@@ -107,12 +107,14 @@ namespace aria {
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
-        // 外层函数局部 -> 需 upvalue 捕获（M4 未实现，先注释掉查找，未命中即落到全局）。
-        // for (const auto e = cur_fn_ctx()->enclosing_; e != nullptr; e = e->enclosing_) {
-        //     if (e->find_local(name)) {
-        //         return ResolvedVar{ResolvedVar::Kind::Upvalue, 0};
-        //     }
-        // }
+        // 外层函数局部 -> 需 upvalue 捕获（M4 未实现 -> not_impl）。沿 enclosing_ 链查；命中即 Upvalue，
+        // 由调用方（visitIdentifierNode/compile_lvalue）走 not_impl 报编译期错--不静默落到全局，
+        // 否则外层局部会与同名模块全局串台致闭包捕获错误变量（见 CLAUDE.md「作用域模型」）。
+        for (const auto* e = cur_fn_ctx()->enclosing_; e != nullptr; e = e->enclosing_) {
+            if (e->find_local(name)) {
+                return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = 0};
+            }
+        }
         // 否则视为模块全局（VM 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。
         // add_name 溢出 -> 透传 CodeUnitTooLarge，交调用处用节点 loc 显式 fail（本方法不持 loc）。
         if (const auto name_idx = add_name(name)) {

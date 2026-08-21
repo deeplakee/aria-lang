@@ -100,6 +100,7 @@ namespace aria {
         ModuleNotFound,   // import 的模块不存在
         CodeUnitTooLarge, // 常量/指令数超限
         TooManyLocals,    // 局部变量数超限
+        TooManyArguments, // 单次调用实参数超限（CALL 操作数 u8 上限 255）
         TooManyUpvalues,  // upvalue 数超限
         SourceTooLarge,   // 单个源文件过大
     };
@@ -248,6 +249,8 @@ namespace aria {
                 return "CodeUnitTooLarge";
             case ErrorCode::TooManyLocals:
                 return "TooManyLocals";
+            case ErrorCode::TooManyArguments:
+                return "TooManyArguments";
             case ErrorCode::TooManyUpvalues:
                 return "TooManyUpvalues";
             case ErrorCode::SourceTooLarge:
@@ -329,6 +332,7 @@ namespace aria {
             case ErrorCode::ModuleNotFound:
             case ErrorCode::CodeUnitTooLarge:
             case ErrorCode::TooManyLocals:
+            case ErrorCode::TooManyArguments:
             case ErrorCode::TooManyUpvalues:
             case ErrorCode::SourceTooLarge:
                 return ErrorCategory::Resource;

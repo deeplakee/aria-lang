@@ -272,7 +272,6 @@ namespace aria {
         for (const auto& p: params) {
             if (p.is_varargs || p.default_value != nullptr) {
                 not_impl(body, "默认参数 / varargs");
-                return;
             }
         }
         // 形参重名 -> DuplicateParam。
@@ -280,13 +279,11 @@ namespace aria {
             for (usize j = i + 1; j < params.size(); ++j) {
                 if (params[i].name == params[j].name) {
                     fail(ErrorCode::DuplicateParam, loc, "形参重名: {}", params[i].name);
-                    return;
                 }
             }
         }
         if (params.size() > 255) {
             fail(ErrorCode::TooManyLocals, loc, "形参过多(>255)");
-            return;
         }
 
         const auto fn     = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
@@ -406,13 +403,13 @@ namespace aria {
         if (node->else_branch != nullptr) {
             const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
             if (!cur_cu()->patch_jump(jf))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> else
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> else
             emit_stmt(node->else_branch.get());
             if (!cur_cu()->patch_jump(jend))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> end
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> end
         } else {
             if (!cur_cu()->patch_jump(jf))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> end
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> end
         }
     }
 
@@ -433,12 +430,12 @@ namespace aria {
         cur_fn_ctx()->loop_stack_.pop_back();
 
         if (!cur_cu()->emit_jump_back(l_start, line))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "回边偏移超过 64KB");
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "回边偏移超过 64KB");
         if (!cur_cu()->patch_jump(jf))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_end
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_end
         for (const auto bp: loop.break_fwd_patches) {
             if (!cur_cu()->patch_jump(bp))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB");
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB");
         }
     }
 
@@ -471,23 +468,23 @@ namespace aria {
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
         for (const auto cp: loop.continue_fwd_patches) {
             if (!cur_cu()->patch_jump(cp))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_incr
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_incr
         }
         if (node->increment != nullptr) {
             emit_expr(node->increment.get());
             cur_cu()->emit_op(OpCode::POP, line);
         }
         if (!cur_cu()->emit_jump_back(l_cond, line))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "回边偏移超过 64KB");
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "回边偏移超过 64KB");
 
         const u32 l_end = cur_cu()->size();
         if (has_cond) {
             if (!cur_cu()->patch_jump(jf))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_end
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_end
         }
         for (const auto bp: loop.break_fwd_patches) {
             if (!cur_cu()->patch_jump(bp))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_end
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_end
         }
         (void) l_incr;
         end_scope(line);
@@ -553,12 +550,12 @@ namespace aria {
         cur_fn_ctx()->loop_stack_.pop_back();
 
         if (!cur_cu()->emit_jump_back(l_start, line))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "回边偏移超过 64KB");
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "回边偏移超过 64KB");
         if (!cur_cu()->patch_jump(jf))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_end
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_end
         for (const auto bp: loop.break_fwd_patches) {
             if (!cur_cu()->patch_jump(bp))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB");
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB");
         }
         end_scope(line);
     }
@@ -567,7 +564,6 @@ namespace aria {
         const u32 line = node->loc_line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
-            return;
         }
         auto& loop = cur_fn_ctx()->loop_stack_.back();
         pop_locals_to(loop.loop_scope_depth, line);
@@ -578,13 +574,12 @@ namespace aria {
         const u32 line = node->loc_line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
-            return;
         }
         auto& loop = cur_fn_ctx()->loop_stack_.back();
         pop_locals_to(loop.loop_scope_depth, line);
         if (loop.continue_back_target) {
             if (!cur_cu()->emit_jump_back(*loop.continue_back_target, line))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "回边偏移超过 64KB");
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "回边偏移超过 64KB");
         } else {
             loop.continue_fwd_patches.push_back(cur_cu()->emit_jump(OpCode::JUMP, line)); // -> L_incr（回填）
         }
@@ -608,7 +603,6 @@ namespace aria {
         auto* alias_str = new_string(gc_, node->alias); // intern（常量池复用）
         if (!mod_ctx_->declare_global(node->alias)) {
             fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局: {}", node->alias);
-            return;
         }
         const auto path_idx = add_constant(Value::from_obj(new_string(gc_, node->path)));
         if (!path_idx)
@@ -624,7 +618,6 @@ namespace aria {
     void CodeGen::visitTryStmtNode(TryStmtNode* node) {
         if (node->catch_body == nullptr && node->finally_body == nullptr) {
             fail(ErrorCode::TryWithoutHandler, node->loc(), "try 须有 catch 或 finally");
-            return;
         }
         not_impl(node, "try/catch/finally 异常处理");
     }
@@ -647,14 +640,12 @@ namespace aria {
             auto* id = dynamic_cast<IdentifierPatternNode*>(b.target.get());
             if (id == nullptr) {
                 not_impl(b.target.get(), "列表模式解构 var 声明");
-                continue;
             }
             if (cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0) {
                 // 顶层 var -> 模块全局（intern 一次供常量池复用；declare_global 按内容判重）
                 auto* name_str = new_string(gc_, id->name); // intern（常量池复用）
                 if (!mod_ctx_->declare_global(id->name)) {
                     fail(ErrorCode::RedefinedVariable, id->loc(), "重复定义全局: {}", id->name);
-                    continue;
                 }
                 if (b.initializer != nullptr) {
                     emit_expr(b.initializer.get());
@@ -771,7 +762,7 @@ namespace aria {
                     node->op == Op::Binary::Or ? OpCode::JUMP_TRUE_OR_POP : OpCode::JUMP_FALSE_OR_POP, line);
             emit_expr(node->rhs.get());
             if (!cur_cu()->patch_jump(j))
-                fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> L_end（rhs 之后）
+                fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> L_end（rhs 之后）
             return;
         }
         // 算术 / 比较：lhs、rhs 各求值一次，再发射 op。
@@ -888,13 +879,13 @@ namespace aria {
 
     void CodeGen::visitCallNode(CallNode* node) {
         const u32 line = node->loc_line();
+        // 实参上限 255（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
+        if (node->args.size() > 255) {
+            fail(ErrorCode::TooManyArguments, node->loc(), "实参数超过 255");
+        }
         emit_expr(node->callee.get());
         for (auto& arg: node->args) {
             emit_expr(arg.get());
-        }
-        if (node->args.size() > 255) {
-            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "实参数超过 255");
-            return;
         }
         cur_cu()->emit_op(OpCode::CALL, line);
         cur_cu()->emit_byte(static_cast<u8>(node->args.size()), line);
@@ -917,10 +908,10 @@ namespace aria {
         emit_expr(node->then_branch.get());
         const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
         if (!cur_cu()->patch_jump(jf))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> else
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> else
         emit_expr(node->else_branch.get());
         if (!cur_cu()->patch_jump(jend))
-            fail(ErrorCode::CodeUnitTooLarge, SourceLoc{}, "跳转偏移超过 64KB"); // -> end
+            fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB"); // -> end
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode* node) {

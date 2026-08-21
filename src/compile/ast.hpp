@@ -363,7 +363,7 @@ namespace aria {
     };
 
     // for 语句（C 风格）：for (init; cond; incr) stmt。
-    //   - init：varDecl / 空（";"）。统一为 StmtNode（nullptr 表空 init）。
+    //   - init：varDecl / exprStmt / 空（";"）。统一为 StmtNode（nullptr 表空 init）。
     //   - condition / increment：nullptr 表省略。
     struct ForStmtNode : StmtNode {
         ForStmtNode(SourceLoc loc, UPtr<StmtNode> init, UPtr<ExprNode> condition, UPtr<ExprNode> increment,

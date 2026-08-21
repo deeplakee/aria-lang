@@ -1,0 +1,78 @@
+#ifndef ARIA_OBJ_STRING_HPP
+#define ARIA_OBJ_STRING_HPP
+
+#include "common.hpp"
+#include "object/Object.hpp"
+
+namespace aria {
+
+    class GC;
+
+    // 字符串对象:SSO(短串内联 / 长串独立 buffer)。
+    //
+    //   - 长度 <= kShortCapacity(15):内联 short_chars_[16](15 字符 + NUL),无额外分配。
+    //   - 长度  > kShortCapacity:long_chars_ 指向 gc.allocate<char>(length_+1) 的独立 buffer,
+    //     ~ObjString 时 gc_->deallocate<char> 释放。壳本身定长(sizeof(ObjString))。
+    //
+    //   is_long() 由 length_ > kShortCapacity 派生(不存标志位,省 1 字节 + 填充)。
+    //   trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。
+    //   持 GC* gc_ 供 ~ObjString 释放 long_chars_(替代 destroy 钩子:子内存释放统一走虚析构)。
+    //
+    //   Phase 2 起接 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,
+    //   未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
+    class ObjString final : public Object {
+    public:
+        static constexpr usize kShortCapacity = 15;
+
+    private:
+        GC* gc_; // 供 ~ObjString 释放 long_chars_
+        union {
+            char  short_chars_[kShortCapacity + 1]; // 16 字节,与 char* 取大
+            char* long_chars_;
+        };
+        usize length_;
+
+    public:
+        ObjString(GC& gc, StringView src);
+        ~ObjString() override;
+
+        [[nodiscard]]
+        StringView view() const noexcept;
+
+        // 内容相等(==):先比指针(intern 命中快速路径),再比 view() 字符内容。
+        // override Object::equals(默认地址相等)。
+        [[nodiscard]]
+        bool equals(const Object* other) const noexcept override;
+
+        // 可读描述:字符内容原文(无引号),如 hello。override Object::to_string 默认的 `<String at 0x...>`。
+        [[nodiscard]]
+        String to_string() const override;
+
+        [[nodiscard]]
+        usize length() const noexcept {
+            return length_;
+        }
+
+        // 短串内联 / 长串独立 buffer,由 length_ 派生(不存标志位)。
+        [[nodiscard]]
+        bool is_long() const noexcept {
+            return length_ > kShortCapacity;
+        }
+
+        // 无 Value 子节点。
+        void trace(GC&) const noexcept override {}
+
+        // 壳定长(长串 buffer 不计入壳,由 ~ObjString 单独释放)。
+        [[nodiscard]]
+        usize size() const noexcept override {
+            return sizeof(ObjString);
+        }
+    };
+
+    // 工厂:返回内容等于 src 的 ObjString*。经 GC 驻留池:命中返回已有串,未命中分配+驻留。
+    [[nodiscard]]
+    ObjString* new_string(GC& gc, StringView src);
+
+} // namespace aria
+
+#endif // ARIA_OBJ_STRING_HPP

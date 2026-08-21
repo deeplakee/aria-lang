@@ -1,0 +1,22 @@
+# CMake 构建目录（build/ 为命令行/CI；cmake-build-* 为 IDE）
+/build/
+/cmake-build-*/
+
+# IDE
+/.claude/
+/.idea/
+/.vscode/
+/.vs/
+CMakeSettings.json
+.cache/
+
+# 编译产物
+*.o
+*.obj
+*.exe
+*.lib
+*.dll
+*.pdb
+
+# OS
+.DS_Store

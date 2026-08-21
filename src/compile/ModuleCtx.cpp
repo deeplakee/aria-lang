@@ -1,0 +1,35 @@
+#include "compile/ModuleCtx.hpp"
+
+#include "common.hpp"
+#include "compile/FunctionContext.hpp"
+#include "object/ObjFunction.hpp"
+#include "object/ObjModule.hpp"
+
+namespace aria {
+
+    // ============================================================
+    // 构造 / 析构
+    // ============================================================
+
+    // 调用方须先 module.set_entry(entry)；构造期 ASSERT entry 非空，就 m.entry() new 一个入口 fn 上下文
+    // （enclosing_==nullptr = entry）赋值给 current_fn_ctx_--它既是入口所有者也是当前游标（初始 = 入口）。
+    ModuleCtx::ModuleCtx(ObjModule& m) : module_{&m} {
+        ASSERT(m.entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
+        current_fn_ctx_ = new FunctionContext(*m.entry());
+    }
+
+    // 沿 enclosing_ 链（current_fn_ctx_ → 父 → ... → entry）逐个 delete，无论游标在哪儿都对：
+    //   - 成功路径：compile_function 已在还原游标后手动 delete 各子上下文，析构时游标 = entry，仅删 entry。
+    //   - 出错路径：compile_function 不还原游标、不 delete 子，直接 return（出错即停，见 CodeGen）；析构从
+    //     游标（最深层未释放子）走链释放整条活动链 + entry。
+    // 先存 next 再 delete（delete 后不可再读 ctx）。
+    ModuleCtx::~ModuleCtx() {
+        auto ctx = current_fn_ctx_;
+        while (ctx != nullptr) {
+            const auto next = ctx->enclosing_;
+            delete ctx;
+            ctx = next;
+        }
+    }
+
+} // namespace aria

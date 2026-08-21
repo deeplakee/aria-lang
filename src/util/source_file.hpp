@@ -1,0 +1,292 @@
+#ifndef ARIA_SOURCE_FILE_HPP
+#define ARIA_SOURCE_FILE_HPP
+
+#include <algorithm>
+#include <filesystem>
+#include <format>
+#include <ranges>
+#include "common.hpp"
+#include "fs.hpp"
+#include "utf8.hpp"
+
+namespace aria::src {
+
+    namespace stdfs = std::filesystem;
+
+    // 源码中的一段：半开区间 [start, end)。token 与 AST 节点用它记录范围。
+    struct SourceSpan {
+        usize start = 0;
+        usize end   = 0;
+
+        [[nodiscard]]
+        constexpr usize length() const noexcept {
+            return end - start;
+        }
+    };
+
+    // 行/列位置（1-based，符合大多数编辑器与编译器习惯）。
+    struct LineCol {
+        usize line = 1; // 行号，从 1 开始
+        usize col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
+    };
+
+    // 一段源码的起止行/列，用于渲染多行错误信息
+    struct SpanLines {
+        LineCol begin;
+        LineCol end;
+    };
+
+    // 源文件信息：保存文件名、路径与内容。
+    //
+    // 内容由 SourceFile 以 String 持有所有权，解析阶段可通过 name()/path()/content()
+    // 取得 StringView 直接引用，避免拷贝。为保证 StringView 有效，需满足：
+    //   1. 取出的 StringView 不得比所引用的 SourceFile 活得更久；
+    //   2. SourceFile 构造完成后不要修改其内容（本结构体不提供修改接口）；
+    //   3. 若将多个 SourceFile 存入容器（如 List）并已取出 StringView，
+    //      后续不要再向容器追加/删除导致重分配--重分配会移动内部 String，
+    //      对短串（SSO）而言会改变字符地址而使 StringView 悬空。
+    //
+    // 加载处理：
+    //   - 剥除前导 UTF-8 BOM（EF BB BF）；
+    //   - 行尾归一化为 LF（CRLF/CR -> LF），保证行列映射与 tokenize 一致；
+    //   - 校验内容为合法 UTF-8，非法则 from_path 返回 InvalidEncoding。
+    class SourceFile {
+    public:
+        SourceFile() = default;
+
+        // name  : 仅文件名（不含目录），如 "main.aria"
+        // path  : 完整路径
+        // content: 已经过 BOM 剥除与 CRLF 归一化的内容
+        SourceFile(String name, String path, String content) noexcept :
+            name_{std::move(name)}, path_{std::move(path)}, content_{std::move(content)} {}
+
+        // 仅文件名（不含目录），如 "main.aria"
+        [[nodiscard]]
+        StringView name() const noexcept {
+            return name_;
+        }
+
+        // 完整路径
+        [[nodiscard]]
+        StringView path() const noexcept {
+            return path_;
+        }
+
+        // 文件内容。底层 String 以 '\0' 结尾，便于需要哨兵的扫描逻辑。
+        // 已剥除 BOM 并将行尾归一化为 LF。
+        [[nodiscard]]
+        StringView content() const noexcept {
+            return content_;
+        }
+
+        // 行数。与 wc -l 在“内容以 LF 结尾”时一致；最后一行即便没有结尾 LF
+        // 也算一行；末尾的 LF 不产生额外的空行。空内容返回 0。
+        [[nodiscard]]
+        usize line_count() const {
+            ensure_line_starts();
+            return line_starts_.size();
+        }
+
+        // 取第 line 行（1-based）的内容（不含行尾 LF）。越界返回空串。
+        [[nodiscard]]
+        StringView line(const usize line) const {
+            ensure_line_starts();
+            if (line == 0 || line > line_starts_.size()) {
+                return {};
+            }
+            const usize begin = line_starts_[line - 1];
+            // 该行内容到行尾 LF 之前为止；若无行尾 LF 则到内容末尾。
+            // 注意：不能直接用下一行起点 - 1，因为末行可能本身带行尾 LF。
+            usize end = begin;
+            while (end < content_.size() && content_[end] != '\n') {
+                ++end;
+            }
+            return StringView{content_.data() + begin, end - begin};
+        }
+
+        // 将字节偏移解析为 1-based 的 (行, 列)。列按码点计数，对中文源码友好。
+        // offset 超出范围时被钳制到内容末尾。
+        // 特殊地，offset == content.size()（EOF）返回下一行第 1 列，
+        // 即 (line_count()+1, 1)，匹配编辑器把光标停在文件末尾的行为，
+        // 也便于报“unexpected EOF”时给出一个合理位置。
+        [[nodiscard]]
+        LineCol locate(usize offset) const {
+            ensure_line_starts();
+            if (offset > content_.size()) {
+                offset = content_.size();
+            }
+            // EOF：落在所有真实行之后，返回“下一行第 1 列”
+            if (offset == content_.size()) {
+                return {line_starts_.size() + 1, 1};
+            }
+            // upper_bound 给出第一个起始偏移 > offset 的行；
+            // 它的前一行（0-based line_idx）即为 offset 所属行。
+            auto line_idx = static_cast<usize>(std::ranges::upper_bound(line_starts_, offset) - line_starts_.begin());
+            if (line_idx > 0) {
+                --line_idx; // 落到所属行（0-based）
+            }
+            const usize line_off = line_starts_[line_idx];
+            // 列 = 该行内 [line_off, offset) 的码点数 + 1
+            const usize col = count_codepoints(content_, line_off, offset) + 1;
+            return {line_idx + 1, col};
+        }
+
+        // 解析一段 [start, end) 的 (起止行, 起止列)，便于渲染多行错误信息
+        [[nodiscard]]
+        SpanLines locate_span(const usize start, const usize end) const {
+            return {locate(start), locate(end)};
+        }
+
+        // 从磁盘读取一个文件构造 SourceFile：
+        //   1. fs::read_file 读取原始字节；
+        //   2. 剥除前导 BOM、CRLF/CR 归一化为 LF；
+        //   3. 校验为合法 UTF-8，否则返回 InvalidEncoding。
+        // name 取路径的 basename，path 为传入的路径。读取失败时原样返回 fs 错误码。
+        [[nodiscard]]
+        static Result<SourceFile, fs::FsErrCode> from_path(StringView path) {
+            auto content = fs::read_file(path);
+            if (!content) {
+                return std::unexpected(content.error());
+            }
+            String path_str{path};
+            String name_str   = stdfs::path{path_str}.filename().string();
+            auto   normalized = normalize(*content);
+            if (!normalized) {
+                return std::unexpected(fs::FsErrCode::InvalidEncoding);
+            }
+            return SourceFile{std::move(name_str), std::move(path_str), std::move(normalized.value())};
+        }
+
+    private:
+        String name_;
+        String path_;
+        String content_;
+
+        // 懒构建：line_starts_[i] 是第 i+1 行（0-based i）在 content_ 中的起始字节偏移。
+        // 语义遵循主流惯例：一个“行”要么以 LF 结尾，要么是到 EOF 的一段内容；
+        // 因此末尾的 LF 不产生额外的空行起点，空内容则行表为空。
+        //   "a\nb\n" -> [0, 2]   (2 行)
+        //   "a\nb"   -> [0, 2]   (2 行，末行未终止)
+        //   "a\n"    -> [0]      (1 行)
+        //   ""       -> []       (0 行)
+        mutable List<usize> line_starts_;
+        mutable bool        is_line_starts_built_ = false;
+
+        void ensure_line_starts() const {
+            if (is_line_starts_built_) {
+                return;
+            }
+            line_starts_.clear();
+            if (content_.empty()) {
+                is_line_starts_built_ = true;
+                return;
+            }
+            // 第一行总是从 0 开始
+            line_starts_.push_back(0);
+            // 每个 LF 之后若有内容，即为下一行起点；末尾的 LF 不产生空行
+            for (usize i = 0; i + 1 < content_.size(); ++i) {
+                if (content_[i] == '\n') {
+                    line_starts_.push_back(i + 1);
+                }
+            }
+            is_line_starts_built_ = true;
+        }
+
+        // 统计 content 在 [begin, end) 内的码点数（用于把字节列换算成码点列）
+        static usize count_codepoints(const StringView content, const usize begin, const usize end) {
+            usize n = 0;
+            usize i = begin;
+            while (i < end) {
+                const auto [_, len] = utf8::decode_one(content, i);
+                i += len;
+                ++n;
+            }
+            return n;
+        }
+
+        // 剥除前导 BOM、CRLF/CR -> LF，并校验 UTF-8 合法性。
+        // 非法 UTF-8 返回空（调用方据此返回 InvalidEncoding）。
+        [[nodiscard]]
+        static Opt<String> normalize(const StringView raw) {
+            // 剥除 BOM
+            StringView s = raw;
+            if (s.size() >= 3 && static_cast<u8>(s[0]) == 0xEF && static_cast<u8>(s[1]) == 0xBB &&
+                static_cast<u8>(s[2]) == 0xBF) {
+                s.remove_prefix(3);
+            }
+            if (!utf8::is_valid(s)) {
+                return std::nullopt;
+            }
+
+            // 行尾归一化：\r\n -> \n，孤立 \r -> \n
+            String out;
+            out.reserve(s.size());
+            for (usize i = 0; i < s.size(); ++i) {
+                if (const char c = s[i]; c == '\r') {
+                    out.push_back('\n');
+                    if (i + 1 < s.size() && s[i + 1] == '\n') {
+                        ++i; // 跳过 CRLF 中的 \n
+                    }
+                } else {
+                    out.push_back(c);
+                }
+            }
+            return out;
+        }
+    };
+
+    // 源码位置：源文件指针 + 行列。供 Token / Error 等记录「在哪个文件的哪一行哪一列」。
+    //
+    // src 以非拥有指针保存（不拥有所有权），不得比所引用的 SourceFile 活得更久
+    // （同 Token::lexeme_ 的 StringView 约束）。src 非空不变式由显式构造函数的
+    // ASSERT 保证；默认构造为空态（src=nullptr、line_col={0,0}），供 Token 默认
+    // 构造等容器占位--空态下不应依赖其位置语义，to_string 对空态返回 "?"。
+    //
+    // to_string() 渲染为编译器惯例的 "path:line:col"（1-based 行列，完整路径便于
+    // 同名文件区分与 IDE 跳转）；line/col 为 0（无效）时该段渲染为 "?"。
+    class SourceLoc {
+    public:
+        // 空态：src=nullptr。供容器占位（如 List<Token> 预留槽位）。
+        SourceLoc() noexcept : src_{nullptr}, line_col_{0, 0} {}
+
+        // 真实位置构造：src 必须非空（断言保证），line_col 为已解析的行列。
+        SourceLoc(SourceFile* src, LineCol line_col) noexcept : src_{src}, line_col_{line_col} {
+            ASSERT(src != nullptr, "SourceLoc 需要非空 src 指针");
+        }
+
+        [[nodiscard]]
+        SourceFile* source() const noexcept {
+            return src_;
+        }
+
+        [[nodiscard]]
+        LineCol line_col() const noexcept {
+            return line_col_;
+        }
+
+        // 行号（1-based；空态 / 无效为 0，调用方按需处理）。
+        [[nodiscard]]
+        usize line() const noexcept {
+            return line_col_.line;
+        }
+
+        // 渲染为 "path:line:col"（1-based 行列，取 path 便于 IDE 跳转）。
+        // 空态（src 为空）返回 "?"；line/col 为 0（无效）时该段渲染为 "?"。
+        [[nodiscard]]
+        String to_string() const {
+            if (src_ == nullptr) {
+                return "?";
+            }
+            // line/col 为 0 视为「未知」，渲染为 "?"；否则渲染为数值。
+            const auto part        = [](const usize v) -> String { return v == 0 ? "?" : std::format("{}", v); };
+            const auto [line, col] = line_col_;
+            return std::format("{}:{}:{}", src_->path(), part(line), part(col));
+        }
+
+    private:
+        SourceFile* src_;
+        LineCol     line_col_;
+    };
+} // namespace aria::src
+
+#endif // ARIA_SOURCE_FILE_HPP

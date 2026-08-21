@@ -1,0 +1,92 @@
+#ifndef ARIA_OBJ_FUNCTION_HPP
+#define ARIA_OBJ_FUNCTION_HPP
+
+#include "bytecode/CodeUnit.hpp"
+#include "common.hpp"
+#include "object/Object.hpp"
+
+namespace aria {
+
+    class GC;
+    class ObjString;
+    class ObjModule;
+
+    // 函数对象:持一个 CodeUnit(字节码容器,值成员)+ 所属模块 + 函数名 + 参数个数(arity)。
+    //
+    //   - unit_:CodeUnit 值成员(非 Object,见 CodeUnit 注释)。编译期由字节码编译器
+    //     经 unit() 直接操作裸字段 emit;运行期 VM 读 code/constants/try_records。
+    //     其内部 Array 持 GC* 自释放,~ObjFunction -> ~CodeUnit 级联释放。
+    //   - module_:所属模块(词法归属,构造时传入、不可变、非空)。函数必然定义在某个模块内
+    //     (模块体与其内嵌套函数同属一模块;入口脚本本身也是一个模块)。VM 据此定位「当前模块
+    //     globals」(LOAD/STORE/DEF_GLOBAL 查 frame.module->globals(),module_ 经 CallFrame.module
+    //     缓存)。ctor 断言非空,杜绝「无模块函数」。
+    //   - name_:ObjString*(经 intern 驻留,同名同指针;可为 nullptr,表示模块顶层
+    //     匿名单元,to_string 渲染 `<script>`)。
+    //   - arity_:参数个数(u8,上限 255;编译期编译器保证不越界)。
+    //
+    //   地址哈希型可变对象(走 Object{Kind} ctor);equals 保持默认地址相等--
+    //     函数无"内容相等"语义(同名函数体可不同)。
+    //   trace():标 name_ + module_ + 委托 unit_.trace(常量池中的 Value,code/lines 无子节点)。
+    //     module_ 回指形成 module <-> entry 环,mark-sweep 三色标记天然破环,无 double-free
+    //     (两者皆 GC 对象,各自由 sweep 整体回收,~ObjFunction 不释放 module_)。
+    class ObjFunction final : public Object {
+    public:
+        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity);
+        ~ObjFunction() override = default; // CodeUnit 级联自释放,无额外子内存
+
+        [[nodiscard]]
+        CodeUnit& unit() noexcept {
+            return unit_;
+        }
+
+        [[nodiscard]]
+        const CodeUnit& unit() const noexcept {
+            return unit_;
+        }
+
+        [[nodiscard]]
+        ObjString* name() const noexcept {
+            return name_;
+        }
+
+        [[nodiscard]]
+        u8 arity() const noexcept {
+            return arity_;
+        }
+
+        // 所属模块(词法归属,构造时确定、不可变、非空),供 VM 定位模块 globals。
+        [[nodiscard]]
+        ObjModule* module() const noexcept {
+            return module_;
+        }
+
+        // 标 name_ + module_ + 常量池(code/lines 无 Value 子节点)。module_ 非空;mark_object 容 nullptr 仅防御。
+        void trace(GC& gc) const noexcept override;
+
+        // 壳定长(CodeUnit 内部 Array 自管理,~CodeUnit 级联释放)。
+        [[nodiscard]]
+        usize size() const noexcept override {
+            return sizeof(ObjFunction);
+        }
+
+        // 可读描述:`<fn add>`(clox 风格);匿名(name_==nullptr)渲染 `<script>`。
+        // override Object::to_string 默认的 `<Function at 0x...>`。
+        [[nodiscard]]
+        String to_string() const override;
+
+    private:
+        CodeUnit   unit_;
+        ObjModule* module_; // 所属模块(非空,构造时传入)
+        ObjString* name_;
+        u8         arity_;
+    };
+
+    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。
+    //        module 与 name 先入临时根:new_object 顶部 maybe_collect 可能回收未被根持有的两者
+    //        (module 调用方可能尚未入 VM 模块表;name 经 intern 驻留池是 weak root,皆不保命)。
+    [[nodiscard]]
+    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity);
+
+} // namespace aria
+
+#endif // ARIA_OBJ_FUNCTION_HPP

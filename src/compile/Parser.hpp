@@ -1,0 +1,251 @@
+#ifndef ARIA_PARSER_HPP
+#define ARIA_PARSER_HPP
+
+#include "common.hpp"
+#include "compile/Token.hpp"
+#include "compile/ast.hpp"
+#include "error/AriaException.hpp"
+#include "error/Error.hpp"
+
+namespace aria {
+
+    // 递归下降语法分析器：把 Lexer 产出的 Token 流构造为 AST（ProgramNode）。
+    //
+    // 文法来源：docs/grammar.txt。各解析函数与非终结符一一对应，命名一致
+    // （program/declaration/statement/expression/assignment/logic_or/.../primary/pattern 等）。
+    //
+    // 错误处理（与 Lexer 风格一致，见 CLAUDE.md「四条错误通道」之 1 与 3）：
+    //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--
+    //     error()/expect() 抛出，沿 C++ 调用栈上抛。
+    //   - 在 declaration() 层捕获：记入 errors_、做 panic-mode 同步（synchronize）
+    //     后继续解析下一条声明/语句，从而像 Lexer 一样收集多个错误。
+    //   - 边界 parse() 返回 Result<UPtr<ProgramNode>, List<Error>>：
+    //     有任何错误 -> 返回错误集合（丢弃部分 AST）；无错 -> 返回完整程序。
+    //
+    // 生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc
+    // （含 SourceFile*）提供，故调用方须保证 SourceFile 在解析期间存活（同 Lexer
+    //  的生命周期约束）。Parser 可复用（多次 parse）。
+    class Parser {
+    public:
+        // 空态构造：成员全空，待 parse 注入 token 流。
+        Parser() noexcept;
+
+        // 解析 token 流为 Program AST。扫完清空成员。返回程序或错误集合。
+        [[nodiscard]]
+        Result<UPtr<ProgramNode>, List<Error>> parse(List<Token> tokens);
+
+    private:
+        // --- 扫描状态（parse 注入，扫完清空）---
+        List<Token> tokens_;
+        usize       pos_;
+        List<Error> errors_;
+
+        // --- token 游标辅助 ---
+        // 越界（ahead 超出末尾）返回末尾 Eof token，安全。
+        [[nodiscard]]
+        const Token& peek(usize ahead = 0) const noexcept;
+
+        [[nodiscard]]
+        TokenType peek_type(usize ahead = 0) const noexcept;
+
+        [[nodiscard]]
+        bool check(TokenType t) const noexcept;
+
+        [[nodiscard]]
+        bool check_next(TokenType t) const noexcept;
+
+        // 若当前 token 为 t 则消费它并返回 true；否则不动，返回 false（= check + advance）。
+        bool match(TokenType t) noexcept;
+
+        [[nodiscard]]
+        bool is_at_end() const noexcept;
+
+        // 推进游标并返回刚消费的 token（已在末尾时不推进）。
+        const Token& advance() noexcept;
+
+        // 刚消费的 token（pos_>0 时有效）。
+        [[nodiscard]]
+        const Token& previous() const noexcept;
+
+        // --- 错误与期待 ---
+        // 以当前 token 位置构造 Error 并抛 AriaCompileException（[[noreturn]]），
+        // 由 declaration() 捕获。EOF 时改报 UnexpectedEof。
+        [[noreturn]]
+        void error(ErrorCode code, String msg) const;
+
+        // 期待特定 token：匹配则消费并返回；否则报 ExpectedToken/UnexpectedEof 抛出。
+        const Token& expect(TokenType t, StringView what);
+
+        // 期待标识符：返回其 lexeme 文本；否则报 ExpectedIdentifier/UnexpectedEof 抛出。
+        [[nodiscard]]
+        String expect_identifier();
+
+        // panic-mode 同步：跳过当前 token 后推进到下一条语句/声明边界
+        // （';' 之后，或 fun/def/var/if/while/for/.../print/'{' 等起首关键字）。
+        void synchronize();
+
+        // --- 顶层与声明 ---
+        [[nodiscard]]
+        UPtr<ProgramNode> program();
+
+        // 错误恢复点：try/catch AriaCompileException，记错 + synchronize + 返回 nullptr。
+        [[nodiscard]]
+        UPtr<StmtNode> declaration();
+
+        [[nodiscard]]
+        UPtr<FunDeclNode> fun_decl();
+
+        [[nodiscard]]
+        List<Param> params();
+
+        [[nodiscard]]
+        UPtr<DefDeclNode> def_decl();
+
+        [[nodiscard]]
+        UPtr<VarDeclNode> var_decl();
+
+        [[nodiscard]]
+        VarBinding var_binding();
+
+        // --- 语句 ---
+        [[nodiscard]]
+        UPtr<StmtNode> statement();
+
+        [[nodiscard]]
+        UPtr<StmtNode> print_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> if_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> while_stmt();
+
+        // for / for-in 消歧入口。
+        [[nodiscard]]
+        UPtr<StmtNode> for_or_for_in_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> break_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> continue_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> return_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> import_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> try_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> throw_stmt();
+
+        [[nodiscard]]
+        UPtr<StmtNode> match_stmt();
+
+        // expression ";"（statement 默认分支，亦用于 forStmt 的 exprStmt init）。
+        [[nodiscard]]
+        UPtr<StmtNode> expression_stmt();
+
+        [[nodiscard]]
+        UPtr<BlockNode> block();
+
+        // --- 表达式（优先级自低向高）---
+        [[nodiscard]]
+        UPtr<ExprNode> expression();
+
+        [[nodiscard]]
+        UPtr<ExprNode> assignment();
+
+        [[nodiscard]]
+        UPtr<ExprNode> logic_or();
+
+        [[nodiscard]]
+        UPtr<ExprNode> logic_and();
+
+        [[nodiscard]]
+        UPtr<ExprNode> equality();
+
+        [[nodiscard]]
+        UPtr<ExprNode> comparison();
+
+        [[nodiscard]]
+        UPtr<ExprNode> range();
+
+        [[nodiscard]]
+        UPtr<ExprNode> term();
+
+        [[nodiscard]]
+        UPtr<ExprNode> factor();
+
+        [[nodiscard]]
+        UPtr<ExprNode> unary();
+
+        // 后缀链：primary ( args | "." identifier | "[" expression "]" )*。
+        [[nodiscard]]
+        UPtr<ExprNode> value();
+
+        [[nodiscard]]
+        UPtr<ExprNode> primary();
+
+        [[nodiscard]]
+        List<UPtr<ExprNode>> args();
+
+        [[nodiscard]]
+        UPtr<ExprNode> list_expr();
+
+        [[nodiscard]]
+        UPtr<ExprNode> map_expr();
+
+        // mapExpr 的单个键值对：expression ":" expression。
+        [[nodiscard]]
+        MapEntry parse_map_entry();
+
+        [[nodiscard]]
+        UPtr<ExprNode> if_expr();
+
+        [[nodiscard]]
+        UPtr<ExprNode> lambda_expr();
+
+        [[nodiscard]]
+        UPtr<ExprNode> match_expr();
+
+        [[nodiscard]]
+        MatchPattern match_pattern();
+
+        [[nodiscard]]
+        MatchArm match_arm();
+
+        [[nodiscard]]
+        MatchExprArm match_expr_arm();
+
+        // --- 解构模式 ---
+        // pattern -> identifier | "_" | listPattern。
+        [[nodiscard]]
+        UPtr<PatternNode> pattern();
+
+        [[nodiscard]]
+        UPtr<ListPatternNode> list_pattern();
+
+        // rest 模式："..." identifier，返回绑名（拒绝 ..._）。
+        [[nodiscard]]
+        String rest_pattern();
+
+        // --- for / for-in 消歧与收尾 ---
+        // pos_ 位于 '(' 后首个 token；判定是否为 <pattern> "in"（identifier/"_" 紧跟 in，
+        // 或 [...] 后跟 in）。in 非表达式运算符，故 <pattern> in 唯一标识 forIn。
+        [[nodiscard]]
+        bool looks_like_for_in() const noexcept;
+
+        [[nodiscard]]
+        UPtr<StmtNode> finish_for_in_stmt(SourceLoc loc);
+
+        [[nodiscard]]
+        UPtr<StmtNode> finish_for_stmt(SourceLoc loc, UPtr<StmtNode> init);
+    };
+
+} // namespace aria
+
+#endif // ARIA_PARSER_HPP

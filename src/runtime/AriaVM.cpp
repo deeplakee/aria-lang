@@ -290,7 +290,7 @@ namespace aria {
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
-        // 前置编写(peek-not-pop、make_guard(module))。不再全程禁用 GC。
+        // 前置编写(peek-not-pop)。
         // 源根:入口槽 [0] 原地替换为入口模块 root_(对齐 Python sys.path[0] -- 入口源根居首,
         // 配置根 stdlib / -L / 环境变量在 [1..] 不动)。直接赋值 [0],无 flag、无重建、reuse 安全
         // (覆盖旧值,不累积)。root_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用

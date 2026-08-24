@@ -19,10 +19,8 @@ namespace aria {
     Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule& module) {
         // GC 已启用:module 入临时根贯穿全程。经 module.entry_ -> 常量池 -> 嵌套 fn 常量池 -> ...
         // 整链根化所有建设中 ObjFunction / 常量池 ObjString。每个子 fn 在 compile_function 起始即
-        // add_constant 入父常量池(先于编译体),故体编译期它已被链根化;new_string/new_function 等
-        // 工厂已用内部 Guard 保护入参与新对象,new_object -> add_constant 间无 new_object 调用
-        // (只有 Array::push/reallocate/std 容器 insert/指针赋值,均不触发 GC),故「创建后到入常量池前」
-        // 窗口无 GC。不再全程禁用 GC(同 run())。
+        // add_constant 入父常量池(先于编译体),入池即经 module 根链可达;new_object -> add_constant
+        // 间走 trivial 分配(constants.push/reallocate),按 GC 核心不变式不触发 GC,故该窗口无需守卫。
         auto module_guard = gc_.make_guard(&module);
 
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
@@ -642,7 +640,7 @@ namespace aria {
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
         auto name_str = new_string(gc_, node->name); // intern
         // name_str 裸持跨 compile_function（其内 new_function 与函数体编译均可能 new_string ->
-        // maybe_collect 回收未根持有的 name_str），故先入临时根。GC 启用后必须；旧 make_lock 掩盖了此。
+        // maybe_collect 回收未根持有的 name_str），故先入临时根。
         auto name_guard = gc_.make_guard(name_str);
         compile_function(name_str, node->params, node->body.get());
     }

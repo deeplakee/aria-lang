@@ -25,7 +25,7 @@
 //   reset() 即释放，~CodeGen 自动释放作安全网）。上下文所有权：current_fn_ctx_ 兼拥有入口 fn 上下文（ctor new、
 //   ~ModuleCtx 沿 enclosing_ 链 delete）；compile_function 子上下文由 `new` 分配、靠 enclosing_ 链回父--
 //   **成功**路径还原游标并手动 `delete` 子，**出错**路径 fail() 抛 AriaCompileException 直接 unwind（不还原游标、
-//   不 delete 子），交 ~ModuleCtx 沿链释放。不再用 ctx_stack_ vector。**错误通道**：与 Parser 同--编译期深层
+//   不 delete 子），交 ~ModuleCtx 沿链释放。**错误通道**：与 Parser 同--编译期深层
 //   fail() 抛 `AriaCompileException`（持 Error），自动 unwind 跨 visit 递归栈，compile() 顶层 catch 翻译为
 //   `Result<ObjFunction*, Error>`（成功返入口函数，失败返 unexpected(e.error())）。无需 error_ 成员 / ok()
 //   短路 / 各 visit 的 if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。unwind 时 compile_function 的
@@ -41,9 +41,11 @@
 // GC 安全：compile() 入口 gc_.make_guard(&module) 把 module 入临时根贯穿全程。经
 //   module.entry_ -> 常量池 -> 嵌套 ObjFunction 常量池 -> ... 整链根化建设中 ObjFunction /
 //   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
-//   new_string/new_function 工厂已用内部 Guard 保护入参与新对象，故 new_object -> add_constant
-//   窗口无 GC。compile_function 另对 new_function 返回的 fn 加 fn_guard 防御该窗口（与 AriaVM::run()
-//   同一「启用 GC + 接根」思路，不再全程 make_lock）。
+//   入池即经 module 根链可达。new_object -> add_constant 间走 trivial 分配(constants.push ->
+//   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。真 GC 触发点
+//   (new_object 顶部 maybe_collect)的守卫：new_function/new_native_fn/new_module 工厂内部 Guard
+//   保护其 module/name 入参；visitFunDeclNode/visitVarDeclNode/visitImportStmtNode 的 name_str 跨
+//   compile_function/emit_expr/new_string 由 make_guard 根化。
 
 #include "bytecode/code.hpp"
 #include "common.hpp"

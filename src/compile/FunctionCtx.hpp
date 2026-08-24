@@ -2,10 +2,9 @@
 #define ARIA_FUNCTIONCTX_HPP
 
 // 单函数编译上下文：持当前函数的局部栈 / 作用域深度 / 循环上下文栈 / 指向外层上下文。
-// 从 CodeGen 抽出--CodeGen 持当前上下文指针（经 ModuleCtx::ctx_，见 compile/ModuleCtx.hpp），
-// 进 fun/lambda 压一层、退出弹一层。本类只负责「登记」（局部 / 作用域 / 循环 break-continue
-// 的栈管理，并返回弹出数等数据）；「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
-// 这样把单函数的可变状态与遍历/发射逻辑分离，二者各自演进（如 M4 闭包只需在 FunctionCtx 内加 upvalue）。
+// 进 fun/lambda 压一层、退出弹一层（CodeGen 经 ModuleCtx::current_fn_ctx_ 持当前上下文指针）。
+// 本类只负责「登记」（局部 / 作用域 / 循环 break-continue 的栈管理，并返回弹出数等数据）；
+// 「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
 //
 // 局部栈（clox 风格）：locals_[0] = 哑元（slot 0 = callee，隐含不命名）；
 //   1..A = 形参（caller 压栈，编译期 add_local 登记后 mark_initialized）；
@@ -86,9 +85,8 @@ namespace aria {
 
         // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_ 等）---
         // enclosing_ 所有权由调用方局部 UPtr 持有（CodeGen::compile 入口 / compile_function 子）：
-        // 父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定
-        // （不再依赖 ctx_stack_ vector 固定地址）。enclosing_==nullptr 即入口。
-        // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不再缓存于本类。
+        // 父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
+        // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
         FunctionCtx* enclosing_;
         ObjFunction*     fn_;
         List<Local>      locals_;

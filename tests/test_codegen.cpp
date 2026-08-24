@@ -77,9 +77,13 @@ namespace {
     };
 
     // 端到端：源码 -> 编译 -> VM 运行。返回 RunResult（持 vm 活到调用方检视完返回值）。
+    // stress GC：每次 new_object / 循环回边都 collect，主动锻炼 compile+run 的 GC 根接线，
+    // 暴露缺失根（裸指针跨分配）的 bug。module 经 compile() 的 module_guard 根化、值栈/帧经
+    // vm_roots tracer 标根，故 stress 下安全。
     RunResult run_source(std::string_view src) {
-        auto  vm       = std::make_unique<AriaVM>();
-        auto& gc       = vm->gc();
+        auto  vm = std::make_unique<AriaVM>();
+        auto& gc = vm->gc();
+        gc.set_stress(true);
         auto* module   = new_module(gc, new_string(gc, "<test>"));
         auto  compiled = compile_source(gc, *module, src);
         if (!compiled.has_value()) {
@@ -90,9 +94,11 @@ namespace {
     }
 
     // 仅编译（不入 VM），供反汇编 / 编译期错误测试用。返回 Compiled（持 vm 活到反汇编/检视完）。
+    // 同 run_source 开 stress GC，锻炼编译期根接线。
     Compiled compile_only(std::string_view src) {
-        auto  vm       = std::make_unique<AriaVM>();
-        auto& gc       = vm->gc();
+        auto  vm = std::make_unique<AriaVM>();
+        auto& gc = vm->gc();
+        gc.set_stress(true);
         auto* module   = new_module(gc, new_string(gc, "<test>"));
         auto  compiled = compile_source(gc, *module, src);
         return Compiled{std::move(vm), std::move(compiled)};

@@ -38,9 +38,12 @@
 // 栈契约：每个 visitXxxNode 自知契约--ExprNode 子类留一值，StmtNode 子类留零值。
 // 父节点在 visit 体内显式调 emit_expr/emit_stmt 编排子节点；出错由 fail() 抛异常自动 unwind，无需逐调用短路。
 //
-// GC 安全：compile() 入口 gc_.make_lock() 贯穿全程，建设中 ObjFunction / 常量池 ObjString /
-// 嵌套 ObjFunction 不会被 new_string / new_function / add_constant 触发的 maybe_collect 回收
-// （与 AriaVM::run() 同一机制）。
+// GC 安全：compile() 入口 gc_.make_guard(&module) 把 module 入临时根贯穿全程。经
+//   module.entry_ -> 常量池 -> 嵌套 ObjFunction 常量池 -> ... 整链根化建设中 ObjFunction /
+//   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
+//   new_string/new_function 工厂已用内部 Guard 保护入参与新对象，故 new_object -> add_constant
+//   窗口无 GC。compile_function 另对 new_function 返回的 fn 加 fn_guard 防御该窗口（与 AriaVM::run()
+//   同一「启用 GC + 接根」思路，不再全程 make_lock）。
 
 #include "bytecode/code.hpp"
 #include "common.hpp"
@@ -68,7 +71,8 @@ namespace aria {
         explicit CodeGen(GC& gc) : gc_{gc} {}
 
         // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0，name=nullptr <script>）。
-        // 整个编译期 GC 加锁。成功返回入口函数（已 module.set_entry）；失败返回首错 Error。
+        // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
+        // Error。
         Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module);
 
         ~CodeGen() override                    = default; // mod_ctx_ 为 UPtr，自动释放（安全网）
@@ -135,7 +139,7 @@ namespace aria {
         UPtr<ModuleCtx> mod_ctx_;
 
         // 模块初始化（compile 入口调用）：建入口函数 + set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
-        // 游标就位），返回入口函数。须在 gc_.make_lock() 下调用。
+        // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）。
         ObjFunction* init_module(ObjModule& module);
 
         // 当前函数上下文游标（= mod_ctx_->current_fn_ctx_）与当前 CodeUnit（派生）。CodeGen 不再自持

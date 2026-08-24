@@ -17,9 +17,16 @@ namespace aria {
     // ============================================================
 
     Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule& module) {
-        auto lock = gc_.make_lock(); // 全程禁 GC（同 run()），建设中对象/常量不被回收
+        // GC 已启用:module 入临时根贯穿全程。经 module.entry_ -> 常量池 -> 嵌套 fn 常量池 -> ...
+        // 整链根化所有建设中 ObjFunction / 常量池 ObjString。每个子 fn 在 compile_function 起始即
+        // add_constant 入父常量池(先于编译体),故体编译期它已被链根化;new_string/new_function 等
+        // 工厂已用内部 Guard 保护入参与新对象,new_object -> add_constant 间无 new_object 调用
+        // (只有 Array::push/reallocate/std 容器 insert/指针赋值,均不触发 GC),故「创建后到入常量池前」
+        // 窗口无 GC。不再全程禁用 GC(同 run())。
+        auto module_guard = gc_.make_guard(&module);
 
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
+        // 须在 module 已根化下调用(上方 module_guard)。
         auto* entry = init_module(module);
 
         try {
@@ -42,7 +49,8 @@ namespace aria {
     }
 
     // 建模块入口函数（arity 0、匿名 <script>）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、游标就位），
-    // 返回入口函数。须在 gc_.make_lock() 下调用；ModuleCtx 构造期 ASSERT entry 非空（此处先 set_entry）。
+    // 返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）；ModuleCtx 构造期 ASSERT entry 非空
+    // （此处先 set_entry）。
     ObjFunction* CodeGen::init_module(ObjModule& module) {
         const auto entry = new_function(gc_, &module, nullptr, 0);
         module.set_entry(entry);
@@ -52,7 +60,7 @@ namespace aria {
 
     // 当前 CodeUnit = 当前函数 fn_->unit()，随游标派生（定义于此：需 ObjFunction 完整类型取 unit()）。
     FunctionCtx* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
-    CodeUnit*        CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
+    CodeUnit*    CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
 
     // ============================================================
     // 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）
@@ -67,7 +75,7 @@ namespace aria {
     }
 
     Opt<u16> CodeGen::add_name(const StringView s) const {
-        const auto str = new_string(gc_, s);       // intern（锁下安全）
+        const auto str = new_string(gc_, s);       // intern；new_string 内部 Guard 保护至 intern_insert 完成
         return add_constant(Value::from_obj(str)); // 透传 add_constant 的 nullopt
     }
 
@@ -286,7 +294,9 @@ namespace aria {
             fail(ErrorCode::TooManyLocals, loc, "形参过多(>255)");
         }
 
-        const auto fn     = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
+        const auto fn       = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
+        auto       fn_guard = gc_.make_guard(fn); // 防御性:保护「new_function 返回 -> add_constant 入父常量池」
+                                                  // 窗口;入父常量池后即被链根化,双根无害。RAII,unwind 自动 pop。
         const auto fn_idx = add_constant(Value::from_obj(fn)); // 入父（当前）序列常量池
         if (!fn_idx) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>65535)");
@@ -423,7 +433,7 @@ namespace aria {
         auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
                                 .continue_back_target = {l_start},
                                 .continue_fwd_patches = {},
-                                .break_fwd_patches        = {}};
+                                .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
         auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
@@ -457,7 +467,7 @@ namespace aria {
         auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
                                 .continue_back_target = node->increment != nullptr ? std::nullopt : Opt{l_cond},
                                 .continue_fwd_patches = {},
-                                .break_fwd_patches        = {}};
+                                .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
         auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
@@ -534,7 +544,7 @@ namespace aria {
         auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
                                 .continue_back_target = Opt{l_start},
                                 .continue_fwd_patches = {},
-                                .break_fwd_patches        = {}};
+                                .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         cur_cu()->emit_load_local(iter_slot, line); // [iter]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
@@ -601,6 +611,8 @@ namespace aria {
         // IMPORT path:u16 alias:u16（VM 绑定为模块全局；栈中性）。
         // import 别名入表：补漏检 `import "x" as U; var U = 1;`（现报 RedefinedVariable）。
         auto* alias_str = new_string(gc_, node->alias); // intern（常量池复用）
+        // alias_str 裸持跨下方 new_string(path)：后者 maybe_collect 可能回收未根持有的 alias_str，故先入临时根。
+        auto alias_guard = gc_.make_guard(alias_str);
         if (!mod_ctx_->declare_global(node->alias)) {
             fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局: {}", node->alias);
         }
@@ -627,7 +639,10 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode* node) { not_impl(node, "match 语句"); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
-        auto* name_str = new_string(gc_, node->name); // intern（锁下安全）
+        auto* name_str = new_string(gc_, node->name); // intern
+        // name_str 裸持跨 compile_function（其内 new_function 与函数体编译均可能 new_string ->
+        // maybe_collect 回收未根持有的 name_str），故先入临时根。GC 启用后必须；旧 make_lock 掩盖了此。
+        auto name_guard = gc_.make_guard(name_str);
         compile_function(name_str, node->params, node->body.get());
     }
 
@@ -644,6 +659,9 @@ namespace aria {
             if (cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0) {
                 // 顶层 var -> 模块全局（intern 一次供常量池复用；declare_global 按内容判重）
                 auto* name_str = new_string(gc_, id->name); // intern（常量池复用）
+                // name_str 裸持跨 emit_expr(initializer)：初始化器可能分配（lambda -> new_function、
+                // 字符串字面量 -> new_string）触发 maybe_collect 回收未根持有的 name_str，故先入临时根。
+                auto name_guard = gc_.make_guard(name_str);
                 if (!mod_ctx_->declare_global(id->name)) {
                     fail(ErrorCode::RedefinedVariable, id->loc(), "重复定义全局: {}", id->name);
                 }

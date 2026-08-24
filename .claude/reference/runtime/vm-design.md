@@ -94,9 +94,11 @@ struct ExecOutcome {
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)
 
+> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不再等 M6 -- 当前 `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时标 `main_ctx_` 值栈 `[base, top)` + 各活动帧 `function`/`module` + `modules_`;`run()` 不再持 `LockGuard`,`JUMP_BACK` 已是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表 + 接 open upvalue 链 + 多协程 `contexts_` 并集标根。下方描述为 M6 目标形态。
+
 - `contexts_` 中每个上下文 trace 自己:值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure_`、open upvalue 链。`FrameStack::span()` 正好返回已用区间。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
-- safe point:`CALL`、循环回边(`JUMP_BACK`)、`new_object` 内、协程切换点。
+- safe point:`CALL`、循环回边(`JUMP_BACK`)、`new_object` 内、协程切换点。当前已落地 `JUMP_BACK` + `new_object` 内;`CALL`/协程切换点随 M6 补。
 
 ### 4.7 原生函数(ObjNativeFn)与侧信道错误寄存器
 
@@ -127,7 +129,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符 `vm.fail(WrongArity, ...)`。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
-**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop`),否则 `slots` 视图失效(值栈增长会搬迁重定位,见 §4.1)。只读 `slots[1..]`、写 `slots[0]`、经 `vm.fail`/`raise` 报错。回调 aria 函数属未来机制(由 `vm` 提供,自管栈纪律)。M1 持 `LockGuard` 禁 GC,故 M1 原生函数只能返回即时值(数字/布尔/nil/既有对象指针),不能内部分配;M6 解锁 VM 根后方可在原生函数内 `vm.gc()` 分配,且中间对象须 `Guard` 入临时根(`slots[0]` 写入后即随值栈为根)。
+**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop`),否则 `slots` 视图失效(值栈增长会搬迁重定位,见 §4.1)。只读 `slots[1..]`、写 `slots[0]`、经 `vm.fail`/`raise` 报错。回调 aria 函数属未来机制(由 `vm` 提供,自管栈纪律)。GC 已启用(值栈/帧接根),原生函数内可经 `vm.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,`slots[0]` 写入后即随值栈为根。
 
 **内建作者体感**(从 `Result<Value, Error>` 的啰嗦降到一行):
 
@@ -146,7 +148,7 @@ bool len_native(AriaVM& vm, Span<Value> slots) {
 
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。刻意砍掉:
 
-- **不继承 Object、不接 GC 根**:`Movement` 是 `AriaVM` 的纯 C++ 成员;`run()` 期间用 `GC::LockGuard` 禁用 GC(或全靠 temp root),M1 的指令集几乎不分配对象,无正确性风险。这是有意的暂态,M6 接根时移除。
+- **不继承 Object**(已接 GC 根):`Movement` 仍是 `AriaVM` 的纯 C++ 成员(非 Object),但值栈/帧已经 vm_roots tracer 接 GC 根(见 §4.6「已前拉」),`run()` 不再禁 GC,`JUMP_BACK` 已是 safe point。开发期即开 GC(stress GC 于集成测试)以早暴露缺失根。M6 升级 `ObjMovement : Object` 入对象链表 + open upvalue 链 + 多协程根并集。
 - **无闭包/upvalue**:`CallFrame::closure_` 过渡期持 `ObjFunction*`;`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 暂 pass。
 - **无完整异常**:`raise` 的完整形态(`TryRecord` 查表 + `truncate` unwind + `THROW`)暂不实现;op 失败直接作为 `run()` 的失败返回。但 `raise` 的 M1 最小切片--`VMContext` 上的挂起错误寄存器--已随原生函数落地(见 §4.7),供原生函数侧信道报错;M3 完整 `raise` 在此寄存器上接 unwind,寄存器本身不变。
 - **无模块/类/导入**:globals 暂以 VM 内单张表顶替(M2 换 per-module)。

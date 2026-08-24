@@ -18,9 +18,9 @@ namespace aria {
     //        M1 范围(.claude/reference/runtime/vm-design.md §6):单一主上下文 main_ctx_,指令子集覆盖
     //        常量/字面量、局部槽、算术/比较/逻辑、栈操作、跳转、CALL(仅 ObjFunction)、
     //        RETURN/HALT/PRINT。闭包/全局/异常/模块/类/协程后续阶段接入。
-    //        run() 期间经 LockGuard 禁用 GC(M1 不接 Movement 根:值栈/帧对 GC 不透明;
-    //        M6 接 movement 根后移除)。循环状态全部取自 *current_(现为 main_ctx_),按可重入
-    //        风格写 -- 协程期 resume 即换 current_ 重入,循环体无静态/成员临时。
+    //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
+    //        直标代替 Movement 升 Object;open upvalues 留待 M4)。循环状态全部取自 *current_
+    //        (现为 main_ctx_),按可重入风格写 -- 协程期 resume 即换 current_ 重入,循环体无静态/成员临时。
     //
     //        M2 新增:模块表(modules_,解释器级共享)+ 经 std::function 回调纳入 GC 根(组合而非继承:
     //        GC 不识 VM 类型,VM 构造时把标记 lambda 注册进自己的 gc_ -- [this] 捕获,内部 trace

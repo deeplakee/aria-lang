@@ -18,7 +18,7 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 | **Phase 1** | `Array<T>` + GC(模板分配器 + mark-sweep + 临时根 + `new_object`)+ `ObjString`(SSO,**无驻留**)+ 测试 | 已落地 |
 | Phase 2 | `HashTable`(Swiss Table)+ intern 驻留池 + 值绑定容器(`AriaArray`/`AriaHashTable`) | 已落地 |
 | Phase 3 | `CodeUnit` 用 `Array<OpCode>` / `Array<Value>`;`ObjFunction` / `ObjList` / `ObjMap` 等子类型 | 待做 |
-| Phase 4 | `Movement`(有栈协程,VM 持 `current_` + `movements_`)+ VM 根集合(所有活协程栈/帧/upvalue 并集)+ safe point | 待做 |
+| Phase 4 | `Movement`(有栈协程,VM 持 `current_` + `movements_`)+ VM 根集合(所有活协程栈/帧/upvalue 并集)+ safe point | 部分前拉:值栈/帧经 vm_roots tracer 标根 + `JUMP_BACK` safe point 已落地(开发期即开 GC);`ObjMovement : Object` + open upvalue 链 + 多协程根并集仍待 M6 |
 
 > intern 延后到 Phase 2:它依赖 HashTable,而 HashTable 是 Phase 1 之后的下一个产物(与 Array 平级、并列的通用容器,不依赖 Array)。Phase 1 不引入 `std::unordered_map` 占位代码,GC 核心(分配计数 / mark-sweep / 临时根 / ObjString 析构)已可独立测试。
 
@@ -221,7 +221,7 @@ ObjString* new_string(GC& gc, StringView src);    // = gc.new_object<ObjString>(
 
 ```
 collect():
-  mark_roots_()    // Phase 1:仅 temp_roots_;Phase 4 接 VM/Movement 根
+  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + main_ctx_ 值栈/帧;已前拉)
   trace_gray_()    // gray 栈弹一个 -> o->trace(*this) -> 子节点标灰入栈
   sweep_()         // 遍历 objects_head_:未标 -> 摘除 + delete_object();已标 -> unmark()
   next_gc_ = bytes_allocated_ * 2
@@ -474,6 +474,8 @@ class InternPool {
 - 工厂函数 `new_xxx(GC&, ...)` per type,定义在对应 `ObjXxx.hpp`。
 
 ### Phase 4:Movement + VM 根
+
+> **已前拉部分(开发期即启用 GC)**:值栈 `[base, top)` + 各活动帧 `function`/`module` 已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、open upvalue 链、多协程 `movements_` 并集标根、`CALL`/协程切换 safe point。
 
 - `Movement`(协程单元,作 Object 子类型):持 `Array<Value> value_stack_`、`FrameStack<CallFrame> frames_`、`ObjUpvalue* open_upvalues_`、`MovementState`。`trace()` 遍历值栈/帧/upvalue。
 - VM 持 `Movement* current_` + `List<Movement*> movements_`。`mark_roots_` 遍历所有 Movement(不只 current_)。

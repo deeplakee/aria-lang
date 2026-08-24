@@ -18,9 +18,9 @@ namespace aria {
     //
     //   - vm:宿主句柄(对标 Lua lua_State* / Wren WrenVM* / N-API env -- 单一状态句柄)。
     //       供:报错--vm.fail(code, fmt, ...)/vm.raise(err)(写入当前上下文的挂起错误寄存器,
-    //       见下"错误");分配对象--vm.gc()(M6 解锁 VM 根后;M1 持 LockGuard 禁 GC,不得在内建内
-    //       分配);未来回调 aria 函数 / 反射(待 vm 暴露相应访问器)。M6 协程期 vm 路由到当前协程,
-    //       故原生函数无需也不持 VMContext 引用 -- 单句柄即可,且自动随当前协程。
+    //       见下"错误");分配对象--vm.gc()(run() 期值栈/帧已接 GC 根,内建内可经 vm.gc().new_string 等
+    //       分配;跨分配持有的裸 Obj* 须 make_guard 根化);未来回调 aria 函数 / 反射(待 vm 暴露相应访问器)。
+    //       M6 协程期 vm 路由到当前协程,故原生函数无需也不持 VMContext 引用 -- 单句柄即可,且自动随当前协程。
     //   - slots:调用区可写视图,指向值栈上 [callee, a1..aN] 的连续 argc+1 个槽:
     //       slots[0]  = 槽 0(callee / **返回槽**--原生函数把返回值直接写于此,省去 drop+push);
     //       slots[1..argc] = 实参 a1..aN(a1 = slots[1], aN = slots[argc]);

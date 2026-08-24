@@ -35,8 +35,9 @@ namespace aria {
     //     但无必要)。open upvalue 尚未落地(M6),落地后须在 grow_stack_ 一并重绑(同法,或改索引式
     //     upvalue 免逐条修)。
     //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧)。
-    //   - M1 为纯 C++ 类(非 Object、不接 GC 根);M6 协程期升级为 ObjMovement : Object
-    //     并增 open upvalue 链头/执行状态机/resume 字段。主上下文与协程同构。
+    //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,改经 AriaVM 的 vm_roots tracer 在 collect
+    //     时直标(值栈 [base,top) + 各帧 function/module),M6 前即接根。M6 协程期升级 ObjMovement
+    //     : Object 并增 open upvalue 链头/执行状态机/resume 字段,届时入对象链表。主上下文与协程同构。
     class Movement {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,8KB);不足时 2x 增长

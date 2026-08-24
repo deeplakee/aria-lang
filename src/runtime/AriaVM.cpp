@@ -242,10 +242,27 @@ namespace aria {
     } // namespace
 
     // 构造:成员初始化(gc_ 先,main_ctx_/modules_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC。
-    // tracer 为 lambda:[this] 捕获,内部 trace modules_(M6 起再扩值栈/帧/open upvalues)。
-    // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_ 同生共死,无需析构注销。
+    // tracer 为 lambda:[this] 捕获,标记三类根:
+    //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/root_/entry_/globals_);
+    //   2) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
+    //      是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时栈遍历为空,
+    //      不会标到指向已回收对象的陈旧栈值;
+    //   3) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
+    //      免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4。
+    // 值栈/帧以 tracer 直标代替 Movement 升 Object(M6 协程期再升级 ObjMovement 入对象链表)。
+    // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/main_ctx_ 同生共死,无需析构注销。
     AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, modules_{&gc_}, source_roots_{} {
-        gc_.set_vm_roots([this](GC& g) { modules_.trace(g); });
+        gc_.set_vm_roots([this](GC& g) {
+            modules_.trace(g);
+            auto& ctx = main_ctx_;
+            for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
+                g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+            }
+            for (const auto& f: ctx.frames().span()) {
+                g.mark_object(f.function); // mark_object 容 nullptr
+                g.mark_object(f.module);
+            }
+        });
         // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 root_
         //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 root_ 时裸名搜 cwd),
         //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
@@ -272,10 +289,8 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
-        // M1 未接 VM 根(.claude/reference/runtime/vm-design.md §5):值栈/帧对 GC 不透明,运行期禁用 GC。
-        // M6 接根(current_/contexts_ 进 mark_roots_)后移除此锁。
-        auto lock = gc_.make_lock();
-
+        // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
+        // 前置编写(peek-not-pop、make_guard(module))。不再全程禁用 GC。
         // 源根:入口槽 [0] 原地替换为入口模块 root_(对齐 Python sys.path[0] -- 入口源根居首,
         // 配置根 stdlib / -L / 环境变量在 [1..] 不动)。直接赋值 [0],无 flag、无重建、reuse 安全
         // (覆盖旧值,不累积)。root_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用
@@ -291,7 +306,12 @@ namespace aria {
         // VM 专有字段(function/unit/module/ip)填充,定义在 Movement.cpp。
         main_ctx_.enter_frame(fn, 0);
 
-        return run_();
+        // run_() 结束后 reset 主上下文:清空值栈/帧,确保 run() 外(后续 compile / 测试显式 collect)
+        // GC 不会经 tracer 标到指向已回收对象的陈旧栈值。result 为值拷贝,reset 不影响返回值;
+        // 返回值若持对象,由调用方自行根化(Guard / vm 存活),同既有契约。
+        auto result = run_();
+        main_ctx_.reset();
+        return result;
     }
 
     Opt<Error> AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
@@ -305,12 +325,11 @@ namespace aria {
                 return call_function(ctx, Object::as<ObjFunction>(obj), argc);
             case ObjType::NATIVE_FN:
                 return call_native(ctx, Object::as<ObjNativeFn>(obj), argc);
-                default:
+            default:
                 return errorf(ErrorCode::CallNonCallable,
-                      "call non-callable {} (M1 supports functions / native functions only)", to_string(obj->type()));
+                              "call non-callable {} (M1 supports functions / native functions only)",
+                              to_string(obj->type()));
         }
-
-
     }
 
     Opt<Error> AriaVM::call_function(Movement& ctx, ObjFunction* obj, const u8 argc) {
@@ -619,7 +638,9 @@ namespace aria {
                 case OpCode::JUMP_BACK: {
                     const auto off = read_u16(frame);
                     frame.ip -= off;
-                    // M6 safe point:循环回边调 gc.maybe_collect()(接 VM 根后)。
+                    // safe point:循环回边触发回收。值栈/帧已接根(tracer),maybe_collect 不移动
+                    // 值栈/帧/字节码,frame 引用跨调用有效。stress 下每回边一次 collect(测试用)。
+                    gc_.maybe_collect();
                     break;
                 }
 
@@ -659,7 +680,8 @@ namespace aria {
 
                 // ---- 模块导入 ----
                 case OpCode::IMPORT: {
-                    // path:u16, alias:u16;栈中性。按 .claude/reference/runtime/import-path-resolution.md「加载层设计基线」解析:
+                    // path:u16, alias:u16;栈中性。按
+                    // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」解析:
                     //   把 import 串经 resolve_module 解析为命中文件的绝对规范路径(weakly_canonical)作
                     //   模块表键,再查 modules_。
                     //   相对(./ ../)基 = 当前模块所在目录(单基,caller-local,不碰 source_roots);

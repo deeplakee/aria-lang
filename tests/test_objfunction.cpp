@@ -28,7 +28,7 @@ namespace {
     // 此重载多了一步 make_module 故须提前保 name)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         auto  guard = gc.make_guard(name);
-        auto* m     = make_module(gc);
+        auto m     = make_module(gc);
         guard.push(m);
         return aria::new_function(gc, m, name, arity);
     }
@@ -37,8 +37,8 @@ namespace {
 
 TEST(ObjFunction, Basics) {
     GC    gc;
-    auto* name = new_string(gc, "add");
-    auto* fn   = new_function(gc, name, 2);
+    auto name = new_string(gc, "add");
+    auto fn   = new_function(gc, name, 2);
     EXPECT_TRUE(aria::Object::is<ObjFunction>(fn));
     EXPECT_EQ(fn->type(), aria::ObjType::FUNCTION);
     EXPECT_EQ(fn->name(), name); // 同名 intern 同指针
@@ -50,7 +50,7 @@ TEST(ObjFunction, Basics) {
 
 TEST(ObjFunction, EmitIntoUnit) {
     GC    gc;
-    auto* fn = new_function(gc, new_string(gc, "mul"), 1);
+    auto fn = new_function(gc, new_string(gc, "mul"), 1);
     auto& cu = fn->unit();
     cu.emit_op(aria::OpCode::LOAD_CONST, 3);
     cu.emit_word(cu.add_constant(Value::from_i32(42)), 3);
@@ -63,21 +63,21 @@ TEST(ObjFunction, EmitIntoUnit) {
 
 TEST(ObjFunction, ToString) {
     GC    gc;
-    auto* fn = new_function(gc, new_string(gc, "add"), 0);
+    auto fn = new_function(gc, new_string(gc, "add"), 0);
     EXPECT_EQ(fn->to_string(), "<fn add>");
 
-    auto* script = new_function(gc, nullptr, 0); // 匿名顶层单元
+    auto script = new_function(gc, nullptr, 0); // 匿名顶层单元
     EXPECT_EQ(script->to_string(), "<script>");
 }
 
 TEST(ObjFunction, TraceMarksNameAndConstants) {
     GC gc;
     gc.set_stress(true);
-    auto* name  = new_string(gc, "add");
-    auto* fn    = new_function(gc, name, 2);
+    auto name  = new_string(gc, "add");
+    auto fn    = new_function(gc, name, 2);
     auto  guard = gc.make_guard(fn); // stress 下后续任何 new_object 都会 collect,先保住 fn
     // 长串常量(独立 buffer,被回收则内容不可访问)
-    auto* constant = new_string(gc, "a long constant string beyond sso");
+    auto constant = new_string(gc, "a long constant string beyond sso");
     fn->unit().add_constant(Value::from_obj(constant));
     (void) new_string(gc, "trigger"); // stress 触发 collect:name/常量须经 fn 的 trace 存活
     EXPECT_EQ(fn->name(), name);
@@ -96,8 +96,8 @@ TEST(ObjFunction, UnrootedFunctionSwept) {
 TEST(ObjFunction, SweptAfterGuardReleased) {
     GC gc;
     gc.set_stress(true);
-    auto* name = new_string(gc, "add");
-    auto* fn   = new_function(gc, name, 0);
+    auto name = new_string(gc, "add");
+    auto fn   = new_function(gc, name, 0);
     {
         auto guard = gc.make_guard(fn);
         (void) new_string(gc, "trigger"); // GC:fn 存活
@@ -111,8 +111,8 @@ TEST(ObjFunction, SweptAfterGuardReleased) {
 // module_ 回指:构造时传入模块,不可变、非空。
 TEST(ObjFunction, ModuleBackref) {
     GC    gc;
-    auto* m  = new_module(gc, new_string(gc, "lib/utils"));
-    auto* fn = aria::new_function(gc, m, new_string(gc, "f"), 0);
+    auto m  = new_module(gc, new_string(gc, "lib/utils"));
+    auto fn = aria::new_function(gc, m, new_string(gc, "f"), 0);
     EXPECT_EQ(fn->module(), m); // 构造时确定
 }
 
@@ -120,8 +120,8 @@ TEST(ObjFunction, ModuleBackref) {
 // 验证 module <-> entry 环不影响 mark-sweep(module_ 不被根,仅经 fn.trace 可达)。
 TEST(ObjFunction, TraceMarksModule) {
     GC          gc;
-    auto*       m  = new_module(gc, new_string(gc, "lib/utils"));       // 模块不单独根
-    auto*       fn = aria::new_function(gc, m, new_string(gc, "f"), 0); // m 经 new_function 内部 guard 存活至 fn 入根
+    auto       m  = new_module(gc, new_string(gc, "lib/utils"));       // 模块不单独根
+    auto       fn = aria::new_function(gc, m, new_string(gc, "f"), 0); // m 经 new_function 内部 guard 存活至 fn 入根
     auto        guard  = gc.make_guard(fn);                             // 仅根 fn:m 须经 fn.trace(module_) 存活
     const usize before = gc.bytes_allocated();
     gc.collect();

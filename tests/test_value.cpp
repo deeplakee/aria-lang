@@ -50,9 +50,9 @@ TEST(ValueIdentical, F64Bitwise) {
 TEST(ValueIdentical, ObjPointer) {
     GC    gc;
     auto  lock = gc.make_lock(); // 持裸指针跨分配
-    auto* a    = new_string(gc, "hello");
-    auto* b    = new_string(gc, "hello"); // intern:同指针
-    auto* c    = new_string(gc, "world");
+    auto a    = new_string(gc, "hello");
+    auto b    = new_string(gc, "hello"); // intern:同指针
+    auto c    = new_string(gc, "world");
     EXPECT_TRUE(value_identical(Value::from_obj(a), Value::from_obj(b))); // intern 同指针
     EXPECT_FALSE(value_identical(Value::from_obj(a), Value::from_obj(c)));
 }
@@ -92,17 +92,17 @@ TEST(ValueEqual, ObjStringContent) {
     GC   gc;
     auto lock = gc.make_lock();
     // intern 路径:同指针 -> == 当然 true
-    auto* a = new_string(gc, "hello");
-    auto* b = new_string(gc, "hello");
+    auto a = new_string(gc, "hello");
+    auto b = new_string(gc, "hello");
     EXPECT_TRUE(value_equal(Value::from_obj(a), Value::from_obj(b)));
     // 非 intern 路径:不同指针、等价内容 -> == 仍 true(ObjString::equals 比内容)
-    auto* c = gc.new_object<ObjString>(gc, "hello");
-    auto* d = gc.new_object<ObjString>(gc, "hello");
+    auto c = gc.new_object<ObjString>(gc, "hello");
+    auto d = gc.new_object<ObjString>(gc, "hello");
     EXPECT_NE(c, d);                                                       // 非 intern:不同指针
     EXPECT_TRUE(value_equal(Value::from_obj(c), Value::from_obj(d)));      // 内容相等
     EXPECT_FALSE(value_identical(Value::from_obj(c), Value::from_obj(d))); // 指针不等
     // 不同内容
-    auto* e = new_string(gc, "world");
+    auto e = new_string(gc, "world");
     EXPECT_FALSE(value_equal(Value::from_obj(a), Value::from_obj(e)));
     // 字符串不与数值互比
     EXPECT_FALSE(value_equal(Value::from_obj(a), Value::from_i32(1)));
@@ -116,7 +116,7 @@ TEST(HashTableKey, IntAndFloatAreDifferentKeys) {
     ht.upsert(Value::from_i32(1))->value = Value::from_i32(100);
     // int 1 与 f64 1.0 是不同键(哈希键用 === value_identical:类型严格)
     EXPECT_EQ(ht.find(Value::from_f64(1.0)), nullptr);
-    auto* found = ht.find(Value::from_i32(1));
+    auto found = ht.find(Value::from_i32(1));
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->value.as_int(), 100);
 }
@@ -127,7 +127,7 @@ TEST(HashTableKey, StringKeyByContentViaIntern) {
     AriaHashTable ht{&gc};
     ht.upsert(Value::from_obj(new_string(gc, "key")))->value = Value::from_i32(42);
     // 字符串键靠 intern 等价内容同指针 -> 按内容查到(=== 指针相等)
-    auto* found = ht.find(Value::from_obj(new_string(gc, "key")));
+    auto found = ht.find(Value::from_obj(new_string(gc, "key")));
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->value.as_int(), 42);
 }

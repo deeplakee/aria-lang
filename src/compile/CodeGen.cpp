@@ -27,7 +27,7 @@ namespace aria {
 
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
         // 须在 module 已根化下调用(上方 module_guard)。
-        auto* entry = init_module(module);
+        const auto entry = init_module(module);
 
         try {
             // 遍历顶层声明（顶层 var/fun/import -> 模块全局；嵌套块内 var -> 局部）。
@@ -118,7 +118,7 @@ namespace aria {
         // 外层函数局部 -> 需 upvalue 捕获（M4 未实现 -> not_impl）。沿 enclosing_ 链查；命中即 Upvalue，
         // 由调用方（visitIdentifierNode/compile_lvalue）走 not_impl 报编译期错--不静默落到全局，
         // 否则外层局部会与同名模块全局串台致闭包捕获错误变量（见 CLAUDE.md「作用域模型」）。
-        for (const auto* e = cur_fn_ctx()->enclosing_; e != nullptr; e = e->enclosing_) {
+        for (auto e = cur_fn_ctx()->enclosing_; e != nullptr; e = e->enclosing_) {
             if (e->find_local(name)) {
                 return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = 0};
             }
@@ -175,7 +175,7 @@ namespace aria {
     }
 
     CodeGen::Lvalue CodeGen::compile_lvalue(ExprNode* target) {
-        if (auto* id = dynamic_cast<IdentifierNode*>(target)) {
+        if (auto id = dynamic_cast<IdentifierNode*>(target)) {
             const auto r = resolve_name(id->name);
             if (!r) {
                 fail(ErrorCode::CodeUnitTooLarge, id->loc(), "常量池溢出(>65535)"); // add_name 溢出透传
@@ -209,7 +209,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::declare_pattern(PatternNode* pat) {
-        if (auto* id = dynamic_cast<IdentifierPatternNode*>(pat)) {
+        if (auto id = dynamic_cast<IdentifierPatternNode*>(pat)) {
             // for-in pattern 是 loop-carried 局部（每轮回绑），保留预占槽模型：声明后显式 LOAD_NIL 预留 + mark_init，
             // 使各轮回绑经 STORE_LOCAL+POP 时栈布局一致（与新 var「值填槽」模型不同）。
             const auto slot = declare_local(id->name);
@@ -610,7 +610,7 @@ namespace aria {
         const u32 line = node->loc_line();
         // IMPORT path:u16 alias:u16（VM 绑定为模块全局；栈中性）。
         // import 别名入表：补漏检 `import "x" as U; var U = 1;`（现报 RedefinedVariable）。
-        auto* alias_str = new_string(gc_, node->alias); // intern（常量池复用）
+        auto alias_str = new_string(gc_, node->alias); // intern（常量池复用）
         // alias_str 裸持跨下方 new_string(path)：后者 maybe_collect 可能回收未根持有的 alias_str，故先入临时根。
         auto alias_guard = gc_.make_guard(alias_str);
         if (!mod_ctx_->declare_global(node->alias)) {
@@ -639,7 +639,7 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode* node) { not_impl(node, "match 语句"); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
-        auto* name_str = new_string(gc_, node->name); // intern
+        auto name_str = new_string(gc_, node->name); // intern
         // name_str 裸持跨 compile_function（其内 new_function 与函数体编译均可能 new_string ->
         // maybe_collect 回收未根持有的 name_str），故先入临时根。GC 启用后必须；旧 make_lock 掩盖了此。
         auto name_guard = gc_.make_guard(name_str);
@@ -652,13 +652,13 @@ namespace aria {
         const u32 line = node->loc_line();
         for (auto& b: node->bindings) {
             // 仅 IdentifierPattern 可跑；ListPattern -> not_impl。
-            auto* id = dynamic_cast<IdentifierPatternNode*>(b.target.get());
+            auto id = dynamic_cast<IdentifierPatternNode*>(b.target.get());
             if (id == nullptr) {
                 not_impl(b.target.get(), "列表模式解构 var 声明");
             }
             if (mod_ctx_->is_global_scope()) {
                 // 顶层 var -> 模块全局（intern 一次供常量池复用；declare_global 按内容判重）
-                auto* name_str = new_string(gc_, id->name); // intern（常量池复用）
+                auto name_str = new_string(gc_, id->name); // intern（常量池复用）
                 // name_str 裸持跨 emit_expr(initializer)：初始化器可能分配（lambda -> new_function、
                 // 字符串字面量 -> new_string）触发 maybe_collect 回收未根持有的 name_str，故先入临时根。
                 auto name_guard = gc_.make_guard(name_str);

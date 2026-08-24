@@ -80,7 +80,7 @@ namespace {
     // 此重载多了一步 make_module 故须提前保 name)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         auto  guard = gc.make_guard(name);
-        auto* m     = make_module(gc);
+        auto m     = make_module(gc);
         guard.push(m);
         return aria::new_function(gc, m, name, arity);
     }
@@ -106,7 +106,7 @@ namespace {
     // (典型:ImportBareSearchesSourceRoots 需入口根无 lib/math.aria,但其它用例会建同名文件)。
     // 按用例名隔离后,每测试独占一目录,互不污染;同测试重跑时自建文件幂等覆盖。
     std::string test_canon_dir() {
-        const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+        auto info = ::testing::UnitTest::GetInstance()->current_test_info();
         auto dir = std::filesystem::weakly_canonical(std::filesystem::path{testing::TempDir()} /
                                                      (std::string{info->test_suite_name()} + "_" + info->name()));
         std::filesystem::create_directories(dir);
@@ -129,7 +129,7 @@ namespace {
     // new_string(name) 分配时 root 须已入根)。new_module 本身对 nullptr root 会默认 cwd,但本
     // 辅助的用例都需精确控制源根,故一律显式传 root。
     ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* root) {
-        auto* nm    = new_string(gc, name);
+        auto nm    = new_string(gc, name);
         auto  guard = gc.make_guard(nm);
         guard.push(root);
         return new_module(gc, nm, root);
@@ -155,9 +155,9 @@ namespace {
 
     // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。
     u16 add_native_const(CodeUnit& cu, GC& gc, const char* name, NativeFn fn) {
-        auto* nm    = new_string(gc, name);
+        auto nm    = new_string(gc, name);
         auto  guard = gc.make_guard(nm); // name 是 weak root,new_native_fn 顶 maybe_collect 前先保
-        auto* nf    = new_native_fn(gc, nm, fn);
+        auto nf    = new_native_fn(gc, nm, fn);
         return cu.add_constant(Value::from_obj(nf));
     }
 
@@ -176,7 +176,7 @@ protected:
 TEST_F(AriaVMStress, Arithmetic) {
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     emit_imm(cu, 1);                 // [1]
@@ -195,7 +195,7 @@ TEST_F(AriaVMStress, Arithmetic) {
 TEST_F(AriaVMStress, F64ConstantAndPromotion) {
 
     auto&      gc       = vm.gc();
-    auto*      fn       = new_function(gc, nullptr, 0);
+    auto      fn       = new_function(gc, nullptr, 0);
     auto       fn_guard = gc.make_guard(fn);
     auto&      cu       = fn->unit();
     const auto c25      = cu.add_constant(Value::from_f64(2.5));
@@ -218,7 +218,7 @@ TEST_F(AriaVMStress, WhileLoopWithJumps) {
     // 序言的两次 LOAD_NIL 预留局部区(slots[1..3)):槽 0 是 callee,临时值在保留区之上压栈不覆写局部。
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -269,7 +269,7 @@ TEST_F(AriaVMStress, WhileLoopWithJumps) {
 TEST_F(AriaVMStress, FunctionCall) {
 
     auto& gc        = vm.gc();
-    auto* add       = new_function(gc, new_string(gc, "add"), 2);
+    auto add       = new_function(gc, new_string(gc, "add"), 2);
     auto  add_guard = gc.make_guard(add); // add 裸持跨下方 main_fn 的 new_function(stress collect)
     auto& acu       = add->unit();
     emit_local(acu, OpCode::LOAD_LOCAL, 1); // 参数 1 在槽 1(槽 0 是 callee)
@@ -277,7 +277,7 @@ TEST_F(AriaVMStress, FunctionCall) {
     acu.emit_op(OpCode::ADD, 1);
     acu.emit_op(OpCode::RETURN, 1);
 
-    auto*      main_fn = new_function(gc, nullptr, 0);
+    auto      main_fn = new_function(gc, nullptr, 0);
     auto&      mcu     = main_fn->unit();
     const auto idx     = mcu.add_constant(Value::from_obj(add));
     mcu.emit_op(OpCode::LOAD_CONST, 1);
@@ -299,7 +299,7 @@ TEST_F(AriaVMStress, StackGrowsAndRebasesFrames) {
     // 压入超过初始容量(1024)的临时值触发值栈 2x 增长;增长后读取局部,验证帧的 slots 指针已重定位。
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 1); // 预留局部槽 1(槽 0 是 callee)
@@ -329,7 +329,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc       = vm.gc();
-        auto* fn       = new_function(gc, nullptr, 0);
+        auto fn       = new_function(gc, nullptr, 0);
         auto  fn_guard = gc.make_guard(fn);
         auto& cu       = fn->unit();
         cu.emit_op(OpCode::LOAD_FALSE, 1);
@@ -350,7 +350,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc       = vm.gc();
-        auto* fn       = new_function(gc, nullptr, 0);
+        auto fn       = new_function(gc, nullptr, 0);
         auto  fn_guard = gc.make_guard(fn);
         auto& cu       = fn->unit();
         cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -370,7 +370,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc       = vm.gc();
-        auto* fn       = new_function(gc, nullptr, 0);
+        auto fn       = new_function(gc, nullptr, 0);
         auto  fn_guard = gc.make_guard(fn);
         auto& cu       = fn->unit();
         cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -387,7 +387,7 @@ TEST_F(AriaVMStress, EqualitySemantics) {
     // 1 == 1.0 内容相等为 true;1 === 1.0 严格相等为 false
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     emit_imm(cu, 1);
@@ -404,7 +404,7 @@ TEST_F(AriaVMStress, EqualitySemantics) {
 TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -420,7 +420,7 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
 TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     emit_imm(cu, 1);
@@ -436,13 +436,13 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
 TEST_F(AriaVMStress, WrongArityIsUncaught) {
 
     auto& gc        = vm.gc();
-    auto* two       = new_function(gc, new_string(gc, "two"), 2);
+    auto two       = new_function(gc, new_string(gc, "two"), 2);
     auto  two_guard = gc.make_guard(two); // two 裸持跨下方 fn 的 new_function(stress collect)
     auto& tcu       = two->unit();
     tcu.emit_op(OpCode::LOAD_NIL, 1);
     tcu.emit_op(OpCode::RETURN, 1);
 
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     cu.emit_op(OpCode::LOAD_CONST, 1);
@@ -461,7 +461,7 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
     // fn 直接调用自己(arity 0),永不返回 -> 值栈/帧栈溢出
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     cu.emit_op(OpCode::LOAD_CONST, 1);
@@ -481,19 +481,19 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
 
     auto& gc = vm.gc();
 
-    auto* path = new_string(gc, "lib/utils");
-    auto* m    = new_module(gc, path);
+    auto path = new_string(gc, "lib/utils");
+    auto m    = new_module(gc, path);
     // 入模块表(键=path,值=m)
-    auto* e  = vm.modules().upsert(Value::from_obj(path));
+    auto e  = vm.modules().upsert(Value::from_obj(path));
     e->value = Value::from_obj(m);
 
     // 给模块挂体 + 一条全局绑定,验证经模块表根 -> 模块 trace -> 子节点存活
-    auto* body = aria::new_function(gc, m, nullptr, 0); // body 属于 m
+    auto body = aria::new_function(gc, m, nullptr, 0); // body 属于 m
     m->set_entry(body);
-    auto* g_key       = new_string(gc, "g");
+    auto g_key       = new_string(gc, "g");
     auto  g_key_guard = gc.make_guard(g_key); // g_key 裸持跨下方 new_string(g_val)(stress collect)
-    auto* g_val       = new_string(gc, "a long global value string!!!");
-    auto* ge          = m->globals().upsert(Value::from_obj(g_key));
+    auto g_val       = new_string(gc, "a long global value string!!!");
+    auto ge          = m->globals().upsert(Value::from_obj(g_key));
     ge->value         = Value::from_obj(g_val);
 
     const usize before = gc.bytes_allocated();
@@ -509,7 +509,7 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
 TEST_F(AriaVMStress, DefAndLoadGlobal) {
 
     auto&     gc       = vm.gc();
-    auto*     fn       = new_function(gc, nullptr, 0);
+    auto     fn       = new_function(gc, nullptr, 0);
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -528,7 +528,7 @@ TEST_F(AriaVMStress, DefAndLoadGlobal) {
 TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
 
     auto&     gc       = vm.gc();
-    auto*     fn       = new_function(gc, nullptr, 0);
+    auto     fn       = new_function(gc, nullptr, 0);
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -549,7 +549,7 @@ TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
 TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
 
     auto&     gc       = vm.gc();
-    auto*     fn       = new_function(gc, nullptr, 0);
+    auto     fn       = new_function(gc, nullptr, 0);
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -566,7 +566,7 @@ TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
 TEST_F(AriaVMStress, LoadGlobalUndefinedErrors) {
 
     auto&     gc       = vm.gc();
-    auto*     fn       = new_function(gc, nullptr, 0);
+    auto     fn       = new_function(gc, nullptr, 0);
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -589,20 +589,20 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     const auto base = test_canon_dir();
 
     // 源根 = base:入口与目标模块均属此源根(root_ = base),name_ 为相对 base 的路径。
-    auto* root_ptr   = new_string(gc, base);
+    auto root_ptr   = new_string(gc, base);
     auto  root_guard = gc.make_guard(root_ptr);
     // 目标文件 base/lib/utils.aria -> 其规范绝对路径即模块表键 K(resolve 命中此键)。
     const auto key_str = touch_aria(base, "lib/utils.aria");
-    auto*      key     = new_string(gc, key_str);
+    auto      key     = new_string(gc, key_str);
     root_guard.push(key);
-    auto* m = new_module(gc, new_string(gc, "lib/utils"), root_ptr); // 目标:root=base, name=lib/utils
+    auto m = new_module(gc, new_string(gc, "lib/utils"), root_ptr); // 目标:root=base, name=lib/utils
     root_guard.push(m);                                              // 保 m 过 modules_.upsert 的 hash 分配
     m->set_state(ObjModule::ModuleState::Loading);
-    auto* me  = vm.modules().upsert(Value::from_obj(key));
+    auto me  = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto*     mod       = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
-    auto*     fn        = aria::new_function(gc, mod, nullptr, 0);
+    auto     mod       = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
+    auto     fn        = aria::new_function(gc, mod, nullptr, 0);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/utils")));
@@ -625,9 +625,9 @@ TEST_F(AriaVMStress, ImportNotFoundErrors) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto*     root_ptr   = new_string(gc, base); // 入口源根 = base(run 播种 source_roots[0] = base)
+    auto     root_ptr   = new_string(gc, base); // 入口源根 = base(run 播种 source_roots[0] = base)
     auto      root_guard = gc.make_guard(root_ptr);
-    auto*     fn         = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
+    auto     fn         = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
     auto      fn_guard   = gc.make_guard(fn);
     auto&     cu         = fn->unit();
     const u16 path_idx   = cu.add_constant(Value::from_obj(new_string(gc, "nope/missing")));
@@ -648,17 +648,17 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto*      root_ptr   = new_string(gc, base);
+    auto      root_ptr   = new_string(gc, base);
     auto       root_guard = gc.make_guard(root_ptr);
     const auto key_str    = touch_aria(base, "lib/utils.aria");
-    auto*      key        = new_string(gc, key_str);
+    auto      key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto* m = new_module(gc, new_string(gc, "lib/utils"), root_ptr);
+    auto m = new_module(gc, new_string(gc, "lib/utils"), root_ptr);
     root_guard.push(m);
-    auto* me  = vm.modules().upsert(Value::from_obj(key));
+    auto me  = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto*     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
+    auto     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/./utils")));
@@ -683,19 +683,19 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     const auto base = test_canon_dir();
 
     // 源根 = base:导入方/入口模块 root_ = base、name_ = lib/main(相对基 = base/lib)。
-    auto* root_ptr   = new_string(gc, base);
+    auto root_ptr   = new_string(gc, base);
     auto  root_guard = gc.make_guard(root_ptr);
     // 目标 base/lib/helper.aria -> 绝对键 K。
     const auto key_str = touch_aria(base, "lib/helper.aria");
-    auto*      key     = new_string(gc, key_str);
+    auto      key     = new_string(gc, key_str);
     root_guard.push(key);
-    auto* helper = new_module(gc, new_string(gc, "lib/helper"), root_ptr);
+    auto helper = new_module(gc, new_string(gc, "lib/helper"), root_ptr);
     root_guard.push(helper);
-    auto* he  = vm.modules().upsert(Value::from_obj(key));
+    auto he  = vm.modules().upsert(Value::from_obj(key));
     he->value = Value::from_obj(helper);
 
-    auto*     mod       = new_disk_module(gc, "lib/main", root_ptr);
-    auto*     fn        = aria::new_function(gc, mod, nullptr, 0);
+    auto     mod       = new_disk_module(gc, "lib/main", root_ptr);
+    auto     fn        = aria::new_function(gc, mod, nullptr, 0);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./helper")));
@@ -720,24 +720,24 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto* root_ptr   = new_string(gc, base); // 入口源根 = base
+    auto root_ptr   = new_string(gc, base); // 入口源根 = base
     auto  root_guard = gc.make_guard(root_ptr);
     // stdlib 第二根 = base/stdlib(建目录);文件只放 stdlib,base 下不放 -> 强制 fall-through。
     const auto stdlib_dir = std::filesystem::weakly_canonical(std::filesystem::path{base} / "stdlib").string();
     std::filesystem::create_directories(stdlib_dir);
-    auto* stdlib_ptr = new_string(gc, stdlib_dir); // 目标模块所属源根 = stdlib
+    auto stdlib_ptr = new_string(gc, stdlib_dir); // 目标模块所属源根 = stdlib
     root_guard.push(stdlib_ptr);
     const auto key_str = touch_aria(stdlib_dir, "lib/math.aria"); // = base/stdlib/lib/math.aria
     vm.set_source_roots({stdlib_dir});
 
-    auto* key = new_string(gc, key_str);
+    auto key = new_string(gc, key_str);
     root_guard.push(key);
-    auto* target = new_module(gc, new_string(gc, "lib/math"), stdlib_ptr); // 目标:root=stdlib, name=lib/math
+    auto target = new_module(gc, new_string(gc, "lib/math"), stdlib_ptr); // 目标:root=stdlib, name=lib/math
     root_guard.push(target);
-    auto* te  = vm.modules().upsert(Value::from_obj(key));
+    auto te  = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
 
-    auto*     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0); // 入口:root=base
+    auto     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0); // 入口:root=base
     auto      fn_guard  = gc.make_guard(fn); // fn(+所属 module)裸持跨下方 new_string(path/alias)(stress collect)
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math"))); // 裸路径
@@ -761,17 +761,17 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto*      root_ptr   = new_string(gc, base);
+    auto      root_ptr   = new_string(gc, base);
     auto       root_guard = gc.make_guard(root_ptr);
     const auto key_str    = touch_aria(base, "lib/math.aria");
-    auto*      key        = new_string(gc, key_str);
+    auto      key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto* m = new_module(gc, new_string(gc, "lib/math"), root_ptr);
+    auto m = new_module(gc, new_string(gc, "lib/math"), root_ptr);
     root_guard.push(m);
-    auto* me  = vm.modules().upsert(Value::from_obj(key));
+    auto me  = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto*     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
+    auto     fn        = aria::new_function(gc, new_disk_module(gc, "main", root_ptr), nullptr, 0);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math.aria")));
@@ -796,18 +796,18 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto*      root_ptr   = new_string(gc, base);
+    auto      root_ptr   = new_string(gc, base);
     auto       root_guard = gc.make_guard(root_ptr);
     const auto key_str    = touch_aria(base, "lib/math.aria");
-    auto*      key        = new_string(gc, key_str);
+    auto      key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto* target = new_module(gc, new_string(gc, "lib/math"), root_ptr);
+    auto target = new_module(gc, new_string(gc, "lib/math"), root_ptr);
     root_guard.push(target);
-    auto* te  = vm.modules().upsert(Value::from_obj(key));
+    auto te  = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
 
-    auto*     mod       = new_disk_module(gc, "lib/main", root_ptr);
-    auto*     fn        = aria::new_function(gc, mod, nullptr, 0);
+    auto     mod       = new_disk_module(gc, "lib/main", root_ptr);
+    auto     fn        = aria::new_function(gc, mod, nullptr, 0);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./math.aria")));
@@ -831,10 +831,10 @@ TEST_F(AriaVMStress, SourceRootSeededFromEntryModuleDir) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto* root_ptr   = new_string(gc, base);
+    auto root_ptr   = new_string(gc, base);
     auto  root_guard = gc.make_guard(root_ptr);
-    auto* mod        = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
-    auto* fn         = aria::new_function(gc, mod, nullptr, 0);
+    auto mod        = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
+    auto fn         = aria::new_function(gc, mod, nullptr, 0);
     auto  fn_guard   = gc.make_guard(fn);
     auto& cu         = fn->unit();
     cu.emit_op(OpCode::HALT, 1);
@@ -853,7 +853,7 @@ TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
     vm.set_source_roots({}); // 隔离:仅入口槽,免默认 stdlib
     auto& gc = vm.gc();
 
-    auto* fn = new_function(gc, nullptr, 0); // make_module -> <script>, root_ = cwd
+    auto fn = new_function(gc, nullptr, 0); // make_module -> <script>, root_ = cwd
     auto& cu = fn->unit();
     cu.emit_op(OpCode::HALT, 1);
 
@@ -869,7 +869,7 @@ TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
 TEST_F(AriaVMStress, NativeFnSlot0Return) {
 
     auto&      gc       = vm.gc();
-    auto*      fn       = new_function(gc, nullptr, 0);
+    auto      fn       = new_function(gc, nullptr, 0);
     auto       fn_guard = gc.make_guard(fn);
     auto&      cu       = fn->unit();
     const auto nf_idx   = add_native_const(cu, gc, "double", double_native);
@@ -890,7 +890,7 @@ TEST_F(AriaVMStress, NativeFnSlot0Return) {
 TEST_F(AriaVMStress, NativeFnZeroArity) {
 
     auto& gc       = vm.gc();
-    auto* fn       = new_function(gc, nullptr, 0);
+    auto fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     // 复用 double_native 但传 0 参:它会因 argc != 1 报错 -- 故另造一个无参内建。
@@ -915,7 +915,7 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
 TEST_F(AriaVMStress, NativeFnSideChannelError) {
 
     auto&      gc       = vm.gc();
-    auto*      fn       = new_function(gc, nullptr, 0);
+    auto      fn       = new_function(gc, nullptr, 0);
     auto       fn_guard = gc.make_guard(fn);
     auto&      cu       = fn->unit();
     const auto nf_idx   = add_native_const(cu, gc, "fail_always", fail_always_native);
@@ -936,7 +936,7 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
 TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
 
     auto&      gc       = vm.gc();
-    auto*      fn       = new_function(gc, nullptr, 0);
+    auto      fn       = new_function(gc, nullptr, 0);
     auto       fn_guard = gc.make_guard(fn);
     auto&      cu       = fn->unit();
     const auto nf_idx   = add_native_const(cu, gc, "double", double_native);

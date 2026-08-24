@@ -18,22 +18,22 @@ using aria::usize;
 
 TEST(InternPool, SameContentReturnsSamePtr) {
     GC    gc;
-    auto* a = new_string(gc, "hello world");
-    auto* b = new_string(gc, "hello world");
+    auto a = new_string(gc, "hello world");
+    auto b = new_string(gc, "hello world");
     EXPECT_EQ(a, b); // 驻留:等价内容共享同一 ObjString*
 }
 
 TEST(InternPool, DifferentContentDifferentPtr) {
     GC    gc;
-    auto* a = new_string(gc, "aaa");
-    auto* b = new_string(gc, "bbb");
+    auto a = new_string(gc, "aaa");
+    auto b = new_string(gc, "bbb");
     EXPECT_NE(a, b);
 }
 
 TEST(InternPool, LongStringInterning) {
     GC    gc;
-    auto* a = new_string(gc, "this is a long string over fifteen chars");
-    auto* b = new_string(gc, "this is a long string over fifteen chars");
+    auto a = new_string(gc, "this is a long string over fifteen chars");
+    auto b = new_string(gc, "this is a long string over fifteen chars");
     EXPECT_TRUE(a->is_long());
     EXPECT_EQ(a, b); // 长串也驻留
     EXPECT_EQ(a->view(), "this is a long string over fifteen chars");
@@ -57,10 +57,10 @@ TEST(InternPool, ManyStringsRehash) {
 TEST(InternPool, RootedStaysInternedAcrossGc) {
     GC gc;
     gc.set_stress(true);
-    auto* s1    = new_string(gc, "rooted content here!");
+    auto s1    = new_string(gc, "rooted content here!");
     auto  guard = gc.make_guard(s1);
     (void) new_string(gc, "trigger");                  // GC:s1 标记存活
-    auto* s2 = new_string(gc, "rooted content here!"); // find 命中存活表项
+    auto s2 = new_string(gc, "rooted content here!"); // find 命中存活表项
     EXPECT_EQ(s1, s2);                                  // 同指针(驻留 + 存活)
 }
 
@@ -81,7 +81,7 @@ TEST(InternPool, RemoveWhiteClearsEntry) {
     (void) new_string(gc, content); // 无根
     gc.collect();                    // 释放 + remove_white 摘除表项
     const usize before = gc.bytes_allocated();
-    auto*       s2     = new_string(gc, content); // find 应 miss(表项已摘) -> 新分配
+    auto       s2     = new_string(gc, content); // find 应 miss(表项已摘) -> 新分配
     ASSERT_GT(gc.bytes_allocated(), before);       // 新分配 => remove_white 生效(否则 find 命中悬垂旧串,无新分配)
     EXPECT_EQ(s2->view(), content);                // 新串内容正确
 }
@@ -89,7 +89,7 @@ TEST(InternPool, RemoveWhiteClearsEntry) {
 TEST(InternPool, MixedRootingSelectiveSurvival) {
     GC gc;
     gc.set_stress(true);
-    auto* kept  = new_string(gc, "kept-string-content-here");
+    auto kept  = new_string(gc, "kept-string-content-here");
     auto  guard = gc.make_guard(kept);
     (void) new_string(gc, "dropped-string-content");    // 无根
     (void) new_string(gc, "trigger");                   // GC:kept 存活,dropped 回收

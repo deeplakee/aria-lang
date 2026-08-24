@@ -86,7 +86,7 @@ namespace {
         BENCH_CHECK(sum_v == expected * 7, "sum of values");
 
         for (usize i = 0; i < n; ++i) {
-            auto* e = ht.find(static_cast<int>(i));
+            auto e = ht.find(static_cast<int>(i));
             BENCH_CHECK(e != nullptr && e->value == static_cast<int>(i) * 7, "find hit value");
         }
         for (usize i = n; i < n + 16; ++i) { // 抽样 miss
@@ -133,7 +133,7 @@ namespace {
                                 volatile long sink = 0;
                                 long          acc  = 0;
                                 for (usize i = 0; i < n; ++i) {
-                                    auto* e = ht.find(static_cast<int>(i));
+                                    auto e = ht.find(static_cast<int>(i));
                                     acc += e ? e->value : -1;
                                 }
                                 sink = acc;
@@ -155,7 +155,7 @@ namespace {
                                 volatile long sink = 0;
                                 long          acc  = 0;
                                 for (usize i = 0; i < n; ++i) {
-                                    auto* e = ht.find(static_cast<int>(i + n)); // 必不在表中
+                                    auto e = ht.find(static_cast<int>(i + n)); // 必不在表中
                                     acc += e ? e->value : -1;
                                 }
                                 sink = acc;

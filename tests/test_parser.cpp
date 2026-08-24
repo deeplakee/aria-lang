@@ -139,14 +139,14 @@ TEST(ParserBinary, Precedence) {
     // 1 + 2 * 3 -> 1 + (2 * 3)
     auto p = parse_src("1 + 2 * 3;");
     ASSERT_TRUE(p->result.has_value());
-    const auto* stmt = first_decl(p);
+    auto stmt = first_decl(p);
     ASSERT_NE(stmt, nullptr);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* top = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
+    auto top = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(top, nullptr);
     EXPECT_EQ(top->op, aria::Op::Binary::Plus); // 顶层为 +
-    const auto* rhs = dynamic_cast<const BinaryExprNode*>(top->rhs.get());
+    auto rhs = dynamic_cast<const BinaryExprNode*>(top->rhs.get());
     ASSERT_NE(rhs, nullptr);
     EXPECT_EQ(rhs->op, aria::Op::Binary::Star); // 右子为 *
 }
@@ -154,12 +154,12 @@ TEST(ParserBinary, Precedence) {
 TEST(ParserBinary, LeftAssociative) {
     // 1 - 2 - 3 -> (1 - 2) - 3
     auto        p         = parse_src("1 - 2 - 3;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
-    const auto* top       = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto top       = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(top, nullptr);
     EXPECT_EQ(top->op, aria::Op::Binary::Minus);
-    const auto* lhs = dynamic_cast<const BinaryExprNode*>(top->lhs.get());
+    auto lhs = dynamic_cast<const BinaryExprNode*>(top->lhs.get());
     ASSERT_NE(lhs, nullptr);
     EXPECT_EQ(lhs->op, aria::Op::Binary::Minus); // 左子亦为 -（左结合）
 }
@@ -167,13 +167,13 @@ TEST(ParserBinary, LeftAssociative) {
 TEST(ParserBinary, Logic) {
     // a && b || c -> (a && b) || c（&& 优先级高于 ||）
     auto        p         = parse_src("a && b || c;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* top = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
+    auto top = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(top, nullptr);
     EXPECT_EQ(top->op, aria::Op::Binary::Or); // 外层 ||
-    const auto* lhs = dynamic_cast<const BinaryExprNode*>(top->lhs.get());
+    auto lhs = dynamic_cast<const BinaryExprNode*>(top->lhs.get());
     ASSERT_NE(lhs, nullptr);
     EXPECT_EQ(lhs->op, aria::Op::Binary::And); // 内层 &&
 }
@@ -195,16 +195,16 @@ TEST(ParserBinary, ComparisonAndEquality) {
 TEST(ParserRange, Inclusive) {
     // 1..10 -> RangeExpr inclusive，lower=1，upper=10
     auto        p         = parse_src("1..10;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
+    auto r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(r, nullptr);
     EXPECT_FALSE(r->is_exclusive);
-    const auto* lo = dynamic_cast<const IntegerLiteralNode*>(r->lower.get());
+    auto lo = dynamic_cast<const IntegerLiteralNode*>(r->lower.get());
     ASSERT_NE(lo, nullptr);
     EXPECT_EQ(lo->value, 1);
-    const auto* hi = dynamic_cast<const IntegerLiteralNode*>(r->upper.get());
+    auto hi = dynamic_cast<const IntegerLiteralNode*>(r->upper.get());
     ASSERT_NE(hi, nullptr);
     EXPECT_EQ(hi->value, 10);
 }
@@ -212,10 +212,10 @@ TEST(ParserRange, Inclusive) {
 TEST(ParserRange, Exclusive) {
     // 1...10 -> RangeExpr exclusive
     auto        p         = parse_src("1...10;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
+    auto r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(r, nullptr);
     EXPECT_TRUE(r->is_exclusive);
 }
@@ -223,13 +223,13 @@ TEST(ParserRange, Exclusive) {
 TEST(ParserRange, PrecedenceWithAdditive) {
     // 1..n+1 -> 1..(n+1)：加减比区间紧
     auto        p         = parse_src("1..n+1;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
+    auto r = dynamic_cast<const RangeExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(r, nullptr);
     // 上界应为 n+1（BinaryExpr Plus），非裸 n
-    const auto* hi = dynamic_cast<const BinaryExprNode*>(r->upper.get());
+    auto hi = dynamic_cast<const BinaryExprNode*>(r->upper.get());
     ASSERT_NE(hi, nullptr);
     EXPECT_EQ(hi->op, aria::Op::Binary::Plus);
 }
@@ -254,12 +254,12 @@ TEST(ParserUnary, Prefix) {
 TEST(ParserUnary, RightAssociative) {
     // -- -x -> --(-x)
     auto        p         = parse_src("-- -x;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
-    const auto* outer     = dynamic_cast<const UnaryExprNode*>(expr_stmt->expr.get());
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto outer     = dynamic_cast<const UnaryExprNode*>(expr_stmt->expr.get());
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, aria::Op::Unary::PreDec);
-    const auto* inner = dynamic_cast<const UnaryExprNode*>(outer->operand.get());
+    auto inner = dynamic_cast<const UnaryExprNode*>(outer->operand.get());
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->op, aria::Op::Unary::Minus);
 }
@@ -318,33 +318,33 @@ TEST(ParserAssignment, RightAssociative) {
 TEST(ParserAssignment, ChainedCompoundRightAssoc) {
     // a += b += c  ==>  a += (b += c)：复合赋值与 = 同族，右结合，可链式。
     auto        p         = parse_src("a += b += c;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* outer = dynamic_cast<const AssignmentNode*>(expr_stmt->expr.get());
+    auto outer = dynamic_cast<const AssignmentNode*>(expr_stmt->expr.get());
     ASSERT_NE(outer, nullptr);
     EXPECT_EQ(outer->op, aria::Op::Assignment::PlusAssign);
-    const auto* a = dynamic_cast<const IdentifierNode*>(outer->target.get());
+    auto a = dynamic_cast<const IdentifierNode*>(outer->target.get());
     ASSERT_NE(a, nullptr);
     EXPECT_EQ(a->name, "a");
     // 右结合：外层 value 为内层赋值节点
-    const auto* inner = dynamic_cast<const AssignmentNode*>(outer->value.get());
+    auto inner = dynamic_cast<const AssignmentNode*>(outer->value.get());
     ASSERT_NE(inner, nullptr);
     EXPECT_EQ(inner->op, aria::Op::Assignment::PlusAssign);
-    const auto* b = dynamic_cast<const IdentifierNode*>(inner->target.get());
+    auto b = dynamic_cast<const IdentifierNode*>(inner->target.get());
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->name, "b");
-    const auto* c = dynamic_cast<const IdentifierNode*>(inner->value.get());
+    auto c = dynamic_cast<const IdentifierNode*>(inner->value.get());
     ASSERT_NE(c, nullptr);
     EXPECT_EQ(c->name, "c");
 }
 
 TEST(ParserAssignment, Destructure) {
     auto        p         = parse_src("[a, b] = lst;");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
-    const auto* da = dynamic_cast<const DestructureAssignmentNode*>(expr_stmt->expr.get());
+    auto da = dynamic_cast<const DestructureAssignmentNode*>(expr_stmt->expr.get());
     ASSERT_NE(da, nullptr);
     expect_has(da->dump(0), "ListPattern elements=2");
     expect_has(da->dump(0), "Identifier lst");
@@ -358,8 +358,8 @@ TEST(ParserAssignment, DestructureWithRest) {
 TEST(ParserAssignment, ListExprNotDestructure) {
     // [1, 2] 作为列表表达式（非解构目标），不应产生 DestructureAssignment
     auto        p         = parse_src("[1, 2];");
-    const auto* stmt      = first_decl(p);
-    const auto* expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
+    auto stmt      = first_decl(p);
+    auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
     EXPECT_EQ(dynamic_cast<const DestructureAssignmentNode*>(expr_stmt->expr.get()), nullptr);
     expect_has(expr_stmt->expr->dump(0), "ListExpr elements=2");
@@ -510,8 +510,8 @@ TEST(ParserStmt, IfElse) {
 
 TEST(ParserStmt, IfNoElse) {
     auto        p    = parse_src("if (c) print 1;");
-    const auto* stmt = first_decl(p);
-    const auto* ifn  = dynamic_cast<const IfStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto ifn  = dynamic_cast<const IfStmtNode*>(stmt);
     ASSERT_NE(ifn, nullptr);
     EXPECT_EQ(ifn->else_branch, nullptr);
 }
@@ -520,8 +520,8 @@ TEST(ParserStmt, While) { expect_has(dump_ok("while (c) print 1;"), "WhileStmt")
 
 TEST(ParserStmt, ForCStyle) {
     auto        p    = parse_src("for (var i = 0; i < 10; i = i + 1) print i;");
-    const auto* stmt = first_decl(p);
-    const auto* forn = dynamic_cast<const ForStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
     EXPECT_NE(forn->condition, nullptr);
@@ -530,8 +530,8 @@ TEST(ParserStmt, ForCStyle) {
 
 TEST(ParserStmt, ForEmpty) {
     auto        p    = parse_src("for (;;) print 1;");
-    const auto* stmt = first_decl(p);
-    const auto* forn = dynamic_cast<const ForStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_EQ(forn->init, nullptr);
     EXPECT_EQ(forn->condition, nullptr);
@@ -540,11 +540,11 @@ TEST(ParserStmt, ForEmpty) {
 
 TEST(ParserStmt, ForInSingle) {
     auto        p    = parse_src("for (k in m) print k;");
-    const auto* stmt = first_decl(p);
-    const auto* fin  = dynamic_cast<const ForInStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto fin  = dynamic_cast<const ForInStmtNode*>(stmt);
     ASSERT_NE(fin, nullptr);
     ASSERT_NE(fin->pattern, nullptr);
-    const auto* pat = dynamic_cast<const IdentifierPatternNode*>(fin->pattern.get());
+    auto pat = dynamic_cast<const IdentifierPatternNode*>(fin->pattern.get());
     ASSERT_NE(pat, nullptr);
     EXPECT_EQ(pat->name, String{"k"});
 }
@@ -571,8 +571,8 @@ TEST(ParserStmt, ForInPatternVariants) {
 TEST(ParserStmt, ForCStyleExprInit) {
     // forStmt init 恢复支持裸表达式（撤销 route 2）：for (i = 0; ...) 走 exprStmt init。
     auto        p    = parse_src("for (i = 0; i < 10; i = i + 1) print i;");
-    const auto* stmt = first_decl(p);
-    const auto* forn = dynamic_cast<const ForStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
     EXPECT_NE(forn->condition, nullptr);
@@ -582,8 +582,8 @@ TEST(ParserStmt, ForCStyleExprInit) {
 TEST(ParserStmt, ForCStyleDestructureInit) {
     // [...] 不跟 in -> forStmt 的解构赋值 exprStmt init（验证 [ 分流不走 forIn）。
     auto        p    = parse_src("for ([a, b] = c; a < b; a = a + 1) print a;");
-    const auto* stmt = first_decl(p);
-    const auto* forn = dynamic_cast<const ForStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
     EXPECT_NE(forn->condition, nullptr);
@@ -596,8 +596,8 @@ TEST(ParserStmt, BreakContinueReturn) {
     expect_has(dump_ok("return 1;"), "ReturnStmt");
     // 裸 return（无值）
     auto        p    = parse_src("return;");
-    const auto* stmt = first_decl(p);
-    const auto* ret  = dynamic_cast<const ReturnStmtNode*>(stmt);
+    auto stmt = first_decl(p);
+    auto ret  = dynamic_cast<const ReturnStmtNode*>(stmt);
     ASSERT_NE(ret, nullptr);
     EXPECT_EQ(ret->value, nullptr);
 }

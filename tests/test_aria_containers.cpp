@@ -35,8 +35,8 @@ TEST(AriaArray, PushIndexSize) {
 TEST(AriaArray, TraceMarksElements) {
     GC        gc;
     AriaArray arr{&gc};
-    auto*     a = new_string(gc, "long element string a!!!!");
-    auto*     b = new_string(gc, "long element string b!!!!");
+    auto     a = new_string(gc, "long element string a!!!!");
+    auto     b = new_string(gc, "long element string b!!!!");
     arr.push(Value::from_obj(a));
     arr.push(Value::from_obj(b));
     arr.push(Value::nil_val()); // 非对象元素:trace 应跳过(nil/int/f64 无对象子节点)
@@ -53,7 +53,7 @@ TEST(AriaArray, TraceMarksElements) {
 TEST(AriaArray, UntracedElementsCollected) {
     GC        gc;
     AriaArray arr{&gc};
-    auto*     a = new_string(gc, "long element string a!!!!");
+    auto     a = new_string(gc, "long element string a!!!!");
     arr.push(Value::from_obj(a));
     // 不 trace:arr 非 root,a 无根 -> collect 回收
     const usize before = gc.bytes_allocated();
@@ -67,20 +67,20 @@ TEST(AriaArray, UntracedElementsCollected) {
 TEST(AriaHashTable, UpsertFindErase) {
     GC            gc;
     AriaHashTable ht{&gc};
-    auto*         ka = new_string(gc, "key-a");
-    auto*         va = new_string(gc, "value-a long enough!!!");
-    auto*         e  = ht.upsert(Value::from_obj(ka));
+    auto         ka = new_string(gc, "key-a");
+    auto         va = new_string(gc, "value-a long enough!!!");
+    auto         e  = ht.upsert(Value::from_obj(ka));
     ASSERT_NE(e, nullptr);
     e->value = Value::from_obj(va);
     EXPECT_EQ(ht.size(), 1u);
 
-    auto* found = ht.find(Value::from_obj(ka));
+    auto found = ht.find(Value::from_obj(ka));
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->key.as_obj(), ka);
     EXPECT_EQ(found->value.as_obj(), va);
 
     // upsert 已有键:返回同 entry,value 保留(未重置为 V{})
-    auto* e2 = ht.upsert(Value::from_obj(ka));
+    auto e2 = ht.upsert(Value::from_obj(ka));
     EXPECT_EQ(e2, e);
     EXPECT_EQ(e2->value.as_obj(), va);
     EXPECT_EQ(ht.size(), 1u);
@@ -112,16 +112,16 @@ TEST(AriaHashTable, ManyEntriesRehash) {
     auto          lock = gc.make_lock(); // 禁用 GC:本测关注 HashTable rehash,不测 GC 交互
     AriaHashTable ht{&gc};               // (60 个 intern 串 + ht 分配会超 next_gc_,触发回收未根化的串)
     for (int i = 0; i < 30; ++i) {
-        auto* k                              = new_string(gc, std::format("key-{}", i));
-        auto* v                              = new_string(gc, std::format("value-{}", i));
+        auto k                              = new_string(gc, std::format("key-{}", i));
+        auto v                              = new_string(gc, std::format("value-{}", i));
         ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
     }
     EXPECT_EQ(ht.size(), 30u);
     for (int i = 0; i < 30; ++i) {
-        auto* k = new_string(gc, std::format("key-{}", i)); // interned:同插入时的指针
-        auto* e = ht.find(Value::from_obj(k));
+        auto k = new_string(gc, std::format("key-{}", i)); // interned:同插入时的指针
+        auto e = ht.find(Value::from_obj(k));
         ASSERT_NE(e, nullptr);
-        auto* v = new_string(gc, std::format("value-{}", i)); // interned:同插入值指针
+        auto v = new_string(gc, std::format("value-{}", i)); // interned:同插入值指针
         EXPECT_EQ(e->value.as_obj(), v);
     }
 }
@@ -129,8 +129,8 @@ TEST(AriaHashTable, ManyEntriesRehash) {
 TEST(AriaHashTable, TraceMarksKeysAndValues) {
     GC            gc;
     AriaHashTable ht{&gc};
-    auto*         k                      = new_string(gc, "trace-key long enough!!!");
-    auto*         v                      = new_string(gc, "trace-value long enough!");
+    auto         k                      = new_string(gc, "trace-key long enough!!!");
+    auto         v                      = new_string(gc, "trace-value long enough!");
     ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
     ht.trace(gc); // 标记 k, v(模拟 owner ObjMap 调用)
     const usize before = gc.bytes_allocated();
@@ -142,8 +142,8 @@ TEST(AriaHashTable, TraceMarksKeysAndValues) {
 TEST(AriaHashTable, UntracedEntriesCollected) {
     GC            gc;
     AriaHashTable ht{&gc};
-    auto*         k                      = new_string(gc, "untraced-key long enough");
-    auto*         v                      = new_string(gc, "untraced-value long enuf");
+    auto         k                      = new_string(gc, "untraced-key long enough");
+    auto         v                      = new_string(gc, "untraced-value long enuf");
     ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
     // 不 trace:ht 非 root,k/v 无根 -> collect 回收
     const usize before = gc.bytes_allocated();

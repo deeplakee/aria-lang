@@ -84,7 +84,7 @@ namespace {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto* module   = new_module(gc, new_string(gc, "<test>"));
+        auto module   = new_module(gc, new_string(gc, "<test>"));
         auto  compiled = compile_source(gc, *module, src);
         if (!compiled.has_value()) {
             return RunResult{std::move(vm), std::unexpected(compiled.error())};
@@ -99,7 +99,7 @@ namespace {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto* module   = new_module(gc, new_string(gc, "<test>"));
+        auto module   = new_module(gc, new_string(gc, "<test>"));
         auto  compiled = compile_source(gc, *module, src);
         return Compiled{std::move(vm), std::move(compiled)};
     }

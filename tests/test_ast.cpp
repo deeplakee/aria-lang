@@ -138,8 +138,8 @@ TEST(AstBinary, DisplayAndStruct) {
     EXPECT_EQ(out, "BinaryExpr op=+\n  IntegerLiteral 1\n  IntegerLiteral 2\n");
 
     // 结构：左右子节点为 IntegerLiteralNode，值正确（dynamic_cast 依赖 ASTNode 虚析构）。
-    auto* lhs = dynamic_cast<IntegerLiteralNode*>(node.lhs.get());
-    auto* rhs = dynamic_cast<IntegerLiteralNode*>(node.rhs.get());
+    auto lhs = dynamic_cast<IntegerLiteralNode*>(node.lhs.get());
+    auto rhs = dynamic_cast<IntegerLiteralNode*>(node.rhs.get());
     ASSERT_NE(lhs, nullptr);
     ASSERT_NE(rhs, nullptr);
     EXPECT_EQ(lhs->value, 1);

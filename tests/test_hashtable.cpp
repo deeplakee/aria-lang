@@ -34,13 +34,13 @@ TEST(HashTable, UpsertInsertAndFind) {
     IntTable ht{&gc};
     EXPECT_TRUE(ht.empty());
     for (int i = 0; i < 20; ++i) {
-        auto* e = ht.upsert(i);
+        auto e = ht.upsert(i);
         ASSERT_NE(e, nullptr);
         e->value = i * 10;
     }
     EXPECT_EQ(ht.size(), 20u);
     for (int i = 0; i < 20; ++i) {
-        auto* e = ht.find(i);
+        auto e = ht.find(i);
         ASSERT_NE(e, nullptr);
         EXPECT_EQ(e->key, i);
         EXPECT_EQ(e->value, i * 10);
@@ -52,7 +52,7 @@ TEST(HashTable, UpsertExistingPreservesValue) {
     GC       gc;
     IntTable ht{&gc};
     ht.upsert(5)->value = 50;
-    auto* e             = ht.upsert(5); // 已存在
+    auto e             = ht.upsert(5); // 已存在
     ASSERT_NE(e, nullptr);
     EXPECT_EQ(e->value, 50); // value 保留(未重置为 V{})
     e->value = 999;          // 调用方覆写
@@ -141,7 +141,7 @@ TEST(HashTable, CollisionsTriangularProbing) {
         ht.upsert(i)->value = i * 100; // cap=8 容纳 6(<7)
     }
     for (int i = 0; i < 6; ++i) {
-        auto* e = ht.find(i);
+        auto e = ht.find(i);
         ASSERT_NE(e, nullptr);
         EXPECT_EQ(e->value, i * 100);
     }

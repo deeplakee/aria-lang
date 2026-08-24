@@ -211,7 +211,7 @@ namespace aria {
         if (type_ != TokenType::String) {
             return {};
         }
-        const auto* sval_ptr = std::get_if<String>(&value_);
+        auto sval_ptr = std::get_if<String>(&value_);
         return sval_ptr ? StringView{*sval_ptr} : StringView{};
     }
 

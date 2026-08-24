@@ -70,7 +70,7 @@ TEST(GcAlloc, ReallocToZeroFrees) {
 
 TEST(ObjString, ShortIsInline) {
     GC    gc;
-    auto* s = new_string(gc, kShort);
+    auto s = new_string(gc, kShort);
     EXPECT_FALSE(s->is_long());
     EXPECT_EQ(s->length(), kShort.size());
     EXPECT_EQ(s->view(), kShort);
@@ -78,7 +78,7 @@ TEST(ObjString, ShortIsInline) {
 
 TEST(ObjString, LongIsSeparate) {
     GC    gc;
-    auto* s = new_string(gc, kLong);
+    auto s = new_string(gc, kLong);
     EXPECT_TRUE(s->is_long());
     EXPECT_EQ(s->length(), kLong.size());
     EXPECT_EQ(s->view(), kLong);
@@ -86,8 +86,8 @@ TEST(ObjString, LongIsSeparate) {
 
 TEST(ObjString, HashStableForEqualContent) {
     GC    gc;
-    auto* a = new_string(gc, "same content here!!!!");
-    auto* b = new_string(gc, "same content here!!!!");
+    auto a = new_string(gc, "same content here!!!!");
+    auto b = new_string(gc, "same content here!!!!");
     EXPECT_EQ(a->hash(), b->hash());
 }
 
@@ -116,7 +116,7 @@ TEST(GcCollect, UnrootedLongSwept) {
 TEST(GcCollect, TempRootSurvives) {
     GC gc;
     gc.set_stress(true);
-    auto* s     = new_string(gc, kLong);
+    auto s     = new_string(gc, kLong);
     auto  guard = gc.make_guard(s);    // 保护
     (void) new_string(gc, "trigger"); // 触发 GC:s 被标根 -> 存活
     EXPECT_EQ(s->view(), kLong);       // 未被释放,访问安全
@@ -125,7 +125,7 @@ TEST(GcCollect, TempRootSurvives) {
 TEST(GcCollect, SweepResetsMarks) {
     GC gc;
     gc.set_stress(true);
-    auto* s     = new_string(gc, kLong);
+    auto s     = new_string(gc, kLong);
     auto  guard = gc.make_guard(s);
     (void) new_string(gc, "trigger"); // GC:s 存活,is_marked 复位
     EXPECT_FALSE(s->is_marked());
@@ -134,7 +134,7 @@ TEST(GcCollect, SweepResetsMarks) {
 TEST(GcCollect, GuardBalancesTempRoots) {
     GC gc;
     gc.set_stress(true);
-    auto* s = new_string(gc, kLong);
+    auto s = new_string(gc, kLong);
     {
         auto guard = gc.make_guard(s);
         (void) new_string(gc, "trigger"); // GC:s 存活
@@ -147,8 +147,8 @@ TEST(GcCollect, GuardBalancesTempRoots) {
 
 TEST(Object, AddressHashCtor) {
     GC    gc;
-    auto* a = gc.new_object<ObjDummy>();
-    auto* b = gc.new_object<ObjDummy>();
+    auto a = gc.new_object<ObjDummy>();
+    auto b = gc.new_object<ObjDummy>();
     EXPECT_EQ(a->hash(), a->hash()); // 同一对象哈希稳定
     EXPECT_NE(a->hash(), b->hash()); // 不同对象不同地址 -> 不同哈希
 }

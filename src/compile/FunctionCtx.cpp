@@ -34,7 +34,7 @@ namespace aria {
     bool FunctionCtx::is_defined_in_scope(const StringView name) const {
         for (const auto& local: std::views::reverse(locals_)) {
             if (local.depth < scope_depth_) {
-                break; // 离开当前作用域（外层同名允许 shadow）
+                return false; // 外层同名允许 shadow
             }
             if (local.name == name) {
                 return true;

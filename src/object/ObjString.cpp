@@ -44,8 +44,9 @@ namespace aria {
         if (ObjString* found = gc.intern_find(src)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
-        auto s     = gc.new_object<ObjString>(gc, src); // 顶部 maybe_collect 在分配前完成
-        auto guard = gc.make_guard(s);                  // 防御性:保护新串直至 insert 完成
+        // s 此刻白色无根,但 intern_insert -> InternPool::insert -> allocate<ObjString*> 走 trivial
+        // 分配(不触发 GC,见 GC.hpp 核心不变式),故 s 跨 insert 不会被回收,无需守卫。
+        auto s = gc.new_object<ObjString>(gc, src); // 顶部 maybe_collect 在 s 诞生前完成
         gc.intern_insert(s);
         return s;
     }

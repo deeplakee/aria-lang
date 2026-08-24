@@ -295,8 +295,9 @@ namespace aria {
         }
 
         const auto fn       = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
-        auto       fn_guard = gc_.make_guard(fn); // 防御性:保护「new_function 返回 -> add_constant 入父常量池」
-                                                  // 窗口;入父常量池后即被链根化,双根无害。RAII,unwind 自动 pop。
+        // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
+        // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。
+        // 入父常量池后即经 module 根链可达。
         const auto fn_idx = add_constant(Value::from_obj(fn)); // 入父（当前）序列常量池
         if (!fn_idx) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>65535)");

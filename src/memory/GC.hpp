@@ -18,7 +18,7 @@ namespace aria {
     //
     // 两层分配:
     //   - 类型化 trivial 模板(allocate<T>/deallocate<T>/reallocate<T>):count 个 T,
-    //     计入 bytes_allocated_,不触发 GC。供 Array<T> / ObjString long_chars_ 等使用。
+    //     计入 bytes_allocated_,**永不触发 GC**。供 Array<T> / ObjString long_chars_ 等使用。
     //   - Object(new_object<T>):带 Object 头的可追踪对象,链入 objects_head_,
     //     分配前 maybe_collect() 可能触发回收。
     //
@@ -27,8 +27,18 @@ namespace aria {
     //   mark_roots_ -> trace_gray_ -> sweep_;sweep_ 对未标对象调虚析构(级联释放
     //   子内存:Array 成员自释放 / ObjString long_chars_ 在 ~ObjString 释放)再释放壳。
     //
-    // 不变式:allocate/reallocate 永不触发 GC,故对象构造期内的子分配不会回收正在
-    //   构造的对象。GC 仅在 new_object 顶部与 VM safe point 触发。
+    // **核心不变式(承重)**:allocate<T>/reallocate<T> 永不触发 GC,GC 仅在 new_object 顶部
+    //   与 VM safe point 触发。这不是性能取舍,而是与「link-on-alloc + publish-after」对象
+    //   模型绑定的定义性约束:new_object 返回的对象此时已在 objects_head_、白色、无任何根
+    //   指向,它要被「发布」进某个根(常量池/intern 池/值栈/globals 表)才真正安全,而发布动作
+    //   本身就是一次 buffer 分配(Array::push->reallocate / InternPool::insert->allocate /
+    //   HashTable::upsert->allocate)。若该 buffer 分配会触发 GC,此刻白色无根对象会被
+    //   sweep,发布进去的即悬垂指针。故 add_constant(new_string(...)) / intern_insert /
+    //   globals().upsert 等「fresh 对象裸持跨一次 buffer 分配再发布」的写法全靠此不变式
+    //   免守卫。打破它(给 allocate/reallocate 加 maybe_collect)会让所有此类未守卫站点
+    //   同时悬垂。此为不变式契约(见各函数注释),靠 review 守;allocate/reallocate 是叶函数,
+    //   无间接触发 GC 的现实路径。注意另一方向--裸持白色对象跨真 GC 点(new_object/
+    //   new_string/emit_expr)漏 make_guard--本不变式不管,靠显式守卫 + stress GC 测试守。
     //
     // gray_stack_ / temp_roots_ 是 GC 自身 scratch,用 List(std::vector)实现,
     // 不经 GC 分配器、不计入 bytes_allocated_(GC overhead 与 managed heap 分离)。
@@ -43,7 +53,10 @@ namespace aria {
         GC& operator=(GC&&)      = delete;
 
         // ---- 类型化 trivial 分配 ----
-        // 分配 count 个 T(= count*sizeof(T) 字节),失败走 fatal_error(OutOfMemory)。不触发 GC。
+        // 分配 count 个 T(= count*sizeof(T) 字节),失败走 fatal_error(OutOfMemory)。
+        // **INVARIANT: 永不触发 GC(不调 maybe_collect)**。调用方据此可裸持白色对象跨本调用
+        // (Array::push / InternPool::insert / HashTable::upsert / ObjString 构造子分配等全靠此)。
+        // 在此加 maybe_collect 会让所有「fresh 对象 -> 发布进结构」未守卫站点悬垂(见类注释核心不变式)。
         template<typename T>
         [[nodiscard]]
         T* allocate(usize count);
@@ -52,12 +65,15 @@ namespace aria {
         void deallocate(T* p, usize count) noexcept;
 
         // realloc 语义:new_count==0 退化为 deallocate;否则新分配 + 拷贝 min(old,new) 个 T + 释放旧。
+        // **INVARIANT: 永不触发 GC**——同 allocate,调本函数期间裸持的白色对象不会被回收。
         template<typename T>
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);
 
         // ---- object allocation(可追踪层)----
-        // maybe_collect -> allocate<u8>(sizeof(T)) -> placement-new 构造 -> 链入 objects_head_。
+        // **分配层唯一触发 GC 的入口**:顶部 maybe_collect() 在分配前完成(此刻新对象尚未诞生,
+        // 不会被本轮 GC 扫到),再 allocate<u8> + placement-new 构造 + 链入 objects_head_。
+        // 返回的对象此刻白色、无根,需调用方发布进某根后才安全(见类注释核心不变式)。
         template<DerivedFromObj T, typename... Args>
         [[nodiscard]]
         T* new_object(Args&&... args);

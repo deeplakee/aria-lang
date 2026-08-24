@@ -696,8 +696,9 @@ namespace aria {
                     // 取到模块对象后,以 alias 名 upsert 进当前模块 globals(顶层 import 即全局绑定)。
                     //
                     // 根安全(M6 解锁 GC 后):path/alias 经常量池根(同 LOAD_CONST)。键经 new_string intern
-                    //   驻留(weak root,collect 期间在 GC lock 内不触回收)。module 是跨 upsert 分配持有的
-                    //   裸 Value(off-stack),guard 显式保命 -- 不依赖读者推断 modules_ 为根,对将来重构稳健。
+                    //   驻留(weak root)。module 是跨 upsert 分配持有的裸 Value(off-stack),但
+                    //   globals().upsert -> HashTable rehash 走 trivial 分配(不触发 GC,见 GC.hpp 核心不变式),
+                    //   且 module 本就经 modules_ 根可达(VM tracer 标 modules_),故跨 upsert 无需守卫。
                     //   module_entry 指入 modules_,非移动 GC 且 upsert 不触 modules_,collect 后仍有效。
                     ObjString* path  = read_name(frame);
                     ObjString* alias = read_name(frame);
@@ -723,7 +724,6 @@ namespace aria {
                         return runtime_err(ErrorCode::ModuleNotFound,
                                            "module not loaded: '{}' (loading not implemented yet)", path->view());
                     }
-                    auto guard          = gc_.make_guard(module); // 跨 upsert 分配保命
                     auto global_entry   = frame.module->globals().upsert(Value::from_obj(alias));
                     global_entry->value = module;
                     break;

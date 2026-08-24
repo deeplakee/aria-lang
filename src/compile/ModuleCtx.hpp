@@ -63,6 +63,12 @@ namespace aria {
         // 内联：insert 已处理「存在则不插入」，.second 即「是否新插入」。
         bool declare_global(const StringView name) { return defined_globals_.insert(String{name}).second; }
 
+        // 当前是否在模块顶层作用域（变量定义应作为模块全局而非局部）：当前函数为入口
+        // （current_fn_ctx_->enclosing_ == nullptr）且处于第 0 层作用域（scope_depth_ == 0）。
+        // 收口 CodeGen 中 `cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0`
+        // 判定，供 visitVarDeclNode / compile_function 复用。定义于 .cpp（需 FunctionCtx 完整类型）。
+        bool is_global_scope() const noexcept;
+
         ObjModule* module_;
 
         // 当前函数上下文游标，兼拥有入口 fn 上下文（ctor new、dtor delete）。compile_function 进出函数

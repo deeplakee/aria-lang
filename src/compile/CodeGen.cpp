@@ -304,7 +304,7 @@ namespace aria {
 
         // 父序列：压函数值 + 绑定名字（仍发射入父 unit = 当前 cur_cu()）。
         if (name != nullptr) {
-            if (cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0) {
+            if (mod_ctx_->is_global_scope()) {
                 // 顶层 fun -> 模块全局（name 已是 intern ObjString*，declare_global 按内容判重）
                 if (!mod_ctx_->declare_global(name->view())) {
                     fail(ErrorCode::RedefinedVariable, loc, "重复定义全局: {}", name->view());
@@ -656,7 +656,7 @@ namespace aria {
             if (id == nullptr) {
                 not_impl(b.target.get(), "列表模式解构 var 声明");
             }
-            if (cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0) {
+            if (mod_ctx_->is_global_scope()) {
                 // 顶层 var -> 模块全局（intern 一次供常量池复用；declare_global 按内容判重）
                 auto* name_str = new_string(gc_, id->name); // intern（常量池复用）
                 // name_str 裸持跨 emit_expr(initializer)：初始化器可能分配（lambda -> new_function、

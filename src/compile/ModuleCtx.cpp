@@ -32,4 +32,10 @@ namespace aria {
         }
     }
 
+    // 当前函数为入口（enclosing_==nullptr）且在第 0 层作用域 -> 模块顶层：var/fun/import 别名
+    // 定义为模块全局（DEF_GLOBAL / IMPORT），否则为局部。游标 current_fn_ctx_ 即「当前编译到的函数」。
+    bool ModuleCtx::is_global_scope() const noexcept {
+        return current_fn_ctx_->enclosing_ == nullptr && current_fn_ctx_->scope_depth_ == 0;
+    }
+
 } // namespace aria

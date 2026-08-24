@@ -51,7 +51,7 @@ namespace aria {
     }
 
     // 当前 CodeUnit = 当前函数 fn_->unit()，随游标派生（定义于此：需 ObjFunction 完整类型取 unit()）。
-    FunctionContext* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
+    FunctionCtx* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
     CodeUnit*        CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
 
     // ============================================================
@@ -72,7 +72,7 @@ namespace aria {
     }
 
     // ============================================================
-    // 局部管理（登记经 FunctionContext，发射经 cur_cu()）
+    // 局部管理（登记经 FunctionCtx，发射经 cur_cu()）
     // ============================================================
 
     Result<u16, ErrorCode> CodeGen::declare_local(const StringView name) const {
@@ -329,7 +329,7 @@ namespace aria {
 
         // 切到子函数上下文：new 分配（非 UPtr），enclosing_ 回父（父函数编译期长于子，裸指针稳定）。
         // 摆动 ModuleCtx 游标即可--cu 由游标派生，随游标自动切到子 unit，无需 save/restore。
-        auto child                = new FunctionContext{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
+        auto child                = new FunctionCtx{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& p: params) {
             cur_fn_ctx()->add_local(p.name); // caller 压栈，登记但不预留（不 emit LOAD_NIL）

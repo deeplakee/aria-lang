@@ -15,7 +15,7 @@
 //   - 首错即止：遇第一个语义错误记录并短路后续发射，compile() 返回 Result<ObjFunction*, Error>。
 //
 // 状态分离：每函数的可变状态（局部栈 / 作用域深度 / 循环上下文栈 / 外层链）收口于
-//   FunctionContext（见 compile/FunctionContext.hpp）；每模块状态（模块句柄 + 当前函数上下文游标
+//   FunctionCtx（见 compile/FunctionCtx.hpp）；每模块状态（模块句柄 + 当前函数上下文游标
 //   current_fn_ctx_（兼拥有入口 fn 上下文：ctor new、dtor delete）+ 顶层全局名注册表）收口于 ModuleCtx
 //   （见 compile/ModuleCtx.hpp），形成「模块 > 函数 > 作用域」三层。「当前函数」不再作 CodeGen 成员--
 //   游标 current_fn_ctx_ 寄存于 ModuleCtx，CodeGen 经 cur_fn_ctx() 读取、compile_function 经
@@ -31,7 +31,7 @@
 //   短路 / 各 visit 的 if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。unwind 时 compile_function 的
 //   `delete child` 与还原游标被跳过，子留在 enclosing_ 链上，~ModuleCtx 析构沿链从游标走到 entry 逐个 delete
 //   （成功时仅 entry，出错时整条活动链 + entry）。局部 / 作用域 / 循环 break-continue 的「登记」
-//   由 FunctionContext 负责（并返回弹出数等数据）；「发射」（emit_op / 跳转编码 / 回填 / 分块 / 槽位变体）下沉
+//   由 FunctionCtx 负责（并返回弹出数等数据）；「发射」（emit_op / 跳转编码 / 回填 / 分块 / 槽位变体）下沉
 //   CodeUnit，CodeGen 经 cur_cu()（派生自游标）调用。越界（超 64KB）由 CodeUnit 方法返 bool，CodeGen 翻译
 //   为 Error。循环上下文随函数走，故 break/continue 不会跨函数绑定到外层循环。
 //
@@ -45,7 +45,7 @@
 #include "bytecode/code.hpp"
 #include "common.hpp"
 #include "compile/AstVisitor.hpp"
-#include "compile/FunctionContext.hpp"
+#include "compile/FunctionCtx.hpp"
 #include "compile/ModuleCtx.hpp"
 #include "compile/ast.hpp"
 #include "error/AriaException.hpp"
@@ -142,7 +142,7 @@ namespace aria {
         // 「当前函数」指针--游标在 ModuleCtx，cu 由游标派生（= &fn_->unit()），随 compile_function
         // 摆动游标自动切换，免两指针同步 save/restore。编译外（mod_ctx_ 为空）不可调用。
         [[nodiscard]]
-        FunctionContext* cur_fn_ctx() const noexcept;
+        FunctionCtx* cur_fn_ctx() const noexcept;
 
         [[nodiscard]]
         CodeUnit* cur_cu() const noexcept;
@@ -155,7 +155,7 @@ namespace aria {
         [[nodiscard]]
         Opt<u16> add_name(StringView s) const; // intern(new_string) + add_constant(from_obj)；溢出透传 nullopt
 
-        // --- 局部管理（登记经 FunctionContext，发射经 cur_cu()）---
+        // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
         // 薄封装：检测重定义/溢出 -> 返回 ErrorCode（不构造 Error、不持 loc）；成功 add_local 仅登记并标
         // 「定义但未初始化」（不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
         [[nodiscard]]

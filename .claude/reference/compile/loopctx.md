@@ -1,6 +1,6 @@
 # LoopCtx 结构体说明
 
-> 源码位置：`src/compile/FunctionContext.hpp`
+> 源码位置：`src/compile/FunctionCtx.hpp`
 > 相关代码：`src/compile/CodeGen.cpp`（`visitWhileStmtNode` / `visitForStmtNode` / `visitForInStmtNode` / `visitBreakStmtNode` / `visitContinueStmtNode`）
 
 ## 1. 它解决什么问题
@@ -9,7 +9,7 @@ aria 的 `break` / `continue` 是**前向跳转**（break 跳到循环结束 `L_
 
 clox 风格的解法是「**占位 + 回填**」：遇到 `break`/`continue` 先发一条 `JUMP`，把这条跳转指令的**占位偏移**记下来；等循环体编译完、真正的目标地址确定了，再回去把这些占位改成真实偏移（`patch_jump`）。
 
-`LoopCtx` 就是记录「**当前这一个循环**」在编译期内需要的所有回填信息的载体。每个循环进入时往 `FunctionContext::loop_stack_` 压一个 `LoopCtx`，循环结束时弹出并完成所有回填。
+`LoopCtx` 就是记录「**当前这一个循环**」在编译期内需要的所有回填信息的载体。每个循环进入时往 `FunctionCtx::loop_stack_` 压一个 `LoopCtx`，循环结束时弹出并完成所有回填。
 
 ## 2. 字段逐项说明
 
@@ -185,21 +185,21 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.1 随函数隔离（不跨函数绑定外层循环）
 
-`loop_stack_` 是 `FunctionContext` 的成员，**进新函数即得空 `loop_stack_`**（见 `FunctionContext.hpp:15-16` 的注释）。所以嵌套函数里的 `break`/`continue` 不会绑到外层函数的循环--外层循环的 `LoopCtx` 在外层函数的 `loop_stack_` 里，子函数看不到。子函数顶层写 `break` 会因自己的 `loop_stack_` 为空而报 `BreakOutsideLoop`。测试 `ErrBreakInNestedFunDoesNotBindOuterLoop`（`tests/test_codegen.cpp`）专门验证这一点。
+`loop_stack_` 是 `FunctionCtx` 的成员，**进新函数即得空 `loop_stack_`**（见 `FunctionCtx.hpp:15-16` 的注释）。所以嵌套函数里的 `break`/`continue` 不会绑到外层函数的循环--外层循环的 `LoopCtx` 在外层函数的 `loop_stack_` 里，子函数看不到。子函数顶层写 `break` 会因自己的 `loop_stack_` 为空而报 `BreakOutsideLoop`。测试 `ErrBreakInNestedFunDoesNotBindOuterLoop`（`tests/test_codegen.cpp`）专门验证这一点。
 
 ### 4.2 `loop_scope_depth` 的作用：跳转前弹局部
 
 `break`/`continue` 跳出循环体时，循环体内声明的局部变量已经「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
 
-这个弹局部机制和正常退出作用域（`end_scope_pop_count`）复用同一个底层 `pop_locals_deeper_than`（见 `FunctionContext.hpp:81-83`），不限于控制流。
+这个弹局部机制和正常退出作用域（`end_scope_pop_count`）复用同一个底层 `pop_locals_deeper_than`（见 `FunctionCtx.hpp:81-83`），不限于控制流。
 
 ### 4.3 入栈/出栈的 RAII 式对称
 
-每个循环 visit 严格遵循「push -> 编译体 -> move 出 + pop」的对称结构。注意是 `std::move` 出栈顶后再 `pop_back()`，这样回填阶段用的是局部副本 `loop`，即使回填过程中 `cur_cu()` 状态变化也不影响 `loop_stack_`。出错路径下（`fail()` 抛 `AriaCompileException` unwind），pop 会被跳过，但整个 `ModuleCtx` 析构时会沿 enclosing_ 链清理 `FunctionContext`，`loop_stack_` 作为其成员随之销毁，不泄漏。
+每个循环 visit 严格遵循「push -> 编译体 -> move 出 + pop」的对称结构。注意是 `std::move` 出栈顶后再 `pop_back()`，这样回填阶段用的是局部副本 `loop`，即使回填过程中 `cur_cu()` 状态变化也不影响 `loop_stack_`。出错路径下（`fail()` 抛 `AriaCompileException` unwind），pop 会被跳过，但整个 `ModuleCtx` 析构时会沿 enclosing_ 链清理 `FunctionCtx`，`loop_stack_` 作为其成员随之销毁，不泄漏。
 
 ### 4.4 为什么 `LoopCtx` 是简单聚合而不是带方法的类
 
-`LoopCtx` 的全部行为（入栈、读栈顶、追加占位、回填）都由 `CodeGen` 编排，`LoopCtx` 本身只是数据载体。这与 `FunctionContext` 的设计分工一致（见 `FunctionContext.hpp:4-8` 注释）：`FunctionContext` 负责「登记」（局部/作用域/循环栈管理），`CodeGen` 负责「发射」（`emit_op`/跳转回填/错误）。`LoopCtx` 作为 `FunctionContext` 的成员，自然也只持数据、不持逻辑。回填逻辑（`patch_jump`）属于 `CodeUnit` 的编码能力，由 `CodeGen` 调用，不放进 `LoopCtx`。
+`LoopCtx` 的全部行为（入栈、读栈顶、追加占位、回填）都由 `CodeGen` 编排，`LoopCtx` 本身只是数据载体。这与 `FunctionCtx` 的设计分工一致（见 `FunctionCtx.hpp:4-8` 注释）：`FunctionCtx` 负责「登记」（局部/作用域/循环栈管理），`CodeGen` 负责「发射」（`emit_op`/跳转回填/错误）。`LoopCtx` 作为 `FunctionCtx` 的成员，自然也只持数据、不持逻辑。回填逻辑（`patch_jump`）属于 `CodeUnit` 的编码能力，由 `CodeGen` 调用，不放进 `LoopCtx`。
 
 ## 5. 速查：三种循环的 `LoopCtx` 配置
 

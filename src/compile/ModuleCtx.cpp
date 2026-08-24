@@ -1,7 +1,7 @@
 #include "compile/ModuleCtx.hpp"
 
 #include "common.hpp"
-#include "compile/FunctionContext.hpp"
+#include "compile/FunctionCtx.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 
@@ -15,7 +15,7 @@ namespace aria {
     // （enclosing_==nullptr = entry）赋值给 current_fn_ctx_--它既是入口所有者也是当前游标（初始 = 入口）。
     ModuleCtx::ModuleCtx(ObjModule& m) : module_{&m} {
         ASSERT(m.entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
-        current_fn_ctx_ = new FunctionContext(*m.entry());
+        current_fn_ctx_ = new FunctionCtx(*m.entry());
     }
 
     // 沿 enclosing_ 链（current_fn_ctx_ → 父 → ... → entry）逐个 delete，无论游标在哪儿都对：

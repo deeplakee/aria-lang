@@ -2,11 +2,11 @@
 #define ARIA_MODULECTX_HPP
 
 // 模块编译上下文：收口每模块状态 -- 模块句柄 + 当前函数上下文游标（兼拥有入口 fn 上下文）+ 顶层
-// 全局名注册表。与 FunctionContext（每函数）对齐：模块 > 函数 > 作用域 三层各一席。「当前函数上下文」
+// 全局名注册表。与 FunctionCtx（每函数）对齐：模块 > 函数 > 作用域 三层各一席。「当前函数上下文」
 // 游标 current_fn_ctx_ 寄存于此，「当前 CodeUnit」不再单独存--由 CodeGen 经
 // cur_cu() = &current_fn_ctx_->fn_->unit() 派生，随游标自动切换，免两指针同步。
 //
-// current_fn_ctx_ 是普通 FunctionContext*：构造函数就 m.entry() new 一个入口 FunctionContext
+// current_fn_ctx_ 是普通 FunctionCtx*：构造函数就 m.entry() new 一个入口 FunctionCtx
 // （enclosing_==nullptr = entry）并赋值给它。它既是「入口 fn 上下文的所有者」，又是「当前编译到哪个
 // 函数」的游标。子函数上下文由 compile_function 用 `new` 分配、enclosing_ 回父、游标摆向子；**成功**
 // 路径 compile_function 还原游标并手动 `delete` 子，**出错**路径不还原游标、不 delete 子、直接 return
@@ -27,7 +27,7 @@
 // HashSet<String> 内容哈希，不依赖 intern 指针）。一个内联方法 declare_global；构造函数就着已 set_entry
 // 的模块创建入口 fn 上下文并就位游标。entry 判定 = current_fn_ctx_->enclosing_ == nullptr。
 //
-// 特殊成员：current_fn_ctx_ 是 new 分配的裸指针，析构沿链 delete（需 FunctionContext 完整类型，故
+// 特殊成员：current_fn_ctx_ 是 new 分配的裸指针，析构沿链 delete（需 FunctionCtx 完整类型，故
 // ~ModuleCtx() 声明于头、定义于 .cpp）；copy / move 删除（ModuleCtx 一次性、不可移动）--由调用方按
 // 指针持有（CodeGen 持 `UPtr<ModuleCtx> mod_ctx_`，init_module 入口 make_unique、compile 遍历后
 // reset()、~CodeGen 自动释放），无需 move。
@@ -41,7 +41,7 @@ namespace aria {
 
     class ObjModule;
     class ObjFunction;
-    class FunctionContext;
+    class FunctionCtx;
 
     // 模块编译上下文（一次性）。详见上方类注释。
     class ModuleCtx {
@@ -67,7 +67,7 @@ namespace aria {
 
         // 当前函数上下文游标，兼拥有入口 fn 上下文（ctor new、dtor delete）。compile_function 进出函数
         // 时摆动；析构时须已还原到入口（enclosing_==nullptr）。详见类注释「析构不变式」。
-        FunctionContext* current_fn_ctx_;
+        FunctionCtx* current_fn_ctx_;
 
     private:
         HashSet<String> defined_globals_; // 已登记顶层全局名（内容判等）

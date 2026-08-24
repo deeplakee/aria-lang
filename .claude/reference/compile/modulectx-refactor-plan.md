@@ -5,8 +5,8 @@
 
 ## 目标
 
-1. 把 `CodeGen` 的**模块级**状态收口进新类 `ModuleCtx`，与 `FunctionContext`（每函数状态）对齐，形成「模块 > 函数 > 作用域」三层。
-2. **去掉 `ctx_stack_`**：不再用 `List<UPtr<FunctionContext>>` 持有所有上下文，改为 `ctx_` 单指针 + `enclosing_` 链 + 局部 `UPtr` 持有。
+1. 把 `CodeGen` 的**模块级**状态收口进新类 `ModuleCtx`，与 `FunctionCtx`（每函数状态）对齐，形成「模块 > 函数 > 作用域」三层。
+2. **去掉 `ctx_stack_`**：不再用 `List<UPtr<FunctionCtx>>` 持有所有上下文，改为 `ctx_` 单指针 + `enclosing_` 链 + 局部 `UPtr` 持有。
 3. 顺带去掉 `is_entry_`：`enclosing_ == nullptr` 即 entry，`is_entry_` 冗余。
 4. 顺带两项改进：`defined_globals_` 值类型 `String` → `ObjString*`（intern 指针判等，免拷贝）；import 别名入表（补 `import "x" as U; var U = 1;` 漏检）。
 
@@ -24,10 +24,10 @@
 namespace aria {
     class ObjModule;
     class ObjString;
-    class FunctionContext;
+    class FunctionCtx;
 
     // 模块编译上下文：收口每模块状态 -- 模块句柄 + 顶层全局名注册表 + 当前函数上下文指针。
-    // 与 FunctionContext（每函数）对齐：模块 > 函数 > 作用域 三层各一席。
+    // 与 FunctionCtx（每函数）对齐：模块 > 函数 > 作用域 三层各一席。
     // 只负责「登记」：declare_global 做顶层全局名重定义检查（intern 指针判等）。
     class ModuleCtx {
     public:
@@ -39,7 +39,7 @@ namespace aria {
         // 登记顶层全局名（intern 指针判等）：true=新登记；false=已存在（调用方 fail RedefinedVariable）。
         bool declare_global(ObjString* name);
 
-        FunctionContext* ctx_ = nullptr;  // 当前函数上下文；nullptr=尚未开始；ctx_->enclosing_==nullptr=entry
+        FunctionCtx* ctx_ = nullptr;  // 当前函数上下文；nullptr=尚未开始；ctx_->enclosing_==nullptr=entry
 
     private:
         ObjModule*          module_ = nullptr;
@@ -52,28 +52,28 @@ namespace aria {
 - `reset`：`module_ = &m; defined_globals_.clear(); ctx_ = nullptr;`
 - `module()`：`return module_;`
 
-### FunctionContext 简化（改 `src/compile/FunctionContext.hpp`/`.cpp`）
+### FunctionCtx 简化（改 `src/compile/FunctionCtx.hpp`/`.cpp`）
 
 - **删 `is_entry_` 成员**与构造参数。
-- 入口构造改为 `FunctionContext(ObjFunction& fn)`（`enclosing_{nullptr}`）；嵌套构造 `FunctionContext(FunctionContext& enclosing, ObjFunction& fn)` 不变。
+- 入口构造改为 `FunctionCtx(ObjFunction& fn)`（`enclosing_{nullptr}`）；嵌套构造 `FunctionCtx(FunctionCtx& enclosing, ObjFunction& fn)` 不变。
 - entry 判定由调用方用 `ctx_->enclosing_ == nullptr` 替代 `ctx_->is_entry_`。
 - 更新头注释：去掉 `is_entry_` 描述；`enclosing_` 链说明改为「所有权由调用方局部 UPtr 持有，父函数编译期长于子函数，故 enclosing_ 裸指针在子生命期内稳定（不再依赖 vector 固定地址）」。
 
 ### CodeGen 改动（`src/compile/CodeGen.hpp`/`.cpp`）
 
 **成员**：
-- 删 `ObjModule* module_`、`HashSet<String> defined_globals_`、`List<UPtr<FunctionContext>> ctx_stack_`、`FunctionContext* ctx_`。
+- 删 `ObjModule* module_`、`HashSet<String> defined_globals_`、`List<UPtr<FunctionCtx>> ctx_stack_`、`FunctionCtx* ctx_`。
 - 增 `ModuleCtx mod_ctx_;`。
 - 增访问辅助（减少 `ctx_->` → `mod_ctx_.ctx_->` 的满屏改动）：
   ```cpp
-  FunctionContext*& ctx() noexcept { return mod_ctx_.ctx_; } // 读 ctx()->... / 写 ctx() = ...
+  FunctionCtx*& ctx() noexcept { return mod_ctx_.ctx_; } // 读 ctx()->... / 写 ctx() = ...
   ```
   → `ctx_->` 全部 sed 替换为 `ctx()->`（读），`ctx_ = ...` 替换为 `ctx() = ...`（写，仅 3 处）。
 
 **`compile()`**：入口上下文改由**局部 UPtr** 持有（不再入 ctx_stack_）：
 ```cpp
 mod_ctx_.reset(module);
-auto entry_ctx = std::make_unique<FunctionContext>(*entry);  // enclosing_=nullptr = entry
+auto entry_ctx = std::make_unique<FunctionCtx>(*entry);  // enclosing_=nullptr = entry
 ctx() = entry_ctx.get();
 // ... 遍历声明、隐式 return ...
 ctx() = nullptr;          // （entry_ctx 在函数末析构，entry ObjFunction 归 GC/module 存活）
@@ -82,7 +82,7 @@ ctx() = nullptr;          // （entry_ctx 在函数末析构，entry ObjFunction
 
 **`compile_function()`**：子上下文改由**局部 UPtr** 持有，靠 `enclosing_` 回父：
 ```cpp
-auto child = std::make_unique<FunctionContext>(*ctx(), *fn);  // child->enclosing_ = 当前 ctx()
+auto child = std::make_unique<FunctionCtx>(*ctx(), *fn);  // child->enclosing_ = 当前 ctx()
 ctx() = child.get();
 // 形参 add_local、emit_stmt(body)、隐式 LOAD_NIL/RETURN ...
 ctx() = child->enclosing_;   // = 父
@@ -133,10 +133,10 @@ emit_word(alias_idx, line);
 
 ## 登记
 
-- `CMakeLists.txt`：`aria_core` 源列表加 `src/compile/ModuleCtx.cpp`（`ModuleCtx.hpp` 仿 `FunctionContext.hpp` 登记位置加）。
+- `CMakeLists.txt`：`aria_core` 源列表加 `src/compile/ModuleCtx.cpp`（`ModuleCtx.hpp` 仿 `FunctionCtx.hpp` 登记位置加）。
 - `.claude/rules/compile.md`：
-  - 新增 `compile/ModuleCtx.hpp/.cpp` 条目（职责：模块句柄 + 顶层全局名注册表 declare_global + 当前函数 ctx_ 指针；intern 指针判等；与 FunctionContext 对齐）。
-  - 改 `FunctionContext` 条目：去掉 `is_entry_`，注明 entry 由 `enclosing_==nullptr` 判定。
+  - 新增 `compile/ModuleCtx.hpp/.cpp` 条目（职责：模块句柄 + 顶层全局名注册表 declare_global + 当前函数 ctx_ 指针；intern 指针判等；与 FunctionCtx 对齐）。
+  - 改 `FunctionCtx` 条目：去掉 `is_entry_`，注明 entry 由 `enclosing_==nullptr` 判定。
   - 改 `CodeGen` 条目：`module_`/`defined_globals_`/`ctx_stack_`/`ctx_` → `ModuleCtx mod_ctx_`（经 `ctx()` 访问当前函数）；ctx_stack_ 去除，靠 enclosing_ 链 + 局部 UPtr 持有；import 别名入表。
 
 ## 测试（`tests/test_codegen.cpp`）
@@ -148,7 +148,7 @@ emit_word(alias_idx, line);
 ## 验证
 
 ```sh
-clang-format -i src/compile/ModuleCtx.hpp src/compile/ModuleCtx.cpp src/compile/CodeGen.hpp src/compile/CodeGen.cpp src/compile/FunctionContext.hpp src/compile/FunctionContext.cpp
+clang-format -i src/compile/ModuleCtx.hpp src/compile/ModuleCtx.cpp src/compile/CodeGen.hpp src/compile/CodeGen.cpp src/compile/FunctionCtx.hpp src/compile/FunctionCtx.cpp
 clang++ -std=c++23 -I src -fsyntax-only src/compile/ModuleCtx.cpp
 clang++ -std=c++23 -I src -fsyntax-only src/compile/CodeGen.cpp
 cmake --build build --target aria_tests -j
@@ -158,8 +158,8 @@ ctest --test-dir build --output-on-failure
 
 ## 风险与注意
 
-- **enclosing_ 链生命期**：父函数 `compile_function` 帧包住子函数 `compile_function` 帧，父 `FunctionContext`（局部 UPtr in 父帧 / entry UPtr in `compile`）必长于子。子回父用 `ctx() = child->enclosing_`。**实现时务必核对**：子编译体 `emit_stmt(body)` 递归期间 `ctx()` 始终指向最内层；每次 `compile_function` 退出都把 `ctx()` 还原为其入参时的父。entry_ctx 生命期贯穿整个 `compile()`。
+- **enclosing_ 链生命期**：父函数 `compile_function` 帧包住子函数 `compile_function` 帧，父 `FunctionCtx`（局部 UPtr in 父帧 / entry UPtr in `compile`）必长于子。子回父用 `ctx() = child->enclosing_`。**实现时务必核对**：子编译体 `emit_stmt(body)` 递归期间 `ctx()` 始终指向最内层；每次 `compile_function` 退出都把 `ctx()` 还原为其入参时的父。entry_ctx 生命期贯穿整个 `compile()`。
 - **`resolve_name` 不受影响**：已沿 `ctx_->enclosing_` 链查外层局部，模型一致。
 - **sed 替换 `ctx_->` → `ctx()->`**：`ctx_->` 为成员名，唯一；替换后检查 `ctx_ =`（3 处）改 `ctx() =`。注意不要误伤注释里的 `ctx_stack_` 文字（先改代码后改注释）。
-- **`is_entry_` 删除**：确认无其它引用（grep 已核实仅 2 处 CodeGen + FunctionContext 定义/构造）。
+- **`is_entry_` 删除**：确认无其它引用（grep 已核实仅 2 处 CodeGen + FunctionCtx 定义/构造）。
 - **`ObjString*` 判等依赖 intern**：`new_string` 已 intern（Phase 2 InternPool），同名同指针。`declare_global` 与 `add_constant` 复用同一 intern 串。

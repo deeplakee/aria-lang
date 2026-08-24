@@ -414,7 +414,7 @@ TEST(CodeGen, ErrBreakOutsideLoop) {
 }
 
 // 循环上下文随函数隔离：嵌套函数内的 break 不应绑定到外层循环（重构前 loop_stack_
-// 是 CodeGen 单栈，会错误绑定；现 loop_stack_ 收入 FunctionContext，函数边界天然隔离）。
+// 是 CodeGen 单栈，会错误绑定；现 loop_stack_ 收入 FunctionCtx，函数边界天然隔离）。
 TEST(CodeGen, ErrBreakInNestedFunDoesNotBindOuterLoop) {
     auto c = compile_only("for (var i = 0; i < 3; i = i + 1) { fun g() { break; } }");
     ASSERT_FALSE(c.has_value());

@@ -9,7 +9,7 @@
 // 局部栈（clox 风格）：locals_[0] = 哑元（slot 0 = callee，隐含不命名）；
 //   1..A = 形参（caller 压栈，编译期 add_local 登记后 mark_initialized）；
 //   A+1.. = 函数体局部（CodeGen::declare_local 仅登记并标「定义但未初始化」，不发指令；
-//     调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized，无 store/pop 预占）。
+//     调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized，无 store/pop、不预占槽）。
 //
 // 循环上下文栈随函数走：进新函数即得空 loop_stack_，故 break/continue 不会跨函数绑定到
 // 外层循环（函数边界天然隔离循环上下文）。

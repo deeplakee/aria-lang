@@ -77,7 +77,7 @@ namespace aria {
         // Error。
         Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module);
 
-        ~CodeGen() override                    = default; // mod_ctx_ 为 UPtr，自动释放（安全网）
+        ~CodeGen() override                    = default;
         CodeGen(const CodeGen&)                = delete;
         CodeGen& operator=(const CodeGen&)     = delete;
         CodeGen(CodeGen&&) noexcept            = delete;
@@ -153,16 +153,19 @@ namespace aria {
         [[nodiscard]]
         CodeUnit* cur_cu() const noexcept;
 
-        // --- 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）---
-        // 薄封装：只做操作 + 失败信号，不构造/抛错误、不持 loc。溢出返回 nullopt，调用处检查后显式 fail。
+        // 将常量插入常量池，返回索引(这个方法进行溢出检查)
+        // 溢出(>65535) -> nullopt；否则 -> idx
         [[nodiscard]]
-        Opt<u16> add_constant(Value v) const; // 溢出(>65535) -> nullopt；否则 cur_cu()->add_constant
+        Opt<u16> add_constant(Value v) const;
 
+        // 创建字符串对象并插入常量池，返回索引(这个方法进行溢出检查)
+        // 溢出(>65535) -> nullopt；否则 -> idx
         [[nodiscard]]
-        Opt<u16> add_name(StringView s) const; // intern(new_string) + add_constant(from_obj)；溢出透传 nullopt
+        Opt<u16> add_name(StringView s) const;
 
         // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
         // 薄封装：检测重定义/溢出 -> 返回 ErrorCode（不构造 Error、不持 loc）；成功 add_local 仅登记并标
+
         // 「定义但未初始化」（不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
         [[nodiscard]]
         Result<u16, ErrorCode> declare_local(StringView name) const;
@@ -220,12 +223,10 @@ namespace aria {
         // 仅做检查并报错，不发射。
         void check_local_initialized(u16 slot, const SourceLoc& loc);
 
-        // --- 模式绑定（var 声明 / forIn 用）---
-        // declare_pattern: 预留局部槽（IdentifierPattern -> declare_local；ListPattern -> not_impl）。
-        void declare_pattern(PatternNode* pat);
-
-        // bind_pattern: 栈顶已有一值，按模式绑定并弹栈。IdentifierPattern -> STORE_LOCAL k + POP；
-        // WildcardPattern -> POP；ListPattern -> not_impl。行号取自 pat->loc()（绑定发生在模式源行）。
+        // --- 模式绑定（forIn 用）---
+        // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
+        // IdentifierPattern -> declare_local 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP 丢弃；
+        // ListPattern -> not_impl。行号取自 pat->loc_line()（仅 _/ListPattern 分支发射时用）。
         void bind_pattern(PatternNode* pat);
 
         // --- 遍历入口（薄包装：accept 双分派）---

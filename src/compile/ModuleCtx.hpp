@@ -14,10 +14,11 @@
 // delete：成功时游标 = entry 仅删 entry，出错时游标停在 deepest 未释放子，走链释放整条活动链 + entry。
 // 故只需一个成员，无需 owner + cursor 两指针，也无需「游标必回入口」的不变式。
 //
-// **出错即停**（CodeGen 约定）：一旦 fail() 置首错，emit_expr/emit_stmt 对 !ok() 短路（不再递归），
-// 各 visit 在每个可递归子调用（emit_expr/emit_stmt/bind_pattern/declare_pattern）后 `if (!ok()) return`
-// 短路，不再 emit 字节码 / 动 cur_fn_ctx() 簿记。这样出错后游标虽停在子，但无后续 cur_cu()/cur_fn_ctx()
-// 访问，析构走链释放即可（出错后清理资源并返回，不继续 emit）。
+// **出错即停**（CodeGen 约定）：编译期深层 fail() 抛 AriaCompileException（[[noreturn]]），自动 unwind
+// 跨 visit 递归栈，compile() 顶层 catch 翻译为 Result。无需 error_ 成员 / ok() / 各 visit 的
+// if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。unwind 时 compile_function 的 delete child
+// 与游标还原被跳过，子留 enclosing_ 链，~ModuleCtx 沿链从 current_fn_ctx_ 走到 entry 逐个 delete
+// （成功时仅 entry，出错时整条活动链 + entry）。
 //
 // **一次性**：每个模块编译用一个新的 ModuleCtx（CodeGen::init_module 入口
 // `mod_ctx_ = std::make_unique<ModuleCtx>(module)` 构造一个全新实例），用完即弃，不复用、无 reset。

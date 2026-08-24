@@ -67,14 +67,14 @@ namespace aria {
 
     Opt<u16> CodeGen::add_constant(const Value v) const {
         if (cur_cu()->constants.size() >= 65536) {
-            return std::nullopt; // 溢出 -> 交调用处 fail CodeUnitTooLarge
+            return std::nullopt;
         }
         return cur_cu()->add_constant(v);
     }
 
     Opt<u16> CodeGen::add_name(const StringView s) const {
-        const auto str = new_string(gc_, s);       // intern；new_string 内部 Guard 保护至 intern_insert 完成
-        return add_constant(Value::from_obj(str)); // 透传 add_constant 的 nullopt
+        const auto str = new_string(gc_, s);
+        return add_constant(Value::from_obj(str));
     }
 
     // ============================================================
@@ -173,10 +173,10 @@ namespace aria {
     }
 
     CodeGen::Lvalue CodeGen::compile_lvalue(ExprNode* target) {
-        if (auto id = dynamic_cast<IdentifierNode*>(target)) {
+        if (const auto id = dynamic_cast<IdentifierNode*>(target)) {
             const auto r = resolve_name(id->name);
             if (!r) {
-                fail(ErrorCode::CodeUnitTooLarge, id->loc(), "常量池溢出(>65535)"); // add_name 溢出透传
+                fail(ErrorCode::CodeUnitTooLarge, id->loc(), "常量池溢出(>65535)");
             }
             // ResolvedVar 与 Lvalue 的 identifier 三种 kind 同形（Local/Upvalue/Global），index 语义一致，直传。
             switch (const auto& [kind, index] = *r; kind) {
@@ -186,68 +186,43 @@ namespace aria {
                     return Lvalue{.kind = Lvalue::Kind::Global, .index = index};
                 case ResolvedVar::Kind::Upvalue:
                     not_impl(id, "闭包/upvalue 捕获");
-                    break;
             }
             UNREACHABLE();
         }
         if (dynamic_cast<FieldAccessNode*>(target)) {
             not_impl(target, "字段赋值");
-            return Lvalue{Lvalue::Kind::Local, 0};
         }
         if (dynamic_cast<IndexAccessNode*>(target)) {
             not_impl(target, "下标赋值");
-            return Lvalue{Lvalue::Kind::Local, 0};
         }
         fail(ErrorCode::InvalidAssignmentTarget, target->loc(), "非法赋值左值");
-        return Lvalue{Lvalue::Kind::Local, 0};
     }
 
     // ============================================================
     // 模式绑定
     // ============================================================
 
-    void CodeGen::declare_pattern(PatternNode* pat) {
-        if (auto id = dynamic_cast<IdentifierPatternNode*>(pat)) {
-            // for-in pattern 是 loop-carried 局部（每轮回绑），保留预占槽模型：声明后显式 LOAD_NIL 预留 + mark_init，
-            // 使各轮回绑经 STORE_LOCAL+POP 时栈布局一致（与新 var「值填槽」模型不同）。
-            const auto slot = declare_local(id->name);
+    void CodeGen::bind_pattern(PatternNode* pat) {
+        // 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。值填槽模型：
+        // 声明发生在值已在栈顶之时，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
+        if (const auto id = dynamic_cast<IdentifierPatternNode*>(pat)) {
+            const auto slot = declare_local(id->name); // 纯登记，slot = 值位置；值填槽不发指令
             if (!slot) {
-                if (slot.error() == ErrorCode::RedefinedVariable) {
-                    fail(ErrorCode::RedefinedVariable, pat->loc(), "重复定义局部: {}", id->name);
-                } else {
-                    fail(ErrorCode::TooManyLocals, pat->loc(), "局部变量过多(>65535)");
+                switch (slot.error()) {
+                    case ErrorCode::RedefinedVariable:
+                        fail(ErrorCode::RedefinedVariable, pat->loc(), "重复定义局部变量: {}", id->name);
+                    case ErrorCode::TooManyLocals:
+                        fail(ErrorCode::TooManyLocals, pat->loc(), "局部变量过多(>65535)");
+                    default:
+                        UNREACHABLE();
                 }
             }
-            cur_cu()->emit_op(OpCode::LOAD_NIL, pat->loc_line()); // 显式预占槽
-            cur_fn_ctx()->mark_initialized(*slot);                // pattern 在绑定前不可被用户读，标 init 避免误报
+            cur_fn_ctx()->mark_initialized(*slot); // 值已在槽
             return;
         }
-        if (dynamic_cast<WildcardPatternNode*>(pat) != nullptr) {
-            return; // 不绑名，无需预留
-        }
-        if (dynamic_cast<ListPatternNode*>(pat) != nullptr) {
-            not_impl(pat, "列表模式解构");
-            return;
-        }
-        not_impl(pat, "未知模式");
-    }
-
-    void CodeGen::bind_pattern(PatternNode* pat) {
-        // 栈顶已有一值，按模式绑定并弹栈。行号取模式 loc（绑定发生在模式源行）。
         const u32 line = pat->loc_line();
-        if (const auto id = dynamic_cast<IdentifierPatternNode*>(pat)) {
-            const auto local = resolve_local(id->name);
-            if (!local) {
-                // declare_pattern 已预留；若未命中说明此前出错，交由短路处理。
-                cur_cu()->emit_op(OpCode::POP, line);
-                return;
-            }
-            cur_cu()->emit_store_local(*local, line); // peek-store：槽 = 值，留值于栈顶
-            cur_cu()->emit_op(OpCode::POP, line);     // 弹栈顶副本
-            return;
-        }
         if (dynamic_cast<WildcardPatternNode*>(pat) != nullptr) {
-            cur_cu()->emit_op(OpCode::POP, line); // 丢弃
+            cur_cu()->emit_op(OpCode::POP, line); // 丢弃值
             return;
         }
         if (dynamic_cast<ListPatternNode*>(pat) != nullptr) {
@@ -292,7 +267,7 @@ namespace aria {
             fail(ErrorCode::TooManyLocals, loc, "形参过多(>255)");
         }
 
-        const auto fn       = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
+        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
         // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
         // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。
         // 入父常量池后即经 module 根链可达。
@@ -317,17 +292,21 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
                 cur_cu()->emit_word(*name_idx, line);
             } else {
-                // 嵌套 fun -> 局部（新模型：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部，无
+                // 嵌套 fun -> 局部（值填槽：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部，无
                 // store/pop）
                 const auto slot = declare_local(name->view());
                 if (!slot) {
-                    if (slot.error() == ErrorCode::RedefinedVariable)
-                        fail(ErrorCode::RedefinedVariable, loc, "重复定义局部: {}", name->view());
-                    else
-                        fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>65535)");
+                    switch (slot.error()) {
+                        case ErrorCode::RedefinedVariable:
+                            fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name->view());
+                        case ErrorCode::TooManyLocals:
+                            fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>65535)");
+                        default:
+                            UNREACHABLE();
+                    }
                 }
                 cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-                cur_cu()->emit_word(*fn_idx, line); // fn 恰好压在 slot（新不变式：declare 与 init 相邻）
+                cur_cu()->emit_word(*fn_idx, line); // fn 恰好压在 slot（不变式：declare 与 init 相邻）
                 cur_fn_ctx()->mark_initialized(*slot);
             }
         } else {
@@ -501,33 +480,31 @@ namespace aria {
 
     void CodeGen::visitForInStmtNode(ForInStmtNode* node) {
         const u32 line = node->loc_line();
-        begin_scope();
+        begin_scope();                          // for-in scope（D）：仅 <iter>，循环全程存活
         const u32 loop_scope = cur_fn_ctx()->scope_depth_;
 
-        // 隐藏局部 <iter>：保留预占槽模型（与新 var 模型不同）--声明后显式 LOAD_NIL 预留 + mark_init，
-        // 再求值 iterable、取 iter 方法、调用、存槽、弹栈顶。字节码与原 clox 预占模型一致。
-        const auto iter_slot_opt = declare_local("<iter>");
-        if (!iter_slot_opt) {
-            if (iter_slot_opt.error() == ErrorCode::RedefinedVariable)
-                fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义局部: <iter>");
-            else
-                fail(ErrorCode::TooManyLocals, node->loc(), "局部变量过多(>65535)");
-        }
-        const u16 iter_slot = *iter_slot_opt;
-        cur_cu()->emit_op(OpCode::LOAD_NIL, line); // 显式预占槽（原在 declare_local 内）
-        cur_fn_ctx()->mark_initialized(iter_slot); // <iter> 在循环中被 LOAD_LOCAL 读取，须标 init 避免误报
-        emit_expr(node->iterable.get());           // [iterable]
+        // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无 STORE_LOCAL/POP）。
+        emit_expr(node->iterable.get());        // [iterable]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
         const auto iter_name = add_name("iter");
         if (!iter_name)
             fail(ErrorCode::CodeUnitTooLarge, node->loc(), "常量池溢出(>65535)");
         cur_cu()->emit_word(*iter_name, line); // [iter_fn]
         cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(0, line);                // [iter_obj]
-        cur_cu()->emit_store_local(iter_slot, line); // 槽 = iter_obj，留值
-        cur_cu()->emit_op(OpCode::POP, line);        // []
-
-        declare_pattern(node->pattern.get()); // 预留模式局部（id -> 槽）
+        cur_cu()->emit_byte(0, line); // [iter_obj] 恰在 slot 位置
+        const auto iter_slot_opt = declare_local("<iter>");
+        if (!iter_slot_opt) {
+            switch (iter_slot_opt.error()) {
+                case ErrorCode::RedefinedVariable:
+                    fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义局部: <iter>");
+                case ErrorCode::TooManyLocals:
+                    fail(ErrorCode::TooManyLocals, node->loc(), "局部变量过多(>65535)");
+                default:
+                    UNREACHABLE();
+            }
+        }
+        const u16 iter_slot = *iter_slot_opt;
+        cur_fn_ctx()->mark_initialized(iter_slot); // 值已在槽
 
         const u32 l_start = cur_cu()->size();
         cur_cu()->emit_load_local(iter_slot, line); // [iter]
@@ -545,6 +522,10 @@ namespace aria {
                                 .continue_fwd_patches = {},
                                 .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+
+        // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
+        // 若为 block 则自带更深层 scope；break/continue 跳出时由 pop_locals_to(loop_scope) 代弹。
+        begin_scope();
         cur_cu()->emit_load_local(iter_slot, line); // [iter]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
         const auto next_name = add_name("next");
@@ -552,9 +533,11 @@ namespace aria {
             fail(ErrorCode::CodeUnitTooLarge, node->loc(), "常量池溢出(>65535)");
         cur_cu()->emit_word(*next_name, line); // [next_fn]
         cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(0, line);      // [value]
-        bind_pattern(node->pattern.get()); // id: STORE_LOCAL+POP / _: POP
+        cur_cu()->emit_byte(0, line);      // [value] 恰在 slot 位置
+        bind_pattern(node->pattern.get()); // id: declare 值填槽（不发指令）/ _: POP 丢弃
         emit_stmt(node->body.get());
+        end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
+
         auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
         cur_fn_ctx()->loop_stack_.pop_back();
 
@@ -566,7 +549,7 @@ namespace aria {
             if (!cur_cu()->patch_jump(bp))
                 fail(ErrorCode::CodeUnitTooLarge, node->loc(), "跳转偏移超过 64KB");
         }
-        end_scope(line);
+        end_scope(line); // for-in：POP_N 弹 <iter>
     }
 
     void CodeGen::visitBreakStmtNode(BreakStmtNode* node) {
@@ -675,17 +658,21 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
                 cur_cu()->emit_word(*name_idx, line);
             } else {
-                // 嵌套 var -> 局部（新模型：declare 仅登记标未初始化；初始化器值恰好压在 slot 即该局部，
+                // 嵌套 var -> 局部（值填槽：declare 仅登记标未初始化；初始化器值恰好压在 slot 即该局部，
                 // 无 store/pop；无初始化器则 LOAD_NIL 填槽。最后 mark_initialized）
                 const auto slot = declare_local(id->name);
                 if (!slot) {
-                    if (slot.error() == ErrorCode::RedefinedVariable)
-                        fail(ErrorCode::RedefinedVariable, id->loc(), "重复定义局部: {}", id->name);
-                    else
-                        fail(ErrorCode::TooManyLocals, id->loc(), "局部变量过多(>65535)");
+                    switch (slot.error()) {
+                        case ErrorCode::RedefinedVariable:
+                            fail(ErrorCode::RedefinedVariable, id->loc(), "重复定义局部变量: {}", id->name);
+                        case ErrorCode::TooManyLocals:
+                            fail(ErrorCode::TooManyLocals, id->loc(), "局部变量过多(>65535)");
+                        default:
+                            UNREACHABLE();
+                    }
                 }
                 if (b.initializer != nullptr) {
-                    emit_expr(b.initializer.get()); // 值恰好压在 slot（新不变式：declare 与 init 相邻）
+                    emit_expr(b.initializer.get()); // 值恰好压在 slot（不变式：declare 与 init 相邻）
                 } else {
                     cur_cu()->emit_op(OpCode::LOAD_NIL, id->loc_line()); // 无初始化器：nil 填槽
                 }
@@ -942,7 +929,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode* node) {
-        // 独立出现（非经 declare_pattern/bind_pattern 调用）：无独立语义，不发射。
+        // 独立出现（非经 bind_pattern 调用）：无独立语义，不发射。
         (void) node;
     }
 

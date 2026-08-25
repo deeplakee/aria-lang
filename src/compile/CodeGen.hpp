@@ -214,6 +214,15 @@ namespace aria {
         [[nodiscard]]
         ResolvedVar resolve_name_or_fail(StringView name, const SourceLoc& loc);
 
+        // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
+        // 与上面 _or_fail 同一职责约定;patch_jump 无返回值,故本封装 void(仅翻译失败,无解包)。
+        void patch_jump_or_fail(usize off, const SourceLoc& loc) const;
+
+        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
+        // 同 patch_jump_or_fail:void 封装,仅翻译失败。比 patch_jump 多一个 line 参数--emit_jump_back
+        // 要发射 JUMP_BACK 指令(line 供其行号),而 patch_jump 只回填占位不发射,故无需 line。
+        void emit_jump_back_or_fail(u32 target, u32 line, const SourceLoc& loc) const;
+
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
         // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格，取代旧 slot+name_idx 双字段）。
         //   Local:   局部槽

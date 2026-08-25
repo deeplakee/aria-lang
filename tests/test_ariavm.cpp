@@ -28,6 +28,7 @@ using aria::ObjModule;
 using aria::ObjString;
 using aria::OpCode;
 using aria::Span;
+using aria::StringView;
 using aria::u16;
 using aria::u32;
 using aria::u8;
@@ -67,18 +68,28 @@ namespace {
         cu.emit_word(alias_idx, line);
     }
 
-    // 测试便利:M1 机制测试不关心模块归属,为每个函数造一个临时 "<script>" 模块
-    // (满足「函数必属某模块」不变式)。需要真实模块归属的测试用 aria::new_function 显式传模块。
-    // root_ 走 new_module 默认(当前工作目录,指针恒非空);run() 用其替换 source_roots_[0]。
-    ObjModule* make_module(GC& gc) {
-        return new_module(gc, new_string(gc, "<script>")); // root 缺省 -> cwd(失败时空串兜底)
+    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
+    // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根,调用方跨 GC 点持有
+    // m 须自行再守卫。默认 "<script>"(M1 机制测试不关心模块归属,临时模块;root_ 走 cwd,run() 替换
+    // source_roots_[0])。需要真实模块归属用 aria::new_function 显式传模块。
+    ObjModule* make_module(GC& gc, StringView name = "<script>") {
+        auto nm    = new_string(gc, name);
+        auto guard = gc.make_guard(nm);
+        return new_module(gc, nm); // root 缺省 -> cwd(失败时空串兜底)
+    }
+
+    // 显式源根版:intern + 守卫 name,先守 root 再 new_string(name),调 new_module(3-arg)。
+    ObjModule* make_module(GC& gc, StringView name, ObjString* root) {
+        auto guard = gc.make_guard(root); // root 先入根:下方 new_string(name) 可能 collect
+        auto nm    = new_string(gc, name);
+        guard.push(nm);
+        return new_module(gc, nm, root);
     }
 
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // 注:须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,
-    // 此时 name 仅为裸局部指针(无根)会被扫掉(原 4 参 aria::new_function 一进来就 guard name,
-    // 此重载多了一步 make_module 故须提前保 name)。name=nullptr -> `<script>`(入口单元统一名,
-    // ObjFunction ctor ASSERT name 非空)。
+    // 须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,此时 name 仅
+    // 为裸局部指针(无根)会被扫掉(aria::new_function 不再自守卫入参,故本重载全程自守 name+m)。
+    // name=nullptr -> `<script>`(入口单元统一名,ObjFunction ctor ASSERT name 非空)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         if (name == nullptr) {
             name = new_string(gc, "<script>");
@@ -89,11 +100,12 @@ namespace {
         return aria::new_function(gc, m, name, arity);
     }
 
-    // 指定模块的匿名入口单元(`<script>` 名,arity 0)。先 guard m 再 new_string,避免 new_string 的
-    // maybe_collect 回收未根持有的 m(aria::new_function 内部亦 guard m,但 new_string 在其之前)。
+    // 指定模块的匿名入口单元(`<script>` 名,arity 0)。工厂不再守卫入参,故先 guard m 再 new_string,
+    // 再 push name -- 避免 new_string 与 new_function 内 new_object 回收未根持有的 m 与 name。
     ObjFunction* new_script(GC& gc, ObjModule* m) {
         auto guard = gc.make_guard(m);
         auto name  = new_string(gc, "<script>");
+        guard.push(name);
         return aria::new_function(gc, m, name, 0);
     }
 
@@ -136,8 +148,8 @@ namespace {
     }
 
     // 造带源根的模块(name + root):name = 相对源根的路径,root = 所属源根目录(intern 的 ObjString*,非空)。
-    // 妥善处理临时根:name 先 intern,guard 后再让 new_module 内部 guard 两者(分配 new_object 顶部
-    // 的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 root(本函数内
+    // 妥善处理临时根:工厂不再替调用方守卫入参,故 name 先 intern 再 guard,root 亦 guard(分配 new_object
+    // 顶部的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 root(本函数内
     // new_string(name) 分配时 root 须已入根)。new_module 本身对 nullptr root 会默认 cwd,但本
     // 辅助的用例都需精确控制源根,故一律显式传 root。
     ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* root) {
@@ -493,8 +505,10 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
 
     auto& gc = vm.gc();
 
-    auto path = new_string(gc, "lib/utils");
-    auto m    = new_module(gc, path);
+    auto path       = new_string(gc, "lib/utils");
+    auto path_guard = gc.make_guard(path); // 工厂不再守卫入参:path 裸持跨 new_module 的 new_string(cwd)
+    auto m          = new_module(gc, path);
+    path_guard.push(m); // m 裸持跨下方 modules_.upsert 的 hash 分配
     // 入模块表(键=path,值=m)
     auto e   = vm.modules().upsert(Value::from_obj(path));
     e->value = Value::from_obj(m);
@@ -607,8 +621,8 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     const auto key_str = touch_aria(base, "lib/utils.aria");
     auto       key     = new_string(gc, key_str);
     root_guard.push(key);
-    auto m = new_module(gc, new_string(gc, "lib/utils"), root_ptr); // 目标:root=base, name=lib/utils
-    root_guard.push(m);                                             // 保 m 过 modules_.upsert 的 hash 分配
+    auto m = make_module(gc, "lib/utils", root_ptr); // 目标:root=base, name=lib/utils
+    root_guard.push(m);                              // 保 m 过 modules_.upsert 的 hash 分配
     m->set_state(ObjModule::ModuleState::Loading);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
@@ -665,7 +679,7 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     const auto key_str    = touch_aria(base, "lib/utils.aria");
     auto       key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto m = new_module(gc, new_string(gc, "lib/utils"), root_ptr);
+    auto m = make_module(gc, "lib/utils", root_ptr);
     root_guard.push(m);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
@@ -701,7 +715,7 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     const auto key_str = touch_aria(base, "lib/helper.aria");
     auto       key     = new_string(gc, key_str);
     root_guard.push(key);
-    auto helper = new_module(gc, new_string(gc, "lib/helper"), root_ptr);
+    auto helper = make_module(gc, "lib/helper", root_ptr);
     root_guard.push(helper);
     auto he   = vm.modules().upsert(Value::from_obj(key));
     he->value = Value::from_obj(helper);
@@ -744,7 +758,7 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
 
     auto key = new_string(gc, key_str);
     root_guard.push(key);
-    auto target = new_module(gc, new_string(gc, "lib/math"), stdlib_ptr); // 目标:root=stdlib, name=lib/math
+    auto target = make_module(gc, "lib/math", stdlib_ptr); // 目标:root=stdlib, name=lib/math
     root_guard.push(target);
     auto te   = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
@@ -778,7 +792,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     const auto key_str    = touch_aria(base, "lib/math.aria");
     auto       key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto m = new_module(gc, new_string(gc, "lib/math"), root_ptr);
+    auto m = make_module(gc, "lib/math", root_ptr);
     root_guard.push(m);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
@@ -813,7 +827,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     const auto key_str    = touch_aria(base, "lib/math.aria");
     auto       key        = new_string(gc, key_str);
     root_guard.push(key);
-    auto target = new_module(gc, new_string(gc, "lib/math"), root_ptr);
+    auto target = make_module(gc, "lib/math", root_ptr);
     root_guard.push(target);
     auto te   = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);

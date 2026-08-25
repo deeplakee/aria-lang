@@ -12,14 +12,48 @@ using aria::GC;
 using aria::new_function;
 using aria::new_module;
 using aria::new_string;
+using aria::ObjFunction;
 using aria::ObjModule;
+using aria::ObjString;
+using aria::StringView;
+using aria::u8;
 using aria::usize;
 using aria::Value;
 
+namespace {
+
+    // intern + 守卫 name,再调 new_module。工厂不再替调用方守卫入参,故本助手显式守卫 name 跨
+    // new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放)。
+    // 2 参(无 root):root 取 cwd。3 参:root 须由调用方传入(本助手先守 root 再 new_string(name))。
+    ObjModule* make_module(GC& gc, StringView name = "<script>") {
+        auto nm    = new_string(gc, name);
+        auto guard = gc.make_guard(nm);
+        return new_module(gc, nm);
+    }
+
+    ObjModule* make_module(GC& gc, StringView name, ObjString* root) {
+        auto guard = gc.make_guard(root); // root 先入根:下方 new_string(name) 可能 collect
+        auto nm    = new_string(gc, name);
+        guard.push(nm);
+        return new_module(gc, nm, root);
+    }
+
+    // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 new_function(aria::)。工厂不再守卫入参,
+    // 故本助手显式守卫 m 与 name。m 须在 new_string(name) 之前入根。
+    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+        auto guard = gc.make_guard(m);
+        auto nm    = new_string(gc, name);
+        guard.push(nm);
+        return new_function(gc, m, nm, arity);
+    }
+
+} // namespace
+
 TEST(ObjModule, Basics) {
     GC   gc;
-    auto name = new_string(gc, "lib/utils");
-    auto m    = new_module(gc, name);
+    auto name       = new_string(gc, "lib/utils");
+    auto name_guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto m          = new_module(gc, name);
     EXPECT_TRUE(aria::Object::is<ObjModule>(m));
     EXPECT_EQ(m->type(), aria::ObjType::MODULE);
     EXPECT_EQ(m->name(), name);                             // intern 同指针
@@ -30,9 +64,8 @@ TEST(ObjModule, Basics) {
 
 TEST(ObjModule, SetEntryAndState) {
     GC   gc;
-    auto m       = new_module(gc, new_string(gc, "m"));
-    auto m_guard = gc.make_guard(m); // 护 m 跨下方 new_string("<script>"):m 未根,new_string 可能 collect
-    auto fn      = new_function(gc, m, new_string(gc, "<script>"), 0); // body 属于 m(入口 <script> 名)
+    auto m  = make_module(gc, "m");
+    auto fn = make_function(gc, m, "<script>", 0); // body 属于 m(入口 <script> 名)
     m->set_entry(fn);
     EXPECT_EQ(m->entry(), fn);
     EXPECT_EQ(m->state(), ObjModule::ModuleState::Loading);
@@ -42,13 +75,13 @@ TEST(ObjModule, SetEntryAndState) {
 
 TEST(ObjModule, ToString) {
     GC   gc;
-    auto m = new_module(gc, new_string(gc, "lib/utils"));
+    auto m = make_module(gc, "lib/utils");
     EXPECT_EQ(m->to_string(), "<module lib/utils>");
 }
 
 TEST(ObjModule, GlobalsUpsert) {
     GC   gc;
-    auto m = new_module(gc, new_string(gc, "m"));
+    auto m = make_module(gc, "m");
     auto k = new_string(gc, "x");
     auto v = new_string(gc, "a long enough value string!!!");
     auto e = m->globals().upsert(Value::from_obj(k));
@@ -64,11 +97,12 @@ TEST(ObjModule, GlobalsUpsert) {
 // 三类子节点(name/body/g_key/g_val)存活。验证 trace 覆盖完整。
 TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
     GC   gc;
-    auto name  = new_string(gc, "lib/utils");
-    auto m     = new_module(gc, name);
-    auto guard = gc.make_guard(m); // 模块入临时根:collect -> mark_roots_ -> trace_gray_ -> m.trace
+    auto name       = new_string(gc, "lib/utils");
+    auto name_guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto m          = new_module(gc, name);
+    auto guard      = gc.make_guard(m); // 模块入临时根:collect -> mark_roots_ -> trace_gray_ -> m.trace
 
-    auto body  = new_function(gc, m, new_string(gc, "body"), 0); // body 属于 m
+    auto body  = make_function(gc, m, "body", 0); // body 属于 m
     auto g_key = new_string(gc, "g");
     auto g_val = new_string(gc, "a long global value string!!!");
     m->set_entry(body);
@@ -86,7 +120,7 @@ TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
 // 未根模块被 sweep 回收。
 TEST(ObjModule, UnrootedModuleSwept) {
     GC gc;
-    (void) new_module(gc, new_string(gc, "orphan"));
+    (void) make_module(gc, "orphan");
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -95,7 +129,7 @@ TEST(ObjModule, UnrootedModuleSwept) {
 // new_module 2 参重载时 root_ 取当前工作目录(指针恒非空),与 std::filesystem::current_path 一致。
 TEST(ObjModule, RootDefaultsToCwd) {
     GC   gc;
-    auto m = new_module(gc, new_string(gc, "lib/utils"));
+    auto m = make_module(gc, "lib/utils");
     ASSERT_NE(m->root(), nullptr);
     EXPECT_EQ(m->root()->view(), std::filesystem::current_path().string());
 }
@@ -104,7 +138,7 @@ TEST(ObjModule, RootDefaultsToCwd) {
 TEST(ObjModule, AbsPathComposesRootNameAria) {
     GC   gc;
     auto root = new_string(gc, "/proj");
-    auto m    = new_module(gc, new_string(gc, "lib/utils"), root);
+    auto m    = make_module(gc, "lib/utils", root);
     EXPECT_EQ(m->abs_path(), "/proj/lib/utils.aria");
 }
 
@@ -112,7 +146,7 @@ TEST(ObjModule, AbsPathComposesRootNameAria) {
 TEST(ObjModule, AbsPathForEmptyNameIsRoot) {
     GC   gc;
     auto root = new_string(gc, "/proj");
-    auto m    = new_module(gc, new_string(gc, ""), root);
+    auto m    = make_module(gc, "", root);
     EXPECT_EQ(m->abs_path(), "/proj");
 }
 
@@ -120,7 +154,7 @@ TEST(ObjModule, AbsPathForEmptyNameIsRoot) {
 TEST(ObjModule, ExplicitRootRespected) {
     GC   gc;
     auto root = new_string(gc, "/stdlib");
-    auto m    = new_module(gc, new_string(gc, "math"), root);
+    auto m    = make_module(gc, "math", root);
     EXPECT_EQ(m->root(), root);
     EXPECT_EQ(m->abs_path(), "/stdlib/math.aria");
 }

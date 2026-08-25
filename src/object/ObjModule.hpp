@@ -124,9 +124,9 @@ namespace aria {
     };
 
     // 工厂:分配 ObjModule 并置 Loading 态。root 为显式源根目录(指针须非空,构造期 ASSERT;内容
-    //        可空 -- 调用方若需「无源根 -> cwd 退化」语义用 2 参重载)。name 先入临时根,root 随后入根:
-    //        new_object 顶部 maybe_collect 可能回收未被根持有的串(intern 驻留池是 weak root,不保命),
-    //        与 new_function 同理。
+    //        可空 -- 调用方若需「无源根 -> cwd 退化」语义用 2 参重载)。工厂不替调用方守卫入参--本重载
+    //        只做一次 new_object、无内部新建对象,故**调用方须在调用前自行根化 name 与 root**(跨
+    //        new_object 顶 maybe_collect;intern 驻留池是 weak root,不保命),与 new_function 同理。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* root);
 
@@ -134,6 +134,8 @@ namespace aria {
     //        时以空串兜底(不 fatal:罕见、绝对源根 [1..] 仍可用、嵌入不应因 cwd 异常拖死宿主);空串经下游
     //        空值守卫干净拒绝 cwd 锚定(resolve_module 跳空根、abs_path 返空 -> 相对解析返 nullopt),比拿
     //        "." 碰运气更诚实。cwd 串经 new_string intern 驻留。委托 3 参重载建对象。
+    //        根化契约:name 是调用方入参,**调用方须根化**(下方 new_string(cwd) 与 new_object 均 GC);
+    //        root_str 是本函数内部新建,工厂自行守卫跨 new_object(「每方守自己创建的」)。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name);
 

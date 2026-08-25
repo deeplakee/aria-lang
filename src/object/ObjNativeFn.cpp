@@ -23,9 +23,8 @@ namespace aria {
     }
 
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn) {
-        // name 经 intern 驻留池是 weak root,new_object 顶部 maybe_collect 可能回收未被根持有的串,
-        // 故先入临时根(与 new_function / new_module 同理)。fn 为标量,无需入根。
-        auto guard = gc.make_guard(name);
+        // 工厂不替调用方守卫入参:本工厂只做一次 new_object、无内部新建对象,调用方须在调用前自行
+        // 根化 name(跨 new_object 顶 maybe_collect)。fn 为标量,无需入根。
         return gc.new_object<ObjNativeFn>(name, fn);
     }
 

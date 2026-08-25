@@ -12,21 +12,35 @@ using aria::new_string;
 using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
+using aria::StringView;
 using aria::u8;
 using aria::usize;
 using aria::Value;
 
 namespace {
 
-    // 测试便利:M1 机制测试不关心模块归属,为每个函数造一个临时 "<script>" 模块
-    // (满足「函数必属某模块」不变式)。需要真实模块归属的测试用 aria::new_function 显式传模块。
-    ObjModule* make_module(GC& gc) { return new_module(gc, new_string(gc, "<script>")); }
+    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
+    // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放),
+    // 调用方跨 GC 点持有 m 须自行再守卫。默认名 "<script>"(M1 机制测试不关心模块归属,临时模块)。
+    ObjModule* make_module(GC& gc, StringView name = "<script>") {
+        auto nm    = new_string(gc, name);
+        auto guard = gc.make_guard(nm);
+        return new_module(gc, nm);
+    }
+
+    // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 aria::new_function。工厂不再守卫入参,
+    // 故本助手显式守卫 m 与 name。m 须在 new_string(name) 之前入根(name 分配可能 collect 回收 m)。
+    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+        auto guard = gc.make_guard(m);
+        auto nm    = new_string(gc, name);
+        guard.push(nm);
+        return aria::new_function(gc, m, nm, arity);
+    }
 
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // 注:须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,
-    // 此时 name 仅为裸局部指针(无根)会被扫掉(原 4 参 aria::new_function 一进来就 guard name,
-    // 此重载多了一步 make_module 故须提前保 name)。name=nullptr -> `<script>`(入口单元统一名,
-    // ObjFunction ctor ASSERT name 非空)。
+    // 须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,此时 name 仅
+    // 为裸局部指针(无根)会被扫掉(aria::new_function 不再自守卫入参,故本重载全程自守 name+m)。
+    // name=nullptr -> `<script>`(入口单元统一名,ObjFunction ctor ASSERT name 非空)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         if (name == nullptr) {
             name = new_string(gc, "<script>");
@@ -115,8 +129,8 @@ TEST(ObjFunction, SweptAfterGuardReleased) {
 // module_ 回指:构造时传入模块,不可变、非空。
 TEST(ObjFunction, ModuleBackref) {
     GC   gc;
-    auto m  = new_module(gc, new_string(gc, "lib/utils"));
-    auto fn = aria::new_function(gc, m, new_string(gc, "f"), 0);
+    auto m  = make_module(gc, "lib/utils");
+    auto fn = make_function(gc, m, "f", 0);
     EXPECT_EQ(fn->module(), m); // 构造时确定
 }
 
@@ -124,9 +138,9 @@ TEST(ObjFunction, ModuleBackref) {
 // 验证 module <-> entry 环不影响 mark-sweep(module_ 不被根,仅经 fn.trace 可达)。
 TEST(ObjFunction, TraceMarksModule) {
     GC          gc;
-    auto        m  = new_module(gc, new_string(gc, "lib/utils"));       // 模块不单独根
-    auto        fn = aria::new_function(gc, m, new_string(gc, "f"), 0); // m 经 new_function 内部 guard 存活至 fn 入根
-    auto        guard  = gc.make_guard(fn);                             // 仅根 fn:m 须经 fn.trace(module_) 存活
+    auto        m      = make_module(gc, "lib/utils"); // 模块不单独根
+    auto        fn     = make_function(gc, m, "f", 0); // m 经 make_function 内部 guard 存活至 fn 入根
+    auto        guard  = gc.make_guard(fn);            // 仅根 fn:m 须经 fn.trace(module_) 存活
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_EQ(gc.bytes_allocated(), before); // m + m->name_ 经 fn.trace 存活

@@ -82,9 +82,10 @@ namespace aria {
         u8         arity_;
     };
 
-    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。
-    //        module 与 name 先入临时根:new_object 顶部 maybe_collect 可能回收未被根持有的两者
-    //        (module 调用方可能尚未入 VM 模块表;name 经 intern 驻留池是 weak root,皆不保命)。
+    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。工厂不替调用方守卫入参--module 与 name 经
+    //        intern/模块表皆是 weak root,new_object 顶部 maybe_collect 可能回收未被根持有的两者,
+    //        但工厂只做一次 new_object、无内部新建对象,故**调用方须在调用前自行根化 module 与 name**
+    //        (跨 new_object)。即「每方只守卫自己创建的对象」:工厂不创建入参,不守卫。
     [[nodiscard]]
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity);
 

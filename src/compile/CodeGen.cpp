@@ -57,9 +57,11 @@ namespace aria {
 
     // 建模块入口函数（arity 0、名 `<script>`）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、游标就位），
     // 返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）；ModuleCtx 构造期 ASSERT entry 非空
-    // （此处先 set_entry）。`<script>` 串裸持跨到 new_function:其间无分配,new_function 内部 guard name,故安全。
+    // （此处先 set_entry）。工厂不再替调用方守卫入参,故 `<script>` 名须显式 make_guard 跨 new_function 的 new_object。
     ObjFunction* CodeGen::init_module(ObjModule& module) {
-        const auto entry = new_function(gc_, &module, new_string(gc_, kScriptName), 0);
+        const auto name  = new_string(gc_, kScriptName);
+        auto       guard = gc_.make_guard(name);
+        const auto entry = new_function(gc_, &module, name, 0);
         module.set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
         return entry;
@@ -307,6 +309,8 @@ namespace aria {
         }
 
         // name 恒非空(ObjFunction 模型统一):具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`。
+        // 入参根化:module_ 经 compile() 的 module_guard、name 经 visit 层 name_guard(visitFunDeclNode/
+        // visitLambdaExprNode,作用域包住 compile_function)--工厂不再自守卫,故二者调用前已根化。
         const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
         // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
         // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。

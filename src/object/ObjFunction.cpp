@@ -26,10 +26,9 @@ namespace aria {
     }
 
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity) {
-        // module 与 name 皆可能未被根持有:module 调用方可能尚未入 VM 模块表,name 经 intern
-        // 是 weak root。new_object 顶部 maybe_collect 可能回收二者,故先入临时根。
-        auto guard = gc.make_guard(module);
-        guard.push(name);
+        // 工厂不替调用方守卫入参:module 与 name 经 intern/模块表皆是 weak root,但本工厂只做一次
+        // new_object、无内部新建对象,故调用方须在调用前自行根化 module 与 name(跨 new_object 顶
+        // maybe_collect)。调用方裸持 fresh 对象直接传入是 bug,需 make_guard。
         return gc.new_object<ObjFunction>(gc, module, name, arity);
     }
 

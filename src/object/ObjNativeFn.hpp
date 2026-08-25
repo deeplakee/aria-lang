@@ -100,8 +100,9 @@ namespace aria {
         NativeFn   fn_;
     };
 
-    // 工厂:分配 ObjNativeFn。name 经 intern 是 weak root,new_object 顶部 maybe_collect
-    //   可能回收,故先入临时根(与 new_function 同理)。fn 是标量,无需入根。
+    // 工厂:分配 ObjNativeFn。工厂不替调用方守卫入参--name 经 intern 是 weak root,new_object 顶
+    //   maybe_collect 可能回收,但工厂只做一次 new_object、无内部新建对象,故**调用方须在调用前自行
+    //   根化 name**(跨 new_object),与 new_function 同理。fn 是标量,无需入根。
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn);
 

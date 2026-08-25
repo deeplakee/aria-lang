@@ -48,16 +48,17 @@ namespace aria {
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* root) {
-        auto guard = gc.make_guard(name); // name 先入临时根:下方 new_object 顶 maybe_collect 可能回收
-        guard.push(root);                 // root 随后入根(intern 驻留池是 weak root,不保命)
+        // 工厂不替调用方守卫入参:本重载只做一次 new_object、无内部新建对象,调用方须在调用前自行
+        // 根化 name 与 root(跨 new_object 顶 maybe_collect)。
         return gc.new_object<ObjModule>(gc, name, root);
     }
 
     ObjModule* new_module(GC& gc, ObjString* name) {
-        auto guard = gc.make_guard(name); // 先保 name:下方 new_string(cwd) 可能 collect
+        // 调用方须保证 name 在本调用期间已根化:下方 new_string(cwd) 与最终 new_object 均 GC。
+        // root_str 是本函数内部新建、调用方看不到,故自行守卫跨下方 new_object(工厂守「自己创建的」)。
         // cwd 不可用时以空串兜底(不 fatal,见头注释):下游空值守卫拒绝 cwd 锚定。cwd 串经 intern 驻留。
         ObjString* root_str = new_string(gc, fs::current_dir().value_or(""));
-        // 委托 3 参重载:本函数 guard 析构前 root_str 仍受保护,且 3 参重载内再 guard(name+root)。
+        auto       guard    = gc.make_guard(root_str);
         return new_module(gc, name, root_str);
     }
 

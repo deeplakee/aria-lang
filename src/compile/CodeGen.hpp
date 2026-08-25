@@ -43,8 +43,9 @@
 //   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
 //   入池即经 module 根链可达。new_object -> add_constant 间走 trivial 分配(constants.push ->
 //   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。真 GC 触发点
-//   (new_object 顶部 maybe_collect)的守卫：new_function/new_native_fn/new_module 工厂内部 Guard
-//   保护其 module/name 入参；visitFunDeclNode/visitVarDeclNode/visitImportStmtNode 的 name_str 跨
+//   (new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
+//   调用方守卫入参(「每方只守自己创建的」,工厂不创建入参),故调用方须自行 make_guard 根化传入的
+//   module/name 入参；visitFunDeclNode/visitVarDeclNode/visitImportStmtNode 的 name_str 跨
 //   compile_function/emit_expr/new_string 由 make_guard 根化。
 
 #include "bytecode/code.hpp"

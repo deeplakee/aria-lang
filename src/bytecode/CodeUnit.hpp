@@ -73,7 +73,7 @@ namespace aria {
         bool patch_jump(usize off);
         // 后向:emit JUMP_BACK + (here_after_operand - target);越界(反向/超 64KB)emit 占位 word 0 后返 false。
         bool emit_jump_back(u32 target, u32 line);
-        // 局部槽 load/store:slot<256 用短变体(LOAD/STORE_LOCAL + u8),否则长变体(_L + u16)。
+        // 局部槽 load/store:slot<=255 用短变体(LOAD/STORE_LOCAL + u8),否则长变体(_L + u16)。
         void emit_load_local(u16 slot, u32 line);
         void emit_store_local(u16 slot, u32 line);
 

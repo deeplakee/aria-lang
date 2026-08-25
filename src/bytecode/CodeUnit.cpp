@@ -5,6 +5,19 @@
 
 namespace aria {
 
+    namespace {
+        // 操作数位宽决定的编码上限(u8 操作数最大 255,u16 操作数最大 65535):
+        //   kMaxPopChunk       -- POP_N 单块最多 255(操作数 u8);
+        //   kMaxShortLocalSlot -- 局部槽短变体(LOAD/STORE_LOCAL + u8)最大槽号 255,超过则用长变体(_L + u16);
+        //   kMaxJumpOffset     -- 跳转偏移最大 65535(操作数 u16,前向 patch/后向 jump_back 共用);
+        //   kMaxConstantCount  -- 常量池最多 65536 项(u16 索引 0..65535).
+        // 集中定义,使各编码点共享同一来源,无散落魔数。
+        constexpr u32 kMaxPopChunk       = 255;
+        constexpr u32 kMaxShortLocalSlot = 255;
+        constexpr u32 kMaxJumpOffset     = 65535;
+        constexpr u32 kMaxConstantCount  = 65536;
+    } // namespace
+
     CodeUnit::CodeUnit(GC* gc) noexcept : code{gc}, constants{gc}, lines{gc}, try_records{gc} {}
 
     // ---- emit ----
@@ -26,7 +39,7 @@ namespace aria {
 
     void CodeUnit::emit_pop_n(const u32 count, const u32 line) {
         for (u32 remaining = count; remaining > 0;) {
-            const u8 chunk = remaining > 255 ? 255 : static_cast<u8>(remaining);
+            const u8 chunk = remaining > kMaxPopChunk ? kMaxPopChunk : static_cast<u8>(remaining);
             // chunk==1 时发 POP(1B) 而非 POP_N 1(2B): 省一字节 + 免读操作数, 与
             // emit_load_local/emit_store_local 的短/长变体分流同思路; POP_N 1 与 POP 栈效应等价。
             if (chunk == 1) {
@@ -49,7 +62,7 @@ namespace aria {
     bool CodeUnit::patch_jump(const usize off) {
         const u32 target = size();
         const u32 diff   = target - (static_cast<u32>(off) + 2);
-        if (diff > 65535) {
+        if (diff > kMaxJumpOffset) {
             return false; // 越界,交调用方翻译为 Error
         }
         code[off]     = static_cast<u8>(diff & 0xFF);
@@ -61,7 +74,7 @@ namespace aria {
         emit_op(OpCode::JUMP_BACK, line);
         const u32 off   = size();
         const u32 after = off + 2; // ip 读完操作数后
-        if (after < target || after - target > 65535) {
+        if (after < target || after - target > kMaxJumpOffset) {
             emit_word(0, line); // 占位,保持 code 长度一致
             return false;
         }
@@ -70,7 +83,7 @@ namespace aria {
     }
 
     void CodeUnit::emit_load_local(const u16 slot, const u32 line) {
-        if (slot < 256) {
+        if (slot <= kMaxShortLocalSlot) {
             emit_op(OpCode::LOAD_LOCAL, line);
             emit_byte(static_cast<u8>(slot), line);
         } else {
@@ -80,7 +93,7 @@ namespace aria {
     }
 
     void CodeUnit::emit_store_local(const u16 slot, const u32 line) {
-        if (slot < 256) {
+        if (slot <= kMaxShortLocalSlot) {
             emit_op(OpCode::STORE_LOCAL, line);
             emit_byte(static_cast<u8>(slot), line);
         } else {
@@ -92,7 +105,7 @@ namespace aria {
     // ---- 常量池 ----
 
     u16 CodeUnit::add_constant(const Value value) {
-        ASSERT(constants.size() < 65536, "constant pool overflow (>65535 constants)");
+        ASSERT(constants.size() < kMaxConstantCount, "constant pool overflow (>65535 constants)");
         const auto idx = static_cast<u16>(constants.size());
         constants.push(value);
         return idx;

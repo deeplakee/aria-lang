@@ -502,7 +502,7 @@ namespace aria {
                                 .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
-        auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
+        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
         cur_fn_ctx()->loop_stack_.pop_back();
 
         const u32 l_incr = cur_cu()->size();
@@ -572,7 +572,7 @@ namespace aria {
         emit_stmt(node->body.get());
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 
-        auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
+        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
         cur_fn_ctx()->loop_stack_.pop_back();
 
         emit_jump_back_or_fail(l_start, line, node->loc());

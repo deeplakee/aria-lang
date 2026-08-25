@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include "bytecode/CodeUnit.hpp"
@@ -456,6 +457,21 @@ TEST(CodeGen, ErrContinueOutsideLoop) {
     auto c = compile_only("continue;");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::ContinueOutsideLoop);
+}
+
+// 形参 > 255(arity u8 上限) -> TooManyParameters（区别于体局部超限 TooManyLocals）。
+TEST(CodeGen, ErrTooManyParameters) {
+    std::string src = "fun f(";
+    for (int i = 0; i < 256; ++i) {
+        src += "p" + std::to_string(i);
+        if (i + 1 < 256) {
+            src += ", ";
+        }
+    }
+    src += ") { return 0; }";
+    auto c = compile_only(src);
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::TooManyParameters);
 }
 
 TEST(CodeGen, ErrInvalidAssignmentTarget) {

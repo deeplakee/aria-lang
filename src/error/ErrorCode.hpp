@@ -95,14 +95,15 @@ namespace aria {
         InvalidState,    // VM 处于非法内部状态
 
         // ========= RESOURCE ERROR（资源 / 环境）=========
-        OutOfMemory,      // GC 分配失败
-        FileReadFailed,   // 源码/模块文件读取失败（映射自 fs::FsErrCode）
-        ModuleNotFound,   // import 的模块不存在
-        CodeUnitTooLarge, // 常量/指令数超限
-        TooManyLocals,    // 局部变量数超限
-        TooManyArguments, // 单次调用实参数超限（CALL 操作数 u8 上限 255）
-        TooManyUpvalues,  // upvalue 数超限
-        SourceTooLarge,   // 单个源文件过大
+        OutOfMemory,       // GC 分配失败
+        FileReadFailed,    // 源码/模块文件读取失败（映射自 fs::FsErrCode）
+        ModuleNotFound,    // import 的模块不存在
+        CodeUnitTooLarge,  // 常量/指令数超限
+        TooManyLocals,     // 局部变量数超限
+        TooManyArguments,  // 单次调用实参数超限（CALL 操作数 u8 上限 255）
+        TooManyParameters, // 函数形参数超限（arity u8 上限 255）
+        TooManyUpvalues,   // upvalue 数超限
+        SourceTooLarge,    // 单个源文件过大
     };
 
     using ErrCode = ErrorCode;
@@ -251,6 +252,8 @@ namespace aria {
                 return "TooManyLocals";
             case ErrorCode::TooManyArguments:
                 return "TooManyArguments";
+            case ErrorCode::TooManyParameters:
+                return "TooManyParameters";
             case ErrorCode::TooManyUpvalues:
                 return "TooManyUpvalues";
             case ErrorCode::SourceTooLarge:
@@ -333,6 +336,7 @@ namespace aria {
             case ErrorCode::CodeUnitTooLarge:
             case ErrorCode::TooManyLocals:
             case ErrorCode::TooManyArguments:
+            case ErrorCode::TooManyParameters:
             case ErrorCode::TooManyUpvalues:
             case ErrorCode::SourceTooLarge:
                 return ErrorCategory::Resource;

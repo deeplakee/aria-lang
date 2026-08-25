@@ -14,11 +14,22 @@ namespace aria {
 
     namespace {
         // 合成函数名(`<>` 是标识符中不可用的符号,故不可能与用户具名 fun 冲突):
-        //   kScriptName   -- 模块入口函数名(`<script>`);
+        //   kScriptName    -- 模块入口函数名(`<script>`);
         //   kAnonymousName -- lambda 函数名(`<anonymous>`),compile_function 据此判定「lambda -> 留栈不绑定」。
         // 集中定义,使 visitLambdaExprNode 的创建点与 compile_function 的判定点不致漂移。
         constexpr StringView kScriptName    = "<script>";
         constexpr StringView kAnonymousName = "<anonymous>";
+
+        // 容量上限(均由操作数/索引位宽决定;值为该位宽最大值,越界判定统一用 > 比较):
+        //   kMaxArity     -- 函数形参上限 255(ObjFunction arity 为 u8);
+        //   kMaxArguments -- 单次调用实参上限 255(CALL 操作数 u8);
+        //   kMaxConstants -- 常量池最大索引 65535(u16 索引,即最多 65536 项);
+        //   kMaxLocals    -- 单函数局部最大槽号 65535(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
+        // 集中定义,使各检查点与报错文案共享同一来源,无散落魔数。
+        constexpr u32 kMaxArity     = 255;
+        constexpr u32 kMaxArguments = 255;
+        constexpr u32 kMaxConstants = 65535;
+        constexpr u32 kMaxLocals    = 65535;
     } // namespace
 
     // ============================================================
@@ -77,7 +88,7 @@ namespace aria {
     // ============================================================
 
     Opt<u16> CodeGen::add_constant(const Value v) const {
-        if (cur_cu()->constants.size() >= 65536) {
+        if (cur_cu()->constants.size() > kMaxConstants) {
             return std::nullopt;
         }
         return cur_cu()->add_constant(v);
@@ -99,7 +110,7 @@ namespace aria {
         if (cur_fn_ctx()->is_defined_in_scope(name)) {
             return std::unexpected(ErrorCode::RedefinedVariable);
         }
-        if (cur_fn_ctx()->locals_.size() >= 65536) {
+        if (cur_fn_ctx()->locals_.size() > kMaxLocals) {
             return std::unexpected(ErrorCode::TooManyLocals);
         }
         return cur_fn_ctx()->add_local(name); // 纯登记，is_initialized 默认 false
@@ -152,14 +163,14 @@ namespace aria {
         if (const auto idx = add_constant(value)) {
             return *idx;
         }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>65535)");
+        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
     }
 
     u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc& loc) const {
         if (const auto idx = add_name(name)) {
             return *idx;
         }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>65535)");
+        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
     }
 
     u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc& loc) const {
@@ -171,7 +182,7 @@ namespace aria {
             case ErrorCode::RedefinedVariable:
                 fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
             case ErrorCode::TooManyLocals:
-                fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>65535)");
+                fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>{})", kMaxLocals);
             default:
                 UNREACHABLE();
         }
@@ -181,7 +192,7 @@ namespace aria {
         if (const auto resolved = resolve_name(name)) {
             return *resolved;
         }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>65535)"); // add_name 溢出透传
+        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants); // add_name 溢出透传
     }
 
     // ============================================================
@@ -290,8 +301,9 @@ namespace aria {
         const SourceLoc loc  = body->loc();
         const u32       line = body->loc_line(); // 父序列压函数值 / 绑定 / 隐式 return 均用此行
 
-        if (params.size() > 255) {
-            fail(ErrorCode::TooManyLocals, loc, "形参过多(>255)");
+        // 形参上限 kMaxArity(arity u8):超限 -> TooManyParameters(形参语义,区别于 TooManyLocals 的体局部超限)。
+        if (params.size() > kMaxArity) {
+            fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
         }
 
         // 默认参数 / varargs -> not_impl（VM CALL 精确 arity，无默认/varargs 支持）。
@@ -345,11 +357,12 @@ namespace aria {
 
         // 切到子函数上下文：new 分配（非 UPtr），enclosing_ 回父（父函数编译期长于子，裸指针稳定）。
         // 摆动 ModuleCtx 游标即可--cu 由游标派生，随游标自动切到子 unit，无需 save/restore。
-        auto child                = new FunctionCtx{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
+        const auto child          = new FunctionCtx{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& p: params) {
-            cur_fn_ctx()->add_local(p.name); // caller 压栈，登记但不预留（不 emit LOAD_NIL）
-            cur_fn_ctx()->mark_initialized(static_cast<u16>(cur_fn_ctx()->locals_.size() - 1)); // 形参已初始化
+            // 这里没有采取任何检查，因为函数参数是函数的前n个局部变量
+            const auto slot = cur_fn_ctx()->add_local(p.name);
+            cur_fn_ctx()->mark_initialized(slot);
         }
 
         // 编译体（BlockNode 自带 scope）。
@@ -870,9 +883,9 @@ namespace aria {
 
     void CodeGen::visitCallNode(CallNode* node) {
         const u32 line = node->loc_line();
-        // 实参上限 255（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
-        if (node->args.size() > 255) {
-            fail(ErrorCode::TooManyArguments, node->loc(), "实参数超过 255");
+        // 实参上限 kMaxArguments（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
+        if (node->args.size() > kMaxArguments) {
+            fail(ErrorCode::TooManyArguments, node->loc(), "实参数超过 {}", kMaxArguments);
         }
         emit_expr(node->callee.get());
         for (auto& arg: node->args) {

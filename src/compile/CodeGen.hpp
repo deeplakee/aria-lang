@@ -197,6 +197,22 @@ namespace aria {
         // Global 分支 add_name 可能溢出 -> 透传 CodeUnitTooLarge，调用处检查后用节点 loc 显式 fail（本方法不持 loc）。
         Result<ResolvedVar, ErrorCode> resolve_name(StringView name);
 
+        // --- 失败翻译层（visit 层便利）---
+        // 薄封装层（add_constant/add_name/declare_local/resolve_name）只做操作 + 失败信号、不持 loc；以下在
+        // visit 层（有节点 loc）调用：失败即 fail（[[noreturn]]，之后值恒有效）并返回解包值，把重复的
+        // 「检查 + fail + 解引用」收敛为一行。loc/message 由本层据节点 loc 显式构造，与薄封装层同一职责约定。
+        [[nodiscard]]
+        u16 add_constant_or_fail(Value value, const SourceLoc& loc) const;
+
+        [[nodiscard]]
+        u16 add_name_or_fail(StringView name, const SourceLoc& loc) const;
+
+        [[nodiscard]]
+        u16 declare_local_or_fail(StringView name, const SourceLoc& loc) const;
+
+        [[nodiscard]]
+        ResolvedVar resolve_name_or_fail(StringView name, const SourceLoc& loc);
+
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
         // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格，取代旧 slot+name_idx 双字段）。
         //   Local:   局部槽
@@ -221,7 +237,7 @@ namespace aria {
 
         // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
         // 仅做检查并报错，不发射。
-        void check_local_initialized(u16 slot, const SourceLoc& loc);
+        void check_local_initialized(u16 slot, const SourceLoc& loc) const;
 
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
@@ -242,7 +258,7 @@ namespace aria {
         // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result）---
         template<typename... Args>
         [[noreturn]]
-        void fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args);
+        void fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const;
 
         [[noreturn]]
         void not_impl(ASTNode* node, StringView feature); // throw AriaCompileException(NotImplemented, loc, ...)
@@ -253,7 +269,7 @@ namespace aria {
     // ------------------------------------------------------------
     template<typename... Args>
     [[noreturn]]
-    void CodeGen::fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) {
+    void CodeGen::fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const {
         throw AriaCompileException{Error{code, loc, std::format(fmt, std::forward<Args>(args)...)}};
     }
 

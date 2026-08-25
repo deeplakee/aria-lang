@@ -12,6 +12,15 @@
 
 namespace aria {
 
+    namespace {
+        // 合成函数名(`<>` 是标识符中不可用的符号,故不可能与用户具名 fun 冲突):
+        //   kScriptName   -- 模块入口函数名(`<script>`);
+        //   kAnonymousName -- lambda 函数名(`<anonymous>`),compile_function 据此判定「lambda -> 留栈不绑定」。
+        // 集中定义,使 visitLambdaExprNode 的创建点与 compile_function 的判定点不致漂移。
+        constexpr StringView kScriptName    = "<script>";
+        constexpr StringView kAnonymousName = "<anonymous>";
+    } // namespace
+
     // ============================================================
     // 入口
     // ============================================================
@@ -46,11 +55,11 @@ namespace aria {
         return entry;
     }
 
-    // 建模块入口函数（arity 0、匿名 <script>）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、游标就位），
+    // 建模块入口函数（arity 0、名 `<script>`）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、游标就位），
     // 返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）；ModuleCtx 构造期 ASSERT entry 非空
-    // （此处先 set_entry）。
+    // （此处先 set_entry）。`<script>` 串裸持跨到 new_function:其间无分配,new_function 内部 guard name,故安全。
     ObjFunction* CodeGen::init_module(ObjModule& module) {
-        const auto entry = new_function(gc_, &module, nullptr, 0);
+        const auto entry = new_function(gc_, &module, new_string(gc_, kScriptName), 0);
         module.set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
         return entry;
@@ -297,6 +306,7 @@ namespace aria {
             }
         }
 
+        // name 恒非空(ObjFunction 模型统一):具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`。
         const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
         // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
         // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。
@@ -304,28 +314,27 @@ namespace aria {
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc); // 入父（当前）序列常量池
 
         // 父序列：压函数值 + 绑定名字（仍发射入父 unit = 当前 cur_cu()）。
-        if (name != nullptr) {
-            if (mod_ctx_->is_global_scope()) {
-                // 顶层 fun -> 模块全局（name 已是 intern ObjString*，declare_global 按内容判重）
-                if (!mod_ctx_->declare_global(name->view())) {
-                    fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name->view());
-                }
-                cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-                cur_cu()->emit_word(fn_idx, line);
-                const auto name_idx = add_constant_or_fail(Value::from_obj(name), loc);
-                cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-                cur_cu()->emit_word(name_idx, line);
-            } else {
-                // 嵌套 fun -> 局部（值填槽：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部）
-                const auto slot = declare_local_or_fail(name->view(), loc);
-                cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-                cur_cu()->emit_word(fn_idx, line); // fn 恰好压在 slot（不变式：declare 与 init 相邻）
-                cur_fn_ctx()->mark_initialized(slot);
-            }
-        } else {
-            // lambda：函数值留栈作表达式值
+        // name == `<anonymous>` -> lambda:函数值留栈作表达式值,不绑定名字(`<<>` 标识符不可用,
+        // 仅 visitLambdaExprNode 产生此名,故 name 即 lambda 判据);否则具名 fun -> 模块全局或局部。
+        if (name->view() == kAnonymousName) {
             cur_cu()->emit_op(OpCode::LOAD_CONST, line);
             cur_cu()->emit_word(fn_idx, line);
+        } else if (mod_ctx_->is_global_scope()) {
+            // 顶层 fun -> 模块全局（name 已是 intern ObjString*，declare_global 按内容判重）
+            if (!mod_ctx_->declare_global(name->view())) {
+                fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name->view());
+            }
+            cur_cu()->emit_op(OpCode::LOAD_CONST, line);
+            cur_cu()->emit_word(fn_idx, line);
+            const auto name_idx = add_constant_or_fail(Value::from_obj(name), loc);
+            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
+            cur_cu()->emit_word(name_idx, line);
+        } else {
+            // 嵌套 fun -> 局部（值填槽：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部）
+            const auto slot = declare_local_or_fail(name->view(), loc);
+            cur_cu()->emit_op(OpCode::LOAD_CONST, line);
+            cur_cu()->emit_word(fn_idx, line); // fn 恰好压在 slot（不变式：declare 与 init 相邻）
+            cur_fn_ctx()->mark_initialized(slot);
         }
 
         // 切到子函数上下文：new 分配（非 UPtr），enclosing_ 回父（父函数编译期长于子，裸指针稳定）。
@@ -614,7 +623,7 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode* node) { not_impl(node, "match 语句"); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
-        auto name_str = new_string(gc_, node->name); // intern
+        const auto name_str = new_string(gc_, node->name); // intern
         // name_str 裸持跨 compile_function（其内 new_function 与函数体编译均可能 new_string ->
         // maybe_collect 回收未根持有的 name_str），故先入临时根。
         auto name_guard = gc_.make_guard(name_str);
@@ -891,7 +900,13 @@ namespace aria {
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode* node) {
-        compile_function(nullptr, node->params, node->body.get());
+        // lambda 名 `<anonymous>`（`<>` 标识符不可用,具独特辨识度);compile_function 据名 == `<anonymous>`
+        // 判定 lambda -> 函数值留栈不绑定名字。name_str 裸持跨 compile_function（其内 new_function 与
+        // 函数体编译均可能 new_string -> maybe_collect 回收未根持有的 name_str），故先入临时根
+        // （与 visitFunDeclNode 同一 GC 纪律）。
+        const auto name_str   = new_string(gc_, kAnonymousName);
+        auto       name_guard = gc_.make_guard(name_str);
+        compile_function(name_str, node->params, node->body.get());
     }
 
     void CodeGen::visitMatchExprNode(MatchExprNode* node) { not_impl(node, "match 表达式"); }

@@ -20,8 +20,9 @@ namespace aria {
     //     (模块体与其内嵌套函数同属一模块;入口脚本本身也是一个模块)。VM 据此定位「当前模块
     //     globals」(LOAD/STORE/DEF_GLOBAL 查 frame.module->globals(),module_ 经 CallFrame.module
     //     缓存)。ctor 断言非空,杜绝「无模块函数」。
-    //   - name_:ObjString*(经 intern 驻留,同名同指针;可为 nullptr,表示模块顶层
-    //     匿名单元,to_string 渲染 `<script>`)。
+    //   - name_:ObjString*(经 intern 驻留,同名同指针;恒非空)。模块入口函数名 `<script>`、
+    //     lambda 名 `<anonymous>`(`<>` 是正常标识符中不可用的符号,具独特辨识度);具名函数为
+    //     其声明名。统一模型:每个函数都有名字,ctor ASSERT 非空。to_string 渲染 `<fn name>`。
     //   - arity_:参数个数(u8,上限 255;编译期编译器保证不越界)。
     //
     //   地址哈希型可变对象(走 Object{Kind} ctor);equals 保持默认地址相等--
@@ -69,8 +70,8 @@ namespace aria {
             return sizeof(ObjFunction);
         }
 
-        // 可读描述:`<fn add>`(clox 风格);匿名(name_==nullptr)渲染 `<script>`。
-        // override Object::to_string 默认的 `<Function at 0x...>`。
+        // 可读描述:`<fn add>`(clox 风格);name_ 恒非空,统一 `<fn name>`(入口渲染 `<fn <script>>`、
+        // lambda 渲染 `<fn <anonymous>>`)。override Object::to_string 默认的 `<Function at 0x...>`。
         [[nodiscard]]
         String to_string() const override;
 

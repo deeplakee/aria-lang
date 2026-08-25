@@ -490,14 +490,15 @@ namespace aria {
         }
         const u32  l_cond   = cur_cu()->size();
         const bool has_cond = node->condition != nullptr;
-        usize      jf       = 0;
+        const bool has_incr = node->increment != nullptr;
+        Opt<usize> jf; // 条件假跳 L_end 占位；无 cond 时留空（永不回填）
         if (has_cond) {
             emit_expr(node->condition.get());
             jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
         }
         // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳 L_cond。
         auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
-                                .continue_back_target = node->increment != nullptr ? std::nullopt : Opt{l_cond},
+                                .continue_back_target = has_incr ? std::nullopt : Opt{l_cond},
                                 .continue_fwd_patches = {},
                                 .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
@@ -505,26 +506,23 @@ namespace aria {
         const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
         cur_fn_ctx()->loop_stack_.pop_back();
 
-        const u32 l_incr = cur_cu()->size();
-        // continue（前向）须回填到 L_incr：此处 cur_cu()->size()==L_incr（递增区起点），先于递增发射。
+        // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
         for (const auto cp: loop.continue_fwd_patches) {
             patch_jump_or_fail(cp, node->loc()); // -> L_incr
         }
-        if (node->increment != nullptr) {
+        if (has_incr) {
             emit_expr(node->increment.get());
             cur_cu()->emit_op(OpCode::POP, line);
         }
         emit_jump_back_or_fail(l_cond, line, node->loc());
 
-        const u32 l_end = cur_cu()->size();
-        if (has_cond) {
-            patch_jump_or_fail(jf, node->loc()); // -> L_end
+        if (jf) {
+            patch_jump_or_fail(*jf, node->loc()); // -> L_end
         }
         for (const auto bp: loop.break_fwd_patches) {
             patch_jump_or_fail(bp, node->loc()); // -> L_end
         }
-        (void) l_incr;
         end_scope(line);
     }
 

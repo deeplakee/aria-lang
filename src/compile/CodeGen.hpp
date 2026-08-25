@@ -181,8 +181,8 @@ namespace aria {
         // emit POP_N(= cur_fn_ctx()->end_scope_pop_count())
         void end_scope(u32 line) const;
 
-        // emit POP_N(= cur_fn_ctx()->pop_locals_deeper_than)（break/continue 弹比循环 scope
-        // 更深的局部，仅副作用，返回计数无人用故 void）
+        // emit POP_N(= cur_fn_ctx()->count_locals_deeper_than)（break/continue 弹比循环 scope
+        // 更深的局部;仅计数不破坏 locals_ 登记--跳转后语句仍在作用域内可引用,故用 count 而非 pop）
         void pop_locals_to(u32 target_depth, u32 line) const;
 
         // --- 名字解析 ---

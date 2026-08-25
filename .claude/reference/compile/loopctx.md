@@ -189,9 +189,9 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.2 `loop_scope_depth` 的作用：跳转前弹局部
 
-`break`/`continue` 跳出循环体时，循环体内声明的局部变量已经「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
+`break`/`continue` 跳出循环体时，循环体内声明的局部变量在运行期已「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
 
-这个弹局部机制和正常退出作用域（`end_scope_pop_count`）复用同一个底层 `pop_locals_deeper_than`（见 `FunctionCtx.hpp:81-83`），不限于控制流。
+注意 `pop_locals_to` 只 emit `POP_N`（运行期弹栈），**不破坏编译期 `locals_` 登记**--它走 `count_locals_deeper_than`（const，仅计数不弹出），而非 `pop_locals_deeper_than`。因为 `break`/`continue` 后的语句（死代码或其他分支）仍在作用域内，可引用这些局部；只有真正退出作用域的 `end_scope_pop_count` 才用 `pop_locals_deeper_than` 从编译期 `locals_` 移除。若 `pop_locals_to` 误用 `pop_locals_deeper_than`，`break`/`continue` 会把循环体局部从 `locals_` pop_back 掉，后续语句引用该名会误落全局（运行期 `UndefinedVariable`）。
 
 ### 4.3 入栈/出栈的 RAII 式对称
 

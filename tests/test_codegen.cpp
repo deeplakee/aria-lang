@@ -297,6 +297,27 @@ TEST(CodeGen, WhileBreak) {
               3);
 }
 
+// break/continue 只能 emit POP_N(运行期弹栈),不得破坏编译期 locals_ 登记:
+// 跳转后的死代码仍在作用域内,引用循环体局部应解析为局部而非误落全局(否则运行期 UndefinedVariable)。
+// 旧实现 pop_locals_to 走 pop_locals_deeper_than 会 pop_back 移除 x -> 后续 s = s + x 解析到全局 x 报错。
+TEST(CodeGen, BreakPreservesLocalsForDeadCode) {
+    EXPECT_EQ(run_int("var i = 0; var s = 0; while (i < 5) {"
+                      "  var x = i;"
+                      "  if (i == 2) { break; }"
+                      "  s = s + x; i = i + 1;"
+                      "} return s;"),
+              1);
+}
+
+TEST(CodeGen, ContinuePreservesLocalsForDeadCode) {
+    EXPECT_EQ(run_int("var s = 0; for (var i = 0; i < 5; i = i + 1) {"
+                      "  var x = i;"
+                      "  if (i == 2) { continue; }"
+                      "  s = s + x;"
+                      "} return s;"),
+              8);
+}
+
 TEST(CodeGen, IfExpr) {
     EXPECT_EQ(run_int("var c = true; return if (c) { 1 } else { 2 };"), 1);
     EXPECT_EQ(run_int("var c = false; return if (c) { 1 } else { 2 };"), 2);

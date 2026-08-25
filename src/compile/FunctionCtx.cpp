@@ -70,9 +70,25 @@ namespace aria {
     }
 
     u32 FunctionCtx::pop_locals_deeper_than(const u32 target_depth) {
+        // 仅弹 depth > target 的局部;slot 0 哑元(depth=0)因 0 <= 任意 u32 target_depth 而
+        // 永不满足弹出条件,故 !empty() 足够--与 count_locals_deeper_than 共用同一深度不变式。
         u32 count = 0;
-        while (locals_.size() > 1 && locals_.back().depth > target_depth) {
+        while (!locals_.empty() && locals_.back().depth > target_depth) {
             locals_.pop_back();
+            ++count;
+        }
+        return count;
+    }
+
+    u32 FunctionCtx::count_locals_deeper_than(const u32 target_depth) const {
+        // 与 pop_locals_deeper_than 同形,但仅计数不弹出:break/continue 后的语句仍在作用域内,
+        // 编译期 locals_ 须保持完整(只有 end_scope 才真正移除)。从末尾(最内层)向前数,遇 depth<=target 即停
+        // (活局部按 depth 非递减序排列,见 pop_locals_deeper_than 的不变式)。
+        u32 count = 0;
+        for (const auto& local: std::views::reverse(locals_)) {
+            if (local.depth <= target_depth) {
+                return count;
+            }
             ++count;
         }
         return count;

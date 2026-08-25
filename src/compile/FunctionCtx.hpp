@@ -80,18 +80,24 @@ namespace aria {
         u32 end_scope_pop_count();
 
         // 弹深度 > target_depth 的局部（更内层作用域的局部），返回弹出数（不改变 scope_depth_）。
-        // end_scope 退出作用域、break/continue 跳出循环均用此（不限于控制流）。
+        // 仅 end_scope 退出作用域用此--真正从编译期 locals_ 移除（局部出作用域，后续语句不可再引用）。
         u32 pop_locals_deeper_than(u32 target_depth);
+
+        // 计数深度 > target_depth 的局部数（不改变 locals_ / scope_depth_）。
+        // break/continue 跳出循环用此：仅 emit POP_N（运行期弹栈），不破坏编译期 locals_ 登记--
+        // 跳转后的语句仍在作用域内，可引用这些局部；只有 end_scope 才真正 pop_locals_deeper_than 移除。
+        [[nodiscard]]
+        u32 count_locals_deeper_than(u32 target_depth) const;
 
         // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_ 等）---
         // enclosing_ 所有权由调用方局部 UPtr 持有（CodeGen::compile 入口 / compile_function 子）：
         // 父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
         // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
-        FunctionCtx* enclosing_;
-        ObjFunction*     fn_;
-        List<Local>      locals_;
-        u32              scope_depth_;
-        List<LoopCtx>    loop_stack_;
+        FunctionCtx*  enclosing_;
+        ObjFunction*  fn_;
+        List<Local>   locals_;
+        u32           scope_depth_;
+        List<LoopCtx> loop_stack_;
     };
 
 } // namespace aria

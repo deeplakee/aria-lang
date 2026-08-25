@@ -112,7 +112,9 @@ namespace aria {
     void CodeGen::end_scope(const u32 line) const { cur_cu()->emit_pop_n(cur_fn_ctx()->end_scope_pop_count(), line); }
 
     void CodeGen::pop_locals_to(const u32 target_depth, const u32 line) const {
-        const u32 n = cur_fn_ctx()->pop_locals_deeper_than(target_depth);
+        // 仅计数并 emit POP_N(运行期弹栈),不破坏编译期 locals_ 登记:break/continue 后的语句仍在作用域内,
+        // 可引用这些局部;只有 end_scope 才真正 pop_locals_deeper_than 移除。
+        const u32 n = cur_fn_ctx()->count_locals_deeper_than(target_depth);
         cur_cu()->emit_pop_n(n, line);
     }
 

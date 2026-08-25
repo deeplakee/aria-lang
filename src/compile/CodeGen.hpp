@@ -240,7 +240,7 @@ namespace aria {
         Lvalue compile_lvalue(ExprNode* target);
 
         // Local: check_initialized + emit_load_local / Global: LOAD_GLOBAL
-        void emit_load(const Lvalue& lv, u32 line, const SourceLoc& loc);
+        void emit_load(const Lvalue& lv, u32 line, const SourceLoc& loc) const;
 
         // Local: emit_store_local + mark_initialized / Global: STORE_GLOBAL（peek-store 留值）
         void emit_store(const Lvalue& lv, u32 line) const;
@@ -273,7 +273,7 @@ namespace aria {
         void fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const;
 
         [[noreturn]]
-        void not_impl(ASTNode* node, StringView feature); // throw AriaCompileException(NotImplemented, loc, ...)
+        void not_impl(ASTNode* node, StringView feature) const; // throw AriaCompileException(NotImplemented, loc, ...)
     };
 
     // ------------------------------------------------------------

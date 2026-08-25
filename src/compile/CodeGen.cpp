@@ -120,7 +120,10 @@ namespace aria {
 
     void CodeGen::begin_scope() const { cur_fn_ctx()->begin_scope(); }
 
-    void CodeGen::end_scope(const u32 line) const { cur_cu()->emit_pop_n(cur_fn_ctx()->end_scope_pop_count(), line); }
+    void CodeGen::end_scope(const u32 line) const {
+        const u32 n = cur_fn_ctx()->end_scope_pop_count();
+        cur_cu()->emit_pop_n(n, line);
+    }
 
     void CodeGen::pop_locals_to(const u32 target_depth, const u32 line) const {
         // 仅计数并 emit POP_N(运行期弹栈),不破坏编译期 locals_ 登记:break/continue 后的语句仍在作用域内,
@@ -222,7 +225,7 @@ namespace aria {
         }
     }
 
-    void CodeGen::emit_load(const Lvalue& lv, const u32 line, const SourceLoc& loc) {
+    void CodeGen::emit_load(const Lvalue& lv, const u32 line, const SourceLoc& loc) const {
         switch (const auto& [kind, index] = lv; kind) {
             case Lvalue::Kind::Local:
                 check_local_initialized(index, loc); // 读点 init 检查
@@ -400,7 +403,7 @@ namespace aria {
     // not_impl
     // ============================================================
 
-    void CodeGen::not_impl(ASTNode* node, StringView feature) {
+    void CodeGen::not_impl(ASTNode* node, StringView feature) const {
         fail(ErrorCode::NotImplemented, node->loc(), "{} 尚未支持", feature);
     }
 
@@ -468,7 +471,7 @@ namespace aria {
                                 .break_fwd_patches    = {}};
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
-        auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
+        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
         cur_fn_ctx()->loop_stack_.pop_back();
 
         emit_jump_back_or_fail(l_start, line, node->loc());

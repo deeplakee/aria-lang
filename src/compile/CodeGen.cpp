@@ -258,6 +258,17 @@ namespace aria {
         }
     }
 
+    // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前压栈
+    // （emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。封装 for-in
+    // 的 iter()/has_next()/next() 三处同型 LOAD_FIELD+CALL 0 模式；name 入常量池经 add_name_or_fail。
+    void CodeGen::emit_method_call0(const StringView name, const u32 line, const SourceLoc& loc) const {
+        cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
+        const auto name_idx = add_name_or_fail(name, loc);
+        cur_cu()->emit_word(name_idx, line);
+        cur_cu()->emit_op(OpCode::CALL, line);
+        cur_cu()->emit_byte(0, line);
+    }
+
     CodeGen::Lvalue CodeGen::compile_lvalue(ExprNode* target) {
         if (const auto id = dynamic_cast<IdentifierNode*>(target)) {
             const auto [kind, index] = resolve_name_or_fail(id->name, id->loc());
@@ -532,22 +543,14 @@ namespace aria {
         // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无
         // STORE_LOCAL/POP）。
         // { var <iter> = expr.iter(); while( }
-        emit_expr(node->iterable.get()); // [iterable]
-        cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
-        const auto iter_name_idx = add_name_or_fail("iter", node->loc());
-        cur_cu()->emit_word(iter_name_idx, line); // [iter_fn]
-        cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(0, line); // [iter_obj] 恰在 slot 位置
+        emit_expr(node->iterable.get());              // [iterable]（receiver）
+        emit_method_call0("iter", line, node->loc()); // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = declare_local_or_fail("<iter>", node->loc());
         cur_fn_ctx()->mark_initialized(iter_var_slot); // 值已在槽
 
         const u32 l_start = cur_cu()->size();
-        cur_cu()->emit_load_local(iter_var_slot, line); // [iter]
-        cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
-        const auto has_next_name_idx = add_name_or_fail("has_next", node->loc());
-        cur_cu()->emit_word(has_next_name_idx, line); // [has_next_fn]
-        cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(0, line);                                  // [bool]
+        cur_cu()->emit_load_local(iter_var_slot, line);                // [iter]（receiver）
+        emit_method_call0("has_next", line, node->loc());              // [bool]
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
         auto loop_ctx                 = make_loop_ctx(loop_scope);
@@ -557,13 +560,9 @@ namespace aria {
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
         // 若为 block 则自带更深层 scope；break/continue 跳出时由 pop_locals_to(loop_scope) 代弹。
         begin_scope();
-        cur_cu()->emit_load_local(iter_var_slot, line); // [iter]
-        cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
-        const auto next_name = add_name_or_fail("next", node->loc());
-        cur_cu()->emit_word(next_name, line); // [next_fn]
-        cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(0, line);      // [value] 恰在 slot 位置
-        bind_pattern(node->pattern.get()); // id: declare 值填槽（不发指令）/ _: POP 丢弃
+        cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
+        emit_method_call0("next", line, node->loc());   // [value] 恰在 slot 位置
+        bind_pattern(node->pattern.get());              // id: declare 值填槽（不发指令）/ _: POP 丢弃
         emit_stmt(node->body.get());
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 

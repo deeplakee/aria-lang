@@ -245,6 +245,12 @@ namespace aria {
         // Local: emit_store_local + mark_initialized / Global: STORE_GLOBAL（peek-store 留值）
         void emit_store(const Lvalue& lv, u32 line) const;
 
+        // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前
+        // 压栈（emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。
+        // 封装 for-in 的 iter()/has_next()/next() 三处同型 LOAD_FIELD+CALL 0 模式；name 入常量池经
+        // add_name_or_fail（溢出即 fail）。将来 M5 类方法调用 lowering 可复用此原语。
+        void emit_method_call0(StringView name, u32 line, const SourceLoc& loc) const;
+
         // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
         // 仅做检查并报错，不发射。
         void check_local_initialized(u16 slot, const SourceLoc& loc) const;

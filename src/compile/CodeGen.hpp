@@ -45,9 +45,10 @@
 //   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。真 GC 触发点
 //   (new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
 //   调用方守卫入参(「每方只守自己创建的」,工厂不创建入参),故调用方须自行 make_guard 根化传入的
-//   module/name 入参；visitFunDeclNode/visitLambdaExprNode 的 name_str 跨 compile_function（含
-//   体编译）由 make_guard 根化。visitVarDeclNode（顶层）/visitImportStmtNode 的名字经
-//   add_name_or_fail 在 emit_expr 之后入池（new_string 结果立即 add_constant，trivial push 不
+//   module/name 入参；compile() 守 module 入临时根、compile_function 内部 intern name 成 ObjString*
+//   并 make_guard 跨 new_function + 体编译（「每方只守自己创建的」:compile_function 创建 name_str
+//   即自守,visit 层只传 StringView 无需守卫）。visitVarDeclNode（顶层）/visitImportStmtNode 的名字
+//   经 add_name_or_fail 在 emit_expr 之后入池（new_string 结果立即 add_constant，trivial push 不
 //   触发 GC，见 GC.hpp 核心不变式），无需守卫。
 
 #include "bytecode/code.hpp"
@@ -65,7 +66,6 @@ namespace aria {
     class GC;
     class ObjModule;
     class ObjFunction;
-    class ObjString;
     class CodeUnit;
 
     class CodeGen final : public AstVisitor {
@@ -274,11 +274,12 @@ namespace aria {
         void emit_stmt(StmtNode* n); // n->accept(*this)，不留值
 
         // --- 函数编译（FunDecl / Lambda 共用）---
-        // name 恒非空（ObjFunction 模型统一:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`）。
+        // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`），
+        // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（每方只守自己创建的）。
         // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
         // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（LOAD_CONST fn_idx）。
-        void compile_function(ObjString* name, List<Param>& params, BlockNode* body);
+        void compile_function(StringView name, List<Param>& params, BlockNode* body);
 
         // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result）---
         template<typename... Args>

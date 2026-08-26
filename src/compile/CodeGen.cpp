@@ -336,7 +336,7 @@ namespace aria {
     // 函数编译（FunDecl / Lambda 共用）
     // ============================================================
 
-    void CodeGen::compile_function(ObjString* name, List<Param>& params, BlockNode* body) {
+    void CodeGen::compile_function(const StringView name, List<Param>& params, BlockNode* body) {
         const auto loc  = body->loc();
         const u32  line = body->loc_line(); // 父序列压函数值 / 绑定 / 隐式 return 均用此行
 
@@ -362,31 +362,35 @@ namespace aria {
         }
 
         // name 恒非空(ObjFunction 模型统一):具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`。
-        // 入参根化:module_ 经 compile() 的 module_guard、name 经 visit 层 name_guard(visitFunDeclNode/
-        // visitLambdaExprNode,作用域包住 compile_function)--工厂不再自守卫,故二者调用前已根化。
-        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
+        // 入参为 StringView,此处 intern 成 ObjString* name_str 并入临时根:跨下方 new_function(其内
+        // new_object 顶部 maybe_collect)与函数体编译(emit_stmt 可能 new_string/new_object -> maybe_collect)
+        // --未根持有的 name_str 会被回收,故 make_guard 根化。「每方只守自己创建的」:compile_function
+        // 创建 name_str 即由其自守,visit 层只传 StringView 无需守卫。module_ 经 compile() 的 module_guard。
+        const auto name_str   = new_string(gc_, name);
+        auto       name_guard = gc_.make_guard(name_str);
+        const auto fn         = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
         // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
         // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。
         // 入父常量池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc); // 入父（当前）序列常量池
 
         // 父序列：压函数值 + 绑定名字（仍发射入父 unit = 当前 cur_cu()）。
-        // name == `<anonymous>` -> lambda:函数值留栈作表达式值,不绑定名字(`<<>` 标识符不可用,
+        // name == `<anonymous>` -> lambda:函数值留栈作表达式值,不绑定名字(`<>` 标识符不可用,
         // 仅 visitLambdaExprNode 产生此名,故 name 即 lambda 判据);否则具名 fun -> 模块全局或局部。
-        if (name->view() == kAnonymousName) {
+        if (name == kAnonymousName) {
             cur_cu()->emit_op(OpCode::LOAD_CONST, line);
             cur_cu()->emit_word(fn_idx, line);
         } else if (mod_ctx_->is_global_scope()) {
-            // 顶层 fun -> 模块全局（name 已是 intern ObjString*，declare_global 按内容判重）
-            declare_global_or_fail(name->view(), loc);
+            // 顶层 fun -> 模块全局（declare_global 内容判重；name 经 add_name_or_fail 入池，与 var/import 同形）
+            declare_global_or_fail(name, loc);
             cur_cu()->emit_op(OpCode::LOAD_CONST, line);
             cur_cu()->emit_word(fn_idx, line);
-            const auto name_idx = add_constant_or_fail(Value::from_obj(name), loc);
+            const auto name_idx = add_name_or_fail(name, loc);
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(name_idx, line);
         } else {
             // 嵌套 fun -> 局部（值填槽：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部）
-            const auto slot = declare_local_or_fail(name->view(), loc);
+            const auto slot = declare_local_or_fail(name, loc);
             cur_cu()->emit_op(OpCode::LOAD_CONST, line);
             cur_cu()->emit_word(fn_idx, line); // fn 恰好压在 slot（不变式：declare 与 init 相邻）
             cur_fn_ctx()->mark_initialized(slot);
@@ -667,11 +671,8 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode* node) { not_impl(node, "match 语句"); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
-        const auto name_str = new_string(gc_, node->name); // intern
-        // name_str 裸持跨 compile_function（其内 new_function 与函数体编译均可能 new_string ->
-        // maybe_collect 回收未根持有的 name_str），故先入临时根。
-        auto name_guard = gc_.make_guard(name_str);
-        compile_function(name_str, node->params, node->body.get());
+        // 顶层 fun：name 经 compile_function 内部 intern + make_guard（每方只守自己创建的），故此处只传 StringView。
+        compile_function(node->name, node->params, node->body.get());
     }
 
     void CodeGen::visitDefDeclNode(DefDeclNode* node) { not_impl(node, "def 类与对象"); }
@@ -937,13 +938,10 @@ namespace aria {
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode* node) {
-        // lambda 名 `<anonymous>`（`<>` 标识符不可用,具独特辨识度);compile_function 据名 == `<anonymous>`
-        // 判定 lambda -> 函数值留栈不绑定名字。name_str 裸持跨 compile_function（其内 new_function 与
-        // 函数体编译均可能 new_string -> maybe_collect 回收未根持有的 name_str），故先入临时根
-        // （与 visitFunDeclNode 同一 GC 纪律）。
-        const auto name_str   = new_string(gc_, kAnonymousName);
-        auto       name_guard = gc_.make_guard(name_str);
-        compile_function(name_str, node->params, node->body.get());
+        // lambda 名 `<anonymous>`（`<>` 标识符不可用，具独特辨识度）；compile_function 据名 == `<anonymous>`
+        // 判定 lambda -> 函数值留栈不绑定名字。name 经 compile_function 内部 intern + make_guard，故此处只传
+        // StringView。
+        compile_function(kAnonymousName, node->params, node->body.get());
     }
 
     void CodeGen::visitMatchExprNode(MatchExprNode* node) { not_impl(node, "match 表达式"); }

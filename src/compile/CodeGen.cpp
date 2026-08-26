@@ -626,14 +626,13 @@ namespace aria {
         const u32 line = node->loc_line();
         // IMPORT path:u16 alias:u16（VM 绑定为模块全局；栈中性）。
         // import 别名入表：补漏检 `import "x" as U; var U = 1;`（现报 RedefinedVariable）。
-        auto alias_str = new_string(gc_, node->alias); // intern（常量池复用）
-        // alias_str 裸持跨下方 new_string(path)：后者 maybe_collect 可能回收未根持有的 alias_str，故先入临时根。
-        auto alias_guard = gc_.make_guard(alias_str);
         if (!mod_ctx_->declare_global(node->alias)) {
             fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局变量: {}", node->alias);
         }
-        const auto path_idx  = add_constant_or_fail(Value::from_obj(new_string(gc_, node->path)), node->loc());
-        const auto alias_idx = add_constant_or_fail(Value::from_obj(alias_str), node->loc()); // 复用 intern 串
+        // path/alias 经 add_name_or_fail：new_string(intern) 结果立即 add_constant 入池（trivial push 不触发
+        // GC），无需守卫；入池即经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path 串。
+        const auto path_idx  = add_name_or_fail(node->path, node->loc());
+        const auto alias_idx = add_name_or_fail(node->alias, node->loc());
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line);
         cur_cu()->emit_word(alias_idx, line);

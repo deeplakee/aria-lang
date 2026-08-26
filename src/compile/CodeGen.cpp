@@ -635,26 +635,25 @@ namespace aria {
     void CodeGen::visitImportStmtNode(ImportStmtNode* node) {
         const u32 line = node->loc_line();
         // IMPORT path:u16 压模块值于栈顶；绑定按作用域走（与 var/fun 同形 lowering）：
-        //   顶层 -> DEF_GLOBAL alias（弹值定义全局）；嵌套 -> 值填槽（IMPORT 压在 declare 的 slot 即该
-        //   局部）+ mark_initialized，无 STORE_LOCAL。对齐文法「绑模块到当前作用域（函数体=局部）」。
+        //   顶层 -> DEF_GLOBAL alias（弹值定义全局）；嵌套 -> 值填槽（IMPORT 压 [module] 在下个 slot
+        //   位置，declare 登记该 slot + mark_initialized），无 STORE_LOCAL。对齐文法「绑模块到当前作用域
+        //   （函数体=局部）」。
+        // path 入池 + IMPORT 压模块值于栈顶（两分支共用）。path/alias 经 add_name_or_fail：new_string(intern)
+        // 结果立即 add_constant 入池（trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫。
+        const auto path_idx = add_name_or_fail(node->path, node->loc());
+        cur_cu()->emit_op(OpCode::IMPORT, line);
+        cur_cu()->emit_word(path_idx, line); // [module]
         if (mod_ctx_->is_global_scope()) {
-            // 顶层 import -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。
+            // 顶层 import -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。path 已先入池
+            // 经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path。
             declare_global_or_fail(node->alias, node->loc());
-            // path/alias 经 add_name_or_fail：new_string(intern) 结果立即 add_constant 入池（trivial push
-            // 不触发 GC），无需守卫；入池即经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path。
-            const auto path_idx = add_name_or_fail(node->path, node->loc());
-            cur_cu()->emit_op(OpCode::IMPORT, line);
-            cur_cu()->emit_word(path_idx, line); // [module]
             const auto alias_idx = add_name_or_fail(node->alias, node->loc());
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(alias_idx, line); // []  弹值定义全局
         } else {
-            // 嵌套 import -> 局部（值填槽：declare 仅登记标未初始化，IMPORT 压在 slot 即该局部，末
-            // mark_initialized；无 STORE_LOCAL/POP）。
-            const auto slot     = declare_local_or_fail(node->alias, node->loc());
-            const auto path_idx = add_name_or_fail(node->path, node->loc());
-            cur_cu()->emit_op(OpCode::IMPORT, line);
-            cur_cu()->emit_word(path_idx, line);  // [module] 压在 slot（值填槽）
+            // 嵌套 import -> 局部（值填槽：IMPORT 已压 [module] 在栈顶 = 下个 slot 位置，declare 登记该
+            // slot 并 mark_initialized；无 STORE_LOCAL/POP。与 for-in <iter> 值填槽同形）。
+            const auto slot = declare_local_or_fail(node->alias, node->loc());
             cur_fn_ctx()->mark_initialized(slot); // 值已在槽
         }
     }

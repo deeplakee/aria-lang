@@ -38,6 +38,18 @@ namespace aria {
         List<usize> break_fwd_patches;                   // 待回填的 JUMP 占位偏移
     };
 
+    // 工厂：构造一个仅指定 loop_scope_depth 的新循环上下文（continue_back_target=nullopt、
+    // 两个 patch 列表空）。调用方按循环类型在入栈前给 continue_back_target 赋值（while/for-in ->
+    // L_start、for 无 incr -> L_cond；for 有 incr 留空走前向 continue_fwd_patches）。集中收口
+    // 「新 LoopCtx 全字段初始化」语义于一处，调用点只表达与默认的偏差；返回值须立即入栈或进一步赋值。
+    [[nodiscard]]
+    inline LoopCtx make_loop_ctx(const u32 loop_scope_depth) {
+        return {.loop_scope_depth     = loop_scope_depth,
+                .continue_back_target = std::nullopt,
+                .continue_fwd_patches = {},
+                .break_fwd_patches    = {}};
+    }
+
     class FunctionCtx {
     public:
         FunctionCtx() = delete;

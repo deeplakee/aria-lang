@@ -465,10 +465,8 @@ namespace aria {
         emit_expr(node->condition.get());
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
-        auto loop_ctx = LoopCtx{.loop_scope_depth     = cur_fn_ctx()->scope_depth_,
-                                .continue_back_target = {l_start},
-                                .continue_fwd_patches = {},
-                                .break_fwd_patches    = {}};
+        auto loop_ctx                 = make_loop_ctx(cur_fn_ctx()->scope_depth_);
+        loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
         const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
@@ -497,10 +495,10 @@ namespace aria {
             jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
         }
         // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳 L_cond。
-        auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
-                                .continue_back_target = has_incr ? std::nullopt : Opt{l_cond},
-                                .continue_fwd_patches = {},
-                                .break_fwd_patches    = {}};
+        auto loop_ctx = make_loop_ctx(loop_scope);
+        if (!has_incr) {
+            loop_ctx.continue_back_target = l_cond; // 无 incr: continue 后向跳 L_cond
+        } // 有 incr: 留空，走前向 continue_fwd_patches -> L_incr
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
         emit_stmt(node->body.get());
         const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
@@ -552,10 +550,8 @@ namespace aria {
         cur_cu()->emit_byte(0, line);                                  // [bool]
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
-        auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
-                                .continue_back_target = Opt{l_start},
-                                .continue_fwd_patches = {},
-                                .break_fwd_patches    = {}};
+        auto loop_ctx                 = make_loop_ctx(loop_scope);
+        loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start（has_next 判断处）
         cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
 
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，

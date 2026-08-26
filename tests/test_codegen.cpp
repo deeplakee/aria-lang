@@ -366,12 +366,14 @@ TEST(CodeGen, ForInDisassembly) {
     EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
 }
 
+// 顶层 import：IMPORT path 压模块值 + DEF_GLOBAL alias 绑全局。
 TEST(CodeGen, ImportEmitsImport) {
     auto compiled = compile_only("import \"lib/utils\" as U;");
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled.value()->unit().disassemble("<test>");
     EXPECT_NE(text.find("IMPORT"), aria::String::npos);
     EXPECT_NE(text.find("lib/utils"), aria::String::npos);
+    EXPECT_NE(text.find("DEF_GLOBAL"), aria::String::npos); // 顶层经 DEF_GLOBAL 绑全局
 }
 
 // ============================================================
@@ -397,19 +399,21 @@ TEST(CodeGen, ErrRedefinedImportAlias) {
     EXPECT_EQ(c.error().code(), ErrorCode::RedefinedVariable);
 }
 
-// import 当前仅支持模块顶层；嵌套 import（函数体内）编译期拒绝（ImportNotAtTopLevel）。
-// 待 IMPORT 指令拆分（load 压值 + DEF_GLOBAL/STORE_LOCAL 绑定）后放开，对齐文法「函数体=局部」。
-TEST(CodeGen, ErrImportNotAtTopLevel) {
+// 嵌套 import（函数体内）按当前作用域绑局部：IMPORT 压值在 declare 的 slot（值填槽）+
+// mark_initialized，无 DEF_GLOBAL。编译成功（不再限制仅顶层）。IMPORT 在嵌套函数 f 自己的
+// unit 里（不在入口 unit），故此处只验编译成功，字节码形状由 ImportNestedInBlock 在入口 unit 验。
+TEST(CodeGen, ImportNestedInFunction) {
     auto c = compile_only("fun f() { import \"lib/u\" as U; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::ImportNotAtTopLevel);
+    ASSERT_TRUE(c.has_value()) << "嵌套 import 应编译成功（绑局部）";
 }
 
-// 块作用域内的 import 同样视为嵌套，编译期拒绝。
-TEST(CodeGen, ErrImportNotAtTopLevelInBlock) {
+// 块作用域内的 import 按嵌套局部绑定（IMPORT 在入口 unit）：IMPORT 压值 + 值填槽，无 DEF_GLOBAL。
+TEST(CodeGen, ImportNestedInBlock) {
     auto c = compile_only("{ import \"lib/u\" as U; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::ImportNotAtTopLevel);
+    ASSERT_TRUE(c.has_value()) << "块内 import 应编译成功（绑局部）";
+    const auto text = c.value()->unit().disassemble("<test>");
+    EXPECT_NE(text.find("IMPORT"), aria::String::npos);
+    EXPECT_EQ(text.find("DEF_GLOBAL"), aria::String::npos) << "嵌套 import 不走 DEF_GLOBAL";
 }
 
 // 使用「定义但未初始化」的局部 -> UninitializedVariable（Python 风格 definite-assignment）。

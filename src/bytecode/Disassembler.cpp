@@ -167,16 +167,15 @@ namespace aria {
         return join_line(op_name, std::format("{:04X} <- {:04X}", off, static_cast<u32>(target)));
     }
 
-    // IMPORT:u16 path + u16 alias,两 hex 操作数 + `path as alias` 注释(名字)。
+    // IMPORT:u16 path,单 hex 操作数 + path 名注释。IMPORT 仅压模块值于栈顶,绑定由 DEF_GLOBAL /
+    // 值填槽在别处完成,故此处无 alias 操作数。
     String Disassembler::import_instruction(const StringView op_name) {
-        if (is_truncated(4)) {
+        if (is_truncated(2)) {
             return join_line(op_name, truncated());
         }
-        const u16    path_idx  = read_u16();
-        const u16    alias_idx = read_u16();
-        const String path      = format_constant(path_idx);
-        const String alias     = format_constant(alias_idx);
-        return join_line(op_name, std::format("{:04X} {:04X}  ; {} as {}", path_idx, alias_idx, path, alias));
+        const u16    path_idx = read_u16();
+        const String path     = format_constant(path_idx);
+        return join_line(op_name, std::format("{:04X}  ; {}", path_idx, path));
     }
 
     // INVOKE_METHOD:u16 name + u8 argc,name+argc hex 操作数 + `name argc=N` 注释。

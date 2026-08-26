@@ -55,7 +55,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
-| 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径与别名 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器 |
+| 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器 |
 | 局部槽号 | `u8`（1B，0..255）短 / `u16`（2B）长 | `LOAD_LOCAL` `STORE_LOCAL`（+ `_L` 变体） | 短型覆盖 <256；`slot>=256` 编译器直接发 `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)，值发射时已知、无需回填 |
 | Upvalue 索引 | `u8` | `LOAD_UPVALUE` `STORE_UPVALUE` | 256 upvalue 远超实际 |
 | 调用参数数 | `u8` | `CALL` | 255 参数足够 |
@@ -281,9 +281,9 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `IMPORT` | `path:u16`, `alias:u16` | `... -> ...` | 加载/复用 `path` 模块，以 `alias` 名 upsert 进当前模块 globals。栈中性 |
+| `IMPORT` | `path:u16` | `... -> [module]` | 解析 `path` 并复用/加载模块，把 `ObjModule` 压栈。绑定交后续 `DEF_GLOBAL`/值填槽按作用域走 |
 
-`path`/`alias` 均为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。当前 `IMPORT` 耦合「取模块 + 按名绑 globals」，CodeGen 限制 import 仅模块顶层（嵌套报 `ImportNotAtTopLevel`），故运行期必为全局绑定。设计目标是 `IMPORT` 仅取模块对象压栈、绑定交 `DEF_GLOBAL`/`STORE_LOCAL` 按作用域走（`alias` 视作用域种类），以支持函数体局部 import；待指令拆分后落地。
+`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走——顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部）+ `mark_initialized`，与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
 
 ### 4.16 异常
 
@@ -453,7 +453,7 @@ Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Objec
 - **动态加静态**：不支持 monkey-patch；`Foo.newStatic = v`（新名）报错，静态必须 `var` 声明。实例字段动态（`this.x = v` 创建），静态声明式--有意不对称（`var` 标静态、与实例方法声明区分）。
 - **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。
 
-**模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体=局部为设计目标；当前实现仅支持模块顶层，嵌套 import 编译期报 `ImportNotAtTopLevel`，待 `IMPORT` 指令拆分后放开），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。
+**模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体/块内=局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽 + `mark_initialized`（嵌套）按作用域走），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。
 
 **目标方向：uniform OOP（Design B）**：aria 的方向是把内置类型也纳入 aria 类体系--每个内置 Obj 类型配一个 `ObjClass`（String/List/Map 继承 Object），`class_` 进 Object 头，方法统一走 `class_->lookup` 分派，内置类型继承 Object 的公共方法。原始值（nil/bool/f64/int）进一步可经 tag->class 映射（Num/Bool 类）获得方法分派而不装箱（Wren 路子），仍保 NaN-boxing 内联存储。性能上走 CPython 式 intrinsic 做热路径--统一语义为规约、intrinsic 为快路径，二者兼得；`+8B class_` 只落 Obj、不落原始值，代价 bounded。此为方向性目标，尚未实现；落地前可先用 Design A（内置保持特殊、虚 `op_get_field`）作 interim，不阻塞迁移（`op_get_field` 接口保持、内部从虚派发换类表查找）。
 

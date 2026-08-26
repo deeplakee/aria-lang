@@ -9,7 +9,7 @@
 ## 一句话结论
 
 导入路径处理目前是**部分实现**：「specifier -> 绝对规范键（磁盘解析）-> 模块表查重 -> 命中
-复用并按 alias 绑入 globals」这条链路已在 VM 落地并可测（含 `source_roots` 播种 + 逐根
+复用并把 ObjModule 压栈（绑定交 CodeGen 按 DEF_GLOBAL / 值填槽走）」这条链路已在 VM 落地
 exists-check）；**磁盘加载、AST→CodeUnit 编译器、VM 内嵌套执行模块体（run-once）三条链路
 均未实现**，文件解析命中但模块未入表时直接报 `ErrorCode::ModuleNotFound`。`SourceFile::from_path`
 与大部分 `util/fs.hpp` 原语已就绪，但加载链路（读文件 -> 编译 -> run-once）仍未衔接——当前
@@ -28,7 +28,7 @@ Token (Import / As / String / Identifier)
 ImportStmtNode { path:String, alias:String }
    │  ③ AST→CodeUnit 编译器  ✗ 未实现（无 AstVisitor 子类）
    ▼
-OpCode::IMPORT  path:u16, alias:u16   (常量池 ObjString 索引)
+OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
    │  ④ VM run_() IMPORT 分支  部分实现
    ▼
 resolve_module()  →  new_string() intern  →  modules_ 查表
@@ -36,7 +36,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
         │                                          │
         │ 命中(Loading/Loaded)                     │ 未命中(文件命中但模块未入表)
         ▼                                          ▼
-  复用 ObjModule，以 alias upsert 进当前 globals    ⑤ 加载层：磁盘读 + 编译 + run-once
+  复用 ObjModule，压栈（绑定交 CodeGen 走）      ⑤ 加载层：磁盘读 + 编译 + run-once
                                                    ✗ 未实现 → ModuleNotFound
    解析失败(无源根命中) → ModuleNotFound
 ```
@@ -51,7 +51,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp:91-92` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp:63-107` |
-| ④ IMPORT 命中分支（查表 + 绑定） | 已实现 | `src/runtime/AriaVM.cpp:618-664` |
+| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:618-664` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **未实现**，报 `ModuleNotFound` | `src/runtime/AriaVM.cpp:653-659` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp:83-102`、`AriaVM.cpp:231-247,262-267` |
 | `ObjModule` 对象 + 状态机 + `root_`/`name_`/`abs_path()` | 已实现（`root_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
@@ -94,11 +94,12 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 ## ③ 字节码
 
 - **`OpCode::IMPORT`**（`src/bytecode/code.hpp:91-92`）：枚举项，归类于 "Module import"。
-- **指令格式**（`bytecode-instruction-set.md §4.15`）：`IMPORT path:u16, alias:u16`，
-  栈中性。`path` / `alias` 均为常量池 `ObjString` 索引；「模块解析、路径搜索、循环导入检测
-  留 VM / 嵌入层」。**无 `SETUP_EXCEPT` / `END_EXCEPT`** 一类指令——import 不靠额外操作码。
-- **反汇编**（`src/bytecode/Disassembler.cpp:170-180,324-325`）：读两个 u16 常量池索引，
-  渲染 `IMPORT PPPP AAAA  ; path as alias`。
+- **指令格式**（`bytecode-instruction-set.md §4.15`）：`IMPORT path:u16`，栈效应
+  `... -> [module]`（压模块值）。`path` 为常量池 `ObjString` 索引；「模块解析、路径搜索、循环
+  导入检测留 VM / 嵌入层」。绑定不在 IMPORT 内——交 CodeGen 按作用域经 `DEF_GLOBAL` / 值填槽走。
+  **无 `SETUP_EXCEPT` / `END_EXCEPT`** 一类指令——import 不靠额外操作码。
+- **反汇编**（`src/bytecode/Disassembler.cpp:170-180,324-325`）：读一个 u16 常量池索引，
+  渲染 `IMPORT PPPP  ; path`。
 
 ## ④ VM 运行时
 
@@ -127,7 +128,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 `src/runtime/AriaVM.cpp:618-664` 的 `case OpCode::IMPORT:`：
 
-1. `read_name(frame)` 读两个 u16 常量池索引取 `ObjString* path / alias`（`read_name` 见
+1. `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path`（`read_name` 见
    `AriaVM.cpp:40-43`，良构前提是常量必为 intern 的 `ObjString*`）。
 2. 以 `frame.module->abs_path()`（= `root_ + "/" + name_ + ".aria"`，`ObjModule::abs_path`）为
    当前模块绝对路径，直接内联传入 `resolve_module`。`root_` 恒非空（`new_module` 默认 cwd）故恒非空；
@@ -144,17 +145,17 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
      `[aria] module loading not implemented yet: 'PATH'`，返回
      `Error{ModuleNotFound, "module not loaded: 'PATH' (loading not implemented yet)"}`
      （`AriaVM.cpp:653-659`）。**磁盘加载 + AST→CodeUnit 编译 + VM 内嵌套执行模块体 run-once 均未就绪**。
-5. 命中后：`gc_.make_guard(module)` 跨分配保命 →
-   `frame.module->globals().upsert(Value::from_obj(alias))` 把模块对象以 alias 名 upsert 进
-   **当前模块** globals（顶层 import 即全局绑定）（`AriaVM.cpp:660-661`）。
-6. 栈中性（无 push/pop）。
+5. 命中后：`gc_.make_guard(module)` 跨分配保命 → **压模块值于栈顶**（`ctx.push(module)`）。
+   绑定不再由 IMPORT 做——交 CodeGen 按作用域走：顶层经 `DEF_GLOBAL alias`（弹值定义全局）、
+   嵌套经值填槽（IMPORT 压在 `declare_local` 的 slot）+ `mark_initialized`。
+6. 栈效应 `... -> [module]`（压一值）。
 
-> **当前作用域限制**：CodeGen `visitImportStmtNode` 起始 `is_global_scope()` 检查，嵌套 import
-> （函数体/块内）编译期报 `ImportNotAtTopLevel`，故运行期 IMPORT 一定在模块顶层执行、绑全局。
-> 文法设计目标是「绑模块到当前作用域（函数体=局部）」，待 IMPORT 指令拆分（`IMPORT path` 压值 +
-> `DEF_GLOBAL`/`STORE_LOCAL` 绑定）后放开嵌套 import 并在此更新。
+> **按作用域绑定**：`IMPORT path:u16` 仅取模块对象压栈，不带 `alias` 操作数。CodeGen
+> `visitImportStmtNode` 按 `is_global_scope()` 分派（与 `var`/`fun` 同形 lowering）：顶层
+> `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
+> （值填槽）+ `mark_initialized`。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
-**根安全**：`run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根）；path / alias 经常量池根；key 经
+**根安全**：`run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根）；path 经常量池根；key 经
 intern weak root（GC lock 内不触回收）；module 经 guard 显式保命，不依赖读者推断 `modules_`
 为根。
 
@@ -236,8 +237,8 @@ intern weak root（GC lock 内不触回收）；module 经 guard 显式保命，
 `resolve_module` 的 exists-check 命中，按解析出的绝对键预注册合成模块入 `vm.modules()`，触发
 命中分支：
 
-- `ImportBindsPreRegisteredModule`：入口根 `lib/utils.aria` 命中 Loading 态模块 -> alias 绑入
-  globals -> `LOAD_GLOBAL` 取回同一对象。
+- `ImportBindsPreRegisteredModule`：入口根 `lib/utils.aria` 命中 Loading 态模块 -> IMPORT 压栈
+  -> `DEF_GLOBAL` 绑入 globals -> `LOAD_GLOBAL` 取回同一对象。
 - `ImportNotFoundErrors`：无源根命中 `nope/missing.aria` -> `ModuleNotFound`。
 - `ImportNormalizesAbsolutePath`：`lib/./utils` 经 `weakly_canonical` 折 `.` -> 命中
   `lib/utils.aria`。

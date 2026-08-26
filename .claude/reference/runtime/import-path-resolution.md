@@ -13,9 +13,10 @@
    `.`/`..`、去冗余分隔符）。相对 / 裸名是同一原语，仅基目录列表不同（见下）。
 2. **intern 驻留**：经 `new_string(gc_, key_str)` 把绝对键驻留为 `ObjString*`。同内容共享
    同一指针，模块表用 `===` 严格相等查表，天然去重；符号链接经 `weakly_canonical` 规避双加载。
-3. **模块表查表 + 绑定**：以绝对键 `ObjString*`（装箱为 `Value`）在 VM 模块表 `modules_`
-   （`AriaHashTable`）里查；命中即复用模块对象，以 `ALIAS` 名 upsert 进当前模块 `globals`。
-   未命中走「未实现」分支（见下）。
+3. **模块表查表 + 压栈**：以绝对键 `ObjString*`（装箱为 `Value`）在 VM 模块表 `modules_`
+   （`AriaHashTable`）里查；命中即复用模块对象并 `ctx.push` 压栈（`IMPORT path:u16`，栈效应
+   `... -> [module]`）。绑定不在 IMPORT 内——交 CodeGen 按作用域经 `DEF_GLOBAL`（顶层）/ 值填槽
+   + `mark_initialized`（嵌套）走。未命中走「未实现」分支（见下）。
 
 模块表 `modules_`：键 = 绝对规范路径 `ObjString*`（intern），值 = `ObjModule*`，均装箱为
 `Value` 入 `AriaHashTable`。`modules_` 经 VM 根 tracer 纳入 GC（`gc_.set_vm_roots`）。
@@ -128,13 +129,14 @@ IMPORT 以绝对键查 `modules_`：
 - **解析失败**（无源根命中 `<base>/<spec>.aria`）：返回 `ErrorCode::ModuleNotFound`
   （`module not found: 'PATH' (no matching source root)`）。
 
-命中后，以 `ALIAS` 名 upsert 进**当前模块** `globals`（顶层 `import` 即全局绑定）。
+命中后，`ctx.push(module)` 把模块对象压栈（`IMPORT path:u16`，栈效应 `... -> [module]`）；
+绑定交 CodeGen 按作用域走（顶层 `DEF_GLOBAL` / 嵌套值填槽 + `mark_initialized`）。
 
 ## 根安全
 
 `run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根，值栈 / 帧对 GC 不透明）：
 
-- `path` / `alias` 经常量池根（同 `LOAD_CONST`）。
+- `path` 经常量池根（同 `LOAD_CONST`）。
 - 绝对键经 `new_string` intern 驻留（weak root，GC lock 内不触回收）。
 - 命中分支取回的 `module` 是跨 `upsert` 分配持有的裸 `Value`，经 `gc_.make_guard` 显式
   保命——不依赖读者推断 `modules_` 为根，对将来重构稳健。

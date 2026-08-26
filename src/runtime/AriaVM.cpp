@@ -680,8 +680,10 @@ namespace aria {
 
                 // ---- 模块导入 ----
                 case OpCode::IMPORT: {
-                    // path:u16, alias:u16;栈中性。按
-                    // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」解析:
+                    // path:u16;解析后把命中的 ObjModule 压栈（[...] -> [..., module]）。绑定交 CodeGen 按
+                    //   作用域走：顶层经 DEF_GLOBAL alias 弹值定义全局、嵌套经值填槽（IMPORT 压在 declare
+                    //   的 slot 即该局部）+ mark_initialized。IMPORT 仅负责「取模块对象」，不再自绑 globals。
+                    //   解析按 .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:
                     //   把 import 串经 resolve_module 解析为命中文件的绝对规范路径(weakly_canonical)作
                     //   模块表键,再查 modules_。
                     //   相对(./ ../)基 = 当前模块所在目录(单基,caller-local,不碰 source_roots);
@@ -693,15 +695,12 @@ namespace aria {
                     //     入表 run-once(见 bytecode-instruction-set.md §4.15)。该链路(磁盘加载 +
                     //     AST->CodeUnit 编译器 + VM 内嵌套执行模块体)尚未就绪,故暂打印未实现提示并报
                     //     ModuleNotFound(表里预注册的模块仍可被命中复用,故解析/命中路径可测)。
-                    // 取到模块对象后,以 alias 名 upsert 进当前模块 globals(顶层 import 即全局绑定)。
                     //
-                    // 根安全(M6 解锁 GC 后):path/alias 经常量池根(同 LOAD_CONST)。键经 new_string intern
-                    //   驻留(weak root)。module 是跨 upsert 分配持有的裸 Value(off-stack),但
-                    //   globals().upsert -> HashTable rehash 走 trivial 分配(不触发 GC,见 GC.hpp 核心不变式),
-                    //   且 module 本就经 modules_ 根可达(VM tracer 标 modules_),故跨 upsert 无需守卫。
-                    //   module_entry 指入 modules_,非移动 GC 且 upsert 不触 modules_,collect 后仍有效。
-                    ObjString* path  = read_name(frame);
-                    ObjString* alias = read_name(frame);
+                    // 根安全(M6 解锁 GC 后):path 经常量池根(同 LOAD_CONST)。键经 new_string intern
+                    //   驻留(weak root)。module 取自 modules_（VM tracer 标 modules_），经 modules_ 根可达,
+                    //   非移动 GC 故 ctx.push（栈溢出增长走 Buffer 重分配）期间指针稳定,无需守卫;入栈后
+                    //   另经值栈根可达。
+                    ObjString* path = read_name(frame);
                     // 当前模块的绝对文件路径(ObjModule::abs_path = root_ + "/" + name_ + ".aria"),
                     // 供 resolve_module 相对分支取 dirname 作基:dirname(abs_path) = root_ + "/" +
                     // dirname(name_) = 当前模块所在目录(.aria 后缀在末段,dirname 不受影响)。
@@ -724,8 +723,7 @@ namespace aria {
                         return runtime_err(ErrorCode::ModuleNotFound,
                                            "module not loaded: '{}' (loading not implemented yet)", path->view());
                     }
-                    auto global_entry   = frame.module->globals().upsert(Value::from_obj(alias));
-                    global_entry->value = module;
+                    ctx.push(module); // 压模块值于栈顶,绑定交 DEF_GLOBAL / 值填槽
                     break;
                 }
 

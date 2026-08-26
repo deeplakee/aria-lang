@@ -61,11 +61,11 @@ namespace {
         cu.emit_word(name_idx, line);
     }
 
-    // IMPORT path:u16 alias:u16(均为常量池 ObjString 索引)。栈中性。
-    void emit_import(CodeUnit& cu, u16 path_idx, u16 alias_idx, u32 line = 1) {
+    // IMPORT path:u16(常量池 ObjString 索引)。压模块值于栈顶（[...] -> [..., module]）；绑定由
+    // 调用方按作用域经 DEF_GLOBAL / 值填槽自行完成。
+    void emit_import(CodeUnit& cu, u16 path_idx, u32 line = 1) {
         cu.emit_op(OpCode::IMPORT, line);
         cu.emit_word(path_idx, line);
-        cu.emit_word(alias_idx, line);
     }
 
     // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
@@ -633,7 +633,8 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/utils")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "Utils")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "lib/utils" as Utils;栈中性
+    emit_import(cu, path_idx);                       // IMPORT "lib/utils" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "Utils" = module
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -657,8 +658,7 @@ TEST_F(AriaVMStress, ImportNotFoundErrors) {
     auto      fn_guard   = gc.make_guard(fn);
     auto&     cu         = fn->unit();
     const u16 path_idx   = cu.add_constant(Value::from_obj(new_string(gc, "nope/missing")));
-    const u16 alias_idx  = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx, alias_idx);
+    emit_import(cu, path_idx);
     cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);
@@ -689,7 +689,8 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/./utils")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "Utils")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "lib/./utils" as Utils
+    emit_import(cu, path_idx);                       // IMPORT "lib/./utils" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "Utils"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -726,7 +727,8 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./helper")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "H")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "./helper" as H
+    emit_import(cu, path_idx);                       // IMPORT "./helper" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "H"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -768,7 +770,8 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math"))); // 裸路径
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "lib/math" as M
+    emit_import(cu, path_idx);                       // IMPORT "lib/math" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -802,7 +805,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math.aria")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "lib/math.aria" as M
+    emit_import(cu, path_idx);                       // IMPORT "lib/math.aria" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -838,7 +842,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./math.aria")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx, alias_idx);            // IMPORT "./math.aria" as M
+    emit_import(cu, path_idx);                       // IMPORT "./math.aria" -> [module]
+    emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
 

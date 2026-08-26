@@ -56,7 +56,6 @@ namespace aria {
         BreakOutsideLoop,        // break 须在循环内
         ContinueOutsideLoop,     // continue 须在循环内
         ReturnOutsideFunction,   // return 须在函数内
-        ImportNotAtTopLevel,     // import 须在模块顶层（当前实现限制；计划支持函数体局部绑定）
         TryWithoutHandler,       // try 须有 catch 或 finally
         DefaultParamSelfRef,     // 默认值表达式引用了同函数的参数
         DuplicateParam,          // 同函数形参重名
@@ -175,8 +174,6 @@ namespace aria {
                 return "ContinueOutsideLoop";
             case ErrorCode::ReturnOutsideFunction:
                 return "ReturnOutsideFunction";
-            case ErrorCode::ImportNotAtTopLevel:
-                return "ImportNotAtTopLevel";
             case ErrorCode::TryWithoutHandler:
                 return "TryWithoutHandler";
             case ErrorCode::DefaultParamSelfRef:
@@ -294,7 +291,6 @@ namespace aria {
             case ErrorCode::BreakOutsideLoop:
             case ErrorCode::ContinueOutsideLoop:
             case ErrorCode::ReturnOutsideFunction:
-            case ErrorCode::ImportNotAtTopLevel:
             case ErrorCode::TryWithoutHandler:
             case ErrorCode::DefaultParamSelfRef:
             case ErrorCode::DuplicateParam:

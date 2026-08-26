@@ -624,25 +624,31 @@ namespace aria {
 
     void CodeGen::visitImportStmtNode(ImportStmtNode* node) {
         const u32 line = node->loc_line();
-        // IMPORT path:u16 alias:u16（VM 绑定为模块全局；栈中性）。
-        // 当前 import 仅支持模块顶层（顶层 -> 模块全局绑定）。嵌套 import（函数体/块内）按设计应绑
-        // 当前作用域局部，但 IMPORT 指令现耦合「加载 + 按名绑 globals」、无局部绑定能力，故编译期
-        // 拒绝嵌套 import（ImportNotAtTopLevel）；待 IMPORT 指令拆分（load 压值 + DEF_GLOBAL/STORE_LOCAL
-        // 绑定）后放开，对齐文法「绑模块到当前作用域（函数体=局部）」。
-        if (!mod_ctx_->is_global_scope()) {
-            fail(ErrorCode::ImportNotAtTopLevel, node->loc(), "import 必须在模块顶层");
+        // IMPORT path:u16 压模块值于栈顶；绑定按作用域走（与 var/fun 同形 lowering）：
+        //   顶层 -> DEF_GLOBAL alias（弹值定义全局）；嵌套 -> 值填槽（IMPORT 压在 declare 的 slot 即该
+        //   局部）+ mark_initialized，无 STORE_LOCAL。对齐文法「绑模块到当前作用域（函数体=局部）」。
+        if (mod_ctx_->is_global_scope()) {
+            // 顶层 import -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。
+            if (!mod_ctx_->declare_global(node->alias)) {
+                fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局变量: {}", node->alias);
+            }
+            // path/alias 经 add_name_or_fail：new_string(intern) 结果立即 add_constant 入池（trivial push
+            // 不触发 GC），无需守卫；入池即经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path。
+            const auto path_idx = add_name_or_fail(node->path, node->loc());
+            cur_cu()->emit_op(OpCode::IMPORT, line);
+            cur_cu()->emit_word(path_idx, line); // [module]
+            const auto alias_idx = add_name_or_fail(node->alias, node->loc());
+            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
+            cur_cu()->emit_word(alias_idx, line); // []  弹值定义全局
+        } else {
+            // 嵌套 import -> 局部（值填槽：declare 仅登记标未初始化，IMPORT 压在 slot 即该局部，末
+            // mark_initialized；无 STORE_LOCAL/POP）。
+            const auto slot     = declare_local_or_fail(node->alias, node->loc());
+            const auto path_idx = add_name_or_fail(node->path, node->loc());
+            cur_cu()->emit_op(OpCode::IMPORT, line);
+            cur_cu()->emit_word(path_idx, line);  // [module] 压在 slot（值填槽）
+            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
         }
-        // import 别名入表：补漏检 `import "x" as U; var U = 1;`（现报 RedefinedVariable）。
-        if (!mod_ctx_->declare_global(node->alias)) {
-            fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局变量: {}", node->alias);
-        }
-        // path/alias 经 add_name_or_fail：new_string(intern) 结果立即 add_constant 入池（trivial push 不触发
-        // GC），无需守卫；入池即经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path 串。
-        const auto path_idx  = add_name_or_fail(node->path, node->loc());
-        const auto alias_idx = add_name_or_fail(node->alias, node->loc());
-        cur_cu()->emit_op(OpCode::IMPORT, line);
-        cur_cu()->emit_word(path_idx, line);
-        cur_cu()->emit_word(alias_idx, line);
     }
 
     void CodeGen::visitTryStmtNode(TryStmtNode* node) {

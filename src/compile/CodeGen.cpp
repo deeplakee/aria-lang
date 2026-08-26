@@ -539,7 +539,7 @@ namespace aria {
         const u32 line = node->loc_line();
         // 等价形式（lowering 蓝图）：
         //   {                                     // for-in scope（整循环存活）
-        //     var <iter> = expr.iter();            // <iter> 隐藏局部（"<iter>" 含 <> 不可作标识符，不撞用户名）
+        //     var <iter> = <iterable>.iter();       // <iter> 隐藏局部（"<iter>" 含 <> 不可作标识符，不撞用户名）
         //     while (<iter>.has_next()) {          // L_start = has_next 判断处
         //       {                                  // per-iteration scope（每轮 fresh）
         //         var <pattern> = <iter>.next();   // bind_pattern：declare + 值填槽（_ -> POP 丢弃）

@@ -41,7 +41,7 @@ namespace aria {
         // 整链根化所有建设中 ObjFunction / 常量池 ObjString。每个子 fn 在 compile_function 起始即
         // add_constant 入父常量池(先于编译体),入池即经 module 根链可达;new_object -> add_constant
         // 间走 trivial 分配(constants.push/reallocate),按 GC 核心不变式不触发 GC,故该窗口无需守卫。
-        auto module_guard = gc_.make_guard(&module);
+        const auto module_guard = gc_.make_guard(&module);
 
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
         // 须在 module 已根化下调用(上方 module_guard)。
@@ -49,7 +49,7 @@ namespace aria {
 
         try {
             // 遍历顶层声明（顶层 var/fun/import -> 模块全局；嵌套块内 var -> 局部）。
-            for (auto& decl: program.declarations) {
+            for (const auto& decl: program.declarations) {
                 emit_stmt(decl.get());
             }
             // 隐式 return nil（无显式 return 时的兜底；显式 return 后为死代码，无害）。
@@ -71,7 +71,7 @@ namespace aria {
     // （此处先 set_entry）。工厂不再替调用方守卫入参,故 `<script>` 名须显式 make_guard 跨 new_function 的 new_object。
     ObjFunction* CodeGen::init_module(ObjModule& module) {
         const auto name  = new_string(gc_, kScriptName);
-        auto       guard = gc_.make_guard(name);
+        const auto guard = gc_.make_guard(name);
         const auto entry = new_function(gc_, &module, name, 0);
         module.set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
@@ -80,7 +80,8 @@ namespace aria {
 
     // 当前 CodeUnit = 当前函数 fn_->unit()，随游标派生（定义于此：需 ObjFunction 完整类型取 unit()）。
     FunctionCtx* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
-    CodeUnit*    CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
+
+    CodeUnit* CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
 
     // ============================================================
     // 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）
@@ -143,8 +144,8 @@ namespace aria {
         // 外层函数局部 -> 需 upvalue 捕获（M4 未实现 -> not_impl）。沿 enclosing_ 链查；命中即 Upvalue，
         // 由调用方（visitIdentifierNode/compile_lvalue）走 not_impl 报编译期错--不静默落到全局，
         // 否则外层局部会与同名模块全局串台致闭包捕获错误变量（见 CLAUDE.md「作用域模型」）。
-        for (auto e = cur_fn_ctx()->enclosing_; e != nullptr; e = e->enclosing_) {
-            if (e->find_local(name)) {
+        for (auto ctx = cur_fn_ctx()->enclosing_; ctx != nullptr; ctx = ctx->enclosing_) {
+            if (ctx->find_local(name)) {
                 return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = 0};
             }
         }
@@ -317,8 +318,8 @@ namespace aria {
     // ============================================================
 
     void CodeGen::compile_function(ObjString* name, List<Param>& params, BlockNode* body) {
-        const SourceLoc loc  = body->loc();
-        const u32       line = body->loc_line(); // 父序列压函数值 / 绑定 / 隐式 return 均用此行
+        const auto loc  = body->loc();
+        const u32  line = body->loc_line(); // 父序列压函数值 / 绑定 / 隐式 return 均用此行
 
         // 形参上限 kMaxArity(arity u8):超限 -> TooManyParameters(形参语义,区别于 TooManyLocals 的体局部超限)。
         if (params.size() > kMaxArity) {
@@ -326,8 +327,8 @@ namespace aria {
         }
 
         // 默认参数 / varargs -> not_impl（VM CALL 精确 arity，无默认/varargs 支持）。
-        for (const auto& p: params) {
-            if (p.is_varargs || p.default_value != nullptr) {
+        for (const auto& param: params) {
+            if (param.is_varargs || param.default_value != nullptr) {
                 not_impl(body, "默认参数 / varargs");
             }
         }
@@ -378,9 +379,9 @@ namespace aria {
         // 摆动 ModuleCtx 游标即可--cu 由游标派生，随游标自动切到子 unit，无需 save/restore。
         const auto child          = new FunctionCtx{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
         mod_ctx_->current_fn_ctx_ = child;
-        for (const auto& p: params) {
+        for (const auto& param: params) {
             // 这里没有采取任何检查，因为函数参数是函数的前n个局部变量
-            const auto slot = cur_fn_ctx()->add_local(p.name);
+            const auto slot = cur_fn_ctx()->add_local(param.name);
             cur_fn_ctx()->mark_initialized(slot);
         }
 
@@ -425,8 +426,8 @@ namespace aria {
     void CodeGen::visitBlockNode(BlockNode* node) {
         const u32 line = node->loc_line();
         begin_scope();
-        for (const auto& s: node->statements) {
-            emit_stmt(s.get());
+        for (const auto& stmt: node->statements) {
+            emit_stmt(stmt.get());
         }
         end_scope(line);
     }
@@ -459,13 +460,12 @@ namespace aria {
     }
 
     void CodeGen::visitWhileStmtNode(WhileStmtNode* node) {
-        const u32 line       = node->loc_line();
-        const u32 loop_scope = cur_fn_ctx()->scope_depth_;
-        const u32 l_start    = cur_cu()->size();
+        const u32 line    = node->loc_line();
+        const u32 l_start = cur_cu()->size();
         emit_expr(node->condition.get());
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
-        auto loop_ctx = LoopCtx{.loop_scope_depth     = loop_scope,
+        auto loop_ctx = LoopCtx{.loop_scope_depth     = cur_fn_ctx()->scope_depth_,
                                 .continue_back_target = {l_start},
                                 .continue_fwd_patches = {},
                                 .break_fwd_patches    = {}};
@@ -533,20 +533,21 @@ namespace aria {
 
         // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无
         // STORE_LOCAL/POP）。
+        // { var <iter> = expr.iter(); while( }
         emit_expr(node->iterable.get()); // [iterable]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
-        const auto iter_name = add_name_or_fail("iter", node->loc());
-        cur_cu()->emit_word(iter_name, line); // [iter_fn]
+        const auto iter_name_idx = add_name_or_fail("iter", node->loc());
+        cur_cu()->emit_word(iter_name_idx, line); // [iter_fn]
         cur_cu()->emit_op(OpCode::CALL, line);
         cur_cu()->emit_byte(0, line); // [iter_obj] 恰在 slot 位置
-        const u16 iter_slot = declare_local_or_fail("<iter>", node->loc());
-        cur_fn_ctx()->mark_initialized(iter_slot); // 值已在槽
+        const u16 iter_var_slot = declare_local_or_fail("<iter>", node->loc());
+        cur_fn_ctx()->mark_initialized(iter_var_slot); // 值已在槽
 
         const u32 l_start = cur_cu()->size();
-        cur_cu()->emit_load_local(iter_slot, line); // [iter]
+        cur_cu()->emit_load_local(iter_var_slot, line); // [iter]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
-        const auto has_next_name = add_name_or_fail("has_next", node->loc());
-        cur_cu()->emit_word(has_next_name, line); // [has_next_fn]
+        const auto has_next_name_idx = add_name_or_fail("has_next", node->loc());
+        cur_cu()->emit_word(has_next_name_idx, line); // [has_next_fn]
         cur_cu()->emit_op(OpCode::CALL, line);
         cur_cu()->emit_byte(0, line);                                  // [bool]
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
@@ -560,7 +561,7 @@ namespace aria {
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
         // 若为 block 则自带更深层 scope；break/continue 跳出时由 pop_locals_to(loop_scope) 代弹。
         begin_scope();
-        cur_cu()->emit_load_local(iter_slot, line); // [iter]
+        cur_cu()->emit_load_local(iter_var_slot, line); // [iter]
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
         const auto next_name = add_name_or_fail("next", node->loc());
         cur_cu()->emit_word(next_name, line); // [next_fn]

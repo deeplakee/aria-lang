@@ -45,8 +45,10 @@
 //   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。真 GC 触发点
 //   (new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
 //   调用方守卫入参(「每方只守自己创建的」,工厂不创建入参),故调用方须自行 make_guard 根化传入的
-//   module/name 入参；visitFunDeclNode/visitVarDeclNode/visitImportStmtNode 的 name_str 跨
-//   compile_function/emit_expr/new_string 由 make_guard 根化。
+//   module/name 入参；visitFunDeclNode/visitLambdaExprNode 的 name_str 跨 compile_function（含
+//   体编译）由 make_guard 根化。visitVarDeclNode（顶层）/visitImportStmtNode 的名字经
+//   add_name_or_fail 在 emit_expr 之后入池（new_string 结果立即 add_constant，trivial push 不
+//   触发 GC，见 GC.hpp 核心不变式），无需守卫。
 
 #include "bytecode/code.hpp"
 #include "common.hpp"
@@ -222,6 +224,11 @@ namespace aria {
         // 同 patch_jump_or_fail:void 封装,仅翻译失败。比 patch_jump 多一个 line 参数--emit_jump_back
         // 要发射 JUMP_BACK 指令(line 供其行号),而 patch_jump 只回填占位不发射,故无需 line。
         void emit_jump_back_or_fail(u32 target, u32 line, const SourceLoc& loc) const;
+
+        // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与 declare_local_or_fail
+        // 对称(局部/全局重定义检查各一),但 declare_global 返 bool、单一失败,故同 patch_jump_or_fail/
+        // emit_jump_back_or_fail 为 void 封装(无解包)。替代 visit 层 3 处 if+fail,消息文案收口于此。
+        void declare_global_or_fail(StringView name, const SourceLoc& loc) const;
 
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
         // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格，取代旧 slot+name_idx 双字段）。

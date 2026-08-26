@@ -215,6 +215,14 @@ namespace aria {
         }
     }
 
+    void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc& loc) const {
+        // declare_global 重定义 -> fail RedefinedVariable。void 封装(declare_global 返 bool,无解包),
+        // 同 patch_jump_or_fail/emit_jump_back_or_fail;与 declare_local_or_fail 对称,文案收口于此。
+        if (!mod_ctx_->declare_global(name)) {
+            fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name);
+        }
+    }
+
     // ============================================================
     // lvalue / 局部槽 load-store
     // ============================================================
@@ -370,9 +378,7 @@ namespace aria {
             cur_cu()->emit_word(fn_idx, line);
         } else if (mod_ctx_->is_global_scope()) {
             // 顶层 fun -> 模块全局（name 已是 intern ObjString*，declare_global 按内容判重）
-            if (!mod_ctx_->declare_global(name->view())) {
-                fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name->view());
-            }
+            declare_global_or_fail(name->view(), loc);
             cur_cu()->emit_op(OpCode::LOAD_CONST, line);
             cur_cu()->emit_word(fn_idx, line);
             const auto name_idx = add_constant_or_fail(Value::from_obj(name), loc);
@@ -629,9 +635,7 @@ namespace aria {
         //   局部）+ mark_initialized，无 STORE_LOCAL。对齐文法「绑模块到当前作用域（函数体=局部）」。
         if (mod_ctx_->is_global_scope()) {
             // 顶层 import -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。
-            if (!mod_ctx_->declare_global(node->alias)) {
-                fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局变量: {}", node->alias);
-            }
+            declare_global_or_fail(node->alias, node->loc());
             // path/alias 经 add_name_or_fail：new_string(intern) 结果立即 add_constant 入池（trivial push
             // 不触发 GC），无需守卫；入池即经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path。
             const auto path_idx = add_name_or_fail(node->path, node->loc());
@@ -681,21 +685,17 @@ namespace aria {
                 not_impl(b.target.get(), "列表模式解构 var 声明");
             }
             if (mod_ctx_->is_global_scope()) {
-                // 顶层 var -> 模块全局（intern 一次供常量池复用；declare_global 按内容判重）
-                auto name_str = new_string(gc_, id->name); // intern（常量池复用）
-                // name_str 裸持跨 emit_expr(initializer)：初始化器可能分配（lambda -> new_function、
-                // 字符串字面量 -> new_string）触发 maybe_collect 回收未根持有的 name_str，故先入临时根。
-                auto name_guard = gc_.make_guard(name_str);
-                if (!mod_ctx_->declare_global(id->name)) {
-                    fail(ErrorCode::RedefinedVariable, id->loc(), "重复定义全局变量: {}", id->name);
-                }
+                // 顶层 var -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。name 经
+                // add_name_or_fail 在 emit_expr 之后入池：new_string(intern) 结果立即 add_constant
+                // （trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫；与 visitImportStmtNode
+                // 顶层分支同形。
+                declare_global_or_fail(id->name, id->loc());
                 if (b.initializer != nullptr) {
                     emit_expr(b.initializer.get());
                 } else {
                     cur_cu()->emit_op(OpCode::LOAD_NIL, line);
                 }
-                const auto name_idx =
-                        add_constant_or_fail(Value::from_obj(name_str), id->loc()); // 复用，免 add_name 二次 intern
+                const auto name_idx = add_name_or_fail(id->name, id->loc());
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
                 cur_cu()->emit_word(name_idx, line);
             } else {

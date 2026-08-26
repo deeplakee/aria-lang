@@ -537,12 +537,22 @@ namespace aria {
 
     void CodeGen::visitForInStmtNode(ForInStmtNode* node) {
         const u32 line = node->loc_line();
+        // 等价形式（lowering 蓝图）：
+        //   {                                     // for-in scope（整循环存活）
+        //     var <iter> = expr.iter();            // <iter> 隐藏局部（"<iter>" 含 <> 不可作标识符，不撞用户名）
+        //     while (<iter>.has_next()) {          // L_start = has_next 判断处
+        //       {                                  // per-iteration scope（每轮 fresh）
+        //         var <pattern> = <iter>.next();   // bind_pattern：declare + 值填槽（_ -> POP 丢弃）
+        //         <body>
+        //       }
+        //     }
+        //   }
+        // continue 跳回 L_start（has_next），无 increment 步；下一轮值在每轮体首调 next() 取。
         begin_scope(); // for-in scope（D）：仅 <iter>，循环全程存活
         const u32 loop_scope = cur_fn_ctx()->scope_depth_;
 
         // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无
         // STORE_LOCAL/POP）。
-        // { var <iter> = expr.iter(); while( }
         emit_expr(node->iterable.get());              // [iterable]（receiver）
         emit_method_call0("iter", line, node->loc()); // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = declare_local_or_fail("<iter>", node->loc());

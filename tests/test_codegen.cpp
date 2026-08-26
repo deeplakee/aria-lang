@@ -397,6 +397,21 @@ TEST(CodeGen, ErrRedefinedImportAlias) {
     EXPECT_EQ(c.error().code(), ErrorCode::RedefinedVariable);
 }
 
+// import 当前仅支持模块顶层；嵌套 import（函数体内）编译期拒绝（ImportNotAtTopLevel）。
+// 待 IMPORT 指令拆分（load 压值 + DEF_GLOBAL/STORE_LOCAL 绑定）后放开，对齐文法「函数体=局部」。
+TEST(CodeGen, ErrImportNotAtTopLevel) {
+    auto c = compile_only("fun f() { import \"lib/u\" as U; }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ImportNotAtTopLevel);
+}
+
+// 块作用域内的 import 同样视为嵌套，编译期拒绝。
+TEST(CodeGen, ErrImportNotAtTopLevelInBlock) {
+    auto c = compile_only("{ import \"lib/u\" as U; }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ImportNotAtTopLevel);
+}
+
 // 使用「定义但未初始化」的局部 -> UninitializedVariable（Python 风格 definite-assignment）。
 // 典型：初始化器中自引用（declare 已标记未初始化，init 尚未完成时读取）。
 TEST(CodeGen, ErrUninitializedVariableSelfRef) {

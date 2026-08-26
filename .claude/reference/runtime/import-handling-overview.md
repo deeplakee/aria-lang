@@ -149,6 +149,11 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
    **当前模块** globals（顶层 import 即全局绑定）（`AriaVM.cpp:660-661`）。
 6. 栈中性（无 push/pop）。
 
+> **当前作用域限制**：CodeGen `visitImportStmtNode` 起始 `is_global_scope()` 检查，嵌套 import
+> （函数体/块内）编译期报 `ImportNotAtTopLevel`，故运行期 IMPORT 一定在模块顶层执行、绑全局。
+> 文法设计目标是「绑模块到当前作用域（函数体=局部）」，待 IMPORT 指令拆分（`IMPORT path` 压值 +
+> `DEF_GLOBAL`/`STORE_LOCAL` 绑定）后放开嵌套 import 并在此更新。
+
 **根安全**：`run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根）；path / alias 经常量池根；key 经
 intern weak root（GC lock 内不触回收）；module 经 guard 显式保命，不依赖读者推断 `modules_`
 为根。

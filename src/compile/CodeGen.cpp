@@ -625,6 +625,13 @@ namespace aria {
     void CodeGen::visitImportStmtNode(ImportStmtNode* node) {
         const u32 line = node->loc_line();
         // IMPORT path:u16 alias:u16（VM 绑定为模块全局；栈中性）。
+        // 当前 import 仅支持模块顶层（顶层 -> 模块全局绑定）。嵌套 import（函数体/块内）按设计应绑
+        // 当前作用域局部，但 IMPORT 指令现耦合「加载 + 按名绑 globals」、无局部绑定能力，故编译期
+        // 拒绝嵌套 import（ImportNotAtTopLevel）；待 IMPORT 指令拆分（load 压值 + DEF_GLOBAL/STORE_LOCAL
+        // 绑定）后放开，对齐文法「绑模块到当前作用域（函数体=局部）」。
+        if (!mod_ctx_->is_global_scope()) {
+            fail(ErrorCode::ImportNotAtTopLevel, node->loc(), "import 必须在模块顶层");
+        }
         // import 别名入表：补漏检 `import "x" as U; var U = 1;`（现报 RedefinedVariable）。
         if (!mod_ctx_->declare_global(node->alias)) {
             fail(ErrorCode::RedefinedVariable, node->loc(), "重复定义全局变量: {}", node->alias);

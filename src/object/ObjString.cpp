@@ -36,7 +36,7 @@ namespace aria {
         if (this == other)
             return true; // intern 命中:同指针同内容
         if (!is<ObjString>(other))
-            return false; // 不同 Obj 类型
+            return false;
         return view() == as<ObjString>(other)->view();
     }
 

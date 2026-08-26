@@ -263,7 +263,7 @@ namespace aria {
         }
     }
 
-    // 错误码所属大类（原 ErrorCode::category() 的映射搬迁而来，分组注释保留）。
+    // 错误码所属大类。
     [[nodiscard]]
     constexpr ErrorCategory category_of(ErrorCode c) noexcept {
         switch (c) {

@@ -13,9 +13,7 @@ namespace aria {
     //        持 Buffer<T,Alloc> buf_(收口分配/重分配/释放)+ usize len_(逻辑长度,<= cap)。
     //        不可拷贝/不可移动(继承自 Buffer)。
     //
-    //        扩容策略固定:初始 8、2 倍几何增长(见 ensure_capacity)。曾以 GrowPolicy 模板
-    //        参数化,但全代码库无自定义策略消费(所有实例化皆用默认),属推测性泛化,故内联。
-    //        若将来出现需不同增长因子 / 初始容量的容器,再按需抽出策略即可(局部改动)。
+    //        扩容策略固定:初始 8、2 倍几何增长(见 ensure_capacity)。
     //
     //        用途:**顺序**增长的可扩容数组(ObjList 元素 / CodeUnit 字节码与常量池)。
     //        扩容走 Buffer::reserve -> reallocate(memcpy 旧数据到新块),故不适合 HashTable --

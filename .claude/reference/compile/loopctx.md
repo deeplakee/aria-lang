@@ -62,7 +62,7 @@ cur_fn_ctx()->loop_stack_.pop_back();               // 循环结束，弹出
 
 `break`/`continue` 在循环体内被访问时，总是取 `loop_stack_.back()`（**当前最内层**循环的 `LoopCtx`），往它的 `break_fwd_patches` / `continue_fwd_patches` 里追加占位偏移，或用 `continue_back_target` 直接回跳。这天然实现了「break/continue 绑定到最内层循环」。
 
-### 3.2 `while` 循环（`visitWhileStmtNode`，CodeGen.cpp:461）
+### 3.2 `while` 循环（`visitWhileStmtNode`，CodeGen.cpp:483）
 
 ```cpp
 const u32 l_start = cur_cu()->size();      // 循环起点 = continue 的后向目标
@@ -94,7 +94,7 @@ L_start: <cond> JUMP_FALSE -> L_end
 L_end:   <break 回填到这里>
 ```
 
-### 3.3 `for` 循环（`visitForStmtNode`，CodeGen.cpp:484）
+### 3.3 `for` 循环（`visitForStmtNode`，CodeGen.cpp:503）
 
 这是最复杂的，因为 continue 的目标取决于**有没有 increment**：
 
@@ -139,7 +139,7 @@ L_incr: <incr> POP          <- continue_fwd_patches 回填到这里
 L_end:  <- break_fwd_patches 回填到这里
 ```
 
-### 3.4 `for-in` 循环（`visitForInStmtNode`，CodeGen.cpp:529）
+### 3.4 `for-in` 循环（`visitForInStmtNode`，CodeGen.cpp:548）
 
 与 `while` 同型：continue 后向跳回 `l_start`（每轮重新调 `has_next` 判断）。
 
@@ -160,7 +160,7 @@ for (const auto bp: loop.break_fwd_patches)
 
 `continue_back_target = l_start`，`continue_fwd_patches` 空，与 `while` 完全一致。
 
-### 3.5 `break`（`visitBreakStmtNode`，CodeGen.cpp:584）
+### 3.5 `break`（`visitBreakStmtNode`，CodeGen.cpp:600）
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
@@ -173,7 +173,7 @@ loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记�
 
 三步：① 查非空（否则 `BreakOutsideLoop`）；② 用 `loop_scope_depth` 弹局部；③ 发占位 `JUMP` 并把偏移追加到 `break_fwd_patches`。break 永远前向，所以从不需要 `continue_back_target`。
 
-### 3.6 `continue`（`visitContinueStmtNode`，CodeGen.cpp:594）
+### 3.6 `continue`（`visitContinueStmtNode`，CodeGen.cpp:610）
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
@@ -293,7 +293,7 @@ L_end:  <- jf / break_fwd_patches 回填到这里
 三个关键点：
 
 1. **continue 跳 `L_incr` 而非 `L_cond`**：C 风格 for 的 continue 语义是「跳过本轮剩余体，但**仍要执行递增**再判断」。目标必须是递增区起点 `L_incr`；而 `L_incr` 在循环体之后才发射，continue 编译时还不知道 -> 占位 + 回填 -> `continue_fwd_patches`。这是 `for` 带 increment 独有前向 continue 的全部根因。
-2. **`continue_fwd_patches` 必须在「发射 incr 之前」回填**：`patch_jump` 用「当前 `size()`」当 dst。回填那一刻 `size()` 必须恰好等于 `L_incr`，所以顺序是「`L_incr = size()` -> 立刻回填 -> 再发 incr」。若等 incr 与 `JUMP_BACK` 发完再回填，`size()` 已是 `L_end`，continue 全错跳到 `L_end` 直接退出循环（`CodeGen.cpp:509-510` 注释专门强调）。
+2. **`continue_fwd_patches` 必须在「发射 incr 之前」回填**：`patch_jump` 用「当前 `size()`」当 dst。回填那一刻 `size()` 必须恰好等于 `L_incr`，所以顺序是「`L_incr = size()` -> 立刻回填 -> 再发 incr」。若等 incr 与 `JUMP_BACK` 发完再回填，`size()` 已是 `L_end`，continue 全错跳到 `L_end` 直接退出循环（`CodeGen.cpp:528-529` 注释专门强调）。
 3. **`continue_back_target = none`**：有 incr 时 continue 走前向，后向目标留空，`visitContinueStmtNode` 里 `if (loop.continue_back_target)` 为假 -> 走 else 分支追加 `continue_fwd_patches`。
 
 ### 6.3 `while (cond) body` -- continue 后向
@@ -326,7 +326,7 @@ patch break_fwd_patches -> L_end
 for-in 也没有独立递增步，continue = 「重新调 `has_next` 判断」，判断在体前 -> 后向已知。
 
 ```
-... 声明 <iter>，LOAD_NIL 预占，取 iter 对象 ...
+... 声明 <iter>（值填槽：iterable.iter() 出值即 <iter>，无 LOAD_NIL 预占），取 iter 对象 ...
 L_start = size()  ◀─────────────┐   continue 的 dst（已知）
 LOAD iter; has_next; CALL;       │
 JUMP_FALSE ──► ? (jf 占位)      │

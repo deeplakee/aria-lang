@@ -95,7 +95,6 @@ namespace aria::fs {
             }
         }
 
-        // 读取当前线程的 errno 并映射
         [[nodiscard]]
         inline FsErrCode errno_to_fserr() noexcept {
             return errno_to_fserr(errno);
@@ -184,7 +183,6 @@ namespace aria::fs {
     }
 
 
-    // 获取当前工作目录
     [[nodiscard]]
     inline Result<String, FsErrCode> current_dir() {
         std::error_code ec;
@@ -195,7 +193,6 @@ namespace aria::fs {
         return p.string();
     }
 
-    // 获取该程序所在的目录
     [[nodiscard]]
     inline Result<String, FsErrCode> program_dir() {
         auto exe = detail::executable_path();

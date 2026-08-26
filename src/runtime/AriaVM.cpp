@@ -229,13 +229,13 @@ namespace aria {
             return std::nullopt;
         }
 
-        // M1 范围外 opcode 的统一处理:后续阶段(闭包/全局/字段/索引/类/导入/异常等)
-        // 才会实现,M1 暂不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 run_ 返回)。
+        // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类/异常等)才会实现,
+        // 当前不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 run_ 返回)。
         [[noreturn]]
         void not_implemented(const StringView op_name) {
             fatal_error(ErrorCode::NotImplemented,
-                        std::format("opcode '{}' not implemented yet (beyond M1 scope: closures/globals/fields/"
-                                    "classes/imports/exceptions come later)",
+                        std::format("opcode '{}' not implemented yet (out of current scope: closures/fields/index/"
+                                    "classes/exceptions come later)",
                                     op_name));
         }
 

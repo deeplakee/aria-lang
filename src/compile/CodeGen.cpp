@@ -314,7 +314,7 @@ namespace aria {
         }
         const u32 line = pat->loc_line();
         if (dynamic_cast<WildcardPatternNode*>(pat) != nullptr) {
-            cur_cu()->emit_op(OpCode::POP, line); // 丢弃值
+            cur_cu()->emit_op(OpCode::POP, line);
             return;
         }
         if (dynamic_cast<ListPatternNode*>(pat) != nullptr) {

@@ -8,7 +8,6 @@ namespace aria {
     namespace {
         // TokenType -> Op 映射。parser 负责 token->op 映射（Op 与 TokenType 解耦，见 ast.hpp）。
         // 调用方须先 match 对应 token，故入参必为合法运算符 token；非运算符 token 触发 UNREACHABLE。
-        // 等价拼写合并：or/|| -> Or、and/&& -> And、!/not -> Not。
         Op::Assignment assignment_op(const TokenType t) noexcept {
             switch (t) {
                 case TokenType::Equal:

@@ -255,7 +255,7 @@ namespace aria {
 
             entries_ = alloc_->template allocate<Entry>(new_cap);
             ctrl_    = alloc_->template allocate<u8>(new_cap);
-            std::memset(ctrl_, kCtrlEmpty, new_cap); // 全 kEmpty
+            std::memset(ctrl_, kCtrlEmpty, new_cap);
             cap_        = new_cap;
             count_      = 0; // 重插时累加
             tombstones_ = 0;

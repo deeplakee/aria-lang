@@ -20,7 +20,7 @@ namespace aria {
     // 故以指针持有 SourceFile（nullptr 表空态，引用无法「清空」）。
     //
     // 返回 Result<List<Token>, List<Error>>：
-    //   - 所有词法错误（含原「致命」的串未闭合/插值错配等）一律作可恢复处理--
+    //   - 所有词法错误（串未闭合等）一律作可恢复处理--
     //     记入 List<Error> 后推进 pos_ 继续扫描，尽量多收集错误，而非遇首个错误即终止。
     //   - 为缓解级联错误，设错误上限 kMaxErrors：errors_ 达上限即置 is_fatal_，
     //     主循环检测后停止，避免无限级联刷屏。

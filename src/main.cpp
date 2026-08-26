@@ -103,7 +103,6 @@ var g = f + "\t", h = g, i;
         io::println("{:<3}:{}", i, tks[i].to_string());
     }
 
-    // 构造 AST：用 Parser 解析上面的 token 流，dump 出语法树。
     // token 的 lexeme 与 AST 的 SourceLoc 均指向 s（SourceFile），s 存活至函数返回，安全。
     io::println("==== ast =====");
     auto parser  = Parser{};

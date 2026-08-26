@@ -76,27 +76,27 @@ STORE_INDEX      ; []    消耗留下的 (obj,idx) 与新值
 
 `++E` / `--E` 与复合赋值同属 lvalue-once 操作:C 标准明文 `++E` 等价于 `E += 1`、`--E` 等价于 `E -= 1`(C11 §6.5.3.1p2/p3),故继承同一条"左值只求值一次"不变式。`++obj[f()]` 的 `f()` 只调一次,`++getObj().field` 的 `getObj()` 只调一次--与 `obj[f()] += 1` 完全相同。
 
-lowering 复用 §4 的 DUP/DUP2 locator 保留手法,差别仅两点:运算对象是常量 1(`LOAD_I 1`)而非任意 rhs;前置 `++`/`--` 作为表达式**返回新值**。以 `++obj[idx]` 为例:
+lowering 复用 §4 的 DUP/DUP2 locator 保留手法,差别仅两点:运算对象是常量 1(`LOAD_IMM 1`)而非任意 rhs;前置 `++`/`--` 作为表达式**返回新值**。以 `++obj[idx]` 为例:
 
 ```
 <obj>            ; [obj]
 <idx>            ; [obj, idx]            <- 副作用在此,仅一次
 DUP2             ; [obj, idx, obj, idx]
 LOAD_INDEX       ; [obj, idx, obj[idx]]  消耗顶层一对,留下复制对
-LOAD_I 1         ; [obj, idx, obj[idx], 1]
+LOAD_IMM 1       ; [obj, idx, obj[idx], 1]
 ADD              ; [obj, idx, newval]    newval = obj[idx]+1
 STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)),留 newval 作返回值
 ```
 
 `--E` 把 `ADD` 换 `SUBTRACT`。`++x`(标识符)/`++x.f`(字段)同理,按 §4.1/§4.2 无 DUP 或用 `DUP`。
 
-> **返回新值的 tail**:前置 `++`/`--` 返回新值,与 `x += e` 返回新值同属"赋值类表达式返回什么值"的未决 VM 语义(§4 各序列同样只画了值被丢弃的形态,表达式上下文需留值)。上图假设 STORE 操作码存后留值,`x = e` / `x += e` / `++x` 三者统一;若 STORE 不留值,需额外栈操作(旋转或临时槽)保住新值,具体 choreography 留 VM 实现定。locator-once 不受此 tail 影响。
+> **返回新值的 tail**:前置 `++`/`--` 返回新值,与 `x += e` 返回新值同属"赋值类表达式返回什么值"的语义。已采纳 peek-store:`STORE_LOCAL`/`STORE_GLOBAL` 存后留值,`x = e` / `x += e` / `++x` 三者统一;语句上下文(表达式值被丢弃)补一条 `POP`。locator-once 不受此 tail 影响。
 
 > aria 文法 `unary -> ( ... | "++" | "--" ) unary`,`value` 层无后置 `++`/`--`,故只有前置。若日后加后置 `x++`(返回旧值),仍 locator-once,但要先读出旧值保住、再自增存回(多一步保存旧值);locator 依旧只求值一次。
 
 ## 6. 编译器设计
 
-字节码编译器(尚未实现)需把"左值编译为 locator"与"编译为值"分开:
+字节码编译器(CodeGen)把"左值编译为 locator"与"编译为值"分开:
 
 - `compile_lvalue(target)`:求值 target 的 locator(局部槽 / upvalue 索引 / 全局名 / `obj` 引用 + field / `obj` 引用 + idx),返回 locator 描述;**不**产生 load。
 - 普通 `lhs = e`:`<e>` 压值 -> `compile_store(locator)`。

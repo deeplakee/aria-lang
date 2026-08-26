@@ -2,13 +2,13 @@
 
 aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，供后续 CodeUnit / 反汇编器 / 字节码编译器 / VM 实现参考。
 
-> 现状：`OpCode` 枚举已就绪（61 条，含 2 条 `_L` 长变体（局部槽），`u8`）；`CodeUnit` 仍为空骨架；操作数编码、栈效应约定尚未落地。本文中标「建议」「待决」者为面向实现的提案，非既成事实。
+> 现状：`OpCode` 枚举已就绪（63 条，含 2 条 `_L` 长变体（局部槽），`u8`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文中标「建议」「待决」者为面向实现的提案，非既成事实。
 
 ## 1. 现状与基准
 
 ### 1.1 枚举现状（以 `code.hpp` 为准）
 
-`OpCode : u8`，共 61 条（含 2 条 `_L` 长变体），按功能分组：
+`OpCode : u8`，共 63 条（含 2 条 `_L` 长变体），按功能分组：
 
 | 分组 | 指令 |
 | :--- | :--- |
@@ -30,7 +30,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
 
-`u8` 上限 256，当前 57 条，扩空间充裕。
+`u8` 上限 256，当前 63 条，扩空间充裕。
 
 ### 1.2 与 CLAUDE.md 的同步状态
 
@@ -47,7 +47,7 @@ CLAUDE.md「关键模块」段已与 `code.hpp` 对齐。当前已定决策：
 
 CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内联操作数。VM 的 `ip`（指令指针）按 opcode 查「操作数格式表」决定读取几字节、如何拼。
 
-- **代码段类型建议 `Array<u8>`**，opcode 以 `static_cast<u8>(op)` 存入，操作数直接写字节。`gc-implementation-plan.md` 写的 `Array<OpCode>` 应理解为「代码段」的泛指；实际存 `Array<u8>` 才能让操作数字节与 opcode 统一寻址（见 §7）。
+- **代码段类型 `Array<u8>`**：opcode 以 `static_cast<u8>(op)` 存入，操作数直接写字节，让操作数字节与 opcode 统一寻址（见 §7）。
 - **字节序：小端**（低位在前）。仅影响内存表示与反汇编可读性，不落盘则无跨平台问题。
 - 反汇编器与 VM 共用同一张「opcode -> 操作数格式」解码表，避免两处漂移。
 
@@ -528,18 +528,18 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程：取当前 `ip` + 当前帧/栈深度 -> 查当前 CodeUnit 记录表找最近覆盖 `ip` 的条目 -> 若 `frame_depth` 小于当前深度则 `frames_.truncate(frame_depth)` 跨帧回退 -> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handler_ip`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构尚未实现（§6.1）。
+`raise` 流程：取当前 `ip` + 当前帧/栈深度 -> 查当前 CodeUnit 记录表找最近覆盖 `ip` 的条目 -> 若 `frame_depth` 小于当前深度则 `frames_.truncate(frame_depth)` 跨帧回退 -> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handler_ip`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle}` + `find_try_handler`），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
 
 ## 6. 缺口分析（相对文法与 CLAUDE.md）
 
-### 6.1 异常记录表（已采纳方案，待实现）
+### 6.1 异常记录表（已采纳方案，部分落地）
 
-**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析，但记录表结构与 VM `raise` 尚未实现，故 try 暂无法编译运行。待实现项：
+**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。记录表结构与查表已落地：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle}`（按 `begin` 单调），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录返 handler offset。`CallFrame` 亦已落地（`truncate` 目标深度来源之一）。待实现项：
 
-- CodeUnit 内异常记录表结构（建议 `Array<TryRecord>`，每条 `{try_start_ip, try_end_ip, handler_ip, catch_slot, stack_depth, frame_depth}`，按 `try_start_ip` 排序便于二分查找）。
+- `TryRecord` 扩字段（`stack_depth`/`frame_depth`/`catch_slot`，供 `raise` 回退与传参）。
 - VM `raise`：按 `ip` 查表 -> `truncate` 回退 -> 跳 handler（见 §5.9）。
+- `THROW` 运行时语义（当前 `THROW` 命中 `not_implemented`）。
 - `finally` 语义细化（finally 内 return/throw、finally 必执行）。
-- `CallFrame` 结构（`truncate` 目标深度来源之一）。
 
 详见 CLAUDE.md「错误处理」第 2 条。
 
@@ -560,21 +560,24 @@ L_end:
 
 `ObjType::ITERATOR` 已预留。for-in 经方法调用（§5.6）实现，无需独立迭代指令；`iter`/`has_next`/`next` 作为方法/内建提供。
 
-## 7. CodeUnit 结构建议
+## 7. CodeUnit 结构
 
 ```cpp
 class CodeUnit {
-    Array<u8>    code_;       // 字节流: opcode + 内联操作数
-    Array<Value> constants_;  // 常量池: nil/bool/int/f64/ObjString/ObjFunction...
-    // 调试信息 (待决, 见下)
+    Array<u8>        code;        // 字节流: opcode + 内联操作数 (小端)
+    AriaArray        constants;   // 常量池 (Array<Value> + trace)
+    Array<LineEntry> lines;       // RLE 行段表 (offset -> line)
+    Array<TryRecord> try_records; // 异常记录表 (按 begin 单调, 见 §6.1)
 };
 ```
 
-- **`code_` 用 `Array<u8>`**：opcode 与操作数统一按字节寻址，VM 读操作数直接取字节。`gc-implementation-plan.md` §5 Phase 3 写的 `Array<OpCode>` 建议改为 `Array<u8>`（理由 §2.1）。
-- **`constants_` 用 `Array<Value>`**：`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
-- **调试信息（待决）**：运行时错误需 `ip -> SourceLoc` 映射。建议存「每字节码偏移 -> 行号 `u32`」（或 RLE 压缩），`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。不落盘则无需序列化。
+四个容器字段直接 public 裸露，VM/编译器/反汇编器直接操作；字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`）收口于 CodeUnit 方法，越界以 bool 返回交调用方翻译。详见 `.claude/rules/bytecode.md`。
 
-`ObjFunction`（Phase 3）持 `String name`、`CodeUnit codeunit`、参数/upvalue 计数、`Array<UpvalDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）等；`ObjFunction::trace` 标 name、常量池与捕获描述表（不标字节码）。
+- **`code` 用 `Array<u8>`**：opcode 与操作数统一按字节寻址，VM 读操作数直接取字节。
+- **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFunction::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
+- **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
+
+`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）留 M4 闭包。
 
 ## 8. 反汇编器输出格式（建议）
 

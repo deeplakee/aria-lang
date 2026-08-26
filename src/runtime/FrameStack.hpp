@@ -33,7 +33,6 @@ namespace aria {
         FrameStack& operator=(FrameStack&&) noexcept = default;
 
         // 占用下一个空闲槽并推进计数。不构造--调用方就地填充字段。
-        // 等价旧代码：c_frames_[count].init(...); count++;
         [[nodiscard]] T& acquire() {
             ASSERT(count_ < Capacity, "FrameStack overflow");
             return storage_[count_++];

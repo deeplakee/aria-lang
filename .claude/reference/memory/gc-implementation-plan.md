@@ -17,7 +17,7 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 | :--- | :--- | :--- |
 | **Phase 1** | `Array<T>` + GC(模板分配器 + mark-sweep + 临时根 + `new_object`)+ `ObjString`(SSO,**无驻留**)+ 测试 | 已落地 |
 | Phase 2 | `HashTable`(Swiss Table)+ intern 驻留池 + 值绑定容器(`AriaArray`/`AriaHashTable`) | 已落地 |
-| Phase 3 | `CodeUnit` 用 `Array<OpCode>` / `Array<Value>`;`ObjFunction` / `ObjList` / `ObjMap` 等子类型 | 待做 |
+| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn` 已落地;`ObjList`/`ObjMap`/`ObjClass`/`ObjInstance`/`ObjClosure`/`ObjUpvalue`/`ObjBoundMethod` 待后续 | 部分落地 |
 | Phase 4 | `Movement`(有栈协程,VM 持 `current_` + `movements_`)+ VM 根集合(所有活协程栈/帧/upvalue 并集)+ safe point | 部分前拉:值栈/帧经 vm_roots tracer 标根 + `JUMP_BACK` safe point 已落地(开发期即开 GC);`ObjMovement : Object` + open upvalue 链 + 多协程根并集仍待 M6 |
 
 > intern 延后到 Phase 2:它依赖 HashTable,而 HashTable 是 Phase 1 之后的下一个产物(与 Array 平级、并列的通用容器,不依赖 Array)。Phase 1 不引入 `std::unordered_map` 占位代码,GC 核心(分配计数 / mark-sweep / 临时根 / ObjString 析构)已可独立测试。
@@ -53,36 +53,26 @@ GC.hpp 还 include error/Error.hpp + <format>/<cstring>/<algorithm>(模板分配
 
 #### `Array<T>`(`memory/Array.hpp`)
 
-基于 GC 分配器的可扩容 trivial 数组(**顺序**增长)。`T` 必须 trivially-copyable(`Value`/`OpCode`/`u8`/`i32` 等 POD)。持 `GC* gc_`,dtor 自释放。不可拷贝/不可移动。扩容策略经 `Policy` 参数抽象,默认 `DefaultGrowPolicy`(初始 8、2 倍几何增长);外部用 `Array<T>` 别名。
+基于 GC 分配器的可扩容 trivial 数组(**顺序**增长)。`T` 须 `TriviallyCopyable`(`Value`/`OpCode`/`u8`/`i32` 等 POD),分配器须 `TrivialAllocator`(默认 `GC`)。建在 `Buffer<T,Alloc>`(收口分配/重分配/释放)之上,加 `usize len_` 逻辑长度。不可拷贝/不可移动。扩容固定初始 8、2 倍几何增长(内联,无策略模板参数)。
 
 ```cpp
-struct DefaultGrowPolicy {
-    static constexpr usize kInitialCapacity = 8;
-    static usize next_capacity(usize old_cap, usize needed) noexcept;  // 返回 >= needed
-};
-
-template<typename T, typename Policy = DefaultGrowPolicy>
-class ArrayImpl {
-    static_assert(std::is_trivially_copyable_v<T>);
-    T* data_; usize len_; usize cap_; GC* gc_;
+template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
+class Array {
+    Buffer<T, Alloc> buf_;   // 收口 allocate/reallocate/deallocate,无逻辑长度
+    usize len_ = 0;          // 逻辑长度(<= cap)
 public:
-    explicit ArrayImpl(GC* gc) noexcept;
-    ~ArrayImpl();                                // gc_->deallocate<T>(data_, cap_)
-    ArrayImpl(ArrayImpl&&) = delete;               // 禁移动(同拷贝)
-    ArrayImpl& operator=(ArrayImpl&&) = delete;
-    void push(const T& v);                        // 容量不足按 Policy 扩容
-    void reserve(usize n);                        // Policy::next_capacity -> gc_->reallocate<T>
-    void resize(usize n, T fill = T{});           // 注意 Value{} 是 f64 0.0 非 nil
-    void truncate(usize n) noexcept;              // 不释放容量
+    explicit Array(Alloc* alloc) noexcept;
+    void push(const T& v);                   // 容量不足 2x 扩容
+    void reserve(usize n);                   // buf_.reserve -> alloc->reallocate<T>(memcpy 旧块)
+    void resize(usize n, T fill = T{});       // 注意 Value{} 是 f64 0.0 非 nil
+    void truncate(usize n) noexcept;          // 不释放容量
+    void clear() noexcept;                    // len_ = 0,不释放容量
     void pop() noexcept; T& top() noexcept;
     T& operator[](usize i) noexcept;
-    Span<T> span() noexcept;
+    T* data() noexcept; Span<T> span() noexcept;
     usize size() / capacity() const noexcept;
     bool empty() const noexcept;
 };
-
-template<typename T>
-using Array = ArrayImpl<T, DefaultGrowPolicy>;  // 外部默认用此别名
 ```
 
 用途:**顺序**增长的可扩容数组(ObjList 元素 / CodeUnit 字节码与常量池)。扩容走 `reallocate<T>`(memcpy 旧数据到新块),不触发 GC。
@@ -107,10 +97,10 @@ public:
     void maybe_collect() noexcept;                // bytes_allocated_ >= next_gc_ 或 stress 时 collect
     void collect();                               // mark_roots_ -> trace_gray_ -> sweep_
     // ---- 临时根 ----
-    void push_temp_root(Value v) noexcept;
-    void push_temp_root(Object* o) noexcept;      // 双重载,内部统一 List<Value>(Object* 经 from_obj 装箱)
-    void pop_temp_root(usize n = 1) noexcept;
-    class Guard { /* RAII,禁拷贝/移动,经 make_guard 的 prvalue 必然复制消除 */ };
+    // push_temp_root/pop_temp_root 为私有(仅 Guard 内部调用);公共增量压入 API 为 Guard::push
+    class Guard { /* RAII,禁拷贝/移动,经 make_guard 的 prvalue 必然复制消除 */
+                  void push(Value v) noexcept;
+                  void push(Object* o) noexcept; };
     Guard make_guard() / make_guard(Value) / make_guard(Object*);
     usize bytes_allocated() const noexcept;
     void set_stress(bool) noexcept;               // 运行期压力开关(测试用)
@@ -458,7 +448,7 @@ class InternPool {
 | `src/memory/HashTable.hpp` | 通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq>`(header-only,值无关,`upsert`/`find`/`erase`/`for_each_occupied`) |
 | `src/memory/InternPool.hpp` / `.cpp` | 字符串驻留池(低位标签,weak root;头循环经前向声明 + .cpp 打破) |
 | `src/value/AriaArray.hpp` | `AriaArray : public Array<Value>` + `trace` |
-| `src/value/AriaHashTable.hpp` | `AriaHashTable : public HashTable<Value,Value,ValueHash,ValueEq>` + `trace`;含 `ValueHash`/`ValueEq` 内联包装(转发到 value_hash/value_equal) |
+| `src/value/AriaHashTable.hpp` | `AriaHashTable : public HashTable<Value,Value,ValueHash,ValueEq>` + `trace`;含 `ValueHash`/`ValueEq` 内联包装(转发到 value_hash/value_identical,哈希键用 ===) |
 | `src/value/Value.hpp` / `.cpp` | 值操作收口:`value_hash`/`value_equal` 自由函数(声明在 .hpp,定义在 .cpp;`<bit>`/`Object.hpp` 置于 .cpp) |
 | `src/memory/GC.{hpp,cpp}` | 加 `intern_` 成员 + `intern_find`/`intern_insert` + `collect` 调 `remove_white` |
 | `src/object/ObjString.{hpp,cpp}` | `new_string` 改驻留(find -> new_object + Guard + insert) |
@@ -466,7 +456,7 @@ class InternPool {
 
 ### Phase 3：CodeUnit + Object 子类型
 
-- `CodeUnit`：内含 `Array<OpCode> code_` + `Array<Value> constants_`。
+- `CodeUnit`：内含 `Array<u8> code`(字节流) + `AriaArray constants`(常量池) + `Array<LineEntry> lines`(RLE 行号表) + `Array<TryRecord> try_records`(异常记录表)。
 - `ObjFunction`：trace name(string)+ codeunit 常量池；不 trace 字节码。
 - `ObjList`:持 `AriaArray` 成员;trace 委托 `AriaArray::trace`。
 - `ObjMap`:持 `AriaHashTable` 成员;trace 委托 `AriaHashTable::trace`。

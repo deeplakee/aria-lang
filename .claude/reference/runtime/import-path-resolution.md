@@ -134,12 +134,11 @@ IMPORT 以绝对键查 `modules_`：
 
 ## 根安全
 
-`run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根，值栈 / 帧对 GC 不透明）：
+GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 `LockGuard`：
 
 - `path` 经常量池根（同 `LOAD_CONST`）。
-- 绝对键经 `new_string` intern 驻留（weak root，GC lock 内不触回收）。
-- 命中分支取回的 `module` 是跨 `upsert` 分配持有的裸 `Value`，经 `gc_.make_guard` 显式
-  保命——不依赖读者推断 `modules_` 为根，对将来重构稳健。
+- 绝对键经 `new_string` intern 驻留（weak root）。
+- 命中分支取回的 `module` 经 `modules_` 根可达，`ctx.push` 期间指针稳定（非移动 GC），无需守卫。
 
 ## 示例
 
@@ -162,8 +161,7 @@ IMPORT 以绝对键查 `modules_`：
 
 ## 当前边界与后续
 
-- **未实现**：磁盘加载、AST->CodeUnit 编译器、VM 内嵌套执行模块体（run-once）。文件解析
-  命中但模块未入表即 `ModuleNotFound`。
+- **未实现**：磁盘加载链路（读文件 → 词法/语法 → 编译为被导入模块的 CodeUnit → VM 内嵌套 run-once 入表）。编译器（CodeGen）本身已就绪，缺的是加载编排；文件解析命中但模块未入表即 `ModuleNotFound`。
 - **已落地**：绝对键解析（`resolve_module` + `weakly_canonical` + 逐基 exists-check）、
   `source_roots` 播种（`[0]` 入口槽 cwd 占位 + `run()` 换入口 `root_`、`[1..]` 配置根 stdlib）、
   `ObjModule::root_`/`name_` + `abs_path()`（合成绝对路径，`root_` 恒非空 -- `new_module` 默认

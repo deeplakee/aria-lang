@@ -26,7 +26,7 @@ Token (Import / As / String / Identifier)
    │  ② Parser              已实现
    ▼
 ImportStmtNode { path:String, alias:String }
-   │  ③ AST→CodeUnit 编译器  ✗ 未实现（无 AstVisitor 子类）
+   │  ③ AST→CodeUnit 编译器  ✓ 已实现（CodeGen : AstVisitor）
    ▼
 OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
    │  ④ VM run_() IMPORT 分支  部分实现
@@ -46,13 +46,13 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ① 文法 `import "str" as id;` | 已定义 | `docs/grammar.txt:42` |
 | ① 词法关键字 `import` / `as` | 已实现 | `src/compile/Token.hpp:48-49`、`Token.cpp:23` |
 | ② Parser 解析 import 语句 | 已实现 | `src/compile/Parser.cpp:523-534` |
-| AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp:427-441`、`ast.cpp:295,653` |
-| ③ AST→CodeUnit 编译器（发射 IMPORT） | **未实现** | 全仓无 `AstVisitor` 具体子类 |
+| AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp:436`、`ast.cpp:295,653` |
+| ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp:91-92` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp:63-107` |
-| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:618-664` |
-| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **未实现**，报 `ModuleNotFound` | `src/runtime/AriaVM.cpp:653-659` |
+| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:682-728` |
+| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **未实现**，报 `ModuleNotFound` | `src/runtime/AriaVM.cpp:718-725` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp:83-102`、`AriaVM.cpp:231-247,262-267` |
 | `ObjModule` 对象 + 状态机 + `root_`/`name_`/`abs_path()` | 已实现（`root_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
 | VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp:72-81,117-119`、`AriaVM.cpp:231-247` |
@@ -84,12 +84,11 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   `String path;` / `String alias;`，注释说明 path = 字符串字面量解析后的内容（模块路径），
   alias = 绑定模块的本地名。`dump` 渲染 `ImportStmt path=... as=...`（`ast.cpp:295-297`），
   `accept` 调 `visitor.visitImportStmtNode(this)`（`ast.cpp:653`）。
-- **visitor**（`src/compile/AstVisitor.hpp:92`）：`visitImportStmtNode` 为**纯虚**。
+- **visitor**（`src/compile/AstVisitor.hpp:92`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
-> **关键缺口**：全仓库没有任何 `AstVisitor` 的具体子类把 `ImportStmtNode` 编译成
-> `OpCode::IMPORT` 字节码（grep `: public AstVisitor` 无结果）。即 AST→CodeUnit 编译器尚未
-> 存在，`IMPORT` 当前只在测试里手工 `emit_op(OpCode::IMPORT, ...)` 发射
-> （`tests/test_ariavm.cpp` 的 `emit_import` 辅助）。
+> `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`
+> 发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽
+> + `mark_initialized`）。
 
 ## ③ 字节码
 
@@ -144,8 +143,8 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
    - **未命中**（文件命中但模块未入表）：向 stderr 打印
      `[aria] module loading not implemented yet: 'PATH'`，返回
      `Error{ModuleNotFound, "module not loaded: 'PATH' (loading not implemented yet)"}`
-     （`AriaVM.cpp:653-659`）。**磁盘加载 + AST→CodeUnit 编译 + VM 内嵌套执行模块体 run-once 均未就绪**。
-5. 命中后：`gc_.make_guard(module)` 跨分配保命 → **压模块值于栈顶**（`ctx.push(module)`）。
+     （`AriaVM.cpp:718-725`）。**磁盘加载 + AST→CodeUnit 编译 + VM 内嵌套执行模块体 run-once 均未就绪**。
+5. 命中后：module 经 `modules_` 根可达（非移动 GC，`ctx.push` 期间指针稳定，无需守卫）→ **压模块值于栈顶**（`ctx.push(module)`）。
    绑定不再由 IMPORT 做——交 CodeGen 按作用域走：顶层经 `DEF_GLOBAL alias`（弹值定义全局）、
    嵌套经值填槽（IMPORT 压在 `declare_local` 的 slot）+ `mark_initialized`。
 6. 栈效应 `... -> [module]`（压一值）。
@@ -155,9 +154,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 > `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
 > （值填槽）+ `mark_initialized`。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
-**根安全**：`run_()` 持 `LockGuard` 禁 GC（M1 未接 VM 根）；path 经常量池根；key 经
-intern weak root（GC lock 内不触回收）；module 经 guard 显式保命，不依赖读者推断 `modules_`
-为根。
+**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 `LockGuard`；path 经常量池根；key 经 intern weak root；命中分支的 module 经 `modules_` 根可达，`ctx.push` 期间指针稳定（非移动 GC），无需守卫。
 
 ### 源根列表（已实现，被 IMPORT 消费）
 

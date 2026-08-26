@@ -147,9 +147,8 @@ namespace aria {
         // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）。
         ObjFunction* init_module(ObjModule& module);
 
-        // 当前函数上下文游标（= mod_ctx_->current_fn_ctx_）与当前 CodeUnit（派生）。CodeGen 不再自持
-        // 「当前函数」指针--游标在 ModuleCtx，cu 由游标派生（= &fn_->unit()），随 compile_function
-        // 摆动游标自动切换，免两指针同步 save/restore。编译外（mod_ctx_ 为空）不可调用。
+        // 当前函数上下文游标（= mod_ctx_->current_fn_ctx_）与当前 CodeUnit（由游标派生 =
+        // &fn_->unit()，随 compile_function 摆动游标自动切换）。编译外（mod_ctx_ 为空）不可调用。
         [[nodiscard]]
         FunctionCtx* cur_fn_ctx() const noexcept;
 
@@ -189,7 +188,7 @@ namespace aria {
 
         // --- 名字解析 ---
         // 名字解析结果：kind 描述命中类别，index 为相关槽/索引（Local: 局部槽；Global: 名字常量池索引；
-        // Upvalue: 未用）。用结构体按值返回，取代旧 out_slot/out_name_idx 双引用参数的隐式返回。
+        // Upvalue: 未用）。按值返回。
         struct ResolvedVar {
             enum class Kind { Local, Upvalue, Global } kind;
             u16 index;
@@ -231,7 +230,7 @@ namespace aria {
         void declare_global_or_fail(StringView name, const SourceLoc& loc) const;
 
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
-        // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格，取代旧 slot+name_idx 双字段）。
+        // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格）。
         //   Local:   局部槽
         //   Upvalue: upvalue 索引（M4 闭包未实现，compile_lvalue 走 not_impl）
         //   Global:  名字常量池索引

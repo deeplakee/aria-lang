@@ -29,7 +29,7 @@ namespace aria {
     //        模块表键为规范路径 ObjString*(intern),值为 ObjModule*(均装箱为 Value 入 AriaHashTable,
     //        白赚 trace)。collect 时 GC 调 lambda -> modules_.trace 标全部模块(进而 trace 各模块
     //        name_/root_/entry_/globals_)。IMPORT 已部分落地(路径解析 + 模块表命中复用;磁盘加载/编译/run-once
-    //        未就绪);DEF/LOAD/STORE_GLOBAL 指令待后续步骤。
+    //        未就绪);DEF/LOAD/STORE_GLOBAL 已落地。
     //
     //        VM 持有自己的 GC(值成员 gc_):每个 VM 一个 GC,无需外部注入。成员声明序
     //        gc_ -> main_ctx_ -> modules_(后者引用 &gc_),故析构逆序下 gc_ 最后析构,

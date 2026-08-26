@@ -46,10 +46,12 @@ struct CallFrame {
 
 // ---- 解释器级 ----
 class AriaVM {
-    GC&              gc_;          // 或 VM 拥有 GC(实施时定,倾向 VM 拥有)
-    List<ObjModule*> modules_;     // 模块表(M2 起用)
-    Movement*        current_;     // 正在运行的上下文
-    List<Movement*>  contexts_;    // 所有活上下文 = GC 根集合(M6 起用)
+    GC               gc_;          // VM 拥有 GC 值成员(已定:每 VM 一个 GC)
+    AriaHashTable    modules_;     // 模块表(键=规范路径 ObjString*、值=ObjModule*,均装箱 Value)
+    Movement         main_ctx_;    // 主上下文(值栈 + 帧栈;M6 协程期升级 ObjMovement : Object)
+    List<String>     source_roots_;// 源根列表([0]=入口根、[1..]=配置根)
+    // Movement*      current_;     // M6:多协程时当前上下文(现单上下文,直接用 main_ctx_)
+    // List<Movement*> contexts_;   // M6:所有活上下文 = GC 根集合
 
     ExecOutcome run();             // 驱动 current_ 直到 返回/yield/未捕获异常
     void        raise(Error&&);    // 查 TryRecord 表 -> truncate -> 跳 handler(M3 起用)
@@ -158,14 +160,14 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 | 阶段 | 内容 | 验收 |
 | :--- | :--- | :--- |
-| **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通,ctest 371/371 绿 |
+| **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通,ctest 371/371 绿(M1 当时快照) |
 | **M2 全局与模块** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常** | `TryRecord` 扩字段、`raise`、`THROW`、truncate unwind、finally 语义细化 | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 链、`CallFrame::closure_` 换闭包。open upvalue 落地后须在值栈增长时重定位其 Value*(或改索引式) | 计数器闭包等经典样例正确 |
 | **M5 类与对象** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC mark 回调 + safe point、`YIELD`/`RESUME`(指令集新增,`CALL` 语义扩「callee 是协程则 resume」)、调度列表 `contexts_` | 协程生成器样例;stress GC 下多协程无悬垂 |
 
-顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)另线推进,M1-M3 期间以手写 emit 的测试用例驱动 VM。
+顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,42 个 visit);M1 早期曾以手写 emit 测试驱动 VM,现由 CodeGen 产出字节码。
 
 ### M1 验证状态
 
@@ -179,9 +181,9 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - **`YIELD`/`RESUME` 指令缺失**(指令集文档需增补,参照 `INVOKE_METHOD` 的「预备指令」先例)。
 - **`ObjType` 无 `MOVEMENT`**(M6 增)。
 - **`TryRecord` 字段不全**(缺 stack_depth/frame_depth/catch_slot,M3 补)。
-- **GC 的 VM 根回调接口**不存在(M6 补)。
+- **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册,标 `modules_`/值栈/帧)。
 - **内置函数注册机制**(把 `print`/`len`/... 等内建按名注册进模块 globals 的表/指令,如专设 `LOAD_BUILTIN idx` 或走全局表预填)待定(M2 定);原生函数**类型与 CALL 路径**已落地(见 §4.7),M2 只需补「按名注册」一层。
-- **VM 与 GC 的拥有关系**(VM 持 `GC&` 还是拥有 `GC` 成员):倾向 VM 拥有(一个 VM 一个 GC,REPL 常驻),M1 实施时定。
+- **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考
 

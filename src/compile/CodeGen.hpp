@@ -272,6 +272,15 @@ namespace aria {
         // 仅做检查并报错，不发射。
         void check_local_initialized(u16 slot, const SourceLoc& loc) const;
 
+        // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local；Global LOAD_GLOBAL；
+        // Upvalue -> not_impl（M4 闭包）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽或
+        // 全局名字常量池索引；loc 供 check_local_initialized / not_impl（走其 SourceLoc 重载）复用。
+        void emit_load_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
+
+        // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
+        // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL；Upvalue -> not_impl（M4 闭包）。
+        void emit_store_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
+
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
         // IdentifierPattern -> declare_local 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP 丢弃；

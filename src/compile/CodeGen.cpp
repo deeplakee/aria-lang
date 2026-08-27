@@ -288,6 +288,44 @@ namespace aria {
         cur_cu()->emit_byte(0, line);
     }
 
+    // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local（未初始化 ->
+    // UninitializedVariable）；Global LOAD_GLOBAL（VM 运行期查表）；Upvalue -> not_impl（M4 闭包未实现）。
+    // visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽或全局名字常量池索引；loc 供
+    // check_local_initialized / not_impl（走其 SourceLoc 重载）复用。
+    void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line, const SourceLoc& loc) const {
+        switch (const auto [kind, slot] = var; kind) {
+            case ResolvedVar::Kind::Local:
+                check_local_initialized(slot, loc);
+                cur_cu()->emit_load_local(slot, line);
+                return;
+            case ResolvedVar::Kind::Global:
+                cur_cu()->emit_op(OpCode::LOAD_GLOBAL, line);
+                cur_cu()->emit_word(slot, line);
+                return;
+            case ResolvedVar::Kind::Upvalue:
+                not_impl(loc, "闭包/upvalue 捕获");
+        }
+        UNREACHABLE();
+    }
+
+    // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized（赋值即
+    // 初始化，不做 init 检查）；Global STORE_GLOBAL（VM 运行期查表）；Upvalue -> not_impl（M4 闭包未实现）。
+    void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line, const SourceLoc& loc) const {
+        switch (const auto [kind, slot] = var; kind) {
+            case ResolvedVar::Kind::Local:
+                cur_cu()->emit_store_local(slot, line);
+                cur_fn_ctx()->mark_initialized(slot);
+                return;
+            case ResolvedVar::Kind::Global:
+                cur_cu()->emit_op(OpCode::STORE_GLOBAL, line);
+                cur_cu()->emit_word(slot, line);
+                return;
+            case ResolvedVar::Kind::Upvalue:
+                not_impl(loc, "闭包/upvalue 捕获");
+        }
+        UNREACHABLE();
+    }
+
     // ============================================================
     // 模式绑定
     // ============================================================
@@ -757,37 +795,20 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierNode(IdentifierNode* node) {
-        const auto mode   = take_lvalue_mode(); // 入口 take：取模式并清空为 Load（子节点经 emit_expr 时已为 Load）
-        const u32  line   = node->loc_line();
-        auto [kind, slot] = resolve_name_or_fail(node->name, node->loc());
-        if (mode == LvalueMode::Store) {
-            // 赋值目标：peek-store 留栈顶值。Store 路径不做 init 检查（赋值即初始化，mark_initialized）。
-            switch (kind) {
-                case ResolvedVar::Kind::Local:
-                    cur_cu()->emit_store_local(slot, line);
-                    cur_fn_ctx()->mark_initialized(slot);
-                    return;
-                case ResolvedVar::Kind::Global:
-                    cur_cu()->emit_op(OpCode::STORE_GLOBAL, line);
-                    cur_cu()->emit_word(slot, line);
-                    return;
-                case ResolvedVar::Kind::Upvalue:
-                    not_impl(node, "闭包/upvalue 捕获");
-            }
-            UNREACHABLE();
-        }
-        // Load（默认 rvalue / 复合 load）或 Locate（预留，Identifier 同 Load）。读点 init 检查仅 Local。
-        switch (kind) {
-            case ResolvedVar::Kind::Local:
-                check_local_initialized(slot, node->loc()); // 读点 init 检查（未初始化 -> UninitializedVariable）
-                cur_cu()->emit_load_local(slot, line);
+        // 入口 take：取模式并清空为 Load（子节点经 emit_expr 时已为 Load）。按 mode 分派到 emit_load_var /
+        // emit_store_var，两者各自按 var.kind 发射 Local/Global/Upvalue。Locate 预留（Identifier 无 receiver，
+        // 同 Load）；Upvalue 走 not_impl（M4 闭包）。
+        const auto mode     = take_lvalue_mode();
+        const u32  line     = node->loc_line();
+        const auto resolved = resolve_name_or_fail(node->name, node->loc());
+        switch (mode) {
+            case LvalueMode::Load:
+            case LvalueMode::Locate:
+                emit_load_var(resolved, line, node->loc());
                 return;
-            case ResolvedVar::Kind::Global:
-                cur_cu()->emit_op(OpCode::LOAD_GLOBAL, line);
-                cur_cu()->emit_word(slot, line);
+            case LvalueMode::Store:
+                emit_store_var(resolved, line, node->loc());
                 return;
-            case ResolvedVar::Kind::Upvalue:
-                not_impl(node, "闭包/upvalue 捕获");
         }
         UNREACHABLE();
     }

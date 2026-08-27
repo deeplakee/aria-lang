@@ -120,20 +120,20 @@ namespace aria {
         if (lines.empty()) {
             return 0;
         }
-        usize lo = 0;
-        usize hi = lines.size();
-        while (lo < hi) {
-            const usize mid = lo + (hi - lo) / 2;
+        usize low = 0;
+        usize high = lines.size();
+        while (low < high) {
+            const usize mid = low + (high - low) / 2;
             if (static_cast<usize>(lines[mid].offset) <= offset) {
-                lo = mid + 1;
+                low = mid + 1;
             } else {
-                hi = mid;
+                high = mid;
             }
         }
-        if (lo == 0) {
+        if (low == 0) {
             return 0; // offset 在首条之前(不应发生: 首次 emit 在 offset 0 记一条)
         }
-        return lines[lo - 1].line;
+        return lines[low - 1].line;
     }
 
     // ---- 异常记录表 ----
@@ -143,21 +143,21 @@ namespace aria {
         if (try_records.empty()) {
             return std::nullopt;
         }
-        usize lo = 0;
-        usize hi = try_records.size();
-        while (lo < hi) {
-            const usize mid = lo + (hi - lo) / 2;
+        usize low = 0;
+        usize high = try_records.size();
+        while (low < high) {
+            const usize mid = low + (high - low) / 2;
             if (try_records[mid].begin <= ip) {
-                lo = mid + 1;
+                low = mid + 1;
             } else {
-                hi = mid;
+                high = mid;
             }
         }
-        // lo = 首个 begin > ip 的位置; 从 lo-1 向前找第一个 end > ip
-        while (lo > 0) {
-            --lo;
-            if (try_records[lo].end > ip) {
-                return try_records[lo].handle;
+        // low = 首个 begin > ip 的位置; 从 low-1 向前找第一个 end > ip
+        while (low > 0) {
+            --low;
+            if (try_records[low].end > ip) {
+                return try_records[low].handle;
             }
         }
         return std::nullopt;

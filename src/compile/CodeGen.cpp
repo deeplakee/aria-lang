@@ -30,6 +30,14 @@ namespace aria {
         constexpr u32 kMaxArguments = 255;
         constexpr u32 kMaxConstants = 65535;
         constexpr u32 kMaxLocals    = 65535;
+
+        // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
+        // 超出 -> NumberOutOfRange):
+        //   kIntMin -- -(2^47);
+        //   kIntMax -- 2^47 - 1.
+        // 集中定义,使 visitIntegerLiteralNode 的范围检查与报错文案共享同一来源,无散落魔数。
+        constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
+        constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
     } // namespace
 
     // ============================================================
@@ -664,7 +672,7 @@ namespace aria {
 
     void CodeGen::visitVarDeclNode(VarDeclNode* node) {
         const u32 line = node->loc_line();
-        for (auto& [target, initializer]: node->bindings) {
+        for (const auto& [target, initializer]: node->bindings) {
             // 仅 IdentifierPattern 可跑；ListPattern -> not_impl。
             const auto id = dynamic_cast<IdentifierPatternNode*>(target.get());
             if (id == nullptr) {
@@ -710,8 +718,6 @@ namespace aria {
             cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(v)), line);
             return;
         }
-        constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
-        constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
         if (v < kIntMin || v > kIntMax) {
             fail(ErrorCode::NumberOutOfRange, node->loc(), "整数字面量超出 i48 范围: {}", v);
             return;

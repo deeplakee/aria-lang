@@ -902,8 +902,9 @@ namespace aria {
                 emit_lvalue(node->operand.get(), LvalueMode::Store); // peek-store 留新值
                 return;
             }
+            default:
+                UNREACHABLE();
         }
-        not_impl(node, "未知一元运算符");
     }
 
     void CodeGen::visitAssignmentNode(AssignmentNode* node) {
@@ -934,8 +935,8 @@ namespace aria {
             case Op::Assignment::PercentAssign:
                 cur_cu()->emit_op(OpCode::MOD, line);
                 break;
-            case Op::Assignment::Assign:
-                break; // 已处理
+            default:
+                UNREACHABLE();
         }
         emit_lvalue(node->target.get(), LvalueMode::Store);
     }
@@ -949,7 +950,7 @@ namespace aria {
             fail(ErrorCode::TooManyArguments, node->loc(), "实参数超过 {}", kMaxArguments);
         }
         emit_expr(node->callee.get());
-        for (auto& arg: node->args) {
+        for (const auto& arg: node->args) {
             emit_expr(arg.get());
         }
         cur_cu()->emit_op(OpCode::CALL, line);

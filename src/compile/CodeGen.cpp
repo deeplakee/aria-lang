@@ -338,21 +338,18 @@ namespace aria {
 
     void CodeGen::compile_function(const StringView name, List<Param>& params, BlockNode* body) {
         const auto loc  = body->loc();
-        const u32  line = body->loc_line(); // 父序列压函数值 / 绑定 / 隐式 return 均用此行
+        const u32  line = body->loc_line();
 
-        // 形参上限 kMaxArity(arity u8):超限 -> TooManyParameters(形参语义,区别于 TooManyLocals 的体局部超限)。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
         }
 
-        // 默认参数 / varargs -> not_impl（VM CALL 精确 arity，无默认/varargs 支持）。
         for (const auto& param: params) {
             if (param.is_varargs || param.default_value != nullptr) {
                 not_impl(body, "默认参数 / varargs");
             }
         }
 
-        // 形参重名 -> DuplicateParam。
         for (usize i = 0; i < params.size(); ++i) {
             for (usize j = i + 1; j < params.size(); ++j) {
                 if (params[i].name == params[j].name) {
@@ -361,47 +358,37 @@ namespace aria {
             }
         }
 
-        // name 恒非空(ObjFunction 模型统一):具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`。
-        // 入参为 StringView,此处 intern 成 ObjString* name_str 并入临时根:跨下方 new_function(其内
-        // new_object 顶部 maybe_collect)与函数体编译(emit_stmt 可能 new_string/new_object -> maybe_collect)
-        // --未根持有的 name_str 会被回收,故 make_guard 根化。「每方只守自己创建的」:compile_function
-        // 创建 name_str 即由其自守,visit 层只传 StringView 无需守卫。module_ 经 compile() 的 module_guard。
+        // name_str 在下方 new_function 调用中可能被回收,故 make_guard 保护
         const auto name_str   = new_string(gc_, name);
         auto       name_guard = gc_.make_guard(name_str);
         const auto fn         = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
-        // fn 此刻白色无根,但 add_constant -> constants.push -> reallocate<T> 走 trivial 分配
-        // (不触发 GC,见 GC.hpp 核心不变式),故 fn 跨 add_constant 不会被回收,无需守卫。
-        // 入父常量池后即经 module 根链可达。
-        const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc); // 入父（当前）序列常量池
+        // fn 创建后跨 add_constant 无需守卫:constants.push -> reallocate 走 trivial 分配不触发 GC(见 GC.hpp
+        // 核心不变式);入池后即经 module 根链可达。
+        const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
+        cur_cu()->emit_op(OpCode::LOAD_CONST, line);
+        cur_cu()->emit_word(fn_idx, line);
 
-        // 父序列：压函数值 + 绑定名字（仍发射入父 unit = 当前 cur_cu()）。
-        // name == `<anonymous>` -> lambda:函数值留栈作表达式值,不绑定名字(`<>` 标识符不可用,
-        // 仅 visitLambdaExprNode 产生此名,故 name 即 lambda 判据);否则具名 fun -> 模块全局或局部。
-        if (name == kAnonymousName) {
-            cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-            cur_cu()->emit_word(fn_idx, line);
-        } else if (mod_ctx_->is_global_scope()) {
-            // 顶层 fun -> 模块全局（declare_global 内容判重；name 经 add_name_or_fail 入池，与 var/import 同形）
-            declare_global_or_fail(name, loc);
-            cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-            cur_cu()->emit_word(fn_idx, line);
-            const auto name_idx = add_name_or_fail(name, loc);
-            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-            cur_cu()->emit_word(name_idx, line);
-        } else {
-            // 嵌套 fun -> 局部（值填槽：declare 仅登记标未初始化，LOAD_CONST 把 fn 压在 slot 即该局部）
-            const auto slot = declare_local_or_fail(name, loc);
-            cur_cu()->emit_op(OpCode::LOAD_CONST, line);
-            cur_cu()->emit_word(fn_idx, line); // fn 恰好压在 slot（不变式：declare 与 init 相邻）
-            cur_fn_ctx()->mark_initialized(slot);
+        // lambda(name == `<anonymous>`)留栈作表达式值不绑定，故可以跳过;具名 fun 绑定全局/局部。
+        if (name != kAnonymousName) {
+            if (mod_ctx_->is_global_scope()) {
+                // 顶层 fun -> 模块全局
+                declare_global_or_fail(name, loc);
+                const auto name_idx = add_name_or_fail(name, loc);
+                cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
+                cur_cu()->emit_word(name_idx, line);
+            } else {
+                // 嵌套 fun -> 局部(值填槽:fn 已压在 slot 位置,declare 登记该 slot 即该局部,无 store/pop)
+                const auto slot = declare_local_or_fail(name, loc);
+                cur_fn_ctx()->mark_initialized(slot);
+            }
         }
 
-        // 切到子函数上下文：new 分配（非 UPtr），enclosing_ 回父（父函数编译期长于子，裸指针稳定）。
-        // 摆动 ModuleCtx 游标即可--cu 由游标派生，随游标自动切到子 unit，无需 save/restore。
-        const auto child          = new FunctionCtx{*cur_fn_ctx(), *fn}; // child->enclosing_ = 当前游标
+        // 切到子函数上下文并摆动游标:cu 由游标派生,随游标自动切到子 unit,无需 save/restore。
+        // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。
+        const auto child          = new FunctionCtx{*cur_fn_ctx(), *fn};
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& param: params) {
-            // 这里没有采取任何检查，因为函数参数是函数的前n个局部变量
+            // 形参即函数前 n 个局部变量(slot 1..n);重名已在上方检查,故直接 add_local 无需再查。
             const auto slot = cur_fn_ctx()->add_local(param.name);
             cur_fn_ctx()->mark_initialized(slot);
         }
@@ -409,15 +396,14 @@ namespace aria {
         // 编译体（BlockNode 自带 scope）。
         emit_stmt(body);
 
-        // 若 emit_stmt(body) 抛 AriaCompileException：unwind 跳过下方 delete/还原，子留在 enclosing_ 链上，
-        // 交 ~ModuleCtx 沿链释放（compile() 顶层 catch 后 mod_ctx_.reset()）。
+        // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
 
-        // 隐式 return nil（成功路径）。
+        // 隐式 return nil(兜底;显式 return 后为死代码,无害)。
         cur_cu()->emit_op(OpCode::LOAD_NIL, line);
         cur_cu()->emit_op(OpCode::RETURN, line);
 
-        // 成功：还原父游标（cu 随之自动回父 unit）并手动 delete 子上下文。
-        mod_ctx_->current_fn_ctx_ = child->enclosing_; // = 父
+        // 成功:还原父游标(cu 自动回父 unit)并 delete 子上下文。
+        mod_ctx_->current_fn_ctx_ = child->enclosing_;
         delete child;
     }
 
@@ -678,11 +664,11 @@ namespace aria {
 
     void CodeGen::visitVarDeclNode(VarDeclNode* node) {
         const u32 line = node->loc_line();
-        for (auto& b: node->bindings) {
+        for (auto& [target, initializer]: node->bindings) {
             // 仅 IdentifierPattern 可跑；ListPattern -> not_impl。
-            auto id = dynamic_cast<IdentifierPatternNode*>(b.target.get());
+            const auto id = dynamic_cast<IdentifierPatternNode*>(target.get());
             if (id == nullptr) {
-                not_impl(b.target.get(), "列表模式解构 var 声明");
+                not_impl(target.get(), "列表模式解构 var 声明");
             }
             if (mod_ctx_->is_global_scope()) {
                 // 顶层 var -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。name 经
@@ -690,8 +676,8 @@ namespace aria {
                 // （trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫；与 visitImportStmtNode
                 // 顶层分支同形。
                 declare_global_or_fail(id->name, id->loc());
-                if (b.initializer != nullptr) {
-                    emit_expr(b.initializer.get());
+                if (initializer != nullptr) {
+                    emit_expr(initializer.get());
                 } else {
                     cur_cu()->emit_op(OpCode::LOAD_NIL, line);
                 }
@@ -702,8 +688,8 @@ namespace aria {
                 // 嵌套 var -> 局部（值填槽：declare 仅登记标未初始化；初始化器值恰好压在 slot 即该局部，
                 // 无 store/pop；无初始化器则 LOAD_NIL 填槽。最后 mark_initialized）
                 const auto slot = declare_local_or_fail(id->name, id->loc());
-                if (b.initializer != nullptr) {
-                    emit_expr(b.initializer.get()); // 值恰好压在 slot（不变式：declare 与 init 相邻）
+                if (initializer != nullptr) {
+                    emit_expr(initializer.get()); // 值恰好压在 slot（不变式：declare 与 init 相邻）
                 } else {
                     cur_cu()->emit_op(OpCode::LOAD_NIL, id->loc_line()); // 无初始化器：nil 填槽
                 }

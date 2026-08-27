@@ -329,17 +329,20 @@ namespace aria {
     // 函数编译（FunDecl / Lambda 共用）
     // ============================================================
 
-    void CodeGen::compile_function(const StringView name, List<Param>& params, BlockNode* body) {
-        const auto loc  = body->loc();
-        const u32  line = body->loc_line();
-
+    void CodeGen::validate_params(const List<Param>& params, const SourceLoc& loc) const {
+        // 形参合法性检查（FunDecl / Lambda 共用，compile_function 编译体前调用）：
+        //   >kMaxArity -> TooManyParameters；默认参数 / varargs -> not_impl；形参重名 -> DuplicateParam。
+        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出，
+        // 与原内联检查同一职责与顺序，首错即止行为不变。loc 为声明节点位置（fun 关键字，compile_function
+        // 经 decl_loc 传入）而非 body->loc()（body 的 '{'），更贴近参数列表所在；只需位置无需整节点，故入参
+        // 为 const SourceLoc& 而非 ASTNode*（not_impl 走其 SourceLoc 重载）。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
         }
 
         for (const auto& param: params) {
             if (param.is_varargs || param.default_value != nullptr) {
-                not_impl(body, "默认参数 / varargs");
+                not_impl(loc, "默认参数 / varargs");
             }
         }
 
@@ -350,6 +353,17 @@ namespace aria {
                 }
             }
         }
+    }
+
+    void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode* body,
+                                   const SourceLoc& decl_loc) {
+        // 参数合法性检查：decl_loc 为声明节点位置（fun 关键字，visit 层经 node->loc() 传入），非 body 的 '{'，
+        // 供 validate_params 报参数错；先于 new_function 等分配，失败即抛 AriaCompileException 跳过下方所有
+        // 发射与分配。首错即止行为与检查顺序与原内联实现一致。下方体发射行号仍取 body->loc_line()。
+        validate_params(params, decl_loc);
+
+        const auto loc  = body->loc();
+        const u32  line = body->loc_line();
 
         // name_str 在下方 new_function 调用中可能被回收,故 make_guard 保护
         const auto name_str   = new_string(gc_, name);
@@ -406,6 +420,11 @@ namespace aria {
 
     void CodeGen::not_impl(ASTNode* node, StringView feature) const {
         fail(ErrorCode::NotImplemented, node->loc(), "{} 尚未支持", feature);
+    }
+
+    void CodeGen::not_impl(const SourceLoc& loc, StringView feature) const {
+        // loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。与 ASTNode* 重载同一消息格式。
+        fail(ErrorCode::NotImplemented, loc, "{} 尚未支持", feature);
     }
 
     // ============================================================
@@ -650,7 +669,8 @@ namespace aria {
 
     void CodeGen::visitFunDeclNode(FunDeclNode* node) {
         // 顶层 fun：name 经 compile_function 内部 intern + make_guard（每方只守自己创建的），故此处只传 StringView。
-        compile_function(node->name, node->params, node->body.get());
+        // node->loc() 传作 decl_loc，供 compile_function -> validate_params 取声明节点 loc（fun 关键字）报参数错。
+        compile_function(node->name, node->params, node->body.get(), node->loc());
     }
 
     void CodeGen::visitDefDeclNode(DefDeclNode* node) { not_impl(node, "def 类与对象"); }
@@ -937,8 +957,8 @@ namespace aria {
     void CodeGen::visitLambdaExprNode(LambdaExprNode* node) {
         // lambda 名 `<anonymous>`（`<>` 标识符不可用，具独特辨识度）；compile_function 据名 == `<anonymous>`
         // 判定 lambda -> 函数值留栈不绑定名字。name 经 compile_function 内部 intern + make_guard，故此处只传
-        // StringView。
-        compile_function(kAnonymousName, node->params, node->body.get());
+        // StringView。node->loc() 传作 decl_loc，供 compile_function -> validate_params 取声明节点 loc 报参数错。
+        compile_function(kAnonymousName, node->params, node->body.get(), node->loc());
     }
 
     void CodeGen::visitMatchExprNode(MatchExprNode* node) { not_impl(node, "match 表达式"); }

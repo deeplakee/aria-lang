@@ -284,12 +284,20 @@ namespace aria {
         void emit_stmt(StmtNode* n); // n->accept(*this)，不留值
 
         // --- 函数编译（FunDecl / Lambda 共用）---
+        // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；默认参数 / varargs
+        // -> not_impl；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，首错即 fail / not_impl 抛出。
+        // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body->loc()（body 的 '{'），
+        // 更贴近参数列表所在。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*（not_impl 走其重载）。
+        void validate_params(const List<Param>& params, const SourceLoc& loc) const;
+
         // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`），
         // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（每方只守自己创建的）。
         // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
         // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（LOAD_CONST fn_idx）。
-        void compile_function(StringView name, List<Param>& params, BlockNode* body);
+        // decl_loc 为声明节点位置（fun 关键字，visit 层经 node->loc() 传入），供 validate_params 报参数错;
+        // 体发射行号仍取 body->loc_line()。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*。
+        void compile_function(StringView name, const List<Param>& params, BlockNode* body, const SourceLoc& decl_loc);
 
         // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result）---
         template<typename... Args>
@@ -298,6 +306,10 @@ namespace aria {
 
         [[noreturn]]
         void not_impl(ASTNode* node, StringView feature) const; // throw AriaCompileException(NotImplemented, loc, ...)
+
+        // 同上，loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。
+        [[noreturn]]
+        void not_impl(const SourceLoc& loc, StringView feature) const;
     };
 
     // ------------------------------------------------------------

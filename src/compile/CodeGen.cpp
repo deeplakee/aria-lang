@@ -819,17 +819,21 @@ namespace aria {
 
     void CodeGen::visitBinaryExprNode(BinaryExprNode* node) {
         const u32 line = node->loc_line();
+        emit_expr(node->lhs.get());
         // 短路逻辑运算：lhs 真假跳留值、跳过 rhs；否则弹 lhs 求 rhs。跳转回填到 rhs 之后（L_end）。
-        if (node->op == Op::Binary::Or || node->op == Op::Binary::And) {
-            emit_expr(node->lhs.get());
-            const auto j = cur_cu()->emit_jump(
-                    node->op == Op::Binary::Or ? OpCode::JUMP_TRUE_OR_POP : OpCode::JUMP_FALSE_OR_POP, line);
+        if (node->op == Op::Binary::Or) {
+            const auto j = cur_cu()->emit_jump(OpCode::JUMP_TRUE_OR_POP, line);
+            emit_expr(node->rhs.get());
+            patch_jump_or_fail(j, node->loc()); // -> L_end（rhs 之后）
+            return;
+        }
+        if (node->op == Op::Binary::And) {
+            const auto j = cur_cu()->emit_jump(OpCode::JUMP_FALSE_OR_POP, line);
             emit_expr(node->rhs.get());
             patch_jump_or_fail(j, node->loc()); // -> L_end（rhs 之后）
             return;
         }
         // 算术 / 比较：lhs、rhs 各求值一次，再发射 op。
-        emit_expr(node->lhs.get());
         emit_expr(node->rhs.get());
         switch (node->op) {
             case Op::Binary::EqualEqual:
@@ -871,11 +875,9 @@ namespace aria {
             case Op::Binary::Percent:
                 cur_cu()->emit_op(OpCode::MOD, line);
                 return;
-            case Op::Binary::Or:
-            case Op::Binary::And:
-                break; // 已在上方短路分支处理（不可达）
+            default:
+                UNREACHABLE();
         }
-        not_impl(node, "未知二元运算符");
     }
 
     void CodeGen::visitUnaryExprNode(UnaryExprNode* node) {

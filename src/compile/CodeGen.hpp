@@ -232,12 +232,12 @@ namespace aria {
 
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
         // 与上面 _or_fail 同一职责约定;patch_jump 无返回值,故本封装 void(仅翻译失败,无解包)。
-        void patch_jump_or_fail(usize off, const SourceLoc& loc) const;
+        void patch_jump_or_fail(usize src_off, const SourceLoc& loc) const;
 
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
         // 同 patch_jump_or_fail:void 封装,仅翻译失败。比 patch_jump 多一个 line 参数--emit_jump_back
         // 要发射 JUMP_BACK 指令(line 供其行号),而 patch_jump 只回填占位不发射,故无需 line。
-        void emit_jump_back_or_fail(u32 target, u32 line, const SourceLoc& loc) const;
+        void emit_jump_back_or_fail(u32 target_off, u32 line, const SourceLoc& loc) const;
 
         // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与 declare_local_or_fail
         // 对称(局部/全局重定义检查各一),但 declare_global 返 bool、单一失败,故同 patch_jump_or_fail/

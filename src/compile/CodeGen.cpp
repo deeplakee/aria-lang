@@ -210,18 +210,18 @@ namespace aria {
         fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants); // add_name 溢出透传
     }
 
-    void CodeGen::patch_jump_or_fail(const usize off, const SourceLoc& loc) const {
+    void CodeGen::patch_jump_or_fail(const usize src_off, const SourceLoc& loc) const {
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
         // 与上面 _or_fail 同一职责约定;patch_jump 无返回值,故本封装 void(仅翻译失败,无解包)。
-        if (!cur_cu()->patch_jump(off)) {
+        if (!cur_cu()->patch_jump(src_off)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "跳转偏移超过 64KB");
         }
     }
 
-    void CodeGen::emit_jump_back_or_fail(const u32 target, const u32 line, const SourceLoc& loc) const {
+    void CodeGen::emit_jump_back_or_fail(const u32 target_off, const u32 line, const SourceLoc& loc) const {
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
         // 同 patch_jump_or_fail:void 封装,仅翻译失败。line 供 JUMP_BACK 发射行号(patch_jump 不发射故无)。
-        if (!cur_cu()->emit_jump_back(target, line)) {
+        if (!cur_cu()->emit_jump_back(target_off, line)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "回边偏移超过 64KB");
         }
     }

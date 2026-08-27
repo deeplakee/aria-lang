@@ -35,7 +35,7 @@ struct LoopCtx {
 
 这是 `LoopCtx` 最关键的设计点：**continue 的目标地址在遇到 continue 时是否已知**，决定了走哪条路径。
 
-- **已知（后向）**：目标在 continue 之前已经发射。填 `continue_back_target`，`continue` 直接 `emit_jump_back(target)` 一条指令搞定，`continue_fwd_patches` 留空。
+- **已知（后向）**：目标在 continue 之前已经发射。填 `continue_back_target`，`continue` 直接 `emit_jump_back(target_off)` 一条指令搞定，`continue_fwd_patches` 留空。
 - **未知（前向）**：目标在 continue 之后才发射（`for` 的递增区 `L_incr`）。`continue_back_target` 留空（`Opt{}` = nullopt），`continue` 发一条占位 `JUMP` 并把偏移塞进 `continue_fwd_patches`，等循环体编译完再统一回填。
 
 二者互斥：构造 `LoopCtx` 时根据循环类型只填其中一个，另一个保持空。`visitContinueStmtNode` 里用 `if (loop.continue_back_target)` 判断走哪条分支。
@@ -229,9 +229,9 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 跳转由两个端点组成：**src**（发射跳转指令的位置）和 **dst**（跳转目标地址）。谁先确定，就把谁「随身携带」到另一个端点处完成对接。底层三个原语（`CodeUnit` 提供）：
 
-- `emit_jump(op)` -- 发 `op` + 2 字节**占位**，返回占位偏移。dst 未知时用。
-- `patch_jump(off)` -- 用「**当前**已发射到的位置」回填占位。前向跳，dst 在后面、此刻才确定时用。
-- `emit_jump_back(target)` -- 一次性发后向跳，target 必须**已经发射过**（已知）。
+- `emit_jump(op)` -- 发 `op` + 2 字节**占位**，返回占位偏移 src_off。dst 未知时用。
+- `patch_jump(src_off)` -- 用「**当前**已发射到的位置」回填占位。前向跳，dst 在后面、此刻才确定时用。
+- `emit_jump_back(target_off)` -- 一次性发后向跳，target_off 必须**已经发射过**（已知）。
 
 | dst 在 src 编译时是否已知 | 用法 | LoopCtx 对应字段 | 存的是 |
 | --- | --- | --- | --- |

@@ -40,8 +40,6 @@ namespace aria {
     void CodeUnit::emit_pop_n(const u32 count, const u32 line) {
         for (u32 remaining = count; remaining > 0;) {
             const u8 chunk = remaining > kMaxPopChunk ? kMaxPopChunk : static_cast<u8>(remaining);
-            // chunk==1 时发 POP(1B) 而非 POP_N 1(2B): 省一字节 + 免读操作数, 与
-            // emit_load_local/emit_store_local 的短/长变体分流同思路; POP_N 1 与 POP 栈效应等价。
             if (chunk == 1) {
                 emit_op(OpCode::POP, line);
             } else {
@@ -54,31 +52,34 @@ namespace aria {
 
     usize CodeUnit::emit_jump(const OpCode op, const u32 line) {
         emit_op(op, line);
-        const usize off = size();
-        emit_word(0, line); // 占位
-        return off;
+        const usize src_off = size(); // 跳转源: 占位偏移, 供 patch_jump 回填
+        emit_word(0, line);           // 占位
+        return src_off;
     }
 
-    bool CodeUnit::patch_jump(const usize off) {
-        const u32 target = size();
-        const u32 diff   = target - (static_cast<u32>(off) + 2);
-        if (diff > kMaxJumpOffset) {
+    bool CodeUnit::patch_jump(const usize src_off) {
+        const u32 base_off   = static_cast<u32>(src_off) + 2; // 偏移基准: 读完 u16 操作数后的 ip
+        const u32 target_off = size();                        // 跳转目标: 当前末尾
+        const u32 offset     = target_off - base_off;        // 前向偏移
+        if (offset > kMaxJumpOffset) {
             return false; // 越界,交调用方翻译为 Error
         }
-        code[off]     = static_cast<u8>(diff & 0xFF);
-        code[off + 1] = static_cast<u8>(diff >> 8);
+        const auto bytes = util::split_word(static_cast<u16>(offset)); // 小端: [低字节, 高字节]
+        code[src_off]     = bytes[0];
+        code[src_off + 1] = bytes[1];
         return true;
     }
 
-    bool CodeUnit::emit_jump_back(const u32 target, const u32 line) {
+    bool CodeUnit::emit_jump_back(const u32 target_off, const u32 line) {
         emit_op(OpCode::JUMP_BACK, line);
-        const u32 off   = size();
-        const u32 after = off + 2; // ip 读完操作数后
-        if (after < target || after - target > kMaxJumpOffset) {
+        const u32 src_off  = size();
+        const u32 base_off = src_off + 2; // 偏移基准: 读完 u16 操作数后的 ip
+        if (base_off < target_off || base_off - target_off > kMaxJumpOffset) {
             emit_word(0, line); // 占位,保持 code 长度一致
-            return false;
+            return false;       // 反向或越界
         }
-        emit_word(static_cast<u16>(after - target), line);
+        const u32 offset = base_off - target_off; // 后向偏移
+        emit_word(static_cast<u16>(offset), line);
         return true;
     }
 

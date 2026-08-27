@@ -69,11 +69,21 @@ namespace aria {
     class CodeUnit;
 
     class CodeGen final : public AstVisitor {
+        // lvalue 模式（赋值/复合赋值 lowering，见 compound-assignment-lowering.md）：访问节点据此分支。
+        // flag 由 emit_lvalue 设置、由目标节点在入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load）--
+        // 故子节点经 emit_expr 时 flag 已清空、不泄漏。emit_expr 入口 ASSERT lvalue_mode_ == Load，开发期
+        // 捕获漏 take 的 bug（非预防性赋值）。构造与 compile() 入口亦置 Load（防上次 throw 残留跨复用）。
+        //   Load   -- 默认 rvalue：visitIdentifierNode resolve + check_init[Local] + LOAD
+        //   Store  -- 赋值目标：resolve + STORE + mark_init[Local]（peek-store 留值）
+        //   Locate -- 预留：未来 Field/Index 单次求值 locator（receiver 经 DUP/DUP2 留栈，Load/Store
+        //             复用栈上副本，非编译期 stash）。当前赋值只用 Load/Store，Locate 落入 Load 分支。
+        enum class LvalueMode : u8 { Load, Store, Locate };
+
     public:
         CodeGen() = delete;
 
         // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
-        explicit CodeGen(GC& gc) : gc_{gc} {}
+        explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
 
         // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0，名 <script>）。
         // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
@@ -138,6 +148,11 @@ namespace aria {
 
     private:
         GC& gc_;
+
+        // 当前 lvalue 模式（见类首 LvalueMode）：emit_lvalue 设置，目标节点入口经 take_lvalue_mode() 取值
+        // 并清空为 Load；emit_expr 入口 ASSERT 之为 Load；构造与 compile() 入口均置 Load（防 throw 残留）。
+        // 赋值/复合赋值/前置自增自减经 emit_lvalue 驱动目标节点，余经 emit_expr。
+        LvalueMode lvalue_mode_;
 
         // 模块编译上下文（详见 compile/ModuleCtx.hpp）：UPtr 持有，compile 入口 make_unique、
         // 遍历后 reset() 即释放（无裸 delete）。~CodeGen 自动释放作安全网。编译期间非空，编译外为空。
@@ -230,26 +245,22 @@ namespace aria {
         void declare_global_or_fail(StringView name, const SourceLoc& loc) const;
 
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
-        // 单 index 字段随 kind 解释（对齐 ResolvedVar「index 随 kind 重载」风格）。
-        //   Local:   局部槽
-        //   Upvalue: upvalue 索引（M4 闭包未实现，compile_lvalue 走 not_impl）
-        //   Global:  名字常量池索引
-        //   Field:   field 名常量池索引（VM LOAD_FIELD/STORE_FIELD 未实现，走 not_impl）
-        //   Index:   未用（obj/idx 运行时 locator，VM LOAD_INDEX/STORE_INDEX 未实现，走 not_impl）
-        struct Lvalue {
-            enum class Kind { Local, Upvalue, Global, Field, Index } kind;
-            u16 index;
-        };
+        // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 是合法左值种类（放行，由各自 visit 节点
+        // 处理 load/store 或 not_impl）；其余节点种类 -> InvalidAssignmentTarget。由 emit_lvalue 在分派前
+        // 调用：复合/前置自增自减的首次 emit_lvalue(Load) 先于 rhs，普通 = 的 emit_lvalue(Store) 后于 rhs
+        // （非法左值在 rhs 编译后才抛，字节码随 throw 丢弃）。Field/Index 的 not_impl 由 visit 节点分派时抛。
+        void validate_lvalue_target(ExprNode* target) const;
 
-        // 求 locator 描述符（identifier 类：编译期常量，不产生 load；Field/Index 运行时 locator 待 VM 落地）。
-        // Upvalue/Field/Index -> not_impl；非 lvalue -> InvalidAssignmentTarget。
-        Lvalue compile_lvalue(ExprNode* target);
+        // 以给定 lvalue 模式分派目标节点：先 validate_lvalue_target(n) 验证左值种类，再设置 lvalue_mode_ 后
+        // n->accept(*this)（不在分派后恢复--清空职责交给目标节点的 take_lvalue_mode()）。复合赋值/前置自增
+        // 自减用 Load+Store 两次分派（Identifier 重 resolve 廉价无副作用，locator-once 自然成立；两次分派
+        // 会重复 validate，首次失败即抛，无正确性问题）。
+        void emit_lvalue(ExprNode* n, LvalueMode m);
 
-        // Local: check_initialized + emit_load_local / Global: LOAD_GLOBAL
-        void emit_load(const Lvalue& lv, u32 line, const SourceLoc& loc) const;
-
-        // Local: emit_store_local + mark_initialized / Global: STORE_GLOBAL（peek-store 留值）
-        void emit_store(const Lvalue& lv, u32 line) const;
+        // 目标节点（visitIdentifierNode 等）入口调用：返回当前 lvalue_mode_ 并清空为 Load（一次性 take）。
+        // 节点据返回值分支 Load/Store；清空确保子节点经 emit_expr 时 flag 已为 Load、不泄漏。对 lvalue_mode_
+        // 的直接读写收口于此与 emit_lvalue，访问节点不直接触碰该成员。
+        LvalueMode take_lvalue_mode();
 
         // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前
         // 压栈（emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。
@@ -268,7 +279,7 @@ namespace aria {
         void bind_pattern(PatternNode* pat);
 
         // --- 遍历入口（薄包装：accept 双分派）---
-        void emit_expr(ExprNode* n); // n->accept(*this)，留一值
+        void emit_expr(ExprNode* n); // 防御性重置 lvalue_mode_ 为 Load 后 n->accept(*this)，留一值
 
         void emit_stmt(StmtNode* n); // n->accept(*this)，不留值
 

@@ -96,13 +96,15 @@ STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)
 
 ## 6. 编译器设计
 
-字节码编译器(CodeGen)把"左值编译为 locator"与"编译为值"分开:
+字节码编译器(CodeGen)把 load/store 的发射收归到访问节点,经上下文 flag `LvalueMode{Load,Store,Locate}`(CodeGen 成员 `lvalue_mode_`,默认 `Load`)告诉目标节点当前作为 load 还是 store:
 
-- `compile_lvalue(target)`:求值 target 的 locator(局部槽 / upvalue 索引 / 全局名 / `obj` 引用 + field / `obj` 引用 + idx),返回 locator 描述;**不**产生 load。
-- 普通 `lhs = e`:`<e>` 压值 -> `compile_store(locator)`。
-- 复合 `lhs op= e`:`compile_lvalue(lhs)` 一次 -> 经该 locator load -> `<e>` -> `<op>` -> 经**同一** locator store。
+- `emit_lvalue(node, mode)`:`validate_lvalue_target(node)` 后设置 `lvalue_mode_`、`node->accept(*this)` 分派(不在分派后恢复)。目标节点入口经 `take_lvalue_mode()` 一次性 take(取值并清空为 `Load`),故子节点经 `emit_expr` 时 flag 已清空、不泄漏。`emit_expr` 入口 `ASSERT(lvalue_mode_ == Load)` 开发期捕获漏 take 的 bug。
+- `validate_lvalue_target(target)`(dynamic_cast 守卫):Identifier/Field/Index 三种合法左值种类放行(未实现的由各自 visit 节点分派时 `not_impl`)、其余 -> `InvalidAssignmentTarget`;由 `emit_lvalue` 在分派前调用(复合/前置自增自减首次 `Load` 先于 rhs,普通 `=` 的 `Store` 后于 rhs,非法左值在 rhs 编译后才抛、字节码随 throw 丢弃)。
+- `visitIdentifierNode` 入口 `take_lvalue_mode()` 取模式并清空,据返回值分支:`Store` = resolve + STORE(peek-store 留值,Local 另 `mark_initialized`);`Load` = resolve + LOAD(Local 另读点 `is_initialized` 检查)。`Locate` 预留同 Load。
+- 普通 `lhs = e`:`<e>` 压值 -> `emit_lvalue(lhs, Store)`(peek-store)。
+- 复合 `lhs op= e`:`emit_lvalue(lhs, Load)` -> `<e>` -> `<op>` -> `emit_lvalue(lhs, Store)`。Load 与 Store 各 resolve 一次,对 Identifier(局部槽 / 全局名,编译期常量)重新 resolve 廉价且无副作用,"locator 只求值一次"自然成立;Field/Index 的运行时 locator(receiver/idx)则由 `Locate` 模式单次求值并经 `DUP`/`DUP2` 留 VM 栈、Load/Store 复用栈上副本(见 §4.2/§4.3),非编译期 stash。
 
-即 compound 复用一次 `compile_lvalue` 的结果做 load 与 store,这正是"只求值一次"在编译器里的落点,也是 `+=` 等视为"赋值类运算符同族"在实现上的体现。
+即 Identifier 的 locator-once 由"resolve 廉价可重做"体现,Field/Index 的 locator-once 由"VM 栈 DUP 复用"体现;两者都不靠编译期缓存 locator 描述。`Locate` 当前不使用,预留给 Field/Index 落地。
 
 ## 7. 不要这么做
 
@@ -111,7 +113,7 @@ STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)
 
 ## 8. 链式复合赋值
 
-`a op= b op= c` 右结合解析为 `a op= (b op= c)`(见 `docs/grammar.txt`)。每个 compound 各自保证自己 locator 只求值一次;内层 `b op= c` 作为外层 rhs 求值(其值为赋值后的新 `b`)。链式不引入新的重复求值问题,沿用上述 lowering 即可。
+`a op= b op= c` 右结合解析为 `a op= (b op= c)`(见 `docs/grammar.txt`)。每个 compound 各自保证自己 locator 只求值一次;内层 `b op= c` 作为外层 rhs 求值(其值为赋值后的新 `b`)。链式不引入新的重复求值问题,沿用上述 lowering 即可。`lvalue_mode_` 由目标节点入口 `take_lvalue_mode()` 清空为 `Load`,故内层赋值完整结束(已清空)后外层才发其 `emit_lvalue`,嵌套不泄漏 flag。
 
 ## 9. 备选方案(未采纳)
 

@@ -51,6 +51,9 @@ namespace aria {
         // 间走 trivial 分配(constants.push/reallocate),按 GC 核心不变式不触发 GC,故该窗口无需守卫。
         const auto module_guard = gc_.make_guard(&module);
 
+        // 防御：lvalue_mode_ 复位为 Load（构造已置；此处防上一次 compile() throw 后残留跨复用）。
+        lvalue_mode_ = LvalueMode::Load;
+
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
         // 须在 module 已根化下调用(上方 module_guard)。
         const auto entry = init_module(module);
@@ -150,7 +153,7 @@ namespace aria {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
         // 外层函数局部 -> 需 upvalue 捕获（M4 未实现 -> not_impl）。沿 enclosing_ 链查；命中即 Upvalue，
-        // 由调用方（visitIdentifierNode/compile_lvalue）走 not_impl 报编译期错--不静默落到全局，
+        // 由调用方 visitIdentifierNode 走 not_impl 报编译期错--不静默落到全局，
         // 否则外层局部会与同名模块全局串台致闭包捕获错误变量（见 CLAUDE.md「作用域模型」）。
         for (auto ctx = cur_fn_ctx()->enclosing_; ctx != nullptr; ctx = ctx->enclosing_) {
             if (ctx->find_local(name)) {
@@ -242,36 +245,36 @@ namespace aria {
         }
     }
 
-    void CodeGen::emit_load(const Lvalue& lv, const u32 line, const SourceLoc& loc) const {
-        switch (const auto& [kind, index] = lv; kind) {
-            case Lvalue::Kind::Local:
-                check_local_initialized(index, loc); // 读点 init 检查
-                cur_cu()->emit_load_local(index, line);
-                return;
-            case Lvalue::Kind::Global:
-                cur_cu()->emit_op(OpCode::LOAD_GLOBAL, line);
-                cur_cu()->emit_word(index, line);
-                return;
-            // Upvalue/Field/Index 由 compile_lvalue 的 not_impl 挡住，到不了这里。
-            default:
-                UNREACHABLE();
+    void CodeGen::validate_lvalue_target(ExprNode* target) const {
+        // 赋值左值种类合法性：Identifier/FieldAccess/IndexAccess 是合法左值种类，放行（未实现的由各自
+        // visit 节点在被 emit_lvalue 分派时 not_impl）；其余节点种类 -> InvalidAssignmentTarget。
+        // 由 emit_lvalue 在分派前调用：复合/前置自增自减的首次 emit_lvalue(Load) 先于 rhs，故彼等先于 rhs
+        // 报；普通 = 的 emit_lvalue(Store) 后于 rhs，非法左值在 rhs 编译后才抛（字节码随 throw 丢弃）。
+        if (dynamic_cast<IdentifierNode*>(target) != nullptr) {
+            return;
         }
+        if (dynamic_cast<FieldAccessNode*>(target) != nullptr) {
+            return;
+        }
+        if (dynamic_cast<IndexAccessNode*>(target) != nullptr) {
+            return;
+        }
+        fail(ErrorCode::InvalidAssignmentTarget, target->loc(), "非法赋值左值");
     }
 
-    void CodeGen::emit_store(const Lvalue& lv, const u32 line) const {
-        switch (const auto& [kind, index] = lv; kind) {
-            case Lvalue::Kind::Local:
-                cur_cu()->emit_store_local(index, line);
-                cur_fn_ctx()->mark_initialized(index); // 赋值即初始化
-                return;
-            case Lvalue::Kind::Global:
-                cur_cu()->emit_op(OpCode::STORE_GLOBAL, line);
-                cur_cu()->emit_word(index, line);
-                return;
-            // Upvalue/Field/Index 由 compile_lvalue 的 not_impl 挡住，到不了这里。
-            default:
-                UNREACHABLE();
-        }
+    void CodeGen::emit_lvalue(ExprNode* n, const LvalueMode m) {
+        // 验证左值种类后设置模式并分派。目标节点入口经 take_lvalue_mode() 取值并清空为 Load，故子节点经
+        // emit_expr 时 flag 已清空（emit_expr 入口 ASSERT 之为 Load）。不在分派后恢复--清空职责在
+        // take_lvalue_mode，漏 take 会被 emit_expr 的 ASSERT 在开发期捕获。
+        validate_lvalue_target(n);
+        lvalue_mode_ = m;
+        n->accept(*this);
+    }
+
+    CodeGen::LvalueMode CodeGen::take_lvalue_mode() {
+        // 取当前 lvalue_mode_ 并清空为 Load（一次性 take）。访问节点据此返回值分支 Load/Store，不直接读写
+        // lvalue_mode_；清空确保子节点经 emit_expr 时 flag 已为 Load。
+        return std::exchange(lvalue_mode_, LvalueMode::Load);
     }
 
     // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前压栈
@@ -283,29 +286,6 @@ namespace aria {
         cur_cu()->emit_word(name_idx, line);
         cur_cu()->emit_op(OpCode::CALL, line);
         cur_cu()->emit_byte(0, line);
-    }
-
-    CodeGen::Lvalue CodeGen::compile_lvalue(ExprNode* target) {
-        if (const auto id = dynamic_cast<IdentifierNode*>(target)) {
-            const auto [kind, index] = resolve_name_or_fail(id->name, id->loc());
-            // ResolvedVar 与 Lvalue 的 identifier 三种 kind 同形（Local/Upvalue/Global），index 语义一致，直传。
-            switch (kind) {
-                case ResolvedVar::Kind::Local:
-                    return Lvalue{.kind = Lvalue::Kind::Local, .index = index};
-                case ResolvedVar::Kind::Global:
-                    return Lvalue{.kind = Lvalue::Kind::Global, .index = index};
-                case ResolvedVar::Kind::Upvalue:
-                    not_impl(id, "闭包/upvalue 捕获");
-            }
-            UNREACHABLE();
-        }
-        if (dynamic_cast<FieldAccessNode*>(target)) {
-            not_impl(target, "字段赋值");
-        }
-        if (dynamic_cast<IndexAccessNode*>(target)) {
-            not_impl(target, "下标赋值");
-        }
-        fail(ErrorCode::InvalidAssignmentTarget, target->loc(), "非法赋值左值");
     }
 
     // ============================================================
@@ -336,7 +316,12 @@ namespace aria {
     // ============================================================
 
     // 遍历入口：accept 双分派；出错时 visit 内 fail() 抛 AriaCompileException 自动 unwind，无需 ok() 短路。
-    void CodeGen::emit_expr(ExprNode* n) { n->accept(*this); }
+    void CodeGen::emit_expr(ExprNode* n) {
+        // rvalue 上下文恒 Load：emit_lvalue 分派后必恢复为 Load。断言（非预防性赋值）以在开发期捕获漏恢复。
+        ASSERT(lvalue_mode_ == LvalueMode::Load,
+               "lvalue_mode_ 应为 Load（rvalue 上下文）；非 Load 表明 emit_lvalue 分派后未恢复");
+        n->accept(*this);
+    }
 
     void CodeGen::emit_stmt(StmtNode* n) { n->accept(*this); }
 
@@ -752,18 +737,39 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierNode(IdentifierNode* node) {
-        const u32 line        = node->loc_line();
-        auto [var_type, slot] = resolve_name_or_fail(node->name, node->loc());
-        if (var_type == ResolvedVar::Kind::Local) {
-            check_local_initialized(slot, node->loc()); // 读点 init 检查（未初始化 -> UninitializedVariable）
-            cur_cu()->emit_load_local(slot, line);
-        } else if (var_type == ResolvedVar::Kind::Global) {
-            cur_cu()->emit_op(OpCode::LOAD_GLOBAL, line);
-            cur_cu()->emit_word(slot, line);
-        } else {
-            // Upvalue
-            not_impl(node, "闭包/upvalue 捕获");
+        const auto mode   = take_lvalue_mode(); // 入口 take：取模式并清空为 Load（子节点经 emit_expr 时已为 Load）
+        const u32  line   = node->loc_line();
+        auto [kind, slot] = resolve_name_or_fail(node->name, node->loc());
+        if (mode == LvalueMode::Store) {
+            // 赋值目标：peek-store 留栈顶值。Store 路径不做 init 检查（赋值即初始化，mark_initialized）。
+            switch (kind) {
+                case ResolvedVar::Kind::Local:
+                    cur_cu()->emit_store_local(slot, line);
+                    cur_fn_ctx()->mark_initialized(slot);
+                    return;
+                case ResolvedVar::Kind::Global:
+                    cur_cu()->emit_op(OpCode::STORE_GLOBAL, line);
+                    cur_cu()->emit_word(slot, line);
+                    return;
+                case ResolvedVar::Kind::Upvalue:
+                    not_impl(node, "闭包/upvalue 捕获");
+            }
+            UNREACHABLE();
         }
+        // Load（默认 rvalue / 复合 load）或 Locate（预留，Identifier 同 Load）。读点 init 检查仅 Local。
+        switch (kind) {
+            case ResolvedVar::Kind::Local:
+                check_local_initialized(slot, node->loc()); // 读点 init 检查（未初始化 -> UninitializedVariable）
+                cur_cu()->emit_load_local(slot, line);
+                return;
+            case ResolvedVar::Kind::Global:
+                cur_cu()->emit_op(OpCode::LOAD_GLOBAL, line);
+                cur_cu()->emit_word(slot, line);
+                return;
+            case ResolvedVar::Kind::Upvalue:
+                not_impl(node, "闭包/upvalue 捕获");
+        }
+        UNREACHABLE();
     }
 
     void CodeGen::visitThisExprNode(ThisExprNode* node) { not_impl(node, "this（类与对象）"); }
@@ -844,14 +850,13 @@ namespace aria {
                 return;
             case Op::Unary::PreInc:
             case Op::Unary::PreDec: {
-                // E += 1 / E -= 1（locator 只求值一次）。统一压 +1，由 ADD/SUBTRACT 决定方向--
+                // E += 1 / E -= 1。统一压 +1，由 ADD/SUBTRACT 决定方向--
                 // 若 PreDec 压 -1 再 SUBTRACT 会算成 E - (-1) = E + 1，方向反。
-                const auto lv = compile_lvalue(node->operand.get());
-                emit_load(lv, line, node->loc());
+                emit_lvalue(node->operand.get(), LvalueMode::Load);
                 cur_cu()->emit_op(OpCode::LOAD_IMM, line);
                 cur_cu()->emit_byte(1, line);
                 cur_cu()->emit_op(node->op == Op::Unary::PreInc ? OpCode::ADD : OpCode::SUBTRACT, line);
-                emit_store(lv, line); // peek-store 留新值
+                emit_lvalue(node->operand.get(), LvalueMode::Store); // peek-store 留新值
                 return;
             }
         }
@@ -859,15 +864,16 @@ namespace aria {
     }
 
     void CodeGen::visitAssignmentNode(AssignmentNode* node) {
-        const u32  line = node->loc_line();
-        const auto lv   = compile_lvalue(node->target.get());
+        const u32 line = node->loc_line();
+        // 左值种类验证（InvalidAssignmentTarget / Field/Index not_impl）由 emit_lvalue 在分派前完成。
         if (node->op == Op::Assignment::Assign) {
+            // 普通 =：value -> store（peek-store 留值）
             emit_expr(node->value.get());
-            emit_store(lv, line); // peek-store 留值
+            emit_lvalue(node->target.get(), LvalueMode::Store);
             return;
         }
-        // 复合赋值：load -> value -> op -> store（locator 单次求值）
-        emit_load(lv, line, node->loc());
+        // 复合赋值：load target -> value -> op -> store target（Identifier 重 resolve 廉价，locator-once 自然成立）
+        emit_lvalue(node->target.get(), LvalueMode::Load);
         emit_expr(node->value.get());
         switch (node->op) {
             case Op::Assignment::PlusAssign:
@@ -888,7 +894,7 @@ namespace aria {
             case Op::Assignment::Assign:
                 break; // 已处理
         }
-        emit_store(lv, line);
+        emit_lvalue(node->target.get(), LvalueMode::Store);
     }
 
     void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode* node) { not_impl(node, "解构赋值"); }

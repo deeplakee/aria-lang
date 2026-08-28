@@ -54,7 +54,7 @@ namespace aria {
     public:
         FunctionCtx() = delete;
 
-        // 入口 <script> 上下文（enclosing_=nullptr = entry）。
+        // 入口 <main> 上下文（enclosing_=nullptr = entry）。
         explicit FunctionCtx(ObjFunction& fn);
 
         // 嵌套函数上下文（enclosing_ 指向外层）。
@@ -105,10 +105,10 @@ namespace aria {
         // enclosing_ 所有权由调用方局部 UPtr 持有（CodeGen::compile 入口 / compile_function 子）：
         // 父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
         // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
-        FunctionCtx*  enclosing_;
-        ObjFunction*  fn_;
-        List<Local>   locals_;
-        u32           scope_depth_;
+        FunctionCtx*   enclosing_;
+        ObjFunction*   fn_;
+        List<Local>    locals_;
+        u32            scope_depth_;
         Stack<LoopCtx> loop_stack_;
     };
 

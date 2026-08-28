@@ -11,7 +11,7 @@ namespace aria {
     ObjFunction::ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity) :
         Object{ObjType::FUNCTION}, unit_{&gc}, module_{module}, name_{name}, arity_{arity} {
         ASSERT(module != nullptr, "ObjFunction: module must not be null (every function belongs to a module)");
-        ASSERT(name != nullptr, "ObjFunction: name must not be null (entry=<script>, lambda=<anonymous>)");
+        ASSERT(name != nullptr, "ObjFunction: name must not be null (entry=<main>, lambda=<anonymous>)");
     }
 
     void ObjFunction::trace(GC& gc) const noexcept {
@@ -21,7 +21,8 @@ namespace aria {
     }
 
     String ObjFunction::to_string() const {
-        // name_ 恒非空(ctor ASSERT):入口 `<script>` / lambda `<anonymous>` / 具名声明名,统一 `<fn name>`。
+        // name_ 恒非空(ctor ASSERT):入口 `<main>`(主入口)/`<module>`(导入) / lambda `<anonymous>` / 具名声明名,统一
+        // `<fn name>`。
         return std::format("<fn {}>", name_->view());
     }
 

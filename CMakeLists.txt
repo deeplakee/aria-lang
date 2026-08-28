@@ -53,6 +53,8 @@ add_library(aria_core STATIC
         src/compile/ModuleCtx.hpp
         src/compile/CodeGen.cpp
         src/compile/CodeGen.hpp
+        src/compile/Compiler.cpp
+        src/compile/Compiler.hpp
         src/runtime/AriaVM.cpp
         src/runtime/AriaVM.hpp
         src/runtime/FrameStack.hpp

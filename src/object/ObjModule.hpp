@@ -23,7 +23,8 @@ namespace aria {
     //     cwd 不可用时以**空串**兜底(不 fatal:罕见、绝对源根 [1..] 仍可用、嵌入不应因 cwd 异常
     //     拖死宿主);空串经下游空值守卫干净拒绝 cwd 锚定(resolve_module 跳空根、abs_path 返空
     //     -> 相对解析返 nullopt),比拿 "." 碰运气更诚实。
-    //   - entry_:模块体(顶层语句编进的 ObjFunction,arity 0、匿名 <script>),导入时 run-once。
+    //   - entry_:模块体(顶层语句编进的 ObjFunction,arity 0、匿名;主入口名 `<main>` / 导入名 `<module>`),
+    //     导入时 run-once。
     //     保留不释放:trace 经它 reach 常量池;半初始化时 globals 未填满,常量池经 entry_ 仍可达,
     //     避免回收正在用的字面量。可为 nullptr(未来目录包占位;当前总有体)。
     //   - globals_:模块级绑定表(顶层 var/fun/def 的目标)。键为 ObjString*(经 intern,内容语义

@@ -191,7 +191,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   模块表查重键形式）；`name_` 为 nullptr 或空串（合成顶层）则仅返 `root_`；`root_` 防御性可空
   （`new_module` 保证非空）。返回 `String`（即时合成，不驻留）。IMPORT 取当前模块 `abs_path()` 供
   `resolve_module` 相对分支 `dirname` 作基（`.aria` 在末段，`dirname` 不受影响）。
-- `entry_`：模块体顶层语句编进的 `ObjFunction`（arity 0、匿名 `<script>`），导入时 run-once；
+- `entry_`：模块体顶层语句编进的 `ObjFunction`（arity 0、匿名；主入口名 `<main>` / 导入名 `<module>`），导入时 run-once；
   可为 nullptr（留作目录包占位）。`set_entry(ObjFunction*)` 是编译产物挂入接口，**当前无调用点**。
 - `globals_`：模块级绑定表，`LOAD/STORE/DEF_GLOBAL` 操作，惰性分配。
 - `state_`：`enum class ModuleState : u8 { Loading, Loaded }`（`ObjModule.hpp`）。

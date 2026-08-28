@@ -65,7 +65,7 @@ TEST(ObjModule, Basics) {
 TEST(ObjModule, SetEntryAndState) {
     GC   gc;
     auto m  = make_module(gc, "m");
-    auto fn = make_function(gc, m, "<script>", 0); // body 属于 m(入口 <script> 名)
+    auto fn = make_function(gc, m, "<main>", 0); // body 属于 m(入口 <main> 名)
     m->set_entry(fn);
     EXPECT_EQ(m->entry(), fn);
     EXPECT_EQ(m->state(), ObjModule::ModuleState::Loading);

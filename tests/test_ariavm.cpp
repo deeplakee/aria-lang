@@ -89,10 +89,10 @@ namespace {
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
     // 须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,此时 name 仅
     // 为裸局部指针(无根)会被扫掉(aria::new_function 不再自守卫入参,故本重载全程自守 name+m)。
-    // name=nullptr -> `<script>`(入口单元统一名,ObjFunction ctor ASSERT name 非空)。
+    // name=nullptr -> `<main>`(主入口单元统一名,ObjFunction ctor ASSERT name 非空)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         if (name == nullptr) {
-            name = new_string(gc, "<script>");
+            name = new_string(gc, "<main>");
         }
         auto guard = gc.make_guard(name);
         auto m     = make_module(gc);
@@ -100,11 +100,11 @@ namespace {
         return aria::new_function(gc, m, name, arity);
     }
 
-    // 指定模块的匿名入口单元(`<script>` 名,arity 0)。工厂不再守卫入参,故先 guard m 再 new_string,
+    // 指定模块的匿名入口单元(`<main>` 名,arity 0)。工厂不再守卫入参,故先 guard m 再 new_string,
     // 再 push name -- 避免 new_string 与 new_function 内 new_object 回收未根持有的 m 与 name。
     ObjFunction* new_script(GC& gc, ObjModule* m) {
         auto guard = gc.make_guard(m);
-        auto name  = new_string(gc, "<script>");
+        auto name  = new_string(gc, "<main>");
         guard.push(name);
         return aria::new_function(gc, m, name, 0);
     }

@@ -5,7 +5,7 @@
 //   - 名字解析（局部 / 模块全局；upvalue 留待 M4 闭包）
 //   - 语义检查（首错即止，详见各 visit 内联检查）
 //   - 字节码发射（经 cur_cu() 写当前函数的 CodeUnit；emit 编码逻辑下沉 CodeUnit）
-// 把 ProgramNode 编译为模块入口 ObjFunction（arity 0，名 <script>）。
+// 把 ProgramNode 编译为模块入口 ObjFunction（arity 0，名 <main>，主入口模块体包装）。
 //
 // 设计要点：
 //   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。
@@ -85,7 +85,7 @@ namespace aria {
         // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
         explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
 
-        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0，名 <script>）。
+        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0，名 <main>）。
         // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
         // Error。
         Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module);
@@ -286,7 +286,7 @@ namespace aria {
         // 更贴近参数列表所在。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*（not_impl 走其重载）。
         void validate_params(const List<Param>& params, const SourceLoc& loc) const;
 
-        // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<script>`），
+        // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<main>`），
         // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（每方只守自己创建的）。
         // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。

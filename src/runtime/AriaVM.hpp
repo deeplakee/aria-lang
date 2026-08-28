@@ -11,6 +11,7 @@
 namespace aria {
 
     class ObjFunction;
+    class ObjModule;
     class ObjNativeFn;
 
     // 解释器:持解释器级共享状态,驱动 Movement 执行字节码。
@@ -49,6 +50,14 @@ namespace aria {
         // 返回 Result<Value, Error>:成功为返回值,失败为未捕获的运行时错误
         // (M6 协程挂起将扩三态,届时引入 Yielded,见 .claude/reference/runtime/vm-design.md §3)。
         Result<Value, Error> run(ObjFunction* fn);
+
+        // 编译 source 到 module 的入口 ObjFunction 并在主上下文执行（编译并执行）。
+        // 经 Compiler（用本 VM 的 gc_，编译期分配与 run 同源）把 source 编进 module，再委托 run(ObjFunction*)。
+        //   - source 须为调用方拥有/加载的实际源文件，存活到本函数返回（编译期 Error 的 SourceLoc 指向它；
+        //     成功路径返回值不依赖 source）。
+        //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
+        // 成功为返回值；失败为首错 Error（编译期错误原样透传，运行期错误同 run(ObjFunction*)）。
+        Result<Value, Error> run(SourceFile& source, ObjModule& module);
 
         [[nodiscard]]
         GC& gc() noexcept {

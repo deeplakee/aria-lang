@@ -8,6 +8,7 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
+#include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
@@ -286,6 +287,20 @@ namespace aria {
         for (auto& r: roots) {
             source_roots_.push_back(std::move(r));
         }
+    }
+
+    Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
+        // 编译并执行：经 Compiler（用本 VM 的 gc_，编译期分配与 run 同源）把 source 编进 module 的入口
+        // ObjFunction，再委托 run(ObjFunction*) 执行。Compiler 每次就地构造（Lexer/Parser 可复用但本处
+        // 一次性编译；REPL 期若需跨次复用可后续提成成员）。module 由调用方提供（控制 name/root 身份），
+        // 编译期由 CodeGen::compile 内部 make_guard 根化；source 须存活到本函数返回（编译期 Error 的
+        // SourceLoc 指向它）。编译失败原样透传首错 Error，不进入执行。
+        Compiler compiler{gc_};
+        auto     compiled = compiler.compile(source, module);
+        if (!compiled.has_value()) {
+            return std::unexpected(compiled.error());
+        }
+        return run(compiled.value());
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {

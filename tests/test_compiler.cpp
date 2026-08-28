@@ -1,5 +1,5 @@
-// Compiler 编排层端到端测试：实际 SourceFile -> Compiler::compile -> ObjFunction -> AriaVM::run。
-// 验证「源文件到可执行 ObjFunction 的编译接口」端到端可用，并覆盖编译失败时返回首错 Error。
+// Compiler/VM 编排层端到端测试：实际 SourceFile -> AriaVM::run(source, module)（编译并执行），
+// 辅以 Compiler::compile 直测编译错误路径。验证「源文件到执行结果」端到端可用，覆盖编译失败首错 Error。
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -42,9 +42,10 @@ namespace {
         const Error&                error() const noexcept { return result.error(); }
     };
 
-    // 端到端：构造实际 SourceFile -> Compiler::compile -> vm.run。经 Compiler 编排层（非手拼 lex/parse/codegen）。
-    // 开 stress GC 锻炼编译期 + 运行期根接线（module 经 CodeGen::compile 内部 make_guard 根化、
-    // 值栈/帧经 vm_roots tracer 标根）。source 经 unique_ptr 持堆，活到调用方检视完返回值/错误。
+    // 端到端：构造实际 SourceFile -> AriaVM::run(source, module)（编译并执行）。经 VM 的编译并执行入口
+    // （内部 Compiler 编排 + run(ObjFunction*)），非手拼 lex/parse/codegen/run。开 stress GC 锻炼编译期 +
+    // 运行期根接线（module 经 CodeGen::compile 内部 make_guard 根化、值栈/帧经 vm_roots tracer 标根）。
+    // source 经 unique_ptr 持堆，活到调用方检视完返回值/错误（编译期 Error 的 SourceLoc 指向它）。
     RunResult run_source(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
@@ -53,13 +54,8 @@ namespace {
         auto guard    = gc.make_guard(mod_name); // 工厂不守入参:name 裸持跨 new_module 的 new_string(cwd)
         auto module   = new_module(gc, mod_name);
         // 实际源文件：调用方构造（测试用 "<test>" 作 name/path，真实入口用文件路径）。堆地址稳定。
-        auto     source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
-        Compiler compiler{gc};
-        auto     compiled = compiler.compile(*source, *module);
-        if (!compiled.has_value()) {
-            return RunResult{std::move(vm), std::move(source), std::unexpected(compiled.error())};
-        }
-        auto result = vm->run(compiled.value());
+        auto source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
+        auto result = vm->run(*source, *module); // 编译并执行
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 

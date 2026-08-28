@@ -303,6 +303,64 @@ namespace aria {
         return run(compiled.value());
     }
 
+    InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule& module) {
+        // 编译并执行，按结果类别映射。失败时 source 仍存活（调用方 interpret/interpret_from_path 的局部），
+        // 故 Error.format() 取 src_->path() 不悬垂；渲染到 stderr 后只回类别，不回 Error。
+        auto result = run(source, module);
+        if (result.has_value()) {
+            return InterpretResult::Ok;
+        }
+        io::println(stderr, "{}", result.error().format());
+        switch (category_of(result.error().code())) {
+            case ErrorCategory::Syntax:
+            case ErrorCategory::Semantic:
+                return InterpretResult::CompileError;
+            default: // Runtime / Internal / Resource -> 运行期
+                return InterpretResult::RuntimeError;
+        }
+    }
+
+    InterpretResult AriaVM::interpret(StringView src) {
+        // 合成入口模块 <script>（root=cwd，2 参 new_module）。name 裸持跨 new_module 内部 new_string(cwd)
+        // 与 new_object，故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
+        auto name_str = new_string(gc_, "<script>");
+        auto guard    = gc_.make_guard(name_str);
+        auto module   = new_module(gc_, name_str);
+        guard.push(module);
+
+        // 字符串源 SourceFile（名 <script>，无文件身份）；方法内局部，存活至返回，Error 渲染不悬垂。
+        SourceFile source{"<script>", "<script>", String{src}};
+        return interpret_run(source, *module);
+    }
+
+    InterpretResult AriaVM::interpret_from_path(StringView path) {
+        // 读盘 + BOM 剥除 + CRLF 归一化 + UTF-8 校验。失败渲染路径并返 LoadError（无 SourceFile，无 SourceLoc）。
+        auto loaded = SourceFile::from_path(path);
+        if (!loaded.has_value()) {
+            io::println(stderr, "无法加载源文件 '{}'", path);
+            return InterpretResult::LoadError;
+        }
+        SourceFile source = std::move(loaded.value());
+
+        // 入口模块身份（dirname + basename）：name = basename 去 .aria、root = dirname(absolute(path))，
+        // 拆分收口于 fs::module_name_and_root。name 为空表路径非合法文件模块（目录 / 空 / 无文件名），
+        // 报 LoadError 而非静默兜底--与读盘失败同属「加载不到合法源文件」。
+        auto [name_s, root_s] = fs::module_name_and_root(path);
+        if (name_s.empty()) {
+            io::println(stderr, "源文件路径无有效模块名: '{}'", path);
+            return InterpretResult::LoadError;
+        }
+
+        auto name_str = new_string(gc_, name_s);
+        auto guard    = gc_.make_guard(name_str);
+        auto root_str = new_string(gc_, root_s);
+        guard.push(root_str);
+        auto module = new_module(gc_, name_str, root_str); // 3 参：显式 root
+        guard.push(module);
+
+        return interpret_run(source, *module);
+    }
+
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
         // 前置编写(peek-not-pop)。

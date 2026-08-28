@@ -170,8 +170,8 @@ namespace aria::fs {
 
         file.seekg(0, std::ios::beg);
 
-        const auto size = static_cast<usize>(end_pos);
-        auto result = String(size, '\0');  // 例外：大括号会触发 initializer_list 窄化
+        const auto size   = static_cast<usize>(end_pos);
+        auto       result = String(size, '\0'); // 例外：大括号会触发 initializer_list 窄化
         if (size > 0) {
             file.read(result.data(), static_cast<std::streamsize>(size));
             if (!file) // 实际读入字节数不足或发生 I/O 错误
@@ -225,6 +225,23 @@ namespace aria::fs {
             return std::unexpected(detail::to_fserr(ec));
         }
         return p.string();
+    }
+
+    // 把文件路径拆为入口模块身份 {name, root}：
+    //   - name = basename 去 .aria 后缀（path::stem() 剥最后一个扩展名，.aria 文件即得模块名）；
+    //   - root = dirname(absolute(path))（所属源根目录，使模块 abs_path = root + "/" + name + ".aria" 还原原文件、
+    //     相对导入以同级目录为基）。absolute 失败时退化为原路径（best effort）。
+    // name 可能为空（路径为目录 / 空 / 无文件名），调用方据空 name 判定加载错误（非合法文件模块）。
+    // 纯路径工具，不读盘、不校验存在性--配合 SourceFile::from_path 的 I/O 结果使用。
+    [[nodiscard]]
+    inline Pair<String, String> module_name_and_root(StringView path) {
+        stdfs::path abs_p{String{path}};
+        if (const auto abs = absolute(path); abs.has_value()) {
+            abs_p = stdfs::path{*abs};
+        }
+        String name = abs_p.filename().stem().string(); // 剥最后一个扩展名（.aria -> 模块名）
+        String root = abs_p.parent_path().string();     // dirname
+        return {std::move(name), std::move(root)};
     }
 } // namespace aria::fs
 

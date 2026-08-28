@@ -19,6 +19,7 @@ add_executable(aria_tests
         test_ariavm.cpp
         test_codegen.cpp
         test_compiler.cpp
+        test_interpret.cpp
 )
 
 target_include_directories(aria_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

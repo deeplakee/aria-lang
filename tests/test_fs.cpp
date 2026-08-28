@@ -7,13 +7,13 @@
 using namespace aria;
 
 namespace {
-String write_temp_file(const String& name, StringView content) {
-    String path = testing::TempDir() + "/" + name;
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    f.write(content.data(), static_cast<std::streamoff>(content.size()));
-    f.close();
-    return path;
-}
+    String write_temp_file(const String& name, StringView content) {
+        String        path = testing::TempDir() + "/" + name;
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        f.write(content.data(), static_cast<std::streamoff>(content.size()));
+        f.close();
+        return path;
+    }
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -22,22 +22,22 @@ String write_temp_file(const String& name, StringView content) {
 
 TEST(FsReadFile, ReadsExistingFile) {
     String path = write_temp_file("fs_read.txt", "hello\nworld");
-    auto r = fs::read_file(path);
+    auto   r    = fs::read_file(path);
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(*r, "hello\nworld");
 }
 
 TEST(FsReadFile, EmptyFile) {
     String path = write_temp_file("fs_empty.txt", "");
-    auto r = fs::read_file(path);
+    auto   r    = fs::read_file(path);
     ASSERT_TRUE(r.has_value());
     EXPECT_TRUE(r->empty());
 }
 
 TEST(FsReadFile, BinaryContent) {
     std::vector<char> bytes = {0x00, 0x01, 0x02, static_cast<char>(0xFF), 'A'};
-    String path = testing::TempDir() + "/fs_bin.txt";
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    String            path  = testing::TempDir() + "/fs_bin.txt";
+    std::ofstream     f(path, std::ios::binary | std::ios::trunc);
     f.write(bytes.data(), static_cast<std::streamoff>(bytes.size()));
     f.close();
     auto r = fs::read_file(path);
@@ -126,4 +126,28 @@ TEST(FsResolve, FullyMissingPathLexicalNormalized) {
     if (r.has_value()) {
         EXPECT_NE(r->find("x"), String::npos);
     }
+}
+
+// ---------------------------------------------------------------------------
+// module_name_and_root
+// ---------------------------------------------------------------------------
+
+TEST(FsModuleNameAndRoot, StripsAriaExtension) {
+    auto cwd = fs::current_dir();
+    ASSERT_TRUE(cwd.has_value());
+    const auto path   = (std::filesystem::path{*cwd} / "lib" / "utils.aria").string();
+    auto [name, root] = fs::module_name_and_root(path);
+    EXPECT_EQ(name, "utils");
+    EXPECT_EQ(root, (std::filesystem::path{*cwd} / "lib").string());
+}
+
+TEST(FsModuleNameAndRoot, NoExtensionKeepsWholeName) {
+    auto [name, root] = fs::module_name_and_root("foo");
+    EXPECT_EQ(name, "foo");
+}
+
+TEST(FsModuleNameAndRoot, DirectoryPathYieldsEmptyName) {
+    // 目录路径（无文件名）-> name 为空，调用方据此判定加载错误
+    auto [name, root] = fs::module_name_and_root(testing::TempDir());
+    EXPECT_TRUE(name.empty());
 }

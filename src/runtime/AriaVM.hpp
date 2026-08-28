@@ -14,6 +14,17 @@ namespace aria {
     class ObjModule;
     class ObjNativeFn;
 
+    // interpret 结果：编译并执行的结局类别（对齐 clox InterpretResult）。
+    // interpret / interpret_from_path 内部已把错误渲染到 stderr（此时 SourceFile 仍存活，SourceLoc 有效），
+    // 故只回类别、不回 Error--避免内部构造/读盘的 SourceFile 在方法返回后销毁致 Error 的 SourceLoc 悬垂。
+    // 低层 run(ObjFunction*) / run(SourceFile&, ObjModule&) 仍返 Result<Value, Error>，供需要值/错误细节的调用方。
+    enum class InterpretResult : u8 {
+        Ok,           // 编译并执行成功
+        CompileError, // 编译失败（词法 / 语法 / 语义）
+        RuntimeError, // 运行期未捕获错误
+        LoadError,    // 源文件加载失败（仅 interpret_from_path：I/O 或 UTF-8 编码）
+    };
+
     // 解释器:持解释器级共享状态,驱动 Movement 执行字节码。
     //
     //        M1 范围(.claude/reference/runtime/vm-design.md §6):单一主上下文 main_ctx_,指令子集覆盖
@@ -58,6 +69,16 @@ namespace aria {
         //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
         // 成功为返回值；失败为首错 Error（编译期错误原样透传，运行期错误同 run(ObjFunction*)）。
         Result<Value, Error> run(SourceFile& source, ObjModule& module);
+
+        // 编译并执行源码字符串（interpret）：构造 SourceFile（名 <script>）+ 合成入口模块（名 <script>、
+        // root=cwd）-> 编译 -> 执行。错误渲染到 stderr，返回 InterpretResult（不返 Error，避免内部
+        // SourceFile 返回后悬垂，见上枚举注释）。
+        InterpretResult interpret(StringView src);
+
+        // 编译并执行源文件（interpret_from_path）：SourceFile::from_path 读盘（失败渲染并返 LoadError）
+        // + 按路径派生入口模块（name=basename 去 .aria、root=dirname(absolute(path))）-> 编译 -> 执行。
+        // 错误渲染到 stderr，返回 InterpretResult。
+        InterpretResult interpret_from_path(StringView path);
 
         [[nodiscard]]
         GC& gc() noexcept {
@@ -141,6 +162,11 @@ namespace aria {
     private:
         // 主循环:驱动 main_ctx_ 直到 返回/错误。状态全部取自上下文,可重入风格。
         Result<Value, Error> run_();
+
+        // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
+        // 失败把 Error.format() 渲染到 stderr（source 仍存活，SourceLoc 有效）并按错误大类映射--
+        // Syntax / Semantic -> CompileError，余（Runtime / Internal / Resource）-> RuntimeError。
+        InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc)。按 callee 的对象类型分派到对应
         // call_* 子例程(ObjFunction -> call_function、ObjNativeFn -> call_native),其余报

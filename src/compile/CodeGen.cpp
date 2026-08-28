@@ -96,39 +96,30 @@ namespace aria {
 
     // ============================================================
     // 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）
-    // 薄封装：只做操作 + 失败信号，不构造/抛错误、不持 loc。调用处检查返回值后用节点 loc 显式 fail。
+    // 单层 _or_fail：操作 + 失败即 fail（持 loc，[[noreturn]]）并返回解包值。原薄封装透传层（add_constant/
+    // add_name 仅作操作 + 失败信号、不持 loc）唯一消费者即对应 _or_fail，透传空转，故内联至此。
+    // add_name_or_fail 经 add_constant_or_fail 复用溢出检查，免拷「溢出检查 + add_constant」逻辑。
     // ============================================================
 
-    Opt<u16> CodeGen::add_constant(const Value v) const {
+    u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc& loc) const {
+        // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge。CodeUnit::add_constant 内部亦有
+        // ASSERT(size < 65536) 兜底，本预检保证永不触达。失败即 fail（[[noreturn]]），之后 add_constant 恒成功。
         if (cur_cu()->constants.size() > kMaxConstants) {
-            return std::nullopt;
+            fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
         }
-        return cur_cu()->add_constant(v);
+        return cur_cu()->add_constant(value);
     }
 
-    Opt<u16> CodeGen::add_name(const StringView s) const {
-        const auto str = new_string(gc_, s);
-        return add_constant(Value::from_obj(str));
+    u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc& loc) const {
+        // intern name 成 ObjString 并入常量池，返回索引。new_string 结果立即 add_constant_or_fail
+        // （trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫。溢出由 add_constant_or_fail fail。
+        const auto str = new_string(gc_, name);
+        return add_constant_or_fail(Value::from_obj(str), loc);
     }
 
     // ============================================================
     // 局部管理（登记经 FunctionCtx，发射经 cur_cu()）
     // ============================================================
-
-    Result<u16, ErrorCode> CodeGen::declare_local(const StringView name) const {
-        // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
-        // 仅登记并标「定义但未初始化」（add_local 置 is_initialized=false），不发任何指令。
-        // 调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。loc/message 由调用处据返回码显式 fail。
-        if (cur_fn_ctx()->is_defined_in_scope(name)) {
-            return std::unexpected(ErrorCode::RedefinedVariable);
-        }
-        if (cur_fn_ctx()->locals_.size() > kMaxLocals) {
-            return std::unexpected(ErrorCode::TooManyLocals);
-        }
-        return cur_fn_ctx()->add_local(name); // 纯登记，is_initialized 默认 false
-    }
-
-    Opt<u16> CodeGen::resolve_local(const StringView name) const { return cur_fn_ctx()->find_local(name); }
 
     void CodeGen::begin_scope() const { cur_fn_ctx()->begin_scope(); }
 
@@ -144,71 +135,45 @@ namespace aria {
         cur_cu()->emit_pop_n(n, line);
     }
 
+    u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc& loc) const {
+        // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
+        // 仅登记并标「定义但未初始化」（add_local 置 is_initialized=false），不发任何指令。
+        // 调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。失败即 fail（[[noreturn]]）。
+        if (cur_fn_ctx()->is_defined_in_scope(name)) {
+            fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
+        }
+        if (cur_fn_ctx()->locals_.size() > kMaxLocals) {
+            fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>{})", kMaxLocals);
+        }
+        return cur_fn_ctx()->add_local(name); // 纯登记，is_initialized 默认 false
+    }
+
     // ============================================================
     // 名字解析
     // ============================================================
 
-    Result<CodeGen::ResolvedVar, ErrorCode> CodeGen::resolve_name(StringView name) {
+    CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc& loc) {
+        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方
+        // emit_load_var/emit_store_var 走 not_impl 报编译期错--不静默落到全局，否则外层局部与同名模块全局
+        // 串台致闭包捕获错误变量，见 CLAUDE.md「作用域模型」）；否则视为模块全局（VM 运行期 LOAD_GLOBAL
+        // 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出即 fail（持 loc）。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
-        // 外层函数局部 -> 需 upvalue 捕获（M4 未实现 -> not_impl）。沿 enclosing_ 链查；命中即 Upvalue，
-        // 由调用方 visitIdentifierNode 走 not_impl 报编译期错--不静默落到全局，
-        // 否则外层局部会与同名模块全局串台致闭包捕获错误变量（见 CLAUDE.md「作用域模型」）。
         for (auto ctx = cur_fn_ctx()->enclosing_; ctx != nullptr; ctx = ctx->enclosing_) {
             if (ctx->find_local(name)) {
                 return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = 0};
             }
         }
-        // 否则视为模块全局（VM 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。
-        // add_name 溢出 -> 透传 CodeUnitTooLarge，交调用处用节点 loc 显式 fail（本方法不持 loc）。
-        if (const auto name_idx = add_name(name)) {
-            return ResolvedVar{.kind = ResolvedVar::Kind::Global, .index = *name_idx};
-        }
-        return std::unexpected(ErrorCode::CodeUnitTooLarge);
+        const auto name_idx = add_name_or_fail(name, loc);
+        return ResolvedVar{.kind = ResolvedVar::Kind::Global, .index = name_idx};
     }
 
     // ============================================================
-    // 失败翻译层（visit 层便利：操作 + 失败即 fail，返回解包值）
-    // 薄封装层只做操作 + 失败信号、不持 loc；以下在 visit 层（有节点 loc）调用：失败即 fail
-    // （[[noreturn]]，之后值恒有效）并返回解包值，把重复的「检查 + fail + 解引用」收敛为一行。
+    // 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）
+    // 与上面 _or_fail 同一职责约定（操作 + 失败即 fail），但底层方法返 bool（patch_jump/emit_jump_back/
+    // declare_global），无解包值，故为 void 封装。文案收口于此。
     // ============================================================
-
-    u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc& loc) const {
-        if (const auto idx = add_constant(value)) {
-            return *idx;
-        }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
-    }
-
-    u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc& loc) const {
-        if (const auto idx = add_name(name)) {
-            return *idx;
-        }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
-    }
-
-    u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc& loc) const {
-        const auto slot = declare_local(name);
-        if (slot) {
-            return *slot;
-        }
-        switch (slot.error()) {
-            case ErrorCode::RedefinedVariable:
-                fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
-            case ErrorCode::TooManyLocals:
-                fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>{})", kMaxLocals);
-            default:
-                UNREACHABLE();
-        }
-    }
-
-    CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc& loc) {
-        if (const auto resolved = resolve_name(name)) {
-            return *resolved;
-        }
-        fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants); // add_name 溢出透传
-    }
 
     void CodeGen::patch_jump_or_fail(const usize src_off, const SourceLoc& loc) const {
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。

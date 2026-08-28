@@ -170,26 +170,24 @@ namespace aria {
         [[nodiscard]]
         CodeUnit* cur_cu() const noexcept;
 
-        // 将常量插入常量池，返回索引(这个方法进行溢出检查)
-        // 溢出(>65535) -> nullopt；否则 -> idx
-        [[nodiscard]]
-        Opt<u16> add_constant(Value v) const;
+        // --- 常量池 / 局部 / 名字解析辅助（单层 _or_fail：操作 + 失败即 fail 并返回解包值）---
+        // 原薄封装透传层（add_constant/add_name/declare_local/resolve_name，只做操作 + 失败信号、不持 loc）
+        // 唯一消费者即对应 _or_fail，透传空转，故内联至此（见 .cpp）。add_name_or_fail 经 add_constant_or_fail
+        // 复用溢出检查。失败即 fail（[[noreturn]]，之后值恒有效）；loc/message 由本层据节点 loc 显式构造。
 
-        // 创建字符串对象并插入常量池，返回索引(这个方法进行溢出检查)
-        // 溢出(>65535) -> nullopt；否则 -> idx
+        // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge；否则入池返回索引。
         [[nodiscard]]
-        Opt<u16> add_name(StringView s) const;
+        u16 add_constant_or_fail(Value value, const SourceLoc& loc) const;
+
+        // intern name 成 ObjString 入常量池，返回索引。溢出由 add_constant_or_fail fail。
+        [[nodiscard]]
+        u16 add_name_or_fail(StringView name, const SourceLoc& loc) const;
 
         // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
-        // 薄封装：检测重定义/溢出 -> 返回 ErrorCode（不构造 Error、不持 loc）；成功 add_local 仅登记并标
-
-        // 「定义但未初始化」（不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
+        // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记并标「定义但未初始化」
+        // （不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
         [[nodiscard]]
-        Result<u16, ErrorCode> declare_local(StringView name) const;
-
-        // = cur_fn_ctx()->find_local
-        [[nodiscard]]
-        Opt<u16> resolve_local(StringView name) const;
+        u16 declare_local_or_fail(StringView name, const SourceLoc& loc) const;
 
         // cur_fn_ctx()->begin_scope()
         void begin_scope() const;
@@ -209,39 +207,28 @@ namespace aria {
             u16 index;
         };
 
-        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方 not_impl）；
-        // 否则视为模块全局 -> Global（index=名字常量池索引，VM 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。
-        // Global 分支 add_name 可能溢出 -> 透传 CodeUnitTooLarge，调用处检查后用节点 loc 显式 fail（本方法不持 loc）。
-        Result<ResolvedVar, ErrorCode> resolve_name(StringView name);
-
-        // --- 失败翻译层（visit 层便利）---
-        // 薄封装层（add_constant/add_name/declare_local/resolve_name）只做操作 + 失败信号、不持 loc；以下在
-        // visit 层（有节点 loc）调用：失败即 fail（[[noreturn]]，之后值恒有效）并返回解包值，把重复的
-        // 「检查 + fail + 解引用」收敛为一行。loc/message 由本层据节点 loc 显式构造，与薄封装层同一职责约定。
-        [[nodiscard]]
-        u16 add_constant_or_fail(Value value, const SourceLoc& loc) const;
-
-        [[nodiscard]]
-        u16 add_name_or_fail(StringView name, const SourceLoc& loc) const;
-
-        [[nodiscard]]
-        u16 declare_local_or_fail(StringView name, const SourceLoc& loc) const;
-
+        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方
+        // emit_load_var/emit_store_var 走 not_impl）；否则视为模块全局 -> Global（index=名字常量池索引，VM
+        // 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出
+        // 即 fail（持 loc）。
         [[nodiscard]]
         ResolvedVar resolve_name_or_fail(StringView name, const SourceLoc& loc);
 
+        // --- 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）---
+        // 与上面 _or_fail 同一职责约定（操作 + 失败即 fail），但底层返 bool（patch_jump/emit_jump_back/
+        // declare_global），无解包值，故为 void 封装。文案收口于此。
+
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
-        // 与上面 _or_fail 同一职责约定;patch_jump 无返回值,故本封装 void(仅翻译失败,无解包)。
         void patch_jump_or_fail(usize src_off, const SourceLoc& loc) const;
 
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
-        // 同 patch_jump_or_fail:void 封装,仅翻译失败。比 patch_jump 多一个 line 参数--emit_jump_back
-        // 要发射 JUMP_BACK 指令(line 供其行号),而 patch_jump 只回填占位不发射,故无需 line。
+        // 比 patch_jump 多一个 line 参数--emit_jump_back 要发射 JUMP_BACK 指令(line 供其行号),而
+        // patch_jump 只回填占位不发射,故无需 line。
         void emit_jump_back_or_fail(u32 target_off, u32 line, const SourceLoc& loc) const;
 
-        // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与 declare_local_or_fail
-        // 对称(局部/全局重定义检查各一),但 declare_global 返 bool、单一失败,故同 patch_jump_or_fail/
-        // emit_jump_back_or_fail 为 void 封装(无解包)。替代 visit 层 3 处 if+fail,消息文案收口于此。
+        // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与
+        // declare_local_or_fail 对称(局部/全局重定义检查各一),但 declare_global 返 bool、单一失败,故
+        // 同上两者为 void 封装(无解包)。替代 visit 层 3 处 if+fail,消息文案收口于此。
         void declare_global_or_fail(StringView name, const SourceLoc& loc) const;
 
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---

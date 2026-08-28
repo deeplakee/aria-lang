@@ -161,6 +161,16 @@ namespace aria::util {
         return {static_cast<u8>(word & 0xFF), static_cast<u8>(word >> 8)};
     }
 
+    // 取栈顶元素并弹出:返回栈顶元素(经 move)后 pop。调用方须保证栈非空。
+    // Stack (std::stack) 只暴露 top(),无"取出并弹"原子原语,故在此收口一处供共用。
+    template<typename T>
+    [[nodiscard]]
+    T pop_top(Stack<T>& stack) {
+        T top = std::move(stack.top());
+        stack.pop();
+        return top;
+    }
+
     // 把 u32 按"低位在前"(小端序)拆成 4 字节:索引 0 为最低字节。
     [[nodiscard]]
     inline Vector<u8, 4> split_dword(const u32 word) noexcept {

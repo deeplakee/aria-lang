@@ -109,7 +109,7 @@ namespace aria {
         ObjFunction*  fn_;
         List<Local>   locals_;
         u32           scope_depth_;
-        List<LoopCtx> loop_stack_;
+        Stack<LoopCtx> loop_stack_;
     };
 
 } // namespace aria

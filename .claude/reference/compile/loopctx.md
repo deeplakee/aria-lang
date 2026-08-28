@@ -53,14 +53,13 @@ const u32 loop_scope = cur_fn_ctx()->scope_depth_;  // 记录循环体所在 sco
 // ... 发射循环条件/初始化，拿到 continue 的后向目标（若有）...
 auto loop_ctx = make_loop_ctx(loop_scope);          // 工厂全字段初始化（back_target=nullopt、两列表空）
 loop_ctx.continue_back_target = <continue_target>;  // 按循环类型赋值（for 有 incr 留空）
-cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 emit_stmt(node->body.get());                        // 编译循环体（体里的 break/continue 会读栈顶 LoopCtx）
-auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-cur_fn_ctx()->loop_stack_.pop_back();               // 循环结束，弹出
+const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);  // 循环结束，取出并弹出
 // ... 发射回边 / 递增 / 回填 break_fwd_patches（和 continue_fwd_patches）...
 ```
 
-`break`/`continue` 在循环体内被访问时，总是取 `loop_stack_.back()`（**当前最内层**循环的 `LoopCtx`），往它的 `break_fwd_patches` / `continue_fwd_patches` 里追加占位偏移，或用 `continue_back_target` 直接回跳。这天然实现了「break/continue 绑定到最内层循环」。
+`break`/`continue` 在循环体内被访问时，总是取 `loop_stack_.top()`（**当前最内层**循环的 `LoopCtx`），往它的 `break_fwd_patches` / `continue_fwd_patches` 里追加占位偏移，或用 `continue_back_target` 直接回跳。这天然实现了「break/continue 绑定到最内层循环」。
 
 ### 3.2 `while` 循环（`visitWhileStmtNode`，CodeGen.cpp:483）
 
@@ -71,10 +70,9 @@ const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
 auto loop_ctx = make_loop_ctx(cur_fn_ctx()->scope_depth_);
 loop_ctx.continue_back_target = l_start;
-cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 emit_stmt(node->body.get());
-auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-cur_fn_ctx()->loop_stack_.pop_back();
+const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 
 emit_jump_back_or_fail(l_start, line, node->loc());  // 回边 -> L_start
 patch_jump_or_fail(jf, node->loc());                 // 条件假 -> L_end
@@ -108,10 +106,9 @@ auto loop_ctx = make_loop_ctx(loop_scope);
 if (!has_incr) {
     loop_ctx.continue_back_target = l_cond;  // 无 incr: continue 后向跳 L_cond
 } // 有 incr: 留空，走前向 continue_fwd_patches -> L_incr
-cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 emit_stmt(node->body.get());
-auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-cur_fn_ctx()->loop_stack_.pop_back();
+const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 
 // *** 关键：前向 continue 必须在「递增发射前」回填（此刻 size() 即 L_incr）***
 for (const auto cp: loop.continue_fwd_patches)
@@ -148,10 +145,9 @@ const u32 l_start = cur_cu()->size();      // has_next 判断处
 // ... LOAD iter; has_next; CALL; JUMP_FALSE -> L_end ...
 auto loop_ctx = make_loop_ctx(loop_scope);
 loop_ctx.continue_back_target = l_start;
-cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 // ... next; bind_pattern; body ...
-auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-cur_fn_ctx()->loop_stack_.pop_back();
+const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 emit_jump_back_or_fail(l_start, line, node->loc());
 patch_jump_or_fail(jf, node->loc());                  // -> L_end
 for (const auto bp: loop.break_fwd_patches)
@@ -165,7 +161,7 @@ for (const auto bp: loop.break_fwd_patches)
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
     fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
-auto& loop = cur_fn_ctx()->loop_stack_.back();      // 最内层循环
+auto& loop = cur_fn_ctx()->loop_stack_.top();      // 最内层循环
 pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
 loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记偏移
     cur_cu()->emit_jump(OpCode::JUMP, line));       // -> L_end（待回填）
@@ -178,7 +174,7 @@ loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记�
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
     fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
-auto& loop = cur_fn_ctx()->loop_stack_.back();
+auto& loop = cur_fn_ctx()->loop_stack_.top();
 pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
 if (loop.continue_back_target) {                    // 后向：目标已知
     cur_cu()->emit_jump_back(*loop.continue_back_target, line);
@@ -204,7 +200,7 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.3 入栈/出栈的 RAII 式对称
 
-每个循环 visit 严格遵循「push -> 编译体 -> move 出 + pop」的对称结构。注意是 `std::move` 出栈顶后再 `pop_back()`，这样回填阶段用的是局部副本 `loop`，即使回填过程中 `cur_cu()` 状态变化也不影响 `loop_stack_`。出错路径下（`fail()` 抛 `AriaCompileException` unwind），pop 会被跳过，但整个 `ModuleCtx` 析构时会沿 enclosing_ 链清理 `FunctionCtx`，`loop_stack_` 作为其成员随之销毁，不泄漏。
+每个循环 visit 严格遵循「push -> 编译体 -> `util::pop_top` 取出并弹出」的对称结构。`pop_top` 经 `std::move` 取出栈顶再 `pop`，这样回填阶段用的是局部副本 `loop`，即使回填过程中 `cur_cu()` 状态变化也不影响 `loop_stack_`。出错路径下（`fail()` 抛 `AriaCompileException` unwind），pop 会被跳过，但整个 `ModuleCtx` 析构时会沿 enclosing_ 链清理 `FunctionCtx`，`loop_stack_` 作为其成员随之销毁，不泄漏。
 
 ### 4.4 为什么 `LoopCtx` 是简单聚合而不是带方法的类
 

@@ -7,6 +7,7 @@
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "util/util.hpp"
 
 #include <format>
 
@@ -489,10 +490,9 @@ namespace aria {
 
         auto loop_ctx                 = make_loop_ctx(cur_fn_ctx()->scope_depth_);
         loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start
-        cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+        cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(node->body.get());
-        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-        cur_fn_ctx()->loop_stack_.pop_back();
+        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 
         emit_jump_back_or_fail(l_start, line, node->loc());
         patch_jump_or_fail(jf, node->loc()); // -> L_end
@@ -521,10 +521,9 @@ namespace aria {
         if (!has_incr) {
             loop_ctx.continue_back_target = l_cond; // 无 incr: continue 后向跳 L_cond
         } // 有 incr: 留空，走前向 continue_fwd_patches -> L_incr
-        cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+        cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(node->body.get());
-        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-        cur_fn_ctx()->loop_stack_.pop_back();
+        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 
         // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
@@ -576,7 +575,7 @@ namespace aria {
 
         auto loop_ctx                 = make_loop_ctx(loop_scope);
         loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start（has_next 判断处）
-        cur_fn_ctx()->loop_stack_.push_back(std::move(loop_ctx));
+        cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
         // 若为 block 则自带更深层 scope；break/continue 跳出时由 pop_locals_to(loop_scope) 代弹。
@@ -587,8 +586,7 @@ namespace aria {
         emit_stmt(node->body.get());
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 
-        const auto loop = std::move(cur_fn_ctx()->loop_stack_.back());
-        cur_fn_ctx()->loop_stack_.pop_back();
+        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
 
         emit_jump_back_or_fail(l_start, line, node->loc());
         patch_jump_or_fail(jf, node->loc()); // -> L_end
@@ -603,7 +601,7 @@ namespace aria {
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
         }
-        auto& loop = cur_fn_ctx()->loop_stack_.back();
+        auto& loop = cur_fn_ctx()->loop_stack_.top();
         pop_locals_to(loop.loop_scope_depth, line);
         loop.break_fwd_patches.push_back(cur_cu()->emit_jump(OpCode::JUMP, line)); // -> L_end（回填）
     }
@@ -613,7 +611,7 @@ namespace aria {
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
         }
-        auto& loop = cur_fn_ctx()->loop_stack_.back();
+        auto& loop = cur_fn_ctx()->loop_stack_.top();
         pop_locals_to(loop.loop_scope_depth, line);
         if (loop.continue_back_target) {
             emit_jump_back_or_fail(*loop.continue_back_target, line, node->loc());

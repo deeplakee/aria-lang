@@ -43,6 +43,13 @@ TEST(Interpret, StringRuntimeError) {
     EXPECT_EQ(vm.interpret("return 1 / 0;"), InterpretResult::RuntimeError);
 }
 
+// 字符串源：未实现特性（list 字面量）-> 编译期 NotImplemented（现归 Semantic 类）-> CompileError。
+// 回归测试：此前 NotImplemented 归 Internal，被 interpret_run 映射为 RuntimeError，误导为运行期错误。
+TEST(Interpret, StringNotImplementedIsCompileError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret("print [1, 2, 3];"), InterpretResult::CompileError);
+}
+
 // 路径源：合法文件 -> Ok。
 TEST(Interpret, PathOk) {
     const auto path = write_tmp_aria("ok.aria", "return 7 * 6;");

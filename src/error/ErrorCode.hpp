@@ -66,6 +66,7 @@ namespace aria {
         RedefinedClass,          // 重复定义类
         RedefinedMember,         // 类内重复的方法/字段
         NumberOutOfRange,        // 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理）
+        NotImplemented,           // 功能尚未实现（CodeGen 占位 not_impl；经 Error 通道均编译期，故归语义阶段）
 
         // ========= RUNTIME ERROR（运行时阶段）=========
         TypeMismatch,      // 运算/操作的类型不符（如 number + 非数）
@@ -91,7 +92,6 @@ namespace aria {
         AssertionFailed, // 内部断言失败
         InvalidBytecode, // codeunit 损坏 / 非法操作码
         StackUnderflow,  // VM 栈失衡（弹出超过已压入）
-        NotImplemented,  // 语义/功能尚未实现
         InvalidState,    // VM 处于非法内部状态
 
         // ========= RESOURCE ERROR（资源 / 环境）=========
@@ -301,6 +301,7 @@ namespace aria {
             case ErrorCode::RedefinedMember:
             case ErrorCode::NumberOutOfRange:
             case ErrorCode::UninitializedVariable:
+            case ErrorCode::NotImplemented:
                 return ErrorCategory::Semantic;
             // Runtime
             case ErrorCode::TypeMismatch:
@@ -326,7 +327,6 @@ namespace aria {
             case ErrorCode::AssertionFailed:
             case ErrorCode::InvalidBytecode:
             case ErrorCode::StackUnderflow:
-            case ErrorCode::NotImplemented:
             case ErrorCode::InvalidState:
                 return ErrorCategory::Internal;
             // Resource

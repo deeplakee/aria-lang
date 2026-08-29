@@ -232,9 +232,12 @@ namespace aria {
 
         // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类/异常等)才会实现,
         // 当前不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 run_ 返回)。
+        // 用 OpcodeNotImplemented(Internal 类)而非 NotImplemented(Semantic 类):后者经 Error 通道
+        // 服务编译期 CodeGen not_impl(可恢复 CompileError);此处是运行期执行到未实现 opcode,
+        // 不可恢复走 fatal_error,属解释器实现不完整(Internal)。
         [[noreturn]]
         void not_implemented(const StringView op_name) {
-            fatal_error(ErrorCode::NotImplemented,
+            fatal_error(ErrorCode::OpcodeNotImplemented,
                         std::format("opcode '{}' not implemented yet (out of current scope: closures/fields/index/"
                                     "classes/exceptions come later)",
                                     op_name));

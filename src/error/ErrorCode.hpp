@@ -66,7 +66,7 @@ namespace aria {
         RedefinedClass,          // 重复定义类
         RedefinedMember,         // 类内重复的方法/字段
         NumberOutOfRange,        // 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理）
-        NotImplemented,           // 功能尚未实现（CodeGen 占位 not_impl；经 Error 通道均编译期，故归语义阶段）
+        NotImplemented,          // 功能尚未实现（CodeGen 占位 not_impl；经 Error 通道均编译期，故归语义阶段）
 
         // ========= RUNTIME ERROR（运行时阶段）=========
         TypeMismatch,      // 运算/操作的类型不符（如 number + 非数）
@@ -88,11 +88,12 @@ namespace aria {
         CircularImport,    // import 形成循环
 
         // ======== INTERNAL ERROR（解释器不变式）========
-        Unreachable,     // 逻辑上不可达的代码被执行
-        AssertionFailed, // 内部断言失败
-        InvalidBytecode, // codeunit 损坏 / 非法操作码
-        StackUnderflow,  // VM 栈失衡（弹出超过已压入）
-        InvalidState,    // VM 处于非法内部状态
+        Unreachable,          // 逻辑上不可达的代码被执行
+        AssertionFailed,      // 内部断言失败
+        InvalidBytecode,      // codeunit 损坏 / 非法操作码
+        OpcodeNotImplemented, // 合法 opcode 但运行期执行语义未实现（VM not_implemented 经 fatal_error）
+        StackUnderflow,       // VM 栈失衡（弹出超过已压入）
+        InvalidState,         // VM 处于非法内部状态
 
         // ========= RESOURCE ERROR（资源 / 环境）=========
         OutOfMemory,       // GC 分配失败
@@ -234,6 +235,8 @@ namespace aria {
                 return "AssertionFailed";
             case ErrorCode::InvalidBytecode:
                 return "InvalidBytecode";
+            case ErrorCode::OpcodeNotImplemented:
+                return "OpcodeNotImplemented";
             case ErrorCode::StackUnderflow:
                 return "StackUnderflow";
             case ErrorCode::NotImplemented:
@@ -326,6 +329,7 @@ namespace aria {
             case ErrorCode::Unreachable:
             case ErrorCode::AssertionFailed:
             case ErrorCode::InvalidBytecode:
+            case ErrorCode::OpcodeNotImplemented:
             case ErrorCode::StackUnderflow:
             case ErrorCode::InvalidState:
                 return ErrorCategory::Internal;

@@ -28,6 +28,7 @@ add_library(aria_core STATIC
         src/util/fs.hpp
         src/util/utf8.hpp
         src/util/source_file.hpp
+        src/util/cli.hpp
         src/bytecode/code.hpp
         src/bytecode/CodeUnit.cpp
         src/bytecode/CodeUnit.hpp

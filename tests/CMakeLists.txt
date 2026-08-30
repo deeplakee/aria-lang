@@ -3,6 +3,7 @@ add_executable(aria_tests
         test_utf8.cpp
         test_source_file.cpp
         test_fs.cpp
+        test_cli.cpp
         test_lexer.cpp
         test_ast.cpp
         test_parser.cpp

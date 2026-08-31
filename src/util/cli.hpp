@@ -3,12 +3,17 @@
 
 // 命令行参数解析器 Cli：链式注册 flag / option / positional 后 parse(argv)，
 // 返回独立 ParseResult（has / get / extra_args）；help() 渲染帮助文本。
-// 定义（模板）与解析结果分离：Cli 仅持注册项与命名索引（const 可重复 parse、互不污染），
-// 每次解析产出一个 ParseResult（持结果数组 + 指回 Cli 的非拥有 const Cli*，借其命名索引分派）。
+// 定义（模板）与解析结果分离：Cli 仅持统一注册项与查重索引（const 可重复 parse、互不污染），
+// 每次解析产出一个 ParseResult（持结果数组 + 指回 Cli 的非拥有 const Cli*，借其注册项分派）。
 // 内置 help flag（--help / -h）首个注册：命中即置位短路、视为成功（经 result.has("help") 取）。
 // parse 首错即终止：返回 unexpected(首个错误消息)；成功返回 ParseResult。
-// Flag / Option 平铺为独立 struct、经 List<Flag>/List<Option> 值存储（无继承多态、无 raw 指针），
-// 按 {Kind, idx} 索引分派；值语义，默认可拷贝/移动。纯解析工具，不打印、不退出（策略交调用方）。
+// 统一枚举 Slot{Empty, Flag, Option, Positional} 贯穿定义/结果两侧：
+//   - 定义侧 Def.kind_ 永非 Empty（构造 ASSERT 把关），标记该槽种类；
+//   - 结果侧 ParseResult::SlotEntry.state 用 Empty 表未提供、种类值表已提供（与 Def 同序、单数组）。
+// 单一事实源：parse/has/get/help 仅依赖 defs_（按 long_name_/short_name_ 线性扫描定位槽），
+// long_index_/short_index_ 退化为注册期查重专用（解析侧不读）。flag/option/positional 共唯一长名空间；
+// --name/-x 解析只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽（名字唯一，单查即定位）。
+// 值语义，默认可拷贝/移动。纯解析工具，不打印、不退出（策略交调用方）。
 
 #include <algorithm>
 #include <format>
@@ -19,40 +24,47 @@ namespace aria::util {
     class Cli {
     public:
         // ============================================================
+        // 统一枚举：定义侧（Def.kind_，永非 Empty）与结果侧（SlotEntry.state，Empty 表未提供）共用
+        // ============================================================
+
+        enum class Slot : u8 {
+            Empty,      // 仅结果侧出现：该槽未提供/未填充
+            Flag,       // 布尔开关（不取值）
+            Option,     // 带值选项
+            Positional, // 位置参数
+        };
+
+        // ============================================================
         // 解析结果：定义/结果分离后的结果侧（每次 parse 产出一份）
         // ============================================================
 
-        // ParseResult 持结果数组 + 指回 Cli 的非拥有指针（借 Cli 的命名索引分派 has/get）。
-        // 调用方须保证 Cli 在 ParseResult 使用期间存活（同 SourceLoc::src_ 持 SourceFile* 的非拥有约定）。
+        // ParseResult 持单个结果数组 + 指回 Cli 的非拥有指针（借 Cli 的注册项分派 has/get）。
+        // 第 n 位 SlotEntry 对应 Cli::defs_ 第 n 位定义：state=Empty 表未提供、种类值表已提供；value 存
+        // option/positional 的值。 调用方须保证 Cli 在 ParseResult 使用期间存活（同 SourceLoc::src_ 持 SourceFile*
+        // 的非拥有约定）。
         class ParseResult {
         public:
-            // 名字是否被解析到（flag/option 看是否在命令行提供；不含 positional）
+            // 名字是否被解析到（flag/option/positional：看是否在命令行提供/填充）
             [[nodiscard]]
             bool has(const StringView name) const {
-                const auto name_str = String{name};
-                if (!cli_->long_index_.contains(name_str)) {
-                    return false;
+                const auto idx = cli_->find_long(name);
+                if (!idx.has_value()) {
+                    return false; // 未注册名
                 }
-                const auto& [kind, idx] = cli_->long_index_.at(name_str);
-                return kind == NameRef::Kind::Flag ? flag_set_[idx] : option_set_[idx];
+                return slots_[*idx].state != Slot::Empty;
             }
 
-            // 取 option / positional 的值；未提供时返回 nullopt（显式置空 --output= 返回 Some("")）
-            // （flag 恒无值，落到 positional 扫描；调用方以 value_or 提供 fallback）
+            // 取 option / positional 的值；未提供或名属 flag（无值）时返回 nullopt
+            // （显式置空 --output= / 空串实参返回 Some("")；调用方以 value_or 提供 fallback）
             [[nodiscard]]
             Opt<String> get(const StringView name) const {
-                const auto name_str = String{name};
-                if (cli_->long_index_.contains(name_str)) {
-                    const auto& [kind, idx] = cli_->long_index_.at(name_str);
-                    if (kind == NameRef::Kind::Option && option_set_[idx]) {
-                        return option_value_[idx]; // 已提供（含显式空串）
-                    }
-                    // flag 命中或 option 未提供：落 positional 扫描
+                const auto idx = cli_->find_long(name);
+                if (!idx.has_value() || cli_->defs_[*idx].kind_ == Slot::Flag) {
+                    return std::nullopt; // 未注册，或命中的是 flag（无值）
                 }
-                for (usize i = 0; i < cli_->positionals_.size(); ++i) {
-                    if (cli_->positionals_[i].name_ == name_str && positional_set_[i]) {
-                        return positional_value_[i]; // 已填充（含显式空串实参）
-                    }
+                // option / positional：已提供（含显式空串）才返回值
+                if (const usize i = *idx; slots_[i].state != Slot::Empty) {
+                    return slots_[i].value;
                 }
                 return std::nullopt;
             }
@@ -66,22 +78,20 @@ namespace aria::util {
         private:
             friend class Cli;
 
+            // 结果侧每槽记录：state（Empty=未提供 / 种类值=已提供）+ value（option/positional 的值，flag 槽未用）。
+            struct SlotEntry {
+                Slot   state{Slot::Empty};
+                String value;
+            };
+
             explicit ParseResult(const Cli& cli) : cli_{&cli} {
-                // 各结果数组与定义 List 同序、按其尺寸预置（构造体为 complete-class context，可见后置成员）
-                flag_set_.assign(cli.flags_.size(), false);
-                option_set_.assign(cli.options_.size(), false);
-                option_value_.resize(cli.options_.size());
-                positional_set_.assign(cli.positionals_.size(), false);
-                positional_value_.resize(cli.positionals_.size());
+                // slots_ 与 defs_ 同序、按其尺寸预置（构造体为 complete-class context，可见后置成员）
+                slots_.resize(cli.defs_.size());
             }
 
-            const Cli*   cli_;
-            List<bool>   flag_set_;         // 与 flags_ 同序：是否在命令行提供
-            List<bool>   option_set_;       // 与 options_ 同序：是否在命令行提供（含显式置空）
-            List<String> option_value_;     // 与 options_ 同序：解析所得值
-            List<bool>   positional_set_;   // 与 positionals_ 同序：是否被填充
-            List<String> positional_value_; // 与 positionals_ 同序：填充值
-            List<String> extra_args_;
+            const Cli*      cli_;
+            List<SlotEntry> slots_; // 与 defs_ 同序：每槽 state + value
+            List<String>    extra_args_;
         };
 
         // ============================================================
@@ -89,19 +99,18 @@ namespace aria::util {
         // ============================================================
 
         explicit Cli(const StringView program_name = "") :
-            program_name_{program_name}, description_{}, flags_{}, options_{}, positionals_{},
-            long_index_{}, short_index_{} {
+            program_name_{program_name}, description_{}, defs_{}, long_index_{}, short_index_{} {
             register_builtin_help();
         }
-        // 值类型：flags_/options_ 等皆值容器、无 raw 指针 -> 默认析构/拷贝/移动均正确（可安全拷贝/移动）。
+        // 值类型：defs_ 等皆值容器、无 raw 指针 -> 默认析构/拷贝/移动均正确（可安全拷贝/移动）。
         // auto parser = Cli{...} 及建造者链无约束；不再需要继承多态时代的 =delete。
 
         // 注册布尔开关：--verbose / -v（short_name 传 '\0' 表示无短名）
         Cli& add_flag(const StringView long_name, const StringView description, const char short_name = '\0') {
-            const usize idx = flags_.size();
-            // emplace_back 抛出（OOM）时该条目随 flags_ 一起回滚（值类型，无指针泄漏）：aria 视 OOM 为 fatal 量级
-            flags_.emplace_back(long_name, short_name, description);
-            register_name(long_name, NameRef::Kind::Flag, idx, short_name);
+            const usize idx = defs_.size();
+            // emplace_back 抛出（OOM）时该条目随 defs_ 一起回滚（值类型，无指针泄漏）：aria 视 OOM 为 fatal 量级
+            defs_.emplace_back(long_name, short_name, description, "", false, Slot::Flag);
+            register_name(long_name, idx, short_name);
             return *this;
         }
 
@@ -109,15 +118,20 @@ namespace aria::util {
         // default_value 仅用于 help() 展示，get() 未提供时返回 nullopt（调用方以 value_or 提供 fallback）。
         Cli& add_option(const StringView long_name, const StringView description, const StringView default_value = "",
                         const char short_name = '\0') {
-            const usize idx = options_.size();
-            options_.emplace_back(long_name, short_name, description, default_value);
-            register_name(long_name, NameRef::Kind::Option, idx, short_name);
+            const usize idx = defs_.size();
+            defs_.emplace_back(long_name, short_name, description, default_value, false, Slot::Option);
+            register_name(long_name, idx, short_name);
             return *this;
         }
 
         // 注册位置参数（按出现顺序填充；is_required=false 时可缺省）
         Cli& add_positional(const StringView name, const StringView description, const bool is_required = true) {
-            positionals_.emplace_back(name, description, is_required);
+            const usize idx = defs_.size();
+            defs_.emplace_back(name, '\0', description, "", is_required, Slot::Positional);
+            // positional 长名入唯一名字空间（与 flag/option 共 long_index_ 查重）；无短名。
+            // --name/-x 解析仍只匹配 flag/option（find_long_without_positional/find_short 按 kind_
+            // 过滤），位置参数按位置填
+            register_name(name, idx, '\0');
             return *this;
         }
 
@@ -126,6 +140,7 @@ namespace aria::util {
         // ============================================================
 
         // 解析 main 的 argc/argv（零拷贝：argv 各元素以 StringView 借用，跳过 argv[0]）
+        [[nodiscard]]
         Result<ParseResult, String> parse(const i32 argc, char* argv[]) const {
             List<StringView> args;
             // argc==0 时防 argc-1 下溢成巨值
@@ -138,6 +153,7 @@ namespace aria::util {
         }
 
         // 解析字符串列表（便捷重载）
+        [[nodiscard]]
         Result<ParseResult, String> parse(const List<String>& args) const {
             List<StringView> views;
             views.reserve(args.size());
@@ -149,27 +165,30 @@ namespace aria::util {
 
         // 核心解析。--help / -h 命中内置 help flag 置位后短路、视为成功（经 result.has("help") 取）；
         // 首错即返回 unexpected(消息)（定义/结果分离：错误不落 Cli 状态，重 parse 从新参数重新开始）
+        [[nodiscard]]
         Result<ParseResult, String> parse(const Span<const StringView> args) const {
             ParseResult result{*this};
-            usize       positional_idx = 0;
+            usize       positional_idx = 0; // 已填充的位置参数序号（在 Positional 槽中的位次）
 
             for (usize i = 0; i < args.size(); ++i) {
                 const auto arg = args[i];
 
                 if (arg.starts_with("--")) {
                     // 长选项：--name 或 --name=value；eq_pos==npos 时 substr(0, npos) 即整名
-                    const auto opt          = arg.substr(2);
-                    const auto eq_pos       = opt.find('=');
-                    const auto opt_name     = opt.substr(0, eq_pos);
-                    const auto opt_name_str = String{opt_name};
+                    const auto opt      = arg.substr(2);
+                    const auto eq_pos   = opt.find('=');
+                    const auto opt_name = opt.substr(0, eq_pos);
 
-                    if (!long_index_.contains(opt_name_str)) {
+                    const auto found =
+                            find_long_without_positional(opt_name); // 只匹配 flag/option（positional 不参与）
+                    if (!found.has_value()) {
                         return std::unexpected(std::format("unknown option: --{}", opt_name));
                     }
-                    const auto& [kind, idx] = long_index_.at(opt_name_str);
+                    const usize idx  = *found;
+                    const Slot  kind = defs_[idx].kind_;
 
-                    if (kind == NameRef::Kind::Flag) {
-                        result.flag_set_[idx] = true; // flag：置位即完（不取值，--flag=x 的 x 忽略）
+                    if (kind == Slot::Flag) {
+                        result.slots_[idx].state = Slot::Flag; // flag：置位即完（不取值，--flag=x 的 x 忽略）
                         if (opt_name == kHelpLongName) {
                             return result; // 内置 help：置位后短路，不再解析其余参数
                         }
@@ -181,11 +200,11 @@ namespace aria::util {
                         if (i + 1 >= args.size()) {
                             return std::unexpected(std::format("option --{} requires a value", opt_name));
                         }
-                        result.option_value_[idx].assign(args[++i]);
+                        result.slots_[idx].value.assign(args[++i]);
                     } else {
-                        result.option_value_[idx].assign(opt.substr(eq_pos + 1));
+                        result.slots_[idx].value.assign(opt.substr(eq_pos + 1));
                     }
-                    result.option_set_[idx] = true; // 已提供（含 --name= 显式置空）
+                    result.slots_[idx].state = Slot::Option; // 已提供（含 --name= 显式置空）
                     continue;
                 }
 
@@ -194,14 +213,15 @@ namespace aria::util {
                     for (usize j = 1; j < arg.size(); ++j) {
                         const char c = arg[j];
 
-                        const auto it = short_index_.find(c);
-                        if (it == short_index_.end()) {
+                        const auto found = find_short(c); // 只匹配 flag/option（positional 不参与）
+                        if (!found.has_value()) {
                             return std::unexpected(std::format("unknown option: -{}", c));
                         }
-                        const auto& [kind, idx] = it->second;
+                        const usize idx  = *found;
+                        const Slot  kind = defs_[idx].kind_;
 
-                        if (kind == NameRef::Kind::Flag) {
-                            result.flag_set_[idx] = true; // flag：置位后继续扫描下一字符
+                        if (kind == Slot::Flag) {
+                            result.slots_[idx].state = Slot::Flag; // flag：置位后继续扫描下一字符
                             if (c == kHelpShortName) {
                                 return result; // 内置 help：置位后短路
                             }
@@ -210,32 +230,45 @@ namespace aria::util {
 
                         // option：值为当前参数余下部分（-oFILE）或下一参数（-o FILE）
                         if (j + 1 < arg.size()) {
-                            result.option_value_[idx].assign(arg.substr(j + 1));
+                            result.slots_[idx].value.assign(arg.substr(j + 1));
                         } else if (i + 1 < args.size()) {
-                            result.option_value_[idx].assign(args[++i]);
+                            result.slots_[idx].value.assign(args[++i]);
                         } else {
                             return std::unexpected(std::format("option -{} requires a value", c));
                         }
-                        result.option_set_[idx] = true; // 已提供（含 -o 后空串）
-                        break;                          // 取值后结束本组（余下字符已作值）
+                        result.slots_[idx].state = Slot::Option; // 已提供（含 -o 后空串）
+                        break;                                   // 取值后结束本组（余下字符已作值）
                     }
                     continue;
                 }
 
-                // 位置参数：按注册顺序填充，超出注册数的收集进 extra
-                if (positional_idx < positionals_.size()) {
-                    result.positional_value_[positional_idx].assign(arg);
-                    result.positional_set_[positional_idx] = true;
+                // 位置参数：按出现顺序填第 positional_idx 个 Positional 槽；无则收进 extra
+                usize seen   = 0;
+                bool  filled = false;
+                for (usize k = 0; k < defs_.size(); ++k) {
+                    if (defs_[k].kind_ != Slot::Positional) {
+                        continue;
+                    }
+                    if (seen == positional_idx) {
+                        result.slots_[k].value.assign(arg);
+                        result.slots_[k].state = Slot::Positional;
+                        filled                 = true;
+                        break;
+                    }
+                    ++seen;
+                }
+                if (filled) {
                     ++positional_idx;
                 } else {
                     result.extra_args_.emplace_back(arg);
                 }
             }
 
-            // 缺失的必填位置参数 -> 错误（用 set_ 而非 value_ 判定：区分'未提供'与'显式空串实参'）
-            for (usize i = 0; i < positionals_.size(); ++i) {
-                if (positionals_[i].is_required_ && !result.positional_set_[i]) {
-                    return std::unexpected(std::format("missing required argument: {}", positionals_[i].name_));
+            // 缺失的必填位置参数 -> 错误（用 state 而非 value 判定：区分'未提供'与'显式空串实参'）
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].kind_ == Slot::Positional && defs_[k].is_required_ &&
+                    result.slots_[k].state == Slot::Empty) {
+                    return std::unexpected(std::format("missing required argument: {}", defs_[k].long_name_));
                 }
             }
 
@@ -256,51 +289,64 @@ namespace aria::util {
                 result += std::format("Usage: {}", program_name_);
             }
 
-            // [OPTIONS] 恒展示（内置 help flag 始终在 flags_ 中）
-            if (!flags_.empty() || !options_.empty()) {
-                result += " [OPTIONS]";
-            }
+            // [OPTIONS] 恒展示：内置 help flag 构造期首个注册，named 参数恒存在
+            result += " [OPTIONS]";
 
-            // 必填 <name>，可选 [name]
-            for (const auto& p: positionals_) {
-                result += p.is_required_ ? std::format(" <{}>", p.name_) : std::format(" [{}]", p.name_);
+            // 必填 <name>，可选 [name]：位置参数按注册序（defs_ 中 Positional 出现序）
+            for (const auto& p: defs_) {
+                if (p.kind_ == Slot::Positional) {
+                    result += p.is_required_ ? std::format(" <{}>", p.long_name_) : std::format(" [{}]", p.long_name_);
+                }
             }
-
-            result += "\n";
+            result += '\n';
 
             if (!description_.empty()) {
                 result += std::format("\n{}\n", description_);
             }
 
-            if (!positionals_.empty()) {
-                result += "\nArguments:\n";
-                for (const auto& p: positionals_) {
-                    // 描述对齐第 16 列（名字超长则贴紧，不留空格）
-                    const usize pad = 16 - std::min<usize>(16, p.name_.size());
-                    result += std::format("  {}{}{}\n", p.name_, String(pad, ' '), p.description_);
+            // Arguments 分节：按注册序遍历 positional，遇首个时才输出分节头
+            bool any_positional = false;
+            for (const auto& p: defs_) {
+                if (p.kind_ != Slot::Positional) {
+                    continue;
                 }
+                if (!any_positional) {
+                    result += "\nArguments:\n";
+                    any_positional = true;
+                }
+                // 名字字段宽 16、描述对齐第 18 列（2 空格缩进 + 16；超长则贴紧，不留空格）
+                const usize pad = 16 - std::min<usize>(16, p.long_name_.size());
+                result += std::format("  {}{}{}\n", p.long_name_, String(pad, ' '), p.description_);
             }
 
-            if (!flags_.empty() || !options_.empty()) {
-                result += "\nOptions:\n";
-                // 按 kind 分组渲染：flags 在前（内置 help 首个注册、恒居首位），options 在后
-                for (const auto& f: flags_) {
-                    // 描述对齐第 22 列（按 "-x, --name" 计，名字超长则贴紧）
-                    const usize pad = 22 - std::min<usize>(22, f.long_name_.size() + 4);
-                    result += std::format("{}{}{}\n", render_prefix(f.long_name_, f.short_name_), String(pad, ' '),
-                                          f.description_);
+            // Options 分节：named 参数（flag/option）按注册序渲染（内置 help 首个注册、恒居首位）
+            // 先算各前缀最大宽度（option 含 " <VALUE>"），描述统一对齐到 max+2 列，所有描述同列
+            usize max_prefix = 0;
+            for (const auto& d: defs_) {
+                if (d.kind_ == Slot::Positional) {
+                    continue;
                 }
-                for (const auto& o: options_) {
-                    // 描述对齐第 22 列（按 "-x, --name <VALUE>" 计，名字超长则贴紧）
-                    const usize pad  = 22 - std::min<usize>(22, o.long_name_.size() + 11);
-                    auto        line = std::format("{} <VALUE>{}{}", render_prefix(o.long_name_, o.short_name_),
-                                                   String(pad, ' '), o.description_);
-                    if (!o.default_value_.empty()) {
-                        line += std::format(" [default: {}]", o.default_value_);
-                    }
-                    line += "\n";
-                    result += line;
+                const usize w = render_prefix(d.long_name_, d.short_name_).size() +
+                                (d.kind_ == Slot::Option ? kOptValueSuffix.size() : 0);
+                max_prefix    = std::max(max_prefix, w);
+            }
+            const usize desc_col = max_prefix + 2; // 最长前缀 + 2 空格间距
+            result += "\nOptions:\n";
+            for (const auto& d: defs_) {
+                if (d.kind_ == Slot::Positional) {
+                    continue;
                 }
+                String prefix = render_prefix(d.long_name_, d.short_name_);
+                if (d.kind_ == Slot::Option) {
+                    prefix += kOptValueSuffix;
+                }
+                const usize pad  = desc_col - prefix.size(); // prefix <= max_prefix -> pad >= 2
+                auto        line = std::format("{}{}{}", prefix, String(pad, ' '), d.description_);
+                if (d.kind_ == Slot::Option && !d.default_value_.empty()) {
+                    line += std::format(" [default: {}]", d.default_value_);
+                }
+                line += '\n';
+                result += line;
             }
 
             return result;
@@ -313,93 +359,100 @@ namespace aria::util {
         }
 
     private:
-        // 长名/短名 -> {种类, 在 flags_ 或 options_ 中的下标}
-        struct NameRef {
-            enum class Kind : u8 { Flag, Option };
-            Kind  kind;
-            usize idx;
-        };
-
-        // 布尔开关（--verbose / -v）：不取值（定义侧；是否提供见 ParseResult::flag_set_）
-        struct Flag {
-            Flag(const StringView long_name, const char short_name, const StringView description) :
-                long_name_{long_name}, short_name_{short_name}, description_{description} {}
-
-            String long_name_;
-            char   short_name_; // '\0' = 无短名
-            String description_;
-        };
-
-        // 带值选项（--output FILE / -o FILE）（定义侧；值/是否提供见 ParseResult::option_*）
-        struct Option {
-            Option(const StringView long_name, const char short_name, const StringView description,
-                   const StringView default_value) :
+        // 统一注册项（定义侧）：flag/option/positional 共一表，按 kind_ 区分哪些字段生效。
+        // kind_ 永非 Empty（构造 ASSERT 把关）；long_name_ 对 flag/option 为长名、对 positional 为参数名。
+        struct Def {
+            Def(const StringView long_name, const char short_name, const StringView description,
+                const StringView default_value, const bool is_required, const Slot kind) :
                 long_name_{long_name}, short_name_{short_name}, description_{description},
-                default_value_{default_value} {}
+                default_value_{default_value}, is_required_{is_required}, kind_{kind} {
+                ASSERT(kind_ != Slot::Empty, "Def kind 不能为 Empty");
+            }
 
-            String long_name_;
-            char   short_name_;      // '\0' = 无短名
+            String long_name_;  // flag/option 长名；positional 参数名
+            char   short_name_; // '\0' = 无短名（positional 不用）
             String description_;
-            String default_value_;   // 仅 help 展示
+            String default_value_; // option only（仅 help 展示）
+            bool   is_required_;   // positional only
+            Slot   kind_;          // Flag | Option | Positional（定义侧永非 Empty）
         };
 
-        // 位置参数（不参与命名索引，按出现顺序填充）（定义侧；值/是否填充见 ParseResult::positional_*）
-        struct Positional {
-            Positional(const StringView name, const StringView description, const bool is_required) :
-                name_{name}, description_{description}, is_required_{is_required} {}
-
-            String name_;
-            String description_;
-            bool   is_required_;
-        };
-
-        // 公共渲染前缀："  -x, --name"（无短名则 "    --name"）；flags_/options_ 渲染共用
+        // 公共渲染前缀："  -x, --name"（无短名则 "    --name"）；flag/option 渲染共用
         [[nodiscard]] static String render_prefix(const StringView long_name, const char short_name) {
             return short_name != '\0' ? std::format("  -{}, --{}", short_name, long_name)
                                       : std::format("    --{}", long_name);
         }
 
-        // 注册名入索引（长名 + 短名）。flag / option 共用一个名字空间：
+        // 在 defs_ 中按长名找任意槽（flag/option/positional，长名全局唯一）。未找到返回 nullopt。
+        // 供 has/get：长名空间唯一后单查即定位。
+        [[nodiscard]] Opt<usize> find_long(const StringView name) const {
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].long_name_ == name) {
+                    return k;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // 在 defs_ 中按长名找 flag/option 槽（positional 不参与 --name 解析）。未找到返回 nullopt。
+        // 供 parse 的 --name 解析；与 find_long 的差别仅排除 positional。
+        [[nodiscard]] Opt<usize> find_long_without_positional(const StringView long_name) const {
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].kind_ != Slot::Positional && defs_[k].long_name_ == long_name) {
+                    return k;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // 在 defs_ 中按短名找 flag/option 槽。未找到返回 nullopt。
+        // 供 parse 的 -x 解析。
+        [[nodiscard]] Opt<usize> find_short(const char short_name) const {
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].short_name_ == short_name) {
+                    return k;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // 注册名入查重索引（长名 + 短名）。flag / option / positional 共用一个长名空间（positional 无短名）：
         // 跨/同 kind 重名、占用内置帮助保留名（--help / -h）均为调用方编程错误，
         // 注册期 ASSERT 拒绝；NDEBUG 下首个注册生效（后续重名经 emplace 忽略）。
+        // 索引仅在注册期查重使用，解析侧（parse/has/get）不读，唯一定位源是 defs_。
         // ASSERT 的 message 经宏文本替换进失败分支，std::format 仅失败时构造。
-        void register_name(const StringView long_name, const NameRef::Kind kind, const usize idx,
-                           const char short_name) {
-
-            const auto ref = NameRef{.kind = kind, .idx = idx};
-
-            [[maybe_unused]] const bool long_inserted = long_index_.emplace(String{long_name}, ref).second;
-            ASSERT(long_inserted, std::format("arg 名 --{} 重复注册", long_name).c_str());
+        void register_name(const StringView long_name, const usize idx, const char short_name) {
+            [[maybe_unused]] const bool long_inserted = long_index_.emplace(String{long_name}, idx).second;
+            ASSERT(long_inserted, std::format("arg 名 {} 重复注册", long_name).c_str());
 
             if (short_name == '\0') {
                 return;
             }
 
-            [[maybe_unused]] const bool short_inserted = short_index_.emplace(short_name, ref).second;
+            [[maybe_unused]] const bool short_inserted = short_index_.emplace(short_name, idx).second;
             ASSERT(short_inserted, std::format("arg 短名 -{} 重复注册", short_name).c_str());
         }
 
-        // 注册内置 help flag 为 flags_[0]（构造共用：恒居 help() 渲染首位，parse 命中即短路）。
+        // 注册内置 help flag 为 defs_[0]（构造共用：恒居 help() 渲染首位，parse 命中即短路）。
         // 不经 register_name（其保留名 ASSERT 专挡用户占 --help/-h），直连索引。
         void register_builtin_help() {
-            flags_.emplace_back(kHelpLongName, kHelpShortName, kHelpDescription);
-            long_index_.emplace(String{kHelpLongName}, NameRef{.kind = NameRef::Kind::Flag, .idx = 0});
-            short_index_.emplace(kHelpShortName, NameRef{.kind = NameRef::Kind::Flag, .idx = 0});
+            defs_.emplace_back(kHelpLongName, kHelpShortName, kHelpDescription, "", false, Slot::Flag);
+            long_index_.emplace(String{kHelpLongName}, 0);
+            short_index_.emplace(kHelpShortName, 0);
         }
 
         // 内置 help flag 的固定身份（构造时首个注册，parse 命中即置位短路）
         static constexpr StringView kHelpLongName    = "help";
         static constexpr char       kHelpShortName   = 'h';
         static constexpr StringView kHelpDescription = "Show this help message";
+        static constexpr StringView kOptValueSuffix  = " <VALUE>"; // option 行前缀尾部（Options 对齐宽度计入）
 
-        String                   program_name_;
-        String                   description_;
-        List<Flag>               flags_;
-        List<Option>             options_;
-        List<Positional>         positionals_;
-        HashMap<String, NameRef> long_index_;  // 长名（flag/option 共用）-> {种类, flags_/options_ 下标}
-        HashMap<char, NameRef>   short_index_; // 短名（flag/option 共用）-> {种类, flags_/options_ 下标}
-        // 不持解析结果：flag_set_/option_value_/extra_args_ 等随 ParseResult 走（定义/结果分离）
+        String                 program_name_;
+        String                 description_;
+        List<Def>              defs_; // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；解析侧唯一事实源
+        HashMap<String, usize> long_index_;  // 长名查重索引（仅注册期用，解析侧不读）
+        HashMap<char, usize>   short_index_; // 短名查重索引（仅注册期用，解析侧不读）
+        // 不持解析结果：slots_/extra_args_ 随 ParseResult 走（定义/结果分离）
     };
 
 } // namespace aria::util

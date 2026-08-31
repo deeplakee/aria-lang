@@ -200,6 +200,26 @@ TEST(CliPositional, EmptyStringSatisfiesRequired) {
     EXPECT_EQ(*r->get("script"), "");
 }
 
+TEST(CliPositional, HasReportsPositional) {
+    // has 覆盖 positional：已填充 -> true，未填充的可选 -> false
+    auto parser = Cli{};
+    parser.add_positional("script", "脚本文件").add_positional("arg", "脚本参数", false);
+    const auto r = parse_args(parser, {"main.aria"});
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(r->has("script")); // 已填充
+    EXPECT_FALSE(r->has("arg"));   // 可选、未提供
+    EXPECT_FALSE(r->has("unregistered"));
+}
+
+TEST(CliPositional, HasReportsEmptyStringPositional) {
+    // 显式空串实参：has 应为 true（区分'已提供空串'与'未提供'，同 get 语义）
+    auto parser = Cli{};
+    parser.add_positional("script", "脚本文件");
+    const auto r = parse_args(parser, {""});
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(r->has("script"));
+}
+
 // ---------------------------------------------------------------------------
 // 混合注册：flag / option / positional 同一 parser（合并索引 + 多态分派路径）
 // ---------------------------------------------------------------------------
@@ -249,8 +269,8 @@ TEST(CliHelpRequest, ShortHelp) {
 }
 
 TEST(CliHelpRequest, NotRequestedByDefault) {
-    auto parser = Cli{};
-    const auto r = parse_args(parser, {});
+    auto       parser = Cli{};
+    const auto r      = parse_args(parser, {});
     ASSERT_TRUE(r.has_value());
     EXPECT_FALSE(r->has("help"));
 }
@@ -315,9 +335,7 @@ TEST(CliErrors, ReuseSameTemplateParsesCleanly) {
     // 定义/结果分离：同一 Cli 可重复 parse，各次 ParseResult 互不污染
     // （修复耦合期 parse-twice 的陈旧残留/extra 累加/必填漏检 bug）
     auto parser = Cli{};
-    parser.add_flag("verbose", "详细", 'v')
-            .add_option("output", "输出", "", 'o')
-            .add_positional("script", "脚本");
+    parser.add_flag("verbose", "详细", 'v').add_option("output", "输出", "", 'o').add_positional("script", "脚本");
     // 首次：全提供
     const auto r1 = parse_args(parser, {"-v", "--output", "o.aria", "main.aria"});
     ASSERT_TRUE(r1.has_value());
@@ -373,7 +391,7 @@ TEST(CliOverloads, ConstParserParses) {
     auto builder = Cli{};
     builder.add_flag("verbose", "详细输出", 'v').add_positional("script", "脚本文件");
     const auto parser = builder; // 拷一份定型的定义
-    const auto r = parser.parse(List<String>{"-v", "main.aria"});
+    const auto r      = parser.parse(List<String>{"-v", "main.aria"});
     ASSERT_TRUE(r.has_value());
     EXPECT_TRUE(r->has("verbose"));
     EXPECT_EQ(r->get("script"), "main.aria");
@@ -425,30 +443,34 @@ TEST(CliHelpText, OptionsSectionFlagsAndOptions) {
     parser.add_flag("verbose", "详细输出", 'v').add_option("output", "输出文件", "out.aria", 'o');
     const auto text = parser.help();
 
-    // help 恒在首位（"  -h, --help" 12 字符 + 14 空格 -> 描述起于第 26 列）
-    EXPECT_NE(text.find(std::format("  -h, --help{}Show this help message\n", String(14, ' '))), String::npos);
-    // flag 行："  -v, --verbose" 15 字符 + 11 空格 -> 描述起于第 26 列
-    EXPECT_NE(text.find(std::format("  -v, --verbose{}详细输出\n", String(11, ' '))), String::npos);
-    // option 行："  -o, --output <VALUE>" 22 字符 + 5 空格，default_value 展示在描述后
-    EXPECT_NE(text.find(std::format("  -o, --output <VALUE>{}输出文件 [default: out.aria]\n", String(5, ' '))),
+    // 描述统一对齐到 max_prefix+2 列：最长前缀 "  -o, --output <VALUE>"(22) -> 描述起于第 24 列
+    // help 恒在首位（"  -h, --help" 12 字符 + 12 空格）
+    EXPECT_NE(text.find(std::format("  -h, --help{}Show this help message\n", String(12, ' '))), String::npos);
+    // flag 行："  -v, --verbose" 15 字符 + 9 空格
+    EXPECT_NE(text.find(std::format("  -v, --verbose{}详细输出\n", String(9, ' '))), String::npos);
+    // option 行："  -o, --output <VALUE>" 22 字符 + 2 空格，default_value 展示在描述后
+    EXPECT_NE(text.find(std::format("  -o, --output <VALUE>{}输出文件 [default: out.aria]\n", String(2, ' '))),
               String::npos);
 }
 
-TEST(CliHelpText, LongFlagNameNoPad) {
-    // 长名超出对齐列则贴紧、不留空格（flag 按 22-len-4 计）
+TEST(CliHelpText, LongFlagNameAligned) {
+    // 长名按 max_prefix+2 对齐：自身是最长前缀，描述跟 2 空格（不再贴紧 0 空格）
     auto parser = Cli{};
     parser.add_flag("a-very-long-flag-name", "长名开关");
     const auto text = parser.help();
-    EXPECT_NE(text.find("    --a-very-long-flag-name长名开关\n"), String::npos);
+    // "    --a-very-long-flag-name"(27) 为最长前缀 -> 描述起于第 29 列（2 空格间距）
+    EXPECT_NE(text.find("    --a-very-long-flag-name  长名开关\n"), String::npos);
 }
 
-TEST(CliHelpText, OptionsGroupedFlagsBeforeOptions) {
-    // 平铺两 List：Options 分节按 kind 分组，flags 在前、options 在后（不再按混合注册序）
+TEST(CliHelpText, OptionsInRegistrationOrder) {
+    // Options 分节按 defs_ 注册序渲染（内置 help 首个注册、恒居首位）；不再 kind 分组
     auto parser = Cli{};
     parser.add_option("output", "输出文件").add_flag("verbose", "详细输出");
     const auto text = parser.help();
     ASSERT_NE(text.find("--output"), String::npos);
     ASSERT_NE(text.find("--verbose"), String::npos);
-    // flags 在 options 前：--verbose 先于 --output 出现（即便 option 先注册）
-    EXPECT_LT(text.find("--verbose"), text.find("--output"));
+    // 注册序：output 先于 verbose（不再强制 flags 在 options 前）
+    EXPECT_LT(text.find("--output"), text.find("--verbose"));
+    // 内置 help 恒居 Options 分节首位
+    EXPECT_LT(text.find("--help"), text.find("--output"));
 }

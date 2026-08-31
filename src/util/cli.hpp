@@ -163,115 +163,41 @@ namespace aria::util {
             return parse(views);
         }
 
-        // 核心解析。--help / -h 命中内置 help flag 置位后短路、视为成功（经 result.has("help") 取）；
-        // 首错即返回 unexpected(消息)（定义/结果分离：错误不落 Cli 状态，重 parse 从新参数重新开始）
+        // 核心解析：仅做按前缀分派，逐 token 交给对应 handler。
+        // --help / -h 命中内置 help flag 置位后短路、视为成功（经 result.has("help") 取）；
+        // 首错即返回 unexpected(消息)（定义/结果分离：错误不落 Cli 状态，重 parse 从新参数重新开始）。
         [[nodiscard]]
         Result<ParseResult, String> parse(const Span<const StringView> args) const {
             ParseResult result{*this};
-            usize       positional_idx = 0; // 已填充的位置参数序号（在 Positional 槽中的位次）
 
             for (usize i = 0; i < args.size(); ++i) {
-                const auto arg = args[i];
+                const auto arg  = args[i];
+                auto       step = Step::Continue;
 
                 if (arg.starts_with("--")) {
-                    // 长选项：--name 或 --name=value；eq_pos==npos 时 substr(0, npos) 即整名
-                    const auto opt      = arg.substr(2);
-                    const auto eq_pos   = opt.find('=');
-                    const auto opt_name = opt.substr(0, eq_pos);
-
-                    const auto found =
-                            find_long_without_positional(opt_name); // 只匹配 flag/option（positional 不参与）
-                    if (!found.has_value()) {
-                        return std::unexpected(std::format("unknown option: --{}", opt_name));
-                    }
-                    const usize idx  = *found;
-                    const Slot  kind = defs_[idx].kind_;
-
-                    if (kind == Slot::Flag) {
-                        result.slots_[idx].state = Slot::Flag; // flag：置位即完（不取值，--flag=x 的 x 忽略）
-                        if (opt_name == kHelpLongName) {
-                            return result; // 内置 help：置位后短路，不再解析其余参数
-                        }
-                        continue;
-                    }
-
-                    // option：内联值（--name=value）或下一参数（--name value）
-                    if (eq_pos == StringView::npos) {
-                        if (i + 1 >= args.size()) {
-                            return std::unexpected(std::format("option --{} requires a value", opt_name));
-                        }
-                        result.slots_[idx].value.assign(args[++i]);
-                    } else {
-                        result.slots_[idx].value.assign(opt.substr(eq_pos + 1));
-                    }
-                    result.slots_[idx].state = Slot::Option; // 已提供（含 --name= 显式置空）
-                    continue;
-                }
-
-                if (arg.starts_with('-') && arg.size() > 1) {
-                    // 短选项组：-abc（flag 簇）；遇取值选项 -oFILE / -o FILE 后结束本组
-                    for (usize j = 1; j < arg.size(); ++j) {
-                        const char c = arg[j];
-
-                        const auto found = find_short(c); // 只匹配 flag/option（positional 不参与）
-                        if (!found.has_value()) {
-                            return std::unexpected(std::format("unknown option: -{}", c));
-                        }
-                        const usize idx  = *found;
-                        const Slot  kind = defs_[idx].kind_;
-
-                        if (kind == Slot::Flag) {
-                            result.slots_[idx].state = Slot::Flag; // flag：置位后继续扫描下一字符
-                            if (c == kHelpShortName) {
-                                return result; // 内置 help：置位后短路
-                            }
-                            continue;
-                        }
-
-                        // option：值为当前参数余下部分（-oFILE）或下一参数（-o FILE）
-                        if (j + 1 < arg.size()) {
-                            result.slots_[idx].value.assign(arg.substr(j + 1));
-                        } else if (i + 1 < args.size()) {
-                            result.slots_[idx].value.assign(args[++i]);
-                        } else {
-                            return std::unexpected(std::format("option -{} requires a value", c));
-                        }
-                        result.slots_[idx].state = Slot::Option; // 已提供（含 -o 后空串）
-                        break;                                   // 取值后结束本组（余下字符已作值）
-                    }
-                    continue;
-                }
-
-                // 位置参数：按出现顺序填第 positional_idx 个 Positional 槽；无则收进 extra
-                usize seen   = 0;
-                bool  filled = false;
-                for (usize k = 0; k < defs_.size(); ++k) {
-                    if (defs_[k].kind_ != Slot::Positional) {
-                        continue;
-                    }
-                    if (seen == positional_idx) {
-                        result.slots_[k].value.assign(arg);
-                        result.slots_[k].state = Slot::Positional;
-                        filled                 = true;
-                        break;
-                    }
-                    ++seen;
-                }
-                if (filled) {
-                    ++positional_idx;
+                    auto s = parse_long(result, arg, args, i);
+                    if (!s.has_value())
+                        return std::unexpected(s.error());
+                    step = *s;
+                } else if (arg.starts_with('-') && arg.size() > 1) {
+                    auto s = parse_short(result, arg, args, i);
+                    if (!s.has_value())
+                        return std::unexpected(s.error());
+                    step = *s;
                 } else {
-                    result.extra_args_.emplace_back(arg);
+                    // 单独 "-"（size<=1）或普通实参 -> 位置参数
+                    parse_positional(result, arg);
+                }
+
+                if (step == Step::ShortCircuit) {
+                    return result; // 内置 help：置位后短路，不再解析其余参数、亦跳过必填检查
                 }
             }
 
             // 缺失的必填位置参数 -> 错误（用 state 而非 value 判定：区分'未提供'与'显式空串实参'）
-            for (usize k = 0; k < defs_.size(); ++k) {
-                if (defs_[k].kind_ == Slot::Positional && defs_[k].is_required_ &&
-                    result.slots_[k].state == Slot::Empty) {
-                    return std::unexpected(std::format("missing required argument: {}", defs_[k].long_name_));
-                }
+            if (const auto err = check_required(result); err.has_value()) {
+                return std::unexpected(*err);
             }
-
             return result;
         }
 
@@ -411,6 +337,114 @@ namespace aria::util {
             for (usize k = 0; k < defs_.size(); ++k) {
                 if (defs_[k].short_name_ == short_name) {
                     return k;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // ============================================================
+        // parse 的逐 token handler：按前缀分派后的具体处理
+        // ------------------------------------------------------------
+        // 控制流经 Step 枚举回传主循环：Continue 继续下一参数、ShortCircuit 命中内置 help 立即成功返回。
+        // 取值类 handler 可能前移 i（消费下一参数为值）；遇错返回 unexpected(消息)。
+        // ============================================================
+
+        enum class Step : u8 {
+            Continue,     // 该 token 处理完毕，继续解析下一参数
+            ShortCircuit, // 命中内置 help flag，置位后立即成功返回（跳过剩余参数与必填检查）
+        };
+
+        // 长选项 --name / --name=value。positional 不参与（find_long_without_positional 过滤）。
+        // flag 不取值（--flag=x 的 x 忽略）；option 取内联值或下一参数。命中 --help 返回 ShortCircuit。
+        [[nodiscard]] Result<Step, String> parse_long(ParseResult& result, const StringView arg,
+                                                      const Span<const StringView> args, usize& i) const {
+            const auto opt      = arg.substr(2); // eq_pos==npos 时 substr(0, npos) 即整名
+            const auto eq_pos   = opt.find('=');
+            const auto opt_name = opt.substr(0, eq_pos);
+
+            const auto found = find_long_without_positional(opt_name);
+            if (!found.has_value()) {
+                return std::unexpected(std::format("unknown option: --{}", opt_name));
+            }
+            const usize idx = *found;
+
+            if (defs_[idx].kind_ == Slot::Flag) {
+                result.slots_[idx].state = Slot::Flag;
+                return opt_name == kHelpLongName ? Step::ShortCircuit : Step::Continue;
+            }
+
+            // option：内联值（--name=value）或下一参数（--name value）
+            if (eq_pos == StringView::npos) {
+                if (i + 1 >= args.size()) {
+                    return std::unexpected(std::format("option --{} requires a value", opt_name));
+                }
+                result.slots_[idx].value.assign(args[++i]);
+            } else {
+                result.slots_[idx].value.assign(opt.substr(eq_pos + 1));
+            }
+            result.slots_[idx].state = Slot::Option; // 已提供（含 --name= 显式置空）
+            return Step::Continue;
+        }
+
+        // 短选项组 -abc（flag 簇）；遇取值选项 -oFILE / -o FILE 后结束本组。
+        // flag 置位后继续扫描下一字符；option 取余下部分或下一参数。命中 -h 返回 ShortCircuit。
+        [[nodiscard]] Result<Step, String> parse_short(ParseResult& result, const StringView arg,
+                                                       const Span<const StringView> args, usize& i) const {
+            for (usize j = 1; j < arg.size(); ++j) {
+                const char c = arg[j];
+
+                const auto found = find_short(c);
+                if (!found.has_value()) {
+                    return std::unexpected(std::format("unknown option: -{}", c));
+                }
+                const usize idx  = *found;
+                const Slot  kind = defs_[idx].kind_;
+
+                if (defs_[idx].kind_ == Slot::Flag) {
+                    result.slots_[idx].state = Slot::Flag;
+                    if (c == kHelpShortName) {
+                        return Step::ShortCircuit;
+                    }
+                    continue; // 置位后继续扫描下一字符
+                }
+
+                // option：值为当前参数余下部分（-oFILE）或下一参数（-o FILE）
+                if (j + 1 < arg.size()) {
+                    result.slots_[idx].value.assign(arg.substr(j + 1));
+                } else if (i + 1 < args.size()) {
+                    result.slots_[idx].value.assign(args[++i]);
+                } else {
+                    return std::unexpected(std::format("option -{} requires a value", c));
+                }
+                result.slots_[idx].state = Slot::Option; // 已提供（含 -o 后空串）
+                return Step::Continue;                   // 取值后结束本组（余下字符已作值）
+            }
+            return Step::Continue; // 全 flag 簇扫描完毕
+        }
+
+        // 位置参数：填入 defs_ 中首个「空且种类为 Positional」的槽；无则收进 extra。
+        // 单独 "-" 也走此路（main loop 已将其排除在长短选项外）。
+        // 以 slots_ 实际填充状态为唯一事实源：Positional 按注册序填、填后不重置，故「首个空
+        // Positional 槽」恒等于「下一个待填的 Positional 槽」，无需另维护填充计数器。
+        void parse_positional(ParseResult& result, const StringView arg) const {
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].kind_ == Slot::Positional && result.slots_[k].state == Slot::Empty) {
+                    result.slots_[k].value.assign(arg);
+                    result.slots_[k].state = Slot::Positional;
+                    return; // 命中首个空 Positional 槽即完
+                }
+            }
+            // 所有 Positional 槽均已填 -> 超额，收进 extra（如转发给脚本的剩余参数）
+            result.extra_args_.emplace_back(arg);
+        }
+
+        // 必填位置参数缺失检查。返回首个缺失项的错误消息，无缺失返回 nullopt。
+        // 用 state 而非 value 判定：区分'未提供'与'显式空串实参'。
+        [[nodiscard]] Opt<String> check_required(const ParseResult& result) const {
+            for (usize k = 0; k < defs_.size(); ++k) {
+                if (defs_[k].kind_ == Slot::Positional && defs_[k].is_required_ &&
+                    result.slots_[k].state == Slot::Empty) {
+                    return std::format("missing required argument: {}", defs_[k].long_name_);
                 }
             }
             return std::nullopt;

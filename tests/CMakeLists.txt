@@ -20,6 +20,7 @@ add_executable(aria_tests
         # runtime
         runtime/test_ariavm.cpp
         runtime/test_interpret.cpp
+        runtime/test_interpreter.cpp
         # object
         object/test_objfunction.cpp
         object/test_objmodule.cpp

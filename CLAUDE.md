@@ -93,7 +93,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 项目对 Claude 的上下文分三层组织（约定对齐 Claude Code `.claude/` 目录）：
 
 - **`CLAUDE.md`（本文件）**：常驻上下文 -- 项目概览/进度 + 构建/输出/命名/类型/代码组织等**通用规则** + 错误处理原则 + 陷阱 + 测试。跨阶段通用、必须每次遵守的规则放这里。
-- **`.claude/rules/`**：按源码目录拆分的**模块参考**，每个文件带 `paths:` frontmatter -- Claude 读到匹配路径的源码时**自动加载**对应参考，不读则不进上下文。当前 9 个：`util`/`value`/`error`/`compile`/`bytecode`/`runtime`/`object`/`memory`（各对应 `src/<dir>/**`）+ `core`（对应 `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp` 等顶层文件）。改某模块代码时其参考自动出现，无需手动翻 CLAUDE.md。
+- **`.claude/rules/`**：按源码目录拆分的**模块参考**，每个文件带 `paths:` frontmatter -- Claude 读到匹配路径的源码时**自动加载**对应参考，不读则不进上下文。当前 9 个：`util`/`value`/`error`/`compile`/`bytecode`/`runtime`/`object`/`memory`（各对应 `src/<dir>/**`）+ `core`（对应 `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp` 等顶层文件）。改某模块代码时其参考自动出现，无需手动翻 CLAUDE.md。
 - **`.claude/reference/`**：深度**设计文档**（按主题分类，不自动加载，Claude 需要时按需 Read）：`bytecode/bytecode-instruction-set.md`（指令集：功能/操作数位宽/栈效应）、`memory/gc-implementation-plan.md`（GC 实现计划，Phase 1/2 落地细节）、`runtime/vm-design.md`（AriaVM/执行上下文设计与分阶段路线）、`runtime/import-handling-overview.md`（import 端到端处理概览）、`runtime/import-path-resolution.md`（IMPORT 路径解析细节）、`compile/compound-assignment-lowering.md`（复合赋值 lowering 设计）、`compile/loopctx.md`（LoopCtx 结构体与 break/continue 占位回填机制）。
 - **`docs/grammar.txt`**：语言文法（手写规范，留在 `docs/`）。Lexer / Parser 的实现应与 `grammar.txt` 保持一致，改文法时同步更新相关代码与测试。（注意**文法作为「语言规范（Specification）」** 与 **文法作为「解析器实现蓝图（Parser Blueprint）」** 可能存在区别，但两者实际描述的语法规则是一样的。）
 
@@ -105,7 +105,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 
 | 源码目录 | 参考文件 | 覆盖 |
 | --- | --- | --- |
-| `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / main(冒烟驱动) |
+| `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / main(解释器入口) / interpreter(CLI 分发核心) |
 | `src/util/**` | `.claude/rules/util.md` | fs / utf8 / source_file / io / util / cli |
 | `src/value/**` | `.claude/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
 | `src/error/**` | `.claude/rules/error.md` | ErrorCode / Error / AriaException |

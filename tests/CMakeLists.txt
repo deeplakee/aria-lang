@@ -1,26 +1,33 @@
 # 测试目标：链接 aria_core（提供被测 util 头文件）与 GTest
 add_executable(aria_tests
-        test_utf8.cpp
-        test_source_file.cpp
-        test_fs.cpp
-        test_cli.cpp
-        test_lexer.cpp
-        test_ast.cpp
-        test_parser.cpp
-        test_astvisitor.cpp
-        test_array.cpp
-        test_gc.cpp
-        test_hashtable.cpp
-        test_internpool.cpp
-        test_aria_containers.cpp
-        test_value.cpp
-        test_codeunit.cpp
-        test_objfunction.cpp
-        test_objmodule.cpp
-        test_ariavm.cpp
-        test_codegen.cpp
-        test_compiler.cpp
-        test_interpret.cpp
+        # util
+        util/test_utf8.cpp
+        util/test_source_file.cpp
+        util/test_fs.cpp
+        util/test_cli.cpp
+        # value
+        value/test_value.cpp
+        value/test_aria_containers.cpp
+        # compile
+        compile/test_lexer.cpp
+        compile/test_ast.cpp
+        compile/test_parser.cpp
+        compile/test_astvisitor.cpp
+        compile/test_codegen.cpp
+        compile/test_compiler.cpp
+        # bytecode
+        bytecode/test_codeunit.cpp
+        # runtime
+        runtime/test_ariavm.cpp
+        runtime/test_interpret.cpp
+        # object
+        object/test_objfunction.cpp
+        object/test_objmodule.cpp
+        # memory
+        memory/test_array.cpp
+        memory/test_gc.cpp
+        memory/test_hashtable.cpp
+        memory/test_internpool.cpp
 )
 
 target_include_directories(aria_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

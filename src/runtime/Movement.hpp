@@ -108,7 +108,7 @@ namespace aria {
 
         // 距栈顶 dist 个槽(0 = 栈顶),可写引用。
         [[nodiscard]]
-        Value& peek(const usize dist) noexcept {
+        Value& peek(const usize dist) const noexcept {
             ASSERT(dist < stack_size(), "peek beyond stack size");
             return *(top_ - 1 - dist);
         }
@@ -122,7 +122,7 @@ namespace aria {
 
         [[nodiscard]]
         bool frames_full() const noexcept {
-            return frames_.size() >= frames_.capacity();
+            return frames_.size() >= kFrameMax;
         }
 
         // 进帧:为对 fn 的调用 acquire 一个空帧并就位全部字段。slots 按不变量设为
@@ -202,7 +202,7 @@ namespace aria {
             // 偏移而非绝对指针 -- 搬运后旧块释放,绝对指针成 dangling 不可再用。
             const auto  top_offset  = static_cast<usize>(top_ - old_base);
             const usize frame_count = frames_.size();
-            usize       slot_offsets[frames_.capacity()];
+            usize       slot_offsets[kFrameMax];
             for (usize i = 0; i < frame_count; ++i) {
                 slot_offsets[i] = static_cast<usize>(frames_[i].slots - old_base);
             }

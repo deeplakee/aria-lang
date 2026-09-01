@@ -52,7 +52,7 @@ namespace aria {
         // 一次性求值源码字符串：自建 VM，interpret 成功返回 0，否则 1。
         int run_src(const StringView src) {
             AriaVM vm;
-            return vm.interpret(src) == InterpretResult::Ok ? 0 : 1;
+            return vm.interpret_from_src(src) == InterpretResult::Ok ? 0 : 1;
         }
 
         // 运行脚本文件：自建 VM，interpret_from_path 成功返回 0，否则 1。

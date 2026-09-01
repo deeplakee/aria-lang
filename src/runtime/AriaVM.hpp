@@ -73,7 +73,7 @@ namespace aria {
         // 编译并执行源码字符串（interpret）：构造 SourceFile（名 <script>）+ 合成入口模块（名 <script>、
         // root=cwd）-> 编译 -> 执行。错误渲染到 stderr，返回 InterpretResult（不返 Error，避免内部
         // SourceFile 返回后悬垂，见上枚举注释）。
-        InterpretResult interpret(StringView src);
+        InterpretResult interpret_from_src(StringView src);
 
         // 编译并执行源文件（interpret_from_path）：SourceFile::from_path 读盘（失败渲染并返 LoadError）
         // + 按路径派生入口模块（name=basename 去 .aria、root=dirname(absolute(path))）-> 编译 -> 执行。

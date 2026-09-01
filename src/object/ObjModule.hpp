@@ -146,6 +146,13 @@ namespace aria {
     [[nodiscard]]
     ObjModule* new_module(GC& gc, StringView name);
 
+    // 工厂重载(3 参, StringView name + StringView root):name 与 root 均以 StringView 传入,工厂内部
+    //        new_string 驻留并自行守卫(工厂守「自己创建的」),委托 new_module(GC&, ObjString*, ObjString*)
+    //        重载建对象。root 串内容可空(调用方需「无源根 -> cwd 退化」语义用上面 2 参 StringView 重载,
+    //        本重载原样 intern 调用方给的 root 串,空串即空串锚点)。调用方无需根化任何入参,传 StringView 即可。
+    [[nodiscard]]
+    ObjModule* new_module(GC& gc, StringView name, StringView root);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_MODULE_HPP

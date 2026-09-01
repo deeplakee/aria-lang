@@ -323,7 +323,7 @@ namespace aria {
         }
     }
 
-    InterpretResult AriaVM::interpret(const StringView src) {
+    InterpretResult AriaVM::interpret_from_src(const StringView src) {
         // 合成入口模块 <script>（root=cwd，2 参 new_module）。
         // 与 new_object，故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
         const auto module = new_module(gc_, "<script>");
@@ -351,13 +351,8 @@ namespace aria {
             io::println(stderr, "源文件路径无有效模块名: '{}'", path);
             return InterpretResult::LoadError;
         }
-
-        auto name_str = new_string(gc_, name_s);
-        auto guard    = gc_.make_guard(name_str);
-        auto root_str = new_string(gc_, root_s);
-        guard.push(root_str);
-        auto module = new_module(gc_, name_str, root_str); // 3 参：显式 root
-        guard.push(module);
+        auto module = new_module(gc_, name_s, root_s); // 3 参：显式 root
+        auto guard  = gc_.make_guard(module);
 
         return interpret_run(source, *module);
     }

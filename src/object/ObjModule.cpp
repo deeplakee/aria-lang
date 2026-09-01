@@ -57,17 +57,29 @@ namespace aria {
         // 调用方须保证 name 在本调用期间已根化:下方 new_string(cwd) 与最终 new_object 均 GC。
         // root_str 是本函数内部新建、调用方看不到,故自行守卫跨下方 new_object(工厂守「自己创建的」)。
         // cwd 不可用时以空串兜底(不 fatal,见头注释):下游空值守卫拒绝 cwd 锚定。cwd 串经 intern 驻留。
-        ObjString* root_str = new_string(gc, fs::current_dir().value_or(""));
-        auto       guard    = gc.make_guard(root_str);
+        const auto root_str = new_string(gc, fs::current_dir().value_or(""));
+        const auto guard    = gc.make_guard(root_str);
         return new_module(gc, name, root_str);
     }
 
     ObjModule* new_module(GC& gc, const StringView name) {
         // name_str 是本函数内部新建,工厂自行守卫跨下方 new_module 内部的 new_string(cwd) 与 new_object
         // (工厂守「自己创建的」)。调用方传 StringView,无需手动建串根化。
-        ObjString* name_str = new_string(gc, name);
-        auto       guard    = gc.make_guard(name_str);
+        const auto name_str = new_string(gc, name);
+        const auto guard    = gc.make_guard(name_str);
         return new_module(gc, name_str);
+    }
+
+    ObjModule* new_module(GC& gc, const StringView name, const StringView root) {
+        // name_str 与 root_str 均本函数内部新建,工厂自行守卫跨下方 new_module(GC&, ObjString*, ObjString*)
+        //   内部的 new_object 顶 maybe_collect(工厂守「自己创建的」)。调用方传 StringView,无需手动建串根化。
+        //   root 串原样 intern 调用方给的串:空串即空串锚点(不替调用方做 cwd 退化,需退化用 2 参 StringView 重载)。
+        auto       guard    = gc.make_guard();
+        const auto name_str = new_string(gc, name);
+        guard.push(name_str);
+        const auto root_str = new_string(gc, root);
+        guard.push(root_str);
+        return new_module(gc, name_str, root_str);
     }
 
 } // namespace aria

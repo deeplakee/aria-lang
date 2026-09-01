@@ -28,26 +28,26 @@ namespace {
 TEST(Interpret, StringOk) {
     AriaVM vm;
     vm.gc().set_stress(true);
-    EXPECT_EQ(vm.interpret("return 1 + 2 * 3;"), InterpretResult::Ok);
+    EXPECT_EQ(vm.interpret_from_src("return 1 + 2 * 3;"), InterpretResult::Ok);
 }
 
 // 字符串源：函数体内局部自引用 -> 编译期 UninitializedVariable -> CompileError。
 TEST(Interpret, StringCompileError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret("fun f() { var x = x + 1; }"), InterpretResult::CompileError);
+    EXPECT_EQ(vm.interpret_from_src("fun f() { var x = x + 1; }"), InterpretResult::CompileError);
 }
 
 // 字符串源：整除零 -> 运行期错误 -> RuntimeError。
 TEST(Interpret, StringRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret("return 1 / 0;"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("return 1 / 0;"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：未实现特性（list 字面量）-> 编译期 NotImplemented（现归 Semantic 类）-> CompileError。
 // 回归测试：此前 NotImplemented 归 Internal，被 interpret_run 映射为 RuntimeError，误导为运行期错误。
 TEST(Interpret, StringNotImplementedIsCompileError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret("print [1, 2, 3];"), InterpretResult::CompileError);
+    EXPECT_EQ(vm.interpret_from_src("print [1, 2, 3];"), InterpretResult::CompileError);
 }
 
 // 路径源：合法文件 -> Ok。

@@ -76,6 +76,7 @@ add_library(aria_core STATIC
         src/object/ObjNativeFn.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
+        src/interpreter.cpp
         src/interpreter.hpp
 )
 

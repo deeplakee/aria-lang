@@ -101,6 +101,13 @@ if (ARIA_DEBUG_PRINT_CODE)
     target_compile_definitions(aria_core PUBLIC DEBUG_PRINT_COMPILED_CODE)
 endif ()
 
+# 执行跟踪(经 DEBUG_TRACE_EXECUTION 宏,被 AriaVM 主循环在每条指令执行前打印字节码/栈/帧/模块信息,
+# 供调试字节码执行)
+option(ARIA_DEBUG_TRACE_EXECUTION "Enable bytecode execution tracing" OFF)
+if (ARIA_DEBUG_TRACE_EXECUTION)
+    target_compile_definitions(aria_core PUBLIC DEBUG_TRACE_EXECUTION)
+endif ()
+
 add_executable(aria src/main.cpp)
 target_include_directories(aria PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aria PRIVATE aria_core)

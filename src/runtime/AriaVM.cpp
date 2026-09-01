@@ -8,6 +8,7 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
+#include "bytecode/Disassembler.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
@@ -243,6 +244,72 @@ namespace aria {
                                     op_name));
         }
 
+#ifdef DEBUG_TRACE_EXECUTION
+        // 执行跟踪:在每条指令执行**前**打印字节码/栈/帧/模块信息(经 io::print 到 stderr,与 GC 调试日志
+        // / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 输出分流)。DEBUG_TRACE_EXECUTION 关闭时
+        // 本函数整体不存在,#ifdef 外零开销。供 run_ 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行
+        // 指令,据此算 offset 并经 Disassembler::disassembleInstruction 解码(仅读不推进 VM 的 ip)。
+        //   - 栈渲染经 format_value_debug(Value 层非重入渲染,见 value/Value.hpp),不用 format_value
+        //     (后者 Obj 走可重载虚 to_string,未来用户类可重载其运行 aria 字节码,trace 在 run_ 内会重入 VM
+        //     致无限递归);format_value_debug 对 Obj 走非虚 obj->type() 分派,绝不触用户重载。
+        //   - 字节码行的 frame.function->to_string() / mod->to_string() 是 ObjFunction/ObjModule(内置,纯 C++,
+        //     用户无法重载),无重入风险。
+        //
+        //   - 字节码行:模块信息(to_string + state,置于 [trace] 与 <fn> 之间)+ 栈顶帧 fn 名 @ip 偏移
+        //     + 指令反汇编(opcode + 操作数 + 注释);第一行即含完整位置上下文(模块/函数/ip/字节码),无需下扫模块行;
+        //   - 栈+帧:  值栈 [base, top) 全部 Value 经 format_value_debug 渲染,逐槽 [ v ](空栈打印 (empty));
+        //             下方一行用 ^ 对齐到当前帧栈底(bottom = slots 基址)所在槽的 [ 下标,联动指示栈中
+        //             哪一段是当前帧的局部区,后随 frame 索引(fn/ip 已在字节码行,不重复)。
+        // 每条指令三行,调试用,详尽优先于简洁。
+        void trace_execution(Movement& ctx) {
+            auto&      frames    = ctx.frames();
+            CallFrame& frame     = frames.top();
+            const auto code_base = frame.unit->code.data();
+            const auto ip_off    = static_cast<usize>(frame.ip - code_base);
+            const auto instr     = Disassembler::disassembleInstruction(frame.unit, ip_off);
+
+            // 字节码行:模块信息(to_string + state)+ fn 名 @偏移 + 指令文本。
+            // 模块信息置于 [trace] 与 <fn> 之间,使第一行即含完整位置上下文。
+            const auto* mod = frame.module;
+            io::print(stderr, "[trace] {} {}  {} @{:04X}  {}\n", mod->to_string(),
+                      mod->state() == ObjModule::ModuleState::Loading ? "Loading" : "Loaded",
+                      frame.function->to_string(), static_cast<u32>(ip_off), instr);
+
+            // 栈:逐槽渲染成段 [ v ](空栈打印 (empty)),记下每段起始偏移供帧标记对齐。
+            const String prefix  = std::format("        stack[{}]: ", ctx.stack_size());
+            List<String> segs;
+            for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
+                segs.emplace_back(std::format("[ {} ]", format_value_debug(*p)));
+            }
+            String stack_str;
+            for (const auto& s: segs) {
+                stack_str += s;
+            }
+            if (stack_str.empty()) {
+                stack_str = "(empty)";
+            }
+            io::print(stderr, "{}{}\n", prefix, stack_str);
+
+            // 帧栈底标记:^ 对齐到当前帧 bottom 槽的 [ 下方,后随 frame 索引;bottom = slots - stack_base。
+            // bottom >= 段数时(栈底在栈顶之上,空帧)对齐到栈末尾。行首用纯空格(与栈行等宽 prefix 对齐),
+            // 不重复 stack[n]: 前缀,只留 ^ 与标签。
+            const auto frame_idx = frames.size() - 1;
+            const auto bottom    = static_cast<usize>(frame.slots - ctx.stack_base());
+            usize      col       = prefix.size();
+            if (bottom < segs.size()) {
+                for (usize i = 0; i < bottom; ++i) {
+                    col += segs[i].size();
+                }
+            } else {
+                col += stack_str.size();
+            }
+            String marker;
+            marker.append(col, ' ');
+            marker += std::format("^ frame[{}]", static_cast<u32>(frame_idx));
+            io::print(stderr, "{}\n", marker);
+        }
+#endif // DEBUG_TRACE_EXECUTION
+
     } // namespace
 
     // 构造:成员初始化(gc_ 先,main_ctx_/modules_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC。
@@ -438,6 +505,10 @@ namespace aria {
         auto& frames = ctx.frames();
 
         while (true) {
+#ifdef DEBUG_TRACE_EXECUTION
+            // 取 opcode 前打印执行状态:此时 frame.ip 指向待执行指令,trace_execution 据此解码(仅读不推进 ip)。
+            trace_execution(ctx);
+#endif
             // 各 case 严格按 bytecode/code.hpp 中 OpCode 枚举的声明顺序排列。
             switch (CallFrame& frame = frames.top(); auto op = static_cast<OpCode>(read_u8(frame))) {
                 case OpCode::HALT:

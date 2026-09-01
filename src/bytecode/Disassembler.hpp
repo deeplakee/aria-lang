@@ -32,6 +32,13 @@ namespace aria {
         [[nodiscard]]
         static String disassembleCodeUnit(const CodeUnit* codeunit, StringView name);
 
+        // 反汇编 codeunit 中 offset 处的**单条指令**,返回该指令的可读文本(与 disassemble() 中
+        // 每行的指令段一致:opcode 名 + 操作数 hex + 解析注释;不含偏移前缀/行号/换行)。仅推进内部
+        // 游标越过该指令(局部,不修改入参 offset、不触碰调用方游标)。offset 须 < code.size()。
+        // 供 VM 执行跟踪(DEBUG_TRACE_EXECUTION)在执行每条指令前打印其反汇编,免为跟踪单独复制解码表。
+        [[nodiscard]]
+        static String disassembleInstruction(const CodeUnit* codeunit, usize offset);
+
     private:
         const CodeUnit* codeunit_;
         StringView      name_;

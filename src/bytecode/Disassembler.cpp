@@ -4,8 +4,6 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
-#include "object/ObjString.hpp"
-#include "object/Object.hpp"
 #include "util/util.hpp"
 #include "value/Value.hpp"
 
@@ -27,34 +25,9 @@ namespace aria {
             return cu->constants[idx];
         }
 
-        // 字符串转义见 util/util.hpp 的 aria::util::escape_string;字符串字面量渲染 `"..."` 见
-        // value/Value.hpp 的 aria::format_string(escape_string 转义内部,外层补双引号)。
-
-        // f64 可读化见 value/Value.hpp 的 aria::format_f64(VM PRINT 与反汇编共用,避免重复)。
-
-        // 值可读化:nil/true/false/整数/浮点/"字符串"/<对象描述>。供常量池小节与 LOAD_CONST/CLOSURE 注释共用。
-        // Obj 走虚函数 obj->to_string()(子类型按需 override,默认 <Type at 0xaddr>);ObjString 特判:
-        // 反汇编里字符串字面量约定用 "..." 形式(转义后),而非 ObjString::to_string 的 '...' Python 风格。
-        String dis_constant(const Value v) {
-            switch (v.type()) {
-                case Value::Type::Nil:
-                    return "nil";
-                case Value::Type::Bool:
-                    return v.as_bool() ? "true" : "false";
-                case Value::Type::Int:
-                    return std::format("{}", v.as_int());
-                case Value::Type::F64:
-                    return format_f64(v.as_f64());
-                case Value::Type::Obj: {
-                    const Object* obj = v.as_obj();
-                    if (Object::is<ObjString>(obj)) {
-                        return format_string(Object::as<ObjString>(obj));
-                    }
-                    return obj->to_string();
-                }
-            }
-            UNREACHABLE();
-        }
+        // 值可读化(nil/true/false/整数/浮点/"字符串"/<对象描述>)统一走 value/Value.hpp 的 format_value_debug
+        // --非重入渲染:Obj 不经可重载虚 to_string,改走非虚 obj->type() 分派(详见其注释)。供常量池小节与
+        // LOAD_CONST/CLOSURE 注释共用;字符串走带引号的 format_string 形式(转义后)。
 
         // 把 opcode 名与操作数段拼成一行:左对齐 16 列的 op_name,空操作数即裸名,末尾尾随空格裁掉。
         String join_line(StringView op_name, const StringView operands) {
@@ -93,11 +66,11 @@ namespace aria {
     bool Disassembler::is_truncated(const usize need) const noexcept { return offset_ + need > codeunit_->code.size(); }
 
     // 常量索引的注释渲染(名字索引与 LOAD_CONST/CLOSURE 共用):按 idx 取常量,越界退化为 <bad idx>。
-    // 名字索引(全局/字段/类/方法名)的操作数本就是常量池里的 ObjString,无特殊对待,直接走 dis_constant
-    // (其内部已对 ObjString 特判为 "..." 字面量形态)。只读,不推进 offset_。
+    // 名字索引(全局/字段/类/方法名)的操作数本就是常量池里的 ObjString,经 format_value_debug 特判为
+    // "..." 字面量形态。只读,不推进 offset_。
     String Disassembler::format_constant(const u16 idx) const {
         const auto v = constant_at(codeunit_, idx);
-        return v ? dis_constant(*v) : std::format("<bad idx {}>", idx);
+        return v ? format_value_debug(*v) : std::format("<bad idx {}>", idx);
     }
 
     // 单字节 i8 立即数(LOAD_IMM):`{:02X}` 操作数 + 有符号十进制注释。
@@ -342,7 +315,7 @@ namespace aria {
         if (!codeunit_->constants.empty()) {
             out += "\nconstants:\n";
             for (usize i = 0; i < codeunit_->constants.size(); ++i) {
-                out += std::format("  {:04X}: {}\n", static_cast<u32>(i), dis_constant(codeunit_->constants[i]));
+                out += std::format("  {:04X}: {}\n", static_cast<u32>(i), format_value_debug(codeunit_->constants[i]));
             }
         }
 
@@ -364,6 +337,15 @@ namespace aria {
 
     String Disassembler::disassembleCodeUnit(const CodeUnit* codeunit, const StringView name) {
         return Disassembler{codeunit, name}.disassemble();
+    }
+
+    String Disassembler::disassembleInstruction(const CodeUnit* codeunit, const usize offset) {
+        // 构造一次性 Disassembler,把内部游标拨到 offset,解码单条指令后丢弃。不依赖 name(disassemble
+        // 才用),故传空。复用私有 dis_instruction() 免为跟踪复制解码表;offset 合法性由调用方保证
+        // (VM 执行跟踪处 ip 必指向有效 opcode)。
+        Disassembler d{codeunit, {}};
+        d.offset_ = offset;
+        return d.dis_instruction();
     }
 
 } // namespace aria

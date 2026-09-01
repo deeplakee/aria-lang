@@ -76,6 +76,15 @@ namespace aria {
     [[nodiscard]]
     String format_value(const Value& v);
 
+    // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):输出与 format_value 对内置类型一致,
+    //   但 Obj **不经虚函数 to_string()** --后者可被未来用户类(M5)重载为运行 aria 字节码,调试上下文若在
+    //   run_ 内调用会重入 VM 致无限递归。故 Obj 走**非虚**的 obj->type() 枚举分派:已知内置类型经纯 C++ 访问器
+    //   渲染(ObjString 走 format_string 带引号;ObjFunction/ObjModule/ObjNativeFn 同各自 to_string 文案),
+    //   其余(未来用户实例 / 未落地类型)退化为 `<Type at 0xaddr>`(同 Object::to_string 基类默认但静态构造、
+    //   不经虚分派),绝不触用户重载。原语 nil/bool/int/f64 同 format_value。
+    [[nodiscard]]
+    String format_value_debug(const Value& v);
+
 } // namespace aria
 
 #endif // ARIA_VALUE_HPP

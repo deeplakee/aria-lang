@@ -3,6 +3,9 @@
 #include <bit>
 #include <format>
 
+#include "object/ObjFunction.hpp"
+#include "object/ObjModule.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "util/util.hpp"
@@ -80,6 +83,42 @@ namespace aria {
                 return format_f64(v.as_f64());
             case Value::Type::Obj:
                 return v.as_obj()->to_string();
+        }
+        UNREACHABLE();
+    }
+
+    String format_value_debug(const Value& v) {
+        // 与 format_value 的关键区别:Obj 不经虚函数 to_string()(可重载、重入风险),改走非虚的
+        // obj->type() 枚举分派。详见 Value.hpp 注释。
+        switch (v.type()) {
+            case Value::Type::Nil:
+                return "nil";
+            case Value::Type::Bool:
+                return v.as_bool() ? "true" : "false";
+            case Value::Type::Int:
+                return std::format("{}", v.as_int());
+            case Value::Type::F64:
+                return format_f64(v.as_f64());
+            case Value::Type::Obj: {
+                Object* obj = v.as_obj();
+                switch (obj->type()) { // 非虚:读 type_ 字段,不经虚分派
+                    case ObjType::STRING:
+                        return format_string(static_cast<ObjString*>(obj));
+                    case ObjType::FUNCTION:
+                        return std::format("<fn {}>", static_cast<ObjFunction*>(obj)->name()->view());
+                    case ObjType::MODULE: {
+                        const auto* m = static_cast<ObjModule*>(obj);
+                        return m->name() != nullptr ? std::format("<module {}>", m->name()->view()) : "<module>";
+                    }
+                    case ObjType::NATIVE_FN: {
+                        const auto* n = static_cast<ObjNativeFn*>(obj);
+                        return n->name() != nullptr ? std::format("<fn {}>", n->name()->view()) : "<fn>";
+                    }
+                    default:
+                        // 未落地 / 用户类实例等:仅类型名 + 地址,绝不调用可重载的 to_string,杜绝重入 VM。
+                        return std::format("<{} at {:p}>", to_string(obj->type()), util::to_void_ptr(obj));
+                }
+            }
         }
         UNREACHABLE();
     }

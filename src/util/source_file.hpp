@@ -30,12 +30,6 @@ namespace aria::src {
         usize col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
     };
 
-    // 一段源码的起止行/列，用于渲染多行错误信息
-    struct SpanLines {
-        LineCol begin;
-        LineCol end;
-    };
-
     // 源文件信息：保存文件名、路径与内容。
     //
     // 内容由 SourceFile 以 String 持有所有权，解析阶段可通过 name()/path()/content()
@@ -129,12 +123,6 @@ namespace aria::src {
             // 列 = 该行内 [line_off, offset) 的码点数 + 1
             const usize col = count_codepoints(content_, line_off, offset) + 1;
             return {line_idx + 1, col};
-        }
-
-        // 解析一段 [start, end) 的 (起止行, 起止列)，便于渲染多行错误信息
-        [[nodiscard]]
-        SpanLines locate_span(const usize start, const usize end) const {
-            return {locate(start), locate(end)};
         }
 
         // 从磁盘读取一个文件构造 SourceFile：

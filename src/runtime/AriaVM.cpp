@@ -7,8 +7,8 @@
 #include <utility>
 
 #include "bytecode/CodeUnit.hpp"
-#include "bytecode/code.hpp"
 #include "bytecode/Disassembler.hpp"
+#include "bytecode/code.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
@@ -276,7 +276,7 @@ namespace aria {
                       frame.function->to_string(), static_cast<u32>(ip_off), instr);
 
             // 栈:逐槽渲染成段 [ v ](空栈打印 (empty)),记下每段起始偏移供帧标记对齐。
-            const String prefix  = std::format("        stack[{}]: ", ctx.stack_size());
+            const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
             List<String> segs;
             for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
                 segs.emplace_back(std::format("[ {} ]", format_value_debug(*p)));
@@ -374,13 +374,13 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule& module) {
-        // 编译并执行，按结果类别映射。失败时 source 仍存活（调用方 interpret/interpret_from_path 的局部），
-        // 故 Error.format() 取 src_->path() 不悬垂；渲染到 stderr 后只回类别，不回 Error。
+        // 编译并执行，按结果类别映射。失败时 Error 已自有完整消息串（构造期烘焙、不持 SourceFile*），
+        // 渲染到 stderr 后只回类别，不回 Error。
         auto result = run(source, module);
         if (result.has_value()) {
             return InterpretResult::Ok;
         }
-        io::println(stderr, "{}", result.error().format());
+        io::println(stderr, "{}", result.error().message());
         switch (category_of(result.error().code())) {
             case ErrorCategory::Syntax:
             case ErrorCategory::Semantic:
@@ -392,7 +392,8 @@ namespace aria {
 
     InterpretResult AriaVM::interpret_from_src(const StringView src) {
         // 合成入口模块 <script>（root=cwd，2 参 new_module）。
-        // new_module 返回 GC 管理对象（经 new_object 分配），故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
+        // new_module 返回 GC 管理对象（经 new_object 分配），故 make_guard 根化；module 一并入根跨编译+执行（编译期
+        // CodeGen::compile 亦自守）。
         const auto module = new_module(gc_, "<script>");
         auto       guard  = gc_.make_guard(module);
 

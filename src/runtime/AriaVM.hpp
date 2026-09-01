@@ -171,7 +171,7 @@ namespace aria {
         Result<Value, Error> run_();
 
         // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
-        // 失败把 Error.format() 渲染到 stderr（source 仍存活，SourceLoc 有效）并按错误大类映射--
+        // 失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）并按错误大类映射--
         // Syntax / Semantic -> CompileError，余（Runtime / Internal / Resource）-> RuntimeError。
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 

@@ -8,20 +8,20 @@ using namespace aria;
 using namespace aria::src;
 
 namespace {
-// 写一个临时文件，返回其路径。文件在测试结束时由 gtest 的环境清理，这里用唯一名避免冲突。
-String write_temp_file(const String& name, const std::vector<u8>& bytes) {
-    String path = testing::TempDir() + "/" + name;
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamoff>(bytes.size()));
-    f.close();
-    return path;
-}
+    // 写一个临时文件，返回其路径。文件在测试结束时由 gtest 的环境清理，这里用唯一名避免冲突。
+    String write_temp_file(const String& name, const std::vector<u8>& bytes) {
+        String        path = testing::TempDir() + "/" + name;
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamoff>(bytes.size()));
+        f.close();
+        return path;
+    }
 
-// 便利：从字符串字面量写文件（按 UTF-8 字节）
-String write_temp_file(const String& name, StringView content) {
-    std::vector<u8> bytes(content.begin(), content.end());
-    return write_temp_file(name, bytes);
-}
+    // 便利：从字符串字面量写文件（按 UTF-8 字节）
+    String write_temp_file(const String& name, StringView content) {
+        std::vector<u8> bytes(content.begin(), content.end());
+        return write_temp_file(name, bytes);
+    }
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ TEST(SourceFile, ContentIsNullTerminated) {
 
 TEST(SourceFileFromPath, ReadsContent) {
     String path = write_temp_file("basic.aria", "let x = 1\n");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_EQ(sf->name(), "basic.aria");
     EXPECT_EQ(sf->path(), path);
@@ -72,10 +72,10 @@ TEST(SourceFileFromPath, MissingFileReturnsNotFound) {
 
 TEST(SourceFileFromPath, StripsBom) {
     std::vector<u8> bytes = {0xEF, 0xBB, 0xBF};
-    String body = "let 中 = 1\n";
+    String          body  = "let 中 = 1\n";
     bytes.insert(bytes.end(), body.begin(), body.end());
     String path = write_temp_file("bom.aria", bytes);
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_NE(static_cast<u8>(sf->content()[0]), 0xEF);
     EXPECT_EQ(sf->content(), "let 中 = 1\n");
@@ -83,7 +83,7 @@ TEST(SourceFileFromPath, StripsBom) {
 
 TEST(SourceFileFromPath, NoBomUnchanged) {
     String path = write_temp_file("nobom.aria", "abc");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_EQ(sf->content(), "abc");
 }
@@ -94,7 +94,7 @@ TEST(SourceFileFromPath, NoBomUnchanged) {
 
 TEST(SourceFileFromPath, NormalizesCrlf) {
     String path = write_temp_file("crlf.aria", "line1\r\nline2\r\n");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_EQ(sf->content().find('\r'), String::npos);
     EXPECT_EQ(sf->content(), "line1\nline2\n");
@@ -102,14 +102,14 @@ TEST(SourceFileFromPath, NormalizesCrlf) {
 
 TEST(SourceFileFromPath, NormalizesLoneCr) {
     String path = write_temp_file("cr.aria", "a\rb\rc");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_EQ(sf->content(), "a\nb\nc");
 }
 
 TEST(SourceFileFromPath, MixedLineEndings) {
     String path = write_temp_file("mixed.aria", "a\r\nb\rc\nd");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
     EXPECT_EQ(sf->content(), "a\nb\nc\nd");
 }
@@ -120,15 +120,15 @@ TEST(SourceFileFromPath, MixedLineEndings) {
 
 TEST(SourceFileFromPath, InvalidUtf8ReturnsInvalidEncoding) {
     std::vector<u8> bytes = {0xFF, 0xFE, 0x00, 0xC0, 0xAF};
-    String path = write_temp_file("bad.aria", bytes);
-    auto sf = SourceFile::from_path(path);
+    String          path  = write_temp_file("bad.aria", bytes);
+    auto            sf    = SourceFile::from_path(path);
     ASSERT_FALSE(sf.has_value());
     EXPECT_EQ(sf.error(), fs::FsErrCode::InvalidEncoding);
 }
 
 TEST(SourceFileFromPath, ValidUtf8Accepted) {
     String path = write_temp_file("ok.aria", "中文 \xF0\x9F\x98\x80");
-    auto sf = SourceFile::from_path(path);
+    auto   sf   = SourceFile::from_path(path);
     ASSERT_TRUE(sf.has_value());
 }
 
@@ -141,33 +141,19 @@ protected:
     SourceFile make(StringView content) { return SourceFile{"t", "t", String{content}}; }
 };
 
-TEST_F(SourceFileLines, EmptyIsZeroLines) {
-    EXPECT_EQ(make("").line_count(), 0u);
-}
+TEST_F(SourceFileLines, EmptyIsZeroLines) { EXPECT_EQ(make("").line_count(), 0u); }
 
-TEST_F(SourceFileLines, SingleCharOneLine) {
-    EXPECT_EQ(make("a").line_count(), 1u);
-}
+TEST_F(SourceFileLines, SingleCharOneLine) { EXPECT_EQ(make("a").line_count(), 1u); }
 
-TEST_F(SourceFileLines, TrailingNewlineOneLine) {
-    EXPECT_EQ(make("a\n").line_count(), 1u);
-}
+TEST_F(SourceFileLines, TrailingNewlineOneLine) { EXPECT_EQ(make("a\n").line_count(), 1u); }
 
-TEST_F(SourceFileLines, UnterminatedLastLineCounts) {
-    EXPECT_EQ(make("a\nb").line_count(), 2u);
-}
+TEST_F(SourceFileLines, UnterminatedLastLineCounts) { EXPECT_EQ(make("a\nb").line_count(), 2u); }
 
-TEST_F(SourceFileLines, TwoLinesTerminated) {
-    EXPECT_EQ(make("a\nb\n").line_count(), 2u);
-}
+TEST_F(SourceFileLines, TwoLinesTerminated) { EXPECT_EQ(make("a\nb\n").line_count(), 2u); }
 
-TEST_F(SourceFileLines, LoneNewlineOneLine) {
-    EXPECT_EQ(make("\n").line_count(), 1u);
-}
+TEST_F(SourceFileLines, LoneNewlineOneLine) { EXPECT_EQ(make("\n").line_count(), 1u); }
 
-TEST_F(SourceFileLines, TwoNewlinesTwoLines) {
-    EXPECT_EQ(make("\n\n").line_count(), 2u);
-}
+TEST_F(SourceFileLines, TwoNewlinesTwoLines) { EXPECT_EQ(make("\n\n").line_count(), 2u); }
 
 // ---------------------------------------------------------------------------
 // line(n)
@@ -242,11 +228,11 @@ TEST_F(SourceFileLocate, EmptyFileEof) {
 TEST_F(SourceFileLocate, CjkCodepointColumn) {
     // "中 = 1"：中占 3 字节
     auto sf = make("\xE4\xB8\xAD = 1");
-    EXPECT_EQ(sf.locate(0).col, 1u);  // 中 起始
-    EXPECT_EQ(sf.locate(3).col, 2u);  // 空格（中 之后 1 码点）
-    EXPECT_EQ(sf.locate(4).col, 3u);  // '='
-    EXPECT_EQ(sf.locate(5).col, 4u);  // 空格
-    EXPECT_EQ(sf.locate(6).col, 5u);  // '1'
+    EXPECT_EQ(sf.locate(0).col, 1u); // 中 起始
+    EXPECT_EQ(sf.locate(3).col, 2u); // 空格（中 之后 1 码点）
+    EXPECT_EQ(sf.locate(4).col, 3u); // '='
+    EXPECT_EQ(sf.locate(5).col, 4u); // 空格
+    EXPECT_EQ(sf.locate(6).col, 5u); // '1'
 }
 
 TEST_F(SourceFileLocate, CjkAcrossLines) {
@@ -268,26 +254,6 @@ TEST_F(SourceFileLocate, MultiByteColNotByteCol) {
     // 'x' 起始于字节 6
     auto lcx = sf.locate(6);
     EXPECT_EQ(lcx.col, 3u);
-}
-
-// ---------------------------------------------------------------------------
-// locate_span
-// ---------------------------------------------------------------------------
-
-TEST_F(SourceFileLocate, SpanSameLine) {
-    auto sf = make("abcdef");
-    auto sl = sf.locate_span(1, 4);
-    EXPECT_EQ(sl.begin.line, 1u);
-    EXPECT_EQ(sl.begin.col, 2u);
-    EXPECT_EQ(sl.end.line, 1u);
-    EXPECT_EQ(sl.end.col, 5u);
-}
-
-TEST_F(SourceFileLocate, SpanAcrossLines) {
-    auto sf = make("ab\ncd");
-    auto sl = sf.locate_span(1, 4); // 'b' .. 'd'
-    EXPECT_EQ(sl.begin.line, 1u);
-    EXPECT_EQ(sl.end.line, 2u);
 }
 
 // ---------------------------------------------------------------------------

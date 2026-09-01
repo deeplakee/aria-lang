@@ -40,11 +40,13 @@ namespace aria {
                 if (line.empty()) {
                     continue;
                 }
-                // SourceFile 就地构造：name/path 仅显示用，content=本行源码；存活到 run 返回，编译期
-                // Error 的 SourceLoc 指向它（不跨行复用，逐行独立源文件）。
-                SourceFile source{"<repl>", "", line};
+                // SourceFile 就地构造：name/path 仅显示用（对齐 --eval 的 <script>，path 给 <repl>
+                // 而非空串，避免 SourceLoc::to_string 渲染出 ":行:列:" 这种开头冒号的畸形前缀），
+                // content=本行源码；存活到 run 返回，编译期 Error 的 SourceLoc 指向它
+                // （不跨行复用，逐行独立源文件）。
+                SourceFile source{"<repl>", "<repl>", line};
                 if (auto result = vm.run(source, *module); !result) {
-                    io::println(stderr, "{}", result.error().format());
+                    io::println(stderr, "{}", result.error().message());
                 }
             }
         }

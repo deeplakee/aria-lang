@@ -28,9 +28,10 @@ using aria::Value;
 
 namespace {
 
-    // 持有 AriaVM（进而其 GC）+ 实际 SourceFile + 结果一并返回，使返回值引用的 GC 对象与 Error 的
-    // SourceLoc 在调用方检视期间存活--否则辅助函数返回即销毁局部 vm/source -> GC 回收 / SourceFile 悬垂。
-    // SourceFile 经 unique_ptr 持堆稳定地址：Error 的 SourceLoc 指向它，move unique_ptr 不动对象地址。
+    // 持有 AriaVM（进而其 GC）+ 实际 SourceFile + 结果一并返回，使返回值引用的 GC 对象在调用方
+    // 检视期间存活--否则辅助函数返回即销毁局部 vm/source -> GC 回收对象悬垂。
+    // Error 构造期已把位置烘成自有串、不再指向 SourceFile，故 SourceFile 的存活只关涉 GC 对象
+    // （ObjFunction 等）的检视，与 Error 无关；unique_ptr 持堆稳定地址仍为 GC 对象地址稳定所需。
     struct RunResult {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
@@ -113,8 +114,8 @@ TEST(Compiler, GlobalsAndWhile) {
 TEST(Compiler, CompileErrorUninitialized) {
     auto fail = compile_fail("fun f() { var x = x + 1; }");
     ASSERT_EQ(fail.error().code(), ErrorCode::UninitializedVariable);
-    // SourceLoc 指向 *source（经 unique_ptr 存活），format() 不应崩溃且含源名 <test>。
-    const auto rendered = fail.error().format();
+    // Error 构造期已把位置烘进自有消息串（含源名 <test>），message() 不依赖 SourceFile 存活、不应崩溃。
+    const auto rendered = fail.error().message();
     EXPECT_NE(rendered.find("<test>"), std::string::npos);
 }
 

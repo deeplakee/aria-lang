@@ -64,11 +64,11 @@ namespace aria {
 
         // --- 错误记账 ---
         // 记入 errors_。若达 kMaxErrors 则置 is_fatal_，主循环将停止。
-        void error(ErrorCode code, SourceSpan span, String msg);
+        void error(ErrorCode code, SourceSpan span, const String& msg);
 
-        // 构造带 source_ 的 Error（format() 可输出 path:line:col）。
+        // 构造带 source_ 的 Error（构造期把 SourceLoc 烘进 message_，含 path:line:col 前缀）。
         [[nodiscard]]
-        Error make_error(ErrorCode code, SourceSpan span, String msg) const;
+        Error make_error(ErrorCode code, SourceSpan span, const String& msg) const;
 
         // --- 游标辅助 ---
         // 越界（pos_+ahead >= src_.size()）返回 '\0' 哨兵，安全。

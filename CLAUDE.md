@@ -21,18 +21,18 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 
 ## 错误处理（src/error/）
 
-错误体系：`ErrorCode`/`ErrorCategory`（普通 `enum class : u8`，各 1 字节）、`Error`（聚合码+`SourceLoc`+消息；`SourceLoc`=`SourceFile*`+`LineCol`，把源文件指针与行列收口为一处，默认构造空态 src=nullptr 表「无位置」）、`AriaException` 派生类（`AriaCompileException`/`AriaRuntimeException`，持 `Error`）、`fatal_error()`（`[[noreturn]]`，打印后 `std::exit`）。
+错误体系：`ErrorCode`/`ErrorCategory`（普通 `enum class : u8`，各 1 字节）、`Error`（仅 `ErrorCode code_` + `String message_` 两字段；**不持 `SourceFile*` 裸指针**--`message_` 构造期一次性烘焙为完整可读串 `"path:line:col: Category: Name detail"`（无位置则 `"Category: Name detail"`），构造后与 `SourceFile` 解耦、无悬空风险。`SourceLoc`=`SourceFile*`+`LineCol` 仍作 `Error` 构造参数类型与 `Token`/AST 节点的位置载体，`Error` 构造后不再持有它。**不保留结构化位置**：位置烘进 `message_` 即丢弃，解释器不做多错误按位置排序/去重）、`AriaException` 派生类（`AriaCompileException`/`AriaRuntimeException`，持 `Error`）、`fatal_error()`（`[[noreturn]]`，打印后 `std::exit`）。
 
 - **核心原则：内部用码，边界用 Error。**
   - **`ErrorCode`（1 字节，纯码）** 用于解释器**内部**判定：不变式断言/不可恢复检查（`fatal_error(ErrorCode::Unreachable, ...)`）、分类与状态机分支（`switch (e.code())`、`e.code() == ErrorCode::X`）、不需要位置/消息的简单结果标志、错误码到操作的映射。即「只关心发生了什么类型的错，不关心在哪、细节」的场合。
-  - **`Error`（带码+位置+源文件+消息）** 用于错误**出门**：跨阶段传递的最终载体（当前实例：`Lexer::tokenize() -> Result<List<Token>, List<Error>>`（词法错误恢复式收集）、`Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`（语法错误 panic-mode 恢复式收集）；后续 `Result<CodeUnit, Error>` 等随编译器推进再加入）、异常构造（`throw AriaCompileException{Error{...}}`）、错误收集与打印（`List<Error>`、`e.format()`）。即词法/语法/语义阶段产出、要报给用户或传到别的阶段的错误。
+  - **`Error`（带码+位置+源文件+消息）** 用于错误**出门**：跨阶段传递的最终载体（当前实例：`Lexer::tokenize() -> Result<List<Token>, List<Error>>`（词法错误恢复式收集）、`Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`（语法错误 panic-mode 恢复式收集）；后续 `Result<CodeUnit, Error>` 等随编译器推进再加入）、异常构造（`throw AriaCompileException{Error{...}}`）、错误收集与打印（`List<Error>`、`e.message()`）。即词法/语法/语义阶段产出、要报给用户或传到别的阶段的错误。
 - **四条错误通道**：
   1. **`Result<T, Error>` 返回**（项目默认风格，**已落地**）：可恢复错误的常规通道。当前实例：`Lexer::tokenize() -> Result<List<Token>, List<Error>>`（词法错误恢复式收集，见下）、`Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`、`AriaVM::run() -> Result<Value, Error>`。VM `run_()` 主循环内部，操作码处理（如算术 `run_binary_numeric`、`CALL` 经 `call_value`）用 `Result<Value, Error>`/`Opt<Error>` 返回局部成败；成功时 `Error` 部分不构造，开销以 Result 类型尺寸为主。
   2. **VM 自管异常状态**（**设计目标，M1 部分落地**）：aria 语言的 `throw/catch` 与 VM 检测到的运行时错误（类型不符、越界等）**统一走 VM 自己的机制**--`op` 返回失败 `Error` 后，`run()` 调 `raise` -> 查 **CodeUnit 内异常记录表**定位最近覆盖当前 `ip` 的 `try` 记录，按记录登记的帧/栈深度 `truncate` 回退（unwind），跳到对应 handler。**不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit，每条记录 `try` 起始/结束 `ip` + `handler ip` + `catch` 参数槽等）登记，运行时按 `ip` 查表；比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）且便于反汇编。**不依赖 C++ 异常**（与 Lua/CPython 一致；动态类型语言运行时错误可能频繁，C++ 异常的栈展开代价不可控）。已就绪/尚未实现的清单见 `.claude/rules/runtime.md`「VM 异常通道落地状态」，设计见 `.claude/reference/runtime/vm-design.md` §4.7。
   3. **`AriaException` 派生**（C++ 异常，**已落地**）：仅用于 **VM 之外、跨 C++ 调用栈**的边界场景--编译期 parser 递归下降深处与 CodeGen 字节码编译器 visit 递归深处（`AriaCompileException`，Parser / CodeGen 均已实现：深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）、REPL/嵌入 API 等顶层流程跨栈传播（`AriaRuntimeException`）。**VM `run()` 主循环内部不用 C++ 异常**（它不跨 C++ 栈、且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`，**已落地**，定义于 `error/Error.hpp`）：不可恢复错误（Internal/Resource 类，如 `Unreachable`/`OutOfMemory`）打印到 stderr 后 `std::exit(1)`。
 - **`AriaException` 与 aria 语言 `throw/catch` 无关**：前者是解释器 C++ 实现内部的错误传播；后者抛的是 aria Value，由 VM 用 `THROW` 操作码 + CodeUnit 内异常记录表实现（设计目标，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见上第 2 条）。不要混淆，也不要用 C++ 异常去实现 aria 语言的 throw。
-- **`Error`（`String` + `SourceLoc` + `ErrorCode`，8 字节对齐；libstdc++ 下 64B（`String` 32 + `SourceLoc` 24 + `ErrorCode` 1）、libc++ 下 56B（`String` 24）；`SourceLoc` 24B = `SourceFile*` 8 + `LineCol` 16，默认构造空态 src=nullptr 表「无位置」）**：报错是冷路径，成功时 `Result` 的 `Error` 部分不构造，故「大」主要影响 `Result` 类型尺寸而非热路径性能。不要为压缩 `Error` 过早牺牲可读性或丢失结构化位置（source/span 支持多错误收集后统一渲染、按位置排序）；确需优化时再按收益处理（source 用 id 替指针、message 用 StringView、span 用 u32 等）。
+- **`Error`（`String`（`message_`，构造期烘焙的完整可读串）+ `ErrorCode`，8 字节对齐；libstdc++ 下 40B、libc++ 下 32B；`message_` 构造期由 `SourceLoc` + 分类名 + 码名 + 细节一次拼成，含 `"path:line:col: "` 前缀或省略）**：报错是冷路径，成功时 `Result` 的 `Error` 部分不构造，故「大」主要影响 `Result` 类型尺寸而非热路径性能。**不保留结构化位置**：`Error` 不存 `SourceLoc`/`LineCol`，位置烘进 `message_` 即丢弃--解释器无需多错误按位置排序/去重，结构化位置只会徒增复杂度与生命期约束（「保留结构化位置供排序」属前期设计，已弃）。接口仅 `code()`/`message()`，无 `format()`/`location()`。
 
 ## 工具
 
@@ -64,7 +64,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 
 ## 类初始化
 
-- **简单类**（纯数据聚合的小结构体，如 `src/source_file.hpp` 中的 `SourceSpan`/`LineCol`/`SpanLines`）：字段少、无逻辑、初始化无依赖，用类内默认成员初始化即可，不必上构造函数。
+- **简单类**（纯数据聚合的小结构体，如 `src/source_file.hpp` 中的 `SourceSpan`/`LineCol`）：字段少、无逻辑、初始化无依赖，用类内默认成员初始化即可，不必上构造函数。
 - **复杂类**（带逻辑或多步/有依赖的初始化，如 `Token`/`Lexer`/`SourceFile`/`GC`）：成员声明处**不写默认值**（或仅写无争议空态如 `= nullptr`/`= 0`），所有初始化统一收敛进构造函数（初始化列表 + 函数体），不要把初始化散落到各字段声明处。
 - 构造函数初始化列表统一用**大括号**写每个成员，形如 `FooClass : mem1{...}, mem2{...}, ... {}`（不用小括号 `mem1(...)`）。大括号即统一初始化语法，会禁止窄化转换，也与项目内其它初始化（如 `SourceFile` 构造）风格一致。
 
@@ -120,7 +120,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 ## 陷阱
 
 - `SourceFile` 的 `content()`/`name()`/`path()` 返回 `StringView`，不得比 `SourceFile` 活得更久；多 `SourceFile` 存容器并已取 `StringView` 后勿再增删致重分配（SSO 改地址）。
-- **`SourceFile` 以指针传入（非拥有）**：`Lexer::tokenize(SourceFile*)` 直接接 `SourceFile*`；`Error`/`Token` 经 `SourceLoc`（`SourceFile* src` + `LineCol`）持源文件指针--`SourceLoc` 显式构造断言 src 非空、默认构造为空态（src=nullptr），`Error::loc_` 与 `Token::loc_` 均为 `SourceLoc`（空态表无位置）。**调用方须保证 `SourceFile` 在所有借出的 `StringView`（`Token::lexeme`）与 `SourceLoc::src_`（`Error::loc_`/`Token::loc_` 内）使用期间存活且地址不变**--尤其注意：`SourceFile` 含 `String content_`，**SSO 短串（短于阈值，如 `"_"`/`"f"`）move 后 data 地址会变**（SSO buffer 跟随对象，move 是逐字节拷贝）。故 token 流/`Error` 持有的指向 `content_` 的 view 与 `SourceLoc::src_`，其 `SourceFile` 不得在它们存活期被 move。实践中：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象（如放进 `unique_ptr` 容器或长寿命成员）。
+- **`SourceFile` 以指针传入（非拥有）**：`Lexer::tokenize(SourceFile*)` 直接接 `SourceFile*`；`Token` 经 `SourceLoc`（`SourceFile* src` + `LineCol`）持源文件指针（`SourceLoc` 显式构造断言 src 非空、默认构造为空态 src=nullptr），`Token::loc_` 为 `SourceLoc`（空态表无位置）。**`Error` 不在此列**--`Error` 构造期已把 `SourceLoc` 烘进自有 `message_` 串，不再持 `SourceFile*`，故与 `SourceFile` 生命周期解耦。**调用方须保证 `SourceFile` 在所有借出的 `StringView`（`Token::lexeme`）与 `Token::loc_` 内 `SourceLoc::src_` 使用期间存活且地址不变**--尤其注意：`SourceFile` 含 `String content_`，**SSO 短串（短于阈值，如 `"_"`/`"f"`）move 后 data 地址会变**（SSO buffer 跟随对象，move 是逐字节拷贝）。故 token 流持有的指向 `content_` 的 view 与 `Token::loc_` 内 `SourceLoc::src_`，其 `SourceFile` 不得在它们存活期被 move。实践中：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象（如放进 `unique_ptr` 容器或长寿命成员）。`Error` 因已自有位置串，无此约束。
 - 源码加载时 CRLF/CR 已归一化为 LF，`line`/`locate` 内部只按 `\n` 切行。
 
 ## 测试

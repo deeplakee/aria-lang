@@ -162,12 +162,12 @@ namespace aria {
     // 错误记账
     // ============================================================
 
-    Error Lexer::make_error(ErrorCode code, SourceSpan span, String msg) const {
-        return Error{code, loc_at(span.start), std::move(msg)};
+    Error Lexer::make_error(ErrorCode code, SourceSpan span, const String& msg) const {
+        return Error{code, loc_at(span.start), msg};
     }
 
-    void Lexer::error(ErrorCode code, SourceSpan span, String msg) {
-        errors_.push_back(make_error(code, span, std::move(msg)));
+    void Lexer::error(ErrorCode code, SourceSpan span, const String& msg) {
+        errors_.push_back(make_error(code, span, msg));
         // 达上限即停止扫描，避免级联错误刷屏
         if (errors_.size() >= kMaxErrors) {
             is_fatal_ = true;

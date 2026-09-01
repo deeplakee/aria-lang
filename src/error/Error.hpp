@@ -14,34 +14,38 @@ namespace aria {
     using src::SourceLoc;
     using src::SourceSpan;
 
-    // 错误值对象：聚合 ErrorCode + SourceLoc(可空) + 可读消息，作为各阶段统一错误载体。
+    // 错误值对象：聚合 ErrorCode + 完整可读消息，作为各阶段统一错误载体。
     //
     // 设计要点：
     //   - 值类型（可拷贝/移动），供 Result<T, Error> 携带，符合项目「错误处理倾向
     //     Result 返回而非抛 C++ 异常」的约束。
-    //   - 只做「承载 + 渲染」：分类/名称/相等判定等由所持 ErrorCode 提供（经 code()
-    //     再取），Error 不重复暴露委托方法。
-    //   - loc 为 SourceLoc：词法/语法/语义错误通常带位置；部分内部/资源错误无位置
-    //     （用 SourceLoc 默认构造的空态，src=nullptr，to_string 返回 "?"）。SourceLoc 把
-    //     「源文件指针 + 行列」收口为一处，空态即「无位置」。
-    //   - message 为人类可读细节（含变量名、期待 token 等）；to_string(code()) 给机器标识。
+    //   - 只两个字段：code_（机器标识，供分类/名称/相等判定经 code() 再取）+ message_
+    //     （完整人类可读串）。message_ 在构造期一次性烘焙成型--把 SourceLoc 的
+    //     "path:line:col"、分类名、码名、细节拼成最终串存下，构造完成后 Error 完全自有、
+    //     不持任何 SourceFile* 裸指针，可任意拷贝/移动/跨流程传递，无悬空风险。
+    //   - 不保留结构化位置（LineCol/SourceLoc）字段：解释器无需多错误按位置排序/去重等
+    //     能力，结构化位置只会徒增复杂度与生命期约束。需要位置时直接读 message_ 串即可。
     //
-    // 生命周期约束：loc_ 内的 src 指针指向的 SourceFile 不得比本 Error 活得更久
-    // （同 Token::lexeme_ 的 StringView 约束）。多数情况下 Error 在编译/解释同一源
-    // 文件期间产生并消费，SourceFile 存活于整个流程，安全；跨流程传递 Error 时需另行保证。
+    // 生命周期：位置在构造期一次性格式化（此时 SourceFile 必然存活），构造完成后 Error 与
+    // SourceFile 完全解耦。这与 Token::lexeme_ 仍借 StringView 指向 SourceFile::content_
+    // （需 SourceFile 存活）的约束不同：Error 不再有此类约束。
     //
     // 注意：本类只承载「解释器报告的错误」。aria 语言自身的 throw/catch 抛的是 Value，
     // 由 VM 用 THROW 操作码 + CodeUnit 内异常记录表实现（不引入 SETUP_EXCEPT，见
     // CLAUDE.md「错误处理」第 2 条），与 C++ 异常无关，不经过本类。
     class Error {
     public:
-        // 无位置错误：仅码 + 可选消息。供内部/资源错误或不关心位置的场景使用。
-        // ErrorCode 为普通 enum class，故常见写法 Error{ErrorCode::X, "msg"}。
-        Error(ErrorCode code, String message = {}) : code_{code}, loc_{}, message_{std::move(message)} {}
+        // 无位置错误：码 + 可选细节。供内部/资源错误或不关心位置的场景使用。
+        // ErrorCode 为普通 enum class，故常见写法 Error{ErrorCode::X, "detail"}。
+        // message_ 烘为 "Category: Name[ detail]"。
+        Error(ErrorCode code, const String& detail = "") : code_{code}, message_{make_message(code, nullptr, detail)} {}
 
-        // 带位置错误：码 + SourceLoc + 可选消息。供词法/语法/语义阶段使用。
-        Error(ErrorCode code, SourceLoc loc, String message = {}) :
-            code_{code}, loc_{loc}, message_{std::move(message)} {}
+        // 带位置错误：码 + SourceLoc + 可选细节。供词法/语法/语义阶段使用。
+        // 构造期就地用 loc 烘位置前缀（SourceFile 此刻存活，安全），此后不再持有
+        // SourceLoc/SourceFile*。空态 loc(source()==nullptr)按「无位置」处理。
+        // message_ 烘为 "path:line:col: Category: Name[ detail]"。
+        Error(ErrorCode code, const SourceLoc& loc, const String& detail = "") :
+            code_{code}, message_{make_message(code, &loc, detail)} {}
 
         // 所属错误码（分类/名称/相等判定经此再取）。
         [[nodiscard]]
@@ -49,40 +53,32 @@ namespace aria {
             return code_;
         }
 
-        // 源码位置（可能为空态--内部/资源错误或无需定位的场景；空态为默认构造的 SourceLoc，
-        // src 为 nullptr，to_string 返回 "?"）。
-        [[nodiscard]]
-        const SourceLoc& loc() const noexcept {
-            return loc_;
-        }
-
-        // 人类可读细节消息。
+        // 完整可读消息（构造期烘焙成型，含位置前缀 + 分类名 + 码名 + 细节）。
+        // 形如 "main.aria:3:5: Syntax: UnterminatedString 字符串未闭合"（带位置）或
+        // "Syntax: UnterminatedString 字符串未闭合"（无位置）。自存、不依赖任何外部对象。
         [[nodiscard]]
         const String& message() const noexcept {
             return message_;
         }
 
-        // 拼接为单行可读串，位置信息前置（符合编译器报错惯例）：
-        //   有 SourceLoc ："main.aria:3:5: Syntax: UnterminatedString 字符串未闭合"
-        //   无 SourceLoc ："Syntax: UnterminatedString 字符串未闭合"
-        [[nodiscard]]
-        String format() const {
-            String prefix;
-            if (loc_.source() != nullptr) { // 空态 SourceLoc(src=nullptr)即「无位置」
-                prefix = std::format("{}: ", loc_.to_string());
-            }
-            String out = std::format("{}{}: {}", prefix, to_string(category_of(code_)), to_string(code_));
-            if (!message_.empty()) {
-                out += ' ';
-                out += message_;
-            }
-            return out;
-        }
-
     private:
         ErrorCode code_;
-        SourceLoc loc_;
         String    message_;
+
+        // 烘焙完整消息串：[loc 前缀 + ": "] + "Category: Name"[ + " " + detail]。
+        // loc 为 nullptr 或 loc->source()==nullptr 时无位置前缀。detail 空则无细节尾。
+        static String make_message(ErrorCode code, const SourceLoc* loc, const String& detail) {
+            String s;
+            if (loc != nullptr && loc->source() != nullptr) {
+                s = std::format("{}: ", loc->to_string()); // "path:line:col: "
+            }
+            s += std::format("{}: {}", to_string(category_of(code)), to_string(code));
+            if (!detail.empty()) {
+                s += ' ';
+                s += detail;
+            }
+            return s;
+        }
     };
 
     // 不可恢复错误：打印错误到 stderr 后以退出码 1 终止进程。
@@ -96,20 +92,20 @@ namespace aria {
     // Result<T, Error> / AriaException。
     [[noreturn]]
     inline void fatal_error(const Error& error) {
-        io::println(stderr, "aria: fatal: {}", error.format());
+        io::println(stderr, "aria: fatal: {}", error.message());
         std::exit(1);
     }
 
     // 便捷重载：仅码 + 可选消息（无位置）。
     [[noreturn]]
-    inline void fatal_error(ErrorCode code, String message = {}) {
-        fatal_error(Error{code, std::move(message)});
+    inline void fatal_error(const ErrorCode code, const String& message = "") {
+        fatal_error(Error{code, message});
     }
 
     // 便捷重载：码 + 位置 + 可选消息。
     [[noreturn]]
-    inline void fatal_error(ErrorCode code, SourceLoc loc, String message = {}) {
-        fatal_error(Error{code, loc, std::move(message)});
+    inline void fatal_error(const ErrorCode code, const SourceLoc& loc, const String& message = "") {
+        fatal_error(Error{code, loc, message});
     }
 
     // 便捷工厂：以 std::format 风格直接格式化构造 Error（无位置）。供各阶段报错用，

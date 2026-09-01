@@ -153,7 +153,7 @@ TEST(ParserBinary, Precedence) {
 
 TEST(ParserBinary, LeftAssociative) {
     // 1 - 2 - 3 -> (1 - 2) - 3
-    auto        p         = parse_src("1 - 2 - 3;");
+    auto p         = parse_src("1 - 2 - 3;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     auto top       = dynamic_cast<const BinaryExprNode*>(expr_stmt->expr.get());
@@ -166,7 +166,7 @@ TEST(ParserBinary, LeftAssociative) {
 
 TEST(ParserBinary, Logic) {
     // a && b || c -> (a && b) || c（&& 优先级高于 ||）
-    auto        p         = parse_src("a && b || c;");
+    auto p         = parse_src("a && b || c;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -194,7 +194,7 @@ TEST(ParserBinary, ComparisonAndEquality) {
 
 TEST(ParserRange, Inclusive) {
     // 1..10 -> RangeExpr inclusive，lower=1，upper=10
-    auto        p         = parse_src("1..10;");
+    auto p         = parse_src("1..10;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -211,7 +211,7 @@ TEST(ParserRange, Inclusive) {
 
 TEST(ParserRange, Exclusive) {
     // 1...10 -> RangeExpr exclusive
-    auto        p         = parse_src("1...10;");
+    auto p         = parse_src("1...10;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -222,7 +222,7 @@ TEST(ParserRange, Exclusive) {
 
 TEST(ParserRange, PrecedenceWithAdditive) {
     // 1..n+1 -> 1..(n+1)：加减比区间紧
-    auto        p         = parse_src("1..n+1;");
+    auto p         = parse_src("1..n+1;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -253,7 +253,7 @@ TEST(ParserUnary, Prefix) {
 
 TEST(ParserUnary, RightAssociative) {
     // -- -x -> --(-x)
-    auto        p         = parse_src("-- -x;");
+    auto p         = parse_src("-- -x;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     auto outer     = dynamic_cast<const UnaryExprNode*>(expr_stmt->expr.get());
@@ -317,7 +317,7 @@ TEST(ParserAssignment, RightAssociative) {
 
 TEST(ParserAssignment, ChainedCompoundRightAssoc) {
     // a += b += c  ==>  a += (b += c)：复合赋值与 = 同族，右结合，可链式。
-    auto        p         = parse_src("a += b += c;");
+    auto p         = parse_src("a += b += c;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -340,7 +340,7 @@ TEST(ParserAssignment, ChainedCompoundRightAssoc) {
 }
 
 TEST(ParserAssignment, Destructure) {
-    auto        p         = parse_src("[a, b] = lst;");
+    auto p         = parse_src("[a, b] = lst;");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -357,7 +357,7 @@ TEST(ParserAssignment, DestructureWithRest) {
 
 TEST(ParserAssignment, ListExprNotDestructure) {
     // [1, 2] 作为列表表达式（非解构目标），不应产生 DestructureAssignment
-    auto        p         = parse_src("[1, 2];");
+    auto p         = parse_src("[1, 2];");
     auto stmt      = first_decl(p);
     auto expr_stmt = dynamic_cast<const ExprStmtNode*>(stmt);
     ASSERT_NE(expr_stmt, nullptr);
@@ -509,7 +509,7 @@ TEST(ParserStmt, IfElse) {
 }
 
 TEST(ParserStmt, IfNoElse) {
-    auto        p    = parse_src("if (c) print 1;");
+    auto p    = parse_src("if (c) print 1;");
     auto stmt = first_decl(p);
     auto ifn  = dynamic_cast<const IfStmtNode*>(stmt);
     ASSERT_NE(ifn, nullptr);
@@ -519,7 +519,7 @@ TEST(ParserStmt, IfNoElse) {
 TEST(ParserStmt, While) { expect_has(dump_ok("while (c) print 1;"), "WhileStmt"); }
 
 TEST(ParserStmt, ForCStyle) {
-    auto        p    = parse_src("for (var i = 0; i < 10; i = i + 1) print i;");
+    auto p    = parse_src("for (var i = 0; i < 10; i = i + 1) print i;");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -529,7 +529,7 @@ TEST(ParserStmt, ForCStyle) {
 }
 
 TEST(ParserStmt, ForEmpty) {
-    auto        p    = parse_src("for (;;) print 1;");
+    auto p    = parse_src("for (;;) print 1;");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -539,7 +539,7 @@ TEST(ParserStmt, ForEmpty) {
 }
 
 TEST(ParserStmt, ForInSingle) {
-    auto        p    = parse_src("for (k in m) print k;");
+    auto p    = parse_src("for (k in m) print k;");
     auto stmt = first_decl(p);
     auto fin  = dynamic_cast<const ForInStmtNode*>(stmt);
     ASSERT_NE(fin, nullptr);
@@ -570,7 +570,7 @@ TEST(ParserStmt, ForInPatternVariants) {
 
 TEST(ParserStmt, ForCStyleExprInit) {
     // forStmt init 恢复支持裸表达式（撤销 route 2）：for (i = 0; ...) 走 exprStmt init。
-    auto        p    = parse_src("for (i = 0; i < 10; i = i + 1) print i;");
+    auto p    = parse_src("for (i = 0; i < 10; i = i + 1) print i;");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -581,7 +581,7 @@ TEST(ParserStmt, ForCStyleExprInit) {
 
 TEST(ParserStmt, ForCStyleDestructureInit) {
     // [...] 不跟 in -> forStmt 的解构赋值 exprStmt init（验证 [ 分流不走 forIn）。
-    auto        p    = parse_src("for ([a, b] = c; a < b; a = a + 1) print a;");
+    auto p    = parse_src("for ([a, b] = c; a < b; a = a + 1) print a;");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -595,7 +595,7 @@ TEST(ParserStmt, BreakContinueReturn) {
     expect_has(dump_ok("continue;"), "ContinueStmt");
     expect_has(dump_ok("return 1;"), "ReturnStmt");
     // 裸 return（无值）
-    auto        p    = parse_src("return;");
+    auto p    = parse_src("return;");
     auto stmt = first_decl(p);
     auto ret  = dynamic_cast<const ReturnStmtNode*>(stmt);
     ASSERT_NE(ret, nullptr);
@@ -774,6 +774,7 @@ TEST(ParserError, ErrorHasLocation) {
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
     const Error& e = p->result.error()[0];
-    ASSERT_TRUE(e.loc().source() != nullptr); // 空态 SourceLoc(src=nullptr)即「无位置」
-    EXPECT_EQ(e.loc().line_col().line, 2u);
+    // Error 构造期已把位置烘进完整消息串 message()（含 "path:line:col" 前缀），不再持 SourceFile*。
+    // parse_src 用 "t" 作源名，错误指向行 2 -> 消息串含 "t:2:"。
+    EXPECT_NE(e.message().find("t:2:"), String::npos);
 }

@@ -323,7 +323,7 @@ namespace aria {
         }
     }
 
-    InterpretResult AriaVM::interpret(StringView src) {
+    InterpretResult AriaVM::interpret(const StringView src) {
         // 合成入口模块 <script>（root=cwd，2 参 new_module）。
         // 与 new_object，故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
         const auto module = new_module(gc_, "<script>");
@@ -334,7 +334,7 @@ namespace aria {
         return interpret_run(source, *module);
     }
 
-    InterpretResult AriaVM::interpret_from_path(StringView path) {
+    InterpretResult AriaVM::interpret_from_path(const StringView path) {
         // 读盘 + BOM 剥除 + CRLF 归一化 + UTF-8 校验。失败渲染路径并返 LoadError（无 SourceFile，无 SourceLoc）。
         auto loaded = SourceFile::from_path(path);
         if (!loaded.has_value()) {

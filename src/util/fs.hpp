@@ -60,7 +60,7 @@ namespace aria::fs {
     namespace detail {
         // 将 POSIX errno 映射到对应的 fsErrCode，未识别的归为 I/O 错误
         [[nodiscard]]
-        inline FsErrCode errno_to_fserr(int e) noexcept {
+        inline FsErrCode errno_to_fserr(const int e) noexcept {
             switch (e) {
                 case ENOENT:
                     return FsErrCode::NotFound;
@@ -156,7 +156,7 @@ namespace aria::fs {
 
 
     [[nodiscard]]
-    inline Result<String, FsErrCode> read_file(StringView path) {
+    inline Result<String, FsErrCode> read_file(const StringView path) {
         auto file = std::ifstream{String{path}, std::ios::in | std::ios::binary};
         if (!file) {
             return std::unexpected(detail::errno_to_fserr());
@@ -204,7 +204,7 @@ namespace aria::fs {
 
     // 参数：路径A。返回A的绝对路径（仅按当前工作目录补全，不解析符号链接与 "."/".."）
     [[nodiscard]]
-    inline Result<String, FsErrCode> absolute(StringView path) {
+    inline Result<String, FsErrCode> absolute(const StringView path) {
         std::error_code ec;
         const auto      p = stdfs::absolute(stdfs::path{String{path}}, ec);
         if (ec) {
@@ -218,7 +218,7 @@ namespace aria::fs {
     // 消除 "."/".."、去除冗余分隔符。对于尚不存在的尾部部分仅做词法规范化，
     // 因此即使最终目标还不存在也能成功返回。
     [[nodiscard]]
-    inline Result<String, FsErrCode> resolve(StringView base, StringView rel) {
+    inline Result<String, FsErrCode> resolve(const StringView base, const StringView rel) {
         std::error_code ec;
         const auto      p = stdfs::weakly_canonical(stdfs::path{String{base}} / String{rel}, ec);
         if (ec) {
@@ -234,7 +234,7 @@ namespace aria::fs {
     // name 可能为空（路径为目录 / 空 / 无文件名），调用方据空 name 判定加载错误（非合法文件模块）。
     // 纯路径工具，不读盘、不校验存在性--配合 SourceFile::from_path 的 I/O 结果使用。
     [[nodiscard]]
-    inline Pair<String, String> module_name_and_root(StringView path) {
+    inline Pair<String, String> module_name_and_root(const StringView path) {
         stdfs::path abs_p{String{path}};
         if (const auto abs = absolute(path); abs.has_value()) {
             abs_p = stdfs::path{*abs};

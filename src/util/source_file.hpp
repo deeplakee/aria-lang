@@ -143,7 +143,7 @@ namespace aria::src {
         //   3. 校验为合法 UTF-8，否则返回 InvalidEncoding。
         // name 取路径的 basename，path 为传入的路径。读取失败时原样返回 fs 错误码。
         [[nodiscard]]
-        static Result<SourceFile, fs::FsErrCode> from_path(StringView path) {
+        static Result<SourceFile, fs::FsErrCode> from_path(const StringView path) {
             auto content = fs::read_file(path);
             if (!content) {
                 return std::unexpected(content.error());

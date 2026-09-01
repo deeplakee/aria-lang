@@ -94,6 +94,13 @@ if (ARIA_DEBUG_GC)
     target_compile_definitions(aria_core PUBLIC DEBUG_LOG_GC)
 endif ()
 
+# 编译产物反汇编打印(经 DEBUG_PRINT_COMPILED_CODE 宏,被 CodeGen 在每个函数编译完成时
+# 打印其 CodeUnit 反汇编,供调试/核对字节码发射)
+option(ARIA_DEBUG_PRINT_CODE "Enable compiled code disassembly printing" OFF)
+if (ARIA_DEBUG_PRINT_CODE)
+    target_compile_definitions(aria_core PUBLIC DEBUG_PRINT_COMPILED_CODE)
+endif ()
+
 add_executable(aria src/main.cpp)
 target_include_directories(aria PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aria PRIVATE aria_core)

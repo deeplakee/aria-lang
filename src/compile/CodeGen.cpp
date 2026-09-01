@@ -79,6 +79,11 @@ namespace aria {
             return std::unexpected(e.error());
         }
 
+#ifdef DEBUG_PRINT_COMPILED_CODE
+        // 打印入口 `<main>` 的 CodeUnit 反汇编（游标仍在入口，cur_cu() 即入口 unit）。
+        io::println(stderr, "{}", cur_cu()->disassemble(kMainName));
+#endif
+
         mod_ctx_.reset(); // 释放本模块上下文（含入口 fn 上下文）；游标随之失效但不再读
         return entry;
     }
@@ -419,6 +424,11 @@ namespace aria {
         // 隐式 return nil(兜底;显式 return 后为死代码,无害)。
         cur_cu()->emit_op(OpCode::LOAD_NIL, line);
         cur_cu()->emit_op(OpCode::RETURN, line);
+
+#ifdef DEBUG_PRINT_COMPILED_CODE
+        // 打印刚编译完成函数的 CodeUnit 反汇编（游标仍在子，cur_cu() 即子 unit；name 为本函数名）。
+        io::println(stderr, "{}", cur_cu()->disassemble(name));
+#endif
 
         // 成功:还原父游标(cu 自动回父 unit)并 delete 子上下文。
         mod_ctx_->current_fn_ctx_ = child->enclosing_;

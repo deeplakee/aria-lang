@@ -55,6 +55,13 @@ namespace aria {
         AriaVM(const AriaVM&)            = delete;
         AriaVM& operator=(const AriaVM&) = delete;
 
+        // VM 不可移动:成员间持指向彼此/自身的指针(main_ctx_/modules_ borrow &gc_;
+        // GC 根 tracer 捕 [this]),move 后这些指针不自动重绑 -> 悬垂。就地构造或以
+        // unique_ptr 持有,勿按值搬迁。显式删 move 把不变式提为显式契约(否则当前仅
+        // 由 GC 不可 move 隐式派生,易被误读为可放开)。
+        AriaVM(AriaVM&&)            = delete;
+        AriaVM& operator=(AriaVM&&) = delete;
+
         // 在主上下文里执行 fn 的顶层帧:压 callee 值 + acquire 主帧 -> run_ 主循环。
         // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用)。
         // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),M1 不做逐指令越界设防。
@@ -194,6 +201,13 @@ namespace aria {
         List<String>
                 source_roots_; // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 root_);[1..]=配置根(stdlib/-L/环境变量)
     };
+
+    // VM 不可移动不变式的显式校验(类完成定义后断言):成员间持指向彼此/自身的指针
+    // (main_ctx_/modules_ borrow &gc_;GC 根 tracer 捕 [this]),move 后不自动重绑 -> 悬垂。
+    // 上方已显式 delete move;此断言锁定该不变式 -- 若有人删掉上面的 delete 且 GC 变可
+    // move 致隐式 move 重新生成,断言在此炸出,避免静默变可移动后的悬垂 UB。
+    static_assert(!std::is_move_constructible_v<AriaVM>);
+    static_assert(!std::is_move_assignable_v<AriaVM>);
 
 } // namespace aria
 

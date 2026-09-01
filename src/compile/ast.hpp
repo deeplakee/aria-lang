@@ -81,7 +81,7 @@ namespace aria {
     // 分类基类
     // =========================================================================
     //
-    // StmtNode：语句基类。文法 declaration 产生式为 funDecl|classDecl|varDecl|statement--
+    // StmtNode：语句基类。文法 declaration 产生式为 funDecl|defDecl|varDecl|statement--
     //   声明即「可出现在 program/block 顶层的语句」，故 FunDeclNode/DefDeclNode/
     //   VarDeclNode 亦为 StmtNode 的派生。ProgramNode 与 BlockNode 持 List<UPtr<StmtNode>>。
     // ExprNode：表达式基类。

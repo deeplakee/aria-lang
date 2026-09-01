@@ -156,7 +156,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查全局表压入；未定义 -> 运行时错误 |
 | `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到全局表（隐式定义或要求已定义，待语义阶段定） |
 
-全局表是 VM 持有的 `HashTable<ObjString*, Value>`（键经 intern 驻留，内容语义）。`name` 操作数是常量池中的 ObjString 索引。
+全局表是各 `ObjModule` 持有的 `AriaHashTable`（即 `HashTable<Value, Value, ValueHash, ValueEq>`，键为装箱的 intern `ObjString*`）。`name` 操作数是常量池中的 ObjString 索引。
 
 ### 4.6 字段（实例属性）
 
@@ -209,7 +209,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负 |
 
-> 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 需 `MAKE_RANGE`，当前缺失（见 §6）。
+> 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（指令已加入 `code.hpp`，待 `ObjRange` 落地后启用编译，见 §6.3）。
 
 ### 4.10 栈操作
 
@@ -622,4 +622,4 @@ class CodeUnit {
 - `.claude/reference/memory/gc-implementation-plan.md` §5 Phase 3：CodeUnit / ObjFunction / ObjList / ObjMap 等子类型路线。
 - `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
 - `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
-- CLAUDE.md「错误处理」第 2 条：VM 自管异常（`SETUP_EXCEPT`/`THROW`/EFrame，设计目标）。
+- CLAUDE.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。

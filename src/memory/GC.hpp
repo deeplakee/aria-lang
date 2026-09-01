@@ -22,8 +22,8 @@ namespace aria {
     //   - Object(new_object<T>):带 Object 头的可追踪对象,链入 objects_head_,
     //     分配前 maybe_collect() 可能触发回收。
     //
-    // 回收:三色 mark-sweep。roots = 临时根(Phase 1)+ VM 根(M2 起用,经函数指针回调,
-    //   当前为模块表);Phase 4 再接 Movement 根(值栈/帧/open upvalues)。
+    // 回收:三色 mark-sweep。roots = 临时根(Phase 1)+ VM 根(M2 起用,经 std::function 回调,
+    //   标 modules_ + main_ctx_ 值栈/活动帧);M4 再接 open upvalues,M6 升 Movement 为 Object。
     //   mark_roots_ -> trace_gray_ -> sweep_;sweep_ 对未标对象调虚析构(级联释放
     //   子内存:Array 成员自释放 / ObjString long_chars_ 在 ~ObjString 释放)再释放壳。
     //
@@ -216,7 +216,7 @@ namespace aria {
         List<Object*>            gray_stack_;      // GC scratch,不计入 bytes_allocated_
         List<Value>              temp_roots_;      // GC scratch,不计入 bytes_allocated_
         InternPool<GC>           intern_;          // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
-        std::function<void(GC&)> vm_roots_tracer_; // VM 根标记回调(M2:模块表;AriaVM 注册,可为空)
+        std::function<void(GC&)> vm_roots_tracer_; // VM 根标记回调(M2:modules_ + main_ctx_ 值栈/活动帧;AriaVM 注册,可为空)
     };
 
     // ---- 模板实现 ----

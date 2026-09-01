@@ -58,7 +58,7 @@ namespace aria::fs {
     };
 
     namespace detail {
-        // 将 POSIX errno 映射到对应的 fsErrCode，未识别的归为 I/O 错误
+        // 将 POSIX errno 映射到对应的 FsErrCode，未识别的归为 I/O 错误
         [[nodiscard]]
         inline FsErrCode errno_to_fserr(const int e) noexcept {
             switch (e) {
@@ -100,7 +100,7 @@ namespace aria::fs {
             return errno_to_fserr(errno);
         }
 
-        // 将 std::error_code 映射到 fsErrCode。
+        // 将 std::error_code 映射到 FsErrCode。
         // 经 default_error_condition() 把平台相关错误码（如 Windows 错误码）
         // 归一化为可移植的 POSIX 条件值后再映射
         [[nodiscard]]

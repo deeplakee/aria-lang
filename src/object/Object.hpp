@@ -76,7 +76,7 @@ namespace aria {
     template<typename T>
     concept DerivedFromObj = std::is_base_of_v<Object, T>;
 
-    // GC 前向声明：Object 的虚函数 trace/destroy 以 GC& 为形参,此处仅需不完整类型即可。
+    // GC 前向声明：Object 的虚函数 trace 以 GC& 为形参、虚析构 ~Object() 无参,此处仅需不完整类型即可。
     // 完整定义见 memory/GC.hpp(子类 .cpp include 后才能调用 GC 方法)。
     class GC;
 

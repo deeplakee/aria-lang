@@ -32,7 +32,7 @@ namespace aria {
     //     top_ 与各活动帧的 slots(原指旧块)须重绑到新块。重绑在搬运**前**(old_base 仍存活)
     //     算好 top_ 与各 slots 相对 old_base 的槽偏移(纯整数),搬运**后**用「新基址 + 偏移」
     //     重算指针,不触碰 dangling 指针(对 dangling 指针做指针减法是 UB,读其值虽实现定义
-    //     但无必要)。open upvalue 尚未落地(M6),落地后须在 grow_stack_ 一并重绑(同法,或改索引式
+    //     但无必要)。open upvalue 尚未落地(M4),落地后须在 grow_stack_ 一并重绑(同法,或改索引式
     //     upvalue 免逐条修)。
     //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧)。
     //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,改经 AriaVM 的 vm_roots tracer 在 collect
@@ -82,8 +82,9 @@ namespace aria {
         }
 
         // 压栈:先写值、再按需 2x 增长。先写使 v 入栈活跃区(随 reallocate 的 memcpy 一并搬迁;
-        // 未来接 GC 根后即被标根),避免「先增长后写」时 v 仍为未根因局部、若增长触发 GC 而被
-        // 回收成悬垂(M1 下 grow_stack_ 不触发 GC 且 run() 禁 GC,无实际风险;此为 M6 防御)。
+        // 值栈已接 VM tracer 根,v 在栈即被标),避免「先增长后写」时 v 仍为未根局部、若增长触发
+        // GC 而被回收成悬垂。当前 grow_stack_ -> reallocate 永不触发 GC(GC.hpp 核心不变式),故此
+        // 序当前不承重,仅为与「栈即根」纪律一致的前瞻防御(将来 reallocate 若接 maybe_collect 即生效)。
         // 先写不越界:top_ < base+cap 为不变式(构造/reset/drop 维持;set_stack_top_ 的 t <= top_
         // 断言保证不顶满;push 写满后立即增长留空槽),故进 push 时必有空槽。
         void push(const Value v) noexcept {
@@ -144,13 +145,13 @@ namespace aria {
         }
 
         // ---- 挂起错误寄存器(侧信道)----
-        // 原生函数等冷路径错误**不走返回类型**(避免把 72B 的 Error 编进热路径返回值),而是经
+        // 原生函数等冷路径错误**不走返回类型**(避免把约 56B（libc++)/64B（libstdc++) 的 Error 编进热路径返回值),而是经
         // raise 写入本寄存器;VM 在 CALL 等安全点检查 has_error() 后用 take_error() 取出传播。
         // 寄存器置于执行上下文(而非 AriaVM):错误状态随上下文走,M6 协程期每个协程有独立的
         // 挂起错误(各自 raise/检查,互不串扰)。M1 单一主上下文,等价于 VM 级单寄存器。
         //   - raise:写入。断言当前无挂起错误(防嵌套 raise 未被取走就再 raise 的 bug)。
         //   - has_error / take_error / clear_error:VM 在安全点查询/取出/清空。take_error 取走即清空。
-        //   - reset() 一并清空(上下文复用前置干净)。Error 含 String,可移动;Opt<Error> 约 80B,非热路径。
+        //   - reset() 一并清空(上下文复用前置干净)。Error 含 String,可移动;Opt<Error> 约 64B（libc++)/72B（libstdc++),非热路径。
 
         void raise(Error err) noexcept {
             ASSERT(!pending_error_.has_value(),
@@ -192,7 +193,7 @@ namespace aria {
         // Buffer::reserve 注释)。活动帧的 slots 必为指入旧块的有效指针(非空),偏移在 [0, cap)
         // 内。若 reallocate 原地扩容(new_base == old_base)则无需重绑、直接返回 -- 当前
         // GC::reallocate 为「先分配新块再释放旧块」,new_base 不可能等于 old_base,此分支为防御性
-        // 保留,供将来支持原地扩容的 reallocate。M6 open upvalue 落地时在此一并重绑(同法:搬运前
+        // 保留,供将来支持原地扩容的 reallocate。M4 open upvalue 落地时在此一并重绑(同法:搬运前
         // 记偏移、搬运后重算;或改索引式 upvalue 免逐条修)。
         void grow_stack_() noexcept {
             const auto old_base = buf_.data();

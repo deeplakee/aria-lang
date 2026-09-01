@@ -102,8 +102,8 @@ namespace aria {
         u32 count_locals_deeper_than(u32 target_depth) const;
 
         // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_ 等）---
-        // enclosing_ 所有权由调用方局部 UPtr 持有（CodeGen::compile 入口 / compile_function 子）：
-        // 父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
+        // enclosing_ 所有权：入口 fn 上下文由 ModuleCtx 构造期 new、~ModuleCtx 沿链 delete；子上下文由 compile_function
+        // new（成功路径 delete、出错交 ~ModuleCtx 走链）。父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
         // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
         FunctionCtx*   enclosing_;
         ObjFunction*   fn_;

@@ -15,7 +15,7 @@ namespace aria {
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。
     //
-    // 生命周期：默认构造为空态；通过 tokenize(const SourceFile&) 传入源文件、
+    // 生命周期：默认构造为空态；通过 tokenize(SourceFile*) 传入源文件、
     // 初始化成员、扫描、扫完清空成员返回。Lexer 可复用（多次 tokenize 不同文件），
     // 故以指针持有 SourceFile（nullptr 表空态，引用无法「清空」）。
     //

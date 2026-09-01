@@ -33,8 +33,8 @@
 // 指针持有（CodeGen 持 `UPtr<ModuleCtx> mod_ctx_`，init_module 入口 make_unique、compile 遍历后
 // reset()、~CodeGen 自动释放），无需 move。
 //
-// 设计上 error_（首错）与 gc_（共享引用）留 CodeGen：前者是 pass 级状态（将来一次 pass 编译多
-// 模块时要「整个 pass 的第一个错」停住所有模块），后者跨编译/运行共享，均非模块状态。
+// 设计上 gc_（共享引用）留 CodeGen：跨编译/运行共享，非模块状态。首错经 AriaCompileException 抛
+// 出即 unwind（CodeGen 无 error_ 成员），天然「整个 pass 的第一个错停住」--将来一次 pass 编译多模块时模块 1 的异常即中断整 pass。
 
 #include "type.hpp"
 
@@ -53,7 +53,7 @@ namespace aria {
         // ASSERT m.entry() 非空（调用方须先 set_entry）。定义于 .cpp。
         explicit ModuleCtx(ObjModule& m);
 
-        ~ModuleCtx(); // 定义于 .cpp：ASSERT 游标已还原到入口后 delete current_fn_ctx_
+        ~ModuleCtx(); // 定义于 .cpp：沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个 delete（无论游标在哪都对）
 
         ModuleCtx(const ModuleCtx&)            = delete;
         ModuleCtx& operator=(const ModuleCtx&) = delete;
@@ -73,7 +73,7 @@ namespace aria {
         ObjModule* module_;
 
         // 当前函数上下文游标，兼拥有入口 fn 上下文（ctor new、dtor delete）。compile_function 进出函数
-        // 时摆动；析构时须已还原到入口（enclosing_==nullptr）。详见类注释「析构不变式」。
+        // 时摆动；析构沿 enclosing_ 链走，无论游标在哪都对（成功仅 entry，出错整条活动链 + entry）。
         FunctionCtx* current_fn_ctx_;
 
     private:

@@ -50,8 +50,8 @@ namespace aria {
         for (const Value& v: temp_roots_) {
             mark_value(v);
         }
-        // VM 根(M2 起用):解释器级共享状态,经 std::function 回调(当前为模块表)。
-        // Phase 4+ 再扩 Movement 根(值栈/调用帧/open upvalues/movements)。
+        // VM 根(M2 起用):经 std::function 回调,标 modules_ + main_ctx_ 值栈/活动帧 function/module。
+        // M4 再接 open upvalues,M6 升 Movement 为 Object。
         if (vm_roots_tracer_) {
             vm_roots_tracer_(*this);
         }

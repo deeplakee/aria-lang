@@ -8,7 +8,7 @@ namespace aria::utf8 {
     // Unicode 码点
     using codepoint = u32;
 
-    // 替换码点 U++FFFD，用于替换非法的 UTF-8 序列
+    // 替换码点 U+FFFD，用于替换非法的 UTF-8 序列
     inline constexpr codepoint kReplacementChar = 0xFFFD;
 
     // UTF-8 序列的字节长度上限

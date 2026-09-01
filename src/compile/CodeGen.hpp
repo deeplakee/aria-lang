@@ -275,7 +275,7 @@ namespace aria {
         void bind_pattern(PatternNode* pat);
 
         // --- 遍历入口（薄包装：accept 双分派）---
-        void emit_expr(ExprNode* n); // 防御性重置 lvalue_mode_ 为 Load 后 n->accept(*this)，留一值
+        void emit_expr(ExprNode* n); // ASSERT lvalue_mode_ == Load 后 n->accept(*this)，留一值
 
         void emit_stmt(StmtNode* n); // n->accept(*this)，不留值
 

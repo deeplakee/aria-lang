@@ -325,7 +325,7 @@ namespace aria {
 
     InterpretResult AriaVM::interpret_from_src(const StringView src) {
         // 合成入口模块 <script>（root=cwd，2 参 new_module）。
-        // 与 new_object，故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
+        // new_module 返回 GC 管理对象（经 new_object 分配），故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
         const auto module = new_module(gc_, "<script>");
         auto       guard  = gc_.make_guard(module);
 
@@ -364,7 +364,7 @@ namespace aria {
         // 配置根 stdlib / -L / 环境变量在 [1..] 不动)。直接赋值 [0],无 flag、无重建、reuse 安全
         // (覆盖旧值,不累积)。root_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用
         // 时退化为空串,磁盘模块 = 命中源根):空串由 resolve_module 裸名分支跳空根(line 87)处理,
-        // 故此处不解空。
+        // 故此处不判空。
         // 注:fn 必属某模块(module_ 非空,见 ObjFunction);[0] 槽位由构造时 cwd 占位恒在。
         source_roots_[0] = fn->module()->root()->view();
 

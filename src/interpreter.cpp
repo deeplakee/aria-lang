@@ -32,10 +32,8 @@ namespace aria {
         void run_repl(const LineReader& reader) {
             AriaVM vm;
             auto&  gc     = vm.gc();
-            auto   name   = new_string(gc, "<repl>");
-            auto   guard  = gc.make_guard(name);  // name 跨 new_module 内部 new_string(cwd)/new_object 保活
-            auto   module = new_module(gc, name); // root 缺省 = cwd（不可用时空串兜底）
-            guard.push(module);                   // 模块跨行保活：run() 间 GC 不回收 -> globals_ 持久
+            auto   module = new_module(gc, "<repl>"); // root 缺省 = cwd（不可用时空串兜底）
+            auto   guard  = gc.make_guard(module);
 
             String line;
             while (reader(line)) {

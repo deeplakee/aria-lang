@@ -62,4 +62,12 @@ namespace aria {
         return new_module(gc, name, root_str);
     }
 
+    ObjModule* new_module(GC& gc, const StringView name) {
+        // name_str 是本函数内部新建,工厂自行守卫跨下方 new_module 内部的 new_string(cwd) 与 new_object
+        // (工厂守「自己创建的」)。调用方传 StringView,无需手动建串根化。
+        ObjString* name_str = new_string(gc, name);
+        auto       guard    = gc.make_guard(name_str);
+        return new_module(gc, name_str);
+    }
+
 } // namespace aria

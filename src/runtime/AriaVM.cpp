@@ -324,12 +324,10 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret(StringView src) {
-        // 合成入口模块 <script>（root=cwd，2 参 new_module）。name 裸持跨 new_module 内部 new_string(cwd)
+        // 合成入口模块 <script>（root=cwd，2 参 new_module）。
         // 与 new_object，故 make_guard 根化；module 一并入根跨编译+执行（编译期 CodeGen::compile 亦自守）。
-        auto name_str = new_string(gc_, "<script>");
-        auto guard    = gc_.make_guard(name_str);
-        auto module   = new_module(gc_, name_str);
-        guard.push(module);
+        const auto module = new_module(gc_, "<script>");
+        auto       guard  = gc_.make_guard(module);
 
         // 字符串源 SourceFile（名 <script>，无文件身份）；方法内局部，存活至返回，Error 渲染不悬垂。
         SourceFile source{"<script>", "<script>", String{src}};

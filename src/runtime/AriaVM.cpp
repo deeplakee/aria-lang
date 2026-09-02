@@ -180,7 +180,7 @@ namespace aria {
         Result<Value, Error> numeric_op(const Value a, const Value b) {
             if (!(is_num(a) && is_num(b))) {
                 return runtime_err(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
-                                   op_symbol(Op), a.type_name(), b.type_name());
+                                   op_symbol(Op), type_name(a), type_name(b));
             }
             if (a.is_int() && b.is_int()) {
                 const auto x = a.as_int();
@@ -473,7 +473,7 @@ namespace aria {
 
     bool AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return ctx_fail(ctx, ErrorCode::CallNonCallable, "call non-callable {}", callee.type_name());
+            return ctx_fail(ctx, ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
         }
         Object* obj = callee.as_obj();
 
@@ -485,7 +485,7 @@ namespace aria {
             default:
                 return ctx_fail(ctx, ErrorCode::CallNonCallable,
                                 "call non-callable {} (M1 supports functions / native functions only)",
-                                to_string(obj->type()));
+                                obj->type_name());
         }
     }
 
@@ -775,8 +775,7 @@ namespace aria {
                     } else if (v.is_f64()) {
                         ctx.push(Value::from_f64(-v.as_f64()));
                     } else {
-                        return runtime_err(ErrorCode::InvalidOperand, "negate requires a number, got {}",
-                                           v.type_name());
+                        return runtime_err(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(v));
                     }
                     break;
                 }

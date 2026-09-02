@@ -11,7 +11,7 @@
 namespace aria {
 
     // Object 子类型标识(普通 enum class)。
-    // 转字符串见 to_string(ObjType);Object::type_ 持本类型,Object::type() 返回之。
+    // 转类型名见 to_string(ObjType) / Object::type_name();Object::type_ 持本类型,Object::type() 返回之。
     enum class ObjType : u8 {
         BASE,
         STRING,
@@ -29,7 +29,8 @@ namespace aria {
         EXCEPTION,
     };
 
-    // 对象类型可读名(如 "String"/"NativeFunction"),供日志与默认 to_string 渲染。
+    // 对象类型可读名(PascalCase,如 "String"/"NativeFn"/"Module"):ObjType 枚举的静态映射,
+    // 供日志、默认 to_string 渲染与 Object::type_name() 复用。单一来源--Object::type_name() 委托本函数。
     [[nodiscard]]
     constexpr StringView to_string(const ObjType kind) noexcept {
         switch (kind) {
@@ -40,7 +41,7 @@ namespace aria {
             case ObjType::FUNCTION:
                 return "Function";
             case ObjType::NATIVE_FN:
-                return "NativeFunction";
+                return "NativeFn";
             case ObjType::UPVALUE:
                 return "Upvalue";
             case ObjType::CLASS:
@@ -65,7 +66,6 @@ namespace aria {
                 UNREACHABLE();
         }
     }
-
 
     // Object 自前向声明:DerivedFromObj concept 在 class Object 定义之前引用 Object 名,
     // 需先声明(concept 不在此求值 is_base_of,延迟到实例化点 Object 已完整)。
@@ -99,6 +99,14 @@ namespace aria {
         [[nodiscard]]
         ObjType type() const noexcept {
             return type_;
+        }
+
+        // 对象类型可读名(PascalCase,如 "String"/"NativeFn"/"Module"):委托 to_string(ObjType)
+        // 取本对象 type_ 的枚举映射,供错误消息类型名打印与默认 to_string 渲染。非虚--类型名纯由 type_
+        // 决定,子类无需 override。与 Value 层自由函数 type_name(Value) 配合:后者 Obj 分支调本方法取子类型。
+        [[nodiscard]]
+        constexpr StringView type_name() const noexcept {
+            return aria::to_string(type_);
         }
 
         [[nodiscard]]
@@ -143,12 +151,12 @@ namespace aria {
             return this == other;
         }
 
-        // 对象的可读描述(Python 风格 `<Type at 0xaddr>`)。基类默认按 to_string(type_)
+        // 对象的可读描述(Python 风格 `<Type at 0xaddr>`)。基类默认按 type_name()
         // + 对象地址渲染;有更具体内容语义的子类型按需 override(如 ObjString 渲染字符内容)。
-        // 与 to_string(ObjType) 的区别:前者是类型名的静态枚举映射,本方法产出"这个对象"的描述。
+        // 与 type_name() 的区别:前者是类型名的静态枚举映射,本方法产出"这个对象"的描述。
         [[nodiscard]]
         virtual String to_string() const {
-            return std::format("<{} at {:p}>", aria::to_string(type_), util::to_void_ptr(this));
+            return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
 
@@ -194,7 +202,7 @@ namespace aria {
     };
 
     inline void log_obj_alloc(Object* obj) {
-        io::println("{:p} allocate bytes {} (Object {})", util::to_void_ptr(obj), obj->size(), to_string(obj->type()));
+        io::println("{:p} allocate bytes {} (Object {})", util::to_void_ptr(obj), obj->size(), obj->type_name());
     }
 
 } // namespace aria

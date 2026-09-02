@@ -46,6 +46,13 @@ namespace aria {
         return !(v.is_nil() || (v.is_bool() && !v.as_bool()));
     }
 
+    // 值的精确类型名(PascalCase,全项目统一约定):原语走 Value::type_name() constexpr 成员
+    // (Nil/Bool/Int/F64/Obj);Obj 走 obj->type_name() 取对象子类型(String/Function/NativeFn/...)。
+    // 区别于 Value::type_name() 成员--后者为 constexpr 粗分类,Obj 一律返 "Obj" 丢子类型;
+    // 本自由函数是**精确类型名**的统一入口,供错误消息类型名打印用。定义在 Value.cpp(需 Object 完整类型)。
+    [[nodiscard]]
+    StringView type_name(const Value& v) noexcept;
+
     [[nodiscard]]
     u32 value_hash(const Value& v) noexcept;
 

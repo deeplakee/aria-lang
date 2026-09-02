@@ -210,15 +210,15 @@ namespace aria::nanboxing {
         static constexpr const char* type_name(Type t) noexcept {
             switch (t) {
                 case Type::Nil:
-                    return "nil";
+                    return "Nil";
                 case Type::Bool:
-                    return "bool";
+                    return "Bool";
                 case Type::F64:
-                    return "f64";
+                    return "F64";
                 case Type::Int:
-                    return "int";
+                    return "Int";
                 case Type::Obj:
-                    return "obj";
+                    return "Obj";
             }
             return "?";
         }

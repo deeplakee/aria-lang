@@ -71,6 +71,14 @@ namespace aria {
 
     String format_string(const ObjString* obj) { return std::format("\"{}\"", util::escape_string(obj->view())); }
 
+    StringView type_name(const Value& v) noexcept {
+        // Obj 分派到对象子类型名;原语走 Value::type_name() constexpr 成员(PascalCase)。
+        if (v.is_obj()) {
+            return v.as_obj()->type_name();
+        }
+        return v.type_name();
+    }
+
     String format_value(const Value& v) {
         switch (v.type()) {
             case Value::Type::Nil:
@@ -116,7 +124,7 @@ namespace aria {
                     }
                     default:
                         // 未落地 / 用户类实例等:仅类型名 + 地址,绝不调用可重载的 to_string,杜绝重入 VM。
-                        return std::format("<{} at {:p}>", to_string(obj->type()), util::to_void_ptr(obj));
+                        return std::format("<{} at {:p}>", obj->type_name(), util::to_void_ptr(obj));
                 }
             }
         }

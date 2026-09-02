@@ -40,7 +40,7 @@ namespace aria {
     //        static_cast,标记逻辑直写进 lambda。[this] 仅一指针,落在 std::function SBO 内零堆分配)。
     //        模块表键为规范路径 ObjString*(intern),值为 ObjModule*(均装箱为 Value 入 AriaHashTable,
     //        白赚 trace)。collect 时 GC 调 lambda -> modules_.trace 标全部模块(进而 trace 各模块
-    //        name_/root_/entry_/globals_)。IMPORT 已部分落地(路径解析 + 模块表命中复用;磁盘加载/编译/run-once
+    //        name_/dir_/entry_/globals_)。IMPORT 已部分落地(路径解析 + 模块表命中复用;磁盘加载/编译/run-once
     //        未就绪);DEF/LOAD/STORE_GLOBAL 已落地。
     //
     //        VM 持有自己的 GC(值成员 gc_):每个 VM 一个 GC,无需外部注入。成员声明序
@@ -150,7 +150,7 @@ namespace aria {
         // .claude/reference/runtime/import-path-resolution.md)。模块表键为命中文件的绝对规范路径(weakly_canonical,
         // 源根不进键)。布局固定:source_roots_[0] = 入口槽,source_roots_[1..] = 配置根。
         //   - 构造时 [0] 占位为当前工作目录(前期源根),[1..] 推入编译器相对 stdlib 目录等配置根。
-        //   - run() 时 [0] 被入口模块 root_ 替换(root_ 恒非空 -- new_module 默认 cwd);[1..] 不动。
+        //   - run() 时 [0] 被入口模块 dir_ 替换(dir_ 恒非空 -- new_module 默认 cwd);[1..] 不动。
         //   - set_source_roots 替换 [1..](配置根),保留 [0](入口槽)。
         // 单一 List<String> 即可,无 flag / 无并列配置列表:[0] 槽位约定 + run() 原地替换。
         // 加载链路(磁盘加载 + AST->CodeUnit 编译 + VM 内嵌套执行模块体)未就绪,源根目前仅服务于
@@ -161,7 +161,7 @@ namespace aria {
             return source_roots_;
         }
 
-        // 覆盖配置源根(stdlib / -L / 环境变量等;不含入口槽 [0] -- 入口槽由 run() 按入口模块 root_
+        // 覆盖配置源根(stdlib / -L / 环境变量等;不含入口槽 [0] -- 入口槽由 run() 按入口模块 dir_
         // 原地替换,不归此管)。保留 source_roots_[0],替换 [1..]。测试 / 嵌入配置用:
         // 置空即清掉默认 stdlib(隔离);置 [dir...] 即指定自定义源根集合。
         void set_source_roots(List<String> roots) noexcept;
@@ -178,11 +178,12 @@ namespace aria {
         // 其 RETURN 按函数名 == <module> 判定后置 Loaded。
         // 成功返回模块对象(已入表 Loading,待 run-once 置 Loaded);失败返回 Error(被导入模块的
         // 编译期错误原样透传,含其文件位置)。
-        //   - key:模块表键(绝对规范路径 intern ObjString*)。**调用方须已根化**(跨本函数内
-        //     modules_.upsert 的 rehash 触 GC -- key 为 intern weak root 不保命)。
-        //   - path_spec:原始 import 串(报错消息用,如 "./helper");读盘用 key->view()。
+        //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作 modules_
+        //     表键,又作读盘路径。**调用方须已根化**(跨本函数内 modules_.upsert 的 rehash 触 GC --
+        //     intern weak root 不保命)。
+        //   - import_specifier:用户写的原始 import 串(报错消息用,如 "./helper")。
         // 越界检测(相对导入越出源根)本轮不做:文件能解析到即读。
-        Result<ObjModule*, Error> load_module(ObjString* key, StringView path_spec);
+        Result<ObjModule*, Error> load_module(ObjString* canonical_path, StringView import_specifier);
 
         // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
         // 失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）并按错误大类映射--
@@ -216,8 +217,8 @@ namespace aria {
         GC            gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
         Movement      main_ctx_;
         AriaHashTable modules_; // 模块表(M2:解释器级共享 + GC 根)
-        List<String>
-                source_roots_; // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 root_);[1..]=配置根(stdlib/-L/环境变量)
+        // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_);[1..]=配置根(stdlib/-L/环境变量)
+        List<String> source_roots_;
     };
 
     // VM 不可移动不变式的显式校验(类完成定义后断言):成员间持指向彼此/自身的指针

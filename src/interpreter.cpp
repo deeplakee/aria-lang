@@ -32,7 +32,7 @@ namespace aria {
         void run_repl(const LineReader& reader) {
             AriaVM vm;
             auto&  gc     = vm.gc();
-            auto   module = new_module(gc, "<repl>"); // root 缺省 = cwd（不可用时空串兜底）
+            auto   module = new_module(gc, "<repl>"); // dir 缺省 = cwd（不可用时空串兜底）
             auto   guard  = gc.make_guard(module);
 
             String line;

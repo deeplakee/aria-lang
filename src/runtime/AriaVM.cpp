@@ -52,17 +52,20 @@ namespace aria {
         // 名字经 intern 驻留(指针唯一),view() 为短串(8 字节),逐 RETURN 一次内容比较开销可忽略。
         constexpr StringView kModuleName = "<module>";
 
-        // 把 import 串解析为命中文件的绝对规范路径(模块表键)。设计见
+        // 把 import 串(specifier)解析为命中文件的绝对规范路径(模块表键)。设计见
         // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:键 = weakly_canonical(候选)
         // (解析已存在部分的符号链接、折叠 "."/".."、去冗余分隔符)。
-        //   - 相对(以 "./" / "../" 开头,或正是 "." / ".."):基 = 当前模块所在目录
-        //     (dirname(current_abs),current_abs = frame.module->abs_path() = root_ + "/" + name_ + ".aria";
-        //     .aria 后缀在末段,dirname 不受影响 -> 等价 dirname(root_ + "/" + name_));
+        //   - spec:import 串(用户写的 specifier,如 "./helper" / "lib/utils")。
+        //   - current_module_path:发出 import 的当前模块的绝对文件路径
+        //     (frame.module->abs_path() = dir_ + "/" + name_ + ".aria";dir_ = 模块文件所在目录、
+        //     name_ = 文件名去 .aria 后缀)。相对分支仅取其 dirname 作基(.aria 后缀在末段,
+        //     dirname 不受影响 -> 即 dir_);裸名分支不依赖此值。
+        //   - 相对(以 "./" / "../" 开头,或正是 "." / ".."):基 = 当前模块所在目录(dirname(current_module_path),
         //     单基,caller-local,不碰 source_roots,故相对导入永不逃逸到别的源根。
-        //     root_ 指针恒非空但内容可空:cwd 可用时 current_abs 为正常绝对路径(合成模块如
-        //     <script> 退化为 cwd,相对导入以 cwd 为基);cwd 不可用时 root_ 为空串 -> abs_path
-        //     返空串 -> 下方 current_abs.empty() 守卫触发,相对解析直接返 nullopt(拒绝锚定)。
-        //   - 裸名(无 ./ ../ 前缀):基 = source_roots(入口槽 [0] = 入口模块 root_、编译器相对
+        //     dir_ 指针恒非空但内容可空:cwd 可用时 current_module_path 为正常绝对路径(合成模块如
+        //     <script> 退化为 cwd,相对导入以 cwd 为基);cwd 不可用时 dir_ 为空串 -> abs_path
+        //     返空串 -> 下方 current_module_path.empty() 守卫触发,相对解析直接返 nullopt(拒绝锚定)。
+        //   - 裸名(无 ./ ../ 前缀):基 = source_roots(入口槽 [0] = 入口模块 dir_、编译器相对
         //     stdlib 目录等),逐个 exists-check,首个存在 <base>/<spec>.aria 者命中(对齐 Python
         //     sys.path 顺序搜索,先入源根者占坑)。
         //   - 末尾 ".aria" 可选:spec 末段以 ".aria" 结尾(段长 > 5)则剥离,查找时统一补回
@@ -71,7 +74,7 @@ namespace aria {
         //     跨根不碰撞、相对不逃逸。符号链接经 weakly_canonical 规避双加载。
         // 磁盘:每基一次 weakly_canonical + exists(裸名 = N 次 stat,相对 = 1 次);解析缓存待加(TODO)。
         // 越界/沙箱检测(相对导入越出源根)留待加载层:本函数不限制 ".." 折叠后的路径范围。
-        Opt<String> resolve_module(const StringView spec, const StringView current_abs,
+        Opt<String> resolve_module(const StringView spec, const StringView current_module_path,
                                    const List<String>& source_roots) {
             // 1. 剥末段 ".aria" 后缀(段长 > 5 且以 ".aria" 结尾),使 lib/math ≡ lib/math.aria。
             String spec_str{spec};
@@ -88,10 +91,10 @@ namespace aria {
             const bool is_relative = spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..";
             List<stdfs::path> bases;
             if (is_relative) {
-                if (current_abs.empty()) {
+                if (current_module_path.empty()) {
                     return std::nullopt; // 合成模块无绝对路径,无法相对解析
                 }
-                bases.push_back(stdfs::path{String{current_abs}}.parent_path());
+                bases.push_back(stdfs::path{String{current_module_path}}.parent_path());
             } else {
                 for (const auto& root: source_roots) {
                     if (!root.empty()) {
@@ -334,7 +337,7 @@ namespace aria {
 
     // 构造:成员初始化(gc_ 先,main_ctx_/modules_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC。
     // tracer 为 lambda:[this] 捕获,标记三类根:
-    //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/root_/entry_/globals_);
+    //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
     //   2) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
     //      是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时栈遍历为空,
     //      不会标到指向已回收对象的陈旧栈值;
@@ -355,7 +358,7 @@ namespace aria {
             }
         });
         // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 root_
-        //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 root_ 时裸名搜 cwd),
+        //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 dir_ 时裸名搜 cwd),
         //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
         //   resolve_module 裸名分支跳过空根(line 87),仅搜 [1..] 配置根,比拿 "." 锚到坏目录更诚实。
         source_roots_.push_back(fs::current_dir().value_or(""));
@@ -372,7 +375,7 @@ namespace aria {
     }
 
     void AriaVM::set_source_roots(List<String> roots) noexcept {
-        // 替换配置根 [1..],保留入口槽 [0](cwd 或 run() 设入的入口 root_)-- 入口槽归 run() 管。
+        // 替换配置根 [1..],保留入口槽 [0](cwd 或 run() 设入的入口 dir_)-- 入口槽归 run() 管。
         source_roots_.resize(1);
         for (auto& r: roots) {
             source_roots_.push_back(std::move(r));
@@ -411,7 +414,7 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_from_src(const StringView src) {
-        // 合成入口模块 <script>（root=cwd，2 参 new_module）。
+        // 合成入口模块 <script>（dir=cwd，2 参 new_module）。
         // new_module 返回 GC 管理对象（经 new_object 分配），故 make_guard 根化；module 一并入根跨编译+执行（编译期
         // CodeGen::compile 亦自守）。
         const auto module = new_module(gc_, "<script>");
@@ -431,15 +434,15 @@ namespace aria {
         }
         SourceFile source = std::move(loaded.value());
 
-        // 入口模块身份（dirname + basename）：name = basename 去 .aria、root = dirname(absolute(path))，
-        // 拆分收口于 fs::module_name_and_root。name 为空表路径非合法文件模块（目录 / 空 / 无文件名），
+        // 入口模块身份（dirname + basename）：name = basename 去 .aria、dir = dirname(absolute(path))，
+        // 拆分收口于 fs::module_name_and_dir。name 为空表路径非合法文件模块（目录 / 空 / 无文件名），
         // 报 LoadError 而非静默兜底--与读盘失败同属「加载不到合法源文件」。
-        auto [name_s, root_s] = fs::module_name_and_root(path);
+        auto [name_s, dir_s] = fs::module_name_and_dir(path);
         if (name_s.empty()) {
             io::println(stderr, "源文件路径无有效模块名: '{}'", path);
             return InterpretResult::LoadError;
         }
-        auto module = new_module(gc_, name_s, root_s); // 3 参：显式 root
+        auto module = new_module(gc_, name_s, dir_s); // 3 参：显式 dir
         auto guard  = gc_.make_guard(module);
 
         return interpret_run(source, *module);
@@ -448,13 +451,13 @@ namespace aria {
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
         // 前置编写(peek-not-pop)。
-        // 源根:入口槽 [0] 原地替换为入口模块 root_(对齐 Python sys.path[0] -- 入口源根居首,
+        // 源根:入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0] -- 即入口文件所在目录居首,
         // 配置根 stdlib / -L / 环境变量在 [1..] 不动)。直接赋值 [0],无 flag、无重建、reuse 安全
-        // (覆盖旧值,不累积)。root_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用
+        // (覆盖旧值,不累积)。dir_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用
         // 时退化为空串,磁盘模块 = 命中源根):空串由 resolve_module 裸名分支跳空根(line 87)处理,
         // 故此处不判空。
         // 注:fn 必属某模块(module_ 非空,见 ObjFunction);[0] 槽位由构造时 cwd 占位恒在。
-        source_roots_[0] = fn->module()->root()->view();
+        source_roots_[0] = fn->module()->dir()->view();
 
         main_ctx_.reset();
         main_ctx_.push(Value::from_obj(fn)); // callee 值躺在主帧槽 0(RETURN 时弹)
@@ -524,9 +527,10 @@ namespace aria {
         return false;
     }
 
-    Result<ObjModule*, Error> AriaVM::load_module(ObjString* key, const StringView path_spec) {
-        // IMPORT 未命中分支的加载层。key 已由调用方根化(IMPORT case 的 key_guard,跨本函数内 upsert)。
-        // path_spec = 原始 import 串(报错用);读盘用 key->view()(= 命中文件的绝对规范路径)。
+    Result<ObjModule*, Error> AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
+        // IMPORT 未命中分支的加载层。canonical_path 已由调用方根化(IMPORT case 的 canonical_path_guard,
+        // 跨本函数内 upsert)。canonical_path = 命中文件的绝对规范路径(intern ObjString*),一身二任:
+        // 既作 modules_ 表键,又作读盘路径。import_specifier = 用户写的原始 import 串(报错用)。
         //
         // 步骤:读盘 -> 派生模块身份 -> new_module(Loading)+ 自守 -> 入表占位 -> 编译(set_entry)。
         // **仅加载与编译**:模块体 run-once 不在此执行 -- 由调用方(IMPORT 分支)以普通函数调用进帧
@@ -535,27 +539,28 @@ namespace aria {
 
         // 1. 读盘:BOM 剥除 + CRLF->LF + UTF-8 校验(见 SourceFile::from_path)。resolve_module 已 exists-check,
         //    理论上必成功,但读盘/编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
-        auto loaded_src = SourceFile::from_path(key->view());
+        auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src.has_value()) {
-            return std::unexpected(
-                    errorf(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", path_spec));
+            return std::unexpected(errorf(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",
+                                          import_specifier));
         }
         SourceFile source = std::move(loaded_src.value());
 
-        // 2. 派生模块身份 {name=stem, root=dirname}(同入口模块 fs::module_name_and_root 约定):
-        //    abs_path() = root_ + "/" + name_ + ".aria" 还原 canonical key,相对导入基(dirname)正确。
-        auto [name_s, root_s] = fs::module_name_and_root(key->view());
+        // 2. 派生模块身份 {name=stem, dir=dirname}(同入口模块 fs::module_name_and_dir 约定):
+        //    abs_path() = dir_ + "/" + name_ + ".aria" 还原 canonical key,相对导入基(dirname)正确。
+        auto [name_s, dir_s] = fs::module_name_and_dir(canonical_path->view());
         if (name_s.empty()) {
-            return std::unexpected(errorf(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", path_spec));
+            return std::unexpected(
+                    errorf(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier));
         }
 
-        // 3. 建模块(Loading 态,工厂内部 intern name/root 并自守)+ 自守跨 upsert/编译。
-        auto module = new_module(gc_, name_s, root_s);
+        // 3. 建模块(Loading 态,工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
+        auto module = new_module(gc_, name_s, dir_s);
         auto guard  = gc_.make_guard(module);
 
-        // 4. 入表占位(Loading):供循环导入命中半初始化对象。key 已由调用方根化;module 由上方 guard 根化。
+        // 4. 入表占位(Loading):供循环导入命中半初始化对象。canonical_path 已由调用方根化;module 由上方 guard 根化。
         //    upsert rehash 触 GC 时两者皆安全。upsert 单参返 Entry*,再写其 value(同 DEF_GLOBAL 用法)。
-        const auto mod_entry = modules_.upsert(Value::from_obj(key));
+        const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
         mod_entry->value     = Value::from_obj(module);
 
         // 5. 编译:SourceFile -> 入口 ObjFunction(名 <module>,见 kModuleName),CodeGen::init_module
@@ -908,30 +913,32 @@ namespace aria {
                     //     故命中/未命中两分支栈效应统一为 [..., module],绑定交后续 DEF_GLOBAL / 值填槽。
                     //     无递归 run_()。
                     //
-                    // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。key 经 new_string intern 驻留
+                    // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。canonical_path 经 new_string intern 驻留
                     //   (weak root,不保命),跨 modules_.find(无 GC)与未命中分支内 load_module 的
-                    //   modules_.upsert(rehash 触 GC)须守 -- 下方 key_guard 跨全程根化 key。
+                    //   modules_.upsert(rehash 触 GC)须守 -- 下方 canonical_path_guard 跨全程根化 canonical_path。
                     //   命中分支取回/加载层产出的 module 与 entry 经 modules_ 根可达,非移动 GC 故 ctx.push(栈
                     //   溢出增长走 Buffer 重分配)期间指针稳定,无需守卫;入栈后另经值栈根可达。
                     ObjString* path = read_name(frame);
-                    // 当前模块的绝对文件路径(ObjModule::abs_path = root_ + "/" + name_ + ".aria"),
-                    // 供 resolve_module 相对分支取 dirname 作基:dirname(abs_path) = root_ + "/" +
-                    // dirname(name_) = 当前模块所在目录(.aria 后缀在末段,dirname 不受影响)。
-                    // 裸名分支不依赖此值。root_ 指针恒非空但内容可空(cwd 不可用时空串兜底):
-                    // 此时 abs_path 返空串,resolve_module 相对分支判空直接返 nullopt(line 81)。
-                    const auto key_str = resolve_module(path->view(), frame.module->abs_path(), source_roots_);
-                    if (!key_str) {
+                    // 当前模块的绝对文件路径(ObjModule::abs_path = dir_ + "/" + name_ + ".aria"),
+                    // 供 resolve_module 相对分支取 dirname 作基:dirname(abs_path) = dir_ (.aria 后缀在末段,
+                    // dirname 不受影响)= 当前模块所在目录。裸名分支不依赖此值。dir_ 指针恒非空但内容可空
+                    // (cwd 不可用时空串兜底):此时 abs_path 返空串,resolve_module 相对分支判空直接返 nullopt(line 81)。
+                    const auto canonical_path_str =
+                            resolve_module(path->view(), frame.module->abs_path(), source_roots_);
+                    if (!canonical_path_str) {
                         return runtime_err(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
                     }
-                    auto key       = new_string(gc_, *key_str);
-                    auto key_guard = gc_.make_guard(key); // 跨 find / load_module 内 upsert(rehash 触 GC)
-                    if (const auto module_entry = modules_.find(Value::from_obj(key)); module_entry != nullptr) {
+                    auto canonical_path = new_string(gc_, *canonical_path_str);
+                    auto canonical_path_guard =
+                            gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
+                    if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
+                        module_entry != nullptr) {
                         // 命中(Loading 半初始化 / Loaded 完整)复用:压模块值,绑定交后续 DEF_GLOBAL / 值填槽。
                         ctx.push(module_entry->value);
                         break;
                     }
                     // 未命中:加载链路 -- 读盘 -> 编译 -> 入表 Loading(见 load_module),不在此执行模块体。
-                    auto loaded = load_module(key, path->view());
+                    auto loaded = load_module(canonical_path, path->view());
                     if (!loaded) {
                         return runtime_err(loaded.error());
                     }

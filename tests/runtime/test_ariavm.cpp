@@ -70,20 +70,20 @@ namespace {
 
     // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
     // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根,调用方跨 GC 点持有
-    // m 须自行再守卫。默认 "<script>"(M1 机制测试不关心模块归属,临时模块;root_ 走 cwd,run() 替换
+    // m 须自行再守卫。默认 "<script>"(M1 机制测试不关心模块归属,临时模块;dir_ 走 cwd,run() 替换
     // source_roots_[0])。需要真实模块归属用 aria::new_function 显式传模块。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
-        return new_module(gc, nm); // root 缺省 -> cwd(失败时空串兜底)
+        return new_module(gc, nm); // dir 缺省 -> cwd(失败时空串兜底)
     }
 
-    // 显式源根版:intern + 守卫 name,先守 root 再 new_string(name),调 new_module(3-arg)。
-    ObjModule* make_module(GC& gc, StringView name, ObjString* root) {
-        auto guard = gc.make_guard(root); // root 先入根:下方 new_string(name) 可能 collect
+    // 显式目录版:intern + 守卫 name,先守 dir 再 new_string(name),调 new_module(3-arg)。
+    ObjModule* make_module(GC& gc, StringView name, ObjString* dir) {
+        auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
         guard.push(nm);
-        return new_module(gc, nm, root);
+        return new_module(gc, nm, dir);
     }
 
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
@@ -112,14 +112,14 @@ namespace {
     // ---- IMPORT 路径解析测试辅助(全量磁盘版:exists-check + 绝对规范键)----
     //
     // 设计(见 .claude/reference/runtime/import-path-resolution.md):IMPORT 把 specifier 经 resolve_module 解析为
-    // 命中文件的绝对规范路径(weakly_canonical)作模块表键。ObjModule 持 (root_, name_):
-    //   - root_ = 所属源根目录(如 base);name_ = 相对源根的路径(如 lib/utils)。
-    //   - 模块绝对路径(= 模块表键)由 root_ + name_ 合成:root_ + "/" + name_ + ".aria"。
-    //   - run() 把入口模块 root_ 播种为 source_roots_[0];相对导入基 = root_ + dirname(name_)。
+    // 命中文件的绝对规范路径(weakly_canonical)作模块表键。ObjModule 持 (dir_, name_):
+    //   - dir_ = 模块文件所在目录(如 base);name_ = 文件名去 .aria 后缀(stem)。
+    //   - 模块绝对路径(= 模块表键)由 dir_ + name_ 合成:dir_ + "/" + name_ + ".aria"。
+    //   - run() 把入口模块 dir_ 播种为 source_roots_[0];相对导入基 = dirname(abs_path) = dir_。
     // 故测试需:
     //   1. 用真实临时文件让 resolve_module 的 exists-check 命中(testing::TempDir 下建空 .aria);
     //   2. 按解析出的绝对键预注册合成模块入 modules_;
-    //   3. 给入口/目标模块设 root_(源根目录 base)+ name_(相对路径)。
+    //   3. 给入口/目标模块设 dir_(所在目录 base)+ name_(文件名 stem)。
     // macOS 下 testing::TempDir() 常落在 /var/... -> /private/var/... 符号链接后,而
     // resolve_module 经 weakly_canonical 解析符号链接,故基准须先规范化,保证预注册键与
     // resolve_module 输出逐字节一致。
@@ -170,16 +170,16 @@ namespace {
         return found;
     }
 
-    // 造带源根的模块(name + root):name = 相对源根的路径,root = 所属源根目录(intern 的 ObjString*,非空)。
-    // 妥善处理临时根:工厂不再替调用方守卫入参,故 name 先 intern 再 guard,root 亦 guard(分配 new_object
-    // 顶部的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 root(本函数内
-    // new_string(name) 分配时 root 须已入根)。new_module 本身对 nullptr root 会默认 cwd,但本
-    // 辅助的用例都需精确控制源根,故一律显式传 root。
-    ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* root) {
+    // 造带目录的模块(name + dir):name = 文件名 stem,dir = 模块文件所在目录(intern 的 ObjString*,非空)。
+    // 妥善处理临时根:工厂不再替调用方守卫入参,故 name 先 intern 再 guard,dir 亦 guard(分配 new_object
+    // 顶部的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 dir(本函数内
+    // new_string(name) 分配时 dir 须已入根)。new_module 本身对 nullptr dir 会默认 cwd,但本
+    // 辅助的用例都需精确控制目录,故一律显式传 dir。
+    ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* dir) {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
-        guard.push(root);
-        return new_module(gc, nm, root);
+        guard.push(dir);
+        return new_module(gc, nm, dir);
     }
 
     // ---- 原生函数测试辅助 ----
@@ -637,20 +637,20 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    // 源根 = base:入口与目标模块均属此源根(root_ = base),name_ 为相对 base 的路径。
-    auto root_ptr   = new_string(gc, base);
-    auto root_guard = gc.make_guard(root_ptr);
+    // 源根 = base:入口与目标模块均在此目录(dir_ = base),name_ 为相对 base 的路径。
+    auto dir_ptr   = new_string(gc, base);
+    auto dir_guard = gc.make_guard(dir_ptr);
     // 目标文件 base/lib/utils.aria -> 其规范绝对路径即模块表键 K(resolve 命中此键)。
     const auto key_str = touch_aria(base, "lib/utils.aria");
     auto       key     = new_string(gc, key_str);
-    root_guard.push(key);
-    auto m = make_module(gc, "lib/utils", root_ptr); // 目标:root=base, name=lib/utils
-    root_guard.push(m);                              // 保 m 过 modules_.upsert 的 hash 分配
+    dir_guard.push(key);
+    auto m = make_module(gc, "lib/utils", dir_ptr); // 目标:dir=base, name=lib/utils
+    dir_guard.push(m);                              // 保 m 过 modules_.upsert 的 hash 分配
     m->set_state(ObjModule::ModuleState::Loading);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto      mod       = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
+    auto      mod       = new_disk_module(gc, "main", dir_ptr); // 入口:dir=base, name=main
     auto      fn        = new_script(gc, mod);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
@@ -675,12 +675,12 @@ TEST_F(AriaVMStress, ImportNotFoundErrors) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto      root_ptr   = new_string(gc, base); // 入口源根 = base(run 播种 source_roots[0] = base)
-    auto      root_guard = gc.make_guard(root_ptr);
-    auto      fn         = new_script(gc, new_disk_module(gc, "main", root_ptr));
-    auto      fn_guard   = gc.make_guard(fn);
-    auto&     cu         = fn->unit();
-    const u16 path_idx   = cu.add_constant(Value::from_obj(new_string(gc, "nope/missing")));
+    auto      dir_ptr   = new_string(gc, base); // 入口源根 = base(run 播种 source_roots[0] = base)
+    auto      dir_guard = gc.make_guard(dir_ptr);
+    auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr));
+    auto      fn_guard  = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "nope/missing")));
     emit_import(cu, path_idx);
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -697,17 +697,17 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto       root_ptr   = new_string(gc, base);
-    auto       root_guard = gc.make_guard(root_ptr);
-    const auto key_str    = touch_aria(base, "lib/utils.aria");
-    auto       key        = new_string(gc, key_str);
-    root_guard.push(key);
-    auto m = make_module(gc, "lib/utils", root_ptr);
-    root_guard.push(m);
+    auto       dir_ptr   = new_string(gc, base);
+    auto       dir_guard = gc.make_guard(dir_ptr);
+    const auto key_str   = touch_aria(base, "lib/utils.aria");
+    auto       key       = new_string(gc, key_str);
+    dir_guard.push(key);
+    auto m = make_module(gc, "lib/utils", dir_ptr);
+    dir_guard.push(m);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto      fn        = new_script(gc, new_disk_module(gc, "main", root_ptr));
+    auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr));
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/./utils")));
@@ -723,28 +723,28 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), m); // 折 "." 后命中同一模块
 }
 
-// IMPORT 相对路径解析:导入函数所属模块 root_ = base、name_ = lib/main,"./helper" 相对当前
-// 模块目录(root_ + dirname(name_) = base/lib)解析 -> base/lib/helper.aria,命中预注册的该绝对键模块。
-// 相对导入基 = root_ + dirname(name_),caller-local,不碰 source_roots。
+// IMPORT 相对路径解析:导入函数所属模块 dir_ = base、name_ = lib/main,"./helper" 相对当前
+// 模块目录(dir_ + dirname(name_) = base/lib)解析 -> base/lib/helper.aria,命中预注册的该绝对键模块。
+// 相对导入基 = dirname(abs_path) = dir_ + dirname(name_),caller-local,不碰 source_roots。
 TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
 
     vm.set_source_roots({});
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    // 源根 = base:导入方/入口模块 root_ = base、name_ = lib/main(相对基 = base/lib)。
-    auto root_ptr   = new_string(gc, base);
-    auto root_guard = gc.make_guard(root_ptr);
+    // 源根 = base:导入方/入口模块 dir_ = base、name_ = lib/main(相对基 = base/lib)。
+    auto dir_ptr   = new_string(gc, base);
+    auto dir_guard = gc.make_guard(dir_ptr);
     // 目标 base/lib/helper.aria -> 绝对键 K。
     const auto key_str = touch_aria(base, "lib/helper.aria");
     auto       key     = new_string(gc, key_str);
-    root_guard.push(key);
-    auto helper = make_module(gc, "lib/helper", root_ptr);
-    root_guard.push(helper);
+    dir_guard.push(key);
+    auto helper = make_module(gc, "lib/helper", dir_ptr);
+    dir_guard.push(helper);
     auto he   = vm.modules().upsert(Value::from_obj(key));
     he->value = Value::from_obj(helper);
 
-    auto      mod       = new_disk_module(gc, "lib/main", root_ptr);
+    auto      mod       = new_disk_module(gc, "lib/main", dir_ptr);
     auto      fn        = new_script(gc, mod);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
@@ -771,24 +771,24 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto root_ptr   = new_string(gc, base); // 入口源根 = base
-    auto root_guard = gc.make_guard(root_ptr);
+    auto dir_ptr   = new_string(gc, base); // 入口源根 = base
+    auto dir_guard = gc.make_guard(dir_ptr);
     // stdlib 第二根 = base/stdlib(建目录);文件只放 stdlib,base 下不放 -> 强制 fall-through。
     const auto stdlib_dir = std::filesystem::weakly_canonical(std::filesystem::path{base} / "stdlib").string();
     std::filesystem::create_directories(stdlib_dir);
     auto stdlib_ptr = new_string(gc, stdlib_dir); // 目标模块所属源根 = stdlib
-    root_guard.push(stdlib_ptr);
+    dir_guard.push(stdlib_ptr);
     const auto key_str = touch_aria(stdlib_dir, "lib/math.aria"); // = base/stdlib/lib/math.aria
     vm.set_source_roots({stdlib_dir});
 
     auto key = new_string(gc, key_str);
-    root_guard.push(key);
-    auto target = make_module(gc, "lib/math", stdlib_ptr); // 目标:root=stdlib, name=lib/math
-    root_guard.push(target);
+    dir_guard.push(key);
+    auto target = make_module(gc, "lib/math", stdlib_ptr); // 目标:dir=stdlib, name=lib/math
+    dir_guard.push(target);
     auto te   = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
 
-    auto      fn        = new_script(gc, new_disk_module(gc, "main", root_ptr)); // 入口:root=base
+    auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr)); // 入口:dir=base
     auto      fn_guard  = gc.make_guard(fn); // fn(+所属 module)裸持跨下方 new_string(path/alias)(stress collect)
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math"))); // 裸路径
@@ -813,17 +813,17 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto       root_ptr   = new_string(gc, base);
-    auto       root_guard = gc.make_guard(root_ptr);
-    const auto key_str    = touch_aria(base, "lib/math.aria");
-    auto       key        = new_string(gc, key_str);
-    root_guard.push(key);
-    auto m = make_module(gc, "lib/math", root_ptr);
-    root_guard.push(m);
+    auto       dir_ptr   = new_string(gc, base);
+    auto       dir_guard = gc.make_guard(dir_ptr);
+    const auto key_str   = touch_aria(base, "lib/math.aria");
+    auto       key       = new_string(gc, key_str);
+    dir_guard.push(key);
+    auto m = make_module(gc, "lib/math", dir_ptr);
+    dir_guard.push(m);
     auto me   = vm.modules().upsert(Value::from_obj(key));
     me->value = Value::from_obj(m);
 
-    auto      fn        = new_script(gc, new_disk_module(gc, "main", root_ptr));
+    auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr));
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math.aria")));
@@ -839,8 +839,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), m); // 剥 .aria 后命中同一文件键
 }
 
-// IMPORT 相对路径 + .aria 后缀组合:导入方 root_ = base、name_ = lib/main,"./math.aria"
-// 相对当前模块目录(root_ + dirname(name_) = base/lib)解析 -> 剥 .aria 再补回 ->
+// IMPORT 相对路径 + .aria 后缀组合:导入方 dir_ = base、name_ = lib/main,"./math.aria"
+// 相对当前模块目录(dir_ + dirname(name_) = base/lib)解析 -> 剥 .aria 再补回 ->
 // base/lib/math.aria,命中预注册目标。与 ImportStripsAriaSuffix(裸名)互补:验证 .aria 剥离在
 // 相对路径上同样生效。
 TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
@@ -849,17 +849,17 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto       root_ptr   = new_string(gc, base);
-    auto       root_guard = gc.make_guard(root_ptr);
-    const auto key_str    = touch_aria(base, "lib/math.aria");
-    auto       key        = new_string(gc, key_str);
-    root_guard.push(key);
-    auto target = make_module(gc, "lib/math", root_ptr);
-    root_guard.push(target);
+    auto       dir_ptr   = new_string(gc, base);
+    auto       dir_guard = gc.make_guard(dir_ptr);
+    const auto key_str   = touch_aria(base, "lib/math.aria");
+    auto       key       = new_string(gc, key_str);
+    dir_guard.push(key);
+    auto target = make_module(gc, "lib/math", dir_ptr);
+    dir_guard.push(target);
     auto te   = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
 
-    auto      mod       = new_disk_module(gc, "lib/main", root_ptr);
+    auto      mod       = new_disk_module(gc, "lib/main", dir_ptr);
     auto      fn        = new_script(gc, mod);
     auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
@@ -876,21 +876,21 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), target); // 相对 + 剥 .aria -> base/lib/math
 }
 
-// 源根列表在 run() 时按 [入口模块 root_, stdlib 目录] 播种:入口模块 root_ = base、name_ = main
+// 源根列表在 run() 时按 [入口模块 dir_, stdlib 目录] 播种:入口模块 dir_ = base、name_ = main
 // -> 入口源根 = base(绝对路径);stdlib 置空隔离 -> source_roots = [base]。
-// 对齐 Python sys.path[0] = 入口脚本所在目录(此处入口源根即 root_,键 = 绝对规范路径)。
+// 对齐 Python sys.path[0] = 入口脚本所在目录(此处入口源根即 dir_,键 = 绝对规范路径)。
 TEST_F(AriaVMStress, SourceRootSeededFromEntryModuleDir) {
 
     vm.set_source_roots({}); // 隔离:仅入口源根
     auto&      gc   = vm.gc();
     const auto base = test_canon_dir();
 
-    auto  root_ptr   = new_string(gc, base);
-    auto  root_guard = gc.make_guard(root_ptr);
-    auto  mod        = new_disk_module(gc, "main", root_ptr); // 入口:root=base, name=main
-    auto  fn         = new_script(gc, mod);
-    auto  fn_guard   = gc.make_guard(fn);
-    auto& cu         = fn->unit();
+    auto  dir_ptr   = new_string(gc, base);
+    auto  dir_guard = gc.make_guard(dir_ptr);
+    auto  mod       = new_disk_module(gc, "main", dir_ptr); // 入口:dir=base, name=main
+    auto  fn        = new_script(gc, mod);
+    auto  fn_guard  = gc.make_guard(fn);
+    auto& cu        = fn->unit();
     cu.emit_op(OpCode::HALT, 1);
 
     const auto out = vm.run(fn);
@@ -899,7 +899,7 @@ TEST_F(AriaVMStress, SourceRootSeededFromEntryModuleDir) {
     EXPECT_EQ(vm.source_roots()[0], base); // 入口源根 = base(绝对)
 }
 
-// 源根列表:默认 <script> 合成模块经 make_module 持 root_ = 当前工作目录(保证非空),
+// 源根列表:默认 <script> 合成模块经 make_module 持 dir_ = 当前工作目录(保证非空),
 // run() 用其原地替换入口槽 [0](构造时占位的 cwd);stdlib 置空隔离 -> source_roots = [cwd]。
 // 对齐 Python sys.path[0] = 入口脚本所在目录 -- 合成入口无明确目录时退化为 cwd 占位。
 TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
@@ -907,7 +907,7 @@ TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
     vm.set_source_roots({}); // 隔离:仅入口槽,免默认 stdlib
     auto& gc = vm.gc();
 
-    auto  fn = new_function(gc, nullptr, 0); // make_module -> <script>, root_ = cwd
+    auto  fn = new_function(gc, nullptr, 0); // make_module -> <script>, dir_ = cwd
     auto& cu = fn->unit();
     cu.emit_op(OpCode::HALT, 1);
 

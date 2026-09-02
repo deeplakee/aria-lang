@@ -24,18 +24,18 @@ namespace {
 
     // intern + 守卫 name,再调 new_module。工厂不再替调用方守卫入参,故本助手显式守卫 name 跨
     // new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放)。
-    // 2 参(无 root):root 取 cwd。3 参:root 须由调用方传入(本助手先守 root 再 new_string(name))。
+    // 2 参(无 dir):dir 取 cwd。3 参:dir 须由调用方传入(本助手先守 dir 再 new_string(name))。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
         return new_module(gc, nm);
     }
 
-    ObjModule* make_module(GC& gc, StringView name, ObjString* root) {
-        auto guard = gc.make_guard(root); // root 先入根:下方 new_string(name) 可能 collect
+    ObjModule* make_module(GC& gc, StringView name, ObjString* dir) {
+        auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
         guard.push(nm);
-        return new_module(gc, nm, root);
+        return new_module(gc, nm, dir);
     }
 
     // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 new_function(aria::)。工厂不再守卫入参,
@@ -126,35 +126,35 @@ TEST(ObjModule, UnrootedModuleSwept) {
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-// new_module 2 参重载时 root_ 取当前工作目录(指针恒非空),与 std::filesystem::current_path 一致。
-TEST(ObjModule, RootDefaultsToCwd) {
+// new_module 2 参重载时 dir_ 取当前工作目录(指针恒非空),与 std::filesystem::current_path 一致。
+TEST(ObjModule, DirDefaultsToCwd) {
     GC   gc;
     auto m = make_module(gc, "lib/utils");
-    ASSERT_NE(m->root(), nullptr);
-    EXPECT_EQ(m->root()->view(), std::filesystem::current_path().string());
+    ASSERT_NE(m->dir(), nullptr);
+    EXPECT_EQ(m->dir()->view(), std::filesystem::current_path().string());
 }
 
-// abs_path = root_ + "/" + name_ + ".aria"(= VM 模块表查重键形式)。
-TEST(ObjModule, AbsPathComposesRootNameAria) {
+// abs_path = dir_ + "/" + name_ + ".aria"(= VM 模块表查重键形式)。
+TEST(ObjModule, AbsPathComposesDirNameAria) {
     GC   gc;
-    auto root = new_string(gc, "/proj");
-    auto m    = make_module(gc, "lib/utils", root);
+    auto dir = new_string(gc, "/proj");
+    auto m   = make_module(gc, "lib/utils", dir);
     EXPECT_EQ(m->abs_path(), "/proj/lib/utils.aria");
 }
 
-// name_ 为空(合成顶层)时 abs_path 仅返 root_(无文件名)。
-TEST(ObjModule, AbsPathForEmptyNameIsRoot) {
+// name_ 为空(合成顶层)时 abs_path 仅返 dir_(无文件名)。
+TEST(ObjModule, AbsPathForEmptyNameIsDir) {
     GC   gc;
-    auto root = new_string(gc, "/proj");
-    auto m    = make_module(gc, "", root);
+    auto dir = new_string(gc, "/proj");
+    auto m   = make_module(gc, "", dir);
     EXPECT_EQ(m->abs_path(), "/proj");
 }
 
-// 显式传 root 时 root_ 用所传值(不被 cwd 默认覆盖)。
-TEST(ObjModule, ExplicitRootRespected) {
+// 显式传 dir 时 dir_ 用所传值(不被 cwd 默认覆盖)。
+TEST(ObjModule, ExplicitDirRespected) {
     GC   gc;
-    auto root = new_string(gc, "/stdlib");
-    auto m    = make_module(gc, "math", root);
-    EXPECT_EQ(m->root(), root);
+    auto dir = new_string(gc, "/stdlib");
+    auto m   = make_module(gc, "math", dir);
+    EXPECT_EQ(m->dir(), dir);
     EXPECT_EQ(m->abs_path(), "/stdlib/math.aria");
 }

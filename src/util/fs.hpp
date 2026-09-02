@@ -229,19 +229,19 @@ namespace aria::fs {
 
     // 把文件路径拆为入口模块身份 {name, root}：
     //   - name = basename 去 .aria 后缀（path::stem() 剥最后一个扩展名，.aria 文件即得模块名）；
-    //   - root = dirname(absolute(path))（所属源根目录，使模块 abs_path = root + "/" + name + ".aria" 还原原文件、
+    //   - dir = dirname(absolute(path))（模块文件所在目录，使模块 abs_path = dir + "/" + name + ".aria" 还原原文件、
     //     相对导入以同级目录为基）。absolute 失败时退化为原路径（best effort）。
     // name 可能为空（路径为目录 / 空 / 无文件名），调用方据空 name 判定加载错误（非合法文件模块）。
     // 纯路径工具，不读盘、不校验存在性--配合 SourceFile::from_path 的 I/O 结果使用。
     [[nodiscard]]
-    inline Pair<String, String> module_name_and_root(const StringView path) {
+    inline Pair<String, String> module_name_and_dir(const StringView path) {
         stdfs::path abs_p{String{path}};
         if (const auto abs = absolute(path); abs.has_value()) {
             abs_p = stdfs::path{*abs};
         }
         String name = abs_p.filename().stem().string(); // 剥最后一个扩展名（.aria -> 模块名）
-        String root = abs_p.parent_path().string();     // dirname
-        return {std::move(name), std::move(root)};
+        String dir  = abs_p.parent_path().string();     // dirname
+        return {std::move(name), std::move(dir)};
     }
 } // namespace aria::fs
 

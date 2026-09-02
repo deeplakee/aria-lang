@@ -54,7 +54,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:682-728` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表 Loading -> 嵌套 `run_` run-once -> Loaded） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp:83-102`、`AriaVM.cpp:231-247,262-267` |
-| `ObjModule` 对象 + 状态机 + `root_`/`name_`/`abs_path()` | 已实现（`root_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
+| `ObjModule` 对象 + 状态机 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
 | VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp:72-81,117-119`、`AriaVM.cpp:231-247` |
 | fs 原语 `program_dir`（推导 stdlib） | 已实现，**被 VM 构造调用** | `src/util/fs.hpp:200-206` |
 | fs 原语（read_file/absolute/resolve/current_dir） | 已实现，加载链路未调用 | `src/util/fs.hpp:160-231` |
@@ -104,16 +104,17 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ### 路径解析（已实现，磁盘 + 绝对键）
 
-`resolve_module(StringView spec, StringView current_abs, const List<String>& source_roots)`
-定义于 `src/runtime/AriaVM.cpp:63-107`（匿名命名空间），返回 `Opt<String>`（命中文件的绝对
+`resolve_module(StringView spec, StringView current_module_path, const List<String>& source_roots)`
+定义于 `src/runtime/AriaVM.cpp`（匿名命名空间），返回 `Opt<String>`（命中文件的绝对
 规范路径），由调用方经 `new_string` intern 驻留。规则要点：
 
 - **`.aria` 后缀剥离**：spec 末段长度 > 5 且以 `.aria` 结尾时剥离，使 `lib/math` ≡
   `lib/math.aria`；查找时统一补回 `.aria`。
 - **相对判定**：spec 以 `./` / `../` 开头，或正是 `.` / `..`。
-- **相对路径**：基 = `dirname(current_abs)`（单一基，caller-local，**不碰 `source_roots`**），
-  故相对导入永不逃逸到别的源根。`current_abs` = `frame.module->abs_path()` = `root_ + "/" + name_ +
-  ".aria"`（`.aria` 在末段，`dirname` 不受影响）；`root_` 恒非空（`new_module` 默认 cwd），合成模块
+- **相对路径**：基 = `dirname(current_module_path)`（单一基，caller-local，**不碰 `source_roots`**），
+  故相对导入永不逃逸到别的源根。`current_module_path` = `frame.module->abs_path()` =
+  `dir_ + "/" + name_ + ".aria"`（`dir_` = 模块文件所在目录、`name_` = stem；`.aria` 在末段，
+  `dirname` 不受影响 -> 即 `dir_`）；`dir_` 恒非空（`new_module` 默认 cwd），合成模块
   （如 `<script>`）退化为 cwd，故恒可相对解析。
 - **裸名**：基 = `source_roots`（逐个 exists-check，首个 `<base>/<spec>.aria` 存在者命中）。
 - **逐基**：`weakly_canonical(base / "<spec>.aria")` -> `exists` 则其 `string()` 为键；都不
@@ -129,9 +130,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 1. `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path`（`read_name` 见
    `AriaVM.cpp:40-43`，良构前提是常量必为 intern 的 `ObjString*`）。
-2. 以 `frame.module->abs_path()`（= `root_ + "/" + name_ + ".aria"`，`ObjModule::abs_path`）为
-   当前模块绝对路径，直接内联传入 `resolve_module`。`root_` 恒非空（`new_module` 默认 cwd）故恒非空；
-   相对分支取 `dirname` 作基，`.aria` 后缀在末段不影响 `dirname`（等价 `dirname(root_ + "/" + name_)`）。
+2. 以 `frame.module->abs_path()`（= `dir_ + "/" + name_ + ".aria"`，`ObjModule::abs_path`）为
+   当前模块绝对路径，直接内联传入 `resolve_module`。`dir_` 恒非空（`new_module` 默认 cwd）故恒非空；
+   相对分支取 `dirname` 作基，`.aria` 后缀在末段不影响 `dirname`（name_ 单段 stem -> 即 `dir_`）。
 3. `resolve_module(path->view(), frame.module->abs_path(), source_roots_)` 解析（`AriaVM.cpp:643`）：
    - **失败**（`nullopt`，无源根命中）：返回 `Error{ModuleNotFound, "module not found: 'PATH'
      (no matching source root)"}`（`AriaVM.cpp:644-647`）。
@@ -170,8 +171,8 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - `AriaVM.cpp` 构造：`source_roots_[0]` 占位为当前工作目录（前期源根）；由 `fs::program_dir()`
   推导 stdlib 源根（约定 `<exe_dir>/../share/aria/lib`，经 `weakly_canonical` 规范化），非空则
   `push_back` 进 `[1..]`（stdlib 即一个配置源根）。
-- `AriaVM.cpp` `run()`：`source_roots_[0] = 入口模块 root_->view()`（原地替换构造时的 cwd 占位），
-  `[1..]` 不动。`root_` 恒非空（`new_module` 默认 cwd），无需空检查。无 flag / 无重建——`[0]` 槽位
+- `AriaVM.cpp` `run()`：`source_roots_[0] = 入口模块 dir_->view()`（原地替换构造时的 cwd 占位），
+  `[1..]` 不动。`dir_` 恒非空（`new_module` 默认 cwd），无需空检查。无 flag / 无重建——`[0]` 槽位
   约定 + 原地赋值，reuse 安全不累积旧入口根。`set_source_roots` 经 `resize(1)` 保留 `[0]`、替换
   `[1..]`（置空即清掉默认 stdlib）。**`source_roots_` 已被 IMPORT 的裸名解析消费**。
 - `AriaVM.hpp:24-34`、`AriaVM.cpp:231-247`：模块表 `modules_` 经 VM 根 tracer 注册进 GC
@@ -182,16 +183,16 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 `src/object/ObjModule.hpp:14-34`：模块 = 命名空间（非类），一源文件 = 一模块。
 
-- `name_`：intern 相对源根的路径（如 `lib/utils`），兼作显示名（`to_string` / 报错渲染）；
-  与 `root_` 合成模块绝对路径；**不单独参与模块表查重**。
-- `root_`：intern 所属源根目录（如 `/proj`）。模块绝对路径（= 模块表查重键）= `root_ + "/" +
-  name_ + ".aria"`；相对导入基 = `root_ + "/" + dirname(name_)`；`run()` 把入口模块 `root_`
-  播种为 `source_roots_[0]`。加载层落地后由 loader 在 `resolve_module` 命中时定（命中哪个源根
-  即哪个 `root_`）；**恒非空** -- `new_module` 未显式传 `root` 时取当前工作目录作默认（合成模块
-  如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对导入基、进源根播种）。构造注入、
-  不可变(无 setter)。`root()`（`ObjModule.hpp`）。
-- `abs_path()`（`ObjModule.hpp`）：模块的绝对文件路径 = `root_ + "/" + name_ + ".aria"`（=
-  模块表查重键形式）；`name_` 为 nullptr 或空串（合成顶层）则仅返 `root_`；`root_` 防御性可空
+- `name_`：intern 文件名去 `.aria` 后缀/stem（如 `utils`，**恒为单段**，不含 `/`），兼作显示名
+  （`to_string` / 报错渲染）；与 `dir_` 合成模块绝对路径；**不单独参与模块表查重**。
+- `dir_`：intern 模块文件所在目录（如 `/proj/lib`）。模块绝对路径（= 模块表查重键）= `dir_ + "/" +
+  name_ + ".aria"`；相对导入基 = `dirname(abs_path())` = `dir_`（name_ 单段 stem）；`run()` 把入口模块 `dir_`
+  播种为 `source_roots_[0]`（即入口文件所在目录）。加载层在 `resolve_module` 命中后由
+  `fs::module_name_and_dir` 按命中文件绝对规范路径定（dirname）；**恒非空** -- `new_module` 未显式传
+  `dir` 时取当前工作目录作默认（合成模块如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对
+  导入基、进源根播种）。构造注入、不可变(无 setter)。`dir()`（`ObjModule.hpp`）。
+- `abs_path()`（`ObjModule.hpp`）：模块的绝对文件路径 = `dir_ + "/" + name_ + ".aria"`（=
+  模块表查重键形式）；`name_` 为 nullptr 或空串（合成顶层）则仅返 `dir_`；`dir_` 防御性可空
   （`new_module` 保证非空）。返回 `String`（即时合成，不驻留）。IMPORT 取当前模块 `abs_path()` 供
   `resolve_module` 相对分支 `dirname` 作基（`.aria` 在末段，`dirname` 不受影响）。
 - `entry_`：模块体顶层语句编进的 `ObjFunction`（arity 0、匿名；主入口名 `<main>` / 导入名 `<module>`），导入时 run-once；
@@ -199,9 +200,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - `globals_`：模块级绑定表，`LOAD/STORE/DEF_GLOBAL` 操作，惰性分配。
 - `state_`：`enum class ModuleState : u8 { Loading, Loaded }`（`ObjModule.hpp`）。
   构造置 `Loading`；未入表 = 未加载（隐含第三态，不入枚举）。
-- `trace`（`ObjModule.cpp`）：标 `name_` + `root_` + `entry_` + `globals_`。
-- `new_module` 工厂（`ObjModule.cpp`）：`root` 缺省（`nullptr`）时 `new_string(fs::current_dir())`
-  取 cwd 作默认 -> `root_` 恒非空。`name` 先入临时根（再 `new_string(cwd)` 可能 collect），`root`
+- `trace`（`ObjModule.cpp`）：标 `name_` + `dir_` + `entry_` + `globals_`。
+- `new_module` 工厂（`ObjModule.cpp`）：`dir` 缺省（`nullptr`）时 `new_string(fs::current_dir())`
+  取 cwd 作默认 -> `dir_` 恒非空。`name` 先入临时根（再 `new_string(cwd)` 可能 collect），`dir`
   随后入根，跨 `new_object` 顶 `maybe_collect` 保命（intern 驻留池是 weak root，不保命）。
 - 地址哈希型，`final` 不再派生；`equals` 保持默认地址相等（模块按身份判等）。
 
@@ -242,16 +243,16 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - `ImportNotFoundErrors`：无源根命中 `nope/missing.aria` -> `ModuleNotFound`。
 - `ImportNormalizesAbsolutePath`：`lib/./utils` 经 `weakly_canonical` 折 `.` -> 命中
   `lib/utils.aria`。
-- `ImportNormalizesRelativePath`：导入方 `root_`=`base`、`name_`=`lib/main` + `./helper` ->
-  相对基 `base/lib` -> `base/lib/helper.aria`。
+- `ImportNormalizesRelativePath`：导入方 `dir_`=`base/lib`、`name_`=`main` + `./helper` ->
+  相对基 `dirname(abs_path)` = `base/lib` = `dir_` -> `base/lib/helper.aria`。
 - `ImportBareSearchesSourceRoots`：入口根无 `lib/math.aria` -> 裸名 fall-through 到 stdlib
   第二根命中（证明裸名用 `source_roots` 列表，非当前模块目录）。
 - `ImportStripsAriaSuffix`：裸名 `lib/math.aria` -> 剥后缀再补回 -> 命中 `lib/math.aria`。
 - `ImportStripsAriaSuffixOnRelative`：相对 `./math.aria` -> 剥后缀 -> 命中 `lib/math.aria`
   （与裸名版互补）。
 - `SourceRootSeededFromEntryModuleDir` / `SourceRootSeededWithCwdForScriptEntry`：`run()`
-  把入口模块 `root_` 原地写入入口槽 `[0]`（磁盘入口 `root_` = base -> `[base]`；合成
-  `<script>` 经 `make_module` 注入 `root_` = cwd -> `[cwd]`，stdlib 置空时列表大小为 1）。
+  把入口模块 `dir_` 原地写入入口槽 `[0]`（磁盘入口 `dir_` = base -> `[base]`；合成
+  `<script>` 经 `make_module` 注入 `dir_` = cwd -> `[cwd]`，stdlib 置空时列表大小为 1）。
 
 其余覆盖：`tests/test_parser.cpp`（`import "math" as m;` 解析）、`tests/test_ast.cpp`
 （`ImportStmtNode` dump）、`tests/test_astvisitor.cpp`（visitor 桩）、`tests/test_lexer.cpp`
@@ -262,10 +263,10 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 IMPORT 未命中分支经 `load_module`（`src/runtime/AriaVM.cpp` 私有成员）已补齐，各步现状：
 
 1. exists-check **已由 `resolve_module` 完成**；目录包 `index.aria` 查找后续在此补。
-2. `SourceFile::from_path(key)` 读文件（已处理 BOM/CRLF/UTF-8）——**已衔接**。
+2. `SourceFile::from_path(canonical_path)` 读文件（已处理 BOM/CRLF/UTF-8）——**已衔接**。
 3. `Compiler{gc_}.compile(source, module, "<module>")` 经 Lexer -> Parser -> CodeGen 编译（`AstVisitor` 编译器子类 `CodeGen` 已就绪）——**已衔接**。
 4. `new_module`(Loading) + `modules_.upsert` 入表占位（供循环导入命中半初始化对象）。身份
-   派生用 `fs::module_name_and_root(key)` = {name=stem, root=dirname}（同入口约定，`abs_path()`
+   派生用 `fs::module_name_and_dir(canonical_path)` = {name=stem, dir=dirname}（同入口约定，`abs_path()`
    还原 canonical key）——**已衔接**。
 5. `set_entry` 由 `CodeGen::init_module` 编译期挂入 -> IMPORT 未命中分支以 `entry` 作**普通 0 参函数调用**进帧交主循环执行(run-once),其 RETURN 按函数名 == `<module>` 判定模块体帧后置 `set_state(Loaded)` + 压回模块对象——**已衔接**。
 6. 相对导入越出源根的检测（`weakly_canonical` 折叠 `..` 后据源根列表判定报错）——**本轮未做**，留待后续。

@@ -33,15 +33,16 @@
 
 ## 统一解析原语
 
-`resolve_module(specifier, current_abs, source_roots) -> Opt<String>`，相对与裸名是同一原语，
+`resolve_module(spec, current_module_path, source_roots) -> Opt<String>`，相对与裸名是同一原语，
 仅基目录列表不同：
 
-- **相对导入**（以 `./` / `../` 开头，或正是 `.` / `..`）：基 = `dirname(current_abs)`
+- **相对导入**（以 `./` / `../` 开头，或正是 `.` / `..`）：基 = `dirname(current_module_path)`
   （单一基，caller-local，**不碰 `source_roots`**），故相对导入永不逃逸到别的源根。
-  其中 `current_abs` = `frame.module->abs_path()` = `root_ + "/" + name_ + ".aria"`（见
-  `ObjModule::abs_path`，`.aria` 在末段，`dirname` 不受影响，等价 `dirname(root_ + "/" + name_)`）
-  = `root_ + "/" + dirname(name_)` = 当前模块所在目录。`root_` 恒非空（`new_module` 默认 cwd），
-  故 `current_abs` 恒非空 -- 合成模块（如 `<script>`，`root_` = cwd）相对导入以 cwd 为基。
+  其中 `current_module_path` = `frame.module->abs_path()` = `dir_ + "/" + name_ + ".aria"`（见
+  `ObjModule::abs_path`，`dir_` = 模块文件所在目录、`name_` = 文件名去 `.aria` 后缀/stem）。
+  `.aria` 后缀在末段，`dirname` 不受影响 -> `dirname(dir_ + "/" + name_ + ".aria")` = `dir_`
+  （name_ 为单段 stem，无 `/`）= 当前模块所在目录。`dir_` 恒非空（`new_module` 默认 cwd），
+  故 `current_module_path` 恒非空 -- 合成模块（如 `<script>`，`dir_` = cwd）相对导入以 cwd 为基。
 - **裸名导入**（无 `./` `../` 前缀）：基 = `source_roots`（见下「裸名解析顺序」），逐个
   exists-check，首个存在 `<base>/<spec>.aria` 者命中。
 - 返回命中文件的绝对规范路径 = 模块表键；都不存在即 `nullopt`（-> `ModuleNotFound`）。
@@ -50,16 +51,16 @@
 
 `source_roots`（`AriaVM::source_roots_`，`List<String>`，按顺序）：
 
-1. **入口槽 `source_roots_[0]`**：入口模块的 `root_`（其所属源根目录，对齐 Python
+1. **入口槽 `source_roots_[0]`**：入口模块的 `dir_`（即入口文件所在目录，对齐 Python
    `sys.path[0]`；整次运行固定，不随导入方文件变化）。VM 构造时先以**当前工作目录**占住
-   `[0]`（前期源根），`run()` 时用入口模块 `root_` 原地替换（前置：入口模块 `root_` 非空）。
+   `[0]`（前期源根），`run()` 时用入口模块 `dir_` 原地替换（前置：入口模块 `dir_` 非空）。
 2. **编译器相对 stdlib 目录**（约定，VM 构造时由 `fs::program_dir()` 推导，如
    `<exe_dir>/../share/aria/lib`，经 `weakly_canonical` 规范化后推入 `source_roots_[1..]`；
    确切路径待定）。
 3. **其余源根**（`-L` 标志、`ARIA_PATH` 环境变量等）—— 之后再加（同样入 `[1..]`）。
 
 存储为单一 `source_roots_`（`List<String>`），按槽位约定分区，无 flag / 无并列配置列表：
-`[0]` = 入口槽（构造占 cwd，`run()` 换成入口 `root_`），`[1..]` = 配置根（stdlib / `-L` /
+`[0]` = 入口槽（构造占 cwd，`run()` 换成入口 `dir_`），`[1..]` = 配置根（stdlib / `-L` /
 环境变量）。`set_source_roots(List<String>)` 替换 `[1..]`、保留 `[0]`（`resize(1)` 后追加），
 故 reuse 安全不累积旧入口根。`set_source_roots` 置空即清掉默认 stdlib（隔离）；置
 `[dir...]` 即指定自定义源根集合。
@@ -77,14 +78,15 @@
 
 ## 相对路径 = 相对当前模块目录
 
-`./`、`../`、`.`、`..` 开头的路径相对**当前模块所在目录**解析：基 = `dirname(current_abs)`
-（`current_abs` = `frame.module->abs_path()` = `root_ + "/" + name_ + ".aria"`，见
-`ObjModule::abs_path`）。`.aria` 后缀在末段，`dirname` 不受影响（等价于 `dirname(root_ + "/" +
-name_)`）。`root_` 恒非空（`new_module` 默认 cwd），故 `current_abs` 恒非空 -- 合成模块（如
-测试桩 `<script>`，`root_` = cwd）相对导入以 cwd 为基。
+`./`、`../`、`.`、`..` 开头的路径相对**当前模块所在目录**解析：基 = `dirname(current_module_path)`
+（`current_module_path` = `frame.module->abs_path()` = `dir_ + "/" + name_ + ".aria"`，见
+`ObjModule::abs_path`；`dir_` = 模块文件所在目录、`name_` = 文件名去 `.aria` 后缀/stem）。
+`.aria` 后缀在末段，`dirname` 不受影响 -> `dirname(dir_ + "/" + name_ + ".aria")` = `dir_`
+（name_ 为单段 stem，无 `/`）。`dir_` 恒非空（`new_module` 默认 cwd），故 `current_module_path`
+恒非空 -- 合成模块（如测试桩 `<script>`，`dir_` = cwd）相对导入以 cwd 为基。
 
-例：当前模块 `root_` = `/proj`、`name_` = `lib/main`（abs_path = `/proj/lib/main.aria`），
-`import "./helper"` -> 基 `dirname(/proj/lib/main.aria)` = `/proj/lib` -> `/proj/lib/helper.aria`。
+例：当前模块 `dir_` = `/proj/lib`、`name_` = `main`（abs_path = `/proj/lib/main.aria`），
+`import "./helper"` -> 基 `dirname(/proj/lib/main.aria)` = `/proj/lib` = `dir_` -> `/proj/lib/helper.aria`。
 
 ## 文件查找约定
 
@@ -94,24 +96,27 @@ name_)`）。`root_` 恒非空（`new_module` 默认 cwd），故 `current_abs` 
 - **目录包**（`<base>/<spec>/index.aria`）属后期特性，当前不支持：找不到
   `<base>/<spec>.aria` 即跳过该基 / `ModuleNotFound`。
 
-## ObjModule 的 root_ / name_ 字段
+## ObjModule 的 dir_ / name_ 字段
 
-`ObjModule` 持 `root_` + `name_`（均 `ObjString*`，intern），模块的绝对路径由二者合成
-（不再单独存 `abs_path_` 字段，由 `abs_path()` 方法即时合成）：
+`ObjModule` 持 `dir_` + `name_`（均 `ObjString*`，intern），模块的绝对路径由二者合成
+（不再单独存 `abs_path_` 字段，由 `abs_path()` 方法即时合成）。二者即模块文件绝对路径的
+dirname / stem 切分，由 `fs::module_name_and_dir` 按命中文件的绝对规范路径做（不依赖源根概念）：
 
-- `root_` = 模块所属的**源根目录**（如 `/proj`）；`name_` = 相对源根的路径（如 `lib/utils`）。
-- 模块绝对路径（= 模块表查重键）= `root_ + "/" + name_ + ".aria"`，由 `abs_path()` 返回；
-  相对导入基目录 = `dirname(abs_path())` = `root_ + "/" + dirname(name_)`；`run()` 把入口模块
-  `root_` 播种为 `source_roots_[0]`。
-- 加载层落地后由 loader 在 `resolve_module` 命中时定 `root_`（命中哪个源根即哪个）、`name_`
-  （specifier 相对该源根的路径）；**`root_` 恒非空** -- `new_module` 未显式传 `root` 时取当前
-  工作目录作默认（合成模块如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对导入基、
-  进源根播种）。
+- `dir_` = 模块文件所在目录（如 `/proj/lib`）；`name_` = 文件名去 `.aria` 后缀/stem（如 `utils`）。
+  **`name_` 恒为单段 stem**（`module_name_and_dir` 取 `filename().stem()`，不含 `/`）--早期文档
+  把 `dir_` 描述为「所属源根」、`name_` 为「相对源根的多段路径」如 `lib/utils`，那是设计意图而非
+  实现现状；`name_` 不支持多段。
+- 模块绝对路径（= 模块表查重键）= `dir_ + "/" + name_ + ".aria"`，由 `abs_path()` 返回；
+  相对导入基目录 = `dirname(abs_path())` = `dir_`（name_ 单段 stem，`dirname(dir/name.aria)` = `dir`）；
+  `run()` 把入口模块 `dir_` 播种为 `source_roots_[0]`（即入口文件所在目录，对齐 Python `sys.path[0]`）。
+- 加载层在 `resolve_module` 命中后由 `fs::module_name_and_dir` 按命中文件绝对规范路径定 `dir_`（dirname）
+  与 `name_`（stem）；**`dir_` 恒非空** -- `new_module` 未显式传 `dir` 时取当前工作目录作默认
+  （合成模块如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对导入基、进源根播种）。
 - `name_` 兼作显示名（`to_string` / 报错渲染），不单独参与模块表查重。
 
-`run()` 时：`source_roots_[0]` = 入口模块 `root_`（原地替换构造时的 cwd 占位），`[1..]`
-不动。`root_` 恒非空（`new_module` 默认 cwd），故无需空检查；合成入口模块（如测试桩
-`<script>`）`root_` = cwd，入口槽即 cwd 退化值。
+`run()` 时：`source_roots_[0]` = 入口模块 `dir_`（原地替换构造时的 cwd 占位），`[1..]`
+不动。`dir_` 恒非空（`new_module` 默认 cwd），故无需空检查；合成入口模块（如测试桩
+`<script>`）`dir_` = cwd，入口槽即 cwd 退化值。
 
 ## 模块表命中与未命中
 
@@ -143,15 +148,15 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 
 
 ## 示例
 
-设入口模块 `root_` = `/proj`、`name_` = `main`（abs_path = `/proj/main.aria`，入口源根 =
-`/proj`），stdlib = `/stdlib`，当前模块 `root_` = `/proj`、`name_` = `a/b`
+设入口模块 `dir_` = `/proj`、`name_` = `main`（abs_path = `/proj/main.aria`，入口源根 =
+`/proj` = 入口 `dir_`），stdlib = `/stdlib`，当前模块 `dir_` = `/proj/a`、`name_` = `b`
 （abs_path = `/proj/a/b.aria`）：
 
 | import 串 | 类别 | 基 | 绝对键 |
 | :--- | :--- | :--- | :--- |
 | `"lib/utils"` | 裸名 | source_roots | `/proj/lib/utils.aria`（入口根命中） |
 | `"lib/utils.aria"` | 裸名，剥 `.aria` | source_roots | `/proj/lib/utils.aria` |
-| `"./helper"` | 相对 | `dirname(cur)` = `/proj/a` | `/proj/a/helper.aria` |
+| `"./helper"` | 相对 | `dirname(cur)` = `/proj/a` = `dir_` | `/proj/a/helper.aria` |
 | `"../x"` | 相对 | `/proj/a`，`..` 折叠 | `/proj/x.aria` |
 | `"lib/./utils"` | 裸名，`weakly_canonical` 折 `.` | source_roots | `/proj/lib/utils.aria` |
 | `"math"`（入口根无，stdlib 有） | 裸名，fall-through | source_roots | `/stdlib/math.aria` |
@@ -163,8 +168,8 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 
 ## 当前边界与后续
 
 - **已落地**：绝对键解析（`resolve_module` + `weakly_canonical` + 逐基 exists-check）、
-  `source_roots` 播种（`[0]` 入口槽 cwd 占位 + `run()` 换入口 `root_`、`[1..]` 配置根 stdlib）、
-  `ObjModule::root_`/`name_` + `abs_path()`（合成绝对路径，`root_` 恒非空 -- `new_module` 默认
+  `source_roots` 播种（`[0]` 入口槽 cwd 占位 + `run()` 换入口 `dir_`、`[1..]` 配置根 stdlib）、
+  `ObjModule::dir_`/`name_` + `abs_path()`（合成绝对路径，`dir_` 恒非空 -- `new_module` 默认
   cwd）、`.aria` 后缀剥离、模块表命中复用（含 `Loading` 半初始化）、循环导入语义、**未命中分支
   加载链路**（`load_module`：读文件 → `Compiler::compile` 编为被导入模块 CodeUnit（入口名 `<module>`、
   `set_entry`）→ 入表 Loading；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其

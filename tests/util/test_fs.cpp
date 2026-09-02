@@ -129,25 +129,25 @@ TEST(FsResolve, FullyMissingPathLexicalNormalized) {
 }
 
 // ---------------------------------------------------------------------------
-// module_name_and_root
+// module_name_and_dir
 // ---------------------------------------------------------------------------
 
-TEST(FsModuleNameAndRoot, StripsAriaExtension) {
+TEST(FsModuleNameAndDir, StripsAriaExtension) {
     auto cwd = fs::current_dir();
     ASSERT_TRUE(cwd.has_value());
-    const auto path   = (std::filesystem::path{*cwd} / "lib" / "utils.aria").string();
-    auto [name, root] = fs::module_name_and_root(path);
+    const auto path  = (std::filesystem::path{*cwd} / "lib" / "utils.aria").string();
+    auto [name, dir] = fs::module_name_and_dir(path);
     EXPECT_EQ(name, "utils");
-    EXPECT_EQ(root, (std::filesystem::path{*cwd} / "lib").string());
+    EXPECT_EQ(dir, (std::filesystem::path{*cwd} / "lib").string());
 }
 
-TEST(FsModuleNameAndRoot, NoExtensionKeepsWholeName) {
-    auto [name, root] = fs::module_name_and_root("foo");
+TEST(FsModuleNameAndDir, NoExtensionKeepsWholeName) {
+    auto [name, dir] = fs::module_name_and_dir("foo");
     EXPECT_EQ(name, "foo");
 }
 
-TEST(FsModuleNameAndRoot, DirectoryPathYieldsEmptyName) {
+TEST(FsModuleNameAndDir, DirectoryPathYieldsEmptyName) {
     // 目录路径（无文件名）-> name 为空，调用方据此判定加载错误
-    auto [name, root] = fs::module_name_and_root(testing::TempDir());
+    auto [name, dir] = fs::module_name_and_dir(testing::TempDir());
     EXPECT_TRUE(name.empty());
 }

@@ -76,8 +76,6 @@ add_library(aria_core STATIC
         src/object/ObjNativeFn.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
-        src/interpreter.cpp
-        src/interpreter.hpp
 )
 
 target_include_directories(aria_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
@@ -108,7 +106,7 @@ if (ARIA_DEBUG_TRACE_EXECUTION)
     target_compile_definitions(aria_core PUBLIC DEBUG_TRACE_EXECUTION)
 endif ()
 
-add_executable(aria src/main.cpp)
+add_executable(aria src/main.cpp src/interpreter.cpp src/interpreter.hpp)
 target_include_directories(aria PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aria PRIVATE aria_core)
 target_link_libraries(aria PRIVATE isocline)

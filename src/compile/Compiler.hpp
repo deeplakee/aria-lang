@@ -52,14 +52,16 @@ namespace aria {
         Compiler(Compiler&&) noexcept            = delete;
         Compiler& operator=(Compiler&&) noexcept = delete;
 
-        // 编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 <main>，主入口模块体包装，已
+        // 编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 entry_name，模块体包装，已
         // module.set_entry）。
         //   - source 为调用方拥有/加载的实际源文件；本类只读其 content()，不拥有、不重建。调用方须保证
         //     source 在返回 Error 的使用期间存活且地址不变（Error 的 SourceLoc 指向 source；成功路径不依赖它）。
         //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
+        //   - entry_name：入口函数名。主入口模块传 <main>（默认）；运行期导入模块传 <module>（由 VM 加载层
+        //     调用时显式传入，区别于主入口）。
         // 成功返回入口 ObjFunction*（归属 gc，须在 gc 存活期间使用）；失败返回首错 Error。
         [[nodiscard]]
-        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule& module);
+        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule& module, StringView entry_name = "<main>");
 
     private:
         GC& gc_;

@@ -85,10 +85,13 @@ namespace aria {
         // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
         explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
 
-        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0，名 <main>）。
+        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名 entry_name）。
+        //   - entry_name：入口函数名（intern）。主入口模块传 <main>（默认）；运行期导入模块传 <module>
+        //     （由 VM 加载层调用，区别于主入口，对齐 CPython 模块体 code object 同名）。
         // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
         // Error。
-        Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module);
+        Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module,
+                                            StringView entry_name = "<main>");
 
         ~CodeGen() override                    = default;
         CodeGen(const CodeGen&)                = delete;
@@ -158,9 +161,9 @@ namespace aria {
         // 遍历后 reset() 即释放（无裸 delete）。~CodeGen 自动释放作安全网。编译期间非空，编译外为空。
         UPtr<ModuleCtx> mod_ctx_;
 
-        // 模块初始化（compile 入口调用）：建入口函数 + set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
+        // 模块初始化（compile 入口调用）：建入口函数（名 entry_name）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
         // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）。
-        ObjFunction* init_module(ObjModule& module);
+        ObjFunction* init_module(ObjModule& module, StringView entry_name);
 
         // 当前函数上下文游标（= mod_ctx_->current_fn_ctx_）与当前 CodeUnit（由游标派生 =
         // &fn_->unit()，随 compile_function 摆动游标自动切换）。编译外（mod_ctx_ 为空）不可调用。

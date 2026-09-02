@@ -167,8 +167,22 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 主循环:驱动 main_ctx_ 直到 返回/错误。状态全部取自上下文,可重入风格。
+        // 主循环:驱动 main_ctx_ 直到顶层返回/错误/显式停止。状态全部取自上下文。
+        // 模块体 run-once 经 IMPORT 未命中分支以普通函数调用进帧(入口名固定 <module>),
+        // 由本循环执行,其 RETURN 按函数名判定模块体帧,置该模块 Loaded 并压回模块对象 -- 无递归调用。
         Result<Value, Error> run_();
+
+        // IMPORT 未命中分支的加载层:把已解析命中的磁盘模块读盘 -> 派生身份 -> new_module(Loading)
+        // -> 入表占位 -> 编译(入口名 <module>,见 AriaVM.cpp kModuleName)-> 返回模块对象(已 set_entry)。
+        // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
+        // 其 RETURN 按函数名 == <module> 判定后置 Loaded。
+        // 成功返回模块对象(已入表 Loading,待 run-once 置 Loaded);失败返回 Error(被导入模块的
+        // 编译期错误原样透传,含其文件位置)。
+        //   - key:模块表键(绝对规范路径 intern ObjString*)。**调用方须已根化**(跨本函数内
+        //     modules_.upsert 的 rehash 触 GC -- key 为 intern weak root 不保命)。
+        //   - path_spec:原始 import 串(报错消息用,如 "./helper");读盘用 key->view()。
+        // 越界检测(相对导入越出源根)本轮不做:文件能解析到即读。
+        Result<ObjModule*, Error> load_module(ObjString* key, StringView path_spec);
 
         // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
         // 失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）并按错误大类映射--

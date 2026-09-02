@@ -121,11 +121,12 @@ IMPORT 以绝对键查 `modules_`：
   - `Loaded` = 完整模块。
   - `Loading` = 循环导入命中的「半初始化对象」——按文法「允许循环导入，命中正在初始化的
     模块返回半初始化对象」直接用，不报错。
-- **未命中**（文件解析命中但模块未入表）：按设计需嵌入层按路径加载文件 -> 词法 / 语法 /
-  编译 -> 入表 run-once（`bytecode-instruction-set.md §4.15`）。该链路（磁盘加载 +
-  AST->CodeUnit 编译器 + VM 内嵌套执行模块体）尚未就绪，故暂只向 stderr 打印
-  `[aria] module loading not implemented yet: 'PATH'` 并返回 `ErrorCode::ModuleNotFound`
-  （表里预注册的模块仍可被命中复用，故解析 / 命中路径可测）。
+- **未命中**（文件解析命中但模块未入表）：调 `load_module(key, path)` 得模块(Loading，已编译 `set_entry`)，
+  IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行
+  一个函数,由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 `Loaded`、
+  改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`。**无递归 `run_()`**。被导入模块的
+  编译期/运行期错误原样透传(含其文件位置);读盘失败/name 空报 `ErrorCode::ModuleNotFound`。详见
+  `import-handling-overview.md`「加载层接入位置」。
 - **解析失败**（无源根命中 `<base>/<spec>.aria`）：返回 `ErrorCode::ModuleNotFound`
   （`module not found: 'PATH' (no matching source root)`）。
 
@@ -161,11 +162,13 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 
 
 ## 当前边界与后续
 
-- **未实现**：磁盘加载链路（读文件 → 词法/语法 → 编译为被导入模块的 CodeUnit → VM 内嵌套 run-once 入表）。编译器（CodeGen）本身已就绪，缺的是加载编排；文件解析命中但模块未入表即 `ModuleNotFound`。
 - **已落地**：绝对键解析（`resolve_module` + `weakly_canonical` + 逐基 exists-check）、
   `source_roots` 播种（`[0]` 入口槽 cwd 占位 + `run()` 换入口 `root_`、`[1..]` 配置根 stdlib）、
   `ObjModule::root_`/`name_` + `abs_path()`（合成绝对路径，`root_` 恒非空 -- `new_module` 默认
-  cwd）、`.aria` 后缀剥离、模块表命中复用（含 `Loading` 半初始化）、循环导入语义。
+  cwd）、`.aria` 后缀剥离、模块表命中复用（含 `Loading` 半初始化）、循环导入语义、**未命中分支
+  加载链路**（`load_module`：读文件 → `Compiler::compile` 编为被导入模块 CodeUnit（入口名 `<module>`、
+  `set_entry`）→ 入表 Loading；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其
+  RETURN 按函数名 == `<module>` 判定模块体帧后置 `Loaded` + 压回模块对象,无递归 `run_()`）。
 - **解析缓存**：IMPORT 重复执行同一 specifier 需避免重复 stat。计划加一层缓存，键
   `(当前模块绝对目录, specifier ObjString*)` -> 已解析绝对键 `ObjString*`，命中即跳过磁盘。
   确切结构 / 存放位置待定（TODO）。

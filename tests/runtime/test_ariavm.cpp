@@ -147,6 +147,29 @@ namespace {
         return file.string();
     }
 
+    // 在 base 下按相对路径 rel 写入源码内容 content(含父目录),返回该文件的规范绝对路径。
+    // 供 IMPORT 加载层端到端测试:被导入模块有真实源码,触发 读盘 -> 编译 -> run-once 全链路。
+    std::string write_aria(const std::string& base, std::string_view rel, std::string_view content) {
+        auto file = std::filesystem::weakly_canonical(std::filesystem::path{base} / std::string{rel});
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream out{file.string()};
+        out << content;
+        return file.string();
+    }
+
+    // 在 VM 模块表 modules 里按模块显示名(name_->view())查找模块对象;未命中返 nullptr。
+    // 加载层测试经 interpret_from_path 跑完后,用此白盒检视被导入模块的 state / globals。
+    ObjModule* find_module_by_name(aria::AriaHashTable& modules, StringView name) {
+        ObjModule* found = nullptr;
+        modules.for_each_occupied([&](const Value& /*key*/, const Value& val) {
+            auto m = aria::Object::as<ObjModule>(val.as_obj());
+            if (m->name() != nullptr && m->name()->view() == name) {
+                found = m;
+            }
+        });
+        return found;
+    }
+
     // 造带源根的模块(name + root):name = 相对源根的路径,root = 所属源根目录(intern 的 ObjString*,非空)。
     // 妥善处理临时根:工厂不再替调用方守卫入参,故 name 先 intern 再 guard,root 亦 guard(分配 new_object
     // 顶部的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 root(本函数内
@@ -892,6 +915,116 @@ TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
     ASSERT_TRUE(out.has_value());
     ASSERT_EQ(vm.source_roots().size(), 1u);
     EXPECT_EQ(vm.source_roots()[0], std::filesystem::current_path().string()); // 入口槽 = cwd
+}
+
+// ---- IMPORT 加载层(磁盘读 + 编译 + run-once + 入表)端到端 ----
+//
+// 经 interpret_from_path 跑真实 .aria 文件(testing::TempDir 下),触发 IMPORT 未命中分支的完整加载链路。
+// set_source_roots({}) 隔离 stdlib,使裸名/相对导入仅落入口源根(= 入口文件目录,run() 播种 source_roots[0])。
+// 跑完后白盒检视 vm.modules()(IMPORT 入表的被导入模块,入口模块不入表)。
+
+// 加载层基本链路:helper 定义 var x = 42;main 导入它 -> 读盘 -> 编译 -> run-once(helper globals 填 x=42)
+// -> 入表 Loaded -> 压栈绑定。检视 modules 里 helper 模块 Loaded 且 globals.x == 42。
+TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
+
+    vm.set_source_roots({}); // 隔离:仅入口源根
+    const auto base = test_canon_dir();
+    write_aria(base, "helper.aria", "var x = 42;");
+    const auto main_path = write_aria(base, "main.aria", "import \"./helper\" as H;");
+
+    const auto result = vm.interpret_from_path(main_path);
+    ASSERT_EQ(result, aria::InterpretResult::Ok);
+
+    auto* helper = find_module_by_name(vm.modules(), "helper");
+    ASSERT_NE(helper, nullptr);
+    EXPECT_EQ(helper->state(), ObjModule::ModuleState::Loaded);
+    auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    ASSERT_NE(x_entry, nullptr);
+    EXPECT_TRUE(x_entry->value.is_int());
+    EXPECT_EQ(x_entry->value.as_int(), 42);
+}
+
+// 被导入模块编译期错误经 Error 原样透传(含其文件位置):helper 有语法错 -> interpret 返 CompileError。
+TEST_F(AriaVMStress, ImportModuleCompileErrorPropagates) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "helper.aria", "var = 5;"); // 语法错:var 后期望标识符
+    const auto main_path = write_aria(base, "main.aria", "import \"./helper\" as H;");
+
+    const auto result = vm.interpret_from_path(main_path);
+    EXPECT_EQ(result, aria::InterpretResult::CompileError);
+}
+
+// 被导入模块运行期错误(模块体 run-once 期间)经 Error 原样透传:helper `var x = 1/0;`(整除零)
+// -> interpret 返 RuntimeError。
+TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "helper.aria", "var x = 1/0;");
+    const auto main_path = write_aria(base, "main.aria", "import \"./helper\" as H;");
+
+    const auto result = vm.interpret_from_path(main_path);
+    EXPECT_EQ(result, aria::InterpretResult::RuntimeError);
+}
+
+// 循环导入:a 导入 b、b 导入 a(均经 IMPORT 入表 -> 命中 Loading 半初始化对象)。两者各 run-once 一次,
+// 均 Loaded,globals 填充,且交叉绑定(b 的 A == a、a 的 B == b)。main(入口)不入表。
+TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "a.aria", "import \"./b\" as B; var x = 1;");
+    write_aria(base, "b.aria", "import \"./a\" as A; var y = 2;");
+    const auto main_path = write_aria(base, "main.aria", "import \"./a\" as A;");
+
+    const auto result = vm.interpret_from_path(main_path);
+    ASSERT_EQ(result, aria::InterpretResult::Ok);
+
+    auto* a = find_module_by_name(vm.modules(), "a");
+    auto* b = find_module_by_name(vm.modules(), "b");
+    ASSERT_NE(a, nullptr);
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(a->state(), ObjModule::ModuleState::Loaded);
+    EXPECT_EQ(b->state(), ObjModule::ModuleState::Loaded);
+
+    // a.globals: x=1, B=b(循环导入命中 a 的 Loading 时,b 的 A 绑定半初始化 a;后 a 完成成 Loaded)
+    auto* ax = a->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    ASSERT_NE(ax, nullptr);
+    EXPECT_EQ(ax->value.as_int(), 1);
+    auto* aB = a->globals().find(Value::from_obj(new_string(vm.gc(), "B")));
+    ASSERT_NE(aB, nullptr);
+    EXPECT_EQ(aria::Object::as<ObjModule>(aB->value.as_obj()), b);
+
+    // b.globals: y=2, A=a
+    auto* by = b->globals().find(Value::from_obj(new_string(vm.gc(), "y")));
+    ASSERT_NE(by, nullptr);
+    EXPECT_EQ(by->value.as_int(), 2);
+    auto* bA = b->globals().find(Value::from_obj(new_string(vm.gc(), "A")));
+    ASSERT_NE(bA, nullptr);
+    EXPECT_EQ(aria::Object::as<ObjModule>(bA->value.as_obj()), a);
+}
+
+// 重复导入同一模块:第二次 IMPORT 命中 Loaded 模块(表查重复用),不再 run-once。检视 modules 中
+// helper 仅一个、Loaded、globals.x==42。
+TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "helper.aria", "var x = 42;");
+    const auto main_path = write_aria(base, "main.aria", "import \"./helper\" as H1; import \"./helper\" as H2;");
+
+    const auto result = vm.interpret_from_path(main_path);
+    ASSERT_EQ(result, aria::InterpretResult::Ok);
+
+    auto* helper = find_module_by_name(vm.modules(), "helper");
+    ASSERT_NE(helper, nullptr);
+    EXPECT_EQ(helper->state(), ObjModule::ModuleState::Loaded);
+    auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    ASSERT_NE(x_entry, nullptr);
+    EXPECT_EQ(x_entry->value.as_int(), 42);
+    EXPECT_EQ(vm.modules().size(), 1u); // 仅 helper 一个被导入模块
 }
 
 // ---- 原生函数:CALL 命中 ObjNativeFn,同步调用,返回值写槽 0 ----

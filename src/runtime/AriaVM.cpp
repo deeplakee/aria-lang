@@ -45,6 +45,13 @@ namespace aria {
             return Object::as<ObjString>(frame.unit->constants[idx].as_obj());
         }
 
+        // 导入模块的入口函数名(固定;主入口为 "<main>")。用户代码无法产生含 '<'/'>' 的名字,
+        // 故函数名 == kModuleName 唯一标识「IMPORT 加载层驱动的模块体 run-once 帧」。RETURN 据它
+        // 判定是否弹弃返回值、置该模块 Loaded、改压模块对象 -- 取代在 CallFrame 上加 is_module_body
+        // 标志位:名字是函数的固有属性,无需进帧时额外置位/复位,亦无帧槽复用残留之虞。
+        // 名字经 intern 驻留(指针唯一),view() 为短串(8 字节),逐 RETURN 一次内容比较开销可忽略。
+        constexpr StringView kModuleName = "<module>";
+
         // 把 import 串解析为命中文件的绝对规范路径(模块表键)。设计见
         // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:键 = weakly_canonical(候选)
         // (解析已存在部分的符号链接、折叠 "."/".."、去冗余分隔符)。
@@ -501,6 +508,54 @@ namespace aria {
         return *ctx.take_error();
     }
 
+    Result<ObjModule*, Error> AriaVM::load_module(ObjString* key, const StringView path_spec) {
+        // IMPORT 未命中分支的加载层。key 已由调用方根化(IMPORT case 的 key_guard,跨本函数内 upsert)。
+        // path_spec = 原始 import 串(报错用);读盘用 key->view()(= 命中文件的绝对规范路径)。
+        //
+        // 步骤:读盘 -> 派生模块身份 -> new_module(Loading)+ 自守 -> 入表占位 -> 编译(set_entry)。
+        // **仅加载与编译**:模块体 run-once 不在此执行 -- 由调用方(IMPORT 分支)以普通函数调用进帧
+        // 驱动,其 RETURN 置 Loaded。故返回的模块处于 Loading 态(待 run-once)。
+        // 越界检测本轮不做:文件能解析到即读(resolve_module 已做 exists-check)。
+
+        // 1. 读盘:BOM 剥除 + CRLF->LF + UTF-8 校验(见 SourceFile::from_path)。resolve_module 已 exists-check,
+        //    理论上必成功,但读盘/编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
+        auto loaded_src = SourceFile::from_path(key->view());
+        if (!loaded_src.has_value()) {
+            return std::unexpected(
+                    errorf(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", path_spec));
+        }
+        SourceFile source = std::move(loaded_src.value());
+
+        // 2. 派生模块身份 {name=stem, root=dirname}(同入口模块 fs::module_name_and_root 约定):
+        //    abs_path() = root_ + "/" + name_ + ".aria" 还原 canonical key,相对导入基(dirname)正确。
+        auto [name_s, root_s] = fs::module_name_and_root(key->view());
+        if (name_s.empty()) {
+            return std::unexpected(errorf(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", path_spec));
+        }
+
+        // 3. 建模块(Loading 态,工厂内部 intern name/root 并自守)+ 自守跨 upsert/编译。
+        auto module = new_module(gc_, name_s, root_s);
+        auto guard  = gc_.make_guard(module);
+
+        // 4. 入表占位(Loading):供循环导入命中半初始化对象。key 已由调用方根化;module 由上方 guard 根化。
+        //    upsert rehash 触 GC 时两者皆安全。upsert 单参返 Entry*,再写其 value(同 DEF_GLOBAL 用法)。
+        const auto mod_entry = modules_.upsert(Value::from_obj(key));
+        mod_entry->value     = Value::from_obj(module);
+
+        // 5. 编译:SourceFile -> 入口 ObjFunction(名 <module>,见 kModuleName),CodeGen::init_module
+        //    已 module.set_entry。Compiler 用本 VM 的 gc_,编译期分配与 run 同源。编译期 Error(含
+        //    被导入文件位置)原样透传。module 经 guard + modules_ 根化,CodeGen::compile 内部亦
+        //    make_guard(&module),双保险。source 须存活到 compile() 返回(Error 烘位置串需它)。entry
+        //    经 module->entry_ 根可达。
+        Compiler compiler{gc_};
+        auto     compiled = compiler.compile(source, *module, kModuleName);
+        if (!compiled.has_value()) {
+            return std::unexpected(std::move(compiled).error());
+        }
+        // 模块保持 Loading 态:run-once + 置 Loaded 由 IMPORT 分支进帧驱动、RETURN 完成。
+        return module;
+    }
+
     Result<Value, Error> AriaVM::run_() {
         auto& ctx    = main_ctx_;
         auto& frames = ctx.frames();
@@ -824,23 +879,25 @@ namespace aria {
                     // path:u16;解析后把命中的 ObjModule 压栈（[...] -> [..., module]）。绑定交 CodeGen 按
                     //   作用域走：顶层经 DEF_GLOBAL alias 弹值定义全局、嵌套经值填槽（IMPORT 压在 declare
                     //   的 slot 即该局部）+ mark_initialized。IMPORT 仅负责「取模块对象」，不再自绑 globals。
-                    //   解析按 .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:
-                    //   把 import 串经 resolve_module 解析为命中文件的绝对规范路径(weakly_canonical)作
-                    //   模块表键,再查 modules_。
+                    //   解析按 .claude/reference/runtime/import-path-resolution.md:把 import 串经 resolve_module
+                    //   解析为命中文件的绝对规范路径(weakly_canonical)作模块表键,再查 modules_。
                     //   相对(./ ../)基 = 当前模块所在目录(单基,caller-local,不碰 source_roots);
                     //   裸名基 = source_roots(逐个 exists-check,首个 <base>/<spec>.aria 存在者命中)。
                     //   键 = 绝对规范路径,跨根不碰撞、相对不逃逸;末尾 .aria 可选(lib/math ≡ lib/math.aria)。
                     //   命中(任意态):复用模块对象 -- Loaded 即完整、Loading 即循环导入命中,按文法
-                    //     「允许循环导入,命中正在初始化的模块返回半初始化对象」直接用(不报错)。
-                    //   解析失败(无源根命中)/ 模块表未命中:按设计需嵌入层加载文件 -> 词法/语法/编译 ->
-                    //     入表 run-once(见 bytecode-instruction-set.md §4.15)。该链路(磁盘加载 +
-                    //     AST->CodeUnit 编译器 + VM 内嵌套执行模块体)尚未就绪,故暂打印未实现提示并报
-                    //     ModuleNotFound(表里预注册的模块仍可被命中复用,故解析/命中路径可测)。
+                    //     「允许循环导入,命中正在初始化的模块返回半初始化对象」直接用(不报错);压栈即可。
+                    //   未命中(文件解析命中但模块未入表):调 load_module(读盘 -> 编译 -> 入表 Loading)得
+                    //     模块,以其 entry(<module>)作一次**普通函数调用**进帧后 break --
+                    //     模块体 run-once 即执行一个函数,由主循环照常驱动;其 RETURN 按函数名 == <module>
+                    //     判定模块体帧,弹弃返回值、置该模块 Loaded、改压模块对象,等价「模块体返回模块」,
+                    //     故命中/未命中两分支栈效应统一为 [..., module],绑定交后续 DEF_GLOBAL / 值填槽。
+                    //     无递归 run_()。
                     //
-                    // 根安全(M6 解锁 GC 后):path 经常量池根(同 LOAD_CONST)。键经 new_string intern
-                    //   驻留(weak root)。module 取自 modules_（VM tracer 标 modules_），经 modules_ 根可达,
-                    //   非移动 GC 故 ctx.push（栈溢出增长走 Buffer 重分配）期间指针稳定,无需守卫;入栈后
-                    //   另经值栈根可达。
+                    // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。key 经 new_string intern 驻留
+                    //   (weak root,不保命),跨 modules_.find(无 GC)与未命中分支内 load_module 的
+                    //   modules_.upsert(rehash 触 GC)须守 -- 下方 key_guard 跨全程根化 key。
+                    //   命中分支取回/加载层产出的 module 与 entry 经 modules_ 根可达,非移动 GC 故 ctx.push(栈
+                    //   溢出增长走 Buffer 重分配)期间指针稳定,无需守卫;入栈后另经值栈根可达。
                     ObjString* path = read_name(frame);
                     // 当前模块的绝对文件路径(ObjModule::abs_path = root_ + "/" + name_ + ".aria"),
                     // 供 resolve_module 相对分支取 dirname 作基:dirname(abs_path) = root_ + "/" +
@@ -849,37 +906,59 @@ namespace aria {
                     // 此时 abs_path 返空串,resolve_module 相对分支判空直接返 nullopt(line 81)。
                     const auto key_str = resolve_module(path->view(), frame.module->abs_path(), source_roots_);
                     if (!key_str) {
-                        return runtime_err(ErrorCode::ModuleNotFound,
-                                           "module not found: '{}' (no matching source root)", path->view());
+                        return runtime_err(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
                     }
-                    auto  key    = new_string(gc_, *std::move(key_str));
-                    Value module = Value::nil_val();
+                    auto key       = new_string(gc_, *key_str);
+                    auto key_guard = gc_.make_guard(key); // 跨 find / load_module 内 upsert(rehash 触 GC)
                     if (const auto module_entry = modules_.find(Value::from_obj(key)); module_entry != nullptr) {
-                        module = module_entry->value;
-                    } else {
-                        // 文件存在但模块未入表:加载链路(磁盘加载 + AST->CodeUnit 编译器 + VM 内嵌套
-                        //   执行模块体)尚未就绪,故暂只打印未实现提示并报 ModuleNotFound(表里预注册的
-                        //   模块仍可被命中复用,故解析/命中路径可测)。
-                        io::print(stderr, "[aria] module loading not implemented yet: '{}'\n", path->view());
-                        return runtime_err(ErrorCode::ModuleNotFound,
-                                           "module not loaded: '{}' (loading not implemented yet)", path->view());
+                        // 命中(Loading 半初始化 / Loaded 完整)复用:压模块值,绑定交后续 DEF_GLOBAL / 值填槽。
+                        ctx.push(module_entry->value);
+                        break;
                     }
-                    ctx.push(module); // 压模块值于栈顶,绑定交 DEF_GLOBAL / 值填槽
-                    break;
+                    // 未命中:加载链路 -- 读盘 -> 编译 -> 入表 Loading(见 load_module),不在此执行模块体。
+                    auto loaded = load_module(key, path->view());
+                    if (!loaded) {
+                        return runtime_err(loaded.error());
+                    }
+                    // 模块体 run-once = 一次普通 0 参函数调用:压 callee(entry,<module>)-> 进帧 -> break。
+                    //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、置
+                    //   Loaded、压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
+                    ObjFunction* entry = (*loaded)->entry();
+                    ctx.push(Value::from_obj(entry)); // callee 压栈
+                    if (auto err = call_value(ctx, Value::from_obj(entry), 0); err) {
+                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。
+                        ctx.drop(1);
+                        return runtime_err(*err);
+                    }
+                    break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
 
                 // ---- 异常 ----
                 case OpCode::THROW:
                     not_implemented("THROW");
 
-                // ---- 返回(exit_frame 后 frame 引用作废,故先取返回值)----
+                // ---- 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)----
                 case OpCode::RETURN: {
                     const Value ret = ctx.pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
-                    ctx.exit_frame();            // 弹帧 + 值栈顶复位到 slots,一体
+                    // 模块体 run-once 帧 = IMPORT 加载层进帧的入口函数,其名固定为 <module>
+                    // (见 kModuleName);主入口 <main> 与普通用户函数名均不含 '<>',故按函数名判定。
+                    // 其 RETURN 弹弃模块体返回值(无意义),改压该模块对象 -- 模块体「返回模块」,
+                    // 使 IMPORT 的栈效应在命中/未命中两分支统一为 [..., module](绑定交 DEF_GLOBAL)。
+                    // 先取 module 再 exit_frame:exit_frame 后 frame 引用悬垂。模块体帧必非顶层(IMPORT
+                    // 帧在下),故 frames.empty() 分支不会命中模块体帧。
+                    auto mod     = frame.module;
+                    auto fn_name = frame.function->name()->view();
+                    ctx.exit_frame(); // 弹帧 + 值栈顶复位到 slots,一体
                     if (frames.empty()) {
-                        return ret;
+                        return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
                     }
-                    ctx.push(ret); // 返回值压入调用者栈顶
+                    if (fn_name == kModuleName) {
+                        // 模块体 run-once 完成:置 Loaded,压模块对象(弹弃 ret)。
+                        mod->set_state(ObjModule::ModuleState::Loaded);
+                        ctx.push(Value::from_obj(mod));
+                    } else {
+                        ctx.push(ret); // 普通函数:返回值压入调用者栈顶
+                    }
                     break;
                 }
 

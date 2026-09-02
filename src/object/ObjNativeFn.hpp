@@ -42,11 +42,12 @@ namespace aria {
     //   跨切面的未来任务(适用所有运行时错误),不独压原生函数。故 Error 仅在出错时构造,不进每次调用的返回值。
     //
     //   bool 与寄存器的同步:bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功
-    //   路径 clear_error() 清掉可能残留(防泄漏到下次调用),失败路径 take_error() 取载荷,空则造
-    //   ErrorCode::InvalidState 内部错误(否则 call_value 返 true 致 CALL 当作成功却不 drop,栈失衡)。
-    //   debug 断言 ok == !has_error() 捕捉两类违约--「调了 vm.fail 却 return true」(忘 return false:
-    //   release 下错误被 clear_error 静默丢弃,作者既声明成功 VM 从之)、「return false 却没调 raise」
-    //   (声明失败无载荷:release 下造内部错误返回)。**契约:return false ⟺ 已调 vm.fail/vm.raise;
+    //   路径仅 debug 断言 !has_error() 验证契约(寄存器本就空 -- 进场已守、原生未 raise,无需 clear_error;
+    //   若违约 debug 暴露,release 不静默清掉掩盖),失败路径 take_error() 取载荷(空则 * 解引用空 Opt
+    //   属 UB,debug 断言先暴露)。debug 断言 ok == !has_error() 捕捉两类违约--「调了 vm.fail 却
+    //   return true」(忘 return false:release 下不再 clear_error 掩盖,残留错误随寄存器泄漏至下次调用,
+    //   违约属实现 bug,任其表面化胜于吞掉)、「return false 却没调 raise」(声明失败无载荷:release 下
+    //   take_error() 取空、* 解引用空 Opt 属 UB)。**契约:return false ⟺ 已调 vm.fail/vm.raise;
     //   用 `return vm.fail(...)` 即自动满足。**
     //
     //   契约:

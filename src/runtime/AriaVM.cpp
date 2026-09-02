@@ -510,9 +510,10 @@ namespace aria {
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!ctx.has_error(), "call_native: pending error not cleared before native call");
         if (obj->fn()(*this, slots)) {
-            // 成功:断言无载荷,清寄存器防残留泄漏,drop 实参使返回值升栈顶(等价 drop(argc+1)+push)。
+            // 成功:断言寄存器空(契约 return true ⟺ 未 raise)。寄存器本就空(进场已守、
+            // 原生未 raise),无需 clear_error -- 若违约,debug 断言即暴露,release 下不静默
+            // 清掉掩盖。drop 实参使返回值升栈顶(等价 drop(argc+1)+push)。
             ASSERT(!ctx.has_error(), "native fn returned true but raised error");
-            ctx.clear_error();
             ctx.drop(argc);
             return true;
         }

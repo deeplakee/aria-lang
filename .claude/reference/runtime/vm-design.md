@@ -120,9 +120,9 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **错误走侧信道寄存器** -- 原生函数调 `vm.fail(code, fmt, ...)`(或 `vm.raise(err)`)写入 `VMContext` 的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`vm.fail`/`vm.raise` 均返回 `false`,故失败路径惯用一行 `return vm.fail(...)`(同时置寄存器与返回失败),成功路径 `slots[0] = ...; return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`drop(argc)`,`slots[0]` 升至栈顶),`false` 经 `take_error()` 取出寄存器中的 `Error` 沿现有 `runtime_err` 路径传播(M1 即作未捕获错误从 `run()` 返回)。约 56B（libc++)/64B（libstdc++) 的 `Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
 
-**bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径 `clear_error()` 清掉可能残留(防泄漏到下次调用),失败路径 `take_error()` 取载荷,寄存器空则造 `ErrorCode::InvalidState` 内部错误(否则 `call_value` 返 `true` 致 CALL 当作成功却不 `drop`,栈失衡)。debug 断言 `ok == !has_error()` 捕捉两类违约:
-- 调了 `vm.fail` 却 `return true`(忘 `return false`):`ok=true ∧ has_error=true` -- release 下错误被 `clear_error` 静默丢弃(作者既声明成功,VM 从之);debug 断言先暴露。
-- `return false` 却没调 `raise`(声明失败无载荷):`ok=false ∧ has_error=false` -- release 下造内部错误返回;debug 断言先暴露。
+**bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径仅 debug 断言 `!has_error()` 验证契约(寄存器本就空 -- 进场已守、原生未 raise,无需 clear_error;若违约 debug 暴露,release 不静默清掉掩盖),失败路径 `take_error()` 取载荷(寄存器空则 `*` 解引用空 Opt 属 UB,debug 断言先暴露)。debug 断言 `ok == !has_error()` 捕捉两类违约:
+- 调了 `vm.fail` 却 `return true`(忘 `return false`):`ok=true ∧ has_error=true` -- release 下不再 `clear_error` 掩盖,残留错误随寄存器泄漏至下次调用(违约属实现 bug,任其表面化胜于吞掉);debug 断言先暴露。
+- `return false` 却没调 `raise`(声明失败无载荷):`ok=false ∧ has_error=false` -- release 下 `take_error()` 取空、`*` 解引用空 Opt 属 UB;debug 断言先暴露。
 **契约:`return false` ⟺ 已调 `vm.fail`/`vm.raise`;用 `return vm.fail(...)` 即自动满足。**
 
 **与 raise(§4.5)的关系** -- 本寄存器是 CLAUDE.md「错误处理」第 2 条 `raise` 的 **M1 最小切片**:M1 无 try/catch,「raise」= 置寄存器 + 让 `run()` 返回;M3 落地完整 `raise` 时,在此寄存器基础上接 `find_try_handler` 查表 + `truncate` unwind + 跳 handler(逻辑见 §4.5),寄存器本身不变。即 M1 的侧信道寄存器是 M3 `raise` 的公共底座--原生函数的 `vm.fail` 与未来 op 处理器的 `raise` 共用同一寄存器。

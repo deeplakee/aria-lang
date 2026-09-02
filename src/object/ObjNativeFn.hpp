@@ -43,7 +43,7 @@ namespace aria {
     //
     //   bool 与寄存器的同步:bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功
     //   路径 clear_error() 清掉可能残留(防泄漏到下次调用),失败路径 take_error() 取载荷,空则造
-    //   ErrorCode::InvalidState 内部错误(否则 call_value 返 nullopt 致 CALL 当作成功却不 drop,栈失衡)。
+    //   ErrorCode::InvalidState 内部错误(否则 call_value 返 true 致 CALL 当作成功却不 drop,栈失衡)。
     //   debug 断言 ok == !has_error() 捕捉两类违约--「调了 vm.fail 却 return true」(忘 return false:
     //   release 下错误被 clear_error 静默丢弃,作者既声明成功 VM 从之)、「return false 却没调 raise」
     //   (声明失败无载荷:release 下造内部错误返回)。**契约:return false ⟺ 已调 vm.fail/vm.raise;

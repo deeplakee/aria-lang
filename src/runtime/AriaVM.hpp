@@ -191,23 +191,27 @@ namespace aria {
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc)。按 callee 的对象类型分派到对应
         // call_* 子例程(ObjFunction -> call_function、ObjNativeFn -> call_native),其余报
-        // CallNonCallable。失败返回 Error,nullopt 即成功(成功时栈效应由子例程各自负责)。
-        // 经当前 ctx 而非 main_ctx_ -- run_ 按重入式风格把所有操作作用于当前 ctx(现为 main_ctx_,
-        // M6 协程期换 current_ 重入),call_value 同理,不写死主上下文。
-        // M1 仅支持 ObjFunction / ObjNativeFn(闭包/类/方法后续阶段)。
-        Opt<Error> call_value(Movement& ctx, Value callee, u8 argc);
+        // CallNonCallable。返回 bool 为成败信号:true 即成功(栈效应由子例程各自负责),
+        // false 即失败 -- 错误载荷已 raise 进 ctx 的挂起错误寄存器,调用方据 bool 决定是否
+        // take_error 取出沿 runtime_err 传播。经当前 ctx 而非 main_ctx_ -- run_ 按重入式风格
+        // 把所有操作作用于当前 ctx(现为 main_ctx_,M6 协程期换 current_ 重入),call_value 同理,
+        // 不写死主上下文(失败时错误随 ctx 走,互不串扰)。M1 仅支持 ObjFunction / ObjNativeFn
+        // (闭包/类/方法后续阶段)。契约:return false ⟺ 已 raise 入 ctx。
+        bool call_value(Movement& ctx, Value callee, u8 argc);
 
         // 用户函数调用:校验 arity + 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,
-        // 参数即局部槽 1..argc)。成功返 nullopt;失败返 WrongArity / StackOverflow。
+        // 参数即局部槽 1..argc)。成功返 true;失败 raise WrongArity / StackOverflow 入 ctx 后返 false。
         // 栈形 [callee, a1..aN] 由 CALL 调用方保证。
-        Opt<Error> call_function(Movement& ctx, ObjFunction* obj, u8 argc);
+        bool call_function(Movement& ctx, ObjFunction* obj, u8 argc);
 
-        // 原生函数调用:同步调用 obj->fn(),不进帧。bool 为成败信号,返回值写槽 0,
-        // 错误载荷走侧信道寄存器(Movement::pending_error_)。成功:断言无载荷 -> 清寄存器 +
-        // drop(argc) 弹实参(返回值升栈顶);失败:断言已 raise -> take_error 取出传播。
-        // 调用区 [callee, a1..aN] 经 Span 暴露:slots[0]=槽 0(返回值),slots[1..argc]=实参。
-        // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md §4.7。
-        Opt<Error> call_native(Movement& ctx, const ObjNativeFn* obj, u8 argc);
+        // 原生函数调用:同步调用 obj->fn(),不进帧。原生函数自身以 bool 为成败信号、返回值写槽 0、
+        // 错误载荷走侧信道寄存器(Movement::pending_error_);本函数透传该 bool 契约:成功(原生返
+        // true)断言无载荷 -> 清寄存器 + drop(argc) 弹实参(返回值升栈顶)后返 true;失败(原生返
+        // false)断言已 raise -> 载荷留寄存器交调用方 take_error,返 false(不在本函数取出,与
+        // call_function/call_value 的 bool 契约统一)。调用区 [callee, a1..aN] 经 Span 暴露:
+        // slots[0]=槽 0(返回值),slots[1..argc]=实参。详见 ObjNativeFn.hpp NativeFn 契约与
+        // .claude/reference/runtime/vm-design.md §4.7。
+        bool call_native(Movement& ctx, const ObjNativeFn* obj, u8 argc);
 
         GC            gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
         Movement      main_ctx_;

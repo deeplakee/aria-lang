@@ -120,7 +120,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **错误走侧信道寄存器** -- 原生函数调 `vm.fail(code, fmt, ...)`(或 `vm.raise(err)`)写入 `VMContext` 的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`vm.fail`/`vm.raise` 均返回 `false`,故失败路径惯用一行 `return vm.fail(...)`(同时置寄存器与返回失败),成功路径 `slots[0] = ...; return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`drop(argc)`,`slots[0]` 升至栈顶),`false` 经 `take_error()` 取出寄存器中的 `Error` 沿现有 `runtime_err` 路径传播(M1 即作未捕获错误从 `run()` 返回)。约 56B（libc++)/64B（libstdc++) 的 `Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
 
-**bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径 `clear_error()` 清掉可能残留(防泄漏到下次调用),失败路径 `take_error()` 取载荷,寄存器空则造 `ErrorCode::InvalidState` 内部错误(否则 `call_value` 返 `nullopt` 致 CALL 当作成功却不 `drop`,栈失衡)。debug 断言 `ok == !has_error()` 捕捉两类违约:
+**bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径 `clear_error()` 清掉可能残留(防泄漏到下次调用),失败路径 `take_error()` 取载荷,寄存器空则造 `ErrorCode::InvalidState` 内部错误(否则 `call_value` 返 `true` 致 CALL 当作成功却不 `drop`,栈失衡)。debug 断言 `ok == !has_error()` 捕捉两类违约:
 - 调了 `vm.fail` 却 `return true`(忘 `return false`):`ok=true ∧ has_error=true` -- release 下错误被 `clear_error` 静默丢弃(作者既声明成功,VM 从之);debug 断言先暴露。
 - `return false` 却没调 `raise`(声明失败无载荷):`ok=false ∧ has_error=false` -- release 下造内部错误返回;debug 断言先暴露。
 **契约:`return false` ⟺ 已调 `vm.fail`/`vm.raise`;用 `return vm.fail(...)` 即自动满足。**

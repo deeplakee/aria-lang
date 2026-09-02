@@ -146,8 +146,8 @@ namespace aria {
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),以 std::format 风格
         // 直接格式化消息。供 run_ 与 numeric_op 等「返回 Result<Value, Error>」的构造点用,
         // 把 std::unexpected(Error{...}) 样板整体收口;调用方只剩 return runtime_err(...)。
-        // 转发已构造 Error(如 run_binary_numeric/call_value 失败回传)的场合用下方
-        // runtime_err(Error) 重载,同样收口 std::unexpected。耦合 Result<Value, Error>,
+        // 转发已构造 Error(如 run_binary_numeric 失败回传、call_value 失败后从 ctx 取出的载荷)
+        // 的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。耦合 Result<Value, Error>,
         // 故仅限本翻译单元(其它阶段返回类型不同,不复用)。
         template<typename... Args>
         Result<Value, Error> runtime_err(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
@@ -155,8 +155,21 @@ namespace aria {
         }
 
         // 转发已构造 Error 为失败结果:把 std::unexpected(std::move(err)) 样板收口。供 run_
-        // 转发 run_binary_numeric/call_value 失败回传的 Error 用,与上面的格式化构造重载成对。
+        // 转发 run_binary_numeric 失败回传的 Error、以及 call_value 失败后从 ctx 取出的载荷用,
+        // 与上面的格式化构造重载成对。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
+
+        // 把无位置运行时 Error raise 进传入 ctx 的挂起错误寄存器并返回 false(成败信号)。供
+        // call_value / call_function 等以 bool 为成败信号的子例程一行报错 -- 错误载荷走 ctx 侧信道,
+        // 调用方(主循环)据返回的 bool 决定是否 take_error 取出沿 runtime_err 传播。与 AriaVM::fail
+        // (面向 main_ctx_)分工:本组函数经传入的 ctx 而非 main_ctx_ 报错,贴合 run_ 的重入式风格
+        // (M6 协程期 ctx 即当前协程上下文,错误随上下文走,互不串扰)。契约与 NativeFn 一致:
+        // return false ⟺ 已 raise;调用方据 bool 取载荷,空则属违约(见 call_native 断言)。
+        template<typename... Args>
+        bool ctx_fail(Movement& ctx, ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            ctx.raise(errorf(code, fmt, std::forward<Args>(args)...));
+            return false;
+        }
 
         // 数值二元运算(算术 + 比较)。双方皆 Int 走整数路径;任一为 F64 则升 F64
         // (浮点除零走 IEEE 的 inf/nan,不报错)。M1 暂定语义:
@@ -458,9 +471,9 @@ namespace aria {
         return result;
     }
 
-    Opt<Error> AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
+    bool AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return errorf(ErrorCode::CallNonCallable, "call non-callable {}", callee.type_name());
+            return ctx_fail(ctx, ErrorCode::CallNonCallable, "call non-callable {}", callee.type_name());
         }
         Object* obj = callee.as_obj();
 
@@ -470,26 +483,26 @@ namespace aria {
             case ObjType::NATIVE_FN:
                 return call_native(ctx, Object::as<ObjNativeFn>(obj), argc);
             default:
-                return errorf(ErrorCode::CallNonCallable,
-                              "call non-callable {} (M1 supports functions / native functions only)",
-                              to_string(obj->type()));
+                return ctx_fail(ctx, ErrorCode::CallNonCallable,
+                                "call non-callable {} (M1 supports functions / native functions only)",
+                                to_string(obj->type()));
         }
     }
 
-    Opt<Error> AriaVM::call_function(Movement& ctx, ObjFunction* obj, const u8 argc) {
+    bool AriaVM::call_function(Movement& ctx, ObjFunction* obj, const u8 argc) {
         if (obj->arity() != argc) {
-            return errorf(ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
+            return ctx_fail(ctx, ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
         }
         if (ctx.frames_full()) {
-            return Error{ErrorCode::StackOverflow, "call frame stack overflow"};
+            return ctx_fail(ctx, ErrorCode::StackOverflow, "call frame stack overflow");
         }
         // 栈形 [callee, a1..aN]:enter_frame 进帧(slots 指向槽 0,参数即局部槽 1..argc),
         // 与 run_ 的 exit_frame 对称。经传入的 ctx 而非 main_ctx_ -- M6 协程期 ctx 即当前协程上下文。
         ctx.enter_frame(obj, argc);
-        return std::nullopt;
+        return true;
     }
 
-    Opt<Error> AriaVM::call_native(Movement& ctx, const ObjNativeFn* obj, const u8 argc) {
+    bool AriaVM::call_native(Movement& ctx, const ObjNativeFn* obj, const u8 argc) {
         // 原生函数同步调用,不进帧:bool 为成败信号,返回值写槽 0,错误载荷走侧信道寄存器。
         // 调用区 [callee, a1..aN] 的可写视图:slots[0]=槽 0(返回值),slots[1..argc]=实参。
         // peek(argc) 即槽 0,叶子调用不增长值栈故指针稳定;argc==0 时 span 仅含槽 0。
@@ -501,11 +514,13 @@ namespace aria {
             ASSERT(!ctx.has_error(), "native fn returned true but raised error");
             ctx.clear_error();
             ctx.drop(argc);
-            return std::nullopt;
+            return true;
         }
-        // 失败:断言已 raise 载荷,取出沿 runtime_err 路径传播。
+        // 失败:断言已 raise 载荷,留在寄存器交调用方 take_error 取出沿 runtime_err 路径传播。
+        // 不在此 take_error -- 载荷随 ctx 走,与 call_function/call_value 的 bool 契约统一
+        // (return false ⟺ 错误已 raise 进 ctx,调用方据 bool 取载荷)。
         ASSERT(ctx.has_error(), "native fn returned false but raised no error");
-        return *ctx.take_error();
+        return false;
     }
 
     Result<ObjModule*, Error> AriaVM::load_module(ObjString* key, const StringView path_spec) {
@@ -846,8 +861,8 @@ namespace aria {
                     // 良构不变式:栈上必有 callee + argc 个实参。
                     ASSERT(ctx.stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
                     const Value callee = ctx.peek(argc);
-                    if (auto err = call_value(ctx, callee, argc)) {
-                        return runtime_err(std::move(*err));
+                    if (!call_value(ctx, callee, argc)) {
+                        return runtime_err(std::move(*ctx.take_error()));
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
@@ -925,10 +940,10 @@ namespace aria {
                     //   Loaded、压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
                     ObjFunction* entry = (*loaded)->entry();
                     ctx.push(Value::from_obj(entry)); // callee 压栈
-                    if (auto err = call_value(ctx, Value::from_obj(entry), 0); err) {
+                    if (!call_value(ctx, Value::from_obj(entry), 0)) {
                         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。
                         ctx.drop(1);
-                        return runtime_err(*err);
+                        return runtime_err(std::move(*ctx.take_error()));
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }

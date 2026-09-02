@@ -113,6 +113,40 @@ target_include_directories(aria PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aria PRIVATE aria_core)
 target_link_libraries(aria PRIVATE isocline)
 
+# === LTO：Release 默认开启（跨平台，可经 -DARIA_ENABLE_LTO=OFF 关闭）===
+# Clang 走 thin LTO（构建快、效果接近 full LTO），链接依赖 lld；macOS 例外（Apple ld64
+# 原生支持 LTO，无需 -fuse-ld）。GCC 走 -flto（g++ 驱动链接时自动选链接器）；MSVC 走 /GL+/LTCG。
+# 用 $<CONFIG:Release> 生成器表达式，兼容单配置（MinGW/Unix Makefiles/Ninja）与多配置
+# （VS / Ninja Multi-Config）生成器。仅作用于 aria_core 与 aria，不影响 isocline/gtest。
+option(ARIA_ENABLE_LTO "Enable link-time optimization in Release build" ON)
+if (ARIA_ENABLE_LTO)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+        if (APPLE)
+            target_compile_options(aria_core PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+            target_compile_options(aria PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+            target_link_options(aria PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+            message(STATUS "LTO (Release): Clang thin LTO via Apple ld64")
+        else()
+            target_compile_options(aria_core PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+            target_compile_options(aria PRIVATE $<$<CONFIG:Release>:-flto=thin>)
+            target_link_options(aria PRIVATE $<$<CONFIG:Release>:-flto=thin> $<$<CONFIG:Release>:-fuse-ld=lld>)
+            message(STATUS "LTO (Release): Clang thin LTO via lld")
+        endif()
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(aria_core PRIVATE $<$<CONFIG:Release>:-flto>)
+        target_compile_options(aria PRIVATE $<$<CONFIG:Release>:-flto>)
+        target_link_options(aria PRIVATE $<$<CONFIG:Release>:-flto>)
+        message(STATUS "LTO (Release): GCC -flto")
+    elseif (MSVC)
+        target_compile_options(aria_core PRIVATE $<$<CONFIG:Release>:/GL>)
+        target_compile_options(aria PRIVATE $<$<CONFIG:Release>:/GL>)
+        target_link_options(aria PRIVATE $<$<CONFIG:Release>:/LTCG>)
+        message(STATUS "LTO (Release): MSVC /GL + /LTCG")
+    else()
+        message(STATUS "LTO (Release): unsupported compiler ${CMAKE_CXX_COMPILER_ID}, skipped")
+    endif()
+endif()
+
 # === 测试 ===
 enable_testing()
 

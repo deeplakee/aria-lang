@@ -151,7 +151,8 @@ namespace aria {
         // 挂起错误(各自 raise/检查,互不串扰)。M1 单一主上下文,等价于 VM 级单寄存器。
         //   - raise:写入。断言当前无挂起错误(防嵌套 raise 未被取走就再 raise 的 bug)。
         //   - has_error / take_error / clear_error:VM 在安全点查询/取出/清空。take_error 取走即清空。
-        //   - reset() 一并清空(上下文复用前置干净)。Error 含 String,可移动;Opt<Error> 约 64B（libc++)/72B（libstdc++),非热路径。
+        //   - reset() 一并清空(上下文复用前置干净)。Error 含 String,可移动;Opt<Error> 约
+        //   64B（libc++)/72B（libstdc++),非热路径。
 
         void raise(Error err) noexcept {
             ASSERT(!pending_error_.has_value(),

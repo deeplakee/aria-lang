@@ -15,16 +15,10 @@ namespace aria {
 
     namespace {
         // 合成函数名(`<>` 是标识符中不可用的符号,故不可能与用户具名 fun 冲突):
-        //   kMainName      -- 主入口模块的入口函数名(`<main>`,arity 0 模块体包装;VM 直接 run 它,
-        //                     非用户可调用 fun,故用尖括号合成名避免与用户标识符碰撞);
-        //   kModuleName    -- 运行期导入模块的入口函数名(`<module>`,与 CPython 模块体 code object 同名)--
-        //                     当前由 init_module 统一产 `<main>`;导入磁盘加载链路落地后,导入编译路径
-        //                     产 `<module>`(届时为另一已知「这是导入」的编译入口,无需参数机制)。
         //   kAnonymousName -- lambda 函数名(`<anonymous>`),compile_function 据此判定「lambda -> 留栈不绑定」。
-        // 集中定义,使 visitLambdaExprNode 的创建点与 compile_function 的判定点不致漂移。
-        constexpr StringView                  kMainName      = "<main>";
-        [[maybe_unused]] constexpr StringView kModuleName    = "<module>";
-        constexpr StringView                  kAnonymousName = "<anonymous>";
+        // 主入口模块与导入模块的入口函数名分别由 compile() 的 entry_name 参数传 `<main>` / `<module>`
+        // (与 CPython 模块体 code object 同名),不再在此集中定义。
+        constexpr StringView kAnonymousName = "<anonymous>";
 
         // 容量上限(均由操作数/索引位宽决定;值为该位宽最大值,越界判定统一用 > 比较):
         //   kMaxArity     -- 函数形参上限 255(ObjFunction arity 为 u8);
@@ -50,7 +44,8 @@ namespace aria {
     // 入口
     // ============================================================
 
-    Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule& module) {
+    Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule& module,
+                                                 const StringView entry_name) {
         // GC 已启用:module 入临时根贯穿全程。经 module.entry_ -> 常量池 -> 嵌套 fn 常量池 -> ...
         // 整链根化所有建设中 ObjFunction / 常量池 ObjString。每个子 fn 在 compile_function 起始即
         // add_constant 入父常量池(先于编译体),入池即经 module 根链可达;new_object -> add_constant
@@ -62,7 +57,7 @@ namespace aria {
 
         // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
         // 须在 module 已根化下调用(上方 module_guard)。
-        const auto entry = init_module(module);
+        const auto entry = init_module(module, entry_name);
 
         try {
             // 遍历顶层声明（顶层 var/fun/import -> 模块全局；嵌套块内 var -> 局部）。
@@ -80,21 +75,20 @@ namespace aria {
         }
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
-        // 打印入口 `<main>` 的 CodeUnit 反汇编（游标仍在入口，cur_cu() 即入口 unit）。
-        io::println(stderr, "{}", cur_cu()->disassemble(kMainName));
+        // 打印入口的 CodeUnit 反汇编（游标仍在入口，cur_cu() 即入口 unit）。
+        io::println(stderr, "{}", cur_cu()->disassemble(entry_name));
 #endif
 
         mod_ctx_.reset(); // 释放本模块上下文（含入口 fn 上下文）；游标随之失效但不再读
         return entry;
     }
 
-    // 建模块入口函数（arity 0、名 `<main>`，主入口模块体包装）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
+    // 建模块入口函数（arity 0、名 entry_name，模块体包装）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
     // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）；ModuleCtx 构造期 ASSERT
-    // entry 非空（此处先 set_entry）。工厂不再替调用方守卫入参,故 `<main>` 名须显式 make_guard 跨 new_function 的
-    // new_object。 （运行期导入模块的入口函数名 `<module>` 见上 kModuleName,由未来导入编译路径产出,当前路径统一产
-    // `<main>`。）
-    ObjFunction* CodeGen::init_module(ObjModule& module) {
-        const auto name  = new_string(gc_, kMainName);
+    // entry 非空（此处先 set_entry）。工厂不再替调用方守卫入参,故入口名须显式 make_guard 跨 new_function 的
+    // new_object。entry_name：主入口模块传 `<main>`、运行期导入模块传 `<module>`。
+    ObjFunction* CodeGen::init_module(ObjModule& module, const StringView entry_name) {
+        const auto name  = new_string(gc_, entry_name);
         const auto guard = gc_.make_guard(name);
         const auto entry = new_function(gc_, &module, name, 0);
         module.set_entry(entry);

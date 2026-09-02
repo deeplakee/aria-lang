@@ -24,6 +24,7 @@ add_executable(aria_tests
         # object
         object/test_objfunction.cpp
         object/test_objmodule.cpp
+        object/test_objnativefn.cpp
         # memory
         memory/test_array.cpp
         memory/test_gc.cpp

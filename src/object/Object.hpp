@@ -151,12 +151,21 @@ namespace aria {
             return this == other;
         }
 
+        // 对象的地址型调试描述(Python 风格 `<Type at 0xaddr>`):按 type_name() + 对象地址
+        // 静态构造,**非虚**--不经虚分派,故可安全用于不可重入的调试上下文(如 format_value_debug
+        // 的 default 分支:避免调用可重载的 to_string() 重入 VM 致无限递归)。to_string() 基类默认
+        // 委托本方法;子类型有更具体内容语义者 override to_string() 即可,无需动本方法。
+        [[nodiscard]]
+        String debug_repr() const {
+            return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
+        }
+
         // 对象的可读描述(Python 风格 `<Type at 0xaddr>`)。基类默认按 type_name()
         // + 对象地址渲染;有更具体内容语义的子类型按需 override(如 ObjString 渲染字符内容)。
         // 与 type_name() 的区别:前者是类型名的静态枚举映射,本方法产出"这个对象"的描述。
         [[nodiscard]]
         virtual String to_string() const {
-            return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
+            return debug_repr();
         }
 
 

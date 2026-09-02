@@ -60,12 +60,14 @@ namespace aria {
 
     // 原生函数对象:把一个 C++ NativeFn 包成 aria Value。
     //
-    //   - name_:函数名(intern 驻留,同指针),供报错渲染与 to_string;可为 nullptr(渲染 <fn>)。
+    //   - name_:函数名(intern 驻留,同指针),供报错渲染与 to_string;**恒非空**(构造期 ASSERT)--
+    //     无具名需求者用 kAnonymousName("<anonymous>")作匿名名,与 ObjFunction 的 lambda 命名一致,
+    //     不可传 nullptr。new_native_fn(GC&, NativeFn) 重载即以 kAnonymousName 建名并自守。
     //   - fn_:C++ 函数指针(恒非空,构造断言)。不存 arity(原生天然变参,fn 自查 slots.size())。
     //
     //   地址哈希型可变对象(走 Object{ObjType::NATIVE_FN} ctor);equals 保持默认地址相等--
     //     原生函数无"内容相等"语义(同名的 C++ 实现可不同)。final,不再派生。
-    //   trace():标 name_(fn_ 是 C++ 指针,非 GC 对象,不标)。mark_object 容 nullptr 仅防御。
+    //   trace():标 name_(fn_ 是 C++ 指针,非 GC 对象,不标)。name_ 恒非空,mark_object 无需容 nullptr。
     class ObjNativeFn final : public Object {
     public:
         ObjNativeFn(ObjString* name, NativeFn fn);
@@ -92,7 +94,7 @@ namespace aria {
 
         // 可读描述:`<fn name>`(与 ObjFunction 一致--用户侧不区分 native / user 函数;
         //   native 身份经 ObjType::NATIVE_FN / type() 反射可见,不靠 to_string 区分)。
-        //   name_ 为 nullptr 渲染 `<fn>`。
+        //   name_ 恒非空(ctor ASSERT),匿名原生函数渲染 `<fn <anonymous>`(name_ = kAnonymousName)。
         [[nodiscard]]
         String to_string() const override;
 
@@ -101,11 +103,21 @@ namespace aria {
         NativeFn   fn_;
     };
 
+    // 匿名原生函数名(`<anonymous>`):与 ObjFunction 的 lambda 命名一致(`<>` 是正常标识符中不可用
+    //   的符号,具独特辨识度)。无具名需求的原生函数用本常量作 name_,经 new_native_fn(GC&, NativeFn)
+    //   重载自动 intern 驻留;亦可由调用方 intern 后传 new_native_fn(GC&, ObjString*, NativeFn) 显式构造。
+    inline constexpr StringView kAnonymousName = "<anonymous>";
+
     // 工厂:分配 ObjNativeFn。工厂不替调用方守卫入参--name 经 intern 是 weak root,new_object 顶
     //   maybe_collect 可能回收,但工厂只做一次 new_object、无内部新建对象,故**调用方须在调用前自行
-    //   根化 name**(跨 new_object),与 new_function 同理。fn 是标量,无需入根。
+    //   根化 name**(跨 new_object),与 new_function 同理。fn 是标量,无需入根。name 须非空(构造期 ASSERT)。
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn);
+
+    // 工厂重载(匿名):name 取 kAnonymousName("<anonymous>"),工厂内部 new_string 驻留并自行守卫
+    //   (工厂守「自己创建的」),调用方无需手动建串根化。委托 new_native_fn(GC&, ObjString*, NativeFn)。
+    [[nodiscard]]
+    ObjNativeFn* new_native_fn(GC& gc, NativeFn fn);
 
 } // namespace aria
 

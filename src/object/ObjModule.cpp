@@ -12,13 +12,14 @@ namespace aria {
     ObjModule::ObjModule(GC& gc, ObjString* name, ObjString* root) :
         Object{ObjType::MODULE}, name_{name}, root_{root}, entry_{nullptr}, globals_{&gc},
         state_{ModuleState::Loading} {
-        // root_ 恒非空(new_module 默认 cwd 兜底):构造期拦截非法 null,与 SourceLoc 同模式。
-        // name_ 可为 nullptr(合成顶层 <script>),不在此约束。
+        // root_ 恒非空(new_module 默认 cwd 兜底)、name_ 恒非空(合成顶层 <script> / REPL 等均以非空
+        // intern 串构造):构造期拦截非法 null,与 SourceLoc 同模式。
         ASSERT(root != nullptr, "ObjModule root must not be null");
+        ASSERT(name != nullptr, "ObjModule name must not be null");
     }
 
     void ObjModule::trace(GC& gc) const noexcept {
-        // mark_object 容 nullptr(GC.cpp:18),entry_ 可为 nullptr 直接标(root_ 恒非空,见 new_module)。
+        // name_/root_ 恒非空(ctor ASSERT);entry_ 可为 nullptr,mark_object 容 nullptr 仅防御。
         gc.mark_object(name_);
         gc.mark_object(root_);
         gc.mark_object(entry_);
@@ -26,9 +27,7 @@ namespace aria {
     }
 
     String ObjModule::to_string() const {
-        if (name_ == nullptr) {
-            return "<module>";
-        }
+        // name_ 恒非空(ctor ASSERT),内容可空(合成顶层)但指针非空。
         return std::format("<module {}>", name_->view());
     }
 
@@ -41,8 +40,9 @@ namespace aria {
             return {};
         }
         const StringView root = root_->view();
-        if (name_ == nullptr || name_->view().empty()) {
-            return String{root}; // 合成顶层模块无文件名,仅返源根
+        // name_ 恒非空(ctor ASSERT),仅判内容空:空串表合成顶层模块无文件名,仅返源根。
+        if (name_->view().empty()) {
+            return String{root};
         }
         return std::format("{}/{}.aria", root, name_->view());
     }

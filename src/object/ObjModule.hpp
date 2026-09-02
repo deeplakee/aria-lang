@@ -15,6 +15,8 @@ namespace aria {
     //
     //   - name_:相对源根的路径(intern 驻留,同指针),如 lib/utils。既作显示名(to_string /
     //     报错渲染),又与 root_ 一起合成模块的绝对路径(见下);不单独参与模块表查重。
+    //     **指针恒非空**(构造期 ASSERT):合成顶层 <script> / REPL 等均以非空 intern 串(内容可空、
+    //     指针非空)构造,无合法 nullptr 空态。
     //   - root_:模块所属的源根目录(intern 驻留,同指针),如 /proj。模块的绝对规范路径由
     //     root_ + name_ 合成:文件路径(= VM 模块表查重键)= root_ + "/" + name_ + ".aria";
     //     相对导入基目录 = root_ + "/" + dirname(name_);run() 把入口模块的 root_ 播种为
@@ -44,7 +46,8 @@ namespace aria {
             Loaded,  // 模块体执行完毕,globals_ 完整
         };
 
-        // name = 相对源根的路径(显示名 + 合成绝对路径用);root = 所属源根目录(恒非空,见 new_module,构造期 ASSERT)。
+        // name = 相对源根的路径(显示名 + 合成绝对路径用,指针恒非空 -- 构造期 ASSERT,内容可空);
+        // root = 所属源根目录(恒非空,见 new_module,构造期 ASSERT)。
         ObjModule(GC& gc, ObjString* name, ObjString* root);
         ~ObjModule() override = default; // globals_ 持 GC* 级联自释放;entry_/name_/root_ 是 GC 对象,不归本类释放
 
@@ -61,15 +64,16 @@ namespace aria {
         // 所属源根目录(intern):与 name_ 合成模块绝对路径(模块表键 + 相对导入基);指针恒非空
         // (构造期 ASSERT),内容可空(cwd 不可用时 new_module 以空串兜底,见类注释)。构造注入、
         // 不可变:加载器在 resolve 时定 root_(命中哪个源根即哪个),再 new_module(name, root) 建模块。故无 setter。
+        // name() 同理指针恒非空(构造期 ASSERT,内容可空)。
         [[nodiscard]]
         ObjString* root() const noexcept {
             return root_;
         }
 
         // 模块的绝对文件路径(= VM 模块表查重键形式)= root_ + "/" + name_ + ".aria"。
-        // name_ 为 nullptr 或空串(合成顶层)则仅返 root_(无文件名);root_ 内容**空串**(cwd 不可用时
-        // new_module 2 参重载兜底)则返空串 -- 供 resolve_module 相对分支判空直接返 nullopt。root_ 指针
-        // 恒非空(构造期 ASSERT,无合法指针空态),故不判 nullptr。供 IMPORT 取当前模块目录
+        // name_ 内容空串(合成顶层)则仅返 root_(无文件名);root_ 内容**空串**(cwd 不可用时
+        // new_module 2 参重载兜底)则返空串 -- 供 resolve_module 相对分支判空直接返 nullopt。name_/root_
+        // 指针恒非空(构造期 ASSERT,无合法指针空态),故不判 nullptr。供 IMPORT 取当前模块目录
         // (dirname(abs_path) = 当前模块所在目录)、加载层入表键等用。返回 String(即时合成,不驻留)。
         [[nodiscard]]
         String abs_path() const;
@@ -111,13 +115,13 @@ namespace aria {
             return sizeof(ObjModule);
         }
 
-        // 可读描述:`<module lib/utils>`;name_ 为 nullptr 防御性渲染 `<module>`。
+        // 可读描述:`<module lib/utils>`;name_ 恒非空(ctor ASSERT),内容可空时渲染 `<module >`。
         // override Object::to_string 默认的 `<Module at 0x...>`。
         [[nodiscard]]
         String to_string() const override;
 
     private:
-        ObjString*    name_;    // 相对源根的路径(intern 驻留;显示名 + 合成绝对路径用)
+        ObjString*    name_;    // 相对源根的路径(intern 驻留;显示名 + 合成绝对路径用;指针恒非空,内容可空)
         ObjString*    root_;    // 所属源根目录(intern;合成绝对路径 + 相对导入基 + run() 播种源根;指针恒非空,内容可空)
         ObjFunction*  entry_;   // 模块体(run-once;可为 nullptr)
         AriaHashTable globals_; // 模块级绑定表(惰性分配)

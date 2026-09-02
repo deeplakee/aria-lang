@@ -108,23 +108,19 @@ namespace aria {
             case Value::Type::F64:
                 return format_f64(v.as_f64());
             case Value::Type::Obj: {
-                Object* obj = v.as_obj();
-                switch (obj->type()) { // 非虚:读 type_ 字段,不经虚分派
+                switch (Object* obj = v.as_obj(); obj->type()) { // 非虚:读 type_ 字段,不经虚分派
                     case ObjType::STRING:
-                        return format_string(static_cast<ObjString*>(obj));
+                        return format_string(Object::as<ObjString>(obj));
                     case ObjType::FUNCTION:
-                        return std::format("<fn {}>", static_cast<ObjFunction*>(obj)->name()->view());
-                    case ObjType::MODULE: {
-                        const auto* m = static_cast<ObjModule*>(obj);
-                        return m->name() != nullptr ? std::format("<module {}>", m->name()->view()) : "<module>";
-                    }
-                    case ObjType::NATIVE_FN: {
-                        const auto* n = static_cast<ObjNativeFn*>(obj);
-                        return n->name() != nullptr ? std::format("<fn {}>", n->name()->view()) : "<fn>";
-                    }
+                        return std::format("<fn {}>", Object::as<ObjFunction>(obj)->name()->view());
+                    case ObjType::MODULE:
+                        return std::format("<module {}>", Object::as<ObjModule>(obj)->name()->view());
+                    case ObjType::NATIVE_FN:
+                        return std::format("<fn {}>", Object::as<ObjNativeFn>(obj)->name()->view());
                     default:
                         // 未落地 / 用户类实例等:仅类型名 + 地址,绝不调用可重载的 to_string,杜绝重入 VM。
-                        return std::format("<{} at {:p}>", obj->type_name(), util::to_void_ptr(obj));
+                        // 复用 Object::debug_repr()(非虚,不经虚分派)。
+                        return obj->debug_repr();
                 }
             }
         }

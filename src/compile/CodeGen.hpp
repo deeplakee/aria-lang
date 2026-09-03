@@ -317,7 +317,7 @@ namespace aria {
     template<typename... Args>
     [[noreturn]]
     void CodeGen::fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const {
-        throw AriaCompileException{Error{code, loc, std::format(fmt, std::forward<Args>(args)...)}};
+        throw AriaCompileException{Error::format(code, loc, fmt, std::forward<Args>(args)...)};
     }
 
 } // namespace aria

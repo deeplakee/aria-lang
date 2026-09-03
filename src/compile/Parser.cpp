@@ -156,7 +156,7 @@ namespace aria {
     // ============================================================
 
     void Parser::error(const ErrorCode code, String msg) const {
-        throw AriaCompileException{Error{code, peek().loc(), std::move(msg)}};
+        throw AriaCompileException{Error::from_detail(code, peek().loc(), msg)};
     }
 
     const Token& Parser::expect(const TokenType t, const StringView what) {
@@ -922,8 +922,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望标识符或模式却遇到文件结束");
         }
-        error(ErrorCode::ExpectedIdentifier,
-              std::format("期望标识符或模式却遇到 '{}'", token_type_name(peek_type())));
+        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符或模式却遇到 '{}'", token_type_name(peek_type())));
     }
 
     UPtr<ListPatternNode> Parser::list_pattern() {

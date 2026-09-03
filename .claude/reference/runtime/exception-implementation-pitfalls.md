@@ -8,7 +8,7 @@
 
 - **无 `SETUP_EXCEPT`/`END_EXCEPT` 指令**：`try` 的范围与 handler 地址由编译期写入 `CodeUnit::try_records`（异常记录表），运行时按 `ip` 查表。比操作码方案紧凑、不污染字节码流、便于反汇编。
 - **不依赖 C++ 异常**：与 Lua/CPython 一致。`op` 返回失败 `Error` 后，`run()` 调 raise -> 查表 -> `FrameStack::truncate` 跨帧 unwind -> 跳 handler。
-- **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, new_string(baked_message))` 包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::with_message(code, message)`（跳过 `make_message` 的重建工厂）回传原码+原消息（含位置）；原值回 `Error{UncaughtException, format_value(V)}`。详见坑 #7。
+- **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, new_string(baked_message))` 包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::from_baked(code, message)`（跳过 `make_message` 的静态工厂）回传原码+原消息（含位置）；原值回 `Error::from_detail(ErrorCode::UncaughtException, format_value(V))`。详见坑 #7。（注：Error 构造面已重构为「私有 raw 构造 + 公开静态工厂」，`from_baked` 即定稿时的 `with_message`，见 `.claude/rules/error.md`。）
 - **`TryRecord` 字段**：`{begin, end, handle, stack_depth}`（`frame_depth` 不存见坑 #5；`catch_slot` 不存见坑 #10 —— 恒等于 `stack_depth`，且 unwind 的 `push` 已把异常值落在该槽，无 `STORE_LOCAL`）。
 
 ---
@@ -189,18 +189,18 @@ public:
 
 | 路径 | 写入 pending_error_ | catch 绑定 | 未捕获 run() 回传 |
 |---|---|---|---|
-| 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error{UncaughtException, format_value(V)}` |
-| 运行时错误 / native `fail` | `new_exception(gc, err.code(), new_string(gc, err.message()))`（包成 ObjException） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::with_message(ex.code(), ex.message()->view())`（原码+原消息含位置） |
+| 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, format_value(V))` |
+| 运行时错误 / native `fail` | `new_exception(gc, err.code(), new_string(gc, err.message()))`（包成 ObjException） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码+原消息含位置） |
 
-**Error 需新增 `with_message(code, baked_string)` 工厂**：现有两个构造都经私有 `make_message` 重新烘焙（`Error(code, detail)` 会产出 `"Category: Name " + detail`，对已烘焙消息双重前缀）。`with_message` 跳过 `make_message`、直接装已烘焙串——唯一目的是从 ObjException 反提 `Error` 回传 run()。最小、收口于 Error.hpp。
+**Error 需新增「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`，定稿期名 `with_message`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经私有 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串——唯一合法调用方是 ObjException 反提 `Error` 回传 run()。收口于 Error.hpp（构造面重构见 `.claude/rules/error.md`）。
 
 **两硬约束都满足**：
 - 类型保留：用户 throw 存原值，catch 绑原值 ✅。
-- 码保留：运行时错误包成 ObjException（携 `code_`），未捕获经 `with_message` 回原码 ✅（`TypeMismatch`/`DivisionByZero`/`WrongArity`/`StackOverflow`/`UndefinedVariable`/`ModuleNotFound` 等 9 处断言过）。
+- 码保留：运行时错误包成 ObjException（携 `code_`），未捕获经 `from_baked` 回原码 ✅（`TypeMismatch`/`DivisionByZero`/`WrongArity`/`StackOverflow`/`UndefinedVariable`/`ModuleNotFound` 等 9 处断言过）。
 
 **比双寄存器多的语义收益：re-throw 保码**。`try {1/0} catch(e) { throw e }` 未捕获：
 - 双寄存器：catch 绑懒合成消息串 → `throw e` 存串 → 未捕获回 `UncaughtException`（**丢 DivisionByZero**）。
-- 单寄存器：catch 绑 ObjException → `throw e` 存同一 ObjException → 未捕获 `with_message` 回 `DivisionByZero` ✅。
+- 单寄存器：catch 绑 ObjException → `throw e` 存同一 ObjException → 未捕获 `from_baked` 回 `DivisionByZero` ✅。
 
 **catch 绑 ObjException 的 M3 可用性**：`print(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
@@ -291,7 +291,7 @@ cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
 
 **对策**：统一模式：
 ```cpp
-if (auto u = raise_and_unwind_(Error{...})) {
+if (auto u = raise_and_unwind_(Error::from_detail(ErrorCode::X, "...") /* 各类运行时错误构造点 */)) {
     return runtime_err(std::move(*u));   // 未捕获 -> 终止 run_
 }
 continue;                                // 命中 handler -> frame 已废，循环顶重取
@@ -321,7 +321,7 @@ case OpCode::THROW: {
 }
 ```
 
-`throw_and_unwind_(Value v)`：**直接存原值** `pending_error_ = v`（不包 ObjException——用户 throw 携类型，catch 绑原值）+ 调 `unwind_()`。返回 `Opt<Error>`（nullopt = 已 dispatch 到 handler，some = 未捕获回传）。未捕获时 run() 见 pending_error_ 是原值（非 ObjException）→ 回 `Error{UncaughtException, format_value(v)}`。
+`throw_and_unwind_(Value v)`：**直接存原值** `pending_error_ = v`（不包 ObjException——用户 throw 携类型，catch 绑原值）+ 调 `unwind_()`。返回 `Opt<Error>`（nullopt = 已 dispatch 到 handler，some = 未捕获回传）。未捕获时 run() 见 pending_error_ 是原值（非 ObjException）→ 回 `Error::from_detail(ErrorCode::UncaughtException, format_value(v))`。
 
 ---
 
@@ -331,7 +331,7 @@ unwind 从最内帧向外遍历：
 1. 当前帧：用 `frame.last_off`（由本轮循环顶写入，见坑 #2）查 `frame.unit->find_try_handler`。
 2. 命中 -> 在该帧 unwind（truncate 帧栈到该帧 + truncate_stack 到 `slots + stack_depth` + `push(*pending_error_)`（Value 原样:ObjException 或用户 throw 原值，落在 catch 参数槽 stack_depth，见坑 #10）+ `ip = handle` + 清 `pending_error_`）-> 返 nullopt。
 3. 未命中 -> `ctx.exit_frame()`（弹该帧 + 复位值栈到该帧 slots，丢弃 callee+args，恢复调用者栈态）-> 继续遍历调用者帧，用 `frame.last_off`（CALL 站点，见坑 #2）查表。
-4. 所有帧都无 handler -> 从 `pending_error_` 反提 `Error`（ObjException 经 `Error::with_message(code, message)`、原值经 `Error{UncaughtException, format_value(v)}`），清 `pending_error_`，返回该 Error。
+4. 所有帧都无 handler -> 从 `pending_error_` 反提 `Error`（ObjException 经 `Error::from_baked(code, message)`、原值经 `Error::from_detail(ErrorCode::UncaughtException, format_value(v))`），清 `pending_error_`，返回该 Error。
 
 **注意**：遍历中 `exit_frame` 修改帧栈，循环索引/引用要小心。建议用 `while (!frames.empty())` + 每轮取 `frames.top()`，命中即停，未命中 `exit_frame` 后下一轮。
 
@@ -354,11 +354,11 @@ unwind 从最内帧向外遍历：
 
 ## 实现顺序建议（下次重启时）
 
-1. **B0** 新增 `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, ObjString* message)` + `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error` 新增 `with_message(code, baked_string)` 工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 加 EXCEPTION 分支。
+1. **B0** 新增 `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, ObjString* message)` + `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error` 新增 `from_baked(code, baked_string)` 静态工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 加 EXCEPTION 分支。
 2. **B1** `TryRecord` 扩字段 `{begin, end, handle, stack_depth}`（4 字段,无 `catch_slot`，见坑 #10） + `find_try_handler` 返 `Opt<const TryRecord*>`（`CodeUnit.hpp/.cpp`；二分已是最内层语义，仅改返回型，坑 #4 核对）。
 3. **B3** `Movement` 改 `pending_error_` 为 `Opt<Value>` + 加 `truncate_stack` + `raise(Value)`（存原值不包）+ `reset` 清；删除 `pending_throw_` 计划（`Movement.hpp/.cpp`，坑 #14）。
 4. **B2** `CallFrame` 加 `u32 last_off`（**无 NSDMI**，`init_frame_` 置 0，坑 #3）。
-5. **B4** `AriaVM` 加 `unwind_`/`raise_and_unwind_(Error)`（内部 `new_exception` 包成 Value 存入）/`throw_and_unwind_(Value)`（存原值不包）；`raise(Error)`/`fail(...)` 改为包 ObjException；vm_roots tracer 标 `pending_error_`（坑 #8）；`run_()` 循环顶每轮取指前写 `frame.last_off = offset(frame.ip)`（坑 #1/#2）；未捕获从 `pending_error_` 反提 `Error`（ObjException 经 `with_message`、原值经 `Error{UncaughtException, format_value}`）。
+5. **B4** `AriaVM` 加 `unwind_`/`raise_and_unwind_(Error)`（内部 `new_exception` 包成 Value 存入）/`throw_and_unwind_(Value)`（存原值不包）；`raise(const Error&)`/`fail(...)` 改为包 ObjException；vm_roots tracer 标 `pending_error_`（坑 #8）；`run_()` 循环顶每轮取指前写 `frame.last_off = offset(frame.ip)`（坑 #1/#2）；未捕获从 `pending_error_` 反提 `Error`（ObjException 经 `from_baked`、原值经 `Error::from_detail(ErrorCode::UncaughtException, format_value)`）。
 6. **B5** CodeGen `visitTryStmtNode`/`visitThrowStmtNode` 发射（坑 #9/#10）；`visitTryStmtNode` **入口预插占位 + 结尾回填** `try_records`（构造即升序，**不**编译末尾排序，坑 #4）。
 7. **B6** Disassembler `try_records:` 小节。
 8. **B7** 测试（含 stress GC，坑 #8；含 re-throw 保码用例）。
@@ -371,10 +371,10 @@ unwind 从最内帧向外遍历：
 
 - 正向：throw 被 catch 捕获；catch 绑定值保类型（`throw 42` -> e==42 Int）；未捕获 throw -> `UncaughtException`；嵌套 try（内层捕获 / 外层捕获内层 rethrow）；catch 内再 throw；跨帧捕获（被调函数 throw、调用者 try 捕获）。
 - 运行时错误可捕获：`try { 1/0 } catch (e) {}`（e 绑定 `ObjException`，`print(e)` 渲染消息）；`try { len(nil) } catch (e) {}` 捕获 native fn 错误（e 是 ObjException，`e.code()` 待 M5）。
-- **re-throw 保码（单寄存器语义收益）**：`try { 1/0 } catch (e) { throw e }` 未捕获 -> `run()` 回 `Error{DivisionByZero,...}`（非 `UncaughtException`）；对比用户 `throw 42` 未捕获 -> `UncaughtException`。
+- **re-throw 保码（单寄存器语义收益）**：`try { 1/0 } catch (e) { throw e }` 未捕获 -> `run()` 回码 `DivisionByZero` 的 Error（非 `UncaughtException`）；对比用户 `throw 42` 未捕获 -> `UncaughtException`。
 - 反向：`ErrTryWithoutHandler` 既有保留；含 finally 的 try 报 `NotImplemented`（M3b 占位）。
 - stress GC：try/catch 路径 `gc.set_stress(true)` 验根接线（坑 #8，标 `pending_error_`）。
-- 既有 `NativeFnSideChannelError` 仍期望 `TypeMismatch`（单寄存器 + ObjException 保码：未加 try 时运行时错误包成 ObjException 存入 `pending_error_`，未捕获经 `with_message` 回原码，坑 #7）。
+- 既有 `NativeFnSideChannelError` 仍期望 `TypeMismatch`（单寄存器 + ObjException 保码：未加 try 时运行时错误包成 ObjException 存入 `pending_error_`，未捕获经 `from_baked` 回原码，坑 #7）。
 
 ---
 

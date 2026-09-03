@@ -25,15 +25,10 @@ namespace aria {
     // throw/catch（抛 Value，由 VM THROW 操作码 + CodeUnit 内异常记录表实现，不引入 SETUP_EXCEPT）无关。
     class AriaException : public std::exception {
     public:
-        // 从 Error 值对象构造（推荐：携带码/位置/消息）。
+        // 从 Error 值对象构造（唯一构造面：携带码/位置/消息）。不再镜像 Error 的各构造入口 --
+        // Error 的组件/成品语义由其静态工厂(from_detail/from_baked/format)收口,
+        // 本类只收成品(Error),镜像会逐入口漂移(见 Error.hpp)。
         explicit AriaException(Error error) : AriaException{std::move(error), make_what(error)} {}
-
-        // 仅码 + 可选消息（无位置时便捷构造）。
-        explicit AriaException(ErrorCode code, String message = {}) : AriaException{Error{code, std::move(message)}} {}
-
-        // 码 + 位置 + 可选消息（SourceLoc 携带源文件指针与行列，format 可输出文件名+行列）。
-        AriaException(ErrorCode code, SourceLoc loc, String message = {}) :
-            AriaException{Error{code, loc, std::move(message)}} {}
 
         // 所携错误对象（码/位置/消息）。
         [[nodiscard]]
@@ -71,12 +66,6 @@ namespace aria {
     class AriaCompileException : public AriaException {
     public:
         explicit AriaCompileException(Error error) : AriaException{std::move(error)} {}
-
-        explicit AriaCompileException(ErrorCode code, String message = {}) :
-            AriaCompileException{Error{code, std::move(message)}} {}
-
-        AriaCompileException(ErrorCode code, SourceLoc loc, String message = {}) :
-            AriaCompileException{Error{code, loc, std::move(message)}} {}
     };
 
     // 运行期异常（VM 执行期间）。
@@ -86,12 +75,6 @@ namespace aria {
     class AriaRuntimeException : public AriaException {
     public:
         explicit AriaRuntimeException(Error error) : AriaException{std::move(error)} {}
-
-        explicit AriaRuntimeException(ErrorCode code, String message = {}) :
-            AriaRuntimeException{Error{code, std::move(message)}} {}
-
-        AriaRuntimeException(ErrorCode code, SourceLoc loc, String message = {}) :
-            AriaRuntimeException{Error{code, loc, std::move(message)}} {}
     };
 
 } // namespace aria

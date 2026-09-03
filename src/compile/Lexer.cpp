@@ -163,7 +163,7 @@ namespace aria {
     // ============================================================
 
     Error Lexer::make_error(ErrorCode code, SourceSpan span, const String& msg) const {
-        return Error{code, loc_at(span.start), msg};
+        return Error::from_detail(code, loc_at(span.start), msg);
     }
 
     void Lexer::error(ErrorCode code, SourceSpan span, const String& msg) {

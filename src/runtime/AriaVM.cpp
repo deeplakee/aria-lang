@@ -11,6 +11,7 @@
 #include "bytecode/code.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
@@ -155,23 +156,44 @@ namespace aria {
         // 故仅限本翻译单元(其它阶段返回类型不同,不复用)。
         template<typename... Args>
         Result<Value, Error> runtime_err(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return std::unexpected(errorf(code, fmt, std::forward<Args>(args)...));
+            return std::unexpected(Error::format(code, fmt, std::forward<Args>(args)...));
         }
 
         // 转发已构造 Error 为失败结果:把 std::unexpected(std::move(err)) 样板收口。供 run_
         // 转发 run_binary_numeric 失败回传的 Error、以及 call_value 失败后从 ctx 取出的载荷用,
-        // 与上面的格式化构造重载成对。
+        // 与下面的格式化构造重载成对。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 把无位置运行时 Error raise 进传入 ctx 的挂起错误寄存器并返回 false(成败信号)。供
-        // call_value / call_function 等以 bool 为成败信号的子例程一行报错 -- 错误载荷走 ctx 侧信道,
-        // 调用方(主循环)据返回的 bool 决定是否 take_error 取出沿 runtime_err 传播。与 AriaVM::fail
-        // (面向 main_ctx_)分工:本组函数经传入的 ctx 而非 main_ctx_ 报错,贴合 run_ 的重入式风格
-        // (M6 协程期 ctx 即当前协程上下文,错误随上下文走,互不串扰)。契约与 NativeFn 一致:
-        // return false ⟺ 已 raise;调用方据 bool 取载荷,空则属违约(见 call_native 断言)。
+        // 把寄存器取出的载荷还原为边界 Error:ObjException -> to_error()(message_ 已是完整烘焙串,
+        // 经 Error::from_baked 原样回传,与 Error::format 直构文案逐字一致);其它载荷(未来用户
+        // throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,兜底仅防御)报
+        // UncaughtException,消息渲染值本身。
+        Error value_to_error(const Value v) {
+            if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
+                return Object::as<ObjException>(v.as_obj())->to_error();
+            }
+            return Error::format(ErrorCode::UncaughtException, "uncaught exception: {}", format_value(v));
+        }
+
+        // 转发寄存器载荷(Value)为失败结果:经 value_to_error 还原为 Error 后 std::unexpected。
+        // 供 run_ 在 CALL 等 take 点把 ctx 寄存器载荷沿 runtime_err 传播,与上面的
+        // runtime_err(Error) 重载成对。
+        Result<Value, Error> runtime_err(const Value v) { return std::unexpected(value_to_error(v)); }
+
+        // 把 Error 装箱为 ObjException(码 + 完整烘焙消息)后 raise 进传入 ctx 的挂起错误寄存器并
+        // 返回 false(成败信号)。供 call_value / call_function 等以 bool 为成败信号的子例程一行
+        // 报错 -- 错误载荷走 ctx 侧信道,调用方(主循环)据返回的 bool 决定是否 take_error 取出沿
+        // runtime_err 传播。与 AriaVM::fail(面向 main_ctx_)分工:本函数经传入的 ctx 而非 main_ctx_
+        // 报错,贴合 run_ 的重入式风格(M6 协程期 ctx 即当前协程上下文,错误随上下文走,互不串扰);
+        // gc 为载荷分配器(AriaVM::gc_,协程与主上下文同 VM 同 GC)。Error::format 先烘完整消息,
+        // 工厂原样存已烘焙串(不经 make_message,见 exception-implementation-pitfalls.md 坑 #7)。
+        // new_exception 内部分配可能在运行中触发 GC:值栈/帧已接根,载荷构造后经 ctx.raise 立即
+        // 入寄存器(pending_error 由 VM 根 tracer 标根)。契约与 NativeFn 一致:return false ⟺ 已
+        // raise;调用方据 bool 取载荷,空则属违约(见 call_native 断言)。
         template<typename... Args>
-        bool ctx_fail(Movement& ctx, ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            ctx.raise(errorf(code, fmt, std::forward<Args>(args)...));
+        bool ctx_fail(GC& gc, Movement& ctx, ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            const auto err = Error::format(code, fmt, std::forward<Args>(args)...);
+            ctx.raise(Value::from_obj(new_exception(gc, err.code(), err.message())));
             return false;
         }
 
@@ -338,14 +360,17 @@ namespace aria {
 
     // 构造:成员初始化(gc_ 先,main_ctx_/modules_/builtins_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC,
     // 最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时已入表条目经 builtins_.trace 标根)。
-    // tracer 为 lambda:[this] 捕获,标记四类根:
+    // tracer 为 lambda:[this] 捕获,标记五类根:
     //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
     //   2) builtins_:VM 级只读 builtins 表(内置 ObjNativeFn + name 串,LOAD_GLOBAL 回退查此);
     //   3) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
     //      是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时栈遍历为空,
     //      不会标到指向已回收对象的陈旧栈值;
     //   4) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
-    //      免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4。
+    //      免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4;
+    //   5) main_ctx_ 挂起错误寄存器(M3 起载荷为 Value -- ObjException 或用户 throw 的任意值):
+    //      置入寄存器到 take_error 取出之间可能跨安全点分配(如 raise 后 unwind),须标根保命。
+    //      协程(M6)各自的寄存器届时随 ObjMovement 入链,同法标。
     // 值栈/帧以 tracer 直标代替 Movement 升 Object(M6 协程期再升级 ObjMovement 入对象链表)。
     // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/builtins_/main_ctx_ 同生共死,无需析构注销。
     AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{} {
@@ -355,6 +380,9 @@ namespace aria {
             auto& ctx = main_ctx_;
             for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
                 g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+            }
+            if (const auto& pending = ctx.pending_error(); pending.has_value()) {
+                g.mark_value(*pending);
             }
             for (const auto& f: ctx.frames().span()) {
                 g.mark_object(f.function); // mark_object 容 nullptr
@@ -389,6 +417,17 @@ namespace aria {
         for (auto& r: roots) {
             source_roots_.push_back(std::move(r));
         }
+    }
+
+    bool AriaVM::raise(const Error& err) {
+        // 把 err 装箱为 ObjException 存入主上下文挂起寄存器(单寄存器模型,载荷统一 Value,见
+        // exception-implementation-pitfalls.md 坑 #7)。err.message() 已是完整烘焙串("Category:
+        // Name detail",位置标注落地后含位置前缀),经工厂原样 intern 存入(不经 make_message --
+        // 双重前缀由传已烘焙串规避)。工厂内部 new_string 驻留并自守,跨 new_object 顶
+        // maybe_collect 安全;返回对象到 main_ctx_.raise 之间无分配,入寄存器后由 VM 根 tracer
+        // 标 pending_error 保命。返回 false 供 `return vm.fail(...);` 惯用法(见 AriaVM.hpp 契约)。
+        main_ctx_.raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
+        return false;
     }
 
     Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
@@ -487,7 +526,7 @@ namespace aria {
 
     bool AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return ctx_fail(ctx, ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
+            return ctx_fail(gc_, ctx, ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
         }
         Object* obj = callee.as_obj();
 
@@ -497,7 +536,7 @@ namespace aria {
             case ObjType::NATIVE_FN:
                 return call_native(ctx, Object::as<ObjNativeFn>(obj), argc);
             default:
-                return ctx_fail(ctx, ErrorCode::CallNonCallable,
+                return ctx_fail(gc_, ctx, ErrorCode::CallNonCallable,
                                 "call non-callable {} (M1 supports functions / native functions only)",
                                 obj->type_name());
         }
@@ -505,10 +544,10 @@ namespace aria {
 
     bool AriaVM::call_function(Movement& ctx, ObjFunction* obj, const u8 argc) {
         if (obj->arity() != argc) {
-            return ctx_fail(ctx, ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
+            return ctx_fail(gc_, ctx, ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
         }
         if (ctx.frames_full()) {
-            return ctx_fail(ctx, ErrorCode::StackOverflow, "call frame stack overflow");
+            return ctx_fail(gc_, ctx, ErrorCode::StackOverflow, "call frame stack overflow");
         }
         // 栈形 [callee, a1..aN]:enter_frame 进帧(slots 指向槽 0,参数即局部槽 1..argc),
         // 与 run_ 的 exit_frame 对称。经传入的 ctx 而非 main_ctx_ -- M6 协程期 ctx 即当前协程上下文。
@@ -552,8 +591,8 @@ namespace aria {
         //    理论上必成功,但读盘/编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src.has_value()) {
-            return std::unexpected(errorf(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",
-                                          import_specifier));
+            return std::unexpected(Error::format(ErrorCode::ModuleNotFound,
+                                                 "failed to load module '{}': read/decode error", import_specifier));
         }
         SourceFile source = std::move(loaded_src.value());
 
@@ -562,7 +601,7 @@ namespace aria {
         auto [name_s, dir_s] = fs::module_name_and_dir(canonical_path->view());
         if (name_s.empty()) {
             return std::unexpected(
-                    errorf(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier));
+                    Error::format(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier));
         }
 
         // 3. 建模块(Loading 态,工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
@@ -676,9 +715,9 @@ namespace aria {
                     // 根安全(M6 解锁 GC 后):find 无分配;push 的唯一分配是值栈 grow,而 push 不变式
                     //   先写栈再增长(Movement::push),e->value 已入栈(根)后方 grow -> collect;且
                     //   e->value 经 module -> globals 或 builtins_ -> VM 根存活。name 同上经常量池根。
-                    ObjString*  name = read_name(frame);
-                    const Value key  = Value::from_obj(name);
-                    auto entry = frame.module->globals().find(key);
+                    ObjString*  name  = read_name(frame);
+                    const Value key   = Value::from_obj(name);
+                    auto        entry = frame.module->globals().find(key);
                     if (entry == nullptr) {
                         entry = builtins_.find(key); // 回退 VM 级 builtins(内置 type/len/str/assert)
                         if (entry == nullptr) {
@@ -885,7 +924,8 @@ namespace aria {
                     ASSERT(ctx.stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
                     const Value callee = ctx.peek(argc);
                     if (!call_value(ctx, callee, argc)) {
-                        return runtime_err(std::move(*ctx.take_error()));
+                        // 寄存器载荷(ObjException 等 Value)经 value_to_error 还原为 Error 出栈。
+                        return runtime_err(*ctx.take_error());
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
@@ -966,9 +1006,10 @@ namespace aria {
                     ObjFunction* entry = (*loaded)->entry();
                     ctx.push(Value::from_obj(entry)); // callee 压栈
                     if (!call_value(ctx, Value::from_obj(entry), 0)) {
-                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。
+                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。寄存器载荷(ObjException
+                        // 等 Value)经 value_to_error 还原为 Error 出栈。
                         ctx.drop(1);
-                        return runtime_err(std::move(*ctx.take_error()));
+                        return runtime_err(*ctx.take_error());
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }

@@ -35,37 +35,77 @@ namespace aria {
     // CLAUDE.md「错误处理」第 2 条），与 C++ 异常无关，不经过本类。
     class Error {
     public:
-        // 无位置错误：码 + 可选细节。供内部/资源错误或不关心位置的场景使用。
-        // ErrorCode 为普通 enum class，故常见写法 Error{ErrorCode::X, "detail"}。
+        // ---- 构造工厂(唯一公开构造面;语义在工厂名上自文档化,构造点无法拼写错语义)----
+
+        // 细节语义(无位置):码 + 细节,供内部/资源错误或不关心位置的场景使用。
+        // detail 是「只读组件」(被 make_message 烘进 message_,本身不存储),故取 const String&
+        // 而非 by-value -- by-value 是 sink 惯用法,用在此处只会让 lvalue 调用点多付一次参数拷贝
+        // (C++17 起 std::string 已无偷缓冲区的 move-append,烘焙拷贝省不掉)。
+        // detail **不设默认值**:无 detail 的错误缺上下文(detail 是运行期错误的唯一上下文载体),
+        // 有意为空须显式传 {} / "",强制每个报错点说出发生了什么。
         // message_ 烘为 "Category: Name[ detail]"。
-        Error(ErrorCode code, const String& detail = "") : code_{code}, message_{make_message(code, nullptr, detail)} {}
+        [[nodiscard]]
+        static Error from_detail(const ErrorCode code, const String& detail) {
+            return Error{code, make_message(code, nullptr, detail)};
+        }
 
-        // 带位置错误：码 + SourceLoc + 可选细节。供词法/语法/语义阶段使用。
-        // 构造期就地用 loc 烘位置前缀（SourceFile 此刻存活，安全），此后不再持有
-        // SourceLoc/SourceFile*。空态 loc(source()==nullptr)按「无位置」处理。
+        // 细节语义(带位置):码 + SourceLoc + 细节,供词法/语法/语义阶段使用。
+        // 与上一重载同属「组件构造」,以 SourceLoc 参数区分、共名 from_detail -- 位置只是
+        // 细节语义的一个可选变体,不给它单独立名。构造期就地用 loc 烘位置前缀(SourceFile
+        // 此刻存活,安全),此后不再持有 SourceLoc/SourceFile*。空态 loc(source()==nullptr)
+        // 按「无位置」处理。detail 同上一重载(const String&,无默认值)。
         // message_ 烘为 "path:line:col: Category: Name[ detail]"。
-        Error(ErrorCode code, const SourceLoc& loc, const String& detail = "") :
-            code_{code}, message_{make_message(code, &loc, detail)} {}
+        [[nodiscard]]
+        static Error from_detail(const ErrorCode code, const SourceLoc& loc, const String& detail) {
+            return Error{code, make_message(code, &loc, detail)};
+        }
 
-        // 所属错误码（分类/名称/相等判定经此再取）。
+        // 成品语义:以**已烘焙完整消息串**原样构造,不经 make_message(否则把 "Category: Name"
+        // 前缀再烘一遍成双重前缀)。唯一合法调用方:ObjException::to_error()(其 message_ 与
+        // Error::message() 同形)。禁止其它来源传组件串 -- 用错方向(把 detail 传进来)会得到
+        // 缺前缀的消息,渲染不一致。设计见 .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7。
+        [[nodiscard]]
+        static Error from_baked(const ErrorCode code, const StringView message) {
+            return Error{code, String{message}};
+        }
+
+        // 格式化糖:from_detail + std::format 的组合,免调用方手写 Error 嵌套样板。
+        // 两条重载对应「无位置 / 带位置」。取代原自由函数 errorf(命名取 format,类比 printf:
+        // Error 是值类型,不走 GC 对象工厂 new_string/new_function 等,故不取 make_/new_ 前缀)。
+        template<typename... Args>
+        [[nodiscard]]
+        static Error format(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            return from_detail(code, std::format(fmt, std::forward<Args>(args)...));
+        }
+
+        template<typename... Args>
+        [[nodiscard]]
+        static Error format(const ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt,
+                            Args&&... args) {
+            return from_detail(code, loc, std::format(fmt, std::forward<Args>(args)...));
+        }
+
+        // 所属错误码(分类/名称/相等判定经此再取)。
         [[nodiscard]]
         ErrorCode code() const noexcept {
             return code_;
         }
 
-        // 完整可读消息（构造期烘焙成型，含位置前缀 + 分类名 + 码名 + 细节）。
-        // 形如 "main.aria:3:5: Syntax: UnterminatedString 字符串未闭合"（带位置）或
-        // "Syntax: UnterminatedString 字符串未闭合"（无位置）。自存、不依赖任何外部对象。
+        // 完整可读消息(构造期烘焙成型,含位置前缀 + 分类名 + 码名 + 细节)。
+        // 形如 "main.aria:3:5: Syntax: UnterminatedString 字符串未闭合"(带位置)或
+        // "Syntax: UnterminatedString 字符串未闭合"(无位置)。自存、不依赖任何外部对象。
         [[nodiscard]]
         const String& message() const noexcept {
             return message_;
         }
 
     private:
-        ErrorCode code_;
-        String    message_;
+        // 原始构造(唯一默认形态):直接收 code + **最终消息串**,不经 make_message、不做任何加工。
+        // 烘焙单点收于 make_message,仅 from_detail 两重载调用;from_baked 装载已烘串。
+        // 公开构造面一律走上方静态工厂。
+        Error(ErrorCode code, String message) : code_{code}, message_{std::move(message)} {}
 
-        // 烘焙完整消息串：[loc 前缀 + ": "] + "Category: Name"[ + " " + detail]。
+        // 烘焙完整消息串:[loc 前缀 + ": "] + "Category: Name"[ + " " + detail]。
         // loc 为 nullptr 或 loc->source()==nullptr 时无位置前缀。detail 空则无细节尾。
         static String make_message(ErrorCode code, const SourceLoc* loc, const String& detail) {
             String s;
@@ -79,6 +119,9 @@ namespace aria {
             }
             return s;
         }
+
+        ErrorCode code_;
+        String    message_;
     };
 
     // 不可恢复错误：打印错误到 stderr 后以退出码 1 终止进程。
@@ -96,26 +139,10 @@ namespace aria {
         std::exit(1);
     }
 
-    // 便捷重载：仅码 + 可选消息（无位置）。
+    // 便捷重载：仅码 + 可选细节（无位置，构造走 Error::from_detail）。
     [[noreturn]]
-    inline void fatal_error(const ErrorCode code, const String& message = "") {
-        fatal_error(Error{code, message});
-    }
-
-    // 便捷重载：码 + 位置 + 可选消息。
-    [[noreturn]]
-    inline void fatal_error(const ErrorCode code, const SourceLoc& loc, const String& message = "") {
-        fatal_error(Error{code, loc, message});
-    }
-
-    // 便捷工厂：以 std::format 风格直接格式化构造 Error（无位置）。供各阶段报错用，
-    // 避免调用方手写 Error{code, std::format(...)} 的嵌套样板。带位置版本直接用构造函数。
-    // 命名取 errorf（f=format，类比 printf/fprintf）：Error 是值类型，不走 GC 对象工厂
-    // （new_string/new_function/new_object 等），故不取 make_/new_ 工厂前缀以免混淆。
-    template<typename... Args>
-    [[nodiscard]]
-    Error errorf(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-        return Error{code, std::format(fmt, std::forward<Args>(args)...)};
+    inline void fatal_error(const ErrorCode code, const String& detail = "") {
+        fatal_error(Error::from_detail(code, detail));
     }
 
 } // namespace aria

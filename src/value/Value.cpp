@@ -3,6 +3,7 @@
 #include <bit>
 #include <format>
 
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
@@ -117,6 +118,10 @@ namespace aria {
                         return std::format("<module {}>", Object::as<ObjModule>(obj)->name()->view());
                     case ObjType::NATIVE_FN:
                         return std::format("<fn {}>", Object::as<ObjNativeFn>(obj)->name()->view());
+                    case ObjType::EXCEPTION:
+                        // ObjException:渲染完整烘焙消息(纯 C++ 访问器,非虚无重入风险;消息即身份,
+                        // 同 to_string 文案,不带引号)。
+                        return String{Object::as<ObjException>(obj)->message()->view()};
                     default:
                         // 未落地 / 用户类实例等:仅类型名 + 地址,绝不调用可重载的 to_string,杜绝重入 VM。
                         // 复用 Object::debug_repr()(非虚,不经虚分派)。

@@ -127,7 +127,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **与 raise(§4.5)的关系** -- 本寄存器是 CLAUDE.md「错误处理」第 2 条 `raise` 的 **M1 最小切片**:M1 无 try/catch,「raise」= 置寄存器 + 让 `run()` 返回;M3 落地完整 `raise` 时,在此寄存器基础上接 `find_try_handler` 查表 + `truncate` unwind + 跳 handler(逻辑见 §4.5),寄存器本身不变。即 M1 的侧信道寄存器是 M3 `raise` 的公共底座--原生函数的 `vm.fail` 与未来 op 处理器的 `raise` 共用同一寄存器。
 
-**错误无位置** -- 与 M1 现有运行时错误一致(`runtime_err` 经 `errorf` 构造,皆空态 loc -- `SourceLoc` 默认构造 src=nullptr,见 `Error.hpp`)。位置标注是跨切面的未来任务(适用所有运行时错误,经当前帧 `ip` 查 `CodeUnit` 行号表),不独压原生函数。
+**错误无位置** -- 与 M1 现有运行时错误一致(`runtime_err` 经 `Error::format` 构造,皆无位置,见 `Error.hpp`)。位置标注是跨切面的未来任务(适用所有运行时错误,经当前帧 `ip` 查 `CodeUnit` 行号表),不独压原生函数。
 
 **不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符 `vm.fail(WrongArity, ...)`。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 

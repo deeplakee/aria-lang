@@ -76,6 +76,8 @@ add_library(aria_core STATIC
         src/object/ObjModule.hpp
         src/object/ObjNativeFn.cpp
         src/object/ObjNativeFn.hpp
+        src/object/ObjException.cpp
+        src/object/ObjException.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
 )

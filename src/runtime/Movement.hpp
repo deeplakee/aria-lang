@@ -2,7 +2,6 @@
 #define ARIA_MOVEMENT_HPP
 
 #include "common.hpp"
-#include "error/Error.hpp"
 #include "memory/Buffer.hpp"
 #include "memory/GC.hpp"
 #include "runtime/FrameStack.hpp"
@@ -145,19 +144,24 @@ namespace aria {
         }
 
         // ---- 挂起错误寄存器(侧信道)----
-        // 原生函数等冷路径错误**不走返回类型**(避免把约 56B（libc++)/64B（libstdc++) 的 Error 编进热路径返回值),而是经
-        // raise 写入本寄存器;VM 在 CALL 等安全点检查 has_error() 后用 take_error() 取出传播。
-        // 寄存器置于执行上下文(而非 AriaVM):错误状态随上下文走,M6 协程期每个协程有独立的
-        // 挂起错误(各自 raise/检查,互不串扰)。M1 单一主上下文,等价于 VM 级单寄存器。
+        // 原生函数等冷路径错误**不走返回类型**(避免把约 56B（libc++)/64B（libstdc++) 的 Error
+        // 编进热路径返回值),而是经 raise 写入本寄存器;VM 在 CALL 等安全点检查 has_error() 后用
+        // take_error() 取出传播。寄存器置于执行上下文(而非 AriaVM):错误状态随上下文走,M6
+        // 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰)。M1 单一主上下文,等价于
+        // VM 级单寄存器。
+        //   - 载荷类型(M3 起):Value。VM 检测到的运行时错误与原生函数报错装箱为 ObjException
+        //     (码 + 消息串,经 to_error 还原为 Error)后写入;aria 语言自身 throw(M3)抛任意值。
+        //     raise 收已构造好的 Value(构造 ObjException 需分配,在调用方 -- 持 GC 者 -- 完成);
+        //     寄存器置入后即由 VM 根 tracer 标 pending_error() 保命(见 AriaVM ctor),取出前
+        //     跨安全点分配不回收载荷。
         //   - raise:写入。断言当前无挂起错误(防嵌套 raise 未被取走就再 raise 的 bug)。
         //   - has_error / take_error / clear_error:VM 在安全点查询/取出/清空。take_error 取走即清空。
-        //   - reset() 一并清空(上下文复用前置干净)。Error 含 String,可移动;Opt<Error> 约
-        //   64B（libc++)/72B（libstdc++),非热路径。
+        //   - reset() 一并清空(上下文复用前置干净)。Opt<Value> 尺寸小、非热路径。
 
-        void raise(Error err) noexcept {
+        void raise(Value err) noexcept {
             ASSERT(!pending_error_.has_value(),
                    "Movement::raise: pending error already set (take/clear before re-raise)");
-            pending_error_ = std::move(err);
+            pending_error_ = err;
         }
 
         [[nodiscard]]
@@ -166,11 +170,18 @@ namespace aria {
         }
 
         [[nodiscard]]
-        Opt<Error> take_error() noexcept {
+        Opt<Value> take_error() noexcept {
             return std::exchange(pending_error_, std::nullopt);
         }
 
         void clear_error() noexcept { pending_error_.reset(); }
+
+        // 挂起载荷的只读引用(为空态时无值)。供 VM 根 tracer 标根用(take_error 取走会清空,
+        // 不能经它只读查询)。
+        [[nodiscard]]
+        const Opt<Value>& pending_error() const noexcept {
+            return pending_error_;
+        }
 
     private:
         // 就位一帧为对 fn 的调用:slots 指向槽 0,VM 专有字段(function/unit/module/ip)从 fn 填充。
@@ -225,7 +236,8 @@ namespace aria {
         Buffer<Value>                    buf_; // 值栈缓冲底座(GC 分配,可增长)
         Value*                           top_; // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
         FrameStack<CallFrame, kFrameMax> frames_;
-        Opt<Error>                       pending_error_; // 挂起错误寄存器(侧信道;原生函数等冷路径经 raise 写入)
+        Opt<Value>                       pending_error_; // 挂起错误寄存器(侧信道;M3 起载荷为 Value -- ObjException 装箱
+                                                         // 或用户 throw 的任意值;置入后由 VM 根 tracer 标根,见上注释)
     };
 
     // VMContext 是 Movement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用

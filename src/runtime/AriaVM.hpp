@@ -113,24 +113,29 @@ namespace aria {
         // (届时 run_ 经 current_ 重入,call_value 检查的 ctx 即 current_,与本转发一致)。
         // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md 错误通道 2(raise)。
         //
-        // raise:写入挂起错误。断言当前无挂起(Movement::raise 内把关)。
-        // fail:便捷工厂--errorf 构造无位置 Error 后 raise,供原生函数一行报错。
+        // 载荷类型(M3 起)为 Value,单寄存器模型(exception-implementation-pitfalls.md 坑 #7):
+        // - raise(Error):VM 检测错误 / 原生报错入口 -- Error 烘完整消息("Category: Name"
+        //   detail,位置标注落地后含位置前缀)后,**装箱 ObjException{code, 已烘消息}** 存入寄存器。
+        //   Movement::raise(Value)(存原值不包)是 M3 用户 throw 的路由,不经本 VM 层 API。
+        // - fail:便捷工厂 -- Error::format 格式化构造 Error 后 raise。
+        // 寄存器取出的 ObjException 经其 to_error 还原为 Error(见 AriaVM.cpp value_to_error),
+        // 边界文案与 Error::format 直构逐字一致。
         //
-        // 两者均返回 false -- 供原生函数一行报错 `return vm.fail(...);`(同时置寄存器与返回失败),
-        // 成功路径则写 slots[0] 后 `return true;`。[[nodiscard]] 故意为之:裸 `vm.fail(...);`(丢弃
-        // 其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),要么显式 `(void)vm.fail(...);`
-        // 表明「我要 raise 但走别的控制流」。VM 以**返回的 bool 为成败信号**(见 call_value 原生分支),
-        // 寄存器仅作错误载荷容器;二者须一致(debug 断言把关),契约 `return false ⟺ 已 raise`。
+        // raise / fail 均返回 false -- 供原生函数一行报错 `return vm.fail(...);`(同时置寄存器与
+        // 返回失败),成功路径则写 slots[0] 后 `return true;`。[[nodiscard]] 故意为之:裸
+        // `vm.fail(...);`(丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),
+        // 要么显式 `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**返回的 bool
+        // 为成败信号**(见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug 断言
+        // 把关),契约 `return false ⟺ 已 raise`。raise(Error) 内 new_exception(分配)可能在原生
+        // 执行中触发 GC:值栈/帧/builtins_ 均已接根,载荷构造后立即入寄存器(pending_error 亦由
+        // VM 根 tracer 标根),根安全由既有接线承保。定义在 .cpp(需 ObjException 完整类型)。
         [[nodiscard]]
-        bool raise(Error err) noexcept {
-            main_ctx_.raise(std::move(err));
-            return false;
-        }
+        bool raise(const Error& err);
 
         template<typename... Args>
         [[nodiscard]]
         bool fail(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return raise(errorf(code, fmt, std::forward<Args>(args)...));
+            return raise(Error::format(code, fmt, std::forward<Args>(args)...));
         }
 
         // 模块表(解释器级):键 = 规范路径 ObjString*(intern,装箱为 Value),

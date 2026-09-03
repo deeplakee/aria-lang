@@ -58,6 +58,8 @@ add_library(aria_core STATIC
         src/compile/Compiler.hpp
         src/runtime/AriaVM.cpp
         src/runtime/AriaVM.hpp
+        src/runtime/Builtins.cpp
+        src/runtime/Builtins.hpp
         src/runtime/FrameStack.hpp
         src/runtime/Movement.cpp
         src/runtime/Movement.hpp

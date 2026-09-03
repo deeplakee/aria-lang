@@ -16,6 +16,7 @@
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
+#include "runtime/Builtins.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -335,19 +336,22 @@ namespace aria {
 
     } // namespace
 
-    // 构造:成员初始化(gc_ 先,main_ctx_/modules_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC。
-    // tracer 为 lambda:[this] 捕获,标记三类根:
+    // 构造:成员初始化(gc_ 先,main_ctx_/modules_/builtins_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC,
+    // 最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时已入表条目经 builtins_.trace 标根)。
+    // tracer 为 lambda:[this] 捕获,标记四类根:
     //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
-    //   2) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
+    //   2) builtins_:VM 级只读 builtins 表(内置 ObjNativeFn + name 串,LOAD_GLOBAL 回退查此);
+    //   3) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
     //      是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时栈遍历为空,
     //      不会标到指向已回收对象的陈旧栈值;
-    //   3) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
+    //   4) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
     //      免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4。
     // 值栈/帧以 tracer 直标代替 Movement 升 Object(M6 协程期再升级 ObjMovement 入对象链表)。
-    // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/main_ctx_ 同生共死,无需析构注销。
-    AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, modules_{&gc_}, source_roots_{} {
+    // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/builtins_/main_ctx_ 同生共死,无需析构注销。
+    AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{} {
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
+            builtins_.trace(g);
             auto& ctx = main_ctx_;
             for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
                 g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
@@ -357,6 +361,11 @@ namespace aria {
                 g.mark_object(f.module);
             }
         });
+        // VM 级 builtins 一次性注册(set_vm_roots 已就绪):type/len/str/assert 经 new_native_fn 包成
+        //   ObjNativeFn 后按名 upsert 进 builtins_。注册内 new_string/new_native_fn 各一次 new_object 顶
+        //   maybe_collect:已入表条目经上方 tracer 的 builtins_.trace 标根,在建的 name/fn 经
+        //   register_builtins 内 make_guard 双守卫根化(见 Builtins.cpp)。全 VM 共享一份,不再每模块注入。
+        builtins::register_builtins(gc_, builtins_);
         // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 root_
         //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 dir_ 时裸名搜 cwd),
         //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
@@ -393,6 +402,8 @@ namespace aria {
         if (!compiled.has_value()) {
             return std::unexpected(compiled.error());
         }
+        // 内置函数不经此注册 -- VM 级 builtins_ 表由 ctor 一次性填充,LOAD_GLOBAL 模块 globals
+        // 未命中后回退查之,覆盖所有执行入口(见 Builtins.hpp)。
         return run(compiled.value());
     }
 
@@ -574,6 +585,7 @@ namespace aria {
             return std::unexpected(std::move(compiled).error());
         }
         // 模块保持 Loading 态:run-once + 置 Loaded 由 IMPORT 分支进帧驱动、RETURN 完成。
+        // 内置函数不经此注入 -- 由 VM 级 builtins_ 表统一承载,LOAD_GLOBAL 模块 globals 未命中后回退查之。
         return module;
     }
 
@@ -656,16 +668,22 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
-                    // [] -> [v]:按名查当前模块 globals,压入;未定义 -> UndefinedVariable 运行时错误。
+                    // [] -> [v]:按名查当前模块 globals,命中则压入;miss 回退 VM 级 builtins_ 表
+                    //   (Python 式 globals -> builtins 查找链,内置经此解析);两者皆未命中 ->
+                    //   UndefinedVariable 运行时错误。STORE_GLOBAL 不回退 builtins(赋值不隐式创建,
+                    //   必须先 var 声明,见 grammar.txt §445),仅 DEF_GLOBAL 写模块 globals 可 shadow 内置。
                     //
                     // 根安全(M6 解锁 GC 后):find 无分配;push 的唯一分配是值栈 grow,而 push 不变式
                     //   先写栈再增长(Movement::push),e->value 已入栈(根)后方 grow -> collect;且
-                    //   e->value 经 module -> globals 根存活。name 同上经常量池根。
-                    ObjString*  name  = read_name(frame);
-                    const Value key   = Value::from_obj(name);
-                    const auto  entry = frame.module->globals().find(key);
+                    //   e->value 经 module -> globals 或 builtins_ -> VM 根存活。name 同上经常量池根。
+                    ObjString*  name = read_name(frame);
+                    const Value key  = Value::from_obj(name);
+                    auto entry = frame.module->globals().find(key);
                     if (entry == nullptr) {
-                        return runtime_err(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        entry = builtins_.find(key); // 回退 VM 级 builtins(内置 type/len/str/assert)
+                        if (entry == nullptr) {
+                            return runtime_err(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        }
                     }
                     ctx.push(entry->value);
                     break;

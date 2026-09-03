@@ -145,6 +145,19 @@ namespace aria {
             return modules_;
         }
 
+        // VM 级只读 builtins 表:内置原生函数(type/len/str/assert)按名注册于此,LOAD_GLOBAL
+        // 在模块 globals 未命中后回退查此表(Python 式 globals -> builtins 查找链)。构造期由
+        // builtins::register_builtins 一次性填充,全 VM 生命周期共享;trace 由 VM 根 tracer 委托。
+        [[nodiscard]]
+        AriaHashTable& builtins() noexcept {
+            return builtins_;
+        }
+
+        [[nodiscard]]
+        const AriaHashTable& builtins() const noexcept {
+            return builtins_;
+        }
+
         // 源根列表(解释器级):裸名导入(import "lib/utils")的搜索路径根目录,语义对齐 Python
         // sys.path -- 解析器沿各源根找 <源根>/<spec>.aria,首个存在者命中(详见 IMPORT 实现 &
         // .claude/reference/runtime/import-path-resolution.md)。模块表键为命中文件的绝对规范路径(weakly_canonical,
@@ -216,7 +229,8 @@ namespace aria {
 
         GC            gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
         Movement      main_ctx_;
-        AriaHashTable modules_; // 模块表(M2:解释器级共享 + GC 根)
+        AriaHashTable modules_;  // 模块表(M2:解释器级共享 + GC 根)
+        AriaHashTable builtins_; // VM 级只读 builtins 表(构造期一次填充 + GC 根,LOAD_GLOBAL 回退查)
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_);[1..]=配置根(stdlib/-L/环境变量)
         List<String> source_roots_;
     };

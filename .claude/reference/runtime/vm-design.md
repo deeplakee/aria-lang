@@ -144,7 +144,7 @@ bool len_native(AriaVM& vm, Span<Value> slots) {
 }
 ```
 
-**落地**:类型 `src/object/ObjNativeFn.{hpp,cpp}`;寄存器 `Movement::pending_error_` + `raise/has_error/take_error/clear_error`;`AriaVM::raise/fail` 返 `false` 转发到当前上下文;`call_value` 加 `ObjNativeFn` 分支(bool 成败信号 + 槽 0 返回 + 寄存器载荷)。`tests/test_ariavm.cpp` 4 例(槽 0 返回 / 零元 / 侧信道错误 / 元数自查)。注意:**原生函数类型与 CALL 路径已落地,但内置函数注册机制(把内建按名注册进模块 globals 的表/指令)仍属 M2**(见 §7)。
+**落地**:类型 `src/object/ObjNativeFn.{hpp,cpp}`;寄存器 `Movement::pending_error_` + `raise/has_error/take_error/clear_error`;`AriaVM::raise/fail` 返 `false` 转发到当前上下文;`call_value` 加 `ObjNativeFn` 分支(bool 成败信号 + 槽 0 返回 + 寄存器载荷)。`tests/test_ariavm.cpp` 4 例(槽 0 返回 / 零元 / 侧信道错误 / 元数自查)。注意:**原生函数类型与 CALL 路径已落地,内置函数注册机制亦已落地**(方案 B VM 级 builtins 表 + LOAD_GLOBAL 回退,见 §7)。
 
 ## 5. 早期简化(M1 的刻意收敛)
 
@@ -181,8 +181,8 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - **`YIELD`/`RESUME` 指令缺失**(指令集文档需增补,参照 `INVOKE_METHOD` 的「预备指令」先例)。
 - **`ObjType` 无 `MOVEMENT`**(M6 增)。
 - **`TryRecord` 字段不全**(缺 stack_depth/frame_depth/catch_slot,M3 补)。
-- **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册,标 `modules_`/值栈/帧)。
-- **内置函数注册机制**(把 `print`/`len`/... 等内建按名注册进模块 globals 的表/指令,如专设 `LOAD_BUILTIN idx` 或走全局表预填)待定(M2 定);原生函数**类型与 CALL 路径**已落地(见 §4.7),M2 只需补「按名注册」一层。
+- **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册,标 `modules_`/`builtins_`/值栈/帧)。
+- **内置函数注册机制**已落地(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/Builtins.{hpp,cpp}` 的 `builtins::register_builtins(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等原生函数经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `upsert` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次,全 VM 生命周期共享,不再每模块注入。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 grammar.txt §205-206),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。原方案 A「按模块预填 globals」会在 REPL 逐行 `run()` 重注册、覆写用户 shadow(与「顶层 var 跨行保留」矛盾),方案 B 一份只读表彻底回避,并省掉每模块 4 个 `ObjNativeFn` 分配。原生函数**类型与 CALL 路径**早已落地(见 §4.7)。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

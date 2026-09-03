@@ -575,3 +575,122 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
+
+// ============================================================
+// 内置函数（M2 收尾：type / len / str / assert）
+// ============================================================
+// 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
+// （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFunction*)，
+// VM ctor 已注册 builtins，故单次 run 测试天然覆盖。跨行 shadow 持久见 BuiltinShadowPersistsAcrossRuns。
+
+TEST(CodeGen, BuiltinType) {
+    // type(x) -> 值的精确类型名（PascalCase）。Int/Bool/Nil/String 各一。
+    EXPECT_EQ(aria::format_value(run_source("return type(42);").value()), "Int");
+    EXPECT_EQ(aria::format_value(run_source("return type(true);").value()), "Bool");
+    EXPECT_EQ(aria::format_value(run_source("return type(nil);").value()), "Nil");
+    EXPECT_EQ(aria::format_value(run_source("return type(\"x\");").value()), "String");
+}
+
+TEST(CodeGen, BuiltinLen) {
+    // len(s) -> 字符串长度（当前仅 String，List/Map 随 M5）。
+    EXPECT_EQ(run_int("return len(\"abc\");"), 3);
+    EXPECT_EQ(run_int("return len(\"\");"), 0);
+}
+
+TEST(CodeGen, BuiltinLenNonString) {
+    // len 对非字符串报 TypeMismatch。
+    auto out = run_source("return len(42);");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+}
+
+TEST(CodeGen, BuiltinStr) {
+    // str(x) -> 可读渲染（同 PRINT / format_value）。
+    EXPECT_EQ(aria::format_value(run_source("return str(nil);").value()), "nil");
+    EXPECT_EQ(aria::format_value(run_source("return str(42);").value()), "42");
+    EXPECT_EQ(aria::format_value(run_source("return str(true);").value()), "true");
+}
+
+TEST(CodeGen, BuiltinAssertPass) {
+    // assert(true) 成功返 nil（作为语句被 POP 丢弃），后续正常执行。
+    EXPECT_EQ(run_int("assert(true); return 1;"), 1);
+    // 真值（非 false/nil）亦通过：Lua 风格真值。
+    EXPECT_EQ(run_int("assert(1); return 2;"), 2);
+}
+
+TEST(CodeGen, BuiltinAssertFail) {
+    // assert(false) -> AssertionFailed，未捕获即 run() 返回该错误。
+    auto out = run_source("assert(false); return 1;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::AssertionFailed);
+}
+
+TEST(CodeGen, BuiltinAssertFailWithMessage) {
+    // assert(false, "boom") -> AssertionFailed，消息含自定义串。
+    auto out = run_source("assert(false, \"boom\"); return 1;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::AssertionFailed);
+    EXPECT_TRUE(out.error().message().find("boom") != std::string::npos);
+}
+
+TEST(CodeGen, BuiltinShadowedByUserGlobal) {
+    // 用户顶层 var 同名覆盖内置：DEF_GLOBAL 在运行期 upsert 覆写同名全局，内置被替换。
+    // 内置仅注册进运行期 globals 表，不入编译期 defined_globals_，故 var len 不触发 RedefinedVariable。
+    EXPECT_EQ(run_int("var len = 5; return len;"), 5);
+    EXPECT_EQ(run_int("var type = 99; return type;"), 99);
+}
+
+TEST(CodeGen, BuiltinArityCheck) {
+    // 内置自检 argc：type() 0 参 / type(1,2) 2 参 -> WrongArity。
+    auto a = run_source("return type();");
+    ASSERT_FALSE(a.has_value());
+    EXPECT_EQ(a.error().code(), ErrorCode::WrongArity);
+
+    auto b = run_source("return type(1, 2);");
+    ASSERT_FALSE(b.has_value());
+    EXPECT_EQ(b.error().code(), ErrorCode::WrongArity);
+}
+
+TEST(CodeGen, BuiltinAssertArityCheck) {
+    // assert 自检 argc：assert() 0 参 / assert(1,2,3) 3 参 -> WrongArity（修零参越界读 slots[1]）。
+    auto a = run_source("assert(); return 1;");
+    ASSERT_FALSE(a.has_value());
+    EXPECT_EQ(a.error().code(), ErrorCode::WrongArity);
+
+    auto b = run_source("assert(1, 2, 3); return 1;");
+    ASSERT_FALSE(b.has_value());
+    EXPECT_EQ(b.error().code(), ErrorCode::WrongArity);
+}
+
+TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
+    // 跨 run() 复用同一模块（模拟 REPL 逐行）：第 1 行 `var len = 5` 写入模块 globals；
+    // 第 2 行 `return len` 应命中模块 globals 返回 5，而非被内置覆写回 <fn len>。
+    // 旧方案 A「每模块预填 globals」会在第 2 行 run() 重注册、冲掉 shadow；方案 B VM 级只读
+    // builtins_ 表不再每 run 注入，shadow 跨行持久。stress GC 锻炼 builtins_ 根接线。
+    auto  vm = std::make_unique<AriaVM>();
+    auto& gc = vm->gc();
+    gc.set_stress(true);
+    auto mod_name = new_string(gc, "<test>");
+    auto guard    = gc.make_guard(mod_name);
+    auto module   = new_module(gc, mod_name);
+
+    auto c1 = compile_source(gc, *module, "var len = 5;");
+    ASSERT_TRUE(c1.has_value());
+    auto r1 = vm->run(c1.value());
+    ASSERT_TRUE(r1.has_value()) << r1.error().message();
+
+    auto c2 = compile_source(gc, *module, "return len;");
+    ASSERT_TRUE(c2.has_value());
+    auto r2 = vm->run(c2.value());
+    ASSERT_TRUE(r2.has_value()) << r2.error().message();
+    EXPECT_EQ(r2.value().as_int(), 5); // 非内置 <fn len>
+}
+
+TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
+    // 裸名赋值 `len = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
+    // 写（STORE_GLOBAL 不回退，与 grammar §205-206「赋值不隐式创建、必须先 var 声明」一致）。
+    // 旧方案 A 因预填会静默覆写内置；方案 B 正确报错。
+    auto out = run_source("len = 5; return len;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
+}

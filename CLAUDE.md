@@ -2,7 +2,7 @@
 
 aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算支持 Windows / Linux / macOS）。当前进度：util 工具层（fs / utf8 / source_file / io / util / cli）与 value 层（NaN-boxing / TagValue 可切换）已就绪；error 层（ErrorCode / Error / AriaException / fatal_error）与 compile 层（Token / Lexer / AST / Parser）已实现；`OpCode` 枚举与 `FrameStack` 模板就绪；GC Phase 1 + Phase 2 已落地（详见 `.claude/reference/memory/gc-implementation-plan.md`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表）；AriaVM M2 进行中（模块表 + 源根列表 + VM 根 tracer（标 `modules_` + `main_ctx_` 值栈/帧，**开发期即开 GC**：`run()`/`compile()` 不再持 `LockGuard`，`JUMP_BACK` 为 safe point；`compile()` 以 `make_guard(&module)` 根化建设中函数链，CodeGen 各 name 串跨子编译 `make_guard`）+ 全局指令 `DEF/LOAD/STORE_GLOBAL` + `IMPORT` 路径解析/模块表命中复用已落地，**模块磁盘加载/AST->CodeUnit 编译/run-once 已落地**（IMPORT 未命中分支:读盘 -> 编译(入口名 `<module>`) -> 入表 Loading -> 以 entry 作普通 0 参函数调用进帧交主循环执行;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 Loaded、改压模块对象,即「模块体返回模块」,命中/未命中栈效应统一；被导入模块编译期/运行期错误原样透传含其文件位置）），M3+（异常 try/catch、闭包、类、协程）仍为骨架；Object 子类型已落地 `ObjString`/`ObjFunction`/`ObjNativeFn`/`ObjModule`，其余未开始；`AstVisitor` 访问者基类已落地；字节码编译器 `CodeGen`（`AstVisitor` 具体子类，单遍合一：名字解析 + 语义检查 + 字节码发射）已落地--42 个 `visitXxxNode` 全 override，核心特性（算术/比较/逻辑短路/局部与全局/控制流/函数与递归/lambda/复合赋值/前置自增自减/import/for-in lowering）完整发射字节码，依赖未落地 VM 里程碑的特性（类/异常/闭包/list/map/field/index/match/range）占位 `NotImplemented`（编译期 Error），随 VM M3/M4/M5 推进逐个翻为真实发射。VM M1 主循环跑通、`Disassembler` 已落地。
 
-> **模块参考与设计文档已拆出 CLAUDE.md**：各源码目录的模块参考在 `.claude/rules/`（带 `paths:` frontmatter，读对应源码时自动加载），设计文档在 `.claude/reference/`（按需 Read，不自动加载），语言文法 `grammar.txt` 留在 `docs/`。详见下「文档与参考」节。
+> **模块参考与设计文档已拆出 CLAUDE.md**：各源码目录的模块参考在 `.claude/rules/`（带 `paths:` frontmatter，读对应源码时自动加载），设计文档在 `.claude/reference/`（按需 Read，不自动加载），语言文法 `grammar.txt` 留在 `docs/`。详见下「文档与参考」节。根目录 `AGENTS.md` 是本文件的软链，作为 ZCode 的工作区指令入口（内容同源，单一事实源）。
 
 ## 构建
 
@@ -90,7 +90,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 
 ## 文档与参考
 
-项目对 Claude 的上下文分三层组织（约定对齐 Claude Code `.claude/` 目录）：
+项目上下文分三层组织（Claude Code 约定对齐 `.claude/` 目录；ZCode 复用同一套内容作单一事实源：指令经根目录 `AGENTS.md` 软链（→ 本文件），模块参考经 `.zcode/skills/aria-<dir>/SKILL.md` 软链（→ `.claude/rules/<dir>.md`，frontmatter 另带 `name`/`description`，按 description 自动触发））：
 
 - **`CLAUDE.md`（本文件）**：常驻上下文 -- 项目概览/进度 + 构建/输出/命名/类型/代码组织等**通用规则** + 错误处理原则 + 陷阱 + 测试。跨阶段通用、必须每次遵守的规则放这里。
 - **`.claude/rules/`**：按源码目录拆分的**模块参考**，每个文件带 `paths:` frontmatter -- Claude 读到匹配路径的源码时**自动加载**对应参考，不读则不进上下文。当前 9 个：`util`/`value`/`error`/`compile`/`bytecode`/`runtime`/`object`/`memory`（各对应 `src/<dir>/**`）+ `core`（对应 `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp` 等顶层文件）。改某模块代码时其参考自动出现，无需手动翻 CLAUDE.md。
@@ -115,7 +115,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 | `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjNativeFn / ObjModule |
 | `src/memory/**` | `.claude/rules/memory.md` | Array / Allocator / HashTable / InternPool / GC |
 
-深度设计文档见 `.claude/reference/`（按需 Read，见上「文档与参考」节）。
+深度设计文档见 `.claude/reference/`（按需 Read，见上「文档与参考」节）。ZCode 中上表各规则经 `.zcode/skills/aria-<dir>/SKILL.md` 软链暴露为技能（与 `.claude/rules/<dir>.md` 为同一文件；`core` 对应 `aria-core`）。
 
 ## 陷阱
 

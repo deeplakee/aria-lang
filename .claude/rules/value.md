@@ -1,4 +1,6 @@
 ---
+name: aria-value
+description: aria 解释器 value 层模块参考：Value（NaN-boxing/TagValue 可切换）、AriaArray、AriaHashTable、value_equal/value_identical 双相等、format_value 系列渲染。读写 src/value/** 或涉及值表示、栈上值布局、类型名打印时使用。
 paths:
   - "src/value/**"
 ---

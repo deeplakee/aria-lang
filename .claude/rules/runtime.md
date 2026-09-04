@@ -1,4 +1,6 @@
 ---
+name: aria-runtime
+description: aria 解释器 runtime 层模块参考：FrameStack、Movement 执行上下文（值栈/帧栈/挂起错误寄存器）、AriaVM（主循环/全局与 builtins 回退/IMPORT 模块加载，含 VM 异常通道落地状态清单）。读写 src/runtime/**、实现 VM 里程碑（M3 异常等）时使用。
 paths:
   - "src/runtime/**"
 ---

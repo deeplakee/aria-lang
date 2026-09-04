@@ -1,4 +1,6 @@
 ---
+name: aria-core
+description: aria 解释器（C++23）顶层公共头模块参考：common.hpp（宏/USING_NANBOXING）、type.hpp（i32/String/List/Result 等类型别名）、sys.hpp（平台宏）、main.cpp（入口）、interpreter.hpp（CLI 分发核心）。读写这些顶层文件或涉及类型别名选择、平台检测、CLI 入口分发时使用。
 paths:
   - "src/common.hpp"
   - "src/type.hpp"

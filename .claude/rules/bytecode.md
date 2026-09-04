@@ -1,4 +1,6 @@
 ---
+name: aria-bytecode
+description: aria 解释器 bytecode 层模块参考：OpCode 指令集、CodeUnit 字节码容器（emit/跳转回填/异常记录表）、Disassembler 反汇编器。读写 src/bytecode/** 或涉及字节码编码、跳转占位回填、按 ip 查行号/查 try handler 时使用。
 paths:
   - "src/bytecode/**"
 ---

@@ -1,4 +1,6 @@
 ---
+name: aria-error
+description: aria 解释器 error 层模块参考：ErrorCode/ErrorCategory、Error（静态工厂构造面）、AriaException、fatal_error。读写 src/error/** 或涉及四条错误通道（Result 返回/VM 自管异常/AriaException 边界/fatal_error）、错误消息烘焙时使用。总览见 CLAUDE.md「错误处理」节。
 paths:
   - "src/error/**"
 ---

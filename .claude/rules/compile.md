@@ -1,4 +1,6 @@
 ---
+name: aria-compile
+description: aria 解释器 compile 层模块参考：Token/Lexer/ast/Parser/AstVisitor/FunctionCtx/ModuleCtx/CodeGen（单遍合一字节码编译器）/Compiler 编排器。读写 src/compile/** 或改文法（docs/grammar.txt）、词法/语法/语义检查、字节码发射时使用。
 paths:
   - "src/compile/**"
 ---

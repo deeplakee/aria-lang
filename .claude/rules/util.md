@@ -1,4 +1,6 @@
 ---
+name: aria-util
+description: aria 解释器 util 工具层模块参考：fs（路径/读盘）、utf8（码点编解码）、source_file（SourceFile/SourceLoc 位置类型）、io（print/println）、util（哈希/转义）、cli（参数解析器）。读写 src/util/** 或处理源文件加载、位置定位、命令行参数解析时使用。
 paths:
   - "src/util/**"
 ---

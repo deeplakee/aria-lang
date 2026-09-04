@@ -1,4 +1,6 @@
 ---
+name: aria-object
+description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T> 约定、ObjString（SSO+intern）、ObjFunction、ObjNativeFn、ObjException、ObjModule。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
 paths:
   - "src/object/**"
 ---

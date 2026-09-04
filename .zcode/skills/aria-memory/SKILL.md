@@ -1,0 +1,1 @@
+../../../.claude/rules/memory.md

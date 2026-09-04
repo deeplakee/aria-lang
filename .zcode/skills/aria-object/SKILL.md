@@ -1,0 +1,1 @@
+../../../.claude/rules/object.md

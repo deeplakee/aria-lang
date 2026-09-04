@@ -1,4 +1,6 @@
 ---
+name: aria-memory
+description: aria 解释器 memory 层模块参考：Buffer/Array（trivial 可增长容器）、Allocator 约束、HashTable（Swiss Table）、InternPool 驻留池、GC（mark-sweep/临时根/VM 根 tracer/核心不变式）。读写 src/memory/** 或涉及分配器、GC 触发点与守卫纪律时使用。
 paths:
   - "src/memory/**"
 ---

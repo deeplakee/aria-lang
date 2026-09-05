@@ -293,7 +293,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出；VM `raise` 查 `ExceptionFrame`/`CallFrame` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
 
-> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（M3 补；帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与 VM `raise` 尚未实现（见 §5.9/§6.1）。
+> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与查表已落地（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返命中记录指针）；VM `raise`（查表 + truncate unwind + 跳 handler）尚未实现（见 §5.9/§6.1）。
 
 ### 4.17 返回
 
@@ -513,7 +513,7 @@ LOAD_IMM 0; LOAD_INDEX ; [list, list[0]]  -- 绑 a: STORE_LOCAL a; POP list[0]?
 不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码。编译期为每个 `try` 在 CodeUnit 的异常记录表生成一条记录：
 
 ```
-记录表条目: { begin, end, handle=L_catch, stack_depth(M3 补) }   -- 帧深度由 unwind 遍历隐式决定, catch_slot 由 handler 约定承载
+记录表条目: { begin, end, handle=L_catch, stack_depth }   -- 帧深度由 unwind 遍历隐式决定, catch_slot 由 handler 约定承载
 ```
 
 字节码本身不含 try 设置/清理指令，`<body>` 直接顺序排列：
@@ -530,15 +530,14 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程：按顶帧 `last_ip` 反推 offset -> 查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 沿帧栈退到 handler 所属帧（`FrameStack::truncate`）-> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handle`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle}` + `find_try_handler`），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
+`raise` 流程：按顶帧 `last_ip` 反推 offset -> 查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 沿帧栈退到 handler 所属帧（`FrameStack::truncate`）-> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handle`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返 `Opt<const TryRecord*>` 命中记录指针），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
 
 ## 6. 缺口分析（相对文法与 CLAUDE.md）
 
 ### 6.1 异常记录表（已采纳方案，部分落地）
 
-**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。记录表结构与查表已落地：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle}`（按 `begin` 单调），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录返 handler offset。`CallFrame` 亦已落地（`truncate` 目标深度来源之一）。待实现项：
+**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。记录表结构与查表已落地：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle, stack_depth}`（按 `begin` 单调；`stack_depth` = try 入口局部数编译期快照，供值栈回退），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录，返 `Opt<const TryRecord*>` 指向命中记录。`CallFrame` 亦已落地（`truncate` 目标深度来源之一）。待实现项：
 
-- `TryRecord` 扩 `stack_depth` 字段（供值栈回退；帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。
 - VM `raise`：按 `last_ip` 反推 offset 查表 -> `truncate` 回退 -> 跳 handler（见 §5.9）。
 - `THROW` 运行时语义（当前 `THROW` 命中 `not_implemented`）。
 - `finally` 语义细化（finally 内 return/throw、finally 必执行）。

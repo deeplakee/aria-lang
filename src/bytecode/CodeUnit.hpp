@@ -17,14 +17,17 @@ namespace aria {
         u32 line   = 0;
     };
 
-    // 异常记录表条目:一个 try 块的受保护区间 [begin, end) 与 catch handler 入口。
-    //        三字段均为 code 字节流中的 offset。M3 起 unwind 按帧 last_ip 反推 offset 查表命中
-    //        此记录(届时再扩 stack_depth 字段);当前编译器尚无发射方。
-    //        简单聚合(类内默认成员初始化, 同 LineEntry), trivially-copyable 满足 Array<T>。
+    // 异常记录表条目:一个 try 块的受保护区间 [begin, end)、catch handler 入口与 unwind 栈深。
+    //        begin/end/handle 均为 code 字节流中的 offset;stack_depth 为编译期 try 入口局部数快照
+    //        (相对 frame.slots,非全局栈基址),unwind 据此截断值栈,并把异常值 push 落到 catch 参数槽
+    //        (恒 == stack_depth,值填槽无 STORE_LOCAL)。不存 frame_depth(运行时量,由 unwind 遍历
+    //        帧链隐式决定)、不存 catch_slot(恒等 stack_depth)。
+    //        简单聚合(类内默认成员初始化, 同 LineEntry), trivially-copyable 满足 Array<T> 约束。
     struct TryRecord {
-        u32 begin  = 0; // try 受保护区间起始 offset (含)
-        u32 end    = 0; // try 受保护区间结束 offset (不含); [begin, end) 内的 ip 命中此记录
-        u32 handle = 0; // catch handler 入口 offset; unwind 后跳此
+        u32 begin       = 0; // try 受保护区间起始 offset (含)
+        u32 end         = 0; // try 受保护区间结束 offset (不含); [begin, end) 内的 ip 命中此记录
+        u32 handle      = 0; // catch handler 入口 offset; unwind 后跳此
+        u32 stack_depth = 0; // try 入口局部数(编译期快照); unwind 截值栈至 frame.slots + 此值
     };
 
     // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表 + 异常记录表。
@@ -98,10 +101,10 @@ namespace aria {
         u32 line_for_offset(usize offset) const noexcept;
 
         // ---- 异常记录表 ----
-        // 按 ip 查最近覆盖的 try 记录(嵌套取最内层), 返回其 handle offset 的包装; 无覆盖返 nullopt。
-        // 记录按 begin 单调; 二分 + 前溯, O(嵌套深度) 最坏。
+        // 按 ip 查最近覆盖的 try 记录(嵌套取最内层), 返回指向命中记录的指针(unwind 读 handle 与
+        // stack_depth 两字段); 无覆盖返 nullopt。记录按 begin 单调; 二分 + 前溯, O(嵌套深度) 最坏。
         [[nodiscard]]
-        Opt<u32> find_try_handler(u32 ip) const noexcept;
+        Opt<const TryRecord*> find_try_handler(u32 ip) const noexcept;
 
         // ---- GC trace ----
         // 委托 constants.trace(gc)(code/lines/try_records 无 Value,不标)。由 ObjFunction::trace 调用。

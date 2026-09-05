@@ -141,7 +141,7 @@ namespace aria {
 
     // ---- 异常记录表 ----
 
-    Opt<u32> CodeUnit::find_try_handler(const u32 ip) const noexcept {
+    Opt<const TryRecord*> CodeUnit::find_try_handler(const u32 ip) const noexcept {
         // 记录按 begin 单调; 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
         // 前提:try 区间良嵌套(任意两条记录不交叉重叠),交叉时"前溯第一个 end > ip"可能命中
         // 错误 handler;该不变式由编译器 try 的「入口预插占位 + 结尾回填」发射顺序保证。
@@ -162,7 +162,7 @@ namespace aria {
         while (low > 0) {
             --low;
             if (try_records[low].end > ip) {
-                return try_records[low].handle;
+                return &try_records[low];
             }
         }
         return std::nullopt;

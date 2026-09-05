@@ -148,15 +148,53 @@ namespace aria {
             }
         }
 
+        // 运行期位置串:"path:line"(文件模块)或 "<name>:line"(合成模块 -- 名以 '<' 开头,如
+        // <script>/<test>,abs_path 会拼出伪路径;dir_ 内容空同理退化)。帧栈空(run 外经
+        // vm.fail 直调等)返空串 -- 无位置。行号 = 顶帧 last_ip(主循环取指前写的指令起始指针,
+        // 与 unit->code.data() 相减反推 offset)查 RLE 行号表;表空(手搓 CodeUnit 无行号)
+        // line_for_offset 返 0,不炸。报错是冷路径,
+        // 一次 std::format 可忽略。供 raise(装箱点)与 runtime_err(run_ 直报站点)共用 --
+        // 二者调用时顶帧恒为故障指令所在帧(直报)或 caller 帧(call_*/原生失败,被调帧未进/
+        // 原生不进帧),last_ip 恰为故障指令 / CALL 站点(pitfalls 坑 #15 的位置语义)。
+        String runtime_loc(Movement& ctx) {
+            if (ctx.frames().empty()) {
+                return {};
+            }
+            const auto& frame = ctx.frames().top();
+            const auto  line  = frame.unit->line_for_offset(static_cast<usize>(frame.last_ip - frame.unit->code.data()));
+            const auto  mod   = frame.module;
+            if (const auto name = mod->name()->view(); name.starts_with('<') || mod->abs_path().empty()) {
+                return std::format("{}:{}", name, line);
+            }
+            return std::format("{}:{}", mod->abs_path(), line);
+        }
+
+        // 把寄存器取出的载荷还原为边界 Error:ObjException -> to_error()(message_ 已是完整烘焙串,
+        // 经 Error::from_baked 原样回传,与 from_detail 直构文案逐字一致);其它载荷(未来用户
+        // throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,兜底仅防御)报
+        // UncaughtException,消息渲染值本身。
+        Error value_to_error(const Value v) {
+            if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
+                return Object::as<ObjException>(v.as_obj())->to_error();
+            }
+            return Error::from_detail(ErrorCode::UncaughtException,
+                                      std::format("uncaught exception: {}", format_value(v)));
+        }
+
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),以 std::format 风格
-        // 直接格式化消息。供 run_ 与 numeric_op 等「返回 Result<Value, Error>」的构造点用,
-        // 把 std::unexpected(Error{...}) 样板整体收口;调用方只剩 return runtime_err(...)。
-        // 转发已构造 Error(如 run_binary_numeric 失败回传、call_value 失败后从 ctx 取出的载荷)
-        // 的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。耦合 Result<Value, Error>,
-        // 故仅限本翻译单元(其它阶段返回类型不同,不复用)。
+        // 直接格式化消息,**位置取自 ctx 顶帧**(经 runtime_loc 查行号表取 "path:line",与细节
+        // 一并经 Error::make_message 烘齐,再经 from_baked 装回 -- 同形于编译期消息仅少列号段;
+        // 与装箱点 raise 同用 runtime_loc + make_message,两条运行期报错路径对称)。供 run_ 与
+        // numeric_op 等「返回 Result<Value, Error>」的构造点用,把 std::unexpected(Error{...})
+        // 样板整体收口;调用方只剩 return runtime_err(ctx, ...)。转发已构造 Error(如
+        // run_binary_numeric 失败回传、call_value 失败后从 ctx 取出的载荷 -- 位置已在构造点
+        // 烘好或不适用)的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。
+        // 耦合 Result<Value, Error>,故仅限本翻译单元(其它阶段返回类型不同,不复用)。
         template<typename... Args>
-        Result<Value, Error> runtime_err(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return std::unexpected(Error::format(code, fmt, std::forward<Args>(args)...));
+        Result<Value, Error> runtime_err(Movement& ctx, const ErrorCode code, std::format_string<Args...> fmt,
+                                         Args&&... args) {
+            const auto detail = std::format(fmt, std::forward<Args>(args)...);
+            return std::unexpected(Error::from_baked(code, Error::make_message(code, runtime_loc(ctx), detail)));
         }
 
         // 转发已构造 Error 为失败结果:把 std::unexpected(std::move(err)) 样板收口。供 run_
@@ -164,38 +202,10 @@ namespace aria {
         // 与下面的格式化构造重载成对。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 把寄存器取出的载荷还原为边界 Error:ObjException -> to_error()(message_ 已是完整烘焙串,
-        // 经 Error::from_baked 原样回传,与 Error::format 直构文案逐字一致);其它载荷(未来用户
-        // throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,兜底仅防御)报
-        // UncaughtException,消息渲染值本身。
-        Error value_to_error(const Value v) {
-            if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
-                return Object::as<ObjException>(v.as_obj())->to_error();
-            }
-            return Error::format(ErrorCode::UncaughtException, "uncaught exception: {}", format_value(v));
-        }
-
         // 转发寄存器载荷(Value)为失败结果:经 value_to_error 还原为 Error 后 std::unexpected。
         // 供 run_ 在 CALL 等 take 点把 ctx 寄存器载荷沿 runtime_err 传播,与上面的
         // runtime_err(Error) 重载成对。
         Result<Value, Error> runtime_err(const Value v) { return std::unexpected(value_to_error(v)); }
-
-        // 把 Error 装箱为 ObjException(码 + 完整烘焙消息)后 raise 进传入 ctx 的挂起错误寄存器并
-        // 返回 false(成败信号)。供 call_value / call_function 等以 bool 为成败信号的子例程一行
-        // 报错 -- 错误载荷走 ctx 侧信道,调用方(主循环)据返回的 bool 决定是否 take_error 取出沿
-        // runtime_err 传播。与 AriaVM::fail(面向 main_ctx_)分工:本函数经传入的 ctx 而非 main_ctx_
-        // 报错,贴合 run_ 的重入式风格(M6 协程期 ctx 即当前协程上下文,错误随上下文走,互不串扰);
-        // gc 为载荷分配器(AriaVM::gc_,协程与主上下文同 VM 同 GC)。Error::format 先烘完整消息,
-        // 工厂原样存已烘焙串(不经 make_message,见 exception-implementation-pitfalls.md 坑 #7)。
-        // new_exception 内部分配可能在运行中触发 GC:值栈/帧已接根,载荷构造后经 ctx.raise 立即
-        // 入寄存器(pending_error 由 VM 根 tracer 标根)。契约与 NativeFn 一致:return false ⟺ 已
-        // raise;调用方据 bool 取载荷,空则属违约(见 call_native 断言)。
-        template<typename... Args>
-        bool ctx_fail(GC& gc, Movement& ctx, ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            const auto err = Error::format(code, fmt, std::forward<Args>(args)...);
-            ctx.raise(Value::from_obj(new_exception(gc, err.code(), err.message())));
-            return false;
-        }
 
         // 数值二元运算(算术 + 比较)。双方皆 Int 走整数路径;任一为 F64 则升 F64
         // (浮点除零走 IEEE 的 inf/nan,不报错)。M1 暂定语义:
@@ -203,9 +213,9 @@ namespace aria {
         //   - Int 溢出 i48 不设防(断言把关,编译期语义阶段再议)。
         // 见 bytecode-instruction-set.md §9 待决 #8。Op 为模板参数,编译期按指令分派。
         template<OpCode Op>
-        Result<Value, Error> numeric_op(const Value a, const Value b) {
+        Result<Value, Error> numeric_op(Movement& ctx, const Value a, const Value b) {
             if (!(is_num(a) && is_num(b))) {
-                return runtime_err(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
+                return runtime_err(ctx, ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
                                    op_symbol(Op), type_name(a), type_name(b));
             }
             if (a.is_int() && b.is_int()) {
@@ -219,12 +229,12 @@ namespace aria {
                     return Value::from_int(x * y);
                 } else if constexpr (Op == OpCode::DIVIDE) {
                     if (y == 0) {
-                        return runtime_err(ErrorCode::DivisionByZero, "integer division by zero");
+                        return runtime_err(ctx, ErrorCode::DivisionByZero, "integer division by zero");
                     }
                     return Value::from_int(x / y);
                 } else if constexpr (Op == OpCode::MOD) {
                     if (y == 0) {
-                        return runtime_err(ErrorCode::ModuloByZero, "integer modulo by zero");
+                        return runtime_err(ctx, ErrorCode::ModuloByZero, "integer modulo by zero");
                     }
                     return Value::from_int(x % y);
                 } else if constexpr (Op == OpCode::GREATER) {
@@ -269,7 +279,7 @@ namespace aria {
         Opt<Error> run_binary_numeric(Movement& ctx) {
             const Value b = ctx.pop();
             const Value a = ctx.pop();
-            const auto  r = numeric_op<Op>(a, b);
+            const auto  r = numeric_op<Op>(ctx, a, b);
             if (!r) {
                 return r.error();
             }
@@ -358,36 +368,45 @@ namespace aria {
 
     } // namespace
 
-    // 构造:成员初始化(gc_ 先,main_ctx_/modules_/builtins_ 借 &gc_),再把 VM 根 tracer 注册进自有 GC,
-    // 最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时已入表条目经 builtins_.trace 标根)。
-    // tracer 为 lambda:[this] 捕获,标记五类根:
+    // 构造:成员初始化(gc_ 先,main_ctx_/modules_/builtins_ 借 &gc_,current_ 指 &main_ctx_),再把
+    // VM 根 tracer 注册进自有 GC,最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时
+    // 已入表条目经 builtins_.trace 标根)。tracer 为 lambda:[this] 捕获,标记三类根:
     //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
     //   2) builtins_:VM 级只读 builtins 表(内置 ObjNativeFn + name 串,LOAD_GLOBAL 回退查此);
-    //   3) main_ctx_ 值栈 [base, top):run() 期局部/实参/临时值只活在栈上,不经常量池链可达,
-    //      是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时栈遍历为空,
-    //      不会标到指向已回收对象的陈旧栈值;
-    //   4) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
-    //      免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4;
-    //   5) main_ctx_ 挂起错误寄存器(M3 起载荷为 Value -- ObjException 或用户 throw 的任意值):
-    //      置入寄存器到 take_error 取出之间可能跨安全点分配(如 raise 后 unwind),须标根保命。
-    //      协程(M6)各自的寄存器届时随 ObjMovement 入链,同法标。
+    //   3) current_ 执行链:自 *current_ 沿 previous_ 走到链尾(现为单节点 main_ctx_;M6 协程期为
+    //      resume 链,挂起协程的值栈/帧/寄存器皆根),逐个标:
+    //        a) 值栈 [base, top) 全部 Value:run() 期局部/实参/临时值只活在栈上,不经常量池链
+    //           可达,是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时
+    //           栈遍历为空,不会标到指向已回收对象的陈旧栈值;
+    //        b) 各活动帧的 function/module:本可经 module -> entry -> 常量池链可达,直标更稳、
+    //           免依赖「帧函数必在其父常量池」不变式。open upvalues 留待 M4;
+    //        c) 挂起错误寄存器(M3 起载荷为 Value -- ObjException 或用户 throw 的任意值):
+    //           置入寄存器到 take_error 取出之间可能跨安全点分配(如 raise 后 unwind),须标根保命。
+    //      链尾断言恒 &main_ctx_:锁定「resume/yield 严格成对」的切换纪律(主上下文是 resume 链
+    //      的根锚,previous_ 语义见 Movement.hpp)。M6 定稿单循环切换模型后本遍历保留(main_ctx_
+    //      不入堆,运行中协程的 previous_ 指向它,对象图不可达;挂起协程已解链、经对象图可达),
+    //      链尾断言届时退役(切换点结构性唯一,无纪律可违,见 vm-design.md §4.9)。
     // 值栈/帧以 tracer 直标代替 Movement 升 Object(M6 协程期再升级 ObjMovement 入对象链表)。
     // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/builtins_/main_ctx_ 同生共死,无需析构注销。
-    AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{} {
+    AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{} {
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
-            auto& ctx = main_ctx_;
-            for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
-                g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+            [[maybe_unused]] Movement* tail = nullptr;
+            for (Movement* m = current_; m != nullptr; m = m->previous()) {
+                for (Value* p = m->stack_base(); p < m->stack_top(); ++p) {
+                    g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+                }
+                if (const auto& pending = m->pending_error(); pending.has_value()) {
+                    g.mark_value(*pending);
+                }
+                for (const auto& f: m->frames().span()) {
+                    g.mark_object(f.function); // mark_object 容 nullptr
+                    g.mark_object(f.module);
+                }
+                tail = m;
             }
-            if (const auto& pending = ctx.pending_error(); pending.has_value()) {
-                g.mark_value(*pending);
-            }
-            for (const auto& f: ctx.frames().span()) {
-                g.mark_object(f.function); // mark_object 容 nullptr
-                g.mark_object(f.module);
-            }
+            ASSERT(tail == &main_ctx_, "VM roots: context chain must terminate at main_ctx_");
         });
         // VM 级 builtins 一次性注册(set_vm_roots 已就绪):type/len/str/assert 经 new_native_fn 包成
         //   ObjNativeFn 后按名 upsert 进 builtins_。注册内 new_string/new_native_fn 各一次 new_object 顶
@@ -419,14 +438,19 @@ namespace aria {
         }
     }
 
-    bool AriaVM::raise(const Error& err) {
-        // 把 err 装箱为 ObjException 存入主上下文挂起寄存器(单寄存器模型,载荷统一 Value,见
-        // exception-implementation-pitfalls.md 坑 #7)。err.message() 已是完整烘焙串("Category:
-        // Name detail",位置标注落地后含位置前缀),经工厂原样 intern 存入(不经 make_message --
-        // 双重前缀由传已烘焙串规避)。工厂内部 new_string 驻留并自守,跨 new_object 顶
-        // maybe_collect 安全;返回对象到 main_ctx_.raise 之间无分配,入寄存器后由 VM 根 tracer
-        // 标 pending_error 保命。返回 false 供 `return vm.fail(...);` 惯用法(见 AriaVM.hpp 契约)。
-        main_ctx_.raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
+    bool AriaVM::raise(const ErrorCode code, const StringView detail) {
+        // 从零构造消息的装箱点,一步烘齐(契约见 AriaVM.hpp):Error::make_message 把 [位置 + ": "] +
+        // "Category: Name" + 细节合成完整消息串 -- 位置经 runtime_loc 查 *current_ 顶帧行号表
+        // (故障指令 / CALL 站点;合成模块退化为 "<name>:line";帧栈空即 run 外直调则无位置),
+        // detail 为原始细节串(不含前缀,防双烘)。装箱入**当前**上下文(*current_,现为
+        // main_ctx_;M6 协程期即当前协程 -- run_/call_value 族与本函数同源同一 current_,错误
+        // 随上下文走不串扰)的挂起寄存器(单寄存器模型,载荷统一 Value,见
+        // exception-implementation-pitfalls.md 坑 #7)。new_exception 工厂内部 new_string 驻留
+        // 并自守,跨 new_object 顶 maybe_collect 安全;返回对象到 current_->raise 之间无分配,
+        // 入寄存器后由 VM 根 tracer 标 pending_error 保命。返回 false 供 `return vm.fail(...);`
+        // 惯用法(见 AriaVM.hpp 契约)。
+        const auto msg = Error::make_message(code, runtime_loc(*current_), detail);
+        current_->raise(Value::from_obj(new_exception(gc_, code, msg)));
         return false;
     }
 
@@ -499,6 +523,10 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
+        // 主上下文入口:进主循环前 current_ 必已归位 main_ctx_。M6 单循环切换模型(vm-design.md §4.9)
+        // 下升格为永久不变式:run() 是唯一驱动入口,resume/yield 不重入 run_,切换只发生在 CALL 善后点
+        // 且只换走 current_、不产生新循环 -- 每次进 run() 必从主上下文起步。
+        ASSERT(current_ == &main_ctx_, "AriaVM::run: current_ is not main_ctx_ (unbalanced context switch)");
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
         // 前置编写(peek-not-pop)。
         // 源根:入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0] -- 即入口文件所在目录居首,
@@ -524,63 +552,85 @@ namespace aria {
         return result;
     }
 
-    bool AriaVM::call_value(Movement& ctx, const Value callee, const u8 argc) {
+    bool AriaVM::call_value(const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return ctx_fail(gc_, ctx, ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
+            return fail(ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
         }
-        Object* obj = callee.as_obj();
 
-        switch (obj->type()) {
+        switch (Object* obj = callee.as_obj(); obj->type()) {
             case ObjType::FUNCTION:
-                return call_function(ctx, Object::as<ObjFunction>(obj), argc);
+                return call_function(Object::as<ObjFunction>(obj), argc);
             case ObjType::NATIVE_FN:
-                return call_native(ctx, Object::as<ObjNativeFn>(obj), argc);
+                return call_native(Object::as<ObjNativeFn>(obj), argc);
             default:
-                return ctx_fail(gc_, ctx, ErrorCode::CallNonCallable,
-                                "call non-callable {} (M1 supports functions / native functions only)",
-                                obj->type_name());
+                return fail(ErrorCode::CallNonCallable,
+                            "call non-callable {} (M1 supports functions / native functions only)", obj->type_name());
         }
     }
 
-    bool AriaVM::call_function(Movement& ctx, ObjFunction* obj, const u8 argc) {
+    bool AriaVM::call_function(ObjFunction* obj, const u8 argc) {
         if (obj->arity() != argc) {
-            return ctx_fail(gc_, ctx, ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
+            return fail(ErrorCode::WrongArity, "function expects {} args, got {}", obj->arity(), argc);
         }
-        if (ctx.frames_full()) {
-            return ctx_fail(gc_, ctx, ErrorCode::StackOverflow, "call frame stack overflow");
+        if (current_->frames_full()) {
+            return fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
         // 栈形 [callee, a1..aN]:enter_frame 进帧(slots 指向槽 0,参数即局部槽 1..argc),
-        // 与 run_ 的 exit_frame 对称。经传入的 ctx 而非 main_ctx_ -- M6 协程期 ctx 即当前协程上下文。
-        ctx.enter_frame(obj, argc);
+        // 与 run_ 的 exit_frame 对称。经 current_ 访问(与 run_/raise 同源,语义统一;现为
+        // main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个上下文驱动,进帧就进哪个)。
+        current_->enter_frame(obj, argc);
         return true;
     }
 
-    bool AriaVM::call_native(Movement& ctx, const ObjNativeFn* obj, const u8 argc) {
-        // 原生函数同步调用,不进帧:bool 为成败信号,返回值写槽 0,错误载荷走侧信道寄存器。
+    bool AriaVM::call_native(const ObjNativeFn* obj, const u8 argc) {
+        // 经 current_ 访问调用区与寄存器(与 run_/raise 同源,语义统一)。原生函数同步调用,
+        // 不进帧:bool 为成败信号,返回值写槽 0,错误载荷走侧信道寄存器。
         // 调用区 [callee, a1..aN] 的可写视图:slots[0]=槽 0(返回值),slots[1..argc]=实参。
         // peek(argc) 即槽 0,叶子调用不增长值栈故指针稳定;argc==0 时 span 仅含槽 0。
-        const auto slots = Span<Value>{&ctx.peek(argc), static_cast<usize>(argc + 1)};
+        //
+        // entered_ctx = 调用发生时的上下文,本函数全部事后簿记(drop/寄存器断言)的统一锚点:
+        // M6 前 current_ 恒等于它(下方守卫断言锁定「原生调用不得换走 current_」);M6 切换
+        // 合法化后,已切换时它恰为刚被挂起的旧上下文 -- drop(argc) 恰好完成调用者侧栈归一,
+        // 断言恰好检查调用方自己的寄存器,无需任何分支探测;届时仅删成功路径守卫、其余一字
+        // 不动(false 路径守卫保留为永久契约:禁止 false+切换)。见 vm-design.md §4.9「切换协议」。
+        // 实参留栈到 drop 亦是 GC 红利:切换型原生函数执行全程,实参(含协程对象)皆调用者栈根。
+        const auto entered_ctx = current_;
+        const auto slots       = Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
-        ASSERT(!ctx.has_error(), "call_native: pending error not cleared before native call");
+        ASSERT(!current_->has_error(), "call_native: pending error not cleared before native call");
         if (obj->fn()(*this, slots)) {
+            ASSERT(current_ == entered_ctx,
+                   "call_native: current_ not restored across native call"); // M6 删:切换合法化
             // 成功:断言寄存器空(契约 return true ⟺ 未 raise)。寄存器本就空(进场已守、
             // 原生未 raise),无需 clear_error -- 若违约,debug 断言即暴露,release 下不静默
-            // 清掉掩盖。drop 实参使返回值升栈顶(等价 drop(argc+1)+push)。
-            ASSERT(!ctx.has_error(), "native fn returned true but raised error");
-            ctx.drop(argc);
+            // 清掉掩盖。drop 实参使返回值升栈顶(等价 drop(argc+1)+push);一律落在
+            // entered_ctx 上,为 M6 切换形态预铺(见函数头注释)。
+            ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
+            entered_ctx->drop(argc);
             return true;
         }
+        ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call"); // M6 留:契约守卫
         // 失败:断言已 raise 载荷,留在寄存器交调用方 take_error 取出沿 runtime_err 路径传播。
-        // 不在此 take_error -- 载荷随 ctx 走,与 call_function/call_value 的 bool 契约统一
-        // (return false ⟺ 错误已 raise 进 ctx,调用方据 bool 取载荷)。
-        ASSERT(ctx.has_error(), "native fn returned false but raised no error");
+        // 不在此 take_error -- 载荷随调用方上下文(entered_ctx)走,与 call_function/call_value
+        // 的 bool 契约统一(return false ⟺ 错误已 raise 进调用方上下文,调用方据 bool 取载荷)。
+        ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
         return false;
     }
 
-    Result<ObjModule*, Error> AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
+    ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
         // IMPORT 未命中分支的加载层。canonical_path 已由调用方根化(IMPORT case 的 canonical_path_guard,
         // 跨本函数内 upsert)。canonical_path = 命中文件的绝对规范路径(intern ObjString*),一身二任:
         // 既作 modules_ 表键,又作读盘路径。import_specifier = 用户写的原始 import 串(报错用)。
+        //
+        // 错误契约与 call_value 族同构:return nullptr ⟺ 错误载荷已 raise 入 *current_ 挂起寄存器,
+        // 调用方(IMPORT 分支)take_error 取出沿 runtime_err 传播。两类失败:
+        //   - 读盘失败/名字无效:fail 烘位置 -- raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令,
+        //     消息带导入方站点位置(与 resolve_module 解析失败的 runtime_err 形态统一);
+        //   - 编译期 Error:消息已在 CodeGen 侧烘焙完成(位置指向被导入文件内部),就地
+        //     new_exception 直接装配箱(from_baked 语义,不重烘 -- 不经 AriaVM::raise,
+        //     其 make_message 会把导入方站点前缀叠上,双重烘焙)。
+        // **仅限 run_ 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清 pending_error --
+        // run 外直调(未来预加载 API 等)的错误会被静默吞掉;runtime_loc 亦依赖顶帧,帧栈空则无位置。
         //
         // 步骤:读盘 -> 派生模块身份 -> new_module(Loading)+ 自守 -> 入表占位 -> 编译(set_entry)。
         // **仅加载与编译**:模块体 run-once 不在此执行 -- 由调用方(IMPORT 分支)以普通函数调用进帧
@@ -591,8 +641,8 @@ namespace aria {
         //    理论上必成功,但读盘/编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src.has_value()) {
-            return std::unexpected(Error::format(ErrorCode::ModuleNotFound,
-                                                 "failed to load module '{}': read/decode error", import_specifier));
+            (void) fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
+            return nullptr;
         }
         SourceFile source = std::move(loaded_src.value());
 
@@ -600,8 +650,8 @@ namespace aria {
         //    abs_path() = dir_ + "/" + name_ + ".aria" 还原 canonical key,相对导入基(dirname)正确。
         auto [name_s, dir_s] = fs::module_name_and_dir(canonical_path->view());
         if (name_s.empty()) {
-            return std::unexpected(
-                    Error::format(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier));
+            (void) fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
+            return nullptr;
         }
 
         // 3. 建模块(Loading 态,工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
@@ -614,14 +664,15 @@ namespace aria {
         mod_entry->value     = Value::from_obj(module);
 
         // 5. 编译:SourceFile -> 入口 ObjFunction(名 <module>,见 kModuleName),CodeGen::init_module
-        //    已 module.set_entry。Compiler 用本 VM 的 gc_,编译期分配与 run 同源。编译期 Error(含
-        //    被导入文件位置)原样透传。module 经 guard + modules_ 根化,CodeGen::compile 内部亦
-        //    make_guard(&module),双保险。source 须存活到 compile() 返回(Error 烘位置串需它)。entry
-        //    经 module->entry_ 根可达。
+        //    已 module.set_entry。Compiler 用本 VM 的 gc_,编译期分配与 run 同源。编译期 Error(位置
+        //    指向被导入文件内部)就地 new_exception 装箱入寄存器(from_baked 语义,消息不重烘)。
+        //    module 经 guard + modules_ 根化,CodeGen::compile 内部亦 make_guard(&module),双保险。
+        //    source 须存活到 compile() 返回(Error 烘位置串需它)。entry 经 module->entry_ 根可达。
         Compiler compiler{gc_};
-        auto     compiled = compiler.compile(source, *module, kModuleName);
-        if (!compiled.has_value()) {
-            return std::unexpected(std::move(compiled).error());
+        if (auto compiled = compiler.compile(source, *module, kModuleName); !compiled) {
+            auto err = std::move(compiled).error();
+            current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
+            return nullptr;
         }
         // 模块保持 Loading 态:run-once + 置 Loaded 由 IMPORT 分支进帧驱动、RETURN 完成。
         // 内置函数不经此注入 -- 由 VM 级 builtins_ 表统一承载,LOAD_GLOBAL 模块 globals 未命中后回退查之。
@@ -629,57 +680,66 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run_() {
-        auto& ctx    = main_ctx_;
-        auto& frames = ctx.frames();
+        // 语义统一:栈/帧/错误寄存器一律经 current_ 访问当前上下文(现为 main_ctx_;M6 切换时为
+        // 被恢复协程的上下文)。M6 单循环切换模型(vm-design.md §4.9)下「正在执行的字节码所在
+        // 上下文恒等于 current_」是结构性事实:切换只发生在原生函数体内(resume/yield 换走
+        // current_,call_native 探测发现后循环顶自然采用新上下文),本循环永不重入;M6 前
+        // call_native 断言锁「原生调用不得换走 current_」。
 
         while (true) {
+            // 取指前记本帧指令起始指针:报错定位的行号锚点 -- 顶帧报错
+            // 即故障指令、call_*/原生失败即 CALL 站点(被调帧未进 / 原生不进帧,顶帧仍是
+            // caller);M3 unwind 查表同用此字段(坑点文档 #1/#2)。init_frame_ 置 code
+            // 起始,首次取指前即覆写。offset 由查表冷路径按 last_ip - unit->code.data() 反推。
+            CallFrame& frame = current_->frames().top();
+            frame.last_ip    = frame.ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态:此时 frame.ip 指向待执行指令,trace_execution 据此解码(仅读不推进 ip)。
-            trace_execution(ctx);
+            trace_execution(*current_);
 #endif
             // 各 case 严格按 bytecode/code.hpp 中 OpCode 枚举的声明顺序排列。
-            switch (CallFrame& frame = frames.top(); auto op = static_cast<OpCode>(read_u8(frame))) {
+            switch (auto op = static_cast<OpCode>(read_u8(frame))) {
                 case OpCode::HALT:
                     return Value::nil_val();
 
                 // ---- 数据加载与存储 ----
                 case OpCode::LOAD_CONST: {
                     const auto idx = read_u16(frame);
-                    ctx.push(frame.unit->constants[idx]);
+                    current_->push(frame.unit->constants[idx]);
                     break;
                 }
                 case OpCode::LOAD_NIL:
-                    ctx.push(Value::nil_val());
+                    current_->push(Value::nil_val());
                     break;
                 case OpCode::LOAD_TRUE:
-                    ctx.push(Value::true_val());
+                    current_->push(Value::true_val());
                     break;
                 case OpCode::LOAD_FALSE:
-                    ctx.push(Value::false_val());
+                    current_->push(Value::false_val());
                     break;
                 case OpCode::LOAD_IMM: {
                     const u8 raw = read_u8(frame);
-                    ctx.push(Value::from_i32(std::bit_cast<i8>(raw)));
+                    current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
                     break;
                 }
                 case OpCode::LOAD_LOCAL: {
                     const u8 slot = read_u8(frame);
-                    ctx.push(frame.slots[slot]);
+                    current_->push(frame.slots[slot]);
                     break;
                 }
                 case OpCode::STORE_LOCAL: {
                     const u8 slot     = read_u8(frame);
-                    frame.slots[slot] = ctx.peek(0);
+                    frame.slots[slot] = current_->peek(0);
                     break;
                 }
                 case OpCode::LOAD_LOCAL_L: {
                     const auto slot = read_u16(frame);
-                    ctx.push(frame.slots[slot]);
+                    current_->push(frame.slots[slot]);
                     break;
                 }
                 case OpCode::STORE_LOCAL_L: {
                     const auto slot   = read_u16(frame);
-                    frame.slots[slot] = ctx.peek(0);
+                    frame.slots[slot] = current_->peek(0);
                     break;
                 }
                 case OpCode::LOAD_UPVALUE:
@@ -700,10 +760,10 @@ namespace aria {
                     //     会回收 v 指向的对象 -> 悬垂。键 Value::from_obj(name),靠 intern 同指针经 === 命中。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
-                    const Value value = ctx.peek(0); // 先不弹:留 v 在栈上跨 upsert 的分配
+                    const Value value = current_->peek(0); // 先不弹:留 v 在栈上跨 upsert 的分配
                     const auto  entry = frame.module->globals().upsert(key);
                     entry->value      = value;
-                    ctx.drop(1); // 写完才弹,栈效应仍为 [v] -> []
+                    current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
@@ -721,10 +781,11 @@ namespace aria {
                     if (entry == nullptr) {
                         entry = builtins_.find(key); // 回退 VM 级 builtins(内置 type/len/str/assert)
                         if (entry == nullptr) {
-                            return runtime_err(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            return runtime_err(*current_, ErrorCode::UndefinedVariable, "undefined global '{}'",
+                                               name->view());
                         }
                     }
-                    ctx.push(entry->value);
+                    current_->push(entry->value);
                     break;
                 }
                 case OpCode::STORE_GLOBAL: {
@@ -736,9 +797,10 @@ namespace aria {
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame.module->globals().find(key);
                     if (entry == nullptr) {
-                        return runtime_err(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        return runtime_err(*current_, ErrorCode::UndefinedVariable, "undefined global '{}'",
+                                           name->view());
                     }
-                    entry->value = ctx.peek(0);
+                    entry->value = current_->peek(0);
                     break;
                 }
                 case OpCode::LOAD_FIELD:
@@ -757,114 +819,115 @@ namespace aria {
                 // ---- 算术与逻辑 ----
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
                 case OpCode::EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(value_equal(a, b)));
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(value_equal(a, b)));
                     break;
                 }
                 case OpCode::NOT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(!value_equal(a, b)));
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(!value_equal(a, b)));
                     break;
                 }
                 case OpCode::STRICT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(value_identical(a, b)));
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(value_identical(a, b)));
                     break;
                 }
                 case OpCode::STRICT_NOT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(!value_identical(a, b)));
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
                 // 比较(弹 2 压 1;run_binary_numeric 管栈效应,失败直接终止为 Uncaught)
                 case OpCode::GREATER:
-                    if (auto err = run_binary_numeric<OpCode::GREATER>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::GREATER>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
-                    if (auto err = run_binary_numeric<OpCode::GREATER_EQUAL>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::GREATER_EQUAL>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::LESS:
-                    if (auto err = run_binary_numeric<OpCode::LESS>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::LESS>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::LESS_EQUAL:
-                    if (auto err = run_binary_numeric<OpCode::LESS_EQUAL>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::LESS_EQUAL>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 // 算术(弹 2 压 1;同上)
                 case OpCode::ADD:
-                    if (auto err = run_binary_numeric<OpCode::ADD>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::ADD>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::SUBTRACT:
-                    if (auto err = run_binary_numeric<OpCode::SUBTRACT>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::SUBTRACT>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::MULTIPLY:
-                    if (auto err = run_binary_numeric<OpCode::MULTIPLY>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::MULTIPLY>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::DIVIDE:
-                    if (auto err = run_binary_numeric<OpCode::DIVIDE>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::DIVIDE>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 case OpCode::MOD:
-                    if (auto err = run_binary_numeric<OpCode::MOD>(ctx)) {
+                    if (auto err = run_binary_numeric<OpCode::MOD>(*current_)) {
                         return runtime_err(std::move(*err));
                     }
                     break;
                 // 一元
                 case OpCode::NOT:
-                    ctx.push(Value::from_bool(!is_truthy(ctx.pop())));
+                    current_->push(Value::from_bool(!is_truthy(current_->pop())));
                     break;
                 case OpCode::NEGATE: {
-                    if (const Value v = ctx.pop(); v.is_int()) {
-                        ctx.push(Value::from_int(-v.as_int()));
+                    if (const Value v = current_->pop(); v.is_int()) {
+                        current_->push(Value::from_int(-v.as_int()));
                     } else if (v.is_f64()) {
-                        ctx.push(Value::from_f64(-v.as_f64()));
+                        current_->push(Value::from_f64(-v.as_f64()));
                     } else {
-                        return runtime_err(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(v));
+                        return runtime_err(*current_, ErrorCode::InvalidOperand, "negate requires a number, got {}",
+                                           type_name(v));
                     }
                     break;
                 }
 
                 // ---- 栈操作 ----
                 case OpCode::POP:
-                    ctx.drop(1);
+                    current_->drop(1);
                     break;
                 case OpCode::POP_N: {
                     const u8 n = read_u8(frame);
-                    ctx.drop(n);
+                    current_->drop(n);
                     break;
                 }
                 case OpCode::DUP:
-                    ctx.push(ctx.peek(0));
+                    current_->push(current_->peek(0));
                     break;
                 case OpCode::DUP2: {
-                    const Value b = ctx.peek(0);
-                    const Value a = ctx.peek(1);
-                    ctx.push(a);
-                    ctx.push(b);
+                    const Value b = current_->peek(0);
+                    const Value a = current_->peek(1);
+                    current_->push(a);
+                    current_->push(b);
                     break;
                 }
 
                 // ---- 输出与调试 ----
                 case OpCode::PRINT:
-                    io::println("{}", format_value(ctx.pop()));
+                    io::println("{}", format_value(current_->pop()));
                     break;
                 case OpCode::NOP:
                     break;
@@ -878,33 +941,33 @@ namespace aria {
                 }
                 case OpCode::JUMP_TRUE: {
                     const auto off = read_u16(frame);
-                    if (is_truthy(ctx.pop())) {
+                    if (is_truthy(current_->pop())) {
                         frame.ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_TRUE_OR_POP: {
                     const auto off = read_u16(frame);
-                    if (is_truthy(ctx.peek(0))) {
+                    if (is_truthy(current_->peek(0))) {
                         frame.ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        ctx.drop(1); // 落空:弹掉
+                        current_->drop(1); // 落空:弹掉
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE: {
                     const auto off = read_u16(frame);
-                    if (!is_truthy(ctx.pop())) {
+                    if (!is_truthy(current_->pop())) {
                         frame.ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE_OR_POP: {
                     const auto off = read_u16(frame);
-                    if (!is_truthy(ctx.peek(0))) {
+                    if (!is_truthy(current_->peek(0))) {
                         frame.ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        ctx.drop(1); // 落空:弹掉
+                        current_->drop(1); // 落空:弹掉
                     }
                     break;
                 }
@@ -921,11 +984,10 @@ namespace aria {
                 case OpCode::CALL: {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
-                    ASSERT(ctx.stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
-                    const Value callee = ctx.peek(argc);
-                    if (!call_value(ctx, callee, argc)) {
+                    ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
+                    if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
                         // 寄存器载荷(ObjException 等 Value)经 value_to_error 还原为 Error 出栈。
-                        return runtime_err(*ctx.take_error());
+                        return runtime_err(*current_->take_error());
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
@@ -974,7 +1036,7 @@ namespace aria {
                     // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。canonical_path 经 new_string intern 驻留
                     //   (weak root,不保命),跨 modules_.find(无 GC)与未命中分支内 load_module 的
                     //   modules_.upsert(rehash 触 GC)须守 -- 下方 canonical_path_guard 跨全程根化 canonical_path。
-                    //   命中分支取回/加载层产出的 module 与 entry 经 modules_ 根可达,非移动 GC 故 ctx.push(栈
+                    //   命中分支取回/加载层产出的 module 与 entry 经 modules_ 根可达,非移动 GC 故 current_->push(栈
                     //   溢出增长走 Buffer 重分配)期间指针稳定,无需守卫;入栈后另经值栈根可达。
                     ObjString* path = read_name(frame);
                     // 当前模块的绝对文件路径(ObjModule::abs_path = dir_ + "/" + name_ + ".aria"),
@@ -984,32 +1046,35 @@ namespace aria {
                     const auto canonical_path_str =
                             resolve_module(path->view(), frame.module->abs_path(), source_roots_);
                     if (!canonical_path_str) {
-                        return runtime_err(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
+                        return runtime_err(*current_, ErrorCode::ModuleNotFound, "module not found: '{}'",
+                                           path->view());
                     }
                     auto canonical_path = new_string(gc_, *canonical_path_str);
-                    auto canonical_path_guard =
-                            gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
+                    auto guard = gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
                     if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
                         module_entry != nullptr) {
                         // 命中(Loading 半初始化 / Loaded 完整)复用:压模块值,绑定交后续 DEF_GLOBAL / 值填槽。
-                        ctx.push(module_entry->value);
+                        current_->push(module_entry->value);
                         break;
                     }
                     // 未命中:加载链路 -- 读盘 -> 编译 -> 入表 Loading(见 load_module),不在此执行模块体。
-                    auto loaded = load_module(canonical_path, path->view());
-                    if (!loaded) {
-                        return runtime_err(loaded.error());
+                    //   失败契约同 call_value 族:return nullptr ⟺ 载荷已 raise 入当前上下文寄存器
+                    //   (ModuleNotFound 带 IMPORT 站点位置 / 被导入模块编译期 Error 原样装配箱),
+                    //   take_error 取出经 value_to_error 还原为 Error 出栈。
+                    ObjModule* module = load_module(canonical_path, path->view());
+                    if (module == nullptr) {
+                        return runtime_err(*current_->take_error());
                     }
                     // 模块体 run-once = 一次普通 0 参函数调用:压 callee(entry,<module>)-> 进帧 -> break。
                     //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、置
                     //   Loaded、压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
-                    ObjFunction* entry = (*loaded)->entry();
-                    ctx.push(Value::from_obj(entry)); // callee 压栈
-                    if (!call_value(ctx, Value::from_obj(entry), 0)) {
+                    ObjFunction* entry = module->entry();
+                    current_->push(Value::from_obj(entry)); // callee 压栈
+                    if (!call_value(Value::from_obj(entry), 0)) {
                         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。寄存器载荷(ObjException
                         // 等 Value)经 value_to_error 还原为 Error 出栈。
-                        ctx.drop(1);
-                        return runtime_err(*ctx.take_error());
+                        current_->drop(1);
+                        return runtime_err(*current_->take_error());
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
@@ -1020,25 +1085,25 @@ namespace aria {
 
                 // ---- 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)----
                 case OpCode::RETURN: {
-                    const Value ret = ctx.pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
+                    const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
                     // 模块体 run-once 帧 = IMPORT 加载层进帧的入口函数,其名固定为 <module>
                     // (见 kModuleName);主入口 <main> 与普通用户函数名均不含 '<>',故按函数名判定。
                     // 其 RETURN 弹弃模块体返回值(无意义),改压该模块对象 -- 模块体「返回模块」,
                     // 使 IMPORT 的栈效应在命中/未命中两分支统一为 [..., module](绑定交 DEF_GLOBAL)。
                     // 先取 module 再 exit_frame:exit_frame 后 frame 引用悬垂。模块体帧必非顶层(IMPORT
-                    // 帧在下),故 frames.empty() 分支不会命中模块体帧。
+                    // 帧在下),故 current_->frames().empty() 分支不会命中模块体帧。
                     auto mod     = frame.module;
                     auto fn_name = frame.function->name()->view();
-                    ctx.exit_frame(); // 弹帧 + 值栈顶复位到 slots,一体
-                    if (frames.empty()) {
+                    current_->exit_frame(); // 弹帧 + 值栈顶复位到 slots,一体
+                    if (current_->frames().empty()) {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
                     }
                     if (fn_name == kModuleName) {
                         // 模块体 run-once 完成:置 Loaded,压模块对象(弹弃 ret)。
                         mod->set_state(ObjModule::ModuleState::Loaded);
-                        ctx.push(Value::from_obj(mod));
+                        current_->push(Value::from_obj(mod));
                     } else {
-                        ctx.push(ret); // 普通函数:返回值压入调用者栈顶
+                        current_->push(ret); // 普通函数:返回值压入调用者栈顶
                     }
                     break;
                 }

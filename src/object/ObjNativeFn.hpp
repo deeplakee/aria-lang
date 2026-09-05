@@ -17,7 +17,7 @@ namespace aria {
     //   返回 bool、错误走侧信道、返回值写槽 0 -- 三者配套设计,把冷路径错误踢出返回类型:
     //
     //   - vm:宿主句柄(对标 Lua lua_State* / Wren WrenVM* / N-API env -- 单一状态句柄)。
-    //       供:报错--vm.fail(code, fmt, ...)/vm.raise(err)(写入当前上下文的挂起错误寄存器,
+    //       供:报错--vm.fail(code, fmt, ...)/vm.raise(code, detail)(写入当前上下文的挂起错误寄存器,
     //       见下"错误");分配对象--vm.gc()(run() 期值栈/帧已接 GC 根,内建内可经 vm.gc().new_string 等
     //       分配;跨分配持有的裸 Obj* 须 make_guard 根化);未来回调 aria 函数 / 反射(待 vm 暴露相应访问器)。
     //       M6 协程期 vm 路由到当前协程,故原生函数无需也不持 VMContext 引用 -- 单句柄即可,且自动随当前协程。
@@ -34,16 +34,17 @@ namespace aria {
     //   「drop(argc+1)+push(result)」省一压,且原生函数直接掌控返回槽。
     //
     //   错误(侧信道):冷路径错误不该编进每次调用的返回类型。原生函数调 vm.fail(code, fmt, ...)
-    //   或 vm.raise(err) 写入 VMContext 的挂起错误寄存器(Movement::pending_error_,载荷类型 Value),
-    //   然后 return false;AriaVM::raise/fail 把 err 的**完整烘焙消息**(Error::format 产物,与
-    //   Error::message() 同形)装箱 ObjException{code, 消息} 后存入,用户 throw(M3)的原值路由另走
-    //   Movement::raise(Value)。VM 在 CALL 后以**返回的 bool 为成败信号**--true 走成功路径
-    //   (drop argc,slots[0] 升至栈顶),false 经 take_error() 取出寄存器中的载荷、ObjException 经其
-    //   to_error(Error::from_baked 原样回传)还原为 Error 沿 runtime_err 路径传播(M1 无 try/catch
-    //   即作未捕获错误从 run() 返回;M3 raise/unwind 落地后供 catch)。**错误无位置**:与现有
-    //   运行时错误一致;位置标注是跨切面的未来任务(适用所有运行时错误),不独压原生函数。故
-    //   Error 仅在出错时构造,不进每次调用的返回值。分配安全:vm.fail 内 new_exception 可能触发
-    //   GC,值栈/帧/builtins_ 已接根,载荷入寄存器后经 VM 根 tracer 标 pending_error 保命。
+    //   或 vm.raise(code, detail) 写入 VMContext 的挂起错误寄存器(Movement::pending_error_,载荷
+    //   类型 Value),然后 return false;AriaVM::raise/fail 把 code+detail 一步烘齐**完整烘焙消息**
+    //   (Error::make_message:位置前缀取自调用方帧 last_ip 反推 offset 查行号表 -- 原生不进帧,顶帧即 caller,
+    //   位置恰为 CALL 站点;合成模块退化 "<name>:line";帧栈空即 run 外直调则无位置)装箱
+    //   ObjException{code, 消息} 后存入,用户 throw(M3)的原值路由另走 Movement::raise(Value)。
+    //   VM 在 CALL 后以**返回的 bool 为成败信号**--true 走成功路径(drop argc,slots[0] 升至栈顶),
+    //   false 经 take_error() 取出寄存器中的载荷、ObjException 经其 to_error(Error::from_baked
+    //   原样回传)还原为 Error 沿 runtime_err 路径传播(M1 无 try/catch 即作未捕获错误从 run()
+    //   返回;M3 raise/unwind 落地后供 catch)。故 Error 仅在出错时构造,不进每次调用的返回值。
+    //   分配安全:vm.fail 内 new_exception 可能触发 GC,值栈/帧/builtins_ 已接根,载荷入寄存器后
+    //   经 VM 根 tracer 标 pending_error 保命。
     //
     //   bool 与寄存器的同步:bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功
     //   路径仅 debug 断言 !has_error() 验证契约(寄存器本就空 -- 进场已守、原生未 raise,无需 clear_error;

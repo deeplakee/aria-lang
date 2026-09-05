@@ -52,7 +52,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp:63-107` |
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:682-728` |
-| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表 Loading -> 嵌套 `run_` run-once -> Loaded） | `src/runtime/AriaVM.cpp` `load_module` |
+| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表 Loading -> `entry` 经 `call_value` 进帧交主循环 run-once -> Loaded） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp:83-102`、`AriaVM.cpp:231-247,262-267` |
 | `ObjModule` 对象 + 状态机 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
 | VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp:72-81,117-119`、`AriaVM.cpp:231-247` |
@@ -145,8 +145,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
      以其 `entry`(<module>)作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行一个函数,
      由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 `Loaded`、
      改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`,绑定交后续 `DEF_GLOBAL` /
-     值填槽。**无递归 `run_()`**。读盘失败/name 空报 `ModuleNotFound`;被导入模块的编译期/运行期 Error 原样
-     透传(含其文件位置)。`key` 经 IMPORT case 的 `key_guard` 跨 `upsert`(rehash 触 GC)根化(intern weak
+     值填槽。**无递归 `run_()`**。读盘失败/name 空报 `ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置);被导入模块的
+     编译期/运行期 Error 原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
+     `nullptr ⟺` 载荷已 raise 入寄存器,调用方 `take_error` 取出传播)。`key` 经 IMPORT case 的 `key_guard` 跨 `upsert`(rehash 触 GC)根化(intern weak
      root 不保命);`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
 5. 命中后：module 经 `modules_` 根可达（非移动 GC，`ctx.push` 期间指针稳定，无需守卫）→ **压模块值于栈顶**（`ctx.push(module)`）。
    绑定不再由 IMPORT 做——交 CodeGen 按作用域走：顶层经 `DEF_GLOBAL alias`（弹值定义全局）、

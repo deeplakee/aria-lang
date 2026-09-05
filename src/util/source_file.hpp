@@ -228,7 +228,8 @@ namespace aria::src {
     // src 以非拥有指针保存（不拥有所有权），不得比所引用的 SourceFile 活得更久
     // （同 Token::lexeme_ 的 StringView 约束）。src 非空不变式由显式构造函数的
     // ASSERT 保证；默认构造为空态（src=nullptr、line_col={0,0}），供 Token 默认
-    // 构造等容器占位--空态下不应依赖其位置语义，to_string 对空态返回 "?"。
+    // 构造等容器占位--空态下不应依赖其位置语义，to_string 对空态返回空串
+    // （空态即「无位置」，非「未知位置」，见 to_string 注释）。
     //
     // to_string() 渲染为编译器惯例的 "path:line:col"（1-based 行列，完整路径便于
     // 同名文件区分与 IDE 跳转）；line/col 为 0（无效）时该段渲染为 "?"。
@@ -259,11 +260,14 @@ namespace aria::src {
         }
 
         // 渲染为 "path:line:col"（1-based 行列，取 path 便于 IDE 跳转）。
-        // 空态（src 为空）返回 "?"；line/col 为 0（无效）时该段渲染为 "?"。
+        // 空态（src 为空）返回空串：空态语义是「无位置」而非「未知位置」，空串可与
+        // 消费方的「空位置串 = 无前缀」约定直接组合（如 Error::make_message），
+        // 调用方无须先判 source() 再规避。line/col 为 0（无效但 src 有效）时该段
+        // 渲染为 "?" -- 路径是真实信息保留，仅未知段以 "?" 占位。
         [[nodiscard]]
         String to_string() const {
             if (src_ == nullptr) {
-                return "?";
+                return {};
             }
             // line/col 为 0 视为「未知」，渲染为 "?"；否则渲染为数值。
             const auto part        = [](const usize v) -> String { return v == 0 ? "?" : std::format("{}", v); };

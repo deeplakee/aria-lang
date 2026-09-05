@@ -44,8 +44,8 @@ namespace aria {
     //        未就绪);DEF/LOAD/STORE_GLOBAL 已落地。
     //
     //        VM 持有自己的 GC(值成员 gc_):每个 VM 一个 GC,无需外部注入。成员声明序
-    //        gc_ -> main_ctx_ -> modules_(后者引用 &gc_),故析构逆序下 gc_ 最后析构,
-    //        tracer 与 modules_ 同生共死,无需析构时显式注销(GC 不可能比 VM 长寿)。
+    //        gc_ -> main_ctx_ -> current_(指 &main_ctx_) -> modules_(后者引用 &gc_),故析构
+    //        逆序下 gc_ 最后析构,tracer 与 modules_ 同生共死,无需析构时显式注销(GC 不可能比 VM 长寿)。
     class AriaVM {
     public:
         // 构造即把 VM 根 tracer 注册进自有 GC;main_ctx_/modules_ 借 &gc_。
@@ -56,14 +56,16 @@ namespace aria {
         AriaVM& operator=(const AriaVM&) = delete;
 
         // VM 不可移动:成员间持指向彼此/自身的指针(main_ctx_/modules_ borrow &gc_;
-        // GC 根 tracer 捕 [this]),move 后这些指针不自动重绑 -> 悬垂。就地构造或以
-        // unique_ptr 持有,勿按值搬迁。显式删 move 把不变式提为显式契约(否则当前仅
+        // current_ 指 main_ctx_;GC 根 tracer 捕 [this]),move 后这些指针不自动重绑 -> 悬垂。
+        // 就地构造或以 unique_ptr 持有,勿按值搬迁。显式删 move 把不变式提为显式契约(否则当前仅
         // 由 GC 不可 move 隐式派生,易被误读为可放开)。
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
 
         // 在主上下文里执行 fn 的顶层帧:压 callee 值 + acquire 主帧 -> run_ 主循环。
-        // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用)。
+        // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用);入口断言 current_ == &main_ctx_
+        // (M6 前恒真;M6 后 resume/yield 严格成对,协程挂起返回时 VM 层即已回退 -- 不归位即
+        // 切换纪律被破坏,是错不当静默重置)。
         // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),M1 不做逐指令越界设防。
         // 返回 Result<Value, Error>:成功为返回值,失败为未捕获的运行时错误
         // (M6 协程挂起将扩三态,届时引入 Yielded,见 .claude/reference/runtime/vm-design.md §3)。
@@ -108,34 +110,39 @@ namespace aria {
         }
 
         // ---- 挂起错误侧信道(供原生函数等冷路径报错)----
-        // 寄存器物理上在 VMContext(Movement::pending_error_);VM 经此转发到当前上下文。
-        // M1 当前上下文即 main_ctx_;M6 协程期改由 current_ 指向的当前协程上下文承担
-        // (届时 run_ 经 current_ 重入,call_value 检查的 ctx 即 current_,与本转发一致)。
-        // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md 错误通道 2(raise)。
+        // 寄存器物理上在 VMContext(Movement::pending_error_);VM 经此转发到 *current_(当前执行
+        // 上下文):run_ 主循环、call_value 族与本转发同源同一 current_,故原生函数体内 vm.fail()
+        // 报的错误必落进其调用者正在执行的上下文 -- M6 协程期即该协程的寄存器,不串主上下文。
+        // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md §4.7(错误通道 2)。
         //
         // 载荷类型(M3 起)为 Value,单寄存器模型(exception-implementation-pitfalls.md 坑 #7):
-        // - raise(Error):VM 检测错误 / 原生报错入口 -- Error 烘完整消息("Category: Name"
-        //   detail,位置标注落地后含位置前缀)后,**装箱 ObjException{code, 已烘消息}** 存入寄存器。
+        // - raise(code, detail):从零构造消息的装箱入口,一步烘齐--detail 为原始细节串(不含
+        //   "Category:" 前缀,防双烘),位置取自 *current_ 顶帧 last_ip(故障指令 / CALL 站点)
+        //   查行号表烘 "path:line: " 前缀(合成模块退化为 "<name>:line";帧栈空即 run 外直调
+        //   则无位置),经 Error::make_message(Error 的烘焙单点,公开重载)合成完整消息后
+        //   new_exception 装箱入寄存器。不经 Error 对象中转 -- Error 只在边界出现(Result 出口
+        //   / to_error 反提),不当内部渡船;位置恰只在装箱点可得,一并烘入正是把烘焙责任归位。
         //   Movement::raise(Value)(存原值不包)是 M3 用户 throw 的路由,不经本 VM 层 API。
-        // - fail:便捷工厂 -- Error::format 格式化构造 Error 后 raise。
+        // - fail:便捷工厂 -- std::format 格式化 detail 后 raise(原生函数与 call_value/
+        //   call_function/call_native/load_module 的失败站点共用)。
         // 寄存器取出的 ObjException 经其 to_error 还原为 Error(见 AriaVM.cpp value_to_error),
-        // 边界文案与 Error::format 直构逐字一致。
+        // 边界文案与 Error::from_detail 直构逐字一致。
         //
         // raise / fail 均返回 false -- 供原生函数一行报错 `return vm.fail(...);`(同时置寄存器与
         // 返回失败),成功路径则写 slots[0] 后 `return true;`。[[nodiscard]] 故意为之:裸
         // `vm.fail(...);`(丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),
         // 要么显式 `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**返回的 bool
         // 为成败信号**(见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug 断言
-        // 把关),契约 `return false ⟺ 已 raise`。raise(Error) 内 new_exception(分配)可能在原生
+        // 把关),契约 `return false ⟺ 已 raise`。raise 内 new_exception(分配)可能在原生
         // 执行中触发 GC:值栈/帧/builtins_ 均已接根,载荷构造后立即入寄存器(pending_error 亦由
         // VM 根 tracer 标根),根安全由既有接线承保。定义在 .cpp(需 ObjException 完整类型)。
         [[nodiscard]]
-        bool raise(const Error& err);
+        bool raise(ErrorCode code, StringView detail);
 
         template<typename... Args>
         [[nodiscard]]
-        bool fail(ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return raise(Error::format(code, fmt, std::forward<Args>(args)...));
+        bool fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            return raise(code, std::format(fmt, std::forward<Args>(args)...));
         }
 
         // 模块表(解释器级):键 = 规范路径 ObjString*(intern,装箱为 Value),
@@ -185,7 +192,8 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 主循环:驱动 main_ctx_ 直到顶层返回/错误/显式停止。状态全部取自上下文。
+        // 主循环:驱动 *current_(现为 main_ctx_;M6 resume 重入时为被恢复协程的上下文)直到顶层
+        // 返回/错误/显式停止。栈/帧/错误寄存器一律经 current_ 访问,与 raise 同源(语义统一)。
         // 模块体 run-once 经 IMPORT 未命中分支以普通函数调用进帧(入口名固定 <module>),
         // 由本循环执行,其 RETURN 按函数名判定模块体帧,置该模块 Loaded 并压回模块对象 -- 无递归调用。
         Result<Value, Error> run_();
@@ -194,34 +202,39 @@ namespace aria {
         // -> 入表占位 -> 编译(入口名 <module>,见 AriaVM.cpp kModuleName)-> 返回模块对象(已 set_entry)。
         // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
         // 其 RETURN 按函数名 == <module> 判定后置 Loaded。
-        // 成功返回模块对象(已入表 Loading,待 run-once 置 Loaded);失败返回 Error(被导入模块的
-        // 编译期错误原样透传,含其文件位置)。
+        // 错误契约与 call_value 族同构:return nullptr ⟺ 错误载荷已 raise 入 *current_ 寄存器,
+        // 调用方 take_error 取出沿 runtime_err 传播。两类失败:读盘失败/名字无效经 fail 烘位置
+        // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令 -- 与 resolve_module 解析失败的
+        // runtime_err 形态统一);被导入模块的编译期 Error 就地 new_exception 原样装配箱透传
+        // (from_baked 语义不重烘,位置指向被导入文件内部)。**仅限 run_ 驱动期调用**:寄存器随 *current_ 走,
+        // run() 入口 reset 会清 pending_error -- run 外直调的错误会被静默吞掉(runtime_loc 亦
+        // 依赖顶帧,帧栈空则无位置)。
         //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作 modules_
         //     表键,又作读盘路径。**调用方须已根化**(跨本函数内 modules_.upsert 的 rehash 触 GC --
         //     intern weak root 不保命)。
         //   - import_specifier:用户写的原始 import 串(报错消息用,如 "./helper")。
         // 越界检测(相对导入越出源根)本轮不做:文件能解析到即读。
-        Result<ObjModule*, Error> load_module(ObjString* canonical_path, StringView import_specifier);
+        ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
 
         // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
         // 失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）并按错误大类映射--
         // Syntax / Semantic -> CompileError，余（Runtime / Internal / Resource）-> RuntimeError。
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
-        // CALL 分发:栈顶形如 [callee, a1..aN](N=argc)。按 callee 的对象类型分派到对应
-        // call_* 子例程(ObjFunction -> call_function、ObjNativeFn -> call_native),其余报
-        // CallNonCallable。返回 bool 为成败信号:true 即成功(栈效应由子例程各自负责),
-        // false 即失败 -- 错误载荷已 raise 进 ctx 的挂起错误寄存器,调用方据 bool 决定是否
-        // take_error 取出沿 runtime_err 传播。经当前 ctx 而非 main_ctx_ -- run_ 按重入式风格
-        // 把所有操作作用于当前 ctx(现为 main_ctx_,M6 协程期换 current_ 重入),call_value 同理,
-        // 不写死主上下文(失败时错误随 ctx 走,互不串扰)。M1 仅支持 ObjFunction / ObjNativeFn
-        // (闭包/类/方法后续阶段)。契约:return false ⟺ 已 raise 入 ctx。
-        bool call_value(Movement& ctx, Value callee, u8 argc);
+        // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
+        // 分派到对应 call_* 子例程(ObjFunction -> call_function、ObjNativeFn -> call_native),其余报
+        // CallNonCallable。作用于 *current_(与 run_ 同源;现为 main_ctx_,M6 协程期即当前协程
+        // 上下文 -- 主循环在哪个上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。
+        // 返回 bool 为成败信号:true 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷
+        // 已 raise 进 *current_ 的挂起错误寄存器,调用方据 bool 决定是否 take_error 取出沿
+        // runtime_err 传播。M1 仅支持 ObjFunction / ObjNativeFn(闭包/类/方法后续阶段)。
+        // 契约:return false ⟺ 已 raise 入 *current_。
+        bool call_value(Value callee, u8 argc);
 
         // 用户函数调用:校验 arity + 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,
-        // 参数即局部槽 1..argc)。成功返 true;失败 raise WrongArity / StackOverflow 入 ctx 后返 false。
-        // 栈形 [callee, a1..aN] 由 CALL 调用方保证。
-        bool call_function(Movement& ctx, ObjFunction* obj, u8 argc);
+        // 参数即局部槽 1..argc)。成功返 true;失败 raise WrongArity / StackOverflow 入 *current_
+        // 后返 false。栈形 [callee, a1..aN] 由 CALL 调用方保证。
+        bool call_function(ObjFunction* obj, u8 argc);
 
         // 原生函数调用:同步调用 obj->fn(),不进帧。原生函数自身以 bool 为成败信号、返回值写槽 0、
         // 错误载荷走侧信道寄存器(Movement::pending_error_);本函数透传该 bool 契约:成功(原生返
@@ -230,10 +243,18 @@ namespace aria {
         // call_function/call_value 的 bool 契约统一)。调用区 [callee, a1..aN] 经 Span 暴露:
         // slots[0]=槽 0(返回值),slots[1..argc]=实参。详见 ObjNativeFn.hpp NativeFn 契约与
         // .claude/reference/runtime/vm-design.md §4.7。
-        bool call_native(Movement& ctx, const ObjNativeFn* obj, u8 argc);
+        bool call_native(const ObjNativeFn* obj, u8 argc);
 
-        GC            gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
-        Movement      main_ctx_;
+        GC       gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
+        Movement main_ctx_;
+        // 当前执行上下文:run_ 主循环 / call_value 族 / raise 的作用对象,构造即指 &main_ctx_。
+        // 方法纪律:run_/call_value 族/raise 一律直接经 current_ 访问(语义统一,无入口快照)。
+        // M6 单循环切换模型(vm-design.md §4.9):resume/yield 为原生函数,换 current_ 对
+        // call_native 透明(事后簿记一律落 entered_ctx,无需分支探测,CALL case 零改动),
+        // run_ 永不重入,任一时刻正在执行的字节码所在上下文恒等于 current_;previous_ 对齐
+        // Wren caller(yield/完成解链、可再 resume),tracer 链遍历保留(main_ctx_ 不入堆),
+        // 链尾断言届时退役。
+        Movement*     current_;
         AriaHashTable modules_;  // 模块表(M2:解释器级共享 + GC 根)
         AriaHashTable builtins_; // VM 级只读 builtins 表(构造期一次填充 + GC 根,LOAD_GLOBAL 回退查)
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_);[1..]=配置根(stdlib/-L/环境变量)
@@ -241,7 +262,7 @@ namespace aria {
     };
 
     // VM 不可移动不变式的显式校验(类完成定义后断言):成员间持指向彼此/自身的指针
-    // (main_ctx_/modules_ borrow &gc_;GC 根 tracer 捕 [this]),move 后不自动重绑 -> 悬垂。
+    // (main_ctx_/modules_ borrow &gc_;current_ 指 main_ctx_;GC 根 tracer 捕 [this]),move 后不自动重绑 -> 悬垂。
     // 上方已显式 delete move;此断言锁定该不变式 -- 若有人删掉上面的 delete 且 GC 变可
     // move 致隐式 move 重新生成,断言在此炸出,避免静默变可移动后的悬垂 UB。
     static_assert(!std::is_move_constructible_v<AriaVM>);

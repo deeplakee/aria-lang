@@ -454,14 +454,18 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     auto  fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
-    cu.emit_op(OpCode::LOAD_NIL, 1);
-    emit_imm(cu, 1);
-    cu.emit_op(OpCode::ADD, 1); // nil + 1 -> TypeMismatch
-    cu.emit_op(OpCode::RETURN, 1);
+    cu.emit_op(OpCode::LOAD_NIL, 3); // 行 3:验证直报站点位置前缀取故障指令行
+    emit_imm(cu, 1, 3);
+    cu.emit_op(OpCode::ADD, 3); // nil + 1 -> TypeMismatch
+    cu.emit_op(OpCode::RETURN, 3);
 
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+    // run_ 直报站点带位置前缀(经 runtime_err(ctx,...) -> make_message 烘齐 + from_baked 装回):
+    // 合成模块 <script> 退化 "<name>:line",行号 = ADD 指令所在行。
+    EXPECT_EQ(out.error().message(),
+              "<script>:3: Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int");
 }
 
 TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
@@ -478,6 +482,7 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
+    EXPECT_EQ(out.error().message(), "<script>:1: Runtime: DivisionByZero integer division by zero");
 }
 
 TEST_F(AriaVMStress, WrongArityIsUncaught) {
@@ -1093,7 +1098,9 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
     ASSERT_FALSE(out.has_value()) << "expected error, got value";
     const auto& err = out.error();
     EXPECT_EQ(err.code(), ErrorCode::TypeMismatch);
-    EXPECT_NE(err.message().find("fail_always always fails"), std::string::npos);
+    // vm.fail 装箱路径带位置前缀(raise 一步烘齐):原生不进帧,顶帧即 caller,
+    // 位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line"。
+    EXPECT_EQ(err.message(), "<script>:1: Runtime: TypeMismatch fail_always always fails");
 }
 
 // 原生函数元数自查:double 收 0 参时经 vm.fail 报 WrongArity。

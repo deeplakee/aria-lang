@@ -130,7 +130,9 @@ IMPORT 以绝对键查 `modules_`：
   IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行
   一个函数,由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 `Loaded`、
   改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`。**无递归 `run_()`**。被导入模块的
-  编译期/运行期错误原样透传(含其文件位置);读盘失败/name 空报 `ErrorCode::ModuleNotFound`。详见
+  编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
+  `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `take_error` 取出);
+  读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
   `import-handling-overview.md`「加载层接入位置」。
 - **解析失败**（无源根命中 `<base>/<spec>.aria`）：返回 `ErrorCode::ModuleNotFound`
   （`module not found: 'PATH' (no matching source root)`）。

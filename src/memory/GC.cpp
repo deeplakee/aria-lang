@@ -50,7 +50,7 @@ namespace aria {
         for (const Value& v: temp_roots_) {
             mark_value(v);
         }
-        // VM 根(M2 起用):经 std::function 回调,标 modules_ + main_ctx_ 值栈/活动帧 function/module。
+        // VM 根(M2 起用):经 std::function 回调,标 modules_ + current_ 执行链上各上下文的值栈/活动帧 function/module。
         // M4 再接 open upvalues,M6 升 Movement 为 Object。
         if (vm_roots_tracer_) {
             vm_roots_tracer_(*this);

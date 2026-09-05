@@ -15,7 +15,8 @@ namespace aria {
     //
     //   - code_ / message_:message_ 存**完整烘焙消息** -- 与 Error::message() 同形,含
     //     "Category: Name" 前缀(运行时位置标注落地后含 "path:line:col: " 前缀)。烘焙发生在
-    //     raise 侧(Error::format / Error::from_detail 构造),本对象原样持有,不经 make_message;
+    //     raise 侧(经 Error::make_message 烘齐,from_detail 同源经它),本对象原样持有,
+    //     自身不做加工;
     //     位置不丢、catch 里 print(e)/str(e) 渲染完整消息不退化。code_ 保留机器标识:
     //     to_error() 与 catch 类型判定(M3)经它取。message_ 指针恒非空(ctor ASSERT;内容可空
     //     -- 无细节的错误以空串兜底),经 intern 驻留同指针。设计定稿见
@@ -76,7 +77,7 @@ namespace aria {
     };
 
     // 工厂:完整烘焙消息串以 StringView 传入(**原样存,不经 make_message 烘焙** -- 调用方须传
-    // Error::message() / Error::format 产物那种已烘好的串,常见形如 "Runtime: TypeMismatch ...")。
+    // Error::message() / Error::make_message 产物那种已烘好的串,常见形如 "Runtime: TypeMismatch ...")。
     // 内部 new_string 驻留并自行守卫跨下方 new_object 顶 maybe_collect(工厂守「自己创建的」),
     // 调用方传 StringView 即可,无需手动建串根化。返回对象白色无根:调用方须立即发布进某根
     // (如 ctx.raise(Value::from_obj(...)) -- raise 到寄存器后由 VM 根 tracer 标 pending_error 保命)。

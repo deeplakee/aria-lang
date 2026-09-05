@@ -1,3 +1,4 @@
+#include <format>
 #include <gtest/gtest.h>
 
 #include "error/Error.hpp"
@@ -65,12 +66,14 @@ TEST(ObjException, ToErrorCopiesBakedMessageVerbatim) {
     EXPECT_EQ(converted.message(), "Runtime: TypeMismatch operator '+' requires numbers, got nil and string");
 }
 
-TEST(ObjException, ToErrorMatchesErrorfRoundTrip) {
-    // 全链路回环:Error::format 烘焙 -> message_ 原样存 -> to_error 原样回传,与 Error::format
-    // 直构的 Error 逐字一致(未捕获异常的边界文案/测试断言在寄存器载荷改为 Value 前后不漂移)。
+TEST(ObjException, ToErrorRoundTrip) {
+    // 全链路回环:Error::from_detail(std::format 细节)烘焙 -> message_ 原样存 -> to_error
+    // 原样回传,与 from_detail 直构的 Error 逐字一致(未捕获异常的边界文案/测试断言在寄存器
+    // 载荷改为 Value 前后不漂移)。
     GC   gc;
-    auto err       = aria::Error::format(ErrorCode::TypeMismatch, "operator '+' requires numbers, got {} and {}",
-                                         StringView{"nil"}, StringView{"string"});
+    auto err = aria::Error::from_detail(
+            ErrorCode::TypeMismatch,
+            std::format("operator '+' requires numbers, got {} and {}", StringView{"nil"}, StringView{"string"}));
     auto e         = make_exception(gc, err.code(), err.message());
     auto converted = e->to_error();
     EXPECT_EQ(converted.code(), err.code());

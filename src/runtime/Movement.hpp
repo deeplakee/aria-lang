@@ -21,6 +21,7 @@ namespace aria {
         ObjModule*   module;   // 缓存 function->module(),供 LOAD/STORE/DEF_GLOBAL 定位模块 globals
         u8*          ip;       // 指令指针(裸指针;raise/行号等冷路径按需算 offset)
         Value*       slots;    // 本帧局部基址(callee 在槽 0,参数从槽 1 起;RETURN 时弹)
+        const u8*    last_ip;  // 本帧最近取指指令的起始指针(主循环取指前写;报错定位行号 / M3 unwind 查表锚点,查表时按 last_ip - unit->code.data() 反推 offset。前提:帧存活期间 code 缓冲恒定 -- 非移动 GC + 执行期零 emit)
     };
 
     // 执行上下文:一段执行的完整状态(可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
@@ -36,13 +37,14 @@ namespace aria {
     //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧)。
     //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,改经 AriaVM 的 vm_roots tracer 在 collect
     //     时直标(值栈 [base,top) + 各帧 function/module),M6 前即接根。M6 协程期升级 ObjMovement
-    //     : Object 并增 open upvalue 链头/执行状态机/resume 字段,届时入对象链表。主上下文与协程同构。
+    //     : Object 并增 open upvalue 链头/执行状态机等字段,届时入对象链表;resume 链(previous_,
+    //     见下)已前置落地,VM 根 tracer 沿 current_ -> previous_ 链逐个标根。主上下文与协程同构。
     class Movement {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,8KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
 
-        explicit Movement(GC* gc) noexcept : buf_{gc, kStackInit}, top_{buf_.data()}, frames_{} {}
+        explicit Movement(GC* gc) noexcept : buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, previous_{nullptr} {}
 
         ~Movement() = default; // buf_ 自释放值栈;frames_ 定容无资源。
 
@@ -183,6 +185,22 @@ namespace aria {
             return pending_error_;
         }
 
+        // ---- 协程 resume 链(M6 前置落地)----
+        // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
+        // B yield/结束回退 current_ = B->previous_。自 VM 的 current_ 沿 previous_ 回走即 resume 链,
+        // 链尾恒为主上下文(其 previous_ 恒 nullptr)-- resume/yield 严格成对的直接推论。VM 根
+        // tracer 据此沿链逐个标根(挂起协程的值栈/帧/寄存器都是根,见 AriaVM ctor),并以链尾断言
+        // 锁定切换纪律。切换收口在 AriaVM(current_,见其注释),Movement 不自切;M6 前链长恒 1
+        // (仅主上下文),字段为契约占位。
+        [[nodiscard]]
+        Movement* previous() const noexcept {
+            return previous_;
+        }
+
+        // 链接/重链(resume 方向:置恢复者)。挂起回退时是否清 nullptr 属 M6 设计点(清则无悬指;
+        // 不清则重 resume 时重链,但 Movement 升 Object 后 trace 须防标到已结束的旧恢复者)。
+        void set_previous(Movement* prev) noexcept { previous_ = prev; }
+
     private:
         // 就位一帧为对 fn 的调用:slots 指向槽 0,VM 专有字段(function/unit/module/ip)从 fn 填充。
         // 假定栈顶形如 [callee, a1..aN](N=argc),f 为 enter_frame 刚 acquire 的栈顶空帧。
@@ -238,6 +256,7 @@ namespace aria {
         FrameStack<CallFrame, kFrameMax> frames_;
         Opt<Value>                       pending_error_; // 挂起错误寄存器(侧信道;M3 起载荷为 Value -- ObjException 装箱
                                                          // 或用户 throw 的任意值;置入后由 VM 根 tracer 标根,见上注释)
+        Movement* previous_; // resume 链:恢复者上下文(主上下文恒 nullptr 链尾;见上协程 resume 链注释)
     };
 
     // VMContext 是 Movement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用

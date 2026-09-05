@@ -26,7 +26,7 @@ namespace aria {
     class AriaException : public std::exception {
     public:
         // 从 Error 值对象构造（唯一构造面：携带码/位置/消息）。不再镜像 Error 的各构造入口 --
-        // Error 的组件/成品语义由其静态工厂(from_detail/from_baked/format)收口,
+        // Error 的组件/成品语义由其静态工厂(from_detail/from_baked)收口,
         // 本类只收成品(Error),镜像会逐入口漂移(见 Error.hpp)。
         explicit AriaException(Error error) : AriaException{std::move(error), make_what(error)} {}
 

@@ -17,6 +17,7 @@ add_executable(aria_tests
         compile/test_compiler.cpp
         # bytecode
         bytecode/test_codeunit.cpp
+        bytecode/test_disassembler.cpp
         # runtime
         runtime/test_ariavm.cpp
         runtime/test_interpret.cpp

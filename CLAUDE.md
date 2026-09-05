@@ -4,7 +4,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、bytecode 层（OpCode / CodeUnit / Disassembler）、GC Phase 1 + 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错带 `path:line: ` 位置标注）。
+- **已落地**：util / value / error / compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、bytecode 层（OpCode X-Macro 单一事实源表 + CodeUnit / Disassembler 表驱动解码）、GC Phase 1 + 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错带 `path:line: ` 位置标注）。
 - **骨架待落地**：M3 异常 try/catch、M4 闭包、M5 类、M6 协程；CodeGen 对应特性占位 `NotImplemented`（编译期 Error），随 VM 里程碑逐个翻为真实发射。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 

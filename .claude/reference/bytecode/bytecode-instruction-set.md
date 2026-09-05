@@ -2,7 +2,7 @@
 
 aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，供后续 CodeUnit / 反汇编器 / 字节码编译器 / VM 实现参考。
 
-> 现状：`OpCode` 枚举已就绪（63 条，含 2 条 `_L` 长变体（局部槽），`u8`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文中标「建议」「待决」者为面向实现的提案，非既成事实。
+> 现状：`OpCode` 已升级为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，63 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文中标「建议」「待决」者为面向实现的提案，非既成事实。
 
 ## 1. 现状与基准
 
@@ -49,9 +49,11 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 - **代码段类型 `Array<u8>`**：opcode 以 `static_cast<u8>(op)` 存入，操作数直接写字节，让操作数字节与 opcode 统一寻址（见 §7）。
 - **字节序：小端**（低位在前）。仅影响内存表示与反汇编可读性，不落盘则无跨平台问题。
-- 反汇编器与 VM 遵循同一「opcode -> 操作数格式」解码约定（本节即规格），各自实现解码（反汇编器解码内联于 `Disassembler.cpp`、VM 主循环自持 switch），改指令集时两处同步；尚未提取共享表。
+- 反汇编器与 VM 遵循同一「opcode -> 操作数格式」解码约定（本节即规格）。**共享表已提取**：`code.hpp` 的 `ARIA_OPCODE_LIST(X)` 双列表（枚举名 + 操作数格式类别）展开生成 `kOpCodeNames`/`kOpCodeFormats`，反汇编器按格式表分发解码；VM 主循环仍自持 switch（热路径操作数读取内联于各 case，不查表）。新增指令的同步点 = X 表加一行 + VM 加 case；反汇编器零改动（仅引入新 `OpFormat` 类别时才同步其分发 switch）。
 
 ### 2.2 操作数位宽（建议）
+
+下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽 `u8`/`u16` -> `U8`/`U16`；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`Import`/`Invoke` 为反汇编渲染层面的细分（无操作数 / 预留 flags / path 注释 / name+argc 复合）。
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |

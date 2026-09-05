@@ -108,7 +108,7 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}  ; flags=0x{:02X}", to_u32(raw), to_u32(raw)));
     }
 
-    // 常量索引(LOAD_CONST/CLOSURE):`{:04X}` 操作数 + 常量可读化注释(越界 `<bad idx>`)。
+    // 常量/名字索引(LOAD_CONST/CLOSURE 及全部名字索引指令):`{:04X}` 操作数 + 常量可读化注释(越界 `<bad idx>`)。
     String Disassembler::const_instruction(const StringView op_name) {
         if (is_truncated(2)) {
             return join_line(op_name, truncated());
@@ -116,9 +116,6 @@ namespace aria {
         const u16 idx = read_u16();
         return join_line(op_name, std::format("{:04X}  ; {}", idx, format_constant(idx)));
     }
-
-    // 名字索引(全局/字段/类/方法名):操作数即常量池索引,渲染与 const_instruction 一致,故直接委托。
-    String Disassembler::name_instruction(const StringView op_name) { return const_instruction(op_name); }
 
     // 前向跳转(JUMP 及条件变体):`{:04X} -> target`,目标 = 读操作数后 offset_ + off。
     String Disassembler::jump_forward(const StringView op_name) {
@@ -163,143 +160,38 @@ namespace aria {
     }
 
     // 反汇编单条指令(从 codeunit_->code[offset_] 起),返回指令文本(不含偏移前缀/换行),推进 offset_ 越过该指令。
-    // 每个 opcode 一支,显式调用对应解码函数并直接传字面量名(与参考实现风格一致),不借 opcode->名查表。
+    // 表驱动:opcode 名与操作数格式查 code.hpp 的 X 表生成物(kOpCodeNames/kOpCodeFormats),按格式分发到
+    // 解码函数。新增 opcode 只需在 ARIA_OPCODE_LIST 加一行,本函数零改动(除非引入新格式类别)。
     String Disassembler::dis_instruction() {
         const u8 byte = codeunit_->code[offset_++]; // opcode 字节
 
-        // 越界 opcode 字节(无对应枚举)容错:直接报 bad opcode 并停解码。上界判断依赖
-        // OpCode 枚举稠密无空洞(0..RETURN 连续、无显式赋值跳号),留洞则此判定失效。
-        if (byte > static_cast<u8>(OpCode::RETURN)) {
+        // 越界 opcode 字节(无对应枚举)容错:直接报 bad opcode 并停解码。
+        if (byte >= kOpCodeCount) {
             return std::format("<bad opcode 0x{:02X}>", to_u32(byte));
         }
 
-        switch (static_cast<OpCode>(byte)) {
-            case OpCode::HALT:
-                return simple_instruction("HALT");
-            case OpCode::LOAD_CONST:
-                return const_instruction("LOAD_CONST");
-            case OpCode::LOAD_NIL:
-                return simple_instruction("LOAD_NIL");
-            case OpCode::LOAD_TRUE:
-                return simple_instruction("LOAD_TRUE");
-            case OpCode::LOAD_FALSE:
-                return simple_instruction("LOAD_FALSE");
-            case OpCode::LOAD_IMM:
-                return load_imm("LOAD_IMM");
-            case OpCode::LOAD_LOCAL:
-                return u8_instruction("LOAD_LOCAL");
-            case OpCode::STORE_LOCAL:
-                return u8_instruction("STORE_LOCAL");
-            case OpCode::LOAD_LOCAL_L:
-                return u16_instruction("LOAD_LOCAL_L");
-            case OpCode::STORE_LOCAL_L:
-                return u16_instruction("STORE_LOCAL_L");
-            case OpCode::LOAD_UPVALUE:
-                return u8_instruction("LOAD_UPVALUE");
-            case OpCode::STORE_UPVALUE:
-                return u8_instruction("STORE_UPVALUE");
-            case OpCode::CLOSE_UPVALUE:
-                return simple_instruction("CLOSE_UPVALUE");
-            case OpCode::DEF_GLOBAL:
-                return name_instruction("DEF_GLOBAL");
-            case OpCode::LOAD_GLOBAL:
-                return name_instruction("LOAD_GLOBAL");
-            case OpCode::STORE_GLOBAL:
-                return name_instruction("STORE_GLOBAL");
-            case OpCode::LOAD_FIELD:
-                return name_instruction("LOAD_FIELD");
-            case OpCode::STORE_FIELD:
-                return name_instruction("STORE_FIELD");
-            case OpCode::LOAD_INDEX:
-                return simple_instruction("LOAD_INDEX");
-            case OpCode::STORE_INDEX:
-                return simple_instruction("STORE_INDEX");
-            case OpCode::LOAD_THIS_FIELD:
-                return name_instruction("LOAD_THIS_FIELD");
-            case OpCode::STORE_THIS_FIELD:
-                return name_instruction("STORE_THIS_FIELD");
-            case OpCode::EQUAL:
-                return simple_instruction("EQUAL");
-            case OpCode::NOT_EQUAL:
-                return simple_instruction("NOT_EQUAL");
-            case OpCode::STRICT_EQUAL:
-                return simple_instruction("STRICT_EQUAL");
-            case OpCode::STRICT_NOT_EQUAL:
-                return simple_instruction("STRICT_NOT_EQUAL");
-            case OpCode::GREATER:
-                return simple_instruction("GREATER");
-            case OpCode::GREATER_EQUAL:
-                return simple_instruction("GREATER_EQUAL");
-            case OpCode::LESS:
-                return simple_instruction("LESS");
-            case OpCode::LESS_EQUAL:
-                return simple_instruction("LESS_EQUAL");
-            case OpCode::ADD:
-                return simple_instruction("ADD");
-            case OpCode::SUBTRACT:
-                return simple_instruction("SUBTRACT");
-            case OpCode::MULTIPLY:
-                return simple_instruction("MULTIPLY");
-            case OpCode::DIVIDE:
-                return simple_instruction("DIVIDE");
-            case OpCode::MOD:
-                return simple_instruction("MOD");
-            case OpCode::NOT:
-                return simple_instruction("NOT");
-            case OpCode::NEGATE:
-                return simple_instruction("NEGATE");
-            case OpCode::POP:
-                return simple_instruction("POP");
-            case OpCode::POP_N:
-                return u8_instruction("POP_N");
-            case OpCode::DUP:
-                return simple_instruction("DUP");
-            case OpCode::DUP2:
-                return simple_instruction("DUP2");
-            case OpCode::PRINT:
-                return simple_instruction("PRINT");
-            case OpCode::NOP:
-                return simple_instruction("NOP");
-            case OpCode::JUMP:
-                return jump_forward("JUMP");
-            case OpCode::JUMP_TRUE:
-                return jump_forward("JUMP_TRUE");
-            case OpCode::JUMP_TRUE_OR_POP:
-                return jump_forward("JUMP_TRUE_OR_POP");
-            case OpCode::JUMP_FALSE:
-                return jump_forward("JUMP_FALSE");
-            case OpCode::JUMP_FALSE_OR_POP:
-                return jump_forward("JUMP_FALSE_OR_POP");
-            case OpCode::JUMP_BACK:
-                return jump_back("JUMP_BACK");
-            case OpCode::CALL:
-                return u8_instruction("CALL");
-            case OpCode::CLOSURE:
-                return const_instruction("CLOSURE");
-            case OpCode::LOAD_OBJECT:
-                return simple_instruction("LOAD_OBJECT");
-            case OpCode::MAKE_CLASS:
-                return name_instruction("MAKE_CLASS");
-            case OpCode::MAKE_METHOD:
-                return name_instruction("MAKE_METHOD");
-            case OpCode::MAKE_STATIC:
-                return name_instruction("MAKE_STATIC");
-            case OpCode::LOAD_SUPER_METHOD:
-                return name_instruction("LOAD_SUPER_METHOD");
-            case OpCode::INVOKE_METHOD:
-                return invoke_instruction("INVOKE_METHOD");
-            case OpCode::MAKE_LIST:
-                return u16_instruction("MAKE_LIST");
-            case OpCode::MAKE_MAP:
-                return u16_instruction("MAKE_MAP");
-            case OpCode::MAKE_RANGE:
-                return make_range("MAKE_RANGE");
-            case OpCode::IMPORT:
-                return import_instruction("IMPORT");
-            case OpCode::THROW:
-                return simple_instruction("THROW");
-            case OpCode::RETURN:
-                return simple_instruction("RETURN");
+        const StringView op_name = kOpCodeNames[byte];
+        switch (kOpCodeFormats[byte]) {
+            case OpFormat::Simple:
+                return simple_instruction(op_name);
+            case OpFormat::U8:
+                return u8_instruction(op_name);
+            case OpFormat::U16:
+                return u16_instruction(op_name);
+            case OpFormat::ConstU16:
+                return const_instruction(op_name);
+            case OpFormat::ImmI8:
+                return load_imm(op_name);
+            case OpFormat::JumpFwd:
+                return jump_forward(op_name);
+            case OpFormat::JumpBack:
+                return jump_back(op_name);
+            case OpFormat::RangeFlags:
+                return make_range(op_name);
+            case OpFormat::Import:
+                return import_instruction(op_name);
+            case OpFormat::Invoke:
+                return invoke_instruction(op_name);
         }
         UNREACHABLE();
     }

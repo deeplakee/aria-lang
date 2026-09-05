@@ -4,99 +4,143 @@
 #include "common.hpp"
 
 namespace aria {
-    enum class OpCode : u8 {
-        HALT = 0,
-        // Data loading and storage
-        LOAD_CONST,
-        LOAD_NIL,
-        LOAD_TRUE,
-        LOAD_FALSE,
-        LOAD_IMM,
 
-        LOAD_LOCAL,
-        STORE_LOCAL,
-        LOAD_LOCAL_L,  // 长变体: slot u16, slot>=256 时用; 见 bytecode-instruction-set.md §2.3
-        STORE_LOCAL_L, // 长变体: 同 STORE_LOCAL, slot u16
-
-        LOAD_UPVALUE,
-        STORE_UPVALUE,
-        CLOSE_UPVALUE,
-
-        DEF_GLOBAL,
-        LOAD_GLOBAL,
-        STORE_GLOBAL,
-
-        LOAD_FIELD,
-        STORE_FIELD,
-
-        LOAD_INDEX,
-        STORE_INDEX,
-
-        LOAD_THIS_FIELD,
-        STORE_THIS_FIELD,
-
-        // Arithmetic and logical operations
-        EQUAL,
-        NOT_EQUAL,
-        STRICT_EQUAL,
-        STRICT_NOT_EQUAL,
-        GREATER,
-        GREATER_EQUAL,
-        LESS,
-        LESS_EQUAL,
-        ADD,
-        SUBTRACT,
-        MULTIPLY,
-        DIVIDE,
-        MOD,
-        NOT,
-        NEGATE,
-
-        // Stack operations
-        POP,
-        POP_N,
-        DUP,  // 复制栈顶 1 个槽:[a] -> [a, a]
-        DUP2, // 复制栈顶 2 个槽(保序):[a, b] -> [a, b, a, b]
-
-        // Output/Debug
-        PRINT,
-        NOP,
-
-        // Control flow (jump and branch)
-        // 偏移 u16 无符号, 方向编码于 opcode: JUMP* 前向 (ip+=off), JUMP_BACK 后向 (ip-=off)
-        // 后向恒无条件 (while/for/for-in 回边), 条件跳转恒前向; 见 bytecode-instruction-set.md §2.3/§4.12
-        JUMP,
-        JUMP_TRUE,
-        JUMP_TRUE_OR_POP, // 短路 ||: 真跳留值(结果即 v), 否则弹落空
-        JUMP_FALSE,
-        JUMP_FALSE_OR_POP, // 短路 &&: 假跳留值(结果即 v), 否则弹落空
-        JUMP_BACK,         // 后向无条件回边
-
-        // Functions and Closures
-        CALL,
-        CLOSURE,
-
-        // Classes and Objects
-        LOAD_OBJECT,
-        MAKE_CLASS,
-        MAKE_METHOD,
-        MAKE_STATIC,
-        LOAD_SUPER_METHOD,
-        INVOKE_METHOD, // 预备指令(暂 pass): 合并"取方法 + 调用"; 当前模型无法编译期区分方法调用与属性访问, 暂不发射,
-                       // 留作 VM 性能 pass
-        MAKE_LIST,
-        MAKE_MAP,
-        MAKE_RANGE, // 区间构造: [lo, hi] -> [range]; 操作数 flags:u8 编码含/不含上界(.. vs ...)
-
-        // Module import
-        IMPORT,
-
-        // exception handling
-        THROW,
-
-        // return
-        RETURN,
+    // 操作数格式类别:ARIA_OPCODE_LIST 第二列的取值域,Disassembler 按此分发解码,
+    // 与 bytecode-instruction-set.md §2.2 位宽表一一对应。新增格式类别须同步 Disassembler
+    // 的格式分发 switch(仅当既有类别容纳不下时才需要)。
+    enum class OpFormat : u8 {
+        Simple,     // 无操作数
+        U8,         // 1 字节操作数, 渲染 {:02X}
+        U16,        // 2 字节小端操作数, 渲染 {:04X}
+        ConstU16,   // 2 字节常量池索引(名字索引同类), 附常量可读化注释
+        ImmI8,      // 1 字节有符号立即数, hex + 十进制注释
+        JumpFwd,    // 2 字节前向偏移(ip+=off), 渲染 -> target; 条件跳转恒前向(if/while/短路), 见 instruction-set §2.3
+        JumpBack,   // 2 字节后向偏移(ip-=off), 渲染 <- target; 后向恒无条件(while/for/for-in 回边)
+        RangeFlags, // 1 字节预留 flags, 渲染 flags=0xNN
+        Import,     // 2 字节 path 常量索引 + path 注释
+        Invoke,     // 2 字节 name 索引 + 1 字节 argc
     };
+
+    // 指令集单一事实源: 每行 X(枚举名, 操作数格式), 枚举顺序即 opcode 数值(首条 HALT 隐式为 0,
+    // 依赖稠密递增)。消费方(均由本表展开生成, 生成器宏用完即 #undef):
+    //   - OpCode / kOpCodeCount / kOpCodeNames / kOpCodeFormats(下方)
+    //   - 未来 computed goto 跳转表(同表再加一行消费, 见 vm-design.md dispatch 演进)
+    // 新增指令流程: 本表加一行(选既有 OpFormat 类别) -> AriaVM 加对应 case -> 文档
+    // bytecode-instruction-set.md 同步; Disassembler 与名字/格式表零改动。
+    // 续行符对齐交给 clang-format(RightAlignEscapedNewlines), 无需手工维护。
+    //
+    // 表内不放说明性注释(中英混排难以列对齐), 语义细节统一见 bytecode-instruction-set.md §4;
+    // 少数易踩的点速览:
+    //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
+    //   - LOAD/STORE_LOCAL_L: 长变体, slot:u16, slot>=256 时用
+    //   - DEF_GLOBAL 等名字类指令(ConstU16 格式): 操作数即常量池 ObjString 索引
+    //   - JUMP*: u16 无符号前向偏移(ip+=off); JUMP_BACK: 后向(ip-=off)恒无条件; 条件跳转恒前向(§2.3)
+    //   - JUMP_TRUE/FALSE_OR_POP: 短路跳转, 条件命中则留栈顶值, 否则弹掉
+    //   - INVOKE_METHOD: 预备指令(暂 pass), 当前模型无法编译期区分方法调用与属性访问
+    //   - MAKE_RANGE: 操作数 flags:u8 编码含/不含上界(.. vs ...)
+    // 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
+#define ARIA_OPCODE_LIST(X)                \
+    X(HALT, Simple)                        \
+    /* ---- data loading & storage ---- */ \
+    X(LOAD_CONST, ConstU16)                \
+    X(LOAD_NIL, Simple)                    \
+    X(LOAD_TRUE, Simple)                   \
+    X(LOAD_FALSE, Simple)                  \
+    X(LOAD_IMM, ImmI8)                     \
+    X(LOAD_LOCAL, U8)                      \
+    X(STORE_LOCAL, U8)                     \
+    X(LOAD_LOCAL_L, U16)                   \
+    X(STORE_LOCAL_L, U16)                  \
+    X(LOAD_UPVALUE, U8)                    \
+    X(STORE_UPVALUE, U8)                   \
+    X(CLOSE_UPVALUE, Simple)               \
+    X(DEF_GLOBAL, ConstU16)                \
+    X(LOAD_GLOBAL, ConstU16)               \
+    X(STORE_GLOBAL, ConstU16)              \
+    X(LOAD_FIELD, ConstU16)                \
+    X(STORE_FIELD, ConstU16)               \
+    X(LOAD_INDEX, Simple)                  \
+    X(STORE_INDEX, Simple)                 \
+    X(LOAD_THIS_FIELD, ConstU16)           \
+    X(STORE_THIS_FIELD, ConstU16)          \
+    /* ---- arithmetic & logic ---- */     \
+    X(EQUAL, Simple)                       \
+    X(NOT_EQUAL, Simple)                   \
+    X(STRICT_EQUAL, Simple)                \
+    X(STRICT_NOT_EQUAL, Simple)            \
+    X(GREATER, Simple)                     \
+    X(GREATER_EQUAL, Simple)               \
+    X(LESS, Simple)                        \
+    X(LESS_EQUAL, Simple)                  \
+    X(ADD, Simple)                         \
+    X(SUBTRACT, Simple)                    \
+    X(MULTIPLY, Simple)                    \
+    X(DIVIDE, Simple)                      \
+    X(MOD, Simple)                         \
+    X(NOT, Simple)                         \
+    X(NEGATE, Simple)                      \
+    /* ---- stack ops ---- */              \
+    X(POP, Simple)                         \
+    X(POP_N, U8)                           \
+    X(DUP, Simple)                         \
+    X(DUP2, Simple)                        \
+    /* ---- output & debug ---- */         \
+    X(PRINT, Simple)                       \
+    X(NOP, Simple)                         \
+    /* ---- control flow (jumps) ---- */   \
+    X(JUMP, JumpFwd)                       \
+    X(JUMP_TRUE, JumpFwd)                  \
+    X(JUMP_TRUE_OR_POP, JumpFwd)           \
+    X(JUMP_FALSE, JumpFwd)                 \
+    X(JUMP_FALSE_OR_POP, JumpFwd)          \
+    X(JUMP_BACK, JumpBack)                 \
+    /* ---- functions & closures ---- */   \
+    X(CALL, U8)                            \
+    X(CLOSURE, ConstU16)                   \
+    /* ---- classes & objects ---- */      \
+    X(LOAD_OBJECT, Simple)                 \
+    X(MAKE_CLASS, ConstU16)                \
+    X(MAKE_METHOD, ConstU16)               \
+    X(MAKE_STATIC, ConstU16)               \
+    X(LOAD_SUPER_METHOD, ConstU16)         \
+    X(INVOKE_METHOD, Invoke)               \
+    X(MAKE_LIST, U16)                      \
+    X(MAKE_MAP, U16)                       \
+    X(MAKE_RANGE, RangeFlags)              \
+    /* ---- module import ---- */          \
+    X(IMPORT, Import)                      \
+    /* ---- exceptions ---- */             \
+    X(THROW, Simple)                       \
+    /* ---- return ---- */                 \
+    X(RETURN, Simple)
+
+    enum class OpCode : u8 {
+#define ARIA_OP_ENUM(name, format) name,
+        ARIA_OPCODE_LIST(ARIA_OP_ENUM)
+#undef ARIA_OP_ENUM
+    };
+
+    // 指令总数(= X 表行数):opcode 字节越界判定等用,替代对枚举稠密(上界 = 末条枚举值)的依赖。
+    constexpr usize kOpCodeCount = 0
+#define ARIA_OP_COUNT(name, format) +1
+            ARIA_OPCODE_LIST(ARIA_OP_COUNT)
+#undef ARIA_OP_COUNT
+            ;
+
+    // opcode -> 名字 / 操作数格式查表(数组显式以 kOpCodeCount 定界,表行数与枚举条数不一致即编译错)。
+    // 供 Disassembler 等冷路径消费;VM 热路径不查表(操作数读取内联在各 case)。
+    inline constexpr const char* kOpCodeNames[kOpCodeCount] = {
+#define ARIA_OP_NAME(name, format) #name,
+            ARIA_OPCODE_LIST(ARIA_OP_NAME)
+#undef ARIA_OP_NAME
+    };
+
+    inline constexpr OpFormat kOpCodeFormats[kOpCodeCount] = {
+#define ARIA_OP_FORMAT(name, format) OpFormat::format,
+            ARIA_OPCODE_LIST(ARIA_OP_FORMAT)
+#undef ARIA_OP_FORMAT
+    };
+
 } // namespace aria
 
 #endif // ARIA_CODE_HPP

@@ -49,7 +49,7 @@ namespace aria {
 
         // 导入模块的入口函数名(固定;主入口为 "<main>")。用户代码无法产生含 '<'/'>' 的名字,
         // 故函数名 == kModuleName 唯一标识「IMPORT 加载层驱动的模块体 run-once 帧」。RETURN 据它
-        // 判定是否弹弃返回值、置该模块 Loaded、改压模块对象 -- 取代在 CallFrame 上加 is_module_body
+        // 判定是否弹弃返回值、改压模块对象 -- 取代在 CallFrame 上加 is_module_body
         // 标志位:名字是函数的固有属性,无需进帧时额外置位/复位,亦无帧槽复用残留之虞。
         // 名字经 intern 驻留(指针唯一),view() 为短串(8 字节),逐 RETURN 一次内容比较开销可忽略。
         constexpr StringView kModuleName = "<module>";
@@ -311,7 +311,7 @@ namespace aria {
         //   - 字节码行的 frame.function->to_string() / mod->to_string() 是 ObjFunction/ObjModule(内置,纯 C++,
         //     用户无法重载),无重入风险。
         //
-        //   - 字节码行:模块信息(to_string + state,置于 [trace] 与 <fn> 之间)+ 栈顶帧 fn 名 @ip 偏移
+        //   - 字节码行:模块信息(to_string,置于 [trace] 与 <fn> 之间)+ 栈顶帧 fn 名 @ip 偏移
         //     + 指令反汇编(opcode + 操作数 + 注释);第一行即含完整位置上下文(模块/函数/ip/字节码),无需下扫模块行;
         //   - 栈+帧:  值栈 [base, top) 全部 Value 经 format_value_debug 渲染,逐槽 [ v ](空栈打印 (empty));
         //             下方一行用 ^ 对齐到当前帧栈底(bottom = slots 基址)所在槽的 [ 下标,联动指示栈中
@@ -325,9 +325,8 @@ namespace aria {
             const auto instr     = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
             const auto* mod = frame.module;
-            io::print(stderr, "[trace] {} {}  {} @{:04X}  {}\n", mod->to_string(),
-                      mod->state() == ObjModule::ModuleState::Loading ? "Loading" : "Loaded",
-                      frame.function->to_string(), static_cast<u32>(ip_off), instr);
+            io::print(stderr, "[trace] {}  {} @{:04X}  {}\n", mod->to_string(), frame.function->to_string(),
+                      static_cast<u32>(ip_off), instr);
 
             const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
             List<String> segs;
@@ -629,9 +628,10 @@ namespace aria {
         // **仅限 run_ 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清 pending_error --
         // run 外直调(未来预加载 API 等)的错误会被静默吞掉;runtime_loc 亦依赖顶帧,帧栈空则无位置。
         //
-        // 步骤:读盘 -> 派生模块身份 -> new_module(Loading)+ 自守 -> 入表占位 -> 编译(set_entry)。
+        // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 入表占位 -> 编译(set_entry)。
         // **仅加载与编译**:模块体 run-once 不在此执行 -- 由调用方(IMPORT 分支)以普通函数调用进帧
-        // 驱动,其 RETURN 置 Loaded。故返回的模块处于 Loading 态(待 run-once)。
+        // 驱动。加载事实源 = modules_ 表成员资格(对象无状态字段):入表即「已加载(体待 run-once 或
+        // 已跑完)」,循环导入命中表内半初始化对象即复用。
         // 越界检测本轮不做:文件能解析到即读(resolve_module 已做 exists-check)。
 
         // 1. 读盘:BOM 剥除 + CRLF->LF + UTF-8 校验(见 SourceFile::from_path)。resolve_module 已 exists-check,
@@ -651,11 +651,12 @@ namespace aria {
             return nullptr;
         }
 
-        // 3. 建模块(Loading 态,工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
+        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
         auto module = new_module(gc_, name_s, dir_s);
         auto guard  = gc_.make_guard(module);
 
-        // 4. 入表占位(Loading):供循环导入命中半初始化对象。canonical_path 已由调用方根化;module 由上方 guard 根化。
+        // 4. 入表占位:模块体尚未跑,但表内已有 -- 循环导入命中此半初始化对象直接复用(加载事实源
+        //    即表成员资格,见上)。canonical_path 已由调用方根化;module 由上方 guard 根化。
         //    upsert rehash 触 GC 时两者皆安全。upsert 单参返 Entry*,再写其 value(同 DEF_GLOBAL 用法)。
         const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
         mod_entry->value     = Value::from_obj(module);
@@ -671,7 +672,7 @@ namespace aria {
             current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
             return nullptr;
         }
-        // 模块保持 Loading 态:run-once + 置 Loaded 由 IMPORT 分支进帧驱动、RETURN 完成。
+        // 模块体尚未 run-once:执行由 IMPORT 分支进帧驱动、RETURN 完成压回模块对象。
         // 内置函数不经此注入 -- 由 VM 级 builtins_ 表统一承载,LOAD_GLOBAL 模块 globals 未命中后回退查之。
         return module;
     }
@@ -1024,12 +1025,13 @@ namespace aria {
                     //   相对(./ ../)基 = 当前模块所在目录(单基,caller-local,不碰 source_roots);
                     //   裸名基 = source_roots(逐个 exists-check,首个 <base>/<spec>.aria 存在者命中)。
                     //   键 = 绝对规范路径,跨根不碰撞、相对不逃逸;末尾 .aria 可选(lib/math ≡ lib/math.aria)。
-                    //   命中(任意态):复用模块对象 -- Loaded 即完整、Loading 即循环导入命中,按文法
-                    //     「允许循环导入,命中正在初始化的模块返回半初始化对象」直接用(不报错);压栈即可。
-                    //   未命中(文件解析命中但模块未入表):调 load_module(读盘 -> 编译 -> 入表 Loading)得
+                    //   命中(表内任意初始化进度):复用模块对象 -- 体已跑完即完整、命中正在 run-once 的
+                    //     模块即循环导入,按文法「允许循环导入,命中正在初始化的模块返回半初始化对象」
+                    //     直接用(不报错);压栈即可。加载事实源 = 表成员资格,对象无状态字段。
+                    //   未命中(文件解析命中但模块未入表):调 load_module(读盘 -> 编译 -> 入表占位)得
                     //     模块,以其 entry(<module>)作一次**普通函数调用**进帧后 break --
                     //     模块体 run-once 即执行一个函数,由主循环照常驱动;其 RETURN 按函数名 == <module>
-                    //     判定模块体帧,弹弃返回值、置该模块 Loaded、改压模块对象,等价「模块体返回模块」,
+                    //     判定模块体帧,弹弃返回值、改压模块对象,等价「模块体返回模块」,
                     //     故命中/未命中两分支栈效应统一为 [..., module],绑定交后续 DEF_GLOBAL / 值填槽。
                     //     无递归 run_()。
                     //
@@ -1053,11 +1055,11 @@ namespace aria {
                     auto guard = gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
                     if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
                         module_entry != nullptr) {
-                        // 命中(Loading 半初始化 / Loaded 完整)复用:压模块值,绑定交后续 DEF_GLOBAL / 值填槽。
+                        // 命中(体已跑完 / 循环导入半初始化)复用:压模块值,绑定交后续 DEF_GLOBAL / 值填槽。
                         current_->push(module_entry->value);
                         break;
                     }
-                    // 未命中:加载链路 -- 读盘 -> 编译 -> 入表 Loading(见 load_module),不在此执行模块体。
+                    // 未命中:加载链路 -- 读盘 -> 编译 -> 入表占位(见 load_module),不在此执行模块体。
                     //   失败契约同 call_value 族:return nullptr ⟺ 载荷已 raise 入当前上下文寄存器
                     //   (ModuleNotFound 带 IMPORT 站点位置 / 被导入模块编译期 Error 原样装配箱),
                     //   take_error 取出经 value_to_error 还原为 Error 出栈。
@@ -1066,8 +1068,8 @@ namespace aria {
                         return runtime_err(*current_->take_error());
                     }
                     // 模块体 run-once = 一次普通 0 参函数调用:压 callee(entry,<module>)-> 进帧 -> break。
-                    //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、置
-                    //   Loaded、压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
+                    //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、
+                    //   压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
                     ObjFunction* entry = module->entry();
                     current_->push(Value::from_obj(entry)); // callee 压栈
                     if (!call_value(Value::from_obj(entry), 0)) {
@@ -1099,7 +1101,6 @@ namespace aria {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
                     }
                     if (fn_name == kModuleName) {
-                        mod->set_state(ObjModule::ModuleState::Loaded);
                         current_->push(Value::from_obj(mod));
                     } else {
                         current_->push(ret);

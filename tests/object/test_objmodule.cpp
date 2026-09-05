@@ -56,21 +56,17 @@ TEST(ObjModule, Basics) {
     auto m          = new_module(gc, name);
     EXPECT_TRUE(aria::Object::is<ObjModule>(m));
     EXPECT_EQ(m->type(), aria::ObjType::MODULE);
-    EXPECT_EQ(m->name(), name);                             // intern 同指针
-    EXPECT_EQ(m->entry(), nullptr);                         // 构造时无体
-    EXPECT_EQ(m->state(), ObjModule::ModuleState::Loading); // 构造即 Loading
+    EXPECT_EQ(m->name(), name);     // intern 同指针
+    EXPECT_EQ(m->entry(), nullptr); // 构造时无体
     EXPECT_EQ(m->globals().size(), 0u);
 }
 
-TEST(ObjModule, SetEntryAndState) {
+TEST(ObjModule, SetEntry) {
     GC   gc;
     auto m  = make_module(gc, "m");
     auto fn = make_function(gc, m, "<main>", 0); // body 属于 m(入口 <main> 名)
     m->set_entry(fn);
     EXPECT_EQ(m->entry(), fn);
-    EXPECT_EQ(m->state(), ObjModule::ModuleState::Loading);
-    m->set_state(ObjModule::ModuleState::Loaded);
-    EXPECT_EQ(m->state(), ObjModule::ModuleState::Loaded);
 }
 
 TEST(ObjModule, ToString) {

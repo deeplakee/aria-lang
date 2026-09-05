@@ -197,13 +197,13 @@ namespace aria {
         // 主循环:驱动 *current_(现为 main_ctx_;M6 resume 重入时为被恢复协程的上下文)直到顶层
         // 返回/错误/显式停止。栈/帧/错误寄存器一律经 current_ 访问,与 raise 同源(语义统一)。
         // 模块体 run-once 经 IMPORT 未命中分支以普通函数调用进帧(入口名固定 <module>),
-        // 由本循环执行,其 RETURN 按函数名判定模块体帧,置该模块 Loaded 并压回模块对象 -- 无递归调用。
+        // 由本循环执行,其 RETURN 按函数名判定模块体帧,压回模块对象 -- 无递归调用。
         Result<Value, Error> run_();
 
-        // IMPORT 未命中分支的加载层:把已解析命中的磁盘模块读盘 -> 派生身份 -> new_module(Loading)
+        // IMPORT 未命中分支的加载层:把已解析命中的磁盘模块读盘 -> 派生身份 -> new_module
         // -> 入表占位 -> 编译(入口名 <module>,见 AriaVM.cpp kModuleName)-> 返回模块对象(已 set_entry)。
         // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
-        // 其 RETURN 按函数名 == <module> 判定后置 Loaded。
+        // 其 RETURN 按函数名 == <module> 判定后压回模块对象。
         // 错误契约与 call_value 族同构:return nullptr ⟺ 错误载荷已 raise 入 *current_ 寄存器,
         // 调用方 take_error 取出沿 runtime_err 传播。两类失败:读盘失败/名字无效经 fail 烘位置
         // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令 -- 与 resolve_module 解析失败的

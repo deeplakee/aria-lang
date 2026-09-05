@@ -633,7 +633,7 @@ TEST_F(AriaVMStress, LoadGlobalUndefinedErrors) {
 }
 
 // IMPORT 裸名解析命中(磁盘 exists-check + 模块表查重):入口源根(base)下建真实空文件
-// lib/utils.aria,预注册其绝对键模块(Loading 态模拟循环导入命中半初始化对象);
+// lib/utils.aria,预注册其绝对键模块(模拟循环导入命中半初始化对象);
 // import "lib/utils" as Utils -> resolve 沿 source_roots 命中入口根文件 -> 查表命中 ->
 // 以 alias 绑入当前模块 globals。LOAD_GLOBAL 取回绑入的预注册模块对象。
 TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
@@ -649,10 +649,9 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     const auto key_str = touch_aria(base, "lib/utils.aria");
     auto       key     = new_string(gc, key_str);
     dir_guard.push(key);
-    auto m = make_module(gc, "lib/utils", dir_ptr); // 目标:dir=base, name=lib/utils
-    dir_guard.push(m);                              // 保 m 过 modules_.upsert 的 hash 分配
-    m->set_state(ObjModule::ModuleState::Loading);
-    auto me   = vm.modules().upsert(Value::from_obj(key));
+    auto m = make_module(gc, "lib/utils", dir_ptr);        // 目标:dir=base, name=lib/utils
+    dir_guard.push(m);                                     // 保 m 过 modules_.upsert 的 hash 分配
+    auto me   = vm.modules().upsert(Value::from_obj(key)); // 入表即「已加载」,无对象状态字段
     me->value = Value::from_obj(m);
 
     auto      mod       = new_disk_module(gc, "main", dir_ptr); // 入口:dir=base, name=main
@@ -942,7 +941,6 @@ TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
 
     auto* helper = find_module_by_name(vm.modules(), "helper");
     ASSERT_NE(helper, nullptr);
-    EXPECT_EQ(helper->state(), ObjModule::ModuleState::Loaded);
     auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(x_entry, nullptr);
     EXPECT_TRUE(x_entry->value.is_int());
@@ -991,10 +989,8 @@ TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
     auto* b = find_module_by_name(vm.modules(), "b");
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(a->state(), ObjModule::ModuleState::Loaded);
-    EXPECT_EQ(b->state(), ObjModule::ModuleState::Loaded);
 
-    // a.globals: x=1, B=b(循环导入命中 a 的 Loading 时,b 的 A 绑定半初始化 a;后 a 完成成 Loaded)
+    // a.globals: x=1, B=b(循环导入命中 a 的半初始化对象时,b 的 A 绑定它;后 a 的体跑完 globals 完整)
     auto* ax = a->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(ax, nullptr);
     EXPECT_EQ(ax->value.as_int(), 1);
@@ -1025,7 +1021,6 @@ TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
 
     auto* helper = find_module_by_name(vm.modules(), "helper");
     ASSERT_NE(helper, nullptr);
-    EXPECT_EQ(helper->state(), ObjModule::ModuleState::Loaded);
     auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(x_entry, nullptr);
     EXPECT_EQ(x_entry->value.as_int(), 42);

@@ -37,21 +37,15 @@ namespace aria {
     //     避免回收正在用的字面量。可为 nullptr(未来目录包占位;当前总有体)。
     //   - globals_:模块级绑定表(顶层 var/fun/def 的目标)。键为 ObjString*(经 intern,内容语义
     //     靠 === 同指针),值为绑定 Value。LOAD/STORE/DEF_GLOBAL 操作此表。惰性分配(首次 upsert 才建表)。
-    //   - state_:导入状态机(Loading/Loaded),循环导入检测:命中 Loading 返回半初始化对象。
-    //     未入 VM 模块表 = 未加载(隐含第三态,不入枚举)。
+    //   - 加载事实源 = VM 模块表成员资格(未入表 = 未加载;入表 = 已编译待 run-once / 已 run-once,
+    //     不在对象上另设状态字段):run-once 与循环导入「命中即复用半初始化对象」语义均由表承载
+    //     (load_module 先入表占位再编译执行;IMPORT 命中分支不区分初始化进度,一律复用压栈)。
     //
     //   地址哈希型可变对象(走 Object{ObjType::MODULE} ctor);equals 保持默认地址相等--
     //     模块按身份判等(模块表保证同路径同对象,无内容相等语义)。final,不再派生。
     //   trace():标 name_ + dir_ + entry_ + 委托 globals_.trace(gc)(遍历占用槽 mark_value key+value)。
     class ObjModule final : public Object {
     public:
-        // 导入状态机。模块插入 VM 模块表时即置 Loading;模块体跑完置 Loaded。
-        // 未入表 = 未加载(隐含,不入此枚举,避免与表查重逻辑耦合)。
-        enum class ModuleState : u8 {
-            Loading, // 模块体正在执行(初始化中);循环导入命中此态返回半初始化对象
-            Loaded,  // 模块体执行完毕,globals_ 完整
-        };
-
         // name = 模块文件名去 .aria 后缀(stem,显示名 + 合成绝对路径用,指针恒非空 -- 构造期 ASSERT,内容可空);
         // dir = 模块文件所在目录(恒非空,见 new_module,构造期 ASSERT)。
         ObjModule(GC& gc, ObjString* name, ObjString* dir);
@@ -105,13 +99,6 @@ namespace aria {
 
         void set_entry(ObjFunction* entry) noexcept { entry_ = entry; }
 
-        [[nodiscard]]
-        ModuleState state() const noexcept {
-            return state_;
-        }
-
-        void set_state(ModuleState s) noexcept { state_ = s; }
-
         // 标 name_ + dir_ + entry_ + globals_(key+value)。
         void trace(GC& gc) const noexcept override;
 
@@ -131,10 +118,10 @@ namespace aria {
         ObjString*    dir_;   // 模块文件所在目录(intern;合成绝对路径 + 相对导入基 + run() 播种源根;指针恒非空,内容可空)
         ObjFunction*  entry_; // 模块体(run-once;可为 nullptr)
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
-        ModuleState   state_;   // Loading / Loaded
     };
 
-    // 工厂:分配 ObjModule 并置 Loading 态。dir 为显式模块文件所在目录(指针须非空,构造期 ASSERT;内容
+    // 工厂:分配 ObjModule(加载事实源 = 模块表成员资格,对象无状态字段,见类注释)。dir
+    // 为显式模块文件所在目录(指针须非空,构造期 ASSERT;内容
     //        可空 -- 调用方若需「无目录 -> cwd 退化」语义用 2 参重载)。工厂不替调用方守卫入参--本重载
     //        只做一次 new_object、无内部新建对象,故**调用方须在调用前自行根化 name 与 dir**(跨
     //        new_object 顶 maybe_collect;intern 驻留池是 weak root,不保命),与 new_function 同理。

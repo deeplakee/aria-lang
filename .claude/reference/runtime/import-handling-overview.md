@@ -10,9 +10,10 @@
 
 导入路径处理目前已**完整实现**：「specifier -> 绝对规范键（磁盘解析）-> 模块表查重 -> 命中
 复用并把 ObjModule 压栈（绑定交 CodeGen 按 DEF_GLOBAL / 值填槽走）」与未命中分支的「读盘 ->
-编译（入口名 `<module>`）-> 入表 Loading -> VM 内嵌套执行模块体（run-once）-> Loaded」整条
-链路均已在 VM 落地。`SourceFile::from_path` 与 `util/fs.hpp` 原语已衔接进加载链路；循环导入命中
-Loading 半初始化对象，被导入模块的编译期/运行期错误原样透传（含其文件位置）。当前直接用
+编译（入口名 `<module>`）-> 入表占位 -> VM 内嵌套执行模块体（run-once）」整条链路均已在 VM
+落地（加载事实源 = 模块表成员资格，对象无状态字段）。`SourceFile::from_path` 与 `util/fs.hpp`
+原语已衔接进加载链路；循环导入命中表内半初始化对象，被导入模块的编译期/运行期错误原样透传
+（含其文件位置）。当前直接用
 `<filesystem>` 的 `weakly_canonical` / `exists` 做 exists-check，`fs::program_dir` 用于推导 stdlib
 源根。相对导入越界检测（`../` 越出源根）本轮未做，留待后续。
 
@@ -34,10 +35,10 @@ OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
 resolve_module()  →  new_string() intern  →  modules_ 查表
    (磁盘 exists-check + weakly_canonical)        │
         │                                          │
-        │ 命中(Loading/Loaded)                     │ 未命中(文件命中但模块未入表)
+        │ 命中(体已跑完/循环导入半初始化)           │ 未命中(文件命中但模块未入表)
         ▼                                          ▼
   复用 ObjModule，压栈（绑定交 CodeGen 走）      ⑤ 加载层：磁盘读 + 编译 + run-once（load_module）
-                                                   ✓ 已实现 -> Loaded -> 压栈
+                                                   ✓ 已实现 -> 压栈
    解析失败(无源根命中) → ModuleNotFound
 ```
 
@@ -52,9 +53,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（匿名命名空间） |
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp` `case OpCode::IMPORT` |
-| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表 Loading -> `entry` 经 `call_value` 进帧交主循环 run-once -> Loaded） | `src/runtime/AriaVM.cpp` `load_module` |
+| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表占位 -> `entry` 经 `call_value` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp`（`source_roots()`/`set_source_roots`）、`AriaVM.cpp` 构造与 `run()` |
-| `ObjModule` 对象 + 状态机 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 指针恒非空、内容可空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
+| `ObjModule` 对象 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 指针恒非空、内容可空，`new_module` 默认 cwd；无加载状态字段，事实源 = 模块表成员资格） | `src/object/ObjModule.hpp`、`.cpp` |
 | VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp`（成员声明）、`AriaVM.cpp` 构造注册 tracer |
 | fs 原语 `program_dir`（推导 stdlib） | 已实现，**被 VM 构造调用** | `src/util/fs.hpp` |
 | fs 原语（read_file/absolute/current_dir） | 已实现，经 `SourceFile::from_path`（read_file）与 `fs::module_name_and_dir`（absolute）/`new_module` 默认目录（current_dir）进入加载链路 | `src/util/fs.hpp` |
@@ -140,11 +141,11 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
      （`"module not found: '<path>'"`，带 IMPORT 站点位置）。
    - **成功**：`new_string(gc_, ...)` 把绝对键 intern 驻留为 `ObjString*`。
 4. 以绝对键 `Value::from_obj(key)` 在 VM 模块表 `modules_`（`AriaHashTable`）查：
-   - **命中**（任意态）：`module = module_entry->value`。`Loading` 态即循环导入命中的
-     半初始化对象，按文法直接用不报错。
-   - **未命中**（文件命中但模块未入表）：调 `load_module(key, path)` 得模块(Loading，已编译 `set_entry`)，
+   - **命中**（表内任意初始化进度）：`module = module_entry->value`。命中正在 run-once 的模块
+     即循环导入,按文法直接用其半初始化对象不报错。
+   - **未命中**（文件命中但模块未入表）：调 `load_module(key, path)` 得模块(已编译 `set_entry`，体待 run-once)，
      以其 `entry`(<module>)作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行一个函数,
-     由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 `Loaded`、
+     由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、
      改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`,绑定交后续 `DEF_GLOBAL` /
      值填槽。**无递归 `run_()`**。读盘失败/name 空报 `ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置);被导入模块的
      编译期/运行期 Error 原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
@@ -205,8 +206,6 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   可为 nullptr（留作目录包占位）。`set_entry(ObjFunction*)` 是编译产物挂入接口，由 `CodeGen::init_module`
   编译期调用，运行期不再调。
 - `globals_`：模块级绑定表，`LOAD/STORE/DEF_GLOBAL` 操作，惰性分配。
-- `state_`：`enum class ModuleState : u8 { Loading, Loaded }`（`ObjModule.hpp`）。
-  构造置 `Loading`；未入表 = 未加载（隐含第三态，不入枚举）。
 - `trace`（`ObjModule.cpp`）：标 `name_` + `dir_` + `entry_` + `globals_`。
 - `new_module` 工厂（`ObjModule.cpp`）：`dir` 缺省（`nullptr`）时 `new_string(fs::current_dir())`
   取 cwd 作默认（cwd 不可用空串兜底）-> `dir_` 指针恒非空、内容可空。`name` 先入临时根（再 `new_string(cwd)` 可能 collect），`dir`
@@ -242,7 +241,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 `resolve_module` 的 exists-check 命中，按解析出的绝对键预注册合成模块入 `vm.modules()`，触发
 命中分支：
 
-- `ImportBindsPreRegisteredModule`：入口根 `lib/utils.aria` 命中 Loading 态模块 -> IMPORT 压栈
+- `ImportBindsPreRegisteredModule`：入口根 `lib/utils.aria` 命中预注册模块（模拟循环导入半初始化）-> IMPORT 压栈
   -> `DEF_GLOBAL` 绑入 globals -> `LOAD_GLOBAL` 取回同一对象。
 - `ImportNotFoundErrors`：无源根命中 `nope/missing.aria` -> `ModuleNotFound`。
 - `ImportNormalizesAbsolutePath`：`lib/./utils` 经 `weakly_canonical` 折 `.` -> 命中
@@ -269,10 +268,10 @@ IMPORT 未命中分支经 `load_module`（`src/runtime/AriaVM.cpp` 私有成员�
 1. exists-check **已由 `resolve_module` 完成**；目录包 `index.aria` 查找后续在此补。
 2. `SourceFile::from_path(canonical_path)` 读文件（已处理 BOM/CRLF/UTF-8）——**已衔接**。
 3. `Compiler{gc_}.compile(source, module, "<module>")` 经 Lexer -> Parser -> CodeGen 编译（`AstVisitor` 编译器子类 `CodeGen` 已就绪）——**已衔接**。
-4. `new_module`(Loading) + `modules_.upsert` 入表占位（供循环导入命中半初始化对象）。身份
-   派生用 `fs::module_name_and_dir(canonical_path)` = {name=stem, dir=dirname}（同入口约定，`abs_path()`
-   还原 canonical key）——**已衔接**。
-5. `set_entry` 由 `CodeGen::init_module` 编译期挂入 -> IMPORT 未命中分支以 `entry` 作**普通 0 参函数调用**进帧交主循环执行(run-once),其 RETURN 按函数名 == `<module>` 判定模块体帧后置 `set_state(Loaded)` + 压回模块对象——**已衔接**。
+4. `new_module` + `modules_.upsert` 入表占位（供循环导入命中半初始化对象；加载事实源 = 表成员
+   资格，对象无状态字段）。身份派生用 `fs::module_name_and_dir(canonical_path)` = {name=stem,
+   dir=dirname}（同入口约定，`abs_path()` 还原 canonical key）——**已衔接**。
+5. `set_entry` 由 `CodeGen::init_module` 编译期挂入 -> IMPORT 未命中分支以 `entry` 作**普通 0 参函数调用**进帧交主循环执行(run-once),其 RETURN 按函数名 == `<module>` 判定模块体帧后压回模块对象——**已衔接**。
 6. 相对导入越出源根的检测（`weakly_canonical` 折叠 `..` 后据源根列表判定报错）——**本轮未做**，留待后续。
 
 解析缓存（IMPORT 重复执行同一 specifier 避免重复 stat）亦为 TODO，见

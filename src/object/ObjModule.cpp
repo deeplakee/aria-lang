@@ -10,7 +10,7 @@
 namespace aria {
 
     ObjModule::ObjModule(GC& gc, ObjString* name, ObjString* dir) :
-        Object{ObjType::MODULE}, name_{name}, dir_{dir}, entry_{nullptr}, globals_{&gc}, state_{ModuleState::Loading} {
+        Object{ObjType::MODULE}, name_{name}, dir_{dir}, entry_{nullptr}, globals_{&gc} {
         // dir_ 恒非空(new_module 默认 cwd 兜底)、name_ 恒非空(合成顶层 <script> / REPL 等均以非空
         // intern 串构造):构造期拦截非法 null,与 SourceLoc 同模式。
         ASSERT(dir != nullptr, "ObjModule dir must not be null");

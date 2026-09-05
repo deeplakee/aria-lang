@@ -22,7 +22,7 @@ namespace aria {
     // Value 操作(哈希 / 相等)
     //
     //   值语义收口于 Value 层:声明在此,定义在 Value.cpp。AriaHashTable.hpp 中的
-    //   ValueHash/ValueEq 仿函数(HashTable 模板参数)包装这些自由函数;未来 VM 的
+    //   ValueHash/ValueEq 仿函数(HashTable 模板参数)包装这些自由函数;VM 的
     //   OpCode::EQUAL(==)/STRICT_EQUAL(===) 直接调用。基于两表示共有的 type()/as_*() API,
     //   **不**依赖 NanBoxing 专属的 bits()/same_bits()(TagValue 未提供,故两表示都编译)。
     //
@@ -66,9 +66,8 @@ namespace aria {
 
     // 值的字符串渲染
     //
-    //   f64 可读化:整值浮点补 `.0` 与 Int 区分,inf/nan 直出。收口于 Value 层供多处复用
-    //   (VM 的 PRINT 渲染、反汇编器常量池小节等),避免逻辑散落重复。
-    // f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
+    //   f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
+    //   收口于 Value 层供多处复用(VM 的 PRINT 渲染、反汇编器常量池小节等),避免逻辑散落重复。
     [[nodiscard]]
     String format_f64(f64 d);
 

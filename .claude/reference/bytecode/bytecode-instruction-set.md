@@ -34,7 +34,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 
 ### 1.2 与 CLAUDE.md 的同步状态
 
-CLAUDE.md「关键模块」段已与 `code.hpp` 对齐。当前已定决策：
+指令清单与 `.claude/rules/bytecode.md`、CLAUDE.md「文档与参考」的文档索引保持同步。当前已定决策：
 
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
@@ -49,7 +49,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 - **代码段类型 `Array<u8>`**：opcode 以 `static_cast<u8>(op)` 存入，操作数直接写字节，让操作数字节与 opcode 统一寻址（见 §7）。
 - **字节序：小端**（低位在前）。仅影响内存表示与反汇编可读性，不落盘则无跨平台问题。
-- 反汇编器与 VM 共用同一张「opcode -> 操作数格式」解码表，避免两处漂移。
+- 反汇编器与 VM 遵循同一「opcode -> 操作数格式」解码约定（本节即规格），各自实现解码（反汇编器解码内联于 `Disassembler.cpp`、VM 主循环自持 switch），改指令集时两处同步；尚未提取共享表。
 
 ### 2.2 操作数位宽（建议）
 
@@ -134,9 +134,9 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_LOCAL_L` | `slot:u16` | `[] -> [v]` | 同 `LOAD_LOCAL`，`slot>=256` 时用（3B，见 §2.3） |
 | `STORE_LOCAL_L` | `slot:u16` | `[v] -> [v]` | 同 `STORE_LOCAL`，`slot>=256` 时用（3B） |
 
-局部槽由编译器在函数/块作用域内分配。`this` 在方法帧中约定为槽 1（见 §4.8）。
+局部槽由编译器在函数/块作用域内分配：slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；`this` 在方法帧中约定为槽 1（见 §4.8）。
 
-**局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。读取未初始化局部由读点 `load_local` 检查 `is_initialized` 报 `UninitializedVariable`，避免读到未填充槽。例外：for-in `<iter>`/pattern 为 loop-carried 局部，声明后显式 `LOAD_NIL` 预占 + 原有 `STORE_LOCAL`/`POP` 回绑（字节码与 clox 预占模型一致）。顶层帧同理（无参数，各顶层局部按上述机制填充）。
+**局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。读取未初始化局部由读点 `load_local` 检查 `is_initialized` 报 `UninitializedVariable`，避免读到未填充槽。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
 
 ### 4.4 Upvalue 与闭包
 
@@ -152,9 +152,9 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键定义全局（首次定义；用于顶层 `var`） |
-| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查全局表压入；未定义 -> 运行时错误 |
-| `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到全局表（隐式定义或要求已定义，待语义阶段定） |
+| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 upsert 当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
+| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（type/len/str/assert），再 miss 报 `UndefinedVariable` |
+| `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals 表；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var` 声明），不回退 builtins |
 
 全局表是各 `ObjModule` 持有的 `AriaHashTable`（即 `HashTable<Value, Value, ValueHash, ValueEq>`，键为装箱的 intern `ObjString*`）。`name` 操作数是常量池中的 ObjString 索引。
 
@@ -185,7 +185,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压入 `this.name`（`this` 取自槽 1，不压栈） |
 | `STORE_THIS_FIELD` | `name:u16` | `[v] -> [v]` | peek-store 到 `this.name` |
 
-纯 `this` 表达式（`ThisExprNode`）编译为 `LOAD_LOCAL 1`。
+纯 `this` 表达式（`ThisExprNode`）在实例方法体内拟编译为 `LOAD_LOCAL 1`；嵌套函数引用 `this` 捕获为 upvalue（见 §5.5）。当前类/`this` 相关 visit 未落地（M5），编译器暂不发射。
 
 ### 4.9 算术 / 比较 / 逻辑
 
@@ -204,7 +204,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `ADD` | `[a, b] -> [a+b]` | 数值加；**建议**同时承载字符串拼接（`ObjString` + `ObjString`）与 list 拼接，与 `+` 重载语义一致（待决） |
 | `SUBTRACT` | `[a, b] -> [a-b]` | 数值减 |
 | `MULTIPLY` | `[a, b] -> [a*b]` | |
-| `DIVIDE` | `[a, b] -> [a/b]` | 数值除（整除/浮除语义待决） |
+| `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE） |
 | `MOD` | `[a, b] -> [a%b]` | 取模 |
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负 |
@@ -254,7 +254,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述存于 `ObjFunction` 元数据**（非字节码尾随操作数）：`ObjFunction` 持 `Array<UpvalDesc>`，每条 `{is_local: bool, index: u16}`，编译器建函数时填好。`CLOSURE fn:u16` 只取常量池里的 `ObjFunction`、建 `ObjClosure`，VM 遍历 `fn.upval_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（设计，M4 落地）**：拟存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalDesc>`，每条 `{is_local: bool, index: u16}`，编译器建函数时填好。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure`，VM 遍历 `fn.upval_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获）。
@@ -291,7 +291,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出；VM `raise` 查 `ExceptionFrame`/`CallFrame` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
 
-> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `catch` 参数槽等。`THROW`/`raise` 时按当前 `ip` 查表，定位最近覆盖的 `try` 记录，按记录登记的帧/栈深度 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与 VM `raise` 尚未实现（见 §5.9/§6.1）。
+> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（M3 补；帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与 VM `raise` 尚未实现（见 §5.9/§6.1）。
 
 ### 4.17 返回
 
@@ -299,7 +299,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `RETURN` | 无 | `[v] -> ` | 从当前函数返回 `v`（无返回值时编译器先发 `LOAD_NIL`）。退出当前 `CallFrame`，把 `v` 压入调用者栈顶，`ip` 恢复到 `CALL` 之后 |
 
-`RETURN` 也用于顶层模块执行结束（返回 nil）。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
+`RETURN` 也用于顶层执行结束：主模块体（入口名 `<main>`）返回值即程序结果；导入模块体帧（函数名 == `<module>`，由 IMPORT 加载层驱动 run-once）**弹弃返回值**、置该模块 `Loaded`、改压模块对象（「模块体返回模块」），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
 
 ## 5. 关键 lowering
 
@@ -333,7 +333,7 @@ JUMP_FALSE L_end       ; []
 <incr>                 ; <e> + POP
 JUMP_BACK L_start
 L_end:
-# continue -> JUMP_BACK L_incr (先跑 incr); break -> JUMP L_end
+# continue -> JUMP L_incr (有 incr: 前向跳, 回填须先于 incr 发射; 无 incr -> JUMP_BACK L_cond); break -> JUMP L_end
 ```
 
 for-in 依赖迭代协议（`iter`/`has_next`/`next`），靠方法调用表达（见 §5.6）：
@@ -345,7 +345,7 @@ for-in 依赖迭代协议（`iter`/`has_next`/`next`），靠方法调用表达�
 L_start:
 (call it.has_next())   ; [bool]
 JUMP_FALSE L_end       ; []
-(call it.next())       ; [v]     绑入 pat (LOAD_INDEX 解构 / STORE_LOCAL)
+(call it.next())       ; [v]     绑入 pat (identifier: 值填槽 declare 不发指令; "_": POP 丢弃)
 <body>
 JUMP_BACK L_start
 L_end:
@@ -511,7 +511,7 @@ LOAD_IMM 0; LOAD_INDEX ; [list, list[0]]  -- 绑 a: STORE_LOCAL a; POP list[0]?
 不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码。编译期为每个 `try` 在 CodeUnit 的异常记录表生成一条记录：
 
 ```
-记录表条目: { try_start_ip, try_end_ip, handler_ip=L_catch, catch_slot, stack_depth, frame_depth }
+记录表条目: { begin, end, handle=L_catch, stack_depth(M3 补) }   -- 帧深度由 unwind 遍历隐式决定, catch_slot 由 handler 约定承载
 ```
 
 字节码本身不含 try 设置/清理指令，`<body>` 直接顺序排列：
@@ -520,7 +520,7 @@ LOAD_IMM 0; LOAD_INDEX ; [list, list[0]]  -- 绑 a: STORE_LOCAL a; POP list[0]?
 <body>                 ; try 体内, 顺序执行
 JUMP L_finally         ; 正常完成: 跳过 catch
 L_catch:               ; 抛出时 VM 经 raise 查表 unwind 到此, 异常值在栈顶
-  STORE_LOCAL exc      ; 绑 catch 参数 (catch_slot)
+  STORE_LOCAL exc      ; 绑 catch 参数 (由 handler 处的发射约定承载, 不占记录字段)
   <catch_body>
 L_finally:
   <finally_body>
@@ -528,7 +528,7 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程：取当前 `ip` + 当前帧/栈深度 -> 查当前 CodeUnit 记录表找最近覆盖 `ip` 的条目 -> 若 `frame_depth` 小于当前深度则 `frames_.truncate(frame_depth)` 跨帧回退 -> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handler_ip`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle}` + `find_try_handler`），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
+`raise` 流程：按顶帧 `last_ip` 反推 offset -> 查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 沿帧栈退到 handler 所属帧（`FrameStack::truncate`）-> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handle`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle}` + `find_try_handler`），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
 
 ## 6. 缺口分析（相对文法与 CLAUDE.md）
 
@@ -536,8 +536,8 @@ L_end:
 
 **决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。记录表结构与查表已落地：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle}`（按 `begin` 单调），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录返 handler offset。`CallFrame` 亦已落地（`truncate` 目标深度来源之一）。待实现项：
 
-- `TryRecord` 扩字段（`stack_depth`/`frame_depth`/`catch_slot`，供 `raise` 回退与传参）。
-- VM `raise`：按 `ip` 查表 -> `truncate` 回退 -> 跳 handler（见 §5.9）。
+- `TryRecord` 扩 `stack_depth` 字段（供值栈回退；帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。
+- VM `raise`：按 `last_ip` 反推 offset 查表 -> `truncate` 回退 -> 跳 handler（见 §5.9）。
 - `THROW` 运行时语义（当前 `THROW` 命中 `not_implemented`）。
 - `finally` 语义细化（finally 内 return/throw、finally 必执行）。
 
@@ -579,25 +579,29 @@ class CodeUnit {
 
 `ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）留 M4 闭包。
 
-## 8. 反汇编器输出格式（建议）
+## 8. 反汇编器输出格式（已落地）
 
-每行一条指令，含偏移、操作码名、操作数、栈注释：
+输出含表头、常量池小节（非空才列）、code 段与结尾行：
 
 ```
-0000  LOAD_CONST    0003            ; [] -> ["hello"]
-0003  LOAD_LOCAL    00              ; [] -> [x]
-0005  ADD                           ; [s, x] -> [s+x]
-0006  PRINT                         ; [v] -> []
-0007  LOAD_IMM      01              ; [] -> [1]
-0009  JUMP_FALSE    -> 0020         ; [v] -> []
-0012  CLOSURE       0001            ; [] -> [closure]  (captures [local 3][upval 1] 自 fn 元数据)
-...
+== <main> ==
+
+constants:
+  0000: "hello"
+
+code:
+0000    1 LOAD_CONST    0000            ; "hello"
+0003    | PRINT
+0004    | LOAD_IMM      01              ; 1
+0006    | JUMP_FALSE    -> 000B
+
+== end ==
 ```
 
-- 偏移与操作数十六进制（`u16` 4 位、`u8` 2 位），前向跳转目标用 `-> 偏移`、后向（`JUMP_BACK`）用 `<- 偏移` 直观显示。
-- `CLOSURE` 定长（仅 `fn:u16`）；捕获描述存于 `ObjFunction` 元数据（§4.13），反汇编器可从元数据读出并以 `[local n]`/`[upval n]` 注释展示，不占字节码字节。
-- 栈注释取自本表「栈效应」列，便于人工核对。
-- 反汇编器与 VM 共用 §2.1 的解码表，操作数格式一处定义两处消费。
+- 每行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `|` 占位）+ opcode 名（左对齐列宽）+ 操作数 hex + `;` 解析注释（常量值/名字/跳转目标/立即数/flags/argc，按操作数种类渲染）。
+- 前向跳转目标用 `-> 偏移`、后向（`JUMP_BACK`）用 `<- 偏移` 直观显示。
+- 注释为**解析注释**（把操作数解释成人可读形式），不含栈效应标注；栈效应见 §4 各表。
+- 解码逻辑内联于 `Disassembler.cpp`，与 VM 主循环各持一份（同一 §2.1 约定，未提取共享表），改指令集时两处同步。
 
 ## 9. 待决设计点汇总
 
@@ -610,7 +614,7 @@ class CodeUnit {
 | 5 | `INVOKE_METHOD` | 已加入为预备指令, 暂 pass | 维持 `LOAD_FIELD`+`CALL` |
 | 6 | 异常机制 | CodeUnit 内记录表（已定）, 待实现 | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |
-| 8 | 整除/浮除语义 | 待语义阶段定（int `/` int 是否整除） | -- |
+| 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |
 | 9 | 内建注册机制 | 走全局表预填或 `LOAD_BUILTIN` | -- |
 | 10 | CodeUnit 调试行信息 | 每偏移 `u32` 行号（RLE） | 存全 `LineCol` / 不存 |
 

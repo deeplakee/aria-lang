@@ -41,7 +41,7 @@ namespace aria {
             return line;
         }
 
-        // 无操作数指令(HALT / LOAD_NIL / LOAD_TRUE / ... / RETURN):仅输出名字。
+        // 无操作数指令(HALT / LOAD_NIL / LOAD_TRUE / ... / RETURN)。
         String simple_instruction(StringView op_name) { return std::format("{}", op_name); }
 
     } // namespace
@@ -99,7 +99,7 @@ namespace aria {
         return join_line(op_name, std::format("{:04X}", read_u16()));
     }
 
-    // MAKE_RANGE:单字节 flags,`{:02X}` 操作数 + `flags=0x{:02X}` 注释。
+    // MAKE_RANGE 的 flags:u8 为预留操作数(发射侧 not_impl),位编码未定;渲染原始值供对照 code.hpp。
     String Disassembler::make_range(const StringView op_name) {
         if (is_truncated(1)) {
             return join_line(op_name, truncated());
@@ -167,7 +167,8 @@ namespace aria {
     String Disassembler::dis_instruction() {
         const u8 byte = codeunit_->code[offset_++]; // opcode 字节
 
-        // 越界 opcode 字节(无对应枚举)容错:直接报 bad opcode 并停解码。
+        // 越界 opcode 字节(无对应枚举)容错:直接报 bad opcode 并停解码。上界判断依赖
+        // OpCode 枚举稠密无空洞(0..RETURN 连续、无显式赋值跳号),留洞则此判定失效。
         if (byte > static_cast<u8>(OpCode::RETURN)) {
             return std::format("<bad opcode 0x{:02X}>", to_u32(byte));
         }
@@ -306,7 +307,7 @@ namespace aria {
     Disassembler::Disassembler(const CodeUnit* codeunit, const StringView name) :
         codeunit_{codeunit}, name_{name}, offset_{0} {}
 
-    // 反汇编整个 CodeUnit,返回带表头与逐指令文本的字符串。详见 Disassembler.hpp 的文档注释。
+    // 详见 Disassembler.hpp 的文档注释(输出结构/小节划分)。
     String Disassembler::disassemble() {
         offset_    = 0; // 从头解码,对象可复用
         String out = std::format("== {} ==\n", name_);

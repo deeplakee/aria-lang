@@ -123,7 +123,7 @@ namespace aria {
             const usize mask   = cap_ - 1;
             const u8    target = ctrl_from_hash(hash);
 
-            usize pos  = ht_h1(hash);
+            usize pos  = ht_h1(hash); // 可超 cap,首轮循环统一 & mask 归位
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
@@ -153,7 +153,7 @@ namespace aria {
             const usize mask   = cap_ - 1;
             const u8    target = ctrl_from_hash(hash);
 
-            usize pos  = ht_h1(hash);
+            usize pos  = ht_h1(hash); // 可超 cap,首轮循环统一 & mask 归位
             usize step = 0;
             usize tomb = kNpos;
 

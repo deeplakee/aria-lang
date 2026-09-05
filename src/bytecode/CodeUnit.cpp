@@ -40,7 +40,8 @@ namespace aria {
     void CodeUnit::emit_pop_n(const u32 count, const u32 line) {
         for (u32 remaining = count; remaining > 0;) {
             const u8 chunk = remaining > kMaxPopChunk ? kMaxPopChunk : static_cast<u8>(remaining);
-            if (chunk == 1) {
+            if (chunk == 1) { // 降级 POP(1B,免操作数)
+
                 emit_op(OpCode::POP, line);
             } else {
                 emit_op(OpCode::POP_N, line);
@@ -60,11 +61,13 @@ namespace aria {
     bool CodeUnit::patch_jump(const usize src_off) {
         const u32 base_off   = static_cast<u32>(src_off) + 2; // 偏移基准: 读完 u16 操作数后的 ip
         const u32 target_off = size();                        // 跳转目标: 当前末尾
-        const u32 offset     = target_off - base_off;        // 前向偏移
+        // 前向偏移:契约是 patch 时目标已发射(target_off >= base_off)。误用于反向时 u32 回绕成
+        // 巨大值,恰好被下方 kMaxJumpOffset 上界兜住返 false(等效 emit_jump_back 的显式反向预检)。
+        const u32 offset = target_off - base_off;
         if (offset > kMaxJumpOffset) {
             return false; // 越界,交调用方翻译为 Error
         }
-        const auto bytes = util::split_word(static_cast<u16>(offset)); // 小端: [低字节, 高字节]
+        const auto bytes  = util::split_word(static_cast<u16>(offset)); // 小端: [低字节, 高字节]
         code[src_off]     = bytes[0];
         code[src_off + 1] = bytes[1];
         return true;
@@ -120,7 +123,7 @@ namespace aria {
         if (lines.empty()) {
             return 0;
         }
-        usize low = 0;
+        usize low  = 0;
         usize high = lines.size();
         while (low < high) {
             const usize mid = low + (high - low) / 2;
@@ -140,10 +143,12 @@ namespace aria {
 
     Opt<u32> CodeUnit::find_try_handler(const u32 ip) const noexcept {
         // 记录按 begin 单调; 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
+        // 前提:try 区间良嵌套(任意两条记录不交叉重叠),交叉时"前溯第一个 end > ip"可能命中
+        // 错误 handler;该不变式由编译器 try 的「入口预插占位 + 结尾回填」发射顺序保证。
         if (try_records.empty()) {
             return std::nullopt;
         }
-        usize low = 0;
+        usize low  = 0;
         usize high = try_records.size();
         while (low < high) {
             const usize mid = low + (high - low) / 2;

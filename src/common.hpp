@@ -12,6 +12,8 @@ static_assert(sizeof(void*) == 8, "This program requires a 64-bit system.");
 
 namespace aria {
 
+// 值表示选择：定义则 Value 用 NaN-boxing（8B），注释掉改用 TagValue（tag+union，16B）。
+// 两实现 API 一致（见 value/Value.hpp 的 #ifdef 分派），仅 sizeof 与 Value{} 零填充语义不同。
 #define USING_NANBOXING
 
 

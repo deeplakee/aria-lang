@@ -30,8 +30,6 @@ namespace aria {
     }
 
     bool value_equal(const Value& a, const Value& b) noexcept {
-        // == 内容相等:Nil/Bool 类型严格按值;Int/F64 跨类型 IEEE 数值;Obj 调 equals 虚函数。
-        // 不做 JS 全套强制转换:bool/字符串不与数值互比,跨类型仅 Int<->F64 数值。
         const auto ta = a.type();
         const auto tb = b.type();
 
@@ -73,7 +71,6 @@ namespace aria {
     String format_string(const ObjString* obj) { return std::format("\"{}\"", util::escape_string(obj->view())); }
 
     StringView type_name(const Value& v) noexcept {
-        // Obj 分派到对象子类型名;原语走 Value::type_name() constexpr 成员(PascalCase)。
         if (v.is_obj()) {
             return v.as_obj()->type_name();
         }
@@ -133,7 +130,6 @@ namespace aria {
     }
 
     bool value_identical(const Value& a, const Value& b) noexcept {
-        // === 严格相等:类型严格;f64 按位(-0.0!==0.0,NaN 规范化后 NaN===NaN);Obj 指针相等。
         if (a.type() != b.type()) {
             return false;
         }

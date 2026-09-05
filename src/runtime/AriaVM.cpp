@@ -161,8 +161,8 @@ namespace aria {
                 return {};
             }
             const auto& frame = ctx.frames().top();
-            const auto  line  = frame.unit->line_for_offset(static_cast<usize>(frame.last_ip - frame.unit->code.data()));
-            const auto  mod   = frame.module;
+            const auto  line = frame.unit->line_for_offset(static_cast<usize>(frame.last_ip - frame.unit->code.data()));
+            const auto  mod  = frame.module;
             if (const auto name = mod->name()->view(); name.starts_with('<') || mod->abs_path().empty()) {
                 return std::format("{}:{}", name, line);
             }
@@ -186,9 +186,9 @@ namespace aria {
         // 一并经 Error::make_message 烘齐,再经 from_baked 装回 -- 同形于编译期消息仅少列号段;
         // 与装箱点 raise 同用 runtime_loc + make_message,两条运行期报错路径对称)。供 run_ 与
         // numeric_op 等「返回 Result<Value, Error>」的构造点用,把 std::unexpected(Error{...})
-        // 样板整体收口;调用方只剩 return runtime_err(ctx, ...)。转发已构造 Error(如
-        // run_binary_numeric 失败回传、call_value 失败后从 ctx 取出的载荷 -- 位置已在构造点
-        // 烘好或不适用)的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。
+        // 样板整体收口;调用方只剩 return runtime_err(*current_, ...)。转发已构造 Error(如
+        // run_binary_numeric 失败回传、call_value 失败后从 *current_ 寄存器取出的载荷 --
+        // 位置已在构造点烘好或不适用)的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。
         // 耦合 Result<Value, Error>,故仅限本翻译单元(其它阶段返回类型不同,不复用)。
         template<typename... Args>
         Result<Value, Error> runtime_err(Movement& ctx, const ErrorCode code, std::format_string<Args...> fmt,
@@ -198,20 +198,20 @@ namespace aria {
         }
 
         // 转发已构造 Error 为失败结果:把 std::unexpected(std::move(err)) 样板收口。供 run_
-        // 转发 run_binary_numeric 失败回传的 Error、以及 call_value 失败后从 ctx 取出的载荷用,
-        // 与下面的格式化构造重载成对。
+        // 转发 run_binary_numeric 失败回传的 Error、以及 call_value 失败后从 *current_ 寄存器
+        // 取出的载荷用,与下面的格式化构造重载成对。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
         // 转发寄存器载荷(Value)为失败结果:经 value_to_error 还原为 Error 后 std::unexpected。
-        // 供 run_ 在 CALL 等 take 点把 ctx 寄存器载荷沿 runtime_err 传播,与上面的
+        // 供 run_ 在 CALL 等 take 点把 *current_ 寄存器载荷沿 runtime_err 传播,与上面的
         // runtime_err(Error) 重载成对。
         Result<Value, Error> runtime_err(const Value v) { return std::unexpected(value_to_error(v)); }
 
         // 数值二元运算(算术 + 比较)。双方皆 Int 走整数路径;任一为 F64 则升 F64
-        // (浮点除零走 IEEE 的 inf/nan,不报错)。M1 暂定语义:
+        // (浮点除零走 IEEE 的 inf/nan,不报错)。除法语义已定(指令集 §9 #8):
         //   - Int / Int 截断整除、% 为 C++ 语义(除/模零报运行时错误);
         //   - Int 溢出 i48 不设防(断言把关,编译期语义阶段再议)。
-        // 见 bytecode-instruction-set.md §9 待决 #8。Op 为模板参数,编译期按指令分派。
+        // Op 为模板参数,编译期按指令分派。
         template<OpCode Op>
         Result<Value, Error> numeric_op(Movement& ctx, const Value a, const Value b) {
             if (!(is_num(a) && is_num(b))) {
@@ -324,14 +324,11 @@ namespace aria {
             const auto ip_off    = static_cast<usize>(frame.ip - code_base);
             const auto instr     = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
-            // 字节码行:模块信息(to_string + state)+ fn 名 @偏移 + 指令文本。
-            // 模块信息置于 [trace] 与 <fn> 之间,使第一行即含完整位置上下文。
             const auto* mod = frame.module;
             io::print(stderr, "[trace] {} {}  {} @{:04X}  {}\n", mod->to_string(),
                       mod->state() == ObjModule::ModuleState::Loading ? "Loading" : "Loaded",
                       frame.function->to_string(), static_cast<u32>(ip_off), instr);
 
-            // 栈:逐槽渲染成段 [ v ](空栈打印 (empty)),记下每段起始偏移供帧标记对齐。
             const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
             List<String> segs;
             for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
@@ -413,10 +410,10 @@ namespace aria {
         //   maybe_collect:已入表条目经上方 tracer 的 builtins_.trace 标根,在建的 name/fn 经
         //   register_builtins 内 make_guard 双守卫根化(见 Builtins.cpp)。全 VM 共享一份,不再每模块注入。
         builtins::register_builtins(gc_, builtins_);
-        // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 root_
+        // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 dir_
         //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 dir_ 时裸名搜 cwd),
         //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
-        //   resolve_module 裸名分支跳过空根(line 87),仅搜 [1..] 配置根,比拿 "." 锚到坏目录更诚实。
+        //   resolve_module 裸名分支跳过空根,仅搜 [1..] 配置根,比拿 "." 锚到坏目录更诚实。
         source_roots_.push_back(fs::current_dir().value_or(""));
         // source_roots_[1..] = 配置根:编译器相对 stdlib 源根(约定 <exe_dir>/../share/aria/lib;
         //   确切路径待定),由 fs::program_dir 推导并 weakly_canonical 规范化,非空则推入。
@@ -532,7 +529,7 @@ namespace aria {
         // 源根:入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0] -- 即入口文件所在目录居首,
         // 配置根 stdlib / -L / 环境变量在 [1..] 不动)。直接赋值 [0],无 flag、无重建、reuse 安全
         // (覆盖旧值,不累积)。dir_ 指针恒非空(构造期 ASSERT),内容可空(<script> 在 cwd 不可用
-        // 时退化为空串,磁盘模块 = 命中源根):空串由 resolve_module 裸名分支跳空根(line 87)处理,
+        // 时退化为空串,磁盘模块 = 命中源根):空串由 resolve_module 裸名分支跳空根处理,
         // 故此处不判空。
         // 注:fn 必属某模块(module_ 非空,见 ObjFunction);[0] 槽位由构造时 cwd 占位恒在。
         source_roots_[0] = fn->module()->dir()->view();
@@ -687,6 +684,8 @@ namespace aria {
         // call_native 断言锁「原生调用不得换走 current_」。
 
         while (true) {
+            // 不变式:此处帧栈恒非空(run() 先 enter_frame 才进本循环;唯一弹空帧的 RETURN 顶层
+            // 分支立即 return;CALL/IMPORT 切帧后 break 回到循环顶重取)。
             // 取指前记本帧指令起始指针:报错定位的行号锚点 -- 顶帧报错
             // 即故障指令、call_*/原生失败即 CALL 站点(被调帧未进 / 原生不进帧,顶帧仍是
             // caller);M3 unwind 查表同用此字段(坑点文档 #1/#2)。init_frame_ 置 code
@@ -719,6 +718,7 @@ namespace aria {
                     break;
                 case OpCode::LOAD_IMM: {
                     const u8 raw = read_u8(frame);
+                    // u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8,见 CodeGen)。
                     current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
                     break;
                 }
@@ -753,7 +753,7 @@ namespace aria {
                     // (顶层 var 声明 -- 唯一创建全局的入口)。upsert:命中覆盖(重定义属编译期语义错误
                     // RedefinedVariable,运行期按定义处理),未命中插入新条目,再写入值。
                     //
-                    // 根安全(M6 解锁 GC 后):upsert 可能 rehash -> allocate -> maybe_collect。
+                    // 根安全(GC 已启用):upsert 可能 rehash -> allocate -> maybe_collect。
                     //   - name/key:常量池内,经 frame.function -> unit -> constants 链根(同 LOAD_CONST)。
                     //   - v:用 peek 而非 pop -- 让 v 在 upsert 期间仍留在值栈(M6 值栈即根),collect
                     //     标得到;upsert 返回后再写 e.value、drop。若先 pop,v 退栈成裸局部,collect
@@ -770,9 +770,9 @@ namespace aria {
                     // [] -> [v]:按名查当前模块 globals,命中则压入;miss 回退 VM 级 builtins_ 表
                     //   (Python 式 globals -> builtins 查找链,内置经此解析);两者皆未命中 ->
                     //   UndefinedVariable 运行时错误。STORE_GLOBAL 不回退 builtins(赋值不隐式创建,
-                    //   必须先 var 声明,见 grammar.txt §445),仅 DEF_GLOBAL 写模块 globals 可 shadow 内置。
+                    //   必须先 var 声明,见 grammar.txt §205-206),仅 DEF_GLOBAL 写模块 globals 可 shadow 内置。
                     //
-                    // 根安全(M6 解锁 GC 后):find 无分配;push 的唯一分配是值栈 grow,而 push 不变式
+                    // 根安全(GC 已启用):find 无分配;push 的唯一分配是值栈 grow,而 push 不变式
                     //   先写栈再增长(Movement::push),e->value 已入栈(根)后方 grow -> collect;且
                     //   e->value 经 module -> globals 或 builtins_ -> VM 根存活。name 同上经常量池根。
                     ObjString*  name  = read_name(frame);
@@ -790,9 +790,9 @@ namespace aria {
                 }
                 case OpCode::STORE_GLOBAL: {
                     // [v] -> [v]:peek-store 到当前模块 globals(不弹,留 v);未定义 -> UndefinedVariable
-                    // (赋值不隐式创建,必须先 var 声明,见 grammar.txt §445)。
+                    // (赋值不隐式创建,必须先 var 声明,见 grammar.txt §205-206)。
                     //
-                    // 根安全(M6 解锁 GC 后):本指令无分配(find/peek/写均不触 maybe_collect),无风险。
+                    // 根安全(GC 已启用):本指令无分配(find/peek/写均不触 maybe_collect),无风险。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame.module->globals().find(key);
@@ -1042,7 +1042,7 @@ namespace aria {
                     // 当前模块的绝对文件路径(ObjModule::abs_path = dir_ + "/" + name_ + ".aria"),
                     // 供 resolve_module 相对分支取 dirname 作基:dirname(abs_path) = dir_ (.aria 后缀在末段,
                     // dirname 不受影响)= 当前模块所在目录。裸名分支不依赖此值。dir_ 指针恒非空但内容可空
-                    // (cwd 不可用时空串兜底):此时 abs_path 返空串,resolve_module 相对分支判空直接返 nullopt(line 81)。
+                    // (cwd 不可用时空串兜底):此时 abs_path 返空串,resolve_module 相对分支判空直接返 nullopt。
                     const auto canonical_path_str =
                             resolve_module(path->view(), frame.module->abs_path(), source_roots_);
                     if (!canonical_path_str) {
@@ -1099,11 +1099,10 @@ namespace aria {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
                     }
                     if (fn_name == kModuleName) {
-                        // 模块体 run-once 完成:置 Loaded,压模块对象(弹弃 ret)。
                         mod->set_state(ObjModule::ModuleState::Loaded);
                         current_->push(Value::from_obj(mod));
                     } else {
-                        current_->push(ret); // 普通函数:返回值压入调用者栈顶
+                        current_->push(ret);
                     }
                     break;
                 }

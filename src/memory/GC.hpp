@@ -23,8 +23,9 @@ namespace aria {
     //     分配前 maybe_collect() 可能触发回收。
     //
     // 回收:三色 mark-sweep。roots = 临时根(Phase 1)+ VM 根(M2 起用,经 std::function 回调,
-    //   标 modules_ + current_ 执行链上各上下文的值栈/活动帧);M4 再接 open upvalues,M6 升 Movement 为 Object。
-    //   mark_roots_ -> trace_gray_ -> sweep_;sweep_ 对未标对象调虚析构(级联释放
+    //   标 modules_ + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误
+    //   寄存器);M4 再接 open upvalues,M6 升 Movement 为 Object。
+    //   mark_roots_ -> trace_gray_ -> intern_.remove_white() -> sweep_;sweep_ 对未标对象调虚析构(级联释放
     //   子内存:Array 成员自释放 / ObjString long_chars_ 在 ~ObjString 释放)再释放壳。
     //
     // **核心不变式(承重)**:allocate<T>/reallocate<T> 永不触发 GC,GC 仅在 new_object 顶部
@@ -85,7 +86,8 @@ namespace aria {
         // bytes_allocated_ >= next_gc_(或 stress 开)时 collect()。
         void maybe_collect() noexcept;
 
-        // mark_roots_ -> trace_gray_ -> sweep_ -> 调整 next_gc_。
+        // mark_roots_ -> trace_gray_ -> intern_.remove_white()(摘白表项,须在 sweep 前) -> sweep_
+        // -> 调整 next_gc_。
         void collect();
 
         // ---- temp roots ----
@@ -93,6 +95,8 @@ namespace aria {
         // 对外只暴露 Guard / make_guard RAII API;底层 push_temp_root/pop_temp_root 为私有,
         // 由 Guard 内部调用(GC 的嵌套类可访问外层私有成员)。
         // RAII 临时根:构造时 push,析构时 pop。禁拷贝/移动(make_guard 经 prvalue 必然复制消除)。
+        // 生存期须严格嵌套(temp_roots_ 是朴素栈,析构只从尾部弹 count_ 个、无归属校验):
+        // A push 后 B push、A 先析构会弹掉 B 的根,无断言可拦。
         class Guard {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}
@@ -216,8 +220,8 @@ namespace aria {
         List<Object*>            gray_stack_;      // GC scratch,不计入 bytes_allocated_
         List<Value>              temp_roots_;      // GC scratch,不计入 bytes_allocated_
         InternPool<GC>           intern_;          // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
-        std::function<void(GC&)> vm_roots_tracer_; // VM 根标记回调(M2:modules_ + current_
-                                                   // 执行链上各上下文值栈/活动帧;AriaVM 注册,可为空)
+        std::function<void(GC&)> vm_roots_tracer_; // VM 根标记回调(modules_ + builtins_ + current_
+                                                   // 执行链上各上下文值栈/活动帧/挂起错误寄存器;AriaVM 注册,可为空)
     };
 
     // ---- 模板实现 ----

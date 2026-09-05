@@ -14,8 +14,8 @@ namespace aria {
     }
 
     Error ObjException::to_error() const {
-        // message_ 已是完整烘焙串(含 "Category: Name" 前缀,与 Error::message() 同形;位置标注
-        // 落地后含位置前缀) -- 经 Error::from_baked **原样**回传,跳过 make_message 重烘
+        // message_ 已是完整烘焙串(含 "Category: Name" 前缀与位置前缀,与 Error::message()
+        // 同形) -- 经 Error::from_baked **原样**回传,跳过 make_message 重烘
         // (经 from_detail 会把前缀再烘一遍成双重前缀)。未捕获异常的边界文案(CLI
         // 渲染 / 测试断言)在寄存器载荷改为 Value 前后不漂移。
         return Error::from_baked(code_, message_->view());
@@ -27,8 +27,8 @@ namespace aria {
     }
 
     String ObjException::to_string() const {
-        // 渲染完整烘焙消息(无引号):M3 catch 的 print(e)/str(e) 显示 "Category: Name detail"
-        // (与 CLI 未捕获错误的渲染同款文案,位置标注落地后同含位置前缀)。
+        // 渲染完整烘焙消息(无引号):M3 catch 的 print(e)/str(e) 与 CLI 未捕获错误同款文案
+        // (含位置前缀)。
         return String{message_->view()};
     }
 

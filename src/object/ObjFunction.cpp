@@ -15,8 +15,8 @@ namespace aria {
     }
 
     void ObjFunction::trace(GC& gc) const noexcept {
-        gc.mark_object(name_);   // 非空;mark_object 容 nullptr 仅防御
-        gc.mark_object(module_); // 非空;mark_object 容 nullptr 仅防御。回指所属模块
+        gc.mark_object(name_);
+        gc.mark_object(module_); // 回指所属模块,与 module->entry_ 成环,mark-sweep 三色标记破环
         unit_.trace(gc);
     }
 

@@ -2,7 +2,7 @@
 
 > 本文描述 `OpCode::IMPORT` 当前实现的路径解析与模块查表逻辑。指令格式与栈效应见
 > `bytecode-instruction-set.md §4.15`，本文只聚焦「specifier -> 绝对规范键 -> 模块表命中」
-> 这条链路及其当前边界（磁盘加载 / 编译 / run-once 尚未就绪）。
+> 这条链路。
 
 ## 总览
 
@@ -14,9 +14,9 @@
 2. **intern 驻留**：经 `new_string(gc_, key_str)` 把绝对键驻留为 `ObjString*`。同内容共享
    同一指针，模块表用 `===` 严格相等查表，天然去重；符号链接经 `weakly_canonical` 规避双加载。
 3. **模块表查表 + 压栈**：以绝对键 `ObjString*`（装箱为 `Value`）在 VM 模块表 `modules_`
-   （`AriaHashTable`）里查；命中即复用模块对象并 `ctx.push` 压栈（`IMPORT path:u16`，栈效应
+   （`AriaHashTable`）里查；命中即复用模块对象并 `current_->push` 压栈（`IMPORT path:u16`，栈效应
    `... -> [module]`）。绑定不在 IMPORT 内——交 CodeGen 按作用域经 `DEF_GLOBAL`（顶层）/ 值填槽
-   + `mark_initialized`（嵌套）走。未命中走「未实现」分支（见下）。
+   + `mark_initialized`（嵌套）走。未命中走 `load_module` 加载链路（见下）。
 
 模块表 `modules_`：键 = 绝对规范路径 `ObjString*`（intern），值 = `ObjModule*`，均装箱为
 `Value` 入 `AriaHashTable`。`modules_` 经 VM 根 tracer 纳入 GC（`gc_.set_vm_roots`）。
@@ -41,8 +41,9 @@
   其中 `current_module_path` = `frame.module->abs_path()` = `dir_ + "/" + name_ + ".aria"`（见
   `ObjModule::abs_path`，`dir_` = 模块文件所在目录、`name_` = 文件名去 `.aria` 后缀/stem）。
   `.aria` 后缀在末段，`dirname` 不受影响 -> `dirname(dir_ + "/" + name_ + ".aria")` = `dir_`
-  （name_ 为单段 stem，无 `/`）= 当前模块所在目录。`dir_` 恒非空（`new_module` 默认 cwd），
-  故 `current_module_path` 恒非空 -- 合成模块（如 `<script>`，`dir_` = cwd）相对导入以 cwd 为基。
+  （name_ 为单段 stem，无 `/`）= 当前模块所在目录。`dir_` 指针恒非空但内容可空（`new_module`
+  默认 cwd，cwd 不可用空串兜底），`abs_path()` 随之可返空串；相对分支对空基判空直接返
+  `nullopt`（拒绝锚定），故相对解析可失败。
 - **裸名导入**（无 `./` `../` 前缀）：基 = `source_roots`（见下「裸名解析顺序」），逐个
   exists-check，首个存在 `<base>/<spec>.aria` 者命中。
 - 返回命中文件的绝对规范路径 = 模块表键；都不存在即 `nullopt`（-> `ModuleNotFound`）。
@@ -82,8 +83,8 @@
 （`current_module_path` = `frame.module->abs_path()` = `dir_ + "/" + name_ + ".aria"`，见
 `ObjModule::abs_path`；`dir_` = 模块文件所在目录、`name_` = 文件名去 `.aria` 后缀/stem）。
 `.aria` 后缀在末段，`dirname` 不受影响 -> `dirname(dir_ + "/" + name_ + ".aria")` = `dir_`
-（name_ 为单段 stem，无 `/`）。`dir_` 恒非空（`new_module` 默认 cwd），故 `current_module_path`
-恒非空 -- 合成模块（如测试桩 `<script>`，`dir_` = cwd）相对导入以 cwd 为基。
+（name_ 为单段 stem，无 `/`）。`dir_` 指针恒非空但内容可空（`new_module` 默认 cwd，cwd 不可用
+空串兜底），`abs_path()` 可返空串；相对分支对空基判空返 `nullopt`（拒绝锚定）。
 
 例：当前模块 `dir_` = `/proj/lib`、`name_` = `main`（abs_path = `/proj/lib/main.aria`），
 `import "./helper"` -> 基 `dirname(/proj/lib/main.aria)` = `/proj/lib` = `dir_` -> `/proj/lib/helper.aria`。
@@ -103,20 +104,18 @@
 dirname / stem 切分，由 `fs::module_name_and_dir` 按命中文件的绝对规范路径做（不依赖源根概念）：
 
 - `dir_` = 模块文件所在目录（如 `/proj/lib`）；`name_` = 文件名去 `.aria` 后缀/stem（如 `utils`）。
-  **`name_` 恒为单段 stem**（`module_name_and_dir` 取 `filename().stem()`，不含 `/`）--早期文档
-  把 `dir_` 描述为「所属源根」、`name_` 为「相对源根的多段路径」如 `lib/utils`，那是设计意图而非
-  实现现状；`name_` 不支持多段。
+  **`name_` 恒为单段 stem**（`module_name_and_dir` 取 `filename().stem()`，不含 `/`）；`dir_` 即
+  模块文件所在目录，不支持「相对源根的多段路径」语义。
 - 模块绝对路径（= 模块表查重键）= `dir_ + "/" + name_ + ".aria"`，由 `abs_path()` 返回；
   相对导入基目录 = `dirname(abs_path())` = `dir_`（name_ 单段 stem，`dirname(dir/name.aria)` = `dir`）；
   `run()` 把入口模块 `dir_` 播种为 `source_roots_[0]`（即入口文件所在目录，对齐 Python `sys.path[0]`）。
 - 加载层在 `resolve_module` 命中后由 `fs::module_name_and_dir` 按命中文件绝对规范路径定 `dir_`（dirname）
-  与 `name_`（stem）；**`dir_` 恒非空** -- `new_module` 未显式传 `dir` 时取当前工作目录作默认
-  （合成模块如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对导入基、进源根播种）。
+  与 `name_`（stem）；**`dir_` 指针恒非空、内容可空** -- `new_module` 未显式传 `dir` 时取当前工作目录作默认
+  （cwd 不可用空串兜底；内容空时 `abs_path()` 返空串，相对导入基/源根播种随之空转）。
 - `name_` 兼作显示名（`to_string` / 报错渲染），不单独参与模块表查重。
 
 `run()` 时：`source_roots_[0]` = 入口模块 `dir_`（原地替换构造时的 cwd 占位），`[1..]`
-不动。`dir_` 恒非空（`new_module` 默认 cwd），故无需空检查；合成入口模块（如测试桩
-`<script>`）`dir_` = cwd，入口槽即 cwd 退化值。
+不动。`dir_` 指针恒非空、内容可空（cwd 不可用时空串兜底）——空串播种后裸名解析跳过空根。
 
 ## 模块表命中与未命中
 
@@ -134,10 +133,10 @@ IMPORT 以绝对键查 `modules_`：
   `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `take_error` 取出);
   读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
   `import-handling-overview.md`「加载层接入位置」。
-- **解析失败**（无源根命中 `<base>/<spec>.aria`）：返回 `ErrorCode::ModuleNotFound`
-  （`module not found: 'PATH' (no matching source root)`）。
+- **解析失败**（无源根命中 `<base>/<spec>.aria`）：报 `ErrorCode::ModuleNotFound`
+  （`module not found: '<path>'`，经 `runtime_err` 烘 IMPORT 站点位置）。
 
-命中后，`ctx.push(module)` 把模块对象压栈（`IMPORT path:u16`，栈效应 `... -> [module]`）；
+命中后，`current_->push(module)` 把模块对象压栈（`IMPORT path:u16`，栈效应 `... -> [module]`）；
 绑定交 CodeGen 按作用域走（顶层 `DEF_GLOBAL` / 嵌套值填槽 + `mark_initialized`）。
 
 ## 根安全
@@ -146,7 +145,7 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 
 
 - `path` 经常量池根（同 `LOAD_CONST`）。
 - 绝对键经 `new_string` intern 驻留（weak root）。
-- 命中分支取回的 `module` 经 `modules_` 根可达，`ctx.push` 期间指针稳定（非移动 GC），无需守卫。
+- 命中分支取回的 `module` 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
 
 ## 示例
 
@@ -171,8 +170,8 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 
 
 - **已落地**：绝对键解析（`resolve_module` + `weakly_canonical` + 逐基 exists-check）、
   `source_roots` 播种（`[0]` 入口槽 cwd 占位 + `run()` 换入口 `dir_`、`[1..]` 配置根 stdlib）、
-  `ObjModule::dir_`/`name_` + `abs_path()`（合成绝对路径，`dir_` 恒非空 -- `new_module` 默认
-  cwd）、`.aria` 后缀剥离、模块表命中复用（含 `Loading` 半初始化）、循环导入语义、**未命中分支
+  `ObjModule::dir_`/`name_` + `abs_path()`（合成绝对路径，`dir_` 指针恒非空、内容可空 --
+  `new_module` 默认 cwd）、`.aria` 后缀剥离、模块表命中复用（含 `Loading` 半初始化）、循环导入语义、**未命中分支
   加载链路**（`load_module`：读文件 → `Compiler::compile` 编为被导入模块 CodeUnit（入口名 `<module>`、
   `set_entry`）→ 入表 Loading；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其
   RETURN 按函数名 == `<module>` 判定模块体帧后置 `Loaded` + 压回模块对象,无递归 `run_()`）。

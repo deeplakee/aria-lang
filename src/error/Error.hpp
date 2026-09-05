@@ -14,7 +14,10 @@ namespace aria {
     using src::SourceLoc;
     using src::SourceSpan;
 
-    // 错误值对象：聚合 ErrorCode + 完整可读消息，作为各阶段统一错误载体。
+    // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与
+    // 运行期未捕获出口的边界物化形态--运行期在途错误实体是 ObjException（存 current_ctx
+    // 挂起错误寄存器，见 .claude/rules/runtime.md「VM 异常通道落地状态」），Error 仅在
+    // run_ 返回时经 value_to_error -> from_baked 反提构造，不参与 run_ 内部传播。
     //
     // 设计要点：
     //   - 值类型（可拷贝/移动），供 Result<T, Error> 携带，符合项目「错误处理倾向
@@ -41,7 +44,7 @@ namespace aria {
         // 细节语义(无位置):码 + 细节,供内部/资源错误或不关心位置的场景使用。
         // detail 是「只读组件」(被 make_message 烘进 message_,本身不存储),故取 const String&
         // 而非 by-value -- by-value 是 sink 惯用法,用在此处只会让 lvalue 调用点多付一次参数拷贝
-        // (C++17 起 std::string 已无偷缓冲区的 move-append,烘焙拷贝省不掉)。
+        // (烘进 message_ 的那份拷贝省不掉)。
         // detail **不设默认值**:无 detail 的错误缺上下文(detail 是运行期错误的唯一上下文载体),
         // 有意为空须显式传 {} / "",强制每个报错点说出发生了什么。
         // message_ 烘为 "Category: Name[ detail]"。
@@ -67,23 +70,25 @@ namespace aria {
         // 成品语义:以**已烘焙完整消息串**原样构造,不经 make_message(否则把 "Category: Name"
         // 前缀再烘一遍成双重前缀)。两类合法调用方:ObjException::to_error()(其 message_ 与
         // Error::message() 同形)与 VM run_ 直报站点 runtime_err(位置串 + 细节先经公开
-        // make_message 烘齐、再经本工厂装回 -- 该组合即原 from_runtime 工厂,调用点唯一故
-        // 不单占工厂名)。禁止传组件串(裸 detail)-- 会得到缺前缀的消息,渲染不一致。设计见
+        // make_message 烘齐、再经本工厂装回 -- 该组合调用点唯一,不单占工厂名;过渡形态,
+        // M3 直报站点统一切入寄存器后仅存 to_error 调用方)。
+        // 禁止传组件串(裸 detail)-- 会得到缺前缀的消息,渲染不一致。设计见
         // .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7。
         [[nodiscard]]
         static Error from_baked(const ErrorCode code, const StringView message) {
             return Error{code, String{message}};
         }
 
-        // 运行期报错点的格式化细节在调用处自行 std::format 后走 from_detail(原 format 工厂
-        // 已删,调用点仅 CodeGen::fail / AriaVM value_to_error 等收口漏斗,包装一行即达)。
+        // 运行期报错点的格式化细节在调用处自行 std::format 后走 from_detail(仅编译期与
+        // 兜底收口漏斗,如 CodeGen::fail / AriaVM value_to_error;VM 主报错路径经
+        // make_message + from_baked,见 AriaVM.cpp 的 raise / runtime_err)。
 
         // 烘焙单点的公开重载:完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
         // 位置串由调用方格式化好传入(运行期 "path:line" / "<name>:line";空串无前缀),
         // detail 为**原始细节串**(不含 "Category:" 前缀 -- 防双烘)。from_detail 经此合成;
         // 亦公开供 VM 两处冷路径直接使用:装箱点 AriaVM::raise(烘齐后 new_exception 装箱,
-        // 不经 Error 对象中转)与 run_ 直报站点 runtime_err(烘齐后经 from_baked 装回 Error,
-        // 即原 from_runtime 工厂的组合形态)。编译/运行期消息形态同源于此。
+        // 不经 Error 对象中转)与 run_ 直报站点 runtime_err(烘齐后经 from_baked 装回 Error)。
+        // 编译/运行期消息形态同源于此。
         static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
             String s;
             if (!location.empty()) {

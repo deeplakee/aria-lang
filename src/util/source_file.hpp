@@ -67,7 +67,8 @@ namespace aria::src {
         }
 
         // 文件内容。底层 String 以 '\0' 结尾，便于需要哨兵的扫描逻辑。
-        // 已剥除 BOM 并将行尾归一化为 LF。
+        // 本类不做归一化：经 from_path 构造时内容已剥 BOM 并归一化 LF；直接三参构造时
+        // 内容为调用方所给原文（如 REPL 逐行源码），行列映射按原始字节计。
         [[nodiscard]]
         StringView content() const noexcept {
             return content_;
@@ -169,7 +170,6 @@ namespace aria::src {
                 is_line_starts_built_ = true;
                 return;
             }
-            // 第一行总是从 0 开始
             line_starts_.push_back(0);
             // 每个 LF 之后若有内容，即为下一行起点；末尾的 LF 不产生空行
             for (usize i = 0; i + 1 < content_.size(); ++i) {
@@ -196,7 +196,6 @@ namespace aria::src {
         // 非法 UTF-8 返回空（调用方据此返回 InvalidEncoding）。
         [[nodiscard]]
         static Opt<String> normalize(const StringView raw) {
-            // 剥除 BOM
             StringView s = raw;
             if (s.size() >= 3 && static_cast<u8>(s[0]) == 0xEF && static_cast<u8>(s[1]) == 0xBB &&
                 static_cast<u8>(s[2]) == 0xBF) {
@@ -269,7 +268,6 @@ namespace aria::src {
             if (src_ == nullptr) {
                 return {};
             }
-            // line/col 为 0 视为「未知」，渲染为 "?"；否则渲染为数值。
             const auto part        = [](const usize v) -> String { return v == 0 ? "?" : std::format("{}", v); };
             const auto [line, col] = line_col_;
             return std::format("{}:{}:{}", src_->path(), part(line), part(col));

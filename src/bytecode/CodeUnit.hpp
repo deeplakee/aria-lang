@@ -18,7 +18,8 @@ namespace aria {
     };
 
     // 异常记录表条目:一个 try 块的受保护区间 [begin, end) 与 catch handler 入口。
-    //        三个字段均为 code 字节流中的 offset。VM raise 按当前 ip 查表命中此记录。
+    //        三字段均为 code 字节流中的 offset。M3 起 unwind 按帧 last_ip 反推 offset 查表命中
+    //        此记录(届时再扩 stack_depth 字段);当前编译器尚无发射方。
     //        简单聚合(类内默认成员初始化, 同 LineEntry), trivially-copyable 满足 Array<T>。
     struct TryRecord {
         u32 begin  = 0; // try 受保护区间起始 offset (含)
@@ -26,7 +27,7 @@ namespace aria {
         u32 handle = 0; // catch handler 入口 offset; unwind 后跳此
     };
 
-    // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表。
+    // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表 + 异常记录表。
     //
     //   底层数据结构,四个 Array 字段(code/constants/lines/try_records)直接 public 裸露,VM/编译器/
     //   反汇编器直接操作(`cu.code.push(...)`/`cu.constants[i]`/`cu.lines` 等)。只保留有
@@ -41,7 +42,7 @@ namespace aria {
     //   **行号模型**:emit 一律带 `line` 参数(无状态、无重载)-- 调用方(编译器)自己跟踪
     //   当前行号,每次 emit 传入。RLE 去重在 record_line_ 内做(与末条同行则不追加)。
     //
-    //   注:本类**不是 Object**,是 `ObjFunction` 的值成员。三个 Array 持 GC* 自释放,
+    //   注:本类**不是 Object**,是 `ObjFunction` 的值成员。四个 Array 持 GC* 自释放,
     //   ~CodeUnit -> ~Array 级联释放(同 ObjString long_chars_)。非拷贝/非移动。
     class CodeUnit {
     public:
@@ -103,7 +104,7 @@ namespace aria {
         Opt<u32> find_try_handler(u32 ip) const noexcept;
 
         // ---- GC trace ----
-        // 委托 constants.trace(gc)(code/lines 无 Value,不标)。由 ObjFunction::trace 调用。
+        // 委托 constants.trace(gc)(code/lines/try_records 无 Value,不标)。由 ObjFunction::trace 调用。
         void trace(GC& gc) const noexcept { constants.trace(gc); }
 
         // ---- 反汇编 ----

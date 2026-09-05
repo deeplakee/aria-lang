@@ -8,7 +8,7 @@
 
 - **无 `SETUP_EXCEPT`/`END_EXCEPT` 指令**：`try` 的范围与 handler 地址由编译期写入 `CodeUnit::try_records`（异常记录表），运行时按 `ip` 查表。比操作码方案紧凑、不污染字节码流、便于反汇编。
 - **不依赖 C++ 异常**：与 Lua/CPython 一致。`op` 返回失败 `Error` 后，`run()` 调 raise -> 查表 -> `FrameStack::truncate` 跨帧 unwind -> 跳 handler。
-- **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, new_string(baked_message))` 包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::from_baked(code, message)`（跳过 `make_message` 的静态工厂）回传原码+原消息（含位置）；原值回 `Error::from_detail(ErrorCode::UncaughtException, format_value(V))`。详见坑 #7。（注：Error 构造面已重构为「私有 raw 构造 + 公开静态工厂」，`from_baked` 即定稿时的 `with_message`，见 `.claude/rules/error.md`。）
+- **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, baked_message)`（工厂内部 `new_string` 驻留）包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::from_baked(code, message)`（跳过 `make_message` 的静态工厂）回传原码+原消息（含位置）；原值回 `Error::from_detail(ErrorCode::UncaughtException, format_value(V))`。详见坑 #7。
 - **`TryRecord` 字段**：`{begin, end, handle, stack_depth}`（`frame_depth` 不存见坑 #5；`catch_slot` 不存见坑 #10 —— 恒等于 `stack_depth`，且 unwind 的 `push` 已把异常值落在该槽，无 `STORE_LOCAL`）。
 - **位置与跟踪（M3 定稿）**：运行期位置前缀在**装箱点**烘入 ObjException 消息（取 `frames().top().last_ip` 反推 offset 查行号表，坑 #15）；未捕获时由 unwind 遍历逐帧收集、物化 Error 时附堆栈跟踪（坑 #16）。透传错误（被导入模块的编译期 Error）不标注、无跟踪。
 
@@ -176,7 +176,7 @@ ctx.push(thrown_value);   // 落在 slot stack_depth = catch 参数槽(值填槽
 ```cpp
 class ObjException final : Object {
     ErrorCode  code_;     // 错误码
-    ObjString* message_;   // 完整烘焙消息(含 "path:line:col: Category: Name detail",与 Error::message() 同形)
+    ObjString* message_;   // 完整烘焙消息(与 Error::message() 同形;运行期装箱经 make_message 烘 "path:line: " 前缀,编译期为 path:line:col:,见坑 #15)
 public:
     ErrorCode  code()    const noexcept { return code_; }
     ObjString* message() const noexcept { return message_; }   // catch 的 print(e)/str(e) 渲染此串
@@ -184,16 +184,16 @@ public:
     String to_string() const override { return message_->view(); }        // print(e) -> 消息
 };
 ```
-工厂 `new_exception(gc, code, ObjString* message)`。`message_` 存**完整烘焙消息**（含位置前缀）——与双寄存器 catch 绑的懒合成串一致，位置不丢、catch UX 不退化。
+工厂 `new_exception(gc, code, StringView message)`（工厂内部 `new_string` 驻留并自守，见 `ObjException.hpp`）。`message_` 存**完整烘焙消息**（含位置前缀）——与双寄存器 catch 绑的懒合成串一致，位置不丢、catch UX 不退化。
 
 **单寄存器 `pending_error_ : Opt<Value>`**（替代 `Opt<Error> + Opt<Value>` 双寄存器）：
 
 | 路径 | 写入 pending_error_ | catch 绑定 | 未捕获 run() 回传 |
 |---|---|---|---|
 | 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, format_value(V))` |
-| 运行时错误 / native `fail` | `new_exception(gc, err.code(), new_string(gc, err.message()))`（包成 ObjException） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码+原消息含位置） |
+| 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码+原消息含位置） |
 
-**Error 需新增「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`，定稿期名 `with_message`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经私有 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串——唯一合法调用方是 ObjException 反提 `Error` 回传 run()。收口于 Error.hpp（构造面重构见 `.claude/rules/error.md`）。
+**Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串——两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 run_ 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.claude/rules/error.md`）。
 
 **两硬约束都满足**：
 - 类型保留：用户 throw 存原值，catch 绑原值 ✅。
@@ -306,9 +306,9 @@ continue;                                // 命中 handler -> frame 已废，循
 
 `call_value` 失败站点：
 ```cpp
-if (!call_value(ctx, callee, argc)) {
-    if (auto u = unwind_()) return runtime_err(std::move(*u));  // call_native/AriaVM::fail(call_* 失败)已置 pending_error_
-    continue;
+if (!call_value(callee, argc)) {                 // 作用于 *current_,失败载荷已 raise 入挂起寄存器
+    if (auto u = unwind_()) return runtime_err(std::move(*u));  // 未捕获 -> 终止 run_
+    continue;                                    // 命中 handler -> frame 已废,循环顶重取
 }
 ```
 
@@ -386,7 +386,7 @@ bool AriaVM::raise(const ErrorCode code, const StringView detail) {
 ```
 
 - `Error::make_message(code, location, detail)` 公开（Error 的烘焙单点,from_detail 经此合成,编译/运行期消息形态同源）:location 是调用方格式化好的位置串（空串无前缀）,detail 为原始细节串（不含 `Category:` 前缀,防双烘）。
-- run_ 直报站点（`runtime_err(ctx, ...)`）内部经 `make_message` 烘齐 + `from_baked` 装回构造（原 `from_runtime` 工厂已删,化为此组合）,直报站点与装箱点同形带位置。
+- run_ 直报站点（`runtime_err(ctx, ...)`）内部经 `make_message` 烘齐 + `from_baked` 装回构造,直报站点与装箱点同形带位置。
 - `CallFrame.last_ip`（const u8*，指令起始指针；查表时与 `unit->code.data()` 相减反推 offset）已落地:主循环取指前写、`init_frame_` 置 code 起始（无 NSDMI 保 trivial 聚合,坑 #3 的纪律即为此字段立的）。
 
 - 产出形态 `"path:line: Category: Name detail"`，与编译期 `make_message` 逐字同形（编译期多 `:col` 段）-- 运行期无列号（字节码只有 RLE 行号表），行级即上限（对标 Lua）。
@@ -424,9 +424,9 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 
 ## 实现顺序建议（下次重启时）
 
-1. **B0** 新增 `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, ObjString* message)` + `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error` 新增 `from_baked(code, baked_string)` 静态工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 加 EXCEPTION 分支。
+1. **B0（已落地）** `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, StringView message)`（内部 `new_string` 驻留自守）+ `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error::from_baked(code, baked_string)` 静态工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 的 EXCEPTION 分支均已加。
 2. **B1** `TryRecord` 扩字段 `{begin, end, handle, stack_depth}`（4 字段,无 `catch_slot`，见坑 #10） + `find_try_handler` 返 `Opt<const TryRecord*>`（`CodeUnit.hpp/.cpp`；二分已是最内层语义，仅改返回型，坑 #4 核对）。
-3. **B3** `Movement` 改 `pending_error_` 为 `Opt<Value>` + 加 `truncate_stack` + `raise(Value)`（存原值不包）+ `reset` 清；删除 `pending_throw_` 计划（`Movement.hpp/.cpp`，坑 #14）。
+3. **B3（部分已落地）** `Movement` 改 `pending_error_` 为 `Opt<Value>` + `raise(Value)`（存原值不包）+ `reset` 清已落地；**`truncate_stack` 未落地**（坑 #14，M3 重启时补）。（`Movement.hpp/.cpp`）
 4. **B2**（已落地）`CallFrame` 加 `const u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`run_()` 循环顶每轮取指前写也已落地，坑 #1/#2；存指针、查表时反推 offset，见坑 #2 的表示决策）。
 5. **B4** `AriaVM` 加 `unwind_`/`raise_and_unwind_(code, detail)`（内部 `new_exception` 包成 Value 存入,**同形复用 `runtime_loc` + `Error::make_message` 一步烘位置**，坑 #15 已落地的装箱模式）/`throw_and_unwind_(Value)`（存原值不包）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获从 `pending_error_` 反提 `Error`（ObjException 经 `from_baked`、原值经 `Error::from_detail(ErrorCode::UncaughtException, format_value)`）；unwind 遍历逐帧收集 + 未捕获物化时烘焙堆栈跟踪（坑 #16）。注:`raise(ErrorCode, StringView)`/`fail` 已落地为「一步烘齐」装箱点(不再收 Error 对象),B4 直接复用。
 6. **B5** CodeGen `visitTryStmtNode`/`visitThrowStmtNode` 发射（坑 #9/#10）；`visitTryStmtNode` **入口预插占位 + 结尾回填** `try_records`（构造即升序，**不**编译末尾排序，坑 #4）。
@@ -452,4 +452,4 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 
 ## 附：本次回退范围
 
-M3 实现已整体回退至 HEAD，仅保留 M2（内置函数注册，`src/runtime/Builtins.{hpp,cpp}` + AriaVM 构造期一次性注册进 VM 级 `builtins_` 表 + `LOAD_GLOBAL` 模块 globals 未命中回退查之 + `CMakeLists.txt` + 12 个 builtin 测试）。M3 相关改动（`CodeUnit`/`Movement`/`AriaVM`/`CodeGen`/`Disassembler`/测试）全部回到 HEAD，等重启时按上述顺序重做。完整 M3 设计上下文见归档计划 `/Users/icelake/.claude/plans/quizzical-sniffing-cascade.md`（决策 D1-D8）。
+M3 实现已整体回退至回退时的 HEAD，仅保留 M2（内置函数注册，`src/runtime/Builtins.{hpp,cpp}` + AriaVM 构造期一次性注册进 VM 级 `builtins_` 表 + `LOAD_GLOBAL` 模块 globals 未命中回退查之 + `CMakeLists.txt` + 12 个 builtin 测试）。完整 M3 设计上下文见归档计划 `/Users/icelake/.claude/plans/quizzical-sniffing-cascade.md`（决策 D1-D8）。**回退之后，B0（ObjException/`from_baked`/EXCEPTION 渲染分支）、B2（`last_ip`）与 B3 的寄存器改 `Opt<Value>` 已随后续提交（M3 铺垫）落地**——重启前先对照「实现顺序建议」各步的落地标注，勿重做已完成项。

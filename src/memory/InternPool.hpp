@@ -27,7 +27,7 @@ namespace aria {
     //   remove_white() 摘除指向白色(未标 is_marked)ObjString* 的表项,避免 sweep 后悬垂。
     //
     //   slots_ 经 alloc_->allocate<ObjString*> 分配。分配器经 TrivialAllocator concept 解耦
-    //   (见 Allocator.hpp):本头不 include GC.hpp,故不传递地拖入 object/value 树之外的东西;
+    //   (见 Allocator.hpp):本头不 include GC.hpp,故不传递地拖入 object/value 树;
     //   Alloc 默认为 GC,实例化点(即使用 GC 作分配器的 TU)须令 GC 完整可见。InternPool 本身
     //   是 GC 的普通成员(非 Object、不被 trace、不被 sweep),其 slots_ 在 rehash 或 ~InternPool
     //   时释放。持 Alloc*。

@@ -2,7 +2,7 @@
 #define ARIA_COMPILER_HPP
 
 // 编译编排器：把一个实际的 SourceFile 经 Lexer -> Parser -> CodeGen 编进模块入口 ObjFunction，
-// 收口「源文件 -> 可执行 ObjFunction」的端到端编译链路（此前仅在 tests/test_codegen.cpp 辅助函数手拼）。
+// 收口「源文件 -> 可执行 ObjFunction」的端到端编译链路。
 //
 // 本类不做词法/语法/代码生成--三者各归 Lexer/Parser/CodeGen，本类只负责按序串联，并把三阶段的
 // Result<..., List<Error>>（词法/语法，取 errors_[0]）/ Result<..., Error>（CodeGen 已是单 Error）统一
@@ -13,10 +13,10 @@
 //     磁盘文件经 SourceFile::from_path 读盘、REPL/嵌入由调用方按需构造）。本类不拥有、不重建源文件，
 //     只读它的 content() 做词法。故无 source_ 成员、无 source_name 参数--源的身份（name/path）就是
 //     SourceFile 自带的，错误渲染 "path:line:col" 取自实际源文件，货真价实。
-//   - SourceFile 生命期契约：AST 节点与编译失败返回的 Error 均持 SourceLoc（内含 SourceFile*），指向
-//     调用方传入的 source。故调用方须保证 source 在返回 Error 的使用期间存活且地址不变（SourceFile 含
-//     String，SSO 短串 move 会改 content 地址、对象 move 会改地址--故源文件就位后勿再 move 它；实践中
-//     真实文件加载后常驻源注册表/模块表，自然稳定）。成功路径返回的 ObjFunction 不依赖 source。
+//   - SourceFile 生命期契约：AST 节点持 SourceLoc（内含 SourceFile*），但 AST 仅在 compile() 内部消费、
+//     不外返；编译失败返回的 Error 在构造期已把位置烘进自有 message_ 串、不持 SourceFile*。故 source
+//     只须存活到 compile() 返回（烘焙在此时完成），返回的 Error / ObjFunction 均不依赖 source，调用方
+//     可立即释放或 move 它（Error 已不指向其 content）。
 //   - 可复用：Lexer / Parser 均按「空态可复用」设计（tokenize / parse 扫完即清空成员），作为本类成员
 //     跨多次 compile() 复用（如 REPL 逐行重编译）。CodeGen 一次性、状态局限单次编译（持 UPtr<ModuleCtx>），
 //     故每次 compile() 内就地构造。
@@ -54,8 +54,8 @@ namespace aria {
 
         // 编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 entry_name，模块体包装，已
         // module.set_entry）。
-        //   - source 为调用方拥有/加载的实际源文件；本类只读其 content()，不拥有、不重建。调用方须保证
-        //     source 在返回 Error 的使用期间存活且地址不变（Error 的 SourceLoc 指向 source；成功路径不依赖它）。
+        //   - source 为调用方拥有/加载的实际源文件；本类只读其 content()，不拥有、不重建。source 只须
+        //     存活到 compile() 返回（位置串在构造期烘焙完成），返回的 Error / ObjFunction 均不依赖 source。
         //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
         //   - entry_name：入口函数名。主入口模块传 <main>（默认）；运行期导入模块传 <module>（由 VM 加载层
         //     调用时显式传入，区别于主入口）。

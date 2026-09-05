@@ -12,7 +12,8 @@
 //   - 全骨架 + 可跑子集：42 个 visitXxxNode 全部 override；核心特性完整发射，
 //     依赖未落地 VM 里程碑的特性（类 / 异常 / 闭包 / list / map / field / index 等）
 //     占位 not_impl（编译期 NotImplemented Error），随 VM 推进逐个翻为真实发射。
-//   - 首错即止：遇第一个语义错误记录并短路后续发射，compile() 返回 Result<ObjFunction*, Error>。
+//   - 首错即止：遇第一个语义错误 fail() 抛 AriaCompileException 即 unwind，compile()
+//     返回 Result<ObjFunction*, Error>（错误通道详见下方）。
 //
 // 状态分离：每函数的可变状态（局部栈 / 作用域深度 / 循环上下文栈 / 外层链）收口于
 //   FunctionCtx（见 compile/FunctionCtx.hpp）；每模块状态（模块句柄 + 当前函数上下文游标
@@ -174,9 +175,8 @@ namespace aria {
         CodeUnit* cur_cu() const noexcept;
 
         // --- 常量池 / 局部 / 名字解析辅助（单层 _or_fail：操作 + 失败即 fail 并返回解包值）---
-        // 原薄封装透传层（add_constant/add_name/declare_local/resolve_name，只做操作 + 失败信号、不持 loc）
-        // 唯一消费者即对应 _or_fail，透传空转，故内联至此（见 .cpp）。add_name_or_fail 经 add_constant_or_fail
-        // 复用溢出检查。失败即 fail（[[noreturn]]，之后值恒有效）；loc/message 由本层据节点 loc 显式构造。
+        // 失败即 fail（[[noreturn]]，之后值恒有效）；loc/message 由本层据节点 loc 显式构造，
+        // 无中间薄封装层。add_name_or_fail 经 add_constant_or_fail 复用溢出检查。
 
         // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge；否则入池返回索引。
         [[nodiscard]]
@@ -273,8 +273,8 @@ namespace aria {
 
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
-        // IdentifierPattern -> declare_local 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP 丢弃；
-        // ListPattern -> not_impl。行号取自 pat->loc_line()（仅 _/ListPattern 分支发射时用）。
+        // IdentifierPattern -> declare_local_or_fail 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP
+        // 丢弃； ListPattern -> not_impl。行号取自 pat->loc_line()（仅 _/ListPattern 分支发射时用）。
         void bind_pattern(PatternNode* pat);
 
         // --- 遍历入口（薄包装：accept 双分派）---

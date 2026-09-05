@@ -25,12 +25,11 @@ namespace aria {
     // throw/catch（抛 Value，由 VM THROW 操作码 + CodeUnit 内异常记录表实现，不引入 SETUP_EXCEPT）无关。
     class AriaException : public std::exception {
     public:
-        // 从 Error 值对象构造（唯一构造面：携带码/位置/消息）。不再镜像 Error 的各构造入口 --
-        // Error 的组件/成品语义由其静态工厂(from_detail/from_baked)收口,
-        // 本类只收成品(Error),镜像会逐入口漂移(见 Error.hpp)。
+        // 从 Error 值对象构造（唯一公开构造面：收成品 Error，码/位置/消息都在其中）。
+        // Error 的组件/成品语义由其静态工厂(from_detail/from_baked)收口,本类只收成品--
+        // 镜像 Error 的各构造入口会随其构造面漂移。
         explicit AriaException(Error error) : AriaException{std::move(error), make_what(error)} {}
 
-        // 所携错误对象（码/位置/消息）。
         [[nodiscard]]
         const Error& error() const noexcept {
             return error_;
@@ -53,9 +52,10 @@ namespace aria {
         }
 
     private:
-        // 核心构造：what 已由调用方（基于 move 前的 error）算好，此处仅接管。
-        // 注意 make_what(error) 必须在 std::move(error) 之前求值--委托构造的
-        // 实参求值先于被委托构造体执行，且 make_what 取的是 error 的引用，安全。
+        // 核心构造：what 已由调用方基于 error 算好，此处仅接管。
+        // 公开构造实参表里 std::move(error) 虽写在前,但它只是 cast、不移动任何东西
+        // (braced-init-list 左到右求值);实际移动发生在本构造体内,晚于 make_what(error)
+        // 读 error,顺序无险。
         AriaException(Error error, String what) noexcept : error_{std::move(error)}, what_{std::move(what)} {}
     };
 

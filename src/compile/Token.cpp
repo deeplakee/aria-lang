@@ -11,7 +11,7 @@ namespace aria {
             TokenType  type;
         };
 
-        // 按字母序，便于人工核对；lookup_keyword 顺序扫描即可（关键字数量少）。
+        // lookup_keyword 顺序扫描即可（关键字数量少）。
         // 关键字均为 ASCII，使用普通字符串字面量（u8"..." 会得到 char8_t[]，
         // 无法构造 string_view<char>）。
         constexpr KeywordEntry kKeywords[] = {
@@ -31,7 +31,6 @@ namespace aria {
     } // namespace
 
     Opt<TokenType> lookup_keyword(const StringView lexeme) noexcept {
-        // 结构化绑定拆出 KeywordEntry 的 (lexeme, type)；
         // 绑定名取 word 而非 lexeme，避免遮蔽外层参数 lexeme 导致自比恒真。
         for (const auto& [word, type]: kKeywords) {
             if (word == lexeme) {

@@ -14,7 +14,8 @@ namespace aria {
     // (try/catch/throw)统一异常通道的运行时载体之一。持 ErrorCode + 错误消息串。
     //
     //   - code_ / message_:message_ 存**完整烘焙消息** -- 与 Error::message() 同形,含
-    //     "Category: Name" 前缀(运行时位置标注落地后含 "path:line:col: " 前缀)。烘焙发生在
+    //     "Category: Name" 前缀(运行期装箱经 make_message 另烘 "path:line: " 位置前缀,
+    //     编译期为 path:line:col:)。烘焙发生在
     //     raise 侧(经 Error::make_message 烘齐,from_detail 同源经它),本对象原样持有,
     //     自身不做加工;
     //     位置不丢、catch 里 print(e)/str(e) 渲染完整消息不退化。code_ 保留机器标识:

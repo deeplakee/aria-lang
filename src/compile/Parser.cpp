@@ -186,10 +186,12 @@ namespace aria {
             advance();
         }
         while (!is_at_end()) {
-            // 语句以 ';' 结尾：跳过 ';' 后视为到达下一条语句边界。
+            // 恰在消费 ';' 之后判定（previous 而非 peek）： ';' 本身被丢弃，从下一 token 续扫。
             if (pos_ > 0 && previous().type() == TokenType::Semicolon) {
                 return;
             }
+            // 同步点集合须与 statement() 的分派集保持一致：statement 认哪些语句起首关键字，
+            // 这里就恢复到哪些（漏一个即少一个恢复点）。
             switch (peek_type()) {
                 case TokenType::Fun:
                 case TokenType::Def:
@@ -266,7 +268,7 @@ namespace aria {
                 if (match(TokenType::DotDotDot)) {
                     String name = expect_identifier();
                     result.push_back(Param{.name = std::move(name), .is_varargs = true});
-                    break; // varargs 必为末尾，结束参数列表
+                    break;
                 }
                 String name = expect_identifier();
                 if (match(TokenType::Equal)) {
@@ -280,10 +282,9 @@ namespace aria {
                     result.push_back(Param{.name = std::move(name)});
                 }
                 if (!match(TokenType::Comma)) {
-                    break; // 无逗号则结束参数列表
+                    break;
                 }
             }
-            // varargs 后必须紧跟 ')'，否则报 VarargsNotLast。
             if (!result.empty() && result.back().is_varargs && !check(TokenType::RightParen)) {
                 error(ErrorCode::VarargsNotLast, "varargs '...' 必须位于参数列表末尾");
             }
@@ -608,7 +609,9 @@ namespace aria {
                     return std::make_unique<DestructureAssignmentNode>(loc, std::move(pat), std::move(rhs));
                 }
             } catch (const AriaCompileException&) {
-                // listPattern 解析失败：吞掉异常，下方统一回退按表达式重解析
+                // 吞掉异常统一回退按表达式重解析。注意 match(Equal) 之后 rhs 的 assignment()
+                // 抛错也会进此 catch--正确性依赖回退 pos_ = save 后按 listExpr 重解析会在
+                // 同一位置复现同一错误（错误仅由源内容决定，与解析路径无关）。
             }
             pos_ = save; // 非解构赋值或 listPattern 失败，回退 pos_
         }

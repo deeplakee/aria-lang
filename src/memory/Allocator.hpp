@@ -33,9 +33,9 @@ namespace aria {
     //   其它 trivially-copyable T 实例化同一成员模板,由分配器保证对所有 T 行为一致
     //   (GC 实现为 ::operator new(count*sizeof(T)),与 T 无关)。
     //
-    //   Buffer<T,Alloc> / Array<T,Policy,Alloc> / HashTable<K,V,Hash,Eq,Alloc> 经此概念
+    //   Buffer<T,Alloc> / Array<T,Alloc> / HashTable<K,V,Hash,Eq,Alloc> 经此概念
     //   与具体分配器解耦:容器头不 include GC.hpp,故不传递地拖入 object/value 树;使用 GC
-    //   作分配器的具体类(AriaArray/AriaHashTable/CodeUnit/Movement)自行 include GC.hpp
+    //   作分配器的具体类(AriaArray/AriaHashTable/CodeUnit/Movement/InternPool)自行 include GC.hpp
     //   (显式依赖,而非经容器传递)。这是 enter_frame 同族的依赖反转:低层(容器)依赖抽象
     //   契约(本 concept),高层(GC)实现契约并被注入。
     template<typename A>

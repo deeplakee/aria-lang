@@ -11,7 +11,7 @@
 namespace aria {
 
     // Object 子类型标识(普通 enum class)。
-    // 转类型名见 to_string(ObjType) / Object::type_name();Object::type_ 持本类型,Object::type() 返回之。
+    // 类型名转换见 to_string(ObjType) / Object::type_name()。
     enum class ObjType : u8 {
         BASE,
         STRING,
@@ -127,7 +127,8 @@ namespace aria {
         // 纯字符串等无子节点者空实现。
         virtual void trace(GC& gc) const noexcept = 0;
 
-        // 本对象的实际分配字节数(含 FAM/SSO 外挂),供 sweep_ 释放壳用。必须返回真实大小。
+        // 壳对象的分配字节数(sizeof(壳),不含外挂 buffer),供 sweep_ 释放壳用。
+        // 必须与 GC::new_object 的 allocate<u8>(sizeof(T)) 配对--虚报外挂字节会致分配/释放错配。
         //
         // 子内存释放统一走虚析构:Array 成员靠自身 dtor 自释放(持 GC*),
         // 非 Array 子内存(如 ObjString 的 long_chars_)在子类 ~dtor 里经自己持的 GC* 释放。
@@ -160,9 +161,9 @@ namespace aria {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
-        // 对象的可读描述(Python 风格 `<Type at 0xaddr>`)。基类默认按 type_name()
-        // + 对象地址渲染;有更具体内容语义的子类型按需 override(如 ObjString 渲染字符内容)。
-        // 与 type_name() 的区别:前者是类型名的静态枚举映射,本方法产出"这个对象"的描述。
+        // 对象的可读描述:基类默认 = debug_repr()(地址型);有更具体内容语义的子类型
+        // 按需 override(如 ObjString 渲染字符内容)。与 type_name() 的区别:前者是类型名的
+        // 静态枚举映射,本方法产出"这个对象"的描述。
         [[nodiscard]]
         virtual String to_string() const {
             return debug_repr();
@@ -171,13 +172,15 @@ namespace aria {
 
         ////////////////////////////
 
-        // TODO: 子类型落地后，is<T>() 可改用 ObjType 查表取代 dynamic_cast。
+        // is<T>() 目前一律 dynamic_cast;性能敏感后可改 ObjType 查表(子类型均已落地)。
         template<DerivedFromObj T>
         [[nodiscard]]
         static bool is(const Object* o) noexcept {
             return dynamic_cast<const T*>(o) != nullptr;
         }
 
+        // 前置条件:调用前已经 is<T>() / switch(type()) 确认动态类型匹配--NDEBUG 下是
+        // 裸 static_cast,不校验;DEBUG 下 dynamic_cast 兜底(不匹配返 nullptr 可暴露)。
         template<DerivedFromObj T>
         [[nodiscard]]
         static T* as(Object* o) noexcept {

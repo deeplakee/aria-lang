@@ -18,7 +18,7 @@ namespace aria {
     }
 
     void ObjModule::trace(GC& gc) const noexcept {
-        // name_/dir_ 恒非空(ctor ASSERT);entry_ 可为 nullptr,mark_object 容 nullptr 仅防御。
+        // entry_ 可为 nullptr(未编译/目录包占位),mark_object 容 nullptr。
         gc.mark_object(name_);
         gc.mark_object(dir_);
         gc.mark_object(entry_);

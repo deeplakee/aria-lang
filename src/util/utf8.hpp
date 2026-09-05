@@ -80,7 +80,6 @@ namespace aria::utf8 {
             }
         }
 
-        // 组装码点
         codepoint cp = 0;
         switch (need) {
             case 2:
@@ -118,7 +117,7 @@ namespace aria::utf8 {
     }
 
     // 解码整个字符串为码点序列（非法序列被替换为 kReplacementChar）。
-    // 成功总是为 true；若需要区分是否含非法序列，使用 is_valid。
+    // 需区分「是否含非法序列」时用 is_valid。
     [[nodiscard]]
     inline List<codepoint> decode(const StringView str) {
         List<codepoint> out;
@@ -161,8 +160,8 @@ namespace aria::utf8 {
         return true;
     }
 
-    // 计算合法 UTF-8 文本中的码点数量（非法字节按 1 计）。
-    // 等价于 decode(str).size()，但不分配。
+    // 计算码点数量，不分配。不校验续接字节：非法序列按首字节名义长度整段计 1，
+    // 故与 decode 的替换展开计数不等价，仅对合法输入两者一致。
     [[nodiscard]]
     constexpr usize count(const StringView str) noexcept {
         usize n = 0;
@@ -240,8 +239,8 @@ namespace aria::utf8 {
                || (cp >= 0xFF10 && cp <= 0xFF19); // 全角数字
     }
 
-    // 是否可用于标识符起始：下划线，或 Unicode 字母（Lu/Ll/Lt/Lm/Lo/Nl）。
-    // ASCII 范围内做精确判定，其余通过 is_alpha 近似。
+    // 是否可用于标识符起始：下划线，或 Unicode 字母（Lu/Ll/Lt/Lm/Lo）。
+    // ASCII 范围内做精确判定，其余通过 is_alpha 的区间近似。
     [[nodiscard]]
     constexpr bool is_id_start(const codepoint cp) noexcept {
         if (cp == '_')

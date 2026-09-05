@@ -14,7 +14,7 @@ namespace aria {
     }
 
     void ObjNativeFn::trace(GC& gc) const noexcept {
-        gc.mark_object(name_); // fn_ 是 C++ 指针,非 GC 对象;name_ 恒非空(ctor ASSERT)
+        gc.mark_object(name_); // fn_ 是 C++ 指针,非 GC 对象,唯一 GC 子节点即 name_
     }
 
     String ObjNativeFn::to_string() const {

@@ -8,8 +8,8 @@ namespace aria {
     // 需 ObjFunction 完整类型(unit/module/code),头文件仅前向声明 ObjFunction 即可,
     // 避免 Movement.hpp 拖入 object/bytecode 树。
     void Movement::enter_frame(ObjFunction* fn, const u8 argc) {
-        CallFrame& f = frames_.acquire(); // 取空帧(现为栈顶)
-        init_frame_(f, fn, argc);         // 就位该帧:slots + VM 专有字段
+        CallFrame& f = frames_.acquire();
+        init_frame_(f, fn, argc);
     }
 
     // 修改栈顶帧(刚 acquire 的空帧)为对 fn 的调用。slots 按不变量设为 top - argc - 1
@@ -22,7 +22,8 @@ namespace aria {
         f.unit     = &fn->unit();
         f.module   = fn->module();
         f.ip       = fn->unit().code.data();
-        f.last_ip = f.ip; // 位置锚点占位(= code 起始,等价 offset 0):主循环取指前即覆写;不用 nullptr -- 与 data() 相减是 UB(无 NSDMI 保 trivial 聚合)
+        f.last_ip = f.ip; // 位置锚点占位(= code 起始,等价 offset 0):主循环取指前即覆写;不用 nullptr -- 与 data() 相减是
+                          // UB(无 NSDMI 保 trivial 聚合)
     }
 
 } // namespace aria

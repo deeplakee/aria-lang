@@ -17,7 +17,7 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 | :--- | :--- | :--- |
 | **Phase 1** | `Array<T>` + GC(模板分配器 + mark-sweep + 临时根 + `new_object`)+ `ObjString`(SSO,**无驻留**)+ 测试 | 已落地 |
 | Phase 2 | `HashTable`(Swiss Table)+ intern 驻留池 + 值绑定容器(`AriaArray`/`AriaHashTable`) | 已落地 |
-| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn` 已落地;`ObjList`/`ObjMap`/`ObjClass`/`ObjInstance`/`ObjClosure`/`ObjUpvalue`/`ObjBoundMethod` 待后续 | 部分落地 |
+| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn`/`ObjException` 已落地;`ObjList`/`ObjMap`/`ObjClass`/`ObjInstance`/`ObjClosure`/`ObjUpvalue`/`ObjBoundMethod` 待后续 | 部分落地 |
 | Phase 4 | `Movement`(有栈协程,VM 持 `current_`)+ VM 根(`current_` 单根;协程经对象图可达,M6 定稿不设 `movements_` 并集,见 vm-design.md §4.9)+ safe point | 部分前拉:值栈/帧经 vm_roots tracer 标根 + `JUMP_BACK` safe point 已落地(开发期即开 GC);`ObjMovement : Object` + open upvalue 链 + 协程根收敛仍待 M6 |
 
 > intern 延后到 Phase 2:它依赖 HashTable,而 HashTable 是 Phase 1 之后的下一个产物(与 Array 平级、并列的通用容器,不依赖 Array)。Phase 1 不引入 `std::unordered_map` 占位代码,GC 核心(分配计数 / mark-sweep / 临时根 / ObjString 析构)已可独立测试。
@@ -28,24 +28,25 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 
 | 文件 | 说明 |
 | :--- | :--- |
-| `src/memory/Array.hpp` | `template<typename T> class Array`,header-only,持 `GC* gc_` 自释放 |
+| `src/memory/Array.hpp` | `template<typename T, typename Alloc = GC> class Array`,header-only,建在 `Buffer<T,Alloc>` 上、经分配器自释放 |
 | `src/memory/GC.hpp` | GC 类:模板分配器 + 对象链表 + `new_object` 模板 + mark-sweep + 临时根 + `Guard` |
 | `src/memory/GC.cpp` | GC 非模板方法实现(ctor/dtor/collect/sweep_/free_all_/delete_object/push_temp_root...) |
-| `src/object/Object.hpp` | 加纯虚 `trace(GC&)` / `size()`;`address_hash` + 两 ctor;前向声明 `GC` |
+| `src/object/Object.hpp` | 加纯虚 `trace(GC&)` / `size()`;地址哈希经 `util::hash_addr`(`util/util.hpp`) + 两 ctor;前向声明 `GC` |
 | `src/object/ObjString.hpp` / `.cpp` | SSO 字符串 + FNV-1a 哈希 + `new_string` 工厂 |
 | `CMakeLists.txt` | 登记新文件 + `ARIA_DEBUG_GC` 选项 |
-| `tests/test_array.cpp` / `test_gc.cpp` | 单测 |
+| `tests/memory/test_array.cpp` / `test_gc.cpp` | 单测 |
 
 ### 3.2 头文件依赖(单向,无环)
 
 ```
-Array.hpp -> GC.hpp -> object/Object.hpp -> value/Value.hpp
-                                    |
-                                    +-> util/io.hpp, util/util.hpp
+GC.hpp -> object/Object.hpp -> value/Value.hpp
+               |
+               +-> util/io.hpp, util/util.hpp
 GC.hpp 还 include error/Error.hpp + <format>/<cstring>/<algorithm>(模板分配器内联体用)
+Array.hpp -> memory/Buffer.hpp + memory/Allocator.hpp(经分配器解耦,不 include GC.hpp)
 ```
 
-`GC.hpp` **不** include `Array.hpp`:GC 的 scratch 用 `List`,不走 Array。这样 `Array.hpp` 可直接 include `GC.hpp`(GC 完整,Array 方法全内联),无循环。
+`GC.hpp` **不** include `Array.hpp`:GC 的 scratch 用 `List`,不走 Array。`Array.hpp` 也不 include `GC.hpp`--经 `TrivialAllocator` concept 与具体分配器解耦,使用 GC 的具体类(`AriaArray`/`CodeUnit` 等)自行 include `GC.hpp`,无循环。
 
 > 历史:曾让 `gray_stack_`/`temp_roots_` 用 `Array<T>` 自举,但 GC 需 Array 成员 -> `GC.hpp` include `Array.hpp` -> Array 内联体 `gc_->xxx` 需 GC 完整 -> 循环,被迫拆 `Array.impl.hpp`。后改用 `List` 解掉,更干净(GC overhead 与 managed heap 分离),`Array.impl.hpp` 删除。
 
@@ -110,6 +111,11 @@ public:
     bool is_gc_disabled() const noexcept;         // lock_count_ > 0
     class LockGuard { /* RAII:构造 disable,析构 enable */ };
     LockGuard make_lock() noexcept;
+    // ---- VM 根 tracer(后补,见 Phase 4)----
+    void set_vm_roots(std::function<void(GC&)> tracer) noexcept;
+    // ---- intern 委托(后补,见 Phase 2)----
+    ObjString* intern_find(StringView s) noexcept;   // 委托 intern_
+    ObjString* intern_insert(StringView s);          // 委托 intern_
 private:
     Object*       objects_head_;
     usize         bytes_allocated_;
@@ -118,6 +124,8 @@ private:
     u32           lock_count_;                    // GC 禁用计数(>0 禁用,支持嵌套)
     List<Object*> gray_stack_;                    // GC scratch,不计入 bytes_allocated_
     List<Value>   temp_roots_;                    // GC scratch,不计入 bytes_allocated_
+    InternPool    intern_;                        // 字符串驻留池(Phase 2)
+    std::function<void(GC&)> vm_roots_tracer_;    // VM 根回调(Phase 4 前拉)
 };
 ```
 
@@ -128,7 +136,7 @@ private:
 - `delete_object(Object*)` 是 `new_object` 的逆:`size()`(虚,须在 `~Object` 前)-> `~Object()`(级联释放子内存:Array / long_chars_)-> `deallocate<u8>`(壳)。**不含链表摘除**(由 `sweep_`/`free_all_` 调用方管),`sweep_` 与 `free_all_` 共用此函数,销毁逻辑收口一处。
 - **不变式**:`allocate` / `reallocate` 永不触发 GC,故对象构造期内的子分配不会回收正在构造的对象(其尚未链入/未标根)。GC 仅在 `new_object` 顶部(`maybe_collect`)与 VM safe point 触发。
 - `new_object` 在分配**之前** `maybe_collect()`,新对象尚不存在,无虞。
-- 成员声明顺序:基本类型在前,`List` 在后。成员析构逆序 -> `List` 先析构(其 dtor 不碰 `bytes_allocated_`,无依赖)。
+- 成员声明顺序:基本类型在前,`List`(scratch)/`InternPool`/tracer 在后。成员析构逆序 -> scratch `List` 先析构(其 dtor 不碰 `bytes_allocated_`,无依赖)。
 - `~GC` 调 `free_all_()` 释放所有残留对象。
 - **GC 禁用锁**:`u32 lock_count_` 计数器(单线程,非 mutex--无竞争且 mutex 非递归会死锁;非裸 bool--不支持嵌套)。`disable_gc`/`enable_gc` 增减计数,`>0` 即禁用;嵌套自然支持。检查点在 `collect()`(单一咽喉):`maybe_collect` 与显式 `collect()` 都经此,锁住时均跳过。RAII `LockGuard`/`make_lock()` 保证 disable/enable 配对(临界区异常/提前返回也能恢复)。用于临界区(如 finalizer 执行、堆结构变动中)禁止回收。
 
@@ -137,15 +145,14 @@ private:
 ```cpp
 class GC;   // 前向声明(trace 形参用)
 
-// 指针地址哈希(对象身份哈希):fmix64 截断 32 位。
-[[nodiscard]] u32 address_hash(const void* p) noexcept;
+// 指针地址哈希(对象身份哈希):util::hash_addr,定义于 util/util.hpp(Vigna lowbias32),Object.hpp include 复用。
 
 class Object {
 public:
     Object() = delete;
     // 内容哈希型(ObjString/ObjRange 等不可变对象):显式传算好的内容哈希。
     Object(u32 hash, ObjType type) noexcept;
-    // 地址哈希型(可变对象默认):hash_ = address_hash(this)。
+    // 地址哈希型(可变对象默认):hash_ = util::hash_addr(this)。
     Object(ObjType type) noexcept;
     // ... type() / is_marked() / mark() / unmark() / is<T> / as<T> / 成员 next_ hash_ type_ is_marked_ ...
     [[nodiscard]] u32 hash() const noexcept;              // 返回缓存哈希(内容或地址,构造时定)
@@ -159,7 +166,7 @@ public:
 
 - 内容哈希型(`ObjString`/`ObjRange`):`Object{content_hash, Kind}`。ObjString 现状已是(FNV-1a)。
 - 地址哈希型(可变对象):`Object{Kind}`(内部 `hash_ = address_hash(this)`)。`this` 在 ctor init list 仅取地址,合法。
-- `address_hash`:fmix64 截断 32 位;对象 16 字节对齐(低位冗余),经混合分散。
+- 地址哈希:`util::hash_addr`(`util/util.hpp`,Vigna lowbias32);对象 16 字节对齐(低位冗余),经混合分散。
 
 > 为何不把 `hash_` 移出 Object、改用 `object_hash(o)` 按类型分发?实测:去掉 `Object::hash_` 后 Object 仍 24(对齐填充吃掉 4 字节,没省),而 ObjString 需自带 `hash_` -> 56 涨到 64(多态基类尾部 padding 不被派生类复用)。移出是 ObjString 的内存回退(+8/串),故保留 `hash_` 于 Object。
 
@@ -211,7 +218,7 @@ ObjString* new_string(GC& gc, StringView src);    // = gc.new_object<ObjString>(
 
 ```
 collect():
-  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + main_ctx_ 值栈/帧;已前拉)
+  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + builtins_ + current_ 沿 previous_ 执行链各上下文值栈/帧/挂起错误寄存器)
   trace_gray_()    // gray 栈弹一个 -> o->trace(*this) -> 子节点标灰入栈
   sweep_()         // 遍历 objects_head_:未标 -> 摘除 + delete_object();已标 -> unmark()
   next_gc_ = bytes_allocated_ * 2
@@ -278,8 +285,10 @@ endif()
 > 1. **trace 放 AriaHashTable,非 HashTable**:下文 HashTable 段画了 `trace`(直访 `ctrl_`/`entries_`)。实际为守住「`src/memory/` 值无关」分层,`HashTable` **不** include `Value.hpp`、无 `trace`;改提供 public `for_each_occupied(Fn&&)`,`AriaHashTable::trace` 经它调 `mark_value`。`AriaArray::trace` 同理(直接遍历 `Array<Value>`)。
 > 2. **`upsert` 替代 find+insert**:下文示意「调用方先 `find` 查重,未命中才 `insert`」。实际 `HashTable` 提供 `Entry* upsert(const K&)`(find-or-insert,命中返回已有 Entry 保留其 value,未命中插入 `value=V{}`),消除「必须先 find」前置条件与重复插入风险;另提供只读 `find` 与 `erase(key)`。
 > 3. **ValueHash/ValueEq provisional 落地**:下文说这两个 functor「随 ObjMap 落地」(Phase 3)。但 Phase 2 要让 `AriaHashTable` 可编译可测,故提供 provisional 版(基于两表示共有的 `type()`/`as_*()`,**不**用 NanBoxing 专属的 `bits()`/`same_bits()`--TagValue 未提供,故两表示都编译):Obj 用 `as_obj()->hash()`(ObjString 即内容 FNV-1a)/ 指针相等(intern 后等价内容同指针)。provisional 点(int 1 vs f64 1.0 不同键、f64 NaN 未规范化)留 Phase 3 随 ObjMap 精化。**值操作收口于 Value 层**:`value_hash`/`value_equal` 自由函数声明在 `value/Value.hpp`、定义在 `value/Value.cpp`(`<bit>`/`Object.hpp` 依赖置于 `.cpp`,不污染被广泛 include 的 `Value.hpp`);`ValueHash`/`ValueEq` 为 `AriaHashTable.hpp` 内的内联包装(仅 AriaHashTable 用,转发到自由函数)。
-> 4. **GC↔InternPool 头循环**:GC 持 `InternPool` 值成员(GC.hpp 需 InternPool 完整),InternPool 方法用 `gc_->allocate`(需 GC 完整)。解法同 `Object.hpp` 对 GC 的处理:`InternPool.hpp` 只前向声明 GC/ObjString、声明类与方法,实现统一在 `InternPool.cpp`(include `GC.hpp`+`ObjString.hpp`)。InternPool 非模板、不可移动(GC 不可移动,无需)。
+> 4. **GC↔InternPool 头循环**:GC 持 `InternPool` 值成员(GC.hpp 需 InternPool 完整),InternPool 方法用 `gc_->allocate`(需 GC 完整)。现行解法:InternPool 为 header-only 模板 `InternPool<Alloc = GC>`,头循环靠模板延后具现化 + ctor 函数体内 `static_assert` 打破(同 `Object.hpp` 对 GC 的处理)。
 > 5. **GC 暴露 `intern_find`/`intern_insert`** 委托 `intern_`(保持 private),`new_string` 经此驻留。`collect` 在 `trace_gray_` 后、`sweep_` 前调 `intern_.remove_white()`。
+> 6. **`find` 内部算哈希**:下文设计 `find(const K&, u32 hash)` 收哈希参数;实际 `find(const K&)`/`upsert` 内部调 HashFunctor 算哈希,调用方免传。
+> 7. **判满公式**:`(count_ + tombstones_ + 1) * 8 > cap_ * 7`(含本次插入),非下文示意 `count_ + tombstones_ > cap_ * 7/8`。
 
 #### 文件位置与分层
 
@@ -446,7 +455,7 @@ class InternPool {
 | 文件 | 说明 |
 | :--- | :--- |
 | `src/memory/HashTable.hpp` | 通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq>`(header-only,值无关,`upsert`/`find`/`erase`/`for_each_occupied`) |
-| `src/memory/InternPool.hpp` / `.cpp` | 字符串驻留池(低位标签,weak root;头循环经前向声明 + .cpp 打破) |
+| `src/memory/InternPool.hpp` | 字符串驻留池(低位标签,weak root;header-only 模板,头循环经模板延后具现化 + ctor `static_assert` 打破) |
 | `src/value/AriaArray.hpp` | `AriaArray : public Array<Value>` + `trace` |
 | `src/value/AriaHashTable.hpp` | `AriaHashTable : public HashTable<Value,Value,ValueHash,ValueEq>` + `trace`;含 `ValueHash`/`ValueEq` 内联包装(转发到 value_hash/value_identical,哈希键用 ===) |
 | `src/value/Value.hpp` / `.cpp` | 值操作收口:`value_hash`/`value_equal` 自由函数(声明在 .hpp,定义在 .cpp;`<bit>`/`Object.hpp` 置于 .cpp) |
@@ -465,7 +474,7 @@ class InternPool {
 
 ### Phase 4:Movement + VM 根
 
-> **已前拉部分(开发期即启用 GC)**:值栈 `[base, top)` + 各活动帧 `function`/`module` 已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、open upvalue 链、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point。
+> **已前拉部分(开发期即启用 GC)**:`modules_` + `builtins_` + `current_` 沿 `previous_` 执行链各上下文的值栈 `[base, top)`/各活动帧 `function`/`module`/挂起错误寄存器已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、open upvalue 链、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point。
 
 - `Movement`(协程单元,作 Object 子类型):持 `Array<Value> value_stack_`、`FrameStack<CallFrame> frames_`、`ObjUpvalue* open_upvalues_`、`MovementState`。`trace()` 遍历值栈/帧/upvalue/`previous_`/挂起错误寄存器(对标 Wren `blackenFiber`)。
 - VM 持 `Movement* current_`(唯一 VM 级协程根)。`mark_roots_` 保留 `current_ -> previous_` 链遍历直标(main_ctx_ 不入堆、非对象,运行中协程的 `previous_` 指向它时对象图不可达,只能链遍历覆盖);挂起协程因 yield/完成解链(`previous_` 恒空)经用户持有的协程值走对象图(M6 定稿,取代早期「`movements_` 列表并集标根」方案,见 vm-design.md §4.9)。

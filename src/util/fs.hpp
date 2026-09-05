@@ -155,6 +155,8 @@ namespace aria::fs {
     } // namespace detail
 
 
+    // 以 seekg(end)+tellg 探测大小后一次读入：对报告 st_size=0 的特殊文件（/proc、sysfs 等）
+    // 会静默得到空串而非报错，本函数面向常规文件（源码加载）。
     [[nodiscard]]
     inline Result<String, FsErrCode> read_file(const StringView path) {
         auto file = std::ifstream{String{path}, std::ios::in | std::ios::binary};
@@ -202,7 +204,7 @@ namespace aria::fs {
         return stdfs::path{exe.value()}.parent_path().string();
     }
 
-    // 参数：路径A。返回A的绝对路径（仅按当前工作目录补全，不解析符号链接与 "."/".."）
+    // 返回绝对路径（仅按当前工作目录补全，不解析符号链接与 "."/".."）
     [[nodiscard]]
     inline Result<String, FsErrCode> absolute(const StringView path) {
         std::error_code ec;
@@ -240,7 +242,7 @@ namespace aria::fs {
             abs_p = stdfs::path{*abs};
         }
         String name = abs_p.filename().stem().string(); // 剥最后一个扩展名（.aria -> 模块名）
-        String dir  = abs_p.parent_path().string();     // dirname
+        String dir  = abs_p.parent_path().string();
         return {std::move(name), std::move(dir)};
     }
 } // namespace aria::fs

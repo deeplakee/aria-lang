@@ -4,8 +4,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前状态
 
-- **已落地**：util 工具层（fs / utf8 / source_file / io）、value 层（NaN-boxing / TagValue 可切换）、error 层、compile 层（Token / Lexer / AST / Parser / AstVisitor）、字节码层（OpCode / CodeUnit / Disassembler）、字节码编译器 CodeGen（42 个 `visitXxxNode` 全 override）、GC Phase 1 + Phase 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule。
-- **进行中**：AriaVM M2（模块表 + 源根列表 + VM 根 tracer + 全局 `DEF/LOAD/STORE_GLOBAL` + `IMPORT` 路径解析/命中复用；磁盘加载 / 被导入模块编译 / run-once 待续）。
+- **已落地**：util 工具层（fs / utf8 / source_file / io / util / cli）、value 层（NaN-boxing / TagValue 可切换）、error 层、compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、字节码层（OpCode / CodeUnit / Disassembler）、字节码编译器 CodeGen（42 个 `visitXxxNode` 全 override）、GC Phase 1 + Phase 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / 全局 `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错位置标注）。
 - **待续**：M3 异常 try/catch、M4 闭包、M5 类、M6 协程。
 
 ## 构建
@@ -39,15 +38,16 @@ ctest --test-dir build --output-on-failure
 
 ```
 src/
-  util/      fs / utf8 / source_file / io / util 工具（多 header-only）
+  main.cpp / interpreter.hpp / interpreter.cpp   CLI 入口与分发
+  util/      fs / utf8 / source_file / io / util / cli 工具（多 header-only）
   value/     Value（NanBoxing / TagValue）/ AriaArray / AriaHashTable
   error/     ErrorCode / Error / AriaException
-  compile/   Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen
-  bytecode/  OpCode / CodeUnit / Disassembler
-  object/    Object / ObjString / ObjFunction / ObjNativeFn / ObjModule
+  compile/   Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler
+  bytecode/  code.hpp（OpCode）/ CodeUnit / Disassembler
+  object/    Object / ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException
   memory/    Buffer / Array / Allocator / HashTable / InternPool / GC
-  runtime/   FrameStack / Movement / AriaVM
-tests/      Google Test 单测
+  runtime/   FrameStack / Movement / AriaVM / Builtins
+tests/      Google Test 单测（按 tests/<module>/ 分目录）
 bench/      性能基准（独立可执行）
 third/      isocline（REPL）
 docs/       grammar.txt（语言文法规范）
@@ -55,7 +55,7 @@ docs/       grammar.txt（语言文法规范）
 
 ## 进一步阅读
 
-- `CLAUDE.md` -- 项目规则、进度、构建 / 命名 / 类型 / 错误处理等通用约定（常驻上下文）。
+- `CLAUDE.md`（根目录 `AGENTS.md` 为其软链，ZCode 指令入口同源）-- 项目规则、进度、构建 / 命名 / 类型 / 错误处理等通用约定（常驻上下文）。
 - `CPP_Naming_Convention.md` -- C++ 命名规范。
 - `.claude/rules/` -- 按源码目录拆分的模块参考（带 `paths:` frontmatter，读对应源码时自动加载）。
 - `.claude/reference/` -- 深度设计文档（GC 计划、VM 设计、指令集、import 处理、lowering 等，按需阅读）。

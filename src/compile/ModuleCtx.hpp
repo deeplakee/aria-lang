@@ -34,7 +34,8 @@
 // reset()、~CodeGen 自动释放），无需 move。
 //
 // 设计上 gc_（共享引用）留 CodeGen：跨编译/运行共享，非模块状态。首错经 AriaCompileException 抛
-// 出即 unwind（CodeGen 无 error_ 成员），天然「整个 pass 的第一个错停住」--将来一次 pass 编译多模块时模块 1 的异常即中断整 pass。
+// 出即 unwind（CodeGen 无 error_ 成员），天然「整个 pass 的第一个错停住」--将来一次 pass 编译多模块时模块 1
+// 的异常即中断整 pass。
 
 #include "type.hpp"
 
@@ -47,7 +48,7 @@ namespace aria {
     // 模块编译上下文（一次性）。详见上方类注释。
     class ModuleCtx {
     public:
-        ModuleCtx() = delete; // CodeGen 值成员空态（未开始编译）
+        ModuleCtx() = delete; // 必须绑定 module 构造（一次性实例，经 UPtr<ModuleCtx> 持有）
 
         // 一次性构造：绑定模块句柄 + 创建入口 fn 上下文（就 m.entry()，new 分配）并就位游标；
         // ASSERT m.entry() 非空（调用方须先 set_entry）。定义于 .cpp。

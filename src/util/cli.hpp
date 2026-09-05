@@ -102,8 +102,8 @@ namespace aria::util {
             program_name_{program_name}, description_{}, defs_{}, long_index_{}, short_index_{} {
             register_builtin_help();
         }
-        // 值类型：defs_ 等皆值容器、无 raw 指针 -> 默认析构/拷贝/移动均正确（可安全拷贝/移动）。
-        // auto parser = Cli{...} 及建造者链无约束；不再需要继承多态时代的 =delete。
+        // 值类型：defs_ 等皆值容器、无 raw 指针 -> 默认析构/拷贝/移动均正确，
+        // `auto parser = Cli{...}` 及建造者链无约束。
 
         // 注册布尔开关：--verbose / -v（short_name 传 '\0' 表示无短名）
         Cli& add_flag(const StringView long_name, const StringView description, const char short_name = '\0') {
@@ -370,10 +370,11 @@ namespace aria::util {
 
             if (defs_[idx].kind_ == Slot::Flag) {
                 result.slots_[idx].state = Slot::Flag;
+                // 按名短路 help 的安全性依赖保留名纪律：--help/-h 已被内置 help 占用，
+                // 用户同名注册经 register_name 的 ASSERT 拒绝，故不会误伤用户 flag。
                 return opt_name == kHelpLongName ? Step::ShortCircuit : Step::Continue;
             }
 
-            // option：内联值（--name=value）或下一参数（--name value）
             if (eq_pos == StringView::npos) {
                 if (i + 1 >= args.size()) {
                     return std::unexpected(std::format("option --{} requires a value", opt_name));
@@ -403,12 +404,11 @@ namespace aria::util {
                 if (defs_[idx].kind_ == Slot::Flag) {
                     result.slots_[idx].state = Slot::Flag;
                     if (c == kHelpShortName) {
-                        return Step::ShortCircuit;
+                        return Step::ShortCircuit; // 保留名纪律同 parse_long
                     }
-                    continue; // 置位后继续扫描下一字符
+                    continue;
                 }
 
-                // option：值为当前参数余下部分（-oFILE）或下一参数（-o FILE）
                 if (j + 1 < arg.size()) {
                     result.slots_[idx].value.assign(arg.substr(j + 1));
                 } else if (i + 1 < args.size()) {
@@ -419,7 +419,7 @@ namespace aria::util {
                 result.slots_[idx].state = Slot::Option; // 已提供（含 -o 后空串）
                 return Step::Continue;                   // 取值后结束本组（余下字符已作值）
             }
-            return Step::Continue; // 全 flag 簇扫描完毕
+            return Step::Continue;
         }
 
         // 位置参数：填入 defs_ 中首个「空且种类为 Positional」的槽；无则收进 extra。
@@ -431,7 +431,7 @@ namespace aria::util {
                 if (defs_[k].kind_ == Slot::Positional && result.slots_[k].state == Slot::Empty) {
                     result.slots_[k].value.assign(arg);
                     result.slots_[k].state = Slot::Positional;
-                    return; // 命中首个空 Positional 槽即完
+                    return;
                 }
             }
             // 所有 Positional 槽均已填 -> 超额，收进 extra（如转发给脚本的剩余参数）

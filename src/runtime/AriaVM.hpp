@@ -15,9 +15,10 @@ namespace aria {
     class ObjNativeFn;
 
     // interpret 结果：编译并执行的结局类别（对齐 clox InterpretResult）。
-    // interpret / interpret_from_path 内部已把错误渲染到 stderr（此时 SourceFile 仍存活，SourceLoc 有效），
-    // 故只回类别、不回 Error--避免内部构造/读盘的 SourceFile 在方法返回后销毁致 Error 的 SourceLoc 悬垂。
-    // 低层 run(ObjFunction*) / run(SourceFile&, ObjModule&) 仍返 Result<Value, Error>，供需要值/错误细节的调用方。
+    // interpret / interpret_from_path 内部已把错误渲染到 stderr，故只回类别、不回 Error--
+    // turnkey 场景调用方只要成败类别；Error 自有完整消息串、与内部构造/读盘的 SourceFile 解耦，
+    // 返回后 SourceFile 销毁亦无碍。低层 run(ObjFunction*) / run(SourceFile&, ObjModule&) 仍返
+    // Result<Value, Error>，供需要值/错误细节的调用方。
     enum class InterpretResult : u8 {
         Ok,           // 编译并执行成功
         CompileError, // 编译失败（词法 / 语法 / 语义）
@@ -32,16 +33,18 @@ namespace aria {
     //        RETURN/HALT/PRINT。闭包/全局/异常/模块/类/协程后续阶段接入。
     //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
     //        直标代替 Movement 升 Object;open upvalues 留待 M4)。循环状态全部取自 *current_
-    //        (现为 main_ctx_),按可重入风格写 -- 协程期 resume 即换 current_ 重入,循环体无静态/成员临时。
+    //        (现指 main_ctx_),无循环级 C 局部工作副本 -- M6 单循环切换模型(Wren 式)下
+    //        resume/yield 在 CALL 善后点换 current_、循环自然驱动新上下文,run_ 永不重入。
     //
     //        M2 新增:模块表(modules_,解释器级共享)+ 经 std::function 回调纳入 GC 根(组合而非继承:
-    //        GC 不识 VM 类型,VM 构造时把标记 lambda 注册进自己的 gc_ -- [this] 捕获,内部 trace
-    //        modules_。比「函数指针 + void* ctx + 静态 thunk」干净:无适配器、无 void*、无
+    //        GC 不识 VM 类型,VM 构造时把 tracer lambda 注册进自己的 gc_ -- [this] 捕获。
+    //        比「函数指针 + void* ctx + 静态 thunk」干净:无适配器、无 void*、无
     //        static_cast,标记逻辑直写进 lambda。[this] 仅一指针,落在 std::function SBO 内零堆分配)。
     //        模块表键为规范路径 ObjString*(intern),值为 ObjModule*(均装箱为 Value 入 AriaHashTable,
-    //        白赚 trace)。collect 时 GC 调 lambda -> modules_.trace 标全部模块(进而 trace 各模块
-    //        name_/dir_/entry_/globals_)。IMPORT 已部分落地(路径解析 + 模块表命中复用;磁盘加载/编译/run-once
-    //        未就绪);DEF/LOAD/STORE_GLOBAL 已落地。
+    //        白赚 trace)。collect 时 tracer 标 modules_(进而各模块 name_/dir_/entry_/globals_)
+    //        + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/帧/挂起错误寄存器。
+    //        IMPORT 全链已落地(路径解析 -> 命中复用;未命中 load_module:读盘 -> 编译 -> run-once);
+    //        DEF/LOAD/STORE_GLOBAL 已落地。
     //
     //        VM 持有自己的 GC(值成员 gc_):每个 VM 一个 GC,无需外部注入。成员声明序
     //        gc_ -> main_ctx_ -> current_(指 &main_ctx_) -> modules_(后者引用 &gc_),故析构
@@ -80,12 +83,11 @@ namespace aria {
         Result<Value, Error> run(SourceFile& source, ObjModule& module);
 
         // 编译并执行源码字符串（interpret）：构造 SourceFile（名 <script>）+ 合成入口模块（名 <script>、
-        // root=cwd）-> 编译 -> 执行。错误渲染到 stderr，返回 InterpretResult（不返 Error，避免内部
-        // SourceFile 返回后悬垂，见上枚举注释）。
+        // dir_=cwd）-> 编译 -> 执行。错误渲染到 stderr，返回 InterpretResult（不返 Error，见上枚举注释）。
         InterpretResult interpret_from_src(StringView src);
 
         // 编译并执行源文件（interpret_from_path）：SourceFile::from_path 读盘（失败渲染并返 LoadError）
-        // + 按路径派生入口模块（name=basename 去 .aria、root=dirname(absolute(path))）-> 编译 -> 执行。
+        // + 按路径派生入口模块（name=basename 去 .aria、dir_=dirname(absolute(path))）-> 编译 -> 执行。
         // 错误渲染到 stderr，返回 InterpretResult。
         InterpretResult interpret_from_path(StringView path);
 

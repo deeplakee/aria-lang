@@ -52,7 +52,6 @@ namespace aria {
             return loc_;
         }
 
-        // parser 在构造后修补位置用（如区间合并）。
         void set_loc(SourceLoc loc) noexcept { loc_ = loc; }
 
         // 行号（1-based；空态 / 无效为 0，不做兜底，直接取 loc 原值）。
@@ -120,8 +119,8 @@ namespace aria {
     namespace Op {
         // 二元运算符：覆盖 logic_or/logic_and/equality/comparison/term/factor 各层。
         enum class Binary : u8 {
-            Or,              // or / ||
-            And,             // and / &&
+            Or,              // ||
+            And,             // &&
             EqualEqual,      // ==
             EqualEqualEqual, // ===
             BangEqual,       // !=
@@ -137,10 +136,10 @@ namespace aria {
             Percent,         // %
         };
 
-        // 一元（前缀）运算符：unary 产生式中的 - / ! / not / ++ / --。
+        // 一元（前缀）运算符：unary 产生式中的 - / ! / ++ / --。
         enum class Unary : u8 {
             Minus,  // -
-            Not,    // ! / not
+            Not,    // !
             PreInc, // ++（前置）
             PreDec, // --（前置）
         };
@@ -665,8 +664,8 @@ namespace aria {
         UPtr<ExprNode> rhs;
     };
 
-    // 一元（前缀）表达式：- / ! / not / ++ / -- 作用于后续 unary。
-    // 前置 ++/-- 作用于后续 value，左值合法性留语义阶段。
+    // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary（Parser 递归下降，
+    // 与 grammar.txt 的 unary 产生式一致），左值合法性留语义阶段。
     struct UnaryExprNode : ExprNode {
         UnaryExprNode(SourceLoc loc, Op::Unary op, UPtr<ExprNode> operand) :
             ExprNode{loc}, op{op}, operand{std::move(operand)} {}

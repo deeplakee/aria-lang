@@ -16,7 +16,7 @@ namespace aria {
     //
     //   is_long() 由 length_ > kShortCapacity 派生(不存标志位,省 1 字节 + 填充)。
     //   trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。
-    //   持 GC* gc_ 供 ~ObjString 释放 long_chars_(替代 destroy 钩子:子内存释放统一走虚析构)。
+    //   持 GC* gc_ 供 ~ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。
     //
     //   Phase 2 起接 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,
     //   未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
@@ -25,7 +25,7 @@ namespace aria {
         static constexpr usize kShortCapacity = 15;
 
     private:
-        GC* gc_; // 供 ~ObjString 释放 long_chars_
+        GC* gc_; // 供 ~ObjString 释放 long_chars_(仅长串用到)
         union {
             char  short_chars_[kShortCapacity + 1]; // 16 字节,与 char* 取大
             char* long_chars_;
@@ -36,6 +36,9 @@ namespace aria {
         ObjString(GC& gc, StringView src);
         ~ObjString() override;
 
+        // 借出内容视图:指向 SSO 内联 buffer 或 long_chars_。非移动 GC 对象地址与缓冲恒定,
+        // view 在 ObjString 存活期内有效;但串被 sweep 回收后 view 即悬垂,勿长期持有跨 collect
+        // 的 view(经 intern 持串则随持串者保命)。
         [[nodiscard]]
         StringView view() const noexcept;
 
@@ -53,7 +56,6 @@ namespace aria {
             return length_;
         }
 
-        // 短串内联 / 长串独立 buffer,由 length_ 派生(不存标志位)。
         [[nodiscard]]
         bool is_long() const noexcept {
             return length_ > kShortCapacity;

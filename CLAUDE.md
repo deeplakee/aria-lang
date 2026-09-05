@@ -1,14 +1,57 @@
 # CLAUDE.md
 
-aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算支持 Windows / Linux / macOS）。当前进度：util 工具层（fs / utf8 / source_file / io / util / cli）与 value 层（NaN-boxing / TagValue 可切换）已就绪；error 层（ErrorCode / Error / AriaException / fatal_error）与 compile 层（Token / Lexer / AST / Parser）已实现；`OpCode` 枚举与 `FrameStack` 模板就绪；GC Phase 1 + Phase 2 已落地（详见 `.claude/reference/memory/gc-implementation-plan.md`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表）；AriaVM M2 进行中（模块表 + 源根列表 + VM 根 tracer（标 `modules_` + `main_ctx_` 值栈/帧，**开发期即开 GC**：`run()`/`compile()` 不再持 `LockGuard`，`JUMP_BACK` 为 safe point；`compile()` 以 `make_guard(&module)` 根化建设中函数链，CodeGen 各 name 串跨子编译 `make_guard`）+ 全局指令 `DEF/LOAD/STORE_GLOBAL` + `IMPORT` 路径解析/模块表命中复用已落地，**模块磁盘加载/AST->CodeUnit 编译/run-once 已落地**（IMPORT 未命中分支:读盘 -> 编译(入口名 `<module>`) -> 入表 Loading -> 以 entry 作普通 0 参函数调用进帧交主循环执行;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、置该模块 Loaded、改压模块对象,即「模块体返回模块」,命中/未命中栈效应统一；被导入模块编译期/运行期错误原样透传含其文件位置）），M3+（异常 try/catch、闭包、类、协程）仍为骨架；Object 子类型已落地 `ObjString`/`ObjFunction`/`ObjNativeFn`/`ObjModule`，其余未开始；`AstVisitor` 访问者基类已落地；字节码编译器 `CodeGen`（`AstVisitor` 具体子类，单遍合一：名字解析 + 语义检查 + 字节码发射）已落地--42 个 `visitXxxNode` 全 override，核心特性（算术/比较/逻辑短路/局部与全局/控制流/函数与递归/lambda/复合赋值/前置自增自减/import/for-in lowering）完整发射字节码，依赖未落地 VM 里程碑的特性（类/异常/闭包/list/map/field/index/match/range）占位 `NotImplemented`（编译期 Error），随 VM M3/M4/M5 推进逐个翻为真实发射。VM M1 主循环跑通、`Disassembler` 已落地。
+aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标支持 Windows / Linux / macOS）：栈式字节码 VM + 单遍合一的字节码编译器 + mark-sweep GC，开发期即开 GC。本文件只收**跨阶段通用规则**与文档索引；模块细节一律按需加载（见下「文档与参考」），不要在本文件里展开。
 
-> **模块参考与设计文档已拆出 CLAUDE.md**：各源码目录的模块参考在 `.claude/rules/`（带 `paths:` frontmatter，读对应源码时自动加载），设计文档在 `.claude/reference/`（按需 Read，不自动加载），语言文法 `grammar.txt` 留在 `docs/`。详见下「文档与参考」节。根目录 `AGENTS.md` 是本文件的软链，作为 ZCode 的工作区指令入口（内容同源，单一事实源）。
+## 当前进度
+
+- **已落地**：util / value / error / compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、bytecode 层（OpCode / CodeUnit / Disassembler）、GC Phase 1 + 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错带 `path:line: ` 位置标注）。
+- **骨架待落地**：M3 异常 try/catch、M4 闭包、M5 类、M6 协程；CodeGen 对应特性占位 `NotImplemented`（编译期 Error），随 VM 里程碑逐个翻为真实发射。
+- 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
+
+## 文档与参考（按需加载）
+
+### 模块参考 `.claude/rules/<dir>.md`（9 个，自动加载）
+
+frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读则不进上下文：
+
+| 源码目录 | 参考文件 | 覆盖 |
+| --- | --- | --- |
+| `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / main(解释器入口) / interpreter(CLI 分发核心) |
+| `src/util/**` | `.claude/rules/util.md` | fs / utf8 / source_file / io / util / cli |
+| `src/value/**` | `.claude/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
+| `src/error/**` | `.claude/rules/error.md` | ErrorCode / Error / AriaException |
+| `src/compile/**` | `.claude/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
+| `src/bytecode/**` | `.claude/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
+| `src/runtime/**` | `.claude/rules/runtime.md` | FrameStack / Movement / AriaVM / Builtins（含异常通道落地状态） |
+| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException |
+| `src/memory/**` | `.claude/rules/memory.md` | Buffer / Array / Allocator / HashTable / InternPool / GC |
+
+### 深度设计文档 `.claude/reference/`（不自动加载，需要时 Read）
+
+- `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
+- `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
+- `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
+- `runtime/exception-implementation-pitfalls.md` -- M3 异常（try/catch/throw）踩坑归档，实现 M3 前必读。
+- `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
+- `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
+
+### 语言文法 `docs/grammar.txt`
+
+手写文法规范。Lexer / Parser 的实现应与其保持一致，改文法时同步更新相关代码与测试。（注意「语言规范」与「解析器实现蓝图」两种视角可能存在差别，但描述的语法规则一致。）
+
+### 软链接现状（单一事实源）
+
+- 根目录 `AGENTS.md` **软链** → `CLAUDE.md`：ZCode 的工作区指令入口与本文件同一内容，修改只改本文件。
+- `.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个相对软链）：ZCode 把同一份规则文件暴露为技能，按 frontmatter `description` 自动触发；`paths:` 字段仅 Claude Code 消费。util/value/error/compile/bytecode/runtime/object/memory 与规则文件同名，`core.md` 对应技能 `aria-core`。
+- 即两套 agent（Claude Code / ZCode）共享同一份本体文件，仓库内**无内容副本**。新增模块规则：建 `.claude/rules/<dir>.md`（frontmatter 带 name/description/paths），并补一条 `.zcode/skills/aria-<dir>/SKILL.md` 相对软链。
+
+> 同步义务：改模块代码时同步更新对应 `.claude/rules/<dir>.md`；改设计时同步 `.claude/reference/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
 
 ## 构建
 
 - CMake ≥ 3.20，C++23。clang++ / clang-format / clangd 均已在 PATH 中，可直接调用。在 `build` 目录中进行构建。
 - 单文件语法检查必须带 `-I src`，否则 `common.hpp`/`type.hpp` 找不到：
-  ```powershell
+  ```sh
   clang++ -std=c++23 -I src -fsyntax-only <file>
   ```
 - 依赖 `third/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
@@ -21,18 +64,14 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 
 ## 错误处理（src/error/）
 
-错误体系：`ErrorCode`/`ErrorCategory`（普通 `enum class : u8`，各 1 字节）、`Error`（仅 `ErrorCode code_` + `String message_` 两字段；**不持 `SourceFile*` 裸指针**--`message_` 构造期一次性烘焙为完整可读串 `"path:line:col: Category: Name detail"`（无位置则 `"Category: Name detail"`），构造后与 `SourceFile` 解耦、无悬空风险。`SourceLoc`=`SourceFile*`+`LineCol` 仍作 `Error` 构造参数类型与 `Token`/AST 节点的位置载体，`Error` 构造后不再持有它。**不保留结构化位置**：位置烘进 `message_` 即丢弃，解释器不做多错误按位置排序/去重）、`AriaException` 派生类（`AriaCompileException`/`AriaRuntimeException`，持 `Error`）、`fatal_error()`（`[[noreturn]]`，打印后 `std::exit`）。
+原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.claude/rules/error.md`（读 `src/error/**` 时自动加载）。
 
-- **核心原则：内部用码，边界用 Error。**
-  - **`ErrorCode`（1 字节，纯码）** 用于解释器**内部**判定：不变式断言/不可恢复检查（`fatal_error(ErrorCode::Unreachable, ...)`）、分类与状态机分支（`switch (e.code())`、`e.code() == ErrorCode::X`）、不需要位置/消息的简单结果标志、错误码到操作的映射。即「只关心发生了什么类型的错，不关心在哪、细节」的场合。
-  - **`Error`（带码+位置+源文件+消息）** 用于错误**出门**：跨阶段传递的最终载体（当前实例：`Lexer::tokenize() -> Result<List<Token>, List<Error>>`（词法错误恢复式收集）、`Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`（语法错误 panic-mode 恢复式收集）；后续 `Result<CodeUnit, Error>` 等随编译器推进再加入）、异常构造（`throw AriaCompileException{Error{...}}`）、错误收集与打印（`List<Error>`、`e.message()`）。即词法/语法/语义阶段产出、要报给用户或传到别的阶段的错误。
+- **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 错误码到操作的映射），不关心位置与细节；`Error`（码 + `message_`，位置在构造期一次性烘焙为完整可读串，**不持 `SourceFile*`**，无悬空风险）是**边界与展示**的载体。注意 Error 的位置模型围绕编译期 `SourceLoc`（构造期烘 `path:line:col`），与运行期「装箱点由帧 `last_ip` 查行号表取位置」异位，故**运行期错误不就地构造 Error**，Error 仅在 `run_()` 未捕获出口物化（见通道 2）。
 - **四条错误通道**：
-  1. **`Result<T, Error>` 返回**（项目默认风格，**已落地**）：可恢复错误的常规通道。当前实例：`Lexer::tokenize() -> Result<List<Token>, List<Error>>`（词法错误恢复式收集，见下）、`Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`、`AriaVM::run() -> Result<Value, Error>`。VM `run_()` 主循环内部，操作码处理（如算术 `run_binary_numeric`、`CALL` 经 `call_value`）用 `Result<Value, Error>`/`Opt<Error>` 返回局部成败；成功时 `Error` 部分不构造，开销以 Result 类型尺寸为主。
-  2. **VM 自管异常状态**（**设计目标，M1 部分落地**）：aria 语言的 `throw/catch` 与 VM 检测到的运行时错误（类型不符、越界等）**统一走 VM 自己的机制**--`op` 返回失败 `Error` 后，`run()` 调 `raise` -> 查 **CodeUnit 内异常记录表**定位最近覆盖当前 `ip` 的 `try` 记录，按记录登记的帧/栈深度 `truncate` 回退（unwind），跳到对应 handler。**不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit，每条记录 `try` 起始/结束 `ip` + `handler ip` + `catch` 参数槽等）登记，运行时按 `ip` 查表；比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）且便于反汇编。**不依赖 C++ 异常**（与 Lua/CPython 一致；动态类型语言运行时错误可能频繁，C++ 异常的栈展开代价不可控）。已就绪/尚未实现的清单见 `.claude/rules/runtime.md`「VM 异常通道落地状态」，设计见 `.claude/reference/runtime/vm-design.md` §4.7。
-  3. **`AriaException` 派生**（C++ 异常，**已落地**）：仅用于 **VM 之外、跨 C++ 调用栈**的边界场景--编译期 parser 递归下降深处与 CodeGen 字节码编译器 visit 递归深处（`AriaCompileException`，Parser / CodeGen 均已实现：深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）、REPL/嵌入 API 等顶层流程跨栈传播（`AriaRuntimeException`）。**VM `run()` 主循环内部不用 C++ 异常**（它不跨 C++ 栈、且是热路径）。
-  4. **`fatal_error()`**（`[[noreturn]]`，**已落地**，定义于 `error/Error.hpp`）：不可恢复错误（Internal/Resource 类，如 `Unreachable`/`OutOfMemory`）打印到 stderr 后 `std::exit(1)`。
-- **`AriaException` 与 aria 语言 `throw/catch` 无关**：前者是解释器 C++ 实现内部的错误传播；后者抛的是 aria Value，由 VM 用 `THROW` 操作码 + CodeUnit 内异常记录表实现（设计目标，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见上第 2 条）。不要混淆，也不要用 C++ 异常去实现 aria 语言的 throw。
-- **`Error`（`String`（`message_`，构造期烘焙的完整可读串）+ `ErrorCode`，8 字节对齐；libstdc++ 下 40B、libc++ 下 32B；`message_` 构造期由 `SourceLoc` + 分类名 + 码名 + 细节一次拼成，含 `"path:line:col: "` 前缀或省略）**：报错是冷路径，成功时 `Result` 的 `Error` 部分不构造，故「大」主要影响 `Result` 类型尺寸而非热路径性能。**不保留结构化位置**：`Error` 不存 `SourceLoc`/`LineCol`，位置烘进 `message_` 即丢弃--解释器无需多错误按位置排序/去重，结构化位置只会徒增复杂度与生命期约束（「保留结构化位置供排序」属前期设计，已弃）。接口仅 `code()`/`message()`，无 `format()`/`location()`。
+  1. **`Result<T, Error>` 返回（编译期通道 + VM 边界返回类型）**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错 Result）。VM 侧 `run()`/`interpret` 的 `Result` 仅为未捕获出口的边界返回类型，**不再用于 run_ 内部逐站传播**（过渡态见通道 2）。
+  2. **VM 自管异常状态（运行期主通道）**：aria 的 throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，**错误实体是 `ObjException`**（携 `ErrorCode` + 完整烘焙消息，位置前缀在装箱点由顶帧 `last_ip` 反推 offset 查行号表烘入）。装箱为 Value 存入**当前执行上下文的挂起错误寄存器**（`Movement::pending_error_`，随 `current_` 走、VM 根 tracer 标根）：装箱入口 `AriaVM::raise(code, detail)` 一步烘齐（复用 `Error::make_message` 烘焙单点，不经 Error 对象中转）；原生函数与 `call_value` 族以 bool 成败信号共用（惯用法 `return vm.fail(...)`）。**Error 仅在 `run_()` 返回（未捕获出口）经 `value_to_error` 从寄存器载荷反提构造**（ObjException -> `Error::from_baked` 原样回传；非 ObjException 兜底 `UncaughtException`）。M3 在寄存器之上接 unwind：`THROW` 操作码 + CodeUnit 内**异常记录表**（按帧 `last_ip` 反推 offset 查表，`truncate` 回退跳 handler），**不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码、不依赖 C++ 异常**；现存 run_ 直报站点（`runtime_err` 的 Result 直传，如 `numeric_op`）为过渡形态，M3 统一切入寄存器。落地状态见 `.claude/rules/runtime.md`「VM 异常通道落地状态」，设计见 vm-design.md §4.5-§4.8。
+  3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
+  4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。
 
 ## 工具
 
@@ -82,69 +121,30 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，打算�
 | 类型极长的数据对象 | `auto val = T{...}` | 避免变量名被淹没 |
 | 公共 API / 接口边界 | `T val{...}` | 类型是对外契约的一部分 |
 
-- **基础数据类型**（短类型名，见「类型」节的 `usize`/`i32`/`f64`/`bool` 等别名）优先 `T val = expr`/`T val{...}`，如 `const usize start = pos_;`--类型名本就短，显式写出比 `auto` 直白；与“类型极长”一行形成两端对照（短类型写类型名，长类型让位变量名）。
-- **例外**：右侧是 `static_cast<T>`/`reinterpret_cast<T>` 等类型转换时，左侧统一用 `auto`（类型已在 cast 显式写明，左侧再写 `T` 重复），如 `const auto size = static_cast<usize>(end_pos);`。即使 `T` 是基础类型也用 `auto`，不套用“基础数据类型”那条。
-- **构造用 `{}` 的例外**：大括号会触发 `initializer_list` 窄化或歧义时用小括号，如 `String(size, '\0')` 不能写 `String{size, '\0'}`（`size` 窄化为 `char` 报错），`auto result = String(size, '\0');` 是正确写法。
-- 其余数据对象默认 `auto val = T{...}`（变量名优先）；行为/契约型对象（guard、公共 API）用 `T val{...}`（类型即语义）。
+- 右侧是 `static_cast<T>` 等类型转换时左侧统一用 `auto`，即使 `T` 是基础类型也不套用「基础数据类型」行。
+- 构造用 `{}` 的例外：大括号会触发 `initializer_list` 窄化或歧义时用小括号，如 `String(size, '\0')` 不能写 `String{size, '\0'}`（`size` 窄化为 `char` 报错）。
 - `auto val = expr` 仅用于类型完全由右侧表达式决定的场合（工厂返回、`make_*`、推导），不要为省事对显式构造也用。
-
-## 文档与参考
-
-项目上下文分三层组织（Claude Code 约定对齐 `.claude/` 目录；ZCode 复用同一套内容作单一事实源：指令经根目录 `AGENTS.md` 软链（→ 本文件），模块参考经 `.zcode/skills/aria-<dir>/SKILL.md` 软链（→ `.claude/rules/<dir>.md`，frontmatter 另带 `name`/`description`，按 description 自动触发））：
-
-- **`CLAUDE.md`（本文件）**：常驻上下文 -- 项目概览/进度 + 构建/输出/命名/类型/代码组织等**通用规则** + 错误处理原则 + 陷阱 + 测试。跨阶段通用、必须每次遵守的规则放这里。
-- **`.claude/rules/`**：按源码目录拆分的**模块参考**，每个文件带 `paths:` frontmatter -- Claude 读到匹配路径的源码时**自动加载**对应参考，不读则不进上下文。当前 9 个：`util`/`value`/`error`/`compile`/`bytecode`/`runtime`/`object`/`memory`（各对应 `src/<dir>/**`）+ `core`（对应 `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp` 等顶层文件）。改某模块代码时其参考自动出现，无需手动翻 CLAUDE.md。
-- **`.claude/reference/`**：深度**设计文档**（按主题分类，不自动加载，Claude 需要时按需 Read）：`bytecode/bytecode-instruction-set.md`（指令集：功能/操作数位宽/栈效应）、`memory/gc-implementation-plan.md`（GC 实现计划，Phase 1/2 落地细节）、`runtime/vm-design.md`（AriaVM/执行上下文设计与分阶段路线）、`runtime/import-handling-overview.md`（import 端到端处理概览）、`runtime/import-path-resolution.md`（IMPORT 路径解析细节）、`runtime/exception-implementation-pitfalls.md`（M3 异常 try/catch/throw 实现踩坑归档，下次实现前必读）、`compile/compound-assignment-lowering.md`（复合赋值 lowering 设计）、`compile/loopctx.md`（LoopCtx 结构体与 break/continue 占位回填机制）。
-- **`docs/grammar.txt`**：语言文法（手写规范，留在 `docs/`）。Lexer / Parser 的实现应与 `grammar.txt` 保持一致，改文法时同步更新相关代码与测试。（注意**文法作为「语言规范（Specification）」** 与 **文法作为「解析器实现蓝图（Parser Blueprint）」** 可能存在区别，但两者实际描述的语法规则是一样的。）
-
-> 改模块代码时同步更新对应 `.claude/rules/<dir>.md`；改设计时同步更新对应 `.claude/reference/...`；改文法时同步更新 `docs/grammar.txt` + 代码 + 测试。
-
-## 关键模块
-
-各源码目录的模块参考已按目录拆分到 `.claude/rules/`（带 `paths:` frontmatter，读对应源码时自动加载）：
-
-| 源码目录 | 参考文件 | 覆盖 |
-| --- | --- | --- |
-| `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / main(解释器入口) / interpreter(CLI 分发核心) |
-| `src/util/**` | `.claude/rules/util.md` | fs / utf8 / source_file / io / util / cli |
-| `src/value/**` | `.claude/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
-| `src/error/**` | `.claude/rules/error.md` | ErrorCode / Error / AriaException |
-| `src/compile/**` | `.claude/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor |
-| `src/bytecode/**` | `.claude/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
-| `src/runtime/**` | `.claude/rules/runtime.md` | FrameStack / Movement / AriaVM（含异常通道落地状态） |
-| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjNativeFn / ObjModule |
-| `src/memory/**` | `.claude/rules/memory.md` | Array / Allocator / HashTable / InternPool / GC |
-
-深度设计文档见 `.claude/reference/`（按需 Read，见上「文档与参考」节）。ZCode 中上表各规则经 `.zcode/skills/aria-<dir>/SKILL.md` 软链暴露为技能（与 `.claude/rules/<dir>.md` 为同一文件；`core` 对应 `aria-core`）。
 
 ## 陷阱
 
-- `SourceFile` 的 `content()`/`name()`/`path()` 返回 `StringView`，不得比 `SourceFile` 活得更久；多 `SourceFile` 存容器并已取 `StringView` 后勿再增删致重分配（SSO 改地址）。
-- **`SourceFile` 以指针传入（非拥有）**：`Lexer::tokenize(SourceFile*)` 直接接 `SourceFile*`；`Token` 经 `SourceLoc`（`SourceFile* src` + `LineCol`）持源文件指针（`SourceLoc` 显式构造断言 src 非空、默认构造为空态 src=nullptr），`Token::loc_` 为 `SourceLoc`（空态表无位置）。**`Error` 不在此列**--`Error` 构造期已把 `SourceLoc` 烘进自有 `message_` 串，不再持 `SourceFile*`，故与 `SourceFile` 生命周期解耦。**调用方须保证 `SourceFile` 在所有借出的 `StringView`（`Token::lexeme`）与 `Token::loc_` 内 `SourceLoc::src_` 使用期间存活且地址不变**--尤其注意：`SourceFile` 含 `String content_`，**SSO 短串（短于阈值，如 `"_"`/`"f"`）move 后 data 地址会变**（SSO buffer 跟随对象，move 是逐字节拷贝）。故 token 流持有的指向 `content_` 的 view 与 `Token::loc_` 内 `SourceLoc::src_`，其 `SourceFile` 不得在它们存活期被 move。实践中：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象（如放进 `unique_ptr` 容器或长寿命成员）。`Error` 因已自有位置串，无此约束。
+- `SourceFile` 以指针传入（非拥有）：其借出的 `StringView`（`content()`/`Token::lexeme`）与 `Token::loc_` 内的 `SourceLoc` 须在 `SourceFile` 存活且地址不变期间使用--就位后再 tokenize，之后勿 move（SSO 短串 move 会改 data 地址）。`Error` 位置已烘焙、不受此约束。完整分析见 `.claude/rules/util.md`。
 - 源码加载时 CRLF/CR 已归一化为 LF，`line`/`locate` 内部只按 `\n` 切行。
 
 ## 测试
 
-用 Google Test，位于 `tests/`。GTest 通过 `FetchContent_Declare`（CMakeLists.txt 末尾）下载，配置时联网拉取 `v1.14.0`。
+用 Google Test，位于 `tests/`（按 `tests/<module>/` 分目录）。GTest 通过 `FetchContent_Declare`（CMakeLists.txt 末尾）下载，配置时联网拉取 `v1.14.0`。
 
-- 新增测试：在 `tests/` 加 `test_<module>.cpp`，并在 `tests/CMakeLists.txt` 的 `aria_tests` 源列表里登记。
+- 新增测试：在 `tests/<module>/` 加 `test_<module>.cpp`，并在 `tests/CMakeLists.txt` 的 `aria_tests` 源列表里登记。
 - 测试链接 `aria_core` + `gtest_main`，用 `gtest_discover_tests` 注册到 ctest。
 - 配置 + 构建 + 运行（构建目录用 `build/`，勿占用 IDE 的 `cmake-build-*`）：
-  ```powershell
-  # Windows（clang，MinGW Makefiles 生成器）
-  cmake -S . -B build -G "MinGW Makefiles" `
-        -DCMAKE_CXX_COMPILER=clang++ `
-        -DCMAKE_C_COMPILER=clang
-  ```
   ```sh
+  # Windows（clang，MinGW Makefiles 生成器）
+  cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
   # Linux / macOS（默认生成器，clang++ 或 g++）
   cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-  ```
-  ```powershell
   cmake --build build --target aria_tests -j
   ctest --test-dir build --output-on-failure
   ```
 - 临时文件用 `testing::TempDir()`（gtest 提供）写入，测试结束自动清理。
-- 语法快速检查仍可用 `clang++ -std=c++23 -I src -fsyntax-only`。
 
 `build/` 与 `cmake-build-*` 均已加入 `.gitignore`。

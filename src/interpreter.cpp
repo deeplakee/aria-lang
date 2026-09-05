@@ -80,20 +80,16 @@ namespace aria {
             return 0;
         }
 
-        // --eval：一次性求值字符串后退出。
         if (args.has("eval")) {
             return run_src(args.get("eval").value_or(""));
         }
-        // --repl：显式进入交互式 REPL。
         if (args.has("repl")) {
             run_repl(repl_reader);
             return 0;
         }
-        // <file>：运行脚本文件。
         if (const auto file = args.get("file")) {
             return run_file(*file);
         }
-        // 无参数 -> 默认 REPL。
         run_repl(repl_reader);
         return 0;
     }

@@ -15,7 +15,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## VM 异常通道（throw/catch）落地状态
 
-aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常）：`op` 返回失败 `Error` 后 `run()` 调 `raise` -> 查 CodeUnit 内异常记录表定位最近覆盖当前 `ip` 的 `try` 记录，按记录登记的帧/栈深度 `truncate` 回退（unwind），跳到对应 handler。
+aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常）：`op` 返回失败后 `run()` 调 `raise` -> 查 CodeUnit 内异常记录表定位最近覆盖当前指令（用帧 `last_ip`，非已推进的 `ip`）的 `try` 记录，按记录登记的栈深度 `truncate` 回退（帧深度不存记录，由 unwind 遍历隐式决定），跳到对应 handler。
 
-- **已就绪**：`OpCode::THROW`（`bytecode/code.hpp`）、`FrameStack::truncate`（供 unwind 跨帧，`runtime/FrameStack.hpp`）、`CallFrame`（`runtime/Movement.hpp`）、`AriaVM::run()`（M1 主循环）、`CodeUnit::try_records` + `find_try_handler`（异常记录表 + 按 `ip` 二分查表，`bytecode/CodeUnit.hpp`）、`raise` 的 M1 最小切片（`Movement::pending_error_` 挂起错误寄存器 + `AriaVM::raise/fail`，供原生函数侧信道报错，见 `vm-design.md` §4.7）、`ObjException` 异常对象（`object/ObjException.hpp`，VM 检测错误/原生报错的装箱载荷，M3 起寄存器载荷统一为 Value；现 VM 检测错误的 Result 直传路径（`numeric_op`/`runtime_err`）尚未改走寄存器，M3 统一 raise 时一并切换）。
-- **尚未实现**：`TryRecord` 扩字段（`stack_depth`/`frame_depth`/`catch_slot`，M3 补）、完整 `raise`（查表 + `truncate` unwind + 跳 handler）、`THROW` 的运行时语义。
+- **已就绪**：`OpCode::THROW`（`bytecode/code.hpp`）、`FrameStack::truncate`（供 unwind 跨帧，`runtime/FrameStack.hpp`）、`CallFrame`（`runtime/Movement.hpp`）、`AriaVM::run()`（M1 主循环）、`CodeUnit::try_records` + `find_try_handler`（异常记录表 + 按 `ip` 二分查表，`bytecode/CodeUnit.hpp`）、挂起错误寄存器 + 装箱点（`Movement::pending_error_` + `AriaVM::raise/fail`：原生函数 `vm.fail` 与 `call_value` 族 bool 契约经此报错，由原生侧信道升为运行期主通道，见 `vm-design.md` §4.7）、`ObjException` 异常对象（`object/ObjException.hpp`，VM 检测错误/原生报错的装箱载荷，寄存器载荷为 Value）。**过渡形态**：VM 检测错误的 Result 直传路径（`numeric_op`/`runtime_err` 直报站点）尚未改走寄存器，M3 统一 raise 时一并切换，此后 Error 仅在 run_ 未捕获出口构造。
+- **尚未实现**：`TryRecord` 扩 `stack_depth` 字段（定稿仅此一项：`frame_depth`/`catch_slot` 不入记录，帧深度由 unwind 隐式决定、catch 参数槽走 handler 约定，见 vm-design.md §7 与 pitfalls 坑 #5/#10；M3 补）、完整 `raise`（查表 + `truncate` unwind + 跳 handler）、`THROW` 的运行时语义。

@@ -16,9 +16,8 @@ namespace aria {
     //   模块的绝对文件路径(= VM 模块表查重键)由 dir_ + name_ 合成:dir_ + "/" + name_ + ".aria"。
     //   dir_ 与 name_ 的切分由 fs::module_name_and_dir 按命中文件的绝对规范路径做:
     //   name_ = basename 去 .aria 后缀(stem),dir_ = dirname。即 dir_ 是「模块文件所在目录」,
-    //   name_ 是「模块文件名(去扩展名)」--二者就是路径的 dirname/stem 切分,不依赖源根概念。
-    //   文档早先把 dir_ 描述为「所属源根」、name_ 为「相对源根的多段路径」(如 lib/utils),那是
-    //   设计意图而非实现现状:实现里 name_ 恒为单段 stem。这里按现状命名与注释。
+    //   name_ 是「模块文件名(去扩展名)」--二者就是路径的 dirname/stem 切分,不依赖源根概念
+    //   (name_ 恒为单段 stem,不支持「相对源根的多段路径」语义)。
     //
     //   - name_:模块文件名去 .aria 后缀(stem,intern 驻留,同指针),如 utils。既作显示名
     //     (to_string / 报错渲染),又与 dir_ 一起合成模块的绝对路径(见下);不单独参与模块表查重。

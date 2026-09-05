@@ -9,8 +9,8 @@ namespace aria {
 
     // 字节码反汇编器:把 CodeUnit 字节流解码为可读文本,供调试/调试器/测试核对。
     //
-    //   与 VM 共用「opcode -> 操作数格式」解码约定(.claude/reference/bytecode/bytecode-instruction-set.md §2.1/§8);
-    //   解码表当前内联于 .cpp,VM 落地后可提取共享。
+    //   与 VM 遵循同一「opcode -> 操作数格式」解码约定(.claude/reference/bytecode/bytecode-instruction-set.md §2.1/§8);
+    //   解码实现内联于 .cpp,VM 主循环各持一份,改指令集时两处同步(待提取共享表)。
     //
     //   实例持一个解码游标(codeunit_ + offset_),disassemble() 从头解码整个 CodeUnit;
     //   静态入口 disassembleCodeUnit(codeunit, name) 便捷包装为 `Disassembler{...}.disassemble()`。
@@ -28,7 +28,7 @@ namespace aria {
         [[nodiscard]]
         String disassemble();
 
-        // 静态便捷入口:等价 `Disassembler{codeunit, name}.disassemble()`。
+        // 静态便捷入口:一次性构造并反汇编整个 CodeUnit。
         [[nodiscard]]
         static String disassembleCodeUnit(const CodeUnit* codeunit, StringView name);
 

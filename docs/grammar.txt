@@ -116,8 +116,10 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # 复合赋值求值不变式：E1 op= E2 等价于 E1 = E1 op E2，但左值 E1 只求值一次（C 标准
 # 对 E1 += E2 的定义，非字面展开的两次）。对带副作用左值关键：arr[f()] += 1 中 f()
-# 只调一次，getObj().field += 1 中 getObj() 只调一次。字节码生成须走单次求值 lowering
-# （{ tmp = &lhs; *tmp = *tmp op rhs }），不得将 LHS 子树求值两遍。普通 = 无此约束。
+# 只调一次，getObj().field += 1 中 getObj() 只调一次。字节码生成须走单次求值 lowering--
+# Identifier 左值重解析一遍（名字解析无副作用，locator-once 天然成立），Field/Index 左值
+# 经栈上 DUP/DUP2 保留 locator（见 compound-assignment-lowering.md），不得将带副作用的
+# LHS 子树求值两遍。普通 = 无此约束。
 #
 # 表达式与语句的边界：if/fun/while/for 等既是语句关键字，又能出现在表达式位置
 # （ifExpr、lambdaExpr）。parser 按调用上下文调度--解析 statement 时走语句产生式，
@@ -128,8 +130,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # (含前置 ++/--/!/-) < 后缀调用/取字段/取下标。同层多为左结合；一元右结合；
 # 赋值右结合。相等层含 ==/!=/===/!==（同优先级、左结合）：== 内容相等(value_equal，
 # Int/F64 跨类型 IEEE 数值、Obj 调 Object::equals 虚函数)、=== 严格相等(value_identical，
-# 类型严格、f64 按位、Obj 指针)；!== / === 的否定分别复用 NOT_EQUAL / STRICT_NOT_EQUAL
-# 取反。逻辑运算 (||/&&) 短路求值。前置 ++/-- 作用于后续 value（自增/自减），
+# 类型严格、f64 按位、Obj 指针)；!= / !== 分别为 == / === 的取反（NOT_EQUAL /
+# STRICT_NOT_EQUAL）。逻辑运算 (||/&&) 短路求值。前置 ++/-- 作用于后续 unary（自增/自减），
 # 左值合法性留语义阶段。区间 a..b（含上界）/ a...b（不含上界）产生 range 对象，非结合
 # （a..b..c 非法）；... 兼作 rest/varargs 前缀，按位置消歧。
 #

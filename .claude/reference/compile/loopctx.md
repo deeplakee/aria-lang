@@ -61,7 +61,7 @@ const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);  // 循环结束，�
 
 `break`/`continue` 在循环体内被访问时，总是取 `loop_stack_.top()`（**当前最内层**循环的 `LoopCtx`），往它的 `break_fwd_patches` / `continue_fwd_patches` 里追加占位偏移，或用 `continue_back_target` 直接回跳。这天然实现了「break/continue 绑定到最内层循环」。
 
-### 3.2 `while` 循环（`visitWhileStmtNode`，CodeGen.cpp:483）
+### 3.2 `while` 循环（`visitWhileStmtNode`，CodeGen.cpp:496）
 
 ```cpp
 const u32 l_start = cur_cu()->size();      // 循环起点 = continue 的后向目标
@@ -92,7 +92,7 @@ L_start: <cond> JUMP_FALSE -> L_end
 L_end:   <break 回填到这里>
 ```
 
-### 3.3 `for` 循环（`visitForStmtNode`，CodeGen.cpp:503）
+### 3.3 `for` 循环（`visitForStmtNode`，CodeGen.cpp:515）
 
 这是最复杂的，因为 continue 的目标取决于**有没有 increment**：
 
@@ -136,7 +136,7 @@ L_incr: <incr> POP          <- continue_fwd_patches 回填到这里
 L_end:  <- break_fwd_patches 回填到这里
 ```
 
-### 3.4 `for-in` 循环（`visitForInStmtNode`，CodeGen.cpp:548）
+### 3.4 `for-in` 循环（`visitForInStmtNode`，CodeGen.cpp:559）
 
 与 `while` 同型：continue 后向跳回 `l_start`（每轮重新调 `has_next` 判断）。
 
@@ -156,7 +156,7 @@ for (const auto bp: loop.break_fwd_patches)
 
 `continue_back_target = l_start`，`continue_fwd_patches` 空，与 `while` 完全一致。
 
-### 3.5 `break`（`visitBreakStmtNode`，CodeGen.cpp:600）
+### 3.5 `break`（`visitBreakStmtNode`，CodeGen.cpp:610）
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
@@ -169,7 +169,7 @@ loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记�
 
 三步：① 查非空（否则 `BreakOutsideLoop`）；② 用 `loop_scope_depth` 弹局部；③ 发占位 `JUMP` 并把偏移追加到 `break_fwd_patches`。break 永远前向，所以从不需要 `continue_back_target`。
 
-### 3.6 `continue`（`visitContinueStmtNode`，CodeGen.cpp:610）
+### 3.6 `continue`（`visitContinueStmtNode`，CodeGen.cpp:620）
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
@@ -190,7 +190,7 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.1 随函数隔离（不跨函数绑定外层循环）
 
-`loop_stack_` 是 `FunctionCtx` 的成员，**进新函数即得空 `loop_stack_`**（见 `FunctionCtx.hpp:15-16` 的注释）。所以嵌套函数里的 `break`/`continue` 不会绑到外层函数的循环--外层循环的 `LoopCtx` 在外层函数的 `loop_stack_` 里，子函数看不到。子函数顶层写 `break` 会因自己的 `loop_stack_` 为空而报 `BreakOutsideLoop`。测试 `ErrBreakInNestedFunDoesNotBindOuterLoop`（`tests/test_codegen.cpp`）专门验证这一点。
+`loop_stack_` 是 `FunctionCtx` 的成员，**进新函数即得空 `loop_stack_`**（见 `FunctionCtx.hpp:14-15` 的注释）。所以嵌套函数里的 `break`/`continue` 不会绑到外层函数的循环--外层循环的 `LoopCtx` 在外层函数的 `loop_stack_` 里，子函数看不到。子函数顶层写 `break` 会因自己的 `loop_stack_` 为空而报 `BreakOutsideLoop`。测试 `ErrBreakInNestedFunDoesNotBindOuterLoop`（`tests/compile/test_codegen.cpp`）专门验证这一点。
 
 ### 4.2 `loop_scope_depth` 的作用：跳转前弹局部
 
@@ -204,7 +204,7 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.4 为什么 `LoopCtx` 是简单聚合而不是带方法的类
 
-`LoopCtx` 的全部行为（入栈、读栈顶、追加占位、回填）都由 `CodeGen` 编排，`LoopCtx` 本身只是数据载体。这与 `FunctionCtx` 的设计分工一致（见 `FunctionCtx.hpp:4-8` 注释）：`FunctionCtx` 负责「登记」（局部/作用域/循环栈管理），`CodeGen` 负责「发射」（`emit_op`/跳转回填/错误）。`LoopCtx` 作为 `FunctionCtx` 的成员，自然也只持数据、不持逻辑。回填逻辑（`patch_jump`）属于 `CodeUnit` 的编码能力，由 `CodeGen` 调用，不放进 `LoopCtx`。
+`LoopCtx` 的全部行为（入栈、读栈顶、追加占位、回填）都由 `CodeGen` 编排，`LoopCtx` 本身只是数据载体。这与 `FunctionCtx` 的设计分工一致（见 `FunctionCtx.hpp:4-7` 注释）：`FunctionCtx` 负责「登记」（局部/作用域/循环栈管理），`CodeGen` 负责「发射」（`emit_op`/跳转回填/错误）。`LoopCtx` 作为 `FunctionCtx` 的成员，自然也只持数据、不持逻辑。回填逻辑（`patch_jump`）属于 `CodeUnit` 的编码能力，由 `CodeGen` 调用，不放进 `LoopCtx`。
 
 ## 5. 速查：三种循环的 `LoopCtx` 配置
 
@@ -289,7 +289,7 @@ L_end:  <- jf / break_fwd_patches 回填到这里
 三个关键点：
 
 1. **continue 跳 `L_incr` 而非 `L_cond`**：C 风格 for 的 continue 语义是「跳过本轮剩余体，但**仍要执行递增**再判断」。目标必须是递增区起点 `L_incr`；而 `L_incr` 在循环体之后才发射，continue 编译时还不知道 -> 占位 + 回填 -> `continue_fwd_patches`。这是 `for` 带 increment 独有前向 continue 的全部根因。
-2. **`continue_fwd_patches` 必须在「发射 incr 之前」回填**：`patch_jump` 用「当前 `size()`」当 dst。回填那一刻 `size()` 必须恰好等于 `L_incr`，所以顺序是「`L_incr = size()` -> 立刻回填 -> 再发 incr」。若等 incr 与 `JUMP_BACK` 发完再回填，`size()` 已是 `L_end`，continue 全错跳到 `L_end` 直接退出循环（`CodeGen.cpp:528-529` 注释专门强调）。
+2. **`continue_fwd_patches` 必须在「发射 incr 之前」回填**：`patch_jump` 用「当前 `size()`」当 dst。回填那一刻 `size()` 必须恰好等于 `L_incr`，所以顺序是「`L_incr = size()` -> 立刻回填 -> 再发 incr」。若等 incr 与 `JUMP_BACK` 发完再回填，`size()` 已是 `L_end`，continue 全错跳到 `L_end` 直接退出循环（`CodeGen.cpp:539-540` 注释专门强调）。
 3. **`continue_back_target = none`**：有 incr 时 continue 走前向，后向目标留空，`visitContinueStmtNode` 里 `if (loop.continue_back_target)` 为假 -> 走 else 分支追加 `continue_fwd_patches`。
 
 ### 6.3 `while (cond) body` -- continue 后向

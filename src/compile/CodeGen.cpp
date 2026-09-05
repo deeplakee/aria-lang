@@ -103,8 +103,7 @@ namespace aria {
 
     // ============================================================
     // 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）
-    // 单层 _or_fail：操作 + 失败即 fail（持 loc，[[noreturn]]）并返回解包值。原薄封装透传层（add_constant/
-    // add_name 仅作操作 + 失败信号、不持 loc）唯一消费者即对应 _or_fail，透传空转，故内联至此。
+    // 单层 _or_fail：操作 + 失败即 fail（持 loc，[[noreturn]]）并返回解包值。
     // add_name_or_fail 经 add_constant_or_fail 复用溢出检查，免拷「溢出检查 + add_constant」逻辑。
     // ============================================================
 
@@ -162,7 +161,7 @@ namespace aria {
     CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc& loc) {
         // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方
         // emit_load_var/emit_store_var 走 not_impl 报编译期错--不静默落到全局，否则外层局部与同名模块全局
-        // 串台致闭包捕获错误变量，见 CLAUDE.md「作用域模型」）；否则视为模块全局（VM 运行期 LOAD_GLOBAL
+        // 串台致闭包捕获错误变量，见 .claude/rules/compile.md「作用域模型」）；否则视为模块全局（VM 运行期 LOAD_GLOBAL
         // 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出即 fail（持 loc）。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
@@ -731,6 +730,8 @@ namespace aria {
         const u32 line = node->loc_line();
         const i64 v    = node->value;
         if (v >= -128 && v <= 127) {
+            // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经
+            // i8 保证符号语义、再转 u8 写字节（免窄化告警）。范围外的整数走常量池 LOAD_CONST。
             cur_cu()->emit_op(OpCode::LOAD_IMM, line);
             cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(v)), line);
             return;

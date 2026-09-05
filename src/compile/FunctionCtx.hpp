@@ -8,7 +8,7 @@
 //
 // 局部栈（clox 风格）：locals_[0] = 哑元（slot 0 = callee，隐含不命名）；
 //   1..A = 形参（caller 压栈，编译期 add_local 登记后 mark_initialized）；
-//   A+1.. = 函数体局部（CodeGen::declare_local 仅登记并标「定义但未初始化」，不发指令；
+//   A+1.. = 函数体局部（CodeGen::declare_local_or_fail 仅登记并标「定义但未初始化」，不发指令；
 //     调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized，无 store/pop、不预占槽）。
 //
 // 循环上下文栈随函数走：进新函数即得空 loop_stack_，故 break/continue 不会跨函数绑定到
@@ -21,7 +21,7 @@ namespace aria {
     class ObjFunction;
 
     // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured/is_initialized=false。
-    // is_initialized：定义但未初始化（declare_local 置 false）；初始化器求值 / 无初始化器发
+    // is_initialized：定义但未初始化（declare_local_or_fail 置 false）；初始化器求值 / 无初始化器发
     // LOAD_NIL 后由调用方 mark_initialized 置 true。读取未初始化局部 -> CodeGen 报 UninitializedVariable。
     struct Local {
         String name;
@@ -103,8 +103,9 @@ namespace aria {
 
         // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_ 等）---
         // enclosing_ 所有权：入口 fn 上下文由 ModuleCtx 构造期 new、~ModuleCtx 沿链 delete；子上下文由 compile_function
-        // new（成功路径 delete、出错交 ~ModuleCtx 走链）。父函数编译期长于子函数（栈帧包住），故 enclosing_ 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。
-        // 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（= &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
+        // new（成功路径 delete、出错交 ~ModuleCtx 走链）。父函数编译期长于子函数（栈帧包住），故 enclosing_
+        // 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（=
+        // &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
         FunctionCtx*   enclosing_;
         ObjFunction*   fn_;
         List<Local>    locals_;

@@ -11,7 +11,7 @@ namespace aria {
 
 namespace aria::nanboxing {
 
-    // NaN-boxed value for an interpreter (C++20).
+    // NaN-boxed value for the aria interpreter (C++23).
     //
     // Every value fits in a single 64-bit IEEE-754 double. Real doubles are stored
     // verbatim; all other types hide inside the unused bit patterns of a quiet NaN.
@@ -29,6 +29,8 @@ namespace aria::nanboxing {
     //                   1 = nil
     //                   2 = bool   (truth value in bit 0)
     //                   3 = int    (48-bit two's-complement payload in bits 0..47)
+    // Pointers claim the whole sign==1 half: a 48-bit pointer needs no tag slot,
+    // which leaves both tag slots free for Nil/Bool/Int.
     class Value {
         using Obj = Object*;
 

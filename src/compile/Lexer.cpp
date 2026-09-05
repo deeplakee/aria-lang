@@ -14,7 +14,6 @@ namespace aria {
     // ============================================================
     namespace {
 
-        // 判定 c 是否为十进制数字字符。
         bool is_digit(const char c) { return c >= '0' && c <= '9'; }
 
         // 判定 c 是否为 base 进制的合法数字字符。
@@ -188,7 +187,7 @@ namespace aria {
                 continue;
             }
 
-            // 数字：以数字开头（. 不再启动数字扫描--禁止 .5 这类不完整浮点，. 留给 Dot token）
+            // 数字：以数字开头（. 不启动数字扫描--禁止 .5 这类不完整浮点，. 留给 Dot token）
             if (utf8::is_digit(cp)) {
                 scan_number();
                 continue;

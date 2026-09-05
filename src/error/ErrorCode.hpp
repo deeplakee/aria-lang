@@ -131,7 +131,6 @@ namespace aria {
     }
 
     // 错误码可读标识名（如 "UnterminatedString"），用于日志与调试。
-    // 每个 case 返回与枚举名同形的字符串字面量。
     [[nodiscard]]
     constexpr StringView to_string(const ErrorCode c) noexcept {
         switch (c) {

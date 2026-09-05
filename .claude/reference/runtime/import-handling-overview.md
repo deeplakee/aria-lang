@@ -29,7 +29,7 @@ ImportStmtNode { path:String, alias:String }
    │  ③ AST→CodeUnit 编译器  ✓ 已实现（CodeGen : AstVisitor）
    ▼
 OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
-   │  ④ VM run_() IMPORT 分支  部分实现
+   │  ④ VM run_() IMPORT 分支  已实现
    ▼
 resolve_module()  →  new_string() intern  →  modules_ 查表
    (磁盘 exists-check + weakly_canonical)        │
@@ -50,15 +50,15 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp:91-92` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
-| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp:63-107` |
-| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp:682-728` |
+| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（匿名命名空间） |
+| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp` `case OpCode::IMPORT` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 入表 Loading -> `entry` 经 `call_value` 进帧交主循环 run-once -> Loaded） | `src/runtime/AriaVM.cpp` `load_module` |
-| 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp:83-102`、`AriaVM.cpp:231-247,262-267` |
-| `ObjModule` 对象 + 状态机 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 恒非空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
-| VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp:72-81,117-119`、`AriaVM.cpp:231-247` |
-| fs 原语 `program_dir`（推导 stdlib） | 已实现，**被 VM 构造调用** | `src/util/fs.hpp:200-206` |
-| fs 原语（read_file/absolute/resolve/current_dir） | 已实现，加载链路未调用 | `src/util/fs.hpp:160-231` |
-| `SourceFile::from_path` | 已实现，加载链路未调用 | `src/util/source_file.hpp:146-158` |
+| 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp`（`source_roots()`/`set_source_roots`）、`AriaVM.cpp` 构造与 `run()` |
+| `ObjModule` 对象 + 状态机 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 指针恒非空、内容可空，`new_module` 默认 cwd） | `src/object/ObjModule.hpp`、`.cpp` |
+| VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp`（成员声明）、`AriaVM.cpp` 构造注册 tracer |
+| fs 原语 `program_dir`（推导 stdlib） | 已实现，**被 VM 构造调用** | `src/util/fs.hpp` |
+| fs 原语（read_file/absolute/current_dir） | 已实现，经 `SourceFile::from_path`（read_file）与 `fs::module_name_and_dir`（absolute）/`new_module` 默认目录（current_dir）进入加载链路 | `src/util/fs.hpp` |
+| `SourceFile::from_path` | 已实现，**被 `load_module` 调用**（加载链路首步） | `src/util/source_file.hpp` |
 
 ## ① 文法与词法
 
@@ -114,8 +114,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - **相对路径**：基 = `dirname(current_module_path)`（单一基，caller-local，**不碰 `source_roots`**），
   故相对导入永不逃逸到别的源根。`current_module_path` = `frame.module->abs_path()` =
   `dir_ + "/" + name_ + ".aria"`（`dir_` = 模块文件所在目录、`name_` = stem；`.aria` 在末段，
-  `dirname` 不受影响 -> 即 `dir_`）；`dir_` 恒非空（`new_module` 默认 cwd），合成模块
-  （如 `<script>`）退化为 cwd，故恒可相对解析。
+  `dirname` 不受影响 -> 即 `dir_`）；`dir_` 指针恒非空但**内容可空**（cwd 不可用时 `new_module`
+  以空串兜底），`abs_path()` 随之可返空串；相对分支对空基判空直接返 `nullopt`（拒绝锚定），
+  故相对解析可失败。
 - **裸名**：基 = `source_roots`（逐个 exists-check，首个 `<base>/<spec>.aria` 存在者命中）。
 - **逐基**：`weakly_canonical(base / "<spec>.aria")` -> `exists` 则其 `string()` 为键；都不
   命中 -> `nullopt`。符号链接经 `weakly_canonical` 规避双加载。
@@ -126,18 +127,18 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ### IMPORT 操作码执行（已实现）
 
-`src/runtime/AriaVM.cpp:618-664` 的 `case OpCode::IMPORT:`：
+`src/runtime/AriaVM.cpp` 主循环的 `case OpCode::IMPORT:`：
 
-1. `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path`（`read_name` 见
-   `AriaVM.cpp:40-43`，良构前提是常量必为 intern 的 `ObjString*`）。
+1. `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path`（良构前提是常量必为 intern 的
+   `ObjString*`）。
 2. 以 `frame.module->abs_path()`（= `dir_ + "/" + name_ + ".aria"`，`ObjModule::abs_path`）为
-   当前模块绝对路径，直接内联传入 `resolve_module`。`dir_` 恒非空（`new_module` 默认 cwd）故恒非空；
-   相对分支取 `dirname` 作基，`.aria` 后缀在末段不影响 `dirname`（name_ 单段 stem -> 即 `dir_`）。
-3. `resolve_module(path->view(), frame.module->abs_path(), source_roots_)` 解析（`AriaVM.cpp:643`）：
-   - **失败**（`nullopt`，无源根命中）：返回 `Error{ModuleNotFound, "module not found: 'PATH'
-     (no matching source root)"}`（`AriaVM.cpp:644-647`）。
-   - **成功**：`new_string(gc_, std::move(key_str).value())` 把绝对键 intern 驻留为 `ObjString*`
-     （`AriaVM.cpp:648`）。
+   当前模块绝对路径，直接内联传入 `resolve_module`。相对分支取 `dirname` 作基，`.aria` 后缀在
+   末段不影响 `dirname`（name_ 单段 stem -> 即 `dir_`）；`dir_` 内容空时 `abs_path()` 返空串，
+   相对分支判空拒绝。
+3. `resolve_module(path->view(), frame.module->abs_path(), source_roots_)` 解析：
+   - **失败**（`nullopt`，无源根命中）：经 `runtime_err` 报 `ModuleNotFound`
+     （`"module not found: '<path>'"`，带 IMPORT 站点位置）。
+   - **成功**：`new_string(gc_, ...)` 把绝对键 intern 驻留为 `ObjString*`。
 4. 以绝对键 `Value::from_obj(key)` 在 VM 模块表 `modules_`（`AriaHashTable`）查：
    - **命中**（任意态）：`module = module_entry->value`。`Loading` 态即循环导入命中的
      半初始化对象，按文法直接用不报错。
@@ -147,9 +148,10 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
      改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`,绑定交后续 `DEF_GLOBAL` /
      值填槽。**无递归 `run_()`**。读盘失败/name 空报 `ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置);被导入模块的
      编译期/运行期 Error 原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
-     `nullptr ⟺` 载荷已 raise 入寄存器,调用方 `take_error` 取出传播)。`key` 经 IMPORT case 的 `key_guard` 跨 `upsert`(rehash 触 GC)根化(intern weak
+     `nullptr ⟺` 载荷已 raise 入寄存器,调用方 `take_error` 取出传播)。`canonical_path` 经 IMPORT
+     case 的 `canonical_path_guard` 跨 `upsert`(rehash 触 GC)根化(intern weak
      root 不保命);`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
-5. 命中后：module 经 `modules_` 根可达（非移动 GC，`ctx.push` 期间指针稳定，无需守卫）→ **压模块值于栈顶**（`ctx.push(module)`）。
+5. 命中后：module 经 `modules_` 根可达（非移动 GC，`current_->push` 期间指针稳定，无需守卫）→ **压模块值于栈顶**（`current_->push(module)`）。
    绑定不再由 IMPORT 做——交 CodeGen 按作用域走：顶层经 `DEF_GLOBAL alias`（弹值定义全局）、
    嵌套经值填槽（IMPORT 压在 `declare_local` 的 slot）+ `mark_initialized`。
 6. 栈效应 `... -> [module]`（压一值）。
@@ -159,7 +161,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 > `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
 > （值填槽）+ `mark_initialized`。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
-**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 `LockGuard`；path 经常量池根；key 经 intern weak root；命中分支的 module 经 `modules_` 根可达，`ctx.push` 期间指针稳定（非移动 GC），无需守卫。
+**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 `LockGuard`；path 经常量池根；`canonical_path` 经 intern weak root 加 guard；命中分支的 module 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
 
 ### 源根列表（已实现，被 IMPORT 消费）
 
@@ -169,15 +171,17 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - `AriaVM.hpp`：成员 `AriaHashTable modules_;`、`List<String> source_roots_;`（单一列表，按槽位
   分区：`[0]` = 入口槽、`[1..]` = 配置根）。存为 `List<String>`（路径元数据），**非 `ObjString*`，
   不参与 GC 追踪**。
-- `AriaVM.cpp` 构造：`source_roots_[0]` 占位为当前工作目录（前期源根）；由 `fs::program_dir()`
+- `AriaVM.cpp` 构造：`source_roots_[0]` 占位为当前工作目录（`fs::current_dir()`；前期源根）；由 `fs::program_dir()`
   推导 stdlib 源根（约定 `<exe_dir>/../share/aria/lib`，经 `weakly_canonical` 规范化），非空则
   `push_back` 进 `[1..]`（stdlib 即一个配置源根）。
 - `AriaVM.cpp` `run()`：`source_roots_[0] = 入口模块 dir_->view()`（原地替换构造时的 cwd 占位），
-  `[1..]` 不动。`dir_` 恒非空（`new_module` 默认 cwd），无需空检查。无 flag / 无重建——`[0]` 槽位
+  `[1..]` 不动。`dir_` 指针恒非空（构造断言）、内容可空（cwd 不可用时空串兜底）——空串播种后
+  裸名解析跳过空根。无 flag / 无重建——`[0]` 槽位
   约定 + 原地赋值，reuse 安全不累积旧入口根。`set_source_roots` 经 `resize(1)` 保留 `[0]`、替换
   `[1..]`（置空即清掉默认 stdlib）。**`source_roots_` 已被 IMPORT 的裸名解析消费**。
-- `AriaVM.hpp:24-34`、`AriaVM.cpp:231-247`：模块表 `modules_` 经 VM 根 tracer 注册进 GC
-  （构造里 `gc_.set_vm_roots([this](GC& g){ modules_.trace(g); })`）。键 = 绝对规范路径
+- 模块表 `modules_` 经 VM 根 tracer 注册进 GC（构造里 `gc_.set_vm_roots(...)`，tracer 标
+  `modules_` + `builtins_` + `current_` 沿 `previous_` 执行链各上下文的值栈/帧/挂起错误寄存器）。
+  键 = 绝对规范路径
   `ObjString*`（intern），值 = `ObjModule*`，均装箱为 `Value` 入 `AriaHashTable`。
 
 ## 模块对象 ObjModule
@@ -189,21 +193,23 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - `dir_`：intern 模块文件所在目录（如 `/proj/lib`）。模块绝对路径（= 模块表查重键）= `dir_ + "/" +
   name_ + ".aria"`；相对导入基 = `dirname(abs_path())` = `dir_`（name_ 单段 stem）；`run()` 把入口模块 `dir_`
   播种为 `source_roots_[0]`（即入口文件所在目录）。加载层在 `resolve_module` 命中后由
-  `fs::module_name_and_dir` 按命中文件绝对规范路径定（dirname）；**恒非空** -- `new_module` 未显式传
-  `dir` 时取当前工作目录作默认（合成模块如测试桩 `<script>` 退化为 cwd，仍能合成绝对路径、作相对
-  导入基、进源根播种）。构造注入、不可变(无 setter)。`dir()`（`ObjModule.hpp`）。
+  `fs::module_name_and_dir` 按命中文件绝对规范路径定（dirname）；**指针恒非空、内容可空** --
+  `new_module` 未显式传 `dir` 时取当前工作目录作默认（cwd 不可用时以空串兜底）；内容空时
+  `abs_path()` 返空串，作相对导入基/源根播种会空转（resolve 相对分支判空拒绝）。构造注入、
+  不可变(无 setter)。`dir()`（`ObjModule.hpp`）。
 - `abs_path()`（`ObjModule.hpp`）：模块的绝对文件路径 = `dir_ + "/" + name_ + ".aria"`（=
-  模块表查重键形式）；`name_` 为 nullptr 或空串（合成顶层）则仅返 `dir_`；`dir_` 防御性可空
-  （`new_module` 保证非空）。返回 `String`（即时合成，不驻留）。IMPORT 取当前模块 `abs_path()` 供
+  模块表查重键形式）；`dir_` 内容空 -> 返空串（无目录锚点）；`name_` 内容空串（合成顶层）则仅返
+  `dir_`。返回 `String`（即时合成，不驻留）。IMPORT 取当前模块 `abs_path()` 供
   `resolve_module` 相对分支 `dirname` 作基（`.aria` 在末段，`dirname` 不受影响）。
-- `entry_`：模块体顶层语句编进的 `ObjFunction`（arity 0、匿名；主入口名 `<main>` / 导入名 `<module>`），导入时 run-once；
-  可为 nullptr（留作目录包占位）。`set_entry(ObjFunction*)` 是编译产物挂入接口；编译期已由 `CodeGen::init_module` 调用（`CodeGen.cpp:95`），运行期 IMPORT 加载层待加载链路落地后调用。
+- `entry_`：模块体顶层语句编进的 `ObjFunction`（arity 0；主入口名 `<main>` / 导入名 `<module>`），导入时 run-once；
+  可为 nullptr（留作目录包占位）。`set_entry(ObjFunction*)` 是编译产物挂入接口，由 `CodeGen::init_module`
+  编译期调用，运行期不再调。
 - `globals_`：模块级绑定表，`LOAD/STORE/DEF_GLOBAL` 操作，惰性分配。
 - `state_`：`enum class ModuleState : u8 { Loading, Loaded }`（`ObjModule.hpp`）。
   构造置 `Loading`；未入表 = 未加载（隐含第三态，不入枚举）。
 - `trace`（`ObjModule.cpp`）：标 `name_` + `dir_` + `entry_` + `globals_`。
 - `new_module` 工厂（`ObjModule.cpp`）：`dir` 缺省（`nullptr`）时 `new_string(fs::current_dir())`
-  取 cwd 作默认 -> `dir_` 恒非空。`name` 先入临时根（再 `new_string(cwd)` 可能 collect），`dir`
+  取 cwd 作默认（cwd 不可用空串兜底）-> `dir_` 指针恒非空、内容可空。`name` 先入临时根（再 `new_string(cwd)` 可能 collect），`dir`
   随后入根，跨 `new_object` 顶 `maybe_collect` 保命（intern 驻留池是 weak root，不保命）。
 - 地址哈希型，`final` 不再派生；`equals` 保持默认地址相等（模块按身份判等）。
 
@@ -211,31 +217,28 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 `util/fs.hpp` 提供的文件系统原语：
 
-- `program_dir() -> Result<String, FsErrCode>`（`fs.hpp:200-206`）：经
+- `program_dir() -> Result<String, FsErrCode>`：经
   `detail::executable_path()`（平台分流）取 `parent_path`。**VM 构造时调用**推导 stdlib 源根。
-- `read_file(StringView) -> Result<String, FsErrCode>`（`fs.hpp:160-184`）：`std::ifstream`
-  二进制读全文件到 `String`。加载链路未调用。
-- `current_dir() -> Result<String, FsErrCode>`（`fs.hpp:189-196`）。加载链路未调用。
-- `absolute(StringView)`（`fs.hpp:210-217`）：`stdfs::absolute`，仅按 CWD 补全，不解析符号
-  链接与 `.`/`..`。加载链路未调用。
-- `resolve(StringView base, StringView rel)`（`fs.hpp:224-231`）：`stdfs::weakly_canonical`，
+- `read_file(StringView) -> Result<String, FsErrCode>`：`std::ifstream`
+  二进制读全文件到 `String`。经 `SourceFile::from_path` 被加载链路调用。
+- `current_dir() -> Result<String, FsErrCode>`。VM 构造（`source_roots_[0]` 占位）与
+  `ObjModule::new_module` 默认目录调用。
+- `absolute(StringView)`：`stdfs::absolute`，仅按 CWD 补全，不解析符号
+  链接与 `.`/`..`。被 `fs::module_name_and_dir` 内部调用（加载链路经其派生模块身份）。
+- `resolve(StringView base, StringView rel)`：`stdfs::weakly_canonical`，
   解析已存在部分的符号链接、消去 `.`/`..`、去冗余分隔符；尾部不存在部分仅词法规范化，故目标
   不存在也能成功返回——适合加载层把「源根 + 裸路径」解析成绝对规范路径并检测越界。当前
   `resolve_module` 直接用 `<filesystem>` 的 `weakly_canonical`（语义同 `fs::resolve`），未走
   `util/fs.hpp` 包装；后续若统一可改调 `fs::resolve`。
 
-`SourceFile::from_path(StringView)`（`src/util/source_file.hpp:146-158`）：调
+`SourceFile::from_path(StringView)`（`src/util/source_file.hpp`）：调
 `fs::read_file` 取内容，取 `filename` 作 name，`normalize` 剥 BOM + CRLF→LF + UTF-8 校验
-（非法返 `InvalidEncoding`），构造 `SourceFile{name, path, content}`。是未来加载层把磁盘文件
-喂给 Lexer 的现成入口，已处理 BOM/CRLF/UTF-8。
-
-> **衔接点缺位**：`from_path` 是「路径 -> 磁盘文件 -> SourceFile -> Lexer -> Parser -> AST ->
-> CodeUnit -> VM run-once 入表」整条链路的入口，但当前 IMPORT 未命中分支没有调用它，也没有
-> Lexer/Parser/编译器把源文件转成 `CodeUnit`。即从 `from_path` 之后第二步起全部缺位。
+（非法返 `InvalidEncoding`），构造 `SourceFile{name, path, content}`。是加载层把磁盘文件
+喂给 Lexer 的入口（`load_module` 首步），已处理 BOM/CRLF/UTF-8。
 
 ## 测试覆盖
 
-`tests/test_ariavm.cpp` 一组 IMPORT 测试，用 `testing::TempDir()` 建真实空 `.aria` 文件让
+`tests/runtime/test_ariavm.cpp` 一组 IMPORT 测试，用 `testing::TempDir()` 建真实空 `.aria` 文件让
 `resolve_module` 的 exists-check 命中，按解析出的绝对键预注册合成模块入 `vm.modules()`，触发
 命中分支：
 
@@ -255,9 +258,9 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   把入口模块 `dir_` 原地写入入口槽 `[0]`（磁盘入口 `dir_` = base -> `[base]`；合成
   `<script>` 经 `make_module` 注入 `dir_` = cwd -> `[cwd]`，stdlib 置空时列表大小为 1）。
 
-其余覆盖：`tests/test_parser.cpp`（`import "math" as m;` 解析）、`tests/test_ast.cpp`
-（`ImportStmtNode` dump）、`tests/test_astvisitor.cpp`（visitor 桩）、`tests/test_lexer.cpp`
-（`import` / `as` 关键字）。`tests/test_ariavm.cpp` 新增加载层端到端测试（`ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals`/`ImportModuleCompileErrorPropagates`/`ImportModuleRuntimeErrorPropagates`/`CircularImportCompletesBothLoaded`/`ReimportReusesLoadedModule`，stress GC 下经 `interpret_from_path` 跑真实 `.aria` 文件并白盒检视 `modules_`）。
+其余覆盖：`tests/compile/test_parser.cpp`（`import "math" as m;` 解析）、`tests/compile/test_ast.cpp`
+（`ImportStmtNode` dump）、`tests/compile/test_astvisitor.cpp`（visitor 桩）、`tests/compile/test_lexer.cpp`
+（`import` / `as` 关键字）。`tests/runtime/test_ariavm.cpp` 新增加载层端到端测试（`ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals`/`ImportModuleCompileErrorPropagates`/`ImportModuleRuntimeErrorPropagates`/`CircularImportCompletesBothLoaded`/`ReimportReusesLoadedModule`，stress GC 下经 `interpret_from_path` 跑真实 `.aria` 文件并白盒检视 `modules_`）。
 
 ## 加载层接入位置（已落地）
 

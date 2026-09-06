@@ -668,13 +668,54 @@ namespace aria {
     }
 
     void CodeGen::visitTryStmtNode(TryStmtNode* node) {
-        if (node->catch_body == nullptr && node->finally_body == nullptr) {
+        const u32 line = node->loc_line();
+        // M3 只做 try/catch;finally 属子里程碑 M3b(END_FINALLY 届时引入)。finally 一旦
+        // 出现(无论有无 catch)一律占位 -- finally 语义未落地,只编 catch 会静默丢块。
+        if (node->finally_body != nullptr) {
+            not_impl(node, "try/finally 异常处理");
+        }
+        if (node->catch_body == nullptr) {
             fail(ErrorCode::TryWithoutHandler, node->loc(), "try 须有 catch 或 finally");
         }
-        not_impl(node, "try/catch/finally 异常处理");
+
+        // lowering(入口预插占位 + 结尾回填,pitfalls 坑 #4;catch 参数走值填槽,坑 #10):
+        //   L_try:  try 体(受保护区间 [begin, end),编译期入 cur_cu()->try_records)
+        //   end:    JUMP L_end           ; 正常路径跳过 catch
+        //   L_catch:                     ; unwind 截栈到 slots+stack_depth 后 push 异常值,
+        //                                 ; 恰落 catch 参数槽(stack_depth) -- 无 STORE_LOCAL
+        //   L_end:
+        // 栈平衡:try 体 end_scope 与 catch 子句 end_scope(弹 e + catch 体局部)都回到
+        // stack_depth,两路径在 L_end 齐平(坑 #10 校验)。
+        const auto stack_depth = static_cast<u32>(cur_fn_ctx()->locals_.size()); // try 入口局部数(try scope 开前)
+        const auto begin       = cur_cu()->size();
+        const auto rec_idx     = cur_cu()->try_records.size();
+        cur_cu()->try_records.push(TryRecord{begin, 0, 0, 0}); // 预插占位(begin 已定,余待回填)
+        begin_scope();                                         // try 体 scope
+        emit_stmt(node->body.get()); // 嵌套 try 在此编译,各自入口预插占位(begin > 本层)-> 整体升序(坑 #4)
+        end_scope(line);
+        const auto end    = cur_cu()->size();
+        const auto jskip  = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
+        const auto handle = cur_cu()->size();                        // L_catch
+        begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
+        const auto catch_slot = declare_local_or_fail(*node->catch_param, node->loc());
+        cur_fn_ctx()->mark_initialized(catch_slot); // e 由 unwind 的 push 在运行期填槽(== stack_depth),
+                                                    // 编译期标已初始化放行 catch 体的读检查
+        emit_stmt(node->catch_body.get());
+        end_scope(line);
+        patch_jump_or_fail(jskip, node->loc()); // -> L_end
+        // 回填占位项(嵌套 try 的内层记录已在体编译期间插于本项之后,构造即升序,不排序,坑 #4)。
+        cur_cu()->try_records[rec_idx].end         = end;
+        cur_cu()->try_records[rec_idx].handle      = handle;
+        cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
     }
 
-    void CodeGen::visitThrowStmtNode(ThrowStmtNode* node) { not_impl(node, "throw 异常抛出"); }
+    void CodeGen::visitThrowStmtNode(ThrowStmtNode* node) {
+        const u32 line = node->loc_line();
+        // 求值抛出表达式后 THROW 弹值入寄存器,运行期由 unwind 查异常记录表派发(语义见
+        // AriaVM run_ 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
+        emit_expr(node->expr.get());            // [v]
+        cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
+    }
 
     void CodeGen::visitMatchStmtNode(MatchStmtNode* node) { not_impl(node, "match 语句"); }
 

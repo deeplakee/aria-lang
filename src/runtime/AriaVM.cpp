@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <ranges>
 #include <system_error>
 #include <utility>
 
@@ -148,146 +149,55 @@ namespace aria {
             }
         }
 
-        // 运行期位置串:"path:line"(文件模块)或 "<name>:line"(合成模块 -- 名以 '<' 开头,如
-        // <script>/<test>,abs_path 会拼出伪路径;dir_ 内容空同理退化)。帧栈空(run 外经
-        // vm.fail 直调等)返空串 -- 无位置。行号 = 顶帧 last_ip(主循环取指前写的指令起始指针,
-        // 与 unit->code.data() 相减反推 offset)查 RLE 行号表;表空(手搓 CodeUnit 无行号)
-        // line_for_offset 返 0,不炸。报错是冷路径,
-        // 一次 std::format 可忽略。供 raise(装箱点)与 runtime_err(run_ 直报站点)共用 --
-        // 二者调用时顶帧恒为故障指令所在帧(直报)或 caller 帧(call_*/原生失败,被调帧未进/
-        // 原生不进帧),last_ip 恰为故障指令 / CALL 站点(pitfalls 坑 #15 的位置语义)。
+        // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,如
+        // <script>/<test>,abs_path 会拼出伪路径)或 abs_path 为空(cwd 不可用)退化为 "<name>"。
+        // 装箱点(runtime_loc)与未捕获堆栈跟踪逐帧渲染(unwind_)共用,位置串规则单一事实源。
+        String module_loc(const ObjModule& mod, const u32 line) {
+            if (const auto name = mod.name()->view(); name.starts_with('<') || mod.abs_path().empty()) {
+                return std::format("{}:{}", name, line);
+            }
+            return std::format("{}:{}", mod.abs_path(), line);
+        }
+
+        // 运行期位置串:行号 = 顶帧 last_ip(主循环取指前写的指令起始指针,与 unit->code.data()
+        // 相减反推 offset)查 RLE 行号表;表空(手搓 CodeUnit 无行号)line_for_offset 返 0,不炸。
+        // 帧栈空(run 外经 vm.fail 直调等)返空串 -- 无位置。报错是冷路径,一次 std::format 可忽略。
+        // 供 raise(装箱点)与未捕获跟踪逐帧渲染(module_loc)共用 -- 装箱点调用时
+        // 顶帧恒为故障指令所在帧(直报)或 caller 帧(call_*/原生失败,被调帧未进/原生不进帧),
+        // last_ip 恰为故障指令 / CALL 站点(pitfalls 坑 #15 的位置语义)。
         String runtime_loc(Movement& ctx) {
             if (ctx.frames().empty()) {
                 return {};
             }
-            const auto& frame = ctx.frames().top();
-            const auto  line = frame.unit->line_for_offset(static_cast<usize>(frame.last_ip - frame.unit->code.data()));
-            const auto  mod  = frame.module;
-            if (const auto name = mod->name()->view(); name.starts_with('<') || mod->abs_path().empty()) {
-                return std::format("{}:{}", name, line);
-            }
-            return std::format("{}:{}", mod->abs_path(), line);
+            const auto& frame  = ctx.frames().top();
+            const usize offset = frame.last_ip - frame.unit->code.data();
+            const auto  line   = frame.unit->line_for_offset(offset);
+            return module_loc(*frame.module, line);
         }
 
-        // 把寄存器取出的载荷还原为边界 Error:ObjException -> to_error()(message_ 已是完整烘焙串,
-        // 经 Error::from_baked 原样回传,与 from_detail 直构文案逐字一致);其它载荷(未来用户
-        // throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,兜底仅防御)报
-        // UncaughtException,消息渲染值本身。
-        Error value_to_error(const Value v) {
+        // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
+        // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
+        // 坑 #7);其它载荷(未来用户 throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,
+        // 兜底仅防御)兜底 UncaughtException,消息渲染值本身(经烘焙单点 make_message,与
+        // from_detail 同源同串)。仅 unwind_ 未捕获出口一处消费:拼好跟踪后经 Error::from_baked
+        // 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
+        Pair<ErrorCode, String> uncaught_error_parts(const Value v) {
             if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
-                return Object::as<ObjException>(v.as_obj())->to_error();
+                const auto ex = Object::as<ObjException>(v.as_obj());
+                return {ex->code(), String{ex->message()->view()}};
             }
-            return Error::from_detail(ErrorCode::UncaughtException,
-                                      std::format("uncaught exception: {}", format_value(v)));
+            return {ErrorCode::UncaughtException,
+                    Error::make_message(ErrorCode::UncaughtException, {},
+                                        std::format("uncaught exception: {}", format_value(v)))};
         }
 
-        // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),以 std::format 风格
-        // 直接格式化消息,**位置取自 ctx 顶帧**(经 runtime_loc 查行号表取 "path:line",与细节
-        // 一并经 Error::make_message 烘齐,再经 from_baked 装回 -- 同形于编译期消息仅少列号段;
-        // 与装箱点 raise 同用 runtime_loc + make_message,两条运行期报错路径对称)。供 run_ 与
-        // numeric_op 等「返回 Result<Value, Error>」的构造点用,把 std::unexpected(Error{...})
-        // 样板整体收口;调用方只剩 return runtime_err(*current_, ...)。转发已构造 Error(如
-        // run_binary_numeric 失败回传、call_value 失败后从 *current_ 寄存器取出的载荷 --
-        // 位置已在构造点烘好或不适用)的场合用下方 runtime_err(Error) 重载,同样收口 std::unexpected。
-        // 耦合 Result<Value, Error>,故仅限本翻译单元(其它阶段返回类型不同,不复用)。
-        template<typename... Args>
-        Result<Value, Error> runtime_err(Movement& ctx, const ErrorCode code, std::format_string<Args...> fmt,
-                                         Args&&... args) {
-            const auto detail = std::format(fmt, std::forward<Args>(args)...);
-            return std::unexpected(Error::from_baked(code, Error::make_message(code, runtime_loc(ctx), detail)));
-        }
-
-        // 转发已构造 Error 为失败结果:把 std::unexpected(std::move(err)) 样板收口。供 run_
-        // 转发 run_binary_numeric 失败回传的 Error、以及 call_value 失败后从 *current_ 寄存器
-        // 取出的载荷用,与下面的格式化构造重载成对。
+        // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),转发 unwind_ 物化的
+        // 未捕获 Error 出栈。run_ 各异常站点(unwind_ 返 somed Error)的统一收口,只剩
+        // std::unexpected 样板;旧「ctx + 码 + 格式串」直报重载与 Value 转发重载已随 M3 直报
+        // 站点统一切入寄存器而退役(pitfalls 坑 #11)。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 转发寄存器载荷(Value)为失败结果:经 value_to_error 还原为 Error 后 std::unexpected。
-        // 供 run_ 在 CALL 等 take 点把 *current_ 寄存器载荷沿 runtime_err 传播,与上面的
-        // runtime_err(Error) 重载成对。
-        Result<Value, Error> runtime_err(const Value v) { return std::unexpected(value_to_error(v)); }
-
-        // 数值二元运算(算术 + 比较)。双方皆 Int 走整数路径;任一为 F64 则升 F64
-        // (浮点除零走 IEEE 的 inf/nan,不报错)。除法语义已定(指令集 §9 #8):
-        //   - Int / Int 截断整除、% 为 C++ 语义(除/模零报运行时错误);
-        //   - Int 溢出 i48 不设防(断言把关,编译期语义阶段再议)。
-        // Op 为模板参数,编译期按指令分派。
-        template<OpCode Op>
-        Result<Value, Error> numeric_op(Movement& ctx, const Value a, const Value b) {
-            if (!(is_num(a) && is_num(b))) {
-                return runtime_err(ctx, ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
-                                   op_symbol(Op), type_name(a), type_name(b));
-            }
-            if (a.is_int() && b.is_int()) {
-                const auto x = a.as_int();
-                const auto y = b.as_int();
-                if constexpr (Op == OpCode::ADD) {
-                    return Value::from_int(x + y);
-                } else if constexpr (Op == OpCode::SUBTRACT) {
-                    return Value::from_int(x - y);
-                } else if constexpr (Op == OpCode::MULTIPLY) {
-                    return Value::from_int(x * y);
-                } else if constexpr (Op == OpCode::DIVIDE) {
-                    if (y == 0) {
-                        return runtime_err(ctx, ErrorCode::DivisionByZero, "integer division by zero");
-                    }
-                    return Value::from_int(x / y);
-                } else if constexpr (Op == OpCode::MOD) {
-                    if (y == 0) {
-                        return runtime_err(ctx, ErrorCode::ModuloByZero, "integer modulo by zero");
-                    }
-                    return Value::from_int(x % y);
-                } else if constexpr (Op == OpCode::GREATER) {
-                    return Value::from_bool(x > y);
-                } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-                    return Value::from_bool(x >= y);
-                } else if constexpr (Op == OpCode::LESS) {
-                    return Value::from_bool(x < y);
-                } else if constexpr (Op == OpCode::LESS_EQUAL) {
-                    return Value::from_bool(x <= y);
-                }
-                UNREACHABLE();
-            }
-            const auto x = a.is_f64() ? a.as_f64() : static_cast<f64>(a.as_int());
-            const auto y = b.is_f64() ? b.as_f64() : static_cast<f64>(b.as_int());
-            if constexpr (Op == OpCode::ADD) {
-                return Value::from_f64(x + y);
-            } else if constexpr (Op == OpCode::SUBTRACT) {
-                return Value::from_f64(x - y);
-            } else if constexpr (Op == OpCode::MULTIPLY) {
-                return Value::from_f64(x * y);
-            } else if constexpr (Op == OpCode::DIVIDE) {
-                return Value::from_f64(x / y); // IEEE: 除零得 inf/nan
-            } else if constexpr (Op == OpCode::MOD) {
-                return Value::from_f64(std::fmod(x, y));
-            } else if constexpr (Op == OpCode::GREATER) {
-                return Value::from_bool(x > y);
-            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-                return Value::from_bool(x >= y);
-            } else if constexpr (Op == OpCode::LESS) {
-                return Value::from_bool(x < y);
-            } else if constexpr (Op == OpCode::LESS_EQUAL) {
-                return Value::from_bool(x <= y);
-            }
-            UNREACHABLE();
-        }
-
-        // 弹 2 算 1:对栈顶两个值执行二元数值运算(算术/比较),成功压结果、失败返回 Error
-        // 供 run_ 终止为 Uncaught。Op 为模板参数,调用方显式指定具体指令;与 numeric_op
-        // 分工:后者纯计算(不触栈),此函数只管栈效应。
-        template<OpCode Op>
-        Opt<Error> run_binary_numeric(Movement& ctx) {
-            const Value b = ctx.pop();
-            const Value a = ctx.pop();
-            const auto  r = numeric_op<Op>(ctx, a, b);
-            if (!r) {
-                return r.error();
-            }
-            ctx.push(*r);
-            return std::nullopt;
-        }
-
-        // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类/异常等)才会实现,
+        // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类等)才会实现,
         // 当前不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 run_ 返回)。
         // 用 OpcodeNotImplemented(Internal 类)而非 NotImplemented(Semantic 类):后者经 Error 通道
         // 服务编译期 CodeGen not_impl(可恢复 CompileError);此处是运行期执行到未实现 opcode,
@@ -296,7 +206,7 @@ namespace aria {
         void not_implemented(const StringView op_name) {
             fatal_error(ErrorCode::OpcodeNotImplemented,
                         std::format("opcode '{}' not implemented yet (out of current scope: closures/fields/index/"
-                                    "classes/exceptions come later)",
+                                    "classes come later)",
                                     op_name));
         }
 
@@ -434,20 +344,18 @@ namespace aria {
         }
     }
 
-    bool AriaVM::raise(const ErrorCode code, const StringView detail) {
-        // 从零构造消息的装箱点,一步烘齐(契约见 AriaVM.hpp):Error::make_message 把 [位置 + ": "] +
-        // "Category: Name" + 细节合成完整消息串 -- 位置经 runtime_loc 查 *current_ 顶帧行号表
-        // (故障指令 / CALL 站点;合成模块退化为 "<name>:line";帧栈空即 run 外直调则无位置),
-        // detail 为原始细节串(不含前缀,防双烘)。装箱入**当前**上下文(*current_,现为
-        // main_ctx_;M6 协程期即当前协程 -- run_/call_value 族与本函数同源同一 current_,错误
-        // 随上下文走不串扰)的挂起寄存器(单寄存器模型,载荷统一 Value,见
-        // exception-implementation-pitfalls.md 坑 #7)。new_exception 工厂内部 new_string 驻留
+    void AriaVM::raise_detail(const ErrorCode code, const StringView detail) {
+        // 装箱核心(公开模板 raise(code, fmt, args...) 格式化后经此,契约见 AriaVM.hpp):
+        // Error::make_message 把 [位置 + ": "] + "Category: Name" + 细节合成完整消息串 -- 位置经
+        // runtime_loc 查 *current_ 顶帧行号表(故障指令 / CALL 站点;合成模块退化为 "<name>:line";
+        // 帧栈空即 run 外直调则无位置),detail 为已格式化的原始细节串(不含前缀,防双烘)。装箱入
+        // **当前**上下文(*current_,现为 main_ctx_;M6 协程期即当前协程 -- run_/call_value 族与本
+        // 函数同源同一 current_,错误随上下文走不串扰)的挂起寄存器(单寄存器模型,载荷统一 Value,
+        // 见 exception-implementation-pitfalls.md 坑 #7)。new_exception 工厂内部 new_string 驻留
         // 并自守,跨 new_object 顶 maybe_collect 安全;返回对象到 current_->raise 之间无分配,
-        // 入寄存器后由 VM 根 tracer 标 pending_error 保命。返回 false 供 `return vm.fail(...);`
-        // 惯用法(见 AriaVM.hpp 契约)。
+        // 入寄存器后由 VM 根 tracer 标 pending_error 保命。
         const auto msg = Error::make_message(code, runtime_loc(*current_), detail);
         current_->raise(Value::from_obj(new_exception(gc_, code, msg)));
-        return false;
     }
 
     Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
@@ -677,6 +585,126 @@ namespace aria {
         return module;
     }
 
+    template<OpCode Op>
+    bool AriaVM::run_binary_numeric() {
+        // 弹 2 算 1(9 个算术/比较指令共用,Op 由 run_ 调用点穷举实例化):双 Int 走整数路径,
+        // 任一 F64 升浮点 -- int 除/模零报错、% 为 C++ 语义,f64 按 IEEE(除零得 inf/nan)。
+        // 成功压结果返 true;失败不置值,经 fail 装箱入 *current_ 寄存器后返 false(call_value
+        // 族 bool 契约,调用方 unwind 派发/物化)。
+        const Value b = current_->pop();
+        const Value a = current_->pop();
+        if (!(is_num(a) && is_num(b))) {
+            return fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", op_symbol(Op),
+                        type_name(a), type_name(b));
+        }
+        if (a.is_int() && b.is_int()) {
+            const auto x = a.as_int();
+            const auto y = b.as_int();
+            if constexpr (Op == OpCode::ADD) {
+                current_->push(Value::from_int(x + y));
+            } else if constexpr (Op == OpCode::SUBTRACT) {
+                current_->push(Value::from_int(x - y));
+            } else if constexpr (Op == OpCode::MULTIPLY) {
+                current_->push(Value::from_int(x * y));
+            } else if constexpr (Op == OpCode::DIVIDE) {
+                if (y == 0) {
+                    return fail(ErrorCode::DivisionByZero, "integer division by zero");
+                }
+                current_->push(Value::from_int(x / y));
+            } else if constexpr (Op == OpCode::MOD) {
+                if (y == 0) {
+                    return fail(ErrorCode::ModuloByZero, "integer modulo by zero");
+                }
+                current_->push(Value::from_int(x % y));
+            } else if constexpr (Op == OpCode::GREATER) {
+                current_->push(Value::from_bool(x > y));
+            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+                current_->push(Value::from_bool(x >= y));
+            } else if constexpr (Op == OpCode::LESS) {
+                current_->push(Value::from_bool(x < y));
+            } else if constexpr (Op == OpCode::LESS_EQUAL) {
+                current_->push(Value::from_bool(x <= y));
+            } else {
+                UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+            }
+            return true;
+        }
+        const auto x = a.is_f64() ? a.as_f64() : static_cast<f64>(a.as_int());
+        const auto y = b.is_f64() ? b.as_f64() : static_cast<f64>(b.as_int());
+        if constexpr (Op == OpCode::ADD) {
+            current_->push(Value::from_f64(x + y));
+        } else if constexpr (Op == OpCode::SUBTRACT) {
+            current_->push(Value::from_f64(x - y));
+        } else if constexpr (Op == OpCode::MULTIPLY) {
+            current_->push(Value::from_f64(x * y));
+        } else if constexpr (Op == OpCode::DIVIDE) {
+            current_->push(Value::from_f64(x / y)); // IEEE: 除零得 inf/nan
+        } else if constexpr (Op == OpCode::MOD) {
+            current_->push(Value::from_f64(std::fmod(x, y)));
+        } else if constexpr (Op == OpCode::GREATER) {
+            current_->push(Value::from_bool(x > y));
+        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+            current_->push(Value::from_bool(x >= y));
+        } else if constexpr (Op == OpCode::LESS) {
+            current_->push(Value::from_bool(x < y));
+        } else if constexpr (Op == OpCode::LESS_EQUAL) {
+            current_->push(Value::from_bool(x <= y));
+        } else {
+            UNREACHABLE();
+        }
+        return true;
+    }
+
+    Opt<Error> AriaVM::unwind_() {
+        // 自最内帧向外遍历(pitfalls 坑 #13):每帧以 last_ip(顶帧 = 故障指令起始 / 外层帧 =
+        // CALL 站点,均由 run_ 循环顶写好,坑 #2)反推 offset 查本帧 CodeUnit 的异常记录表。
+        // 首命中即在该帧 unwind -- 此前轮次已逐帧 exit_frame 弹掉全部内层帧,本帧即栈顶,
+        // 无需 FrameStack::truncate。全帧未命中 -> 未捕获:寄存器反提 Error + 跟踪烘焙(坑 #16)。
+        // 前提:寄存器已有载荷(raise/fail/THROW 刚入;call_value 族 bool 契约 return false ⟺ 已
+        // raise 保证) -- take 后解引用空可选是 UB,断言把关(write 侧 Movement::raise 空寄存器
+        // 断言的 read 侧成对)。
+        // 未捕获跟踪条目(仅本函数消费):fn/mod 物化路径只有 String 拼接、无 GC 分配点不悬垂;
+        // ip_off 收集时就地换算 -- 帧随即被 exit_frame 弹掉,last_ip/unit 不可后取。
+        struct TraceEntry {
+            ObjFunction* fn;     // 帧函数(名字渲染)
+            ObjModule*   mod;    // 帧模块(位置串渲染,module_loc)
+            u32          ip_off; // 行号经 fn->unit().line_for_offset 查
+        };
+
+        ASSERT(current_->has_error(), "unwind_: no pending payload");
+        List<TraceEntry> trace; // 收集序:内 -> 外;物化时反转为外 -> 内(Python 式 most recent call last)
+        while (!current_->frames().empty()) {
+            auto& [fn, unit, module, ip, slots, last_ip] = current_->frames().top();
+            const auto ip_off                            = static_cast<u32>(last_ip - unit->code.data());
+            if (const auto rec = unit->find_try_handler(ip_off)) {
+                // 命中 handler:截值栈到本帧 slots + stack_depth(stack_depth 相对 frame.slots 非
+                // 全局基址,坑 #6 -- 丢弃 try 体临时值与本帧残留,保留 callee/参数/已声明局部),
+                // ip 跳 handler 入口;寄存器载荷 push 落 catch 参数槽(恒 == stack_depth,值填槽
+                // 无 STORE_LOCAL,坑 #10)。take 清寄存器到 push 之间无分配,载荷不失根。
+                const auto record = *rec;
+                current_->truncate_stack(static_cast<usize>(slots + record->stack_depth - current_->stack_base()));
+                ip = unit->code.data() + record->handle;
+                current_->push(*current_->take_error());
+                return std::nullopt; // 已派发 handler,调用方 break 回循环顶重取帧(坑 #11)
+            }
+            // 未命中:帧即将被弹,先记跟踪三元组再 exit_frame(坑 #16 点 2 -- 帧存活时收集)。
+            trace.push_back(TraceEntry{fn, module, ip_off});
+            current_->exit_frame();
+        }
+
+        // 全帧未命中 -> 未捕获:寄存器载荷反提拆 (码, 烘焙消息) 两件(ObjException 原码原消息
+        // 含位置;用户 throw 原值兜底 UncaughtException,坑 #7),跟踪逐帧烘焙进消息尾部
+        // (透传的编译期 Error 不经本路径,无跟踪 -- 坑 #16 点 6),拼完经 from_baked 一次物化
+        // 成边界 Error。trace 恒非空(run_ 各调用点帧栈非空不变式),空循环是退化情形。
+        auto [code, msg] = uncaught_error_parts(*current_->take_error());
+        // 收集序内->外反转(坑 #16:渲染外->内)
+        for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
+            const auto line = fn->unit().line_for_offset(ip_off);
+            msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(*mod, line));
+        }
+        return Error::from_baked(code, msg);
+    }
+
     Result<Value, Error> AriaVM::run_() {
         // 语义统一:栈/帧/错误寄存器一律经 current_ 访问当前上下文(现为 main_ctx_;M6 切换时为
         // 被恢复协程的上下文)。M6 单循环切换模型(vm-design.md §4.9)下「正在执行的字节码所在
@@ -698,6 +726,9 @@ namespace aria {
             trace_execution(*current_);
 #endif
             // 各 case 严格按 bytecode/code.hpp 中 OpCode 枚举的声明顺序排列。
+            // 退出约定:一律 break(switch 即整个 while 体,其后无语句,与 continue 等效)。
+            // unwind 派发 handler 后帧引用已废,同样靠 break 回循环顶重取 --
+            // **switch 之后不得新增引用 frame 的代码**,否则派发路径踩陈旧帧(坑 #11 的防御前提)。
             switch (auto op = static_cast<OpCode>(read_u8(frame))) {
                 case OpCode::HALT:
                     return Value::nil_val();
@@ -782,8 +813,11 @@ namespace aria {
                     if (entry == nullptr) {
                         entry = builtins_.find(key); // 回退 VM 级 builtins(内置 type/len/str/assert)
                         if (entry == nullptr) {
-                            return runtime_err(*current_, ErrorCode::UndefinedVariable, "undefined global '{}'",
-                                               name->view());
+                            raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            if (auto u = unwind_()) {
+                                return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                            }
+                            break; // 已派发 handler:帧栈可能已截,循环顶重取
                         }
                     }
                     current_->push(entry->value);
@@ -798,8 +832,11 @@ namespace aria {
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame.module->globals().find(key);
                     if (entry == nullptr) {
-                        return runtime_err(*current_, ErrorCode::UndefinedVariable, "undefined global '{}'",
-                                           name->view());
+                        raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     entry->value = current_->peek(0);
                     break;
@@ -843,51 +880,79 @@ namespace aria {
                     current_->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
-                // 比较(弹 2 压 1;run_binary_numeric 管栈效应,失败直接终止为 Uncaught)
+                // 比较(弹 2 压 1;run_binary_numeric 与 call_value 族同款 bool 契约,失败善后与
+                // CALL case 同形:unwind_ 查表派发 / 未捕获物化 Error 终止 run_,pitfalls 坑 #11)
                 case OpCode::GREATER:
-                    if (auto err = run_binary_numeric<OpCode::GREATER>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::GREATER>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
-                    if (auto err = run_binary_numeric<OpCode::GREATER_EQUAL>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::GREATER_EQUAL>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::LESS:
-                    if (auto err = run_binary_numeric<OpCode::LESS>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::LESS>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::LESS_EQUAL:
-                    if (auto err = run_binary_numeric<OpCode::LESS_EQUAL>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::LESS_EQUAL>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 // 算术(弹 2 压 1;同上)
                 case OpCode::ADD:
-                    if (auto err = run_binary_numeric<OpCode::ADD>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::ADD>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::SUBTRACT:
-                    if (auto err = run_binary_numeric<OpCode::SUBTRACT>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::SUBTRACT>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::MULTIPLY:
-                    if (auto err = run_binary_numeric<OpCode::MULTIPLY>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::MULTIPLY>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::DIVIDE:
-                    if (auto err = run_binary_numeric<OpCode::DIVIDE>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::DIVIDE>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 case OpCode::MOD:
-                    if (auto err = run_binary_numeric<OpCode::MOD>(*current_)) {
-                        return runtime_err(std::move(*err));
+                    if (!run_binary_numeric<OpCode::MOD>()) {
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
                     }
                     break;
                 // 一元
@@ -900,8 +965,11 @@ namespace aria {
                     } else if (v.is_f64()) {
                         current_->push(Value::from_f64(-v.as_f64()));
                     } else {
-                        return runtime_err(*current_, ErrorCode::InvalidOperand, "negate requires a number, got {}",
-                                           type_name(v));
+                        raise(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(v));
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     break;
                 }
@@ -987,8 +1055,12 @@ namespace aria {
                     // 良构不变式:栈上必有 callee + argc 个实参。
                     ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
                     if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
-                        // 寄存器载荷(ObjException 等 Value)经 value_to_error 还原为 Error 出栈。
-                        return runtime_err(*current_->take_error());
+                        // 失败载荷已在寄存器(call_value 族 bool 契约),unwind 查异常记录表:
+                        // 命中 handler 即截栈派发(值落 catch 参数槽),全未命中物化 Error 出栈。
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈已 truncate,循环顶重取
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
@@ -1048,8 +1120,11 @@ namespace aria {
                     const auto canonical_path_str =
                             resolve_module(path->view(), frame.module->abs_path(), source_roots_);
                     if (!canonical_path_str) {
-                        return runtime_err(*current_, ErrorCode::ModuleNotFound, "module not found: '{}'",
-                                           path->view());
+                        raise(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     auto canonical_path = new_string(gc_, *canonical_path_str);
                     auto guard = gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
@@ -1062,10 +1137,13 @@ namespace aria {
                     // 未命中:加载链路 -- 读盘 -> 编译 -> 入表占位(见 load_module),不在此执行模块体。
                     //   失败契约同 call_value 族:return nullptr ⟺ 载荷已 raise 入当前上下文寄存器
                     //   (ModuleNotFound 带 IMPORT 站点位置 / 被导入模块编译期 Error 原样装配箱),
-                    //   take_error 取出经 value_to_error 还原为 Error 出栈。
+                    //   unwind 查表:命中 handler 即截栈派发,全未命中物化 Error 出栈。
                     ObjModule* module = load_module(canonical_path, path->view());
                     if (module == nullptr) {
-                        return runtime_err(*current_->take_error());
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:frame 已废,循环顶重取
                     }
                     // 模块体 run-once = 一次普通 0 参函数调用:压 callee(entry,<module>)-> 进帧 -> break。
                     //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、
@@ -1073,17 +1151,28 @@ namespace aria {
                     ObjFunction* entry = module->entry();
                     current_->push(Value::from_obj(entry)); // callee 压栈
                     if (!call_value(Value::from_obj(entry), 0)) {
-                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶,弹掉。寄存器载荷(ObjException
-                        // 等 Value)经 value_to_error 还原为 Error 出栈。
-                        current_->drop(1);
-                        return runtime_err(*current_->take_error());
+                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
+                        // 载荷已在寄存器,unwind 查表派发 / 物化 Error 出栈。
+                        if (auto u = unwind_()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        }
+                        break; // 已派发 handler:帧栈已 truncate,循环顶重取
                     }
                     break; // 帧已切换,frame 引用作废,循环顶重新取
                 }
 
                 // ---- 异常 ----
-                case OpCode::THROW:
-                    not_implemented("THROW");
+                case OpCode::THROW: {
+                    // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型,
+                    // 坑 #7/#12)后 unwind -- 命中 handler 截栈跳 handler(值落 catch 参数槽),全帧
+                    // 未命中物化 UncaughtException Error(消息渲染值本身,无位置前缀 -- 位置由
+                    // 未捕获跟踪的 at 行给出,坑 #16)。
+                    current_->raise(current_->pop());
+                    if (auto u = unwind_()) {
+                        return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                    }
+                    break; // 已派发 handler:帧栈已 truncate,循环顶重取
+                }
 
                 // ---- 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)----
                 case OpCode::RETURN: {

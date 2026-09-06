@@ -17,7 +17,7 @@ namespace aria {
     // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与
     // 运行期未捕获出口的边界物化形态--运行期在途错误实体是 ObjException（存 current_ctx
     // 挂起错误寄存器，见 .claude/rules/runtime.md「VM 异常通道落地状态」），Error 仅在
-    // run_ 返回时经 value_to_error -> from_baked 反提构造，不参与 run_ 内部传播。
+    // run_ 返回时经反提拆件（AriaVM uncaught_error_parts）+ from_baked 物化构造，不参与 run_ 内部传播。
     //
     // 设计要点：
     //   - 值类型（可拷贝/移动），供 Result<T, Error> 携带，符合项目「错误处理倾向
@@ -68,10 +68,9 @@ namespace aria {
         }
 
         // 成品语义:以**已烘焙完整消息串**原样构造,不经 make_message(否则把 "Category: Name"
-        // 前缀再烘一遍成双重前缀)。两类合法调用方:ObjException::to_error()(其 message_ 与
-        // Error::message() 同形)与 VM run_ 直报站点 runtime_err(位置串 + 细节先经公开
-        // make_message 烘齐、再经本工厂装回 -- 该组合调用点唯一,不单占工厂名;过渡形态,
-        // M3 直报站点统一切入寄存器后仅存 to_error 调用方)。
+        // 前缀再烘一遍成双重前缀)。两类合法调用方(均在 VM 未捕获出口侧):ObjException::to_error()
+        // (其 message_ 与 Error::message() 同形,寄存器载荷反提)与 AriaVM::unwind_ 物化未捕获
+        // Error 时烘焙堆栈跟踪(反提消息 + 逐帧 at 行拼接后经本工厂重建,M3)。
         // 禁止传组件串(裸 detail)-- 会得到缺前缀的消息,渲染不一致。设计见
         // .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7。
         [[nodiscard]]
@@ -79,9 +78,9 @@ namespace aria {
             return Error{code, String{message}};
         }
 
-        // 运行期报错点的格式化细节在调用处自行 std::format 后走 from_detail(仅编译期与
-        // 兜底收口漏斗,如 CodeGen::fail / AriaVM value_to_error;VM 主报错路径经
-        // make_message + from_baked,见 AriaVM.cpp 的 raise / runtime_err)。
+        // 报错点的格式化细节在调用处自行 std::format 后走 from_detail(仅编译期收口,如
+        // CodeGen::fail / Lexer / Parser;运行期一律 make_message 烘齐 -- 见 AriaVM.cpp 的
+        // raise 装箱点与 uncaught_error_parts 兜底)。
 
         // 烘焙单点的公开重载:完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
         // 位置串由调用方格式化好传入(运行期 "path:line" / "<name>:line";空串无前缀),

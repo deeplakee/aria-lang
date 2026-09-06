@@ -10,9 +10,11 @@
 #include "compile/Parser.hpp"
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
 #include "util/source_file.hpp"
 #include "value/Value.hpp"
@@ -693,4 +695,188 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
     auto out = run_source("len = 5; return len;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
+}
+
+// ============================================================
+// M3 异常（try/catch/throw）
+// ============================================================
+// 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表
+// （无 SETUP_EXCEPT 指令，不依赖 C++ 异常）。单寄存器模型：用户 throw 存原值保类型、运行时
+// 错误装箱 ObjException 携码；未捕获物化 Error（ObjException 经 from_baked 保码 / 原值兜底
+// UncaughtException）并烘焙逐帧堆栈跟踪（外 -> 内）。run_source 的 stress GC 默认开，锻炼
+// pending_error_ 根接线（pitfalls 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
+
+TEST(CodeGen, ThrowIntCaughtBindsValue) {
+    // throw 42 被 catch 捕获，e 绑原值保类型（单寄存器模型，坑 #7）。
+    EXPECT_EQ(run_int("try { throw 42; } catch (e) { return e; }"), 42);
+}
+
+TEST(CodeGen, ThrowStringCaughtBindsValue) {
+    auto out = run_source("try { throw \"boom\"; } catch (e) { return e; }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    // 渲染即串内容，证绑的是 ObjString 原值（非消息串）。
+    EXPECT_EQ(aria::format_value(out.value()), "boom");
+}
+
+TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
+    // throw 42 未捕获：原值兜底物化 UncaughtException（无位置前缀 -- throw 不装箱，位置由
+    // 跟踪的 at 行给出），消息渲染值本身 + at 跟踪行（throw 站点 = 顶帧）。
+    auto out = run_source("throw 42;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UncaughtException);
+    EXPECT_EQ(out.error().message(), "Runtime: UncaughtException uncaught exception: 42\n"
+                                     "  at <main> (<test>:1)");
+}
+
+TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
+    // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，print/str 渲染之）。
+    auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out.value().is_obj());
+    const auto* ex = aria::Object::as<aria::ObjException>(out.value().as_obj());
+    ASSERT_NE(ex, nullptr);
+    EXPECT_EQ(ex->code(), ErrorCode::DivisionByZero);
+    EXPECT_EQ(ex->to_string(), "<test>:1: Runtime: DivisionByZero integer division by zero");
+}
+
+TEST(CodeGen, RethrowPreservesCode) {
+    // re-throw 保码（单寄存器收益，坑 #7）：catch 绑 ObjException 再 throw（catch 体不在
+    // 本层受保护区间内，向外传播），未捕获经 from_baked 回 DivisionByZero（非 UncaughtException）。
+    auto out = run_source("try { return 1 / 0; } catch (e) { throw e; }");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
+    EXPECT_EQ(out.error().message(), "<test>:1: Runtime: DivisionByZero integer division by zero\n"
+                                     "  at <main> (<test>:1)");
+}
+
+TEST(CodeGen, NativeFailCaughtByTry) {
+    // 原生报错（len 非 String）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
+    // 经 unwind 被捕获；str(e) 渲染完整消息，位置 = CALL 站点行（原生不进帧，坑 #15）。
+    auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(aria::format_value(out.value()), "<test>:1: Runtime: TypeMismatch len requires a string, got Nil");
+}
+
+TEST(CodeGen, NestedTryInnerCatches) {
+    // 嵌套 try：内层捕获（find_try_handler 取最内层覆盖区间）。
+    auto out = run_source("try { try { throw 1; } catch (i) { return i; } } catch (o) { return 2; }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 1);
+}
+
+TEST(CodeGen, NestedTryOuterCatchesInnerRethrow) {
+    // 内层 catch re-throw：THROW 指令在 catch 体（本层区间之外、外层区间之内）-> 外层捕获。
+    auto out = run_source("try { try { throw 1; } catch (i) { throw i; } } catch (o) { return o + 10; }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 11);
+}
+
+TEST(CodeGen, CrossFrameCatch) {
+    // 跨帧捕获：被调函数 throw，unwind 逐帧 exit_frame 后在调用者帧命中 handler（坑 #13），
+    // 截值栈到 frame.slots + stack_depth，异常值 push 落 catch 参数槽。
+    auto out = run_source("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(aria::format_value(out.value()), "cross");
+}
+
+TEST(CodeGen, DeepCallChainUnwind) {
+    // 三层调用链（a -> b -> c）内 throw，顶层 try 捕获：unwind 连弹三层帧后派发 handler。
+    auto out = run_source(R"(
+fun c() {
+    throw 7;
+}
+fun b() {
+    return c();
+}
+fun a() {
+    return b();
+}
+try {
+    return a();
+} catch (e) {
+    return e;
+}
+)");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 7);
+}
+
+TEST(CodeGen, TryBodyLocalsDiscardedOnUnwind) {
+    // unwind 截栈丢弃 try 体临时值与被调帧残留（截到 stack_depth），try 外变量与 catch 体
+    // 局部照常可用 -- 栈不腐坏（坑 #6/#10 的值填槽不变式）。
+    auto out = run_source(R"(
+var keep = 1;
+fun f() {
+    var in_f = 2;
+    throw 3;
+}
+try {
+    var in_try = f();
+} catch (e) {
+    var in_catch = 4;
+    return keep + in_catch + e;
+}
+)");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 8);
+}
+
+TEST(CodeGen, UncaughtStackTraceListsFramesOuterToInner) {
+    // 未捕获跨帧错误：消息尾部逐帧 at 行，外 -> 内（Python 式 most recent call last，坑 #16）；
+    // 行号 = 各帧执行位置（div 的除法行 / mid 的 CALL 行 / <main> 的 CALL 行，同一 last_ip）。
+    auto out = run_source(R"(
+fun div() {
+    return 1 / 0;
+}
+fun mid() {
+    return div();
+}
+mid();
+)");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
+    EXPECT_EQ(out.error().message(), "<test>:3: Runtime: DivisionByZero integer division by zero\n"
+                                     "  at <main> (<test>:8)\n"
+                                     "  at mid (<test>:6)\n"
+                                     "  at div (<test>:3)");
+}
+
+TEST(CodeGen, ErrNotImplementedTryFinally) {
+    // finally 属 M3b：finally-only 与 catch+finally 一并占位（只编 catch 会静默丢块）。
+    auto c1 = compile_only("try { print 1; } finally { print 2; }");
+    ASSERT_FALSE(c1.has_value());
+    EXPECT_EQ(c1.error().code(), ErrorCode::NotImplemented);
+
+    auto c2 = compile_only("try { print 1; } catch (e) { print 2; } finally { print 3; }");
+    ASSERT_FALSE(c2.has_value());
+    EXPECT_EQ(c2.error().code(), ErrorCode::NotImplemented);
+}
+
+TEST(CodeGen, TryCatchEmitsTryRecordAndThrow) {
+    // 发射核对：try_records 一条，受保护区间 [begin, end) 覆盖 try 体（THROW 在内），
+    // handle 指向跳过 catch 的 JUMP 之后，stack_depth = try 入口局部数（<main> 顶层仅
+    // slot 0 哑元 = 1）；反汇编出现 try records 小节（非空才列）。
+    auto c = compile_only("try { throw 1; } catch (e) { print e; }");
+    ASSERT_TRUE(c.has_value()) << c.error().message();
+    const auto& cu = c.value()->unit();
+    ASSERT_EQ(cu.try_records.size(), 1u);
+    const auto& rec = cu.try_records[0];
+    EXPECT_LT(rec.begin, rec.end);
+    EXPECT_GT(rec.handle, rec.end);
+    EXPECT_EQ(rec.stack_depth, 1u);
+    EXPECT_NE(cu.disassemble("<main>").find("try records:"), std::string::npos);
+}
+
+TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
+    // 嵌套 try：入口预插占位 + 结尾回填（坑 #4）保证记录按 begin 非降序（二分查表前提），
+    // 且内层区间整个嵌于外层区间内。begin 相等（内层是外层体首条语句、其间零发射）合法，
+    // 查表靠反向扫描取最内层 -- 该 tie 语义由 NestedTryInnerCatches 运行期覆盖；本例内层
+    // try 前有语句，begin 严格递增。
+    auto c = compile_only("try { print 0; try { print 1; } catch (a) { print 2; } } catch (b) { print 3; }");
+    ASSERT_TRUE(c.has_value()) << c.error().message();
+    const auto& recs = c.value()->unit().try_records;
+    ASSERT_EQ(recs.size(), 2u);
+    EXPECT_LT(recs[0].begin, recs[1].begin);
+    EXPECT_LT(recs[1].begin, recs[0].end); // 内层起点在外层区间内
+    EXPECT_LT(recs[1].end, recs[0].end);
 }

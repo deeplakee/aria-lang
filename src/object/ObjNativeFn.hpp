@@ -40,9 +40,9 @@ namespace aria {
     //   位置恰为 CALL 站点;合成模块退化 "<name>:line";帧栈空即 run 外直调则无位置)装箱
     //   ObjException{code, 消息} 后存入,用户 throw(M3)的原值路由另走 Movement::raise(Value)。
     //   VM 在 CALL 后以**返回的 bool 为成败信号**--true 走成功路径(drop argc,slots[0] 升至栈顶),
-    //   false 经 take_error() 取出寄存器中的载荷、ObjException 经其 to_error(Error::from_baked
-    //   原样回传)还原为 Error 沿 runtime_err 路径传播(M1 无 try/catch 即作未捕获错误从 run()
-    //   返回;M3 raise/unwind 落地后供 catch)。故 Error 仅在出错时构造,不进每次调用的返回值。
+    //   false 时载荷留寄存器,调用方走 unwind_ 查异常记录表:命中 handler 截栈派发,全未命中
+    //   经 uncaught_error_parts 拆件 + from_baked 物化为 Error 从 run() 返回。故 Error 仅在出错时
+    //   构造,不进每次调用的返回值。
     //   分配安全:vm.fail 内 new_exception 可能触发 GC,值栈/帧/builtins_ 已接根,载荷入寄存器后
     //   经 VM 根 tracer 标 pending_error 保命。
     //

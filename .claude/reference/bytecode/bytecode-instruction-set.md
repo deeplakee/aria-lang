@@ -291,9 +291,9 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出；VM `raise` 查 `ExceptionFrame`/`CallFrame` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
+| `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出（原值入挂起寄存器不包，catch 绑原值保类型）；`unwind_` 查各帧 `try_records` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
 
-> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与查表已落地（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返命中记录指针）；VM `raise`（查表 + truncate unwind + 跳 handler）尚未实现（见 §5.9/§6.1）。
+> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。M3 已落地：记录表结构与查表（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返命中记录指针）+ CodeGen try/catch/throw 发射 + VM `unwind_`（查表 + 逐帧回退 + 截栈跳 handler + 未捕获物化 Error 带堆栈跟踪）全链可用（见 §5.9/§6.1；`finally` 属 M3b 未落地）。
 
 ### 4.17 返回
 
@@ -530,17 +530,15 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程：按顶帧 `last_ip` 反推 offset -> 查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 沿帧栈退到 handler 所属帧（`FrameStack::truncate`）-> 值栈 `truncate(stack_depth)` -> 压异常值 -> `ip = handle`。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。`FrameStack::truncate(n)` 已就绪，供 unwind 一步跨多帧。记录表结构与查表已落地（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返 `Opt<const TryRecord*>` 命中记录指针），`raise` 完整流程（truncate unwind + 跳 handler）与 `THROW` 运行时语义待实现（§6.1）。
+`raise` 流程（M3 已落地，`AriaVM::unwind_()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 未命中的帧 `exit_frame` 逐个弹出（顺路收集未捕获跟踪三元组）-> 命中帧处值栈 `truncate_stack(slots + stack_depth)` -> 压异常值（落 catch 参数槽）-> `ip = handle`；全帧未命中物化 `Error`（反提寄存器载荷）并烘焙外->内逐帧 `at` 堆栈跟踪。`finally` 在 catch 与正常路径汇合处执行（编译器在两路径都安排跳入 `L_finally`）；`finally` 内再抛出/return 的语义留实现细化。
 
 ## 6. 缺口分析（相对文法与 CLAUDE.md）
 
-### 6.1 异常记录表（已采纳方案，部分落地）
+### 6.1 异常记录表（已采纳方案，M3 已落地）
 
-**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。记录表结构与查表已落地：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle, stack_depth}`（按 `begin` 单调；`stack_depth` = try 入口局部数编译期快照，供值栈回退），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录，返 `Opt<const TryRecord*>` 指向命中记录。`CallFrame` 亦已落地（`truncate` 目标深度来源之一）。待实现项：
+**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。已落地全链：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle, stack_depth}`（按 `begin` 非降序，CodeGen 入口预插占位 + 结尾回填保证；`stack_depth` = try 入口局部数编译期快照，供值栈回退），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录，返 `Opt<const TryRecord*>` 指向命中记录；VM `unwind_` 查表 + 逐帧回退 + 截栈跳 handler + 未捕获物化带堆栈跟踪（§5.9）；`THROW` 运行时语义（弹值入寄存器 + unwind，catch 绑原值保类型）；CodeGen try/catch（含嵌套）/throw 发射。待实现项：
 
-- VM `raise`：按 `last_ip` 反推 offset 查表 -> `truncate` 回退 -> 跳 handler（见 §5.9）。
-- `THROW` 运行时语义（当前 `THROW` 命中 `not_implemented`）。
-- `finally` 语义细化（finally 内 return/throw、finally 必执行）。
+- `finally` 语义细化（finally 内 return/throw、finally 必执行）-- M3b，带 `finally` 的 try 目前编译期 `NotImplemented` 占位。
 
 详见 CLAUDE.md「错误处理」第 2 条。
 
@@ -613,7 +611,7 @@ code:
 | 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
 | 4 | `ADD` 重载 | 承载数值加 + 字符串/list 拼接 | 仅数值，拼接走内建 |
 | 5 | `INVOKE_METHOD` | 已加入为预备指令, 暂 pass | 维持 `LOAD_FIELD`+`CALL` |
-| 6 | 异常机制 | CodeUnit 内记录表（已定）, 待实现 | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
+| 6 | 异常机制 | CodeUnit 内记录表（M3 已落地, `finally` 属 M3b 待实现） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |
 | 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |
 | 9 | 内建注册机制 | 走全局表预填或 `LOAD_BUILTIN` | -- |

@@ -17,7 +17,8 @@ namespace aria {
     //   静态入口 disassembleCodeUnit(codeunit, name) 便捷包装为 `Disassembler{...}.disassemble()`。
     //
     //   disassemble() 返回:表头 `== name ==` + `constants:` 小节(非空才列)
-    //   + `code:` 小节(逐指令,始终列出)+ 结尾 `== end ==`;段间空行分隔。
+    //   + `try records:` 小节(非空才列,异常记录表逐条)+ `code:` 小节(逐指令,始终列出)
+    //   + 结尾 `== end ==`;段间空行分隔。
     //   每条指令一行:偏移(4 hex) | 行号(右对齐 4 列十进制,与上行同号用 '|' 占位)
     //   | opcode 名 | 操作数(hex) | ; 解析注释(常量值/名字/跳转目标/立即数)。
     class Disassembler {

@@ -14,6 +14,10 @@ namespace aria {
     class ObjModule;
     class ObjNativeFn;
 
+    // 前置声明(bytecode/code.hpp 的 X 表生成物):run_binary_numeric<Op> 模板形参用,
+    // 免头文件拖入 bytecode 树(定义处 AriaVM.cpp 已含)。
+    enum class OpCode : u8;
+
     // interpret 结果：编译并执行的结局类别（对齐 clox InterpretResult）。
     // interpret / interpret_from_path 内部已把错误渲染到 stderr，故只回类别、不回 Error--
     // turnkey 场景调用方只要成败类别；Error 自有完整消息串、与内部构造/读盘的 SourceFile 解耦，
@@ -45,6 +49,12 @@ namespace aria {
     //        + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/帧/挂起错误寄存器。
     //        IMPORT 全链已落地(路径解析 -> 命中复用;未命中 load_module:读盘 -> 编译 -> run-once);
     //        DEF/LOAD/STORE_GLOBAL 已落地。
+    //
+    //        M3 新增:异常通道闭环 -- run_ 内运行时错误不再直传 Result,统一 raise 入挂起寄存器后经
+    //        unwind_ 查 CodeUnit 异常记录表派发(命中 handler 截栈跳 handler / 全未命中物化 Error 带
+    //        堆栈跟踪);THROW 落地(用户 throw 原值保类型);try/catch 由 CodeGen 编译期写 try_records
+    //        (无 SETUP_EXCEPT 指令)。见下方「异常 unwind」组成员与
+    //        .claude/reference/runtime/exception-implementation-pitfalls.md。
     //
     //        VM 持有自己的 GC(值成员 gc_):每个 VM 一个 GC,无需外部注入。成员声明序
     //        gc_ -> main_ctx_ -> current_(指 &main_ctx_) -> modules_(后者引用 &gc_),故析构
@@ -118,33 +128,38 @@ namespace aria {
         // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md §4.7(错误通道 2)。
         //
         // 载荷类型(M3 起)为 Value,单寄存器模型(exception-implementation-pitfalls.md 坑 #7):
-        // - raise(code, detail):从零构造消息的装箱入口,一步烘齐--detail 为原始细节串(不含
-        //   "Category:" 前缀,防双烘),位置取自 *current_ 顶帧 last_ip(故障指令 / CALL 站点)
-        //   查行号表烘 "path:line: " 前缀(合成模块退化为 "<name>:line";帧栈空即 run 外直调
-        //   则无位置),经 Error::make_message(Error 的烘焙单点,公开重载)合成完整消息后
-        //   new_exception 装箱入寄存器。不经 Error 对象中转 -- Error 只在边界出现(Result 出口
-        //   / to_error 反提),不当内部渡船;位置恰只在装箱点可得,一并烘入正是把烘焙责任归位。
-        //   Movement::raise(Value)(存原值不包)是 M3 用户 throw 的路由,不经本 VM 层 API。
-        // - fail:便捷工厂 -- std::format 格式化 detail 后 raise(原生函数与 call_value/
-        //   call_function/call_native/load_module 的失败站点共用)。
-        // 寄存器取出的 ObjException 经其 to_error 还原为 Error(见 AriaVM.cpp value_to_error),
+        // - raise(code, fmt, args...):从零构造消息的装箱入口,一步烘齐 -- detail 按 fmt+args
+        //   格式化(格式串经 std::format_string 编译期校验;不含 "Category:" 前缀,防双烘),位置
+        //   取自 *current_ 顶帧 last_ip(故障指令 / CALL 站点)查行号表烘 "path:line: " 前缀
+        //   (合成模块退化为 "<name>:line";帧栈空即 run 外直调则无位置),经 Error::make_message
+        //   (Error 的烘焙单点,公开重载)合成完整消息后 new_exception 装箱入寄存器。不经 Error
+        //   对象中转 -- Error 只在边界出现(Result 出口 / 未捕获出口反提物化),不当内部渡船;位置恰
+        //   只在装箱点可得,一并烘入正是把烘焙责任归位。返回 void -- 纯副作用操作(raise 必
+        //   raise,无成败结局可表),bool 惯用法由 fail 承载。Movement::raise(Value)(存原值不包)
+        //   是 M3 用户 throw 的路由,不经本 VM 层 API。
+        // - fail:便捷工厂 -- raise 后**恒返 false**:供原生函数一行报错 `return vm.fail(...);`
+        //   (同时置寄存器与返回 NativeFn 契约要求的失败信号),与 call_value/call_function/
+        //   call_native/load_module 的失败站点共用。[[nodiscard]] 故意为之:裸 `vm.fail(...);`
+        //   (丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),要么显式
+        //   `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**原生函数返回的 bool
+        //   为成败信号**(见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug
+        //   断言把关),契约 `return false ⟺ 已 raise`。
+        // 寄存器载荷在未捕获出口经 AriaVM.cpp 匿名 uncaught_error_parts 拆为 (码, 烘焙消息) 两件,
         // 边界文案与 Error::from_detail 直构逐字一致。
         //
-        // raise / fail 均返回 false -- 供原生函数一行报错 `return vm.fail(...);`(同时置寄存器与
-        // 返回失败),成功路径则写 slots[0] 后 `return true;`。[[nodiscard]] 故意为之:裸
-        // `vm.fail(...);`(丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),
-        // 要么显式 `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**返回的 bool
-        // 为成败信号**(见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug 断言
-        // 把关),契约 `return false ⟺ 已 raise`。raise 内 new_exception(分配)可能在原生
-        // 执行中触发 GC:值栈/帧/builtins_ 均已接根,载荷构造后立即入寄存器(pending_error 亦由
-        // VM 根 tracer 标根),根安全由既有接线承保。定义在 .cpp(需 ObjException 完整类型)。
-        [[nodiscard]]
-        bool raise(ErrorCode code, StringView detail);
+        // 装箱核心 raise_detail 内 new_exception(分配)可能在原生执行中触发 GC:值栈/帧/builtins_
+        // 均已接根,载荷构造后立即入寄存器(pending_error 亦由 VM 根 tracer 标根),根安全由既有
+        // 接线承保。核心定义在 .cpp(需 ObjException 完整类型)。
+        template<typename... Args>
+        void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            raise_detail(code, std::format(fmt, std::forward<Args>(args)...));
+        }
 
         template<typename... Args>
         [[nodiscard]]
         bool fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return raise(code, std::format(fmt, std::forward<Args>(args)...));
+            raise(code, fmt, std::forward<Args>(args)...);
+            return false;
         }
 
         // 模块表(解释器级):键 = 规范路径 ObjString*(intern,装箱为 Value),
@@ -246,6 +261,37 @@ namespace aria {
         // slots[0]=槽 0(返回值),slots[1..argc]=实参。详见 ObjNativeFn.hpp NativeFn 契约与
         // .claude/reference/runtime/vm-design.md §4.7。
         bool call_native(const ObjNativeFn* obj, u8 argc);
+
+        // 装箱核心(公开模板 raise(code, fmt, args...) 格式化后经此,契约见上「挂起错误侧信道」):
+        // detail 为**已格式化**的原始细节串,runtime_loc 烘位置 + Error::make_message 合成完整消息
+        // + new_exception 装箱入 *current_ 挂起寄存器。无调用方需传成品串,故收私有(raise 单一
+        // 签名,不与 StringView 版重载分叉)。定义在 .cpp(需 ObjException 完整类型)。
+        void raise_detail(ErrorCode code, StringView detail);
+
+        // ---- 异常 unwind(M3,run_ 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
+
+        // 弹 2 算 1:对栈顶两个值执行二元数值运算(9 个算术/比较指令共用,Op 由 run_ 调用点
+        // 穷举实例化;数值语义内联于函数 -- 双 Int 整数路径、任一 F64 升浮点,int 除/模零报错、
+        // f64 按 IEEE)。成功压结果返 true;失败不置值,经 fail 装箱入 *current_ 挂起寄存器后
+        // 返 false -- 与 call_value 族同款 bool 契约(return false ⟺ 已 raise),调用方 unwind_
+        // 查表派发/未捕获物化。模板成员定义在 .cpp(全部实例化点在同 TU 的 run_)。
+        template<OpCode Op>
+        bool run_binary_numeric();
+
+        // 自最内帧向外遍历帧链:每帧以 last_ip 反推 offset 查本帧 CodeUnit 异常记录表
+        // (find_try_handler 取最内层覆盖),首命中即在该帧 unwind -- 截值栈到 frame.slots +
+        // rec->stack_depth、ip 跳 rec->handle、寄存器载荷 push 落 catch 参数槽(恒 == stack_depth,
+        // 值填槽无 STORE_LOCAL,坑 #10),返 nullopt(已派发,调用方 continue);未命中的帧先记
+        // 堆栈跟踪三元组(fn/mod/ip_off,坑 #16)再 exit_frame 继续外层。全帧未命中 -> 未捕获:
+        // 从寄存器反提载荷为 (码, 烘焙消息) 两件(uncaught_error_parts)并把跟踪(收集序内->外,反转为
+        // 外->内,Python 式 most recent call last)逐帧烘焙 "\n  at <fn> (<loc>)" 进消息尾部,
+        // 经 Error::from_baked 一次物化返回。
+        // 前提:寄存器已有载荷(raise/fail/THROW 已入),本函数不构造载荷 -- 入口断言把关
+        // (write 侧 Movement::raise 空寄存器断言的 read 侧成对)。帧内 last_ip 由 run_
+        // 循环顶写(顶帧 = 故障指令,外层帧 = CALL 站点,坑 #2),无参数。
+        // raise 与 unwind 不融合成 *_and_* 具名助手:两个直观动作就地两步,全部站点与
+        // CALL case 失败善后同形(raise 在 call_* 内则直接 unwind_)。
+        Opt<Error> unwind_();
 
         GC       gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
         Movement main_ctx_;

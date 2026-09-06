@@ -23,8 +23,8 @@ namespace aria {
     //     -- 无细节的错误以空串兜底),经 intern 驻留同指针。设计定稿见
     //     .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7(单寄存器模型)。
     //   - to_error():经 Error::from_baked 把 message_ **原样**回传(跳过 make_message 重烘 --
-    //     否则双重前缀)。VM run() 出口把未捕获异常还原为 Result<Value, Error> 的错误半边;
-    //     测试 / 嵌入方照旧取 Error 断言。
+    //     否则双重前缀),供测试 / 嵌入方取 Error 断言。VM 未捕获出口不经本方法,经
+    //     AriaVM.cpp uncaught_error_parts 直读 code_/message_ 拆件后 from_baked 一次物化。
     //   - trace():标 message_(唯一 GC 子节点)。
     //   - to_string():渲染完整烘焙消息(M3 catch 的 print(e) 显示 "Category: Name detail")。
     //
@@ -56,6 +56,7 @@ namespace aria {
 
         // 还原为边界 Error:message_ 已是完整烘焙串(与 Error::message() 同形),经
         // Error::from_baked 原样回传、不再重烘前缀。经本方法脱离 GC(Error 自有 String,无对象引用)。
+        // 供测试 / 嵌入方断言;VM 未捕获出口经 uncaught_error_parts 直读两件拆解,不中转 Error 对象。
         [[nodiscard]]
         Error to_error() const;
 

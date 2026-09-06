@@ -14,14 +14,16 @@ namespace aria {
     class ObjModule;
 
     // 调用帧(trivially-copyable 聚合,满足 FrameStack 约束,同 LineEntry 风格不带尾下划线)。
-    //        每进入一个函数体(或顶层)acquire 一帧,RETURN/异常 unwind 时 pop/truncate。
+    // 每进入一个函数体(或顶层)acquire 一帧,RETURN/异常 unwind 时 pop/truncate。
+    // ip/last_ip 仅作读取游标/锚点,运行期从不经其写字节;last_ip 反推 offset 前提:帧存活期间
+    // code 缓冲恒定 -- 非移动 GC + 执行期零 emit。
     struct CallFrame {
-        ObjFunction* function; // M1-M3 过渡持 ObjFunction*;M4 闭包落地后换 ObjClosure*
+        ObjFunction* function; // M1-M3 持 ObjFunction*,M4 换 ObjClosure*
         CodeUnit*    unit;     // 缓存 function->unit(),省每条指令一跳
-        ObjModule*   module;   // 缓存 function->module(),供 LOAD/STORE/DEF_GLOBAL 定位模块 globals
-        u8*          ip;       // 指令指针(裸指针;raise/行号等冷路径按需算 offset)
-        Value*       slots;    // 本帧局部基址(callee 在槽 0,参数从槽 1 起;RETURN 时弹)
-        const u8*    last_ip;  // 本帧最近取指指令的起始指针(主循环取指前写;报错定位行号 / M3 unwind 查表锚点,查表时按 last_ip - unit->code.data() 反推 offset。前提:帧存活期间 code 缓冲恒定 -- 非移动 GC + 执行期零 emit)
+        ObjModule*   module;   // 缓存 function->module(),供 *_GLOBAL 定位模块 globals
+        u8*          ip;       // 指令指针(冷路径按需反推 offset)
+        Value*       slots;    // 本帧局部基址(callee 槽 0,参数槽 1..)
+        u8*          last_ip;  // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)
     };
 
     // 执行上下文:一段执行的完整状态(可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
@@ -114,6 +116,13 @@ namespace aria {
             return *(top_ - 1 - dist);
         }
 
+        // 截断值栈顶到 new_size(相对 stack_base 的槽位数,须 <= 当前 stack_size)。
+        // 异常 unwind 的帧内回退入口:命中 handler 后截掉 try 体临时值与本帧残留,保留
+        // handler 帧的 callee/参数/已声明局部(截到 frame.slots + stack_depth 由调用方算好)。
+        // 与帧栈回退分工:FrameStack::truncate 弹内层帧,值栈截断归本方法,两者组成 unwind
+        // 的完整回退(pitfalls 坑 #6/#14)。内部经 set_stack_top_ 复用其 [base, top] 区间断言。
+        void truncate_stack(const usize new_size) noexcept { set_stack_top_(buf_.data() + new_size); }
+
         // ---- 帧栈 ----
 
         [[nodiscard]]
@@ -152,7 +161,8 @@ namespace aria {
         // 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰)。M1 单一主上下文,等价于
         // VM 级单寄存器。
         //   - 载荷类型(M3 起):Value。VM 检测到的运行时错误与原生函数报错装箱为 ObjException
-        //     (码 + 消息串,经 to_error 还原为 Error)后写入;aria 语言自身 throw(M3)抛任意值。
+        //     (码 + 完整烘焙消息串,未捕获出口经 uncaught_error_parts 拆件 + from_baked 物化)后写入;
+        //     aria 语言自身 throw(M3)抛任意值。
         //     raise 收已构造好的 Value(构造 ObjException 需分配,在调用方 -- 持 GC 者 -- 完成);
         //     寄存器置入后即由 VM 根 tracer 标 pending_error() 保命(见 AriaVM ctor),取出前
         //     跨安全点分配不回收载荷。
@@ -208,7 +218,7 @@ namespace aria {
         void init_frame_(CallFrame& f, ObjFunction* fn, u8 argc) const;
 
         // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 Movement 内部独占
-        // (exit_frame / 未来 unwind_to),不对外暴露,收紧「值栈顶只由 Movement 自身改」的边界。
+        // (exit_frame / truncate_stack),不对外暴露,收紧「值栈顶只由 Movement 自身改」的边界。
         void set_stack_top_(Value* t) noexcept {
             ASSERT(t >= buf_.data() && t <= top_, "Movement::set_stack_top_ out of range");
             top_ = t;

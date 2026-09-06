@@ -1,6 +1,6 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档，供下一次实现参考。设计基线见 `vm-design.md` §4.7，落地状态见 `.claude/rules/runtime.md`「VM 异常通道落地状态」。一次实现尝试因下列坑叠加导致 5/11 测试失败而回退，本文记录根因与对策，避免重蹈。
+> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（M3b finally / 后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
 >
 > 范围：M3 只做 try/catch/throw（`finally` 推迟至子里程碑 M3b，不引入 `END_FINALLY`）。
 
@@ -39,7 +39,7 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 
 **根因**：CALL 进帧后，调用者帧的 `ip` 停在「CALL 之后的下一条」，等被调用者 RETURN 后回来继续。异常 unwind 时要查的是「触发本次调用的 CALL 站点」是否落在某 try 区间内，而 CALL 站点 = `frame.ip - sizeof(CALL指令)`，不是 `frame.ip`。
 
-**对策**：每帧记录「最后执行指令起始指针」。在 `CallFrame` 加 `const u8* last_ip` 字段（无 NSDMI，`init_frame_` 置 code 起始，见坑 #3）。**在 `run_()` 循环顶每轮取指前无条件写**（单次指针 store，热路径开销可接受，换取对所有 raise 站点的统一正确性）。**表示决策**：帧内存**指针**、查表时与 `unit->code.data()` 相减反推 offset（`try_records`/行号表保持 offset 键不动）-- 与 `ip` 同取向（vm-design §4.3「裸指针走热路径、offset 冷路径换算」），主循环省一次基址减法与截断 cast；成立前提是帧存活期间 `code` 缓冲恒定（非移动 GC、CodeUnit 为 `ObjFunction` 值成员、执行期零 emit、IMPORT 现场编译新建 unit）：
+**对策**：每帧记录「最后执行指令起始指针」。在 `CallFrame` 加 `u8* last_ip` 字段（无 NSDMI，`init_frame_` 置 code 起始，见坑 #3）。**在 `run_()` 循环顶每轮取指前无条件写**（单次指针 store，热路径开销可接受，换取对所有 raise 站点的统一正确性）。**表示决策**：帧内存**指针**（与 `ip` 同为非 const 指向，运行期从不经二者写字节）、查表时与 `unit->code.data()` 相减反推 offset（`try_records`/行号表保持 offset 键不动）-- 与 `ip` 同取向（vm-design §4.3「裸指针走热路径、offset 冷路径换算」），主循环省一次基址减法与截断 cast；成立前提是帧存活期间 `code` 缓冲恒定（非移动 GC、CodeUnit 为 `ObjFunction` 值成员、执行期零 emit、IMPORT 现场编译新建 unit）：
 
 ```cpp
 while (true) {
@@ -72,7 +72,7 @@ Opt<Error> unwind_() {
 
 ## 坑 #3：CallFrame 不能有默认成员初始化（NSDMI）-- 破坏 trivially-copyable
 
-**现象**：给 `CallFrame` 加 `const u8* last_ip = nullptr;`（默认成员初始化）后，`FrameStack<CallFrame>` 的 `static_assert(is_trivial_v<CallFrame>)` 失败。
+**现象**：给 `CallFrame` 加 `u8* last_ip = nullptr;`（默认成员初始化）后，`FrameStack<CallFrame>` 的 `static_assert(is_trivial_v<CallFrame>)` 失败。
 
 **根因**：`FrameStack` 要求 T trivial + trivially-copyable + trivially-destructible（`static_assert` 三连）。NSDMI 会使类的默认构造函数变为非 trivial（即便初始化值是常量），导致 `is_trivial_v` 为 false。`CallFrame` 是 trivially-copyable 聚合，禁用 NSDMI。
 
@@ -85,7 +85,7 @@ struct CallFrame {
     ObjModule*   module;
     u8*          ip;
     Value*       slots;
-    const u8*    last_ip;   // 无默认值！init_frame_ 里置 = ip(code 起始)
+    u8*          last_ip;   // 无默认值！init_frame_ 里置 = ip(code 起始)
 };
 ```
 
@@ -302,6 +302,8 @@ continue;                                // 命中 handler -> frame 已废，循
 
 约 25 处 `return runtime_err(...)` 站点（算术/比较/NEGATE/LOAD|STORE_GLOBAL/CALL/IMPORT/THROW）改为此模式。**每处都不能漏 `continue`**。
 
+**终态（2026-09）**：派发站点与普通 case 统一以 `break` 退出（switch 即整个 while 体、其后无语句，与 `continue` 等效）；防御意图改由 run_ 循环顶注释钉住（switch 之后不得新增引用 `frame` 的代码）。本坑的"continue"字样按历史原貌保留。
+
 例外（已消除，M3 前置改造）：IMPORT 内 `load_module` 已统一走寄存器——返 `ObjModule*`（`nullptr ⟺` 载荷已 raise 入 `*current_`），编译期 Error 就地 `new_exception` 原样装配箱（from_baked 语义不重烘，code+消息逐字节保真，位置语义见坑 #15/#16）、`ModuleNotFound` 经 `fail` 烘 IMPORT 站点位置，调用方 `take_error` 取出传播。M3 改造时它不再是直传残留。
 
 `call_value` 失败站点：
@@ -387,7 +389,7 @@ bool AriaVM::raise(const ErrorCode code, const StringView detail) {
 
 - `Error::make_message(code, location, detail)` 公开（Error 的烘焙单点,from_detail 经此合成,编译/运行期消息形态同源）:location 是调用方格式化好的位置串（空串无前缀）,detail 为原始细节串（不含 `Category:` 前缀,防双烘）。
 - run_ 直报站点（`runtime_err(ctx, ...)`）内部经 `make_message` 烘齐 + `from_baked` 装回构造,直报站点与装箱点同形带位置。
-- `CallFrame.last_ip`（const u8*，指令起始指针；查表时与 `unit->code.data()` 相减反推 offset）已落地:主循环取指前写、`init_frame_` 置 code 起始（无 NSDMI 保 trivial 聚合,坑 #3 的纪律即为此字段立的）。
+- `CallFrame.last_ip`（u8*，指令起始指针；查表时与 `unit->code.data()` 相减反推 offset）已落地:主循环取指前写、`init_frame_` 置 code 起始（无 NSDMI 保 trivial 聚合,坑 #3 的纪律即为此字段立的）。
 
 - 产出形态 `"path:line: Category: Name detail"`，与编译期 `make_message` 逐字同形（编译期多 `:col` 段）-- 运行期无列号（字节码只有 RLE 行号表），行级即上限（对标 Lua）。
 - 位置串是 C++ 侧 `String` 拼接（非 GC 分配），不添 GC 约束；`new_exception` 自守不变（坑 #8）。
@@ -410,30 +412,28 @@ bool AriaVM::raise(const ErrorCode code, const StringView detail) {
 5. **烘焙进 message_ 而非直接 print**：与「message 一次性烘焙、Error 自足」一致；`interpret_run` 的 `io::println(stderr, "{}", result.error().message())` 打印代码零改动，REPL/CLI 同款呈现，测试可对 message 断言，嵌入方自行决定展示。
 6. **透传错误无跟踪**：被导入模块编译错误经 IMPORT 直传，不经 unwind，无帧收集（同坑 #15 分路）。
 
-**效果示例**（`main.aria` 调 `lib/x.aria` 里除零，未捕获；路径示意）：
+**效果示例**（`main.aria` 调 `lib/x.aria` 里除零，未捕获；跟踪行外 -> 内，路径示意）：
 
 ```
 lib/x.aria:12: Runtime: DivisionByZero integer division by zero
-  at div (lib/x.aria:12)
   at <main> (main.aria:5)
+  at div (lib/x.aria:12)
 ```
 
 首行与最内 `at` 行位置重复属预期（同 Python：异常行 + traceback 末行重叠）。
 
 ---
 
-## 实现顺序建议（下次重启时）
+## 实现顺序（B0-B7，已全部落地 2026-09）
 
 1. **B0（已落地）** `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, StringView message)`（内部 `new_string` 驻留自守）+ `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error::from_baked(code, baked_string)` 静态工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 的 EXCEPTION 分支均已加。
-2. **B1** `TryRecord` 扩字段 `{begin, end, handle, stack_depth}`（4 字段,无 `catch_slot`，见坑 #10） + `find_try_handler` 返 `Opt<const TryRecord*>`（`CodeUnit.hpp/.cpp`；二分已是最内层语义，仅改返回型，坑 #4 核对）。
-3. **B3（部分已落地）** `Movement` 改 `pending_error_` 为 `Opt<Value>` + `raise(Value)`（存原值不包）+ `reset` 清已落地；**`truncate_stack` 未落地**（坑 #14，M3 重启时补）。（`Movement.hpp/.cpp`）
-4. **B2**（已落地）`CallFrame` 加 `const u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`run_()` 循环顶每轮取指前写也已落地，坑 #1/#2；存指针、查表时反推 offset，见坑 #2 的表示决策）。
-5. **B4** `AriaVM` 加 `unwind_`/`raise_and_unwind_(code, detail)`（内部 `new_exception` 包成 Value 存入,**同形复用 `runtime_loc` + `Error::make_message` 一步烘位置**，坑 #15 已落地的装箱模式）/`throw_and_unwind_(Value)`（存原值不包）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获从 `pending_error_` 反提 `Error`（ObjException 经 `from_baked`、原值经 `Error::from_detail(ErrorCode::UncaughtException, format_value)`）；unwind 遍历逐帧收集 + 未捕获物化时烘焙堆栈跟踪（坑 #16）。注:`raise(ErrorCode, StringView)`/`fail` 已落地为「一步烘齐」装箱点(不再收 Error 对象),B4 直接复用。
-6. **B5** CodeGen `visitTryStmtNode`/`visitThrowStmtNode` 发射（坑 #9/#10）；`visitTryStmtNode` **入口预插占位 + 结尾回填** `try_records`（构造即升序，**不**编译末尾排序，坑 #4）。
-7. **B6** Disassembler `try_records:` 小节。
-8. **B7** 测试（含 stress GC，坑 #8；含 re-throw 保码用例）。
-
-每步可 `clang++ -std=c++23 -I src -fsyntax-only` 单独验证，B4/B5 后跑端到端。
+2. **B1（已落地）** `TryRecord` 定稿四字段 `{begin, end, handle, stack_depth}`（无 `catch_slot`，坑 #10）+ `find_try_handler` 返 `Opt<const TryRecord*>`（二分已是最内层语义，坑 #4 核对；begin 相等 tie 由反向扫描天然取最内层，运行期测试覆盖）。
+3. **B3（已落地）** `Movement::pending_error_ : Opt<Value>` + `raise(Value)` + `reset` 清 + `truncate_stack(usize)`（坑 #14）。
+4. **B2（已落地）** `CallFrame` 加 `u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`run_()` 循环顶每轮取指前写，坑 #1/#2；存指针、查表时反推 offset）。
+5. **B4（已落地）** `AriaVM` 成员 `unwind_()`（入口断言寄存器非空 -- write 侧 `Movement::raise` 空寄存器断言的 read 侧成对）；`runtime_loc` + `Error::make_message` 一步烘位置（坑 #15）复用公共 `raise`/`fail` 装箱。**raise 与 unwind 不融合**成 `raise_and_unwind_`/`throw_and_unwind_` 具名助手（终态：全部站点就地 `raise`/`fail` 装箱 + 直接 `unwind_`，与 CALL 失败善后同形 -- 两个直观动作不硬融，坑 #11）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获物化经 `uncaught_error_parts` 反提拆件（ObjException 原码原消息 / 原值兜底 `UncaughtException`，拼完跟踪 `from_baked` 一次物化）；跟踪收集 + 物化时烘焙（坑 #16）；run_ 直报站点全部切换（坑 #11，`run_binary_numeric<Op>` 升 AriaVM 成员模板、数值语义内联）。
+6. **B5（已落地）** CodeGen `visitTryStmtNode`（入口预插占位 + 结尾回填，构造即非降序不排序，坑 #4；catch 参数值填槽无 STORE_LOCAL，坑 #9/#10；`finally` 一律 `not_impl` 占位 M3b）/`visitThrowStmtNode`（`emit_expr` + `THROW`）。
+7. **B6（已落地）** Disassembler `try records:` 小节（非空才列，逐条 `[begin, end) handle stack_depth`）。
+8. **B7（已落地）** 测试：`tests/compile/test_codegen.cpp` M3 节（throw 保类型/未捕获 UncaughtException/运行时错误绑 ObjException/re-throw 保码/原生 fail 可捕获/嵌套 try（含 re-throw 外层捕获）/跨帧与三层链 unwind/try 体局部丢弃/未捕获跟踪逐行断言/finally 占位/发射核对（try_records 字段 + 反汇编小节 + 升序））+ `tests/runtime/test_ariavm.cpp`（import 模块体 throw 被导入方捕获、既有消息断言补跟踪行）；源码级 run_source/compile_only 均开 stress GC（坑 #8）。
 
 ---
 
@@ -450,6 +450,6 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 
 ---
 
-## 附：本次回退范围
+## 附：本次回退范围（历史记录）
 
-M3 实现已整体回退至回退时的 HEAD，仅保留 M2（内置函数注册，`src/runtime/Builtins.{hpp,cpp}` + AriaVM 构造期一次性注册进 VM 级 `builtins_` 表 + `LOAD_GLOBAL` 模块 globals 未命中回退查之 + `CMakeLists.txt` + 12 个 builtin 测试）。完整 M3 设计上下文见归档计划 `/Users/icelake/.claude/plans/quizzical-sniffing-cascade.md`（决策 D1-D8）。**回退之后，B0（ObjException/`from_baked`/EXCEPTION 渲染分支）、B2（`last_ip`）与 B3 的寄存器改 `Opt<Value>` 已随后续提交（M3 铺垫）落地**——重启前先对照「实现顺序建议」各步的落地标注，勿重做已完成项。
+M3 首次实现曾因上述坑叠加（5/11 测试失败）整体回退至当时的 HEAD，仅保留 M2（内置函数注册）。随后 B0-B2 与 B3 寄存器部分以 M3 铺垫提交落地，B3 收尾-B7 于 2026-09 按「实现顺序」一次落地完成，本文各步落地标注已同步。

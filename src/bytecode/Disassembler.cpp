@@ -212,6 +212,19 @@ namespace aria {
             }
         }
 
+        // 异常记录表小节(非空才列):每条 try 记录一行 -- 索引、受保护区间 [begin, end)
+        // (半开,ip 落此区间命中)、handler 入口 handle、unwind 栈深 stack_depth(截值栈到
+        // frame.slots + 此值)。记录按 begin 升序(CodeGen 入口预插占位 + 结尾回填保证),
+        // 与 code 段偏移对照阅读。
+        if (const auto& records = codeunit_->try_records; !records.empty()) {
+            out += "\ntry records:\n";
+            for (usize i = 0; i < records.size(); ++i) {
+                const auto& [begin, end, handle, stack_depth] = records[i];
+                out += std::format("  {:04X}: [{:04X}, {:04X}) handle={:04X} stack_depth={}\n", static_cast<u32>(i),
+                                   begin, end, handle, stack_depth);
+            }
+        }
+
         // code 段:始终列出(即便为空),与 constants 段区分。
         // 每行:偏移(4 hex) + 行号(右对齐 4 列十进制,与上行同号用 '|' 占位) + 指令文本。
         // 先存 ip 再解码,避免 format 实参求值顺序干扰 offset_。

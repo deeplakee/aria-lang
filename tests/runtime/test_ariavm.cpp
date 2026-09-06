@@ -462,10 +462,11 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    // run_ 直报站点带位置前缀(经 runtime_err(ctx,...) -> make_message 烘齐 + from_baked 装回):
-    // 合成模块 <script> 退化 "<name>:line",行号 = ADD 指令所在行。
+    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(合成模块 <script> 退化 "<name>:line",
+    // 行号 = ADD 指令所在行),未捕获物化时尾部附堆栈跟踪行(单帧即 at <main>,pitfalls 坑 #16)。
     EXPECT_EQ(out.error().message(),
-              "<script>:3: Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int");
+              "<script>:3: Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
+              "  at <main> (<script>:3)");
 }
 
 TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
@@ -482,7 +483,9 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    EXPECT_EQ(out.error().message(), "<script>:1: Runtime: DivisionByZero integer division by zero");
+    // 同 TypeMismatchIsUncaught:位置前缀 + 未捕获堆栈跟踪行(M3)。
+    EXPECT_EQ(out.error().message(), "<script>:1: Runtime: DivisionByZero integer division by zero\n"
+                                     "  at <main> (<script>:1)");
 }
 
 TEST_F(AriaVMStress, WrongArityIsUncaught) {
@@ -972,6 +975,34 @@ TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {
     EXPECT_EQ(result, aria::InterpretResult::RuntimeError);
 }
 
+// M3:模块体 run-once 期间 throw -- unwind 弹 <module> 帧后,导入方 IMPORT 站点所在 try 捕获
+// (外层帧 last_ip = IMPORT 指令,pitfalls 坑 #2),异常值落 catch 参数槽;boomer 半初始化仍在
+// 表中(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 取返回值断言(interpret 只回类别)。
+TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "boomer.aria", "var x = 1; throw \"boom\";");
+    const auto main_path =
+            write_aria(base, "main.aria",
+                       "try {\n    import \"./boomer\" as B;\n    return 0;\n} catch (e) {\n    return e;\n}\n");
+
+    auto loaded = aria::SourceFile::from_path(main_path);
+    ASSERT_TRUE(loaded.has_value());
+    aria::SourceFile source = std::move(loaded.value());
+    auto             dir    = new_string(vm.gc(), base);
+    auto             module = make_module(vm.gc(), "main", dir); // dir 先入根,make_module 内部自守
+    auto             guard  = vm.gc().make_guard(module);
+    const auto       out    = vm.run(source, *module);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out.value().is_obj());
+    const auto* thrown = aria::Object::as<ObjString>(out.value().as_obj());
+    ASSERT_NE(thrown, nullptr);
+    EXPECT_EQ(thrown->view(), "boom");
+
+    EXPECT_NE(find_module_by_name(vm.modules(), "boomer"), nullptr);
+}
+
 // 循环导入:a 导入 b、b 导入 a(均经 IMPORT 入表 -> 命中 Loading 半初始化对象)。两者各 run-once 一次,
 // 均 Loaded,globals 填充,且交叉绑定(b 的 A == a、a 的 B == b)。main(入口)不入表。
 TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
@@ -1094,8 +1125,10 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
     const auto& err = out.error();
     EXPECT_EQ(err.code(), ErrorCode::TypeMismatch);
     // vm.fail 装箱路径带位置前缀(raise 一步烘齐):原生不进帧,顶帧即 caller,
-    // 位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line"。
-    EXPECT_EQ(err.message(), "<script>:1: Runtime: TypeMismatch fail_always always fails");
+    // 位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line";CALL 失败同走
+    // unwind(M3),未捕获尾部附 at <main> 跟踪行。
+    EXPECT_EQ(err.message(), "<script>:1: Runtime: TypeMismatch fail_always always fails\n"
+                             "  at <main> (<script>:1)");
 }
 
 // 原生函数元数自查:double 收 0 参时经 vm.fail 报 WrongArity。

@@ -23,10 +23,11 @@ namespace aria {
         using Array<Value>::Array; // 继承 explicit Array(GC*) ctor
 
         // GC 标记:遍历所有元素,mark_value(对象元素被标根;nil/int/f64 无对象子节点)。
-        // 由 owner(未来 ObjList)在 collect 的 trace 阶段调用。
+        // 由 owner(未来 ObjList)在 collect 的 trace 阶段调用。range-for:trace 期无 push
+        // 不扩容,迭代器恒有效;ObjList 元素与各函数常量池(CodeUnit::trace 委托)均经此。
         void trace(GC& gc) const noexcept {
-            for (usize i = 0; i < this->size(); ++i) {
-                gc.mark_value((*this)[i]);
+            for (const Value& v: *this) {
+                gc.mark_value(v);
             }
         }
     };

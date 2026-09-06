@@ -2,6 +2,7 @@
 
 #include <format>
 
+#include "aria.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
 

@@ -52,6 +52,7 @@
 //   经 add_name_or_fail 在 emit_expr 之后入池（new_string 结果立即 add_constant，trivial push 不
 //   触发 GC，见 GC.hpp 核心不变式），无需守卫。
 
+#include "aria.hpp"
 #include "bytecode/code.hpp"
 #include "common.hpp"
 #include "compile/AstVisitor.hpp"
@@ -92,7 +93,7 @@ namespace aria {
         // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
         // Error。
         Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module,
-                                            StringView entry_name = "<main>");
+                                            StringView entry_name = kMainEntryName);
 
         ~CodeGen() override                    = default;
         CodeGen(const CodeGen&)                = delete;

@@ -10,6 +10,12 @@ namespace aria {
 
     class GC;
 
+    // 操作数位宽上限(字节码编码格式事实源):u8 操作数最大 255、u16 操作数最大 65535。
+    // 发射侧(CodeGen 的 arity/实参/常量池索引/局部槽号检查)与本类编码侧(POP_N 分块/短槽号/
+    // 跳转偏移/池容量)共享,勿在别处重写字面量;各语义上限常量以之为源(见 CodeUnit.cpp/CodeGen.cpp)。
+    constexpr u32 kU8OperandMax  = 0xFF;   // u8 操作数最大值
+    constexpr u32 kU16OperandMax = 0xFFFF; // u16 操作数最大值(u16 索引可寻址 0..65535,容量 = +1)
+
     // 行号表条目(RLE):从 `offset` 起、直到下一条 entry 的 offset 之前,字节码均属 `line` 行。
     //        简单聚合(类内默认成员初始化),trivially-copyable 满足 Array<T> 约束。
     struct LineEntry {

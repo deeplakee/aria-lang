@@ -16,7 +16,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 | 源码目录 | 参考文件 | 覆盖 |
 | --- | --- | --- |
-| `src/common.hpp`/`type.hpp`/`sys.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / main(解释器入口) / interpreter(CLI 分发核心) |
+| `src/common.hpp`/`type.hpp`/`sys.hpp`/`aria.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / aria(项目级定义) / main(解释器入口) / interpreter(CLI 分发核心) |
 | `src/util/**` | `.claude/rules/util.md` | fs / utf8 / source_file / io / util / cli |
 | `src/value/**` | `.claude/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
 | `src/error/**` | `.claude/rules/error.md` | ErrorCode / Error / AriaException |

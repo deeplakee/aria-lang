@@ -28,6 +28,7 @@
 // 「SourceFile -> AST」(Lexer/Parser) + 「调 CodeGen 产出 ObjFunction」编排层。不做磁盘 I/O--加载源文件
 // 是调用方（解释器入口/REPL）的职责，本类只消费已就位的 SourceFile。
 
+#include "aria.hpp"
 #include "common.hpp"
 #include "compile/Lexer.hpp"
 #include "compile/Parser.hpp"
@@ -61,7 +62,8 @@ namespace aria {
         //     调用时显式传入，区别于主入口）。
         // 成功返回入口 ObjFunction*（归属 gc，须在 gc 存活期间使用）；失败返回首错 Error。
         [[nodiscard]]
-        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule& module, StringView entry_name = "<main>");
+        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule& module,
+                                            StringView entry_name = kMainEntryName);
 
     private:
         GC& gc_;

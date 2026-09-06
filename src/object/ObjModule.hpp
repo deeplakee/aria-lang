@@ -70,7 +70,7 @@ namespace aria {
             return dir_;
         }
 
-        // 模块的绝对文件路径(= VM 模块表查重键形式)= dir_ + "/" + name_ + ".aria"。
+        // 模块的绝对文件路径(= VM 模块表查重键形式)= dir_ + "/" + name_ + kAriaExtension。
         // name_ 内容空串(合成顶层)则仅返 dir_(无文件名);dir_ 内容**空串**(cwd 不可用时
         // new_module 2 参重载兜底)则返空串 -- 供 resolve_module 相对分支判空直接返 nullopt。name_/dir_
         // 指针恒非空(构造期 ASSERT,无合法指针空态),故不判 nullptr。供 IMPORT 取当前模块目录

@@ -17,6 +17,7 @@ add_library(aria_core STATIC
         src/sys.hpp
         src/type.hpp
         src/common.hpp
+        src/aria.hpp
         src/value/AriaArray.hpp
         src/value/AriaHashTable.hpp
         src/value/NanBoxing.hpp

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
@@ -14,22 +15,20 @@
 namespace aria {
 
     namespace {
-        // 合成函数名(`<>` 是标识符中不可用的符号,故不可能与用户具名 fun 冲突):
-        //   kAnonymousName -- lambda 函数名(`<anonymous>`),compile_function 据此判定「lambda -> 留栈不绑定」。
-        // 主入口模块与导入模块的入口函数名分别由 compile() 的 entry_name 参数传 `<main>` / `<module>`
-        // (与 CPython 模块体 code object 同名),不再在此集中定义。
-        constexpr StringView kAnonymousName = "<anonymous>";
+        // 匿名函数名 kAnonymousName("<anonymous>")与入口名 <main>/<module> 均为项目级保留名,
+        // 定义见 aria.hpp;compile_function 据匿名名判定「lambda -> 留栈不绑定」。
 
-        // 容量上限(均由操作数/索引位宽决定;值为该位宽最大值,越界判定统一用 > 比较):
-        //   kMaxArity     -- 函数形参上限 255(ObjFunction arity 为 u8);
-        //   kMaxArguments -- 单次调用实参上限 255(CALL 操作数 u8);
-        //   kMaxConstants -- 常量池最大索引 65535(u16 索引,即最多 65536 项);
-        //   kMaxLocals    -- 单函数局部最大槽号 65535(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
-        // 集中定义,使各检查点与报错文案共享同一来源,无散落魔数。
-        constexpr u32 kMaxArity     = 255;
-        constexpr u32 kMaxArguments = 255;
-        constexpr u32 kMaxConstants = 65535;
-        constexpr u32 kMaxLocals    = 65535;
+        // 容量上限(值即对应操作数/索引位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
+        // 越界判定统一用 > 比较):
+        //   kMaxArity     -- 函数形参上限(ObjFunction arity 为 u8);
+        //   kMaxArguments -- 单次调用实参上限(CALL 操作数 u8);
+        //   kMaxConstants -- 常量池最大索引(u16 索引,即最多 65536 项);
+        //   kMaxLocals    -- 单函数局部最大槽号(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
+        // 语义名集中定义,使各检查点与报错文案共享同一来源,无散落魔数。
+        constexpr u32 kMaxArity     = kU8OperandMax;
+        constexpr u32 kMaxArguments = kU8OperandMax;
+        constexpr u32 kMaxConstants = kU16OperandMax;
+        constexpr u32 kMaxLocals    = kU16OperandMax;
 
         // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
         // 超出 -> NumberOutOfRange):

@@ -2,6 +2,7 @@
 
 #include <format>
 
+#include "aria.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
@@ -43,7 +44,7 @@ namespace aria {
         if (name_->view().empty()) {
             return String{dir};
         }
-        return std::format("{}/{}.aria", dir, name_->view());
+        return std::format("{}/{}{}", dir, name_->view(), kAriaExtension);
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {

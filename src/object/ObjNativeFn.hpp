@@ -1,6 +1,7 @@
 #ifndef ARIA_OBJ_NATIVE_FN_HPP
 #define ARIA_OBJ_NATIVE_FN_HPP
 
+#include "aria.hpp"   // kAnonymousName
 #include "common.hpp" // Span / u8 / String (经 type.hpp)
 #include "object/Object.hpp"
 #include "value/Value.hpp" // Value
@@ -108,10 +109,9 @@ namespace aria {
         NativeFn   fn_;
     };
 
-    // 匿名原生函数名(`<anonymous>`):与 ObjFunction 的 lambda 命名一致(`<>` 是正常标识符中不可用
-    //   的符号,具独特辨识度)。无具名需求的原生函数用本常量作 name_,经 new_native_fn(GC&, NativeFn)
-    //   重载自动 intern 驻留;亦可由调用方 intern 后传 new_native_fn(GC&, ObjString*, NativeFn) 显式构造。
-    inline constexpr StringView kAnonymousName = "<anonymous>";
+    // 匿名原生函数名用 aria.hpp 的 kAnonymousName("<anonymous>",与 ObjFunction 的 lambda 命名一致,
+    //   `<>` 是正常标识符中不可用的符号,具独特辨识度):无具名需求的原生函数经 new_native_fn(GC&, NativeFn)
+    //   重载以它自动 intern 驻留;亦可由调用方 intern 后传 new_native_fn(GC&, ObjString*, NativeFn) 显式构造。
 
     // 工厂:分配 ObjNativeFn。工厂不替调用方守卫入参--name 经 intern 是 weak root,new_object 顶
     //   maybe_collect 可能回收,但工厂只做一次 new_object、无内部新建对象,故**调用方须在调用前自行

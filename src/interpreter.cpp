@@ -4,6 +4,7 @@
 
 #include "interpreter.hpp"
 
+#include "aria.hpp"
 #include "error/Error.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
@@ -18,7 +19,7 @@ namespace aria {
 
         // 构建 aria 解释器 CLI 定义（--help/-h 内置、--repl、--eval/-e、<file> 可选位置参数）。
         util::Cli build_cli() {
-            util::Cli cli{"aria"};
+            util::Cli cli{kProductName};
             cli.set_description("aria 脚本语言解释器");
             cli.add_flag("repl", "启动交互式 REPL");
             cli.add_option("eval", "求值源码字符串后退出", "", 'e');
@@ -32,7 +33,7 @@ namespace aria {
         void run_repl(const LineReader& reader) {
             AriaVM vm;
             auto&  gc     = vm.gc();
-            auto   module = new_module(gc, "<repl>"); // dir 缺省 = cwd（不可用时空串兜底）
+            auto   module = new_module(gc, kReplModuleName); // dir 缺省 = cwd（不可用时空串兜底）
             auto   guard  = gc.make_guard(module);
 
             String line;
@@ -44,7 +45,7 @@ namespace aria {
                 // 而非空串，避免 SourceLoc::to_string 渲染出 ":行:列:" 这种开头冒号的畸形前缀），
                 // content=本行源码；存活到 run 返回，编译期 Error 的 SourceLoc 指向它
                 // （不跨行复用，逐行独立源文件）。
-                SourceFile source{"<repl>", "<repl>", line};
+                SourceFile source{String{kReplModuleName}, String{kReplModuleName}, line};
                 if (auto result = vm.run(source, *module); !result) {
                     io::println(stderr, "{}", result.error().message());
                 }
@@ -79,7 +80,6 @@ namespace aria {
             io::println("{}", cli.help());
             return 0;
         }
-
         if (args.has("eval")) {
             return run_src(args.get("eval").value_or(""));
         }

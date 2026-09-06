@@ -6,16 +6,16 @@
 namespace aria {
 
     namespace {
-        // 操作数位宽决定的编码上限(u8 操作数最大 255,u16 操作数最大 65535):
-        //   kMaxPopChunk       -- POP_N 单块最多 255(操作数 u8);
-        //   kMaxShortLocalSlot -- 局部槽短变体(LOAD/STORE_LOCAL + u8)最大槽号 255,超过则用长变体(_L + u16);
-        //   kMaxJumpOffset     -- 跳转偏移最大 65535(操作数 u16,前向 patch/后向 jump_back 共用);
-        //   kMaxConstantCount  -- 常量池最多 65536 项(u16 索引 0..65535).
-        // 集中定义,使各编码点共享同一来源,无散落魔数。
-        constexpr u32 kMaxPopChunk       = 255;
-        constexpr u32 kMaxShortLocalSlot = 255;
-        constexpr u32 kMaxJumpOffset     = 65535;
-        constexpr u32 kMaxConstantCount  = 65536;
+        // 编码上限(值即对应操作数位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
+        // 越界判定统一用 > 比较):
+        //   kMaxPopChunk       -- POP_N 单块上限(操作数 u8);
+        //   kMaxShortLocalSlot -- 局部槽短变体(LOAD/STORE_LOCAL + u8)最大槽号,超过则用长变体(_L + u16);
+        //   kMaxJumpOffset     -- 跳转偏移上限(操作数 u16,前向 patch/后向 jump_back 共用);
+        //   kMaxConstantCount  -- 常量池最大项数(u16 索引 0..65535).
+        constexpr u32 kMaxPopChunk       = kU8OperandMax;
+        constexpr u32 kMaxShortLocalSlot = kU8OperandMax;
+        constexpr u32 kMaxJumpOffset     = kU16OperandMax;
+        constexpr u32 kMaxConstantCount  = kU16OperandMax + 1;
     } // namespace
 
     CodeUnit::CodeUnit(GC* gc) noexcept : code{gc}, constants{gc}, lines{gc}, try_records{gc} {}

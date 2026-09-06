@@ -7,6 +7,7 @@
 #include <system_error>
 #include <utility>
 
+#include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/Disassembler.hpp"
 #include "bytecode/code.hpp"
@@ -48,13 +49,6 @@ namespace aria {
             return Object::as<ObjString>(frame.unit->constants[idx].as_obj());
         }
 
-        // 导入模块的入口函数名(固定;主入口为 "<main>")。用户代码无法产生含 '<'/'>' 的名字,
-        // 故函数名 == kModuleName 唯一标识「IMPORT 加载层驱动的模块体 run-once 帧」。RETURN 据它
-        // 判定是否弹弃返回值、改压模块对象 -- 取代在 CallFrame 上加 is_module_body
-        // 标志位:名字是函数的固有属性,无需进帧时额外置位/复位,亦无帧槽复用残留之虞。
-        // 名字经 intern 驻留(指针唯一),view() 为短串(8 字节),逐 RETURN 一次内容比较开销可忽略。
-        constexpr StringView kModuleName = "<module>";
-
         // 把 import 串(specifier)解析为命中文件的绝对规范路径(模块表键)。设计见
         // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:键 = weakly_canonical(候选)
         // (解析已存在部分的符号链接、折叠 "."/".."、去冗余分隔符)。
@@ -71,7 +65,7 @@ namespace aria {
         //   - 裸名(无 ./ ../ 前缀):基 = source_roots(入口槽 [0] = 入口模块 dir_、编译器相对
         //     stdlib 目录等),逐个 exists-check,首个存在 <base>/<spec>.aria 者命中(对齐 Python
         //     sys.path 顺序搜索,先入源根者占坑)。
-        //   - 末尾 ".aria" 可选:spec 末段以 ".aria" 结尾(段长 > 5)则剥离,查找时统一补回
+        //   - 末尾 ".aria" 可选:spec 末段以 ".aria" 结尾(段长 > 扩展名长)则剥离,查找时统一补回
         //     ".aria",使 lib/math ≡ lib/math.aria。
         //   - 键 = 绝对规范路径:同模块不同写法、不同源根同名模块均归一到各自真实路径,
         //     跨根不碰撞、相对不逃逸。符号链接经 weakly_canonical 规避双加载。
@@ -79,14 +73,14 @@ namespace aria {
         // 越界/沙箱检测(相对导入越出源根)留待加载层:本函数不限制 ".." 折叠后的路径范围。
         Opt<String> resolve_module(const StringView spec, const StringView current_module_path,
                                    const List<String>& source_roots) {
-            // 1. 剥末段 ".aria" 后缀(段长 > 5 且以 ".aria" 结尾),使 lib/math ≡ lib/math.aria。
+            // 1. 剥末段 ".aria" 后缀(段长 > 扩展名长且以 ".aria" 结尾),使 lib/math ≡ lib/math.aria。
             String spec_str{spec};
             {
                 const auto last_slash = spec_str.find_last_of('/');
                 const auto last_seg   = (last_slash == String::npos) ? StringView{spec_str}
                                                                      : StringView{spec_str}.substr(last_slash + 1);
-                if (last_seg.size() > 5 && last_seg.ends_with(".aria")) {
-                    spec_str.erase(spec_str.size() - 5); // 剥末 5 字符(".aria")
+                if (last_seg.size() > kAriaExtension.size() && last_seg.ends_with(kAriaExtension)) {
+                    spec_str.erase(spec_str.size() - kAriaExtension.size()); // 剥末段扩展名
                 }
             }
 
@@ -107,7 +101,8 @@ namespace aria {
             }
 
             // 3. 逐基:<base>/<spec>.aria -> weakly_canonical -> exists 则为键。
-            const auto      file_rel = spec_str + ".aria";
+            auto file_rel = spec_str;
+            file_rel.append(kAriaExtension);
             std::error_code ec;
             for (const auto& base: bases) {
                 auto canon = stdfs::weakly_canonical(base / file_rel, ec);
@@ -328,7 +323,7 @@ namespace aria {
         //   确切路径待定),由 fs::program_dir 推导并 weakly_canonical 规范化,非空则推入。
         //   可经 set_source_roots 覆盖(测试/嵌入配置)。
         if (const auto pd = fs::program_dir()) {
-            const auto      stdlib = stdfs::path{*pd} / "../share/aria/lib";
+            const auto      stdlib = stdfs::path{*pd} / kStdlibRelPath;
             std::error_code ec;
             if (const auto real = stdfs::weakly_canonical(stdlib, ec); !ec && !real.empty()) {
                 source_roots_.push_back(real.string());
@@ -395,11 +390,11 @@ namespace aria {
         // 合成入口模块 <script>（dir=cwd，2 参 new_module）。
         // new_module 返回 GC 管理对象（经 new_object 分配），故 make_guard 根化；module 一并入根跨编译+执行（编译期
         // CodeGen::compile 亦自守）。
-        const auto module = new_module(gc_, "<script>");
+        const auto module = new_module(gc_, kScriptModuleName);
         auto       guard  = gc_.make_guard(module);
 
-        // 字符串源 SourceFile（名 <script>，无文件身份）；方法内局部，存活至返回，Error 渲染不悬垂。
-        SourceFile source{"<script>", "<script>", String{src}};
+        // 字符串源 SourceFile(名 = kScriptModuleName,无文件身份);方法内局部,存活至返回,Error 渲染不悬垂。
+        SourceFile source{String{kScriptModuleName}, String{kScriptModuleName}, String{src}};
         return interpret_run(source, *module);
     }
 
@@ -575,7 +570,7 @@ namespace aria {
         //    module 经 guard + modules_ 根化,CodeGen::compile 内部亦 make_guard(&module),双保险。
         //    source 须存活到 compile() 返回(Error 烘位置串需它)。entry 经 module->entry_ 根可达。
         Compiler compiler{gc_};
-        if (auto compiled = compiler.compile(source, *module, kModuleName); !compiled) {
+        if (auto compiled = compiler.compile(source, *module, kModuleEntryName); !compiled) {
             auto err = std::move(compiled).error();
             current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
             return nullptr;
@@ -1189,7 +1184,7 @@ namespace aria {
                     if (current_->frames().empty()) {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
                     }
-                    if (fn_name == kModuleName) {
+                    if (fn_name == kModuleEntryName) { // 模块体帧:名字经 intern 驻留,短串逐 RETURN 比较开销可忽略
                         current_->push(Value::from_obj(mod));
                     } else {
                         current_->push(ret);

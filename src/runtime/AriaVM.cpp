@@ -205,11 +205,12 @@ namespace aria {
                                     op_name));
         }
 
-#ifdef DEBUG_TRACE_EXECUTION
         // 执行跟踪:在每条指令执行**前**打印字节码/栈/帧/模块信息(经 io::print 到 stderr,与 GC 调试日志
-        // / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 输出分流)。DEBUG_TRACE_EXECUTION 关闭时
-        // 本函数整体不存在,#ifdef 外零开销。供 run_ 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行
-        // 指令,据此算 offset 并经 Disassembler::disassembleInstruction 解码(仅读不推进 VM 的 ip)。
+        // / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 输出分流)。函数常态编译(与
+        // DEBUG_PRINT_COMPILED_CODE 同形,宏只守 run_ 内调用点),常规构建持续类型检查,重构不致静默
+        // 腐化;关闭时无调用点,[[maybe_unused]] 抑制未用告警,匿名命名空间内整段被优化丢弃,热路径
+        // 零开销。供 run_ 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行指令,据此算 offset
+        // 并经 Disassembler::disassembleInstruction 解码(仅读不推进 VM 的 ip)。
         //   - 栈渲染经 format_value_debug(Value 层非重入渲染,见 value/Value.hpp),不用 format_value
         //     (后者 Obj 走可重载虚 to_string,未来用户类可重载其运行 aria 字节码,trace 在 run_ 内会重入 VM
         //     致无限递归);format_value_debug 对 Obj 走非虚 obj->type() 分派,绝不触用户重载。
@@ -222,50 +223,39 @@ namespace aria {
         //             下方一行用 ^ 对齐到当前帧栈底(bottom = slots 基址)所在槽的 [ 下标,联动指示栈中
         //             哪一段是当前帧的局部区,后随 frame 索引(fn/ip 已在字节码行,不重复)。
         // 每条指令三行,调试用,详尽优先于简洁。
-        void trace_execution(Movement& ctx) {
-            auto&      frames    = ctx.frames();
-            CallFrame& frame     = frames.top();
-            const auto code_base = frame.unit->code.data();
-            const auto ip_off    = static_cast<usize>(frame.ip - code_base);
-            const auto instr     = Disassembler::disassembleInstruction(frame.unit, ip_off);
+        [[maybe_unused]] void trace_execution(Movement& ctx) {
+            auto&       frames = ctx.frames();
+            const auto& frame  = frames.top();
+            const auto  ip_off = static_cast<usize>(frame.ip - frame.unit->code.data());
+            const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
-            const auto* mod = frame.module;
-            io::print(stderr, "[trace] {}  {} @{:04X}  {}\n", mod->to_string(), frame.function->to_string(),
+            io::print(stderr, "[trace] {}  {} @{:04X}  {}\n", frame.module->to_string(), frame.function->to_string(),
                       static_cast<u32>(ip_off), instr);
 
+            // 栈行与 ^ 列号一趟同步算:逐槽渲染 [ v ] 拼 stack_str,同时把 frame.slots 之前槽位的段宽
+            // 累进 col -- ^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方,联动指示本帧局部区。slots 越过
+            // 栈顶时(异常态,栈底在栈顶之上)所有槽位都满足 p < slots,累加自然停在全部段之和,即
+            // 对齐到栈末尾,无需分支。空栈打印 (empty)。
             const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
-            List<String> segs;
+            usize        col    = prefix.size();
+            String       stack_str;
             for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
-                segs.emplace_back(std::format("[ {} ]", format_value_debug(*p)));
-            }
-            String stack_str;
-            for (const auto& s: segs) {
+                const auto s = std::format("[ {} ]", format_value_debug(*p));
+                if (p < frame.slots) {
+                    col += s.size();
+                }
                 stack_str += s;
             }
             if (stack_str.empty()) {
                 stack_str = "(empty)";
             }
+
             io::print(stderr, "{}{}\n", prefix, stack_str);
 
-            // 帧栈底标记:^ 对齐到当前帧 bottom 槽的 [ 下方,后随 frame 索引;bottom = slots - stack_base。
-            // bottom >= 段数时(栈底在栈顶之上,空帧)对齐到栈末尾。行首用纯空格(与栈行等宽 prefix 对齐),
-            // 不重复 stack[n]: 前缀,只留 ^ 与标签。
-            const auto frame_idx = frames.size() - 1;
-            const auto bottom    = static_cast<usize>(frame.slots - ctx.stack_base());
-            usize      col       = prefix.size();
-            if (bottom < segs.size()) {
-                for (usize i = 0; i < bottom; ++i) {
-                    col += segs[i].size();
-                }
-            } else {
-                col += stack_str.size();
-            }
-            String marker;
-            marker.append(col, ' ');
-            marker += std::format("^ frame[{}]", static_cast<u32>(frame_idx));
-            io::print(stderr, "{}\n", marker);
+            // 帧栈底标记行:行首纯空格与栈行 prefix 对齐,不重复 stack[n]: 前缀,只留 ^ 与 frame 索引
+            // (fn/ip 已在字节码行,不重复)。
+            io::print(stderr, "{}^ frame[{}]\n", String(col, ' '), static_cast<u32>(frames.size() - 1));
         }
-#endif // DEBUG_TRACE_EXECUTION
 
     } // namespace
 

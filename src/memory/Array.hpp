@@ -143,6 +143,40 @@ namespace aria {
             return {buf_.data(), len_};
         }
 
+        // 迭代器:存储连续,直接以裸指针为迭代器(兼容 range-for 与 <algorithm>)。
+        // 扩容即失效:push/resize/reserve 可能触发 reallocate 搬迁,届时全部迭代器失位
+        // (与 std::vector 同语义);此外 mark-sweep GC 不搬迁块且 allocate/reallocate
+        // 永不触发 GC(见 GC 核心不变式),故迭代期间发生对象分配/GC 不影响本缓冲。
+        [[nodiscard]]
+        T* begin() noexcept {
+            return buf_.data();
+        }
+
+        [[nodiscard]]
+        T* end() noexcept {
+            return buf_.data() + len_;
+        }
+
+        [[nodiscard]]
+        const T* begin() const noexcept {
+            return buf_.data();
+        }
+
+        [[nodiscard]]
+        const T* end() const noexcept {
+            return buf_.data() + len_;
+        }
+
+        [[nodiscard]]
+        const T* cbegin() const noexcept {
+            return buf_.data();
+        }
+
+        [[nodiscard]]
+        const T* cend() const noexcept {
+            return buf_.data() + len_;
+        }
+
         [[nodiscard]]
         usize size() const noexcept {
             return len_;

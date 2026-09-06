@@ -1,5 +1,5 @@
 // cli_dispatch 端到端测试：经 interpreter.hpp 的 CLI 分发核心驱动解释器，
-// 覆盖 --help / --eval / <file> / REPL 各路径与退出码。REPL 行读取器注入流式 lambda，
+// 覆盖 --help / --version / --eval / <file> / REPL 各路径与退出码。REPL 行读取器注入流式 lambda，
 // 验证跨行全局持久与逐行容错。错误路径会向 stderr 输出（正常，同 test_interpret）。
 #include <gtest/gtest.h>
 
@@ -59,6 +59,14 @@ namespace {
 TEST(CliDispatch, HelpReturnsZero) {
     EXPECT_EQ(run_dispatch({"--help"}, eof_reader()), 0);
     EXPECT_EQ(run_dispatch({"-h"}, eof_reader()), 0);
+}
+
+// --version：短路、打印版本、退出码 0。
+TEST(CliDispatch, VersionReturnsZero) { EXPECT_EQ(run_dispatch({"--version"}, eof_reader()), 0); }
+
+// --version 优先于 --eval：eval 给出运行期必错的表达式（-> 1），版本短路则返 0。
+TEST(CliDispatch, VersionTakesPrecedenceOverEval) {
+    EXPECT_EQ(run_dispatch({"--version", "--eval", "return 1 / 0;"}, eof_reader()), 0);
 }
 
 // 未知选项：CLI 解析失败、退出码 1。

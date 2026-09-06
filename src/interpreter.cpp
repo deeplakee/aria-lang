@@ -23,6 +23,7 @@ namespace aria {
             cli.set_description("aria 脚本语言解释器");
             cli.add_flag("repl", "启动交互式 REPL");
             cli.add_option("eval", "求值源码字符串后退出", "", 'e');
+            cli.add_flag("version", "打印版本号后退出", 'v');
             cli.add_positional("file", "待运行的 .aria 脚本文件", false);
             return cli;
         }
@@ -80,6 +81,11 @@ namespace aria {
             io::println("{}", cli.help());
             return 0;
         }
+        if (args.has("version")) { // 优先级仅次于 --help:打印后短路,不进 eval/file/REPL
+            io::println("{} {}.{}.{}", kProductName, kVersionMajor, kVersionMinor, kVersionPatch);
+            return 0;
+        }
+
         if (args.has("eval")) {
             return run_src(args.get("eval").value_or(""));
         }

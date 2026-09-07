@@ -52,7 +52,7 @@ namespace aria {
         // message_ 烘为 "Category: Name[ detail]"。
         [[nodiscard]]
         static Error from_detail(const ErrorCode code, const String& detail) {
-            return Error{code, make_message(code, StringView{}, detail)};
+            return Error{code, make_message(code, detail)};
         }
 
         // 细节语义(带位置):码 + SourceLoc + 细节,供词法/语法/语义阶段使用。
@@ -84,24 +84,32 @@ namespace aria {
         // CodeGen::fail / Lexer / Parser;运行期一律 make_message 烘齐 -- 见 AriaVM.cpp 的
         // raise 装箱点与 uncaught_error_parts 兜底)。
 
-        // 烘焙单点的公开重载:完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
-        // 位置串由调用方格式化好传入(运行期 "path:line" / "<name>:line";空串无前缀),
-        // detail 为**原始细节串**(不含 "Category:" 前缀 -- 防双烘)。from_detail 经此合成;
-        // 亦公开供 VM 冷路径直接使用:装箱点 AriaVM::raise(烘齐后 new_exception 装箱,不经
-        // Error 对象中转)与未捕获出口 uncaught_error_parts 的非 ObjException 兜底(烘
-        // UncaughtException 消息,与 from_detail 同源同串)。
-        // 编译/运行期消息形态同源于此。
-        static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
-            String s;
-            if (!location.empty()) {
-                s = std::format("{}: ", location);
-            }
-            s += std::format("{}: {}", to_string(category_of(code)), to_string(code));
+        // 烘焙单点(公开,一对共名重载,以位置参数区分,与 from_detail 两重载同构镜像):
+        // 完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
+        // detail 为**原始细节串**(不含 "Category:" 前缀 -- 防双烘),位置串由调用方格式化好传入
+        // (编译期 SourceLoc::to_string 的 "path:line:col" / 运行期 "path:line" / "<name>:line")。
+        // from_detail 经此合成;装箱点 AriaVM::raise 亦直接使用(烘齐后 new_exception 装箱,
+        // 不经 Error 对象中转)。编译/运行期消息形态同源于此。
+
+        // 无位置版:消息 = "Category: Name"[ + " " + detail]。供无位置语义的报错点直接使用
+        // (from_detail 无 loc 重载 / uncaught_error_parts 非 ObjException 兜底,与 from_detail
+        // 同源同串),无须显式传空位置占位。
+        static String make_message(const ErrorCode code, const StringView detail) {
+            String s = std::format("{}: {}", to_string(category_of(code)), to_string(code));
             if (!detail.empty()) {
-                s += ' ';
-                s += detail;
+                s.append(" ").append(detail);
             }
             return s;
+        }
+
+        // 带位置版:非空位置串前缀 "location: ";空位置串退化为无位置版 -- 空态 loc
+        // (SourceLoc::to_string 空态渲染空串)与帧栈空(runtime_loc 返空串)在此自然合流,
+        // 调用方无须先判空规避。
+        static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
+            if (location.empty()) {
+                return make_message(code, detail);
+            }
+            return std::format("{}: {}", location, make_message(code, detail));
         }
 
         // 所属错误码(分类/名称/相等判定经此再取)。

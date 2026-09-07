@@ -180,9 +180,8 @@ namespace aria {
             if (const auto ex = try_obj<ObjException>(v)) {
                 return {ex->code(), String{ex->message()->view()}};
             }
-            return {ErrorCode::UncaughtException,
-                    Error::make_message(ErrorCode::UncaughtException, {},
-                                        std::format("uncaught exception: {}", format_value(v)))};
+            const auto msg = std::format("uncaught exception: {}", format_value(v));
+            return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
         }
 
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),转发 unwind_ 物化的

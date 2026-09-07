@@ -24,10 +24,12 @@ add_executable(aria_tests
         runtime/test_interpreter.cpp
         # object
         object/test_object.cpp
+        object/test_objclosure.cpp
         object/test_objfunction.cpp
         object/test_objmodule.cpp
         object/test_objnativefn.cpp
         object/test_objexception.cpp
+        object/test_objupvalue.cpp
         # memory
         memory/test_array.cpp
         memory/test_gc.cpp

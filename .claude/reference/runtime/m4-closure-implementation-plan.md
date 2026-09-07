@@ -12,7 +12,7 @@
 ## 2. 三个关键设计决策
 
 1. **Upvalue 用指针式表示 + 按槽址降序的开链**：open 态持 `Value* location`（指入值栈），closed 态持值。`grow_stack_` 增第三类重绑（搬运前走链记偏移、搬运后重算，与现有 top_/slots 同法，约 8 行）。理由：指令集 §4.4「开指栈槽」、gc-implementation-plan Phase 4、vm-design §4.1 全部按此模型预写，且 clox/Wren/Lua 皆指针式；热路径 LOAD/STORE_UPVALUE 零额外算术。索引式省重绑但每次访问多一次加法且偏离全部文档，不取。
-2. **捕获描述表存 ObjFunction 元数据**（指令集 §4.13 已定稿，照办）：`ObjFunction` 持 `Array<UpvalDesc>`，每条 `{is_local: bool, index: u16}`；`is_local=true` 捕外层帧槽 index，`false` 穿透复用外层闭包的 upvalue index。不进字节码流，`CLOSURE` 保持定长 3B（ConstU16），Disassembler 零改动。
+2. **捕获描述表存 ObjFunction 元数据**（指令集 §4.13 已定稿，照办）：`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`；`is_local=true` 捕外层帧槽 index，`false` 穿透复用外层闭包的 upvalue index。不进字节码流，`CLOSURE` 保持定长 3B（ConstU16），Disassembler 零改动。
 3. **callable 收敛为闭包**：`CallFrame.function: ObjFunction*` -> `ObjClosure* closure`（顶层入口也闭包，`run_function` 内包一个空 upvalue 的闭包进帧）；翻转后 `call_value` 删 FUNCTION 直调分支（`ObjFunction` 退为常量池内部物，不再以可调用值上栈）。迁移期临时保留一个「FUNCTION 现场包闭包」分支，使旧 lowering 与既有测试在阶段 2 后仍然全绿，阶段 3 随编译翻转删除。
 
 ## 3. 实施阶段
@@ -22,7 +22,7 @@
 - **新增 `src/object/ObjUpvalue.{hpp,cpp}`**（`final : Object`，`ObjType::UPVALUE` 枚举已有）：字段 `Value* location_`（open）/ `Value closed_`（ctor 播 `nil_val`）/ `ObjUpvalue* next_`（链）；`is_open()`、`value_slot()`（open -> `location_`，closed -> `&closed_`，LOAD/STORE 统一走它）、`close()`（`closed_ = *location_; location_ = &closed_`）、`set_location()`（重绑用）；`trace` 标 `*value_slot()`；工厂 `new_upvalue(GC&, Value* slot)`（入参是裸栈槽无对象可守，调用方链入后即经 VM 根 tracer 为根）。
 - **新增 `src/object/ObjClosure.{hpp,cpp}`**（`final : Object`）：字段 `ObjFunction* function_` + `Array<ObjUpvalue*> upvalues_`（VM 逐个后填）；`trace` 标 function + 全部 upvalue；`to_string()` 委托 `function_->to_string()`（`<fn name>`，trace_execution 兼容）；equals 保持默认地址相等；工厂 `new_closure(GC&, ObjFunction*)` 不守卫入参（每方只守自己创建的）。
 - **`Object.hpp`**：`ObjType` 追加 `CLOSURE`（尾部）+ `to_string(ObjType)` 补 case（default 是 `UNREACHABLE()`，漏加即死）；`Value.cpp` `format_value_debug` 补 CLOSURE/UPVALUE 渲染分支。
-- **`ObjFunction`**：新增 `UpvalDesc{bool is_local; u16 index}`（定义于 ObjFunction.hpp）+ `Array<UpvalDesc> upval_descs_` + 读口/setter（编译期一次性 flush；~ObjFunction 级联释放）。
+- **`ObjFunction`**：新增 `UpvalueDesc{bool is_local; u16 index}`（定义于 ObjFunction.hpp）+ `Array<UpvalueDesc> upvalue_descs_` + 读口/setter（编译期一次性 flush；~ObjFunction 级联释放）。
 - **登记**：根 CMakeLists.txt aria_core object 组按字母序插两对文件；tests/CMakeLists.txt `# object` 组插两个测试文件。
 - **测试**：`tests/object/test_objupvalue.cpp`（开/闭转换、value_slot、trace stress 存活）、`test_objclosure.cpp`（包 fn、upvalue 数组、trace stress、type_name）；`rules/object.md` 子类型清单同步。
 
@@ -37,7 +37,7 @@
   - `run_function`（AriaVM.cpp:442-456）：入口 fn 先包空闭包（`make_guard` 跨 `new_object`）再压栈进帧——顶层也闭包，`run(ObjFunction*)` 公开签名不动。
   - `call_value`（AriaVM.cpp:458-472）：+ `case CLOSURE -> call_closure`（arity/frames 检查照 call_function）；`case FUNCTION` 改临时 wrap（现场 `new_closure` + guard + 进帧），阶段 3 删。
   - 四 opcode 实装（替换 AriaVM.cpp:776-781、1066-1067 的 `not_implemented`）：
-    - `CLOSURE`：u16 常量取 fn（`as<ObjFunction>`）-> `new_closure` 入 guard -> 遍历 `fn->upval_descs()`：`is_local` -> 槽址 = `frame.slots + index`，`find_open_upvalue` 复用否则 `new_upvalue` + `link`；否则复制 `frame.closure->upvalues()[index]`；逐个 push 进闭包数组（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）-> 压闭包值。
+    - `CLOSURE`：u16 常量取 fn（`as<ObjFunction>`）-> `new_closure` 入 guard -> 遍历 `fn->upvalue_descs()`：`is_local` -> 槽址 = `frame.slots + index`，`find_open_upvalue` 复用否则 `new_upvalue` + `link`；否则复制 `frame.closure->upvalues()[index]`；逐个 push 进闭包数组（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）-> 压闭包值。
     - `LOAD_UPVALUE idx`：`push(*closure->upvalues[idx]->value_slot())`。
     - `STORE_UPVALUE idx`：peek-store（写 `value_slot()` 留栈顶值，与 STORE_LOCAL 同形）。
     - `CLOSE_UPVALUE`：`close_upvalues(top_ - 1)` + `pop()`（指令集 §4.4 语义：关指顶槽的 upvalue 并弹顶）。
@@ -49,11 +49,11 @@
 
 ### 阶段 3：compile 翻转
 
-- **`FunctionCtx`**：`List<UpvalDesc> upvalues_` + `add_upvalue(desc) -> Opt<u8>`（同 `(is_local,index)` 去重复用；>255 返空）。
+- **`FunctionCtx`**：`List<UpvalueDesc> upvalues_` + `add_upvalue(desc) -> Opt<u8>`（同 `(is_local,index)` 去重复用；>255 返空）。
 - **`CodeGen`**：
   - `resolve_name_or_fail`（CodeGen.cpp:160-175）：Upvalue 占位分支接真递归 `resolve_upvalue`：enclosing 局部命中 -> 置该 ctx `Local.is_captured = true` + `{is_local=true, slot}`；否则递归 enclosing 的 upvalue -> `{is_local=false, idx}`；`add_upvalue` 满 -> `fail(TooManyUpvalues)`。
   - `emit_load_var`/`emit_store_var` Upvalue case（CodeGen.cpp:275-276 / 293-294）：`LOAD_UPVALUE`/`STORE_UPVALUE`（u8 索引；不做 init 检查——捕获时序语义同 Lua，与全局路径一致）。
-  - `compile_function`：`LOAD_CONST fn_idx`（CodeGen.cpp:383-384）-> `CLOSURE fn_idx`；成功尾部把 `child->upvalues_` flush 进 `fn->upval_descs()`（发射先于子上下文创建不碍事——描述表在 ObjFunction 元数据，不在字节码流）。
+  - `compile_function`：`LOAD_CONST fn_idx`（CodeGen.cpp:383-384）-> `CLOSURE fn_idx`；成功尾部把 `child->upvalues_` flush 进 `fn->upvalue_descs()`（发射先于子上下文创建不碍事——描述表在 ObjFunction 元数据，不在字节码流）。
   - 新助手 `emit_scope_pops(from_depth)` 统一 end_scope 与 pop_locals_to：弹区局部自栈顶（最内）向外遍历，`is_captured` -> 发 `CLOSE_UPVALUE`（关+弹一槽），未捕获连续段合并 `POP_N`。落点：`visitBlockNode` end_scope（CodeGen.cpp:464）、for/for-in 作用域出口（554/605）与 **for-in per-iteration 出口（596，每轮新鲜绑定语义）**、break/continue（614/624）、try 两 end_scope（690/699）。
 - **`ErrorCode.hpp`**：+ `TooManyUpvalues`（Semantic 类，照 TooManyParameters 模式：枚举 + to_string + category 映射）。
 - **`call_value` 删临时 FUNCTION wrap 分支**，default 的 CallNonCallable 消息更新（"closures / native functions"）；tests/runtime/test_ariavm.cpp 手写站点 `LOAD_CONST fn + CALL` -> `CLOSURE fn_idx + CALL`。

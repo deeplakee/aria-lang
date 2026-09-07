@@ -256,7 +256,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（设计，M4 落地）**：拟存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalDesc>`，每条 `{is_local: bool, index: u16}`，编译器建函数时填好。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure`，VM 遍历 `fn.upval_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（设计，M4 落地）**：拟存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器建函数时填好。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure`，VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获）。
@@ -399,9 +399,9 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
-# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalDesc 表, 编译期填好)
+# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalueDesc 表, 编译期填好)
 LOAD_CONST fn_idx      ; [fn]   ObjFunction
-CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upval_descs() 建捕获, 无尾随操作数
+CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upvalue_descs() 建捕获, 无尾随操作数
 # 块结束、x 将销毁且被捕获时: CLOSE_UPVALUE 关闭指向 x 槽的 upvalue
 ```
 
@@ -574,7 +574,7 @@ class CodeUnit {
 - **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFunction::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
 - **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
 
-`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）留 M4 闭包。
+`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）留 M4 闭包。
 
 ## 8. 反汇编器输出格式（已落地）
 

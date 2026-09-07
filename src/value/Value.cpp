@@ -3,6 +3,7 @@
 #include <bit>
 #include <format>
 
+#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
@@ -111,6 +112,12 @@ namespace aria {
                         return format_string(Object::as<ObjString>(obj));
                     case ObjType::FUNCTION:
                         return std::format("<fn {}>", Object::as<ObjFunction>(obj)->name()->view());
+                    case ObjType::CLOSURE:
+                        // 闭包:渲染 `<fn name>`(与 ObjClosure::to_string 同文案,纯 C++ 访问器,非虚无重入风险)。
+                        return std::format("<fn {}>", Object::as<ObjClosure>(obj)->function()->name()->view());
+                    case ObjType::UPVALUE:
+                        // Upvalue:语言层不可见的内部对象,渲染稳定短文案(地址型描述噪声大且地址不稳)。
+                        return "<upvalue>";
                     case ObjType::MODULE:
                         return std::format("<module {}>", Object::as<ObjModule>(obj)->name()->view());
                     case ObjType::NATIVE_FN:

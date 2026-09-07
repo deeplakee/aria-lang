@@ -27,6 +27,7 @@ namespace aria {
         RANGE,
         ITERATOR,
         EXCEPTION,
+        CLOSURE,
     };
 
     // 对象类型可读名(PascalCase,如 "String"/"NativeFn"/"Module"):ObjType 枚举的静态映射,
@@ -62,6 +63,8 @@ namespace aria {
                 return "Iterator";
             case ObjType::EXCEPTION:
                 return "Exception";
+            case ObjType::CLOSURE:
+                return "Closure";
             default:
                 UNREACHABLE();
         }

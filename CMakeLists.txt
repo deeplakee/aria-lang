@@ -76,6 +76,8 @@ add_library(aria_core STATIC
         src/error/AriaException.hpp
         src/object/Object.cpp
         src/object/Object.hpp
+        src/object/ObjClosure.cpp
+        src/object/ObjClosure.hpp
         src/object/ObjString.cpp
         src/object/ObjString.hpp
         src/object/ObjFunction.cpp
@@ -86,6 +88,8 @@ add_library(aria_core STATIC
         src/object/ObjNativeFn.hpp
         src/object/ObjException.cpp
         src/object/ObjException.hpp
+        src/object/ObjUpvalue.cpp
+        src/object/ObjUpvalue.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
 )

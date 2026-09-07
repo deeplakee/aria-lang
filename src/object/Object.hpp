@@ -203,6 +203,23 @@ namespace aria {
 #endif
         }
 
+        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 o 为 null)。
+        // 「守卫后使用」成对场景的一步形态:类型只写一次,消除 is<>/as<> 双类型参数漂移笔误;
+        // DEBUG 下单次 dynamic_cast(优于成对写法的两次)。纯谓词(不取指针)用 is<T>;
+        // switch(type()) 臂内等静态已知场合用 as<T>。
+        template<DerivedFromObj T>
+        [[nodiscard]]
+        static T* try_as(Object* o) noexcept {
+            return is<T>(o) ? as<T>(o) : nullptr;
+        }
+
+        // const 重载:const Object* -> const T*(与 as(const Object*) 对称)。
+        template<DerivedFromObj T>
+        [[nodiscard]]
+        static const T* try_as(const Object* o) noexcept {
+            return is<T>(o) ? as<T>(o) : nullptr;
+        }
+
         Object* next_;
         u32     hash_;
         ObjType type_;

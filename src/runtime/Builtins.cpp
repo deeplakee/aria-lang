@@ -1,13 +1,13 @@
 #include "runtime/Builtins.hpp"
 
-#include "error/ErrorCode.hpp"    // ErrorCode
-#include "memory/GC.hpp"          // GC, make_guard
-#include "object/ObjNativeFn.hpp" // NativeFn, new_native_fn
-#include "object/ObjString.hpp"   // ObjString, new_string
-#include "object/Object.hpp"      // Object::is<T>/as<T>（类型判断与转换接口）
-#include "runtime/AriaVM.hpp"     // AriaVM (vm.fail / vm.gc)
+#include "error/ErrorCode.hpp"     // ErrorCode
+#include "memory/GC.hpp"           // GC, make_guard
+#include "object/ObjNativeFn.hpp"  // NativeFn, new_native_fn
+#include "object/ObjString.hpp"    // ObjString, new_string
+#include "runtime/AriaVM.hpp"      // AriaVM (vm.fail / vm.gc)
 #include "value/AriaHashTable.hpp" // AriaHashTable
-#include "value/Value.hpp"        // Value, type_name, format_value, is_truthy
+#include "value/ObjBridge.hpp"     // try_obj<T>（Value→对象子类型一步守卫）
+#include "value/Value.hpp"         // Value, type_name, format_value, is_truthy
 
 namespace aria::builtins {
 
@@ -34,12 +34,11 @@ namespace aria::builtins {
                 return vm.fail(ErrorCode::WrongArity, "len expects 1 argument, got {}", argc);
             }
             const Value v = slots[1];
-            if (!v.is_obj() || !Object::is<ObjString>(v.as_obj())) {
-                return vm.fail(ErrorCode::TypeMismatch, "len requires a string, got {}", type_name(v));
+            if (const auto s = try_obj<ObjString>(v)) {
+                slots[0] = Value::from_int(static_cast<i64>(s->length()));
+                return true;
             }
-            const auto s = Object::as<ObjString>(v.as_obj());
-            slots[0]     = Value::from_int(static_cast<i64>(s->length()));
-            return true;
+            return vm.fail(ErrorCode::TypeMismatch, "len requires a string, got {}", type_name(v));
         }
 
         // str(x) -> 字符串:值的可读渲染(复用 format_value,与 PRINT 一致)。
@@ -66,9 +65,8 @@ namespace aria::builtins {
             // 失败:msg 取第二参(须为 String),否则默认。
             StringView msg = "assertion failed";
             if (argc == 2) {
-                const Value m = slots[2];
-                if (m.is_obj() && Object::is<ObjString>(m.as_obj())) {
-                    msg = Object::as<ObjString>(m.as_obj())->view();
+                if (const auto s = try_obj<ObjString>(slots[2])) {
+                    msg = s->view();
                 }
             }
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);

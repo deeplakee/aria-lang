@@ -23,6 +23,7 @@
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -176,8 +177,7 @@ namespace aria {
         // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind_ 未捕获出口一处消费:
         // 拼好跟踪后经 Error::from_baked 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value v) {
-            if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
-                const auto ex = Object::as<ObjException>(v.as_obj());
+            if (const auto ex = try_obj<ObjException>(v)) {
                 return {ex->code(), String{ex->message()->view()}};
             }
             return {ErrorCode::UncaughtException,

@@ -21,6 +21,7 @@ add_library(aria_core STATIC
         src/value/AriaArray.hpp
         src/value/AriaHashTable.hpp
         src/value/NanBoxing.hpp
+        src/value/ObjBridge.hpp
         src/value/TagValue.hpp
         src/value/Value.cpp
         src/value/Value.hpp

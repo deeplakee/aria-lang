@@ -4,14 +4,19 @@
 #include <limits>
 
 #include "memory/GC.hpp"
+#include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "value/AriaHashTable.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 using aria::AriaHashTable;
 using aria::GC;
+using aria::new_module;
 using aria::new_string;
+using aria::ObjModule;
 using aria::ObjString;
+using aria::try_obj;
 using aria::Value;
 using aria::value_equal;
 using aria::value_identical;
@@ -48,8 +53,8 @@ TEST(ValueIdentical, F64Bitwise) {
 }
 
 TEST(ValueIdentical, ObjPointer) {
-    GC    gc;
-    auto  lock = gc.make_lock(); // 持裸指针跨分配
+    GC   gc;
+    auto lock = gc.make_lock(); // 持裸指针跨分配
     auto a    = new_string(gc, "hello");
     auto b    = new_string(gc, "hello"); // intern:同指针
     auto c    = new_string(gc, "world");
@@ -130,4 +135,26 @@ TEST(HashTableKey, StringKeyByContentViaIntern) {
     auto found = ht.find(Value::from_obj(new_string(gc, "key")));
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->value.as_int(), 42);
+}
+
+// ===== try_obj (Value -> 对象子类型一步守卫) =====
+
+TEST(ValueTryObj, ObjMatchReturnsPointer) {
+    GC   gc;
+    auto s = new_string(gc, "hello");
+    EXPECT_EQ(try_obj<ObjString>(Value::from_obj(s)), s);
+}
+
+TEST(ValueTryObj, NonObjValueReturnsNull) {
+    EXPECT_EQ(try_obj<ObjString>(Value::nil_val()), nullptr);
+    EXPECT_EQ(try_obj<ObjString>(Value::from_bool(true)), nullptr);
+    EXPECT_EQ(try_obj<ObjString>(Value::from_i32(1)), nullptr);
+    EXPECT_EQ(try_obj<ObjString>(Value::from_f64(2.5)), nullptr);
+}
+
+TEST(ValueTryObj, ObjMismatchReturnsNull) {
+    GC   gc;
+    auto m = new_module(gc, "m"); // StringView 重载自守 name,本测试无 stress 无 GC 风险
+    EXPECT_EQ(try_obj<ObjString>(Value::from_obj(m)), nullptr);
+    EXPECT_EQ(try_obj<ObjModule>(Value::from_obj(m)), m);
 }

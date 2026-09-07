@@ -172,10 +172,9 @@ namespace aria {
 
         // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
         // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
-        // 坑 #7);其它载荷(未来用户 throw 的任意值 -- THROW 落地前寄存器只可能是 ObjException,
-        // 兜底仅防御)兜底 UncaughtException,消息渲染值本身(经烘焙单点 make_message,与
-        // from_detail 同源同串)。仅 unwind_ 未捕获出口一处消费:拼好跟踪后经 Error::from_baked
-        // 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
+        // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
+        // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind_ 未捕获出口一处消费:
+        // 拼好跟踪后经 Error::from_baked 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value v) {
             if (v.is_obj() && Object::is<ObjException>(v.as_obj())) {
                 const auto ex = Object::as<ObjException>(v.as_obj());
@@ -188,8 +187,7 @@ namespace aria {
 
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),转发 unwind_ 物化的
         // 未捕获 Error 出栈。run_ 各异常站点(unwind_ 返 somed Error)的统一收口,只剩
-        // std::unexpected 样板;旧「ctx + 码 + 格式串」直报重载与 Value 转发重载已随 M3 直报
-        // 站点统一切入寄存器而退役(pitfalls 坑 #11)。
+        // std::unexpected 样板。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
         // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类等)才会实现,
@@ -554,7 +552,7 @@ namespace aria {
         const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
         mod_entry->value     = Value::from_obj(module);
 
-        // 5. 编译:SourceFile -> 入口 ObjFunction(名 <module>,见 kModuleName),CodeGen::init_module
+        // 5. 编译:SourceFile -> 入口 ObjFunction(名 kModuleEntryName,即 "<module>"),CodeGen::init_module
         //    已 module.set_entry。Compiler 用本 VM 的 gc_,编译期分配与 run 同源。编译期 Error(位置
         //    指向被导入文件内部)就地 new_exception 装箱入寄存器(from_baked 语义,消息不重烘)。
         //    module 经 guard + modules_ 根化,CodeGen::compile 内部亦 make_guard(&module),双保险。
@@ -1163,7 +1161,7 @@ namespace aria {
                 case OpCode::RETURN: {
                     const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
                     // 模块体 run-once 帧 = IMPORT 加载层进帧的入口函数,其名固定为 <module>
-                    // (见 kModuleName);主入口 <main> 与普通用户函数名均不含 '<>',故按函数名判定。
+                    // (kModuleEntryName,aria.hpp);主入口 <main> 与普通用户函数名均不含 '<>',故按函数名判定。
                     // 其 RETURN 弹弃模块体返回值(无意义),改压该模块对象 -- 模块体「返回模块」,
                     // 使 IMPORT 的栈效应在命中/未命中两分支统一为 [..., module](绑定交 DEF_GLOBAL)。
                     // 先取 module 再 exit_frame:exit_frame 后 frame 引用悬垂。模块体帧必非顶层(IMPORT

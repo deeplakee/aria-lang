@@ -36,7 +36,7 @@ namespace aria {
     //   - DEF_GLOBAL 等名字类指令(ConstU16 格式): 操作数即常量池 ObjString 索引
     //   - JUMP*: u16 无符号前向偏移(ip+=off); JUMP_BACK: 后向(ip-=off)恒无条件; 条件跳转恒前向(§2.3)
     //   - JUMP_TRUE/FALSE_OR_POP: 短路跳转, 条件命中则留栈顶值, 否则弹掉
-    //   - INVOKE_METHOD: 预备指令(暂 pass), 当前模型无法编译期区分方法调用与属性访问
+    //   - INVOKE_METHOD: 预留指令(编译器不发射, VM 命中 not_implemented), 当前模型无法编译期区分方法调用与属性访问
     //   - MAKE_RANGE: 操作数 flags:u8 编码含/不含上界(.. vs ...)
     // 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
 #define ARIA_OPCODE_LIST(X)                \

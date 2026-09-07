@@ -22,8 +22,9 @@ namespace aria {
         f.unit     = &fn->unit();
         f.module   = fn->module();
         f.ip       = fn->unit().code.data();
-        f.last_ip = f.ip; // 位置锚点占位(= code 起始,等价 offset 0):主循环取指前即覆写;不用 nullptr -- 与 data() 相减是
-                          // UB(无 NSDMI 保 trivial 聚合)
+        // 位置锚点占位(= code 起始,等价 offset 0),主循环取指前即覆写。不用 nullptr:
+        // 与 data() 相减是 UB。(无 NSDMI,保 trivial 聚合。)
+        f.last_ip = f.ip;
     }
 
 } // namespace aria

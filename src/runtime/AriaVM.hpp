@@ -30,29 +30,29 @@ namespace aria {
         LoadError,    // 源文件加载失败（仅 interpret_from_path：I/O 或 UTF-8 编码）
     };
 
-    // 解释器:持解释器级共享状态,驱动 Movement 执行字节码。
+    // 解释器:持解释器级共享状态,驱动 Movement 执行字节码(阶段路线见
+    //        .claude/reference/runtime/vm-design.md §6,主循环/全局/模块/异常已落地,
+    //        M4 闭包/M5 类/M6 协程待续)。
     //
-    //        M1 范围(.claude/reference/runtime/vm-design.md §6):单一主上下文 main_ctx_,指令子集覆盖
-    //        常量/字面量、局部槽、算术/比较/逻辑、栈操作、跳转、CALL(仅 ObjFunction)、
-    //        RETURN/HALT/PRINT。闭包/全局/异常/模块/类/协程后续阶段接入。
-    //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
-    //        直标代替 Movement 升 Object;open upvalues 留待 M4)。循环状态全部取自 *current_
-    //        (现指 main_ctx_),无循环级 C 局部工作副本 -- M6 单循环切换模型(Wren 式)下
+    //        单一主上下文 main_ctx_ + 当前执行上下文指针 current_(现指 main_ctx_)。循环状态全部
+    //        取自 *current_,无循环级 C 局部工作副本 -- M6 单循环切换模型(Wren 式)下
     //        resume/yield 在 CALL 善后点换 current_、循环自然驱动新上下文,run_ 永不重入。
+    //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
+    //        直标代替 Movement 升 Object;open upvalues 留待 M4)。
     //
-    //        M2 新增:模块表(modules_,解释器级共享)+ 经 std::function 回调纳入 GC 根(组合而非继承:
-    //        GC 不识 VM 类型,VM 构造时把 tracer lambda 注册进自己的 gc_ -- [this] 捕获。
+    //        解释器级共享状态:模块表 modules_(键为规范路径 ObjString* intern、值为 ObjModule*,
+    //        均装箱为 Value 入 AriaHashTable,白赚 trace;IMPORT 全链:路径解析 -> 命中复用,
+    //        未命中 load_module 读盘 -> 编译 -> 模块体 run-once)+ VM 级只读 builtins 表
+    //        (LOAD_GLOBAL 未命中模块 globals 后回退查)+ 源根列表。GC 根经 std::function 回调接入
+    //        (组合而非继承:GC 不识 VM 类型,VM 构造时把 tracer lambda 注册进自己的 gc_ -- [this] 捕获。
     //        比「函数指针 + void* ctx + 静态 thunk」干净:无适配器、无 void*、无
     //        static_cast,标记逻辑直写进 lambda。[this] 仅一指针,落在 std::function SBO 内零堆分配)。
-    //        模块表键为规范路径 ObjString*(intern),值为 ObjModule*(均装箱为 Value 入 AriaHashTable,
-    //        白赚 trace)。collect 时 tracer 标 modules_(进而各模块 name_/dir_/entry_/globals_)
+    //        collect 时 tracer 标 modules_(进而各模块 name_/dir_/entry_/globals_)
     //        + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/帧/挂起错误寄存器。
-    //        IMPORT 全链已落地(路径解析 -> 命中复用;未命中 load_module:读盘 -> 编译 -> run-once);
-    //        DEF/LOAD/STORE_GLOBAL 已落地。
     //
-    //        M3 新增:异常通道闭环 -- run_ 内运行时错误不再直传 Result,统一 raise 入挂起寄存器后经
+    //        异常通道(try/catch/throw)闭环:run_ 内运行时错误统一 raise 入挂起寄存器后经
     //        unwind_ 查 CodeUnit 异常记录表派发(命中 handler 截栈跳 handler / 全未命中物化 Error 带
-    //        堆栈跟踪);THROW 落地(用户 throw 原值保类型);try/catch 由 CodeGen 编译期写 try_records
+    //        堆栈跟踪);THROW 弹用户 throw 的原值保类型;try/catch 由 CodeGen 编译期写 try_records
     //        (无 SETUP_EXCEPT 指令)。见下方「异常 unwind」组成员与
     //        .claude/reference/runtime/exception-implementation-pitfalls.md。
     //
@@ -79,7 +79,7 @@ namespace aria {
         // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用);入口断言 current_ == &main_ctx_
         // (M6 前恒真;M6 后 resume/yield 严格成对,协程挂起返回时 VM 层即已回退 -- 不归位即
         // 切换纪律被破坏,是错不当静默重置)。
-        // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),M1 不做逐指令越界设防。
+        // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),不做逐指令越界设防。
         // 返回 Result<Value, Error>:成功为返回值,失败为未捕获的运行时错误
         // (M6 协程挂起将扩三态,届时引入 Yielded,见 .claude/reference/runtime/vm-design.md §3)。
         Result<Value, Error> run(ObjFunction* fn);
@@ -216,7 +216,7 @@ namespace aria {
         Result<Value, Error> run_();
 
         // IMPORT 未命中分支的加载层:把已解析命中的磁盘模块读盘 -> 派生身份 -> new_module
-        // -> 入表占位 -> 编译(入口名 <module>,见 AriaVM.cpp kModuleName)-> 返回模块对象(已 set_entry)。
+        // -> 入表占位 -> 编译(入口名 <module>,即 aria.hpp kModuleEntryName)-> 返回模块对象(已 set_entry)。
         // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
         // 其 RETURN 按函数名 == <module> 判定后压回模块对象。
         // 错误契约与 call_value 族同构:return nullptr ⟺ 错误载荷已 raise 入 *current_ 寄存器,

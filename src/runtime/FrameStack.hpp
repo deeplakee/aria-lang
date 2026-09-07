@@ -7,7 +7,7 @@
 
 namespace aria {
 
-    // 面向 trivial 帧（CallFrame / ExceptionFrame）的栈式槽位池。
+    // 面向 trivial 帧（CallFrame）的栈式槽位池。
     //        零开销：acquire = 返回槽引用 + count++，pop = count--，truncate = count = n。
     //        T 为 trivially-copyable/destructible -> 无构造/析构；一次分配永不扩容 -> 指针绝对稳定。
     // T        帧类型（纯 POD：聚合或 = default，无用户构造函数）

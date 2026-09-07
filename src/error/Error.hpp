@@ -85,8 +85,9 @@ namespace aria {
         // 烘焙单点的公开重载:完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
         // 位置串由调用方格式化好传入(运行期 "path:line" / "<name>:line";空串无前缀),
         // detail 为**原始细节串**(不含 "Category:" 前缀 -- 防双烘)。from_detail 经此合成;
-        // 亦公开供 VM 两处冷路径直接使用:装箱点 AriaVM::raise(烘齐后 new_exception 装箱,
-        // 不经 Error 对象中转)与 run_ 直报站点 runtime_err(烘齐后经 from_baked 装回 Error)。
+        // 亦公开供 VM 冷路径直接使用:装箱点 AriaVM::raise(烘齐后 new_exception 装箱,不经
+        // Error 对象中转)与未捕获出口 uncaught_error_parts 的非 ObjException 兜底(烘
+        // UncaughtException 消息,与 from_detail 同源同串)。
         // 编译/运行期消息形态同源于此。
         static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
             String s;

@@ -340,8 +340,7 @@ namespace aria {
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc& loc) const {
         // 形参合法性检查（FunDecl / Lambda 共用，compile_function 编译体前调用）：
         //   >kMaxArity -> TooManyParameters；默认参数 / varargs -> not_impl；形参重名 -> DuplicateParam。
-        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出，
-        // 与原内联检查同一职责与顺序，首错即止行为不变。loc 为声明节点位置（fun 关键字，compile_function
+        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出。loc 为声明节点位置（fun 关键字，compile_function
         // 经 decl_loc 传入）而非 body->loc()（body 的 '{'），更贴近参数列表所在；只需位置无需整节点，故入参
         // 为 const SourceLoc& 而非 ASTNode*（not_impl 走其 SourceLoc 重载）。
         if (params.size() > kMaxArity) {
@@ -367,7 +366,7 @@ namespace aria {
                                    const SourceLoc& decl_loc) {
         // 参数合法性检查：decl_loc 为声明节点位置（fun 关键字，visit 层经 node->loc() 传入），非 body 的 '{'，
         // 供 validate_params 报参数错；先于 new_function 等分配，失败即抛 AriaCompileException 跳过下方所有
-        // 发射与分配。首错即止行为与检查顺序与原内联实现一致。下方体发射行号仍取 body->loc_line()。
+        // 发射与分配。下方体发射行号仍取 body->loc_line()。
         validate_params(params, decl_loc);
 
         const auto loc  = body->loc();

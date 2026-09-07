@@ -14,10 +14,9 @@ namespace aria {
     }
 
     Error ObjException::to_error() const {
-        // message_ 已是完整烘焙串(含 "Category: Name" 前缀与位置前缀,与 Error::message()
+        // message_ 已是完整烘焙串(含位置前缀与 "Category: Name" 前缀,与 Error::message()
         // 同形) -- 经 Error::from_baked **原样**回传,跳过 make_message 重烘
-        // (经 from_detail 会把前缀再烘一遍成双重前缀)。未捕获异常的边界文案(CLI
-        // 渲染 / 测试断言)在寄存器载荷改为 Value 前后不漂移。
+        // (经 from_detail 会把前缀再烘一遍成双重前缀),边界文案与 Error 直构逐字一致。
         return Error::from_baked(code_, message_->view());
     }
 

@@ -39,7 +39,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
 - **跳转 `u16` 方向拆分 + 局部槽 `_L`**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)。见 §2.3/§4.12。
-- **`INVOKE_METHOD`** 作为**预备指令**加入，**暂 pass**（VM 不实现、编译器不发射）：当前模型无法在编译期区分「方法调用」与「属性访问」（`obj.m` 的 `m` 是字段还是方法，运行时由实例决定），故合并「取方法 + 调用」的 `INVOKE_METHOD` 暂无发射依据，留作未来 VM 性能 pass（见 §5.6/§6.2）。
+- **`INVOKE_METHOD`** 作为**预留指令**加入（编译器不发射、VM 命中 `not_implemented` 经 `fatal_error` 终止）：当前模型无法在编译期区分「方法调用」与「属性访问」（`obj.m` 的 `m` 是字段还是方法，运行时由实例决定），故合并「取方法 + 调用」的 `INVOKE_METHOD` 暂无发射依据，留作未来 VM 性能优化（见 §5.6/§6.2）。
 
 ## 2. 操作数编码约定（建议）
 
@@ -272,7 +272,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为方法 `name` 注册到 `class`（**静态方法与实例方法皆经此注册**，含 `init`）；区别仅在闭包是否绑 `this`：静态方法无 `this`、经 `ClassName.x` 访问静态；实例方法 `this` 占槽 1。`init` 由 init 缓存按名查（§5.5）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量 `name` 存入 `class`（`var` 声明 lowering：eager 求值初始化器后存）；`class` 留栈继续接收成员 |
 | `LOAD_SUPER_METHOD` | `name:u16` | `[] -> [bound]` | `this` 取自槽 1，父类取自**当前闭包的 defining class**（`ObjFn.defining_class.super`，编译期绑定、不经栈）；查方法 `name` 绑成 `ObjBoundMethod` 压栈供 `CALL` |
-| `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预备指令（暂 pass）**：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射、VM 暂不实现；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能 pass（见 §5.6/§6.2） |
+| `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预留指令**（编译器不发射、VM 命中 `not_implemented`）：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能优化（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 创建 `ObjMap`，压栈 |
 | `MAKE_RANGE` | `flags:u8` | `[lo, hi] -> [range]` | 取栈顶 `lo, hi` 创建 `ObjRange`；`flags` 编码含/不含上界（`..` 含、`...` 不含）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
@@ -470,7 +470,7 @@ LOAD_FIELD "m"         ; [bound]   ; m 是方法 -> ObjBoundMethod(this=obj)
 CALL argc              ; [r]
 ```
 
-`INVOKE_METHOD`（合并 `LOAD_FIELD`+`CALL`，少一次压绑方法、省一次 dispatch）已作为**预备指令**加入但**暂 pass**：当前模型无法编译期区分方法调用与属性访问，编译器暂不发射、VM 暂不实现；现状靠 `LOAD_FIELD`+`CALL` 保证正确性（见 §6.2）。for-in 的 `iter`/`has_next`/`next` 同此路径。
+`INVOKE_METHOD`（合并 `LOAD_FIELD`+`CALL`，少一次压绑方法、省一次 dispatch）已作为**预留指令**加入：当前模型无法编译期区分方法调用与属性访问，编译器暂不发射、VM 命中 `not_implemented` 终止；现状靠 `LOAD_FIELD`+`CALL` 保证正确性（见 §6.2）。for-in 的 `iter`/`has_next`/`next` 同此路径。
 
 ### 5.7 match（糖 -> if-else 链）
 
@@ -521,8 +521,8 @@ LOAD_IMM 0; LOAD_INDEX ; [list, list[0]]  -- 绑 a: STORE_LOCAL a; POP list[0]?
 ```
 <body>                 ; try 体内, 顺序执行
 JUMP L_finally         ; 正常完成: 跳过 catch
-L_catch:               ; 抛出时 VM 经 raise 查表 unwind 到此, 异常值在栈顶
-  STORE_LOCAL exc      ; 绑 catch 参数 (由 handler 处的发射约定承载, 不占记录字段)
+L_catch:               ; 抛出时 VM 经 raise 查表 unwind 到此; unwind 截栈后 push 异常值,
+                       ; 恰落 catch 参数槽(== stack_depth, 值填槽, 无 STORE_LOCAL)
   <catch_body>
 L_finally:
   <finally_body>
@@ -542,9 +542,9 @@ L_end:
 
 详见 CLAUDE.md「错误处理」第 2 条。
 
-### 6.2 `INVOKE_METHOD`（已作预备指令加入，暂 pass）
+### 6.2 `INVOKE_METHOD`（预留指令，编译器不发射）
 
-`obj.m(args)` 当前需 `LOAD_FIELD`(返回绑定方法) + `CALL` 两步。`INVOKE_METHOD name argc` 合并二者：直接在实例上查方法并调用，省一次「压绑方法对象 + 弹绑方法对象」与一次 dispatch。**已作为预备指令加入 `code.hpp`**，但**暂 pass**：当前模型无法在编译期区分「方法调用」与「属性访问」（`obj.m` 的 `m` 是字段还是方法，运行时由实例决定），编译器无依据发射 `INVOKE_METHOD`，故 VM 暂不实现、编译器暂不发射，留作未来 VM 性能 pass。现状靠 `LOAD_FIELD`+`CALL` 保证正确性（见 §5.6）。
+`obj.m(args)` 当前需 `LOAD_FIELD`(返回绑定方法) + `CALL` 两步。`INVOKE_METHOD name argc` 合并二者：直接在实例上查方法并调用，省一次「压绑方法对象 + 弹绑方法对象」与一次 dispatch。**已作为预留指令加入 `code.hpp`**，但编译器不发射、VM 命中 `not_implemented`（`fatal_error` 终止）：当前模型无法在编译期区分「方法调用」与「属性访问」（`obj.m` 的 `m` 是字段还是方法，运行时由实例决定），编译器无依据发射 `INVOKE_METHOD`，留作未来 VM 性能优化。现状靠 `LOAD_FIELD`+`CALL` 保证正确性（见 §5.6）。
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
@@ -552,7 +552,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 文法未列内建关键字，但迭代/切片/类型转换等需内建。`ObjType::NATIVE_FN` 已预留；内建的注册与按名引用机制（如专设 `LOAD_BUILTIN idx` 或走全局表预填）待定。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `register_builtins` 一次性填充 type/len/str/assert）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 需切片能力，可由内建 `slice` 或 `MAKE_RANGE`+下标协议承载。
 
 ### 6.5 迭代器
@@ -600,7 +600,7 @@ code:
 - 每行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `|` 占位）+ opcode 名（左对齐列宽）+ 操作数 hex + `;` 解析注释（常量值/名字/跳转目标/立即数/flags/argc，按操作数种类渲染）。
 - 前向跳转目标用 `-> 偏移`、后向（`JUMP_BACK`）用 `<- 偏移` 直观显示。
 - 注释为**解析注释**（把操作数解释成人可读形式），不含栈效应标注；栈效应见 §4 各表。
-- 解码逻辑内联于 `Disassembler.cpp`，与 VM 主循环各持一份（同一 §2.1 约定，未提取共享表），改指令集时两处同步。
+- 解码表驱动：`Disassembler` 查 `code.hpp` X 表生成物（`kOpCodeNames`/`kOpCodeFormats`）按格式分发（§2.1），新增指令零改动；VM 主循环自持 switch（热路径操作数读取内联于各 case，不查表），新增指令需 X 表 + VM case 两处同步。
 
 ## 9. 待决设计点汇总
 
@@ -610,11 +610,11 @@ code:
 | 2 | 常量索引位宽 | `u16` 统一（暂不变；真超 65535 再加 `LOAD_CONST_L`） | `u8` + 长变体 |
 | 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
 | 4 | `ADD` 重载 | 承载数值加 + 字符串/list 拼接 | 仅数值，拼接走内建 |
-| 5 | `INVOKE_METHOD` | 已加入为预备指令, 暂 pass | 维持 `LOAD_FIELD`+`CALL` |
+| 5 | `INVOKE_METHOD` | 预留指令: 编译器不发射, VM `not_implemented` | 维持 `LOAD_FIELD`+`CALL` |
 | 6 | 异常机制 | CodeUnit 内记录表（M3 已落地, `finally` 属 M3b 待实现） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |
 | 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |
-| 9 | 内建注册机制 | 走全局表预填或 `LOAD_BUILTIN` | -- |
+| 9 | 内建注册机制 | **已落地**: VM 级 builtins 表 + `LOAD_GLOBAL` 回退, 无新指令 | -- |
 | 10 | CodeUnit 调试行信息 | 每偏移 `u32` 行号（RLE） | 存全 `LineCol` / 不存 |
 
 ## 10. 参考

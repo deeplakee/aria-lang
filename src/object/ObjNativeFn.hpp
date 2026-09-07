@@ -13,7 +13,7 @@ namespace aria {
     class AriaVM; // 前向声明:NativeFn 形参取引用,本头不依赖其完整定义
 
     // 原生函数的 C++ 调用签名(宿主侧实现,供 VM 在 CALL 命中 ObjNativeFn 时同步直接调用,
-    // 不经字节码帧)。builtins(print / len / type / assert ...)与未来嵌入 API 皆包成此类型。
+    // 不经字节码帧)。builtins(type/len/str/assert)与未来嵌入 API 皆包成此类型。
     //
     //   返回 bool、错误走侧信道、返回值写槽 0 -- 三者配套设计,把冷路径错误踢出返回类型:
     //

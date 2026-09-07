@@ -38,10 +38,12 @@ class ObjMovement /* final : public Object, M6 起继承 */ {
 
 // 帧是纯 POD(FrameStack 要求 trivially-copyable;只持指针,满足约束)
 struct CallFrame {
-    ObjClosure* closure_;   // 顶层也是闭包;M1-M3 过渡期持 ObjFunction*
-    CodeUnit*   unit_;      // 缓存 closure_->fn()->unit(),省每条指令一跳
-    u8*         ip_;        // 裸指针最快;raise 等冷路径按需算 offset
-    Value*      slots_;     // 本帧局部基址(callee=槽0、this/参数、局部)
+    ObjFunction* function;  // M1-M3 持 ObjFunction*,M4 换 ObjClosure*(顶层也是闭包)
+    CodeUnit*    unit;      // 缓存 function->unit(),省每条指令一跳
+    ObjModule*   module;    // 缓存 function->module(),供 *_GLOBAL 定位模块 globals
+    u8*          ip;        // 裸指针最快;raise 等冷路径按需算 offset
+    Value*       slots;     // 本帧局部基址(callee=槽0、参数从槽 1 起、局部)
+    u8*          last_ip;   // 最近取指指令起始(行号/unwind 查表锚点)
 };
 
 // ---- 解释器级 ----
@@ -98,7 +100,7 @@ struct ExecOutcome {
 
 > **已前拉(开发期即启用 GC)**:值栈/帧的根接线不再等 M6 -- 当前 `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时沿 `current_` -> `previous_` 执行链逐个标各上下文值栈 `[base, top)` + 各活动帧 `function`/`module` + 挂起错误寄存器 + `modules_`/`builtins_`(`current_`/`previous_` 已落地,现为单节点 main_ctx_);`run()` 不再持 `LockGuard`,`JUMP_BACK` 已是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表 + 接 open upvalue 链;协程根收敛为 `current_`(tracer 保留其 `-> previous_` 链遍历以覆盖不入堆的 main_ctx_,挂起协程走对象图;`contexts_` 与链尾断言退役,§4.9)。下方描述为 M6 目标形态。
 
-- 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure_`、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
+- 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `function`、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
 - safe point:`CALL`、循环回边(`JUMP_BACK`)、`new_object` 内、协程切换点。当前已落地 `JUMP_BACK` + `new_object` 内;`CALL`/协程切换点随 M6 补。
 
@@ -150,7 +152,7 @@ bool len_native(AriaVM& vm, Span<Value> slots) {
 
 **行级粒度** -- 字节码只有 RLE 行号表(`CodeUnit::line_for_offset`,二分查行),无列号 -> 运行期位置上限为行(对标 Lua);列号须扩行号表,M3 不做。消息形态与编译期对齐:运行期为 `"path:line: Category: Name detail"`(编译期为 `path:line:col:`)。合成模块(名以 `<` 开头,如 `<script>`)无文件身份,`abs_path()` 会拼出伪路径,位置串退化为 `"<模块名>:<line>"`。
 
-**位置标注收口在装箱点(一处覆盖全部报错源;已落地)** -- 三类报错站点(VM 检测错误如算术/LOAD_GLOBAL、`call_*` 失败的 WrongArity/StackOverflow/CallNonCallable、原生函数 `vm.fail`)的细节串皆无位置;但**装箱成 ObjException 的时刻**(`AriaVM::raise` 统一路径 -- `call_*` 失败站点与 `vm.fail` 已统一经 `fail` -> `raise` 装箱,原匿名 `ctx_fail` 已并入)栈顶帧恒为「正在执行的指令所在帧」:顶帧报错即故障帧、`call_*` 失败即 caller 帧(被调帧未进)、原生报错即 caller 帧(原生不进帧),其 `last_ip`(主循环取指前写,已落地)恰为故障指令/CALL 站点。实现为**一步烘齐**:`raise(ErrorCode, StringView detail)` 直接收 code + 原始细节串,内部经 `runtime_loc(*current_)`(匿名 ns 助手:顶帧 `last_ip` 反推 offset 查 `line_for_offset`,合成模块/空路径退化为 `<name>:line`,帧栈空返空串)取位置,再经 `Error::make_message(code, location, detail)` 公开重载(Error 烘焙单点,from_detail 同源)合成完整消息后 `new_exception` 装箱 -- 无 Error 对象中转、无双重标注(每个错误只装箱一次)。run_ 直报站点(`runtime_err(ctx, code, fmt, ...)`)同样 `runtime_loc` + `make_message` 烘齐、经 `from_baked` 装回,同形带位置。帧栈空(run 外直调)无位置。位置串是 C++ 侧 String 拼接,不添 GC 约束(`new_exception` 自守不变,坑点文档 #8)。
+**位置标注收口在装箱点(一处覆盖全部报错源;已落地)** -- 三类报错站点(VM 检测错误如算术/LOAD_GLOBAL、`call_*` 失败的 WrongArity/StackOverflow/CallNonCallable、原生函数 `vm.fail`)的细节串皆无位置;但**装箱成 ObjException 的时刻**(`AriaVM::raise` 统一路径 -- `call_*` 失败站点与 `vm.fail` 统一经 `fail` -> `raise` 装箱)栈顶帧恒为「正在执行的指令所在帧」:顶帧报错即故障帧、`call_*` 失败即 caller 帧(被调帧未进)、原生报错即 caller 帧(原生不进帧),其 `last_ip`(主循环取指前写,已落地)恰为故障指令/CALL 站点。实现为**一步烘齐**:`raise(ErrorCode, StringView detail)` 直接收 code + 原始细节串,内部经 `runtime_loc(*current_)`(匿名 ns 助手:顶帧 `last_ip` 反推 offset 查 `line_for_offset`,合成模块/空路径退化为 `<name>:line`,帧栈空返空串)取位置,再经 `Error::make_message(code, location, detail)` 公开重载(Error 烘焙单点,from_detail 同源)合成完整消息后 `new_exception` 装箱 -- 无 Error 对象中转、无双重标注(每个错误只装箱一次)。未捕获出口经 `uncaught_error_parts` 反拆 (码, 烘焙消息) 拼好跟踪后 `from_baked` 一次物化,同源同串。帧栈空(run 外直调)无位置。位置串是 C++ 侧 String 拼接,不添 GC 约束(`new_exception` 自守不变,坑点文档 #8)。
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者过标注装箱,前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
@@ -214,10 +216,10 @@ if (obj->fn()(*this, slots)) {
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。刻意砍掉:
 
 - **不继承 Object**(已接 GC 根):`Movement` 仍是 `AriaVM` 的纯 C++ 成员(非 Object),但值栈/帧已经 vm_roots tracer 接 GC 根(见 §4.6「已前拉」),`run()` 不再禁 GC,`JUMP_BACK` 已是 safe point。开发期即开 GC(stress GC 于集成测试)以早暴露缺失根。M6 升级 `ObjMovement : Object` 入对象链表 + open upvalue 链 + 多协程根并集。
-- **无闭包/upvalue**:`CallFrame::closure_` 过渡期持 `ObjFunction*`;`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 暂 pass。
-- **无完整异常(M1 时;M3 已落地)**:`raise` 的完整形态(`TryRecord` 查表 + `truncate` unwind + `THROW`)当时暂不实现,op 失败直接作为 `run()` 的失败返回。`raise` 的 M1 最小切片--`VMContext` 上的挂起错误寄存器--已随原生函数落地(见 §4.7),原生函数 `vm.fail` 与 `call_value` 族 bool 契约经此报错,后升为运行期主通道;M3 已在此寄存器上接 unwind(直报 Result 形态退役,寄存器本身不变,见 §4.5 与坑点文档)。
-- **无模块/类/导入**:globals 暂以 VM 内单张表顶替(M2 已换 per-module)。
-- run() 不可重入问题不存在(M1 无 native 回调、无协程),且 M6 定稿单循环切换模型后 `run_()` **永不重入**(§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
+- **无闭包/upvalue**:`CallFrame::function` 现持 `ObjFunction*`(M4 换 `ObjClosure*`);`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 命中 `not_implemented`(`fatal_error` 终止)。
+- **异常已闭环(M3)**:挂起错误寄存器自原生函数侧信道落地起即逐步升为运行期主通道,M3 在其上接 `unwind_` 查表派发(见 §4.5 与坑点文档)。
+- **无类**:类/实例/方法相关指令(`MAKE_*` 系列)与 CodeGen 发射待 M5;模块与导入已落地(M2,per-module globals)。
+- `run_()` 永不重入(M6 单循环切换模型,§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
 
 ## 6. 实施路线
 
@@ -226,7 +228,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通,ctest 371/371 绿(M1 当时快照) |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地,2026-09;finally 属 M3b 未落)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind_`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8) | try/catch 单测,跨帧 unwind 正确(ctest 558/558 绿) |
-| **M4 闭包** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 链、`CallFrame::closure_` 换闭包。open upvalue 落地后须在值栈增长时重定位其 Value*(或改索引式) | 计数器闭包等经典样例正确 |
+| **M4 闭包** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 链、`CallFrame::function` 换闭包。open upvalue 落地后须在值栈增长时重定位其 Value*(或改索引式) | 计数器闭包等经典样例正确 |
 | **M5 类与对象** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC 根收敛 `current_` 单根(协程经对象图可达)、**单循环切换模型**(§4.9):`coroutine.resume/yield/status` 原生函数 + CALL 善后点采用新 `current_` + RETURN 完成切回解链、`run()` 扩三态 `ExecOutcome`(`Yielded` = 根挂起) | 协程生成器样例;stress GC 下多协程无悬垂 |
 
@@ -241,11 +243,11 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 ## 7. 缺口清单(实施前需补的东西)
 
-- **协程不新增指令**(M6 定稿,§4.9):resume/yield 走原生函数通道(builtins 表或 coroutine 模块),原「`YIELD`/`RESUME` 指令 + CALL 语义扩协程」计划废弃,指令集文档无需增补。
+- **协程不新增指令**(M6 定稿,§4.9):resume/yield 走原生函数通道(builtins 表或 coroutine 模块),指令集无需增补。
 - **`ObjType` 无 `MOVEMENT`**(M6 增)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),M3 落地,`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册,标 `modules_`/`builtins_`/值栈/帧)。
-- **内置函数注册机制**已落地(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/Builtins.{hpp,cpp}` 的 `builtins::register_builtins(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等原生函数经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `upsert` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次,全 VM 生命周期共享,不再每模块注入。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 grammar.txt §205-206),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。原方案 A「按模块预填 globals」会在 REPL 逐行 `run()` 重注册、覆写用户 shadow(与「顶层 var 跨行保留」矛盾),方案 B 一份只读表彻底回避,并省掉每模块 4 个 `ObjNativeFn` 分配。原生函数**类型与 CALL 路径**早已落地(见 §4.7)。
+- **内置函数注册机制**已落地(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/Builtins.{hpp,cpp}` 的 `builtins::register_builtins(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等原生函数经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `upsert` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次,全 VM 生命周期共享,不再每模块注入。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 grammar.txt §205-206),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」:它会在 REPL 逐行 `run()` 重注册、覆写用户 shadow(与「顶层 var 跨行保留」矛盾);方案 B 一份只读表彻底回避,并省掉每模块 4 个 `ObjNativeFn` 分配。原生函数**类型与 CALL 路径**早已落地(见 §4.7)。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

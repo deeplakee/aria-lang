@@ -56,7 +56,7 @@ namespace aria {
         BreakOutsideLoop,        // break 须在循环内
         ContinueOutsideLoop,     // continue 须在循环内
         ReturnOutsideFunction,   // return 须在函数内
-        TryWithoutHandler,       // try 须有 catch 或 finally
+        TryWithoutHandler,       // try 须有 catch
         DefaultParamSelfRef,     // 默认值表达式引用了同函数的参数
         DuplicateParam,          // 同函数形参重名
         UndefinedVariable,       // 引用未定义的变量/函数

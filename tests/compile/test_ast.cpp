@@ -315,7 +315,7 @@ TEST(AstDisplay, TryStmt) {
     catch_body_stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, ident("e")));
     auto catch_body = std::make_unique<BlockNode>(kLoc, std::move(catch_body_stmts));
 
-    TryStmtNode  node{kLoc, std::move(try_body), Opt<String>{String{"e"}}, std::move(catch_body), nullptr};
+    TryStmtNode  node{kLoc, std::move(try_body), Opt<String>{String{"e"}}, std::move(catch_body)};
     const String out = dump_str(node);
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");

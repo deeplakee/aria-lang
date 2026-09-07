@@ -69,16 +69,16 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
+    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 随 M4），关键字 23 个
     const String        src      = "fun def var if else while for in break continue return import as "
-                                   "try catch finally throw print nil true false this super match";
-    const List<TokType> expected = {
-            TokType::Fun,     TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
-            TokType::While,   TokType::For,    TokType::In,    TokType::Break, TokType::Continue,
-            TokType::Return,  TokType::Import, TokType::As,    TokType::Try,   TokType::Catch,
-            TokType::Finally, TokType::Throw,  TokType::Print, TokType::Nil,   TokType::True,
-            TokType::False,   TokType::This,   TokType::Super, TokType::Match, TokType::Eof};
-    const auto  lexed  = lex_ok(src);
-    const auto& tokens = lexed->tokens;
+                                   "try catch throw print nil true false this super match";
+    const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
+                                    TokType::While,  TokType::For,    TokType::In,    TokType::Break, TokType::Continue,
+                                    TokType::Return, TokType::Import, TokType::As,    TokType::Try,   TokType::Catch,
+                                    TokType::Throw,  TokType::Print,  TokType::Nil,   TokType::True,  TokType::False,
+                                    TokType::This,   TokType::Super,  TokType::Match, TokType::Eof};
+    const auto          lexed    = lex_ok(src);
+    const auto&         tokens   = lexed->tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
@@ -89,6 +89,18 @@ TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
     // and/or/not 不再是关键字，作为普通 identifier（与 Java/C# 一致）
     const String        src      = "and or not";
     const List<TokType> expected = {TokType::Identifier, TokType::Identifier, TokType::Identifier, TokType::Eof};
+    const auto          lexed    = lex_ok(src);
+    const auto&         tokens   = lexed->tokens;
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+}
+
+TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
+    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 随 M4），回归普通 identifier
+    const String        src      = "finally";
+    const List<TokType> expected = {TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
     const auto&         tokens   = lexed->tokens;
     ASSERT_EQ(tokens.size(), expected.size());

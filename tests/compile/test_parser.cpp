@@ -609,19 +609,25 @@ TEST(ParserStmt, Import) {
 
 TEST(ParserStmt, Throw) { expect_has(dump_ok("throw e;"), "ThrowStmt"); }
 
-TEST(ParserStmt, TryCatchFinally) {
-    const String out = dump_ok("try { print 1; } catch (e) { print e; } finally { print 2; }");
+TEST(ParserStmt, TryCatch) {
+    const String out = dump_ok("try { print 1; } catch (e) { print e; }");
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");
-    expect_has(out, "Finally");
+    // finally 已裁撤（2026-09，后继 defer 随 M4），不再解析 finally 子句
+    EXPECT_EQ(out.find("Finally"), String::npos);
 }
 
-TEST(ParserStmt, TryFinallyOnly) {
-    const String out = dump_ok("try { print 1; } finally { print 2; }");
+TEST(ParserStmt, TryWithoutCatchParses) {
+    const String out = dump_ok("try { print 1; }");
     expect_has(out, "TryStmt");
-    expect_has(out, "Finally");
     // parse 层允许无 catch（语义阶段才校验 TryWithoutHandler）
     EXPECT_EQ(out.find("Catch"), String::npos);
+}
+
+TEST(ParserStmt, FinallyIsPlainIdentifier) {
+    // finally 裁撤后回归普通标识符，可作变量名
+    const String out = dump_ok("var finally = 1; print finally;");
+    expect_has(out, "VarDecl bindings=1");
 }
 
 TEST(ParserStmt, MatchStmt) {

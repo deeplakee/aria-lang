@@ -11,7 +11,7 @@ namespace aria {
     using src::SourceLoc;
 
     // 词法单元类型。覆盖文法（docs/grammar.txt）中的全部终结符：
-    //   - 关键字（fun/def/var/... 共 24 个，见文末「关键字」清单）
+    //   - 关键字（fun/def/var/... 共 23 个，见文末「关键字」清单）
     //   - 运算符（算术 / 复合赋值 / 比较 / 逻辑 / 自增自减 / =>）
     //   - 标点（括号 / 逗号 / 冒号 / 分号 / 点 / ...）
     //   - 字面量（整数 / 浮点 / 字符串 / 标识符 / _ 占位符）
@@ -49,7 +49,6 @@ namespace aria {
         As,       // "as"     import 的别名
         Try,      // "try"    异常处理
         Catch,    // "catch"
-        Finally,  // "finally"
         Throw,    // "throw"  抛出异常
         Print,    // "print"  打印语句
         Nil,      // "nil"    空值字面量

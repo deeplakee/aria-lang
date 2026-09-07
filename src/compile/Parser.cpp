@@ -545,10 +545,8 @@ namespace aria {
             expect(TokenType::RightParen, "')'");
             catch_body = block();
         }
-        UPtr<BlockNode> finally_body = match(TokenType::Finally) ? block() : nullptr;
-        // 语义阶段保证 catch 或 finally 至少其一（TryWithoutHandler）；parse 层允许皆无。
-        return std::make_unique<TryStmtNode>(loc, std::move(body), std::move(catch_param), std::move(catch_body),
-                                             std::move(finally_body));
+        // parse 层允许无 catch（try 单独成块），语义阶段保证必有（TryWithoutHandler）。
+        return std::make_unique<TryStmtNode>(loc, std::move(body), std::move(catch_param), std::move(catch_body));
     }
 
     UPtr<StmtNode> Parser::throw_stmt() {

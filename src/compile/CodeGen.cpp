@@ -340,9 +340,10 @@ namespace aria {
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc& loc) const {
         // 形参合法性检查（FunDecl / Lambda 共用，compile_function 编译体前调用）：
         //   >kMaxArity -> TooManyParameters；默认参数 / varargs -> not_impl；形参重名 -> DuplicateParam。
-        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出。loc 为声明节点位置（fun 关键字，compile_function
-        // 经 decl_loc 传入）而非 body->loc()（body 的 '{'），更贴近参数列表所在；只需位置无需整节点，故入参
-        // 为 const SourceLoc& 而非 ASTNode*（not_impl 走其 SourceLoc 重载）。
+        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出。loc
+        // 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body->loc()（body 的
+        // '{'），更贴近参数列表所在；只需位置无需整节点，故入参 为 const SourceLoc& 而非 ASTNode*（not_impl 走其
+        // SourceLoc 重载）。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
         }
@@ -667,13 +668,9 @@ namespace aria {
 
     void CodeGen::visitTryStmtNode(TryStmtNode* node) {
         const u32 line = node->loc_line();
-        // M3 只做 try/catch;finally 属子里程碑 M3b(END_FINALLY 届时引入)。finally 一旦
-        // 出现(无论有无 catch)一律占位 -- finally 语义未落地,只编 catch 会静默丢块。
-        if (node->finally_body != nullptr) {
-            not_impl(node, "try/finally 异常处理");
-        }
+        // finally 已裁撤(2026-09,善后后继 defer 随 M4);try 须有 catch。
         if (node->catch_body == nullptr) {
-            fail(ErrorCode::TryWithoutHandler, node->loc(), "try 须有 catch 或 finally");
+            fail(ErrorCode::TryWithoutHandler, node->loc(), "try 须有 catch");
         }
 
         // lowering(入口预插占位 + 结尾回填,pitfalls 坑 #4;catch 参数走值填槽,坑 #10):

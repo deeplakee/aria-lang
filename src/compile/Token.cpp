@@ -15,18 +15,18 @@ namespace aria {
         // 关键字均为 ASCII，使用普通字符串字面量（u8"..." 会得到 char8_t[]，
         // 无法构造 string_view<char>）。
         constexpr KeywordEntry kKeywords[] = {
-                {"as", TokenType::As},           {"break", TokenType::Break},
-                {"catch", TokenType::Catch},     {"continue", TokenType::Continue},
-                {"def", TokenType::Def},         {"else", TokenType::Else},
-                {"finally", TokenType::Finally}, {"for", TokenType::For},
-                {"fun", TokenType::Fun},         {"if", TokenType::If},
-                {"import", TokenType::Import},   {"in", TokenType::In},
-                {"match", TokenType::Match},     {"nil", TokenType::Nil},
-                {"print", TokenType::Print},     {"return", TokenType::Return},
-                {"super", TokenType::Super},     {"this", TokenType::This},
-                {"throw", TokenType::Throw},     {"try", TokenType::Try},
-                {"var", TokenType::Var},         {"while", TokenType::While},
-                {"true", TokenType::True},       {"false", TokenType::False},
+                {"as", TokenType::As},         {"break", TokenType::Break},
+                {"catch", TokenType::Catch},   {"continue", TokenType::Continue},
+                {"def", TokenType::Def},       {"else", TokenType::Else},
+                {"for", TokenType::For},       {"fun", TokenType::Fun},
+                {"if", TokenType::If},         {"import", TokenType::Import},
+                {"in", TokenType::In},         {"match", TokenType::Match},
+                {"nil", TokenType::Nil},       {"print", TokenType::Print},
+                {"return", TokenType::Return}, {"super", TokenType::Super},
+                {"this", TokenType::This},     {"throw", TokenType::Throw},
+                {"try", TokenType::Try},       {"var", TokenType::Var},
+                {"while", TokenType::While},   {"true", TokenType::True},
+                {"false", TokenType::False},
         };
     } // namespace
 
@@ -86,8 +86,6 @@ namespace aria {
                 return "Try";
             case TokenType::Catch:
                 return "Catch";
-            case TokenType::Finally:
-                return "Finally";
             case TokenType::Throw:
                 return "Throw";
             case TokenType::Print:
@@ -249,7 +247,6 @@ namespace aria {
             case TokenType::As:
             case TokenType::Try:
             case TokenType::Catch:
-            case TokenType::Finally:
             case TokenType::Throw:
             case TokenType::Print:
             case TokenType::Nil:

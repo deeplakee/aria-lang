@@ -445,14 +445,13 @@ namespace aria {
         String alias;
     };
 
-    // try 语句：try block (catch (id) block)? (finally block)?。
+    // try 语句：try block (catch (id) block)?（finally 已裁撤 2026-09，善后后继 defer 随 M4）。
     //   - catch_param / catch_body 成对出现（parser 保证），均缺省表无 catch。
-    //   - finally_body 缺省表无 finally。语义阶段保证 catch 或 finally 至少其一。
+    //   - 语义阶段保证 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
-        TryStmtNode(SourceLoc loc, UPtr<BlockNode> body, Opt<String> catch_param, UPtr<BlockNode> catch_body,
-                    UPtr<BlockNode> finally_body) :
+        TryStmtNode(SourceLoc loc, UPtr<BlockNode> body, Opt<String> catch_param, UPtr<BlockNode> catch_body) :
             StmtNode{loc}, body{std::move(body)}, catch_param{std::move(catch_param)},
-            catch_body{std::move(catch_body)}, finally_body{std::move(finally_body)} {}
+            catch_body{std::move(catch_body)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -462,7 +461,6 @@ namespace aria {
         UPtr<BlockNode> body;
         Opt<String>     catch_param;
         UPtr<BlockNode> catch_body;
-        UPtr<BlockNode> finally_body;
     };
 
     // throw 语句：throw expression ";"。

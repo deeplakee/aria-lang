@@ -310,10 +310,6 @@ namespace aria {
                 out += catch_body->dump(indent + 2);
             }
         }
-        if (finally_body) {
-            detail::ast::write_line(out, indent + 1, "Finally");
-            out += finally_body->dump(indent + 2);
-        }
         return out;
     }
 

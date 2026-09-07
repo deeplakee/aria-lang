@@ -1,8 +1,8 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（M3b finally / 后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
+> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（finally 已于 2026-09 裁撤、后继 defer 随 M4；后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
 >
-> 范围：M3 只做 try/catch/throw（`finally` 推迟至子里程碑 M3b，不引入 `END_FINALLY`）。
+> 范围：M3 只做 try/catch/throw（`finally` 曾推迟至子里程碑 M3b、后于 2026-09 随特性裁撤移除，不引入 `END_FINALLY`），见下「M3b finally 裁撤记录」节；善后后继为 defer，随 M4 闭包落地。
 
 ## 设计基线速览（已定）
 
@@ -11,6 +11,17 @@
 - **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, baked_message)`（工厂内部 `new_string` 驻留）包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::from_baked(code, message)`（跳过 `make_message` 的静态工厂）回传原码+原消息（含位置）；原值回 `Error::from_detail(ErrorCode::UncaughtException, format_value(V))`。详见坑 #7。
 - **`TryRecord` 字段**：`{begin, end, handle, stack_depth}`（`frame_depth` 不存见坑 #5；`catch_slot` 不存见坑 #10 —— 恒等于 `stack_depth`，且 unwind 的 `push` 已把异常值落在该槽，无 `STORE_LOCAL`）。
 - **位置与跟踪（M3 定稿）**：运行期位置前缀在**装箱点**烘入 ObjException 消息（取 `frames().top().last_ip` 反推 offset 查行号表，坑 #15）；未捕获时由 unwind 遍历逐帧收集、物化 Error 时附堆栈跟踪（坑 #16）。透传错误（被导入模块的编译期 Error）不标注、无跟踪。
+
+---
+
+## M3b finally 裁撤记录（2026-09）
+
+finally 子句（原 M3b 范围）在定稿控制流语义后整体裁撤，不再进入路线图；文法层（tryCatchStmt 产生式 / `finally` 关键字 / AST `finally_body` 字段 / CodeGen 占位）已同步移除，`finally` 回归普通标识符。try/catch 保持 M3 落地形态不变（try 须有 catch，`ErrTryWithoutHandler`）。
+
+- **裁撤理由**：finally 的存在价值是资源善后，而语言层尚无制造 OS 资源的内建（builtins 仅 type/len/str/assert），当前为零实际损失；参照实现 Lua/Wren 均无 finally；其控制流语义是剩余异常机制中最贵的一块。单向门：裁撤后将来重新引入是向后兼容的语法增补。
+- **善后后继：defer**（随 M4 闭包落地）：defer 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）M4 设计时定。
+- **两机制共享的 VM 难点（defer 落地时须面对，保留备忘）**：unwind 途中执行用户代码 + 善后代码自身抛错替换在途异常（原异常丢失）；且在途状态不能只住 `pending_error_`（unwind 途中执行嵌套 try/catch 时，catch 命中会清寄存器吞掉在途异常），须另存专用槽位后续传（坑 #7/#14 单寄存器模型的边界）。
+- **曾定稿的 finally 控制流语义存档**（若将来重新引入 finally，按此起步）：finally 必达（正常结束 / catch 命中 / 异常续传三退出路径各执行一次）；finally 体内 return 一律禁止（嵌套 fun/lambda 的 return 绑定自身函数不受限）、break/continue 指向 finally 外循环禁止（体内自含循环允许）--编译期语义错误；throw 放行但替换挂起中的异常。「不继承 Java/Python/JS 覆盖语义」的既定取向（公认 footgun、生态以 lint 劝阻、与 aria 无静默错误行为取向冲突）复用于 defer 的善后体设计。
 
 ---
 
@@ -431,9 +442,9 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 3. **B3（已落地）** `Movement::pending_error_ : Opt<Value>` + `raise(Value)` + `reset` 清 + `truncate_stack(usize)`（坑 #14）。
 4. **B2（已落地）** `CallFrame` 加 `u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`run_()` 循环顶每轮取指前写，坑 #1/#2；存指针、查表时反推 offset）。
 5. **B4（已落地）** `AriaVM` 成员 `unwind_()`（入口断言寄存器非空 -- write 侧 `Movement::raise` 空寄存器断言的 read 侧成对）；`runtime_loc` + `Error::make_message` 一步烘位置（坑 #15）复用公共 `raise`/`fail` 装箱。**raise 与 unwind 不融合**成 `raise_and_unwind_`/`throw_and_unwind_` 具名助手（终态：全部站点就地 `raise`/`fail` 装箱 + 直接 `unwind_`，与 CALL 失败善后同形 -- 两个直观动作不硬融，坑 #11）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获物化经 `uncaught_error_parts` 反提拆件（ObjException 原码原消息 / 原值兜底 `UncaughtException`，拼完跟踪 `from_baked` 一次物化）；跟踪收集 + 物化时烘焙（坑 #16）；run_ 直报站点全部切换（坑 #11，`run_binary_numeric<Op>` 升 AriaVM 成员模板、数值语义内联）。
-6. **B5（已落地）** CodeGen `visitTryStmtNode`（入口预插占位 + 结尾回填，构造即非降序不排序，坑 #4；catch 参数值填槽无 STORE_LOCAL，坑 #9/#10；`finally` 一律 `not_impl` 占位 M3b）/`visitThrowStmtNode`（`emit_expr` + `THROW`）。
+6. **B5（已落地）** CodeGen `visitTryStmtNode`（入口预插占位 + 结尾回填，构造即非降序不排序，坑 #4；catch 参数值填槽无 STORE_LOCAL，坑 #9/#10；`finally` 一律 `not_impl` 占位 M3b，2026-09 随特性裁撤移除）/`visitThrowStmtNode`（`emit_expr` + `THROW`）。
 7. **B6（已落地）** Disassembler `try records:` 小节（非空才列，逐条 `[begin, end) handle stack_depth`）。
-8. **B7（已落地）** 测试：`tests/compile/test_codegen.cpp` M3 节（throw 保类型/未捕获 UncaughtException/运行时错误绑 ObjException/re-throw 保码/原生 fail 可捕获/嵌套 try（含 re-throw 外层捕获）/跨帧与三层链 unwind/try 体局部丢弃/未捕获跟踪逐行断言/finally 占位/发射核对（try_records 字段 + 反汇编小节 + 升序））+ `tests/runtime/test_ariavm.cpp`（import 模块体 throw 被导入方捕获、既有消息断言补跟踪行）；源码级 run_source/compile_only 均开 stress GC（坑 #8）。
+8. **B7（已落地）** 测试：`tests/compile/test_codegen.cpp` M3 节（throw 保类型/未捕获 UncaughtException/运行时错误绑 ObjException/re-throw 保码/原生 fail 可捕获/嵌套 try（含 re-throw 外层捕获）/跨帧与三层链 unwind/try 体局部丢弃/未捕获跟踪逐行断言/finally 占位（2026-09 裁撤后改为标识符回归用例）/发射核对（try_records 字段 + 反汇编小节 + 升序））+ `tests/runtime/test_ariavm.cpp`（import 模块体 throw 被导入方捕获、既有消息断言补跟踪行）；源码级 run_source/compile_only 均开 stress GC（坑 #8）。
 
 ---
 
@@ -442,7 +453,7 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 - 正向：throw 被 catch 捕获；catch 绑定值保类型（`throw 42` -> e==42 Int）；未捕获 throw -> `UncaughtException`；嵌套 try（内层捕获 / 外层捕获内层 rethrow）；catch 内再 throw；跨帧捕获（被调函数 throw、调用者 try 捕获）。
 - 运行时错误可捕获：`try { 1/0 } catch (e) {}`（e 绑定 `ObjException`，`print(e)` 渲染消息）；`try { len(nil) } catch (e) {}` 捕获 native fn 错误（e 是 ObjException，`e.code()` 待 M5）。
 - **re-throw 保码（单寄存器语义收益）**：`try { 1/0 } catch (e) { throw e }` 未捕获 -> `run()` 回码 `DivisionByZero` 的 Error（非 `UncaughtException`）；对比用户 `throw 42` 未捕获 -> `UncaughtException`。
-- 反向：`ErrTryWithoutHandler` 既有保留；含 finally 的 try 报 `NotImplemented`（M3b 占位）。
+- 反向：`ErrTryWithoutHandler` 既有保留（finally 裁撤后消息为「try 须有 catch」）；`finally` 不再是关键字、回归普通标识符（裁撤后新增标识符回归用例）。
 - stress GC：try/catch 路径 `gc.set_stress(true)` 验根接线（坑 #8，标 `pending_error_`）。
 - 位置前缀（坑 #15）：`try` 外 `1/0` 未捕获 -> `error().message()` 以 `"path:line: Runtime: DivisionByZero"` 开头（行号 == 除法指令行）；catch 场景 `print(e)` 渲染的消息同样含位置前缀；原生 `vm.fail`（如 `len(nil)`）位置 == CALL 站点行；跨帧未捕获 message 含逐帧 `at` 行（外->内，坑 #16）。
 - 透传不标注（坑 #15/#16）：import 的模块含编译错误 -> 透传 Error 消息为**被导入文件**的 `path:line:col:` 前缀、无调用方位置前缀、无 `at` 行。

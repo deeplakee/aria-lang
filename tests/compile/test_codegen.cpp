@@ -841,15 +841,10 @@ mid();
                                      "  at div (<test>:3)");
 }
 
-TEST(CodeGen, ErrNotImplementedTryFinally) {
-    // finally 属 M3b：finally-only 与 catch+finally 一并占位（只编 catch 会静默丢块）。
-    auto c1 = compile_only("try { print 1; } finally { print 2; }");
-    ASSERT_FALSE(c1.has_value());
-    EXPECT_EQ(c1.error().code(), ErrorCode::NotImplemented);
-
-    auto c2 = compile_only("try { print 1; } catch (e) { print 2; } finally { print 3; }");
-    ASSERT_FALSE(c2.has_value());
-    EXPECT_EQ(c2.error().code(), ErrorCode::NotImplemented);
+TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {
+    // finally 已裁撤（2026-09，善后后继 defer 随 M4）：不再是关键字，回归普通标识符可绑定。
+    auto c = compile_only("var finally = 1; print finally;");
+    ASSERT_TRUE(c.has_value()) << c.error().message();
 }
 
 TEST(CodeGen, TryCatchEmitsTryRecordAndThrow) {

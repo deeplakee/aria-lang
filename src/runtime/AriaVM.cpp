@@ -198,9 +198,9 @@ namespace aria {
         [[noreturn]]
         void not_implemented(const StringView op_name) {
             fatal_error(ErrorCode::OpcodeNotImplemented,
-                        std::format("opcode '{}' not implemented yet (out of current scope: closures/fields/index/"
-                                    "classes come later)",
-                                    op_name));
+                        "opcode '{}' not implemented yet (out of current scope: closures/fields/index/"
+                        "classes come later)",
+                        op_name);
         }
 
         // 执行跟踪:在每条指令执行**前**打印字节码/栈/帧/模块信息(经 io::print 到 stderr,与 GC 调试日志

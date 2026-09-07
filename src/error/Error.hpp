@@ -1,6 +1,8 @@
 #ifndef ARIA_ERROR_HPP
 #define ARIA_ERROR_HPP
 
+#include <format>
+
 #include "common.hpp"
 #include "error/ErrorCode.hpp"
 #include "util/io.hpp"
@@ -141,10 +143,13 @@ namespace aria {
         std::exit(1);
     }
 
-    // 便捷重载：仅码 + 可选细节（无位置，构造走 Error::from_detail）。
+    // 便捷重载：码 + 格式化细节（格式串须为编译期常量，经 std::format_string 静态校验）。
+    // 不设成品串重载：动态串经 "{}" 实参传入 -- fatal_error(code, "{}", str)，
+    // 或先经 Error::from_detail 构造 Error 再走上一重载。
+    template<typename... Args>
     [[noreturn]]
-    inline void fatal_error(const ErrorCode code, const String& detail = "") {
-        fatal_error(Error::from_detail(code, detail));
+    void fatal_error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+        fatal_error(Error::from_detail(code, std::format(fmt, std::forward<Args>(args)...)));
     }
 
 } // namespace aria

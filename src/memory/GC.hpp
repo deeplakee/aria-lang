@@ -2,7 +2,6 @@
 #define ARIA_GC_HPP
 
 #include <algorithm>
-#include <format>
 #include <functional>
 #include <new>
 
@@ -230,7 +229,7 @@ namespace aria {
     T* GC::allocate(const usize count) {
         void* p = ::operator new(count * sizeof(T), std::nothrow);
         if (p == nullptr) {
-            fatal_error(ErrorCode::OutOfMemory, std::format("failed to allocate {} bytes", count * sizeof(T)));
+            fatal_error(ErrorCode::OutOfMemory, "failed to allocate {} bytes", count * sizeof(T));
         }
         bytes_allocated_ += count * sizeof(T);
         return static_cast<T*>(p);
@@ -253,7 +252,7 @@ namespace aria {
         }
         void* q = ::operator new(new_count * sizeof(T), std::nothrow);
         if (q == nullptr) {
-            fatal_error(ErrorCode::OutOfMemory, std::format("failed to reallocate {} bytes", new_count * sizeof(T)));
+            fatal_error(ErrorCode::OutOfMemory, "failed to reallocate {} bytes", new_count * sizeof(T));
         }
         if (p != nullptr) {
             std::memcpy(q, p, std::min(old_count, new_count) * sizeof(T));

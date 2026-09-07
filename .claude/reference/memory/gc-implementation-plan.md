@@ -131,7 +131,7 @@ private:
 
 **关键实现点:**
 
-- 分配器三方法是**模板** `allocate<T>(count)` / `deallocate<T>(p, count)` / `reallocate<T>(p, old, new)`,按 T 元素计数(内部 `count * sizeof(T)`)。模板体 inline 在 `GC.hpp`,故 GC.hpp 需 include `error/Error.hpp` + `<format>`/`<cstring>`/`<algorithm>`(模板体用到 `fatal_error` / `std::memcpy` / `std::min`)。
+- 分配器三方法是**模板** `allocate<T>(count)` / `deallocate<T>(p, count)` / `reallocate<T>(p, old, new)`,按 T 元素计数(内部 `count * sizeof(T)`)。模板体 inline 在 `GC.hpp`,故 GC.hpp 需 include `error/Error.hpp` + `<cstring>`/`<algorithm>`(模板体用到 `fatal_error` / `std::memcpy` / `std::min`;fatal_error 自带格式化,调用点不直接用 `<format>`)。
 - `new_object` 用 `allocate<u8>(sizeof(T))` 取裸内存再 placement-new,链入 `objects_head_`。
 - `delete_object(Object*)` 是 `new_object` 的逆:`size()`(虚,须在 `~Object` 前)-> `~Object()`(级联释放子内存:Array / long_chars_)-> `deallocate<u8>`(壳)。**不含链表摘除**(由 `sweep_`/`free_all_` 调用方管),`sweep_` 与 `free_all_` 共用此函数,销毁逻辑收口一处。
 - **不变式**:`allocate` / `reallocate` 永不触发 GC,故对象构造期内的子分配不会回收正在构造的对象(其尚未链入/未标根)。GC 仅在 `new_object` 顶部(`maybe_collect`)与 VM safe point 触发。

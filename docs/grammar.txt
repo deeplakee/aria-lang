@@ -183,8 +183,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 而语言层尚无制造 OS 资源的内建（builtins 仅 type/len/str/assert）；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
 # finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
-# 裁撤记录」。善后后继为 defer（Go/Zig 式，随 M4 闭包落地：defer 注册善后表达式，函数正常
-# 退出与异常 unwind 时 LIFO 执行；细节 M4 设计时定）。
+# 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常
+# unwind 时 LIFO 执行）；defer 已降为可选后续（优先级最低，其他功能完成后另定，2026-09
+# 决定不再绑定 M4），细节重启设计时定。
 #
 # def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> varDecl | funDecl | function）--
 #   - varDecl（var ...;）-> 静态变量，属类本身（Foo.x 读写）。

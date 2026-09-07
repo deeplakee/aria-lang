@@ -445,7 +445,7 @@ namespace aria {
         String alias;
     };
 
-    // try 语句：try block (catch (id) block)?（finally 已裁撤 2026-09，善后后继 defer 随 M4）。
+    // try 语句：try block (catch (id) block)?（finally 已裁撤 2026-09，善后后继 defer 已降为可选后续、不绑定 M4）。
     //   - catch_param / catch_body 成对出现（parser 保证），均缺省表无 catch。
     //   - 语义阶段保证 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {

@@ -668,7 +668,7 @@ namespace aria {
 
     void CodeGen::visitTryStmtNode(TryStmtNode* node) {
         const u32 line = node->loc_line();
-        // finally 已裁撤(2026-09,善后后继 defer 随 M4);try 须有 catch。
+        // finally 已裁撤(2026-09,善后后继 defer 已降为可选后续、不再绑定 M4);try 须有 catch。
         if (node->catch_body == nullptr) {
             fail(ErrorCode::TryWithoutHandler, node->loc(), "try 须有 catch");
         }

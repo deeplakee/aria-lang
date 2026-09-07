@@ -1,8 +1,8 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（finally 已于 2026-09 裁撤、后继 defer 随 M4；后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
+> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（finally 已于 2026-09 裁撤、后继 defer 已降级为可选后续不再绑定 M4；后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
 >
-> 范围：M3 只做 try/catch/throw（`finally` 曾推迟至子里程碑 M3b、后于 2026-09 随特性裁撤移除，不引入 `END_FINALLY`），见下「M3b finally 裁撤记录」节；善后后继为 defer，随 M4 闭包落地。
+> 范围：M3 只做 try/catch/throw（`finally` 曾推迟至子里程碑 M3b、后于 2026-09 随特性裁撤移除，不引入 `END_FINALLY`），见下「M3b finally 裁撤记录」节；善后后继为 defer，已降级为可选后续（其他功能完成后另定，2026-09 决定不再绑定 M4）。
 
 ## 设计基线速览（已定）
 
@@ -19,7 +19,7 @@
 finally 子句（原 M3b 范围）在定稿控制流语义后整体裁撤，不再进入路线图；文法层（tryCatchStmt 产生式 / `finally` 关键字 / AST `finally_body` 字段 / CodeGen 占位）已同步移除，`finally` 回归普通标识符。try/catch 保持 M3 落地形态不变（try 须有 catch，`ErrTryWithoutHandler`）。
 
 - **裁撤理由**：finally 的存在价值是资源善后，而语言层尚无制造 OS 资源的内建（builtins 仅 type/len/str/assert），当前为零实际损失；参照实现 Lua/Wren 均无 finally；其控制流语义是剩余异常机制中最贵的一块。单向门：裁撤后将来重新引入是向后兼容的语法增补。
-- **善后后继：defer**（随 M4 闭包落地）：defer 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）M4 设计时定。
+- **善后后继：defer**（已降级为可选后续，2026-09 决定：优先级最低，其他功能完成后另定，不再绑定 M4）：defer 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）重启设计时定。
 - **两机制共享的 VM 难点（defer 落地时须面对，保留备忘）**：unwind 途中执行用户代码 + 善后代码自身抛错替换在途异常（原异常丢失）；且在途状态不能只住 `pending_error_`（unwind 途中执行嵌套 try/catch 时，catch 命中会清寄存器吞掉在途异常），须另存专用槽位后续传（坑 #7/#14 单寄存器模型的边界）。
 - **曾定稿的 finally 控制流语义存档**（若将来重新引入 finally，按此起步）：finally 必达（正常结束 / catch 命中 / 异常续传三退出路径各执行一次）；finally 体内 return 一律禁止（嵌套 fun/lambda 的 return 绑定自身函数不受限）、break/continue 指向 finally 外循环禁止（体内自含循环允许）--编译期语义错误；throw 放行但替换挂起中的异常。「不继承 Java/Python/JS 覆盖语义」的既定取向（公认 footgun、生态以 lint 劝阻、与 aria 无静默错误行为取向冲突）复用于 defer 的善后体设计。
 

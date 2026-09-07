@@ -227,8 +227,8 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | :--- | :--- | :--- |
 | **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通,ctest 371/371 绿(M1 当时快照) |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
-| **M3 异常(已落地,2026-09)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind_`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 曾列 M3b,2026-09 裁撤,善后后继 defer 随 M4(见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确(ctest 558/558 绿) |
-| **M4 闭包** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 链、`CallFrame::function` 换闭包。open upvalue 落地后须在值栈增长时重定位其 Value*(或改索引式)。加 defer 善后机制(try/finally 裁撤的后继:defer 注册善后表达式,函数退出与异常 unwind 时 LIFO 执行,细节届时定) | 计数器闭包等经典样例正确 |
+| **M3 异常(已落地,2026-09)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind_`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 曾列 M3b,2026-09 裁撤,善后后继 defer 已降级为可选后续、不再绑定 M4(2026-09 定,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确(ctest 558/558 绿) |
+| **M4 闭包** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 链、`CallFrame::function` 换闭包。open upvalue 落地后须在值栈增长时重定位其 Value*(或改索引式)。实施计划见 `m4-closure-implementation-plan.md`(defer 善后机制已移出 M4,2026-09 降级为可选后续) | 计数器闭包等经典样例正确 |
 | **M5 类与对象** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC 根收敛 `current_` 单根(协程经对象图可达)、**单循环切换模型**(§4.9):`coroutine.resume/yield/status` 原生函数 + CALL 善后点采用新 `current_` + RETURN 完成切回解链、`run()` 扩三态 `ExecOutcome`(`Yielded` = 根挂起) | 协程生成器样例;stress GC 下多协程无悬垂 |
 

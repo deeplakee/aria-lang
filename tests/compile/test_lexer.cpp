@@ -69,7 +69,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
-    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 随 M4），关键字 23 个
+    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 已降为可选后续），关键字 23 个
     const String        src      = "fun def var if else while for in break continue return import as "
                                    "try catch throw print nil true false this super match";
     const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
@@ -98,7 +98,7 @@ TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
 }
 
 TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
-    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 随 M4），回归普通 identifier
+    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 已降为可选后续），回归普通 identifier
     const String        src      = "finally";
     const List<TokType> expected = {TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);

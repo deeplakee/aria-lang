@@ -613,7 +613,7 @@ TEST(ParserStmt, TryCatch) {
     const String out = dump_ok("try { print 1; } catch (e) { print e; }");
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");
-    // finally 已裁撤（2026-09，后继 defer 随 M4），不再解析 finally 子句
+    // finally 已裁撤（2026-09，后继 defer 已降为可选后续），不再解析 finally 子句
     EXPECT_EQ(out.find("Finally"), String::npos);
 }
 

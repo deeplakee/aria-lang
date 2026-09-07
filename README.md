@@ -5,7 +5,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 ## 当前状态
 
 - **已落地**：util 工具层（fs / utf8 / source_file / io / util / cli）、value 层（NaN-boxing / TagValue 可切换）、error 层、compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、字节码层（OpCode / CodeUnit / Disassembler）、字节码编译器 CodeGen（42 个 `visitXxxNode` 全 override）、GC Phase 1 + Phase 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / 全局 `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错位置标注）+ M3 异常 try/catch/throw（统一寄存器通道 + unwind 查异常记录表、跨帧捕获、re-throw 保码、未捕获堆栈跟踪）。
-- **待续**：M4 闭包（含 defer 善后，try/finally 之 finally 已裁撤）、M5 类、M6 协程。
+- **待续**：M4 闭包、M5 类、M6 协程；defer 善后为可选后续（优先级最低，其他功能完成后另定；try/finally 已裁撤）。M4 闭包实施计划见 `.claude/reference/runtime/m4-closure-implementation-plan.md`。
 
 ## 构建
 

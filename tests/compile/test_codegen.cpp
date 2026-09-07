@@ -842,7 +842,7 @@ mid();
 }
 
 TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {
-    // finally 已裁撤（2026-09，善后后继 defer 随 M4）：不再是关键字，回归普通标识符可绑定。
+    // finally 已裁撤（2026-09，善后后继 defer 已降为可选后续、不绑定 M4）：不再是关键字，回归普通标识符可绑定。
     auto c = compile_only("var finally = 1; print finally;");
     ASSERT_TRUE(c.has_value()) << c.error().message();
 }

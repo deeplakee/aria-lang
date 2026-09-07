@@ -5,7 +5,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 ## 当前进度
 
 - **已落地**：util / value / error / compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、bytecode 层（OpCode X-Macro 单一事实源表 + CodeUnit / Disassembler 表驱动解码 + 异常记录表小节）、GC Phase 1 + 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException、AriaVM M1 主循环 + M2（模块表 / 源根 / `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错带 `path:line: ` 位置标注）+ **M3 异常 try/catch/throw**（统一寄存器通道 + `unwind_` 查异常记录表派发 / 跨帧 unwind / `THROW` 原值保类型 / re-throw 保码 / 未捕获逐帧堆栈跟踪；run_ 直报 Result 形态已全部退役）。
-- **骨架待落地**：M4 闭包（含 defer 善后机制，try/finally 已裁撤的后继）、M5 类、M6 协程；CodeGen 对应特性占位 `NotImplemented`（编译期 Error），随 VM 里程碑逐个翻为真实发射。
+- **骨架待落地**：M4 闭包、M5 类、M6 协程；CodeGen 对应特性占位 `NotImplemented`（编译期 Error），随 VM 里程碑逐个翻为真实发射。defer 善后机制已降级为可选后续（优先级最低，其他功能完成后另定，不绑定里程碑；try/finally 已裁撤的后继，见坑点文档「M3b finally 裁撤记录」）。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 
 ## 文档与参考（按需加载）
@@ -30,6 +30,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 - `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
 - `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
+- `runtime/m4-closure-implementation-plan.md` -- M4 闭包实施计划（2026-09 定稿、待实施：语义模型、三项设计决策与四阶段落地步骤；M4 开工前重读）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常（try/catch/throw）踩坑归档（已落地；含 finally 裁撤记录与 defer 后继说明，异常相关特性重启前重读）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。

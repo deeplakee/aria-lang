@@ -6,6 +6,7 @@
 #include <fstream>
 #include <system_error>
 #include "common.hpp"
+#include "sys.hpp" // SYS_* 平台宏（本头直接使用，勿依赖 common.hpp 传递）
 
 #if defined(SYS_WINDOWS)
     #include <windows.h>
@@ -142,9 +143,9 @@ namespace aria::fs {
                 return std::unexpected(errno_to_fserr());
             return String{real};
 #elif defined(SYS_FREEBSD)
-            int    mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
-            char   buf[PATH_MAX];
-            size_t len = sizeof(buf);
+            int   mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+            char  buf[PATH_MAX];
+            usize len = sizeof(buf);
             if (::sysctl(mib, 4, buf, &len, nullptr, 0) < 0)
                 return std::unexpected(errno_to_fserr());
             return String{buf};

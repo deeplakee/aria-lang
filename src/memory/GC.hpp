@@ -65,7 +65,7 @@ namespace aria {
         void deallocate(T* p, usize count) noexcept;
 
         // realloc 语义:new_count==0 退化为 deallocate;否则新分配 + 拷贝 min(old,new) 个 T + 释放旧。
-        // **INVARIANT: 永不触发 GC**——同 allocate,调本函数期间裸持的白色对象不会被回收。
+        // **INVARIANT: 永不触发 GC** -- 同 allocate,调本函数期间裸持的白色对象不会被回收。
         template<typename T>
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);

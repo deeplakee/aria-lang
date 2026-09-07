@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD 23)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# 值表示选择（见 src/common.hpp）：默认 NaN-boxing；ON 时以 TagValue 编译全部目标与测试。
+option(ARIA_USE_TAGVALUE "用 TagValue（tag+union, 16B）替代 NaN-boxing 作为 Value 表示" OFF)
+if(ARIA_USE_TAGVALUE)
+    add_compile_definitions(ARIA_USE_TAGVALUE)
+endif()
+
 #add_library(fmt INTERFACE)
 #target_include_directories(fmt INTERFACE third/fmt)
 #target_compile_definitions(fmt INTERFACE FMT_HEADER_ONLY)

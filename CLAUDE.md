@@ -54,6 +54,12 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
   ```sh
   clang++ -std=c++23 -I src -fsyntax-only <file>
   ```
+- 验证 TagValue 值表示（`common.hpp` 的 `USING_NANBOXING` 关闭路径）：独立 build 目录配 `-DARIA_USE_TAGVALUE=ON` 全量构建 + ctest：
+  ```sh
+  cmake -S . -B build/tagvalue -DARIA_USE_TAGVALUE=ON -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build/tagvalue --target aria_tests -j
+  ctest --test-dir build/tagvalue --output-on-failure
+  ```
 - 依赖 `third/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
 
 ## 输出与格式化（强制）
@@ -76,7 +82,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 ## 工具
 
 - **clang-format**（根目录 `.clang-format`，LLVM 风格 / 4 空格 / 120 列 / 命名空间全缩进）：`clang-format -i <file>` 原地格式化。编辑器保存时自动重排（如 `auto p`->`const auto p`）是项目风格，不要回退。
-- **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--**未被任何 .cpp include 的 header-only 头文件（如 `utf8.hpp`/`source_file.hpp`）clangd 会因拿不到参数报类型未定义假错，以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准。根治：尽早让某 .cpp include 一次。**
+- **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--header-only 头文件**不被任何编译 TU（直接或传递）include** 时会因拿不到编译参数报类型未定义假错；已被传递 include 的头 clangd 能推断参数（2026-09 实测 clangd 22：全部头文件 `clangd --check` 0 诊断假错，自含头即可）。疑似假错以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准；根治：尽早让某 .cpp include 一次（仅对确实不可达的头需要）。
 
 ## 命名（强制）
 

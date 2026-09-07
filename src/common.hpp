@@ -12,9 +12,13 @@ static_assert(sizeof(void*) == 8, "This program requires a 64-bit system.");
 
 namespace aria {
 
-// 值表示选择：定义则 Value 用 NaN-boxing（8B），注释掉改用 TagValue（tag+union，16B）。
-// 两实现 API 一致（见 value/Value.hpp 的 #ifdef 分派），仅 sizeof 与 Value{} 零填充语义不同。
-#define USING_NANBOXING
+// 值表示选择：默认 NaN-boxing（8B）；定义 ARIA_USE_TAGVALUE 改用 TagValue（tag+union，16B）。
+// 宏由根 CMakeLists.txt 的 option(ARIA_USE_TAGVALUE) 注入（cmake -DARIA_USE_TAGVALUE=ON，
+// 供 TagValue 路径全量构建 + ctest 验证），亦可编译命令行手工 -D；两实现 API 一致
+// （见 value/Value.hpp 的 #ifdef 分派），仅 sizeof 与 Value{} 零填充语义不同。
+#if !defined(ARIA_USE_TAGVALUE)
+    #define USING_NANBOXING
+#endif
 
 
 #ifdef NDEBUG

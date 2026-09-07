@@ -409,6 +409,8 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
+        // 程序入口仪式:入口纪律断言 + 源根入口槽播种 + 前后清场;执行本体(压 callee/进帧/驱动
+        // 主循环)委托下方 run_function -- 仪式与本体分层,后者是未来重入的接缝(见其注释)。
         // 主上下文入口:进主循环前 current_ 必已归位 main_ctx_。M6 单循环切换模型(vm-design.md §4.9)
         // 下升格为永久不变式:run() 是唯一驱动入口,resume/yield 不重入 run_,切换只发生在 CALL 善后点
         // 且只换走 current_、不产生新循环 -- 每次进 run() 必从主上下文起步。
@@ -423,19 +425,34 @@ namespace aria {
         // 注:fn 必属某模块(module_ 非空,见 ObjFunction);[0] 槽位由构造时 cwd 占位恒在。
         source_roots_[0] = fn->module()->dir()->view();
 
+        // 重复调用先清场(同 Lexer/Parser 式复用):HALT 收场的上一轮不弹帧(run_ 的 HALT 分支
+        // 直接返回),不清场会把新帧叠在陈旧帧上、顶层 RETURN 后驱动陈旧帧的 ip。
         main_ctx_.reset();
-        main_ctx_.push(Value::from_obj(fn)); // callee 值躺在主帧槽 0(RETURN 时弹)
 
-        // 顶层入口无参数:slots 指向槽 0(callee)。enter_frame 收口 acquire + slots 不变量 +
-        // VM 专有字段(function/unit/module/ip)填充,定义在 Movement.cpp。
-        main_ctx_.enter_frame(fn, 0);
-
-        // run_() 结束后 reset 主上下文:清空值栈/帧,确保 run() 外(后续 compile / 测试显式 collect)
-        // GC 不会经 tracer 标到指向已回收对象的陈旧栈值。result 为值拷贝,reset 不影响返回值;
-        // 返回值若持对象,由调用方自行根化(Guard / vm 存活),同既有契约。
-        auto result = run_();
+        // result 为值拷贝,下方清场不影响返回值;返回值若持对象,由调用方自行根化
+        // (Guard / vm 存活),同既有契约。
+        auto result = run_function(fn);
+        // 结束再清场:清空值栈/帧,确保 run() 外(后续 compile / 测试显式 collect)GC 不会经
+        // tracer 标到指向已回收对象的陈旧栈值。清场责任归本入口 -- run_function 无自清场
+        // (重入接缝不得 reset,会冲掉重入调用者的栈,见其注释)。
         main_ctx_.reset();
         return result;
+    }
+
+    Result<Value, Error> AriaVM::run_function(ObjFunction* fn) {
+        // 执行本体(无入口装饰):压 callee + 进帧 + 驱动 run_ 到顶层返回,作用于 *current_ --
+        // 对齐 run_/call_value 族/raise 的 current_ 纪律;程序入口处 run() 已断言
+        // current_ == &main_ctx_,故与拆分前直访 main_ctx_ 的形态逐字等价。
+        // 未来重入的接缝:指令执行中临时运行一个 ObjFunction(原生回调调 aria 函数 / 嵌入宿主调
+        // 函数,vm-design.md §4.7「回调 aria 函数属未来机制(由 vm 提供,自管栈纪律)」)经此进入,
+        // 故不播源根、不 reset(冲掉重入调用者的栈)、不断言主上下文(current_ 即正在执行的上下文);
+        // 落地时升公开(原生函数经 AriaVM& 只能触公开面)。落地尚欠两件:run_ 按基线帧深退出
+        // (现仅 frames().empty() 返回,中途重入会穿掉调用者帧)与实参布线,届时在此扩。
+        // 顶层入口无参数:slots 指向槽 0(callee)。enter_frame 收口 acquire + slots 不变量 +
+        // VM 专有字段(function/unit/module/ip)填充,定义在 Movement.cpp。
+        current_->push(Value::from_obj(fn)); // callee 值躺在主帧槽 0(RETURN 时弹)
+        current_->enter_frame(fn, 0);
+        return run_();
     }
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {

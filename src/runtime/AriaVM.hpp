@@ -75,10 +75,12 @@ namespace aria {
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
 
-        // 在主上下文里执行 fn 的顶层帧:压 callee 值 + acquire 主帧 -> run_ 主循环。
-        // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用);入口断言 current_ == &main_ctx_
-        // (M6 前恒真;M6 后 resume/yield 严格成对,协程挂起返回时 VM 层即已回退 -- 不归位即
-        // 切换纪律被破坏,是错不当静默重置)。
+        // 把 fn 当程序入口在主上下文执行:程序入口仪式(入口纪律断言 + 源根入口槽 [0] 播种 +
+        // 前后 reset 清场)+ 委托私有 run_function 压 callee/进帧/驱动主循环(执行本体,见其注释)。
+        // 重复调用先 reset 主上下文(同 Lexer/Parser 式复用;HALT 收场的上一轮不弹帧,不清场会把
+        // 新帧叠在陈旧帧上);入口断言 current_ == &main_ctx_ (M6 前恒真;M6 后 resume/yield 严格
+        // 成对,协程挂起返回时 VM 层即已回退 -- 不归位即切换纪律被破坏,是错不当静默重置;
+        // M6 单循环切换模型下升格为永久不变式:run() 是唯一驱动入口,见 vm-design.md §4.9)。
         // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),不做逐指令越界设防。
         // 返回 Result<Value, Error>:成功为返回值,失败为未捕获的运行时错误
         // (M6 协程挂起将扩三态,届时引入 Yielded,见 .claude/reference/runtime/vm-design.md §3)。
@@ -209,6 +211,15 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
+        // 执行本体(无入口装饰):压 callee 值 + enter_frame 进帧 -> run_ 主循环,作用于 *current_
+        // (程序入口处 run() 已断言 current_ == &main_ctx_,等价于直访 main_ctx_)。run() 的被委托方,
+        // 亦是未来重入的接缝:指令执行中临时运行一个 ObjFunction(原生回调调 aria 函数 / 嵌入宿主
+        // 调函数,vm-design.md §4.7「回调 aria 函数属未来机制(由 vm 提供,自管栈纪律)」)经此进入,
+        // 故不播源根、不 reset(重入调用者的栈不可冲掉)、不断言主上下文;落地时升公开(原生函数经
+        // AriaVM& 只能触公开面)。落地尚欠 run_ 按基线帧深退出(现仅 frames().empty() 返回,中途重入
+        // 会穿掉调用者帧)与实参布线,届时在此扩。
+        Result<Value, Error> run_function(ObjFunction* fn);
+
         // 主循环:驱动 *current_(现为 main_ctx_;M6 resume 重入时为被恢复协程的上下文)直到顶层
         // 返回/错误/显式停止。栈/帧/错误寄存器一律经 current_ 访问,与 raise 同源(语义统一)。
         // 模块体 run-once 经 IMPORT 未命中分支以普通函数调用进帧(入口名固定 <module>),

@@ -23,7 +23,7 @@ namespace aria {
     //
     // 回收:三色 mark-sweep。roots = 临时根(Phase 1)+ VM 根(M2 起用,经 std::function 回调,
     //   标 modules_ + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误
-    //   寄存器);M4 再接 open upvalues,M6 升 Movement 为 Object。
+    //   寄存器;M4 起并标 open upvalue 开链节点);M6 升 Movement 为 Object。
     //   mark_roots_ -> trace_gray_ -> intern_.remove_white() -> sweep_;sweep_ 对未标对象调虚析构(级联释放
     //   子内存:Array 成员自释放 / ObjString long_chars_ 在 ~ObjString 释放)再释放壳。
     //

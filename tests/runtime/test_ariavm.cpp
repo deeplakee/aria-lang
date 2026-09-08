@@ -6,10 +6,12 @@
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
+#include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
@@ -23,15 +25,19 @@ using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
 using aria::new_string;
+using aria::ObjClosure;
 using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
+using aria::ObjUpvalue;
 using aria::OpCode;
 using aria::Span;
 using aria::StringView;
+using aria::TryRecord;
 using aria::u16;
 using aria::u32;
 using aria::u8;
+using aria::UpvalueDesc;
 using aria::usize;
 using aria::Value;
 
@@ -61,6 +67,27 @@ namespace {
         cu.emit_word(name_idx, line);
     }
 
+    // u8 upvalue 索引指令(LOAD_UPVALUE/STORE_UPVALUE)。
+    void emit_upvalue(CodeUnit& cu, OpCode op, u8 idx, u32 line = 1) {
+        cu.emit_op(op, line);
+        cu.emit_byte(idx, line);
+    }
+
+    // CLOSURE fn:u16(常量池 ObjFunction 索引):VM 按 fn->upvalue_descs() 建捕获,压闭包值。
+    void emit_closure(CodeUnit& cu, u16 fn_idx, u32 line = 1) {
+        cu.emit_op(OpCode::CLOSURE, line);
+        cu.emit_word(fn_idx, line);
+    }
+
+    // LOAD_CONST idx:u16(压常量池 idx 处的值)。
+    void emit_const(CodeUnit& cu, u16 idx, u32 line = 1) {
+        cu.emit_op(OpCode::LOAD_CONST, line);
+        cu.emit_word(idx, line);
+    }
+
+    // 给 fn 追加一条捕获描述:is_local=true 捕直接外围帧局部槽 index(测试只用到此形态)。
+    void capture_local(ObjFunction* fn, u16 index) { fn->upvalue_descs().push(UpvalueDesc{true, index}); }
+
     // IMPORT path:u16(常量池 ObjString 索引)。压模块值于栈顶（[...] -> [..., module]）；绑定由
     // 调用方按作用域经 DEF_GLOBAL / 值填槽自行完成。
     void emit_import(CodeUnit& cu, u16 path_idx, u32 line = 1) {
@@ -84,6 +111,16 @@ namespace {
         auto nm    = new_string(gc, name);
         guard.push(nm);
         return new_module(gc, nm, dir);
+    }
+
+    // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals,
+    // 各测试函数不能再走临时模块的 new_function 便利重载)。守 m 与 name 后调 4 参
+    // aria::new_function;返回白色,调用方自守。
+    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+        auto guard = gc.make_guard(m);
+        auto nm    = new_string(gc, name);
+        guard.push(nm);
+        return aria::new_function(gc, m, nm, arity);
     }
 
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
@@ -1148,4 +1185,401 @@ TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
+}
+
+// ============================================================
+// M4 闭包机制(手写 emit;全部跑在 AriaVMStress 下,每个 new_object 触发 collect,
+// 顺带锻炼开链 tracer 标根 / CLOSURE 根安全 / 关闭挂点的分配安全)
+// ============================================================
+
+// incr 闭包体(arity 0,捕获 uv0 = 外层局部 n):
+//   n += 1 经 LOAD_UPVALUE/STORE_UPVALUE(peek-store 写穿),返回新值。
+void emit_incr_body(CodeUnit& cu) {
+    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0);  // [n]
+    emit_imm(cu, 1);                            // [n, 1]
+    cu.emit_op(OpCode::ADD, 1);                 // [n+1]
+    emit_upvalue(cu, OpCode::STORE_UPVALUE, 0); // [n+1](写穿到 uv0)
+    cu.emit_op(OpCode::POP, 1);                 // []
+    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0);  // [n]
+    cu.emit_op(OpCode::RETURN, 1);
+}
+
+// 计数器闭包:make_counter 返回捕获 n 的 incr 闭包;主程序连调 4 次
+// (1 次建 + 3 次自增),结果 1+2+3=6 -- 证明 STORE_UPVALUE 写穿共享、
+// RETURN 关闭挂点把 n 迁入 upvalue 自持(外层帧已销毁,闭包仍活)。
+TEST_F(AriaVMStress, ClosureCounterSharedState) {
+
+    auto& gc    = vm.gc();
+    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  guard = gc.make_guard(incr);
+    emit_incr_body(incr->unit());
+    capture_local(incr, 1); // 捕 make_counter 的槽 1(n)
+
+    auto outer = new_function(gc, new_string(gc, "make_counter"), 0);
+    guard.push(outer);
+    {
+        auto&      ocu      = outer->unit();
+        const auto incr_idx = ocu.add_constant(Value::from_obj(incr));
+        ocu.emit_op(OpCode::LOAD_NIL, 1);        // [nil@slot1]  n 的槽(值填槽)
+        emit_imm(ocu, 0);                        // [nil, 0]
+        emit_local(ocu, OpCode::STORE_LOCAL, 1); // slot1 = 0
+        ocu.emit_op(OpCode::POP, 1);             // top=slot1 之上,n=0
+        emit_closure(ocu, incr_idx);             // [c](捕获 slot1)
+        ocu.emit_op(OpCode::RETURN, 1);          // 返回 c;n 的 upvalue 随 RETURN 关闭迁移
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&      cu        = fn->unit();
+        const auto outer_idx = cu.add_constant(Value::from_obj(outer));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = counter 存储槽
+        emit_const(cu, outer_idx);       // [nil, outer]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                     // [nil, counter](CALL 消费 callee 槽,闭包须存槽复用)
+        emit_local(cu, OpCode::STORE_LOCAL, 1); // counter 入 slot1
+        cu.emit_op(OpCode::POP, 1);             // [counter@slot1]
+        for (int i = 0; i < 3; ++i) {
+            emit_local(cu, OpCode::LOAD_LOCAL, 1); // 重取闭包再调
+            cu.emit_op(OpCode::CALL, 1);
+            cu.emit_byte(0, 1); // [1] / [1, 2] / [1, 2, 3]
+        }
+        cu.emit_op(OpCode::ADD, 1); // [1, 5]
+        cu.emit_op(OpCode::ADD, 1); // [6]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 6); // 1+2+3:三次自增写同一 upvalue、读回递增
+}
+
+// 同槽捕获复用:一次 make_counter 建两个闭包(c1/c2 入模块 globals),
+// 行为上共享同一 n(c1 自增两次后 c2 读到 3,各一份则为 1);
+// 结构上 run 后白盒断言两闭包 upvalues()[0] 为同一 ObjUpvalue 指针。
+TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
+
+    auto& gc    = vm.gc();
+    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  guard = gc.make_guard(incr);
+    emit_incr_body(incr->unit());
+    capture_local(incr, 1);
+
+    // outer 与 main 共享模块:DEF_GLOBAL(c1/c2)写 outer 的模块 globals,main LOAD_GLOBAL 须同源。
+    auto m       = make_module(gc);
+    auto m_guard = gc.make_guard(m);
+    auto outer   = make_function(gc, m, "make_two", 0);
+    guard.push(outer);
+    {
+        auto&      ocu      = outer->unit();
+        const auto incr_idx = ocu.add_constant(Value::from_obj(incr));
+        const auto c1_name  = ocu.add_constant(Value::from_obj(new_string(gc, "c1")));
+        const auto c2_name  = ocu.add_constant(Value::from_obj(new_string(gc, "c2")));
+        ocu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = n
+        emit_imm(ocu, 0);
+        emit_local(ocu, OpCode::STORE_LOCAL, 1);
+        ocu.emit_op(OpCode::POP, 1);
+        emit_closure(ocu, incr_idx);                   // [c1]
+        emit_global(ocu, OpCode::DEF_GLOBAL, c1_name); // []
+        emit_closure(ocu, incr_idx);                   // [c2](同槽,find 复用同一 uv)
+        emit_global(ocu, OpCode::DEF_GLOBAL, c2_name); // []
+        ocu.emit_op(OpCode::LOAD_NIL, 1);              // [nil]
+        ocu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&      cu        = fn->unit();
+        const auto outer_idx = cu.add_constant(Value::from_obj(outer));
+        const auto c1_name   = cu.add_constant(Value::from_obj(new_string(gc, "c1")));
+        const auto c2_name   = cu.add_constant(Value::from_obj(new_string(gc, "c2")));
+        emit_const(cu, outer_idx); // [outer]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [nil]
+        cu.emit_op(OpCode::POP, 1);
+        emit_global(cu, OpCode::LOAD_GLOBAL, c1_name); // [c1]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [1]
+        cu.emit_op(OpCode::POP, 1);
+        emit_global(cu, OpCode::LOAD_GLOBAL, c1_name); // [c1]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [2]
+        cu.emit_op(OpCode::POP, 1);
+        emit_global(cu, OpCode::LOAD_GLOBAL, c2_name); // [c2]
+        cu.emit_op(OpCode::CALL, 1);                   // c2 读同一 n(已被 c1 加到 2)-> 3
+        cu.emit_byte(0, 1);                            // [3]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 3); // 行为:共享(c1 两次自增,c2 读到 3)
+
+    // 结构:两闭包的 upvalues()[0] 同一 ObjUpvalue(经共享模块 m 的 globals 取回;
+    // 存活链:m_guard -> module -> globals -> 闭包)。
+    auto* c1_entry = m->globals().find(Value::from_obj(new_string(gc, "c1")));
+    auto* c2_entry = m->globals().find(Value::from_obj(new_string(gc, "c2")));
+    ASSERT_NE(c1_entry, nullptr);
+    ASSERT_NE(c2_entry, nullptr);
+    auto* c1 = aria::Object::as<ObjClosure>(c1_entry->value.as_obj());
+    auto* c2 = aria::Object::as<ObjClosure>(c2_entry->value.as_obj());
+    ASSERT_EQ(c1->upvalue_count(), usize{1});
+    ASSERT_EQ(c2->upvalue_count(), usize{1});
+    EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
+}
+
+// CLOSE_UPVALUE 指令:关指顶槽的 upvalue 并弹顶;关闭后读/写走已迁移的 closed_
+// (若未迁移,弹掉的槽会被后续压栈覆写,读到 c 本体 -> nil+1 报 TypeMismatch)。
+TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
+
+    auto& gc    = vm.gc();
+    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  guard = gc.make_guard(incr);
+    emit_incr_body(incr->unit());
+    capture_local(incr, 1);
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&      cu       = fn->unit();
+        const auto incr_idx = cu.add_constant(Value::from_obj(incr));
+        const auto c_name   = cu.add_constant(Value::from_obj(new_string(gc, "c")));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = n(被捕获局部)
+        emit_imm(cu, 7);
+        emit_local(cu, OpCode::STORE_LOCAL, 1);      // n=7(经槽上方临时 peek-store)
+        cu.emit_op(OpCode::POP, 1);                  // top=slot2,slot1=7
+        emit_closure(cu, incr_idx);                  // [c](uv 指向 slot1,开链)
+        emit_global(cu, OpCode::DEF_GLOBAL, c_name); // [] c 入 globals
+        cu.emit_op(OpCode::CLOSE_UPVALUE, 1);        // 关 slot1 的 uv(7 迁入 closed_),弹 slot1
+        emit_global(cu, OpCode::LOAD_GLOBAL, c_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [8](读 closed_ 7 -> +1)
+        emit_global(cu, OpCode::LOAD_GLOBAL, c_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [8, 9](再自增:写 closed_)
+        cu.emit_op(OpCode::ADD, 1);
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(out.value().as_int(), 17); // 8+9:CLOSE 后读写均在 closed_ 上持续
+}
+
+// open upvalue 指着的栈被压 2048 个临时值触发两轮 2x 增长(1024->2048->4096):
+// grow_stack_ 第三类重绑后 LOAD_UPVALUE 仍读对(未重绑即读已释放旧块)。
+TEST_F(AriaVMStress, StackGrowsRebasesOpenUpvalues) {
+
+    auto& gc     = vm.gc();
+    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  guard  = gc.make_guard(reader);
+    {
+        auto& rcu = reader->unit();
+        emit_upvalue(rcu, OpCode::LOAD_UPVALUE, 0);
+        rcu.emit_op(OpCode::RETURN, 1);
+    }
+    capture_local(reader, 1);
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&      cu         = fn->unit();
+        const auto reader_idx = cu.add_constant(Value::from_obj(reader));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slots 1(n), 2(c)
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        emit_imm(cu, 42);
+        emit_local(cu, OpCode::STORE_LOCAL, 1); // n=42
+        cu.emit_op(OpCode::POP, 1);
+        emit_closure(cu, reader_idx);           // [c] uv -> slot1(open)
+        emit_local(cu, OpCode::STORE_LOCAL, 2); // c 存槽 2,uv 仍开
+        cu.emit_op(OpCode::POP, 1);
+        for (usize i = 0; i < 2048; ++i) {
+            cu.emit_op(OpCode::LOAD_NIL, 1); // 压 2048 个临时:1024 满 -> 增长;2048 满 -> 再增长
+        }
+        for (usize i = 0; i < 2048; ++i) {
+            cu.emit_op(OpCode::POP, 1);
+        }
+        emit_local(cu, OpCode::LOAD_LOCAL, 2); // [c](增长后重取)
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [42]:uv 重绑后仍读 slot1
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(out.value().as_int(), 42);
+    EXPECT_GT(vm.main_context().stack_capacity(), usize{2048}); // 增长确已发生(两轮)
+}
+
+// unwind 跨帧关闭(未命中路径):被调函数捕获 n=42 后 throw,其帧无 handler 被弹 --
+// 未命中分支的 close_upvalues(frame.slots) 把 n 迁入 upvalue 自持;主帧 catch 覆写
+// 该栈区(3 个 nil 压过陈旧槽)后调用幸存闭包 -> 43。若未关闭,读到被覆写的 nil ->
+// nil+1 报 TypeMismatch(测试的牙齿)。
+TEST_F(AriaVMStress, UnwindClosesCapturedUpvalue) {
+
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc); // thrower DEF_GLOBAL c 与 main LOAD_GLOBAL c 须同模块
+    auto  m_guard = gc.make_guard(m);
+    auto  incr    = make_function(gc, m, "incr", 0);
+    auto  guard   = gc.make_guard(incr);
+    emit_incr_body(incr->unit());
+    capture_local(incr, 1);
+
+    auto thrower = make_function(gc, m, "thrower", 0);
+    guard.push(thrower);
+    {
+        auto&      tcu      = thrower->unit();
+        const auto incr_idx = tcu.add_constant(Value::from_obj(incr));
+        const auto c_name   = tcu.add_constant(Value::from_obj(new_string(gc, "c")));
+        tcu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = n
+        emit_imm(tcu, 42);
+        emit_local(tcu, OpCode::STORE_LOCAL, 1);
+        tcu.emit_op(OpCode::POP, 1);
+        emit_closure(tcu, incr_idx);                  // [c]
+        emit_global(tcu, OpCode::DEF_GLOBAL, c_name); // c 入共享模块 globals(幸存载体)
+        const auto boom_idx = tcu.add_constant(Value::from_obj(new_string(gc, "boom")));
+        emit_const(tcu, boom_idx);      // [str]
+        tcu.emit_op(OpCode::THROW, 1);  // -> unwind:thrower 帧无 handler,弹帧关链
+        tcu.emit_op(OpCode::RETURN, 1); // 不可达
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&      cu          = fn->unit();
+        const auto thrower_idx = cu.add_constant(Value::from_obj(thrower));
+        const auto c_name      = cu.add_constant(Value::from_obj(new_string(gc, "c")));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = catch 参数槽预占(stack_depth=1)
+        const usize begin = cu.code.size();
+        emit_const(cu, thrower_idx); // [thrower]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);               // thrower throw -> unwind 到本帧
+        const usize end = cu.code.size(); // try 区间终点(CALL 之后)
+        cu.emit_op(OpCode::JUMP, 1);      // 正常路径跳过 catch
+        const usize j_patch = cu.code.size();
+        cu.emit_word(0, 1);
+        const usize handle = cu.code.size(); // L_catch:异常值已落 slot1
+        cu.emit_op(OpCode::POP, 1);          // 弹异常串
+        cu.emit_op(OpCode::LOAD_NIL, 1);     // 覆写 slots+1..+3(含 n 的陈旧槽)
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::POP_N, 1);
+        cu.emit_byte(3, 1);
+        emit_global(cu, OpCode::LOAD_GLOBAL, c_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [43]:n 已随帧关闭迁入 upvalue
+        cu.emit_op(OpCode::RETURN, 1);
+        const usize l_end = cu.code.size();
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::RETURN, 1);
+        patch_word(cu, j_patch, static_cast<u16>(l_end - (j_patch + 2)));
+        cu.try_records.push(TryRecord{static_cast<u32>(begin), static_cast<u32>(end), static_cast<u32>(handle), 1});
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 43); // 42+1:未命中路径关闭已生效
+}
+
+// unwind 命中路径关闭:try 体局部(slot2)被捕获、闭包存 globals 后 throw --
+// handler 命中分支 close_upvalues(slots+stack_depth) 先于截栈关闭被丢弃区间的开指;
+// catch 覆写该区间后调用闭包 -> 5。若未关闭,读到被覆写的 nil。
+TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
+
+    auto& gc     = vm.gc();
+    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  guard  = gc.make_guard(reader);
+    {
+        auto& rcu = reader->unit();
+        emit_upvalue(rcu, OpCode::LOAD_UPVALUE, 0);
+        rcu.emit_op(OpCode::RETURN, 1);
+    }
+    capture_local(reader, 2); // 捕 main 的 slot2(try 体局部 n;非 slot1 -- 那是 catch 参数槽)
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&      cu         = fn->unit();
+        const auto reader_idx = cu.add_constant(Value::from_obj(reader));
+        const auto r_name     = cu.add_constant(Value::from_obj(new_string(gc, "r")));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slots 1(catch 参数),2(try 体局部 n),3(c 临时)
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        const usize begin = cu.code.size();
+        emit_imm(cu, 5);
+        emit_local(cu, OpCode::STORE_LOCAL, 2); // n=5 @slot2
+        cu.emit_op(OpCode::POP, 1);
+        emit_closure(cu, reader_idx);                // [c] uv -> slot2(捕获 index 2)
+        emit_global(cu, OpCode::DEF_GLOBAL, r_name); // c 入 globals
+        const auto x_idx = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_const(cu, x_idx);            // [str]
+        cu.emit_op(OpCode::THROW, 1);     // -> 命中本帧 handler
+        const usize end = cu.code.size(); // try 区间含 THROW(throw 时刻 last_ip < end)
+        cu.emit_op(OpCode::JUMP, 1);
+        const usize j_patch = cu.code.size();
+        cu.emit_word(0, 1);
+        const usize handle = cu.code.size(); // L_catch
+        cu.emit_op(OpCode::POP, 1);          // 弹异常串
+        cu.emit_op(OpCode::LOAD_NIL, 1);     // 覆写 slots+1..+3(含 n 的陈旧槽)
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::POP_N, 1);
+        cu.emit_byte(3, 1);
+        emit_global(cu, OpCode::LOAD_GLOBAL, r_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [5]:n 已在截栈前迁入 upvalue
+        cu.emit_op(OpCode::RETURN, 1);
+        const usize l_end = cu.code.size();
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::RETURN, 1);
+        patch_word(cu, j_patch, static_cast<u16>(l_end - (j_patch + 2)));
+        cu.try_records.push(TryRecord{static_cast<u32>(begin), static_cast<u32>(end), static_cast<u32>(handle), 1});
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 5); // 命中路径关闭已生效(否则读到被覆写的 nil)
+}
+
+// 开链存活(clox 已知坑的防线):第一个闭包建完立即丢弃(无根),其 upvalue 仍开着挂在链上;
+// 第二个 CLOSURE 顶 maybe_collect(stress 必 collect)时该节点仅被链引用 -- vm_roots tracer
+// 若不标链,节点被回收,capture_upvalue 走悬垂链 / 复用已回收节点。行为断言:复用节点
+// 读到 42(被扫节点复用会读到垃圾)。
+TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
+
+    auto& gc     = vm.gc();
+    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  guard  = gc.make_guard(reader);
+    {
+        auto& rcu = reader->unit();
+        emit_upvalue(rcu, OpCode::LOAD_UPVALUE, 0);
+        rcu.emit_op(OpCode::RETURN, 1);
+    }
+    capture_local(reader, 1);
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&      cu         = fn->unit();
+        const auto reader_idx = cu.add_constant(Value::from_obj(reader));
+        const auto r_name     = cu.add_constant(Value::from_obj(new_string(gc, "r")));
+        cu.emit_op(OpCode::LOAD_NIL, 1); // slots 1(n), 2(c1)
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        emit_imm(cu, 42);
+        emit_local(cu, OpCode::STORE_LOCAL, 1);
+        cu.emit_op(OpCode::POP, 1);
+        emit_closure(cu, reader_idx);                // [c1] uv 开、链上
+        cu.emit_op(OpCode::POP, 1);                  // c1 死(无根),uv 仍开
+        emit_closure(cu, reader_idx);                // GC 窗口:uv 仅链引用 -> tracer 必须标链
+        emit_global(cu, OpCode::DEF_GLOBAL, r_name); // c2(与死 c1 共享同一 uv)入 globals
+        emit_global(cu, OpCode::LOAD_GLOBAL, r_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [42]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(out.value().as_int(), 42); // 复用的链节点存活且指槽正确
 }

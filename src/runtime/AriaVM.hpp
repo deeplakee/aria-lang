@@ -10,6 +10,7 @@
 
 namespace aria {
 
+    class ObjClosure;
     class ObjFunction;
     class ObjModule;
     class ObjNativeFn;
@@ -38,7 +39,7 @@ namespace aria {
     //        取自 *current_,无循环级 C 局部工作副本 -- M6 单循环切换模型(Wren 式)下
     //        resume/yield 在 CALL 善后点换 current_、循环自然驱动新上下文,run_ 永不重入。
     //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
-    //        直标代替 Movement 升 Object;open upvalues 留待 M4)。
+    //        直标代替 Movement 升 Object;M4 起并标 open upvalue 开链)。
     //
     //        解释器级共享状态:模块表 modules_(键为规范路径 ObjString* intern、值为 ObjModule*,
     //        均装箱为 Value 入 AriaHashTable,白赚 trace;IMPORT 全链:路径解析 -> 命中复用,
@@ -140,7 +141,7 @@ namespace aria {
         //   raise,无成败结局可表),bool 惯用法由 fail 承载。Movement::raise(Value)(存原值不包)
         //   是 M3 用户 throw 的路由,不经本 VM 层 API。
         // - fail:便捷工厂 -- raise 后**恒返 false**:供原生函数一行报错 `return vm.fail(...);`
-        //   (同时置寄存器与返回 NativeFn 契约要求的失败信号),与 call_value/call_function/
+        //   (同时置寄存器与返回 NativeFn 契约要求的失败信号),与 call_value/call_closure/
         //   call_native/load_module 的失败站点共用。[[nodiscard]] 故意为之:裸 `vm.fail(...);`
         //   (丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),要么显式
         //   `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**原生函数返回的 bool
@@ -211,13 +212,14 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 执行本体(无入口装饰):压 callee 值 + enter_frame 进帧 -> run_ 主循环,作用于 *current_
-        // (程序入口处 run() 已断言 current_ == &main_ctx_,等价于直访 main_ctx_)。run() 的被委托方,
-        // 亦是未来重入的接缝:指令执行中临时运行一个 ObjFunction(原生回调调 aria 函数 / 嵌入宿主
-        // 调函数,vm-design.md §4.7「回调 aria 函数属未来机制(由 vm 提供,自管栈纪律)」)经此进入,
-        // 故不播源根、不 reset(重入调用者的栈不可冲掉)、不断言主上下文;落地时升公开(原生函数经
-        // AriaVM& 只能触公开面)。落地尚欠 run_ 按基线帧深退出(现仅 frames().empty() 返回,中途重入
-        // 会穿掉调用者帧)与实参布线,届时在此扩。
+        // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包,M4)后压 callee 值 + enter_frame
+        // 进帧 -> run_ 主循环,作用于 *current_(程序入口处 run() 已断言 current_ == &main_ctx_,
+        // 等价于直访 main_ctx_)。run() 的被委托方,亦是未来重入的接缝:指令执行中临时运行一个
+        // ObjFunction(原生回调调 aria 函数 / 嵌入宿主调函数,vm-design.md §4.7「回调 aria 函数属
+        // 未来机制(由 vm 提供,自管栈纪律)」)经此进入,故不播源根、不 reset(重入调用者的栈不可
+        // 冲掉)、不断言主上下文(current_ 即正在执行的上下文);落地时升公开(原生函数经 AriaVM&
+        // 只能触公开面)。落地尚欠 run_ 按基线帧深退出(现仅 frames().empty() 返回,中途重入会穿掉
+        // 调用者帧)与实参布线,届时在此扩。
         Result<Value, Error> run_function(ObjFunction* fn);
 
         // 主循环:驱动 *current_(现为 main_ctx_;M6 resume 重入时为被恢复协程的上下文)直到顶层
@@ -250,25 +252,26 @@ namespace aria {
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
-        // 分派到对应 call_* 子例程(ObjFunction -> call_function、ObjNativeFn -> call_native),其余报
-        // CallNonCallable。作用于 *current_(与 run_ 同源;现为 main_ctx_,M6 协程期即当前协程
-        // 上下文 -- 主循环在哪个上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。
-        // 返回 bool 为成败信号:true 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷
-        // 已 raise 进 *current_ 的挂起错误寄存器,调用方据 bool 决定是否 take_error 取出沿
-        // runtime_err 传播。M1 仅支持 ObjFunction / ObjNativeFn(闭包/类/方法后续阶段)。
+        // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native;迁移期
+        // ObjFunction 现场包空闭包走 call_closure,阶段 3 随编译翻转删除),其余报 CallNonCallable。
+        // 作用于 *current_(与 run_ 同源;现为 main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个
+        // 上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。返回 bool 为成败信号:true
+        // 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷已 raise 进 *current_ 的挂起
+        // 错误寄存器,调用方据 bool 决定是否 take_error 取出沿 runtime_err 传播。
         // 契约:return false ⟺ 已 raise 入 *current_。
         bool call_value(Value callee, u8 argc);
 
-        // 用户函数调用:校验 arity + 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,
-        // 参数即局部槽 1..argc)。成功返 true;失败 raise WrongArity / StackOverflow 入 *current_
-        // 后返 false。栈形 [callee, a1..aN] 由 CALL 调用方保证。
-        bool call_function(ObjFunction* obj, u8 argc);
+        // 闭包调用:校验 arity + 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,参数即局部槽 1..argc)。
+        // 成功返 true;失败 raise WrongArity / StackOverflow 入 *current_ 后返 false。
+        // 栈形 [callee, a1..aN] 由 CALL 调用方保证。M4 起 callable 收敛为闭包,arity 等元数据经
+        // closure->function() 取。
+        bool call_closure(ObjClosure* obj, u8 argc);
 
         // 原生函数调用:同步调用 obj->fn(),不进帧。原生函数自身以 bool 为成败信号、返回值写槽 0、
         // 错误载荷走侧信道寄存器(Movement::pending_error_);本函数透传该 bool 契约:成功(原生返
         // true)断言无载荷 -> 清寄存器 + drop(argc) 弹实参(返回值升栈顶)后返 true;失败(原生返
         // false)断言已 raise -> 载荷留寄存器交调用方 take_error,返 false(不在本函数取出,与
-        // call_function/call_value 的 bool 契约统一)。调用区 [callee, a1..aN] 经 Span 暴露:
+        // call_closure/call_value 的 bool 契约统一)。调用区 [callee, a1..aN] 经 Span 暴露:
         // slots[0]=槽 0(返回值),slots[1..argc]=实参。详见 ObjNativeFn.hpp NativeFn 契约与
         // .claude/reference/runtime/vm-design.md §4.7。
         bool call_native(const ObjNativeFn* obj, u8 argc);

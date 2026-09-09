@@ -3,9 +3,12 @@
 #include <bit>
 #include <format>
 
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -120,6 +123,16 @@ namespace aria {
                         return "<upvalue>";
                     case ObjType::MODULE:
                         return std::format("<module {}>", Object::as<ObjModule>(obj)->name()->view());
+                    case ObjType::CLASS:
+                        // 类:渲染 `<class Foo>`(与 ObjClass::to_string 同文案,纯 C++ 访问器,非虚无重入风险)。
+                        return std::format("<class {}>", Object::as<ObjClass>(obj)->name()->view());
+                    case ObjType::INSTANCE:
+                        // 实例:渲染 `<Foo instance>`(与 ObjInstance::to_string 同文案)。
+                        return std::format("<{} instance>", Object::as<ObjInstance>(obj)->cls()->name()->view());
+                    case ObjType::BOUND_METHOD:
+                        // 绑定方法:渲染 `<bound method m>`(与 ObjBoundMethod::to_string 同文案)。
+                        return std::format("<bound method {}>",
+                                           Object::as<ObjBoundMethod>(obj)->method()->function()->name()->view());
                     case ObjType::NATIVE_FN:
                         return std::format("<fn {}>", Object::as<ObjNativeFn>(obj)->name()->view());
                     case ObjType::EXCEPTION:

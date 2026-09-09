@@ -1,13 +1,14 @@
 #include "object/ObjClosure.hpp"
 
 #include "memory/GC.hpp"
+#include "object/ObjClass.hpp" // mark_object(defining_class_) 须完整类型(派生自 Object 的转换)
 #include "object/ObjFunction.hpp"
 #include "object/ObjUpvalue.hpp"
 
 namespace aria {
 
     ObjClosure::ObjClosure(GC& gc, ObjFunction* function) :
-        Object{ObjType::CLOSURE}, function_{function}, upvalues_{&gc} {
+        Object{ObjType::CLOSURE}, function_{function}, upvalues_{&gc}, defining_class_{nullptr} {
         ASSERT(function != nullptr, "ObjClosure: function must not be null");
     }
 
@@ -21,6 +22,7 @@ namespace aria {
         for (ObjUpvalue* uv: upvalues_) { // const Array<T*> 遍历出的元素是 T*(指针本身 const,不传染 pointee)
             gc.mark_object(uv);
         }
+        gc.mark_object(defining_class_); // 非方法闭包为 nullptr,mark_object 容 nullptr;类静态表方法闭包经此级联标所属类
     }
 
     String ObjClosure::to_string() const {

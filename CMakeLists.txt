@@ -76,12 +76,18 @@ add_library(aria_core STATIC
         src/error/AriaException.hpp
         src/object/Object.cpp
         src/object/Object.hpp
+        src/object/ObjBoundMethod.cpp
+        src/object/ObjBoundMethod.hpp
+        src/object/ObjClass.cpp
+        src/object/ObjClass.hpp
         src/object/ObjClosure.cpp
         src/object/ObjClosure.hpp
         src/object/ObjString.cpp
         src/object/ObjString.hpp
         src/object/ObjFunction.cpp
         src/object/ObjFunction.hpp
+        src/object/ObjInstance.cpp
+        src/object/ObjInstance.hpp
         src/object/ObjModule.cpp
         src/object/ObjModule.hpp
         src/object/ObjNativeFn.cpp

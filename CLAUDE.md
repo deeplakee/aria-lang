@@ -31,6 +31,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
 - `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
 - `runtime/m4-closure-implementation-plan.md` -- M4 闭包实施计划（2026-09 定稿并已按四阶段全部落地：语义模型、三项设计决策与落地记录存档）。
+- `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（2026-09 定稿、待实施，M5 开工前重读：语义模型 + 六项设计决策——无 meta、静态与方法单表、构造期 bootstrap Object、bound-method 缓存进实例 fields 表（三铁则）、STORE_FIELD/MAKE_STATIC 镜像双指令、defining class 挂 ObjClosure）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常（try/catch/throw）踩坑归档（已落地；含 finally 裁撤记录与 defer 后继说明，及 M4 补录的 upvalue 关闭与 unwind 截栈/弹帧交互坑点，异常相关特性重启前重读）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。

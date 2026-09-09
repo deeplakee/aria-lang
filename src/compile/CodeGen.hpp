@@ -2,7 +2,7 @@
 #define ARIA_CODEGEN_HPP
 
 // 字节码代码生成器：单遍遍历 AST（继承 AstVisitor），在一次访问中同时完成
-//   - 名字解析（局部 / 模块全局；upvalue 留待 M4 闭包）
+//   - 名字解析（局部 / upvalue / 模块全局；捕获即引用，resolve_upvalue 递归登记捕获描述）
 //   - 语义检查（首错即止，详见各 visit 内联检查）
 //   - 字节码发射（经 cur_cu() 写当前函数的 CodeUnit；emit 编码逻辑下沉 CodeUnit）
 // 把 ProgramNode 编译为模块入口 ObjFunction（arity 0，名 <main>，主入口模块体包装）。
@@ -10,7 +10,7 @@
 // 设计要点：
 //   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。
 //   - 全骨架 + 可跑子集：42 个 visitXxxNode 全部 override；核心特性完整发射，
-//     依赖未落地 VM 里程碑的特性（类 / 异常 / 闭包 / list / map / field / index 等）
+//     依赖未落地 VM 里程碑的特性（类 / list / map / field / index / match 等）
 //     占位 not_impl（编译期 NotImplemented Error），随 VM 推进逐个翻为真实发射。
 //   - 首错即止：遇第一个语义错误 fail() 抛 AriaCompileException 即 unwind，compile()
 //     返回 Result<ObjFunction*, Error>（错误通道详见下方）。
@@ -196,27 +196,49 @@ namespace aria {
         // cur_fn_ctx()->begin_scope()
         void begin_scope() const;
 
-        // emit POP_N(= cur_fn_ctx()->end_scope_pop_count())
+        // 退出作用域（块 / for / for-in / try 共用）：先 emit_pop_locals_to(scope_depth_ - 1) 发射弹区清理
+        // （is_captured 判定需完整 locals_），再 FunctionCtx::end_scope() 收尾（--scope_depth_ + 移除登记）。
         void end_scope(u32 line) const;
 
-        // emit POP_N(= cur_fn_ctx()->count_locals_deeper_than)（break/continue 弹比循环 scope
-        // 更深的局部;仅计数不破坏 locals_ 登记--跳转后语句仍在作用域内可引用,故用 count 而非 pop）
-        void pop_locals_to(u32 target_depth, u32 line) const;
+        // 弹区清理统一发射口（退出作用域与 break/continue 共用，退出作用域由 end_scope 补登记收尾）：
+        // 自栈顶（最内）向外遍历 depth > target_depth 的局部尾段（活局部按 depth 非递减序排列，遇更浅者
+        // 即止；slot 0 哑元 depth=0 恒在界外），整区一条 POP_N（被捕获局部一并计数），弹区含被捕获局部
+        // 才追加一条 CLOSE_UPVALUE（批量关闭所有槽址 >= 新栈顶的开 upvalue，值迁入各自 upvalue 自持；
+        // 弹区槽已在新栈顶之上，不 push 不覆写即安全；对齐 Lua OP_CLOSE）。只发射不改登记：退出作用域
+        // 路径由随后的 FunctionCtx::end_scope 移除登记；break/continue 的登记本就须保留（跳转后语句仍在
+        // 作用域内）。
+        void emit_pop_locals_to(u32 target_depth, u32 line) const;
 
         // --- 名字解析 ---
-        // 名字解析结果：kind 描述命中类别，index 为相关槽/索引（Local: 局部槽；Global: 名字常量池索引；
-        // Upvalue: 未用）。按值返回。
+        // 名字解析结果：kind 描述命中类别，index 为相关槽/索引（Local: 局部槽；Upvalue: upvalue
+        // 索引；Global: 名字常量池索引）。按值返回。
         struct ResolvedVar {
             enum class Kind { Local, Upvalue, Global } kind;
             u16 index;
         };
 
-        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方
-        // emit_load_var/emit_store_var 走 not_impl）；否则视为模块全局 -> Global（index=名字常量池索引，VM
-        // 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出
-        // 即 fail（持 loc）。
+        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部/外层 upvalue -> Upvalue
+        // （index=本函数 upvalue 索引，resolve_upvalue 递归登记捕获描述）；否则视为模块全局 ->
+        // Global（index=名字常量池索引，VM 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。
+        // Global 分支经 add_name_or_fail 入池，溢出即 fail（持 loc）。
         [[nodiscard]]
         ResolvedVar resolve_name_or_fail(StringView name, const SourceLoc& loc);
+
+        // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查 ctx->enclosing_
+        // 的局部，命中 -> 置该局部 is_captured（槽将被捕获，作用域退出须 CLOSE_UPVALUE）+ ctx 登记
+        // {is_local=true, slot}；未命中 -> 递归把 ctx->enclosing_ 当作待捕获函数解析（穿透捕获），
+        // 命中 -> ctx 登记 {is_local=false, 外层 upvalue 索引}。返回 ctx 视角的 upvalue 索引；无外层
+        // 函数可捕获（到 entry 之上）返 nullopt（调用方落全局）。登记经 add_upvalue_or_fail（容量
+        // 越界 fail TooManyUpvalues，nullopt 不外泄免被误读为「落全局」）。ctx == nullptr（递归到
+        // entry 之上）即不可捕获。
+        [[nodiscard]]
+        Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, const SourceLoc& loc);
+
+        // add_upvalue 失败翻译（单层 _or_fail 家族同款约定）：ctx 登记一条捕获描述，追加将越出
+        // u8 索引域（add_upvalue 返 nullopt）-> fail TooManyUpvalues（持 loc），成功返回 upvalue 索引。
+        // 入参 ctx 显式传入--resolve_upvalue 沿 enclosing_ 链递归，登记发生在链上各层（非恒 cur_fn_ctx）。
+        [[nodiscard]]
+        u8 add_upvalue_or_fail(FunctionCtx* ctx, UpvalueDesc desc, const SourceLoc& loc) const;
 
         // --- 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）---
         // 与上面 _or_fail 同一职责约定（操作 + 失败即 fail），但底层返 bool（patch_jump/emit_jump_back/
@@ -263,13 +285,15 @@ namespace aria {
         // 仅做检查并报错，不发射。
         void check_local_initialized(u16 slot, const SourceLoc& loc) const;
 
-        // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local；Global LOAD_GLOBAL；
-        // Upvalue -> not_impl（M4 闭包）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽或
-        // 全局名字常量池索引；loc 供 check_local_initialized / not_impl（走其 SourceLoc 重载）复用。
+        // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local；Global
+        // LOAD_GLOBAL；Upvalue LOAD_UPVALUE（u8 upvalue 索引；不做 init 检查--捕获时序语义同 Lua，
+        // 与全局路径一致）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 /
+        // upvalue 索引 / 全局名字常量池索引；loc 供 check_local_initialized 复用。
         void emit_load_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
 
         // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
-        // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL；Upvalue -> not_impl（M4 闭包）。
+        // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL；Upvalue STORE_UPVALUE（u8 upvalue
+        // 索引，peek-store 写穿外层槽/已关值，不做 init 检查、不 mark_initialized--upvalue 索引非本帧局部槽）。
         void emit_store_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
 
         // --- 模式绑定（forIn 用）---
@@ -294,7 +318,8 @@ namespace aria {
         // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（每方只守自己创建的）。
         // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
-        // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（LOAD_CONST fn_idx）。
+        // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（CLOSURE fn_idx:
+        // 常量池取 fn 包 ObjClosure,按体编译期间登记的捕获描述表建 upvalue）。
         // decl_loc 为声明节点位置（fun 关键字，visit 层经 node->loc() 传入），供 validate_params 报参数错;
         // 体发射行号仍取 body->loc_line()。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*。
         void compile_function(StringView name, const List<Param>& params, BlockNode* body, const SourceLoc& decl_loc);

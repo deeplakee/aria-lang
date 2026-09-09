@@ -64,34 +64,35 @@ namespace aria {
 
     void FunctionCtx::begin_scope() { ++scope_depth_; }
 
-    u32 FunctionCtx::end_scope_pop_count() {
-        --scope_depth_; // 退出当前作用域；之后弹「比新 scope_depth_ 更深的局部」即原 scope 的局部
-        return pop_locals_deeper_than(scope_depth_);
-    }
-
-    u32 FunctionCtx::pop_locals_deeper_than(const u32 target_depth) {
-        // 仅弹 depth > target 的局部;slot 0 哑元(depth=0)因 0 <= 任意 u32 target_depth 而
-        // 永不满足弹出条件,故 !empty() 足够--与 count_locals_deeper_than 共用同一深度不变式。
-        u32 count = 0;
-        while (!locals_.empty() && locals_.back().depth > target_depth) {
+    void FunctionCtx::end_scope() {
+        // 退出当前作用域：--scope_depth_ 后弹出原 scope 的局部（depth > 新 scope_depth_；活局部按
+        // depth 非递减序排列，故尾段即弹区；slot 0 哑元 depth=0 因 0 <= 任意 target_depth 恒在界外）。
+        --scope_depth_;
+        while (!locals_.empty() && locals_.back().depth > scope_depth_) {
             locals_.pop_back();
-            ++count;
         }
-        return count;
     }
 
-    u32 FunctionCtx::count_locals_deeper_than(const u32 target_depth) const {
-        // 与 pop_locals_deeper_than 同形,但仅计数不弹出:break/continue 后的语句仍在作用域内,
-        // 编译期 locals_ 须保持完整(只有 end_scope 才真正移除)。从末尾(最内层)向前数,遇 depth<=target 即停
-        // (活局部按 depth 非递减序排列,见 pop_locals_deeper_than 的不变式)。
-        u32 count = 0;
-        for (const auto& local: std::views::reverse(locals_)) {
-            if (local.depth <= target_depth) {
-                return count;
+    // ============================================================
+    // upvalue 登记
+    // ============================================================
+
+    Opt<u8> FunctionCtx::add_upvalue(const UpvalueDesc desc) {
+        // 同 (is_local,index) 已登记 -> 复用其下标（同一局部被本函数多处引用只占一个 upvalue，
+        // 「捕获即引用」的编译期对应：多引用点经同一 upvalue 索引读写同一槽）。
+        for (usize i = 0; i < upvalues_.size(); ++i) {
+            if (upvalues_[i] == desc) {
+                return static_cast<u8>(i);
             }
-            ++count;
         }
-        return count;
+        // 容量检查（kMaxUpvalues = u8 索引域上限位置，见 FunctionCtx.hpp；越界判定与语义常量家族
+        // 统一用 > 比较）：size > kMaxUpvalues 即 256 条已满（索引 0..255 全占用），新条目的索引
+        // 将越出 u8 域 -- 返 nullopt 交 CodeGen fail(TooManyUpvalues) 翻译。
+        if (upvalues_.size() > kMaxUpvalues) {
+            return std::nullopt;
+        }
+        upvalues_.push_back(desc);
+        return static_cast<u8>(upvalues_.size() - 1);
     }
 
 } // namespace aria

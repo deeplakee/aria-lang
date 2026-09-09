@@ -63,6 +63,11 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
   ```
 - 依赖 `third/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
 
+## Git 提交纪律（强制）
+
+- **改动完成不自行 commit**：代码/文档改完、验证全绿后即向用户报告并停手，改动留在工作区等 review；用户明确说提交（「commit」/「提交吧」等）后才执行 `git commit`。不抢先 `git add` 备提交。
+- 用户确认提交后：一次阶段/里程碑一批，沿用仓库既有提交风格（`<模块>: <里程碑摘要> -- <分段细节>` 长行式，见 git log），提交说明覆盖改动动机、关键机制与验证结果。
+
 ## 输出与格式化（强制）
 
 - **终端/日志输出统一用 `io::print` / `io::println`**（见 `util/io.hpp`，即对 `std::print`/`std::println` 的 using 别名），不要直接裸调 `std::print`/`std::cout`/`printf`。输出到 stderr 时用带 FILE* 的重载：`io::print(stderr, "...")`。

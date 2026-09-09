@@ -1,10 +1,10 @@
 #ifndef ARIA_FUNCTIONCTX_HPP
 #define ARIA_FUNCTIONCTX_HPP
 
-// 单函数编译上下文：持当前函数的局部栈 / 作用域深度 / 循环上下文栈 / 指向外层上下文。
+// 单函数编译上下文：持当前函数的局部栈 / 作用域深度 / 循环上下文栈 / 捕获描述表 / 指向外层上下文。
 // 进 fun/lambda 压一层、退出弹一层（CodeGen 经 ModuleCtx::current_fn_ctx_ 持当前上下文指针）。
-// 本类只负责「登记」（局部 / 作用域 / 循环 break-continue 的栈管理，并返回弹出数等数据）；
-// 「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
+// 本类只负责「登记」（局部 / 作用域 / 循环 break-continue 的栈管理 / upvalue 捕获描述，并返回
+// 弹出数等数据）；「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
 //
 // 局部栈（clox 风格）：locals_[0] = 哑元（slot 0 = callee，隐含不命名）；
 //   1..A = 形参（caller 压栈，编译期 add_local 登记后 mark_initialized）；
@@ -14,11 +14,20 @@
 // 循环上下文栈随函数走：进新函数即得空 loop_stack_，故 break/continue 不会跨函数绑定到
 // 外层循环（函数边界天然隔离循环上下文）。
 
+#include "object/ObjFunction.hpp"
 #include "type.hpp"
 
 namespace aria {
 
-    class ObjFunction;
+    // 单函数捕获 upvalue 上限（kU8OperandMax 的语义名，与 CodeGen 的 kMaxArity/kMaxConstants/
+    // kMaxLocals 同一「上限位置」语义家族：值即对应操作数/索引位宽可表的最大值，越界判定统一用
+    // > 比较--拒绝发生在「新条目的索引将越出操作数域」之时；因登记侧 FunctionCtx::add_upvalue 与
+    // CodeGen 报错文案共用，定义于本头）。LOAD/STORE_UPVALUE 的 idx 为 u8（可寻址 0..kMaxUpvalues），
+    // 故 kMaxUpvalues = 255、单函数最多 256 个捕获（第 256 个的 idx=255 仍合法，第 257 个 idx=256
+    // 越界被拒）--容量 = 上限 + 1，对齐 kMaxConstants 允许 65536 项与 clox 的 UINT8_COUNT 判定。
+    // 与 kMaxArity=255 数值相同但机制不可类比：arity 是「计数本身存 u8 字段」（256 回绕成 0，
+    // 容量即 255），upvalue 是「索引走 u8 操作数」（容量 = 索引上限 + 1）。
+    constexpr u32 kMaxUpvalues = kU8OperandMax;
 
     // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured/is_initialized=false。
     // is_initialized：定义但未初始化（declare_local_or_fail 置 false）；初始化器求值 / 无初始化器发
@@ -84,33 +93,35 @@ namespace aria {
         [[nodiscard]]
         Opt<u16> find_local(StringView name) const;
 
+        // --- upvalue 登记（M4 闭包）---
+        // 登记一条捕获描述，返回 upvalue 索引：同 (is_local,index) 已登记即复用其下标（同一局部
+        // 被多处引用只占一个 upvalue）；未登记则追加。upvalue 索引为 u8（LOAD/STORE_UPVALUE 操作
+        // 数域，可寻址 0..kMaxUpvalues），追加将越出索引域（size > kMaxUpvalues，即 256 条已满、
+        // 新条目 idx 将为 256）返 nullopt，由 CodeGen fail(TooManyUpvalues)。纯登记，不发射。
+        // 表本体 upvalues_ 见下方成员区。
+        Opt<u8> add_upvalue(UpvalueDesc desc);
+
         // 进入块作用域。
         void begin_scope();
 
-        // 退出块作用域：--scope_depth_ 后弹比新 scope_depth_ 更深的局部（即原 scope 的局部），返回弹出数（调用方 emit
-        // POP_N）。
-        u32 end_scope_pop_count();
+        // 退出块作用域：--scope_depth_ 后弹出原 scope 的局部（depth > 新 scope_depth_，自最内层向外清）。
+        // 真正从编译期 locals_ 移除--局部出作用域，后续语句不可再引用；break/continue 跳出循环不得走此
+        // （跳转后的语句仍在作用域内可引用这些局部，须保留登记）。slot 0 哑元 depth=0 因 0 <= 任意
+        // target_depth 恒在弹区界外。弹区清理指令（整区 POP_N + 含被捕获局部时一条批量 CLOSE_UPVALUE）
+        // 由 CodeGen 先经 emit_pop_locals_to 发射（需在登记移除前做），本方法只管登记收尾。
+        void end_scope();
 
-        // 弹深度 > target_depth 的局部（更内层作用域的局部），返回弹出数（不改变 scope_depth_）。
-        // 仅 end_scope 退出作用域用此--真正从编译期 locals_ 移除（局部出作用域，后续语句不可再引用）。
-        u32 pop_locals_deeper_than(u32 target_depth);
-
-        // 计数深度 > target_depth 的局部数（不改变 locals_ / scope_depth_）。
-        // break/continue 跳出循环用此：仅 emit POP_N（运行期弹栈），不破坏编译期 locals_ 登记--
-        // 跳转后的语句仍在作用域内，可引用这些局部；只有 end_scope 才真正 pop_locals_deeper_than 移除。
-        [[nodiscard]]
-        u32 count_locals_deeper_than(u32 target_depth) const;
-
-        // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_ 等）---
+        // --- 成员（公开，CodeGen 直接访问 fn_/locals_/loop_stack_/upvalues_ 等）---
         // enclosing_ 所有权：入口 fn 上下文由 ModuleCtx 构造期 new、~ModuleCtx 沿链 delete；子上下文由 compile_function
         // new（成功路径 delete、出错交 ~ModuleCtx 走链）。父函数编译期长于子函数（栈帧包住），故 enclosing_
         // 裸指针在子生命期内稳定。enclosing_==nullptr 即入口。 当前发射的 CodeUnit 由 CodeGen 经 cur_cu() 派生（=
         // &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
-        FunctionCtx*   enclosing_;
-        ObjFunction*   fn_;
-        List<Local>    locals_;
-        u32            scope_depth_;
-        Stack<LoopCtx> loop_stack_;
+        FunctionCtx*      enclosing_;
+        ObjFunction*      fn_;
+        List<Local>       locals_;
+        u32               scope_depth_;
+        Stack<LoopCtx>    loop_stack_;
+        List<UpvalueDesc> upvalues_; // M4 闭包捕获描述表（按下标即 upvalue 索引），经 add_upvalue 逐条登记
     };
 
 } // namespace aria

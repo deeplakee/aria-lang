@@ -252,8 +252,9 @@ namespace aria {
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
-        // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native;迁移期
-        // ObjFunction 现场包空闭包走 call_closure,阶段 3 随编译翻转删除),其余报 CallNonCallable。
+        // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native),其余报
+        // CallNonCallable。M4 起 callable 收敛为闭包:ObjFunction 退为常量池内部物,不再以 callable
+        // 值上栈(编译器经 CLOSURE 指令现场包闭包;IMPORT 的模块体 entry 由 IMPORT 分支现场包闭包)。
         // 作用于 *current_(与 run_ 同源;现为 main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个
         // 上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。返回 bool 为成败信号:true
         // 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷已 raise 进 *current_ 的挂起

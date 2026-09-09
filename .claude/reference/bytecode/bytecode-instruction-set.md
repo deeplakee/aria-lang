@@ -146,9 +146,9 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | :--- | :--- | :--- | :--- |
 | `LOAD_UPVALUE` | `idx:u8` | `[] -> [v]` | 压入当前闭包的第 `idx` 个 upvalue（开指栈槽或已关闭值） |
 | `STORE_UPVALUE` | `idx:u8` | `[v] -> [v]` | peek-store 到该 upvalue |
-| `CLOSE_UPVALUE` | 无 | `[v] -> []` | 关闭指向当前栈顶槽的 upvalue：把值搬到堆上的 `ObjUpvalue.closed`，弹出栈顶。块结束、局部将销毁时对每个被捕获的局部发一条 |
+| `CLOSE_UPVALUE` | 无 | `[] -> []` | 批量关闭所有槽址 >= 当前栈顶的开 upvalue：值迁入堆上的 `ObjUpvalue.closed`，无弹栈（弹栈由前置 `POP_N` 承担；对齐 Lua `OP_CLOSE`）。作用域退出时编译器在弹区 `POP_N` 后发射（仅当弹区含被捕获局部） |
 
-> `CLOSE_UPVALUE` 的栈效应按 clox 语义（弹出栈顶值并关闭指向该槽的 upvalue）。块退出时编译器按捕获局部逆序发出。
+> 三条均已落地（M4）。编译期单函数捕获上限 = u8 索引域容量 256（索引 0..255），超限报 `TooManyUpvalues`。`CLOSE_UPVALUE` 的发射点由 CodeGen `emit_pop_locals_to` 统一收口（M4，退出作用域与 break/continue 共用）：弹出比目标深度更深的局部区时整区一条 `POP_N`（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（批量关闭槽址 >= 新栈顶的开 upvalue；弹区槽已在新栈顶之上，不 push 不覆写即安全，且两指令均无分配无安全点；外层帧槽址恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部）。落点：块/循环/try 的 `end_scope` 退出、for-in per-iteration 出口（每轮新鲜绑定语义：每轮关闭旧 upvalue，下一轮捕获全新一份）、break/continue 跳出循环；此外帧退出（RETURN / unwind 丢弃区间）由 VM `exit_frame`/`close_upvalues` 整段关闭，无需指令（见 §5.9 与 runtime.md）。`STORE_UPVALUE` 的 peek-store 与 STORE_LOCAL/STORE_GLOBAL 同约定（§3.1）。
 
 ### 4.5 全局变量
 
@@ -256,12 +256,12 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（设计，M4 落地）**：拟存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器建函数时填好。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure`，VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
-- `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获）。
-- `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获）。
+- `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
+- `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
 
-`index` 用 `u16` 与 `LOAD_LOCAL_L` 的 `slot:u16` 同域（0..65535），无捕获范围短板。捕获描述不进字节码流，`CLOSURE` 定长 3B、反汇编器线性扫即可（无需按元数据步进 `ip`）。
+`index` 用 `u16` 与 `LOAD_LOCAL_L` 的 `slot:u16` 同域（0..65535），无捕获范围短板。捕获描述不进字节码流，`CLOSURE` 定长 3B、反汇编器线性扫即可（无需按元数据步进 `ip`）。编译器侧捕获解析见 `CodeGen::resolve_upvalue`（递归：外层局部命中 -> `{is_local=true, slot}` 并置该局部 `is_captured`；否则穿透外层 upvalue -> `{is_local=false, idx}`；容量超限报 `TooManyUpvalues`）。
 
 ### 4.14 类与对象
 
@@ -397,12 +397,16 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ### 5.4 闭包 / upvalue
 
+已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFunction`，无前置 `LOAD_CONST`--旧 lowering 的 `LOAD_CONST fn_idx + CLOSURE` 双发属残留，定夺为仅 `CLOSURE`）：
+
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
-# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalueDesc 表, 编译期填好)
-LOAD_CONST fn_idx      ; [fn]   ObjFunction
+# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalueDesc 表,
+#  编译期 flush 进 ObjFunction 元数据)
 CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upvalue_descs() 建捕获, 无尾随操作数
-# 块结束、x 将销毁且被捕获时: CLOSE_UPVALUE 关闭指向 x 槽的 upvalue
+# 块结束、x 将销毁且被捕获时: POP_N 整区弹局部 + CLOSE_UPVALUE 批量关闭槽址 >= 新栈顶的开 upvalue
+# (CodeGen emit_pop_locals_to 发射, 仅当弹区含被捕获局部, 落点见 §4.4);帧退出(RETURN/unwind)
+# 由 VM close_upvalues 整段关闭,无指令
 ```
 
 ### 5.5 def / 静态成员 / 实例方法 / super / 实例化
@@ -574,7 +578,7 @@ class CodeUnit {
 - **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFunction::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
 - **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
 
-`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）留 M4 闭包。
+`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
 
 ## 8. 反汇编器输出格式（已落地）
 

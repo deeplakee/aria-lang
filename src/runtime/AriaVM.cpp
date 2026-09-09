@@ -480,24 +480,14 @@ namespace aria {
         switch (Object* obj = callee.as_obj(); obj->type()) {
             case ObjType::CLOSURE:
                 return call_closure(Object::as<ObjClosure>(obj), argc);
-            case ObjType::FUNCTION: {
-                // 迁移期临时分支(阶段 3 随编译翻转删除):旧 lowering 尚以 ObjFunction 为 callable
-                // 值(LOAD_CONST fn + CALL,含 IMPORT 模块体 entry),现场包空闭包进帧,使既有
-                // 编译/测试在阶段 2 后仍绿。arity 检查在 call_closure(包前不查,失败时槽 0 已换成
-                // 闭包属可接受 -- 错误路径 unwind 一并丢弃调用区)。
-                // 根安全:obj(原 fn)在 callee 槽经值栈根,new_closure 顶 maybe_collect 时已根;
-                // 闭包建成立即原位写回 callee 槽 -- 纯赋值无 GC 点,入栈即经值栈 tracer 根化,无需
-                // 跨写守卫;call_closure 的 fail 路径(WrongArity -> new_exception)是真 GC 点,但
-                // 时序上闭包已入栈,根成立。
-                const auto closure   = new_closure(gc_, Object::as<ObjFunction>(obj));
-                current_->peek(argc) = Value::from_obj(closure); // callee 槽(距栈顶 argc)原位换闭包
-                return call_closure(closure, argc);
-            }
             case ObjType::NATIVE_FN:
                 return call_native(Object::as<ObjNativeFn>(obj), argc);
             default:
+                // ObjFunction 不再是可调用值（M4 起 callable 收敛为闭包:编译器经 CLOSURE 指令现场
+                // 包闭包,ObjFunction 退为常量池内部物,不再以 callable 值上栈;IMPORT 的模块体 entry
+                // 亦由 IMPORT 分支现场包闭包）。触及此分支即用户代码调用了非函数值。
                 return fail(ErrorCode::CallNonCallable,
-                            "call non-callable {} (M1 supports functions / native functions only)", obj->type_name());
+                            "call non-callable {} (supports closures / native functions only)", obj->type_name());
         }
     }
 
@@ -822,11 +812,14 @@ namespace aria {
                     break;
                 }
                 case OpCode::CLOSE_UPVALUE: {
-                    // [v] -> []:关闭指向当前栈顶槽的 upvalue 并弹顶(指令集 §4.4,clox 语义)。
-                    // 块结束、被捕获局部将随作用域销毁时由编译器发射:值先迁入 ObjUpvalue 自持
-                    // (close_upvalues 读栈槽迁值),再弹掉槽位 -- 闭包此后读已关闭值。
-                    current_->close_upvalues(current_->stack_top() - 1);
-                    current_->drop(1);
+                    // [] -> []:关闭所有槽址 >= 当前栈顶的开 upvalue(值迁入各自 ObjUpvalue 自持),
+                    // 无弹栈--弹栈由前置 POP_N 承担。作用域退出的批量关闭(语义对齐 Lua OP_CLOSE):
+                    // 编译器在弹区 POP_N 之后发射(仅当弹区含被捕获局部),弹区槽已位于 top 之上--
+                    // 不 push 不覆写即安全,且 POP_N/CLOSE_UPVALUE 均无分配无安全点,两指令间无任何
+                    // 触发点;开 upvalue 仍开指该槽,close_upvalues(栈顶) 把降序链的这段前缀整段关闭
+                    // (外层帧槽址恒低于本帧,故新栈顶之上的开 upvalue 只属弹区局部)。闭包此后读已
+                    // 关闭值。
+                    current_->close_upvalues(current_->stack_top());
                     break;
                 }
                 case OpCode::DEF_GLOBAL: {
@@ -1225,12 +1218,16 @@ namespace aria {
                         }
                         break; // 已派发 handler:frame 已废,循环顶重取
                     }
-                    // 模块体 run-once = 一次普通 0 参函数调用:压 callee(entry,<module>)-> 进帧 -> break。
-                    //   主循环照常执行该帧;其 RETURN 按函数名 == <module> 判定模块体帧,弹弃返回值、
-                    //   压回该模块对象,栈效应同命中分支 [..., module]。entry 经 module->entry_ 根可达。
-                    ObjFunction* entry = module->entry();
-                    current_->push(Value::from_obj(entry)); // callee 压栈
-                    if (!call_value(Value::from_obj(entry), 0)) {
+                    // 模块体 run-once = 一次普通 0 参函数调用:现场包闭包(entry,M4 起 callable 收敛为
+                    // 闭包)-> 压 callee -> 进帧 -> break。主循环照常执行该帧;其 RETURN 按函数名 ==
+                    // <module> 判定模块体帧,弹弃返回值、压回该模块对象,栈效应同命中分支 [..., module]。
+                    // 根安全:entry 经 module->entry_ 根可达(module 入 modules_ 表根),new_closure 顶
+                    // maybe_collect 不威胁;闭包建成立即压栈,入栈即经值栈 tracer 根化,无跨写守卫;
+                    // call_closure 的 fail 路径(StackOverflow -> new_exception)时序上闭包已入栈。
+                    ObjFunction* entry   = module->entry();
+                    const auto   closure = new_closure(gc_, entry);
+                    current_->push(Value::from_obj(closure)); // callee 压栈
+                    if (!call_closure(closure, 0)) {
                         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
                         // 载荷已在寄存器,unwind 查表派发 / 物化 Error 出栈。
                         if (auto u = unwind_()) {

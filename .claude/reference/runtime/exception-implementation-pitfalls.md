@@ -293,7 +293,7 @@ cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
 
 **注意**：`catch_slot` 在 lowering 里仍由 `declare_local_or_fail` 拿到（catch 体经 `LOAD_LOCAL catch_slot` 读 `e`），但它 == `stack_depth`，**只编译期用、不入 `TryRecord`**。`mark_initialized` 在 `declare_local` 后立即调（`e` 由 unwind 的 push 在运行期填，编译期标已初始化以放行 catch 体的读检查）。
 
-**核对（已读 `FunctionCtx.cpp` 现有实现）**：`end_scope_pop_count` 经 `pop_locals_deeper_than` **真正 `locals_.pop_back()` 移除**原 scope 局部（非只减 `scope_depth_`），故 `locals_.size()` 精确反映当前活局部、**无陈旧项堆积**。`stack_depth = cur_fn_ctx()->locals_.size()`（try 体 `begin_scope` 前快照）= try 入口活局部数 = 下一可用 slot = catch 参数槽。try 体 `end_scope` 弹回 `stack_depth`，catch 参数 `add_local` 后 `locals_.size() == stack_depth + 1`、catch 参数 slot == `stack_depth`。定稿成立，无问题。
+**核对（已读 `FunctionCtx.cpp` 现有实现；M4 起收口为单方法 `FunctionCtx::end_scope()`，原 `end_scope_pop_count`/`pop_locals_deeper_than` 两步合并）**：`end_scope` **真正 `locals_.pop_back()` 移除**原 scope 局部（非只减 `scope_depth_`），故 `locals_.size()` 精确反映当前活局部、**无陈旧项堆积**。`stack_depth = cur_fn_ctx()->locals_.size()`（try 体 `begin_scope` 前快照）= try 入口活局部数 = 下一可用 slot = catch 参数槽。try 体 `end_scope` 弹回 `stack_depth`，catch 参数 `add_local` 后 `locals_.size() == stack_depth + 1`、catch 参数 slot == `stack_depth`。定稿成立，无问题。
 
 ---
 

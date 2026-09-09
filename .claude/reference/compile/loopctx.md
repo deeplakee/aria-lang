@@ -162,7 +162,7 @@ for (const auto bp: loop.break_fwd_patches)
 if (cur_fn_ctx()->loop_stack_.empty())
     fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
 auto& loop = cur_fn_ctx()->loop_stack_.top();      // 最内层循环
-pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
+emit_pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
 loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记偏移
     cur_cu()->emit_jump(OpCode::JUMP, line));       // -> L_end（待回填）
 ```
@@ -175,7 +175,7 @@ loop.break_fwd_patches.push_back(                       // 发占位 JUMP，记�
 if (cur_fn_ctx()->loop_stack_.empty())
     fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
 auto& loop = cur_fn_ctx()->loop_stack_.top();
-pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
+emit_pop_locals_to(loop.loop_scope_depth, line);         // 弹循环体内局部
 if (loop.continue_back_target) {                    // 后向：目标已知
     cur_cu()->emit_jump_back(*loop.continue_back_target, line);
 } else {                                            // 前向：目标未知，占位待回填
@@ -194,9 +194,9 @@ if (loop.continue_back_target) {                    // 后向：目标已知
 
 ### 4.2 `loop_scope_depth` 的作用：跳转前弹局部
 
-`break`/`continue` 跳出循环体时，循环体内声明的局部变量在运行期已「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
+`break`/`continue` 跳出循环体时，循环体内声明的局部变量在运行期已「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`emit_pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
 
-注意 `pop_locals_to` 只 emit `POP_N`（运行期弹栈），**不破坏编译期 `locals_` 登记**--它走 `count_locals_deeper_than`（const，仅计数不弹出），而非 `pop_locals_deeper_than`。因为 `break`/`continue` 后的语句（死代码或其他分支）仍在作用域内，可引用这些局部；只有真正退出作用域的 `end_scope_pop_count` 才用 `pop_locals_deeper_than` 从编译期 `locals_` 移除。若 `pop_locals_to` 误用 `pop_locals_deeper_than`，`break`/`continue` 会把循环体局部从 `locals_` pop_back 掉，后续语句引用该名会误落全局（运行期 `UndefinedVariable`）。
+注意 `emit_pop_locals_to` 只发射弹区清理指令（运行期弹栈），**不破坏编译期 `locals_` 登记**--M4 起 break/continue 与退出作用域共用同一发射口 `emit_pop_locals_to`（整区一条 `POP_N`，弹区含被捕获局部才追加一条批量 `CLOSE_UPVALUE`），它**只发射、不移除登记**；真正从 `locals_` pop_back 移除的只有退出作用域路径随后调的 `FunctionCtx::end_scope()`（`--scope_depth_` 后弹出原 scope 的局部；`CodeGen::end_scope` = 先 `emit_pop_locals_to` 再此收尾）。因为 `break`/`continue` 后的语句（死代码或其他分支）仍在作用域内，可引用这些局部。若 break/continue 路径误走了登记移除，循环体局部会被 `locals_` pop_back 掉，后续语句引用该名会误落全局（运行期 `UndefinedVariable`）。
 
 ### 4.3 入栈/出栈的 RAII 式对称
 
@@ -260,8 +260,8 @@ push LoopCtx{                     │   ┌ continue_back_target = none（有 in
   break_fwd_patches = {}              │   └
 }                                 │
 emit <body>  ◄── break/continue 在这里编译：
-  │   break:    pop_locals_to(loop_scope); emit_jump(JUMP) -> break_fwd_patches
-  │   continue: pop_locals_to(loop_scope); emit_jump(JUMP) -> continue_fwd_patches
+  │   break:    emit_pop_locals_to(loop_scope); emit_jump(JUMP) -> break_fwd_patches
+  │   continue: emit_pop_locals_to(loop_scope); emit_jump(JUMP) -> continue_fwd_patches
   │                                  │     （有 incr，故走前向占位，记进 fwd_patches）
 pop LoopCtx -> loop                │
                                   │
@@ -363,6 +363,6 @@ end_scope()
 - **`continue_fwd_patches` 是 `List<usize>`（列表）**：前向场景 dst 未知，每个 continue 各发一个占位、各记一个 src 偏移，攒到循环体编译完再批量回填到 `L_incr`，所以是列表。两者互斥，构造时按循环类型只填一个。
 - **`break_fwd_patches` 与 `continue_fwd_patches` 是同一类东西**：都是「前向跳转、src 先发、dst 后定」，所以都是 src 列表。差别只在 dst 是什么（`L_end` vs `L_incr`）、以及 dst 在哪一刻变得已知（break 的 `L_end` 在循环全部编译完时；continue 的 `L_incr` 在体编译完、递增区发射前那一刻，故 continue 的回填要先于 break 的回填）。
 - **没有 `break_back_target`** 是同一条规则的推论：break 的 dst 恒为 `L_end`，**永远在循环体之后**，不可能先确定，所以 break 没有后向分支、没有 dst 字段，只有 src 列表。
-- **`loop_scope_depth` 与跳转方向无关**：它给 `pop_locals_to` 用 -- break/continue 跳出循环体前要把循环体内声明的局部用 `POP_N` 弹掉（否则栈泄漏）。它记录循环体外层的 scope 深度，弹掉所有比它更深的局部（即循环体里声明的）。四种循环都填同一个值（进入循环体前的 `scope_depth_`），与 dst 是否先知无关。
+- **`loop_scope_depth` 与跳转方向无关**：它给 `emit_pop_locals_to` 用 -- break/continue 跳出循环体前要把循环体内声明的局部用 `POP_N` 弹掉（否则栈泄漏）。它记录循环体外层的 scope 深度，弹掉所有比它更深的局部（即循环体里声明的）。四种循环都填同一个值（进入循环体前的 `scope_depth_`），与 dst 是否先知无关。
 
 一句话：`continue_back_target` 存 dst（单值，因 dst 唯一且先知），`continue_fwd_patches` / `break_fwd_patches` 存 src 们（列表，因 dst 后知、要把多个 src 攒到 dst 处回填）。`for` 带 increment 是唯一让 continue 的 dst 落在体后的循环，这就是它独有 `continue_fwd_patches` 路径的全部原因。

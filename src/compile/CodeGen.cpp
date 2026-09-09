@@ -1,6 +1,7 @@
 #include "compile/CodeGen.hpp"
 
 #include <memory>
+#include <ranges>
 
 #include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
@@ -24,7 +25,8 @@ namespace aria {
         //   kMaxArguments -- 单次调用实参上限(CALL 操作数 u8);
         //   kMaxConstants -- 常量池最大索引(u16 索引,即最多 65536 项);
         //   kMaxLocals    -- 单函数局部最大槽号(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
-        // 语义名集中定义,使各检查点与报错文案共享同一来源,无散落魔数。
+        // 语义名集中定义,使各检查点与报错文案共享同一来源,无散落魔数。单函数捕获 upvalue 上限
+        // kMaxUpvalues 同属此纪律,因登记侧 FunctionCtx::add_upvalue 共用而定义于 FunctionCtx.hpp。
         constexpr u32 kMaxArity     = kU8OperandMax;
         constexpr u32 kMaxArguments = kU8OperandMax;
         constexpr u32 kMaxConstants = kU16OperandMax;
@@ -129,15 +131,33 @@ namespace aria {
     void CodeGen::begin_scope() const { cur_fn_ctx()->begin_scope(); }
 
     void CodeGen::end_scope(const u32 line) const {
-        const u32 n = cur_fn_ctx()->end_scope_pop_count();
-        cur_cu()->emit_pop_n(n, line);
+        // 先按弹区（比新 scope_depth_ 更深的局部 = 原 scope 的局部）发射清理指令（is_captured 判定
+        // 需在登记移除前做），再 FunctionCtx::end_scope() 收尾（--scope_depth_ + 移除登记）。
+        emit_pop_locals_to(cur_fn_ctx()->scope_depth_ - 1, line);
+        cur_fn_ctx()->end_scope();
     }
 
-    void CodeGen::pop_locals_to(const u32 target_depth, const u32 line) const {
-        // 仅计数并 emit POP_N(运行期弹栈),不破坏编译期 locals_ 登记:break/continue 后的语句仍在作用域内,
-        // 可引用这些局部;只有 end_scope 才真正 pop_locals_deeper_than 移除。
-        const u32 n = cur_fn_ctx()->count_locals_deeper_than(target_depth);
-        cur_cu()->emit_pop_n(n, line);
+    void CodeGen::emit_pop_locals_to(const u32 target_depth, const u32 line) const {
+        // 弹区清理统一发射口（退出作用域与 break/continue 共用）:整区一条 POP_N（被捕获局部一并
+        // 计数——CLOSE_UPVALUE 只关不弹，弹栈全由 POP_N 承担），弹区含被捕获局部才追加一条
+        // CLOSE_UPVALUE（关闭所有槽址 >= 新栈顶的开 upvalue：弹区槽已在新栈顶之上，不 push 不
+        // 覆写即安全，且 POP_N/CLOSE_UPVALUE 均无分配无安全点、两指令间无任何触发点；外层帧槽址
+        // 恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部——对齐 Lua OP_CLOSE 的批量关闭）。
+        // 只发射不改登记:退出作用域路径(end_scope)由随后 FunctionCtx::end_scope 移除登记并
+        // --scope_depth_;break/continue 路径登记本就须保留(跳转后语句仍在作用域内可引用)。
+        u32   count        = 0; // 弹区局部总数（含被捕获者，POP_N 计数）
+        bool  has_captured = false;
+        for (const auto& local: std::views::reverse(cur_fn_ctx()->locals_)) {
+            if (local.depth <= target_depth) {
+                break; // 弹区到此为止(活局部按 depth 非递减序排列;slot 0 哑元 depth=0 恒在界外)
+            }
+            ++count;
+            has_captured = has_captured || local.is_captured;
+        }
+        cur_cu()->emit_pop_n(count, line); // count==0 无指令
+        if (has_captured) {
+            cur_cu()->emit_op(OpCode::CLOSE_UPVALUE, line); // 批量关 top 及以上的开 upvalue
+        }
     }
 
     u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc& loc) const {
@@ -158,20 +178,52 @@ namespace aria {
     // ============================================================
 
     CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc& loc) {
-        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部 -> Upvalue（M4 未实现，调用方
-        // emit_load_var/emit_store_var 走 not_impl 报编译期错--不静默落到全局，否则外层局部与同名模块全局
-        // 串台致闭包捕获错误变量，见 .claude/rules/compile.md「作用域模型」）；否则视为模块全局（VM 运行期 LOAD_GLOBAL
-        // 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出即 fail（持 loc）。
+        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部/外层 upvalue -> Upvalue
+        // （resolve_upvalue 递归登记捕获描述，index=本函数 upvalue 索引）；否则视为模块全局（VM 运行期
+        // LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出即
+        // fail（持 loc）。解析序「局部 -> upvalue -> 全局」与 grammar.txt 既定一致。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
-        for (auto ctx = cur_fn_ctx()->enclosing_; ctx != nullptr; ctx = ctx->enclosing_) {
-            if (ctx->find_local(name)) {
-                return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = 0};
-            }
+        if (const auto upvalue_idx = resolve_upvalue(cur_fn_ctx(), name, loc)) {
+            return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = *upvalue_idx};
         }
         const auto name_idx = add_name_or_fail(name, loc);
         return ResolvedVar{.kind = ResolvedVar::Kind::Global, .index = name_idx};
+    }
+
+    Opt<u8> CodeGen::resolve_upvalue(FunctionCtx* ctx, const StringView name, const SourceLoc& loc) {
+        // 递归解析「ctx 体内引用 name 的 upvalue 捕获」（clox resolveUpvalue 递归形，捕获即引用）：
+        //   1. ctx->enclosing_ 的局部命中 -> 置该局部 is_captured=true（其槽将被捕获,作用域退出须经
+        //      CLOSE_UPVALUE 关闭；emit_pop_locals_to 据此发射）+ ctx 登记 {is_local=true, slot}。
+        //   2. 未命中 -> 递归把 ctx->enclosing_ 当作待捕获函数解析（穿透捕获:名字不在直接外层帧,
+        //      而在其外层某帧的局部或更外层的 upvalue）,命中 -> ctx 登记 {is_local=false, 外层视角的
+        //      upvalue 索引}（运行期 CLOSURE 执行时复制外围闭包的同下标 upvalue,同一 ObjUpvalue 指针）。
+        //   3. 到 entry（enclosing_==nullptr）之上仍无 -> nullopt,调用方落全局。
+        // 登记经 add_upvalue_or_fail（追加将越出 u8 索引域 -> fail TooManyUpvalues,首个错误自然即止--
+        // 不经此翻译则 nullopt 会被调用方误读为「不可捕获 -> 落全局」,捕获引用静默串台全局）。
+        // 同 (is_local,index) 去重复用:同名多处引用共用一个 upvalue 索引;is_captured 重复置位无害。
+        if (ctx == nullptr || ctx->enclosing_ == nullptr) {
+            return std::nullopt;
+        }
+        if (const auto slot = ctx->enclosing_->find_local(name)) {
+            ctx->enclosing_->locals_[*slot].is_captured = true;
+            return add_upvalue_or_fail(ctx, UpvalueDesc{.is_local = true, .index = *slot}, loc);
+        }
+        if (const auto upvalue = resolve_upvalue(ctx->enclosing_, name, loc)) {
+            return add_upvalue_or_fail(ctx, UpvalueDesc{.is_local = false, .index = *upvalue}, loc);
+        }
+        return std::nullopt;
+    }
+
+    u8 CodeGen::add_upvalue_or_fail(FunctionCtx* ctx, const UpvalueDesc desc, const SourceLoc& loc) const {
+        // add_upvalue 失败翻译（单层 _or_fail 家族同款约定,文案收口于此）:ctx 登记一条捕获描述,
+        // 追加将越出 u8 索引域（add_upvalue 返 nullopt）-> fail TooManyUpvalues（持 loc）。
+        // 入参 ctx 显式传入--resolve_upvalue 沿 enclosing_ 链递归,登记发生在链上各层（非恒 cur_fn_ctx）。
+        if (const auto idx = ctx->add_upvalue(desc)) {
+            return *idx;
+        }
+        fail(ErrorCode::TooManyUpvalues, loc, "闭包捕获变量过多(>{})", kMaxUpvalues);
     }
 
     // ============================================================
@@ -259,9 +311,10 @@ namespace aria {
     }
 
     // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local（未初始化 ->
-    // UninitializedVariable）；Global LOAD_GLOBAL（VM 运行期查表）；Upvalue -> not_impl（M4 闭包未实现）。
-    // visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽或全局名字常量池索引；loc 供
-    // check_local_initialized / not_impl（走其 SourceLoc 重载）复用。
+    // UninitializedVariable）；Global LOAD_GLOBAL（VM 运行期查表）；Upvalue LOAD_UPVALUE（u8 upvalue
+    // 索引；不做 init 检查--捕获时序语义同 Lua：捕获的是声明点快照之外的槽引用，外层可能尚未赋值，
+    // 与全局路径一致）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 / upvalue
+    // 索引 / 全局名字常量池索引；loc 供 check_local_initialized 复用。
     void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line, const SourceLoc& loc) const {
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
@@ -273,13 +326,16 @@ namespace aria {
                 cur_cu()->emit_word(slot, line);
                 return;
             case ResolvedVar::Kind::Upvalue:
-                not_impl(loc, "闭包/upvalue 捕获");
+                cur_cu()->emit_op(OpCode::LOAD_UPVALUE, line);
+                cur_cu()->emit_byte(static_cast<u8>(slot), line); // 索引域由 add_upvalue 容量检查保证 <= u8
+                return;
         }
         UNREACHABLE();
     }
 
-    // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized（赋值即
-    // 初始化，不做 init 检查）；Global STORE_GLOBAL（VM 运行期查表）；Upvalue -> not_impl（M4 闭包未实现）。
+    // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
+    // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL（VM 运行期查表）；Upvalue STORE_UPVALUE
+    // （u8 upvalue 索引，peek-store 写穿外层槽/已关值；不 mark_initialized--索引非本帧局部槽）。
     void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line, const SourceLoc& loc) const {
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
@@ -291,7 +347,9 @@ namespace aria {
                 cur_cu()->emit_word(slot, line);
                 return;
             case ResolvedVar::Kind::Upvalue:
-                not_impl(loc, "闭包/upvalue 捕获");
+                cur_cu()->emit_op(OpCode::STORE_UPVALUE, line);
+                cur_cu()->emit_byte(static_cast<u8>(slot), line); // 索引域由 add_upvalue 容量检查保证 <= u8
+                return;
         }
         UNREACHABLE();
     }
@@ -380,7 +438,10 @@ namespace aria {
         // fn 创建后跨 add_constant 无需守卫:constants.push -> reallocate 走 trivial 分配不触发 GC(见 GC.hpp
         // 核心不变式);入池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
-        cur_cu()->emit_op(OpCode::LOAD_CONST, line);
+        // CLOSURE fn_idx（不再 LOAD_CONST fn）:VM 执行时取常量池 ObjFunction 现场包 ObjClosure,
+        // 按本函数捕获描述表(体编译期间经 resolve_upvalue 登记、下方 flush 进 fn->upvalue_descs_)
+        // 逐个建/复用 upvalue。捕获描述存 ObjFunction 元数据、不进字节码流,故 CLOSURE 定长 3B。
+        cur_cu()->emit_op(OpCode::CLOSURE, line);
         cur_cu()->emit_word(fn_idx, line);
 
         // lambda(name == `<anonymous>`)留栈作表达式值不绑定，故可以跳过;具名 fun 绑定全局/局部。
@@ -416,6 +477,13 @@ namespace aria {
         // 隐式 return nil(兜底;显式 return 后为死代码,无害)。
         cur_cu()->emit_op(OpCode::LOAD_NIL, line);
         cur_cu()->emit_op(OpCode::RETURN, line);
+
+        // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
+        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读;Array push 走 trivial 分配
+        // 不触 GC,fn 此刻已入父常量池经 module 根链可达,免守卫)。
+        for (const auto& desc: child->upvalues_) {
+            fn->upvalue_descs().push(desc);
+        }
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
         // 打印刚编译完成函数的 CodeUnit 反汇编（游标仍在子，cur_cu() 即子 unit；name 为本函数名）。
@@ -587,7 +655,7 @@ namespace aria {
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
-        // 若为 block 则自带更深层 scope；break/continue 跳出时由 pop_locals_to(loop_scope) 代弹。
+        // 若为 block 则自带更深层 scope；break/continue 跳出时由 emit_pop_locals_to(loop_scope) 代弹。
         begin_scope();
         cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
         emit_method_call0("next", line, node->loc());   // [value] 恰在 slot 位置
@@ -611,7 +679,7 @@ namespace aria {
             fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
         }
         auto& loop = cur_fn_ctx()->loop_stack_.top();
-        pop_locals_to(loop.loop_scope_depth, line);
+        emit_pop_locals_to(loop.loop_scope_depth, line);
         loop.break_fwd_patches.push_back(cur_cu()->emit_jump(OpCode::JUMP, line)); // -> L_end（回填）
     }
 
@@ -621,7 +689,7 @@ namespace aria {
             fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
         }
         auto& loop = cur_fn_ctx()->loop_stack_.top();
-        pop_locals_to(loop.loop_scope_depth, line);
+        emit_pop_locals_to(loop.loop_scope_depth, line);
         if (loop.continue_back_target) {
             emit_jump_back_or_fail(*loop.continue_back_target, line, node->loc());
         } else {
@@ -807,8 +875,8 @@ namespace aria {
 
     void CodeGen::visitIdentifierNode(IdentifierNode* node) {
         // 入口 take：取模式并清空为 Load（子节点经 emit_expr 时已为 Load）。按 mode 分派到 emit_load_var /
-        // emit_store_var，两者各自按 var.kind 发射 Local/Global/Upvalue。Locate 预留（Identifier 无 receiver，
-        // 同 Load）；Upvalue 走 not_impl（M4 闭包）。
+        // emit_store_var，两者各自按 var.kind 发射 Local/Upvalue/Global。Locate 预留（Identifier 无 receiver，
+        // 同 Load）。
         const auto mode     = take_lvalue_mode();
         const u32  line     = node->loc_line();
         const auto resolved = resolve_name_or_fail(node->name, node->loc());

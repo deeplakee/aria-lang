@@ -364,8 +364,7 @@ TEST_F(AriaVMStress, FunctionCall) {
     auto       main_fn = new_function(gc, nullptr, 0);
     auto&      mcu     = main_fn->unit();
     const auto idx     = mcu.add_constant(Value::from_obj(add));
-    mcu.emit_op(OpCode::LOAD_CONST, 1);
-    mcu.emit_word(idx, 1);
+    emit_closure(mcu, idx); // [closure]
     emit_imm(mcu, 3);
     emit_imm(mcu, 4);
     mcu.emit_op(OpCode::CALL, 1);
@@ -537,9 +536,8 @@ TEST_F(AriaVMStress, WrongArityIsUncaught) {
     auto  fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
-    cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(cu.add_constant(Value::from_obj(two)), 1);
-    emit_imm(cu, 1); // 只给 1 个参数
+    emit_closure(cu, cu.add_constant(Value::from_obj(two))); // [closure]
+    emit_imm(cu, 1);                                         // 只给 1 个参数
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(1, 1);
     cu.emit_op(OpCode::RETURN, 1);
@@ -556,8 +554,7 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
     auto  fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
-    cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(cu.add_constant(Value::from_obj(fn)), 1); // 常量池引用自己
+    emit_closure(cu, cu.add_constant(Value::from_obj(fn))); // 常量池引用自己(每次调用现场包新闭包)
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1);
     cu.emit_op(OpCode::RETURN, 1);
@@ -1234,7 +1231,7 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
         auto&      cu        = fn->unit();
         const auto outer_idx = cu.add_constant(Value::from_obj(outer));
         cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = counter 存储槽
-        emit_const(cu, outer_idx);       // [nil, outer]
+        emit_closure(cu, outer_idx);     // [nil, closure]
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1);                     // [nil, counter](CALL 消费 callee 槽,闭包须存槽复用)
         emit_local(cu, OpCode::STORE_LOCAL, 1); // counter 入 slot1
@@ -1294,7 +1291,7 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
         const auto outer_idx = cu.add_constant(Value::from_obj(outer));
         const auto c1_name   = cu.add_constant(Value::from_obj(new_string(gc, "c1")));
         const auto c2_name   = cu.add_constant(Value::from_obj(new_string(gc, "c2")));
-        emit_const(cu, outer_idx); // [outer]
+        emit_closure(cu, outer_idx); // [closure]
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [nil]
         cu.emit_op(OpCode::POP, 1);
@@ -1329,8 +1326,9 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
     EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
 }
 
-// CLOSE_UPVALUE 指令:关指顶槽的 upvalue 并弹顶;关闭后读/写走已迁移的 closed_
-// (若未迁移,弹掉的槽会被后续压栈覆写,读到 c 本体 -> nil+1 报 TypeMismatch)。
+// CLOSE_UPVALUE 指令:批量关闭所有槽址 >= 当前栈顶的开 upvalue(无弹栈,弹栈由前置 POP 承担,
+// 对齐 Lua OP_CLOSE);关闭后读/写走已迁移的 closed_(若未迁移,弹掉的槽会被后续压栈覆写,
+// 再经 uv 读到覆写值 -> 报错)。
 TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
 
     auto& gc    = vm.gc();
@@ -1351,7 +1349,8 @@ TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
         cu.emit_op(OpCode::POP, 1);                  // top=slot2,slot1=7
         emit_closure(cu, incr_idx);                  // [c](uv 指向 slot1,开链)
         emit_global(cu, OpCode::DEF_GLOBAL, c_name); // [] c 入 globals
-        cu.emit_op(OpCode::CLOSE_UPVALUE, 1);        // 关 slot1 的 uv(7 迁入 closed_),弹 slot1
+        cu.emit_op(OpCode::POP, 1);                  // 弹 slot1 的槽(编译器 emit_pop_locals_to 镜像:count==1 降级 POP)
+        cu.emit_op(OpCode::CLOSE_UPVALUE, 1);        // 批量关槽址 >= 新栈顶的开 uv(7 迁入 closed_),无弹栈
         emit_global(cu, OpCode::LOAD_GLOBAL, c_name);
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [8](读 closed_ 7 -> +1)
@@ -1452,7 +1451,7 @@ TEST_F(AriaVMStress, UnwindClosesCapturedUpvalue) {
         const auto c_name      = cu.add_constant(Value::from_obj(new_string(gc, "c")));
         cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = catch 参数槽预占(stack_depth=1)
         const usize begin = cu.code.size();
-        emit_const(cu, thrower_idx); // [thrower]
+        emit_closure(cu, thrower_idx); // [closure]
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1);               // thrower throw -> unwind 到本帧
         const usize end = cu.code.size(); // try 区间终点(CALL 之后)

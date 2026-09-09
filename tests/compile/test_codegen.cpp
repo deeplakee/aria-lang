@@ -302,7 +302,7 @@ TEST(CodeGen, WhileBreak) {
 
 // break/continue 只能 emit POP_N(运行期弹栈),不得破坏编译期 locals_ 登记:
 // 跳转后的死代码仍在作用域内,引用循环体局部应解析为局部而非误落全局(否则运行期 UndefinedVariable)。
-// 旧实现 pop_locals_to 走 pop_locals_deeper_than 会 pop_back 移除 x -> 后续 s = s + x 解析到全局 x 报错。
+// 旧实现 emit_pop_locals_to 走 pop_locals_deeper_than 会 pop_back 移除 x -> 后续 s = s + x 解析到全局 x 报错。
 TEST(CodeGen, BreakPreservesLocalsForDeadCode) {
     EXPECT_EQ(run_int("var i = 0; var s = 0; while (i < 5) {"
                       "  var x = i;"
@@ -352,6 +352,108 @@ TEST(CodeGen, HigherOrderReturn) {
 }
 
 // ============================================================
+// M4 闭包（compile 翻转后端到端：捕获读/写/共享/关闭/递归自捕获/unwind 幸存）
+// ============================================================
+
+// 路线表验收样例（vm-design §6 M4 标准）：计数器闭包 -- 内层 lambda 捕获外层局部 n,
+// 捕获即引用（n = n + 1 经 STORE_UPVALUE 写穿）,外层帧 RETURN 后 upvalue 已关闭,
+// 闭包存活且状态跨调用延续。
+TEST(CodeGen, CounterClosure) {
+    EXPECT_EQ(run_int("fun make_counter() {"
+                      "  var n = 0;"
+                      "  return fun() { n = n + 1; return n; };"
+                      "}"
+                      "var c = make_counter();"
+                      "c();"
+                      "c();"
+                      "return c();"),
+              3);
+}
+
+// 双闭包共享同一外层局部:同一 (is_local,index) 去重复用 -> 同一 ObjUpvalue 引用,
+// 经 inc 的写入对 get 可见。
+TEST(CodeGen, TwoClosuresShareUpvalue) {
+    EXPECT_EQ(run_int("fun make() {"
+                      "  var n = 0;"
+                      "  var inc = fun() { n = n + 1; return n; };"
+                      "  var get = fun() { return n; };"
+                      "  inc();"
+                      "  inc();"
+                      "  return get();"
+                      "}"
+                      "return make();"),
+              2);
+}
+
+// 引用语义：捕获是栈槽引用而非值拷贝,捕获后外层的修改对内层可见（Lua 语义）。
+TEST(CodeGen, CaptureIsReference) {
+    EXPECT_EQ(run_int("fun make() {"
+                      "  var x = 1;"
+                      "  var f = fun() { return x; };"
+                      "  x = 42;"
+                      "  return f();"
+                      "}"
+                      "return make();"),
+              42);
+}
+
+// 块出作用域 -> 被捕获局部经 CLOSE_UPVALUE 关闭(值迁入 upvalue 自持),闭包仍读得到。
+TEST(CodeGen, ClosureReadsClosedValueAfterBlock) {
+    EXPECT_EQ(run_int("fun make() {"
+                      "  var f;"
+                      "  {"
+                      "    var x = 7;"
+                      "    f = fun() { return x; };"
+                      "  }"
+                      "  return f();"
+                      "}"
+                      "return make();"),
+              7);
+}
+
+// 嵌套具名 fun 递归自捕获:名字是外层局部,内层经 upvalue 回递到自己(每次递归调用
+// 现场 CLOSURE 捕获外层槽,槽里是同名闭包本身)。
+TEST(CodeGen, NestedNamedFunSelfCapture) {
+    EXPECT_EQ(run_int("fun outer() {"
+                      "  fun fact(n) {"
+                      "    if (n <= 1) { return 1; }"
+                      "    return n * fact(n - 1);"
+                      "  }"
+                      "  return fact(5);"
+                      "}"
+                      "return outer();"),
+              120);
+}
+
+// 异常跨帧 unwind 后幸存闭包读值:thrower 帧未命中逐帧退出,make 帧命中 handler
+// (截栈只弹 try 体区间,不伤 x 的槽),make RETURN 时关闭 x 的 upvalue,闭包照常读。
+TEST(CodeGen, ClosureSurvivesUnwind) {
+    EXPECT_EQ(run_int("fun thrower() { throw \"boom\"; }"
+                      "fun make() {"
+                      "  var x = 41;"
+                      "  var f = fun() { return x + 1; };"
+                      "  try { thrower(); } catch (e) { }"
+                      "  return f();"
+                      "}"
+                      "return make();"),
+              42);
+}
+
+// upvalue 写穿透(引用语义):++counter 经 LOAD_UPVALUE/STORE_UPVALUE 在闭包外累计。
+TEST(CodeGen, UpvalueWriteThrough) {
+    EXPECT_EQ(run_int("fun make() {"
+                      "  var n = 0;"
+                      "  var inc = fun() { ++n; };"
+                      "  inc();"
+                      "  inc();"
+                      "  inc();"
+                      "  return n;"
+                      "}"
+                      "return make();"),
+              3);
+}
+
+// ============================================================
 // 反汇编核对（前向正确特性，VM 暂不能跑）
 // ============================================================
 
@@ -376,6 +478,41 @@ TEST(CodeGen, ImportEmitsImport) {
     EXPECT_NE(text.find("IMPORT"), aria::String::npos);
     EXPECT_NE(text.find("lib/utils"), aria::String::npos);
     EXPECT_NE(text.find("DEF_GLOBAL"), aria::String::npos); // 顶层经 DEF_GLOBAL 绑全局
+}
+
+// 闭包 lowering：具名 fun / lambda 一律发 CLOSURE fn_idx（不再 LOAD_CONST fn），
+// 捕获描述存 ObjFunction 元数据、不进字节码流。
+TEST(CodeGen, ClosureDisassembly) {
+    auto compiled = compile_only("fun make() { var x = 1; return fun() { return x; }; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled.value()->unit().disassemble("<test>");
+    EXPECT_NE(text.find("CLOSURE"), aria::String::npos); // 函数值经 CLOSURE 上栈
+    EXPECT_EQ(text.find("LOAD_CONST"), aria::String::npos)
+            << "入口 unit 不应再发 LOAD_CONST fn（x=1 走 LOAD_IMM,无其他常量加载）";
+}
+
+// for-in per-iteration 出口的新鲜绑定语义:pattern 变量被捕获 -> 每轮 end_scope 发
+// CLOSE_UPVALUE（位置在 CLOSURE 绑定之后、回边 JUMP_BACK 之前）,下一轮捕获是全新 upvalue。
+TEST(CodeGen, ForInPerIterationCloseUpvalue) {
+    auto compiled = compile_only("for (x in iter) { var f = fun() { return x; }; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text        = compiled.value()->unit().disassemble("<test>");
+    const auto closure_pos = text.find("CLOSURE");
+    const auto close_pos   = text.find("CLOSE_UPVALUE");
+    const auto back_pos    = text.find("JUMP_BACK");
+    ASSERT_NE(closure_pos, aria::String::npos);
+    ASSERT_NE(close_pos, aria::String::npos) << "被捕获的 pattern 局部须在每轮出口 CLOSE_UPVALUE";
+    ASSERT_NE(back_pos, aria::String::npos);
+    EXPECT_LT(closure_pos, close_pos) << "先建闭包捕获,后关槽";
+    EXPECT_LT(close_pos, back_pos) << "per-iteration 出口在回边之前";
+}
+
+// 无捕获的 for-in 不发 CLOSE_UPVALUE（pattern 局部未被捕获,纯 POP_N）。
+TEST(CodeGen, ForInNoCloseWithoutCapture) {
+    auto compiled = compile_only("for (x in iter) { print x; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled.value()->unit().disassemble("<test>");
+    EXPECT_EQ(text.find("CLOSE_UPVALUE"), aria::String::npos);
 }
 
 // ============================================================
@@ -493,6 +630,52 @@ TEST(CodeGen, ErrTooManyParameters) {
     auto c = compile_only(src);
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::TooManyParameters);
+}
+
+// 单函数捕获超容量（u8 upvalue 索引域,容量 256）-> TooManyUpvalues。
+// 源码程序生成:257 个外层局部各被内层 lambda 捕获一次,第 257 条捕获越界。
+TEST(CodeGen, ErrTooManyUpvalues) {
+    std::string src = "fun outer() {";
+    for (int i = 0; i < 257; ++i) {
+        src += "var v" + std::to_string(i) + " = " + std::to_string(i) + ";";
+    }
+    src += "return fun() { return";
+    for (int i = 0; i < 257; ++i) {
+        src += " v" + std::to_string(i) + " +";
+    }
+    src += " 0; }; }";
+    auto c = compile_only(src);
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::TooManyUpvalues);
+}
+
+// 容量下界钉子:恰 256 个不同捕获(索引 0..255 用满 u8 索引域,kMaxUpvalues=255 为上限位置、
+// 容量 = 上限 + 1,对齐 kMaxConstants 允许 65536 项与 clox UINT8_COUNT)合法编译且运行正确--
+// 勿把边界「修正」为 255(那会白禁合法索引 255)。
+TEST(CodeGen, ExactlyMaxUpvaluesCompiles) {
+    std::string src = "fun outer() {";
+    for (int i = 0; i < 256; ++i) {
+        src += "var v" + std::to_string(i) + " = " + std::to_string(i) + ";";
+    }
+    src += "return fun() { return";
+    for (int i = 0; i < 256; ++i) {
+        src += " v" + std::to_string(i) + " +";
+    }
+    src += " 0; }; } return outer()();";
+    // 0+1+...+255 = 32640:端到端跑通 CLOSURE 的 256 条捕获循环 + LOAD_UPVALUE 全索引域
+    // (run_source 开 stress GC,顺带压 CLOSURE 捕获循环的根安全)。
+    EXPECT_EQ(run_int(src), 32640);
+}
+
+// 捕获去重:同一外层局部被内层多处引用只占一个 upvalue -- 257 处引用同一变量不越界。
+TEST(CodeGen, DedupCaptureCountsOnce) {
+    std::string src = "fun outer() { var v = 5; return fun() { return";
+    for (int i = 0; i < 257; ++i) {
+        src += " v +";
+    }
+    src += " 0; }; }";
+    auto c = compile_only(src);
+    ASSERT_TRUE(c.has_value()) << "同一 (is_local,index) 去重复用,257 处引用只登记 1 条";
 }
 
 TEST(CodeGen, ErrInvalidAssignmentTarget) {

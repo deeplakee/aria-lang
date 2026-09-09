@@ -1,8 +1,8 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（finally 已于 2026-09 裁撤、后继 defer 已降级为可选后续不再绑定 M4；后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。
+> 本文是 M3 异常通道（aria 语言 `throw/catch` + VM 运行时错误统一走 VM 自管 unwind）实现过程中踩到的坑的归档。**M3 已落地（2026-09）：坑 #1-#16 对策全部实施**，落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering；本文转为归档参考（finally 已于 2026-09 裁撤、后继 defer 已降级为可选后续不再绑定 M4；后续异常类特性重启前仍值得重读）。设计基线见 `vm-design.md` §4.7。**M4 补录（2026-09）**：闭包在 M3 的截栈/弹帧机制上叠加「upvalue 关闭」维度，实施中确认的交互坑点补录为坑 #17-#20（见下「M4 补录」节）。
 >
-> 范围：M3 只做 try/catch/throw（`finally` 曾推迟至子里程碑 M3b、后于 2026-09 随特性裁撤移除，不引入 `END_FINALLY`），见下「M3b finally 裁撤记录」节；善后后继为 defer，已降级为可选后续（其他功能完成后另定，2026-09 决定不再绑定 M4）。
+> 范围：M3 只做 try/catch/throw（`finally` 曾推迟至子里程碑 M3b、后于 2026-09 随特性裁撤移除，不引入 `END_FINALLY`），见下「M3b finally 裁撤记录」节；善后后继为 defer，已降级为可选后续（其他功能完成后另定，2026-09 决定不再绑定 M4）。「M4 补录」节（坑 #17-#20）记录闭包 upvalue 的关闭挂点与本通道截栈/弹帧机制的交互坑点。
 
 ## 设计基线速览（已定）
 
@@ -432,6 +432,53 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 ```
 
 首行与最内 `at` 行位置重复属预期（同 Python：异常行 + traceback 末行重叠）。
+
+---
+
+## M4 补录：闭包 upvalue 关闭与 unwind 的交互坑点（2026-09，已落地）
+
+> M4 闭包（见 `m4-closure-implementation-plan.md`）在 M3 的截栈/弹帧机制上叠加了「upvalue 关闭」维度：局部槽不再只被值栈管理，还可能被 open upvalue 链上的 `ObjUpvalue` 开指着。「丢弃一段栈区」的每条路径（RETURN 弹帧 / unwind 命中截栈 / unwind 未命中弹帧 / 作用域退出）都必须先回答「区间内开指何时关、谁负责关」，与坑 #6/#10/#13 的截栈/弹帧细节交叠，是坑点高发区。四条记录如下，对策均已实施；测试钉在 `tests/runtime/test_ariavm.cpp`（闭包机制节）与 `tests/compile/test_codegen.cpp`（M4 节）。
+
+## 坑 #17：unwind 命中分支的关闭点 -- close 必须先于截栈与 push，且 handler 帧不退、不经 exit_frame
+
+**现象**：try 体内声明并被闭包捕获的局部（`try { var x = ...; ... } catch (e) {}`，x 的 upvalue 开指着本帧槽），若异常 unwind 命中 handler 时不关该区间开指，catch 及其后经闭包读 x 得脏值。
+
+**根因**：unwind 的两条丢弃路径不对称，命中分支不能搭 RETURN 的便车：
+- **未命中帧 / RETURN**：帧被 `exit_frame` 弹掉，关闭可内置其内（坑 #18）。
+- **命中 handler**：**帧不退**（执行点跳回本帧 catch 入口，handler 帧不弹），不经 `exit_frame`；丢弃的只有值栈区间 `[slots + stack_depth, top)`（坑 #6 的截断基准）。try 体被捕获局部恰好住在该区间（try 体局部自 slot `stack_depth` 起声明，坑 #10），必须显式关闭。
+
+且顺序**承重**：`close_upvalues(slots + stack_depth)` -> `truncate_stack` -> `push(载荷)`。载荷 push 落 catch 参数槽 == slot `stack_depth` == **弹弃区首槽**（坑 #10 的「值填槽」约定在此反咬一口）：若不先关，push 覆写被捕获局部槽，迁值读到的是异常值而非局部末值 -- 闭包此后读到的是 catch 参数。`truncate_stack` 本身只移 `top_` 不覆写，不承重；截栈后的**首个覆写点**就是 push，close 必须在它之前。
+
+**对策**：`unwind_` 命中分支三步定序（AriaVM.cpp）：`close_upvalues(slots + stack_depth)`（槽区存活时迁值，基准与坑 #6 截断同源）-> `truncate_stack` -> `push(take_error())`。测试：`UnwindHitClosesTryBodyUpvalue`（命中：try 体 upvalue 随丢弃区间迁移，catch 覆写后读 5）/`UnwindClosesCapturedUpvalue`（未命中：经 exit_frame 关闭，catch 覆写陈旧槽后仍读 43）。
+
+## 坑 #18：「帧退出 ⇒ 本帧区间开指全关」单点收口进 exit_frame + reset() 安全网
+
+**对策（设计决策）**：RETURN 与 unwind 未命中两条路径都要「先关再弹」。与其让各调用方自己配对（易漏一条），不如把 `close_upvalues(frame.slots)` **内置进 `exit_frame`**，与弹帧、值栈顶复位一体 -- 「帧退出 ⇒ 本帧区间开指全关」成为单点结构保证，调用方无法只做其一而破坏值栈/帧栈/开链三者的对应关系。
+
+**两个实现细节**：
+- `exit_frame` 内**先取 `slots` 再 close/pop**：`frames_.top()` 引用在 pop 后悬垂，不可先 pop 再读（与坑 #2 同族的引用生命周期纪律）。
+- 关闭须在**槽区仍存活**时（复位 `top_` 之前）完成：弹帧后调用者的后续 push 自 callee 槽起逐槽覆写已弃局部区，未迁值的被捕获局部会被踩掉（与坑 #17 的 push 覆写同因，方向相反：一个是 unwind 载荷，一个是 RETURN 后调用者的栈增长）。
+
+**reset() 安全网**：HALT 收场**不弹帧**（`case HALT: return` 直接出 run_；CodeGen 从不发射 HALT，它是手写字节码/嵌入方的逃生口），帧上开指残留在链上。`run()` 复用主上下文（REPL 逐行、测试多次 run），残留开指会跨 run 指入被覆写的栈区，再经幸存闭包（如挂在模块 globals 上的）读出脏值。故 `Movement::reset()` 先 `close_upvalues(buf_.data())`（全链）再清场 -- `run()` 前后各一次的清场即激活此安全网。
+
+## 坑 #19：CLOSE_UPVALUE 批量关闭语义（Lua OP_CLOSE 式）与发射时序的安全性前提
+
+**定夺**：作用域退出的显式关闭指令**不弹栈**（原计划为「关指顶槽并弹顶」`close_upvalues(top-1) + pop()`，实施中翻为）：`CLOSE_UPVALUE` 栈效应 `[] -> []`，语义对齐 Lua `OP_CLOSE` -- 关闭所有槽址 >= 当前栈顶的开 upvalue，弹栈全由前置 `POP_N` 承担。编译器发射：`POP_N`（整区一条，被捕获局部一并计数）-> 弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（发射点收口 `CodeGen::emit_pop_locals_to`，块/for/for-in per-iteration/break/continue/try 两 end_scope 共用）。
+
+**安全性前提（坑点本体）**：POP_N 之后弹区槽已位于新栈顶**之上**，close 的迁值仍读它们，安全靠三条：
+1. `POP_N` 与 `CLOSE_UPVALUE` 均无分配、无 GC 安全点，两指令间无任何覆写触发点；
+2. close 只读弹区不写弹区（迁值写各自 `ObjUpvalue.closed_`）；
+3. 外层帧槽址恒低于本帧（帧 slots 区间自底向上嵌套），故「槽址 >= 本帧新栈顶」的开 upvalue 只属弹区局部，不误关外层。
+
+**若将来在作用域出口的 POP_N 与 CLOSE_UPVALUE 之间插入任何 push（调试钩子/defer 类机制），前提 1 即破** -- 这是 defer 落地时（若走本发射模式）须重新核对的一条。
+
+**for-in per-iteration 出口**：每轮循环体结束都发 CLOSE_UPVALUE（若捕获），每轮关旧 upvalue、下一轮捕获全新一份 -- 「每轮新鲜绑定」的落地机制（测试 `ForInPerIterationCloseUpvalue`/`ForInNoCloseWithoutCapture` 钉位置与条件发射）。
+
+## 坑 #20：open upvalue 链的 GC 标根与值栈增长重绑
+
+**GC 悬垂（clox 已知坑）**：链上节点可能**仅被链本身引用** -- 闭包已死（不可达）而其 upvalue 仍在链上（要等作用域出口/帧退出才关）。GC 若不标开链，该节点被回收，链上留悬垂指针，后续 `close_upvalues`/`capture_upvalue` 走链即 use-after-free。故 vm_roots tracer 沿 `current_` 执行链逐 Movement 标开链各节点（「闭包已死而 upvalue 仍在链」防线；闭包可达时经其 trace 双标，mark 幂等无害）。测试：`OpenUpvalueChainSurvivesGcWithDeadClosure`（死闭包 + 开链节点跨 GC 存活）。
+
+**值栈增长重绑（第三类指针）**：open 态 upvalue 的 `location_` 指入值栈，`grow_stack_` 搬运后成 dangling。与 `top_`/各帧 `slots` 同法**偏移两趟**：搬运前走链把各 `location_ - old_base` 记入 `List<usize>`（链节点数不定，不能走帧那样的栈内定长数组；链序两趟间稳定，免数节点一趟），搬运后 `new_base + 偏移`逐节点重建。对 dangling 指针做指针减法是 UB，故偏移必须**搬运前**记、两趟中不碰旧指针。测试：`StackGrowsRebasesOpenUpvalues`（2048 值压栈两轮 2x 增长后 upvalue 重绑仍读对）。
 
 ---
 

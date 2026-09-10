@@ -1,0 +1,3 @@
+// 钉住：给未声明名赋值拒绝（赋值不隐式创建，必须先 var）——STORE_GLOBAL 运行期抛
+# UndefinedVariable，interpret 按码大类映射 CompileError（同 compile_undefined_global_read 注）。
+nope = 1;

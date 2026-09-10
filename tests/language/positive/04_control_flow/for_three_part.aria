@@ -1,0 +1,38 @@
+// 钉住：三段 for（init 可为 var 声明或表达式语句或空；condition/post 可空）。
+var sum = 0;
+for (var i = 1; i <= 5; i += 1) {
+    sum += i;
+}
+assert(sum == 15);
+# 空 condition 恒真 + break
+var j = 0;
+for (;;) {
+    j += 1;
+    if (j == 4) {
+        break;
+    }
+}
+assert(j == 4);
+# init 为表达式语句（先声明的全局）
+var k;
+for (k = 10; k > 7; k -= 1) {
+}
+assert(k == 7);
+# 空 init（; 开头）
+var m = 0;
+for (; m < 3; m += 1) {
+}
+assert(m == 3);
+# 空 post（循环体内自变）
+var p = 0;
+for (var q = 0; q < 2;) {
+    q += 1;
+    p += q;
+}
+assert(p == 3);
+# 一次都不执行的循环
+var never = 0;
+for (var z = 0; z < 0; z += 1) {
+    never += 1;
+}
+assert(never == 0);

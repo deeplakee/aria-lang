@@ -1,0 +1,36 @@
+// 钉住：break/continue 只作用于最内层循环。
+var log = 0;
+for (var i = 0; i < 3; i += 1) {
+    for (var j = 0; j < 3; j += 1) {
+        if (j == 1) {
+            break;          # 只跳出内层，外层继续
+        }
+        log = log * 10 + i * 3 + j;
+    }
+}
+# 内层每轮只跑 j=0 后 break：log = 0,3,6 依次进位 -> 0*10+0, 0*10+3, 3*10+6
+assert(log == 36);
+var outer_hits = 0;
+var inner_hits = 0;
+for (var i = 0; i < 3; i += 1) {
+    if (i == 1) {
+        continue;           # 跳过外层本轮
+    }
+    outer_hits += 1;
+    for (var j = 0; j < 2; j += 1) {
+        inner_hits += 1;
+    }
+}
+assert(outer_hits == 2);
+assert(inner_hits == 4);
+# while 嵌套 for：break 同样只退 for
+var w = 0;
+var runs = 0;
+while (w < 2) {
+    w += 1;
+    for (var q = 0; q < 10; q += 1) {
+        break;
+    }
+    runs += 1;              # break 后外层 while 继续
+}
+assert(runs == 2);

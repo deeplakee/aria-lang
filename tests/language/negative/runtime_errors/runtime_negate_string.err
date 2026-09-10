@@ -1,0 +1,2 @@
+Runtime: InvalidOperand negate requires a number, got String
+at <main> (

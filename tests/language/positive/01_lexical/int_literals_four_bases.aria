@@ -1,0 +1,13 @@
+// 钉住：int 字面量四种进制（十进制 / 0b / 0o / 0x，前缀大小写均可）与数字间 _ 分隔符。
+assert(42 == 42);
+assert(0b1010 == 10);
+assert(0B1101 == 13);
+assert(0o17 == 15);
+assert(0O775 == 509);
+assert(0xFF == 255);
+assert(0XaB == 171);
+assert(1_000_000 == 1000000);
+assert(1_2_3 == 123);
+assert(0b1010_1100 == 172);
+assert(0xF_F == 255);
+assert(0xFF + 0b1 == 256);

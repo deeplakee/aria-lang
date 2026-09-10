@@ -1,0 +1,2 @@
+// 钉住：int 模零为运行期错误 ModuloByZero。
+var x = 10 % 0;

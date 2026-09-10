@@ -1,0 +1,16 @@
+// 钉住：不同工厂调用产出独立实例——每次调用 make 产生新的局部环境与 upvalue。
+fun make_acc(start) {
+    var total = start;
+    return fun(delta) {
+        total += delta;
+        return total;
+    };
+}
+var a = make_acc(100);
+var b = make_acc(0);
+assert(a(1) == 101);
+assert(a(1) == 102);
+assert(b(10) == 10);   # b 不受 a 影响
+assert(b(10) == 20);
+assert(a(0) == 102);   # a 不受 b 影响
+assert(b(0) == 20);

@@ -1,0 +1,4 @@
+// 循环导入 A：体先打印，再导入 B（B 反向导入 A 时 A 尚未跑完 = 半初始化，不报错）。
+print("A:start");
+import "./b" as B;
+print("A:end");

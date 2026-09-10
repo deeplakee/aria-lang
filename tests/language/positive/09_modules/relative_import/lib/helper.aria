@@ -1,0 +1,2 @@
+// 辅助模块：被 relative_import/main.aria 以相对路径导入；体 run-once 时打印标记。
+print("helper body ran");

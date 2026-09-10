@@ -1,0 +1,2 @@
+// 钉住：表达式不能作赋值左值（1 + 2 = 3）为编译期错误 InvalidAssignmentTarget。
+1 + 2 = 3;

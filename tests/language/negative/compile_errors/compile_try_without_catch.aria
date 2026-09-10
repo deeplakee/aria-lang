@@ -1,0 +1,4 @@
+// 钉住：try 无 catch（finally 已裁撤）为编译期错误 TryWithoutHandler。
+try {
+    var x = 1;
+}

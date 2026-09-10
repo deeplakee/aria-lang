@@ -1,0 +1,16 @@
+// 钉住：闭包「捕获即引用」——计数器闭包多次调用共享并推进同一变量。
+fun make_counter() {
+    var n = 0;
+    return fun() {
+        n += 1;
+        return n;
+    };
+}
+var c = make_counter();
+assert(c() == 1);
+assert(c() == 2);
+assert(c() == 3);
+# 工厂返回的每个闭包独立持有各自的 n
+var d = make_counter();
+assert(d() == 1);
+assert(c() == 4);      # c 的计数不受 d 影响

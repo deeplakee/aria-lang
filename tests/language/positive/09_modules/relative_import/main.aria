@@ -1,0 +1,4 @@
+// 钉住：相对导入 "./lib/helper" 解析相对 main.aria 所在目录；import 语句处同步执行
+# 模块体（副作用在 import 返回前完成）；配 .out golden 钉执行顺序。
+import "./lib/helper" as H;
+print("main after import");

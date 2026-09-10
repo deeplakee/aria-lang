@@ -1,0 +1,19 @@
+// 钉住：== value_equal（Int/F64 跨类型数值相等、字符串按内容）vs
+// === value_identical（类型严格、1 === 1.0 为假）。Bool 不与 Int 跨类型相等。
+assert(1 == 1.0);
+assert(1.0 == 1);
+assert(1 != 2);
+assert(1 != 1.5);
+assert(1 === 1);
+assert(!(1 === 1.0));
+assert(1 !== 1.0);
+assert(!(1 !== 1));
+assert("a" == "a");
+assert("a" != "b");
+assert("a" === "a");   // 字符串 === 为对象同一性；字面量经 intern 驻留同对象故成立
+assert(nil == nil);
+assert(nil === nil);
+assert(true == true);
+assert(!(true == 1));  // Bool 与 Int 无跨类型相等
+assert(!(false == 0));
+assert(true === true);

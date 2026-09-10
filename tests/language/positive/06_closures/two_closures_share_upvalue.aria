@@ -1,0 +1,32 @@
+// 钉住：同一作用域产出的多个闭包共享同一 upvalue（一处写处处见）。
+fun make_pair() {
+    var shared = 0;
+    fun bump() {
+        shared += 1;
+        return shared;
+    }
+    fun read() {
+        return shared;
+    }
+    return fun() {
+        # 经一次性返回两个行为验证共享：先 bump 两次再读
+        bump();
+        bump();
+        return read();
+    };
+}
+var probe = make_pair();
+assert(probe() == 2);   # bump 两次后 read 见 2
+assert(probe() == 4);   # 状态跨调用保留
+# 更直接的共享验证：外层直接持有两个闭包
+var shared = 100;
+fun add10() {
+    shared += 10;
+}
+fun read_shared() {
+    return shared;
+}
+assert(read_shared() == 100);
+add10();
+add10();
+assert(read_shared() == 120);   # add10 的写对 read_shared 可见

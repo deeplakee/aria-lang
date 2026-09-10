@@ -1,0 +1,2 @@
+Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int
+at <main> (

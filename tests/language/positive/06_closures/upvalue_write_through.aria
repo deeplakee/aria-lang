@@ -1,0 +1,22 @@
+// 钉住：闭包内写 upvalue 穿透到外层局部——外层后续读同一变量见到闭包的写。
+fun run() {
+    var n = 10;
+    var mutate = fun() {
+        n += 5;
+    };
+    mutate();
+    mutate();
+    return n;           # 外层读：闭包的写穿透可见
+}
+assert(run() == 20);
+# 闭包写 + 外层写交替
+fun pingpong() {
+    var v = 0;
+    var add = fun(d) { v += d; };
+    v += 1;
+    add(10);
+    v *= 2;
+    add(-2);
+    return v;
+}
+assert(pingpong() == 20);   # (0+1+10)*2-2

@@ -1,0 +1,28 @@
+// 辅助模块：模块顶层 var 为模块全局，模块体内多个函数共享读写同一份；
+# 体跑完前的全部断言即对模块全局生命周期的自检（外部主模块暂无法经 H.x 访问
+# 模块成员——字段访问属 M5 未实装，本用例经模块体内部自检钉住语义）。
+var count = 0;
+fun bump() {
+    count += 1;
+    return count;
+}
+fun peek_times10() {
+    return count * 10;
+}
+assert(bump() == 1);
+assert(bump() == 2);
+assert(count == 2);
+assert(peek_times10() == 20);
+count = 5;                 # 顶层直接写
+assert(peek_times10() == 50);
+fun make_inc_closure() {
+    return fun() {
+        count += 1;        # 闭包穿透到模块全局
+        return count;
+    };
+}
+var inc = make_inc_closure();
+assert(inc() == 6);
+assert(inc() == 7);
+assert(count == 7);
+print("keeper ok");

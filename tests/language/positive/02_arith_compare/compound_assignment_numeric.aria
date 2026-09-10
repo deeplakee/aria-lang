@@ -1,0 +1,36 @@
+// 钉住：复合赋值 += -= *= /= %=（E1 op= E2 等价 E1 = E1 op E2）。
+var a = 1;
+a += 2;
+assert(a == 3);
+a -= 5;
+assert(a == -2);
+a *= -3;
+assert(a == 6);
+a /= 2;
+assert(a == 3);
+a %= 2;
+assert(a == 1);
+var f = 1.0;
+f += 0.5;
+assert(f == 1.5);
+f *= 2.0;
+assert(f == 3.0);
+f /= 4.0;
+assert(f == 0.75);
+var g = 7;
+g /= 2;      // int 复合除法同样向零截断
+assert(g == 3);
+g %= 2;
+assert(g == 1);
+// 左值只求值一次的复合赋值不变式见 compound-assignment-lowering 文档；
+// 嵌套副作用写法求值顺序不钉，语料只用单变量复合赋值。
+var seq = 0;
+fun next() {
+    seq += 1;
+    return seq;
+}
+var acc = 0;
+acc += next();
+acc += next();
+assert(acc == 1 + 2);
+assert(seq == 2);

@@ -1,0 +1,6 @@
+// 钉住：模块全局生命周期——辅助模块体的函数/闭包共享其模块全局（lib/keeper 内部断言）；
+# 再次导入（带 .aria 后缀写法）复用已加载模块，体不重跑（"keeper ok" 只出现一次）；
+# 配 .out golden。
+import "./lib/keeper" as K1;
+import "./lib/keeper.aria" as K2;
+print("main done");

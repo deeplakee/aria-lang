@@ -1,0 +1,25 @@
+// 钉住：assert 断言通过形态——单参与带自定义消息两用；失败抛异常可 catch。
+assert(true);
+assert(1 == 1);
+assert(1 == 1.0);          # value_equal 跨类型
+assert("a" != "b");
+assert(1 < 2);
+assert(true, "带消息的通过断言不输出不抛错");
+assert(1 == 1, "同上");
+# 失败路径：AssertionFailed 异常可被 catch（消息文本不钉，见负向层说明）
+try {
+    assert(false);
+    assert(false);         # 不可达
+} catch (e) {
+    assert(type(e) == "Exception");
+}
+try {
+    assert(1 == 2, "custom");
+} catch (e2) {
+    assert(type(e2) == "Exception");
+}
+# assert 结果不影响执行流
+var flow = 0;
+assert(true);
+flow = 1;
+assert(flow == 1);

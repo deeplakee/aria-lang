@@ -1,0 +1,38 @@
+// 钉住：异常跨帧 unwind——多层调用深处抛出，中间帧不接，顶层 catch 接住；
+# 中间帧的善后语句不执行（跳过），调用方后续语句恢复执行。
+fun level3() {
+    throw "deep";
+}
+fun level2() {
+    level3();
+    assert(false);       # 不可达：level3 抛出后本帧被 unwind
+}
+fun level1() {
+    level2();
+    assert(false);       # 不可达
+}
+try {
+    level1();
+} catch (e) {
+    assert(e == "deep");
+}
+# unwind 后执行流恢复：后续代码照常
+var after = 1;
+try {
+    level3();
+} catch (e) {
+    after += 1;
+}
+assert(after == 2);
+# 深递归中途抛出
+fun descend(n) {
+    if (n == 0) {
+        throw "bottom";
+    }
+    descend(n - 1);
+}
+try {
+    descend(50);
+} catch (e) {
+    assert(e == "bottom");
+}

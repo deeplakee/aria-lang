@@ -1,0 +1,13 @@
+// 钉住：算术/比较任一侧为 F64 即升浮点路径，结果恒 F64；双 Int 保持 Int。
+assert(type(1 + 2) == "Int");
+assert(type(1 + 2.0) == "F64");
+assert(type(1.0 + 2) == "F64");
+assert(type(3 * 4) == "Int");
+assert(type(3 * 4.0) == "F64");
+assert(1 + 2.5 == 3.5);
+assert(10 / 4 == 2);          // int/int 整除
+assert(10 / 4.0 == 2.5);      // 升浮点后真除
+assert(7 % 2 == 1);
+assert(7.5 % 2 == 1.5);       // fmod 语义
+assert(2 == 2.0);             // value_equal 跨类型数值相等
+assert(0.1 + 0.2 != 0.3);     // IEEE 二进制浮点固有误差

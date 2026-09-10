@@ -1,0 +1,39 @@
+// 钉住：throw 任意值，catch 绑原值保类型（String/Int/F64/Bool/nil）。
+try {
+    throw "boom";
+} catch (e) {
+    assert(type(e) == "String");
+    assert(e == "boom");
+}
+try {
+    throw 42;
+} catch (e) {
+    assert(type(e) == "Int");
+    assert(e == 42);
+}
+try {
+    throw 1.5;
+} catch (e) {
+    assert(type(e) == "F64");
+    assert(e == 1.5);
+}
+try {
+    throw true;
+} catch (e) {
+    assert(type(e) == "Bool");
+    assert(e == true);
+}
+try {
+    throw nil;
+} catch (e) {
+    assert(type(e) == "Nil");
+    assert(e == nil);
+}
+# throw 函数值也能原样回传（闭包按值捕获语义的行为钉子）
+var orig = fun() { return 99; };
+try {
+    throw orig;
+} catch (e) {
+    assert(e == orig);   # 同一闭包对象
+    assert(e() == 99);
+}

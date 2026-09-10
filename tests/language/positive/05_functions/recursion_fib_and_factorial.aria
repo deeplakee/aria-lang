@@ -1,0 +1,27 @@
+// 钉住：递归调用（帧上限 256 内安全量级）：fib(20) 与 fact(10)。
+fun fib(n) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+fun fact(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * fact(n - 1);
+}
+assert(fib(0) == 0);
+assert(fib(1) == 1);
+assert(fib(10) == 55);
+assert(fib(20) == 6765);
+assert(fact(5) == 120);
+assert(fact(10) == 3628800);
+# 深度 200 的线性递归（帧上限 256 内）
+fun count_down(n) {
+    if (n == 0) {
+        return 0;
+    }
+    return count_down(n - 1) + 1;
+}
+assert(count_down(200) == 200);

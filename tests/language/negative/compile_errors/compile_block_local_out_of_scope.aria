@@ -1,0 +1,6 @@
+// 钉住：块局部变量出块即不可见——出块后按名字解析落全局 miss，报 UndefinedVariable
+# （interpret 按码大类映射 CompileError，同 compile_undefined_global_read 注）。
+{
+    var q = 1;
+}
+print q;

@@ -1,0 +1,30 @@
+// 钉住：函数是一等值——赋给变量、作实参传递、作返回值。
+fun double(x) {
+    return x * 2;
+}
+fun inc(x) {
+    return x + 1;
+}
+fun apply(f, v) {       # 函数作参数
+    return f(v);
+}
+assert(apply(double, 21) == 42);
+assert(apply(inc, 41) == 42);
+var alias = double;     # 赋给变量
+assert(alias(8) == 16);
+assert(alias == double);      # 同一闭包对象，== 成立
+fun pick(which) {       # 按条件返回函数
+    if (which == "d") {
+        return double;
+    }
+    return inc;
+}
+assert(pick("d")(10) == 20);
+assert(pick("i")(10) == 11);
+fun compose(f, g) {     # 高阶：返回函数
+    return fun(x) {
+        return f(g(x));
+    };
+}
+var dinc = compose(double, inc);
+assert(dinc(5) == 12);  # double(inc(5))

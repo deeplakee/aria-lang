@@ -1,0 +1,21 @@
+// 综合：for + if/else 链 + 模运算 + 计数——fizzbuzz 1..15 分类统计。
+var fizz = 0;        # 仅 3 的倍数
+var buzz = 0;        # 仅 5 的倍数
+var fizzbuzz = 0;    # 15 的倍数
+var plain = 0;
+for (var n = 1; n <= 15; n += 1) {
+    if (n % 15 == 0) {
+        fizzbuzz += 1;
+    } else if (n % 3 == 0) {
+        fizz += 1;
+    } else if (n % 5 == 0) {
+        buzz += 1;
+    } else {
+        plain += 1;
+    }
+}
+assert(fizz == 4);        # 3,6,9,12
+assert(buzz == 2);        # 5,10
+assert(fizzbuzz == 1);    # 15
+assert(plain == 8);       # 15 - 4 - 2 - 1
+assert(fizz + buzz + fizzbuzz + plain == 15);

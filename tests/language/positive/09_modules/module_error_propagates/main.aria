@@ -1,0 +1,13 @@
+// 钉住：被导入模块体抛出的异常向 import 站点传播，可被调用方 try/catch 捕获且保类型；
+# 配 .out golden。
+var caught = false;
+try {
+    import "./lib/thrower" as T;
+    assert(false);      # 不可达：import 抛出
+} catch (e) {
+    assert(e == "boom from module");
+    assert(type(e) == "String");
+    caught = true;
+}
+assert(caught);
+print("caught module error");

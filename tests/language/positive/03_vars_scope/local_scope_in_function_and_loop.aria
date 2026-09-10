@@ -1,0 +1,21 @@
+// 钉住：函数体局部变量与循环体每次迭代的作用域——外层不可见内层局部。
+fun f() {
+    var local = 1;
+    {
+        var inner = 2;
+        local += inner;
+    }
+    return local;           // 出块后 inner 不可再引用
+}
+assert(f() == 3);
+var total = 0;
+for (var i = 0; i < 3; i += 1) {
+    var per = i * 10;       // 每轮迭代的循环体局部
+    total += per;
+}
+assert(total == 0 + 10 + 20);
+var outer = 0;
+for (var i = 0; i < 2; i += 1) {
+    outer += i;
+}
+assert(outer == 1);         // 循环变量 i 出循环后不可见，此处只有 outer

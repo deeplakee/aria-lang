@@ -1,0 +1,2 @@
+// 钉住：导入不存在的模块为运行期错误 ModuleNotFound（Resource 类）。
+import "definitely_missing_xyz" as N;

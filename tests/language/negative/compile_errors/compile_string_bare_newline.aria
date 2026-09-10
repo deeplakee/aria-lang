@@ -1,0 +1,3 @@
+// 钉住：字符串内裸换行非法（不跨行、未闭合）为编译期错误 UnterminatedString。
+var s = "line1
+line2";

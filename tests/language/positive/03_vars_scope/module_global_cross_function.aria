@@ -1,0 +1,22 @@
+// 钉住：模块顶层 var 即模块全局，函数内可读写（跨函数共享状态）。
+var count = 0;
+var label = "counter";
+fun bump() {
+    count += 1;
+    return count;
+}
+fun reset(n) {
+    count = n;
+}
+fun peek() {
+    return count * 10;
+}
+assert(count == 0);
+assert(bump() == 1);
+assert(bump() == 2);
+reset(40);
+assert(count == 40);
+assert(peek() == 400);
+assert(label == "counter");
+label = "renamed";          // 顶层也可改
+assert(label == "renamed");

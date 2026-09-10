@@ -1,0 +1,12 @@
+// 钉住：print 对 Int/Bool/nil 的渲染原文；配同名 .out 逐字节比对。
+print(42);
+print(-7);
+print(0);
+print(1_000_000);
+print(0xFF);
+print(true);
+print(false);
+print(nil);
+print(1 == 1.0);         # true
+print(nil == nil);       # true
+print(!0);               # false：0 为真

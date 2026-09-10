@@ -1,0 +1,20 @@
+// 钉住：|| 与 && 短路求值——右侧不求值（副作用函数不调用、错误不触发）。
+var calls = 0;
+fun bump() {
+    calls += 1;
+    return true;
+}
+var r1 = false && bump();   // && 右侧跳过
+assert(r1 == false);
+assert(calls == 0);
+var r2 = true || bump();    // || 右侧跳过
+assert(r2 == true);
+assert(calls == 0);
+var r3 = true && bump();    // 双方求值
+assert(r3 == true);
+assert(calls == 1);
+var r4 = false || bump();
+assert(r4 == true);
+assert(calls == 2);
+assert((false && 1 / 0 == 0) == false); // 右侧整除零永不求值：不报错且值为 false
+assert((true || 1 / 0 == 0) == true);

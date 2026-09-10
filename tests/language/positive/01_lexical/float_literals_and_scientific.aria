@@ -1,0 +1,16 @@
+// 钉住：float 字面量与科学计数。含点或指数即为 F64；无点无指数为 Int。
+// 1e2 无小数点但带指数 -> float；小数点两侧都必须有数字（.5/5. 非法见负向层）。
+assert(type(0.5) == "F64");
+assert(type(1.0) == "F64");
+assert(type(1e2) == "F64");
+assert(type(1) == "Int");
+assert(type(1.5e2) == "F64");
+assert(1e2 == 100.0);
+assert(1.5e2 == 150.0);
+assert(1e-1 == 0.1);
+assert(2.5e-2 == 0.025);
+assert(3.0e+2 == 300.0);
+assert(1_000.000_5 == 1000.0005);
+assert(3.14 > 3.13);
+assert(3.14 < 3.15);
+assert(1.0 == 1); // value_equal 跨 Int/F64 数值相等

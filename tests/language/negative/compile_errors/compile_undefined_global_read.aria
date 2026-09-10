@@ -1,0 +1,4 @@
+// 钉住：读未定义全局名。注：UndefinedVariable 虽在运行期 LOAD_GLOBAL 才抛，但
+# interpret 入口按错误码大类（Semantic）映射为 CompileError——本用例按当前
+# 确定性映射归 compile_errors；若未来 interpret 按「抛出时机」分类，此文件须移层。
+print nope;

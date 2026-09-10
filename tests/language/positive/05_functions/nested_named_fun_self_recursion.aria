@@ -1,0 +1,36 @@
+// 钉住：函数体内嵌套具名 fun 声明自捕获递归（经 upvalue 引用自身名字）。
+fun outer_fact(n) {
+    fun inner_fact(k) {      # 嵌套具名函数，体内引用自身
+        if (k <= 1) {
+            return 1;
+        }
+        return k * inner_fact(k - 1);
+    }
+    return inner_fact(n);
+}
+assert(outer_fact(5) == 120);
+assert(outer_fact(1) == 1);
+# 顶层具名函数同样自引用（模块全局路径）
+fun tri(n) {
+    if (n == 0) {
+        return 0;
+    }
+    return n + tri(n - 1);
+}
+assert(tri(10) == 55);
+# 相互递归：is_even/is_odd 经模块全局互调
+fun is_even(n) {
+    if (n == 0) {
+        return true;
+    }
+    return is_odd(n - 1);
+}
+fun is_odd(n) {
+    if (n == 0) {
+        return false;
+    }
+    return is_even(n - 1);
+}
+assert(is_even(10));
+assert(is_odd(7));
+assert(!is_even(7));

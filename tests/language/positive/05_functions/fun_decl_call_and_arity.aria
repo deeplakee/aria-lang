@@ -1,0 +1,19 @@
+// 钉住：fun 声明、带参调用、多参数按位对应。
+fun add(a, b) {
+    return a + b;
+}
+fun zero() {
+    return 0;
+}
+fun first(a, b, c) {
+    return a;
+}
+assert(add(2, 3) == 5);
+assert(add(-2, 2) == 0);
+assert(zero() == 0);
+assert(first(10, 20, 30) == 10);
+assert(add(add(1, 2), add(3, 4)) == 10);   // 嵌套调用
+fun greet(name) {
+    return name;
+}
+assert(greet("aria") == "aria");

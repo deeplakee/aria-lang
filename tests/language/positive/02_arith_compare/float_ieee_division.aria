@@ -1,0 +1,13 @@
+// 钉住：f64 按 IEEE 754——除零不是错误、产生 inf；inf 大于一切有限值。
+// （语言无 inf 字面量，经比较与运算间接断言。）
+var inf = 1.0 / 0.0;
+assert(type(inf) == "F64");
+assert(inf > 1e308);        // inf 大于一切有限数
+assert(inf > 0.0);
+assert(0.0 - inf < 0.0);    // -inf 小于一切有限数
+var z = 0.0 / 5.0;
+assert(z == 0.0);
+assert(5.0 / 2.0 == 2.5);
+assert(2.5 * 2.0 == 5.0);
+assert(type(1 / 2) == "Int");     // int/int 保持整除
+assert(type(1.0 / 2) == "F64");   // 任一侧 F64 即升浮点

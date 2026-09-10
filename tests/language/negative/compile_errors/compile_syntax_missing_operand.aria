@@ -1,0 +1,2 @@
+// 钉住：var 声明缺绑定名与初始化器（语法错 ExpectedIdentifier/ExpectedExpression 系）。
+var = ;

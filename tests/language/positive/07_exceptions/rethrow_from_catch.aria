@@ -1,0 +1,31 @@
+// 钉住：catch 内 re-throw——值原样传递（不包不吞），链式传播。
+try {
+    try {
+        throw "original";
+    } catch (e) {
+        assert(e == "original");
+        throw e;              # 原值 re-throw
+    }
+} catch (e2) {
+    assert(e2 == "original"); # 同一值穿透
+}
+# re-throw 内建异常：type 保持 Exception
+try {
+    try {
+        var x = 1 / 0;
+    } catch (e) {
+        throw e;
+    }
+} catch (e2) {
+    assert(type(e2) == "Exception");
+}
+# 换值抛（非严格 re-throw）：外层接新值
+try {
+    try {
+        throw 1;
+    } catch (e) {
+        throw 2;
+    }
+} catch (e3) {
+    assert(e3 == 2);
+}

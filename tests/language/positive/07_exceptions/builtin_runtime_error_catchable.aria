@@ -1,0 +1,26 @@
+// 钉住：内建运行期错误（VM 检测错误）可被 catch，载荷为 ObjException：
+# type(e) == "Exception"；未捕获时渲染含位置前缀的完整烘焙消息（见负向层 .err）。
+try {
+    var x = 1 / 0;
+    assert(false);       # 上一行必抛，不可达
+} catch (e) {
+    assert(type(e) == "Exception");
+}
+try {
+    var x = 1 % 0;
+} catch (e) {
+    assert(type(e) == "Exception");
+}
+try {
+    var x = nil + 1;
+} catch (e) {
+    assert(type(e) == "Exception");
+}
+# 异常值本身可比较/可传递
+var kept;
+try {
+    throw 7;
+} catch (e) {
+    kept = e;
+}
+assert(kept == 7);

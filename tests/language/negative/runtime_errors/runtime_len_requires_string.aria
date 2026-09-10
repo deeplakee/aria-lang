@@ -1,0 +1,2 @@
+// 钉住：len 仅接受 String——len(42) 为运行期错误 TypeMismatch。
+var n = len(42);

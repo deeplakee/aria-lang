@@ -1,0 +1,19 @@
+// 钉住：块级作用域与同名遮蔽——内层 var 遮蔽外层，出块恢复外层值。
+var x = 1;
+{
+    var x = 2;
+    assert(x == 2);
+    {
+        var x = 3;
+        assert(x == 3);
+    }
+    assert(x == 2);
+}
+assert(x == 1);
+var y = 10;
+{
+    y = 20;              // 无 var：写外层（无遮蔽）
+    var z = 5;
+    y += z;
+}
+assert(y == 25);

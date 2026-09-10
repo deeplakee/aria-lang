@@ -1,0 +1,12 @@
+// 钉住：var 多绑定逗号分隔；无初始化器绑 nil。
+var a = 1, b = 2, c;
+assert(a == 1);
+assert(b == 2);
+assert(c == nil);
+var d, e = 5;
+assert(d == nil);
+assert(e == 5);
+var x = 1, y = x + 1;   // 按序绑定，右侧可用先前绑定
+assert(y == 2);
+var f = fun() { return nil; }, g = f();
+assert(g == nil);

@@ -1,0 +1,29 @@
+// 钉住：try 体被捕获局部随 unwind 截栈迁移，闭包跨 unwind 存活且读到迁移后闭值。
+var keep;
+fun thrower() {
+    var v = 41;
+    keep = fun() {
+        return v;
+    };
+    throw "boom";       # keep 已捕获 v；unwind 丢弃 try 体区间时关闭 v
+}
+try {
+    thrower();
+} catch (e) {
+    assert(e == "boom");
+}
+assert(keep() == 41);   # 闭包存活，v 已迁值为 41
+# 更深一层：闭包在 catch 内仍可用
+assert(keep() == 41);
+fun survivor(n) {
+    var x = n * 2;
+    var f = fun() { return x + 1; };
+    try {
+        throw x;
+    } catch (e) {
+        assert(e == x); # catch 内可见局部
+    }
+    return f;           # 正常路径返回的闭包同样存活
+}
+var g = survivor(10);
+assert(g() == 21);

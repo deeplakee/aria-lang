@@ -1,0 +1,2 @@
+// 钉住：一元取负仅数值——-"abc" 为运行期错误 InvalidOperand。
+var x = -"abc";

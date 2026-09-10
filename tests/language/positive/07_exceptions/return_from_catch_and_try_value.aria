@@ -1,0 +1,33 @@
+// 钉住：catch 内 return 正常带值返回函数；try 体正常走完不进 catch。
+fun safe_div(a, b) {
+    try {
+        return a / b;
+    } catch (e) {
+        return -1;           # 除零兜底
+    }
+}
+assert(safe_div(10, 2) == 5);
+assert(safe_div(1, 0) == -1);
+assert(safe_div(-6, 3) == -2);
+fun through() {
+    try {
+        var x = 1;           # try 体正常结束
+    } catch (e) {
+        return "caught";
+    }
+    return "clean";          # 无异常走到这里
+}
+assert(through() == "clean");
+# throw 后的函数值与 try 外的局部状态
+var state = "start";
+fun guarded() {
+    try {
+        state = "in-try";
+        throw 1;
+    } catch (e) {
+        state = "in-catch";
+        return "returned";
+    }
+}
+assert(guarded() == "returned");
+assert(state == "in-catch");

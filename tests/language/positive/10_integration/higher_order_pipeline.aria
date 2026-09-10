@@ -1,0 +1,40 @@
+// 综合：一等函数 + 闭包 + 高阶组合——数值管道 map-double/add-one/reduce-sum 的
+# 手写等价实现（无容器，用函数层层传递）。
+fun compose(f, g) {
+    return fun(x) {
+        return f(g(x));
+    };
+}
+fun double_it(x) {
+    return x * 2;
+}
+fun inc_it(x) {
+    return x + 1;
+}
+var add_then_double = compose(double_it, inc_it);
+var double_then_add = compose(inc_it, double_it);
+assert(add_then_double(5) == 12);    # (5+1)*2
+assert(double_then_add(5) == 11);    # 5*2+1
+# 三层组合 + 立即应用
+assert(compose(double_it, compose(inc_it, inc_it))(10) == 24);   # (10+2)*2
+# 高阶 + 递归 + 异常的管道：除法器工厂在除零时抛、由外层统一兜底
+fun make_safe_div(n) {
+    return fun(d) {
+        if (d == 0) {
+            throw "div-by-zero";
+        }
+        return n / d;
+    };
+}
+var div100 = make_safe_div(100);
+assert(div100(4) == 25);
+assert(div100(-4) == -25);
+var rescued = 0;
+try {
+    div100(0);
+    assert(false);   # 不可达
+} catch (e) {
+    assert(e == "div-by-zero");
+    rescued = 1;
+}
+assert(rescued == 1);

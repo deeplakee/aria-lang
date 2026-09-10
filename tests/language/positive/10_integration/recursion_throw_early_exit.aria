@@ -1,0 +1,33 @@
+// 综合：递归 + throw 作跨帧提前返回——累加三角形数直到首超 100，throw 携带结果
+# 穿透全部递归帧，外层 catch 接住。1+2+...+14 == 105。
+fun tri_throw(i, acc) {
+    var next = acc + i;
+    if (next > 100) {
+        throw next;
+    }
+    return tri_throw(i + 1, next);
+}
+var answer = 0;
+try {
+    tri_throw(1, 0);
+    assert(false);   # 不可达：必抛
+} catch (e) {
+    answer = e;
+}
+assert(answer == 105);
+assert(type(answer) == "Int");
+# 同法：首个大于 50 的三角形数 55（1+...+10）
+fun tri_until(limit, i, acc) {
+    var next = acc + i;
+    if (next > limit) {
+        throw next;
+    }
+    return tri_until(limit, i + 1, next);
+}
+var got = 0;
+try {
+    tri_until(50, 1, 0);
+} catch (e2) {
+    got = e2;
+}
+assert(got == 55);

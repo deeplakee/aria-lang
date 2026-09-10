@@ -1,0 +1,21 @@
+// 钉住：前置 ++/-- 自增/自减，返回新值（可作表达式右值使用）。
+var i = 5;
+assert(++i == 6);
+assert(i == 6);
+assert(--i == 5);
+assert(i == 5);
+var j = ++i;      // 取新值
+assert(j == 6 && i == 6);
+var k = --i;
+assert(k == 5 && i == 5);
+var d = 1.5;
+++d;
+assert(d == 2.5);
+var neg = 0;
+--neg;
+assert(neg == -1);
+var sum = 0;
+for (var n = 0; n < 4; ++n) {   // ++ 作 for 后置表达式
+    sum += n;
+}
+assert(sum == 0 + 1 + 2 + 3);

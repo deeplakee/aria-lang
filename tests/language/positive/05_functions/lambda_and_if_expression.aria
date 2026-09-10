@@ -1,0 +1,26 @@
+// 钉住：lambda 表达式 fun(params){...} 与 if 表达式（分支为花括号包表达式）。
+var square = fun(x) {
+    return x * x;
+};
+assert(square(9) == 81);
+var make_adder = fun(n) {          # 返回 lambda 的 lambda
+    return fun(x) {
+        return x + n;
+    };
+};
+var add7 = make_adder(7);
+assert(add7(1) == 8);
+# if 表达式：两分支均为 { expression }，有值
+var abs = fun(v) {
+    return if (v < 0) { -v } else { v };
+};
+assert(abs(-5) == 5);
+assert(abs(5) == 5);
+assert(abs(0) == 0);
+var parity = fun(n) {
+    return if (n % 2 == 0) { "even" } else { "odd" };
+};
+assert(parity(4) == "even");
+assert(parity(9) == "odd");
+var nested = if (1 > 0) { if (2 > 1) { "y" } else { "n" } } else { "outer" };
+assert(nested == "y");

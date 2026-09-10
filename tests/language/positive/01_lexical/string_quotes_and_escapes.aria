@@ -1,0 +1,15 @@
+// 钉住：单/双引号字符串等价；全部合法转义（\" \' \\ \n \t \r \0 \u{...}）。
+// 转义经与 \u{...} 编码结果的内容相等交叉验证（不写同义反复断言）。
+assert("aria" == 'aria');
+assert(len("\n") == 1);
+assert(len("\t") == 1);
+assert(len("\r") == 1);
+assert(len("\0") == 1);
+assert("\\" == "\u{5C}");   // 反斜杠
+assert("\"" == "\u{22}");   // 双引号
+assert("'" == "\u{27}");    // 单引号
+assert("\u{41}" == "A");    // 大写 A
+assert("\u{e9}" == "é");    // 两字节码点
+assert("\n" != "\t");
+assert(len("a\tb") == 3);
+assert(len("") == 0);

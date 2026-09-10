@@ -1,0 +1,20 @@
+// 钉住：块出作用域后被捕获局部关闭（值迁入 upvalue），闭包仍可读；闭包跨 return 存活。
+var keep;
+fun capture() {
+    var v = 7;
+    {
+        var block_local = 40;
+        keep = fun() {          # 捕获函数局部 v 与块局部 block_local
+            return v + block_local;
+        };
+    }   # 出块：block_local 的开 upvalue 在此关闭（值 40 迁入 upvalue）
+    v = 8;                      # v 仍是开 upvalue（capture 帧未退），此写对闭包可见
+    return v;
+}
+assert(capture() == 8);
+assert(keep() == 48);           # v=8（后写可见）+ block_local=40（闭值）
+# 模块级直存闭包跨多个顶层语句存活
+var saved = fun(x) { return x * 3; };
+assert(saved(4) == 12);
+var saved2 = saved;
+assert(saved2(5) == 15);

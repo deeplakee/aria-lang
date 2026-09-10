@@ -1,0 +1,26 @@
+// 钉住：type() 返回值类型名——Int/F64/String/Nil/Bool/Closure/Exception。
+assert(type(1) == "Int");
+assert(type(-1) == "Int");
+assert(type(1.0) == "F64");
+assert(type(1e2) == "F64");
+assert(type(1.0 / 0.0) == "F64");     # inf 仍是 F64
+assert(type("s") == "String");
+assert(type("") == "String");
+assert(type(nil) == "Nil");
+assert(type(true) == "Bool");
+assert(type(false) == "Bool");
+assert(type(1) != type(1.0));
+fun f() { return 1; }
+assert(type(f) == "Closure");
+var lam = fun(x) { return x; };
+assert(type(lam) == "Closure");
+try {
+    var x = 1 / 0;
+} catch (e) {
+    assert(type(e) == "Exception");   # VM 装箱的运行期错误
+}
+try {
+    throw 1;
+} catch (e2) {
+    assert(type(e2) == "Int");        # 用户 throw 原值不包
+}

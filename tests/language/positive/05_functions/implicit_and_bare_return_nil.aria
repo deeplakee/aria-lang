@@ -1,0 +1,26 @@
+// 钉住：函数走到尾无 return 返 nil；裸 `return;` 也返 nil。
+fun no_return() {
+    var x = 1;
+    x += 1;
+}
+fun bare_return() {
+    return;
+}
+fun early_bare(flag) {
+    if (flag) {
+        return;        # 提前裸返回
+    }
+    return 5;
+}
+assert(no_return() == nil);
+assert(bare_return() == nil);
+assert(early_bare(true) == nil);
+assert(early_bare(false) == 5);
+fun returns_value(x) {
+    if (x > 0) {
+        return "pos";
+    }
+    return "neg";      # 所有路径都有值
+}
+assert(returns_value(1) == "pos");
+assert(returns_value(-1) == "neg");

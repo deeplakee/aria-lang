@@ -1,0 +1,5 @@
+// 钉住：break 不在循环内（含函数体内也不行）为编译期错误 BreakOutsideLoop。
+fun f() {
+    break;
+}
+break;

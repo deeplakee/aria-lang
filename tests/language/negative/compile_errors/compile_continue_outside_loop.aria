@@ -1,0 +1,2 @@
+// 钉住：continue 不在循环内为编译期错误 ContinueOutsideLoop。
+continue;

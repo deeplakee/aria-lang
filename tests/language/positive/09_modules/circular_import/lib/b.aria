@@ -1,0 +1,4 @@
+// 循环导入 B：反向导入 A，模块表命中正在 run-once 的半初始化 A 对象，直接复用不报错。
+print("B:start");
+import "./a" as A;
+print("B:end");

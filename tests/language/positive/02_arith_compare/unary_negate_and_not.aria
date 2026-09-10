@@ -1,0 +1,14 @@
+// 钉住：一元 - 与 !（右结合、仅数值取负/真值取反，Lua 风格真值）。
+assert(-5 == 0 - 5);
+assert(-(-5) == 5);
+assert(-2.5 == 0.0 - 2.5);
+assert(-(3 + 4) == -7);
+assert(!true == false);
+assert(!false == true);
+assert(!nil == true);      // nil 为假
+assert(!0 == false);       // 0 为真（Lua 风格）
+assert(!"" == false);      // 空串为真
+assert(!!42 == true);
+assert(!1.5 == false);
+assert(1 + -2 == -1);      // 一元负号在表达式中
+assert(-3 < -2);

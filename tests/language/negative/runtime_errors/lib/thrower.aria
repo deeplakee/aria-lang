@@ -1,0 +1,2 @@
+// 辅助模块：体抛出未捕获异常。
+throw "boom from module";

@@ -27,8 +27,7 @@ namespace aria {
     Opt<Value> Object::load_field(AriaVM& vm, ObjString* name) {
         // 未 override 的类型(ObjString/ObjClosure/...)无命名成员语义:文案与 miss 语义
         // 统一为「X has no member 'y'」(对象描述经 debug_repr,纯 C++ 惰性渲染契约)。
-        return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(),
-                       name->view());
+        return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
     bool Object::store_field(AriaVM& vm, ObjString* name, Value value) {

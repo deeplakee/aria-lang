@@ -1,15 +1,21 @@
 #include <gtest/gtest.h>
 
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/AriaVM.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
+using aria::AriaVM;
+using aria::ErrorCode;
 using aria::GC;
 using aria::new_bound_method;
 using aria::new_class;
@@ -21,11 +27,15 @@ using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjClass;
 using aria::ObjClosure;
+using aria::ObjException;
 using aria::ObjFunction;
 using aria::ObjInstance;
 using aria::ObjModule;
 using aria::ObjString;
+using aria::Pair;
+using aria::String;
 using aria::StringView;
+using aria::try_obj;
 using aria::u8;
 using aria::usize;
 using aria::Value;
@@ -60,6 +70,17 @@ namespace {
         return new_instance(gc, cls);
     }
 
+    // 寄存器取件拆两件(码, 烘焙消息):协议 fail 契约(load 族 nullopt / store 族 false
+    // ⟺ 已 fail)的白盒检视面 --载荷已入 vm 主上下文挂起错误寄存器,take_error 取出为
+    // ObjException。调用前寄存器须已有载荷(先断言协议失败信号)。
+    Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
+        auto payload = vm.main_context().take_error();
+        EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
+        const auto ex = try_obj<ObjException>(*payload);
+        EXPECT_NE(ex, nullptr);
+        return {ex->code(), String{ex->message()->view()}};
+    }
+
 } // namespace
 
 TEST(ObjInstance, Basics) {
@@ -70,29 +91,12 @@ TEST(ObjInstance, Basics) {
     EXPECT_TRUE(aria::Object::is<ObjInstance>(obj));
     EXPECT_EQ(obj->type(), aria::ObjType::INSTANCE);
     EXPECT_EQ(obj->cls(), cls);
-    EXPECT_EQ(obj->fields().size(), 0u); // 惰性:shell 建成即无表,字段全动态
+    // (原 fields().size()==0 惰性断言随整表访问器 fields() 删除退役:字段表不对外暴露,
+    //  空表行为由 LoadFieldBindsCachesAndReadsStatic 的 miss/不缓存断言行为级覆盖。)
 }
 
-TEST(ObjInstance, FieldsUpsertAndFind) {
-    GC   gc;
-    auto cls = make_class(gc, "Foo");
-    auto cg  = gc.make_guard(cls);
-    auto obj = make_instance(gc, cls);
-    cg.push(obj);
-
-    auto k = new_string(gc, "x");
-    cg.push(k);
-    auto v = new_string(gc, "a long field value string!!!");
-    cg.push(v);
-    auto* e = obj->fields().upsert(Value::from_obj(k));
-    ASSERT_NE(e, nullptr);
-    e->value = Value::from_obj(v);
-
-    auto* found = obj->fields().find(Value::from_obj(k));
-    ASSERT_NE(found, nullptr);
-    EXPECT_TRUE(value_identical(found->value, Value::from_obj(v)));
-    EXPECT_EQ(obj->fields().size(), 1u);
-}
+// (原 FieldsUpsertAndFind 用例随整表访问器 fields() 删除退役:raw upsert/find 往返属
+//  AriaHashTable 自身的已测语义;实例字段读写的协议级行为覆盖见 StoreFieldDynamicUpsert。)
 
 TEST(ObjInstance, ToString) {
     GC   gc;
@@ -112,9 +116,11 @@ TEST(ObjInstance, DebugRender) {
 
 // stress GC:实例为唯一根,其类(经 class_)、字段长串、缓存 bound(经 fields 值级联,再经
 // bound.trace 级联其 method 闭包与 receiver 即本实例)全部存活。守卫全部作用域弹出,断言压在
-// trace 覆盖上(漏标即丢)。
+// trace 覆盖上(漏标即丢)。栽种走真实协议路径(字段经 store_field、缓存经 load_field 现场
+// 绑定 --整表访问器 fields() 已删,raw upsert 栽种随之退役)。
 TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
-    GC gc;
+    AriaVM vm;
+    auto&  gc = vm.gc();
     gc.set_stress(true);
 
     ObjClass*       cls    = nullptr;
@@ -132,18 +138,18 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
         g.push(obj);
         method = make_closure(gc, "m", 0); // 建时 collect:cls/obj 经守卫存活
         g.push(method);
-        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(obj)); // 建时 collect:method/obj 经守卫存活
-        g.push(bound);
         bkey = new_string(gc, "m"); // 建时 collect:在根者存活
         g.push(bkey);
-        auto* bslot  = obj->fields().upsert(Value::from_obj(bkey)); // 建表/rehash 非 GC 点(trivial 分配)
-        bslot->value = Value::from_obj(bound);                      // bound-method 缓存写入 fields
-        fkey         = new_string(gc, "x");
+        cls->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
+        auto r = obj->load_field(vm, bkey);            // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
+        ASSERT_TRUE(r.has_value());                    //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
+        bound = aria::Object::try_as<ObjBoundMethod>(r->as_obj());
+        ASSERT_NE(bound, nullptr);
+        fkey = new_string(gc, "x");
         g.push(fkey);
         fval = new_string(gc, "a long field value string!!!"); // 建时 collect:在根者存活
         g.push(fval);
-        auto* fslot  = obj->fields().upsert(Value::from_obj(fkey));
-        fslot->value = Value::from_obj(fval);
+        EXPECT_TRUE(obj->store_field(vm, fkey, Value::from_obj(fval))); // 真字段写入
         // 作用域退出:全部临时根弹出,cls/method/bound/fval 此后仅经 obj.trace 可达
     }
     auto        guard   = gc.make_guard(obj);        // 只根实例
@@ -155,9 +161,14 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     EXPECT_EQ(obj->cls(), cls);
     EXPECT_EQ(cls->name()->view(), "Foo"); // 类经实例存活,其 name_ 级联存活
     EXPECT_EQ(fval->view(), "a long field value string!!!");
-    EXPECT_TRUE(value_identical(obj->fields().find(Value::from_obj(bkey))->value, Value::from_obj(bound)));
-    EXPECT_TRUE(value_identical(obj->fields().find(Value::from_obj(fkey))->value, Value::from_obj(fval)));
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method))); // bound 经 fields 级联存活,method/闭包 fn 全链随活
+    auto bfound = obj->load_field(vm, bkey); // fields 命中:collect 后缓存 bound 原样直取
+    ASSERT_TRUE(bfound.has_value());
+    EXPECT_TRUE(value_identical(*bfound, Value::from_obj(bound)));
+    auto ffound = obj->load_field(vm, fkey);
+    ASSERT_TRUE(ffound.has_value());
+    EXPECT_TRUE(value_identical(*ffound, Value::from_obj(fval)));
+    EXPECT_TRUE(value_identical(bound->method(),
+                                Value::from_obj(method))); // bound 经 fields 级联存活,method/闭包 fn 全链随活
 }
 
 // 未根实例被 sweep(壳 + 其 class_/fields 值若无他根一并回收)。
@@ -168,4 +179,94 @@ TEST(ObjInstance, UnrootedInstanceSwept) {
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
+}
+
+// ---- 成员访问协议 override(2026-09-10 整改:绑定 + 缓存逻辑自 VM helper 迁入本类型;
+//      二次整改:错误通道翻 vm.fail 模型,miss 文案由 override 就地烘焙)----
+
+// load_field 分流:fields 命中优先(铁则 3)→ 委托类协议(ObjClass::load_field 沿链读
+// 穿透直读,类协议不绑定不缓存):可调用值绑 this 并回填 fields 缓存(铁则 1,快照语义)、
+// 非可调用静态值直读不缓存、全链 miss 随类措辞 fail(nullopt ⟺ 已 fail,本 override 只透传)。
+TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+
+    auto cls = make_class(gc, "Foo");
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
+
+    // 类表静态值:直读、不缓存 --行为钉法:类上覆写后实例再读到新值(若被缓存则读陈旧)。
+    auto vkey = new_string(gc, "sv");
+    guard.push(vkey);
+    auto sv = new_string(gc, "a static value string!!!!!!!!!!");
+    guard.push(sv);
+    cls->set_field(vkey, Value::from_obj(sv));
+    auto r = inst->load_field(vm, vkey);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv)));
+    auto sv2  = new_string(gc, "a static value string rewritten!!");
+    auto sv2g = gc.make_guard(sv2);
+    cls->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新(不缓存 ⟹ 实例再读见新值)
+    r = inst->load_field(vm, vkey);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv2))); // 无陈旧缓存(铁则 1)
+
+    // 类表方法(闭包):绑定 ObjBoundMethod(receiver=inst)并回填 fields 缓存。
+    auto mkey = new_string(gc, "m");
+    guard.push(mkey);
+    auto method = make_closure(gc, "m", 0);
+    guard.push(method);
+    cls->set_field(mkey, Value::from_obj(method));
+    r = inst->load_field(vm, mkey);
+    ASSERT_TRUE(r.has_value());
+    auto bound = aria::Object::try_as<ObjBoundMethod>(r->as_obj());
+    ASSERT_NE(bound, nullptr);
+    EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst))); // this=本实例
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+
+    // 二次读同键:fields 命中优先,直取缓存项(不再新建绑定)。
+    auto r2 = inst->load_field(vm, mkey);
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_TRUE(value_identical(*r2, *r)); // 同一缓存项(=== 指针相等)
+
+    // 真字段遮蔽同名方法与缓存项(铁则 3):this.m = 9 走 store_field 后读到字段值
+    //(整表访问器已删,原 raw upsert 栽种改为协议写路径,语义等价)。
+    EXPECT_TRUE(inst->store_field(vm, mkey, Value::from_int(9)));
+    r = inst->load_field(vm, mkey);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->as_int(), 9);
+
+    // 全链 miss:委托类协议,随类措辞 fail(UndefinedProperty,消息含宿主类 debug 渲染;
+    // 实例不再自持措辞 --成员表在类链上,文案随宿主)。
+    auto miss = new_string(gc, "missing");
+    guard.push(miss);
+    EXPECT_FALSE(inst->load_field(vm, miss).has_value());
+    auto [code, msg] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_TRUE(msg.contains("<class Foo> has no member 'missing'"));
+}
+
+// store_field:实例字段动态 upsert,永不失败(恒 true;false ⟺ 已 fail)。
+TEST(ObjInstance, StoreFieldDynamicUpsert) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+
+    auto cls = make_class(gc, "Foo");
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
+
+    auto k = new_string(gc, "x");
+    guard.push(k);
+    EXPECT_TRUE(inst->store_field(vm, k, Value::from_int(1))); // 即创建
+    auto r = inst->load_field(vm, k);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->as_int(), 1);
+    EXPECT_TRUE(inst->store_field(vm, k, Value::from_int(2))); // 原槽更新
+    r = inst->load_field(vm, k);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->as_int(), 2);
 }

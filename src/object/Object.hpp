@@ -235,9 +235,8 @@ namespace aria {
 
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):value 为赋的值。
         // 返回 bool:false ⟺ 已 fail。基类默认:本类型不支持成员赋值,报 "type X does
-        // not support field access";ObjClass 全链 miss 拒新增,报 "cannot set member ...
-        // (static members must be declared with var)"(无 monkey-patch,创建必须经 var
-        // 声明路径);ObjInstance 动态字段 upsert 永不失败(恒 true)。
+        // not support field access";ObjClass 落本类自身表恒成功(继承名/新名新建键遮蔽,
+        // 动态新增允许,2026-09-11 改定);ObjInstance 动态字段 upsert 永不失败(恒 true)。
         [[nodiscard]]
         virtual bool store_field(AriaVM& vm, ObjString* name, Value value);
 

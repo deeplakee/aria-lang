@@ -7,6 +7,11 @@
 #include "common.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
+// Value(成员访问/运算符协议虚函数的签名需要完整类型):Value.hpp -> boxing 头 -> common.hpp,
+// 不依赖 Object,无 include 环;且子类型头早已经 value/AriaHashTable.hpp 等拉入 Value,对基类
+// 头的暴露者非新增。突破旧「Object.hpp 不 include Value.hpp」约束的代价经评估为零(2026-09-10
+// 虚函数协议上基类起)。
+#include "value/Value.hpp"
 
 namespace aria {
 
@@ -82,6 +87,16 @@ namespace aria {
     // GC 前向声明：Object 的虚函数 trace 以 GC& 为形参、虚析构 ~Object() 无参,此处仅需不完整类型即可。
     // 完整定义见 memory/GC.hpp(子类 .cpp include 后才能调用 GC 方法)。
     class GC;
+
+    // ObjString 前向声明:成员访问协议虚函数以 ObjString* 为形参,头内仅需不完整类型
+    //(子类型 override 的实现见各自 .cpp,届时 include ObjString.hpp)。
+    class ObjString;
+
+    // AriaVM 前向声明:成员/下标访问协议与算术协议的虚函数以 AriaVM& 为首参(错误通道
+    // 句柄,2026-09-10 二次整改),头内仅需不完整类型 -- 同 ObjNativeFn 的 NativeFn 签名
+    // 先例;基类默认体定义在 Object.cpp(vm.fail 是 AriaVM.hpp 内模板,而 AriaVM.hpp 经
+    // ObjException.hpp 依赖本头、两头互不 include,出声明避环)。
+    class AriaVM;
 
     class Object {
     public:
@@ -177,6 +192,108 @@ namespace aria {
         virtual String to_string() const {
             return debug_repr();
         }
+
+        ////////////////////////////
+        // 成员/下标访问协议(LOAD/STORE_FIELD 族与未来 LOAD/STORE_INDEX 的分派点)
+        //
+        // 命名成员/下标的读写统一经对象虚函数协议分派,VM 不按子类型 switch 分型 --内建类型与
+        // 用户类的成员语义在各自 override 里一次收口,新增承载类型零 VM 改动(M5 阶段 2
+        // 整改定案;错误通道随 2026-09-10 二次整改翻为下述 vm.fail 模型,原「类别返回 +
+        // VM 统一烘焙」契约与三态 StoreResult 一并退役)。
+        //
+        // 错误通道(对齐 native fn 契约,同构 CPython PyErr 模型):签名收 AriaVM& 单一状态
+        // 句柄(分配经 vm.gc(),报错一行 vm.fail(code, fmt, ...)),协议失败时**自己 fail**
+        // --错误载荷直接入 *current_ 挂起错误寄存器,构造即入寄存器即被 VM 根 tracer 标根,
+        // 无「返回值在途」的白色无根窗口;**返回值只留信号**:load 族返回 Opt<Value>,
+        // nullopt ⟺ 已 fail(somed 才是命中,命中值为 nil 亦 somed);store 族返回 bool,
+        // false ⟺ 已 fail。与 native fn 的 bool 契约、call_value 族同构,runtime 在途错误
+        // 自此只有寄存器一种载体。失败出口经 FailSignal 哨兵一行化:override 一律
+        // `return vm.fail(...);`(fail 返回 FailSignal,按所在函数返回类型隐式转换 --
+        // Opt 站点转 nullopt / bool 站点转 false / 指针站点转 nullptr,契约拼写由签名决定、
+        // 写法全族统一)。
+        //   - 消息文案由最知道语境的一方**就地烘焙**(越界含长度/键错误含键值,与 CPython
+        //     listobject.c 就地拼消息同构):各 override 用自身细节拼,不经 VM 类别映射;
+        //     组合场景(实例委托类链、super 站点)直接**委托协议** ObjClass::load_field --
+        //     命中值原样回传、miss 的类措辞 fail 随协议传播(成员表在类链上,文案随宿主,
+        //     组合方不重复烘焙)。
+        //   - 契约纪律:①fail 文案渲染值一律走非重入的 format_value_debug,不用可重载的
+        //     to_string(防未来语言级 __str__ 重入 VM);②至多 fail 一次、fail 后立即返回;
+        //     ③协议内可分配(绑定/装箱),调用方(VM)须保证接收者「栈即根」(peek 不弹)
+        //     跨协议内的 GC 点。
+        //////////////////////////
+
+        // 读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):name 为 intern 串
+        // (=== 同指针查表)。返回 Opt<Value>:somed = 读取结果(值为 nil 亦 somed);
+        // nullopt = 已 fail。基类默认(本类型无命名成员语义):报 UndefinedProperty
+        // "X has no member 'y'"(对象描述经 debug_repr)。已落地 override
+        // (M5):ObjInstance(fields 命中优先,未命中委托类协议 load_field 沿链读穿透,
+        // 可调用值绑 this
+        // 并回填 fields 缓存,miss 随类措辞 fail)、ObjClass(沿链读穿透直读,不绑定不
+        // 缓存,miss 以类措辞 fail)。基类默认体定义在 Object.cpp(见上 AriaVM 前向声明)。
+        [[nodiscard]]
+        virtual Opt<Value> load_field(AriaVM& vm, ObjString* name);
+
+        // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):value 为赋的值。
+        // 返回 bool:false ⟺ 已 fail。基类默认:本类型不支持成员赋值,报 "type X does
+        // not support field access";ObjClass 全链 miss 拒新增,报 "cannot set member ...
+        // (static members must be declared with var)"(无 monkey-patch,创建必须经 var
+        // 声明路径);ObjInstance 动态字段 upsert 永不失败(恒 true)。
+        [[nodiscard]]
+        virtual bool store_field(AriaVM& vm, ObjString* name, Value value);
+
+        // 读取下标成员(LOAD_INDEX 接线留容器里程碑):key 任意 Value(容器自定合法性与
+        // 语义,如 list 整数下标 / map 任意键)。**备置 API,暂无 override 与调用方**--
+        // 二次整改后的接线形态:容器 override 直接 vm.fail 自选错误码(IndexOutOfBounds /
+        // KeyError 等已预置),错误细节(越界的下标值与容器长度)就地拼进文案,不再需要
+        // 「类别 + VM 烘焙」的中间协议。基类默认:本类型不支持下标读取,报 TypeMismatch
+        // "type X does not support subscript access"。
+        [[nodiscard]]
+        virtual Opt<Value> load_index(AriaVM& vm, Value key);
+
+        // 写入下标成员(STORE_INDEX 接线留容器里程碑):契约同 store_field(false ⟺ 已
+        // fail)。备置 API,基类默认同 load_index 报不支持。
+        [[nodiscard]]
+        virtual bool store_index(AriaVM& vm, Value key, Value value);
+
+        //////////////////////////
+        // 可重载运算符协议(算术虚函数族,备置 API)
+        //
+        // 算术运算的虚函数协议:lhs = this(本对象)、rhs = 另一操作数(任意 Value);
+        // const 纯计算不改接收者。错误通道契约同成员协议(2026-09-10 二次整改):签名收
+        // AriaVM&(分配 vm.gc() / 报错 vm.fail),返回 Opt<Value>,nullopt ⟺ 已 fail。
+        // div/mod 的整除零/f64 IEEE 等数值细节属 VM 原语路径,重载方自定语义。
+        //
+        // **备置 API(2026-09-10 定案,二次整改随错误通道翻型):现在落地接口,暂无子类
+        // override、暂无调用方**--VM 算术指令(run_binary_numeric)的接法留到容器里程碑/
+        // 用户类运算符重载立项时:原语走原数值路径,对象操作数经本协议虚分派(对象在左直调;
+        // 在右的反射接法届时设计)。现在备好接口,避免重蹈「LOAD_FIELD 忘了规划虚函数、
+        // VM 长出一组分型辅助方法」的覆辙。
+        // 接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)--协议 miss 路径 fail 与结果
+        // 路径分配(如未来 list+list 新建)均触 maybe_collect,弹栈裸局部会被回收(与
+        // equals 的 GC-pure 契约相对:后者在弹栈裸局部上被 EQUAL 调用、永不分配,是协议
+        // 边界上的反例参照)。基类默认体定义在 Object.cpp,一律报 TypeMismatch
+        // "operator '...' requires numbers, got X and Y"(与 VM 原语路径文案一致)、
+        // op_negate 报 InvalidOperand "negate requires a number"。
+        //////////////////////////
+
+        [[nodiscard]]
+        virtual Opt<Value> op_add(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_sub(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_mul(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_div(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_mod(AriaVM& vm, Value rhs) const;
+
+        // 一元取负(-x):无 rhs。基类默认报 InvalidOperand "negate requires a number"。
+        [[nodiscard]]
+        virtual Opt<Value> op_negate(AriaVM& vm) const;
 
 
         ////////////////////////////

@@ -1,13 +1,40 @@
 #include <gtest/gtest.h>
 
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/AriaVM.hpp"
+#include "value/ObjBridge.hpp"
+#include "value/Value.hpp"
 
+using aria::AriaVM;
+using aria::ErrorCode;
 using aria::GC;
 using aria::new_string;
+using aria::ObjException;
 using aria::ObjFunction;
 using aria::ObjString;
+using aria::Pair;
+using aria::String;
+using aria::try_obj;
+using aria::Value;
+
+namespace {
+
+    // 寄存器取件拆两件(码, 烘焙消息):协议 fail 契约(load 族 nullopt / store 族 false
+    // ⟺ 已 fail)的白盒检视面 --载荷已入 vm 主上下文挂起错误寄存器,take_error 取出为
+    // ObjException。
+    Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
+        auto payload = vm.main_context().take_error();
+        EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
+        const auto ex = try_obj<ObjException>(*payload);
+        EXPECT_NE(ex, nullptr);
+        return {ex->code(), String{ex->message()->view()}};
+    }
+
+} // namespace
 
 // Object::try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 null 入参)。
 
@@ -34,4 +61,63 @@ TEST(ObjectTryAs, ConstOverload) {
     const aria::Object* o = s;
     EXPECT_EQ(aria::Object::try_as<ObjString>(o), s);
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
+}
+
+// 成员/下标访问协议与运算符协议的**基类默认**(2026-09-10 二次整改后形态):未 override 的
+// 子类型(ObjString 等)对协议操作一律 vm.fail 入寄存器后返失败信号 --load 族 nullopt、
+// store 族 false,消息由默认体就地烘焙(与 VM 原语路径 phrasing 一致)。load_index/
+// store_index 与 op_* 族同为备置 API(暂无 override/调用方,接线留容器里程碑),本测试钉住
+// 默认形态(码 + 文案子串)防止将来基类签名漂移。
+
+TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
+    AriaVM vm; // 协议签名收 AriaVM&(二次整改):分配经 vm.gc()、报错经 vm.fail
+    auto&  gc = vm.gc();
+    auto   s  = new_string(gc, "hello");
+    auto   sg = gc.make_guard(s);
+    auto   k  = new_string(gc, "len");
+    auto   kg = gc.make_guard(k);
+
+    // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
+    // store = "type X does not support field access"。
+    EXPECT_FALSE(s->load_field(vm, k).has_value());
+    auto [code, msg] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_TRUE(msg.contains("has no member 'len'"));
+
+    EXPECT_FALSE(s->store_field(vm, k, Value::from_int(1)));
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_TRUE(msg.contains("type String does not support field access"));
+
+    // 下标协议默认(备置):"type X does not support subscript access"。
+    EXPECT_FALSE(s->load_index(vm, Value::from_int(0)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_TRUE(msg.contains("type String does not support subscript access"));
+
+    EXPECT_FALSE(s->store_index(vm, Value::from_int(0), Value::from_int(1)));
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_TRUE(msg.contains("type String does not support subscript access"));
+
+    // 算术协议默认(备置):"operator '+' requires numbers, got X and Y"(与 VM 原语路径
+    // run_binary_numeric 的 TypeMismatch 文案一致)、一元 "negate requires a number, got X"。
+    EXPECT_FALSE(s->op_add(vm, Value::from_int(1)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_TRUE(msg.contains("operator '+' requires numbers, got String and Int"));
+
+    EXPECT_FALSE(s->op_sub(vm, Value::from_int(1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
+    EXPECT_FALSE(s->op_mul(vm, Value::from_int(1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
+    EXPECT_FALSE(s->op_div(vm, Value::from_int(1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
+    EXPECT_FALSE(s->op_mod(vm, Value::from_int(1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
+
+    EXPECT_FALSE(s->op_negate(vm).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::InvalidOperand);
+    EXPECT_TRUE(msg.contains("negate requires a number, got String"));
 }

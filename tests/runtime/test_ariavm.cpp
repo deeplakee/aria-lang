@@ -984,7 +984,9 @@ TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
     EXPECT_EQ(x_entry->value.as_int(), 42);
 }
 
-// 被导入模块编译期错误经 Error 原样透传(含其文件位置):helper 有语法错 -> interpret 返 CompileError。
+// 被导入模块编译期错误经 Error 原样透传(含其文件位置):helper 有语法错 -> interpret 返 RuntimeError。
+// 分类按失败阶段而非错误码大类:错误在主模块执行期的 IMPORT 站点浮现(经异常通道传播、可被 try/catch
+// 捕获),主入口自身编译已成功 -- "可 catch 的错误"不构成 CompileError(2026-09 决策,见 runtime.md)。
 TEST_F(AriaVMStress, ImportModuleCompileErrorPropagates) {
 
     vm.set_source_roots({});
@@ -993,7 +995,7 @@ TEST_F(AriaVMStress, ImportModuleCompileErrorPropagates) {
     const auto main_path = write_aria(base, "main.aria", "import \"./helper\" as H;");
 
     const auto result = vm.interpret_from_path(main_path);
-    EXPECT_EQ(result, aria::InterpretResult::CompileError);
+    EXPECT_EQ(result, aria::InterpretResult::RuntimeError);
 }
 
 // 被导入模块运行期错误(模块体 run-once 期间)经 Error 原样透传:helper `var x = 1/0;`(整除零)

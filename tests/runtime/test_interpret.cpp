@@ -50,6 +50,32 @@ TEST(Interpret, StringNotImplementedIsCompileError) {
     EXPECT_EQ(vm.interpret_from_src("print [1, 2, 3];"), InterpretResult::CompileError);
 }
 
+// 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable（码已归 Runtime 类）->
+// RuntimeError。回归测试：interpret 此前按错误码大类映射，该码当时归 Semantic 被错分为 CompileError；
+// 2026-09 改为按失败阶段分类后归 RuntimeError，消息前缀同步翻 "Runtime:"。
+TEST(Interpret, StringRuntimeUndefinedVariableIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("print nope;"), InterpretResult::RuntimeError);
+}
+
+// 字符串源：给未声明名赋值 -> 运行期 STORE_GLOBAL miss 抛 UndefinedVariable（赋值不隐式创建）->
+// RuntimeError（同上，此前被按码大类错分 CompileError）。
+TEST(Interpret, StringRuntimeUndeclaredAssignmentIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("nope = 1;"), InterpretResult::RuntimeError);
+}
+
+// 路径源：被导入模块编译期错误在主模块执行期的 IMPORT 站点浮现（经异常通道传播、可被 try/catch
+// 捕获）-> RuntimeError。此前按码大类（Syntax）被错分 CompileError；2026-09 起按失败阶段分类。
+TEST(Interpret, PathImportedModuleCompileErrorIsRuntimeError) {
+    std::filesystem::create_directories(std::filesystem::path{testing::TempDir()} / "imported_ce");
+    const auto main_path = write_tmp_aria("imported_ce/main.aria", "import \"./helper\" as H;");
+    write_tmp_aria("imported_ce/helper.aria", "var = 5;"); // 语法错:var 后期望标识符
+    AriaVM vm;
+    vm.set_source_roots({});
+    EXPECT_EQ(vm.interpret_from_path(main_path), InterpretResult::RuntimeError);
+}
+
 // 路径源：合法文件 -> Ok。
 TEST(Interpret, PathOk) {
     const auto path = write_tmp_aria("ok.aria", "return 7 * 6;");

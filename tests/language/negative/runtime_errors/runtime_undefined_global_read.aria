@@ -1,0 +1,4 @@
+// 钉住：读未定义全局名为运行期错误（LOAD_GLOBAL 查模块 globals 与 builtins 双 miss 抛
+# UndefinedVariable，码归 Runtime 类）。历史上该码归 Semantic 类、interpret 按码大类把这类
+# 运行期错误错分为 CompileError，2026-09 修正：码移 Runtime 类 + interpret 按失败阶段分类。
+print nope;

@@ -68,7 +68,7 @@ struct ExecOutcome {
 // M1 实现简化:run() 返两态 Result<Value, Error>(无 Yielded);M6 引入 yield 后扩为本三态 ExecOutcome。
 ```
 
-协程采用**单循环切换模型**(M6 定稿,详见 §4.9):`resume`/`yield` 是原生函数,换走 `current_` 后返回,CALL 分支善后点发现切换、回到循环顶,循环自然开始驱动新上下文--**不重入 `run_()`**,任一时刻整个 VM 只有一个循环在执行。`run()` 三态里的 `Yielded` 只在根上下文挂起(无人可返回)时出现。
+协程采用**单循环切换模型**(M6 定稿,详见 §4.9):`resume`/`yield` 是原生函数,换走 `current_` 后返回,CALL 分支善后点发现切换、回到循环顶,循环自然开始驱动新上下文--**不重入 `dispatch_loop()`**,任一时刻整个 VM 只有一个循环在执行。`run()` 三态里的 `Yielded` 只在根上下文挂起(无人可返回)时出现。
 
 ## 4. 关键决策
 
@@ -90,10 +90,10 @@ struct ExecOutcome {
 
 ### 4.5 异常衔接(与 CLAUDE.md「错误处理」第 2 条一致;M3 定稿)
 
-- **内部传播统一走寄存器 + unwind(M3 定稿)**:op 处理局部失败不再直接 `return runtime_err(...)` 短路出 run_,而是就地 `raise`(装箱点一步烘位置装成 ObjException,不经 Error 对象中转,见 §4.8/坑点文档 #15)-> 存当前上下文挂起寄存器后调 `unwind_` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点就地两步、与 CALL 失败善后同形;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind_`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。约 25 处 `return runtime_err(...)` 站点统一改此模式(坑点文档 #11)。
-- `unwind_()` 自最内帧向外遍历帧链(**只查当前上下文的帧链**,协程异常不跨协程传播),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;命中 -> `frames_.truncate` 到该帧 + 值栈截断到 `slots + stack_depth` + `push(异常值)`(恰落 catch 参数槽,见坑点文档 #10)+ `ip = handle` + 清寄存器;未命中 -> `exit_frame` 弹帧继续向外。
-- **未命中任何 handler = 本次 run 以未捕获收场,是正常结局而非 fatal**:自寄存器反提 `Error`(ObjException 经 `Error::from_baked` 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),`run_()` 返回 `std::unexpected`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`run_` 保持返回 `Result<Value, Error>`**:客户不止 CLI(REPL/测试断言/嵌入都要 Error 而非死进程),且 M6 协程将扩三态(`Yielded`)。
-- **跨 Movement 模型**:unwind 只发生在单个 Movement 的帧栈内;错误不跨协程边界直接传播——协程内未捕获时,载荷留在该协程寄存器、其帧清空后,在 CALL 善后点(§4.9)切回 resume 调用者,以调用者的挂起寄存器承载(等价于「resume 作为一次失败的原生调用」),由调用方决定 catch 或再抛。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 已落地(构造指 &main_ctx_,run_/call_value 族/raise 同源直读),M6 落地仅 CALL 善后点 + resume/yield 原生函数,本节语义不变。
+- **内部传播统一走寄存器 + unwind(M3 定稿)**:op 处理局部失败不再直接 `return runtime_err(...)` 短路出 dispatch_loop,而是就地 `raise`(装箱点一步烘位置装成 ObjException,不经 Error 对象中转,见 §4.8/坑点文档 #15)-> 存当前上下文挂起寄存器后调 `unwind` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点就地两步、与 CALL 失败善后同形;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。约 25 处 `return runtime_err(...)` 站点统一改此模式(坑点文档 #11)。
+- `unwind()` 自最内帧向外遍历帧链(**只查当前上下文的帧链**,协程异常不跨协程传播),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;命中 -> `frames_.truncate` 到该帧 + 值栈截断到 `slots + stack_depth` + `push(异常值)`(恰落 catch 参数槽,见坑点文档 #10)+ `ip = handle` + 清寄存器;未命中 -> `exit_frame` 弹帧继续向外。
+- **未命中任何 handler = 本次 run 以未捕获收场,是正常结局而非 fatal**:自寄存器反提 `Error`(ObjException 经 `Error::from_baked` 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),`dispatch_loop()` 返回 `std::unexpected`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`dispatch_loop` 保持返回 `Result<Value, Error>`**:客户不止 CLI(REPL/测试断言/嵌入都要 Error 而非死进程),且 M6 协程将扩三态(`Yielded`)。
+- **跨 Movement 模型**:unwind 只发生在单个 Movement 的帧栈内;错误不跨协程边界直接传播——协程内未捕获时,载荷留在该协程寄存器、其帧清空后,在 CALL 善后点(§4.9)切回 resume 调用者,以调用者的挂起寄存器承载(等价于「resume 作为一次失败的原生调用」),由调用方决定 catch 或再抛。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 已落地(构造指 &main_ctx_,dispatch_loop/call_value 族/raise 同源直读),M6 落地仅 CALL 善后点 + resume/yield 原生函数,本节语义不变。
 - **TryRecord 定稿字段**:`{begin, end, handle, stack_depth}`--不存 `frame_depth`(运行时量,编译期不可定)、不存 `catch_slot`(恒等于 `stack_depth`),见坑点文档 #5/#10。
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)
@@ -133,7 +133,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符 `vm.fail(WrongArity, ...)`。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
-**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop`),否则 `slots` 视图失效(值栈增长会搬迁重定位,见 §4.1)。只读 `slots[1..]`、写 `slots[0]`、经 `vm.fail`/`raise` 报错。回调 aria 函数属未来机制(由 `vm` 提供,自管栈纪律;接缝已备:`AriaVM::run_function(fn)`--私有执行本体,压 callee + 进帧 + 驱动 `run_`,无入口装饰、不 reset/不播源根/不断言主上下文,落地重入时升公开并补 `run_` 按基线帧深退出(现仅 `frames().empty()` 返回,中途重入会穿掉调用者帧)与实参布线)。GC 已启用(值栈/帧接根),原生函数内可经 `vm.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,`slots[0]` 写入后即随值栈为根。
+**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop`),否则 `slots` 视图失效(值栈增长会搬迁重定位,见 §4.1)。只读 `slots[1..]`、写 `slots[0]`、经 `vm.fail`/`raise` 报错。回调 aria 函数属未来机制(由 `vm` 提供,自管栈纪律;接缝已备:`AriaVM::run_function(fn)`--私有执行本体,压 callee + 进帧 + 驱动 `dispatch_loop`,无入口装饰、不 reset/不播源根/不断言主上下文,落地重入时升公开并补 `dispatch_loop` 按基线帧深退出(现仅 `frames().empty()` 返回,中途重入会穿掉调用者帧)与实参布线)。GC 已启用(值栈/帧接根),原生函数内可经 `vm.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,`slots[0]` 写入后即随值栈为根。
 
 **内建作者体感**(从 `Result<Value, Error>` 的啰嗦降到一行):
 
@@ -156,18 +156,18 @@ bool len_native(AriaVM& vm, Span<Value> slots) {
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者过标注装箱,前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
-**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind_()` 遍历帧链时**每帧 `exit_frame` 前**顺带收集 `(function, module, last_ip)` 三元组(帧尚存活;坑点文档 #13 的遍历到「所有帧无 handler」时帧已全弹,届时无帧可查,故须顺路收集)。`last_ip` 在此**三用**:unwind 查表(坑 #1/#2)、位置前缀、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接 print:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
+**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链时**每帧 `exit_frame` 前**顺带收集 `(function, module, last_ip)` 三元组(帧尚存活;坑点文档 #13 的遍历到「所有帧无 handler」时帧已全弹,届时无帧可查,故须顺路收集)。`last_ip` 在此**三用**:unwind 查表(坑 #1/#2)、位置前缀、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接 print:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
 
 ### 4.9 协程:单循环切换模型(M6 定稿,Wren 对照)
 
-> **定稿,取代早期「resume 重入 `run_()`」方案**:协程切换采用单循环显式切换模型,对标 Wren 0.4 的 fiber。整个 VM 任一时刻只有一个 `run_()` 循环在执行,切换发生在循环知晓的唯一位置(CALL 善后点),不嵌套解释器调用、不依赖任何「切换纪律」约定。重入式方案被否决的根因:协程深处 `yield` 若是原生函数,没有任何机制能让正在驱动它的 `run_()` 循环返回 `Yielded`——除非嵌套 `run_()`(C 栈随 resume 深度增长,且切换正确性悬于「恢复配对」纪律)或把 yield 做成操作码层层退栈;单循环模型两者都不需要。
+> **定稿,取代早期「resume 重入 `dispatch_loop()`」方案**:协程切换采用单循环显式切换模型,对标 Wren 0.4 的 fiber。整个 VM 任一时刻只有一个 `dispatch_loop()` 循环在执行,切换发生在循环知晓的唯一位置(CALL 善后点),不嵌套解释器调用、不依赖任何「切换纪律」约定。重入式方案被否决的根因:协程深处 `yield` 若是原生函数,没有任何机制能让正在驱动它的 `dispatch_loop()` 循环返回 `Yielded`——除非嵌套 `dispatch_loop()`(C 栈随 resume 深度增长,且切换正确性悬于「恢复配对」纪律)或把 yield 做成操作码层层退栈;单循环模型两者都不需要。
 
 **机制四件套**(Wren 源码索引见 §8):
 
 1. **resume/yield 是原生函数,不是操作码**。职责:校验协程状态(Done/Failed 报错;已有 `previous_` 挂着的再 resume 报错)→ 完成对**对侧**上下文的准备与写值(契约见下方「切换协议」;调用者侧栈一律留给 call_native 统一收敛)→ `co->set_previous(current_)`(resume 时)/`current_ = co->previous()`(yield 时)→ `current_` 换指 → 返回。对标 Wren `Fiber.call/transfer/try`(共用 `runFiber`)与 `Fiber.yield`:全部原语,无 YIELD 操作码。
 2. **切换对 `call_native` 透明,CALL case 零改动**:`call_native` 以 `entered_ctx`(调用发生时的上下文;现为断言锚点,M6 起 release 亦需的真实局部)为事后簿记的统一锚点——成功路径的 `drop(argc)` 与寄存器断言一律落在其上:未切换时它即 `current_`,已切换时它恰为刚被挂起的旧上下文,`drop` 恰好完成调用者侧栈归一,**无需分支、无需探测比较**(协议见下)。CALL case 更无需感知:成功路径本就只剩 `break`,循环顶自新 `current_` 取指。**aria 的切换同步成本为零**:解释器状态全堆驻留(`ip` 在 `CallFrame`、栈顶在 `Movement::top_`、每指令重取帧引用),没有可陈旧的循环级局部副本——这是相对 Wren 的简化(它的循环善后必须感知切换以重载寄存器缓存,`fiber = vm->fiber` + `LOAD_FRAME`);Wren 因 frame/ip/stackTop 缓存于 C 局部寄存器变量,切换前后须 `STORE_FRAME`/`LOAD_FRAME` 一对宏同步,aria 无此负担。
-3. **RETURN 完成路径**:协程帧耗尽且有 `previous_` → 完成值写进其 resume 调用槽、`current_ = previous_`、解链(对标 Wren RETURN:numFrames==0 且有 caller 则切回并写返回值);无 `previous_`(主上下文/根协程)→ `run_()` 以 Returned 返回。
-4. **`run()` 三态**:`Yielded` 仅指「根上下文挂起、无人可返回」的出口(对标 Wren `Fiber.suspend` 置 `vm->fiber = NULL`,循环以 SUCCESS 退出)。resume/yield 的深处切换不再产生 run 返回,`run_()` 因此**永不重入**——`run()` 入口断言 `current_ == &main_ctx_` 从「M6 前恒真」升格为永久不变式(run() 是唯一驱动入口)。
+3. **RETURN 完成路径**:协程帧耗尽且有 `previous_` → 完成值写进其 resume 调用槽、`current_ = previous_`、解链(对标 Wren RETURN:numFrames==0 且有 caller 则切回并写返回值);无 `previous_`(主上下文/根协程)→ `dispatch_loop()` 以 Returned 返回。
+4. **`run()` 三态**:`Yielded` 仅指「根上下文挂起、无人可返回」的出口(对标 Wren `Fiber.suspend` 置 `vm->fiber = NULL`,循环以 SUCCESS 退出)。resume/yield 的深处切换不再产生 run 返回,`dispatch_loop()` 因此**永不重入**——`run()` 入口断言 `current_ == &main_ctx_` 从「M6 前恒真」升格为永久不变式(run() 是唯一驱动入口)。
 
 **切换协议(M6 实施契约)——对 `call_native` 透明,无需探测**:
 
@@ -209,7 +209,7 @@ if (obj->fn()(*this, slots)) {
 6. 错误跨协程路径(M3 寄存器模型就绪后自然接入)。
 7. safe point 补切换点(= CALL 善后,天然已覆盖);stress GC 多协程悬垂测试。
 
-**性能注记**:Wren 以 C 局部寄存器缓存 frame/ip/stackStart 换取每指令速度,代价是切换须显式同步;aria 目前反其道(全堆驻留,切换零成本,每指令多几次内存载入)。若将来测得热路径受损,可引入「指令内工作副本 + 指令边界写回」的缓存——注意快照的正确形态是**指令级 + 显式同步点**,而非「整个 `run_` 生命期的入口快照」(后者已废弃,见 runtime.md)。
+**性能注记**:Wren 以 C 局部寄存器缓存 frame/ip/stackStart 换取每指令速度,代价是切换须显式同步;aria 目前反其道(全堆驻留,切换零成本,每指令多几次内存载入)。若将来测得热路径受损,可引入「指令内工作副本 + 指令边界写回」的缓存——注意快照的正确形态是**指令级 + 显式同步点**,而非「整个 `dispatch_loop` 生命期的入口快照」(后者已废弃,见 runtime.md)。
 
 ## 5. 早期简化(M1 的刻意收敛)
 
@@ -217,9 +217,9 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 - **不继承 Object**(已接 GC 根):`Movement` 仍是 `AriaVM` 的纯 C++ 成员(非 Object),但值栈/帧/open upvalue 开链已经 vm_roots tracer 接 GC 根(见 §4.6「已前拉」),`run()` 不再禁 GC,`JUMP_BACK` 已是 safe point。开发期即开 GC(stress GC 于集成测试)以早暴露缺失根。M6 升级 `ObjMovement : Object` 入对象链表(trace 收口到对象自身),协程根收敛 `current_` 单根(§4.9 定稿,不设 movements_ 并集)。
 - **闭包已闭环(M4,本条原为 M1 期刻意收敛)**:`CallFrame` 持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包),`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 四指令实装,open upvalue 开链 + 值栈增长第三类重绑已落地(见 §4.1 与 `m4-closure-implementation-plan.md` 落地记录);仍 `not_implemented` 的是 M5 类指令(`MAKE_*` 系)等。
-- **异常已闭环(M3)**:挂起错误寄存器自原生函数侧信道落地起即逐步升为运行期主通道,M3 在其上接 `unwind_` 查表派发(见 §4.5 与坑点文档)。
+- **异常已闭环(M3)**:挂起错误寄存器自原生函数侧信道落地起即逐步升为运行期主通道,M3 在其上接 `unwind` 查表派发(见 §4.5 与坑点文档)。
 - **无类**:类/实例/方法相关指令(`MAKE_*` 系列)与 CodeGen 发射待 M5;模块与导入已落地(M2,per-module globals)。
-- `run_()` 永不重入(M6 单循环切换模型,§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
+- `dispatch_loop()` 永不重入(M6 单循环切换模型,§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
 
 ## 6. 实施路线
 
@@ -227,7 +227,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | :--- | :--- | :--- |
 | **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通,ctest 371/371 绿(M1 当时快照) |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
-| **M3 异常(已落地,2026-09)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind_`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 曾列 M3b,2026-09 裁撤,善后后继 defer 已降级为可选后续、不再绑定 M4(2026-09 定,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确(ctest 558/558 绿) |
+| **M3 异常(已落地,2026-09)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 曾列 M3b,2026-09 裁撤,善后后继 defer 已降级为可选后续、不再绑定 M4(2026-09 定,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确(ctest 558/558 绿) |
 | **M4 闭包(已落地,2026-09)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式)。实施计划与落地记录见 `m4-closure-implementation-plan.md`(defer 善后机制已移出 M4,2026-09 降级为可选后续) | 计数器闭包等经典样例正确(ctest 607/607 绿,NaN-boxing 与 TagValue 双值表示配置) |
 | **M5 类与对象** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5;实施计划已定稿,见 `m5-class-implementation-plan.md`,六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC 根收敛 `current_` 单根(协程经对象图可达)、**单循环切换模型**(§4.9):`coroutine.resume/yield/status` 原生函数 + CALL 善后点采用新 `current_` + RETURN 完成切回解链、`run()` 扩三态 `ExecOutcome`(`Yielded` = 根挂起) | 协程生成器样例;stress GC 下多协程无悬垂 |

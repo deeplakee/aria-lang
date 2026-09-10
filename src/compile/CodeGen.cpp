@@ -775,7 +775,7 @@ namespace aria {
     void CodeGen::visitThrowStmtNode(ThrowStmtNode* node) {
         const u32 line = node->loc_line();
         // 求值抛出表达式后 THROW 弹值入寄存器,运行期由 unwind 查异常记录表派发(语义见
-        // AriaVM run_ 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
+        // AriaVM dispatch_loop 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
         emit_expr(node->expr.get());            // [v]
         cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
     }

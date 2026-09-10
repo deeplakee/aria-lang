@@ -19,7 +19,8 @@ namespace aria {
     // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与
     // 运行期未捕获出口的边界物化形态--运行期在途错误实体是 ObjException（存 current_ctx
     // 挂起错误寄存器，见 .claude/rules/runtime.md「VM 异常通道落地状态」），Error 仅在
-    // run_ 返回时经反提拆件（AriaVM uncaught_error_parts）+ from_baked 物化构造，不参与 run_ 内部传播。
+    // dispatch_loop 返回时经反提拆件（AriaVM uncaught_error_parts）+ from_baked 物化构造，
+    // 不参与 dispatch_loop 内部传播。
     //
     // 设计要点：
     //   - 值类型（可拷贝/移动），供 Result<T, Error> 携带，符合项目「错误处理倾向
@@ -71,7 +72,7 @@ namespace aria {
 
         // 成品语义:以**已烘焙完整消息串**原样构造,不经 make_message(否则把 "Category: Name"
         // 前缀再烘一遍成双重前缀)。两类合法调用方(均在 VM 未捕获出口侧):ObjException::to_error()
-        // (其 message_ 与 Error::message() 同形,寄存器载荷反提)与 AriaVM::unwind_ 物化未捕获
+        // (其 message_ 与 Error::message() 同形,寄存器载荷反提)与 AriaVM::unwind 物化未捕获
         // Error 时烘焙堆栈跟踪(反提消息 + 逐帧 at 行拼接后经本工厂重建,M3)。
         // 禁止传组件串(裸 detail)-- 会得到缺前缀的消息,渲染不一致。设计见
         // .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7。

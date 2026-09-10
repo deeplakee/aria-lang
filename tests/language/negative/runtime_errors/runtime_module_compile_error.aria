@@ -1,0 +1,4 @@
+// 钉住：被导入模块的编译期错误在主模块执行期的 import 站点浮现（经异常通道传播、可被
+# try/catch 捕获）-> 运行期错误。主入口自身编译已成功并开始执行，「可 catch 的错误」
+# 不构成 CompileError（2026-09 决策：interpret 按失败阶段而非错误码大类分类）。
+import "./lib/syntax_bad" as B;

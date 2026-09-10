@@ -37,7 +37,7 @@ namespace aria {
     //
     //        单一主上下文 main_ctx_ + 当前执行上下文指针 current_(现指 main_ctx_)。循环状态全部
     //        取自 *current_,无循环级 C 局部工作副本 -- M6 单循环切换模型(Wren 式)下
-    //        resume/yield 在 CALL 善后点换 current_、循环自然驱动新上下文,run_ 永不重入。
+    //        resume/yield 在 CALL 善后点换 current_、循环自然驱动新上下文,dispatch_loop 永不重入。
     //        run() 期间 GC 已启用:值栈/帧经 ctor 注册的 vm_roots tracer 标根(M6 前以 tracer
     //        直标代替 Movement 升 Object;M4 起并标 open upvalue 开链)。
     //
@@ -51,8 +51,8 @@ namespace aria {
     //        collect 时 tracer 标 modules_(进而各模块 name_/dir_/entry_/globals_)
     //        + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/帧/挂起错误寄存器。
     //
-    //        异常通道(try/catch/throw)闭环:run_ 内运行时错误统一 raise 入挂起寄存器后经
-    //        unwind_ 查 CodeUnit 异常记录表派发(命中 handler 截栈跳 handler / 全未命中物化 Error 带
+    //        异常通道(try/catch/throw)闭环:dispatch_loop 内运行时错误统一 raise 入挂起寄存器后经
+    //        unwind 查 CodeUnit 异常记录表派发(命中 handler 截栈跳 handler / 全未命中物化 Error 带
     //        堆栈跟踪);THROW 弹用户 throw 的原值保类型;try/catch 由 CodeGen 编译期写 try_records
     //        (无 SETUP_EXCEPT 指令)。见下方「异常 unwind」组成员与
     //        .claude/reference/runtime/exception-implementation-pitfalls.md。
@@ -126,7 +126,7 @@ namespace aria {
 
         // ---- 挂起错误侧信道(供原生函数等冷路径报错)----
         // 寄存器物理上在 VMContext(Movement::pending_error_);VM 经此转发到 *current_(当前执行
-        // 上下文):run_ 主循环、call_value 族与本转发同源同一 current_,故原生函数体内 vm.fail()
+        // 上下文):dispatch_loop 主循环、call_value 族与本转发同源同一 current_,故原生函数体内 vm.fail()
         // 报的错误必落进其调用者正在执行的上下文 -- M6 协程期即该协程的寄存器,不串主上下文。
         // 详见 ObjNativeFn.hpp NativeFn 契约与 .claude/reference/runtime/vm-design.md §4.7(错误通道 2)。
         //
@@ -213,12 +213,12 @@ namespace aria {
 
     private:
         // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包,M4)后压 callee 值 + enter_frame
-        // 进帧 -> run_ 主循环,作用于 *current_(程序入口处 run() 已断言 current_ == &main_ctx_,
+        // 进帧 -> dispatch_loop 主循环,作用于 *current_(程序入口处 run() 已断言 current_ == &main_ctx_,
         // 等价于直访 main_ctx_)。run() 的被委托方,亦是未来重入的接缝:指令执行中临时运行一个
         // ObjFunction(原生回调调 aria 函数 / 嵌入宿主调函数,vm-design.md §4.7「回调 aria 函数属
         // 未来机制(由 vm 提供,自管栈纪律)」)经此进入,故不播源根、不 reset(重入调用者的栈不可
         // 冲掉)、不断言主上下文(current_ 即正在执行的上下文);落地时升公开(原生函数经 AriaVM&
-        // 只能触公开面)。落地尚欠 run_ 按基线帧深退出(现仅 frames().empty() 返回,中途重入会穿掉
+        // 只能触公开面)。落地尚欠 dispatch_loop 按基线帧深退出(现仅 frames().empty() 返回,中途重入会穿掉
         // 调用者帧)与实参布线,届时在此扩。
         Result<Value, Error> run_function(ObjFunction* fn);
 
@@ -226,7 +226,7 @@ namespace aria {
         // 返回/错误/显式停止。栈/帧/错误寄存器一律经 current_ 访问,与 raise 同源(语义统一)。
         // 模块体 run-once 经 IMPORT 未命中分支以普通函数调用进帧(入口名固定 <module>),
         // 由本循环执行,其 RETURN 按函数名判定模块体帧,压回模块对象 -- 无递归调用。
-        Result<Value, Error> run_();
+        Result<Value, Error> dispatch_loop();
 
         // IMPORT 未命中分支的加载层:把已解析命中的磁盘模块读盘 -> 派生身份 -> new_module
         // -> 入表占位 -> 编译(入口名 <module>,即 aria.hpp kModuleEntryName)-> 返回模块对象(已 set_entry)。
@@ -236,7 +236,7 @@ namespace aria {
         // 调用方 take_error 取出沿 runtime_err 传播。两类失败:读盘失败/名字无效经 fail 烘位置
         // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令 -- 与 resolve_module 解析失败的
         // runtime_err 形态统一);被导入模块的编译期 Error 就地 new_exception 原样装配箱透传
-        // (from_baked 语义不重烘,位置指向被导入文件内部)。**仅限 run_ 驱动期调用**:寄存器随 *current_ 走,
+        // (from_baked 语义不重烘,位置指向被导入文件内部)。**仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,
         // run() 入口 reset 会清 pending_error -- run 外直调的错误会被静默吞掉(runtime_loc 亦
         // 依赖顶帧,帧栈空则无位置)。
         //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作 modules_
@@ -246,16 +246,18 @@ namespace aria {
         // 越界检测(相对导入越出源根)本轮不做:文件能解析到即读。
         ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
 
-        // interpret / interpret_from_path 共用尾段：调 run(SourceFile&, ObjModule&) 编译并执行，成功返 Ok；
-        // 失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）并按错误大类映射--
-        // Syntax / Semantic -> CompileError，余（Runtime / Internal / Resource）-> RuntimeError。
+        // interpret / interpret_from_path 共用尾段：Compiler{gc_}.compile 编译 + run(ObjFunction*) 执行，
+        // 成功返 Ok；失败把 Error.message() 渲染到 stderr（Error 已自有完整消息串、不持 SourceFile*）
+        // 并按**失败阶段**分类 -- 编译期失败 -> CompileError（「主入口编译失败，程序从未开始执行」），
+        // run 期失败 -> RuntimeError（含运行期 UndefinedVariable 与经异常通道传播的被导入模块编译期
+        // 错误，后者可被 try/catch 捕获故不构成 CompileError）。不按错误码大类映射。
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
         // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native),其余报
         // CallNonCallable。M4 起 callable 收敛为闭包:ObjFunction 退为常量池内部物,不再以 callable
         // 值上栈(编译器经 CLOSURE 指令现场包闭包;IMPORT 的模块体 entry 由 IMPORT 分支现场包闭包)。
-        // 作用于 *current_(与 run_ 同源;现为 main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个
+        // 作用于 *current_(与 dispatch_loop 同源;现为 main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个
         // 上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。返回 bool 为成败信号:true
         // 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷已 raise 进 *current_ 的挂起
         // 错误寄存器,调用方据 bool 决定是否 take_error 取出沿 runtime_err 传播。
@@ -283,13 +285,13 @@ namespace aria {
         // 签名,不与 StringView 版重载分叉)。定义在 .cpp(需 ObjException 完整类型)。
         void raise_detail(ErrorCode code, StringView detail);
 
-        // ---- 异常 unwind(M3,run_ 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
+        // ---- 异常 unwind(M3,dispatch_loop 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
 
-        // 弹 2 算 1:对栈顶两个值执行二元数值运算(9 个算术/比较指令共用,Op 由 run_ 调用点
+        // 弹 2 算 1:对栈顶两个值执行二元数值运算(9 个算术/比较指令共用,Op 由 dispatch_loop 调用点
         // 穷举实例化;数值语义内联于函数 -- 双 Int 整数路径、任一 F64 升浮点,int 除/模零报错、
         // f64 按 IEEE)。成功压结果返 true;失败不置值,经 fail 装箱入 *current_ 挂起寄存器后
-        // 返 false -- 与 call_value 族同款 bool 契约(return false ⟺ 已 raise),调用方 unwind_
-        // 查表派发/未捕获物化。模板成员定义在 .cpp(全部实例化点在同 TU 的 run_)。
+        // 返 false -- 与 call_value 族同款 bool 契约(return false ⟺ 已 raise),调用方 unwind
+        // 查表派发/未捕获物化。模板成员定义在 .cpp(全部实例化点在同 TU 的 dispatch_loop)。
         template<OpCode Op>
         bool run_binary_numeric();
 
@@ -302,19 +304,19 @@ namespace aria {
         // 外->内,Python 式 most recent call last)逐帧烘焙 "\n  at <fn> (<loc>)" 进消息尾部,
         // 经 Error::from_baked 一次物化返回。
         // 前提:寄存器已有载荷(raise/fail/THROW 已入),本函数不构造载荷 -- 入口断言把关
-        // (write 侧 Movement::raise 空寄存器断言的 read 侧成对)。帧内 last_ip 由 run_
+        // (write 侧 Movement::raise 空寄存器断言的 read 侧成对)。帧内 last_ip 由 dispatch_loop
         // 循环顶写(顶帧 = 故障指令,外层帧 = CALL 站点,坑 #2),无参数。
         // raise 与 unwind 不融合成 *_and_* 具名助手:两个直观动作就地两步,全部站点与
-        // CALL case 失败善后同形(raise 在 call_* 内则直接 unwind_)。
-        Opt<Error> unwind_();
+        // CALL case 失败善后同形(raise 在 call_* 内则直接 unwind)。
+        Opt<Error> unwind();
 
         GC       gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
         Movement main_ctx_;
-        // 当前执行上下文:run_ 主循环 / call_value 族 / raise 的作用对象,构造即指 &main_ctx_。
-        // 方法纪律:run_/call_value 族/raise 一律直接经 current_ 访问(语义统一,无入口快照)。
+        // 当前执行上下文:dispatch_loop 主循环 / call_value 族 / raise 的作用对象,构造即指 &main_ctx_。
+        // 方法纪律:dispatch_loop/call_value 族/raise 一律直接经 current_ 访问(语义统一,无入口快照)。
         // M6 单循环切换模型(vm-design.md §4.9):resume/yield 为原生函数,换 current_ 对
         // call_native 透明(事后簿记一律落 entered_ctx,无需分支探测,CALL case 零改动),
-        // run_ 永不重入,任一时刻正在执行的字节码所在上下文恒等于 current_;previous_ 对齐
+        // dispatch_loop 永不重入,任一时刻正在执行的字节码所在上下文恒等于 current_;previous_ 对齐
         // Wren caller(yield/完成解链、可再 resume),tracer 链遍历保留(main_ctx_ 不入堆),
         // 链尾断言届时退役。
         Movement*     current_;

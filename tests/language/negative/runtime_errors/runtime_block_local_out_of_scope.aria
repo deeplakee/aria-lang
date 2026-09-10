@@ -1,0 +1,6 @@
+// 钉住：块局部变量出块即不可见——出块后按名字解析落全局 miss，运行期抛 UndefinedVariable
+# （历史错分注记见 runtime_undefined_global_read，2026-09 已修正归 RuntimeError）。
+{
+    var q = 1;
+}
+print q;

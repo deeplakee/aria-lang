@@ -30,7 +30,7 @@ ImportStmtNode { path:String, alias:String }
    │  ③ AST→CodeUnit 编译器  ✓ 已实现（CodeGen : AstVisitor）
    ▼
 OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
-   │  ④ VM run_() IMPORT 分支  已实现
+   │  ④ VM dispatch_loop() IMPORT 分支  已实现
    ▼
 resolve_module()  →  new_string() intern  →  modules_ 查表
    (磁盘 exists-check + weakly_canonical)        │
@@ -147,7 +147,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
      以其 `entry`(<module>)作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行一个函数,
      由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、
      改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`,绑定交后续 `DEF_GLOBAL` /
-     值填槽。**无递归 `run_()`**。读盘失败/name 空报 `ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置);被导入模块的
+     值填槽。**无递归 `dispatch_loop()`**。读盘失败/name 空报 `ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置);被导入模块的
      编译期/运行期 Error 原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
      `nullptr ⟺` 载荷已 raise 入寄存器,调用方 `take_error` 取出传播)。`canonical_path` 经 IMPORT
      case 的 `canonical_path_guard` 跨 `upsert`(rehash 触 GC)根化(intern weak
@@ -162,7 +162,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 > `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
 > （值填槽）+ `mark_initialized`。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
-**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`run_()` 不持 `LockGuard`；path 经常量池根；`canonical_path` 经 intern weak root 加 guard；命中分支的 module 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
+**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()` 不持 `LockGuard`；path 经常量池根；`canonical_path` 经 intern weak root 加 guard；命中分支的 module 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
 
 ### 源根列表（已实现，被 IMPORT 消费）
 

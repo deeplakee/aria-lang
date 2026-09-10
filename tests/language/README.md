@@ -59,13 +59,15 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - `.out` golden 必须从**当前构建产物实测**生成（`./build/aria script.aria > script.out`），
   生成前人工核对输出与特性清单一致，不要盲冻结。
 
-## 已知分类怪癖：运行期 UndefinedVariable 映射为 CompileError
+## interpret 的分类语义（2026-09 起：按失败阶段）
 
-`interpret_run` 按错误**码的大类**（而非抛出时机）映射结果：`UndefinedVariable` 属
-Semantic 类，即使在运行期 `LOAD/STORE_GLOBAL` 才抛，`interpret_from_path` 也返回
-`CompileError`。因此「读未定义全局 / 给未声明名赋值 / 块局部出作用域」三条用例放在
-`compile_errors/`（脚本注释有标注）。若未来 interpret 按「抛出时机」分类，这三个文件
-需要移层。
+`interpret_run` 按**失败阶段**分类，不按错误码大类：编译期失败 -> CompileError（意为
+「主入口编译失败，程序从未开始执行」）；run 期浮现的一切错误 -> RuntimeError——含运行期
+才抛的 `UndefinedVariable`（`LOAD/STORE_GLOBAL` miss，码已归 Runtime 类），与经 IMPORT
+站点异常通道传播的**被导入模块编译期错误**（主模块已在执行、错误可被 try/catch 捕获，
+「可 catch 的错误」不构成 CompileError）。因此「读未定义全局 / 未声明赋值 / 块局部出
+作用域 / 被导入模块编译错」都归 `runtime_errors/`。历史上（2026-09 之前）interpret 按
+码大类映射，前三者曾被错分 CompileError 放在 compile_errors/。
 
 ## 当前禁区（写新用例前必读）
 

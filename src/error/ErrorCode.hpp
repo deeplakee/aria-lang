@@ -59,7 +59,6 @@ namespace aria {
         TryWithoutHandler,       // try 须有 catch
         DefaultParamSelfRef,     // 默认值表达式引用了同函数的参数
         DuplicateParam,          // 同函数形参重名
-        UndefinedVariable,       // 引用未定义的变量/函数
         UndefinedType,           // 引用未定义的类名
         RedefinedVariable,       // 同作用域重复定义变量
         UninitializedVariable,   // 使用定义但未初始化的局部（如 var x = x + 1 自引用）
@@ -76,6 +75,8 @@ namespace aria {
         DivisionByZero,    // 除零
         ModuloByZero,      // 模零
         KeyError,          // map 键不存在
+        UndefinedVariable, // 引用未定义的变量/函数（全局名 LOAD/STORE_GLOBAL 运行期查表 miss；
+                           // 局部的未初始化读是编译期 UninitializedVariable，两者不同码）
         UndefinedProperty, // 对象无该字段/方法
         CallNonCallable,   // 调用非函数值
         WrongArity,        // 实参数量不符（含默认参数/varargs 填充后）
@@ -296,7 +297,6 @@ namespace aria {
             case ErrorCode::TryWithoutHandler:
             case ErrorCode::DefaultParamSelfRef:
             case ErrorCode::DuplicateParam:
-            case ErrorCode::UndefinedVariable:
             case ErrorCode::UndefinedType:
             case ErrorCode::RedefinedVariable:
             case ErrorCode::RedefinedClass:
@@ -313,6 +313,7 @@ namespace aria {
             case ErrorCode::DivisionByZero:
             case ErrorCode::ModuloByZero:
             case ErrorCode::KeyError:
+            case ErrorCode::UndefinedVariable:
             case ErrorCode::UndefinedProperty:
             case ErrorCode::CallNonCallable:
             case ErrorCode::WrongArity:

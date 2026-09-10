@@ -149,7 +149,7 @@ namespace aria {
 
         // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,如
         // <script>/<test>,abs_path 会拼出伪路径)或 abs_path 为空(cwd 不可用)退化为 "<name>"。
-        // 装箱点(runtime_loc)与未捕获堆栈跟踪逐帧渲染(unwind_)共用,位置串规则单一事实源。
+        // 装箱点(runtime_loc)与未捕获堆栈跟踪逐帧渲染(unwind)共用,位置串规则单一事实源。
         String module_loc(const ObjModule& mod, const u32 line) {
             if (const auto name = mod.name()->view(); name.starts_with('<') || mod.abs_path().empty()) {
                 return std::format("{}:{}", name, line);
@@ -176,7 +176,7 @@ namespace aria {
         // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
         // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
         // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
-        // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind_ 未捕获出口一处消费:
+        // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind 未捕获出口一处消费:
         // 拼好跟踪后经 Error::from_baked 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value v) {
             if (const auto ex = try_obj<ObjException>(v)) {
@@ -186,13 +186,13 @@ namespace aria {
             return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
         }
 
-        // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),转发 unwind_ 物化的
-        // 未捕获 Error 出栈。run_ 各异常站点(unwind_ 返 somed Error)的统一收口,只剩
+        // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态),转发 unwind 物化的
+        // 未捕获 Error 出栈。dispatch_loop 各异常站点(unwind 返 somed Error)的统一收口,只剩
         // std::unexpected 样板。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
         // 范围外 opcode 的统一处理:后续阶段(闭包/字段/索引/类等)才会实现,
-        // 当前不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 run_ 返回)。
+        // 当前不执行。命中即打印提示后直接终止进程(经 fatal_error,不沿 dispatch_loop 返回)。
         // 用 OpcodeNotImplemented(Internal 类)而非 NotImplemented(Semantic 类):后者经 Error 通道
         // 服务编译期 CodeGen not_impl(可恢复 CompileError);此处是运行期执行到未实现 opcode,
         // 不可恢复走 fatal_error,属解释器实现不完整(Internal)。
@@ -205,12 +205,12 @@ namespace aria {
 
         // 执行跟踪:在每条指令执行**前**打印字节码/栈/帧/模块信息(经 io::print 到 stderr,与 GC 调试日志
         // / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 输出分流)。函数常态编译(与
-        // DEBUG_PRINT_COMPILED_CODE 同形,宏只守 run_ 内调用点),常规构建持续类型检查,重构不致静默
+        // DEBUG_PRINT_COMPILED_CODE 同形,宏只守 dispatch_loop 内调用点),常规构建持续类型检查,重构不致静默
         // 腐化;关闭时无调用点,[[maybe_unused]] 抑制未用告警,匿名命名空间内整段被优化丢弃,热路径
-        // 零开销。供 run_ 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行指令,据此算 offset
+        // 零开销。供 dispatch_loop 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行指令,据此算 offset
         // 并经 Disassembler::disassembleInstruction 解码(仅读不推进 VM 的 ip)。
         //   - 栈渲染经 format_value_debug(Value 层非重入渲染,见 value/Value.hpp),不用 format_value
-        //     (后者 Obj 走可重载虚 to_string,未来用户类可重载其运行 aria 字节码,trace 在 run_ 内会重入 VM
+        //     (后者 Obj 走可重载虚 to_string,未来用户类可重载其运行 aria 字节码,trace 在 dispatch_loop 内会重入 VM
         //     致无限递归);format_value_debug 对 Obj 走非虚 obj->type() 分派,绝不触用户重载。
         //   - 字节码行的 frame.closure->function()->to_string() / mod->to_string() 是 ObjFunction/
         //     ObjModule(内置,纯 C++,用户无法重载),无重入风险。
@@ -341,7 +341,7 @@ namespace aria {
         // Error::make_message 把 [位置 + ": "] + "Category: Name" + 细节合成完整消息串 -- 位置经
         // runtime_loc 查 *current_ 顶帧行号表(故障指令 / CALL 站点;合成模块退化为 "<name>:line";
         // 帧栈空即 run 外直调则无位置),detail 为已格式化的原始细节串(不含前缀,防双烘)。装箱入
-        // **当前**上下文(*current_,现为 main_ctx_;M6 协程期即当前协程 -- run_/call_value 族与本
+        // **当前**上下文(*current_,现为 main_ctx_;M6 协程期即当前协程 -- dispatch_loop/call_value 族与本
         // 函数同源同一 current_,错误随上下文走不串扰)的挂起寄存器(单寄存器模型,载荷统一 Value,
         // 见 exception-implementation-pitfalls.md 坑 #7)。new_exception 工厂内部 new_string 驻留
         // 并自守,跨 new_object 顶 maybe_collect 安全;返回对象到 current_->raise 之间无分配,
@@ -352,12 +352,11 @@ namespace aria {
 
     Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
         // 编译并执行：经 Compiler（用本 VM 的 gc_，编译期分配与 run 同源）把 source 编进 module 的入口
-        // ObjFunction，再委托 run(ObjFunction*) 执行。Compiler 每次就地构造（Lexer/Parser 可复用但本处
-        // 一次性编译；REPL 期若需跨次复用可后续提成成员）。module 由调用方提供（控制 name/root 身份），
-        // 编译期由 CodeGen::compile 内部 make_guard 根化；source 须存活到本函数返回（编译期 Error 的
-        // SourceLoc 指向它）。编译失败原样透传首错 Error，不进入执行。
-        Compiler compiler{gc_};
-        auto     compiled = compiler.compile(source, module);
+        // ObjFunction，再委托 run(ObjFunction*) 执行。Compiler 就地构造（临时对象，与 load_module 的
+        // 加载编译同款写法；REPL 期若需跨次复用可后续提成成员）。module 由调用方提供（控制 name/root
+        // 身份），编译期由 CodeGen::compile 内部 make_guard 根化；source 须存活到本函数返回（编译期
+        // Error 的 SourceLoc 指向它）。编译失败原样透传首错 Error，不进入执行。
+        auto compiled = Compiler{gc_}.compile(source, module);
         if (!compiled.has_value()) {
             return std::unexpected(compiled.error());
         }
@@ -367,20 +366,24 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule& module) {
-        // 编译并执行，按结果类别映射。失败时 Error 已自有完整消息串（构造期烘焙、不持 SourceFile*），
-        // 渲染到 stderr 后只回类别，不回 Error。
-        auto result = run(source, module);
-        if (result.has_value()) {
-            return InterpretResult::Ok;
+        // 编译并执行，按**失败阶段**分类（不再按错误码大类反推时机）：编译期失败 -> CompileError，
+        // run 期失败 -> RuntimeError。阶段信息经两步调用天然可得，不压进 Error 结构。
+        // 分类语义：CompileError 意为「主入口编译失败，程序从未开始执行」；run 期浮现的一切错误归
+        // RuntimeError -- 含运行期才抛的 UndefinedVariable（LOAD/STORE_GLOBAL miss），与经 IMPORT
+        // 站点异常通道传播的**被导入模块编译期错误**（主模块已在执行、错误可被 try/catch 捕获，
+        // 「可 catch 的错误」不构成 CompileError）。失败时 Error 已自有完整消息串（构造期烘焙、
+        // 不持 SourceFile*），渲染到 stderr 后只回类别，不回 Error。
+        auto compiled = Compiler{gc_}.compile(source, module);
+        if (!compiled.has_value()) {
+            io::println(stderr, "{}", compiled.error().message());
+            return InterpretResult::CompileError;
         }
-        io::println(stderr, "{}", result.error().message());
-        switch (category_of(result.error().code())) {
-            case ErrorCategory::Syntax:
-            case ErrorCategory::Semantic:
-                return InterpretResult::CompileError;
-            default: // Runtime / Internal / Resource -> 运行期
-                return InterpretResult::RuntimeError;
+        auto result = run(compiled.value());
+        if (!result.has_value()) {
+            io::println(stderr, "{}", result.error().message());
+            return InterpretResult::RuntimeError;
         }
+        return InterpretResult::Ok;
     }
 
     InterpretResult AriaVM::interpret_from_src(const StringView src) {
@@ -422,7 +425,7 @@ namespace aria {
         // 程序入口仪式:入口纪律断言 + 源根入口槽播种 + 前后清场;执行本体(压 callee/进帧/驱动
         // 主循环)委托下方 run_function -- 仪式与本体分层,后者是未来重入的接缝(见其注释)。
         // 主上下文入口:进主循环前 current_ 必已归位 main_ctx_。M6 单循环切换模型(vm-design.md §4.9)
-        // 下升格为永久不变式:run() 是唯一驱动入口,resume/yield 不重入 run_,切换只发生在 CALL 善后点
+        // 下升格为永久不变式:run() 是唯一驱动入口,resume/yield 不重入 dispatch_loop,切换只发生在 CALL 善后点
         // 且只换走 current_、不产生新循环 -- 每次进 run() 必从主上下文起步。
         ASSERT(current_ == &main_ctx_, "AriaVM::run: current_ is not main_ctx_ (unbalanced context switch)");
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
@@ -435,7 +438,7 @@ namespace aria {
         // 注:fn 必属某模块(module_ 非空,见 ObjFunction);[0] 槽位由构造时 cwd 占位恒在。
         source_roots_[0] = fn->module()->dir()->view();
 
-        // 重复调用先清场(同 Lexer/Parser 式复用):HALT 收场的上一轮不弹帧(run_ 的 HALT 分支
+        // 重复调用先清场(同 Lexer/Parser 式复用):HALT 收场的上一轮不弹帧(dispatch_loop 的 HALT 分支
         // 直接返回),不清场会把新帧叠在陈旧帧上、顶层 RETURN 后驱动陈旧帧的 ip。
         main_ctx_.reset();
 
@@ -451,13 +454,13 @@ namespace aria {
 
     Result<Value, Error> AriaVM::run_function(ObjFunction* fn) {
         // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包,M4 -- CallFrame 持 ObjClosure*,
-        // 统一「帧 = 闭包」模型)后压 callee + 进帧 + 驱动 run_,作用于 *current_ -- 对齐 run_/
+        // 统一「帧 = 闭包」模型)后压 callee + 进帧 + 驱动 dispatch_loop,作用于 *current_ -- 对齐 dispatch_loop/
         // call_value 族/raise 的 current_ 纪律;程序入口处 run() 已断言 current_ == &main_ctx_,
         // 故与拆分前直访 main_ctx_ 的形态逐字等价。
         // 未来重入的接缝:指令执行中临时运行一个 ObjFunction(原生回调调 aria 函数 / 嵌入宿主调
         // 函数,vm-design.md §4.7「回调 aria 函数属未来机制(由 vm 提供,自管栈纪律)」)经此进入,
         // 故不播源根、不 reset(冲掉重入调用者的栈)、不断言主上下文(current_ 即正在执行的上下文);
-        // 落地时升公开(原生函数经 AriaVM& 只能触公开面)。落地尚欠两件:run_ 按基线帧深退出
+        // 落地时升公开(原生函数经 AriaVM& 只能触公开面)。落地尚欠两件:dispatch_loop 按基线帧深退出
         // (现仅 frames().empty() 返回,中途重入会穿掉调用者帧)与实参布线,届时在此扩。
         // 根安全:fn 在 new_closure 顶 maybe_collect 时须有根(run() 路径经 module->entry_ 模块根
         // /测试 guard,重入路径属调用方契约),此处 make_guard 兜底 -- 该 GC 点是 fn 唯一无根窗口
@@ -469,7 +472,7 @@ namespace aria {
         // VM 专有字段(closure/unit/module/ip)填充,定义在 Movement.cpp。
         current_->push(Value::from_obj(closure)); // callee 值躺在主帧槽 0(RETURN 时弹),入栈即根
         current_->enter_frame(closure, 0);
-        return run_();
+        return dispatch_loop();
     }
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {
@@ -499,14 +502,14 @@ namespace aria {
             return fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
         // 栈形 [callee, a1..aN]:enter_frame 进帧(slots 指向槽 0,参数即局部槽 1..argc),
-        // 与 run_ 的 exit_frame 对称。经 current_ 访问(与 run_/raise 同源,语义统一;现为
+        // 与 dispatch_loop 的 exit_frame 对称。经 current_ 访问(与 dispatch_loop/raise 同源,语义统一;现为
         // main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个上下文驱动,进帧就进哪个)。
         current_->enter_frame(obj, argc);
         return true;
     }
 
     bool AriaVM::call_native(const ObjNativeFn* obj, const u8 argc) {
-        // 经 current_ 访问调用区与寄存器(与 run_/raise 同源,语义统一)。原生函数同步调用,
+        // 经 current_ 访问调用区与寄存器(与 dispatch_loop/raise 同源,语义统一)。原生函数同步调用,
         // 不进帧:bool 为成败信号,返回值写槽 0,错误载荷走侧信道寄存器。
         // 调用区 [callee, a1..aN] 的可写视图:slots[0]=槽 0(返回值),slots[1..argc]=实参。
         // peek(argc) 即槽 0,叶子调用不增长值栈故指针稳定;argc==0 时 span 仅含槽 0。
@@ -552,7 +555,7 @@ namespace aria {
         //   - 编译期 Error:消息已在 CodeGen 侧烘焙完成(位置指向被导入文件内部),就地
         //     new_exception 直接装配箱(from_baked 语义,不重烘 -- 不经 AriaVM::raise,
         //     其 make_message 会把导入方站点前缀叠上,双重烘焙)。
-        // **仅限 run_ 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清 pending_error --
+        // **仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清 pending_error --
         // run 外直调(未来预加载 API 等)的错误会被静默吞掉;runtime_loc 亦依赖顶帧,帧栈空则无位置。
         //
         // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 入表占位 -> 编译(set_entry)。
@@ -606,7 +609,7 @@ namespace aria {
 
     template<OpCode Op>
     bool AriaVM::run_binary_numeric() {
-        // 弹 2 算 1(9 个算术/比较指令共用,Op 由 run_ 调用点穷举实例化):双 Int 走整数路径,
+        // 弹 2 算 1(9 个算术/比较指令共用,Op 由 dispatch_loop 调用点穷举实例化):双 Int 走整数路径,
         // 任一 F64 升浮点 -- int 除/模零报错、% 为 C++ 语义,f64 按 IEEE(除零得 inf/nan)。
         // 成功压结果返 true;失败不置值,经 fail 装箱入 *current_ 寄存器后返 false(call_value
         // 族 bool 契约,调用方 unwind 派发/物化)。
@@ -674,9 +677,9 @@ namespace aria {
         return true;
     }
 
-    Opt<Error> AriaVM::unwind_() {
+    Opt<Error> AriaVM::unwind() {
         // 自最内帧向外遍历(pitfalls 坑 #13):每帧以 last_ip(顶帧 = 故障指令起始 / 外层帧 =
-        // CALL 站点,均由 run_ 循环顶写好,坑 #2)反推 offset 查本帧 CodeUnit 的异常记录表。
+        // CALL 站点,均由 dispatch_loop 循环顶写好,坑 #2)反推 offset 查本帧 CodeUnit 的异常记录表。
         // 首命中即在该帧 unwind -- 此前轮次已逐帧 exit_frame 弹掉全部内层帧,本帧即栈顶,
         // 无需 FrameStack::truncate。全帧未命中 -> 未捕获:寄存器反提 Error + 跟踪烘焙(坑 #16)。
         // 前提:寄存器已有载荷(raise/fail/THROW 刚入;call_value 族 bool 契约 return false ⟺ 已
@@ -690,7 +693,7 @@ namespace aria {
             u32          ip_off; // 行号经 fn->unit().line_for_offset 查
         };
 
-        ASSERT(current_->has_error(), "unwind_: no pending payload");
+        ASSERT(current_->has_error(), "unwind: no pending payload");
         List<TraceEntry> trace; // 收集序:内 -> 外;物化时反转为外 -> 内(Python 式 most recent call last)
         while (!current_->frames().empty()) {
             auto& [closure, unit, module, ip, slots, last_ip] = current_->frames().top();
@@ -718,7 +721,7 @@ namespace aria {
         // 全帧未命中 -> 未捕获:寄存器载荷反提拆 (码, 烘焙消息) 两件(ObjException 原码原消息
         // 含位置;用户 throw 原值兜底 UncaughtException,坑 #7),跟踪逐帧烘焙进消息尾部
         // (透传的编译期 Error 不经本路径,无跟踪 -- 坑 #16 点 6),拼完经 from_baked 一次物化
-        // 成边界 Error。trace 恒非空(run_ 各调用点帧栈非空不变式),空循环是退化情形。
+        // 成边界 Error。trace 恒非空(dispatch_loop 各调用点帧栈非空不变式),空循环是退化情形。
         auto [code, msg] = uncaught_error_parts(*current_->take_error());
         // 收集序内->外反转(坑 #16:渲染外->内)
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
@@ -728,7 +731,7 @@ namespace aria {
         return Error::from_baked(code, msg);
     }
 
-    Result<Value, Error> AriaVM::run_() {
+    Result<Value, Error> AriaVM::dispatch_loop() {
         // 语义统一:栈/帧/错误寄存器一律经 current_ 访问当前上下文(现为 main_ctx_;M6 切换时为
         // 被恢复协程的上下文)。M6 单循环切换模型(vm-design.md §4.9)下「正在执行的字节码所在
         // 上下文恒等于 current_」是结构性事实:切换只发生在原生函数体内(resume/yield 换走
@@ -856,8 +859,8 @@ namespace aria {
                         entry = builtins_.find(key); // 回退 VM 级 builtins(内置 type/len/str/assert)
                         if (entry == nullptr) {
                             raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
-                            if (auto u = unwind_()) {
-                                return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                            if (auto u = unwind()) {
+                                return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                             }
                             break; // 已派发 handler:帧栈可能已截,循环顶重取
                         }
@@ -875,8 +878,8 @@ namespace aria {
                     const auto  entry = frame.module->globals().find(key);
                     if (entry == nullptr) {
                         raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
@@ -923,18 +926,18 @@ namespace aria {
                     break;
                 }
                 // 比较(弹 2 压 1;run_binary_numeric 与 call_value 族同款 bool 契约,失败善后与
-                // CALL case 同形:unwind_ 查表派发 / 未捕获物化 Error 终止 run_,pitfalls 坑 #11)
+                // CALL case 同形:unwind 查表派发 / 未捕获物化 Error 终止 dispatch_loop,pitfalls 坑 #11)
                 case OpCode::GREATER:
                     if (!run_binary_numeric<OpCode::GREATER>()) {
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
                     if (!run_binary_numeric<OpCode::GREATER_EQUAL>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -942,7 +945,7 @@ namespace aria {
                     break;
                 case OpCode::LESS:
                     if (!run_binary_numeric<OpCode::LESS>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -950,7 +953,7 @@ namespace aria {
                     break;
                 case OpCode::LESS_EQUAL:
                     if (!run_binary_numeric<OpCode::LESS_EQUAL>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -959,7 +962,7 @@ namespace aria {
                 // 算术(弹 2 压 1;同上)
                 case OpCode::ADD:
                     if (!run_binary_numeric<OpCode::ADD>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -967,7 +970,7 @@ namespace aria {
                     break;
                 case OpCode::SUBTRACT:
                     if (!run_binary_numeric<OpCode::SUBTRACT>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -975,7 +978,7 @@ namespace aria {
                     break;
                 case OpCode::MULTIPLY:
                     if (!run_binary_numeric<OpCode::MULTIPLY>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -983,7 +986,7 @@ namespace aria {
                     break;
                 case OpCode::DIVIDE:
                     if (!run_binary_numeric<OpCode::DIVIDE>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -991,7 +994,7 @@ namespace aria {
                     break;
                 case OpCode::MOD:
                     if (!run_binary_numeric<OpCode::MOD>()) {
-                        if (auto u = unwind_()) {
+                        if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
@@ -1008,8 +1011,8 @@ namespace aria {
                         current_->push(Value::from_f64(-v.as_f64()));
                     } else {
                         raise(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(v));
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
@@ -1099,8 +1102,8 @@ namespace aria {
                     if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
                         // 失败载荷已在寄存器(call_value 族 bool 契约),unwind 查异常记录表:
                         // 命中 handler 即截栈派发(值落 catch 参数槽),全未命中物化 Error 出栈。
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈已 truncate,循环顶重取
                     }
@@ -1178,7 +1181,7 @@ namespace aria {
                     //     模块体 run-once 即执行一个函数,由主循环照常驱动;其 RETURN 按函数名 == <module>
                     //     判定模块体帧,弹弃返回值、改压模块对象,等价「模块体返回模块」,
                     //     故命中/未命中两分支栈效应统一为 [..., module],绑定交后续 DEF_GLOBAL / 值填槽。
-                    //     无递归 run_()。
+                    //     无递归 dispatch_loop()。
                     //
                     // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。canonical_path 经 new_string intern 驻留
                     //   (weak root,不保命),跨 modules_.find(无 GC)与未命中分支内 load_module 的
@@ -1194,8 +1197,8 @@ namespace aria {
                             resolve_module(path->view(), frame.module->abs_path(), source_roots_);
                     if (!canonical_path_str) {
                         raise(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
@@ -1213,8 +1216,8 @@ namespace aria {
                     //   unwind 查表:命中 handler 即截栈派发,全未命中物化 Error 出栈。
                     ObjModule* module = load_module(canonical_path, path->view());
                     if (module == nullptr) {
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:frame 已废,循环顶重取
                     }
@@ -1230,8 +1233,8 @@ namespace aria {
                     if (!call_closure(closure, 0)) {
                         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
                         // 载荷已在寄存器,unwind 查表派发 / 物化 Error 出栈。
-                        if (auto u = unwind_()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }
                         break; // 已派发 handler:帧栈已 truncate,循环顶重取
                     }
@@ -1245,8 +1248,8 @@ namespace aria {
                     // 未命中物化 UncaughtException Error(消息渲染值本身,无位置前缀 -- 位置由
                     // 未捕获跟踪的 at 行给出,坑 #16)。
                     current_->raise(current_->pop());
-                    if (auto u = unwind_()) {
-                        return runtime_err(std::move(*u)); // 未捕获 -> 终止 run_
+                    if (auto u = unwind()) {
+                        return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                     }
                     break; // 已派发 handler:帧栈已 truncate,循环顶重取
                 }

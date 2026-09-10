@@ -145,8 +145,8 @@ namespace aria {
         // 恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部——对齐 Lua OP_CLOSE 的批量关闭）。
         // 只发射不改登记:退出作用域路径(end_scope)由随后 FunctionCtx::end_scope 移除登记并
         // --scope_depth_;break/continue 路径登记本就须保留(跳转后语句仍在作用域内可引用)。
-        u32   count        = 0; // 弹区局部总数（含被捕获者，POP_N 计数）
-        bool  has_captured = false;
+        u32  count        = 0; // 弹区局部总数（含被捕获者，POP_N 计数）
+        bool has_captured = false;
         for (const auto& local: std::views::reverse(cur_fn_ctx()->locals_)) {
             if (local.depth <= target_depth) {
                 break; // 弹区到此为止(活局部按 depth 非递减序排列;slot 0 哑元 depth=0 恒在界外)
@@ -479,11 +479,9 @@ namespace aria {
         cur_cu()->emit_op(OpCode::RETURN, line);
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
-        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读;Array push 走 trivial 分配
+        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读;copy_from 走 trivial 分配
         // 不触 GC,fn 此刻已入父常量池经 module 根链可达,免守卫)。
-        for (const auto& desc: child->upvalues_) {
-            fn->upvalue_descs().push(desc);
-        }
+        fn->upvalue_descs().copy_from(child->upvalues_);
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
         // 打印刚编译完成函数的 CodeUnit 反汇编（游标仍在子，cur_cu() 即子 unit；name 为本函数名）。

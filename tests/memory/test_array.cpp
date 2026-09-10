@@ -9,6 +9,7 @@
 
 using aria::Array;
 using aria::GC;
+using aria::List;
 using aria::usize;
 using aria::Value;
 
@@ -145,4 +146,56 @@ TEST(Array, ConstIterator) {
     EXPECT_EQ(cbuf.cend() - cbuf.cbegin(), 2);
     // 非 const 对象上 cbegin/cend 也可用,元素不可写
     static_assert(std::is_const_v<std::remove_reference_t<decltype(*buf.cbegin())>>);
+}
+
+TEST(Array, CopyFromList) {
+    GC         gc;
+    Array<int> buf{&gc};
+    List<int>  src{10, 20, 30}; // List(std::vector) 隐式转 Span<const T>,整段一次拷入
+    buf.copy_from(src);
+    ASSERT_EQ(buf.size(), 3u);
+    EXPECT_EQ(buf[0], 10);
+    EXPECT_EQ(buf[1], 20);
+    EXPECT_EQ(buf[2], 30);
+}
+
+TEST(Array, CopyFromAppendsAfterExisting) {
+    GC              gc;
+    Array<int>      buf{&gc};
+    const List<int> src{2, 3, 4};
+    buf.push(1);
+    buf.copy_from(src); // append 语义:接在已有元素之后,不改写
+    ASSERT_EQ(buf.size(), 4u);
+    for (usize i = 0; i < 4; ++i) {
+        EXPECT_EQ(buf[i], static_cast<int>(i) + 1);
+    }
+}
+
+TEST(Array, CopyFromTriggersGrowth) {
+    GC         gc;
+    Array<int> buf{&gc};
+    buf.push(-1);
+    List<int> src(100); // fill 构造走小括号({100} 会成单元素 initializer_list)
+    for (usize i = 0; i < 100; ++i) {
+        src[i] = static_cast<int>(i) * 3;
+    }
+    buf.copy_from(src); // 8 -> 128 跨多次几何扩容,reallocate 搬迁后数据须完好
+    ASSERT_EQ(buf.size(), 101u);
+    EXPECT_EQ(buf[0], -1);
+    for (usize i = 0; i < 100; ++i) {
+        EXPECT_EQ(buf[i + 1], static_cast<int>(i) * 3);
+    }
+    EXPECT_GE(buf.capacity(), 101u);
+}
+
+TEST(Array, CopyFromEmptyNoOp) {
+    GC              gc;
+    Array<int>      buf{&gc};
+    const List<int> empty{};
+    buf.push(7);
+    const usize cap_before = buf.capacity();
+    buf.copy_from(empty); // 空 src 零操作:不扩容不改内容
+    EXPECT_EQ(buf.size(), 1u);
+    EXPECT_EQ(buf[0], 7);
+    EXPECT_EQ(buf.capacity(), cap_before);
 }

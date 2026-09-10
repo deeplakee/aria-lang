@@ -71,6 +71,21 @@ namespace aria {
             buf_.data()[len_++] = v;
         }
 
+        // 整段追加(push 的复数版):把 src 拷到 len_ 之后(append 语义,不改写已有元素,非整体
+        // 替换),一次扩容到位 + 单次 memcpy,替代逐元素 push 循环(免去 log n 次搬迁重拷与每
+        // 元素容量分支)。参数收 Span<const T> 泛化源:List(std::vector)/裸数组/本类 span() 皆
+        // 可隐式转换传入。T trivially-copyable,逐字节拷贝即语义拷贝;扩容路径与 push 同形
+        // (Buffer::reserve -> reallocate,不触发 GC)。空 src 直接返回(size 0 的 memcpy 传
+        // nullptr 属无效参数)。
+        void copy_from(Span<const T> src) {
+            if (src.empty()) {
+                return;
+            }
+            ensure_capacity(len_ + src.size());
+            std::memcpy(buf_.data() + len_, src.data(), src.size() * sizeof(T));
+            len_ += src.size();
+        }
+
         // 公开预分配提示:确保容量 >= n(对标 std::vector::reserve)。已分配指针可能改变
         // (Buffer::reserve 内部 reallocate)。薄封装内部 ensure_capacity,使内部路径
         // (push/resize)不反向依赖本公开接口。

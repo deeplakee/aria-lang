@@ -9,8 +9,10 @@
 namespace aria {
 
     ObjClass::ObjClass(GC& gc, ObjString* name, ObjClass* super) :
-        Object{ObjType::CLASS}, name_{name}, superclass_{super}, field_{&gc}, init_{nullptr} {
+        Object{ObjType::CLASS}, name_{name}, superclass_{super}, field_{&gc}, init_{Value::nil_val()} {
         // name_ 恒非空(ctor ASSERT,与 ObjModule::name_ 同模式);superclass_ 唯 Object 根为 nullptr。
+        // init_ 播 nil(Value 默认构造是不定值,须显式初始化):工厂只分配不 seed,由调用方
+        // 写入(MAKE_CLASS 执行期继承父 init;Object 根由 VM bootstrap 设)。
         ASSERT(name != nullptr, "ObjClass name must not be null");
     }
 
@@ -28,7 +30,7 @@ namespace aria {
     void ObjClass::trace(GC& gc) const noexcept {
         gc.mark_object(name_);
         gc.mark_object(superclass_); // Object 根为 nullptr,mark_object 容 nullptr
-        gc.mark_object(init_);       // ctor nullptr 态(seed 前)容 nullptr
+        gc.mark_value(init_);        // 构造器方法值(闭包/原生装箱)
         field_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);方法闭包的 defining_class 经其 trace 级联
     }
 
@@ -39,7 +41,8 @@ namespace aria {
 
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {
         // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 name 与 super(跨 new_object 顶 maybe_collect)。
+        // 根化 name 与 super(跨 new_object 顶 maybe_collect)。init_ 出厂恒 nil(纯分配工厂,
+        // 与 new_function/new_closure 同纪律),seed 责任在调用方。
         return gc.new_object<ObjClass>(gc, name, super);
     }
 

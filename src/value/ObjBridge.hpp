@@ -26,6 +26,21 @@ namespace aria {
         return v.is_obj() ? Object::try_as<T>(v.as_obj()) : nullptr;
     }
 
+    // 类表成员值是否为「可绑定方法」(M5):闭包(字节码方法)或原生函数(内建方法)--
+    // uniform「可调用一律绑定」,绑定形态统一 ObjBoundMethod。决策 2「区分在值类型本身,
+    // 表内无 tag」的判别谓词;非可调用静态值直读不缓存。**泛化扩展缝**:未来若再扩可绑定
+    // 集合,改本谓词即可(类表是 Value 型,查找/trace/注册路径均不特化值类型)。
+    // 收口三处消费:VM(LOAD_SUPER_METHOD 可调用检查 / MAKE_METHOD 槽形 ASSERT)、
+    // ObjInstance::load_field(绑定判定)、ObjBoundMethod ctor ASSERT。
+    [[nodiscard]]
+    inline bool is_callable_value(const Value v) noexcept {
+        if (!v.is_obj()) {
+            return false;
+        }
+        const ObjType t = v.as_obj()->type();
+        return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
+    }
+
 } // namespace aria
 
 #endif // ARIA_OBJBRIDGE_HPP

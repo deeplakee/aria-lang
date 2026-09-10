@@ -23,22 +23,24 @@ namespace aria {
     //     ObjString*,值为绑定 Value(方法槽的值是 ObjClosure,静态变量槽是任意 Value;区分在
     //     值类型本身,表内无 tag)。MAKE_STATIC/MAKE_METHOD 与类上赋值(STORE_FIELD 类路径,
     //     写遮蔽)写此表;沿链查找见 find_field。惰性分配(首次 upsert 才建表)。
-    //   - init_:构造器闭包。ctor 为 nullptr,MAKE_CLASS 时从父类 seed(super 非空即
-    //     继承其 init 闭包)、MAKE_METHOD("init") 覆盖、类上 init 赋值同步(STORE_FIELD 类路径
-    //     特例,值非 ObjClosure 拒写);不变式「建成的类 init_ 非空且与类表 init 槽一致」
+    //   - init_:构造器方法值(**Value**,init Value 化 2026-09-10:闭包或原生函数皆可,
+    //     实例化统一走 call_value 分发,不再特认闭包;类上赋非可调用值也放行,实例化时
+    //     call_value 自然报 CallNonCallable)。ctor 播 nil,MAKE_CLASS 时从父类 seed(super 非空
+    //     即继承其 init 值)、MAKE_METHOD("init") 覆盖、类上 init 赋值同步(STORE_FIELD 类路径
+    //     特例,经 set_init);不变式「建成的类 init_ 有值且与类表 init 槽一致」
     //     由 VM 建类/写路径保证(Object 根类的由 bootstrap 设)。经类实例化(call_value CLASS 分支)取用。
     //
     //   地址哈希型可变对象(走 Object{ObjType::CLASS} ctor);equals 保持默认地址相等--
     //     类按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
-    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(容 nullptr:
-    //     ctor nullptr 态,seed 前不触 GC 即安全)+ 委托 field_.trace(gc)(遍历占用槽
+    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(出厂 nil,mark_value
+    //     容 nil)+ 委托 field_.trace(gc)(遍历占用槽
     //     mark_value key+value;方法闭包的 defining_class 经 ObjClosure::trace 级联标)。
     //   debug_repr():`<class Foo>`;基类 to_string 默认委托本方法,显示同文案。
     class ObjClass final : public Object {
     public:
         // name = 类名(intern,指针恒非空 -- 构造期 ASSERT);super = 父类(唯 Object 根为 nullptr)。
         ObjClass(GC& gc, ObjString* name, ObjClass* super);
-        // field_ 持 GC* 级联自释放;name_/superclass_/init_ 是 GC 对象,不归本类释放
+        // field_ 持 GC* 级联自释放;name_/superclass_ 是 GC 对象、init_ 是 GC 值,不归本类释放
         ~ObjClass() override = default;
 
 
@@ -85,16 +87,16 @@ namespace aria {
             return field_;
         }
 
-        // 构造器闭包:ctor nullptr,MAKE_CLASS seed / MAKE_METHOD("init") 覆盖 / 类上 init 赋值
-        // 同步(三写点见类注释);实例化取用。
+        // 构造器方法值(Value:闭包/原生函数;出厂 nil,由调用方 seed --MAKE_CLASS 继承父 init /
+        // MAKE_METHOD("init") 覆盖 / 类上 init 赋值同步,三写点见类注释);实例化取用。
         [[nodiscard]]
-        ObjClosure* init() const noexcept {
+        Value init() const noexcept {
             return init_;
         }
 
-        void set_init(ObjClosure* init) noexcept { init_ = init; }
+        void set_init(Value init) noexcept { init_ = init; }
 
-        // 标 name_ + superclass_(容 nullptr)+ init_(容 nullptr)+ field_(key+value)。
+        // 标 name_ + superclass_(容 nullptr:Object 根)+ mark_value(init_)(出厂 nil)+ field_(key+value)。
         void trace(GC& gc) const noexcept override;
 
         // 壳定长(field_ 的 ctrl/entries 两块由 ~HashTable 自释放,不计入壳)。
@@ -111,10 +113,11 @@ namespace aria {
         ObjString*    name_;       // 类名(intern 驻留;显示名;指针恒非空)
         ObjClass*     superclass_; // 父类(唯 Object 根为 nullptr;运行期注入后不可变)
         AriaHashTable field_; // 类级成员表:静态变量 + 静态/实例方法同表(惰性分配;单数 field_ 区分 ObjInstance.fields_)
-        ObjClosure*   init_;  // 构造器闭包(ctor nullptr;MAKE_CLASS seed -> MAKE_METHOD("init") 覆盖)
+        Value         init_;  // 构造器方法值(出厂 nil -> MAKE_CLASS seed -> MAKE_METHOD("init") 覆盖 -> 类上赋值同步)
     };
 
-    // 工厂:分配 ObjClass(field_ 空态、init_ nullptr)。工厂不替调用方守卫入参
+    // 工厂:分配 ObjClass(field_ 空态、init_ 出厂恒 nil --工厂只分配不 seed,seed 责任在调用方)。
+    //     工厂不替调用方守卫入参
     //     (「每方只守自己创建的」)--只做一次 new_object、无内部新建对象,**调用方须在调用前
     //     自行根化 name 与 super**(跨 new_object 顶 maybe_collect;name 经 intern 是 weak root,
     //     super 可能尚未入任何根,如 MAKE_CLASS peek-不弹栈纪律),与 new_function 同理。

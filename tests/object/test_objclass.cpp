@@ -66,7 +66,7 @@ TEST(ObjClass, Basics) {
     EXPECT_EQ(cls->name(), name); // intern 同指针
     EXPECT_EQ(cls->superclass(), nullptr);
     EXPECT_EQ(cls->field().size(), 0u); // 惰性:建类即查,无表
-    EXPECT_EQ(cls->init(), nullptr);    // ctor nullptr 态,MAKE_CLASS seed 前无构造器
+    EXPECT_TRUE(cls->init().is_nil());  // 工厂只分配不 seed:出厂恒 nil(MAKE_CLASS seed / bootstrap 设)
 }
 
 TEST(ObjClass, SuperclassInjects) {
@@ -209,7 +209,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
         method->set_defining_class(sub);
         init = make_closure(gc, "init", 0);
         g.push(init);
-        sub->set_init(init);
+        sub->set_init(Value::from_obj(init)); // init Value 化:装箱继承
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         g.push(constant);
         init->function()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
@@ -233,7 +233,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     EXPECT_EQ(gc.bytes_allocated(), before);
     EXPECT_EQ(sub->superclass(), super); // 父类经链标存活
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
-    EXPECT_EQ(sub->init(), init);
+    EXPECT_TRUE(value_identical(sub->init(), Value::from_obj(init))); // init Value 化:经 === 判同
     EXPECT_EQ(method->defining_class(), sub);
     EXPECT_EQ(sub->field().size(), 2u);
     Value* vfound = sub->find_field(vkey);

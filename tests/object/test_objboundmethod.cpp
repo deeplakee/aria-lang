@@ -7,6 +7,7 @@
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "value/Value.hpp"
 
@@ -17,6 +18,7 @@ using aria::new_closure;
 using aria::new_function;
 using aria::new_instance;
 using aria::new_module;
+using aria::new_native_fn;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjClass;
@@ -61,6 +63,9 @@ namespace {
         return new_instance(gc, cls);
     }
 
+    // 原生方法绑定测试用的空实现(NativeFn 契约形;绑定测试不实际调用)。
+    bool noop_native(aria::AriaVM& /*vm*/, aria::Span<Value> /*slots*/) { return true; }
+
 } // namespace
 
 TEST(ObjBoundMethod, Basics) {
@@ -72,10 +77,10 @@ TEST(ObjBoundMethod, Basics) {
     auto inst   = make_instance(gc, cls);
     mg.push(inst);
 
-    auto bound = new_bound_method(gc, method, Value::from_obj(inst)); // 建时(非 stress)无 collect
+    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时(非 stress)无 collect
     EXPECT_TRUE(aria::Object::is<ObjBoundMethod>(bound));
     EXPECT_EQ(bound->type(), aria::ObjType::BOUND_METHOD);
-    EXPECT_EQ(bound->method(), method);
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
 }
 
@@ -91,8 +96,8 @@ TEST(ObjBoundMethod, IdentitySemantics) {
     auto i2 = make_instance(gc, cls);
     mg.push(i2);
 
-    auto b1 = new_bound_method(gc, method, Value::from_obj(i1));
-    auto b2 = new_bound_method(gc, method, Value::from_obj(i2));
+    auto b1 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i1));
+    auto b2 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i2));
     EXPECT_NE(b1, b2);
     EXPECT_TRUE(value_identical(Value::from_obj(b1), Value::from_obj(b1)));
     EXPECT_FALSE(value_identical(Value::from_obj(b1), Value::from_obj(b2)));
@@ -107,8 +112,28 @@ TEST(ObjBoundMethod, ToString) {
     auto cg     = gc.make_guard(cls);
     auto inst   = make_instance(gc, cls);
     mg.push(inst);
-    auto bound = new_bound_method(gc, method, Value::from_obj(inst));
+    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(bound->to_string(), "<bound method m>");
+}
+
+// 原生方法绑定(M5 泛化):method_ 可为 ObjNativeFn -- 内建类型方法的载体;
+// method_name 非虚取名分派(闭包 fn 名 / 原生 name_),to_string 与调试渲染同文案。
+TEST(ObjBoundMethod, NativeMethodBinding) {
+    GC   gc;
+    auto nm     = new_string(gc, "echo");
+    auto guard  = gc.make_guard(nm);
+    auto native = new_native_fn(gc, nm, noop_native);
+    guard.push(native);
+    auto cls  = make_class(gc, "Foo");
+    auto cg   = gc.make_guard(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
+
+    auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(native)));
+    EXPECT_EQ(bound->method_name(), "echo");
+    EXPECT_EQ(bound->to_string(), "<bound method echo>");
+    EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method echo>"); // 调试渲染同文案
 }
 
 TEST(ObjBoundMethod, DebugRender) {
@@ -119,7 +144,7 @@ TEST(ObjBoundMethod, DebugRender) {
     auto cg     = gc.make_guard(cls);
     auto inst   = make_instance(gc, cls);
     mg.push(inst);
-    auto bound = new_bound_method(gc, method, Value::from_obj(inst));
+    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
 }
 
@@ -145,8 +170,8 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
         g.push(method);
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         g.push(constant);
-        method->function()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
-        bound = new_bound_method(gc, method, Value::from_obj(inst));        // 建时 collect:method/inst 经守卫存活
+        method->function()->unit().add_constant(Value::from_obj(constant));           // push 走 trivial 分配不触 GC
+        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时 collect:经守卫存活
         g.push(bound);
         // 作用域退出:全部临时根弹出,method/inst/cls 此后仅经 bound.trace 可达
     }
@@ -156,7 +181,7 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
     const usize before  = gc.bytes_allocated();
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
-    EXPECT_EQ(bound->method(), method);
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
     EXPECT_EQ(inst->cls(), cls);
@@ -169,7 +194,7 @@ TEST(ObjBoundMethod, UnrootedBoundMethodSwept) {
     auto method = make_closure(gc, "m", 1);
     auto cls    = make_class(gc, "orphan");
     auto inst   = make_instance(gc, cls);
-    (void) new_bound_method(gc, method, Value::from_obj(inst)); // 全链无根
+    (void) new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 全链无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

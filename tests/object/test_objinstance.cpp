@@ -132,7 +132,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
         g.push(obj);
         method = make_closure(gc, "m", 0); // 建时 collect:cls/obj 经守卫存活
         g.push(method);
-        bound = new_bound_method(gc, method, Value::from_obj(obj)); // 建时 collect:method/obj 经守卫存活
+        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(obj)); // 建时 collect:method/obj 经守卫存活
         g.push(bound);
         bkey = new_string(gc, "m"); // 建时 collect:在根者存活
         g.push(bkey);
@@ -157,7 +157,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     EXPECT_EQ(fval->view(), "a long field value string!!!");
     EXPECT_TRUE(value_identical(obj->fields().find(Value::from_obj(bkey))->value, Value::from_obj(bound)));
     EXPECT_TRUE(value_identical(obj->fields().find(Value::from_obj(fkey))->value, Value::from_obj(fval)));
-    EXPECT_EQ(bound->method(), method); // bound 经 fields 级联存活,method/闭包 fn 全链随活
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method))); // bound 经 fields 级联存活,method/闭包 fn 全链随活
 }
 
 // 未根实例被 sweep(壳 + 其 class_/fields 值若无他根一并回收)。

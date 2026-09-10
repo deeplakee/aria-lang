@@ -26,8 +26,9 @@ namespace aria {
         }
 
         // 值可读化(nil/true/false/整数/浮点/"字符串"/<对象描述>)统一走 value/Value.hpp 的 format_value_debug
-        // --非重入渲染:Obj 不经可重载虚 to_string,改走非虚 obj->type() 分派(详见其注释)。供常量池小节与
-        // LOAD_CONST/CLOSURE 注释共用;字符串走带引号的 format_string 形式(转义后)。
+        // --非重入渲染:Obj 走 debug_repr() 虚分派,override 契约纯 C++ 惰性、绝不触用户重载(详见
+        // Object.hpp/Value.hpp 注释)。供常量池小节与 LOAD_CONST/CLOSURE 注释共用;字符串走
+        // ObjString::debug_repr 的带引号转义形态。
 
         // 把 opcode 名与操作数段拼成一行:左对齐 16 列的 op_name,空操作数即裸名,末尾尾随空格裁掉。
         String join_line(StringView op_name, const StringView operands) {

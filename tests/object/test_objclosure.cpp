@@ -88,13 +88,13 @@ TEST(ObjClosure, AddUpvaluesInOrder) {
     EXPECT_EQ(c->upvalues()[1], u2);
 }
 
-// to_string 委托 function_->to_string():渲染 `<fn name>`,与纯函数同文案。
-TEST(ObjClosure, ToStringDelegatesToFunction) {
+// debug_repr 直取 function_ 名渲染 `<fn name>`,与纯函数同文案;to_string 经基类默认委托之。
+TEST(ObjClosure, DebugReprSameAsFunction) {
     GC   gc;
     auto fn = new_function(gc, new_string(gc, "add"), 0);
     auto c  = new_closure(gc, fn);
     EXPECT_EQ(c->to_string(), "<fn add>");
-    // 调试渲染同文案(format_value_debug 的 CLOSURE 分支,非虚路径)。
+    // 调试渲染同文案(format_value_debug 经 debug_repr 虚分派)。
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(c)), "<fn add>");
 }
 

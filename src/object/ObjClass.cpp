@@ -32,7 +32,7 @@ namespace aria {
         field_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);方法闭包的 defining_class 经其 trace 级联
     }
 
-    String ObjClass::to_string() const {
+    String ObjClass::debug_repr() const {
         // name_ 恒非空(ctor ASSERT)。
         return std::format("<class {}>", name_->view());
     }

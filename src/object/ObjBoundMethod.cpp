@@ -19,7 +19,7 @@ namespace aria {
         gc.mark_value(receiver_); // receiver 装箱任意值,mark_value 分派
     }
 
-    String ObjBoundMethod::to_string() const {
+    String ObjBoundMethod::debug_repr() const {
         // method_ 恒非空(ctor ASSERT):渲染方法名,与 <fn m> 渲染族同源(闭包 -> fn 名)。
         return std::format("<bound method {}>", method_->function()->name()->view());
     }

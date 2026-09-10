@@ -27,6 +27,10 @@ namespace aria {
     //       slots[1..argc] = 实参 a1..aN(a1 = slots[1], aN = slots[argc]);
     //       argc = slots.size() - 1。
     //     原生函数天然变参(不存 arity 字段),元数自查 args.size();固定元数内建在体内自查即可。
+    //     方法调用形态(M5 泛化,经 ObjBoundMethod 绑定,uniform「可调用一律绑定」):调用区
+    //     [bound, a1..aN] 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生收到的
+    //     slots[0] = this,同时仍是返回槽;实参槽位与自由调用一致(实参不动槽、无整形)。
+    //     类路径/静态访问(`Foo.m`)取出裸原生值不绑定,slots[0] = 原生自身,与自由调用无异。
     //
     //   返回值:bool。true = 成功(把返回值写到 slots[0],原地覆盖 callee);false = 失败(已调
     //   vm.fail/vm.raise 置寄存器)。惯用法--成功路径 `slots[0] = ...; return true;`,失败路径
@@ -98,11 +102,12 @@ namespace aria {
             return sizeof(ObjNativeFn);
         }
 
-        // 可读描述:`<fn name>`(与 ObjFunction 一致--用户侧不区分 native / user 函数;
-        //   native 身份经 ObjType::NATIVE_FN / type() 反射可见,不靠 to_string 区分)。
+        // 调试渲染:`<fn name>`(与 ObjFunction 一致--用户侧不区分 native / user 函数;
+        //   native 身份经 ObjType::NATIVE_FN / type() 反射可见,不靠渲染文案区分)。
         //   name_ 恒非空(ctor ASSERT),匿名原生函数渲染 `<fn <anonymous>`(name_ = kAnonymousName)。
+        //   基类 to_string 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjString* name_;

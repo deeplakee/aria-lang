@@ -26,7 +26,7 @@ namespace aria {
         globals_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value)
     }
 
-    String ObjModule::to_string() const {
+    String ObjModule::debug_repr() const {
         // name_ 恒非空(ctor ASSERT),内容可空(合成顶层)但指针非空。
         return std::format("<module {}>", name_->view());
     }

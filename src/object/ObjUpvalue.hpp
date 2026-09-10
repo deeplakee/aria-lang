@@ -25,7 +25,8 @@ namespace aria {
     //   final,不再派生;非拷贝/非移动--upvalue 按身份共享(同一局部同一份引用),浅拷贝会
     //   破坏开链与 VM 侧「复用同一对象」不变式。
     //   trace():标 *value_slot()(open 标栈槽内值 / closed 标 closed_;栈槽内的 Value 可能
-    //   装箱任意对象)。upvalue 本体从不出现在 aria 值面(语言层不可见),to_string 用基类默认。
+    //   装箱任意对象)。upvalue 本体从不出现在 aria 值面(语言层不可见),debug_repr 渲染
+    //   `<upvalue>` 稳定短文案(地址型描述噪声大且地址不稳)。
     class ObjUpvalue final : public Object {
     public:
         // slot = 被捕获的值栈槽地址(open 起点;恒非空,栈槽必存在)。
@@ -86,6 +87,11 @@ namespace aria {
         usize size() const noexcept override {
             return sizeof(ObjUpvalue);
         }
+
+        // 调试渲染:`<upvalue>` 稳定短文案。override Object::debug_repr 默认的地址型;基类
+        // to_string 默认委托本方法,随之同文案。
+        [[nodiscard]]
+        String debug_repr() const override;
 
     private:
         Value*      location_;  // open:指入值栈的槽;closed:恒指 &closed_

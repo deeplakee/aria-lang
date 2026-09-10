@@ -76,9 +76,9 @@ namespace aria {
             return sizeof(ObjClosure);
         }
 
-        // 可读描述:委托 function_->to_string(),渲染 `<fn name>`(与 ObjFunction 同文案)。
+        // 调试渲染:直取 function_ 名渲染 `<fn name>`(与 ObjFunction 同文案)。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjFunction*       function_;       // 被包函数(恒非空,ctor ASSERT)

@@ -155,18 +155,24 @@ namespace aria {
             return this == other;
         }
 
-        // 对象的地址型调试描述(Python 风格 `<Type at 0xaddr>`):按 type_name() + 对象地址
-        // 静态构造,**非虚**--不经虚分派,故可安全用于不可重入的调试上下文(如 format_value_debug
-        // 的 default 分支:避免调用可重载的 to_string() 重入 VM 致无限递归)。to_string() 基类默认
-        // 委托本方法;子类型有更具体内容语义者 override to_string() 即可,无需动本方法。
+        // 对象的调试渲染(repr 位):各具体子类型 override 实现自己的 debug 文案(ObjString
+        // 字面量带引号转义 / ObjFunction `<fn name>` / ObjUpvalue `<upvalue>` 等),基类默认 =
+        // 地址型 `<Type at 0xaddr>`(无更具体内容语义时的兜底)。虚函数,但 **override 契约 =
+        // 纯 C++ 惰性渲染**:只读自身 C++ 成员造返回串(String 走 std::allocator,不触 GC 回收),
+        // 绝不执行 aria 字节码 / 调 call_value 等可重入 VM 的路径。语言层无法新增 C++ 子类型,
+        // override 集合编译期封闭,故 format_value_debug / trace_execution / 反汇编常量池等
+        // dispatch_loop 内调试上下文经虚分派调用本方法安全,绝不触用户重载--「防重入」由本
+        // 契约维护,不再依赖非虚分派(2026-09-10 起 debug 文案从 format_value_debug 的 ObjType
+        // switch 下沉到各子类型,value 层不再认识具体子类型)。
         [[nodiscard]]
-        String debug_repr() const {
+        virtual String debug_repr() const {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
-        // 对象的可读描述:基类默认 = debug_repr()(地址型);有更具体内容语义的子类型
-        // 按需 override(如 ObjString 渲染字符内容)。与 type_name() 的区别:前者是类型名的
-        // 静态枚举映射,本方法产出"这个对象"的描述。
+        // 对象的可读描述(str 位):基类默认 = debug_repr()(显示与调试同文案);显示语义与
+        // 调试分叉的子类型两者都 override(当前唯一:ObjString--显示原文无引号、调试带引号
+        // 转义)。未来用户类 __str__ 落地时在 ObjInstance::to_string 分叉,调试位保持惰性不受
+        // 影响。与 type_name() 的区别:前者是类型名的静态枚举映射,本方法产出"这个对象"的描述。
         [[nodiscard]]
         virtual String to_string() const {
             return debug_repr();

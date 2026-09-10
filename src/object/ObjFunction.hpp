@@ -97,10 +97,11 @@ namespace aria {
             return sizeof(ObjFunction);
         }
 
-        // 可读描述:`<fn add>`(clox 风格);name_ 恒非空,统一 `<fn name>`(入口渲染 `<fn <main>>`/`<fn <module>>`、
-        // lambda 渲染 `<fn <anonymous>>`)。override Object::to_string 默认的 `<Function at 0x...>`。
+        // 调试渲染:`<fn add>`(clox 风格);name_ 恒非空,统一 `<fn name>`(入口渲染 `<fn <main>>`/`<fn <module>>`、
+        // lambda 渲染 `<fn <anonymous>>`)。override Object::debug_repr 默认的 `<Function at 0x...>`;
+        // 基类 to_string 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         CodeUnit           unit_;

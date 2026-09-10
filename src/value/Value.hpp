@@ -71,23 +71,20 @@ namespace aria {
     [[nodiscard]]
     String format_f64(f64 d);
 
-    // 字符串对象的字面量渲染:`"<转义内容>"`。util::escape_string 转义内部,外层补双引号。
-    // 反汇编对字符串字面量的既有约定(用 `"..."` 而非 ObjString::to_string 的 `'...'`)。
-    [[nodiscard]]
-    String format_string(const ObjString* obj);
-
     // 值的可读渲染(PRINT / REPL 回显等用):nil/true/false/整数/浮点/对象描述。
-    //   Obj 统一走虚函数 to_string()(ObjString 返回原文无引号、ObjFunction 返回 <fn name> 等)。
-    //   区别于反汇编 format_string 的字面量 "..."(双引号转义)。
+    //   Obj 统一走虚函数 to_string()(显示位:多数内建类型经基类默认委托 debug_repr;ObjString
+    //   返回原文无引号)。区别于调试渲染的带引号字面量形式(居 ObjString::debug_repr)。
     [[nodiscard]]
     String format_value(const Value& v);
 
-    // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):输出与 format_value 对内置类型一致,
-    //   但 Obj **不经虚函数 to_string()** --后者可被未来用户类(M5)重载为运行 aria 字节码,调试上下文若在
-    //   dispatch_loop 内调用会重入 VM 致无限递归。故 Obj 走**非虚**的 obj->type() 枚举分派:已知内置类型经纯 C++ 访问器
-    //   渲染(ObjString 走 format_string 带引号;ObjException 渲染完整烘焙消息;ObjFunction/ObjModule/
-    //   ObjNativeFn 同各自 to_string 文案),其余(未来用户实例 / 未落地类型)退化为 `<Type at 0xaddr>`(同
-    //   Object::to_string 基类默认但静态构造、不经虚分派),绝不触用户重载。原语 nil/bool/int/f64 同 format_value。
+    // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):内置原语与 format_value
+    //   一致,Obj 走虚函数 debug_repr() 而非可重载的 to_string()(后者是未来用户类 __str__ 的
+    //   挂载点,可重载为运行 aria 字节码,调试上下文若在 dispatch_loop 内调用会重入 VM 致无限递归)。
+    //   debug_repr 的 override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),
+    //   语言层无法新增 C++ 子类型、override 集合编译期封闭,故虚分派绝不触用户重载;各类型 debug
+    //   文案由各子类型自己实现(ObjString 字面量带引号转义 / ObjFunction/ObjClosure/ObjNativeFn
+    //   渲染 `<fn name>` / ObjUpvalue `<upvalue>` 稳定短文案 / 其余内建类型同各自显示文案)。
+    //   原语 nil/bool/int/f64 同 format_value。
     [[nodiscard]]
     String format_value_debug(const Value& v);
 

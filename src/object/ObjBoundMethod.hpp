@@ -22,7 +22,7 @@ namespace aria {
     //   地址哈希型可变对象(走 Object{ObjType::BOUND_METHOD} ctor);equals 保持默认地址相等--
     //     绑定按身份判等(同一方法绑不同实例是不同对象,绑定语义上无内容相等需求)。final。
     //   trace():标 method_ + mark_value(receiver_)(receiver 可能装箱任意对象,值级联)。
-    //   to_string():`<bound method m>`(m = method_ 的函数名;与 <fn m> 渲染族一致)。
+    //   debug_repr():`<bound method m>`(m = method_ 的函数名;与 <fn m> 渲染族一致)。
     class ObjBoundMethod final : public Object {
     public:
         ObjBoundMethod(ObjClosure* method, Value receiver);
@@ -53,9 +53,10 @@ namespace aria {
             return sizeof(ObjBoundMethod);
         }
 
-        // 可读描述:`<bound method m>`。
+        // 调试渲染:`<bound method m>`(m = method_ 的函数名,与 <fn m> 渲染族一致);基类 to_string
+        // 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjClosure* method_;   // 被绑定方法闭包(恒非空,ctor ASSERT)

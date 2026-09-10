@@ -18,7 +18,7 @@ namespace aria {
         gc.mark_object(name_); // fn_ 是 C++ 指针,非 GC 对象,唯一 GC 子节点即 name_
     }
 
-    String ObjNativeFn::to_string() const {
+    String ObjNativeFn::debug_repr() const {
         // name_ 恒非空(ctor ASSERT);匿名原生函数 name_ = kAnonymousName,渲染 `<fn <anonymous>>`。
         return std::format("<fn {}>", name_->view());
     }

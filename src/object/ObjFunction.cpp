@@ -20,7 +20,7 @@ namespace aria {
         unit_.trace(gc);
     }
 
-    String ObjFunction::to_string() const {
+    String ObjFunction::debug_repr() const {
         // name_ 恒非空(ctor ASSERT):入口 `<main>`(主入口)/`<module>`(导入) / lambda `<anonymous>` / 具名声明名,统一
         // `<fn name>`。
         return std::format("<fn {}>", name_->view());

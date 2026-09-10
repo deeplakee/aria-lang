@@ -33,7 +33,7 @@ namespace aria {
     //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(容 nullptr:
     //     ctor nullptr 态,seed 前不触 GC 即安全)+ 委托 field_.trace(gc)(遍历占用槽
     //     mark_value key+value;方法闭包的 defining_class 经 ObjClosure::trace 级联标)。
-    //   to_string():`<class Foo>`。
+    //   debug_repr():`<class Foo>`;基类 to_string 默认委托本方法,显示同文案。
     class ObjClass final : public Object {
     public:
         // name = 类名(intern,指针恒非空 -- 构造期 ASSERT);super = 父类(唯 Object 根为 nullptr)。
@@ -103,9 +103,9 @@ namespace aria {
             return sizeof(ObjClass);
         }
 
-        // 可读描述:`<class Foo>`;name_ 恒非空(ctor ASSERT)。
+        // 调试渲染:`<class Foo>`(name_ 恒非空,ctor ASSERT);基类 to_string 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjString*    name_;       // 类名(intern 驻留;显示名;指针恒非空)

@@ -211,9 +211,10 @@ namespace aria {
         // 并经 Disassembler::disassembleInstruction 解码(仅读不推进 VM 的 ip)。
         //   - 栈渲染经 format_value_debug(Value 层非重入渲染,见 value/Value.hpp),不用 format_value
         //     (后者 Obj 走可重载虚 to_string,未来用户类可重载其运行 aria 字节码,trace 在 dispatch_loop 内会重入 VM
-        //     致无限递归);format_value_debug 对 Obj 走非虚 obj->type() 分派,绝不触用户重载。
+        //     致无限递归);format_value_debug 对 Obj 走 debug_repr() 虚分派(override 契约纯 C++ 惰性,
+        //     见 Object.hpp),绝不触用户重载。
         //   - 字节码行的 frame.closure->function()->to_string() / mod->to_string() 是 ObjFunction/
-        //     ObjModule(内置,纯 C++,用户无法重载),无重入风险。
+        //     ObjModule(内置,渲染经 debug_repr 纯 C++,用户无法重载),无重入风险。
         //
         //   - 字节码行:模块信息(to_string,置于 [trace] 与 <fn> 之间)+ 栈顶帧 fn 名 @ip 偏移
         //     + 指令反汇编(opcode + 操作数 + 注释);第一行即含完整位置上下文(模块/函数/ip/字节码),无需下扫模块行;

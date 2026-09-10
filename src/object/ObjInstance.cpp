@@ -17,7 +17,7 @@ namespace aria {
         fields_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);缓存 bound 经此级联
     }
 
-    String ObjInstance::to_string() const {
+    String ObjInstance::debug_repr() const {
         // class_ 恒非空(ctor ASSERT)。
         return std::format("<{} instance>", class_->name()->view());
     }

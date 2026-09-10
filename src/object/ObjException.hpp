@@ -69,9 +69,10 @@ namespace aria {
             return sizeof(ObjException);
         }
 
-        // 可读描述:渲染消息原文(无引号),同 ObjString::to_string 风格。
+        // 调试渲染:消息原文(无引号),同 ObjString 显示(to_string)风格;基类 to_string 默认委托本方法,
+        // catch 的 print(e)/str(e) 显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ErrorCode  code_;    // 错误码(机器标识)

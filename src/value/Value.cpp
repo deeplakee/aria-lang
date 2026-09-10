@@ -3,15 +3,6 @@
 #include <bit>
 #include <format>
 
-#include "object/ObjBoundMethod.hpp"
-#include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
-#include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
-#include "object/ObjInstance.hpp"
-#include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
-#include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "util/util.hpp"
 
@@ -72,8 +63,6 @@ namespace aria {
         return s;
     }
 
-    String format_string(const ObjString* obj) { return std::format("\"{}\"", util::escape_string(obj->view())); }
-
     StringView type_name(const Value& v) noexcept {
         if (v.is_obj()) {
             return v.as_obj()->type_name();
@@ -98,8 +87,11 @@ namespace aria {
     }
 
     String format_value_debug(const Value& v) {
-        // 与 format_value 的关键区别:Obj 不经虚函数 to_string()(可重载、重入风险),改走非虚的
-        // obj->type() 枚举分派。详见 Value.hpp 注释。
+        // 与 format_value 的关键区别:Obj 走 debug_repr() 虚分派而非可重载的 to_string()
+        //(后者是未来用户类 __str__ 的挂载点,可重入 VM)。debug_repr 虽是虚函数,但其
+        // override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),语言层
+        // 无法新增 C++ 子类型,故调试上下文虚分派安全,绝不触用户重载;各类型的 debug 文案
+        // 由各子类型自己实现,本函数不再按 ObjType 分型。详见 Value.hpp 注释。
         switch (v.type()) {
             case Value::Type::Nil:
                 return "nil";
@@ -109,42 +101,8 @@ namespace aria {
                 return std::format("{}", v.as_int());
             case Value::Type::F64:
                 return format_f64(v.as_f64());
-            case Value::Type::Obj: {
-                switch (Object* obj = v.as_obj(); obj->type()) { // 非虚:读 type_ 字段,不经虚分派
-                    case ObjType::STRING:
-                        return format_string(Object::as<ObjString>(obj));
-                    case ObjType::FUNCTION:
-                        return std::format("<fn {}>", Object::as<ObjFunction>(obj)->name()->view());
-                    case ObjType::CLOSURE:
-                        // 闭包:渲染 `<fn name>`(与 ObjClosure::to_string 同文案,纯 C++ 访问器,非虚无重入风险)。
-                        return std::format("<fn {}>", Object::as<ObjClosure>(obj)->function()->name()->view());
-                    case ObjType::UPVALUE:
-                        // Upvalue:语言层不可见的内部对象,渲染稳定短文案(地址型描述噪声大且地址不稳)。
-                        return "<upvalue>";
-                    case ObjType::MODULE:
-                        return std::format("<module {}>", Object::as<ObjModule>(obj)->name()->view());
-                    case ObjType::CLASS:
-                        // 类:渲染 `<class Foo>`(与 ObjClass::to_string 同文案,纯 C++ 访问器,非虚无重入风险)。
-                        return std::format("<class {}>", Object::as<ObjClass>(obj)->name()->view());
-                    case ObjType::INSTANCE:
-                        // 实例:渲染 `<Foo instance>`(与 ObjInstance::to_string 同文案)。
-                        return std::format("<{} instance>", Object::as<ObjInstance>(obj)->cls()->name()->view());
-                    case ObjType::BOUND_METHOD:
-                        // 绑定方法:渲染 `<bound method m>`(与 ObjBoundMethod::to_string 同文案)。
-                        return std::format("<bound method {}>",
-                                           Object::as<ObjBoundMethod>(obj)->method()->function()->name()->view());
-                    case ObjType::NATIVE_FN:
-                        return std::format("<fn {}>", Object::as<ObjNativeFn>(obj)->name()->view());
-                    case ObjType::EXCEPTION:
-                        // ObjException:渲染完整烘焙消息(纯 C++ 访问器,非虚无重入风险;消息即身份,
-                        // 同 to_string 文案,不带引号)。
-                        return String{Object::as<ObjException>(obj)->message()->view()};
-                    default:
-                        // 未落地 / 用户类实例等:仅类型名 + 地址,绝不调用可重载的 to_string,杜绝重入 VM。
-                        // 复用 Object::debug_repr()(非虚,不经虚分派)。
-                        return obj->debug_repr();
-                }
-            }
+            case Value::Type::Obj:
+                return v.as_obj()->debug_repr();
         }
         UNREACHABLE();
     }

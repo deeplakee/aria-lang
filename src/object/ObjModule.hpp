@@ -108,10 +108,10 @@ namespace aria {
             return sizeof(ObjModule);
         }
 
-        // 可读描述:`<module lib/utils>`;name_ 恒非空(ctor ASSERT),内容可空时渲染 `<module >`。
-        // override Object::to_string 默认的 `<Module at 0x...>`。
+        // 调试渲染:`<module lib/utils>`;name_ 恒非空(ctor ASSERT),内容可空时渲染 `<module >`。
+        // override Object::debug_repr 默认的 `<Module at 0x...>`;基类 to_string 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjString*    name_;  // 模块文件名去 .aria 后缀(intern 驻留;显示名 + 合成绝对路径用;指针恒非空,内容可空)

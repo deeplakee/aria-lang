@@ -23,7 +23,7 @@ namespace aria {
     //     实例按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
     //   trace():标 class_ + 委托 fields_.trace(gc)(遍历占用槽 mark_value key+value;缓存
     //     的 bound-method 经此级联标,GC 侧零额外负担)。
-    //   to_string():`<Foo instance>`。
+    //   debug_repr():`<Foo instance>`;基类 to_string 默认委托本方法,显示同文案。
     class ObjInstance final : public Object {
     public:
         explicit ObjInstance(GC& gc, ObjClass* cls);
@@ -61,9 +61,9 @@ namespace aria {
             return sizeof(ObjInstance);
         }
 
-        // 可读描述:`<Foo instance>`;class_ 恒非空。
+        // 调试渲染:`<Foo instance>`(class_ 恒非空);基类 to_string 默认委托本方法,显示同文案。
         [[nodiscard]]
-        String to_string() const override;
+        String debug_repr() const override;
 
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)

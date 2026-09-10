@@ -32,6 +32,11 @@ namespace aria {
 
     String ObjString::to_string() const { return std::format("{}", view()); }
 
+    String ObjString::debug_repr() const {
+        // 字面量形式:转义 + 双引号包裹(原 value 层 format_string 的职责下沉至此)。
+        return std::format("\"{}\"", util::escape_string(view()));
+    }
+
     bool ObjString::equals(const Object* other) const noexcept {
         if (this == other)
             return true; // intern 命中:同指针同内容

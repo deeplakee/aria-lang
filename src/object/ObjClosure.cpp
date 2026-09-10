@@ -25,9 +25,10 @@ namespace aria {
         gc.mark_object(defining_class_); // 非方法闭包为 nullptr,mark_object 容 nullptr;类静态表方法闭包经此级联标所属类
     }
 
-    String ObjClosure::to_string() const {
-        // function_ 恒非空(ctor ASSERT):渲染 `<fn name>`,与 ObjFunction 同文案。
-        return function_->to_string();
+    String ObjClosure::debug_repr() const {
+        // function_ 恒非空(ctor ASSERT):直取其名渲染 `<fn name>`,与 ObjFunction 同文案
+        //(不经 function_->to_string() 虚委托,调试路径保持一跳纯 C++ 访问器)。
+        return std::format("<fn {}>", function_->name()->view());
     }
 
     ObjClosure* new_closure(GC& gc, ObjFunction* function) {

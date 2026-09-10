@@ -47,9 +47,16 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 可读描述:字符内容原文(无引号),如 hello。override Object::to_string 默认的 `<String at 0x...>`。
+        // 可读描述(显示位):字符内容原文(无引号),如 hello。override Object::to_string
+        // (基类默认委托 debug_repr,本类型显示与调试分叉故两者都 override)。
         [[nodiscard]]
         String to_string() const override;
+
+        // 调试渲染(repr 位):字面量形式 `"<转义内容>"`--util::escape_string 转义内部、外层
+        // 补双引号,反汇编常量池等调试上下文的字符串约定形态(原 value 层 format_string 的
+        // 职责下沉至此)。override Object::debug_repr 默认的 `<String at 0x...>`。
+        [[nodiscard]]
+        String debug_repr() const override;
 
         [[nodiscard]]
         usize length() const noexcept {

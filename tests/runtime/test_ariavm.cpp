@@ -501,7 +501,7 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(合成模块 <script> 退化 "<name>:line",
     // 行号 = ADD 指令所在行),未捕获物化时尾部附堆栈跟踪行(单帧即 at <main>,pitfalls 坑 #16)。
     EXPECT_EQ(out.error().message(),
-              "<script>:3: Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
+              "Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
               "  at <main> (<script>:3)");
 }
 
@@ -520,7 +520,7 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
     // 同 TypeMismatchIsUncaught:位置前缀 + 未捕获堆栈跟踪行(M3)。
-    EXPECT_EQ(out.error().message(), "<script>:1: Runtime: DivisionByZero integer division by zero\n"
+    EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<script>:1)");
 }
 
@@ -1163,7 +1163,7 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
     // vm.fail 装箱路径带位置前缀(raise 一步烘齐):原生不进帧,顶帧即 caller,
     // 位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line";CALL 失败同走
     // unwind(M3),未捕获尾部附 at <main> 跟踪行。
-    EXPECT_EQ(err.message(), "<script>:1: Runtime: TypeMismatch fail_always always fails\n"
+    EXPECT_EQ(err.message(), "Runtime: TypeMismatch fail_always always fails\n"
                              "  at <main> (<script>:1)");
 }
 

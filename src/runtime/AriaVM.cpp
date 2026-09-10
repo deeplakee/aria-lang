@@ -149,28 +149,13 @@ namespace aria {
 
         // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,如
         // <script>/<test>,abs_path 会拼出伪路径)或 abs_path 为空(cwd 不可用)退化为 "<name>"。
-        // 装箱点(runtime_loc)与未捕获堆栈跟踪逐帧渲染(unwind)共用,位置串规则单一事实源。
+        // 未捕获堆栈跟踪逐帧渲染(unwind 的 at 行)用 -- 消息本身不烘位置前缀(2026-09-10 起,
+        // 见 AriaVM::raise),位置串规则单一事实源。
         String module_loc(const ObjModule& mod, const u32 line) {
             if (const auto name = mod.name()->view(); name.starts_with('<') || mod.abs_path().empty()) {
                 return std::format("{}:{}", name, line);
             }
             return std::format("{}:{}", mod.abs_path(), line);
-        }
-
-        // 运行期位置串:行号 = 顶帧 last_ip(主循环取指前写的指令起始指针,与 unit->code.data()
-        // 相减反推 offset)查 RLE 行号表;表空(手搓 CodeUnit 无行号)line_for_offset 返 0,不炸。
-        // 帧栈空(run 外经 vm.fail 直调等)返空串 -- 无位置。报错是冷路径,一次 std::format 可忽略。
-        // 供 raise(装箱点)与未捕获跟踪逐帧渲染(module_loc)共用 -- 装箱点调用时
-        // 顶帧恒为故障指令所在帧(直报)或 caller 帧(call_*/原生失败,被调帧未进/原生不进帧),
-        // last_ip 恰为故障指令 / CALL 站点(pitfalls 坑 #15 的位置语义)。
-        String runtime_loc(Movement& ctx) {
-            if (ctx.frames().empty()) {
-                return {};
-            }
-            const auto& frame  = ctx.frames().top();
-            const usize offset = frame.last_ip - frame.unit->code.data();
-            const auto  line   = frame.unit->line_for_offset(offset);
-            return module_loc(*frame.module, line);
         }
 
         // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
@@ -335,20 +320,6 @@ namespace aria {
         for (auto& r: roots) {
             source_roots_.push_back(std::move(r));
         }
-    }
-
-    void AriaVM::raise_detail(const ErrorCode code, const StringView detail) {
-        // 装箱核心(公开模板 raise(code, fmt, args...) 格式化后经此,契约见 AriaVM.hpp):
-        // Error::make_message 把 [位置 + ": "] + "Category: Name" + 细节合成完整消息串 -- 位置经
-        // runtime_loc 查 *current_ 顶帧行号表(故障指令 / CALL 站点;合成模块退化为 "<name>:line";
-        // 帧栈空即 run 外直调则无位置),detail 为已格式化的原始细节串(不含前缀,防双烘)。装箱入
-        // **当前**上下文(*current_,现为 main_ctx_;M6 协程期即当前协程 -- dispatch_loop/call_value 族与本
-        // 函数同源同一 current_,错误随上下文走不串扰)的挂起寄存器(单寄存器模型,载荷统一 Value,
-        // 见 exception-implementation-pitfalls.md 坑 #7)。new_exception 工厂内部 new_string 驻留
-        // 并自守,跨 new_object 顶 maybe_collect 安全;返回对象到 current_->raise 之间无分配,
-        // 入寄存器后由 VM 根 tracer 标 pending_error 保命。
-        const auto msg = Error::make_message(code, runtime_loc(*current_), detail);
-        current_->raise(Value::from_obj(new_exception(gc_, code, msg)));
     }
 
     Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
@@ -557,7 +528,7 @@ namespace aria {
         //     new_exception 直接装配箱(from_baked 语义,不重烘 -- 不经 AriaVM::raise,
         //     其 make_message 会把导入方站点前缀叠上,双重烘焙)。
         // **仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清 pending_error --
-        // run 外直调(未来预加载 API 等)的错误会被静默吞掉;runtime_loc 亦依赖顶帧,帧栈空则无位置。
+        // run 外直调(未来预加载 API 等)的错误会被静默吞掉。
         //
         // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 入表占位 -> 编译(set_entry)。
         // **仅加载与编译**:模块体 run-once 不在此执行 -- 由调用方(IMPORT 分支)以普通函数调用进帧
@@ -569,8 +540,7 @@ namespace aria {
         //    理论上必成功,但读盘/编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src.has_value()) {
-            (void) fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
-            return nullptr;
+            return fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
         }
         SourceFile source = std::move(loaded_src.value());
 
@@ -578,8 +548,7 @@ namespace aria {
         //    abs_path() = dir_ + "/" + name_ + ".aria" 还原 canonical key,相对导入基(dirname)正确。
         auto [name_s, dir_s] = fs::module_name_and_dir(canonical_path->view());
         if (name_s.empty()) {
-            (void) fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
-            return nullptr;
+            return fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
         // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。

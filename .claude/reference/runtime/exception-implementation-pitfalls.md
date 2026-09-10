@@ -10,7 +10,7 @@
 - **不依赖 C++ 异常**：与 Lua/CPython 一致。`op` 返回失败 `Error` 后，`run()` 调 raise -> 查表 -> `FrameStack::truncate` 跨帧 unwind -> 跳 handler。
 - **单寄存器模型**：`pending_error_ : Opt<Value>`（单一挂起寄存器，既装运行时错误包成的 `ObjException`，也装用户 `throw` 的原值）。运行时错误经 `new_exception(gc, code, baked_message)`（工厂内部 `new_string` 驻留）包成 `ObjException{code, ObjString* message}` 存入；用户 `throw V` 直接存 `V`。catch 绑 `pending_error_` 里的 Value（运行时错误绑 ObjException、用户 throw 绑原值，保类型）。未捕获时 `run()` 从 Value 反提 `Error`：ObjException 经 `Error::from_baked(code, message)`（跳过 `make_message` 的静态工厂）回传原码+原消息（含位置）；原值回 `Error::from_detail(ErrorCode::UncaughtException, format_value(V))`。详见坑 #7。
 - **`TryRecord` 字段**：`{begin, end, handle, stack_depth}`（`frame_depth` 不存见坑 #5；`catch_slot` 不存见坑 #10 —— 恒等于 `stack_depth`，且 unwind 的 `push` 已把异常值落在该槽，无 `STORE_LOCAL`）。
-- **位置与跟踪（M3 定稿）**：运行期位置前缀在**装箱点**烘入 ObjException 消息（取 `frames().top().last_ip` 反推 offset 查行号表，坑 #15）；未捕获时由 unwind 遍历逐帧收集、物化 Error 时附堆栈跟踪（坑 #16）。透传错误（被导入模块的编译期 Error）不标注、无跟踪。
+- **位置与跟踪（M3 定稿；2026-09-10 改定）**：运行期位置**不烘入** ObjException 消息（原「装箱点烘 path:line 前缀」已裁撤 -- 与未捕获跟踪行信息重复，且 THROW 原值/透传编译错两路本就无/自带位置）；位置唯一载体是未捕获时 unwind 逐帧收集、物化 Error 时附的堆栈跟踪 at 行（坑 #16）。透传错误（被导入模块的编译期 Error）不标注、无跟踪、自带编译期位置。
 
 ---
 
@@ -386,7 +386,7 @@ unwind 从最内帧向外遍历：
 
 故无需按站点分派传 frame、无需在 take 点补标、无双重标注问题（每个错误只装箱一次；构造站点照旧产无位置 Error，标注不侵入任何调用点）。`last_ip` 由主循环取指前写（坑 #1/#2），本坑为其又一消费方（unwind 查表、跨帧传播定位之外）。
 
-**实现形态（已落地,较原计划简化）**：原计划的两段式（构造无位置 Error -> `with_runtime_loc` 装箱前重组前缀）已被 `raise(ErrorCode, StringView detail)` 单步烘焙吸收——`raise` 签名改收 code + 原始 detail（不再收构造好的 Error 对象,无中转），装箱语句一步合成：
+**实现形态（已落地,较原计划简化；2026-09-10 增注：位置烘焙已整体裁撤 -- 现行 raise 模板头内内联走 `Error::make_message(code, detail)` 无位置版，runtime_loc 助手与 raise_detail .cpp 壳均退役删除，下方代码为落地时形态，存档留痕）**：原计划的两段式（构造无位置 Error -> `with_runtime_loc` 装箱前重组前缀）已被 `raise(ErrorCode, StringView detail)` 单步烘焙吸收——`raise` 签名改收 code + 原始 detail（不再收构造好的 Error 对象,无中转），装箱语句一步合成：
 
 ```cpp
 // AriaVM.cpp;runtime_loc 为匿名 ns 助手(帧栈空即 run 外直调返空串,无位置。
@@ -406,7 +406,7 @@ bool AriaVM::raise(const ErrorCode code, const StringView detail) {
 - 位置串是 C++ 侧 `String` 拼接（非 GC 分配），不添 GC 约束；`new_exception` 自守不变（坑 #8）。
 - **透传错误不标注**：被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`，经 IMPORT 原样透传（现有语义），二次标注会得双重位置且类别混乱。实现上与「运行期错误当场构造」分路：后者过带位置的构造，前者直传原 Error（`runtime_err(Error)` 重载）。
 
-**接入点（已落地部分）**：`AriaVM::raise(code, detail)`（原生 `vm.fail` 与 call_* 失败的统一装箱路径）与 dispatch_loop 直报站点（`runtime_err(ctx, code, fmt, ...)` 经 `make_message` + `from_baked`）已全部带位置；M3 的 `raise_and_unwind_(code, detail)` 落地时同形复用 `runtime_loc` + `make_message`。`throw_and_unwind_(Value)` 不标注（用户 throw 存原值，无 ObjException 可烘；throw 站点行号由坑 #16 的跟踪覆盖）。
+**接入点（已落地部分；2026-09-10 改定：均不再带位置）**：`AriaVM::raise(code, detail)`（原生 `vm.fail` 与 call_* 失败的统一装箱路径，现行无位置前缀）与 dispatch_loop 直报站点（直报形态已随 M3 闭环退役，历史记录）当时均带位置；`raise_and_unwind_`/`throw_and_unwind_` 助手未落地（raise 与 unwind 不融合，站点就地两步）。`throw_and_unwind_(Value)` 不标注（用户 throw 存原值，无 ObjException 可烘；throw 站点行号由坑 #16 的跟踪覆盖）。
 
 ---
 
@@ -488,7 +488,7 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 2. **B1（已落地）** `TryRecord` 定稿四字段 `{begin, end, handle, stack_depth}`（无 `catch_slot`，坑 #10）+ `find_try_handler` 返 `Opt<const TryRecord*>`（二分已是最内层语义，坑 #4 核对；begin 相等 tie 由反向扫描天然取最内层，运行期测试覆盖）。
 3. **B3（已落地）** `Movement::pending_error_ : Opt<Value>` + `raise(Value)` + `reset` 清 + `truncate_stack(usize)`（坑 #14）。
 4. **B2（已落地）** `CallFrame` 加 `u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`dispatch_loop()` 循环顶每轮取指前写，坑 #1/#2；存指针、查表时反推 offset）。
-5. **B4（已落地）** `AriaVM` 成员 `unwind()`（入口断言寄存器非空 -- write 侧 `Movement::raise` 空寄存器断言的 read 侧成对）；`runtime_loc` + `Error::make_message` 一步烘位置（坑 #15）复用公共 `raise`/`fail` 装箱。**raise 与 unwind 不融合**成 `raise_and_unwind_`/`throw_and_unwind_` 具名助手（终态：全部站点就地 `raise`/`fail` 装箱 + 直接 `unwind`，与 CALL 失败善后同形 -- 两个直观动作不硬融，坑 #11）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获物化经 `uncaught_error_parts` 反提拆件（ObjException 原码原消息 / 原值兜底 `UncaughtException`，拼完跟踪 `from_baked` 一次物化）；跟踪收集 + 物化时烘焙（坑 #16）；dispatch_loop 直报站点全部切换（坑 #11，`run_binary_numeric<Op>` 升 AriaVM 成员模板、数值语义内联）。
+5. **B4（已落地）** `AriaVM` 成员 `unwind()`（入口断言寄存器非空 -- write 侧 `Movement::raise` 空寄存器断言的 read 侧成对）；装箱复用公共 `raise`/`fail`（2026-09-10 改定：不再烘位置，原 runtime_loc 助手退役，坑 #15）。**raise 与 unwind 不融合**成 `raise_and_unwind_`/`throw_and_unwind_` 具名助手（终态：全部站点就地 `raise`/`fail` 装箱 + 直接 `unwind`，与 CALL 失败善后同形 -- 两个直观动作不硬融，坑 #11）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获物化经 `uncaught_error_parts` 反提拆件（ObjException 原码原消息 / 原值兜底 `UncaughtException`，拼完跟踪 `from_baked` 一次物化）；跟踪收集 + 物化时烘焙（坑 #16）；dispatch_loop 直报站点全部切换（坑 #11，`run_binary_numeric<Op>` 升 AriaVM 成员模板、数值语义内联）。
 6. **B5（已落地）** CodeGen `visitTryStmtNode`（入口预插占位 + 结尾回填，构造即非降序不排序，坑 #4；catch 参数值填槽无 STORE_LOCAL，坑 #9/#10；`finally` 一律 `not_impl` 占位 M3b，2026-09 随特性裁撤移除）/`visitThrowStmtNode`（`emit_expr` + `THROW`）。
 7. **B6（已落地）** Disassembler `try records:` 小节（非空才列，逐条 `[begin, end) handle stack_depth`）。
 8. **B7（已落地）** 测试：`tests/compile/test_codegen.cpp` M3 节（throw 保类型/未捕获 UncaughtException/运行时错误绑 ObjException/re-throw 保码/原生 fail 可捕获/嵌套 try（含 re-throw 外层捕获）/跨帧与三层链 unwind/try 体局部丢弃/未捕获跟踪逐行断言/finally 占位（2026-09 裁撤后改为标识符回归用例）/发射核对（try_records 字段 + 反汇编小节 + 升序））+ `tests/runtime/test_ariavm.cpp`（import 模块体 throw 被导入方捕获、既有消息断言补跟踪行）；源码级 run_source/compile_only 均开 stress GC（坑 #8）。
@@ -502,7 +502,7 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 - **re-throw 保码（单寄存器语义收益）**：`try { 1/0 } catch (e) { throw e }` 未捕获 -> `run()` 回码 `DivisionByZero` 的 Error（非 `UncaughtException`）；对比用户 `throw 42` 未捕获 -> `UncaughtException`。
 - 反向：`ErrTryWithoutHandler` 既有保留（finally 裁撤后消息为「try 须有 catch」）；`finally` 不再是关键字、回归普通标识符（裁撤后新增标识符回归用例）。
 - stress GC：try/catch 路径 `gc.set_stress(true)` 验根接线（坑 #8，标 `pending_error_`）。
-- 位置前缀（坑 #15）：`try` 外 `1/0` 未捕获 -> `error().message()` 以 `"path:line: Runtime: DivisionByZero"` 开头（行号 == 除法指令行）；catch 场景 `print(e)` 渲染的消息同样含位置前缀；原生 `vm.fail`（如 `len(nil)`）位置 == CALL 站点行；跨帧未捕获 message 含逐帧 `at` 行（外->内，坑 #16）。
+- 位置（坑 #15；2026-09-10 改定）：`try` 外 `1/0` 未捕获 -> 消息首行无位置前缀，错误位置 = 最内 `at` 行（行号 == 除法指令行）；catch 场景 `print(e)` 渲染的消息无位置（同 Python str(e)）；原生 `vm.fail`（如 `len(nil)`）跟踪行位置 == CALL 站点行；跨帧未捕获 message 含逐帧 `at` 行（外->内，坑 #16）。
 - 透传不标注（坑 #15/#16）：import 的模块含编译错误 -> 透传 Error 消息为**被导入文件**的 `path:line:col:` 前缀、无调用方位置前缀、无 `at` 行。
 - 既有 `NativeFnSideChannelError` 仍期望 `TypeMismatch`（单寄存器 + ObjException 保码：未加 try 时运行时错误包成 ObjException 存入 `pending_error_`，未捕获经 `from_baked` 回原码，坑 #7）。
 

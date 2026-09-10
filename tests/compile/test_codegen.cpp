@@ -912,14 +912,16 @@ TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
 }
 
 TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
-    // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，print/str 渲染之）。
+    // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，print/str 渲染之；
+    // 2026-09-10 起消息不含位置前缀 -- catch 侧 print(e) 不显示位置，同 Python str(e)，
+    // 位置只在未捕获出口的 at 跟踪行给出）。
     auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out.value().is_obj());
-    const auto* ex = aria::Object::as<aria::ObjException>(out.value().as_obj());
+    const auto ex = aria::Object::as<aria::ObjException>(out.value().as_obj());
     ASSERT_NE(ex, nullptr);
     EXPECT_EQ(ex->code(), ErrorCode::DivisionByZero);
-    EXPECT_EQ(ex->to_string(), "<test>:1: Runtime: DivisionByZero integer division by zero");
+    EXPECT_EQ(ex->to_string(), "Runtime: DivisionByZero integer division by zero");
 }
 
 TEST(CodeGen, RethrowPreservesCode) {
@@ -928,16 +930,17 @@ TEST(CodeGen, RethrowPreservesCode) {
     auto out = run_source("try { return 1 / 0; } catch (e) { throw e; }");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    EXPECT_EQ(out.error().message(), "<test>:1: Runtime: DivisionByZero integer division by zero\n"
+    EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<test>:1)");
 }
 
 TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生报错（len 非 String）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
-    // 经 unwind 被捕获；str(e) 渲染完整消息，位置 = CALL 站点行（原生不进帧，坑 #15）。
+    // 经 unwind 被捕获；str(e) 渲染完整消息（2026-09-10 起无位置前缀 -- catch 侧不显示
+    // 位置，同 Python str(e)；位置只在未捕获跟踪行给出，原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(out.value()), "<test>:1: Runtime: TypeMismatch len requires a string, got Nil");
+    EXPECT_EQ(aria::format_value(out.value()), "Runtime: TypeMismatch len requires a string, got Nil");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
@@ -1018,7 +1021,8 @@ mid();
 )");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    EXPECT_EQ(out.error().message(), "<test>:3: Runtime: DivisionByZero integer division by zero\n"
+    // 消息首行无位置前缀（2026-09-10 起），错误位置 = 最内 at 行（div 的除法行）。
+    EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<test>:8)\n"
                                      "  at mid (<test>:6)\n"
                                      "  at div (<test>:3)");

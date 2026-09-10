@@ -4,6 +4,10 @@
 #include "common.hpp"
 #include "error/Error.hpp"
 #include "memory/GC.hpp"
+// raise 模板头内内联装箱需 ObjException 完整类型(2026-09-10 去位置后装箱体一行,原
+// raise_detail .cpp 壳随之退役);其依赖(ErrorCode.hpp/Object.hpp)早已经 GC.hpp 传递拉入,
+// include 面零增长。
+#include "object/ObjException.hpp"
 #include "runtime/Movement.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
@@ -18,6 +22,25 @@ namespace aria {
     // 前置声明(bytecode/code.hpp 的 X 表生成物):run_binary_numeric<Op> 模板形参用,
     // 免头文件拖入 bytecode 树(定义处 AriaVM.cpp 已含)。
     enum class OpCode : u8;
+
+    // fail 的返回哨兵:「已 fail」信号的统一载体(无数据成员,仅充当转换源)。
+    // 按调用点所在函数的返回类型隐式转换为该类型的失败拼写 -- bool -> false(NativeFn/
+    // call_value 族/store 族)、指针 -> nullptr(load_module 等边界)、Opt<T> -> nullopt
+    // (load/op 协议族,somed 才是命中)。调用点自此一律一行 `return vm.fail(...);`,签名
+    // 形态(Opt<Value> vs bool vs 指针)不再支配失败出口的写法;契约不变:nullopt/false/
+    // nullptr ⟺ 已 fail,错误载荷已在挂起错误寄存器。只 raise 不借信号的语句式站点
+    // (dispatch_loop 内 raise + unwind)直接用 void 的 raise(...),不经本哨兵。
+    struct FailSignal {
+        operator bool() const noexcept { return false; }
+        template<typename T>
+        operator T*() const noexcept {
+            return nullptr;
+        }
+        template<typename T>
+        operator Opt<T>() const noexcept {
+            return std::nullopt;
+        }
+    };
 
     // interpret 结果：编译并执行的结局类别（对齐 clox InterpretResult）。
     // interpret / interpret_from_path 内部已把错误渲染到 stderr，故只回类别、不回 Error--
@@ -132,38 +155,41 @@ namespace aria {
         //
         // 载荷类型(M3 起)为 Value,单寄存器模型(exception-implementation-pitfalls.md 坑 #7):
         // - raise(code, fmt, args...):从零构造消息的装箱入口,一步烘齐 -- detail 按 fmt+args
-        //   格式化(格式串经 std::format_string 编译期校验;不含 "Category:" 前缀,防双烘),位置
-        //   取自 *current_ 顶帧 last_ip(故障指令 / CALL 站点)查行号表烘 "path:line: " 前缀
-        //   (合成模块退化为 "<name>:line";帧栈空即 run 外直调则无位置),经 Error::make_message
-        //   (Error 的烘焙单点,公开重载)合成完整消息后 new_exception 装箱入寄存器。不经 Error
-        //   对象中转 -- Error 只在边界出现(Result 出口 / 未捕获出口反提物化),不当内部渡船;位置恰
-        //   只在装箱点可得,一并烘入正是把烘焙责任归位。返回 void -- 纯副作用操作(raise 必
-        //   raise,无成败结局可表),bool 惯用法由 fail 承载。Movement::raise(Value)(存原值不包)
-        //   是 M3 用户 throw 的路由,不经本 VM 层 API。
-        // - fail:便捷工厂 -- raise 后**恒返 false**:供原生函数一行报错 `return vm.fail(...);`
-        //   (同时置寄存器与返回 NativeFn 契约要求的失败信号),与 call_value/call_closure/
-        //   call_native/load_module 的失败站点共用。[[nodiscard]] 故意为之:裸 `vm.fail(...);`
-        //   (丢弃其 false)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),要么显式
-        //   `(void)vm.fail(...);` 表明「我要 raise 但走别的控制流」。VM 以**原生函数返回的 bool
-        //   为成败信号**(见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug
-        //   断言把关),契约 `return false ⟺ 已 raise`。
+        //   格式化(格式串经 std::format_string 编译期校验;不含 "Category:" 前缀,防双烘),经
+        //   Error::make_message(无位置版,Error 的烘焙单点)合成完整消息后 new_exception 装箱
+        //   入寄存器,装箱体内联在本模板(2026-09-10 去位置烘焙后仅一行,原 .cpp 壳 raise_detail
+        //   退役)。**消息不含位置前缀**(2026-09-10 起:被抛出的错误只携带码与描述,对齐
+        //   clox/Python 惯例 -- 位置由 unwind 未捕获出口的逐帧 at 跟踪行给出,不与消息首行
+        //   重复;catch 侧 print(e) 不显示位置,同 Python str(e);THROW 原值不装箱、load_module
+        //   透传的编译错自带编译期位置,三路自此一致)。不经 Error 对象中转 -- Error 只在边界
+        //   出现(Result 出口 / 未捕获出口反提物化),不当内部渡船。返回 void -- 纯副作用操作
+        //   (raise 必 raise,语句式用法无信号可借),失败信号惯用法由 fail 承载(FailSignal
+        //   哨兵按调用点上下文转 false/nullptr/nullopt)。Movement::raise(Value)
+        //   (存原值不包)是 M3 用户 throw 的路由,不经本 VM 层 API。
+        template<typename... Args>
+        void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            const auto msg = Error::make_message(code, std::format(fmt, std::forward<Args>(args)...));
+            current_->raise(Value::from_obj(new_exception(gc_, code, msg)));
+        }
+        // - fail:便捷工厂 -- raise 后**恒返失败信号**:供各失败出口一行报错 `return vm.fail(...);`
+        //   (同时置寄存器与调用点要求的失败拼写 -- 返回 FailSignal 哨兵,按所在函数返回类型
+        //   隐式转换:false/nullptr/nullopt,见 FailSignal 注),与原生函数/call_value 族/load/op
+        //   协议族/load_module 的失败站点共用。[[nodiscard]] 故意为之:裸 `vm.fail(...);`
+        //   (丢弃信号)会触发警告 -- 要么写成 `return vm.fail(...);`(惯用法),要么改用
+        //   void 的 raise(...)(不借信号的语句式站点)。VM 以**原生函数返回的 bool 为成败信号**
+        //   (见 call_value 原生分支),寄存器仅作错误载荷容器;二者须一致(debug 断言把关),
+        //   契约 `false ⟺ 已 raise`。
+        template<typename... Args>
+        [[nodiscard]]
+        FailSignal fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            raise(code, fmt, std::forward<Args>(args)...);
+            return FailSignal{};
+        }
         // 寄存器载荷在未捕获出口经 AriaVM.cpp 匿名 uncaught_error_parts 拆为 (码, 烘焙消息) 两件,
         // 边界文案与 Error::from_detail 直构逐字一致。
         //
-        // 装箱核心 raise_detail 内 new_exception(分配)可能在原生执行中触发 GC:值栈/帧/builtins_
-        // 均已接根,载荷构造后立即入寄存器(pending_error 亦由 VM 根 tracer 标根),根安全由既有
-        // 接线承保。核心定义在 .cpp(需 ObjException 完整类型)。
-        template<typename... Args>
-        void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            raise_detail(code, std::format(fmt, std::forward<Args>(args)...));
-        }
-
-        template<typename... Args>
-        [[nodiscard]]
-        bool fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            raise(code, fmt, std::forward<Args>(args)...);
-            return false;
-        }
+        // raise 模板内 new_exception(分配)可能在原生执行中触发 GC:值栈/帧/builtins_ 均已接根,
+        // 载荷构造后立即入寄存器(pending_error 亦由 VM 根 tracer 标根),根安全由既有接线承保。
 
         // 模块表(解释器级):键 = 规范路径 ObjString*(intern,装箱为 Value),
         // 值 = ObjModule*(装箱为 Value)。IMPORT 按键查重/插入;trace 由 VM 根 tracer 委托。
@@ -278,12 +304,6 @@ namespace aria {
         // slots[0]=槽 0(返回值),slots[1..argc]=实参。详见 ObjNativeFn.hpp NativeFn 契约与
         // .claude/reference/runtime/vm-design.md §4.7。
         bool call_native(const ObjNativeFn* obj, u8 argc);
-
-        // 装箱核心(公开模板 raise(code, fmt, args...) 格式化后经此,契约见上「挂起错误侧信道」):
-        // detail 为**已格式化**的原始细节串,runtime_loc 烘位置 + Error::make_message 合成完整消息
-        // + new_exception 装箱入 *current_ 挂起寄存器。无调用方需传成品串,故收私有(raise 单一
-        // 签名,不与 StringView 版重载分叉)。定义在 .cpp(需 ObjException 完整类型)。
-        void raise_detail(ErrorCode code, StringView detail);
 
         // ---- 异常 unwind(M3,dispatch_loop 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
 

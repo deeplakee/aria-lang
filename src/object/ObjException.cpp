@@ -27,7 +27,7 @@ namespace aria {
 
     String ObjException::debug_repr() const {
         // 渲染完整烘焙消息(无引号):M3 catch 的 print(e)/str(e) 与 CLI 未捕获错误同款文案
-        // (含位置前缀);基类 to_string 默认委托本方法,显示同文案。
+        // (基类 to_string 默认委托本方法,显示同文案)。
         return String{message_->view()};
     }
 

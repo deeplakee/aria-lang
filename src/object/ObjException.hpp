@@ -14,8 +14,9 @@ namespace aria {
     // (try/catch/throw)统一异常通道的运行时载体之一。持 ErrorCode + 错误消息串。
     //
     //   - code_ / message_:message_ 存**完整烘焙消息** -- 与 Error::message() 同形,含
-    //     "Category: Name" 前缀(运行期装箱经 make_message 另烘 "path:line: " 位置前缀,
-    //     编译期为 path:line:col:)。烘焙发生在
+    //     "Category: Name" 前缀(运行期装箱不含位置前缀,2026-09-10 起 -- 位置由未捕获出口的
+    //     at 跟踪行给出;经 load_module 透传的编译期 Error 消息自带 path:line:col: 位置,原样
+    //     保留)。烘焙发生在
     //     raise 侧(经 Error::make_message 烘齐,from_detail 同源经它),本对象原样持有,
     //     自身不做加工;
     //     位置不丢、catch 里 print(e)/str(e) 渲染完整消息不退化。code_ 保留机器标识:
@@ -69,8 +70,8 @@ namespace aria {
             return sizeof(ObjException);
         }
 
-        // 调试渲染:消息原文(无引号),同 ObjString 显示(to_string)风格;基类 to_string 默认委托本方法,
-        // catch 的 print(e)/str(e) 显示同文案。
+        // 调试渲染:消息原文(无引号),同 ObjString 显示(to_string)风格;基类 to_string
+        // 默认委托本方法,catch 的 print(e)/str(e) 显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 

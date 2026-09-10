@@ -82,8 +82,8 @@ namespace aria {
         }
 
         // 报错点的格式化细节在调用处自行 std::format 后走 from_detail(仅编译期收口,如
-        // CodeGen::fail / Lexer / Parser;运行期一律 make_message 烘齐 -- 见 AriaVM.cpp 的
-        // raise 装箱点与 uncaught_error_parts 兜底)。
+        // CodeGen::fail / Lexer / Parser;运行期一律 make_message 烘齐 -- 见 AriaVM.hpp 的
+        // raise 模板装箱与 uncaught_error_parts 兜底)。
 
         // 烘焙单点(公开,一对共名重载,以位置参数区分,与 from_detail 两重载同构镜像):
         // 完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
@@ -104,8 +104,9 @@ namespace aria {
         }
 
         // 带位置版:非空位置串前缀 "location: ";空位置串退化为无位置版 -- 空态 loc
-        // (SourceLoc::to_string 空态渲染空串)与帧栈空(runtime_loc 返空串)在此自然合流,
-        // 调用方无须先判空规避。
+        // (SourceLoc::to_string 空态渲染空串)在此自然合流,调用方无须先判空规避。
+        // 当前消费方为编译期路径(from_detail 带 loc 重载);运行期装箱自 2026-09-10 起
+        // 不烘位置(AriaVM::raise 走无位置版,位置由 unwind 跟踪行给出)。
         static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
             if (location.empty()) {
                 return make_message(code, detail);

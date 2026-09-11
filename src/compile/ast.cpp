@@ -629,55 +629,55 @@ namespace aria {
     // accept 分发（访问者模式）
     // =========================================================================
     //
-    // 各具体节点把实际类型交给访问者：visitor.visitXxxNode(this)。访问者基类 AstVisitor
+    // 各具体节点把实际类型交给访问者：visitor.visitXxxNode(*this)。访问者基类 AstVisitor
     // 仅声明 visitXxxNode 纯虚接口（见 compile/AstVisitor.hpp），不做按运行时类型的集中
-    // 分派；双分派由节点自身的 accept 完成。参数为非 const 指针，
+    // 分派；双分派由节点自身的 accept 完成。参数为非 const 引用，
     // 子类可读写节点。
 
-    void ProgramNode::accept(AstVisitor& visitor) { visitor.visitProgramNode(this); }
+    void ProgramNode::accept(AstVisitor& visitor) { visitor.visitProgramNode(*this); }
 
-    void BlockNode::accept(AstVisitor& visitor) { visitor.visitBlockNode(this); }
-    void ExprStmtNode::accept(AstVisitor& visitor) { visitor.visitExprStmtNode(this); }
-    void PrintStmtNode::accept(AstVisitor& visitor) { visitor.visitPrintStmtNode(this); }
-    void IfStmtNode::accept(AstVisitor& visitor) { visitor.visitIfStmtNode(this); }
-    void WhileStmtNode::accept(AstVisitor& visitor) { visitor.visitWhileStmtNode(this); }
-    void ForStmtNode::accept(AstVisitor& visitor) { visitor.visitForStmtNode(this); }
-    void ForInStmtNode::accept(AstVisitor& visitor) { visitor.visitForInStmtNode(this); }
-    void BreakStmtNode::accept(AstVisitor& visitor) { visitor.visitBreakStmtNode(this); }
-    void ContinueStmtNode::accept(AstVisitor& visitor) { visitor.visitContinueStmtNode(this); }
-    void ReturnStmtNode::accept(AstVisitor& visitor) { visitor.visitReturnStmtNode(this); }
-    void ImportStmtNode::accept(AstVisitor& visitor) { visitor.visitImportStmtNode(this); }
-    void TryStmtNode::accept(AstVisitor& visitor) { visitor.visitTryStmtNode(this); }
-    void ThrowStmtNode::accept(AstVisitor& visitor) { visitor.visitThrowStmtNode(this); }
-    void MatchStmtNode::accept(AstVisitor& visitor) { visitor.visitMatchStmtNode(this); }
-    void FunDeclNode::accept(AstVisitor& visitor) { visitor.visitFunDeclNode(this); }
-    void DefDeclNode::accept(AstVisitor& visitor) { visitor.visitDefDeclNode(this); }
-    void VarDeclNode::accept(AstVisitor& visitor) { visitor.visitVarDeclNode(this); }
+    void BlockNode::accept(AstVisitor& visitor) { visitor.visitBlockNode(*this); }
+    void ExprStmtNode::accept(AstVisitor& visitor) { visitor.visitExprStmtNode(*this); }
+    void PrintStmtNode::accept(AstVisitor& visitor) { visitor.visitPrintStmtNode(*this); }
+    void IfStmtNode::accept(AstVisitor& visitor) { visitor.visitIfStmtNode(*this); }
+    void WhileStmtNode::accept(AstVisitor& visitor) { visitor.visitWhileStmtNode(*this); }
+    void ForStmtNode::accept(AstVisitor& visitor) { visitor.visitForStmtNode(*this); }
+    void ForInStmtNode::accept(AstVisitor& visitor) { visitor.visitForInStmtNode(*this); }
+    void BreakStmtNode::accept(AstVisitor& visitor) { visitor.visitBreakStmtNode(*this); }
+    void ContinueStmtNode::accept(AstVisitor& visitor) { visitor.visitContinueStmtNode(*this); }
+    void ReturnStmtNode::accept(AstVisitor& visitor) { visitor.visitReturnStmtNode(*this); }
+    void ImportStmtNode::accept(AstVisitor& visitor) { visitor.visitImportStmtNode(*this); }
+    void TryStmtNode::accept(AstVisitor& visitor) { visitor.visitTryStmtNode(*this); }
+    void ThrowStmtNode::accept(AstVisitor& visitor) { visitor.visitThrowStmtNode(*this); }
+    void MatchStmtNode::accept(AstVisitor& visitor) { visitor.visitMatchStmtNode(*this); }
+    void FunDeclNode::accept(AstVisitor& visitor) { visitor.visitFunDeclNode(*this); }
+    void DefDeclNode::accept(AstVisitor& visitor) { visitor.visitDefDeclNode(*this); }
+    void VarDeclNode::accept(AstVisitor& visitor) { visitor.visitVarDeclNode(*this); }
 
-    void IntegerLiteralNode::accept(AstVisitor& visitor) { visitor.visitIntegerLiteralNode(this); }
-    void FloatLiteralNode::accept(AstVisitor& visitor) { visitor.visitFloatLiteralNode(this); }
-    void StringLiteralNode::accept(AstVisitor& visitor) { visitor.visitStringLiteralNode(this); }
-    void BoolLiteralNode::accept(AstVisitor& visitor) { visitor.visitBoolLiteralNode(this); }
-    void NilLiteralNode::accept(AstVisitor& visitor) { visitor.visitNilLiteralNode(this); }
-    void IdentifierNode::accept(AstVisitor& visitor) { visitor.visitIdentifierNode(this); }
-    void ThisExprNode::accept(AstVisitor& visitor) { visitor.visitThisExprNode(this); }
-    void SuperExprNode::accept(AstVisitor& visitor) { visitor.visitSuperExprNode(this); }
-    void BinaryExprNode::accept(AstVisitor& visitor) { visitor.visitBinaryExprNode(this); }
-    void UnaryExprNode::accept(AstVisitor& visitor) { visitor.visitUnaryExprNode(this); }
-    void AssignmentNode::accept(AstVisitor& visitor) { visitor.visitAssignmentNode(this); }
-    void DestructureAssignmentNode::accept(AstVisitor& visitor) { visitor.visitDestructureAssignmentNode(this); }
-    void CallNode::accept(AstVisitor& visitor) { visitor.visitCallNode(this); }
-    void FieldAccessNode::accept(AstVisitor& visitor) { visitor.visitFieldAccessNode(this); }
-    void IndexAccessNode::accept(AstVisitor& visitor) { visitor.visitIndexAccessNode(this); }
-    void ListExprNode::accept(AstVisitor& visitor) { visitor.visitListExprNode(this); }
-    void MapExprNode::accept(AstVisitor& visitor) { visitor.visitMapExprNode(this); }
-    void RangeExprNode::accept(AstVisitor& visitor) { visitor.visitRangeExprNode(this); }
-    void IfExprNode::accept(AstVisitor& visitor) { visitor.visitIfExprNode(this); }
-    void LambdaExprNode::accept(AstVisitor& visitor) { visitor.visitLambdaExprNode(this); }
-    void MatchExprNode::accept(AstVisitor& visitor) { visitor.visitMatchExprNode(this); }
+    void IntegerLiteralNode::accept(AstVisitor& visitor) { visitor.visitIntegerLiteralNode(*this); }
+    void FloatLiteralNode::accept(AstVisitor& visitor) { visitor.visitFloatLiteralNode(*this); }
+    void StringLiteralNode::accept(AstVisitor& visitor) { visitor.visitStringLiteralNode(*this); }
+    void BoolLiteralNode::accept(AstVisitor& visitor) { visitor.visitBoolLiteralNode(*this); }
+    void NilLiteralNode::accept(AstVisitor& visitor) { visitor.visitNilLiteralNode(*this); }
+    void IdentifierNode::accept(AstVisitor& visitor) { visitor.visitIdentifierNode(*this); }
+    void ThisExprNode::accept(AstVisitor& visitor) { visitor.visitThisExprNode(*this); }
+    void SuperExprNode::accept(AstVisitor& visitor) { visitor.visitSuperExprNode(*this); }
+    void BinaryExprNode::accept(AstVisitor& visitor) { visitor.visitBinaryExprNode(*this); }
+    void UnaryExprNode::accept(AstVisitor& visitor) { visitor.visitUnaryExprNode(*this); }
+    void AssignmentNode::accept(AstVisitor& visitor) { visitor.visitAssignmentNode(*this); }
+    void DestructureAssignmentNode::accept(AstVisitor& visitor) { visitor.visitDestructureAssignmentNode(*this); }
+    void CallNode::accept(AstVisitor& visitor) { visitor.visitCallNode(*this); }
+    void FieldAccessNode::accept(AstVisitor& visitor) { visitor.visitFieldAccessNode(*this); }
+    void IndexAccessNode::accept(AstVisitor& visitor) { visitor.visitIndexAccessNode(*this); }
+    void ListExprNode::accept(AstVisitor& visitor) { visitor.visitListExprNode(*this); }
+    void MapExprNode::accept(AstVisitor& visitor) { visitor.visitMapExprNode(*this); }
+    void RangeExprNode::accept(AstVisitor& visitor) { visitor.visitRangeExprNode(*this); }
+    void IfExprNode::accept(AstVisitor& visitor) { visitor.visitIfExprNode(*this); }
+    void LambdaExprNode::accept(AstVisitor& visitor) { visitor.visitLambdaExprNode(*this); }
+    void MatchExprNode::accept(AstVisitor& visitor) { visitor.visitMatchExprNode(*this); }
 
-    void IdentifierPatternNode::accept(AstVisitor& visitor) { visitor.visitIdentifierPatternNode(this); }
-    void WildcardPatternNode::accept(AstVisitor& visitor) { visitor.visitWildcardPatternNode(this); }
-    void ListPatternNode::accept(AstVisitor& visitor) { visitor.visitListPatternNode(this); }
+    void IdentifierPatternNode::accept(AstVisitor& visitor) { visitor.visitIdentifierPatternNode(*this); }
+    void WildcardPatternNode::accept(AstVisitor& visitor) { visitor.visitWildcardPatternNode(*this); }
+    void ListPatternNode::accept(AstVisitor& visitor) { visitor.visitListPatternNode(*this); }
 
 } // namespace aria

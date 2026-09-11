@@ -103,6 +103,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - 布尔用 `is_`/`has_`/`can_`/`should_`/`was_`/`needs_` 前缀
 - 禁 Hungarian（`m_`）、禁保留标识符（`_Foo`）、禁宏风格常量（`MAX_SIZE`）
 
+参数传递（指针 / 引用 / 按值的选择）同属强制，规则见根目录 `CPP_Naming_Convention.md`「Parameter Passing」节。要点：**所有权只经 `UPtr` 出现**；object 层 GC 对象类型（`Object`/`Obj*`）一律按指针；服务/宿主（`GC`/`AriaVM`/`SourceFile` 等借用期必非空）按引用；仅可空（`nullptr` 合法）、位置/槽位（`Value*`）、dyn_cast 查询族与容器分配器注入（`Alloc*`）用指针；AST 节点非空借用按引用（`visitXxxNode(XxxNode&)`）；小值类型（`Value`/标量/`SourceLoc`/`StringView`/`Span`）按值，`const` 写在定义处（不改参契约，纯声明不写）。
+
 ## 类型（src/type.hpp）
 
 **不要直接用 `std::string`/`int`/`size_t` 等**，用别名：`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`（= `std::expected`）/`Opt<T>`。错误处理倾向 `Result` 返回而非抛异常。

@@ -52,7 +52,7 @@ namespace aria {
 
         // 一次性构造：绑定模块句柄 + 创建入口 fn 上下文（就 m.entry()，new 分配）并就位游标；
         // ASSERT m.entry() 非空（调用方须先 set_entry）。定义于 .cpp。
-        explicit ModuleCtx(ObjModule& m);
+        explicit ModuleCtx(ObjModule* module);
 
         ~ModuleCtx(); // 定义于 .cpp：沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个 delete（无论游标在哪都对）
 

@@ -13,7 +13,7 @@ namespace aria {
     // 类型作模板参数(Hash{}(key))。哈希键用 ===(见 ValueEq)。
     struct ValueHash {
         [[nodiscard]]
-        u32 operator()(const Value& v) const noexcept {
+        u32 operator()(const Value v) const noexcept {
             return value_hash(v);
         }
     };
@@ -22,7 +22,7 @@ namespace aria {
         // 哈希表键用 ===(value_identical 严格相等):对象按引用做键,字符串靠 intern 等价内容
         // 同指针 -> 按内容查到;int 1 与 f64 1.0 是不同键。不用 value_equal(== 内容相等)。
         [[nodiscard]]
-        bool operator()(const Value& a, const Value& b) const noexcept {
+        bool operator()(const Value a, const Value b) const noexcept {
             return value_identical(a, b);
         }
     };

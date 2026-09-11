@@ -23,7 +23,7 @@ namespace aria {
     // 的两步写法(类型只写一次)。分派臂内等静态已知场合仍走 v.is_obj() + Object::as<T>()。
     template<DerivedFromObj T>
     [[nodiscard]]
-    T* try_obj(const Value& v) noexcept {
+    T* try_obj(const Value v) noexcept {
         return v.is_obj() ? Object::try_as<T>(v.as_obj()) : nullptr;
     }
 

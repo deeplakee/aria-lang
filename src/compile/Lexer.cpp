@@ -97,10 +97,10 @@ namespace aria {
 
     Lexer::Lexer() noexcept : source_{nullptr}, src_{}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
 
-    Result<List<Token>, List<Error>> Lexer::tokenize(SourceFile* src) {
+    Result<List<Token>, List<Error>> Lexer::tokenize(SourceFile& src) {
         // 注入扫描状态
-        source_   = src;
-        src_      = src->content();
+        source_   = &src;
+        src_      = src.content();
         pos_      = 0;
         is_fatal_ = false;
 

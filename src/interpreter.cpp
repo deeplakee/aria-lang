@@ -28,7 +28,7 @@ namespace aria {
             return cli;
         }
 
-        // REPL 行状态跨行持久：复用单个 <repl> 模块逐行 run(SourceFile&, ObjModule&) 编译执行，
+        // REPL 行状态跨行持久：复用单个 <repl> 模块逐行 run(SourceFile&, ObjModule*) 编译执行，
         // 顶层 var 声明经 DEF_GLOBAL 落入该模块 globals_，跨行保留（对齐 Python 交互式 globals 复用）。
         // 模块经 GC 临时根（make_guard）跨行保活，否则 run() 间 GC 会回收未入模块表的孤立模块。
         void run_repl(const LineReader& reader) {
@@ -47,7 +47,7 @@ namespace aria {
                 // content=本行源码；存活到 run 返回，编译期 Error 的 SourceLoc 指向它
                 // （不跨行复用，逐行独立源文件）。
                 SourceFile source{String{kReplModuleName}, String{kReplModuleName}, line};
-                if (auto result = vm.run(source, *module); !result) {
+                if (auto result = vm.run(source, module); !result) {
                     io::println(stderr, "{}", result.error().message());
                 }
             }

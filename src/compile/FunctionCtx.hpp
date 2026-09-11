@@ -64,10 +64,10 @@ namespace aria {
         FunctionCtx() = delete;
 
         // 入口 <main> 上下文（enclosing_=nullptr = entry）。
-        explicit FunctionCtx(ObjFunction& fn);
+        explicit FunctionCtx(ObjFunction* fn);
 
         // 嵌套函数上下文（enclosing_ 指向外层）。
-        FunctionCtx(FunctionCtx& enclosing, ObjFunction& fn);
+        FunctionCtx(FunctionCtx& enclosing, ObjFunction* fn);
 
         FunctionCtx(const FunctionCtx&)                = delete;
         FunctionCtx& operator=(const FunctionCtx&)     = delete;

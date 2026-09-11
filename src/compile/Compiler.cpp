@@ -16,9 +16,9 @@ namespace aria {
     // Token / AST 节点的 SourceLoc 指向 source（仅本函数内部消费）；Error 的位置在构造期烘焙、
     // 不持 source（见头注生命期契约）。
     // entry_name 透传给 CodeGen 作入口函数名（主入口 <main> / 导入 <module>）。
-    Result<ObjFunction*, Error> Compiler::compile(SourceFile& source, ObjModule& module, const StringView entry_name) {
+    Result<ObjFunction*, Error> Compiler::compile(SourceFile& source, ObjModule* module, const StringView entry_name) {
         // 1) 词法：SourceFile -> token 流（或 List<Error>，取首错）。
-        auto lex = lexer_.tokenize(&source);
+        auto lex = lexer_.tokenize(source);
         if (!lex.has_value()) {
             return std::unexpected(lex.error()[0]);
         }

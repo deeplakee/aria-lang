@@ -1043,7 +1043,7 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
     auto             dir    = new_string(vm.gc(), base);
     auto             module = make_module(vm.gc(), "main", dir); // dir 先入根,make_module 内部自守
     auto             guard  = vm.gc().make_guard(module);
-    const auto       out    = vm.run(source, *module);
+    const auto       out    = vm.run(source, module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out.value().is_obj());
     const auto thrown = aria::Object::as<ObjString>(out.value().as_obj());

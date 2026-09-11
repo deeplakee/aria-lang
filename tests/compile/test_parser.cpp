@@ -62,7 +62,7 @@ namespace {
         auto p = std::make_unique<Parsed>();
         p->sf  = SourceFile{String{"t"}, String{"t"}, String{src}};
         Lexer lexer;
-        auto  lex = lexer.tokenize(&p->sf);
+        auto  lex = lexer.tokenize(p->sf);
         if (!lex.has_value()) {
             // 词法错误直接作为解析失败返回（测试用源码应词法合法）。
             p->result = std::unexpected(std::move(lex.error()));

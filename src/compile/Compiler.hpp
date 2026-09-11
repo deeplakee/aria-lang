@@ -21,7 +21,7 @@
 //     跨多次 compile() 复用（如 REPL 逐行重编译）。CodeGen 一次性、状态局限单次编译（持 UPtr<ModuleCtx>），
 //     故每次 compile() 内就地构造。
 //   - GC 同源：构造取 GC&（与 VM 同一 GC），编译期分配的 ObjFunction / ObjString 归此 GC、与后续 run()
-//     同源。编译期 GC 已启用--CodeGen::compile 入口 make_guard(&module) 自守 module，故调用方无需为编译期
+//     同源。编译期 GC 已启用--CodeGen::compile 入口 make_guard(module) 自守 module，故调用方无需为编译期
 //     再守模块（module 须是 GC 管理的合法 ObjModule）。
 //
 // 与 CodeGen 的分工：CodeGen 是「AST -> CodeUnit（包在 ObjFunction）」代码生成器；Compiler 是
@@ -62,7 +62,7 @@ namespace aria {
         //     调用时显式传入，区别于主入口）。
         // 成功返回入口 ObjFunction*（归属 gc，须在 gc 存活期间使用）；失败返回首错 Error。
         [[nodiscard]]
-        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule& module,
+        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule* module,
                                             StringView entry_name = kMainEntryName);
 
     private:

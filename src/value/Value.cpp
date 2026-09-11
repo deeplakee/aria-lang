@@ -8,7 +8,7 @@
 
 namespace aria {
 
-    u32 value_hash(const Value& v) noexcept {
+    u32 value_hash(const Value v) noexcept {
         switch (v.type()) {
             case Value::Type::Nil:
                 return 0x12345678u;
@@ -24,7 +24,7 @@ namespace aria {
         return 0;
     }
 
-    bool value_equal(const Value& a, const Value& b) noexcept {
+    bool value_equal(const Value a, const Value b) noexcept {
         const auto ta = a.type();
         const auto tb = b.type();
 
@@ -63,14 +63,14 @@ namespace aria {
         return s;
     }
 
-    StringView type_name(const Value& v) noexcept {
+    StringView type_name(const Value v) noexcept {
         if (v.is_obj()) {
             return v.as_obj()->type_name();
         }
         return v.type_name();
     }
 
-    String format_value(const Value& v) {
+    String format_value(const Value v) {
         switch (v.type()) {
             case Value::Type::Nil:
                 return "nil";
@@ -86,7 +86,7 @@ namespace aria {
         UNREACHABLE();
     }
 
-    String format_value_debug(const Value& v) {
+    String format_value_debug(const Value v) {
         // 与 format_value 的关键区别:Obj 走 debug_repr() 虚分派而非可重载的 to_string()
         //(后者是未来用户类 __str__ 的挂载点,可重入 VM)。debug_repr 虽是虚函数,但其
         // override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),语言层
@@ -107,7 +107,7 @@ namespace aria {
         UNREACHABLE();
     }
 
-    bool value_identical(const Value& a, const Value& b) noexcept {
+    bool value_identical(const Value a, const Value b) noexcept {
         if (a.type() != b.type()) {
             return false;
         }

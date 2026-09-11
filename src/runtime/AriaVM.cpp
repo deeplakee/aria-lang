@@ -154,11 +154,11 @@ namespace aria {
         // <script>/<test>,abs_path 会拼出伪路径)或 abs_path 为空(cwd 不可用)退化为 "<name>"。
         // 未捕获堆栈跟踪逐帧渲染(unwind 的 at 行)用 -- 消息本身不烘位置前缀(2026-09-10 起,
         // 见 AriaVM::raise),位置串规则单一事实源。
-        String module_loc(const ObjModule& mod, const u32 line) {
-            if (const auto name = mod.name()->view(); name.starts_with('<') || mod.abs_path().empty()) {
+        String module_loc(const ObjModule* module, const u32 line) {
+            if (const auto name = module->name()->view(); name.starts_with('<') || module->abs_path().empty()) {
                 return std::format("{}:{}", name, line);
             }
-            return std::format("{}:{}", mod.abs_path(), line);
+            return std::format("{}:{}", module->abs_path(), line);
         }
 
         // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
@@ -370,7 +370,7 @@ namespace aria {
         }
     }
 
-    Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule& module) {
+    Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule* module) {
         // 编译并执行：经 Compiler（用本 VM 的 gc_，编译期分配与 run 同源）把 source 编进 module 的入口
         // ObjFunction，再委托 run(ObjFunction*) 执行。Compiler 就地构造（临时对象，与 load_module 的
         // 加载编译同款写法；REPL 期若需跨次复用可后续提成成员）。module 由调用方提供（控制 name/root
@@ -385,7 +385,7 @@ namespace aria {
         return run(compiled.value());
     }
 
-    InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule& module) {
+    InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule* module) {
         // 编译并执行，按**失败阶段**分类（不再按错误码大类反推时机）：编译期失败 -> CompileError，
         // run 期失败 -> RuntimeError。阶段信息经两步调用天然可得，不压进 Error 结构。
         // 分类语义：CompileError 意为「主入口编译失败，程序从未开始执行」；run 期浮现的一切错误归
@@ -415,7 +415,7 @@ namespace aria {
 
         // 字符串源 SourceFile(名 = kScriptModuleName,无文件身份);方法内局部,存活至返回,Error 渲染不悬垂。
         SourceFile source{String{kScriptModuleName}, String{kScriptModuleName}, String{src}};
-        return interpret_run(source, *module);
+        return interpret_run(source, module);
     }
 
     InterpretResult AriaVM::interpret_from_path(const StringView path) {
@@ -438,7 +438,7 @@ namespace aria {
         auto module = new_module(gc_, name_s, dir_s); // 3 参：显式 dir
         auto guard  = gc_.make_guard(module);
 
-        return interpret_run(source, *module);
+        return interpret_run(source, module);
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
@@ -652,7 +652,7 @@ namespace aria {
         //    module 经 guard + modules_ 根化,CodeGen::compile 内部亦 make_guard(&module),双保险。
         //    source 须存活到 compile() 返回(Error 烘位置串需它)。entry 经 module->entry_ 根可达。
         Compiler compiler{gc_};
-        if (auto compiled = compiler.compile(source, *module, kModuleEntryName); !compiled) {
+        if (auto compiled = compiler.compile(source, module, kModuleEntryName); !compiled) {
             auto err = std::move(compiled).error();
             current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
             return nullptr;
@@ -847,7 +847,7 @@ namespace aria {
         // 收集序内->外反转(坑 #16:渲染外->内)
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
             const auto line = fn->unit().line_for_offset(ip_off);
-            msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(*mod, line));
+            msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(mod, line));
         }
         return Error::from_baked(code, msg);
     }

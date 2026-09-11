@@ -46,7 +46,7 @@ namespace {
         auto lexed = std::make_unique<Lexed>();
         lexed->sf  = make_src(content); // sf 就位（此后不再 move）
         Lexer lexer;
-        auto  result = lexer.tokenize(&lexed->sf);
+        auto  result = lexer.tokenize(lexed->sf);
         EXPECT_TRUE(result.has_value()) << "期望 tokenize 成功";
         lexed->tokens = result.has_value() ? std::move(result.value()) : List<Token>{};
         return lexed;
@@ -57,7 +57,7 @@ namespace {
         auto lexed = std::make_unique<LexErrors>();
         lexed->sf  = make_src(content);
         Lexer lexer;
-        auto  result = lexer.tokenize(&lexed->sf);
+        auto  result = lexer.tokenize(lexed->sf);
         EXPECT_FALSE(result.has_value()) << "期望 tokenize 失败";
         lexed->errors = result.has_value() ? List<Error>{} : std::move(result.error());
         return lexed;
@@ -194,7 +194,7 @@ TEST(LexerIdentifier, LoneUnderscore) {
     // 内联以排除 helper 的生命周期干扰
     SourceFile sf{String{"t"}, String{"t"}, String{"_"}};
     Lexer      lexer;
-    auto       result = lexer.tokenize(&sf);
+    auto       result = lexer.tokenize(sf);
     ASSERT_TRUE(result.has_value());
     const auto& tokens = result.value();
     ASSERT_EQ(tokens.size(), 2u);
@@ -579,7 +579,7 @@ TEST(LexerRecovery, ContinueAfterRecoverable) {
     // @ 是 InvalidCharacter（可恢复），应继续扫到 42
     SourceFile sf = make_src("@ 42");
     Lexer      lexer;
-    auto       result = lexer.tokenize(&sf);
+    auto       result = lexer.tokenize(sf);
     // 有错误 -> 返回错误集合
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
@@ -591,7 +591,7 @@ TEST(LexerRecovery, MultipleErrorsCollected) {
     // 两个非法字符 @ 和 ?
     SourceFile sf = make_src("@ ?");
     Lexer      lexer;
-    auto       result = lexer.tokenize(&sf);
+    auto       result = lexer.tokenize(sf);
     ASSERT_FALSE(result.has_value());
     EXPECT_GE(result.error().size(), 2u);
 }
@@ -601,7 +601,7 @@ TEST(LexerRecovery, UnterminatedStringContinuesScanning) {
     // "abc<换行>@ -> UnterminatedString（跨行）+ InvalidCharacter（@）
     SourceFile sf = make_src("\"abc\n@");
     Lexer      lexer;
-    auto       result = lexer.tokenize(&sf);
+    auto       result = lexer.tokenize(sf);
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
     ASSERT_GE(errors.size(), 2u);
@@ -627,7 +627,7 @@ TEST(LexerRecovery, MaxErrorsCapStopsScan) {
     }
     SourceFile sf = make_src(src);
     Lexer      lexer;
-    auto       result = lexer.tokenize(&sf);
+    auto       result = lexer.tokenize(sf);
     ASSERT_FALSE(result.has_value());
     // 错误数受上限约束（不应到 100）
     EXPECT_LE(result.error().size(), 64u); // 上限 32，留余量（达上限后不再记账）

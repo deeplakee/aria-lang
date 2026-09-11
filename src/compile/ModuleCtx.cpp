@@ -13,9 +13,9 @@ namespace aria {
 
     // 调用方须先 module.set_entry(entry)；构造期 ASSERT entry 非空，就 m.entry() new 一个入口 fn 上下文
     // （enclosing_==nullptr = entry）赋值给 current_fn_ctx_--它既是入口所有者也是当前游标（初始 = 入口）。
-    ModuleCtx::ModuleCtx(ObjModule& m) : module_{&m} {
-        ASSERT(m.entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
-        current_fn_ctx_ = new FunctionCtx(*m.entry());
+    ModuleCtx::ModuleCtx(ObjModule* module) : module_{module} {
+        ASSERT(module->entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
+        current_fn_ctx_ = new FunctionCtx(module->entry());
     }
 
     // 沿 enclosing_ 链（current_fn_ctx_ → 父 → ... → entry）逐个 delete，无论游标在哪儿都对：

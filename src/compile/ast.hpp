@@ -67,7 +67,7 @@ namespace aria {
         // 直接打印本节点（含子树）到终端：经 dump 构造文本后 io::print 输出。
         void display() const;
 
-        // 访问者模式入口（双分派）：各具体节点 override 为 visitor.visitXxxNode(this)，
+        // 访问者模式入口（双分派）：各具体节点 override 为 visitor.visitXxxNode(*this)，
         // 把本节点实际类型交给访问者，无需按运行时类型手动分派。接受非 const 访问者，
         // 允许遍历中读写节点（如语义分析阶段注记解析结果）。
         virtual void accept(AstVisitor& visitor) = 0;

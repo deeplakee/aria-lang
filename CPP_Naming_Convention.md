@@ -147,6 +147,36 @@ class RingBuffer;
 
 ------
 
+# Parameter Passing
+
+> **参数形态表达「借用契约与可空性」，不表达所有权。**
+> 所有权只在 `UPtr` 成员/返回中出现；函数参数永远是非拥有借用。
+
+| 参数类别 | 形态 | 说明与例子 |
+| --- | --- | --- |
+| GC 对象（object 层 `Object`/`Obj*`） | 恒 `T*` | 族级约定：成员/`trace`/`is`/`as` 全指针化，不为个别非空参数引入 `&`（`ObjClass(GC&, ObjString* name, ObjClass* super)`，`super` 可空） |
+| 服务/宿主（`GC`/`AriaVM`/`SourceFile` 等长寿命非 GC 宿主） | `T&` | 借用期必非空；成员需要指针存法时在**成员侧**取址解决，参数仍传 `T&`（`Lexer::tokenize(SourceFile& src)`，成员 `source_` 存 `&src`） |
+| AST 节点 | `T&` | 非空借用：visitor 双分派 `accept(AstVisitor&)` / `visitXxxNode(XxxNode&)`；仅语义上可缺省的子节点入参才 `T*`（如 for 的可省 init/condition） |
+| 容器分配器注入 | `T*` | 豁免：`Buffer`/`Array`/`HashTable` 的 `Alloc*`、`Movement`/`GC::Guard` 的 `GC*`，与 `TrivialAllocator` concept 的 `A*` 形态绑定 |
+| 位置/槽位 | `T*` | `Value*` 槽位、`u8*` 内存块：以地址身份参与（算术/写穿/身份比较） |
+| dyn_cast 查询家族 | `T*` | `Object::is/as/try_as`、`equals(const Object* other)`，与 `dynamic_cast` 惯例对齐恒指针 |
+| 递归链/重绑 | `T*` | `nullptr` 是合法状态或递归终止（`FunctionCtx* enclosing_`、`Movement* previous_`） |
+| 字符串/缓冲 | `StringView`/`Span<T>` | 不建串；要 GC 串对象走工厂 `StringView` 重载，`ObjString*` 只表示已持有对象的身份 |
+| 小值 | 按值，`const` 写在定义处 | `Value`、`i8..i64`/`u8..u64`、`f32`/`f64`、`bool`、`SourceLoc`、`StringView`、`Span`；range-for 与容器内联回调 lambda 的元素绑定不属参数规则 |
+| 出参 | 无 | 返回值优先（`Result`/`Opt`/聚合）；仅「往已有缓冲追加」类允许 `T&` 入出参（如 `String& out`） |
+
+判定顺序：所有权？→ 不许（`UPtr` 只在成员/返回）。可空 / 位置 / dyn_cast 查询？→ 指针。object 层 GC 对象？→ 指针。其余必非空借用 → 引用；小值 → 按值（`const` 写在**定义**处--.cpp 实现或头内 inline 定义体，纯声明不写，const 是「不改参」契约）。
+
+```cpp
+ObjClass(GC& gc, ObjString* name, ObjClass* super);                          // 服务 &，GC 对象 *
+Result<List<Token>, List<Error>> tokenize(SourceFile& src);                  // 宿主借用 &（成员空态存 &src）
+void visitBlockNode(BlockNode& node) override;                               // AST 非空借用
+Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, SourceLoc loc);   // 可空递归链 + 小值按值
+void emit_expr(ExprNode& n);                                                 // AST 借用
+```
+
+------
+
 # Naming Priorities
 
 当规则冲突时：

@@ -15,9 +15,10 @@ namespace aria {
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。
     //
-    // 生命周期：默认构造为空态；通过 tokenize(SourceFile*) 传入源文件、
+    // 生命周期：默认构造为空态；通过 tokenize(SourceFile&) 传入源文件、
     // 初始化成员、扫描、扫完清空成员返回。Lexer 可复用（多次 tokenize 不同文件），
-    // 故以指针持有 SourceFile（nullptr 表空态，引用无法「清空」）。
+    // 故以指针持有 SourceFile（nullptr 表空态，引用无法「清空」）；参数仍按
+    // 借用约定传引用（见 CPP_Naming_Convention.md Parameter Passing）。
     //
     // 返回 Result<List<Token>, List<Error>>：
     //   - 所有词法错误（串未闭合等）一律作可恢复处理--
@@ -36,7 +37,7 @@ namespace aria {
 
         // 对 src 做词法分析。扫完清空成员。返回 token 流或错误集合。
         [[nodiscard]]
-        Result<List<Token>, List<Error>> tokenize(SourceFile* src);
+        Result<List<Token>, List<Error>> tokenize(SourceFile& src);
 
     private:
         // 错误上限：errors_ 达此数即置 is_fatal_ 停止扫描，避免级联刷屏。

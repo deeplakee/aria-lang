@@ -89,58 +89,58 @@ namespace {
         }
 
         // --- 根节点 ---
-        void visitProgramNode(ProgramNode*) override { visited_.push_back("ProgramNode"); }
+        void visitProgramNode(ProgramNode&) override { visited_.push_back("ProgramNode"); }
 
         // --- 语句节点 ---
-        void visitBlockNode(BlockNode*) override { visited_.push_back("BlockNode"); }
-        void visitExprStmtNode(ExprStmtNode*) override { visited_.push_back("ExprStmtNode"); }
-        void visitPrintStmtNode(PrintStmtNode*) override { visited_.push_back("PrintStmtNode"); }
-        void visitIfStmtNode(IfStmtNode*) override { visited_.push_back("IfStmtNode"); }
-        void visitWhileStmtNode(WhileStmtNode*) override { visited_.push_back("WhileStmtNode"); }
-        void visitForStmtNode(ForStmtNode*) override { visited_.push_back("ForStmtNode"); }
-        void visitForInStmtNode(ForInStmtNode*) override { visited_.push_back("ForInStmtNode"); }
-        void visitBreakStmtNode(BreakStmtNode*) override { visited_.push_back("BreakStmtNode"); }
-        void visitContinueStmtNode(ContinueStmtNode*) override { visited_.push_back("ContinueStmtNode"); }
-        void visitReturnStmtNode(ReturnStmtNode*) override { visited_.push_back("ReturnStmtNode"); }
-        void visitImportStmtNode(ImportStmtNode*) override { visited_.push_back("ImportStmtNode"); }
-        void visitTryStmtNode(TryStmtNode*) override { visited_.push_back("TryStmtNode"); }
-        void visitThrowStmtNode(ThrowStmtNode*) override { visited_.push_back("ThrowStmtNode"); }
-        void visitMatchStmtNode(MatchStmtNode*) override { visited_.push_back("MatchStmtNode"); }
-        void visitFunDeclNode(FunDeclNode*) override { visited_.push_back("FunDeclNode"); }
-        void visitDefDeclNode(DefDeclNode*) override { visited_.push_back("DefDeclNode"); }
-        void visitVarDeclNode(VarDeclNode*) override { visited_.push_back("VarDeclNode"); }
+        void visitBlockNode(BlockNode&) override { visited_.push_back("BlockNode"); }
+        void visitExprStmtNode(ExprStmtNode&) override { visited_.push_back("ExprStmtNode"); }
+        void visitPrintStmtNode(PrintStmtNode&) override { visited_.push_back("PrintStmtNode"); }
+        void visitIfStmtNode(IfStmtNode&) override { visited_.push_back("IfStmtNode"); }
+        void visitWhileStmtNode(WhileStmtNode&) override { visited_.push_back("WhileStmtNode"); }
+        void visitForStmtNode(ForStmtNode&) override { visited_.push_back("ForStmtNode"); }
+        void visitForInStmtNode(ForInStmtNode&) override { visited_.push_back("ForInStmtNode"); }
+        void visitBreakStmtNode(BreakStmtNode&) override { visited_.push_back("BreakStmtNode"); }
+        void visitContinueStmtNode(ContinueStmtNode&) override { visited_.push_back("ContinueStmtNode"); }
+        void visitReturnStmtNode(ReturnStmtNode&) override { visited_.push_back("ReturnStmtNode"); }
+        void visitImportStmtNode(ImportStmtNode&) override { visited_.push_back("ImportStmtNode"); }
+        void visitTryStmtNode(TryStmtNode&) override { visited_.push_back("TryStmtNode"); }
+        void visitThrowStmtNode(ThrowStmtNode&) override { visited_.push_back("ThrowStmtNode"); }
+        void visitMatchStmtNode(MatchStmtNode&) override { visited_.push_back("MatchStmtNode"); }
+        void visitFunDeclNode(FunDeclNode&) override { visited_.push_back("FunDeclNode"); }
+        void visitDefDeclNode(DefDeclNode&) override { visited_.push_back("DefDeclNode"); }
+        void visitVarDeclNode(VarDeclNode&) override { visited_.push_back("VarDeclNode"); }
 
         // --- 表达式节点 ---
-        void visitIntegerLiteralNode(IntegerLiteralNode*) override { visited_.push_back("IntegerLiteralNode"); }
-        void visitFloatLiteralNode(FloatLiteralNode*) override { visited_.push_back("FloatLiteralNode"); }
-        void visitStringLiteralNode(StringLiteralNode*) override { visited_.push_back("StringLiteralNode"); }
-        void visitBoolLiteralNode(BoolLiteralNode*) override { visited_.push_back("BoolLiteralNode"); }
-        void visitNilLiteralNode(NilLiteralNode*) override { visited_.push_back("NilLiteralNode"); }
-        void visitIdentifierNode(IdentifierNode*) override { visited_.push_back("IdentifierNode"); }
-        void visitThisExprNode(ThisExprNode*) override { visited_.push_back("ThisExprNode"); }
-        void visitSuperExprNode(SuperExprNode*) override { visited_.push_back("SuperExprNode"); }
-        void visitBinaryExprNode(BinaryExprNode*) override { visited_.push_back("BinaryExprNode"); }
-        void visitUnaryExprNode(UnaryExprNode*) override { visited_.push_back("UnaryExprNode"); }
-        void visitAssignmentNode(AssignmentNode*) override { visited_.push_back("AssignmentNode"); }
-        void visitDestructureAssignmentNode(DestructureAssignmentNode*) override {
+        void visitIntegerLiteralNode(IntegerLiteralNode&) override { visited_.push_back("IntegerLiteralNode"); }
+        void visitFloatLiteralNode(FloatLiteralNode&) override { visited_.push_back("FloatLiteralNode"); }
+        void visitStringLiteralNode(StringLiteralNode&) override { visited_.push_back("StringLiteralNode"); }
+        void visitBoolLiteralNode(BoolLiteralNode&) override { visited_.push_back("BoolLiteralNode"); }
+        void visitNilLiteralNode(NilLiteralNode&) override { visited_.push_back("NilLiteralNode"); }
+        void visitIdentifierNode(IdentifierNode&) override { visited_.push_back("IdentifierNode"); }
+        void visitThisExprNode(ThisExprNode&) override { visited_.push_back("ThisExprNode"); }
+        void visitSuperExprNode(SuperExprNode&) override { visited_.push_back("SuperExprNode"); }
+        void visitBinaryExprNode(BinaryExprNode&) override { visited_.push_back("BinaryExprNode"); }
+        void visitUnaryExprNode(UnaryExprNode&) override { visited_.push_back("UnaryExprNode"); }
+        void visitAssignmentNode(AssignmentNode&) override { visited_.push_back("AssignmentNode"); }
+        void visitDestructureAssignmentNode(DestructureAssignmentNode&) override {
             visited_.push_back("DestructureAssignmentNode");
         }
-        void visitCallNode(CallNode*) override { visited_.push_back("CallNode"); }
-        void visitFieldAccessNode(FieldAccessNode*) override { visited_.push_back("FieldAccessNode"); }
-        void visitIndexAccessNode(IndexAccessNode*) override { visited_.push_back("IndexAccessNode"); }
-        void visitListExprNode(ListExprNode*) override { visited_.push_back("ListExprNode"); }
-        void visitMapExprNode(MapExprNode*) override { visited_.push_back("MapExprNode"); }
-        void visitRangeExprNode(RangeExprNode*) override { visited_.push_back("RangeExprNode"); }
-        void visitIfExprNode(IfExprNode*) override { visited_.push_back("IfExprNode"); }
-        void visitLambdaExprNode(LambdaExprNode*) override { visited_.push_back("LambdaExprNode"); }
-        void visitMatchExprNode(MatchExprNode*) override { visited_.push_back("MatchExprNode"); }
+        void visitCallNode(CallNode&) override { visited_.push_back("CallNode"); }
+        void visitFieldAccessNode(FieldAccessNode&) override { visited_.push_back("FieldAccessNode"); }
+        void visitIndexAccessNode(IndexAccessNode&) override { visited_.push_back("IndexAccessNode"); }
+        void visitListExprNode(ListExprNode&) override { visited_.push_back("ListExprNode"); }
+        void visitMapExprNode(MapExprNode&) override { visited_.push_back("MapExprNode"); }
+        void visitRangeExprNode(RangeExprNode&) override { visited_.push_back("RangeExprNode"); }
+        void visitIfExprNode(IfExprNode&) override { visited_.push_back("IfExprNode"); }
+        void visitLambdaExprNode(LambdaExprNode&) override { visited_.push_back("LambdaExprNode"); }
+        void visitMatchExprNode(MatchExprNode&) override { visited_.push_back("MatchExprNode"); }
 
         // --- 解构模式节点 ---
-        void visitIdentifierPatternNode(IdentifierPatternNode*) override {
+        void visitIdentifierPatternNode(IdentifierPatternNode&) override {
             visited_.push_back("IdentifierPatternNode");
         }
-        void visitWildcardPatternNode(WildcardPatternNode*) override { visited_.push_back("WildcardPatternNode"); }
-        void visitListPatternNode(ListPatternNode*) override { visited_.push_back("ListPatternNode"); }
+        void visitWildcardPatternNode(WildcardPatternNode&) override { visited_.push_back("WildcardPatternNode"); }
+        void visitListPatternNode(ListPatternNode&) override { visited_.push_back("ListPatternNode"); }
 
     private:
         List<StringView> visited_;

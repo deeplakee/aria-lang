@@ -66,7 +66,7 @@ namespace aria {
         // detail 同上一重载(const String&,无默认值)。
         // message_ 烘为 "path:line:col: Category: Name[ detail]"(空态 loc 无位置段)。
         [[nodiscard]]
-        static Error from_detail(const ErrorCode code, const SourceLoc& loc, const String& detail) {
+        static Error from_detail(const ErrorCode code, const SourceLoc loc, const String& detail) {
             return Error{code, make_message(code, loc.to_string(), detail)};
         }
 

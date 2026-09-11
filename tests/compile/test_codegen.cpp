@@ -40,10 +40,10 @@ namespace {
     // 端到端：源码 -> tokenize -> parse -> CodeGen::compile。
     // 断言词法/语法成功（测试用例均用合法语法），返回编译结果（入口 ObjFunction 或首错 Error）。
     // 注意：返回的 ObjFunction 及其常量池 ObjString 归属调用方提供的 vm 的 GC，须在 vm 存活期间使用。
-    Result<ObjFunction*, Error> compile_source(GC& gc, ObjModule& module, std::string_view src) {
+    Result<ObjFunction*, Error> compile_source(GC& gc, ObjModule* module, std::string_view src) {
         SourceFile file{"<test>", "<test>", aria::String{src}};
         Lexer      lexer;
-        auto       lex = lexer.tokenize(&file);
+        auto       lex = lexer.tokenize(file);
         if (!lex.has_value()) {
             return std::unexpected(lex.error()[0]);
         }
@@ -90,7 +90,7 @@ namespace {
         auto mod_name = new_string(gc, "<test>");
         auto guard    = gc.make_guard(mod_name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
         auto module   = new_module(gc, mod_name);
-        auto compiled = compile_source(gc, *module, src);
+        auto compiled = compile_source(gc, module, src);
         if (!compiled.has_value()) {
             return RunResult{std::move(vm), std::unexpected(compiled.error())};
         }
@@ -107,7 +107,7 @@ namespace {
         auto mod_name = new_string(gc, "<test>");
         auto guard    = gc.make_guard(mod_name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
         auto module   = new_module(gc, mod_name);
-        auto compiled = compile_source(gc, *module, src);
+        auto compiled = compile_source(gc, module, src);
         return Compiled{std::move(vm), std::move(compiled)};
     }
 
@@ -859,12 +859,12 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
     auto guard    = gc.make_guard(mod_name);
     auto module   = new_module(gc, mod_name);
 
-    auto c1 = compile_source(gc, *module, "var len = 5;");
+    auto c1 = compile_source(gc, module, "var len = 5;");
     ASSERT_TRUE(c1.has_value());
     auto r1 = vm->run(c1.value());
     ASSERT_TRUE(r1.has_value()) << r1.error().message();
 
-    auto c2 = compile_source(gc, *module, "return len;");
+    auto c2 = compile_source(gc, module, "return len;");
     ASSERT_TRUE(c2.has_value());
     auto r2 = vm->run(c2.value());
     ASSERT_TRUE(r2.has_value()) << r2.error().message();

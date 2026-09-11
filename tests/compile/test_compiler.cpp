@@ -56,7 +56,7 @@ namespace {
         auto module   = new_module(gc, mod_name);
         // 实际源文件：调用方构造（测试用 "<test>" 作 name/path，真实入口用文件路径）。堆地址稳定。
         auto source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
-        auto result = vm->run(*source, *module); // 编译并执行
+        auto result = vm->run(*source, module); // 编译并执行
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
@@ -78,7 +78,7 @@ namespace {
         auto     module   = new_module(gc, mod_name);
         auto     source   = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
         Compiler compiler{gc};
-        auto     compiled = compiler.compile(*source, *module);
+        auto     compiled = compiler.compile(*source, module);
         EXPECT_FALSE(compiled.has_value());
         // guard 释放临时根；module 仍由 GC 管理。error 的 SourceLoc 指向 *source，source 经 unique_ptr 存活故可渲染。
         (void) guard;

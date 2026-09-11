@@ -119,7 +119,7 @@ namespace aria {
         //     成功路径返回值不依赖 source）。
         //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
         // 成功为返回值；失败为首错 Error（编译期错误原样透传，运行期错误同 run(ObjFunction*)）。
-        Result<Value, Error> run(SourceFile& source, ObjModule& module);
+        Result<Value, Error> run(SourceFile& source, ObjModule* module);
 
         // 编译并执行源码字符串（interpret）：构造 SourceFile（名 <script>）+ 合成入口模块（名 <script>、
         // dir_=cwd）-> 编译 -> 执行。错误渲染到 stderr，返回 InterpretResult（不返 Error，见上枚举注释）。
@@ -291,7 +291,7 @@ namespace aria {
         // 并按**失败阶段**分类 -- 编译期失败 -> CompileError（「主入口编译失败，程序从未开始执行」），
         // run 期失败 -> RuntimeError（含运行期 UndefinedVariable 与经异常通道传播的被导入模块编译期
         // 错误，后者可被 try/catch 捕获故不构成 CompileError）。不按错误码大类映射。
-        InterpretResult interpret_run(SourceFile& source, ObjModule& module);
+        InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
         // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native、

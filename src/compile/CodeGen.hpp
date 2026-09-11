@@ -39,7 +39,7 @@
 // 栈契约：每个 visitXxxNode 自知契约--ExprNode 子类留一值，StmtNode 子类留零值。
 // 父节点在 visit 体内显式调 emit_expr/emit_stmt 编排子节点；出错由 fail() 抛异常自动 unwind，无需逐调用短路。
 //
-// GC 安全：compile() 入口 gc_.make_guard(&module) 把 module 入临时根贯穿全程。经
+// GC 安全：compile() 入口 gc_.make_guard(module) 把 module 入临时根贯穿全程。经
 //   module.entry_ -> 常量池 -> 嵌套 ObjFunction 常量池 -> ... 整链根化建设中 ObjFunction /
 //   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
 //   入池即经 module 根链可达。new_object -> add_constant 间走 trivial 分配(constants.push ->
@@ -92,7 +92,7 @@ namespace aria {
         //     （由 VM 加载层调用，区别于主入口，对齐 CPython 模块体 code object 同名）。
         // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
         // Error。
-        Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule& module,
+        Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule* module,
                                             StringView entry_name = kMainEntryName);
 
         ~CodeGen() override                    = default;
@@ -102,54 +102,54 @@ namespace aria {
         CodeGen& operator=(CodeGen&&) noexcept = delete;
 
         // --- 根节点 ---
-        void visitProgramNode(ProgramNode* node) override;
+        void visitProgramNode(ProgramNode& node) override;
 
         // --- 语句节点 ---
-        void visitBlockNode(BlockNode* node) override;
-        void visitExprStmtNode(ExprStmtNode* node) override;
-        void visitPrintStmtNode(PrintStmtNode* node) override;
-        void visitIfStmtNode(IfStmtNode* node) override;
-        void visitWhileStmtNode(WhileStmtNode* node) override;
-        void visitForStmtNode(ForStmtNode* node) override;
-        void visitForInStmtNode(ForInStmtNode* node) override;
-        void visitBreakStmtNode(BreakStmtNode* node) override;
-        void visitContinueStmtNode(ContinueStmtNode* node) override;
-        void visitReturnStmtNode(ReturnStmtNode* node) override;
-        void visitImportStmtNode(ImportStmtNode* node) override;
-        void visitTryStmtNode(TryStmtNode* node) override;
-        void visitThrowStmtNode(ThrowStmtNode* node) override;
-        void visitMatchStmtNode(MatchStmtNode* node) override;
-        void visitFunDeclNode(FunDeclNode* node) override;
-        void visitDefDeclNode(DefDeclNode* node) override;
-        void visitVarDeclNode(VarDeclNode* node) override;
+        void visitBlockNode(BlockNode& node) override;
+        void visitExprStmtNode(ExprStmtNode& node) override;
+        void visitPrintStmtNode(PrintStmtNode& node) override;
+        void visitIfStmtNode(IfStmtNode& node) override;
+        void visitWhileStmtNode(WhileStmtNode& node) override;
+        void visitForStmtNode(ForStmtNode& node) override;
+        void visitForInStmtNode(ForInStmtNode& node) override;
+        void visitBreakStmtNode(BreakStmtNode& node) override;
+        void visitContinueStmtNode(ContinueStmtNode& node) override;
+        void visitReturnStmtNode(ReturnStmtNode& node) override;
+        void visitImportStmtNode(ImportStmtNode& node) override;
+        void visitTryStmtNode(TryStmtNode& node) override;
+        void visitThrowStmtNode(ThrowStmtNode& node) override;
+        void visitMatchStmtNode(MatchStmtNode& node) override;
+        void visitFunDeclNode(FunDeclNode& node) override;
+        void visitDefDeclNode(DefDeclNode& node) override;
+        void visitVarDeclNode(VarDeclNode& node) override;
 
         // --- 表达式节点 ---
-        void visitIntegerLiteralNode(IntegerLiteralNode* node) override;
-        void visitFloatLiteralNode(FloatLiteralNode* node) override;
-        void visitStringLiteralNode(StringLiteralNode* node) override;
-        void visitBoolLiteralNode(BoolLiteralNode* node) override;
-        void visitNilLiteralNode(NilLiteralNode* node) override;
-        void visitIdentifierNode(IdentifierNode* node) override;
-        void visitThisExprNode(ThisExprNode* node) override;
-        void visitSuperExprNode(SuperExprNode* node) override;
-        void visitBinaryExprNode(BinaryExprNode* node) override;
-        void visitUnaryExprNode(UnaryExprNode* node) override;
-        void visitAssignmentNode(AssignmentNode* node) override;
-        void visitDestructureAssignmentNode(DestructureAssignmentNode* node) override;
-        void visitCallNode(CallNode* node) override;
-        void visitFieldAccessNode(FieldAccessNode* node) override;
-        void visitIndexAccessNode(IndexAccessNode* node) override;
-        void visitListExprNode(ListExprNode* node) override;
-        void visitMapExprNode(MapExprNode* node) override;
-        void visitRangeExprNode(RangeExprNode* node) override;
-        void visitIfExprNode(IfExprNode* node) override;
-        void visitLambdaExprNode(LambdaExprNode* node) override;
-        void visitMatchExprNode(MatchExprNode* node) override;
+        void visitIntegerLiteralNode(IntegerLiteralNode& node) override;
+        void visitFloatLiteralNode(FloatLiteralNode& node) override;
+        void visitStringLiteralNode(StringLiteralNode& node) override;
+        void visitBoolLiteralNode(BoolLiteralNode& node) override;
+        void visitNilLiteralNode(NilLiteralNode& node) override;
+        void visitIdentifierNode(IdentifierNode& node) override;
+        void visitThisExprNode(ThisExprNode& node) override;
+        void visitSuperExprNode(SuperExprNode& node) override;
+        void visitBinaryExprNode(BinaryExprNode& node) override;
+        void visitUnaryExprNode(UnaryExprNode& node) override;
+        void visitAssignmentNode(AssignmentNode& node) override;
+        void visitDestructureAssignmentNode(DestructureAssignmentNode& node) override;
+        void visitCallNode(CallNode& node) override;
+        void visitFieldAccessNode(FieldAccessNode& node) override;
+        void visitIndexAccessNode(IndexAccessNode& node) override;
+        void visitListExprNode(ListExprNode& node) override;
+        void visitMapExprNode(MapExprNode& node) override;
+        void visitRangeExprNode(RangeExprNode& node) override;
+        void visitIfExprNode(IfExprNode& node) override;
+        void visitLambdaExprNode(LambdaExprNode& node) override;
+        void visitMatchExprNode(MatchExprNode& node) override;
 
         // --- 解构模式节点 ---
-        void visitIdentifierPatternNode(IdentifierPatternNode* node) override;
-        void visitWildcardPatternNode(WildcardPatternNode* node) override;
-        void visitListPatternNode(ListPatternNode* node) override;
+        void visitIdentifierPatternNode(IdentifierPatternNode& node) override;
+        void visitWildcardPatternNode(WildcardPatternNode& node) override;
+        void visitListPatternNode(ListPatternNode& node) override;
 
     private:
         GC& gc_;
@@ -165,7 +165,7 @@ namespace aria {
 
         // 模块初始化（compile 入口调用）：建入口函数（名 entry_name）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
         // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）。
-        ObjFunction* init_module(ObjModule& module, StringView entry_name);
+        ObjFunction* init_module(ObjModule* module, StringView entry_name);
 
         // 当前函数上下文游标（= mod_ctx_->current_fn_ctx_）与当前 CodeUnit（由游标派生 =
         // &fn_->unit()，随 compile_function 摆动游标自动切换）。编译外（mod_ctx_ 为空）不可调用。
@@ -181,17 +181,17 @@ namespace aria {
 
         // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge；否则入池返回索引。
         [[nodiscard]]
-        u16 add_constant_or_fail(Value value, const SourceLoc& loc) const;
+        u16 add_constant_or_fail(Value value, SourceLoc loc) const;
 
         // intern name 成 ObjString 入常量池，返回索引。溢出由 add_constant_or_fail fail。
         [[nodiscard]]
-        u16 add_name_or_fail(StringView name, const SourceLoc& loc) const;
+        u16 add_name_or_fail(StringView name, SourceLoc loc) const;
 
         // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
         // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记并标「定义但未初始化」
         // （不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
         [[nodiscard]]
-        u16 declare_local_or_fail(StringView name, const SourceLoc& loc) const;
+        u16 declare_local_or_fail(StringView name, SourceLoc loc) const;
 
         // cur_fn_ctx()->begin_scope()
         void begin_scope() const;
@@ -222,7 +222,7 @@ namespace aria {
         // Global（index=名字常量池索引，VM 运行期 LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。
         // Global 分支经 add_name_or_fail 入池，溢出即 fail（持 loc）。
         [[nodiscard]]
-        ResolvedVar resolve_name_or_fail(StringView name, const SourceLoc& loc);
+        ResolvedVar resolve_name_or_fail(StringView name, SourceLoc loc);
 
         // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查 ctx->enclosing_
         // 的局部，命中 -> 置该局部 is_captured（槽将被捕获，作用域退出须 CLOSE_UPVALUE）+ ctx 登记
@@ -232,43 +232,43 @@ namespace aria {
         // 越界 fail TooManyUpvalues，nullopt 不外泄免被误读为「落全局」）。ctx == nullptr（递归到
         // entry 之上）即不可捕获。
         [[nodiscard]]
-        Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, const SourceLoc& loc);
+        Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, SourceLoc loc);
 
         // add_upvalue 失败翻译（单层 _or_fail 家族同款约定）：ctx 登记一条捕获描述，追加将越出
         // u8 索引域（add_upvalue 返 nullopt）-> fail TooManyUpvalues（持 loc），成功返回 upvalue 索引。
         // 入参 ctx 显式传入--resolve_upvalue 沿 enclosing_ 链递归，登记发生在链上各层（非恒 cur_fn_ctx）。
         [[nodiscard]]
-        u8 add_upvalue_or_fail(FunctionCtx* ctx, UpvalueDesc desc, const SourceLoc& loc) const;
+        u8 add_upvalue_or_fail(FunctionCtx* ctx, UpvalueDesc desc, SourceLoc loc) const;
 
         // --- 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）---
         // 与上面 _or_fail 同一职责约定（操作 + 失败即 fail），但底层返 bool（patch_jump/emit_jump_back/
         // declare_global），无解包值，故为 void 封装。文案收口于此。
 
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
-        void patch_jump_or_fail(usize src_off, const SourceLoc& loc) const;
+        void patch_jump_or_fail(usize src_off, SourceLoc loc) const;
 
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
         // 比 patch_jump 多一个 line 参数--emit_jump_back 要发射 JUMP_BACK 指令(line 供其行号),而
         // patch_jump 只回填占位不发射,故无需 line。
-        void emit_jump_back_or_fail(u32 target_off, u32 line, const SourceLoc& loc) const;
+        void emit_jump_back_or_fail(u32 target_off, u32 line, SourceLoc loc) const;
 
         // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与
         // declare_local_or_fail 对称(局部/全局重定义检查各一),但 declare_global 返 bool、单一失败,故
         // 同上两者为 void 封装(无解包)。替代 visit 层 3 处 if+fail,消息文案收口于此。
-        void declare_global_or_fail(StringView name, const SourceLoc& loc) const;
+        void declare_global_or_fail(StringView name, SourceLoc loc) const;
 
         // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
         // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 是合法左值种类（放行，由各自 visit 节点
         // 处理 load/store 或 not_impl）；其余节点种类 -> InvalidAssignmentTarget。由 emit_lvalue 在分派前
         // 调用：复合/前置自增自减的首次 emit_lvalue(Load) 先于 rhs，普通 = 的 emit_lvalue(Store) 后于 rhs
         // （非法左值在 rhs 编译后才抛，字节码随 throw 丢弃）。Field/Index 的 not_impl 由 visit 节点分派时抛。
-        void validate_lvalue_target(ExprNode* target) const;
+        void validate_lvalue_target(ExprNode& target) const;
 
         // 以给定 lvalue 模式分派目标节点：先 validate_lvalue_target(n) 验证左值种类，再设置 lvalue_mode_ 后
-        // n->accept(*this)（不在分派后恢复--清空职责交给目标节点的 take_lvalue_mode()）。复合赋值/前置自增
+        // n.accept(*this)（不在分派后恢复--清空职责交给目标节点的 take_lvalue_mode()）。复合赋值/前置自增
         // 自减用 Load+Store 两次分派（Identifier 重 resolve 廉价无副作用，locator-once 自然成立；两次分派
         // 会重复 validate，首次失败即抛，无正确性问题）。
-        void emit_lvalue(ExprNode* n, LvalueMode m);
+        void emit_lvalue(ExprNode& node, LvalueMode mode);
 
         // 目标节点（visitIdentifierNode 等）入口调用：返回当前 lvalue_mode_ 并清空为 Load（一次性 take）。
         // 节点据返回值分支 Load/Store；清空确保子节点经 emit_expr 时 flag 已为 Load、不泄漏。对 lvalue_mode_
@@ -279,40 +279,41 @@ namespace aria {
         // 压栈（emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。
         // 封装 for-in 的 iter()/has_next()/next() 三处同型 LOAD_FIELD+CALL 0 模式；name 入常量池经
         // add_name_or_fail（溢出即 fail）。将来 M5 类方法调用 lowering 可复用此原语。
-        void emit_method_call0(StringView name, u32 line, const SourceLoc& loc) const;
+        void emit_method_call0(StringView name, u32 line, SourceLoc loc) const;
 
         // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
         // 仅做检查并报错，不发射。
-        void check_local_initialized(u16 slot, const SourceLoc& loc) const;
+        void check_local_initialized(u16 slot, SourceLoc loc) const;
 
         // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local；Global
         // LOAD_GLOBAL；Upvalue LOAD_UPVALUE（u8 upvalue 索引；不做 init 检查--捕获时序语义同 Lua，
         // 与全局路径一致）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 /
         // upvalue 索引 / 全局名字常量池索引；loc 供 check_local_initialized 复用。
-        void emit_load_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
+        void emit_load_var(const ResolvedVar& var, u32 line, SourceLoc loc) const;
 
         // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
         // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL；Upvalue STORE_UPVALUE（u8 upvalue
         // 索引，peek-store 写穿外层槽/已关值，不做 init 检查、不 mark_initialized--upvalue 索引非本帧局部槽）。
-        void emit_store_var(const ResolvedVar& var, u32 line, const SourceLoc& loc) const;
+        void emit_store_var(const ResolvedVar& var, u32 line, SourceLoc loc) const;
 
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
         // IdentifierPattern -> declare_local_or_fail 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP
-        // 丢弃； ListPattern -> not_impl。行号取自 pat->loc_line()（仅 _/ListPattern 分支发射时用）。
-        void bind_pattern(PatternNode* pat);
+        // 丢弃； ListPattern -> not_impl。行号取自 pat.loc_line()（仅 _/ListPattern 分支发射时用）。
+        void bind_pattern(PatternNode& node);
 
         // --- 遍历入口（薄包装：accept 双分派）---
-        void emit_expr(ExprNode* n); // ASSERT lvalue_mode_ == Load 后 n->accept(*this)，留一值
+        void emit_expr(ExprNode& node); // ASSERT lvalue_mode_ == Load 后 n.accept(*this)，留一值
 
-        void emit_stmt(StmtNode* n); // n->accept(*this)，不留值
+        void emit_stmt(StmtNode& node); // n.accept(*this)，不留值
 
         // --- 函数编译（FunDecl / Lambda 共用）---
         // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；默认参数 / varargs
         // -> not_impl；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，首错即 fail / not_impl 抛出。
-        // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body->loc()（body 的 '{'），
-        // 更贴近参数列表所在。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*（not_impl 走其重载）。
-        void validate_params(const List<Param>& params, const SourceLoc& loc) const;
+        // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body.loc()（body 的 '{'），
+        // 更贴近参数列表所在。只需位置无需整节点，故入参按值传 `SourceLoc`（const 写在定义处）而非 ASTNode&（not_impl
+        // 走其重载）。
+        void validate_params(const List<Param>& params, SourceLoc loc) const;
 
         // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<main>`），
         // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（每方只守自己创建的）。
@@ -320,31 +321,26 @@ namespace aria {
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
         // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（CLOSURE fn_idx:
         // 常量池取 fn 包 ObjClosure,按体编译期间登记的捕获描述表建 upvalue）。
-        // decl_loc 为声明节点位置（fun 关键字，visit 层经 node->loc() 传入），供 validate_params 报参数错;
-        // 体发射行号仍取 body->loc_line()。只需位置无需整节点，故入参为 const SourceLoc& 而非 ASTNode*。
-        void compile_function(StringView name, const List<Param>& params, BlockNode* body, const SourceLoc& decl_loc);
+        // decl_loc 为声明节点位置（fun 关键字，visit 层经 node.loc() 传入），供 validate_params 报参数错;
+        // 体发射行号仍取 body.loc_line()。只需位置无需整节点，故入参按值传 `SourceLoc`（const 写在定义处）而非
+        // ASTNode&。
+        void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc);
 
-        // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result）---
+        // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result；throw 即 unwind，
+        // 首个错误自然即止，详见类首「错误通道」注释）---
         template<typename... Args>
         [[noreturn]]
-        void fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const;
+        void fail(ErrorCode code, const SourceLoc loc, std::format_string<Args...> fmt, Args&&... args) const {
+            throw AriaCompileException{Error::from_detail(code, loc, std::format(fmt, std::forward<Args>(args)...))};
+        }
 
         [[noreturn]]
-        void not_impl(ASTNode* node, StringView feature) const; // throw AriaCompileException(NotImplemented, loc, ...)
+        void not_impl(ASTNode& node, StringView feature) const; // throw AriaCompileException(NotImplemented, loc, ...)
 
         // 同上，loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。
         [[noreturn]]
-        void not_impl(const SourceLoc& loc, StringView feature) const;
+        void not_impl(SourceLoc loc, StringView feature) const;
     };
-
-    // ------------------------------------------------------------
-    // 错误模板：抛 AriaCompileException（首个错误自然即止--throw 即 unwind）
-    // ------------------------------------------------------------
-    template<typename... Args>
-    [[noreturn]]
-    void CodeGen::fail(ErrorCode code, const SourceLoc& loc, std::format_string<Args...> fmt, Args&&... args) const {
-        throw AriaCompileException{Error::from_detail(code, loc, std::format(fmt, std::forward<Args>(args)...))};
-    }
 
 } // namespace aria
 

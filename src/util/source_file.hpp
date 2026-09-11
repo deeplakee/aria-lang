@@ -54,13 +54,11 @@ namespace aria::src {
         SourceFile(String name, String path, String content) noexcept :
             name_{std::move(name)}, path_{std::move(path)}, content_{std::move(content)} {}
 
-        // 仅文件名（不含目录），如 "main.aria"
         [[nodiscard]]
         StringView name() const noexcept {
             return name_;
         }
 
-        // 完整路径
         [[nodiscard]]
         StringView path() const noexcept {
             return path_;
@@ -90,8 +88,7 @@ namespace aria::src {
                 return {};
             }
             const usize begin = line_starts_[line - 1];
-            // 该行内容到行尾 LF 之前为止；若无行尾 LF 则到内容末尾。
-            // 注意：不能直接用下一行起点 - 1，因为末行可能本身带行尾 LF。
+            // 到行尾 LF 前为止；不能直接用下一行起点 - 1，末行可能没有行尾 LF。
             usize end = begin;
             while (end < content_.size() && content_[end] != '\n') {
                 ++end;
@@ -99,18 +96,15 @@ namespace aria::src {
             return StringView{content_.data() + begin, end - begin};
         }
 
-        // 将字节偏移解析为 1-based 的 (行, 列)。列按码点计数，对中文源码友好。
-        // offset 超出范围时被钳制到内容末尾。
-        // 特殊地，offset == content.size()（EOF）返回下一行第 1 列，
-        // 即 (line_count()+1, 1)，匹配编辑器把光标停在文件末尾的行为，
-        // 也便于报“unexpected EOF”时给出一个合理位置。
+        // 将字节偏移解析为 1-based 的 (行, 列)。列按码点计数，对中文源码友好；offset 超出范围时钳制到内容末尾。
+        // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1），
+        // 对齐编辑器光标停在文件末尾的行为，便于报 unexpected EOF 时给出合理位置。
         [[nodiscard]]
         LineCol locate(usize offset) const {
             ensure_line_starts();
             if (offset > content_.size()) {
                 offset = content_.size();
             }
-            // EOF：落在所有真实行之后，返回“下一行第 1 列”
             if (offset == content_.size()) {
                 return {line_starts_.size() + 1, 1};
             }
@@ -126,11 +120,8 @@ namespace aria::src {
             return {line_idx + 1, col};
         }
 
-        // 从磁盘读取一个文件构造 SourceFile：
-        //   1. fs::read_file 读取原始字节；
-        //   2. 剥除前导 BOM、CRLF/CR 归一化为 LF；
-        //   3. 校验为合法 UTF-8，否则返回 InvalidEncoding。
-        // name 取路径的 basename，path 为传入的路径。读取失败时原样返回 fs 错误码。
+        // 从磁盘读取并构造：fs::read_file 读原始字节，剥 BOM、CRLF/CR 归一化为 LF，校验 UTF-8
+        // （非法返回 InvalidEncoding）。name 取路径 basename；读取失败原样返回 fs 错误码。
         [[nodiscard]]
         static Result<SourceFile, fs::FsErrCode> from_path(const StringView path) {
             auto content = fs::read_file(path);
@@ -171,7 +162,6 @@ namespace aria::src {
                 return;
             }
             line_starts_.push_back(0);
-            // 每个 LF 之后若有内容，即为下一行起点；末尾的 LF 不产生空行
             for (usize i = 0; i + 1 < content_.size(); ++i) {
                 if (content_[i] == '\n') {
                     line_starts_.push_back(i + 1);
@@ -205,7 +195,6 @@ namespace aria::src {
                 return std::nullopt;
             }
 
-            // 行尾归一化：\r\n -> \n，孤立 \r -> \n
             String out;
             out.reserve(s.size());
             for (usize i = 0; i < s.size(); ++i) {
@@ -224,14 +213,11 @@ namespace aria::src {
 
     // 源码位置：源文件指针 + 行列。供 Token / Error 等记录「在哪个文件的哪一行哪一列」。
     //
-    // src 以非拥有指针保存（不拥有所有权），不得比所引用的 SourceFile 活得更久
-    // （同 Token::lexeme_ 的 StringView 约束）。src 非空不变式由显式构造函数的
-    // ASSERT 保证；默认构造为空态（src=nullptr、line_col={0,0}），供 Token 默认
-    // 构造等容器占位--空态下不应依赖其位置语义，to_string 对空态返回空串
-    // （空态即「无位置」，非「未知位置」，见 to_string 注释）。
-    //
-    // to_string() 渲染为编译器惯例的 "path:line:col"（1-based 行列，完整路径便于
-    // 同名文件区分与 IDE 跳转）；line/col 为 0（无效）时该段渲染为 "?"。
+    // src 为非拥有指针，不得比所引用的 SourceFile 活得更久（同 Token::lexeme_ 的 StringView 约束）；
+    // 非空不变式由显式构造函数的 ASSERT 保证。默认构造为空态（src=nullptr、line_col={0,0}），
+    // 供 Token 默认构造等容器占位--空态即「无位置」，to_string 返回空串（见 to_string 注释）。
+    // to_string() 渲染为编译器惯例的 "path:line:col"（1-based，完整路径便于同名区分与 IDE 跳转）；
+    // line/col 为 0（无效）时该段渲染为 "?"。
     class SourceLoc {
     public:
         // 空态：src=nullptr。供容器占位（如 List<Token> 预留槽位）。
@@ -258,11 +244,9 @@ namespace aria::src {
             return line_col_.line;
         }
 
-        // 渲染为 "path:line:col"（1-based 行列，取 path 便于 IDE 跳转）。
-        // 空态（src 为空）返回空串：空态语义是「无位置」而非「未知位置」，空串可与
-        // 消费方的「空位置串 = 无前缀」约定直接组合（如 Error::make_message），
-        // 调用方无须先判 source() 再规避。line/col 为 0（无效但 src 有效）时该段
-        // 渲染为 "?" -- 路径是真实信息保留，仅未知段以 "?" 占位。
+        // 渲染 "path:line:col"（1-based）。空态（src 为空）返回空串--空态即「无位置」，空串可与
+        // 消费方的「空位置串 = 无前缀」约定直接组合（如 Error::make_message）。line/col 为 0
+        // （无效但 src 有效）时该段渲染为 "?"--路径是真实信息保留，仅未知段占位。
         [[nodiscard]]
         String to_string() const {
             if (src_ == nullptr) {

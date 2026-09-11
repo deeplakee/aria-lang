@@ -15,8 +15,7 @@ static_assert(std::is_copy_constructible_v<Cli::ParseResult>);
 static_assert(std::is_move_constructible_v<Cli::ParseResult>);
 
 namespace {
-    // 便捷入口：从初始化列表建 StringView 列表再 parse（核心 Span 重载）。
-    // 返回契约同 parse：成功 = 有值（ParseResult），失败 = unexpected（首个错误消息）
+    // 便捷入口：从初始化列表建 StringView 列表再走核心 Span 重载 parse。
     auto parse_args(const Cli& parser, std::initializer_list<StringView> args) {
         const List<StringView> views{args};
         return parser.parse(views);
@@ -206,8 +205,8 @@ TEST(CliPositional, HasReportsPositional) {
     parser.add_positional("script", "脚本文件").add_positional("arg", "脚本参数", false);
     const auto r = parse_args(parser, {"main.aria"});
     ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(r->has("script")); // 已填充
-    EXPECT_FALSE(r->has("arg"));   // 可选、未提供
+    EXPECT_TRUE(r->has("script"));
+    EXPECT_FALSE(r->has("arg"));
     EXPECT_FALSE(r->has("unregistered"));
 }
 
@@ -333,7 +332,6 @@ TEST(CliErrors, ParseAgainAfterErrorWorks) {
 
 TEST(CliErrors, ReuseSameTemplateParsesCleanly) {
     // 定义/结果分离：同一 Cli 可重复 parse，各次 ParseResult 互不污染
-    // （修复耦合期 parse-twice 的陈旧残留/extra 累加/必填漏检 bug）
     auto parser = Cli{};
     parser.add_flag("verbose", "详细", 'v').add_option("output", "输出", "", 'o').add_positional("script", "脚本");
     // 首次：全提供
@@ -463,13 +461,13 @@ TEST(CliHelpText, LongFlagNameAligned) {
 }
 
 TEST(CliHelpText, OptionsInRegistrationOrder) {
-    // Options 分节按 defs_ 注册序渲染（内置 help 首个注册、恒居首位）；不再 kind 分组
+    // Options 分节按 defs_ 注册序渲染（内置 help 首个注册、恒居首位）
     auto parser = Cli{};
     parser.add_option("output", "输出文件").add_flag("verbose", "详细输出");
     const auto text = parser.help();
     ASSERT_NE(text.find("--output"), String::npos);
     ASSERT_NE(text.find("--verbose"), String::npos);
-    // 注册序：output 先于 verbose（不再强制 flags 在 options 前）
+    // 注册序：output 先于 verbose
     EXPECT_LT(text.find("--output"), text.find("--verbose"));
     // 内置 help 恒居 Options 分节首位
     EXPECT_LT(text.find("--help"), text.find("--output"));

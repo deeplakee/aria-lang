@@ -45,9 +45,7 @@ namespace aria {
     constexpr StringView kProductName = "aria";
 
     // 语义化版本分量:版本的单一事实源,**不设字符串常量副本**(派生串在 --version 消费点
-    // 就地 format,字符串与分量两处维护必漂移);代码内版本判定直接比较分量
-    // (static_assert / if constexpr)。预处理期门控(#if)暂无场景,待将来以 C API 库形态
-    // 发布、宿主需按版本裁剪头接口时再议宏方案。
+    // 就地 format,字符串与分量两处维护必漂移);代码内版本判定直接比较分量。
     constexpr i32 kVersionMajor = 0;
     constexpr i32 kVersionMinor = 1;
     constexpr i32 kVersionPatch = 0;

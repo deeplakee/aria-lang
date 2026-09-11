@@ -101,9 +101,8 @@ namespace aria::fs {
             return errno_to_fserr(errno);
         }
 
-        // 将 std::error_code 映射到 FsErrCode。
-        // 经 default_error_condition() 把平台相关错误码（如 Windows 错误码）
-        // 归一化为可移植的 POSIX 条件值后再映射
+        // 将 std::error_code 映射到 FsErrCode：经 default_error_condition() 把平台相关错误码
+        // （如 Windows 错误码）归一化为可移植的 POSIX 条件值后再映射
         [[nodiscard]]
         inline FsErrCode to_fserr(const std::error_code& ec) noexcept {
             return errno_to_fserr(ec.default_error_condition().value());
@@ -216,10 +215,8 @@ namespace aria::fs {
         return p.string();
     }
 
-    // 参数：路径A、B。B 是相对于 A 的相对路径，返回 B 的绝对路径。
-    // 先拼接 A/B，再用 weakly_canonical 规范化：解析已存在部分的符号链接、
-    // 消除 "."/".."、去除冗余分隔符。对于尚不存在的尾部部分仅做词法规范化，
-    // 因此即使最终目标还不存在也能成功返回。
+    // B 是相对 A 的相对路径，返回 B 的绝对路径：拼接后经 weakly_canonical 规范化（解析已存在部分
+    // 的符号链接、消除 "."/".."）；尚不存在的尾部仅做词法规范化，目标不存在也成功返回。
     [[nodiscard]]
     inline Result<String, FsErrCode> resolve(const StringView base, const StringView rel) {
         std::error_code ec;
@@ -230,11 +227,9 @@ namespace aria::fs {
         return p.string();
     }
 
-    // 把文件路径拆为入口模块身份 {name, root}：
-    //   - name = basename 去 .aria 后缀（path::stem() 剥最后一个扩展名，.aria 文件即得模块名）；
-    //   - dir = dirname(absolute(path))（模块文件所在目录，使模块 abs_path = dir + "/" + name + ".aria" 还原原文件、
-    //     相对导入以同级目录为基）。absolute 失败时退化为原路径（best effort）。
-    // name 可能为空（路径为目录 / 空 / 无文件名），调用方据空 name 判定加载错误（非合法文件模块）。
+    // 把文件路径拆为入口模块身份 {name, dir}：name = basename 去 .aria 后缀（stem 剥最后扩展名）；
+    // dir = dirname(absolute(path))，使 dir + "/" + name + ".aria" 还原原文件、相对导入以同级目录为基
+    // （absolute 失败退化为原路径，best effort）。name 可能为空（目录/空/无文件名），调用方据此判定加载错误。
     // 纯路径工具，不读盘、不校验存在性--配合 SourceFile::from_path 的 I/O 结果使用。
     [[nodiscard]]
     inline Pair<String, String> module_name_and_dir(const StringView path) {

@@ -73,7 +73,6 @@ namespace aria::utf8 {
             return {kReplacementChar, 1};
         }
 
-        // 校验所有续接字节
         for (u8 i = 1; i < need; ++i) {
             if (!detail::is_cont_byte(static_cast<u8>(str[offset + i]))) {
                 return {kReplacementChar, 1};
@@ -173,7 +172,7 @@ namespace aria::utf8 {
                 continue;
             }
             const u8 need = detail::seq_len_from_lead(lead);
-            i += (need == 0) ? 1 : need; // 不严格校验，仅按长度推进
+            i += (need == 0) ? 1 : need;
             ++n;
         }
         return n;

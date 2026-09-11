@@ -10,14 +10,14 @@ namespace aria {
     // 字节码反汇编器:把 CodeUnit 字节流解码为可读文本,供调试/调试器/测试核对。
     //
     //   解码表驱动:opcode 名与操作数格式查 code.hpp 的 X 表生成物(kOpCodeNames/kOpCodeFormats),
-    //   按格式分发到解码函数。VM 与本类共享同一份「opcode -> 名字/格式」事实源,新增指令只需在
-    //   ARIA_OPCODE_LIST 加一行,本类零改动(仅当需新操作数格式类别时才同步分发 switch)。
+    //   按格式分发到解码函数;新增指令只需在 ARIA_OPCODE_LIST 加一行,本类零改动
+    //  (仅当需新操作数格式类别时才同步分发 switch)。
     //
     //   实例持一个解码游标(codeunit_ + offset_),disassemble() 从头解码整个 CodeUnit;
-    //   静态入口 disassembleCodeUnit(codeunit, name) 便捷包装为 `Disassembler{...}.disassemble()`。
+    //   静态入口 disassembleCodeUnit(codeunit, name) 便捷包装。
     //
     //   disassemble() 返回:表头 `== name ==` + `constants:` 小节(非空才列)
-    //   + `try records:` 小节(非空才列,异常记录表逐条)+ `code:` 小节(逐指令,始终列出)
+    //   + `try records:` 小节(非空才列)+ `code:` 小节(逐指令,始终列出)
     //   + 结尾 `== end ==`;段间空行分隔。
     //   每条指令一行:偏移(4 hex) | 行号(右对齐 4 列十进制,与上行同号用 '|' 占位)
     //   | opcode 名 | 操作数(hex) | ; 解析注释(常量值/名字/跳转目标/立即数)。
@@ -35,9 +35,8 @@ namespace aria {
         static String disassembleCodeUnit(const CodeUnit* codeunit, StringView name);
 
         // 反汇编 codeunit 中 offset 处的**单条指令**,返回该指令的可读文本(与 disassemble() 中
-        // 每行的指令段一致:opcode 名 + 操作数 hex + 解析注释;不含偏移前缀/行号/换行)。仅推进内部
-        // 游标越过该指令(局部,不修改入参 offset、不触碰调用方游标)。offset 须 < code.size()。
-        // 供 VM 执行跟踪(DEBUG_TRACE_EXECUTION)在执行每条指令前打印其反汇编,免为跟踪单独复制解码表。
+        // 每行的指令段一致,不含偏移前缀/行号/换行)。仅推进内部游标越过该指令(不动调用方 offset)。
+        // offset 须 < code.size()。供 VM 执行跟踪(DEBUG_TRACE_EXECUTION)逐指令打印,免为跟踪复制解码表。
         [[nodiscard]]
         static String disassembleInstruction(const CodeUnit* codeunit, usize offset);
 

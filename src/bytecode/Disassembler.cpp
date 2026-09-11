@@ -25,10 +25,8 @@ namespace aria {
             return cu->constants[idx];
         }
 
-        // 值可读化(nil/true/false/整数/浮点/"字符串"/<对象描述>)统一走 value/Value.hpp 的 format_value_debug
-        // --非重入渲染:Obj 走 debug_repr() 虚分派,override 契约纯 C++ 惰性、绝不触用户重载(详见
-        // Object.hpp/Value.hpp 注释)。供常量池小节与 LOAD_CONST/CLOSURE 注释共用;字符串走
-        // ObjString::debug_repr 的带引号转义形态。
+        // 值可读化统一走 value/Value.hpp 的 format_value_debug(非重入渲染,契约详见
+        // Object.hpp/Value.hpp 注释);字符串走 ObjString::debug_repr 的带引号转义形态。
 
         // 把 opcode 名与操作数段拼成一行:左对齐 16 列的 op_name,空操作数即裸名,末尾尾随空格裁掉。
         String join_line(StringView op_name, const StringView operands) {
@@ -66,9 +64,8 @@ namespace aria {
     // 越界预检:读取 need 字节是否会越过末尾(残缺字节码将被截断)。
     bool Disassembler::is_truncated(const usize need) const noexcept { return offset_ + need > codeunit_->code.size(); }
 
-    // 常量索引的注释渲染(名字索引与 LOAD_CONST/CLOSURE 共用):按 idx 取常量,越界退化为 <bad idx>。
-    // 名字索引(全局/字段/类/方法名)的操作数本就是常量池里的 ObjString,经 format_value_debug 特判为
-    // "..." 字面量形态。只读,不推进 offset_。
+    // 常量/名字索引的注释渲染(供 LOAD_CONST/CLOSURE 及全部名字索引指令):按 idx 取常量,
+    // 越界退化为 <bad idx>。只读,不推进 offset_。
     String Disassembler::format_constant(const u16 idx) const {
         const auto v = constant_at(codeunit_, idx);
         return v ? format_value_debug(*v) : std::format("<bad idx {}>", idx);
@@ -84,7 +81,7 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}  ; {}", to_u32(raw), to_i32(imm)));
     }
 
-    // 单字节 u8 操作数(LOAD_LOCAL/STORE_LOCAL/LOAD_UPVALUE/STORE_UPVALUE/POP_N/CALL):`{:02X}`。
+    // 单字节 u8 操作数:{:02X}。
     String Disassembler::u8_instruction(const StringView op_name) {
         if (is_truncated(1)) {
             return join_line(op_name, truncated());
@@ -92,7 +89,7 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}", to_u32(read_u8())));
     }
 
-    // 双字节 u16 槽/计数(LOAD_LOCAL_L/STORE_LOCAL_L/MAKE_LIST/MAKE_MAP):`{:04X}`。
+    // 双字节 u16 槽/计数:{:04X}。
     String Disassembler::u16_instruction(const StringView op_name) {
         if (is_truncated(2)) {
             return join_line(op_name, truncated());
@@ -109,7 +106,7 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}  ; flags=0x{:02X}", to_u32(raw), to_u32(raw)));
     }
 
-    // 常量/名字索引(LOAD_CONST/CLOSURE 及全部名字索引指令):`{:04X}` 操作数 + 常量可读化注释(越界 `<bad idx>`)。
+    // 常量/名字索引:{:04X} 操作数 + 常量可读化注释(越界 <bad idx>)。
     String Disassembler::const_instruction(const StringView op_name) {
         if (is_truncated(2)) {
             return join_line(op_name, truncated());
@@ -138,8 +135,7 @@ namespace aria {
         return join_line(op_name, std::format("{:04X} <- {:04X}", off, static_cast<u32>(target)));
     }
 
-    // IMPORT:u16 path,单 hex 操作数 + path 名注释。IMPORT 仅压模块值于栈顶,绑定由 DEF_GLOBAL /
-    // 值填槽在别处完成,故此处无 alias 操作数。
+    // IMPORT:u16 path 操作数 + path 名注释(绑定由后续指令完成,故无 alias 操作数)。
     String Disassembler::import_instruction(const StringView op_name) {
         if (is_truncated(2)) {
             return join_line(op_name, truncated());
@@ -160,11 +156,10 @@ namespace aria {
         return join_line(op_name, std::format("{:04X} {:02X}  ; {} argc={}", name_idx, argc, name, argc));
     }
 
-    // 反汇编单条指令(从 codeunit_->code[offset_] 起),返回指令文本(不含偏移前缀/换行),推进 offset_ 越过该指令。
-    // 表驱动:opcode 名与操作数格式查 code.hpp 的 X 表生成物(kOpCodeNames/kOpCodeFormats),按格式分发到
-    // 解码函数。新增 opcode 只需在 ARIA_OPCODE_LIST 加一行,本函数零改动(除非引入新格式类别)。
+    // 反汇编单条指令,返回指令文本(不含偏移前缀/换行),推进 offset_ 越过该指令。
+    // 表驱动按格式分发(见 Disassembler.hpp 文档);新增 opcode 本函数零改动。
     String Disassembler::dis_instruction() {
-        const u8 byte = codeunit_->code[offset_++]; // opcode 字节
+        const u8 byte = codeunit_->code[offset_++];
 
         // 越界 opcode 字节(无对应枚举)容错:直接报 bad opcode 并停解码。
         if (byte >= kOpCodeCount) {
@@ -213,9 +208,7 @@ namespace aria {
             }
         }
 
-        // 异常记录表小节(非空才列):每条 try 记录一行 -- 索引、受保护区间 [begin, end)
-        // (半开,ip 落此区间命中)、handler 入口 handle、unwind 栈深 stack_depth(截值栈到
-        // frame.slots + 此值)。记录按 begin 升序(CodeGen 入口预插占位 + 结尾回填保证),
+        // 异常记录表小节(非空才列):字段语义见 TryRecord(CodeUnit.hpp);记录按 begin 升序,
         // 与 code 段偏移对照阅读。
         if (const auto& records = codeunit_->try_records; !records.empty()) {
             out += "\ntry records:\n";
@@ -226,8 +219,7 @@ namespace aria {
             }
         }
 
-        // code 段:始终列出(即便为空),与 constants 段区分。
-        // 每行:偏移(4 hex) + 行号(右对齐 4 列十进制,与上行同号用 '|' 占位) + 指令文本。
+        // code 段:始终列出。每行:偏移(4 hex) + 行号(与上行同号用 '|' 占位) + 指令文本。
         // 先存 ip 再解码,避免 format 实参求值顺序干扰 offset_。
         out += "\ncode:\n";
         Opt<u32> prev_line = std::nullopt;
@@ -248,8 +240,7 @@ namespace aria {
 
     String Disassembler::disassembleInstruction(const CodeUnit* codeunit, const usize offset) {
         // 构造一次性 Disassembler,把内部游标拨到 offset,解码单条指令后丢弃。不依赖 name(disassemble
-        // 才用),故传空。复用私有 dis_instruction() 免为跟踪复制解码表;offset 合法性由调用方保证
-        // (VM 执行跟踪处 ip 必指向有效 opcode)。
+        // 才用),故传空。offset 合法性由调用方保证(VM 执行跟踪处 ip 必指向有效 opcode)。
         Disassembler d{codeunit, {}};
         d.offset_ = offset;
         return d.dis_instruction();

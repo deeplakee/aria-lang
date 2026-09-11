@@ -18,13 +18,9 @@ namespace aria {
 
     // 解释器内部统一错误码：普通 enum class。
     // 枚举值转字符串用 to_string(ErrorCode)；所属大类用 category_of(ErrorCode)。
-    //
-    // 分层按「错误在哪一阶段被发现」，思路对标
-    // CPython（编译期 SyntaxError vs 运行期异常）、Lua 状态码、crafting-interpreters：
+    // 分层按「错误在哪一阶段被发现」（对标 CPython 编译期/运行期二分、Lua 状态码、crafting-interpreters）：
     //   - Syntax   ：词法/语法阶段，源码结构本身不合法（lexer/parser 可直接判定）。
-    //   - Semantic ：结构合法但违反类型/作用域/形态规则；文法明确推迟到语义/字节码阶段
-    //                的检查（左值合法性、super 形态、break/continue/return 上下文、
-    //                try 须有 handler、默认值不得引用同函数参数等）归此类。
+    //   - Semantic ：结构合法但违反类型/作用域/形态规则（文法明确推迟到语义/字节码阶段的检查归此类）。
     //   - Runtime  ：执行期间才暴露的语义错误（类型不符、越界、键缺失等）。
     //   - Internal ：解释器自身不变式被破坏，属实现 bug（不可达、栈失衡、坏字节码）。
     //   - Resource ：资源/环境受限（内存、文件、模块、容量上限）。

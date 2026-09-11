@@ -6,12 +6,7 @@
 namespace aria {
 
     namespace {
-        // 编码上限(值即对应操作数位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
-        // 越界判定统一用 > 比较):
-        //   kMaxPopChunk       -- POP_N 单块上限(操作数 u8);
-        //   kMaxShortLocalSlot -- 局部槽短变体(LOAD/STORE_LOCAL + u8)最大槽号,超过则用长变体(_L + u16);
-        //   kMaxJumpOffset     -- 跳转偏移上限(操作数 u16,前向 patch/后向 jump_back 共用);
-        //   kMaxConstantCount  -- 常量池最大项数(u16 索引 0..65535).
+        // 编码上限(源自 CodeUnit.hpp 的位宽事实源 kU8OperandMax/kU16OperandMax, 越界判定统一用 > 比较)。
         constexpr u32 kMaxPopChunk       = kU8OperandMax;
         constexpr u32 kMaxShortLocalSlot = kU8OperandMax;
         constexpr u32 kMaxJumpOffset     = kU16OperandMax;

@@ -118,7 +118,6 @@ namespace aria::util {
             std::memcpy(buf, &addr, sizeof(addr));
             detail::emit_bytes(buf, sizeof(addr), group_bits);
         } else {
-            // 整型、浮点及其它可平凡复制的对象：直接打印对象表示
             u8 buf[sizeof(T)];
             std::memcpy(buf, &value, sizeof(T));
             detail::emit_bytes(buf, sizeof(T), group_bits);

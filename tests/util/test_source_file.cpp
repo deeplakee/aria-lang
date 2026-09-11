@@ -305,8 +305,7 @@ TEST(SourceLoc, AccessorsAndEmptyState) {
     EXPECT_EQ(loc.line_col().line, 2u);
     EXPECT_EQ(loc.line_col().col, 7u);
 
-    // 默认构造为空态（src=nullptr）：空态即「无位置」，to_string 渲染空串（可与
-    // 「空位置串 = 无前缀」的消费方直接组合，如 Error::make_message），source 返回 nullptr。
+    // 默认构造为空态（src=nullptr）：空态即「无位置」，to_string 渲染空串（语义见 source_file.hpp）。
     SourceLoc empty;
     EXPECT_EQ(empty.source(), nullptr);
     EXPECT_EQ(empty.to_string(), "");

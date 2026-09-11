@@ -42,10 +42,9 @@ namespace aria {
                 if (line.empty()) {
                     continue;
                 }
-                // SourceFile 就地构造：name/path 仅显示用（对齐 --eval 的 <script>，path 给 <repl>
-                // 而非空串，避免 SourceLoc::to_string 渲染出 ":行:列:" 这种开头冒号的畸形前缀），
-                // content=本行源码；存活到 run 返回，编译期 Error 的 SourceLoc 指向它
-                // （不跨行复用，逐行独立源文件）。
+                // path 给 <repl> 而非空串，避免 SourceLoc::to_string 渲染出 ":行:列:" 这种
+                // 开头冒号的畸形前缀；逐行独立 SourceFile，存活到 run 返回（编译期 Error
+                // 的 SourceLoc 指向它）。
                 SourceFile source{String{kReplModuleName}, String{kReplModuleName}, line};
                 if (auto result = vm.run(source, module); !result) {
                     io::println(stderr, "{}", result.error().message());
@@ -67,7 +66,6 @@ namespace aria {
 
     } // namespace
 
-    // CLI 分发核心：解析 argc/argv -> 派发到 eval / file / REPL。返回退出码（0 成功 / 1 错误）。
     int cli_dispatch(const i32 argc, char* argv[], const LineReader& repl_reader) {
         const auto cli    = build_cli();
         const auto parsed = cli.parse(argc, argv);
@@ -81,7 +79,7 @@ namespace aria {
             io::println("{}", cli.help());
             return 0;
         }
-        if (args.has("version")) { // 优先级仅次于 --help:打印后短路,不进 eval/file/REPL
+        if (args.has("version")) {
             io::println("{} {}.{}.{}", kProductName, kVersionMajor, kVersionMinor, kVersionPatch);
             return 0;
         }

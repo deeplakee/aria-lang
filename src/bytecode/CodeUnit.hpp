@@ -26,8 +26,7 @@ namespace aria {
     // 异常记录表条目:一个 try 块的受保护区间 [begin, end)、catch handler 入口与 unwind 栈深。
     //        begin/end/handle 均为 code 字节流中的 offset;stack_depth 为编译期 try 入口局部数快照
     //        (相对 frame.slots,非全局栈基址),unwind 据此截断值栈,并把异常值 push 落到 catch 参数槽
-    //        (恒 == stack_depth,值填槽无 STORE_LOCAL)。不存 frame_depth(运行时量,由 unwind 遍历
-    //        帧链隐式决定)、不存 catch_slot(恒等 stack_depth)。
+    //        (恒 == stack_depth,值填槽无 STORE_LOCAL)。
     //        简单聚合(类内默认成员初始化, 同 LineEntry), trivially-copyable 满足 Array<T> 约束。
     struct TryRecord {
         u32 begin       = 0; // try 受保护区间起始 offset (含)
@@ -38,18 +37,14 @@ namespace aria {
 
     // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表 + 异常记录表。
     //
-    //   底层数据结构,四个 Array 字段(code/constants/lines/try_records)直接 public 裸露,VM/编译器/
-    //   反汇编器直接操作(`cu.code.push(...)`/`cu.constants[i]`/`cu.lines` 等)。只保留有
-    //   "不可散落逻辑"的方法:
-    //     - emit_*:写字节同时按 RLE 记行号表(去重逻辑收口于此,不散到调用方);
-    //     - emit_pop_n/emit_jump/patch_jump/emit_jump_back/emit_load_local/emit_store_local:
-    //       跳转编码 / 回填 / 分块 POP / 槽位短长变体等字节码编码逻辑收口于此(编译器不再自持薄包装);
-    //     - line_for_offset:RLE 二分查行(二分逻辑不重复实现);
-    //     - trace:GC 委托入口(ObjFunction::trace 调)。
-    //   跳转回填的越界(超 64KB)以 bool 返回交回调用方翻译为 Error -- 本类不持有 Error 语义。
+    //   四个 Array 字段(code/constants/lines/try_records)直接 public 裸露,VM/编译器/反汇编器
+    //   直接操作;只保留有"不可散落逻辑"的方法:emit_*(写字节同时按 RLE 记行号表)、跳转编码/
+    //   回填/分块 POP/槽位短长变体等编码收口、line_for_offset(RLE 二分查行)、trace(GC 委托入口,
+    //   ObjFunction::trace 调)。跳转回填越界(超 64KB)以 bool 返回交回调用方翻译为 Error --
+    //   本类不持有 Error 语义。
     //
     //   **行号模型**:emit 一律带 `line` 参数(无状态、无重载)-- 调用方(编译器)自己跟踪
-    //   当前行号,每次 emit 传入。RLE 去重在 record_line_ 内做(与末条同行则不追加)。
+    //   当前行号,每次 emit 传入。RLE 去重收口在 record_line_ 内做。
     //
     //   注:本类**不是 Object**,是 `ObjFunction` 的值成员。四个 Array 持 GC* 自释放,
     //   ~CodeUnit -> ~Array 级联释放(同 ObjString long_chars_)。非拷贝/非移动。
@@ -74,8 +69,7 @@ namespace aria {
         void emit_word(u16 word, u32 line); // 小端: 低字节先
         void emit_op(OpCode op, u32 line);
 
-        // 字节码编码逻辑(收口于此,编译器不再自持薄包装)。偏移基准 = 读 u16 操作数后的 ip。
-        // 分块 emit POP_N(每块<=255);chunk==1 时降级为 POP(1B,免操作数),与 load/store 局部槽短/长分流同思路。
+        // 分块 emit POP_N(每块<=255);chunk==1 时降级为 POP(1B,免操作数)。偏移基准 = 读 u16 操作数后的 ip。
         void emit_pop_n(u32 count, u32 line);
         // 发 op + 占位 u16,返回占位偏移 src_off(供 patch_jump 回填)。无越界。
         usize emit_jump(OpCode op, u32 line);
@@ -96,8 +90,7 @@ namespace aria {
         }
 
         // ---- 常量池 ----
-        // 暂不去重(clox 去重是优化项):先 append;ObjString 经 intern 同指针,
-        // 未来加去重 hash set 不影响 API。索引 u16,超 65535 断言。
+        // 暂不去重(ObjString 经 intern 同指针)。索引 u16,超 65535 断言。
         u16 add_constant(Value value);
 
         // ---- 行号查询 ----

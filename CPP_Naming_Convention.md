@@ -172,7 +172,48 @@ ObjClass(GC& gc, ObjString* name, ObjClass* super);                          // 
 Result<List<Token>, List<Error>> tokenize(SourceFile& src);                  // 宿主借用 &（成员空态存 &src）
 void visitBlockNode(BlockNode& node) override;                               // AST 非空借用
 Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, SourceLoc loc);   // 可空递归链 + 小值按值
-void emit_expr(ExprNode& n);                                                 // AST 借用
+void emit_expr(ExprNode& node);                                                 // AST 借用
+```
+
+------
+
+# Variable & Parameter Names
+
+> **名字承载语义：默认完整单词。** 单字母与缩写只允许来自下方豁免清单；清单是闭集，新条目先入表再用。
+
+单字母（`n`/`m`/`b`）与臆造截断（`mod`）的问题：语义靠读者脑补、grep 不可及（搜 `n` 等于没搜）、截断可能与域内其他词相撞（`mod` 撞 `op_mod` 的 modulo）。大小写风格见「Naming Rules」表；指针/引用/按值的选择见「Parameter Passing」节。
+
+| 规则 | 内容 |
+| --- | --- |
+| 参数实名 | 完整单词体现用途，零单字母：下标写 `index` 不写 `i`；纯数量参数可用 `n`（「n 个 xx」），语义更窄时写精确名（`capacity`/`new_len`/`count`） |
+| 变量默认全称 | 完整单词；极小作用域的中转临时（可见范围几行内）可短，但豁免清单外的缩写仍不取 |
+| 禁臆造截断 | `mod`/`tok`/`res`/`val`/`cond` 一类不取，用 `module`/`token`/`result`/`value`/`condition` |
+| 同一概念全库同名 | 不一处 `node` 一处 `n`，一处 `module` 一处 `mod` |
+
+豁免清单（领域标准缩写，仅限表内语义与范围使用）：
+
+| 名字 | 语义 | 限用范围 |
+| --- | --- | --- |
+| `i`/`j`/`k` | 计数器/索引（嵌套依次取 j/k） | 局部，循环 |
+| `n` | 数量（「n 个 xx」，std 惯用同款） | 纯数量语义的参数/局部（`advance(n)`/`drop(n)`）；语义不止数量（下标/字节操作数等）不适用 |
+| `c` | 当前扫描字符 | 局部，仅逐字符扫描上下文（Lexer 扫描循环等） |
+| `ch` | 单个字符 | 参数 |
+| `lhs`/`rhs` | 二元操作数 | 参数/局部 |
+| `loc` | 源位置（随 `SourceLoc` 类型短名） | `SourceLoc` 的参数/局部 |
+| `cp` | UTF-8 码点 | `codepoint` 的参数/局部（utf8 层、Lexer 扫描） |
+| `expr`/`stmt` | 表达式/语句 AST 节点 | AST 节点的参数/字段/局部 |
+| `ctx` | 执行上下文 | `FunctionCtx`/`ModuleCtx`/`AriaVM` 等上下文的参数/局部（类型名 `XxxCtx` 不在此列） |
+
+```cpp
+// 不取
+bool is_digit(const char c);        // 参数不用单字母（c 白名单仅限逐字符扫描局部）
+usize p = pos_;                     // p 语义不明,应实名 saved_pos
+void op_mod(AriaVM& vm, Value mod); // 截断撞 modulo
+
+// 取
+bool is_digit(const char ch);
+void advance(usize n);              // 前进 n 个字符,数量语义
+void op_mod(AriaVM& vm, Value rhs);
 ```
 
 ------

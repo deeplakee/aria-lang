@@ -105,6 +105,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 参数传递（指针 / 引用 / 按值的选择）同属强制，规则见根目录 `CPP_Naming_Convention.md`「Parameter Passing」节。要点：**所有权只经 `UPtr` 出现**；object 层 GC 对象类型（`Object`/`Obj*`）一律按指针；服务/宿主（`GC`/`AriaVM`/`SourceFile` 等借用期必非空）按引用；仅可空（`nullptr` 合法）、位置/槽位（`Value*`）、dyn_cast 查询族与容器分配器注入（`Alloc*`）用指针；AST 节点非空借用按引用（`visitXxxNode(XxxNode&)`）；小值类型（`Value`/标量/`SourceLoc`/`StringView`/`Span`）按值，`const` 写在定义处（不改参契约，纯声明不写）。
 
+变量与参数名的语义同属强制，规则见根目录 `CPP_Naming_Convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单——`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
+
 ## 类型（src/type.hpp）
 
 **不要直接用 `std::string`/`int`/`size_t` 等**，用别名：`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`（= `std::expected`）/`Opt<T>`。错误处理倾向 `Result` 返回而非抛异常。

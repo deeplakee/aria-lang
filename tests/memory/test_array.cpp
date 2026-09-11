@@ -4,7 +4,7 @@
 #include <cstring>
 #include <type_traits>
 
-#include "memory/Array.hpp" // Array 经 TrivialAllocator concept 与分配器解耦,不再传递 GC.hpp
+#include "memory/Array.hpp" // 分配器解耦,不传递 GC.hpp(见 Allocator.hpp)
 #include "memory/GC.hpp"    // 显式 include:本测用 GC 作分配器(默认 Alloc=GC)
 
 using aria::Array;

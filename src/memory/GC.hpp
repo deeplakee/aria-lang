@@ -21,24 +21,21 @@ namespace aria {
     //   - Object(new_object<T>):带 Object 头的可追踪对象,链入 objects_head_,
     //     分配前 maybe_collect() 可能触发回收。
     //
-    // 回收:三色 mark-sweep。roots = 临时根(Phase 1)+ VM 根(M2 起用,经 std::function 回调,
-    //   标 modules_ + builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误
-    //   寄存器;M4 起并标 open upvalue 开链节点);M6 升 Movement 为 Object。
+    // 回收:三色 mark-sweep。roots = 临时根 + VM 根(经 std::function 回调,标 modules_ +
+    //   builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误寄存器 +
+    //   open upvalue 开链节点)。
     //   mark_roots_ -> trace_gray_ -> intern_.remove_white() -> sweep_;sweep_ 对未标对象调虚析构(级联释放
     //   子内存:Array 成员自释放 / ObjString long_chars_ 在 ~ObjString 释放)再释放壳。
     //
     // **核心不变式(承重)**:allocate<T>/reallocate<T> 永不触发 GC,GC 仅在 new_object 顶部
     //   与 VM safe point 触发。这不是性能取舍,而是与「link-on-alloc + publish-after」对象
-    //   模型绑定的定义性约束:new_object 返回的对象此时已在 objects_head_、白色、无任何根
-    //   指向,它要被「发布」进某个根(常量池/intern 池/值栈/globals 表)才真正安全,而发布动作
-    //   本身就是一次 buffer 分配(Array::push->reallocate / InternPool::insert->allocate /
-    //   HashTable::upsert->allocate)。若该 buffer 分配会触发 GC,此刻白色无根对象会被
-    //   sweep,发布进去的即悬垂指针。故 add_constant(new_string(...)) / intern_insert /
-    //   globals().upsert 等「fresh 对象裸持跨一次 buffer 分配再发布」的写法全靠此不变式
-    //   免守卫。打破它(给 allocate/reallocate 加 maybe_collect)会让所有此类未守卫站点
-    //   同时悬垂。此为不变式契约(见各函数注释),靠 review 守;allocate/reallocate 是叶函数,
-    //   无间接触发 GC 的现实路径。注意另一方向--裸持白色对象跨真 GC 点(new_object/
-    //   new_string/emit_expr)漏 make_guard--本不变式不管,靠显式守卫 + stress GC 测试守。
+    //   模型绑定的定义性约束:new_object 返回的对象白色、无根,要被「发布」进某个根(常量池/
+    //   intern 池/值栈/globals 表)才真正安全,而发布动作本身就是一次 buffer 分配(Array::push /
+    //   InternPool::insert / HashTable::upsert)。若该分配会触发 GC,白色无根对象会被 sweep,
+    //   发布进去的即悬垂指针。故「fresh 对象裸持跨一次 buffer 分配再发布」的写法全靠此不变式
+    //   免守卫,打破它会让所有此类未守卫站点同时悬垂;allocate/reallocate 是叶函数,无间接
+    //   触发 GC 的现实路径。反向情形--裸持白色对象跨真 GC 点(new_object/new_string/emit_expr)
+    //   漏 make_guard--本不变式不管,靠显式守卫 + stress GC 测试守。
     //
     // gray_stack_ / temp_roots_ 是 GC 自身 scratch,用 List(std::vector)实现,
     // 不经 GC 分配器、不计入 bytes_allocated_(GC overhead 与 managed heap 分离)。
@@ -54,9 +51,8 @@ namespace aria {
 
         // ---- 类型化 trivial 分配 ----
         // 分配 count 个 T(= count*sizeof(T) 字节),失败走 fatal_error(OutOfMemory)。
-        // **INVARIANT: 永不触发 GC(不调 maybe_collect)**。调用方据此可裸持白色对象跨本调用
-        // (Array::push / InternPool::insert / HashTable::upsert / ObjString 构造子分配等全靠此)。
-        // 在此加 maybe_collect 会让所有「fresh 对象 -> 发布进结构」未守卫站点悬垂(见类注释核心不变式)。
+        // **INVARIANT: 永不触发 GC(不调 maybe_collect)**--调用方可裸持白色对象跨本调用
+        // (Array::push / InternPool::insert / HashTable::upsert 等全靠此,见类注释核心不变式)。
         template<typename T>
         [[nodiscard]]
         T* allocate(usize count);
@@ -91,9 +87,8 @@ namespace aria {
 
         // ---- temp roots ----
         // C++ 局部变量持有的、尚未入值栈的对象/值,在分配序列间保护其不被回收。
-        // 对外只暴露 Guard / make_guard RAII API;底层 push_temp_root/pop_temp_root 为私有,
-        // 由 Guard 内部调用(GC 的嵌套类可访问外层私有成员)。
-        // RAII 临时根:构造时 push,析构时 pop。禁拷贝/移动(make_guard 经 prvalue 必然复制消除)。
+        // 对外只暴露 Guard / make_guard RAII API(构造时 push,析构时 pop;禁拷贝/移动);
+        // 底层 push_temp_root/pop_temp_root 为私有,由 Guard 内部调用。
         // 生存期须严格嵌套(temp_roots_ 是朴素栈,析构只从尾部弹 count_ 个、无归属校验):
         // A push 后 B push、A 先析构会弹掉 B 的根,无断言可拦。
         class Guard {
@@ -186,12 +181,11 @@ namespace aria {
 
         void intern_insert(ObjString* s);
 
-        // ---- VM 根(M2 起用)----
+        // ---- VM 根 ----
         // 解释器级共享状态(模块表等)经 std::function 回调接入 mark_roots_(组合而非继承:
-        // GC 不识 VM 类型,避免双向 include)。调用方(AriaVM)注册一个 lambda(通常捕获 this,
-        // 内部 trace 自己的 roots);collect -> mark_roots_ 末尾调用。std::function 比
-        // 裸函数指针 + void* ctx + 静态 thunk 干净:无静态适配器、无 void*、无 static_cast,
-        // 且 lambda 直写标记逻辑。[this] 仅一指针,落在 std::function SBO 内,零堆分配。
+        // GC 不识 VM 类型,避免双向 include;[this] 仅一指针,落在 std::function SBO 内,
+        // 零堆分配)。调用方(AriaVM)注册一个 lambda(通常捕获 this,内部 trace 自己的
+        // roots);collect -> mark_roots_ 末尾调用。
         void set_vm_roots(std::function<void(GC&)> tracer) noexcept { vm_roots_tracer_ = std::move(tracer); }
 
     private:

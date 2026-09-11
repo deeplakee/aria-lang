@@ -88,11 +88,7 @@ namespace aria {
     }
 
     String format_value_debug(const Value value) {
-        // 与 format_value 的关键区别:Obj 走 debug_repr() 虚分派而非可重载的 to_string()
-        //(后者是未来用户类 __str__ 的挂载点,可重入 VM)。debug_repr 虽是虚函数,但其
-        // override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),语言层
-        // 无法新增 C++ 子类型,故调试上下文虚分派安全,绝不触用户重载;各类型的 debug 文案
-        // 由各子类型自己实现,本函数不再按 ObjType 分型。详见 Value.hpp 注释。
+        // Obj 走 debug_repr() 而非可重载的 to_string():调试上下文不可重入 VM。详见 Value.hpp 注释。
         switch (value.type()) {
             case Value::Type::Nil:
                 return "nil";

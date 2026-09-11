@@ -8,24 +8,16 @@
 namespace aria {
 
     // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。
-    //        T 必须 trivially-copyable(无析构/可 memcpy / 可逐字节赋值):
-    //        Value / OpCode / u8 / i32 等 POD。
+    //        T 必须 trivially-copyable(Value / OpCode / u8 / i32 等 POD,契约见 Allocator.hpp)。
     //        持 Buffer<T,Alloc> buf_(收口分配/重分配/释放)+ usize len_(逻辑长度,<= cap)。
-    //        不可拷贝/不可移动(继承自 Buffer)。
+    //        不可拷贝/不可移动(继承自 Buffer,理由见 Buffer 注)。
     //
-    //        扩容策略固定:初始 8、2 倍几何增长(见 ensure_capacity)。
-    //
+    //        扩容策略固定:初始 8、2 倍几何增长(见 ensure_capacity)。扩容走 memcpy 搬迁,
+    //        故不适合按内容重定位的容器(HashTable / InternPool rehash,见 Buffer 注)。
     //        用途:**顺序**增长的可扩容数组(ObjList 元素 / CodeUnit 字节码与常量池)。
-    //        扩容走 Buffer::reserve -> reallocate(memcpy 旧数据到新块),故不适合 HashTable --
-    //        HashTable 的 rehash 要按新容量重算每个元素位置(memcpy 会放错),它该直接用
-    //        分配器的 allocate/deallocate 自管 bucket 数组,intern 驻留池同理。
     //
-    //        GC 自身的 scratch(gray_stack_ / temp_roots_)用 List(std::vector),
-    //        不走 Array,不混入 managed heap 计数。
-    //
-    //        分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp):本头不 include
-    //        GC.hpp,故不传递地拖入 object/value 树;Alloc 默认为 GC,实例化点(调用方 TU)
-    //        须令 GC 完整可见。
+    //        分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,
+    //        实例化点(调用方 TU)须令 GC 完整可见。
     // T     元素类型(POD)
     // Alloc Trivial 分配器(默认 GC)
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
@@ -35,11 +27,9 @@ namespace aria {
         Buffer<T, Alloc> buf_; // 内存块底座(持 alloc_/data_/cap_,收口分配/重分配/释放)
         usize            len_; // 逻辑长度(<= buf_.capacity())
 
-        // 内部扩容原语:确保容量 >= required_capacity,不足则 2 倍几何增长(从当前容量起翻倍直到
-        // >= required_capacity)。一次 reallocate 到位(Buffer::reserve -> reallocate<T>,不触发 GC);
-        // required_capacity <= 当前容量时无操作。供内部路径(push/resize)与公开 reserve 共用此实现,
-        // 使内部不反向依赖公开接口。
-        // cap_=0(空态未分配)时落到 kInitialCapacity=8,push 首元素顺带完成首次分配。
+        // 内部扩容原语:确保容量 >= required_capacity,不足则从当前容量(空态落到
+        // kInitialCapacity=8)起 2 倍几何增长,一次 reallocate 到位(不触发 GC)。
+        // 供内部路径(push/resize)与公开 reserve 共用此实现,使内部不反向依赖公开接口。
         void ensure_capacity(const usize required_capacity) noexcept {
             if (required_capacity <= buf_.capacity()) {
                 return;
@@ -63,8 +53,8 @@ namespace aria {
         Array(Array&&)                 = delete;
         Array& operator=(Array&&)      = delete;
 
-        // 追加一个元素;满栈时经 ensure_capacity 长一档(Buffer::reserve -> reallocate<T>,
-        // 不触发 GC)。Array 无指进缓冲的派生裸指针,扩容后无需重定位。
+        // 追加一个元素;满时经 ensure_capacity 长一档。Array 无指进缓冲的派生裸指针,
+        // 扩容后无需重定位。
         void push(const T& value) {
             if (len_ == buf_.capacity()) {
                 ensure_capacity(buf_.capacity() + 1);
@@ -72,12 +62,9 @@ namespace aria {
             buf_.data()[len_++] = value;
         }
 
-        // 整段追加(push 的复数版):把 src 拷到 len_ 之后(append 语义,不改写已有元素,非整体
-        // 替换),一次扩容到位 + 单次 memcpy,替代逐元素 push 循环(免去 log n 次搬迁重拷与每
-        // 元素容量分支)。参数收 Span<const T> 泛化源:List(std::vector)/裸数组/本类 span() 皆
-        // 可隐式转换传入。T trivially-copyable,逐字节拷贝即语义拷贝;扩容路径与 push 同形
-        // (Buffer::reserve -> reallocate,不触发 GC)。空 src 直接返回(size 0 的 memcpy 传
-        // nullptr 属无效参数)。
+        // 整段追加(append 语义,接在 len_ 之后,不改写已有元素):一次扩容 + 单次 memcpy,
+        // 替代逐元素 push 循环。参数收 Span<const T> 泛化源:List(std::vector)/裸数组/
+        // 本类 span() 皆可隐式转换。空 src 直接返回(size 0 的 memcpy 传 nullptr 属无效参数)。
         void copy_from(Span<const T> src) {
             if (src.empty()) {
                 return;
@@ -87,9 +74,8 @@ namespace aria {
             len_ += src.size();
         }
 
-        // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve)。已分配指针可能改变
-        // (Buffer::reserve 内部 reallocate)。薄封装内部 ensure_capacity,使内部路径
-        // (push/resize)不反向依赖本公开接口。
+        // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);已分配指针可能
+        // 改变(Buffer::reserve 内部 reallocate)。薄封装内部 ensure_capacity。
         void reserve(const usize capacity) { ensure_capacity(capacity); }
 
         // 改变长度;增长部分用 fill 填充(默认 T{})。注意 Value{} 零填充是 f64 0.0 非 nil,

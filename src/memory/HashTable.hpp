@@ -35,17 +35,9 @@ namespace aria {
     //     始终保留 >= 1/8 空槽 -> 探针必然在空槽终止。
     //
     //   两块独立分配(ctrl_ + entries_),rehash 时一起重分配、逐占用槽重算 hash 重插、
-    //   释放旧两块。rehash 走分配器 allocate/deallocate(GC 下**不触发 GC**,同 Array 的存储)。
-    //
-    //   持 Alloc* alloc_,dtor 自释放。不可拷贝/不可移动。K/V 必须 trivially-copyable。
-    //   分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp):本头不 include GC.hpp,
-    //   故不传递地拖入 object/value 树;Alloc 默认为 GC,实例化点须令 GC 完整可见。
-    //
-    // K    键类型(POD)
-    // V    值类型(POD)
-    // Hash 键哈希仿函数:u32 operator()(const K&) const noexcept
-    // Eq   键相等仿函数:bool operator()(const K&, const K&) const noexcept
-    // Alloc Trivial 分配器(默认 GC)
+    //   释放旧两块;rehash 走分配器 allocate/deallocate(GC 下**不触发 GC**)。
+    //   持 Alloc* alloc_,dtor 自释放。不可拷贝/不可移动(理由同 Buffer:浅 move 会 double-free)。
+    //   K/V 必须 trivially-copyable;分配器解耦见 Allocator.hpp(实例化点须令 GC 完整可见)。
     template<TriviallyCopyable K, TriviallyCopyable V, HashFunctor<K> Hash, EqFunctor<K> Eq,
              TrivialAllocator Alloc = GC>
     class HashTable {
@@ -229,8 +221,8 @@ namespace aria {
         }
 
     private:
-        // 插入前确保有空槽:cap_==0 初始分配;插入后(count+tomb+1)超 7/8 则扩容×2;
-        // 墓碑超 cap/8 则原容 compact(清墓碑)。任一情形都经 grow_and_rehash_。
+        // 插入前确保有空槽(阈值见类注释):cap_==0 初始分配;过满扩容×2;墓碑过多原容 compact。
+        // 任一情形都经 grow_and_rehash_。
         void maybe_rehash_for_insert_() {
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);

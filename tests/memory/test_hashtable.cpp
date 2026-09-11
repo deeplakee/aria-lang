@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "memory/GC.hpp"        // 显式 include:本测用 GC 作分配器(默认 Alloc=GC)
-#include "memory/HashTable.hpp" // HashTable 经 TrivialAllocator concept 与分配器解耦,不再传递 GC.hpp
+#include "memory/HashTable.hpp" // 分配器解耦,不传递 GC.hpp(见 Allocator.hpp)
 
 using aria::GC;
 using aria::HashTable;
@@ -52,7 +52,7 @@ TEST(HashTable, UpsertExistingPreservesValue) {
     GC       gc;
     IntTable ht{&gc};
     ht.upsert(5)->value = 50;
-    auto e             = ht.upsert(5); // 已存在
+    auto e              = ht.upsert(5); // 已存在
     ASSERT_NE(e, nullptr);
     EXPECT_EQ(e->value, 50); // value 保留(未重置为 V{})
     e->value = 999;          // 调用方覆写

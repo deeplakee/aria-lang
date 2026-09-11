@@ -18,12 +18,11 @@ namespace aria::tagvalue {
     public:
         enum class Type : u8 { Nil, Bool, F64, Int, Obj };
 
-        // 默认构造为 trivial（= default）：默认初始化 Value v; 时为不定值；
-        // 值初始化 Value{} 零填充 -> tag_=0=Type::Nil（Nil 为首枚举值 0）、union 零位置 nil，
-        // 故 Value{} 仍为合法 nil。注意与 NanBoxing 的语义差：后者的 Value{} 零填充是
-        // f64 0.0 非 nil，零填充值栈时不可跨两表示做统一语义假设。这样 Value 满足
-        // is_trivial + is_standard_layout（POD），可 memcpy、可入 FrameStack。
-        // 若日后 Type 枚举顺序变动需同步 nil_val()。
+        // 默认构造为 trivial（= default）：默认初始化 Value v; 时为不定值；值初始化 Value{}
+        // 零填充 -> tag_=0=Type::Nil（首枚举值 0）、union 零位置为 nullptr_t，故零初始化
+        // 恰为合法 nil。注意与 NanBoxing 的语义差：后者 Value{} 零填充是 f64 0.0 非 nil，
+        // 零填充值栈时不可跨两表示做统一语义假设。POD，可 memcpy、可入 FrameStack；
+        // Type 枚举顺序变动需同步 nil_val()。
         constexpr Value() noexcept = default;
 
         [[nodiscard]]

@@ -11,21 +11,17 @@ namespace aria {
     //          - Array 加逻辑长度(len_)+ 追加 / 截断语义;
     //          - Movement 加 top_ 游标 + 增长时重定位派生指针(top_ / 各帧 slots)。
     //
-    //        扩容策略不内置(Buffer 不带 grow policy):调用方按自己的需要算好 new_cap
-    //        后调 reserve。reserve 走分配器 reallocate(GC 为内部 memcpy 旧块到新块)搬迁,
-    //        不返回基址差(算 delta 本身是 UB,见 reserve 注释);有派生裸指针的调用方
-    //        (Movement 值栈的 top_ / 各帧 slots)须在 reserve 前后各取一次 data(),以整数
-    //        偏移自行重定位。
+    //        扩容策略不内置:调用方按自己的需要算好 new_cap 后调 reserve。reserve 走分配器
+    //        reallocate(memcpy 旧块到新块),不返回基址差(算 delta 本身是 UB,见 reserve 注释);
+    //        有派生裸指针的调用方须在 reserve 前后各取一次 data(),以整数偏移自行重定位。
     //
-    //        T 须 trivially-copyable(无析构 / 可 memcpy)。故只适合「搬迁 = 逐字节拷贝」
-    //        的块;按内容重定位的容器(HashTable rehash / InternPool rehash)不走本类,
-    //        它们直接用分配器的 allocate / deallocate 自管 bucket 数组。
+    //        T 须 trivially-copyable:只适合「搬迁 = 逐字节拷贝」的块;按内容重定位的容器
+    //        (HashTable / InternPool rehash 要按新容量重算元素位置,memcpy 会放错)不走本类,
+    //        直接用分配器的 allocate / deallocate 自管 bucket 数组。
     //
-    //        分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp):本头不 include
-    //        GC.hpp,故不传递地拖入 object/value 树;Alloc 默认为 GC,实例化点(调用方 TU)
-    //        须令 GC 完整可见。
-    //
-    //        不可拷贝 / 不可移动:持分配器堆分配裸指针(data_),浅 move 会 double-free;
+    //        分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,
+    //        实例化点(调用方 TU)须令 GC 完整可见。
+    //        不可拷贝/不可移动:持分配器堆分配裸指针(data_),浅 move 会 double-free;
     //        资源仅经析构释放,需转移所有权时用指针 / 就地构造。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Buffer {

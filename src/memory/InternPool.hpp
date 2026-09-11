@@ -19,34 +19,24 @@ namespace aria {
     //     (ObjString*)0x1   = 墓碑
     //     真 ObjString*      = 占用
     //
-    //   lookup:hash 串内容(FNV-1a,同 ObjString)-> slot = hash & (cap-1) -> 三角探测 ->
-    //           占用槽比 view()==query,空槽终止,墓碑跳过。
-    //   insert:首个墓碑或空槽写入(复用墓碑)。调用方先 find 查重,未命中才 insert。
+    //   lookup:hash 串内容(FNV-1a,同 ObjString)-> 三角探测,占用槽比 view()==query,
+    //   空槽终止,墓碑跳过。insert:首个墓碑或空槽写入(复用墓碑);调用方先 find 查重。
     //
     //   **weak root**:不进 GC::mark_roots_(否则驻留串永生)。GC::collect 在 sweep 前调
     //   remove_white() 摘除指向白色(未标 is_marked)ObjString* 的表项,避免 sweep 后悬垂。
     //
-    //   slots_ 经 alloc_->allocate<ObjString*> 分配。分配器经 TrivialAllocator concept 解耦
-    //   (见 Allocator.hpp):本头不 include GC.hpp,故不传递地拖入 object/value 树;
-    //   Alloc 默认为 GC,实例化点(即使用 GC 作分配器的 TU)须令 GC 完整可见。InternPool 本身
-    //   是 GC 的普通成员(非 Object、不被 trace、不被 sweep),其 slots_ 在 rehash 或 ~InternPool
-    //   时释放。持 Alloc*。
+    //   slots_ 经 alloc_->allocate<ObjString*> 分配,在 rehash 或 ~InternPool 释放。InternPool
+    //   本身是 GC 的普通值成员(非 Object、不被 trace/sweep)。分配器解耦见 Allocator.hpp
+    //   (实例化点须令 GC 完整可见)。**元素类型固定 ObjString***:特化表示依赖其缓存哈希
+    //   (hash())、内容视图(view())与 weak root 清理用的 is_marked(),未参数化(YAGNI)。
     //
-    //   **元素类型仍固定 ObjString***:特化表示依赖 ObjString 自带缓存哈希(hash())与内容视图
-    //   (view())、以及 weak root 清理用的 is_marked();未把元素类型一并参数化(YAGNI,当前唯一
-    //   使用点即字符串驻留)。仅分配器被抽象,与 Array/HashTable 的解耦范式一致。
-    //
-    //   **Alloc 约束的位置**:不把 TrivialAllocator 放在模板头约束(不像 HashTable),而是在
-    //   ctor 体内 static_assert。原因:InternPool<GC> 是 GC 的**值成员**,在 GC 类体内实例化--
-    //   此刻 GC 尚不完整,而 TrivialAllocator<GC> 的 requires-expression 在 Allocator.hpp 上下文
-    //   做名字查找(那里 GC 仅前向声明、看不到 allocate 成员),头部约束会判定不满足而报错。
-    //   放到 ctor 体内后,约束随 ctor 具现化时检查(GC.cpp 里构造 intern_ 时 GC 已完整),既保留
-    //   概念强制又能在 GC 体内作成员。allocate/deallocate 调用本身也在具现化点类型检查。
-    //
-    //   头循环处理:InternPool 是 GC 的值成员(GC.hpp 需 InternPool 完整),而 InternPool 方法用
-    //   alloc_->allocate(需 Alloc 完整)。故 InternPool.hpp 只前向声明 GC(供默认模板实参)、
-    //   include ObjString.hpp(方法体调 view/hash/is_marked);调 allocate/deallocate 的成员
-    //   (ctor/dtor/grow_and_rehash_)在实例化点才具现化,届时 Alloc(GC)必已完整(同 HashTable)。
+    //   **Alloc 约束的位置**:不放在模板头,而在 ctor 体内 static_assert。InternPool<GC> 是
+    //   GC 的**值成员**,在 GC 类体内实例化--此刻 GC 尚不完整,而模板头约束在 Allocator.hpp
+    //   上下文做名字查找(那里 GC 仅前向声明、看不到 allocate 成员),会判定不满足而报错;
+    //   ctor 体内随具现化检查(GC.cpp 构造 intern_ 时 GC 已完整),既保留概念强制又能作成员。
+    //   头循环同因:本头只前向声明 GC(供默认模板实参)、include ObjString.hpp(方法体调
+    //   view/hash/is_marked);调 allocate/deallocate 的成员在实例化点具现化,届时 Alloc 必已
+    //   完整(同 HashTable)。
     template<typename Alloc = GC>
     class InternPool {
         ObjString** slots_;

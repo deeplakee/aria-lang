@@ -21,10 +21,10 @@ namespace aria {
 
     // Value 操作(哈希 / 相等)
     //
-    //   值语义收口于 Value 层:声明在此,定义在 Value.cpp。AriaHashTable.hpp 中的
-    //   ValueHash/ValueEq 仿函数(HashTable 模板参数)包装这些自由函数;VM 的
-    //   OpCode::EQUAL(==)/STRICT_EQUAL(===) 直接调用。基于两表示共有的 type()/as_*() API,
-    //   **不**依赖 NanBoxing 专属的 bits()/same_bits()(TagValue 未提供,故两表示都编译)。
+    //   值语义收口于 Value 层:声明在此,定义在 Value.cpp。VM 的 EQUAL(==)/STRICT_EQUAL(===)
+    //   直接调用;AriaHashTable 的 ValueHash/ValueEq 包装这些自由函数。基于两表示共有的
+    //   type()/as_*() API,**不**依赖 NanBoxing 专属的 bits()/same_bits()(TagValue 未提供,
+    //   故两表示都编译)。
     //
     //   双相等体系(语言 == 与 === 的语义来源):
     //   - value_equal(== 内容相等):Nil/Bool 类型严格按值;Int/F64 **跨类型 IEEE 数值**
@@ -34,7 +34,7 @@ namespace aria {
     //     NaN 规范化后 NaN===NaN true);Obj 指针相等。
     //
     //   哈希表键用 ===(value_identical):对象按引用做键,字符串靠 intern 等价内容同指针 ->
-    //   按内容查到。value_hash 已与 === 自洽(a===b => hash(a)==hash(b)),无需改。
+    //   按内容查到;value_hash 已与 === 自洽(a===b => hash(a)==hash(b))。
     [[nodiscard]]
     inline bool is_num(const Value value) noexcept {
         return value.is_int() || value.is_f64();
@@ -46,10 +46,10 @@ namespace aria {
         return !(value.is_nil() || (value.is_bool() && !value.as_bool()));
     }
 
-    // 值的精确类型名(PascalCase,全项目统一约定):原语走 Value::type_name() constexpr 成员
-    // (Nil/Bool/Int/F64/Obj);Obj 走 obj->type_name() 取对象子类型(String/Function/NativeFn/...)。
-    // 区别于 Value::type_name() 成员--后者为 constexpr 粗分类,Obj 一律返 "Obj" 丢子类型;
-    // 本自由函数是**精确类型名**的统一入口,供错误消息类型名打印用。定义在 Value.cpp(需 Object 完整类型)。
+    // 值的精确类型名(PascalCase,全项目统一约定):原语走 Value::type_name() constexpr 成员,
+    // Obj 走 obj->type_name() 取对象子类型。区别于成员版--后者为 constexpr 粗分类,Obj 一律
+    // 返 "Obj" 丢子类型;本自由函数是**精确类型名**的统一入口(错误消息打印用)。
+    // 定义在 Value.cpp(需 Object 完整类型)。
     [[nodiscard]]
     StringView type_name(Value value) noexcept;
 
@@ -64,10 +64,8 @@ namespace aria {
     [[nodiscard]]
     bool value_identical(Value lhs, Value rhs) noexcept;
 
-    // 值的字符串渲染
-    //
-    //   f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
-    //   收口于 Value 层供多处复用(VM 的 PRINT 渲染、反汇编器常量池小节等),避免逻辑散落重复。
+    // f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
+    //   收口于 Value 层供多处复用(PRINT 渲染 / 反汇编常量池小节等),避免逻辑散落重复。
     [[nodiscard]]
     String format_f64(f64 value);
 
@@ -79,12 +77,10 @@ namespace aria {
 
     // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):内置原语与 format_value
     //   一致,Obj 走虚函数 debug_repr() 而非可重载的 to_string()(后者是未来用户类 __str__ 的
-    //   挂载点,可重载为运行 aria 字节码,调试上下文若在 dispatch_loop 内调用会重入 VM 致无限递归)。
-    //   debug_repr 的 override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),
-    //   语言层无法新增 C++ 子类型、override 集合编译期封闭,故虚分派绝不触用户重载;各类型 debug
-    //   文案由各子类型自己实现(ObjString 字面量带引号转义 / ObjFunction/ObjClosure/ObjNativeFn
-    //   渲染 `<fn name>` / ObjUpvalue `<upvalue>` 稳定短文案 / 其余内建类型同各自显示文案)。
-    //   原语 nil/bool/int/f64 同 format_value。
+    //   挂载点,可重载为运行 aria 字节码,调试上下文调用会重入 VM 致无限递归)。debug_repr 的
+    //   override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),语言层
+    //   无法新增 C++ 子类型,故虚分派绝不触用户重载;各类型 debug 文案由各子类型自己实现
+    //   (ObjString 带引号转义 / 函数类渲染 `<fn name>` / ObjUpvalue `<upvalue>` / 其余同显示文案)。
     [[nodiscard]]
     String format_value_debug(Value value);
 

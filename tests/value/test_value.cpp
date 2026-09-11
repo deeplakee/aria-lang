@@ -21,7 +21,7 @@ using aria::Value;
 using aria::value_equal;
 using aria::value_identical;
 
-// 双相等体系(value.hpp):value_equal(== 内容相等)/ value_identical(=== 严格相等)。
+// 双相等体系见 Value.hpp:value_equal(== 内容相等)/ value_identical(=== 严格相等);
 // 哈希表键用 ===(见末尾 HashTableKey*)。
 
 // ===== value_identical (=== 严格相等) =====

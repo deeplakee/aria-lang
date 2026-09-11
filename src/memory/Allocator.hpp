@@ -13,31 +13,23 @@ namespace aria {
     class GC;
 
     // 元素类型契约:T 必须 trivially-copyable(无非平凡拷贝/移动/析构,可 memcpy / 逐字节赋值)。
-    //   供 Array / Buffer / HashTable 约束 K/V/元素:这些容器靠 memcpy 搬迁元素(Buffer::reserve
-    //   reallocate / HashTable rehash / Array push 扩容),非 trivially-copyable 的 T 会破坏对象
-    //   语义(浅拷贝丢资源 / 漏析构)。封装为具名 concept 而非体里 static_assert:
-    //   (1) 令三容器统一走「约束型模板参数」(template<TriviallyCopyable T, ...>),头里每个参数
-    //       都带约束,体里不再散落 static_assert;
-    //   (2) 具名 concept 在诊断里自文档化(`does not satisfy 'TriviallyCopyable'`),可读性不输
-    //       自定义 static_assert 消息,且胜过裸 `requires is_trivially_copyable_v<T>`(后者诊断
-    //       只冒一串 trait 模板);
-    //   (3) 可作复合约束的积木(如未来 PodValue = TriviallyCopyable<T> && ...);
-    //   (4) C++23 标准库无 std::trivially_copyable concept(C++26 或加),故自管一行。
+    //   供 Array / Buffer / HashTable 约束 K/V/元素:这些容器靠 memcpy 搬迁元素(reallocate /
+    //   rehash / 扩容),非 trivially-copyable 的 T 会破坏对象语义(浅拷贝丢资源 / 漏析构)。
+    //   封装为具名 concept 而非 static_assert:三容器统一约束型模板参数,诊断自文档化
+    //   (`does not satisfy 'TriviallyCopyable'`;C++23 标准库无此 concept,故自管一行)。
     template<typename T>
     concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
 
-    // Trivial 分配器契约:持「分配 / 重分配 / 释放」三件字节级模板方法的对象。
+    // Trivial 分配器契约:持「分配 / 重分配 / 释放」三件字节级模板方法的对象(GC 满足本概念)。
     //
-    //   GC 满足本概念(allocate<T>/reallocate<T>/deallocate<T>);未来可供给 mock 或 arena
-    //   分配器做测试 / 隔离。concept 仅以 u8 为代表类型校验成员模板存在且签名相符;实际以
-    //   其它 trivially-copyable T 实例化同一成员模板,由分配器保证对所有 T 行为一致
-    //   (GC 实现为 ::operator new(count*sizeof(T)),与 T 无关)。
+    //   concept 仅以 u8 为代表类型校验成员模板存在且签名相符;实际以其它 trivially-copyable T
+    //   实例化同一成员模板,由分配器保证对所有 T 行为一致(GC 实现为 ::operator
+    //   new(count*sizeof(T)),与 T 无关)。
     //
-    //   Buffer<T,Alloc> / Array<T,Alloc> / HashTable<K,V,Hash,Eq,Alloc> 经此概念
-    //   与具体分配器解耦:容器头不 include GC.hpp,故不传递地拖入 object/value 树;使用 GC
-    //   作分配器的具体类(AriaArray/AriaHashTable/CodeUnit/Movement/InternPool)自行 include GC.hpp
-    //   (显式依赖,而非经容器传递)。这是 enter_frame 同族的依赖反转:低层(容器)依赖抽象
-    //   契约(本 concept),高层(GC)实现契约并被注入。
+    //   Buffer<T,Alloc> / Array<T,Alloc> / HashTable<K,V,Hash,Eq,Alloc> 经此概念与具体分配器
+    //   解耦:容器头不 include GC.hpp,不传递地拖入 object/value 树;使用 GC 作分配器的具体类
+    //   (AriaArray/AriaHashTable/CodeUnit/Movement/InternPool)自行 include GC.hpp(显式依赖,
+    //   而非经容器传递)。
     template<typename A>
     concept TrivialAllocator = requires(A* a, u8* p, usize old_n, usize new_n) {
         { a->template allocate<u8>(new_n) } -> std::same_as<u8*>;

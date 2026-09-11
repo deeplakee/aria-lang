@@ -26,18 +26,20 @@ namespace aria {
     //     惰性分配(首次 upsert 才建表)。
     //   - init_:构造器方法值(**Value**,init Value 化 2026-09-10:闭包或原生函数皆可,
     //     实例化统一走 call_value 分发,不再特认闭包;类上赋非可调用值也放行,实例化时
-    //     call_value 自然报 CallNonCallable)。写点:对象内 **set_field 落表时同步**
-    //     (name=="init" 即写 init_,bootstrap/MAKE_METHOD/store_field 三路合流于此,
-    //     表槽/init_ 一致由对象自维护)+ 对象外**调用方 seed(set_init)**--MAKE_CLASS
-    //     执行期继承父 init、VM bootstrap 设 Object 根;new_class 工厂只分配不 seed
-    //     (出厂恒 nil),不变式「建成的类 init_ 有值」由 VM 侧两 seed 写点维持。
-    //     经类实例化(call_value CLASS 分支)取用。
+    //     call_value 自然报 CallNonCallable)。写点全在对象内:**构造期自 super 派生**
+    //     (ctor,2026-09-11 改定:原「出厂恒 nil + 对象外调用方 set_init seed」废止 --
+    //     seed 属对象自身状态初始化,归构造函数;工厂仍纯分配,亦不归指令层补写)+
+    //     **set_field 落表时同步**(name=="init" 即写 init_,MAKE_METHOD/store_field/
+    //     bootstrap 合流于此,表槽/init_ 一致由对象自维护)。super 非空出厂即继承父
+    //     init_ 当前值(快照语义:此后父 init 变更不再传导);Object 根(super==nullptr)
+    //     出厂 nil,由 bootstrap 经 set_field 设。「建成的类 init_ 有值」由 ctor 派生
+    //     维持。经类实例化(call_value CLASS 分支)取用。
     //
     //   地址哈希型可变对象(走 Object{ObjType::CLASS} ctor);equals 保持默认地址相等--
     //     类按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
-    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(出厂 nil,mark_value
-    //     容 nil)+ 委托 field_.trace(gc)(遍历占用槽 mark_value key+value;方法闭包的
-    //     defining_class 经 ObjClosure::trace 级联标)。
+    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(ctor 自 super
+    //     派生、Object 根出厂 nil,mark_value 容 nil)+ 委托 field_.trace(gc)(遍历
+    //     占用槽 mark_value key+value;方法闭包的 defining_class 经 ObjClosure::trace 级标)。
     //   to_string():`<class Foo>`。
     class ObjClass final : public Object {
     public:
@@ -71,8 +73,9 @@ namespace aria {
         void set_field(ObjString* name, Value value);
 
         // 构造器方法值(Value:闭包/原生函数;类上赋非可调用值亦放行,实例化时 call_value
-        //     分发报错兜底)。出厂恒 nil(工厂只分配不 seed),由调用方 seed(写点见类注释);
-        //     实例化取用。**实例化机制接缝,非字段协议**:init 是构造器值,消费方是
+        //     分发报错兜底)。构造期自 super 派生(super 非空出厂即继承父 init_ 当前值;
+        //     Object 根 nil 由 bootstrap 经 set_field 设,写点见类注释);实例化取用。
+        //     **实例化机制接缝,非字段协议**:init 是构造器值,消费方是
         //     call_value 的 CLASS 分支(callable 协议),不属 load_field/store_field 的
         //     成员访问职责,故不经协议;成员表里的 "init" 槽与 init_ 的一致性由 set_field
         //     同步自维护。
@@ -80,8 +83,6 @@ namespace aria {
         Value init() const noexcept {
             return init_;
         }
-
-        void set_init(Value init) noexcept { init_ = init; }
 
         // 命名成员读取协议 override:沿链 find_field 读穿透直读 --静态值/静态方法闭包/原生
         // 原样取出,**不绑定不缓存**(静态方法无 this;类路径不经 ObjBoundMethod)。全链
@@ -123,12 +124,13 @@ namespace aria {
         ObjString*    name_;       // 类名(intern 驻留;显示名;指针恒非空)
         ObjClass*     superclass_; // 父类(唯 Object 根为 nullptr;运行期注入后不可变)
         AriaHashTable field_; // 类级成员表:静态变量 + 静态/实例方法同表(惰性分配;单数 field_ 区分 ObjInstance.fields_)
-        Value         init_;  // 构造器方法值(闭包/原生;出厂 nil -> MAKE_CLASS seed -> MAKE_METHOD 覆盖 -> 类上赋值同步)
+        Value         init_;  // 构造器方法值(闭包/原生)
     };
 
-    // 工厂:分配 ObjClass(field_ 空态、init_ 出厂恒 nil --**工厂只分配不 seed**,init
-    //     seed 责任在调用方:MAKE_CLASS 执行期继承父 init、Object 根由 VM bootstrap 设,
-    //     「建成的类 init_ 有值」不变式由 VM 侧两写点维持)。工厂不替调用方守卫入参
+    // 工厂:分配 ObjClass(field_ 空态;init_ 由 **ObjClass 构造函数自 super 派生**
+    //     --2026-09-11 改定:super 非空出厂即继承父 init_ 当前值,Object 根态出厂 nil
+    //     由 bootstrap 经 set_field 设;工厂仍**只做一次 new_object、无内部新建对象**,
+    //     继承属对象构造期自身状态初始化,不掺工厂语义)。工厂不替调用方守卫入参
     //     (「每方只守自己创建的」)--只做一次 new_object、无内部新建对象,**调用方须在调用前
     //     自行根化 name 与 super**(跨 new_object 顶 maybe_collect;name 经 intern 是 weak root,
     //     super 可能尚未入任何根,如 MAKE_CLASS peek-不弹栈纪律),与 new_function 同理。

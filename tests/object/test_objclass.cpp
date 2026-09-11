@@ -88,8 +88,7 @@ TEST(ObjClass, Basics) {
     EXPECT_EQ(cls->superclass(), nullptr);
     // (原 field().size()==0 惰性断言随整表访问器 field() 删除退役:成员表不对外暴露,
     //  惰性建表属 AriaHashTable 自身的已测不变式,类层行为断言见 SetFieldThenLoadOwnTable。)
-    EXPECT_TRUE(
-            cls->init().is_nil()); // 工厂只分配不 seed:出厂恒 nil(普通类经 MAKE_CLASS seed,Object 根由 bootstrap 设)
+    EXPECT_TRUE(cls->init().is_nil()); // ctor 自 super 派生:根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
 }
 
 TEST(ObjClass, SuperclassInjects) {
@@ -213,6 +212,9 @@ TEST(ObjClass, DebugRender) {
 // stress GC:sub 为唯一根,superclass 链(经 superclass_)、静态值(长串)/方法闭包(defining
 // class 级联回 sub)/init 闭包(fn 持常量池长串)全部经 sub.trace 存活。守卫全部作用域弹出,
 // 断言压在 trace 覆盖上(漏标即丢)。
+// (init 经 set_field 落表 + 同步 init_:set_init 退役(2026-09-11,ctor 自 super 派生)后
+//  init_ 与表槽/super 派生值恒同值,mark_value(init_) 的「唯一保命路径」合成态不再可构造,
+//  init_ 标记经表槽路径覆盖,trace 侧保留该行作防御。)
 TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     AriaVM vm;
     auto&  gc = vm.gc();
@@ -222,6 +224,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     ObjClass*   sub      = nullptr;
     ObjClosure* method   = nullptr;
     ObjClosure* init     = nullptr;
+    ObjString*  ikey     = nullptr;
     ObjString*  mkey     = nullptr;
     ObjString*  vkey     = nullptr;
     ObjString*  val      = nullptr;
@@ -237,7 +240,9 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
         method->set_defining_class(sub);
         init = make_closure(gc, "init", 0);
         g.push(init);
-        sub->set_init(Value::from_obj(init));
+        ikey = new_string(gc, "init");
+        g.push(ikey);
+        sub->set_field(ikey, Value::from_obj(init)); // 落表 + 同步 init_(set_field 单一写入口)
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         g.push(constant);
         init->function()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
@@ -259,7 +264,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     EXPECT_EQ(gc.bytes_allocated(), before);
     EXPECT_EQ(sub->superclass(), super); // 父类经链标存活
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
-    EXPECT_TRUE(value_identical(sub->init(), Value::from_obj(init))); // init Value 化:经 === 判同
+    EXPECT_TRUE(value_identical(sub->init(), Value::from_obj(init))); // set_field 同步:表槽/init_ 一致
     EXPECT_EQ(method->defining_class(), sub);
     // (原 sub->field().size()==2 断言随整表访问器 field() 删除退役:两成员的存活已分别
     //  经 load_field(vfound 值)与 method->defining_class()(表槽方法对象仍可读)行为钉住。)
@@ -302,25 +307,31 @@ TEST(ObjClass, UnrootedClassSwept) {
 
 // ---- 成员访问协议 override(2026-09-10 整改:VM 字段指令统一走虚函数协议)----
 
-// new_class 工厂只分配不 seed(与 new_function/new_closure 同纪律,纯分配工厂):super
-// 非空出厂 init_ 亦 nil --seed 责任在调用方(MAKE_CLASS 执行期继承父 init,VM 级用例
-// InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉行为;Object
-// 根由 bootstrap 设)。
-TEST(ObjClass, FactoryDoesNotSeedInit) {
+// 构造期 init 派生(2026-09-11 改定,set_init 与 MAKE_CLASS 指令层 seed 退役):ObjClass
+// 构造函数自 super 派生 init_ --super 非空出厂即继承父 init_ 当前值(快照语义:此后父
+// init 变更不传导);Object 根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
+//(VM 级行为仍由 InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉)。
+TEST(ObjClass, CtorDerivesInitFromSuper) {
     GC   gc;
     auto guard = gc.make_guard();
 
     auto base = make_class(gc, "Base");
     guard.push(base);
+    auto pre = make_class(gc, "Pre", base); // 建于父 init 设值前:ctor 快照为 nil
+    guard.push(pre);
+
     auto base_init = make_closure(gc, "init", 0);
     guard.push(base_init);
-    base->set_init(Value::from_obj(base_init));
+    auto init_key = new_string(gc, "init");
+    guard.push(init_key);
+    base->set_field(init_key, Value::from_obj(base_init));
 
-    auto sub = make_class(gc, "Sub", base); // super 非空:出厂亦不 seed
+    auto sub = make_class(gc, "Sub", base); // ctor 自 super 派生:出厂即继承父 init 当前值
     guard.push(sub);
-    EXPECT_TRUE(sub->init().is_nil());
+    EXPECT_TRUE(value_identical(sub->init(), Value::from_obj(base_init)));
+    EXPECT_TRUE(pre->init().is_nil()); // 快照语义:base 后设 init 不传导回已建的子类
 
-    auto root = make_class(gc, "Rootless", nullptr); // Object 根态:同态
+    auto root = make_class(gc, "Rootless", nullptr); // Object 根态:出厂 nil(bootstrap 经 set_field 设)
     guard.push(root);
     EXPECT_TRUE(root->init().is_nil());
 }

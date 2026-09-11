@@ -347,8 +347,8 @@ namespace aria {
         guard.push(cls);
         const auto init_key = new_string(gc_, "init"); // intern 命中:= init_native 的 name 串,零分配
         guard.push(init_key);
-        // 表槽/init_ 一致(Object 根的 init 由 bootstrap 设,其余类经 MAKE_CLASS seed/set_field 同步):
-        // set_field 命中 "init" 即同步 init_,无需另调 set_init。
+        // 表槽/init_ 一致(Object 根的 init 由 bootstrap 经本入口设;其余类 ctor 自 super
+        // 派生、后续 MAKE_METHOD/类上赋值经 set_field 同步):set_field 命中 "init" 即同步 init_。
         cls->set_field(init_key, Value::from_obj(init_native));
         object_class_ = cls; // 发布进 VM 成员:此后经 tracer 第 4 根保命
     }
@@ -518,7 +518,7 @@ namespace aria {
         // 约定:init 为闭包则经 call_closure 进方法帧 [this, a1..aN](编译器尾部
         // LOAD_LOCAL 0; RETURN 使 init 返回 this)、为原生则同步调用(no-op 不动 slots[0]
         // 即返回实例)、为非可调用值(类上赋 Foo.init = 5 经 store_field 放行)则 call_value
-        // 报 CallNonCallable 兜底。init_ 经 MAKE_CLASS seed(继承父 init)/MAKE_METHOD 覆盖/
+        // 报 CallNonCallable 兜底。init_ 经 ctor 自 super 派生(继承父 init)/MAKE_METHOD 覆盖/
         // 类上赋值同步,恒有值,无需空判与快路径(Object 根的 no-op 原生调用开销可忽略)。
         const auto instance  = new_instance(gc_, obj);
         current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
@@ -1312,24 +1312,22 @@ namespace aria {
                     // super 须仍在栈(「栈即根」);非类值是**语言可达**错误(`var Bar = 5; def Foo : Bar`
                     // 合法 -- superclass 运行期才知值类型),故 raise 而非 ASSERT,类型检查经
                     // try_obj 一步收口。name 经常量池可达(帧 -> closure -> unit.trace),无需
-                    // 守卫。建成写回原槽(top 不变,[super] -> [class] 收口,class 即经值栈根);
-                    // init seed 在指令层(工厂只分配不 seed):super 此处已验为类,直接继承其
-                    // init --沿链语义天然成立(父的 init_ 已是 seed 后值)。写回原槽后 seed:
-                    // 先发布进根,两步间无 GC 点。
-                    const auto  name    = read_name(frame);
-                    const Value super_v = current_->peek(0);
-                    auto        super   = try_obj<ObjClass>(super_v);
-                    if (super == nullptr) {
-                        raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(super_v));
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
-                        }
-                        break; // 已派发 handler:循环顶重取
+                    // 守卫。建成写回原槽(top 不变,[super] -> [class] 收口,class 即经值栈根)。
+                    // init 继承收进对象构造(2026-09-11 改定,原「出厂 nil + 指令层 set_init
+                    // 补写」废止):new_class 出厂即自 super 派生 --super 此处已验为类,父的
+                    // init_ 已是 seed 后值,沿链语义天然成立;指令层零 seed 写点,写回原槽
+                    // 一步收口。
+                    if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
+                        const auto cls    = new_class(gc_, read_name(frame), super);
+                        current_->peek(0) = Value::from_obj(cls);
+                        break;
                     }
-                    auto cls          = new_class(gc_, name, super); // 出厂 init_ nil(工厂只分配不 seed)
-                    current_->peek(0) = Value::from_obj(cls);        // 写回原槽(top 不变):class 经值栈根
-                    cls->set_init(super->init());                    // seed:继承父 init(Object 根由 bootstrap 设)
-                    break;
+
+                    raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
+                    if (auto u = unwind()) {
+                        return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                    }
+                    break; // 已派发 handler:循环顶重取
                 }
                 case OpCode::MAKE_METHOD: {
                     // name:u16;[class, closure] -> [class]:**普通方法(实例方法)注册**(2026-09-11

@@ -328,7 +328,7 @@ namespace aria {
         // 约定:init 闭包经 call_closure 进方法帧(方法帧 [this, a1..aN],编译器尾部
         // LOAD_LOCAL 0; RETURN 使 init 返回 this)、原生同步调用(no-op 不动 slots[0] 即返回
         // 实例)、非可调用值(类上赋 Foo.init = 5 经 store_field 放行)报 CallNonCallable
-        // 兜底。init_ 经 MAKE_CLASS seed(继承父 init)/set_field 命中 "init" 同步,恒有值,
+        // 兜底。init_ 经 ctor 自 super 派生(继承父 init)/set_field 命中 "init" 同步,恒有值,
         // 无空判与快路径。
         // 成功返 true;失败经分发 raise 后返 false(bool 契约)。
         bool call_class(ObjClass* obj, u8 argc);
@@ -345,7 +345,7 @@ namespace aria {
         // + 原生 no-op init(init Value 化:无 ObjFunction/无模块,ObjFunction「module 恒非空」
         // 不变式保持;no-op 语义 = 返回 true 不写槽,slots[0] 已是 this 即返回实例)并发布:
         // upsert 进类表 init 槽 + init_ 指同一值(表槽/init_ 一致,Object 根的 init 由本函数设,
-        // 其余类经 MAKE_CLASS seed)。
+        // 其余类 ctor 自 super 派生)。
         // 成员 object_class_ 单独持有、不进 builtins_/任何模块 globals(裸名解析 局部->upvalue->
         // 全局->builtins 全部够不到,LOAD_OBJECT 直推成员,用户 shadow 全局名免疫)。
         void bootstrap_object_class();

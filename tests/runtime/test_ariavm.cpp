@@ -1605,7 +1605,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 // 实例化快慢路径 / LOAD_FIELD 绑定 + 缓存回填 / 超类链的分配安全。
 // ============================================================
 
-// 无自定义 init 的类(无成员):LOAD_OBJECT + MAKE_CLASS 后 Foo() -- MAKE_CLASS seed 继承
+// 无自定义 init 的类(无成员):LOAD_OBJECT + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
 // Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native 同步
 // 调用(no-op 不写 slots[0],this 原样即返回值),不进帧、留空 ObjInstance。
 TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {

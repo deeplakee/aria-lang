@@ -10,10 +10,15 @@
 namespace aria {
 
     ObjClass::ObjClass(GC& gc, ObjString* name, ObjClass* super) :
-        Object{ObjType::CLASS}, name_{name}, superclass_{super}, field_{&gc}, init_{Value::nil_val()} {
+        Object{ObjType::CLASS}, name_{name}, superclass_{super}, field_{&gc},
+        init_{super != nullptr ? super->init() : Value::nil_val()} {
         // name_ 恒非空(ctor ASSERT,与 ObjModule::name_ 同模式);superclass_ 唯 Object 根为 nullptr。
-        // init_ 播 nil(Value 默认构造是不定值,须显式初始化):工厂只分配不 seed,由调用方
-        // 写入(MAKE_CLASS 执行期继承父 init;Object 根由 VM bootstrap 设)。
+        // init_ 构造期自 super 派生(2026-09-11 改定,原「出厂恒 nil + 调用方 set_init seed」
+        // 废止):super 非空即继承父 init_ 当前值(快照语义 --此后父 init 经 MAKE_METHOD/
+        // 类上赋值变更不再传导),Object 根(super==nullptr)出厂 nil、由 bootstrap 经
+        // set_field 设。「建成的类 init_ 有值」对 MAKE_CLASS 建的类成为构造期结构保证,
+        // 不再依赖指令层补写。ctor 内读 super->init() 纯读无分配无 GC 点:值经调用方
+        // 根化的 super 可达,new_object 内部 maybe_collect 后 ctor 运行、其间无 GC 触发点。
         ASSERT(name != nullptr, "ObjClass name must not be null");
     }
 
@@ -70,13 +75,14 @@ namespace aria {
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {
         // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
         // 根化 name 与 super(跨 new_object 顶 maybe_collect)。
-        // 工厂只分配不 seed(纯分配工厂,与 new_function/new_closure 同纪律,语义不掺进工厂):
-        // init_ 出厂恒 nil,seed 责任在调用方 --MAKE_CLASS 执行期继承父 init、VM bootstrap 设
-        // Object 根,「建成的类 init_ 有值」不变式由 VM 侧两写点维持。
+        // 工厂仍纯分配(与 new_function/new_closure 同纪律,语义不掺进工厂):init_ 出厂值
+        // 由 ObjClass 构造函数自 super 派生(2026-09-11 改定,原「出厂恒 nil、seed 责任在
+        // 调用方」废止)--继承属对象构造期自身状态初始化,super 非空出厂即继承、Object 根
+        // 态出厂 nil 由 bootstrap 经 set_field 设,「建成的类 init_ 有值」由 ctor 派生维持。
         return gc.new_object<ObjClass>(gc, name, super);
     }
 
-    ObjClass* new_class(GC& gc, StringView name, ObjClass* super) {
+    ObjClass* new_class(GC& gc, const StringView name, ObjClass* super) {
         // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
         //(「每方守自己创建的」);super 的根化约定同显式名重载。委托显式名重载。
         const auto name_str = new_string(gc, name);

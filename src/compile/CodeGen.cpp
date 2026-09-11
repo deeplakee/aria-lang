@@ -363,7 +363,7 @@ namespace aria {
         // 声明发生在值已在栈顶之时，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
         if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
             const auto slot = declare_local_or_fail(id->name, node.loc()); // 纯登记，slot = 值位置；值填槽不发指令
-            cur_fn_ctx()->mark_initialized(slot);                         // 值已在槽
+            cur_fn_ctx()->mark_initialized(slot);                          // 值已在槽
             return;
         }
         const u32 line = node.loc_line();
@@ -602,8 +602,8 @@ namespace aria {
 
         // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
-        for (const auto cp: loop.continue_fwd_patches) {
-            patch_jump_or_fail(cp, node.loc()); // -> L_incr
+        for (const auto patch: loop.continue_fwd_patches) {
+            patch_jump_or_fail(patch, node.loc()); // -> L_incr
         }
         if (has_incr) {
             emit_expr(*node.increment);
@@ -829,20 +829,20 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitIntegerLiteralNode(IntegerLiteralNode& node) {
-        const u32 line = node.loc_line();
-        const i64 v    = node.value;
-        if (v >= -128 && v <= 127) {
+        const u32 line  = node.loc_line();
+        const i64 value = node.value;
+        if (value >= -128 && value <= 127) {
             // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经
             // i8 保证符号语义、再转 u8 写字节（免窄化告警）。范围外的整数走常量池 LOAD_CONST。
             cur_cu()->emit_op(OpCode::LOAD_IMM, line);
-            cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(v)), line);
+            cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(value)), line);
             return;
         }
-        if (v < kIntMin || v > kIntMax) {
-            fail(ErrorCode::NumberOutOfRange, node.loc(), "整数字面量超出 i48 范围: {}", v);
+        if (value < kIntMin || value > kIntMax) {
+            fail(ErrorCode::NumberOutOfRange, node.loc(), "整数字面量超出 i48 范围: {}", value);
             return;
         }
-        const auto idx = add_constant_or_fail(Value::from_int(v), node.loc());
+        const auto idx = add_constant_or_fail(Value::from_int(value), node.loc());
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
     }

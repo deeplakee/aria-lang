@@ -467,20 +467,20 @@ namespace aria {
     bool Parser::looks_like_for_in() const noexcept {
         // pos_ 位于 '(' 后首个 token；判定 <pattern> "in"：identifier/"_" 紧跟 in，或
         // [...]（扫到匹配 ']'）后跟 in。in 非表达式运算符，故命中即 forIn。
-        usize p = pos_;
-        if (p >= tokens_.size()) {
+        usize cursor = pos_;
+        if (cursor >= tokens_.size()) {
             return false;
         }
-        const TokenType t = tokens_[p].type();
+        const TokenType t = tokens_[cursor].type();
         if (t == TokenType::Underscore || t == TokenType::Identifier) {
-            return p + 1 < tokens_.size() && tokens_[p + 1].type() == TokenType::In;
+            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].type() == TokenType::In;
         }
         if (t == TokenType::LeftBracket) {
             usize depth = 0;
-            for (; p < tokens_.size(); ++p) {
-                if (tokens_[p].type() == TokenType::LeftBracket) {
+            for (; cursor < tokens_.size(); ++cursor) {
+                if (tokens_[cursor].type() == TokenType::LeftBracket) {
                     ++depth;
-                } else if (tokens_[p].type() == TokenType::RightBracket) {
+                } else if (tokens_[cursor].type() == TokenType::RightBracket) {
                     --depth;
                     if (depth == 0) {
                         break;
@@ -490,7 +490,7 @@ namespace aria {
             if (depth != 0) {
                 return false; // 括号不配对，交由后续解析报错
             }
-            return p + 1 < tokens_.size() && tokens_[p + 1].type() == TokenType::In;
+            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].type() == TokenType::In;
         }
         return false;
     }

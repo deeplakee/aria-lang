@@ -17,14 +17,15 @@ namespace aria {
     //   异常载荷判定等),故隔离在此,需要者显式 include。依赖方向 value -> object,与
     //   「Object.hpp 不 include Value.hpp」的既有约束互不冲突。
 
-    // 从 Value 一步取对象子类型(try_obj = is_obj + Object::try_as 合一):v 持对象且动态类型
-    // 匹配 T 时返回 T*,否则(非对象 / 类型不符)返回 nullptr。「守卫后使用」成对场景的一步
-    // 形态,替代 `v.is_obj() && Object::is<T>(v.as_obj())` 命中后再 `Object::as<T>(v.as_obj())`
-    // 的两步写法(类型只写一次)。分派臂内等静态已知场合仍走 v.is_obj() + Object::as<T>()。
+    // 从 Value 一步取对象子类型(try_obj = is_obj + Object::try_as 合一):value 持对象且动态
+    // 类型匹配 T 时返回 T*,否则(非对象 / 类型不符)返回 nullptr。「守卫后使用」成对场景的一步
+    // 形态,替代 `value.is_obj() && Object::is<T>(value.as_obj())` 命中后再
+    // `Object::as<T>(value.as_obj())` 的两步写法(类型只写一次)。分派臂内等静态已知场合仍走
+    // value.is_obj() + Object::as<T>()。
     template<DerivedFromObj T>
     [[nodiscard]]
-    T* try_obj(const Value v) noexcept {
-        return v.is_obj() ? Object::try_as<T>(v.as_obj()) : nullptr;
+    T* try_obj(const Value value) noexcept {
+        return value.is_obj() ? Object::try_as<T>(value.as_obj()) : nullptr;
     }
 
     // 类表成员值是否为「可调用」(M5):闭包(字节码方法)或原生函数(内建方法)。
@@ -36,11 +37,11 @@ namespace aria {
     // 绑定判别/MAKE_METHOD 槽形 ASSERT)与 ObjInstance::load_field(绑定判定)三处消费随
     // 戳判别退役。
     [[nodiscard]]
-    inline bool is_callable_value(const Value v) noexcept {
-        if (!v.is_obj()) {
+    inline bool is_callable_value(const Value value) noexcept {
+        if (!value.is_obj()) {
             return false;
         }
-        const ObjType t = v.as_obj()->type();
+        const ObjType t = value.as_obj()->type();
         return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
     }
 
@@ -50,8 +51,8 @@ namespace aria {
     // 判别不看值类型,一步收「取闭包 + 查戳」两步守卫。**泛化扩展缝**:未来再扩方法
     // 承载形态改本谓词即可。
     [[nodiscard]]
-    inline bool is_method(const Value v) noexcept {
-        const auto closure = try_obj<ObjClosure>(v);
+    inline bool is_method(const Value value) noexcept {
+        const auto closure = try_obj<ObjClosure>(value);
         return closure != nullptr && closure->is_method();
     }
 

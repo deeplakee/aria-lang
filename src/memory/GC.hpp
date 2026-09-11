@@ -79,8 +79,8 @@ namespace aria {
         T* new_object(Args&&... args);
 
         // ---- tracing ----
-        void mark_value(Value v) noexcept;
-        void mark_object(Object* o) noexcept;
+        void mark_value(Value value) noexcept;
+        void mark_object(Object* object) noexcept;
 
         // bytes_allocated_ >= next_gc_(或 stress 开)时 collect()。
         void maybe_collect() noexcept;
@@ -100,9 +100,9 @@ namespace aria {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}
 
-            Guard(GC* gc, Value v) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(v); }
+            Guard(GC* gc, Value value) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(value); }
 
-            Guard(GC* gc, Object* o) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(o); }
+            Guard(GC* gc, Object* object) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(object); }
 
             ~Guard() {
                 if (count_ > 0) {
@@ -115,13 +115,13 @@ namespace aria {
             Guard& operator=(const Guard&) = delete;
             Guard& operator=(Guard&&)      = delete;
 
-            void push(Value v) noexcept {
-                gc_->push_temp_root(v);
+            void push(Value value) noexcept {
+                gc_->push_temp_root(value);
                 ++count_;
             }
 
-            void push(Object* o) noexcept {
-                gc_->push_temp_root(o);
+            void push(Object* object) noexcept {
+                gc_->push_temp_root(object);
                 ++count_;
             }
 
@@ -136,13 +136,13 @@ namespace aria {
         }
 
         [[nodiscard]]
-        Guard make_guard(Value v) noexcept {
-            return Guard{this, v};
+        Guard make_guard(Value value) noexcept {
+            return Guard{this, value};
         }
 
         [[nodiscard]]
-        Guard make_guard(Object* o) noexcept {
-            return Guard{this, o};
+        Guard make_guard(Object* object) noexcept {
+            return Guard{this, object};
         }
 
         [[nodiscard]]
@@ -151,7 +151,7 @@ namespace aria {
         }
 
         // 运行期压力开关(测试用):开启后每次 new_object 强制 collect。
-        void set_stress(bool b) noexcept { is_stress_ = b; }
+        void set_stress(bool enabled) noexcept { is_stress_ = enabled; }
 
         // ---- GC 禁用锁(单线程,计数器实现,支持嵌套)----
         // collect() 在 lock_count_>0 时跳过(临界区不回收);maybe_collect 经 collect() 间接受控。
@@ -204,9 +204,9 @@ namespace aria {
 
         // ---- temp roots 底层(由 Guard 调用)----
         // Value 与 Object* 双重载,内部统一存为 Value(Object* 经 from_obj 装箱)。
-        void push_temp_root(Value v) noexcept;
-        void push_temp_root(Object* o) noexcept;
-        void pop_temp_root(usize n = 1) noexcept;
+        void push_temp_root(Value value) noexcept;
+        void push_temp_root(Object* object) noexcept;
+        void pop_temp_root(usize count = 1) noexcept;
 
         static constexpr usize kInitialGcThreshold = 1024 * 4;
         static constexpr usize kGcGrowFactor       = 2;

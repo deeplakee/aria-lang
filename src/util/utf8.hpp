@@ -17,37 +17,37 @@ namespace aria::utf8 {
     namespace detail {
         // 该字节是否为 UTF-8 序列的起始字节（ASCII 或多字节首字节）
         [[nodiscard]]
-        constexpr bool is_lead_byte(const u8 b) noexcept {
+        constexpr bool is_lead_byte(const u8 byte) noexcept {
             // 10xxxxxx 的续接字节返回 false，其余都是起始字节
-            return (b & 0xC0) != 0x80;
+            return (byte & 0xC0) != 0x80;
         }
 
         // 该字节是否为 UTF-8 续接字节（10xxxxxx）
         [[nodiscard]]
-        constexpr bool is_cont_byte(const u8 b) noexcept {
-            return (b & 0xC0) == 0x80;
+        constexpr bool is_cont_byte(const u8 byte) noexcept {
+            return (byte & 0xC0) == 0x80;
         }
 
         // 根据起始字节推断序列应有的字节长度；0 表示非法起始字节
         [[nodiscard]]
-        constexpr u8 seq_len_from_lead(const u8 b) noexcept {
-            if (b < 0x80)
+        constexpr u8 seq_len_from_lead(const u8 byte) noexcept {
+            if (byte < 0x80)
                 return 1; // 0xxxxxxx
-            if (b < 0xC0)
+            if (byte < 0xC0)
                 return 0; // 10xxxxxx 不能作为起始字节
-            if (b < 0xE0)
+            if (byte < 0xE0)
                 return 2; // 110xxxxx
-            if (b < 0xF0)
+            if (byte < 0xF0)
                 return 3; // 1110xxxx
-            if (b < 0xF8)
+            if (byte < 0xF8)
                 return 4; // 11110xxx
             return 0;     // 11111xxx 非法
         }
 
         // 续接字节的低 6 位
         [[nodiscard]]
-        constexpr u8 cont_bits(const u8 b) noexcept {
-            return static_cast<u8>(b & 0x3F);
+        constexpr u8 cont_bits(const u8 byte) noexcept {
+            return static_cast<u8>(byte & 0x3F);
         }
     } // namespace detail
 

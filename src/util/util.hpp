@@ -31,13 +31,13 @@ namespace aria::util {
         // 常数/移位(30/27/31)专为 32 位输出低偏置调优--高位差异充分传播到低 32 位,
         // 利于 Swiss Table 取低 7 位作 h2。供数值/地址等 64 位标量哈希共用(见 hash_num/hash_addr)。
         [[nodiscard]]
-        inline u32 splitmix64_mix32(u64 x) noexcept {
-            x ^= x >> 30;
-            x *= 0xbf58476d1ce4e5b9ull;
-            x ^= x >> 27;
-            x *= 0x94d049bb133111ebull;
-            x ^= x >> 31;
-            return static_cast<u32>(x);
+        inline u32 splitmix64_mix32(u64 value) noexcept {
+            value ^= value >> 30;
+            value *= 0xbf58476d1ce4e5b9ull;
+            value ^= value >> 27;
+            value *= 0x94d049bb133111ebull;
+            value ^= value >> 31;
+            return static_cast<u32>(value);
         }
 
         // FNV-1a 32-bit 字节哈希核心:逐字节 h ^= byte; h *= prime。
@@ -174,11 +174,8 @@ namespace aria::util {
     // 把 u32 按"低位在前"(小端序)拆成 4 字节:索引 0 为最低字节。
     [[nodiscard]]
     inline Vector<u8, 4> split_dword(const u32 word) noexcept {
-        return {
-            static_cast<u8>(word & 0xFF),
-            static_cast<u8>((word >> 8) & 0xFF),
-            static_cast<u8>((word >> 16) & 0xFF),
-            static_cast<u8>((word >> 24) & 0xFF)};
+        return {static_cast<u8>(word & 0xFF), static_cast<u8>((word >> 8) & 0xFF), static_cast<u8>((word >> 16) & 0xFF),
+                static_cast<u8>((word >> 24) & 0xFF)};
     }
 } // namespace aria::util
 

@@ -42,33 +42,33 @@ namespace aria::tagvalue {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bool(bool b) noexcept {
-            return Value{b};
+        static constexpr Value from_bool(bool value) noexcept {
+            return Value{value};
         }
 
         [[nodiscard]]
-        static constexpr Value from_f64(f64 d) noexcept {
+        static constexpr Value from_f64(f64 value) noexcept {
             // 规范化 NaN 到单一 bit pattern(0x7ff8...,与 NanBoxing 一致),消除两表示分叉:
             // value_identical(===) 按位比较,规范化后任意两个 NaN bit 相等 -> NaN===NaN true。
-            if (d != d) {
+            if (value != value) {
                 return Value{std::bit_cast<f64>(0x7ff8000000000000ull)};
             }
-            return Value{d};
+            return Value{value};
         }
 
         [[nodiscard]]
-        static constexpr Value from_int(i64 i) noexcept {
-            return Value{i};
+        static constexpr Value from_int(i64 value) noexcept {
+            return Value{value};
         }
 
         [[nodiscard]]
-        static constexpr Value from_i32(i32 i) noexcept {
-            return Value{static_cast<i64>(i)};
+        static constexpr Value from_i32(i32 value) noexcept {
+            return Value{static_cast<i64>(value)};
         }
 
         [[nodiscard]]
-        static Value from_obj(Obj p) noexcept {
-            return Value{p};
+        static Value from_obj(Obj object) noexcept {
+            return Value{object};
         }
 
         [[nodiscard]]

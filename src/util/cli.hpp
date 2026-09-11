@@ -63,8 +63,8 @@ namespace aria::util {
                     return std::nullopt; // 未注册，或命中的是 flag（无值）
                 }
                 // option / positional：已提供（含显式空串）才返回值
-                if (const usize i = *idx; slots_[i].state != Slot::Empty) {
-                    return slots_[i].value;
+                if (const usize index = *idx; slots_[index].state != Slot::Empty) {
+                    return slots_[index].value;
                 }
                 return std::nullopt;
             }
@@ -252,9 +252,9 @@ namespace aria::util {
                 if (d.kind_ == Slot::Positional) {
                     continue;
                 }
-                const usize w = render_prefix(d.long_name_, d.short_name_).size() +
-                                (d.kind_ == Slot::Option ? kOptValueSuffix.size() : 0);
-                max_prefix    = std::max(max_prefix, w);
+                const usize width = render_prefix(d.long_name_, d.short_name_).size() +
+                                    (d.kind_ == Slot::Option ? kOptValueSuffix.size() : 0);
+                max_prefix        = std::max(max_prefix, width);
             }
             const usize desc_col = max_prefix + 2; // 最长前缀 + 2 空格间距
             result += "\nOptions:\n";

@@ -72,38 +72,38 @@ namespace aria::nanboxing {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bool(bool b) noexcept {
-            return Value{b ? kTrueBits : kFalseBits};
+        static constexpr Value from_bool(bool value) noexcept {
+            return Value{value ? kTrueBits : kFalseBits};
         }
 
         [[nodiscard]]
-        static constexpr Value from_f64(f64 d) noexcept {
+        static constexpr Value from_f64(f64 value) noexcept {
             // Canonicalize any NaN to the hardware quiet NaN so it can never be
             // mistaken for a boxed value on the way back out.
-            if (d != d) {
+            if (value != value) {
                 return Value{0x7ff8000000000000ull};
             }
-            return Value{f64_to_u64(d)};
+            return Value{f64_to_u64(value)};
         }
 
         [[nodiscard]]
-        static constexpr Value from_int(int64_t i) noexcept {
+        static constexpr Value from_int(int64_t value) noexcept {
             // Stored as a 48-bit two's-complement integer (range +/- 2^47).
-            ASSERT(i >= -(static_cast<int64_t>(1) << 47) && i < (static_cast<int64_t>(1) << 47),
+            ASSERT(value >= -(static_cast<int64_t>(1) << 47) && value < (static_cast<int64_t>(1) << 47),
                    "integer does not fit in 48-bit NaN-box payload");
-            return Value{kQNan | kTagInt | (static_cast<u64>(i) & kPayload)};
+            return Value{kQNan | kTagInt | (static_cast<u64>(value) & kPayload)};
         }
 
         [[nodiscard]]
-        static constexpr Value from_i32(i32 i) noexcept {
-            return from_int(i); // i32 always fits in the 48-bit payload
+        static constexpr Value from_i32(i32 value) noexcept {
+            return from_int(value); // i32 always fits in the 48-bit payload
         }
 
         [[nodiscard]]
-        static Value from_obj(Obj p) noexcept {
-            u64 u = ptr_to_u64(p);
-            ASSERT((u & ~kPayload) == 0, "pointer exceeds 48-bit payload");
-            return Value{kSign | kQNan | (u & kPayload)};
+        static Value from_obj(Obj object) noexcept {
+            u64 bits = ptr_to_u64(object);
+            ASSERT((bits & ~kPayload) == 0, "pointer exceeds 48-bit payload");
+            return Value{kSign | kQNan | (bits & kPayload)};
         }
 
         // --- type tests -------------------------------------------------------
@@ -197,16 +197,16 @@ namespace aria::nanboxing {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bits(u64 b) noexcept {
-            return Value{b};
+        static constexpr Value from_bits(u64 bits) noexcept {
+            return Value{bits};
         }
 
         // Bitwise equality. Note: two f64 NaNs compare unequal under `==` but here
         // identical bit patterns are equal, and -0.0 != 0.0 in bits. Use as_f64()
         // and float comparison if you need IEEE numeric semantics.
         [[nodiscard]]
-        constexpr bool same_bits(Value o) const noexcept {
-            return bits_ == o.bits_;
+        constexpr bool same_bits(Value other) const noexcept {
+            return bits_ == other.bits_;
         }
 
         static constexpr const char* type_name(Type t) noexcept {
@@ -228,10 +228,10 @@ namespace aria::nanboxing {
     private:
         explicit constexpr Value(u64 bits) noexcept : bits_(bits) {}
 
-        static u64 f64_to_u64(f64 d) { return std::bit_cast<u64>(d); }
-        static f64 u64_to_f64(u64 u) { return std::bit_cast<f64>(u); }
-        static u64 ptr_to_u64(Obj p) { return static_cast<u64>(reinterpret_cast<uintptr_t>(p)); }
-        static Obj u64_to_ptr(u64 u) { return reinterpret_cast<Obj>(u); }
+        static u64 f64_to_u64(f64 value) { return std::bit_cast<u64>(value); }
+        static f64 u64_to_f64(u64 bits) { return std::bit_cast<f64>(bits); }
+        static u64 ptr_to_u64(Obj object) { return static_cast<u64>(reinterpret_cast<uintptr_t>(object)); }
+        static Obj u64_to_ptr(u64 bits) { return reinterpret_cast<Obj>(bits); }
 
         u64 bits_;
     };

@@ -91,14 +91,14 @@ namespace aria {
             return buf_.capacity();
         }
 
-        // 压栈:先写值、再按需 2x 增长。先写使 v 入栈活跃区(随 reallocate 的 memcpy 一并搬迁;
-        // 值栈已接 VM tracer 根,v 在栈即被标),避免「先增长后写」时 v 仍为未根局部、若增长触发
-        // GC 而被回收成悬垂。当前 grow_stack_ -> reallocate 永不触发 GC(GC.hpp 核心不变式),故此
-        // 序当前不承重,仅为与「栈即根」纪律一致的前瞻防御(将来 reallocate 若接 maybe_collect 即生效)。
-        // 先写不越界:top_ < base+cap 为不变式(构造/reset/drop 维持;set_stack_top_ 的 t <= top_
-        // 断言保证不顶满;push 写满后立即增长留空槽),故进 push 时必有空槽。
-        void push(const Value v) noexcept {
-            *top_++ = v;
+        // 压栈:先写值、再按需 2x 增长。先写使 value 入栈活跃区(随 reallocate 的 memcpy 一并搬迁;
+        // 值栈已接 VM tracer 根,value 在栈即被标),避免「先增长后写」时 value 仍为未根局部、若增长
+        // 触发 GC 而被回收成悬垂。当前 grow_stack_ -> reallocate 永不触发 GC(GC.hpp 核心不变式),
+        // 故此序当前不承重,仅为与「栈即根」纪律一致的前瞻防御(将来 reallocate 若接 maybe_collect
+        // 即生效)。先写不越界:top_ < base+cap 为不变式(构造/reset/drop 维持;set_stack_top_ 的
+        // t <= top_ 断言保证不顶满;push 写满后立即增长留空槽),故进 push 时必有空槽。
+        void push(const Value value) noexcept {
+            *top_++ = value;
             if (top_ == buf_.data() + buf_.capacity()) {
                 grow_stack_();
             }
@@ -116,11 +116,11 @@ namespace aria {
             top_ -= n;
         }
 
-        // 距栈顶 dist 个槽(0 = 栈顶),可写引用。
+        // 距栈顶 n 个槽(0 = 栈顶),可写引用。
         [[nodiscard]]
-        Value& peek(const usize dist) const noexcept {
-            ASSERT(dist < stack_size(), "peek beyond stack size");
-            return *(top_ - 1 - dist);
+        Value& peek(const usize n) const noexcept {
+            ASSERT(n < stack_size(), "peek beyond stack size");
+            return *(top_ - 1 - n);
         }
 
         // 截断值栈顶到 new_size(相对 stack_base 的槽位数,须 <= 当前 stack_size)。

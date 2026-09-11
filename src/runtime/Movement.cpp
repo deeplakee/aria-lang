@@ -106,9 +106,9 @@ namespace aria {
         }
 
         // 开链偏移:走链记偏移(节点非移动,链序两趟间稳定)。
-        List<usize> uv_offsets;
-        for (ObjUpvalue* uv = open_upvalues_; uv != nullptr; uv = uv->next_open()) {
-            uv_offsets.push_back(static_cast<usize>(uv->value_slot() - old_base));
+        List<usize> upvalue_offsets;
+        for (ObjUpvalue* upvalue = open_upvalues_; upvalue != nullptr; upvalue = upvalue->next_open()) {
+            upvalue_offsets.push_back(static_cast<usize>(upvalue->value_slot() - old_base));
         }
 
         buf_.reserve(buf_.capacity() * 2); // 搬迁:旧块释放,新块就位
@@ -124,8 +124,8 @@ namespace aria {
             frames_[i].slots = new_base + slot_offsets[i];
         }
         usize i = 0;
-        for (ObjUpvalue* uv = open_upvalues_; uv != nullptr; uv = uv->next_open()) {
-            uv->set_location(new_base + uv_offsets[i++]);
+        for (ObjUpvalue* upvalue = open_upvalues_; upvalue != nullptr; upvalue = upvalue->next_open()) {
+            upvalue->set_location(new_base + upvalue_offsets[i++]);
         }
     }
 

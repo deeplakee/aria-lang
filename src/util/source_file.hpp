@@ -268,7 +268,7 @@ namespace aria::src {
             if (src_ == nullptr) {
                 return {};
             }
-            const auto part        = [](const usize v) -> String { return v == 0 ? "?" : std::format("{}", v); };
+            const auto part = [](const usize value) -> String { return value == 0 ? "?" : std::format("{}", value); };
             const auto [line, col] = line_col_;
             return std::format("{}:{}:{}", src_->path(), part(line), part(col));
         }

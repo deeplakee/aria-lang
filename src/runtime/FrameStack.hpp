@@ -51,13 +51,13 @@ namespace aria {
 
         void clear() noexcept { count_ = 0; }
 
-        [[nodiscard]] T& operator[](usize i) noexcept {
-            ASSERT(i < count_, "FrameStack index out of range");
-            return storage_[i];
+        [[nodiscard]] T& operator[](usize index) noexcept {
+            ASSERT(index < count_, "FrameStack index out of range");
+            return storage_[index];
         }
-        [[nodiscard]] const T& operator[](usize i) const noexcept {
-            ASSERT(i < count_, "FrameStack index out of range");
-            return storage_[i];
+        [[nodiscard]] const T& operator[](usize index) const noexcept {
+            ASSERT(index < count_, "FrameStack index out of range");
+            return storage_[index];
         }
 
         [[nodiscard]] T& top() noexcept {

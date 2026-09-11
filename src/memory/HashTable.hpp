@@ -63,13 +63,13 @@ namespace aria {
         //   0xFE        = 墓碑(已删除)
         //   0x00..0x7F  = 占用,低 7 位 = h2(部分哈希)
         // 高位 1 = 特殊(空/墓碑),高位 0 = 占用。target = ctrl_from_hash(hash)(高位 0),
-        // 故 c == target 只会命中占用槽,不会误中 kCtrlEmpty/kCtrlDeleted(它们高位 1)。
+        // 故 byte == target 只会命中占用槽,不会误中 kCtrlEmpty/kCtrlDeleted(它们高位 1)。
         static constexpr u8 kCtrlEmpty   = 0xFF;
         static constexpr u8 kCtrlDeleted = 0xFE;
 
-        [[nodiscard]] static constexpr bool ctrl_is_occupied(const u8 c) noexcept { return (c & 0x80) == 0; }
+        [[nodiscard]] static constexpr bool ctrl_is_occupied(const u8 byte) noexcept { return (byte & 0x80) == 0; }
 
-        [[nodiscard]] static constexpr bool ctrl_is_empty(const u8 c) noexcept { return c == kCtrlEmpty; }
+        [[nodiscard]] static constexpr bool ctrl_is_empty(const u8 byte) noexcept { return byte == kCtrlEmpty; }
 
         [[nodiscard]] static constexpr u8 ctrl_from_hash(const u32 hash) noexcept {
             return static_cast<u8>(ht_h2(hash) & 0x7F);
@@ -128,11 +128,11 @@ namespace aria {
 
             for (usize probe = 0; probe < cap_; ++probe) {
                 pos = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
-                if (const u8 c = ctrl_[pos]; c == target) {
+                if (const u8 byte = ctrl_[pos]; byte == target) {
                     if (Eq{}(entries_[pos].key, key)) {
                         return &entries_[pos];
                     }
-                } else if (ctrl_is_empty(c)) {
+                } else if (ctrl_is_empty(byte)) {
                     return nullptr; // 空槽,探针终止
                 }
                 // h2 命中但全键不等 / 墓碑 -> 继续探测
@@ -145,8 +145,8 @@ namespace aria {
         // 可能触发 rehash(扩容或 compact),rehash 后 entries_/ctrl_ 指针改变。
         // 注意:Value{} 零填充是 f64 0.0 非 nil,需要 nil 的场合调用方显式覆写。
         Entry* upsert(const K& key) {
-            if (Entry* e = find(key)) {
-                return e; // 命中已有,value 保留
+            if (Entry* entry = find(key)) {
+                return entry; // 命中已有,value 保留
             }
             maybe_rehash_for_insert_(); // 确保有空槽(可能重分配)
             const u32   hash   = Hash{}(key);
@@ -158,9 +158,9 @@ namespace aria {
             usize tomb = kNpos;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos        = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
-                const u8 c = ctrl_[pos];
-                if (ctrl_is_empty(c)) {
+                pos           = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                const u8 byte = ctrl_[pos];
+                if (ctrl_is_empty(byte)) {
                     const usize insert_pos     = (tomb != kNpos) ? tomb : pos;
                     ctrl_[insert_pos]          = target;
                     entries_[insert_pos].key   = key;
@@ -171,7 +171,7 @@ namespace aria {
                     ++count_;
                     return &entries_[insert_pos];
                 }
-                if (c == kCtrlDeleted && tomb == kNpos) {
+                if (byte == kCtrlDeleted && tomb == kNpos) {
                     tomb = pos; // 记首个墓碑,探到空槽时回退写入
                 }
             }
@@ -181,11 +181,11 @@ namespace aria {
 
         // 擦除命中槽(置墓碑)。返回是否确实擦除。无需 nil-out entries_,trace 按 ctrl 跳过非占用槽。
         bool erase(const K& key) noexcept {
-            Entry* e = find(key);
-            if (e == nullptr) {
+            Entry* entry = find(key);
+            if (entry == nullptr) {
                 return false;
             }
-            const auto idx = static_cast<usize>(e - entries_);
+            const auto idx = static_cast<usize>(entry - entries_);
             ctrl_[idx]     = kCtrlDeleted;
             --count_;
             ++tombstones_;

@@ -320,19 +320,19 @@ namespace aria {
         // is<T>() 目前一律 dynamic_cast;性能敏感后可改 ObjType 查表(子类型均已落地)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static bool is(const Object* o) noexcept {
-            return dynamic_cast<const T*>(o) != nullptr;
+        static bool is(const Object* object) noexcept {
+            return dynamic_cast<const T*>(object) != nullptr;
         }
 
         // 前置条件:调用前已经 is<T>() / switch(type()) 确认动态类型匹配--NDEBUG 下是
         // 裸 static_cast,不校验;DEBUG 下 dynamic_cast 兜底(不匹配返 nullptr 可暴露)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static T* as(Object* o) noexcept {
+        static T* as(Object* object) noexcept {
 #ifdef NDEBUG
-            return static_cast<T*>(o);
+            return static_cast<T*>(object);
 #else
-            return dynamic_cast<T*>(o);
+            return dynamic_cast<T*>(object);
 #endif
         }
 
@@ -340,29 +340,29 @@ namespace aria {
         // 收口类型转换,避免裸 static_cast(DEBUG 下 dynamic_cast 校验,与 as(Object*) 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static const T* as(const Object* o) noexcept {
+        static const T* as(const Object* object) noexcept {
 #ifdef NDEBUG
-            return static_cast<const T*>(o);
+            return static_cast<const T*>(object);
 #else
-            return dynamic_cast<const T*>(o);
+            return dynamic_cast<const T*>(object);
 #endif
         }
 
-        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 o 为 null)。
+        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 object 为 null)。
         // 「守卫后使用」成对场景的一步形态:类型只写一次,消除 is<>/as<> 双类型参数漂移笔误;
         // DEBUG 下单次 dynamic_cast(优于成对写法的两次)。纯谓词(不取指针)用 is<T>;
         // switch(type()) 臂内等静态已知场合用 as<T>。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static T* try_as(Object* o) noexcept {
-            return is<T>(o) ? as<T>(o) : nullptr;
+        static T* try_as(Object* object) noexcept {
+            return is<T>(object) ? as<T>(object) : nullptr;
         }
 
         // const 重载:const Object* -> const T*(与 as(const Object*) 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static const T* try_as(const Object* o) noexcept {
-            return is<T>(o) ? as<T>(o) : nullptr;
+        static const T* try_as(const Object* object) noexcept {
+            return is<T>(object) ? as<T>(object) : nullptr;
         }
 
         Object* next_;

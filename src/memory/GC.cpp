@@ -8,18 +8,18 @@ namespace aria {
 
     GC::~GC() { free_all_(); }
 
-    void GC::mark_value(Value v) noexcept {
-        if (v.is_obj()) {
-            mark_object(v.as_obj());
+    void GC::mark_value(Value value) noexcept {
+        if (value.is_obj()) {
+            mark_object(value.as_obj());
         }
     }
 
-    void GC::mark_object(Object* o) noexcept {
-        if (o == nullptr || o->is_marked()) {
+    void GC::mark_object(Object* object) noexcept {
+        if (object == nullptr || object->is_marked()) {
             return;
         }
-        o->mark();
-        gray_stack_.push_back(o);
+        object->mark();
+        gray_stack_.push_back(object);
     }
 
     void GC::maybe_collect() noexcept {
@@ -47,8 +47,8 @@ namespace aria {
     }
 
     void GC::mark_roots_() noexcept {
-        for (const Value& v: temp_roots_) {
-            mark_value(v);
+        for (const Value& value: temp_roots_) {
+            mark_value(value);
         }
         // VM 根(M2 起用):经 std::function 回调,标 modules_ + current_ 执行链上各上下文的值栈/活动帧 function/module。
         // M4 再接 open upvalues,M6 升 Movement 为 Object。
@@ -59,9 +59,9 @@ namespace aria {
 
     void GC::trace_gray_() noexcept {
         while (!gray_stack_.empty()) {
-            Object* o = gray_stack_.back();
+            Object* object = gray_stack_.back();
             gray_stack_.pop_back();
-            o->trace(*this);
+            object->trace(*this);
         }
     }
 
@@ -96,13 +96,13 @@ namespace aria {
         objects_head_ = nullptr;
     }
 
-    void GC::push_temp_root(Value v) noexcept { temp_roots_.push_back(v); }
+    void GC::push_temp_root(Value value) noexcept { temp_roots_.push_back(value); }
 
-    void GC::push_temp_root(Object* o) noexcept { temp_roots_.push_back(Value::from_obj(o)); }
+    void GC::push_temp_root(Object* object) noexcept { temp_roots_.push_back(Value::from_obj(object)); }
 
-    void GC::pop_temp_root(usize n) noexcept {
-        ASSERT(n <= temp_roots_.size(), "pop_temp_root: n exceeds count");
-        temp_roots_.resize(temp_roots_.size() - n);
+    void GC::pop_temp_root(usize count) noexcept {
+        ASSERT(count <= temp_roots_.size(), "pop_temp_root: count exceeds size");
+        temp_roots_.resize(temp_roots_.size() - count);
     }
 
     ObjString* GC::intern_find(const StringView src) const noexcept { return intern_.find(src); }

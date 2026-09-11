@@ -13,8 +13,8 @@ namespace aria {
     // 类型作模板参数(Hash{}(key))。哈希键用 ===(见 ValueEq)。
     struct ValueHash {
         [[nodiscard]]
-        u32 operator()(const Value v) const noexcept {
-            return value_hash(v);
+        u32 operator()(const Value value) const noexcept {
+            return value_hash(value);
         }
     };
 
@@ -22,8 +22,8 @@ namespace aria {
         // 哈希表键用 ===(value_identical 严格相等):对象按引用做键,字符串靠 intern 等价内容
         // 同指针 -> 按内容查到;int 1 与 f64 1.0 是不同键。不用 value_equal(== 内容相等)。
         [[nodiscard]]
-        bool operator()(const Value a, const Value b) const noexcept {
-            return value_identical(a, b);
+        bool operator()(const Value lhs, const Value rhs) const noexcept {
+            return value_identical(lhs, rhs);
         }
     };
 
@@ -47,9 +47,9 @@ namespace aria {
         // GC 标记:遍历所有占用槽,mark_value(key) + mark_value(value)。只看 ctrl,不加载非占用
         // Entry,故空/墓碑槽里是垃圾也安全。由 owner(未来 ObjMap)在 collect 的 trace 阶段调用。
         void trace(GC& gc) const noexcept {
-            this->for_each_occupied([&gc](const Value& k, const Value& v) {
-                gc.mark_value(k);
-                gc.mark_value(v);
+            this->for_each_occupied([&gc](const Value& key, const Value& value) {
+                gc.mark_value(key);
+                gc.mark_value(value);
             });
         }
     };

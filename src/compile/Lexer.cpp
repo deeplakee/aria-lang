@@ -4,8 +4,8 @@
 
 // 生成按引用捕获的 char 谓词 lambda，用于 conditional_advance 等接受 char 谓词的场合。
 // 仅因「lambda 样板噪音掩盖判断逻辑」这一 C++ 语言层面难以消除的痛点而引入；
-// 非此场景勿滥用宏。用法：conditional_advance(ARIA_CHAR_PRED_REF(c != '\n'));
-#define ARIA_CHAR_PRED_REF(cond) [&](const char c) { return (cond); }
+// 非此场景勿滥用宏。用法：conditional_advance(ARIA_CHAR_PRED_REF(ch != '\n'));
+#define ARIA_CHAR_PRED_REF(cond) [&](const char ch) { return (cond); }
 
 namespace aria {
 
@@ -14,21 +14,21 @@ namespace aria {
     // ============================================================
     namespace {
 
-        bool is_digit(const char c) { return c >= '0' && c <= '9'; }
+        bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
 
-        // 判定 c 是否为 base 进制的合法数字字符。
+        // 判定 ch 是否为 base 进制的合法数字字符。
         // 合法进制范围: 2 ~ 36
-        bool is_radix_digit(const int base, const char c) {
+        bool is_radix_digit(const int base, const char ch) {
             if (base < 2 || base > 36) {
                 return false;
             }
             if (base <= 10) {
-                return c >= '0' && c < static_cast<char>('0' + base);
+                return ch >= '0' && ch < static_cast<char>('0' + base);
             }
 
-            const bool lower = (c >= 'a' && c < static_cast<char>('a' + base - 10));
-            const bool upper = (c >= 'A' && c < static_cast<char>('A' + base - 10));
-            return is_digit(c) || lower || upper;
+            const bool lower = (ch >= 'a' && ch < static_cast<char>('a' + base - 10));
+            const bool upper = (ch >= 'A' && ch < static_cast<char>('A' + base - 10));
+            return is_digit(ch) || lower || upper;
         }
 
         // 校验数字字面量中 _ 的位置：_ 必须位于两个进制数字之间。
@@ -131,21 +131,21 @@ namespace aria {
     // ============================================================
 
     char Lexer::peek_byte(const usize ahead) const noexcept {
-        const usize i = pos_ + ahead;
+        const usize index = pos_ + ahead;
         // src_ 底层以 '\0' 结尾且 content() 保证 size 以内有数据；
         // 越过真实内容返回 '\0'（哨兵），安全。
-        if (i >= src_.size()) {
+        if (index >= src_.size()) {
             return '\0';
         }
-        return src_[i];
+        return src_[index];
     }
 
     utf8::codepoint Lexer::peek_codepoint(const usize ahead) const noexcept {
-        const usize i = pos_ + ahead;
-        if (i >= src_.size()) {
+        const usize index = pos_ + ahead;
+        if (index >= src_.size()) {
             return 0;
         }
-        return utf8::decode_one(src_, i).first;
+        return utf8::decode_one(src_, index).first;
     }
 
     void Lexer::advance(const usize n) noexcept {
@@ -226,7 +226,7 @@ namespace aria {
             }
             // // 或 # 到行尾
             if ((cp == '/' && peek_byte(1) == '/') || cp == '#') {
-                conditional_advance(ARIA_CHAR_PRED_REF(c != '\n'));
+                conditional_advance(ARIA_CHAR_PRED_REF(ch != '\n'));
                 continue;
             }
             break;
@@ -240,8 +240,8 @@ namespace aria {
     void Lexer::scan_number() {
         // 判定进制前缀：0b/0o/0x
         if (peek_byte(0) == '0') {
-            const char p = peek_byte(1);
-            if (p == 'b' || p == 'B' || p == 'o' || p == 'O' || p == 'x' || p == 'X') {
+            const char peeked = peek_byte(1);
+            if (peeked == 'b' || peeked == 'B' || peeked == 'o' || peeked == 'O' || peeked == 'x' || peeked == 'X') {
                 return scan_radix_int();
             }
         }
@@ -261,7 +261,7 @@ namespace aria {
             return;
         }
         // 消费后续的数字与 _（_ 位置合法性由 validate_underscores 校验）
-        conditional_advance(ARIA_CHAR_PRED_REF(is_radix_digit(base, c) || c == '_'));
+        conditional_advance(ARIA_CHAR_PRED_REF(is_radix_digit(base, ch) || ch == '_'));
 
         const auto lex = StringView{src_.data() + start, pos_ - start};
         // 去掉进制前缀 0x/0b/0o（2 字节），传给解析辅助做校验/解析
@@ -288,14 +288,14 @@ namespace aria {
         bool        has_exp = false;
 
         // 整数部分：消费连续的数字与 _（入口必是数字，故非空；_ 位置合法性由 validate_underscores 校验）
-        conditional_advance(ARIA_CHAR_PRED_REF(is_digit(c) || c == '_'));
+        conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
 
         // 小数部分：仅当 . 后紧跟数字时才消费（禁止 5. / 1. 这类点后无数字的不完整浮点；
         // . 后非数字则不消费，把 . 留给 operator/punct，如 5.foo 走字段访问）。
         if (peek_byte(0) == '.' && is_digit(peek_byte(1))) {
             has_dot = true;
             ++pos_; // 消费 .
-            conditional_advance(ARIA_CHAR_PRED_REF(is_digit(c) || c == '_'));
+            conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
         }
 
         // 指数部分：当前是 e/E。含指数一律作 float。e 后须有数字，否则回退把 e 留下。
@@ -431,7 +431,7 @@ namespace aria {
                 // 收集 } 前的字符到 lex（与数字扫描一致：遇终止符停）。
                 // 非 hex 字符（如 \u{12g}）留给 from_chars 检测。
                 const usize start = pos_;
-                conditional_advance(ARIA_CHAR_PRED_REF(c != '}'));
+                conditional_advance(ARIA_CHAR_PRED_REF(ch != '}'));
 
                 if (peek_byte(0) != '}') {
                     // \u{...} 到 EOF 也无 }

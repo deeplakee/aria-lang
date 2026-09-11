@@ -166,11 +166,11 @@ namespace aria {
         // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
         // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind 未捕获出口一处消费:
         // 拼好跟踪后经 Error::from_baked 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
-        Pair<ErrorCode, String> uncaught_error_parts(const Value v) {
-            if (const auto ex = try_obj<ObjException>(v)) {
+        Pair<ErrorCode, String> uncaught_error_parts(const Value value) {
+            if (const auto ex = try_obj<ObjException>(value)) {
                 return {ex->code(), String{ex->message()->view()}};
             }
-            const auto msg = std::format("uncaught exception: {}", format_value(v));
+            const auto msg = std::format("uncaught exception: {}", format_value(value));
             return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
         }
 

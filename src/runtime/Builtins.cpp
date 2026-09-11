@@ -1,13 +1,13 @@
 #include "runtime/Builtins.hpp"
 
-#include "error/ErrorCode.hpp"     // ErrorCode
-#include "memory/GC.hpp"           // GC, make_guard
-#include "object/ObjNativeFn.hpp"  // NativeFn, new_native_fn
-#include "object/ObjString.hpp"    // ObjString, new_string
-#include "runtime/AriaVM.hpp"      // AriaVM (vm.fail / vm.gc)
-#include "value/AriaHashTable.hpp" // AriaHashTable
-#include "value/ObjBridge.hpp"     // try_obj<T>（Value→对象子类型一步守卫）
-#include "value/Value.hpp"         // Value, type_name, format_value, is_truthy
+#include "error/ErrorCode.hpp"
+#include "memory/GC.hpp"
+#include "object/ObjNativeFn.hpp"
+#include "object/ObjString.hpp"
+#include "runtime/AriaVM.hpp"
+#include "value/AriaHashTable.hpp"
+#include "value/ObjBridge.hpp" // try_obj<T>
+#include "value/Value.hpp"
 
 namespace aria::builtins {
 
@@ -16,7 +16,6 @@ namespace aria::builtins {
         // ---- 内置原生函数实现(NativeFn 契约:读 slots[1..]、写 slots[0]、失败 return vm.fail(...)) ----
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
-        //   复用 value 层 type_name(Value)(原语走 Value::type_name() constexpr、Obj 走 obj->type_name())。
         bool type_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -27,7 +26,7 @@ namespace aria::builtins {
             return true;
         }
 
-        // len(x) -> 整数:当前仅支持 String(返 UTF-8 字节数,即 ObjString::length());List/Map 随 M5。
+        // len(x) -> 整数:当前仅支持 String(返 UTF-8 字节数,即 ObjString::length());List/Map 随后。
         bool len_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -62,7 +61,6 @@ namespace aria::builtins {
                 slots[0] = Value::nil_val();
                 return true;
             }
-            // 失败:msg 取第二参(须为 String),否则默认。
             StringView msg = "assertion failed";
             if (argc == 2) {
                 if (const auto s = try_obj<ObjString>(slots[2])) {
@@ -87,11 +85,10 @@ namespace aria::builtins {
 
     } // namespace
 
-    // 把全部内置按名 upsert 进 VM 级 builtins 表(给定 AriaHashTable)。每条:new_string(intern weak
-    //   root)+ make_guard -> new_native_fn + make_guard -> builtins.upsert(rehash 触 GC,双守卫承重)
-    //   -> 赋 value。intern 池保证此处 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
-    //   由 AriaVM ctor 在 set_vm_roots 之后调用一次:已入表条目经 vm_roots tracer 的 builtins_.trace
-    //   标根,在建的 name/fn 经 make_guard 根化,故注册内触 GC 安全。
+    // 把全部内置按名 upsert 进 VM 级 builtins 表。由 AriaVM ctor 在 set_vm_roots 之后调用一次:
+    // 每条 new_string/new_native_fn 各一次 new_object 顶 maybe_collect,在建对象经 make_guard
+    // 双守卫根化,已入表条目经 vm_roots tracer 的 builtins_.trace 标根,注册内触 GC 安全;
+    // intern 池保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
     void register_builtins(GC& gc, AriaHashTable& builtins) {
         for (const auto& [name, fn]: kBuiltins) {
             auto       guard    = gc.make_guard();

@@ -109,10 +109,9 @@ namespace {
         cu.emit_word(path_idx, line);
     }
 
-    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
-    // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根,调用方跨 GC 点持有
-    // m 须自行再守卫。默认 "<script>"(M1 机制测试不关心模块归属,临时模块;dir_ 走 cwd,run() 替换
-    // source_roots_[0])。需要真实模块归属用 aria::new_function 显式传模块。
+    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参
+    // (本文件各 make_*/new_* 助手同理,下文不再赘述),返回的 m 未根,调用方跨 GC 点持有
+    // 须自行再守卫。默认 "<script>"(临时模块,dir_ 走 cwd,run() 替换 source_roots_[0])。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
@@ -127,9 +126,8 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals,
-    // 各测试函数不能再走临时模块的 new_function 便利重载)。守 m 与 name 后调 4 参
-    // aria::new_function;返回白色,调用方自守。
+    // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
+    // 返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
         auto nm    = new_string(gc, name);
@@ -137,10 +135,8 @@ namespace {
         return aria::new_function(gc, m, nm, arity);
     }
 
-    // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // 须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,此时 name 仅
-    // 为裸局部指针(无根)会被扫掉(aria::new_function 不再自守卫入参,故本重载全程自守 name+m)。
-    // name=nullptr -> `<main>`(主入口单元统一名,ObjFunction ctor ASSERT name 非空)。
+    // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。全程自守 name+m(stress GC 下
+    // 中途分配会 collect,裸局部指针无根会被扫掉)。name=nullptr -> `<main>`。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         if (name == nullptr) {
             name = new_string(gc, "<main>");
@@ -151,8 +147,7 @@ namespace {
         return aria::new_function(gc, m, name, arity);
     }
 
-    // 指定模块的匿名入口单元(`<main>` 名,arity 0)。工厂不再守卫入参,故先 guard m 再 new_string,
-    // 再 push name -- 避免 new_string 与 new_function 内 new_object 回收未根持有的 m 与 name。
+    // 指定模块的匿名入口单元(`<main>` 名,arity 0)。
     ObjFunction* new_script(GC& gc, ObjModule* m) {
         auto guard = gc.make_guard(m);
         auto name  = new_string(gc, "<main>");
@@ -160,26 +155,18 @@ namespace {
         return aria::new_function(gc, m, name, 0);
     }
 
-    // ---- IMPORT 路径解析测试辅助(全量磁盘版:exists-check + 绝对规范键)----
+    // ---- IMPORT 路径解析测试辅助 ----
     //
-    // 设计(见 .claude/reference/runtime/import-path-resolution.md):IMPORT 把 specifier 经 resolve_module 解析为
-    // 命中文件的绝对规范路径(weakly_canonical)作模块表键。ObjModule 持 (dir_, name_):
-    //   - dir_ = 模块文件所在目录(如 base);name_ = 文件名去 .aria 后缀(stem)。
-    //   - 模块绝对路径(= 模块表键)由 dir_ + name_ 合成:dir_ + "/" + name_ + ".aria"。
-    //   - run() 把入口模块 dir_ 播种为 source_roots_[0];相对导入基 = dirname(abs_path) = dir_。
-    // 故测试需:
-    //   1. 用真实临时文件让 resolve_module 的 exists-check 命中(testing::TempDir 下建空 .aria);
-    //   2. 按解析出的绝对键预注册合成模块入 modules_;
-    //   3. 给入口/目标模块设 dir_(所在目录 base)+ name_(文件名 stem)。
-    // macOS 下 testing::TempDir() 常落在 /var/... -> /private/var/... 符号链接后,而
-    // resolve_module 经 weakly_canonical 解析符号链接,故基准须先规范化,保证预注册键与
+    // 设计见 .claude/reference/runtime/import-path-resolution.md:IMPORT 把 specifier 解析为命中
+    // 文件的绝对规范路径(weakly_canonical)作模块表键;模块绝对路径 = dir_ + "/" + name_ + ".aria",
+    // run() 把入口模块 dir_ 播种为 source_roots_[0]。测试需:真实临时文件让 exists-check 命中、
+    // 按解析出的绝对键预注册合成模块入 modules_、给模块设 dir_/name_。macOS 下 testing::TempDir()
+    // 常落在符号链接后(/var -> /private/var),基准须先 weakly_canonical 规范化,保证预注册键与
     // resolve_module 输出逐字节一致。
 
-    // 取本测试专用的规范绝对路径(解析符号链接):在 testing::TempDir() 下按「套件名_用例名」
-    // 建独立子目录。gtest 的 TempDir() 是整个测试程序共享、跨运行不清理的同一目录,若各测试
-    // 直接在其下建同路径文件(如 lib/math.aria),残留文件会污染依赖「该文件不存在」的用例
-    // (典型:ImportBareSearchesSourceRoots 需入口根无 lib/math.aria,但其它用例会建同名文件)。
-    // 按用例名隔离后,每测试独占一目录,互不污染;同测试重跑时自建文件幂等覆盖。
+    // 按「套件名_用例名」建独立子目录并返回其规范绝对路径:TempDir() 全程序共享、跨运行不清理,
+    // 各测试直接建同路径文件会互相污染(如依赖「lib/math.aria 不存在」的用例);按用例名隔离后
+    // 互不污染,重跑自建文件幂等覆盖。
     std::string test_canon_dir() {
         auto info = ::testing::UnitTest::GetInstance()->current_test_info();
         auto dir  = std::filesystem::weakly_canonical(std::filesystem::path{testing::TempDir()} /
@@ -221,11 +208,8 @@ namespace {
         return found;
     }
 
-    // 造带目录的模块(name + dir):name = 文件名 stem,dir = 模块文件所在目录(intern 的 ObjString*,非空)。
-    // 妥善处理临时根:工厂不再替调用方守卫入参,故 name 先 intern 再 guard,dir 亦 guard(分配 new_object
-    // 顶部的 maybe_collect 可能回收未被根持有的串)。调用方须先 guard 已创建的 dir(本函数内
-    // new_string(name) 分配时 dir 须已入根)。new_module 本身对 nullptr dir 会默认 cwd,但本
-    // 辅助的用例都需精确控制目录,故一律显式传 dir。
+    // 造带目录的模块(name = 文件名 stem,dir = 模块文件所在目录)。调用方须先 guard 已创建
+    // 的 dir;本函数内 new_string(name) 分配时 dir 须已入根。
     ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* dir) {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
@@ -235,8 +219,7 @@ namespace {
 
     // ---- 原生函数测试辅助 ----
 
-    // double(x):把 x*2 写入槽 0(就地返回)。演示「读 slots[1..]、写 slots[0]」契约。
-    // 元数自查(slots.size()-1 == argc);不符经 vm.fail 侧信道报错(一行 `return vm.fail(...)`)。
+    // double(x):把 x*2 写入槽 0(就地返回),元数自查。
     bool double_native(AriaVM& vm, Span<Value> slots) {
         const auto argc = slots.size() - 1;
         if (argc != 1) {
@@ -512,9 +495,8 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(码类前缀+细节,**不含位置前缀** --
-    // 2026-09-10 起位置归跟踪行,对齐 clox/Python 惯例),未捕获物化时尾部附堆栈跟踪行
-    // (单帧即 at <main>,行号 = ADD 指令所在行,pitfalls 坑 #16)。
+    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(码类前缀+细节,不含位置前缀 --
+    // 位置归跟踪行),未捕获物化时尾部附堆栈跟踪行(单帧即 at <main>,行号 = ADD 指令所在行)。
     EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
                                      "  at <main> (<script>:3)");
 }
@@ -585,7 +567,7 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
     auto& gc = vm.gc();
 
     auto path       = new_string(gc, "lib/utils");
-    auto path_guard = gc.make_guard(path); // 工厂不再守卫入参:path 裸持跨 new_module 的 new_string(cwd)
+    auto path_guard = gc.make_guard(path); // path 裸持跨 new_module 的 new_string(cwd)
     auto m          = new_module(gc, path);
     path_guard.push(m); // m 裸持跨下方 modules_.upsert 的 hash 分配
     // 入模块表(键=path,值=m)
@@ -816,11 +798,9 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), helper); // 相对解析后命中 base/lib/helper
 }
 
-// IMPORT 裸名沿 source_roots 逐根搜索(对齐 Python sys.path 顺序搜索):入口根(base)无
-// lib/math.aria -> 落到 stdlib 根(base/stdlib)命中。证明裸名用源根列表,而非「当前模块目录」--
-// 此处导入方即入口,当前目录 = 入口目录 = base,而文件在 stdlib,故裸名越过了当前目录命中 stdlib。
-// (M1 单模块运行:导入方恒为入口;裸名 vs 相对的区别体现在裸名查 source_roots 列表而非单个
-// caller 目录,本例靠 stdlib 第二根体现该区别。)
+// IMPORT 裸名沿 source_roots 逐根搜索(对齐 Python sys.path 顺序搜索):入口根无
+// lib/math.aria -> 落到 stdlib 根命中。证明裸名用源根列表,而非「当前模块目录」--
+// 此处导入方即入口,当前目录 = 入口目录 = base,文件却在 stdlib。
 TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
 
     auto&      gc   = vm.gc();
@@ -999,8 +979,8 @@ TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
 }
 
 // 被导入模块编译期错误经 Error 原样透传(含其文件位置):helper 有语法错 -> interpret 返 RuntimeError。
-// 分类按失败阶段而非错误码大类:错误在主模块执行期的 IMPORT 站点浮现(经异常通道传播、可被 try/catch
-// 捕获),主入口自身编译已成功 -- "可 catch 的错误"不构成 CompileError(2026-09 决策,见 runtime.md)。
+// 分类按失败阶段而非错误码大类:错误在主模块执行期的 IMPORT 站点浮现(可被 try/catch 捕获),
+// 主入口自身编译已成功 -- 「可 catch 的错误」不构成 CompileError。
 TEST_F(AriaVMStress, ImportModuleCompileErrorPropagates) {
 
     vm.set_source_roots({});
@@ -1174,9 +1154,7 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
     ASSERT_FALSE(out.has_value()) << "expected error, got value";
     const auto& err = out.error();
     EXPECT_EQ(err.code(), ErrorCode::TypeMismatch);
-    // vm.fail 装箱路径(消息无位置前缀,2026-09-10 起):原生不进帧,顶帧即 caller,
-    // 跟踪行位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line";CALL 失败同走
-    // unwind(M3),未捕获尾部附 at <main> 跟踪行。
+    // 消息无位置前缀,跟踪行位置 = CALL 站点行(原生不进帧,顶帧即 caller);未捕获尾部附 at 行。
     EXPECT_EQ(err.message(), "Runtime: TypeMismatch fail_always always fails\n"
                              "  at <main> (<script>:1)");
 }
@@ -1632,8 +1610,7 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     EXPECT_EQ(inst->cls()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
     // seed = Object 的原生 no-op init(MAKE_CLASS 继承,Value 经 === 判同):
     EXPECT_TRUE(aria::value_identical(inst->cls()->init(), vm.object_class()->init()));
-    // no-op init 留空实例(无字段要初始化):任一名字 load_field 全链 miss(整表访问器
-    // fields() 已删,行为级钉法;miss 的 fail 装箱是分配点,实例先入根)。
+    // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
     auto ig   = gc.make_guard(inst);
     auto nope = new_string(gc, "nope");
     auto ng   = gc.make_guard(nope);
@@ -1869,8 +1846,7 @@ TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
     EXPECT_EQ(fetch("r3"), 42); // 实例沿链读见遮蔽
 }
 
-// 类上赋值动态新增(2026-09-11 改定,原 ClassWriteRejectsNewMember 的「无 monkey-patch
-// 拒新增」废止):沿链全 miss 的新名字经 STORE_FIELD 落接收类自身表,类上读回即新值
+// 类上赋值动态新增:沿链全 miss 的新名字经 STORE_FIELD 落接收类自身表,类上读回即新值
 //(父类不可见由 test_objclass 层的 base miss 断言覆盖)。
 TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
 
@@ -1904,9 +1880,9 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
 }
 
 // 方法经类上赋值改写(STORE_FIELD 类路径 = 静态写):旧解析沿用首解析绑定快照(bound);
-// 改写后新解析读回**原值**不绑定(赋值闭包无 defining class 戳 ⟹ 非方法槽,2026-09-11
-// 改定方法性看戳不看值类型),自由调用新值仍可执行。方法性随值携带:经类路径拷贝
-// MAKE_METHOD 出品的戳定闭包(如 Foo.m = Base.m)保方法性,赋 lambda/裸函数降为静态。
+// 改写后新解析读回**原值**不绑定(赋值闭包无 defining class 戳 ⟹ 非方法槽,方法性看戳
+// 不看值类型),自由调用新值仍可执行。经类路径拷贝 MAKE_METHOD 出品的戳定闭包
+// (如 Foo.m = Base.m)保方法性,赋 lambda/裸函数降为静态。
 TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
 
     auto& gc      = vm.gc();
@@ -2217,7 +2193,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
 // ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_FIELD 运行期防线)----
 
 // 对 nil 取字段 -> UndefinedProperty(nil 并入非对象统一文案「type Nil does not support
-// field access」,2026-09-10 化简:field 族不再特判 NilDereference,类型名 Nil 已可辨识)。
+// field access」,类型名 Nil 已可辨识)。
 TEST_F(AriaVMStress, LoadFieldOnNilErrors) {
 
     auto&     gc       = vm.gc();
@@ -2287,9 +2263,8 @@ TEST_F(AriaVMStress, MakeClassNonClassSuperErrors) {
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
 
-// 类上 init 赋值为非可调用值:init Value 化(2026-09-10 整改)后赋值**放行**
-// (store_field 同步 init_,表槽/init_ 一致),实例化时 call_value 分发报
-// CallNonCallable 兜底 -- 原「init 仅认闭包」的赋值点 TypeMismatch 特例已退役。
+// 类上 init 赋值为非可调用值:init Value 化后赋值**放行**(store_field 同步 init_,
+// 表槽/init_ 一致),实例化时 call_value 分发报 CallNonCallable 兜底。
 TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
 
     auto&     gc        = vm.gc();
@@ -2315,15 +2290,8 @@ TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
     EXPECT_EQ(out.error().code(), ErrorCode::CallNonCallable);
 }
 
-// 原 SuperOutsideMethodClosureFails / SuperInObjectMethodFails 两用例随 2026-09-10
-// 整改退役:LOAD_SUPER_FIELD 的 defining==nullptr / superclass==nullptr 是编译器
-// 保证的不变式(指令只在方法闭包体内发射;Object 的方法内用 super 由编译期
-// SuperNoBaseClass 挡),运行期防线由可 catch 的 raise 降为 ASSERT -- 语言写不出
-// 的形态直接 abort 暴露,不再构成运行期错误,无法以 interpret 结果断言。
-
 // 类成员图跨 GC 存活(白盒):类/方法闭包/绑定/实例经共享模块 globals 根可达,
-// run() 后显式 collect 字节数不减、对象图仍可遍历。stress 下每 new_object 已触发
-// collect,此处再钉一层「run 外显式 collect 不误伤已发布进模块 globals 的类图」。
+// run() 后显式 collect 字节数不减、对象图仍可遍历。
 TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 
     auto& gc      = vm.gc();
@@ -2382,7 +2350,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     EXPECT_EQ(gc.bytes_allocated(), before);
 
     // collect 后对象图仍完好:绑定经 fields 缓存/表可达,字段值经协议读回一致
-    //(整表访问器 fields() 已删,改走 load_field;命中路径纯查询无分配,读安全)。
+    //(命中路径纯查询无分配,读安全)。
     auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->cls()->name()->view(), "Foo");
@@ -2393,8 +2361,8 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 
 // ============================================================
 // M5 泛化:native 落表(原生值经 MAKE_STATIC/类上赋值落类表 = 静态槽语义,读恒原值
-// --方法性 = defining class 戳,2026-09-11 改定,原生方法绑定随 uniform 绑定废止;
-// 绑定形态 ObjBoundMethod 的原生分支仍由对象层直接构造覆盖,见 test_objboundmethod)。
+// --方法性 = defining class 戳;绑定形态 ObjBoundMethod 的原生分支由对象层直接构造,
+// 见 test_objboundmethod)。
 // ============================================================
 
 // echo_this():验证原生的调用约定 -- 绑定调用(call_bound_method)时 VM 把调用区槽 0
@@ -2412,9 +2380,8 @@ bool echo_this_native(AriaVM& vm, Span<Value> slots) {
 }
 
 // 静态槽持可调用值(原生经 MAKE_STATIC,var 声明/类上赋值同形)经实例读取**原值直读**
-//(方法性 = defining class 戳,2026-09-11 改定,不再按值类型绑定):读回值与常量池原生
-// === 同一对象,无 ObjBoundMethod 包装。原「静态槽持可调用值同样绑定」(uniform 绑定,
-// Python 函数语义)随方法性翻注册期戳废止。
+//(方法性 = defining class 戳,不按值类型绑定):读回值与常量池原生 === 同一对象,
+// 无 ObjBoundMethod 包装。
 TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
 
     auto&      gc       = vm.gc();
@@ -2473,9 +2440,8 @@ TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
 
-// super 读静态方法(2026-09-11 改定:fun 静态经 MAKE_STATIC 注册,不戳 defining class):
-// LOAD_SUPER_FIELD 沿父链命中未戳闭包 -> 原值直读,与类路径裸读 === 同一闭包(方法性看
-// 戳不看值类型;原「原生方法经 super 绑定」随方法性翻注册期戳退役)。
+// super 读静态方法(fun 静态经 MAKE_STATIC 注册,不戳 defining class):
+// LOAD_SUPER_FIELD 沿父链命中未戳闭包 -> 原值直读,与类路径裸读 === 同一闭包。
 TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
 
     auto& gc      = vm.gc();
@@ -2535,9 +2501,9 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
     EXPECT_TRUE(out.value().as_bool());
 }
 
-// super 读静态成员(2026-09-11 改定:LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看
-// defining class 戳):Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈
-//(不绑定、不写 fields 缓存,铁则 2);返回值即父类静态,验证父链真被读到。
+// super 读静态成员(LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看 defining class 戳):
+// Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈(不绑定、不写
+// fields 缓存,铁则 2);返回值即父类静态,验证父链真被读到。
 TEST_F(AriaVMStress, SuperReadsStaticMember) {
 
     auto& gc      = vm.gc();
@@ -2587,11 +2553,10 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
     EXPECT_EQ(out.value().as_int(), 1);
 }
 
-// 原生 init 注册走类上赋值路径(MAKE_METHOD 2026-09-11 起仅收闭包,原生落表经
-// STORE_FIELD):init Value 化(2026-09-10 整改)后**合法** -- set_field 命中 "init" 同步
-// init_,实例化经 call_value 走 call_native:slots[0] = this(echo 校验接收者是实例后覆写
-// 返回 1),原生 init 的返回值即实例化结果(嵌入 API 灵活性:不写槽即返回 this,写槽可
-// 返回任意值)。
+// 原生 init 注册走类上赋值路径(MAKE_METHOD 仅收闭包,原生落表经 STORE_FIELD):
+// init Value 化后**合法** -- set_field 命中 "init" 同步 init_,实例化经 call_value 走
+// call_native:slots[0] = this(echo 校验接收者是实例后覆写返回 1),原生 init 的返回值
+// 即实例化结果(不写槽即返回 this,写槽可返回任意值)。
 TEST_F(AriaVMStress, NativeInitInstantiates) {
 
     auto&      gc        = vm.gc();

@@ -43,30 +43,27 @@ TEST(Interpret, StringRuntimeError) {
     EXPECT_EQ(vm.interpret_from_src("return 1 / 0;"), InterpretResult::RuntimeError);
 }
 
-// 字符串源：未实现特性（list 字面量）-> 编译期 NotImplemented（现归 Semantic 类）-> CompileError。
-// 回归测试：此前 NotImplemented 归 Internal，被 interpret_run 映射为 RuntimeError，误导为运行期错误。
+// 字符串源：未实现特性（list 字面量）-> 编译期 NotImplemented -> CompileError。
 TEST(Interpret, StringNotImplementedIsCompileError) {
     AriaVM vm;
     EXPECT_EQ(vm.interpret_from_src("print [1, 2, 3];"), InterpretResult::CompileError);
 }
 
-// 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable（码已归 Runtime 类）->
-// RuntimeError。回归测试：interpret 此前按错误码大类映射，该码当时归 Semantic 被错分为 CompileError；
-// 2026-09 改为按失败阶段分类后归 RuntimeError，消息前缀同步翻 "Runtime:"。
+// 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
 TEST(Interpret, StringRuntimeUndefinedVariableIsRuntimeError) {
     AriaVM vm;
     EXPECT_EQ(vm.interpret_from_src("print nope;"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：给未声明名赋值 -> 运行期 STORE_GLOBAL miss 抛 UndefinedVariable（赋值不隐式创建）->
-// RuntimeError（同上，此前被按码大类错分 CompileError）。
+// RuntimeError。
 TEST(Interpret, StringRuntimeUndeclaredAssignmentIsRuntimeError) {
     AriaVM vm;
     EXPECT_EQ(vm.interpret_from_src("nope = 1;"), InterpretResult::RuntimeError);
 }
 
 // 路径源：被导入模块编译期错误在主模块执行期的 IMPORT 站点浮现（经异常通道传播、可被 try/catch
-// 捕获）-> RuntimeError。此前按码大类（Syntax）被错分 CompileError；2026-09 起按失败阶段分类。
+// 捕获）-> RuntimeError。
 TEST(Interpret, PathImportedModuleCompileErrorIsRuntimeError) {
     std::filesystem::create_directories(std::filesystem::path{testing::TempDir()} / "imported_ce");
     const auto main_path = write_tmp_aria("imported_ce/main.aria", "import \"./helper\" as H;");

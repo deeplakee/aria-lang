@@ -276,6 +276,7 @@ namespace aria {
     AriaVM::AriaVM() :
         gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
         object_class_{nullptr} {
+
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
@@ -303,29 +304,19 @@ namespace aria {
             }
             ASSERT(tail == &main_ctx_, "VM roots: context chain must terminate at main_ctx_");
         });
+
+        // 源根默认值初始化(纯路径配置,与 GC 无关):入口槽占位 + stdlib 配置根。
+        init_source_roots();
+
         // Object 根类 bootstrap(M5 决策 3,tracer 已就绪;顺序与 builtins 无依赖,先行使
         // object_class_ 进入 tracer 根集,register_builtins 内触 GC 亦安全)。
         bootstrap_object_class();
+
         // VM 级 builtins 一次性注册(set_vm_roots 已就绪):type/len/str/assert 经 new_native_fn 包成
         //   ObjNativeFn 后按名 upsert 进 builtins_。注册内 new_string/new_native_fn 各一次 new_object 顶
         //   maybe_collect:已入表条目经上方 tracer 的 builtins_.trace 标根,在建的 name/fn 经
         //   register_builtins 内 make_guard 双守卫根化(见 Builtins.cpp)。全 VM 共享一份,不再每模块注入。
         builtins::register_builtins(gc_, builtins_);
-        // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 dir_
-        //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 dir_ 时裸名搜 cwd),
-        //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
-        //   resolve_module 裸名分支跳过空根,仅搜 [1..] 配置根,比拿 "." 锚到坏目录更诚实。
-        source_roots_.push_back(fs::current_dir().value_or(""));
-        // source_roots_[1..] = 配置根:编译器相对 stdlib 源根(约定 <exe_dir>/../share/aria/lib;
-        //   确切路径待定),由 fs::program_dir 推导并 weakly_canonical 规范化,非空则推入。
-        //   可经 set_source_roots 覆盖(测试/嵌入配置)。
-        if (const auto pd = fs::program_dir()) {
-            const auto      stdlib = stdfs::path{*pd} / kStdlibRelPath;
-            std::error_code ec;
-            if (const auto real = stdfs::weakly_canonical(stdlib, ec); !ec && !real.empty()) {
-                source_roots_.push_back(real.string());
-            }
-        }
     }
 
     void AriaVM::bootstrap_object_class() {
@@ -351,6 +342,24 @@ namespace aria {
         // 派生、后续 MAKE_METHOD/类上赋值经 set_field 同步):set_field 命中 "init" 即同步 init_。
         cls->set_field(init_key, Value::from_obj(init_native));
         object_class_ = cls; // 发布进 VM 成员:此后经 tracer 第 4 根保命
+    }
+
+    void AriaVM::init_source_roots() {
+        // source_roots_[0] = 入口槽:构造时占位为当前工作目录(前期源根),run() 时被入口模块 dir_
+        //   原地替换。占位用 cwd:既是一个可用的默认源根(REPL / 未显式设 dir_ 时裸名搜 cwd),
+        //   又保证 [0] 槽位恒在,run() 可直接赋值无需 null/空判定。cwd 不可用时以空串兜底(不 fatal):
+        //   resolve_module 裸名分支跳过空根,仅搜 [1..] 配置根,比拿 "." 锚到坏目录更诚实。
+        source_roots_.push_back(fs::current_dir().value_or(""));
+        // source_roots_[1..] = 配置根:编译器相对 stdlib 源根(约定 <exe_dir>/../share/aria/lib;
+        //   确切路径待定),由 fs::program_dir 推导并 weakly_canonical 规范化,非空则推入。
+        //   可经 set_source_roots 覆盖(测试/嵌入配置)。
+        if (const auto pd = fs::program_dir()) {
+            const auto      stdlib = stdfs::path{*pd} / kStdlibRelPath;
+            std::error_code ec;
+            if (const auto real = stdfs::weakly_canonical(stdlib, ec); !ec && !real.empty()) {
+                source_roots_.push_back(real.string());
+            }
+        }
     }
 
     void AriaVM::set_source_roots(List<String> roots) noexcept {

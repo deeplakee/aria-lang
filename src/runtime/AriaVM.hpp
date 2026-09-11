@@ -350,6 +350,12 @@ namespace aria {
         // 全局->builtins 全部够不到,LOAD_OBJECT 直推成员,用户 shadow 全局名免疫)。
         void bootstrap_object_class();
 
+        // 源根默认值初始化(ctor 一次调用,纯路径配置不触 GC):入口槽 [0] 占位为 cwd(run() 时
+        // 被入口模块 dir_ 原地替换,布局与替换权见 source_roots/set_source_roots 注释)+
+        // 配置根 [1..] = 编译器相对 stdlib 源根(约定 <exe_dir>/../share/aria/lib,weakly_canonical
+        // 规范化,推导失败跳过)。可经 set_source_roots 覆盖(测试/嵌入配置)。
+        void init_source_roots();
+
         // ---- 异常 unwind(M3,dispatch_loop 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
 
         // 弹 2 算 1:对栈顶两个值执行二元数值运算(9 个算术/比较指令共用,Op 由 dispatch_loop 调用点

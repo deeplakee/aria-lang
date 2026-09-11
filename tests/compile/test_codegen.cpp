@@ -203,7 +203,7 @@ TEST(CodeGen, UnaryMinusAndNot) {
 // ============================================================
 
 TEST(CodeGen, LogicShortCircuit) {
-    // nil || 5 -> 5（短路真，留 lhs 即 nil? 否：|| 真跳留值，nil 假故求 rhs -> 5）
+    // nil || 5 -> 5（nil 假，求 rhs 留值）
     auto or1 = run_source("return nil || 5;");
     ASSERT_TRUE(or1.has_value());
     ASSERT_TRUE(or1.value().is_int());
@@ -302,7 +302,6 @@ TEST(CodeGen, WhileBreak) {
 
 // break/continue 只能 emit POP_N(运行期弹栈),不得破坏编译期 locals_ 登记:
 // 跳转后的死代码仍在作用域内,引用循环体局部应解析为局部而非误落全局(否则运行期 UndefinedVariable)。
-// 旧实现 emit_pop_locals_to 走 pop_locals_deeper_than 会 pop_back 移除 x -> 后续 s = s + x 解析到全局 x 报错。
 TEST(CodeGen, BreakPreservesLocalsForDeadCode) {
     EXPECT_EQ(run_int("var i = 0; var s = 0; while (i < 5) {"
                       "  var x = i;"
@@ -352,7 +351,7 @@ TEST(CodeGen, HigherOrderReturn) {
 }
 
 // ============================================================
-// M4 闭包（compile 翻转后端到端：捕获读/写/共享/关闭/递归自捕获/unwind 幸存）
+// M4 闭包（端到端：捕获读/写/共享/关闭/递归自捕获/unwind 幸存）
 // ============================================================
 
 // 路线表验收样例（vm-design §6 M4 标准）：计数器闭包 -- 内层 lambda 捕获外层局部 n,
@@ -480,8 +479,7 @@ TEST(CodeGen, ImportEmitsImport) {
     EXPECT_NE(text.find("DEF_GLOBAL"), aria::String::npos); // 顶层经 DEF_GLOBAL 绑全局
 }
 
-// 闭包 lowering：具名 fun / lambda 一律发 CLOSURE fn_idx（不再 LOAD_CONST fn），
-// 捕获描述存 ObjFunction 元数据、不进字节码流。
+// 闭包 lowering：具名 fun / lambda 一律发 CLOSURE fn_idx，捕获描述存 ObjFunction 元数据、不进字节码流。
 TEST(CodeGen, ClosureDisassembly) {
     auto compiled = compile_only("fun make() { var x = 1; return fun() { return x; }; }");
     ASSERT_TRUE(compiled.has_value());
@@ -531,7 +529,7 @@ TEST(CodeGen, ErrRedefinedGlobalFun) {
     EXPECT_EQ(c.error().code(), ErrorCode::RedefinedVariable);
 }
 
-// import 别名入表：import "x" as U; 后再 var U = 1; 应报 RedefinedVariable（重构新增检查）。
+// import 别名入表：import "x" as U; 后再 var U = 1; 应报 RedefinedVariable。
 TEST(CodeGen, ErrRedefinedImportAlias) {
     auto c = compile_only("import \"lib/u\" as U; var U = 1;");
     ASSERT_FALSE(c.has_value());
@@ -539,8 +537,8 @@ TEST(CodeGen, ErrRedefinedImportAlias) {
 }
 
 // 嵌套 import（函数体内）按当前作用域绑局部：IMPORT 压值在 declare 的 slot（值填槽）+
-// mark_initialized，无 DEF_GLOBAL。编译成功（不再限制仅顶层）。IMPORT 在嵌套函数 f 自己的
-// unit 里（不在入口 unit），故此处只验编译成功，字节码形状由 ImportNestedInBlock 在入口 unit 验。
+// mark_initialized，无 DEF_GLOBAL，编译成功。IMPORT 在嵌套函数 f 自己的 unit 里（不在入口
+// unit），故此处只验编译成功，字节码形状由 ImportNestedInBlock 在入口 unit 验。
 TEST(CodeGen, ImportNestedInFunction) {
     auto c = compile_only("fun f() { import \"lib/u\" as U; }");
     ASSERT_TRUE(c.has_value()) << "嵌套 import 应编译成功（绑局部）";
@@ -587,12 +585,12 @@ TEST(CodeGen, VarNoInitializerRuntimeNil) {
     EXPECT_EQ(run_int("fun f() { var x; if (x == nil) { return 1; } return 0; } return f();"), 1);
 }
 
-// 新 var 模型：嵌套 var 的初始化器值恰好压在 slot（无 store/pop），运行时行为与旧模型等价。
+// 嵌套 var 的初始化器值恰好压在 slot（值填槽，无 store/pop）。
 TEST(CodeGen, VarInitValueFillsSlot) {
     EXPECT_EQ(run_int("fun f() { var x = 5; var y = x + 1; return y; } return f();"), 6);
 }
 
-// 嵌套具名 fun 绑定（新模型：declare + LOAD_CONST + mark_init，无 store/pop）。
+// 嵌套具名 fun 绑定（declare + mark_init，无 store/pop）。
 TEST(CodeGen, NestedNamedFun) {
     EXPECT_EQ(run_int("fun outer() { fun inner() { return 42; } return inner(); } return outer();"), 42);
 }
@@ -603,8 +601,8 @@ TEST(CodeGen, ErrBreakOutsideLoop) {
     EXPECT_EQ(c.error().code(), ErrorCode::BreakOutsideLoop);
 }
 
-// 循环上下文随函数隔离：嵌套函数内的 break 不应绑定到外层循环（重构前 loop_stack_
-// 是 CodeGen 单栈，会错误绑定；现 loop_stack_ 收入 FunctionCtx，函数边界天然隔离）。
+// 循环上下文随函数隔离：嵌套函数内的 break 不绑定到外层循环（loop_stack_ 收入 FunctionCtx，
+// 函数边界天然隔离）。
 TEST(CodeGen, ErrBreakInNestedFunDoesNotBindOuterLoop) {
     auto c = compile_only("for (var i = 0; i < 3; i = i + 1) { fun g() { break; } }");
     ASSERT_FALSE(c.has_value());
@@ -734,9 +732,9 @@ TEST(CodeGen, ErrNotImplementedDefaultParam) {
 }
 
 // 出错即停 + ~ModuleCtx 沿 enclosing_ 链释放：lambda（表达式位）体内 break 触发 BreakOutsideLoop
-// （lambda 自身 loop_stack 空，不绑外层 for），错误发生在 compile_function 摆动游标到 lambda 之后。
-// 游标停在 lambda 上下文，各层 visit（for / block / var / binary / call）经 if(!ok()) return 短路、
-// 不继续 emit；~ModuleCtx 沿 enclosing_ 链（lambda -> entry）逐个释放。验证不崩溃且返 BreakOutsideLoop。
+// （lambda 自身 loop_stack 空，不绑外层 for），fail() 抛 AriaCompileException 直接 unwind（游标停在
+// lambda 上下文、不还原），~ModuleCtx 沿 enclosing_ 链（lambda -> entry）逐个释放。
+// 验证不崩溃且返 BreakOutsideLoop。
 TEST(CodeGen, ErrStopOnNestedLambdaInExpr) {
     auto c = compile_only("for (var i = 0; i < 3; i = i + 1) { var x = 1 + (fun() { break; })(); }");
     ASSERT_FALSE(c.has_value());
@@ -837,7 +835,7 @@ TEST(CodeGen, BuiltinArityCheck) {
 }
 
 TEST(CodeGen, BuiltinAssertArityCheck) {
-    // assert 自检 argc：assert() 0 参 / assert(1,2,3) 3 参 -> WrongArity（修零参越界读 slots[1]）。
+    // assert 自检 argc：assert() 0 参 / assert(1,2,3) 3 参 -> WrongArity。
     auto a = run_source("assert(); return 1;");
     ASSERT_FALSE(a.has_value());
     EXPECT_EQ(a.error().code(), ErrorCode::WrongArity);
@@ -850,8 +848,7 @@ TEST(CodeGen, BuiltinAssertArityCheck) {
 TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
     // 跨 run() 复用同一模块（模拟 REPL 逐行）：第 1 行 `var len = 5` 写入模块 globals；
     // 第 2 行 `return len` 应命中模块 globals 返回 5，而非被内置覆写回 <fn len>。
-    // 旧方案 A「每模块预填 globals」会在第 2 行 run() 重注册、冲掉 shadow；方案 B VM 级只读
-    // builtins_ 表不再每 run 注入，shadow 跨行持久。stress GC 锻炼 builtins_ 根接线。
+    // VM 级只读 builtins_ 表不随 run() 重新注入，shadow 跨行持久。stress GC 锻炼 builtins_ 根接线。
     auto  vm = std::make_unique<AriaVM>();
     auto& gc = vm->gc();
     gc.set_stress(true);
@@ -874,7 +871,6 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
 TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
     // 裸名赋值 `len = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
     // 写（STORE_GLOBAL 不回退，与 grammar §205-206「赋值不隐式创建、必须先 var 声明」一致）。
-    // 旧方案 A 因预填会静默覆写内置；方案 B 正确报错。
     auto out = run_source("len = 5; return len;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
@@ -883,11 +879,10 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
 // ============================================================
 // M3 异常（try/catch/throw）
 // ============================================================
-// 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表
-// （无 SETUP_EXCEPT 指令，不依赖 C++ 异常）。单寄存器模型：用户 throw 存原值保类型、运行时
-// 错误装箱 ObjException 携码；未捕获物化 Error（ObjException 经 from_baked 保码 / 原值兜底
-// UncaughtException）并烘焙逐帧堆栈跟踪（外 -> 内）。run_source 的 stress GC 默认开，锻炼
-// pending_error_ 根接线（pitfalls 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
+// 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表。
+// 单寄存器模型：用户 throw 存原值保类型、运行时错误装箱 ObjException 携码；未捕获物化 Error
+// 并烘焙逐帧堆栈跟踪（外 -> 内）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
+// （pitfalls 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
 
 TEST(CodeGen, ThrowIntCaughtBindsValue) {
     // throw 42 被 catch 捕获，e 绑原值保类型（单寄存器模型，坑 #7）。
@@ -913,8 +908,7 @@ TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
 
 TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
     // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，print/str 渲染之；
-    // 2026-09-10 起消息不含位置前缀 -- catch 侧 print(e) 不显示位置，同 Python str(e)，
-    // 位置只在未捕获出口的 at 跟踪行给出）。
+    // 消息不含位置前缀，同 Python str(e)，位置只在未捕获出口的 at 跟踪行给出）。
     auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out.value().is_obj());
@@ -936,8 +930,8 @@ TEST(CodeGen, RethrowPreservesCode) {
 
 TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生报错（len 非 String）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
-    // 经 unwind 被捕获；str(e) 渲染完整消息（2026-09-10 起无位置前缀 -- catch 侧不显示
-    // 位置，同 Python str(e)；位置只在未捕获跟踪行给出，原生不进帧时即 CALL 站点行，坑 #15）。
+    // 经 unwind 被捕获；str(e) 渲染完整消息（无位置前缀，位置只在未捕获跟踪行给出；
+    // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(aria::format_value(out.value()), "Runtime: TypeMismatch len requires a string, got Nil");
@@ -1021,7 +1015,7 @@ mid();
 )");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    // 消息首行无位置前缀（2026-09-10 起），错误位置 = 最内 at 行（div 的除法行）。
+    // 消息首行无位置前缀，错误位置 = 最内 at 行（div 的除法行）。
     EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<test>:8)\n"
                                      "  at mid (<test>:6)\n"
@@ -1029,7 +1023,7 @@ mid();
 }
 
 TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {
-    // finally 已裁撤（2026-09，善后后继 defer 已降为可选后续、不绑定 M4）：不再是关键字，回归普通标识符可绑定。
+    // finally 已裁撤：不再是关键字，回归普通标识符可绑定。
     auto c = compile_only("var finally = 1; print finally;");
     ASSERT_TRUE(c.has_value()) << c.error().message();
 }

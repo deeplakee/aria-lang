@@ -16,9 +16,8 @@
 //
 // **出错即停**（CodeGen 约定）：编译期深层 fail() 抛 AriaCompileException（[[noreturn]]），自动 unwind
 // 跨 visit 递归栈，compile() 顶层 catch 翻译为 Result。无需 error_ 成员 / ok() / 各 visit 的
-// if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。unwind 时 compile_function 的 delete child
-// 与游标还原被跳过，子留 enclosing_ 链，~ModuleCtx 沿链从 current_fn_ctx_ 走到 entry 逐个 delete
-// （成功时仅 entry，出错时整条活动链 + entry）。
+// if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止；出错路径对所有权的影响即上段所述
+// （游标还原与 delete 子被跳过，交 ~ModuleCtx 走链释放）。
 //
 // **一次性**：每个模块编译用一个新的 ModuleCtx（CodeGen::init_module 入口
 // `mod_ctx_ = std::make_unique<ModuleCtx>(module)` 构造一个全新实例），用完即弃，不复用、无 reset。
@@ -29,13 +28,10 @@
 // 的模块创建入口 fn 上下文并就位游标。entry 判定 = current_fn_ctx_->enclosing_ == nullptr。
 //
 // 特殊成员：current_fn_ctx_ 是 new 分配的裸指针，析构沿链 delete（需 FunctionCtx 完整类型，故
-// ~ModuleCtx() 声明于头、定义于 .cpp）；copy / move 删除（ModuleCtx 一次性、不可移动）--由调用方按
-// 指针持有（CodeGen 持 `UPtr<ModuleCtx> mod_ctx_`，init_module 入口 make_unique、compile 遍历后
-// reset()、~CodeGen 自动释放），无需 move。
+// ~ModuleCtx() 声明于头、定义于 .cpp）；copy / move 删除（ModuleCtx 一次性、不可移动）--由调用方
+// 按指针持有（CodeGen 持 UPtr<ModuleCtx>），无需 move。
 //
-// 设计上 gc_（共享引用）留 CodeGen：跨编译/运行共享，非模块状态。首错经 AriaCompileException 抛
-// 出即 unwind（CodeGen 无 error_ 成员），天然「整个 pass 的第一个错停住」--将来一次 pass 编译多模块时模块 1
-// 的异常即中断整 pass。
+// 设计上 gc_（共享引用）留 CodeGen：跨编译/运行共享，非模块状态。
 
 #include "type.hpp"
 

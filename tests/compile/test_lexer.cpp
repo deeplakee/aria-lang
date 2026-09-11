@@ -18,8 +18,7 @@ using aria::TokenType;
 using aria::UPtr;
 using aria::usize;
 
-// Windows SDK winnt.h 有同名全局 TokenType（枚举值），与 aria::TokenType 冲突。
-// 用别名 TokType 彻底绕开歧义--别名指向 aria::TokenType 类型，查找优先级明确。
+// Windows SDK winnt.h 有同名全局 TokenType（枚举值）。用别名 TokType 绕开歧义。
 using TokType = aria::TokenType;
 
 namespace {
@@ -69,7 +68,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
-    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 已降为可选后续），关键字 23 个
+    // 关键字 23 个（finally 已裁撤，现为普通 identifier）
     const String        src      = "fun def var if else while for in break continue return import as "
                                    "try catch throw print nil true false this super match";
     const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
@@ -86,7 +85,7 @@ TEST(LexerKeyword, AllKeywords) {
 }
 
 TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
-    // and/or/not 不再是关键字，作为普通 identifier（与 Java/C# 一致）
+    // and/or/not 作普通 identifier
     const String        src      = "and or not";
     const List<TokType> expected = {TokType::Identifier, TokType::Identifier, TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
@@ -98,7 +97,7 @@ TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
 }
 
 TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
-    // finally 已裁撤（2026-09，try/finally 特性移除、后继 defer 已降为可选后续），回归普通 identifier
+    // finally 回归普通 identifier
     const String        src      = "finally";
     const List<TokType> expected = {TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
@@ -237,7 +236,7 @@ TEST(LexerFloat, ScientificNotation) {
     EXPECT_EQ(tokens[2].type(), TokenType::Float);
     EXPECT_DOUBLE_EQ(tokens[2].float_value(), 0.0); // 0e-5
     EXPECT_EQ(tokens[3].type(), TokenType::Float);
-    EXPECT_DOUBLE_EQ(tokens[3].float_value(), 0.1); // 1e-1（不再报错）
+    EXPECT_DOUBLE_EQ(tokens[3].float_value(), 0.1); // 1e-1
     EXPECT_EQ(tokens[4].type(), TokenType::Float);
     EXPECT_DOUBLE_EQ(tokens[4].float_value(), 150.0); // 1.5e2
 }
@@ -400,7 +399,7 @@ TEST(LexerString, UnicodeEscape) {
 }
 
 TEST(LexerString, UnicodeEscapeErrors) {
-    // \u 缺少 { -> InvalidEscape（致命？不，error 可恢复，但 tokenize 仍返 errors）
+    // \u 缺少 { -> InvalidEscape
     {
         const auto  lexed = lex_err("\"\\u41\"");
         const auto& errs  = lexed->errors;
@@ -435,7 +434,7 @@ TEST(LexerString, UnicodeEscapeErrors) {
         ASSERT_FALSE(errs.empty());
         EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
     }
-    // \u{1_2} 含 _（hex+ 不允许 _）-> InvalidEscape（曾因 parse_int 剥 _ 而被错误接受）
+    // \u{1_2} 含 _（hex+ 不允许 _）-> InvalidEscape
     {
         const auto  lexed = lex_err("\"\\u{1_2}\"");
         const auto& errs  = lexed->errors;
@@ -580,7 +579,6 @@ TEST(LexerRecovery, ContinueAfterRecoverable) {
     SourceFile sf = make_src("@ 42");
     Lexer      lexer;
     auto       result = lexer.tokenize(sf);
-    // 有错误 -> 返回错误集合
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
     ASSERT_FALSE(errors.empty());
@@ -597,17 +595,14 @@ TEST(LexerRecovery, MultipleErrorsCollected) {
 }
 
 TEST(LexerRecovery, UnterminatedStringContinuesScanning) {
-    // 未闭合串（原致命）现在可恢复：遇裸换行记错后跨过换行，继续扫下一行的 @。
-    // "abc<换行>@ -> UnterminatedString（跨行）+ InvalidCharacter（@）
+    // 未闭合串遇裸换行：记 UnterminatedString（跨行）后跨过换行继续扫，收集到后续 @ 的 InvalidCharacter。
     SourceFile sf = make_src("\"abc\n@");
     Lexer      lexer;
     auto       result = lexer.tokenize(sf);
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
     ASSERT_GE(errors.size(), 2u);
-    // 首个错误是字符串跨行未闭合
     EXPECT_EQ(errors[0].code(), ErrorCode::UnterminatedString);
-    // 后续收集到 @ 的非法字符错误
     bool has_invalid_char = false;
     for (const auto& e: errors) {
         if (e.code() == ErrorCode::InvalidCharacter) {

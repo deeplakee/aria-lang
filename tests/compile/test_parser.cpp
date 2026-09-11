@@ -569,7 +569,7 @@ TEST(ParserStmt, ForInPatternVariants) {
 }
 
 TEST(ParserStmt, ForCStyleExprInit) {
-    // forStmt init 恢复支持裸表达式（撤销 route 2）：for (i = 0; ...) 走 exprStmt init。
+    // forStmt init 支持裸表达式：for (i = 0; ...) 走 exprStmt init。
     auto p    = parse_src("for (i = 0; i < 10; i = i + 1) print i;");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
@@ -613,7 +613,7 @@ TEST(ParserStmt, TryCatch) {
     const String out = dump_ok("try { print 1; } catch (e) { print e; }");
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");
-    // finally 已裁撤（2026-09，后继 defer 已降为可选后续），不再解析 finally 子句
+    // 不再解析 finally 子句
     EXPECT_EQ(out.find("Finally"), String::npos);
 }
 
@@ -765,7 +765,7 @@ TEST(ParserRecovery, MultipleErrorsCollected) {
 TEST(ParserRecovery, RecoversAndContinues) {
     // 第一条 var 缺目标（错），第二条合法：错误后同步应能继续解析第二条
     auto p = parse_src("var = 1;\nvar y = 2;\n");
-    ASSERT_FALSE(p->result.has_value()); // 有错误 -> 返回错误集合
+    ASSERT_FALSE(p->result.has_value());
     ASSERT_GE(p->result.error().size(), 1u);
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedIdentifier);
 }

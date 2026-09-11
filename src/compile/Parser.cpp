@@ -100,7 +100,6 @@ namespace aria {
             prog = nullptr;
         }
 
-        // 清空成员，回到空态，供 Parser 复用。
         List<Error> out_errors = std::move(errors_);
         tokens_.clear();
         pos_ = 0;
@@ -430,12 +429,11 @@ namespace aria {
             UPtr<StmtNode> init = var_decl(); // var_decl 消费末尾 ';'
             return finish_for_stmt(loc, std::move(init));
         }
-        // forIn：<pattern> "in"。in 非表达式运算符，故 <pattern> in 唯一标识 forIn
-        // （identifier/"_" 紧跟 in，或 [...] 后跟 in）；否则按 forStmt 的 exprStmt init。
+        // forIn：<pattern> "in" 消歧（判据见 looks_like_for_in 注与 Parser.hpp）；否则按 forStmt。
         if (looks_like_for_in()) {
             return finish_for_in_stmt(loc);
         }
-        // forStmt exprStmt init：复用 expression_stmt()（expression ";"，返回 ExprStmtNode）。
+        // forStmt exprStmt init：复用 expression_stmt()。
         return finish_for_stmt(loc, expression_stmt());
     }
 
@@ -466,7 +464,7 @@ namespace aria {
 
     bool Parser::looks_like_for_in() const noexcept {
         // pos_ 位于 '(' 后首个 token；判定 <pattern> "in"：identifier/"_" 紧跟 in，或
-        // [...]（扫到匹配 ']'）后跟 in。in 非表达式运算符，故命中即 forIn。
+        // [...]（扫到匹配 ']'）后跟 in。
         usize cursor = pos_;
         if (cursor >= tokens_.size()) {
             return false;
@@ -545,7 +543,6 @@ namespace aria {
             expect(TokenType::RightParen, "')'");
             catch_body = block();
         }
-        // parse 层允许无 catch（try 单独成块），语义阶段保证必有（TryWithoutHandler）。
         return std::make_unique<TryStmtNode>(loc, std::move(body), std::move(catch_param), std::move(catch_body));
     }
 

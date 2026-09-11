@@ -629,10 +629,7 @@ namespace aria {
     // accept 分发（访问者模式）
     // =========================================================================
     //
-    // 各具体节点把实际类型交给访问者：visitor.visitXxxNode(*this)。访问者基类 AstVisitor
-    // 仅声明 visitXxxNode 纯虚接口（见 compile/AstVisitor.hpp），不做按运行时类型的集中
-    // 分派；双分派由节点自身的 accept 完成。参数为非 const 引用，
-    // 子类可读写节点。
+    // 双分派机制见 compile/AstVisitor.hpp 头注与 ast.hpp accept 注。
 
     void ProgramNode::accept(AstVisitor& visitor) { visitor.visitProgramNode(*this); }
 

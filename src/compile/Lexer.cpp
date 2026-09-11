@@ -2,9 +2,8 @@
 #include <charconv>
 #include "util/utf8.hpp"
 
-// 生成按引用捕获的 char 谓词 lambda，用于 conditional_advance 等接受 char 谓词的场合。
-// 仅因「lambda 样板噪音掩盖判断逻辑」这一 C++ 语言层面难以消除的痛点而引入；
-// 非此场景勿滥用宏。用法：conditional_advance(ARIA_CHAR_PRED_REF(ch != '\n'));
+// 生成按引用捕获的 char 谓词 lambda（消除 conditional_advance 一类调用点的样板噪音）；
+// 非此场景勿滥用宏。
 #define ARIA_CHAR_PRED_REF(cond) [&](const char ch) { return (cond); }
 
 namespace aria {
@@ -98,7 +97,6 @@ namespace aria {
     Lexer::Lexer() noexcept : source_{nullptr}, src_{}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
 
     Result<List<Token>, List<Error>> Lexer::tokenize(SourceFile& src) {
-        // 注入扫描状态
         source_   = &src;
         src_      = src.content();
         pos_      = 0;
@@ -106,13 +104,12 @@ namespace aria {
 
         run();
 
-        // 收尾：存在任何错误（含达上限 is_fatal_，此时 errors_ 必非空）-> 返回错误集合；
-        // 否则返回 token 流。
+        // 存在任何错误（含达上限 is_fatal_，此时 errors_ 必非空）-> 返回错误集合；否则 token 流。
         List<Token> out_tokens = std::move(tokens_);
         List<Error> out_errors = std::move(errors_);
         const bool  had_error  = !out_errors.empty();
 
-        // 清空成员，回到空态，供 Lexer 复用
+        // 清空成员，回到空态供复用
         source_   = nullptr;
         src_      = {};
         pos_      = 0;
@@ -132,8 +129,6 @@ namespace aria {
 
     char Lexer::peek_byte(const usize ahead) const noexcept {
         const usize index = pos_ + ahead;
-        // src_ 底层以 '\0' 结尾且 content() 保证 size 以内有数据；
-        // 越过真实内容返回 '\0'（哨兵），安全。
         if (index >= src_.size()) {
             return '\0';
         }
@@ -167,7 +162,6 @@ namespace aria {
 
     void Lexer::error(ErrorCode code, SourceSpan span, const String& msg) {
         errors_.push_back(make_error(code, span, msg));
-        // 达上限即停止扫描，避免级联错误刷屏
         if (errors_.size() >= kMaxErrors) {
             is_fatal_ = true;
         }
@@ -193,26 +187,23 @@ namespace aria {
                 continue;
             }
 
-            // 字符串
             if (cp == '"' || cp == '\'') {
                 scan_string();
                 continue;
             }
 
-            // 标识符 / 关键字 / _
             if (utf8::is_id_start(cp)) {
                 scan_identifier();
                 continue;
             }
 
-            // 运算符 / 标点（含 lone & | 等非法字符的 InvalidCharacter 兜底）
+            // 含 lone & | 等非法字符的 InvalidCharacter 兜底
             scan_operator_or_punct(cp);
         }
 
         if (is_fatal_) {
             return; // 致命错误，不补 Eof
         }
-        // 末尾 Eof token
         const usize eof = src_.size();
         tokens_.push_back(Token{TokenType::Eof, {}, loc_at(eof)});
     }
@@ -263,9 +254,8 @@ namespace aria {
         // 消费后续的数字与 _（_ 位置合法性由 validate_underscores 校验）
         conditional_advance(ARIA_CHAR_PRED_REF(is_radix_digit(base, ch) || ch == '_'));
 
-        const auto lex = StringView{src_.data() + start, pos_ - start};
-        // 去掉进制前缀 0x/0b/0o（2 字节），传给解析辅助做校验/解析
-        const auto lex_no_tag = StringView{src_.data() + start + 2, pos_ - start - 2};
+        const auto lex        = StringView{src_.data() + start, pos_ - start};
+        const auto lex_no_tag = StringView{src_.data() + start + 2, pos_ - start - 2}; // 剥掉 2 字节前缀
 
         if (!validate_underscores(lex_no_tag, base)) {
             error(ErrorCode::InvalidNumber, SourceSpan{start, pos_}, String{"数字字面量下划线位置非法"});
@@ -326,7 +316,6 @@ namespace aria {
             return;
         }
 
-        // 含小数点或指数 -> float；否则 int
         if (has_dot || has_exp) {
             f64 value = 0.0;
             if (!parse_float(lex, value)) {

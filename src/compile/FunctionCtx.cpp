@@ -49,9 +49,8 @@ namespace aria {
 
     Opt<u16> FunctionCtx::find_local(const StringView name) const {
         // 从内向外查找（高索引 = 更内层作用域），首个命中即最内层同名局部，早退。
-        // 同名局部必处不同作用域（is_defined_in_scope 禁同作用域重名），内层后声明故索引更高。
-        // std::views::reverse 从末尾（内层）向前遍历；i 从 size 倒数，--i 后即当前元素的原始索引（slot）。
-        // （std::views::enumerate 可一步配对索引但本环境 libc++ 尚未提供，故用 reverse + 倒数计数器。）
+        // std::views::reverse 从末尾向前遍历；i 从 size 倒数，--i 后即当前元素原始索引（slot）。
+        // （libc++ 尚未提供 std::views::enumerate，故用 reverse + 倒数计数器。）
         usize i = locals_.size();
         for (const auto& local: std::views::reverse(locals_)) {
             --i;
@@ -65,8 +64,7 @@ namespace aria {
     void FunctionCtx::begin_scope() { ++scope_depth_; }
 
     void FunctionCtx::end_scope() {
-        // 退出当前作用域：--scope_depth_ 后弹出原 scope 的局部（depth > 新 scope_depth_；活局部按
-        // depth 非递减序排列，故尾段即弹区；slot 0 哑元 depth=0 因 0 <= 任意 target_depth 恒在界外）。
+        // 弹出 depth > 新 scope_depth_ 的局部（不变式与 break/continue 例外见头文件 end_scope 注）。
         --scope_depth_;
         while (!locals_.empty() && locals_.back().depth > scope_depth_) {
             locals_.pop_back();
@@ -78,16 +76,14 @@ namespace aria {
     // ============================================================
 
     Opt<u8> FunctionCtx::add_upvalue(const UpvalueDesc desc) {
-        // 同 (is_local,index) 已登记 -> 复用其下标（同一局部被本函数多处引用只占一个 upvalue，
-        // 「捕获即引用」的编译期对应：多引用点经同一 upvalue 索引读写同一槽）。
+        // 同 (is_local,index) 已登记 -> 复用其下标（同一局部被多处引用只占一个 upvalue，
+        // 多引用点经同一 upvalue 索引读写同一槽）。
         for (usize i = 0; i < upvalues_.size(); ++i) {
             if (upvalues_[i] == desc) {
                 return static_cast<u8>(i);
             }
         }
-        // 容量检查（kMaxUpvalues = u8 索引域上限位置，见 FunctionCtx.hpp；越界判定与语义常量家族
-        // 统一用 > 比较）：size > kMaxUpvalues 即 256 条已满（索引 0..255 全占用），新条目的索引
-        // 将越出 u8 域 -- 返 nullopt 交 CodeGen fail(TooManyUpvalues) 翻译。
+        // 容量判定 > kMaxUpvalues 的语义见 FunctionCtx.hpp kMaxUpvalues 注。
         if (upvalues_.size() > kMaxUpvalues) {
             return std::nullopt;
         }

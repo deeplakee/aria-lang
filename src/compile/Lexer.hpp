@@ -23,13 +23,10 @@ namespace aria {
     // 返回 Result<List<Token>, List<Error>>：
     //   - 所有词法错误（串未闭合等）一律作可恢复处理--
     //     记入 List<Error> 后推进 pos_ 继续扫描，尽量多收集错误，而非遇首个错误即终止。
-    //   - 为缓解级联错误，设错误上限 kMaxErrors：errors_ 达上限即置 is_fatal_，
-    //     主循环检测后停止，避免无限级联刷屏。
+    //   - 为缓解级联错误设错误上限 kMaxErrors，达上限即停。
     //   - 有任何错误 -> unexpected(List<Error>)；无错 -> 完整 token 流（含末尾 Eof）。
     //
     // 扫描基于 utf8::decode_one 按码点推进；src_ 底层 String 以 '\0' 结尾，可作哨兵。
-    // 复用 Token 工厂（make_integer/make_float/make_string）、lookup_keyword、
-    // utf8::is_id_start/is_id_continue/is_whitespace/is_digit。
     class Lexer {
     public:
         // 空态构造：成员全空，待 tokenize 注入 SourceFile。
@@ -64,7 +61,6 @@ namespace aria {
 
 
         // --- 错误记账 ---
-        // 记入 errors_。若达 kMaxErrors 则置 is_fatal_，主循环将停止。
         void error(ErrorCode code, SourceSpan span, const String& msg);
 
         // 构造带 source_ 的 Error（构造期把 SourceLoc 烘进 message_，含 path:line:col 前缀）。

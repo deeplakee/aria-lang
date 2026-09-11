@@ -213,11 +213,7 @@ namespace aria {
     }
 
     bool Token::is_literal() const noexcept {
-        // 词法层「值/名」分类：直接表示一个值或名字的 token（非符号/关键字/控制流），
-        // 作为 token 层四分类之一（与 is_keyword/is_operator/is_punctuation 正交并互补）。
-        // 注意：此处的 literal 是词法概念，与文法产生式 literal（编译期常量，仅
-        // number/plainString/true/false/nil，用作 mapEntry 键）不同--后者由 parser 按需判断。
-        // 故 Identifier、Underscore 在本分类中算入，尽管它们不属于文法 literal。
+        // 分类依据见 Token.hpp is_literal 注。
         switch (type_) {
             case TokenType::Integer:
             case TokenType::Float:
@@ -315,7 +311,6 @@ namespace aria {
     }
 
     String Token::to_string() const {
-        // 类型名 + 可选 lexeme（'...'）。lexeme 为空时省略引号段。
         String lexeme_info = lexeme_.empty() ? std::format("{:<13}", token_type_name(type_))
                                              : std::format("{:<13} '{}'", token_type_name(type_), lexeme_);
         // 字面量附带解析值，便于调试；Error 附带消息

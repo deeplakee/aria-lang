@@ -1,23 +1,19 @@
 #ifndef ARIA_ASTVISITOR_HPP
 #define ARIA_ASTVISITOR_HPP
 
-// AST 访问者（Visitor）接口：实现访问者模式，作为后续代码生成阶段「代码生成器」
-// （AST -> CodeUnit 的字节码编译器）等遍历类（如语义分析器）的父类。
+// AST 访问者（Visitor）接口：作为代码生成器（AST -> CodeUnit 的字节码编译器）等
+// 遍历类（如语义分析器）的父类。
 //
 // 这里前置声明所有具体 AST 节点类型（完整定义见 compile/ast.hpp）。本头文件只用到
 // 节点类型的引用，前置声明即可，与 ast.hpp 解耦；子类（代码生成器等）需自行 include
 // ast.hpp 以访问节点成员。
 //
-// 访问者模式的两部分：
-//   1. 每个具体节点对应一个 visitXxxNode(XxxNode&) 纯虚方法（本类声明）--子类必须
-//      逐一实现，编译器据此强制覆盖全部节点类型，避免漏处理。
-//   2. 双分派由节点的 accept(AstVisitor&) 完成（见 compile/ast.hpp）：节点调用
-//      visitor.visitXxxNode(*this) 把实际节点类型交给访问者；访问者自身不做按运行时
-//      类型的集中分派。子类遍历子节点时统一经 emit_expr(*child)/emit_stmt(*child) 递归。
+// 每个具体节点对应一个 visitXxxNode(XxxNode&) 纯虚方法--子类必须逐一实现，编译器据此
+// 强制覆盖全部节点类型，避免漏处理；双分派由节点的 accept(AstVisitor&) 完成
+// （见 compile/ast.hpp），访问者自身不做按运行时类型的集中分派。
 //
-// 参数统一用非 const 引用：子类可在遍历中读写节点
-// （如语义分析阶段给节点注记解析结果）。节点生命周期由 AST 的 UPtr 树持有者保证，
-// 访问者不拥有节点。
+// 参数统一用非 const 引用：子类可在遍历中读写节点（如语义分析阶段注记解析结果）。
+// 节点生命周期由 AST 的 UPtr 树持有者保证，访问者不拥有节点。
 
 namespace aria {
 

@@ -25,8 +25,8 @@
 //     再守模块（module 须是 GC 管理的合法 ObjModule）。
 //
 // 与 CodeGen 的分工：CodeGen 是「AST -> CodeUnit（包在 ObjFunction）」代码生成器；Compiler 是
-// 「SourceFile -> AST」(Lexer/Parser) + 「调 CodeGen 产出 ObjFunction」编排层。不做磁盘 I/O--加载源文件
-// 是调用方（解释器入口/REPL）的职责，本类只消费已就位的 SourceFile。
+// 「SourceFile -> AST」(Lexer/Parser) + 「调 CodeGen 产出 ObjFunction」编排层；不做磁盘 I/O
+// （加载源文件是调用方的职责）。
 
 #include "aria.hpp"
 #include "common.hpp"
@@ -54,10 +54,7 @@ namespace aria {
         Compiler& operator=(Compiler&&) noexcept = delete;
 
         // 编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 entry_name，模块体包装，已
-        // module.set_entry）。
-        //   - source 为调用方拥有/加载的实际源文件；本类只读其 content()，不拥有、不重建。source 只须
-        //     存活到 compile() 返回（位置串在构造期烘焙完成），返回的 Error / ObjFunction 均不依赖 source。
-        //   - module 须为 GC 管理的合法 ObjModule（编译期由 CodeGen::compile 内部 make_guard 根化，调用方无需再守）。
+        // module.set_entry）。source / module 的生命期与 GC 契约见类注「设计要点」。
         //   - entry_name：入口函数名。主入口模块传 <main>（默认）；运行期导入模块传 <module>（由 VM 加载层
         //     调用时显式传入，区别于主入口）。
         // 成功返回入口 ObjFunction*（归属 gc，须在 gc 存活期间使用）；失败返回首错 Error。

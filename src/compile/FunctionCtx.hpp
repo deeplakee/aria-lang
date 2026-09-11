@@ -23,10 +23,7 @@ namespace aria {
     // kMaxLocals 同一「上限位置」语义家族：值即对应操作数/索引位宽可表的最大值，越界判定统一用
     // > 比较--拒绝发生在「新条目的索引将越出操作数域」之时；因登记侧 FunctionCtx::add_upvalue 与
     // CodeGen 报错文案共用，定义于本头）。LOAD/STORE_UPVALUE 的 idx 为 u8（可寻址 0..kMaxUpvalues），
-    // 故 kMaxUpvalues = 255、单函数最多 256 个捕获（第 256 个的 idx=255 仍合法，第 257 个 idx=256
-    // 越界被拒）--容量 = 上限 + 1，对齐 kMaxConstants 允许 65536 项与 clox 的 UINT8_COUNT 判定。
-    // 与 kMaxArity=255 数值相同但机制不可类比：arity 是「计数本身存 u8 字段」（256 回绕成 0，
-    // 容量即 255），upvalue 是「索引走 u8 操作数」（容量 = 索引上限 + 1）。
+    // 故容量 = 上限 + 1：第 256 个捕获 idx=255 仍合法，第 257 个 idx=256 越界被拒。
     constexpr u32 kMaxUpvalues = kU8OperandMax;
 
     // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured/is_initialized=false。
@@ -47,10 +44,10 @@ namespace aria {
         List<usize> break_fwd_patches;                   // 待回填的 JUMP 占位偏移
     };
 
-    // 工厂：构造一个仅指定 loop_scope_depth 的新循环上下文（continue_back_target=nullopt、
-    // 两个 patch 列表空）。调用方按循环类型在入栈前给 continue_back_target 赋值（while/for-in ->
-    // L_start、for 无 incr -> L_cond；for 有 incr 留空走前向 continue_fwd_patches）。集中收口
-    // 「新 LoopCtx 全字段初始化」语义于一处，调用点只表达与默认的偏差；返回值须立即入栈或进一步赋值。
+    // 工厂：构造仅指定 loop_scope_depth 的新循环上下文（continue_back_target=nullopt、
+    // 两个 patch 列表空），集中收口「新 LoopCtx 全字段初始化」。调用方按循环类型在入栈前给
+    // continue_back_target 赋值（while/for-in -> L_start、for 无 incr -> L_cond；for 有 incr
+    // 留空走前向 continue_fwd_patches）。
     [[nodiscard]]
     inline LoopCtx make_loop_ctx(const u32 loop_scope_depth) {
         return {.loop_scope_depth     = loop_scope_depth,

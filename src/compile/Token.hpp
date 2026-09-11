@@ -16,11 +16,6 @@ namespace aria {
     //   - 标点（括号 / 逗号 / 冒号 / 分号 / 点 / ...）
     //   - 字面量（整数 / 浮点 / 字符串 / 标识符 / _ 占位符）
     //   - 特殊（EOF / 词法错误）
-    //
-    // 说明：
-    //   - 单独的 "_" 由 lexer 识别为 Underscore（占位/通配符，不绑定），
-    //     形如 "_foo" 的仍为 Identifier。
-    //   - "..." 仅作 varargs/rest 前缀（DotDotDot），非独立关键字。
     enum class TokenType : u8 {
         // --- 特殊 ---
         Eof,
@@ -164,7 +159,6 @@ namespace aria {
             return value_;
         }
 
-        // 类型判定
         [[nodiscard]]
         bool is(TokenType t) const noexcept {
             return type_ == t;
@@ -196,10 +190,9 @@ namespace aria {
         StringView string_value() const noexcept;
 
         // --- 类型分类（基于 TokenType） ---
-        // 词法层「值/名」分类：直接表示值或名字的 token（Integer/Float/String/
-        // Identifier/Underscore），作为 token 层四分类之一。
-        // 注意：这是词法概念，与文法产生式 literal（编译期常量，范围更窄）不同--
-        // 文法 literal 的判断留给 parser。
+        // 词法层「值/名」分类（Integer/Float/String/Identifier/Underscore），与
+        // is_keyword/is_operator/is_punctuation 正交互补。注意这是词法概念，与文法产生式
+        // literal（编译期常量，更窄）不同--文法 literal 的判断留给 parser。
         [[nodiscard]]
         bool is_literal() const noexcept;
 
@@ -217,7 +210,7 @@ namespace aria {
         String to_string() const;
 
     private:
-        // 全参私有构造函数：所有初始化在此收口（复杂类风格，不在成员声明处写默认值）。
+        // 全参私有构造函数：所有初始化在此收口。
         Token(TokenType type, StringView lexeme, SourceLoc loc, TokenValue value) noexcept :
             type_{type}, loc_{loc}, lexeme_{lexeme}, value_{std::move(value)} {}
 

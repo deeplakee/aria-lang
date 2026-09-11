@@ -4,7 +4,6 @@
 
 // 不使用 `using namespace aria`：fs.hpp 在 Windows 下可能间接包含 windows.h，
 // 其全局符号会与 aria 命名空间冲突（同 test_lexer.cpp 的处理）。按需显式引入。
-// 节点类已加 Node 后缀；辅助值类型（Param/Match*/VarBinding/Map*）与枚举不加。
 using aria::AssignmentNode;
 using aria::ASTNode;
 using aria::BinaryExprNode;

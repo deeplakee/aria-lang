@@ -60,16 +60,12 @@ namespace aria {
             return static_cast<u32>(loc_.line());
         }
 
-        // 渲染本节点（含子树）为带缩进的树形文本并返回（存储到字符串）。
         [[nodiscard]]
         virtual String dump(usize indent) const = 0;
 
-        // 直接打印本节点（含子树）到终端：经 dump 构造文本后 io::print 输出。
         void display() const;
 
-        // 访问者模式入口（双分派）：各具体节点 override 为 visitor.visitXxxNode(*this)，
-        // 把本节点实际类型交给访问者，无需按运行时类型手动分派。接受非 const 访问者，
-        // 允许遍历中读写节点（如语义分析阶段注记解析结果）。
+        // 访问者模式入口（双分派，机制见 compile/AstVisitor.hpp 头注）。
         virtual void accept(AstVisitor& visitor) = 0;
 
     protected:
@@ -255,14 +251,12 @@ namespace aria {
     // =========================================================================
     namespace detail::ast {
 
-        // 写入 indent 层缩进（每层 2 空格）到 out。
         inline void write_indent(String& out, const usize indent) {
             for (usize i = 0; i < indent; ++i) {
                 out.append("  ", 2);
             }
         }
 
-        // 写入一行：缩进 + content + 换行。
         inline void write_line(String& out, const usize indent, const StringView content) {
             write_indent(out, indent);
             out.append(content);
@@ -291,9 +285,6 @@ namespace aria {
     // =========================================================================
     // 语句节点（StmtNode）
     // =========================================================================
-    //
-    // 对应文法 statement 产生式。依赖 ExprNode 基（已完整）。BlockNode 置首--TryStmtNode/
-    // FunDeclNode 等持 UPtr<BlockNode>，需 BlockNode 先完整。声明（fun/def/var）紧随其后。
 
     // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
@@ -445,7 +436,7 @@ namespace aria {
         String alias;
     };
 
-    // try 语句：try block (catch (id) block)?（finally 已裁撤 2026-09，善后后继 defer 已降为可选后续、不绑定 M4）。
+    // try 语句：try block (catch (id) block)?。
     //   - catch_param / catch_body 成对出现（parser 保证），均缺省表无 catch。
     //   - 语义阶段保证 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
@@ -540,10 +531,6 @@ namespace aria {
     // =========================================================================
     // 表达式节点（ExprNode）
     // =========================================================================
-    //
-    // 对应文法 expression -> assignment 起的整条表达式层级。依赖 PatternNode 基（DestructureAssignmentNode）
-    // 与 StmtNode 段（LambdaExprNode.body 为 BlockNode--StmtNode 段在前，BlockNode 已完整，
-    // 故 LambdaExprNode 构造函数可 inline）。
 
     // ----- 字面量与基础表达式（primary） -----
     //
@@ -643,8 +630,8 @@ namespace aria {
 
     // ----- 运算符表达式 -----
     //
-    // 文法：unary -> (前置运算符) unary | value；value -> primary (args | .id | [expr])*。
-    // 即前置一元 + 后缀调用/取字段/取下标链。赋值（含复合与解构）右结合，作 expression 顶层。
+    // 文法层级见 grammar.txt：前置一元 + 后缀调用/取字段/取下标链；赋值（含复合与解构）
+    // 右结合，作 expression 顶层。
 
     // 二元运算表达式：logic_or / logic_and / equality / comparison / term / factor
     // 各层统一为一个节点，运算种类由 op 区分（左结合，parser 已构建左倾树）。
@@ -662,8 +649,7 @@ namespace aria {
         UPtr<ExprNode> rhs;
     };
 
-    // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary（Parser 递归下降，
-    // 与 grammar.txt 的 unary 产生式一致），左值合法性留语义阶段。
+    // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary，左值合法性留语义阶段。
     struct UnaryExprNode : ExprNode {
         UnaryExprNode(SourceLoc loc, Op::Unary op, UPtr<ExprNode> operand) :
             ExprNode{loc}, op{op}, operand{std::move(operand)} {}
@@ -842,8 +828,6 @@ namespace aria {
     // 对应文法 pattern 产生式。仅出现在 var 声明的 varTarget 与解构赋值（"=" 右侧候选）。
     //   - listPattern 映射为下标访问（位置 i 绑 list[i]），多余忽略、不足越界报错。
     //   - rest 仅 listPattern 支持（"..." 前缀，收集剩余为新 list）。
-    //
-    // 定义顺序最后：Pattern 节点仅依赖 PatternNode 基与辅助类型（均已完成）。
 
     // 标识符模式：绑定该名字。
     struct IdentifierPatternNode : PatternNode {

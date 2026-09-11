@@ -16,8 +16,8 @@
 namespace aria {
 
     namespace {
-        // 匿名函数名 kAnonymousName("<anonymous>")与入口名 <main>/<module> 均为项目级保留名,
-        // 定义见 aria.hpp;compile_function 据匿名名判定「lambda -> 留栈不绑定」。
+        // 匿名函数名 kAnonymousName("<anonymous>")与入口名 <main>/<module> 均为项目级保留名(aria.hpp);
+        // compile_function 据匿名名判定「lambda -> 留栈不绑定」。
 
         // 容量上限(值即对应操作数/索引位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
         // 越界判定统一用 > 比较):
@@ -36,7 +36,6 @@ namespace aria {
         // 超出 -> NumberOutOfRange):
         //   kIntMin -- -(2^47);
         //   kIntMax -- 2^47 - 1.
-        // 集中定义,使 visitIntegerLiteralNode 的范围检查与报错文案共享同一来源,无散落魔数。
         constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
         constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
     } // namespace
@@ -47,17 +46,12 @@ namespace aria {
 
     Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule* module,
                                                  const StringView entry_name) {
-        // GC 已启用:module 入临时根贯穿全程。经 module.entry_ -> 常量池 -> 嵌套 fn 常量池 -> ...
-        // 整链根化所有建设中 ObjFunction / 常量池 ObjString。每个子 fn 在 compile_function 起始即
-        // add_constant 入父常量池(先于编译体),入池即经 module 根链可达;new_object -> add_constant
-        // 间走 trivial 分配(constants.push/reallocate),按 GC 核心不变式不触发 GC,故该窗口无需守卫。
+        // module 入临时根贯穿全程（根化链与各守卫窗口见类首「GC 安全」注）。
         const auto module_guard = gc_.make_guard(module);
 
         // 防御：lvalue_mode_ 复位为 Load（构造已置；此处防上一次 compile() throw 后残留跨复用）。
         lvalue_mode_ = LvalueMode::Load;
 
-        // 初始化模块编译上下文（建入口函数 + set_entry + 构造 ModuleCtx，含创建入口 fn 上下文与游标就位）。
-        // 须在 module 已根化下调用(上方 module_guard)。
         const auto entry = init_module(module, entry_name);
 
         try {
@@ -84,10 +78,8 @@ namespace aria {
         return entry;
     }
 
-    // 建模块入口函数（arity 0、名 entry_name，模块体包装）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
-    // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）；ModuleCtx 构造期 ASSERT
-    // entry 非空（此处先 set_entry）。工厂不再替调用方守卫入参,故入口名须显式 make_guard 跨 new_function 的
-    // new_object。entry_name：主入口模块传 `<main>`、运行期导入模块传 `<module>`。
+    // 建模块入口函数 + set_entry + 构造 ModuleCtx（契约见 CodeGen.hpp init_module 注）。
+    // 工厂不守入参，故入口名须显式 make_guard 跨 new_function 的 new_object。
     ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
         const auto name  = new_string(gc_, entry_name);
         const auto guard = gc_.make_guard(name);
@@ -103,14 +95,12 @@ namespace aria {
     CodeUnit* CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
 
     // ============================================================
-    // 常量池辅助（emit 编码已下沉 CodeUnit，调用方经 cur_cu()->emit_* 直接发射）
-    // 单层 _or_fail：操作 + 失败即 fail（持 loc，[[noreturn]]）并返回解包值。
-    // add_name_or_fail 经 add_constant_or_fail 复用溢出检查，免拷「溢出检查 + add_constant」逻辑。
+    // 常量池辅助
     // ============================================================
 
     u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc loc) const {
-        // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge。CodeUnit::add_constant 内部亦有
-        // ASSERT(size < 65536) 兜底，本预检保证永不触达。失败即 fail（[[noreturn]]），之后 add_constant 恒成功。
+        // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge（CodeUnit::add_constant 内部
+        // ASSERT 兜底，本预检保证永不触达）。
         if (cur_cu()->constants.size() > kMaxConstants) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
         }
@@ -118,8 +108,8 @@ namespace aria {
     }
 
     u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc loc) const {
-        // intern name 成 ObjString 并入常量池，返回索引。new_string 结果立即 add_constant_or_fail
-        // （trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫。溢出由 add_constant_or_fail fail。
+        // intern name 入常量池返回索引；new_string 结果立即 add_constant（trivial push 不触发 GC，
+        // 见类首 GC 安全注），无需守卫。溢出由 add_constant_or_fail fail。
         const auto str = new_string(gc_, name);
         return add_constant_or_fail(Value::from_obj(str), loc);
     }
@@ -131,20 +121,14 @@ namespace aria {
     void CodeGen::begin_scope() const { cur_fn_ctx()->begin_scope(); }
 
     void CodeGen::end_scope(const u32 line) const {
-        // 先按弹区（比新 scope_depth_ 更深的局部 = 原 scope 的局部）发射清理指令（is_captured 判定
-        // 需在登记移除前做），再 FunctionCtx::end_scope() 收尾（--scope_depth_ + 移除登记）。
         emit_pop_locals_to(cur_fn_ctx()->scope_depth_ - 1, line);
         cur_fn_ctx()->end_scope();
     }
 
     void CodeGen::emit_pop_locals_to(const u32 target_depth, const u32 line) const {
-        // 弹区清理统一发射口（退出作用域与 break/continue 共用）:整区一条 POP_N（被捕获局部一并
-        // 计数——CLOSE_UPVALUE 只关不弹，弹栈全由 POP_N 承担），弹区含被捕获局部才追加一条
-        // CLOSE_UPVALUE（关闭所有槽址 >= 新栈顶的开 upvalue：弹区槽已在新栈顶之上，不 push 不
-        // 覆写即安全，且 POP_N/CLOSE_UPVALUE 均无分配无安全点、两指令间无任何触发点；外层帧槽址
-        // 恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部——对齐 Lua OP_CLOSE 的批量关闭）。
-        // 只发射不改登记:退出作用域路径(end_scope)由随后 FunctionCtx::end_scope 移除登记并
-        // --scope_depth_;break/continue 路径登记本就须保留(跳转后语句仍在作用域内可引用)。
+        // 弹区清理统一发射口（POP_N / CLOSE_UPVALUE 的机制与「只发射不改登记」见头注）。
+        // 补充：CLOSE_UPVALUE 只关不弹（弹栈全由 POP_N 承担），且两指令均无分配无安全点、
+        // 其间无任何触发点。
         u32  count        = 0; // 弹区局部总数（含被捕获者，POP_N 计数）
         bool has_captured = false;
         for (const auto& local: std::views::reverse(cur_fn_ctx()->locals_)) {
@@ -162,8 +146,7 @@ namespace aria {
 
     u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc loc) const {
         // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
-        // 仅登记并标「定义但未初始化」（add_local 置 is_initialized=false），不发任何指令。
-        // 调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。失败即 fail（[[noreturn]]）。
+        // 仅登记不发指令；mark_initialized 时机见 CodeGen.hpp declare_local_or_fail 注。
         if (cur_fn_ctx()->is_defined_in_scope(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
         }
@@ -178,10 +161,7 @@ namespace aria {
     // ============================================================
 
     CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc loc) {
-        // 裸名解析：当前函数局部命中 -> Local（index=局部槽）；外层函数局部/外层 upvalue -> Upvalue
-        // （resolve_upvalue 递归登记捕获描述，index=本函数 upvalue 索引）；否则视为模块全局（VM 运行期
-        // LOAD_GLOBAL 查表，未定义报 UndefinedVariable）。Global 分支经 add_name_or_fail 入池，溢出即
-        // fail（持 loc）。解析序「局部 -> upvalue -> 全局」与 grammar.txt 既定一致。
+        // 解析序「局部 -> upvalue -> 全局」，契约见 CodeGen.hpp resolve_name_or_fail 注。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
@@ -193,16 +173,10 @@ namespace aria {
     }
 
     Opt<u8> CodeGen::resolve_upvalue(FunctionCtx* ctx, const StringView name, const SourceLoc loc) {
-        // 递归解析「ctx 体内引用 name 的 upvalue 捕获」（clox resolveUpvalue 递归形，捕获即引用）：
-        //   1. ctx->enclosing_ 的局部命中 -> 置该局部 is_captured=true（其槽将被捕获,作用域退出须经
-        //      CLOSE_UPVALUE 关闭；emit_pop_locals_to 据此发射）+ ctx 登记 {is_local=true, slot}。
-        //   2. 未命中 -> 递归把 ctx->enclosing_ 当作待捕获函数解析（穿透捕获:名字不在直接外层帧,
-        //      而在其外层某帧的局部或更外层的 upvalue）,命中 -> ctx 登记 {is_local=false, 外层视角的
-        //      upvalue 索引}（运行期 CLOSURE 执行时复制外围闭包的同下标 upvalue,同一 ObjUpvalue 指针）。
-        //   3. 到 entry（enclosing_==nullptr）之上仍无 -> nullopt,调用方落全局。
-        // 登记经 add_upvalue_or_fail（追加将越出 u8 索引域 -> fail TooManyUpvalues,首个错误自然即止--
-        // 不经此翻译则 nullopt 会被调用方误读为「不可捕获 -> 落全局」,捕获引用静默串台全局）。
-        // 同 (is_local,index) 去重复用:同名多处引用共用一个 upvalue 索引;is_captured 重复置位无害。
+        // 算法契约（clox resolveUpvalue 递归形、捕获即引用）见 CodeGen.hpp resolve_upvalue 注。
+        // 此处补充两点运行期事实：穿透捕获登记的 {is_local=false, idx} 在 CLOSURE 执行时复制外围
+        // 闭包的同下标 upvalue（同一 ObjUpvalue 指针）；add_upvalue_or_fail 把容量越界翻译为 fail
+        // （nullopt 只表「无外层可捕获 -> 落全局」，不外泄越界信号，否则捕获引用静默串台全局）。
         if (ctx == nullptr || ctx->enclosing_ == nullptr) {
             return std::nullopt;
         }
@@ -217,9 +191,6 @@ namespace aria {
     }
 
     u8 CodeGen::add_upvalue_or_fail(FunctionCtx* ctx, const UpvalueDesc desc, const SourceLoc loc) const {
-        // add_upvalue 失败翻译（单层 _or_fail 家族同款约定,文案收口于此）:ctx 登记一条捕获描述,
-        // 追加将越出 u8 索引域（add_upvalue 返 nullopt）-> fail TooManyUpvalues（持 loc）。
-        // 入参 ctx 显式传入--resolve_upvalue 沿 enclosing_ 链递归,登记发生在链上各层（非恒 cur_fn_ctx）。
         if (const auto idx = ctx->add_upvalue(desc)) {
             return *idx;
         }
@@ -227,14 +198,11 @@ namespace aria {
     }
 
     // ============================================================
-    // 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）
-    // 与上面 _or_fail 同一职责约定（操作 + 失败即 fail），但底层方法返 bool（patch_jump/emit_jump_back/
-    // declare_global），无解包值，故为 void 封装。文案收口于此。
+    // 跳转回填 / 全局登记失败翻译
     // ============================================================
 
     void CodeGen::patch_jump_or_fail(const usize src_off, const SourceLoc loc) const {
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
-        // 与上面 _or_fail 同一职责约定;patch_jump 无返回值,故本封装 void(仅翻译失败,无解包)。
         if (!cur_cu()->patch_jump(src_off)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "跳转偏移超过 64KB");
         }
@@ -242,15 +210,13 @@ namespace aria {
 
     void CodeGen::emit_jump_back_or_fail(const u32 target_off, const u32 line, const SourceLoc loc) const {
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
-        // 同 patch_jump_or_fail:void 封装,仅翻译失败。line 供 JUMP_BACK 发射行号(patch_jump 不发射故无)。
         if (!cur_cu()->emit_jump_back(target_off, line)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "回边偏移超过 64KB");
         }
     }
 
     void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc loc) const {
-        // declare_global 重定义 -> fail RedefinedVariable。void 封装(declare_global 返 bool,无解包),
-        // 同 patch_jump_or_fail/emit_jump_back_or_fail;与 declare_local_or_fail 对称,文案收口于此。
+        // declare_global 重定义 -> fail RedefinedVariable（文案收口于此）。
         if (!mod_ctx_->declare_global(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name);
         }
@@ -268,10 +234,6 @@ namespace aria {
     }
 
     void CodeGen::validate_lvalue_target(ExprNode& target) const {
-        // 赋值左值种类合法性：Identifier/FieldAccess/IndexAccess 是合法左值种类，放行（未实现的由各自
-        // visit 节点在被 emit_lvalue 分派时 not_impl）；其余节点种类 -> InvalidAssignmentTarget。
-        // 由 emit_lvalue 在分派前调用：复合/前置自增自减的首次 emit_lvalue(Load) 先于 rhs，故彼等先于 rhs
-        // 报；普通 = 的 emit_lvalue(Store) 后于 rhs，非法左值在 rhs 编译后才抛（字节码随 throw 丢弃）。
         if (dynamic_cast<IdentifierNode*>(&target) != nullptr) {
             return;
         }
@@ -285,23 +247,14 @@ namespace aria {
     }
 
     void CodeGen::emit_lvalue(ExprNode& node, const LvalueMode mode) {
-        // 验证左值种类后设置模式并分派。目标节点入口经 take_lvalue_mode() 取值并清空为 Load，故子节点经
-        // emit_expr 时 flag 已清空（emit_expr 入口 ASSERT 之为 Load）。不在分派后恢复--清空职责在
-        // take_lvalue_mode，漏 take 会被 emit_expr 的 ASSERT 在开发期捕获。
+        // 验证左值种类后设置模式并分派；清空职责在 take_lvalue_mode（漏 take 由 emit_expr ASSERT 捕获）。
         validate_lvalue_target(node);
         lvalue_mode_ = mode;
         node.accept(*this);
     }
 
-    CodeGen::LvalueMode CodeGen::take_lvalue_mode() {
-        // 取当前 lvalue_mode_ 并清空为 Load（一次性 take）。访问节点据此返回值分支 Load/Store，不直接读写
-        // lvalue_mode_；清空确保子节点经 emit_expr 时 flag 已为 Load。
-        return std::exchange(lvalue_mode_, LvalueMode::Load);
-    }
+    CodeGen::LvalueMode CodeGen::take_lvalue_mode() { return std::exchange(lvalue_mode_, LvalueMode::Load); }
 
-    // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前压栈
-    // （emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。封装 for-in
-    // 的 iter()/has_next()/next() 三处同型 LOAD_FIELD+CALL 0 模式；name 入常量池经 add_name_or_fail。
     void CodeGen::emit_method_call0(const StringView name, const u32 line, const SourceLoc loc) const {
         cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
         const auto name_idx = add_name_or_fail(name, loc);
@@ -310,12 +263,8 @@ namespace aria {
         cur_cu()->emit_byte(0, line);
     }
 
-    // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local（未初始化 ->
-    // UninitializedVariable）；Global LOAD_GLOBAL（VM 运行期查表）；Upvalue LOAD_UPVALUE（u8 upvalue
-    // 索引；不做 init 检查--捕获时序语义同 Lua：捕获的是声明点快照之外的槽引用，外层可能尚未赋值，
-    // 与全局路径一致）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 / upvalue
-    // 索引 / 全局名字常量池索引；loc 供 check_local_initialized 复用。
     void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line, const SourceLoc loc) const {
+        // 契约见 CodeGen.hpp emit_load_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
                 check_local_initialized(slot, loc);
@@ -333,10 +282,8 @@ namespace aria {
         UNREACHABLE();
     }
 
-    // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
-    // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL（VM 运行期查表）；Upvalue STORE_UPVALUE
-    // （u8 upvalue 索引，peek-store 写穿外层槽/已关值；不 mark_initialized--索引非本帧局部槽）。
     void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line, const SourceLoc loc) const {
+        // 契约见 CodeGen.hpp emit_store_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
                 cur_cu()->emit_store_local(slot, line);
@@ -359,8 +306,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::bind_pattern(PatternNode& node) {
-        // 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。值填槽模型：
-        // 声明发生在值已在栈顶之时，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
+        // 契约与值填槽模型见 CodeGen.hpp bind_pattern 注。
         if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
             const auto slot = declare_local_or_fail(id->name, node.loc()); // 纯登记，slot = 值位置；值填槽不发指令
             cur_fn_ctx()->mark_initialized(slot);                          // 值已在槽
@@ -381,7 +327,6 @@ namespace aria {
     // 遍历入口
     // ============================================================
 
-    // 遍历入口：accept 双分派；出错时 visit 内 fail() 抛 AriaCompileException 自动 unwind，无需 ok() 短路。
     void CodeGen::emit_expr(ExprNode& node) {
         // rvalue 上下文恒 Load：emit_lvalue 分派后必恢复为 Load。断言（非预防性赋值）以在开发期捕获漏恢复。
         ASSERT(lvalue_mode_ == LvalueMode::Load,
@@ -396,12 +341,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc loc) const {
-        // 形参合法性检查（FunDecl / Lambda 共用，compile_function 编译体前调用）：
-        //   >kMaxArity -> TooManyParameters；默认参数 / varargs -> not_impl；形参重名 -> DuplicateParam。
-        // 只读 params、不触碰编译器状态（无 cur_cu / cur_fn_ctx / GC 依赖），首错即 fail / not_impl 抛出。loc
-        // 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body.loc()（body 的
-        // '{'），更贴近参数列表所在；只需位置无需整节点，故入参为按值 SourceLoc 而非 ASTNode&（not_impl 走其
-        // SourceLoc 重载）。
+        // 契约见 CodeGen.hpp validate_params 注；此处只读 params，不触碰编译器状态。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
         }
@@ -423,9 +363,7 @@ namespace aria {
 
     void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
                                    SourceLoc decl_loc) {
-        // 参数合法性检查：decl_loc 为声明节点位置（fun 关键字，visit 层经 node.loc() 传入），非 body 的 '{'，
-        // 供 validate_params 报参数错；先于 new_function 等分配，失败即抛 AriaCompileException 跳过下方所有
-        // 发射与分配。下方体发射行号仍取 body.loc_line()。
+        // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
         validate_params(params, decl_loc);
 
         const auto loc  = body.loc();
@@ -435,8 +373,7 @@ namespace aria {
         const auto name_str   = new_string(gc_, name);
         auto       name_guard = gc_.make_guard(name_str);
         const auto fn         = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
-        // fn 创建后跨 add_constant 无需守卫:constants.push -> reallocate 走 trivial 分配不触发 GC(见 GC.hpp
-        // 核心不变式);入池后即经 module 根链可达。
+        // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
         // CLOSURE fn_idx（不再 LOAD_CONST fn）:VM 执行时取常量池 ObjFunction 现场包 ObjClosure,
         // 按本函数捕获描述表(体编译期间经 resolve_upvalue 登记、下方 flush 进 fn->upvalue_descs_)
@@ -447,7 +384,6 @@ namespace aria {
         // lambda(name == `<anonymous>`)留栈作表达式值不绑定，故可以跳过;具名 fun 绑定全局/局部。
         if (name != kAnonymousName) {
             if (mod_ctx_->is_global_scope()) {
-                // 顶层 fun -> 模块全局
                 declare_global_or_fail(name, loc);
                 const auto name_idx = add_name_or_fail(name, loc);
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
@@ -479,8 +415,7 @@ namespace aria {
         cur_cu()->emit_op(OpCode::RETURN, line);
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
-        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读;copy_from 走 trivial 分配
-        // 不触 GC,fn 此刻已入父常量池经 module 根链可达,免守卫)。
+        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
         fn->upvalue_descs().copy_from(child->upvalues_);
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
@@ -708,25 +643,20 @@ namespace aria {
 
     void CodeGen::visitImportStmtNode(ImportStmtNode& node) {
         const u32 line = node.loc_line();
-        // IMPORT path:u16 压模块值于栈顶；绑定按作用域走（与 var/fun 同形 lowering）：
-        //   顶层 -> DEF_GLOBAL alias（弹值定义全局）；嵌套 -> 值填槽（IMPORT 压 [module] 在下个 slot
-        //   位置，declare 登记该 slot + mark_initialized），无 STORE_LOCAL。对齐文法「绑模块到当前作用域
-        //   （函数体=局部）」。
-        // path 入池 + IMPORT 压模块值于栈顶（两分支共用）。path/alias 经 add_name_or_fail：new_string(intern)
-        // 结果立即 add_constant 入池（trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫。
+        // IMPORT path:u16 压模块值于栈顶；绑定与 var/fun 同形：顶层 -> DEF_GLOBAL alias，嵌套 -> 值填槽。
+        // path/alias 经 add_name_or_fail（无需守卫，见类首 GC 安全注）。
         const auto path_idx = add_name_or_fail(node.path, node.loc());
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line); // [module]
         if (mod_ctx_->is_global_scope()) {
-            // 顶层 import -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。path 已先入池
-            // 经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path。
+            // 顶层 import -> 模块全局。path 已先入池经 module 根链可达，故 alias 的 new_string
+            // 不会回收已入池的 path。
             declare_global_or_fail(node.alias, node.loc());
             const auto alias_idx = add_name_or_fail(node.alias, node.loc());
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(alias_idx, line); // []  弹值定义全局
         } else {
-            // 嵌套 import -> 局部（值填槽：IMPORT 已压 [module] 在栈顶 = 下个 slot 位置，declare 登记该
-            // slot 并 mark_initialized；无 STORE_LOCAL/POP。与 for-in <iter> 值填槽同形）。
+            // 嵌套 import -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注）。
             const auto slot = declare_local_or_fail(node.alias, node.loc());
             cur_fn_ctx()->mark_initialized(slot); // 值已在槽
         }
@@ -734,7 +664,7 @@ namespace aria {
 
     void CodeGen::visitTryStmtNode(TryStmtNode& node) {
         const u32 line = node.loc_line();
-        // finally 已裁撤(2026-09,善后后继 defer 已降为可选后续、不再绑定 M4);try 须有 catch。
+        // try 须有 catch（parse 层允许无 catch，语义收口在此）。
         if (node.catch_body == nullptr) {
             fail(ErrorCode::TryWithoutHandler, node.loc(), "try 须有 catch");
         }
@@ -781,8 +711,7 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode& node) { not_impl(node, "match 语句"); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode& node) {
-        // 顶层 fun：name 经 compile_function 内部 intern + make_guard（每方只守自己创建的），故此处只传 StringView。
-        // node.loc() 传作 decl_loc，供 compile_function -> validate_params 取声明节点 loc（fun 关键字）报参数错。
+        // name 由 compile_function 内部 intern + make_guard，此处只传 StringView；node.loc() 作 decl_loc。
         compile_function(node.name, node.params, *node.body, node.loc());
     }
 
@@ -797,10 +726,8 @@ namespace aria {
                 not_impl(*target, "列表模式解构 var 声明");
             }
             if (mod_ctx_->is_global_scope()) {
-                // 顶层 var -> 模块全局（declare_global 内容判重；DEF_GLOBAL 弹值定义）。name 经
-                // add_name_or_fail 在 emit_expr 之后入池：new_string(intern) 结果立即 add_constant
-                // （trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫；与 visitImportStmtNode
-                // 顶层分支同形。
+                // 顶层 var -> 模块全局（DEF_GLOBAL 弹值定义）。name 在 emit_expr 之后入池
+                // （无需守卫，见类首 GC 安全注），与 visitImportStmtNode 顶层分支同形。
                 declare_global_or_fail(id->name, id->loc());
                 if (initializer != nullptr) {
                     emit_expr(*initializer);
@@ -811,8 +738,7 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
                 cur_cu()->emit_word(name_idx, line);
             } else {
-                // 嵌套 var -> 局部（值填槽：declare 仅登记标未初始化；初始化器值恰好压在 slot 即该局部，
-                // 无 store/pop；无初始化器则 LOAD_NIL 填槽。最后 mark_initialized）
+                // 嵌套 var -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注；无初始化器 LOAD_NIL 填槽）。
                 const auto slot = declare_local_or_fail(id->name, id->loc());
                 if (initializer != nullptr) {
                     emit_expr(*initializer); // 值恰好压在 slot（不变式：declare 与 init 相邻）
@@ -872,9 +798,7 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierNode(IdentifierNode& node) {
-        // 入口 take：取模式并清空为 Load（子节点经 emit_expr 时已为 Load）。按 mode 分派到 emit_load_var /
-        // emit_store_var，两者各自按 var.kind 发射 Local/Upvalue/Global。Locate 预留（Identifier 无 receiver，
-        // 同 Load）。
+        // 入口 take：按 mode 分派 Load/Store（Locate 预留位，同 Load）。
         const auto mode     = take_lvalue_mode();
         const u32  line     = node.loc_line();
         const auto resolved = resolve_name_or_fail(node.name, node.loc());
@@ -910,7 +834,6 @@ namespace aria {
             patch_jump_or_fail(j, node.loc()); // -> L_end（rhs 之后）
             return;
         }
-        // 算术 / 比较：lhs、rhs 各求值一次，再发射 op。
         emit_expr(*node.rhs);
         switch (node.op) {
             case Op::Binary::EqualEqual:
@@ -986,7 +909,6 @@ namespace aria {
 
     void CodeGen::visitAssignmentNode(AssignmentNode& node) {
         const u32 line = node.loc_line();
-        // 左值种类验证（InvalidAssignmentTarget / Field/Index not_impl）由 emit_lvalue 在分派前完成。
         if (node.op == Op::Assignment::Assign) {
             // 普通 =：value -> store（peek-store 留值）
             emit_expr(*node.value);
@@ -1056,9 +978,7 @@ namespace aria {
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode& node) {
-        // lambda 名 `<anonymous>`（`<>` 标识符不可用，具独特辨识度）；compile_function 据名 == `<anonymous>`
-        // 判定 lambda -> 函数值留栈不绑定名字。name 经 compile_function 内部 intern + make_guard，故此处只传
-        // StringView。node.loc() 传作 decl_loc，供 compile_function -> validate_params 取声明节点 loc 报参数错。
+        // lambda 判据即 name == `<anonymous>`（机制见 compile_function 注）；decl_loc 同 visitFunDeclNode。
         compile_function(kAnonymousName, node.params, *node.body, node.loc());
     }
 

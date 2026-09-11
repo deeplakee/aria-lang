@@ -218,7 +218,7 @@ ObjString* new_string(GC& gc, StringView src);    // = gc.new_object<ObjString>(
 
 ```
 collect():
-  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + builtins_ + current_ 沿 previous_ 执行链各上下文值栈/帧/挂起错误寄存器)
+  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + builtins_ + object_class_(M5 第 4 根) + current_ 沿 previous_ 执行链各上下文值栈/帧/挂起错误寄存器)
   trace_gray_()    // gray 栈弹一个 -> o->trace(*this) -> 子节点标灰入栈
   sweep_()         // 遍历 objects_head_:未标 -> 摘除 + delete_object();已标 -> unmark()
   next_gc_ = bytes_allocated_ * 2
@@ -474,7 +474,7 @@ class InternPool {
 
 ### Phase 4:Movement + VM 根
 
-> **已前拉部分(开发期即启用 GC)**:`modules_` + `builtins_` + `current_` 沿 `previous_` 执行链各上下文的值栈 `[base, top)`/各活动帧 `closure`/`module`/挂起错误寄存器/open upvalue 开链(M4 起一并标)已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point(open upvalue 链已随 M4 落地于 Movement、经 vm_roots tracer 标根,不再待 M6)。
+> **已前拉部分(开发期即启用 GC)**:`modules_` + `builtins_` + `object_class_`(M5 tracer 第 4 根) + `current_` 沿 `previous_` 执行链各上下文的值栈 `[base, top)`/各活动帧 `closure`/`module`/挂起错误寄存器/open upvalue 开链(M4 起一并标)已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point(open upvalue 链已随 M4 落地于 Movement、经 vm_roots tracer 标根,不再待 M6)。
 
 - `Movement`(协程单元,作 Object 子类型):持 `Array<Value> value_stack_`、`FrameStack<CallFrame> frames_`、`ObjUpvalue* open_upvalues_`、`MovementState`。`trace()` 遍历值栈/帧/upvalue/`previous_`/挂起错误寄存器(对标 Wren `blackenFiber`)。
 - VM 持 `Movement* current_`(唯一 VM 级协程根)。`mark_roots_` 保留 `current_ -> previous_` 链遍历直标(main_ctx_ 不入堆、非对象,运行中协程的 `previous_` 指向它时对象图不可达,只能链遍历覆盖);挂起协程因 yield/完成解链(`previous_` 恒空)经用户持有的协程值走对象图(M6 定稿,取代早期「`movements_` 列表并集标根」方案,见 vm-design.md §4.9)。

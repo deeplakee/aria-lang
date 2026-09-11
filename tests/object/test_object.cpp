@@ -17,6 +17,7 @@ using aria::ObjException;
 using aria::ObjFunction;
 using aria::ObjString;
 using aria::Pair;
+using aria::Span;
 using aria::String;
 using aria::try_obj;
 using aria::Value;
@@ -120,4 +121,12 @@ TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::InvalidOperand);
     EXPECT_TRUE(msg.contains("negate requires a number, got String"));
+
+    // 可调用协议默认(备置):本类型不可调用,CallNonCallable(文案与 call_value 原默认一致;
+    // slots 契约同 NativeFn,调用区 Span 经 Span<Value>{&peek(argc), argc+1} 构造)。
+    Value sv_box = Value::from_obj(s); // callee 占槽 0(与 VM 调用区同形)
+    EXPECT_FALSE(s->op_call(vm, Span<Value>{&sv_box, 1}));
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::CallNonCallable);
+    EXPECT_TRUE(msg.contains("call non-callable String"));
 }

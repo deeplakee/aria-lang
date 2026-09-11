@@ -148,6 +148,9 @@ namespace aria {
         // 头文件仅前向声明即可,避免 Movement.hpp 拖入 object 树)。slots 与值栈的对应关系在此
         // 收口,与 exit_frame 成对,锁住「栈顶帧 slots 即值栈本帧槽 0」的不变量。
         // 注:M4 起 callable 收敛为闭包,帧持 ObjClosure*;arity/名字等元数据经 closure->function() 取。
+        // 槽 0 的语义由调用方在进帧前写定:普通函数调用 = 闭包自身(压在栈上的 callee),
+        // 方法调用 = 接收者(this)替代 bound 对象 -- 闭包不入栈,经 frame.closure 携带
+        // (对齐 clox / 旧版 VM 的方法帧形 [this, a1..aN],两态共用本入口,无专用方法进帧)。
         void enter_frame(ObjClosure* closure, u8 argc);
 
         // ---- open upvalue 开链(M4)----
@@ -254,6 +257,8 @@ namespace aria {
         // 就位一帧为对 closure 的调用:slots 指向槽 0,VM 专有字段(closure/unit/module/ip)从
         // closure 解引用填充。假定栈顶形如 [callee, a1..aN](N=argc),f 为 enter_frame 刚 acquire
         // 的栈顶空帧。与 enter_frame 分工:enter_frame 管 acquire(帧栈管理),此函数管填字段。
+        // 槽 0 内容即「被调用者语义槽」:普通帧 = 闭包自身、方法帧 = this(调用方进帧前写好;
+        // 闭包经 frame.closure 携带不上栈,见 enter_frame 注释)。
         void init_frame_(CallFrame& f, ObjClosure* closure, u8 argc) const;
 
         // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 Movement 内部独占

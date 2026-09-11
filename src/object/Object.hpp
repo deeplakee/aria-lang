@@ -294,6 +294,26 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_negate(AriaVM& vm) const;
 
+        //////////////////////////
+        // 可调用协议(CALL 的对象侧分派点,备置 API)
+        //
+        // 对象作为被调用者(callee)的虚函数协议:call_value 的 switch 对已实装可调用类型
+        //(CLOSURE/NATIVE_FN/CLASS/BOUND_METHOD)精确分派,其余类型落本协议基类默认
+        //(fail CallNonCallable)。未来新增可调用对象类型(如语言级 __call)override 本方法
+        // 即接入调用协议,无需改 call_value 的 switch(同 op_add 族备置模式,2026-09-11)。
+        //
+        // **签名与 ObjNativeFn 契约同构**(`NativeFn = bool (*)(AriaVM&, Span<Value>)`):
+        // 调用区 [callee, a1..aN] 的可写视图 --slots[0] = callee(双职:被调者/返回槽,
+        // 写返回值即覆写 slots[0])、slots[1..size()-1] = 实参(槽位不动,argc =
+        // slots.size() - 1)。执行型协议(进帧/改栈/写返回槽)与 op_* 算术族(纯计算,
+        // const 接收 + Opt<Value> 返回)分属两族:返回 bool 与 NativeFn 契约一致 --
+        // true = 成功(返回值已写 slots[0]),false = 已 fail(载荷在挂起寄存器,契约
+        // 同全 VM);覆写槽 0 的特殊语义(如实例化原位换实例作 this)由 override 自定。
+        //////////////////////////
+
+        [[nodiscard]]
+        virtual bool op_call(AriaVM& vm, Span<Value> slots);
+
 
         ////////////////////////////
 

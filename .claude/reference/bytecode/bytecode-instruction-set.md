@@ -136,7 +136,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_LOCAL_L` | `slot:u16` | `[] -> [v]` | 同 `LOAD_LOCAL`，`slot>=256` 时用（3B，见 §2.3） |
 | `STORE_LOCAL_L` | `slot:u16` | `[v] -> [v]` | 同 `STORE_LOCAL`，`slot>=256` 时用（3B） |
 
-局部槽由编译器在函数/块作用域内分配：slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；`this` 在方法帧中约定为槽 1（见 §4.8）。
+局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
 
 **局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。读取未初始化局部由读点 `load_local` 检查 `is_initialized` 报 `UninitializedVariable`，避免读到未填充槽。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
 
@@ -180,11 +180,11 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 ### 4.8 this 字段（优化）
 
-`this` 在方法帧中固定占槽 1。`obj.field` 当 `obj` 恰为 `this` 时，可省去压 `this` 这一步：
+`this` 在方法帧中固定占槽 0（方法帧 `[this, a1..aN]`，this 替代 callee 占位）。`obj.field` 当 `obj` 恰为 `this` 时，可省去压 `this` 这一步：
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压入 `this.name`（`this` 取自槽 1，不压栈） |
+| `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压入 `this.name`（`this` 取自帧槽 0，不压栈） |
 | `STORE_THIS_FIELD` | `name:u16` | `[v] -> [v]` | peek-store 到 `this.name` |
 
 纯 `this` 表达式（`ThisExprNode`）在实例方法体内拟编译为 `LOAD_LOCAL 1`；嵌套函数引用 `this` 捕获为 upvalue（见 §5.5）。当前类/`this` 相关 visit 未落地（M5），编译器暂不发射。
@@ -269,9 +269,9 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | :--- | :--- | :--- | :--- |
 | `LOAD_OBJECT` | (无) | `[] -> [Object]` | 压栈内置 `Object` 根类（VM 内部指针，不经名字查，避免 shadow `Object` 名破坏隐式继承） |
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_OBJECT` |
-| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为方法 `name` 注册到 `class`（**静态方法与实例方法皆经此注册**，含 `init`）；区别仅在闭包是否绑 `this`：静态方法无 `this`、经 `ClassName.x` 访问静态；实例方法 `this` 占槽 1。`init` 由 init 缓存按名查（§5.5）；`class` 留栈继续接收成员 |
+| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为方法 `name` 注册到 `class`（**静态方法与实例方法皆经此注册**，含 `init`）；区别仅在闭包是否绑 `this`：静态方法无 `this`、经 `ClassName.x` 访问静态；实例方法 `this` 占帧槽 0（方法帧 `[this, a1..aN]`）。`init` 命中时覆盖工厂 seed 同步 `ObjClass.init_`（init Value 化）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量 `name` 存入 `class`（`var` 声明 lowering：eager 求值初始化器后存）；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_METHOD` | `name:u16` | `[] -> [bound]` | `this` 取自槽 1，父类取自**当前闭包的 defining class**（`ObjFn.defining_class.super`，编译期绑定、不经栈）；查方法 `name` 绑成 `ObjBoundMethod` 压栈供 `CALL` |
+| `LOAD_SUPER_METHOD` | `name:u16` | `[] -> [bound]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；查方法 `name` 绑成 `ObjBoundMethod` 压栈供 `CALL` |
 | `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预留指令**（编译器不发射、VM 命中 `not_implemented`）：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能优化（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 创建 `ObjMap`，压栈 |
@@ -411,7 +411,7 @@ CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upvalue_descs() 建捕获, 无�
 
 ### 5.5 def / 静态成员 / 实例方法 / super / 实例化
 
-def 体内三种成员：`var` -> 静态变量（属类，`ClassName.x` 读写）；`fun name(){}` -> 静态方法（无 `this`，经 `ClassName.x` 访问静态成员）；`name(){}`（裸 identifier）-> 实例方法（`this` 占槽 1，经 superclass 链继承、`super.m()` 可用）。体内裸名解析顺序：**局部 -> upvalue -> 模块全局**（类静态不在裸名作用域，经 `ClassName.x` 限定访问）。`def` 在运行时仍是 `ObjClass`。
+def 体内三种成员：`var` -> 静态变量（属类，`ClassName.x` 读写）；`fun name(){}` -> 静态方法（无 `this`，经 `ClassName.x` 访问静态成员）；`name(){}`（裸 identifier）-> 实例方法（`this` 占帧槽 0，经 superclass 链继承、`super.m()` 可用）。体内裸名解析顺序：**局部 -> upvalue -> 模块全局**（类静态不在裸名作用域，经 `ClassName.x` 限定访问）。`def` 在运行时仍是 `ObjClass`。
 
 ```
 # def Foo : Bar { var x = 1; fun s() {...} init(...) {...} m(...) {...} }
@@ -420,7 +420,7 @@ MAKE_CLASS "Foo"       ; [class]    ; 弹 super 创建 Foo
 LOAD_IMM 1             ; [class, 1] ; var x = 1
 MAKE_STATIC "x"        ; [class]    ; 存为静态变量 x
 MAKE_METHOD "s"        ; [class]    ; 静态方法: 闭包不绑 this
-MAKE_METHOD "init"     ; [class]    ; 实例方法: init, this 占槽 1（init 缓存按名查）
+MAKE_METHOD "init"     ; [class]    ; 实例方法: init, this 占帧槽 0（命中 init 覆盖工厂 seed）
 MAKE_METHOD "m"        ; [class]    ; 实例方法
 STORE_GLOBAL "Foo"     ; []         ; 绑类名 (或 STORE_LOCAL)
 
@@ -430,7 +430,7 @@ LOAD_GLOBAL "Foo"      ; [class]
 CALL argc              ; [instance] ; VM 见 ObjClass -> 新建 ObjInstance + 调 init
 
 # super.m(args)
-LOAD_SUPER_METHOD "m"  ; [bound]    ; this 来自槽 1, 父类来自当前闭包的 defining class
+LOAD_SUPER_METHOD "m"  ; [bound]    ; this 来自帧槽 0, 父类来自当前闭包的 defining class
 <args>                 ; [bound, a1..aN]
 CALL argc              ; [r]
 ```
@@ -441,7 +441,7 @@ CALL argc              ; [r]
 
 Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Object 根类，统一继承链语义。**Bootstrap**：VM init 阶段、用户代码执行前，创建 Object--一个普通 `ObjClass`，`superclass_ = nil`（唯一 nil 超类的类），VM 成员单独持有（M5 决策 3：**不进 globals/builtins/任何模块**，裸名解析四层均够不到、正常代码访问不到，本段旧文「注册为全局名」措辞待阶段 4 随 §5.5 精化收回）。**编译器隐式超类**：`def Foo`（无显式父类）编译等价于 `def Foo : Object`，编译器填 Object 作隐式超类；`def Foo : Bar` 设 super=Bar（经 Bar 链最终到达 Object）。隐式 Object 引用经 `LOAD_OBJECT`（VM 内部指针，**不按名字查**）--Object 不入任何名字空间，用户 shadow 全局名无从谈起，继承机制天然免疫用户命名。**Object 方法集**：保持最小通用--`init`（no-op，返回 this）、`to_string`（如 `<ClassName>`），可再加 `equals`（引用相等）、`hash`（地址/id）、`class`（返 ObjClass）、`is_a(Class)`；每个方法被所有实例继承，谨慎加。Object **不带静态变量**（根类保持最小，静态会被全类经链共享）。Object 方法体内 `super` **非法**（它是根，无超类），编译期/VM 报错。`Object()` 实例化允许（permissive），产出持 Object 方法的最小 ObjInstance。**边界**：Object 统一的是用户定义类的实例（持 ObjClass 的 ObjInstance）。原始值（nil/bool/f64/int，NaN-boxing 内联载荷，非 Obj）不在 Object 层次内；内置 Obj 类型（ObjString/ObjList/ObjMap 等，C++ 类型带 ObjType tag、不持 ObjClass）暂亦不在内；纳入内置类型为 uniform OOP 目标方向（见下文）。链式查找（静态/实例方法/`foo.x` 回退/`init` 解析）统一终止于 Object（裸名走模块全局，不在此列）。
 
-`init` 缓存与实例化快路径（编译期/VM 语义）：`init` 是每次构造的热路径，不在实例化时查表，而在 MAKE_CLASS 注册完所有成员后**当场解析一次**--沿 `superclass_` 链找到最近的 `init` 闭包，存进 `ObjClass.init_`。之后 `Foo()` 实例化直接读 `class.init_`，O(1) 不走链。有 Object 根兜底，`init_` 永不为空（总在 Object 命中 no-op `init`）。进一步快路径：Object 的 `init` 是 no-op，若 `class.init_` 指向的就是 Object 的 no-op `init`（指针同一性判断）且无参（`argc == 0`），实例化**连调都不调**，直接 `new ObjInstance(class)` 返回--与无 Object 根时一样快，语义统一不付性能代价。aria 实例字段由 `init` 内 `this.x = ...` 动态设置，无自定义 `init` 的类本无字段要初始化，跳过 no-op 留空 ObjInstance 正确。缓存失效：`def` 一次性定义方法集；类上赋值可改写方法槽（读穿透、写遮蔽，M5 决策补记）--已绑定实例不失效，bound 缓存取**首解析快照**语义（新解析见新闭包、旧实例沿用旧绑定）；"init" 赋值由 STORE_FIELD 类路径特例同步 `init_`（值非 ObjClosure 拒写），故实例化快路径前提（`init_` 与类表 init 槽一致）始终成立。
+`init` 缓存与实例化路径（编译期/VM 语义；2026-09-10 整改定稿）：`init` 不在实例化时查表，而在 `MAKE_CLASS` 指令执行中 **seed**--super 已验为类，直接继承父的 `init_`（O(1) 不走链；`new_class` 工厂只分配不 seed、出厂恒 nil，seed 责任在指令层，2026-09-10 自工厂移出），Object 根由 bootstrap 设原生 no-op `init`，`init_` 恒有值。`init_` 为 **Value**（闭包/原生皆可）：`Foo()` 实例化为槽 0 原位换实例 + `call_value(cls->init(), argc)` 通用分发三步 -- init 闭包进方法帧（编译器尾部 `LOAD_LOCAL 0; RETURN` 返 this）、原生同步调用（Object 的 no-op 不写 slots[0] 即返回 this）、非可调用值（类上赋 `Foo.init = 5` 放行）报 CallNonCallable 兜底。无指针同一性快路径（原生 no-op 调用开销可忽略，不值得特判）。aria 实例字段由 `init` 内 `this.x = ...` 动态设置，无自定义 `init` 的类本无字段要初始化。缓存失效：`def` 一次性定义方法集；类上赋值可改写方法槽（读穿透、写遮蔽，M5 决策补记）--已绑定实例不失效，bound 缓存取**首解析快照**语义（新解析见新闭包、旧实例沿用旧绑定）；"init" 赋值经 `ObjClass::set_field` 命中同步 `init_`（值形态不特判），表槽/init_ 一致始终成立。
 
 **作用域模型：模块即命名空间 + 裸名走词法+模块全局**（编译期/VM 语义，Python/JS 路子）：
 
@@ -453,10 +453,10 @@ Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Objec
 - **嵌套类（全路径）**：`class B` 在 `class A` 内 -> `B` 是 `A` 的静态 `A.B`。从内部引用 `B` 须经全路径 `A.B`（限定访问，运行期查 `A` 的静态 `B`），**无 enclosing 链、无裸名**。模块顶层类是模块全局，裸名可访；嵌套类不是模块全局，须全路径。
 - **无 `This` 关键字**：自引用写类名（`Foo.x`）。
 - **ObjFn 持 defining class**：用于 `super`（`LOAD_SUPER_METHOD` 的“父类来自当前闭包”）。**不再用于 enclosing 走链**（无 enclosing）。
-- **`this`（实例，小写）为捕获 upvalue（arrow-function 语义）**：`this` 是实例方法的槽 1；嵌套函数引用 `this` 时，沿外围函数帧找最近的**实例方法**，把它的槽 1 捕获为 upvalue（`this` -> `LOAD_UPVALUE`，`.x` -> `LOAD_FIELD`）。若链上无实例方法（静态方法、顶层函数、或只嵌在静态方法里），`this` 不可用--编译期报错。静态方法本身无 `this`。
-- **`super` 边界**：`super.m()` 仅实例方法可用--用槽 1 的 `this` 调被覆写的实例方法（`LOAD_SUPER_METHOD` 从 defining class 的 super 起）。访问父类静态直接 `ClassName.x`，**不支持 `super.x`**（避免额外复杂度）。静态方法无 `this`，`super` 非法。
+- **`this`（实例，小写）为捕获 upvalue（arrow-function 语义）**：`this` 是实例方法的帧槽 0（首个具名局部）；嵌套函数引用 `this` 时，沿外围函数帧找最近的**实例方法**，把它的槽 0 捕获为 upvalue（`this` -> `LOAD_UPVALUE`，`.x` -> `LOAD_FIELD`）。若链上无实例方法（静态方法、顶层函数、或只嵌在静态方法里），`this` 不可用--编译期报错。静态方法本身无 `this`。
+- **`super` 边界**：`super.m()` 仅实例方法可用--用帧槽 0 的 `this` 调被覆写的实例方法（`LOAD_SUPER_METHOD` 从 defining class 的 super 起）。访问父类静态直接 `ClassName.x`，**不支持 `super.x`**（避免额外复杂度）。静态方法无 `this`，`super` 非法。
 - **静态初始化时机（eager）**：静态变量的初始化器在类定义时求值（eager），非首次访问（lazy）。故 `class A { var x = B(); }` 要求 `B` 先于 `A` 定义；类定义顺序即静态初始化顺序。
-- **动态加静态**：不支持 monkey-patch；`Foo.newStatic = v`（新名）报错，静态必须 `var` 声明。实例字段动态（`this.x = v` 创建），静态声明式--有意不对称（`var` 标静态、与实例方法声明区分）。
+- **动态加静态**：允许（2026-09-11 改定，原「不支持 monkey-patch」废止）；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
 - **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。
 
 **模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体/块内=局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽 + `mark_initialized`（嵌套）按作用域走），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。

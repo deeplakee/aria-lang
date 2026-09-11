@@ -14,8 +14,11 @@
 
 namespace aria {
 
+    class ObjBoundMethod;
+    class ObjClass;
     class ObjClosure;
     class ObjFunction;
+    class ObjInstance;
     class ObjModule;
     class ObjNativeFn;
 
@@ -216,6 +219,18 @@ namespace aria {
             return builtins_;
         }
 
+        // Object 根类(M5 决策 3:bootstrap、VM 成员单独持有,不进任何名字空间)。
+        // LOAD_OBJECT 直推该成员;测试白盒检视用。
+        [[nodiscard]]
+        ObjClass* object_class() noexcept {
+            return object_class_;
+        }
+
+        [[nodiscard]]
+        const ObjClass* object_class() const noexcept {
+            return object_class_;
+        }
+
         // 源根列表(解释器级):裸名导入(import "lib/utils")的搜索路径根目录,语义对齐 Python
         // sys.path -- 解析器沿各源根找 <源根>/<spec>.aria,首个存在者命中(详见 IMPORT 实现 &
         // .claude/reference/runtime/import-path-resolution.md)。模块表键为命中文件的绝对规范路径(weakly_canonical,
@@ -263,8 +278,7 @@ namespace aria {
         // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令 -- 与 resolve_module 解析失败的
         // runtime_err 形态统一);被导入模块的编译期 Error 就地 new_exception 原样装配箱透传
         // (from_baked 语义不重烘,位置指向被导入文件内部)。**仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,
-        // run() 入口 reset 会清 pending_error -- run 外直调的错误会被静默吞掉(runtime_loc 亦
-        // 依赖顶帧,帧栈空则无位置)。
+        // run() 入口 reset 会清 pending_error -- run 外直调的错误会被静默吞掉。
         //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作 modules_
         //     表键,又作读盘路径。**调用方须已根化**(跨本函数内 modules_.upsert 的 rehash 触 GC --
         //     intern weak root 不保命)。
@@ -280,9 +294,12 @@ namespace aria {
         InterpretResult interpret_run(SourceFile& source, ObjModule& module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN](N=argc,由 CALL 调用方保证)。按 callee 的对象类型
-        // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native),其余报
-        // CallNonCallable。M4 起 callable 收敛为闭包:ObjFunction 退为常量池内部物,不再以 callable
-        // 值上栈(编译器经 CLOSURE 指令现场包闭包;IMPORT 的模块体 entry 由 IMPORT 分支现场包闭包)。
+        // 分派到对应 call_* 子例程(ObjClosure -> call_closure、ObjNativeFn -> call_native、
+        // ObjClass -> call_class、ObjBoundMethod -> call_bound_method),其余经 Object::op_call
+        // 协议基类默认报 CallNonCallable(未来可调用新类型 override op_call 即接入,不改本 switch)。
+        // M4 起 callable 收敛为闭包:ObjFunction 退为常量池内部物,不再以 callable 值上栈(编译器经
+        // CLOSURE 指令现场包闭包;IMPORT 的模块体 entry 由 IMPORT 分支现场包闭包);M5 起类与绑定
+        // 方法是 callable(CLASS 实例化、BOUND_METHOD 解包进方法帧)。
         // 作用于 *current_(与 dispatch_loop 同源;现为 main_ctx_,M6 协程期即当前协程上下文 -- 主循环在哪个
         // 上下文上驱动,调用就发生在哪个上下文,错误随上下文走不串扰)。返回 bool 为成败信号:true
         // 即成功(栈效应由子例程各自负责),false 即失败 -- 错误载荷已 raise 进 *current_ 的挂起
@@ -305,6 +322,34 @@ namespace aria {
         // .claude/reference/runtime/vm-design.md §4.7。
         bool call_native(const ObjNativeFn* obj, u8 argc);
 
+        // 类实例化(call_value CLASS 分支):new_instance 为唯一 GC 点(obj 经值栈根化),
+        // instance 建成即写 callee 槽 -- **槽 0 原位换实例**(即新帧的 this / 原生 init 的
+        // slots[0]),余下交 call_value 通用分发,与 call_bound_method 同款「槽 0 调用方改写」
+        // 约定:init 闭包经 call_closure 进方法帧(方法帧 [this, a1..aN],编译器尾部
+        // LOAD_LOCAL 0; RETURN 使 init 返回 this)、原生同步调用(no-op 不动 slots[0] 即返回
+        // 实例)、非可调用值(类上赋 Foo.init = 5 经 store_field 放行)报 CallNonCallable
+        // 兜底。init_ 经 MAKE_CLASS seed(继承父 init)/set_field 命中 "init" 同步,恒有值,
+        // 无空判与快路径。
+        // 成功返 true;失败经分发 raise 后返 false(bool 契约)。
+        bool call_class(ObjClass* obj, u8 argc);
+
+        // 绑定方法调用(call_value BOUND_METHOD 分支):调用区 [bound, a1..aN] 的槽 0 恰为
+        // bound 对象,原位覆写为 receiver(this 替代 callee,零整形,实参槽位不动),余下交
+        // call_value 分发 -- 闭包方法走 call_closure 进方法帧(方法帧 [this, a1..aN],this 占
+        // 槽 0;闭包经 frame.closure 携带不上栈),原生方法走 call_native(槽 0 即原生契约的
+        // this,兼返回槽,见 ObjNativeFn 契约「方法调用形态」)。方法值无需守卫:覆写槽 0 后
+        // 经类表槽/缓存可达(实现注释含完整走查)。成功返 true;失败经分发 raise 后返 false。
+        bool call_bound_method(const ObjBoundMethod* obj, u8 argc);
+
+        // Object 根类 bootstrap(M5 决策 3,ctor 一次调用):建 ObjClass("Object", super=nullptr)
+        // + 原生 no-op init(init Value 化:无 ObjFunction/无模块,ObjFunction「module 恒非空」
+        // 不变式保持;no-op 语义 = 返回 true 不写槽,slots[0] 已是 this 即返回实例)并发布:
+        // upsert 进类表 init 槽 + init_ 指同一值(表槽/init_ 一致,Object 根的 init 由本函数设,
+        // 其余类经 MAKE_CLASS seed)。
+        // 成员 object_class_ 单独持有、不进 builtins_/任何模块 globals(裸名解析 局部->upvalue->
+        // 全局->builtins 全部够不到,LOAD_OBJECT 直推成员,用户 shadow 全局名免疫)。
+        void bootstrap_object_class();
+
         // ---- 异常 unwind(M3,dispatch_loop 驱动期专用;设计见 exception-implementation-pitfalls.md 坑 #11-#16)----
 
         // 弹 2 算 1:对栈顶两个值执行二元数值运算(9 个算术/比较指令共用,Op 由 dispatch_loop 调用点
@@ -314,6 +359,40 @@ namespace aria {
         // 查表派发/未捕获物化。模板成员定义在 .cpp(全部实例化点在同 TU 的 dispatch_loop)。
         template<OpCode Op>
         bool run_binary_numeric();
+
+        // ---- 类与对象(M5):field 族指令执行体 ----
+        // 与 run_binary_numeric/call_value 族同款 bool 契约:成功(含栈形收口)返 true;
+        // 失败载荷已在 *current_ 挂起寄存器 --对象协议失败由 override 内 vm.fail 就地烘焙、
+        // 非对象守卫由执行体 fail(2026-09-10 二次整改,执行体只透传信号),返 false 后
+        // 调用方(case 体)据 bool 走 unwind 派发/物化。dispatch_loop 的 case 体只留
+        // 「读操作数 + 调执行体 + 失败善后」三件事。THIS 对(LOAD/STORE_THIS_FIELD)不设
+        // 执行体:编译器不变式保证 this 恒实例,无 nil/原语守卫,case 内直调协议(load
+        // 单一 miss 错误路径,化简后与执行体等长,函数边界只剩噪音)。
+
+        // LOAD_FIELD 执行体(name 操作数已读出):peek obj 不弹,经 Object::load_field
+        // 虚函数协议解析(实例绑定+缓存回填 / 类沿链读穿透 / 其余基类默认),结果写回原槽
+        // ([obj] -> [v])。obj peek 不弹 --协议内分配(绑定的 new_bound_method / miss 的
+        // fail 装箱)跨 GC 须 this 在栈(「栈即根」)。非对象(含 nil,不特判)是协议外的
+        // 原语,文案留本执行体(fail "type X does not support field access");对象 miss 的
+        // 文案由协议 override 就地烘焙(nullopt ⟺ 已 fail)。
+        bool run_load_field(ObjString* name);
+
+        // STORE_FIELD 执行体:[obj, v] -> [v](双值 peek 不弹,完成时单槽下移留 v -- 赋值
+        // 表达式约定;peek 不弹兼跨协议内 miss fail 分配的「栈即根」)。经 Object::store_field
+        // 协议(原三态 StoreResult 随 2026-09-10 二次整改退役:Rejected/Unsupported 文案
+        // 移入 override,执行体只透传 bool 信号);非对象守卫同 run_load_field。
+        bool run_store_field(ObjString* name);
+
+        // LOAD_SUPER_METHOD 执行体:defining class 取 *current_ 顶帧 closure 直读(M5 决策 6
+        // -- 挂 ObjClosure 不挂共享 fn 常量,函数体内 def 执行 N 次产生 N 个类不串链),从其
+        // 父类起走 ObjClass::load_field 协议沿链读穿透(起点即 super,不含 defining 自身;
+        // 命中:静态值/方法闭包原样直读,类协议不绑定不缓存;miss:类措辞 fail 已入寄存器,
+        // 本执行体只透传信号,2026-09-10 二次整改后封装收口再翻为协议委托),命中可调用值
+        //(闭包或原生)绑 this=帧槽 0 压栈供 CALL;**不写 fields 缓存**(铁则 2:super
+        // 查到的是被覆写前的实现,写缓存会被 fields 命中劫持后续 obj.m 动态派发)。defining
+        // 非空/方法类恒有父是编译器保证的不变式(ASSERT 钉);命中静态值为语言可达错误,
+        // 经 fail 返 false。
+        bool run_load_super_method(ObjString* name);
 
         // 自最内帧向外遍历帧链:每帧以 last_ip 反推 offset 查本帧 CodeUnit 异常记录表
         // (find_try_handler 取最内层覆盖),首命中即在该帧 unwind -- 截值栈到 frame.slots +
@@ -344,6 +423,12 @@ namespace aria {
         AriaHashTable builtins_; // VM 级只读 builtins 表(构造期一次填充 + GC 根,LOAD_GLOBAL 回退查)
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_);[1..]=配置根(stdlib/-L/环境变量)
         List<String> source_roots_;
+        // Object 根类(M5 决策 3):VM 构造期 bootstrap、单独持有,不进 builtins_/任何模块 globals
+        // (用户代码经名字够不到),LOAD_OBJECT 直推;tracer 第 4 根。唯一 superclass 为 nullptr
+        // 的类,链式查找(方法/静态/init)统一终止于它。声明不写默认值(复杂类成员初始化
+        // 统一收敛进构造函数):bootstrap 前的空态 nullptr 由构造函数初始化列表显式置,
+        // 供 tracer 先行注册后 register_builtins 触 GC 时 mark_object 容 nullptr。
+        ObjClass* object_class_;
     };
 
     // VM 不可移动不变式的显式校验(类完成定义后断言):成员间持指向彼此/自身的指针

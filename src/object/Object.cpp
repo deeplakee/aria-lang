@@ -57,4 +57,13 @@ namespace aria {
         return vm.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name());
     }
 
+    bool Object::op_call(AriaVM& vm, Span<Value> slots) {
+        // 基类默认:本类型不可调用(文案与 call_value 原默认逐字一致,消费方=call_value 的
+        // switch default)。slots 为调用区视图,本默认不读(vm 同样仅协议签名统一,均保留命名)。
+        return vm.fail(ErrorCode::CallNonCallable,
+                       "call non-callable {} (supports closures / native functions / classes / bound "
+                       "methods only)",
+                       type_name());
+    }
+
 } // namespace aria

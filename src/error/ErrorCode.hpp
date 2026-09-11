@@ -70,7 +70,6 @@ namespace aria {
         // ========= RUNTIME ERROR（运行时阶段）=========
         TypeMismatch,      // 运算/操作的类型不符（如 number + 非数）
         InvalidOperand,    // 一元操作数非法（如对非数取负）
-        NilDereference,    // 对 nil 取字段 / 下标 / 调用
         IndexOutOfBounds,  // list 下标越界（含解构元素不足）
         DivisionByZero,    // 除零
         ModuloByZero,      // 模零
@@ -199,8 +198,6 @@ namespace aria {
                 return "TypeMismatch";
             case ErrorCode::InvalidOperand:
                 return "InvalidOperand";
-            case ErrorCode::NilDereference:
-                return "NilDereference";
             case ErrorCode::IndexOutOfBounds:
                 return "IndexOutOfBounds";
             case ErrorCode::DivisionByZero:
@@ -308,7 +305,6 @@ namespace aria {
             // Runtime
             case ErrorCode::TypeMismatch:
             case ErrorCode::InvalidOperand:
-            case ErrorCode::NilDereference:
             case ErrorCode::IndexOutOfBounds:
             case ErrorCode::DivisionByZero:
             case ErrorCode::ModuloByZero:

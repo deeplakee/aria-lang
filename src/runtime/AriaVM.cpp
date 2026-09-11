@@ -13,9 +13,12 @@
 #include "bytecode/code.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -244,11 +247,14 @@ namespace aria {
     } // namespace
 
     // 构造:成员初始化(gc_ 先,main_ctx_/modules_/builtins_ 借 &gc_,current_ 指 &main_ctx_),再把
-    // VM 根 tracer 注册进自有 GC,最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时
-    // 已入表条目经 builtins_.trace 标根)。tracer 为 lambda:[this] 捕获,标记三类根:
+    // VM 根 tracer 注册进自有 GC,bootstrap Object 根类(M5,顺序与 builtins 无依赖、先行使
+    // object_class_ 进 tracer 根集),最后一次性注册 VM 级 builtins(在 tracer 已就绪后,注册内触 GC 时
+    // 已入表条目经 builtins_.trace 标根)。tracer 为 lambda:[this] 捕获,标记四类根:
     //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
     //   2) builtins_:VM 级只读 builtins 表(内置 ObjNativeFn + name 串,LOAD_GLOBAL 回退查此);
-    //   3) current_ 执行链:自 *current_ 沿 previous_ 走到链尾(现为单节点 main_ctx_;M6 协程期为
+    //   3) object_class_:Object 根类(M5 决策 3 -- VM 成员单独持有、不进 builtins_/任何模块 globals,
+    //      裸名解析四层全部够不到,须经 tracer 单独标根;经其 trace 级联整张类成员图);
+    //   4) current_ 执行链:自 *current_ 沿 previous_ 走到链尾(现为单节点 main_ctx_;M6 协程期为
     //      resume 链,挂起协程的值栈/帧/寄存器皆根),逐个标:
     //        a) 值栈 [base, top) 全部 Value:run() 期局部/实参/临时值只活在栈上,不经常量池链
     //           可达,是最关键的缺失根。run() 结束 reset() 清空,故 run() 外(compile/测试)GC 时
@@ -267,10 +273,15 @@ namespace aria {
     //      无纪律可违,见 vm-design.md §4.9)。
     // 值栈/帧以 tracer 直标代替 Movement 升 Object(M6 协程期再升级 ObjMovement 入对象链表)。
     // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与 modules_/builtins_/main_ctx_ 同生共死,无需析构注销。
-    AriaVM::AriaVM() : gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{} {
+    AriaVM::AriaVM() :
+        gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
+        object_class_{nullptr} {
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
+            // Object 根类(M5 决策 3):VM 成员单独持有,不进 modules_/builtins_/任何名字空间,
+            // 须由 tracer 单独标根(经其 trace 级联整张类成员图:super/init/field 表)。
+            g.mark_object(object_class_);
             [[maybe_unused]] Movement* tail = nullptr;
             for (Movement* m = current_; m != nullptr; m = m->previous()) {
                 for (Value* p = m->stack_base(); p < m->stack_top(); ++p) {
@@ -292,6 +303,9 @@ namespace aria {
             }
             ASSERT(tail == &main_ctx_, "VM roots: context chain must terminate at main_ctx_");
         });
+        // Object 根类 bootstrap(M5 决策 3,tracer 已就绪;顺序与 builtins 无依赖,先行使
+        // object_class_ 进入 tracer 根集,register_builtins 内触 GC 亦安全)。
+        bootstrap_object_class();
         // VM 级 builtins 一次性注册(set_vm_roots 已就绪):type/len/str/assert 经 new_native_fn 包成
         //   ObjNativeFn 后按名 upsert 进 builtins_。注册内 new_string/new_native_fn 各一次 new_object 顶
         //   maybe_collect:已入表条目经上方 tracer 的 builtins_.trace 标根,在建的 name/fn 经
@@ -312,6 +326,31 @@ namespace aria {
                 source_roots_.push_back(real.string());
             }
         }
+    }
+
+    void AriaVM::bootstrap_object_class() {
+        // M5 决策 3:Object 根类构造期 bootstrap -- ObjClass("Object", super=nullptr) + 原生
+        // no-op init(init Value 化 2026-09-10 整改:不再合成 ObjFunction/字节码 -- 无模块、无
+        // CodeUnit,ObjFunction 的「module 恒非空」全项目不变式得以保持)。no-op 语义:原生收到
+        // slots[0] = this(调用前 call_class 已把 callee 槽原位换为实例),返回 true 不写槽 --
+        // 槽 0 原样即返回实例,「Foo() 得实例」天然成立,不依赖编译器尾部返回 this 的约定。
+        // 类表 upsert("init", native) + init_ 指同一值(表槽/init_ 一致)。
+        // 名串经工厂 StringView 重载内部 intern 自守(工厂守「自己创建的」),站点不再手动
+        // new_string+守卫;"init" 表键经 intern 命中(与 init_native 的 name 串同指针,零分配)
+        // 后仍有 guard 一道 --镜像 register_builtins 纪律;全部发布落位后 object_class_ 进
+        // tracer 第 4 根,此后 guard 释放亦安全。
+        auto guard = gc_.make_guard();
+
+        const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
+        guard.push(init_native);
+        auto cls = new_class(gc_, "Object", nullptr); // Object 根:super==nullptr,不经 MAKE_CLASS,init 由本函数设
+        guard.push(cls);
+        const auto init_key = new_string(gc_, "init"); // intern 命中:= init_native 的 name 串,零分配
+        guard.push(init_key);
+        // 表槽/init_ 一致(Object 根的 init 由 bootstrap 设,其余类经 MAKE_CLASS seed/set_field 同步):
+        // set_field 命中 "init" 即同步 init_,无需另调 set_init。
+        cls->set_field(init_key, Value::from_obj(init_native));
+        object_class_ = cls; // 发布进 VM 成员:此后经 tracer 第 4 根保命
     }
 
     void AriaVM::set_source_roots(List<String> roots) noexcept {
@@ -457,19 +496,56 @@ namespace aria {
                 return call_closure(Object::as<ObjClosure>(obj), argc);
             case ObjType::NATIVE_FN:
                 return call_native(Object::as<ObjNativeFn>(obj), argc);
+            case ObjType::CLASS:
+                return call_class(Object::as<ObjClass>(obj), argc);
+            case ObjType::BOUND_METHOD:
+                return call_bound_method(Object::as<ObjBoundMethod>(obj), argc);
             default:
-                // ObjFunction 不再是可调用值（M4 起 callable 收敛为闭包:编译器经 CLOSURE 指令现场
-                // 包闭包,ObjFunction 退为常量池内部物,不再以 callable 值上栈;IMPORT 的模块体 entry
-                // 亦由 IMPORT 分支现场包闭包）。触及此分支即用户代码调用了非函数值。
-                return fail(ErrorCode::CallNonCallable,
-                            "call non-callable {} (supports closures / native functions only)", obj->type_name());
+                // 其余 Obj 类型不可调用:经 op_call 协议基类默认 fail(文案在 Object.cpp)。
+                // Span 构造与 call_native 同款(调用区可写视图,slots[0] = 槽 0)。ObjFunction
+                // 不再是可调用值(M4 起 callable 收敛为闭包:编译器经 CLOSURE 指令现场包闭包,
+                // ObjFunction 退为常量池内部物,不再以 callable 值上栈;IMPORT 的模块体 entry 亦由
+                // IMPORT 分支现场包闭包)。未来新增可调用对象类型 override op_call 即接入调用协议,
+                // 无需改本 switch(同 op_add 族备置模式)。
+                return obj->op_call(*this, Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)});
         }
+    }
+
+    bool AriaVM::call_class(ObjClass* obj, const u8 argc) {
+        // 类实例化(M5,call_value CLASS 分支):new_instance 是唯一 GC 点(obj 经值栈根化),
+        // instance 建成即写 callee 槽 -- **槽 0 原位换实例**(即新帧的 this / 原生 init 的
+        // slots[0]),余下交 call_value 通用分发,与 call_bound_method 同款「槽 0 调用方改写」
+        // 约定:init 为闭包则经 call_closure 进方法帧 [this, a1..aN](编译器尾部
+        // LOAD_LOCAL 0; RETURN 使 init 返回 this)、为原生则同步调用(no-op 不动 slots[0]
+        // 即返回实例)、为非可调用值(类上赋 Foo.init = 5 经 store_field 放行)则 call_value
+        // 报 CallNonCallable 兜底。init_ 经 MAKE_CLASS seed(继承父 init)/MAKE_METHOD 覆盖/
+        // 类上赋值同步,恒有值,无需空判与快路径(Object 根的 no-op 原生调用开销可忽略)。
+        const auto instance  = new_instance(gc_, obj);
+        current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
+        return call_value(obj->init(), argc);
+    }
+
+    bool AriaVM::call_bound_method(const ObjBoundMethod* obj, const u8 argc) {
+        // 绑定方法调用(M5,call_value BOUND_METHOD 分支):调用区 [bound, a1..aN] 的槽 0 恰为
+        // bound 对象 -- **原位覆写为 receiver**(this 替代 callee,实参槽位不动,零整形),余下
+        // 交通用 call_value 分发:CLOSURE -> call_closure(arity/帧溢出/进帧,方法帧 [this,
+        // a1..aN],闭包经 frame.closure 携带不上栈)、NATIVE_FN -> call_native(槽 0 即原生契约的
+        // this,兼返回槽,见 ObjNativeFn 契约「方法调用形态」)。
+        // 方法值无需守卫:覆写槽 0 后唯一 GC 窗口是原生方法体内/方法帧执行期 --闭包经
+        // frame.closure 由帧 tracer 标根;原生经类表槽可达(实例路径 this->fields 缓存回填了
+        // bound、super 路径 frame.closure->defining_class 链),bound 本体的数据已转移
+        // (method/receiver 各就位),回收亦无害。
+        current_->peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
+        return call_value(obj->method(), argc);
     }
 
     bool AriaVM::call_closure(ObjClosure* obj, const u8 argc) {
         if (const auto arity = obj->function()->arity(); arity != argc) {
-            return fail(ErrorCode::WrongArity, "function expects {} args, got {}", arity, argc);
+            // 报错带函数名:实例化经 call_class 委托至此,init 的元数错误同样指名("function 'init' ...")。
+            return fail(ErrorCode::WrongArity, "function '{}' expects {} args, got {}", obj->function()->name()->view(),
+                        arity, argc);
         }
+
         if (current_->frames_full()) {
             return fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
@@ -644,6 +720,71 @@ namespace aria {
         } else {
             UNREACHABLE();
         }
+        return true;
+    }
+
+    bool AriaVM::run_load_field(ObjString* name) {
+        // LOAD_FIELD 执行体([obj] -> [v],结果写回原槽;契约见 AriaVM.hpp「field 族指令执行体」):
+        // 非对象(含 nil)是协议外的原语,统一「type X does not support field access」--
+        // 协议分派需要 Object*,原语不进协议(nil 与其他原语同文案,类型名已可辨识)。
+        // 对象经 Object::load_field 虚函数协议 --miss 时 override 已按自身措辞 vm.fail 入
+        // 寄存器(nullopt ⟺ 已 fail,2026-09-10 二次整改),本函数只透传信号。obj peek
+        // 不弹 --协议内分配(绑定的 new_bound_method / miss 的 fail 装箱)跨 GC 须 this
+        // 在栈(「栈即根」,同 CLOSURE「闭包建成立即压栈」家族);写回原槽后 push 无 GC 点。
+        const Value obj = current_->peek(0);
+        if (!obj.is_obj()) {
+            return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
+        }
+        if (const auto result = obj.as_obj()->load_field(*this, name)) {
+            current_->peek(0) = *result; // 写回原槽:[obj] -> [v]
+            return true;
+        }
+        return false; // 载荷已在寄存器(协议 fail 契约:nullopt ⟺ 已 fail)
+    }
+
+    bool AriaVM::run_store_field(ObjString* name) {
+        // STORE_FIELD 执行体([obj, v] -> [v],完成时单槽下移;契约见 AriaVM.hpp):非对象
+        // (含 nil)同 run_load_field(协议外的原语,文案留执行体);对象经 Object::store_field
+        // 协议 --false ⟺ override 已按自身措辞 fail 入寄存器,本函数只透传信号(原三态
+        // StoreResult 的 Rejected/Unsupported 文案随 2026-09-10 二次整改移入 override)。
+        // 双值 peek 不弹:完成时单槽下移留 v(赋值表达式约定),兼跨协议内 miss fail
+        // 分配的「栈即根」。
+        const Value obj = current_->peek(1);
+        if (!obj.is_obj()) {
+            return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
+        }
+        if (!obj.as_obj()->store_field(*this, name, current_->peek(0))) {
+            return false; // 载荷已在寄存器(协议 fail 契约:false ⟺ 已 fail)
+        }
+        current_->peek(1) = current_->peek(0); // 单槽下移:弹 obj 留 v,[obj, v] -> [v]
+        current_->drop(1);
+        return true;
+    }
+
+    bool AriaVM::run_load_super_method(ObjString* name) {
+        // LOAD_SUPER_METHOD 执行体([] -> [bound];契约见 AriaVM.hpp):defining class 从
+        // frame.closure 直读(挂闭包不挂共享 fn 常量,函数体内 def 执行 N 次产生 N 个类不
+        // 串链);从其父类起走 load_field 协议沿链查(命中:静态值/方法闭包原样直读,类协议
+        // 不绑定不缓存 --绑定与"不写 fields 缓存"由本站点自持;miss:类措辞 fail 已入
+        // 寄存器,nullopt ⟺ 已 fail,本函数只透传信号)。命中可调用值绑 this=帧槽 0 后压栈
+        // 供 CALL;**不写 fields 缓存**(铁则 2:super 查到的是被覆写前的实现,写缓存会被
+        // fields 命中劫持后续 obj.m 动态派发)。命中静态值(super.x 取 var 成员)是
+        // **语言可达**错误,raise 保留。
+        auto&      frame    = current_->frames().top();
+        const auto defining = frame.closure->defining_class();
+        ASSERT(defining != nullptr, "LOAD_SUPER_METHOD: closure has no defining class (compiler invariant)");
+        const auto super = defining->superclass();
+        ASSERT(super != nullptr, "LOAD_SUPER_METHOD: method class has no superclass (compiler invariant)");
+        const auto hit = super->load_field(*this, name); // 从父类起读穿透(类协议)
+        if (!hit) {
+            return false; // 载荷已在寄存器(类措辞 miss,契约透传)
+        }
+        if (!is_callable_value(*hit)) {
+            return fail(ErrorCode::UndefinedProperty,
+                        "'{}' is not a method (static members are not accessible via super)", name->view());
+        }
+        // 建成立即压栈(push 无 GC 点),this 经帧槽根化;方法对象经 super 链根可达(帧经 tracer 根)
+        current_->push(Value::from_obj(new_bound_method(gc_, *hit, frame.slots[0])));
         return true;
     }
 
@@ -857,17 +998,62 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_FIELD:
-                    not_implemented("LOAD_FIELD");
+                    // name:u16;[obj] -> [v]。执行体收口于 run_load_field(协议分派/错误烘焙/
+                    // 栈形操作),同 run_binary_numeric 式 bool 契约。
+                    if (!run_load_field(read_name(frame))) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
+                    }
+                    break;
                 case OpCode::STORE_FIELD:
-                    not_implemented("STORE_FIELD");
+                    // name:u16;[obj, v] -> [v]。执行体收口于 run_store_field(协议三态分派/
+                    // 错误烘焙/单槽下移)。
+                    if (!run_store_field(read_name(frame))) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
+                    }
+                    break;
                 case OpCode::LOAD_INDEX:
                     not_implemented("LOAD_INDEX");
                 case OpCode::STORE_INDEX:
                     not_implemented("STORE_INDEX");
-                case OpCode::LOAD_THIS_FIELD:
-                    not_implemented("LOAD_THIS_FIELD");
-                case OpCode::STORE_THIS_FIELD:
-                    not_implemented("STORE_THIS_FIELD");
+                case OpCode::LOAD_THIS_FIELD: {
+                    // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN],不经栈;帧槽
+                    // 在值栈 [base,top) 内,tracer 标根),查找与 obj.m 同走 load_field 协议
+                    // (fields 命中优先 + 未命中委托类协议读穿透,绑定 + 缓存回填),结果 push;
+                    // miss 时类协议已按类措辞 fail 入寄存器(nullopt ⟺ 已 fail),本 case
+                    // 只透传信号 + unwind。帧槽 0 恒实例 -- 指令仅编译器于实例方法内发射,
+                    // 语言写不出的形态,运行期以 ASSERT 钉编译器不变式(不走可 catch 的 raise)。
+                    auto inst = try_obj<ObjInstance>(frame.slots[0]);
+                    ASSERT(inst != nullptr, "LOAD_THIS_FIELD: 'this' slot must be an instance (compiler invariant)");
+                    if (const auto result = inst->load_field(*this, read_name(frame))) {
+                        current_->push(*result); // [] -> [v]
+                        break;
+                    }
+                    if (auto u = unwind()) {
+                        return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                    }
+                    break; // 已派发 handler:帧栈可能已截,循环顶重取
+                }
+                case OpCode::STORE_THIS_FIELD: {
+                    // name:u16;[v] -> [v]:peek-store 经 this 的 store_field 协议(实例字段
+                    // 动态,即创建,当前恒 true -- false 分支为契约透传的防御形态,实例路径
+                    // 不可达),值留栈顶、this 不经栈。帧槽 0 恒实例,校验同 LOAD_THIS_FIELD
+                    // (ASSERT 钉编译器不变式)。
+                    auto inst = try_obj<ObjInstance>(frame.slots[0]);
+                    ASSERT(inst != nullptr, "STORE_THIS_FIELD: 'this' slot must be an instance (compiler invariant)");
+                    if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                        }
+                        // 已派发 handler:帧栈可能已截,循环顶重取
+                    }
+                    break; // 值留栈(peek-store),this 不经栈
+                }
 
                 // ---- 算术与逻辑 ----
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
@@ -1113,17 +1299,81 @@ namespace aria {
                     break; // 闭包已在栈顶,栈效应仍为 [] -> [closure]
                 }
 
-                // ---- 类与对象 ----
+                // ---- 类与对象(M5 阶段 2:VM 机制落地,编译器发射阶段 3 翻转)----
                 case OpCode::LOAD_OBJECT:
-                    not_implemented("LOAD_OBJECT");
-                case OpCode::MAKE_CLASS:
-                    not_implemented("MAKE_CLASS");
-                case OpCode::MAKE_METHOD:
-                    not_implemented("MAKE_METHOD");
-                case OpCode::MAKE_STATIC:
-                    not_implemented("MAKE_STATIC");
+                    // [] -> [Object]:压 VM bootstrap 的 Object 根类(VM 内部指针,不经名字查 --
+                    // 不进 builtins_/任何模块 globals,用户 shadow 全局名免疫隐式继承,M5 决策 3)。
+                    current_->push(Value::from_obj(object_class_));
+                    break;
+                case OpCode::MAKE_CLASS: {
+                    // name:u16;[super] -> [class]:super 经 LOAD_GLOBAL(运行期解析,跨模块导入类
+                    // 可用)/ LOAD_OBJECT 上的类值。peek super 不先弹 -- new_class 顶 maybe_collect,
+                    // super 须仍在栈(「栈即根」);非类值是**语言可达**错误(`var Bar = 5; def Foo : Bar`
+                    // 合法 -- superclass 运行期才知值类型),故 raise 而非 ASSERT,类型检查经
+                    // try_obj 一步收口。name 经常量池可达(帧 -> closure -> unit.trace),无需
+                    // 守卫。建成写回原槽(top 不变,[super] -> [class] 收口,class 即经值栈根);
+                    // init seed 在指令层(工厂只分配不 seed):super 此处已验为类,直接继承其
+                    // init --沿链语义天然成立(父的 init_ 已是 seed 后值)。写回原槽后 seed:
+                    // 先发布进根,两步间无 GC 点。
+                    const auto  name    = read_name(frame);
+                    const Value super_v = current_->peek(0);
+                    auto        super   = try_obj<ObjClass>(super_v);
+                    if (super == nullptr) {
+                        raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(super_v));
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                        }
+                        break; // 已派发 handler:循环顶重取
+                    }
+                    auto cls          = new_class(gc_, name, super); // 出厂 init_ nil(工厂只分配不 seed)
+                    current_->peek(0) = Value::from_obj(cls);        // 写回原槽(top 不变):class 经值栈根
+                    cls->set_init(super->init());                    // seed:继承父 init(Object 根由 bootstrap 设)
+                    break;
+                }
+                case OpCode::MAKE_METHOD: {
+                    // name:u16;[class, method] -> [class]:方法注册(静态/实例方法同路,init 亦经
+                    // 此;方法帧槽 0 即 this,语义差异全在编译期)。方法值可为闭包或
+                    // 原生函数(M5 泛化:内建方法经原生承载,绑定形态统一 ObjBoundMethod)。
+                    // 编译器路径(值恒来自上一条 CLOSURE/内建注册),栈形经 ASSERT 钉 --
+                    // 语言写不出违例,不走可 catch 的 raise。完成后弹方法值留 class(class 留栈
+                    // 继续接收成员,镜像 MAKE_STATIC;set_field 的 upsert 走 trivial 分配不触
+                    // GC -- GC 核心不变式,peek 不弹的真实理由是栈效应)。注册副作用:set_field
+                    // 命中 "init" 同步 init_(值形态不特判,init Value 化:原生/非可调用亦放行,
+                    // 实例化时 call_value 分发兜底)+ 闭包戳 defining class(M5 决策 6 --
+                    // LOAD_SUPER_METHOD 从 frame.closure 直读;原生无 defining class 不戳)。
+                    const auto name = read_name(frame);
+                    auto       cls  = try_obj<ObjClass>(current_->peek(1));
+                    ASSERT(cls != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
+                    const Value m_v = current_->peek(0);
+                    ASSERT(is_callable_value(m_v), "MAKE_METHOD: slot-0 is not a callable (malformed stack)");
+                    cls->set_field(name, m_v); // 落本类自身表;"init" 同步 init_(MAKE_CLASS seed 被覆盖)
+                    if (auto closure = try_obj<ObjClosure>(m_v)) {
+                        closure->set_defining_class(cls); // 裸写:MAKE_METHOD 注册时一次性 set,此后只读
+                    }
+                    current_->drop(1); // 弹方法值留 class:[class, method] -> [class]
+                    break;
+                }
+                case OpCode::MAKE_STATIC: {
+                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明 lowering:eager
+                    // 求值初始化器后存)。与 MAKE_METHOD 同形(peek 不弹 + set_field + 弹 value
+                    // 留 class),无 defining class 戳;编译器路径,栈形 ASSERT 钉。
+                    const auto name = read_name(frame);
+                    auto       cls  = try_obj<ObjClass>(current_->peek(1));
+                    ASSERT(cls != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
+                    cls->set_field(name, current_->peek(0));
+                    current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
+                    break;
+                }
                 case OpCode::LOAD_SUPER_METHOD:
-                    not_implemented("LOAD_SUPER_METHOD");
+                    // name:u16;[] -> [bound]。执行体收口于 run_load_super_method(协议沿链查 +
+                    // 绑定 this,不写 fields 缓存)。
+                    if (!run_load_super_method(read_name(frame))) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
+                        }
+                        break; // 已派发 handler:帧栈可能已截,循环顶重取
+                    }
+                    break;
                 case OpCode::INVOKE_METHOD:
                     not_implemented("INVOKE_METHOD");
                 case OpCode::MAKE_LIST:
@@ -1154,8 +1404,10 @@ namespace aria {
                     //     无递归 dispatch_loop()。
                     //
                     // 根安全(GC 已启用):path 经常量池根(同 LOAD_CONST)。canonical_path 经 new_string intern 驻留
-                    //   (weak root,不保命),跨 modules_.find(无 GC)与未命中分支内 load_module 的
-                    //   modules_.upsert(rehash 触 GC)须守 -- 下方 canonical_path_guard 跨全程根化 canonical_path。
+                    //   (weak root,不保命),跨未命中分支内 load_module 的一串 new_* 分配(new_module/new_string/
+                    //   new_function 等,各为 new_object 顶 maybe_collect)须守 -- 下方 canonical_path_guard 跨全程
+                    //   根化 canonical_path;modules_.upsert 等表 rehash 走 trivial 分配不触 GC(GC 核心不变式:
+                    //   allocate/reallocate 永不触发 GC),不是守卫承重点。
                     //   命中分支取回/加载层产出的 module 与 entry 经 modules_ 根可达,非移动 GC 故 current_->push(栈
                     //   溢出增长走 Buffer 重分配)期间指针稳定,无需守卫;入栈后另经值栈根可达。
                     ObjString* path = read_name(frame);

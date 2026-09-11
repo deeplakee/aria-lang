@@ -129,6 +129,12 @@ namespace aria {
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, NativeFn fn);
 
+    // 工厂重载(StringView 名):name 经工厂内部 intern 并自行守卫(工厂守「自己创建的」),
+    //   调用方传文本即可,无需手动建串根化(bootstrap/builtins 注册等无现成 intern 串的站点
+    //   免去 new_string+guard 两步)。委托 new_native_fn(GC&, ObjString*, NativeFn)。
+    [[nodiscard]]
+    ObjNativeFn* new_native_fn(GC& gc, StringView name, NativeFn fn);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_NATIVE_FN_HPP

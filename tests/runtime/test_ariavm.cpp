@@ -6,8 +6,11 @@
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -25,8 +28,11 @@ using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
 using aria::new_string;
+using aria::ObjBoundMethod;
+using aria::ObjClass;
 using aria::ObjClosure;
 using aria::ObjFunction;
+using aria::ObjInstance;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::ObjUpvalue;
@@ -77,6 +83,14 @@ namespace {
     void emit_closure(CodeUnit& cu, u16 fn_idx, u32 line = 1) {
         cu.emit_op(OpCode::CLOSURE, line);
         cu.emit_word(fn_idx, line);
+    }
+
+    // u16 名字操作数的类组/字段组指令(MAKE_CLASS/MAKE_METHOD/MAKE_STATIC/LOAD_FIELD/
+    // STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD/LOAD_SUPER_METHOD):op + 常量池
+    // ObjString 索引,与 emit_global 同形(DEF/LOAD/STORE_GLOBAL 用)。
+    void emit_named(CodeUnit& cu, OpCode op, u16 name_idx, u32 line = 1) {
+        cu.emit_op(op, line);
+        cu.emit_word(name_idx, line);
     }
 
     // LOAD_CONST idx:u16(压常量池 idx 处的值)。
@@ -498,11 +512,11 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(合成模块 <script> 退化 "<name>:line",
-    // 行号 = ADD 指令所在行),未捕获物化时尾部附堆栈跟踪行(单帧即 at <main>,pitfalls 坑 #16)。
-    EXPECT_EQ(out.error().message(),
-              "Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
-              "  at <main> (<script>:3)");
+    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(码类前缀+细节,**不含位置前缀** --
+    // 2026-09-10 起位置归跟踪行,对齐 clox/Python 惯例),未捕获物化时尾部附堆栈跟踪行
+    // (单帧即 at <main>,行号 = ADD 指令所在行,pitfalls 坑 #16)。
+    EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
+                                     "  at <main> (<script>:3)");
 }
 
 TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
@@ -519,7 +533,7 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    // 同 TypeMismatchIsUncaught:位置前缀 + 未捕获堆栈跟踪行(M3)。
+    // 同 TypeMismatchIsUncaught:位置由未捕获堆栈跟踪行携带(M3,消息无位置前缀)。
     EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<script>:1)");
 }
@@ -976,9 +990,9 @@ TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
     const auto result = vm.interpret_from_path(main_path);
     ASSERT_EQ(result, aria::InterpretResult::Ok);
 
-    auto* helper = find_module_by_name(vm.modules(), "helper");
+    auto helper = find_module_by_name(vm.modules(), "helper");
     ASSERT_NE(helper, nullptr);
-    auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    auto x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(x_entry, nullptr);
     EXPECT_TRUE(x_entry->value.is_int());
     EXPECT_EQ(x_entry->value.as_int(), 42);
@@ -1032,7 +1046,7 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
     const auto       out    = vm.run(source, *module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out.value().is_obj());
-    const auto* thrown = aria::Object::as<ObjString>(out.value().as_obj());
+    const auto thrown = aria::Object::as<ObjString>(out.value().as_obj());
     ASSERT_NE(thrown, nullptr);
     EXPECT_EQ(thrown->view(), "boom");
 
@@ -1052,26 +1066,26 @@ TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
     const auto result = vm.interpret_from_path(main_path);
     ASSERT_EQ(result, aria::InterpretResult::Ok);
 
-    auto* a = find_module_by_name(vm.modules(), "a");
-    auto* b = find_module_by_name(vm.modules(), "b");
+    auto a = find_module_by_name(vm.modules(), "a");
+    auto b = find_module_by_name(vm.modules(), "b");
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
 
     // a.globals: x=1, B=b(循环导入命中 a 的半初始化对象时,b 的 A 绑定它;后 a 的体跑完 globals 完整)
-    auto* ax = a->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    auto ax = a->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(ax, nullptr);
     EXPECT_EQ(ax->value.as_int(), 1);
-    auto* aB = a->globals().find(Value::from_obj(new_string(vm.gc(), "B")));
-    ASSERT_NE(aB, nullptr);
-    EXPECT_EQ(aria::Object::as<ObjModule>(aB->value.as_obj()), b);
+    auto a_b = a->globals().find(Value::from_obj(new_string(vm.gc(), "B")));
+    ASSERT_NE(a_b, nullptr);
+    EXPECT_EQ(aria::Object::as<ObjModule>(a_b->value.as_obj()), b);
 
     // b.globals: y=2, A=a
-    auto* by = b->globals().find(Value::from_obj(new_string(vm.gc(), "y")));
+    auto by = b->globals().find(Value::from_obj(new_string(vm.gc(), "y")));
     ASSERT_NE(by, nullptr);
     EXPECT_EQ(by->value.as_int(), 2);
-    auto* bA = b->globals().find(Value::from_obj(new_string(vm.gc(), "A")));
-    ASSERT_NE(bA, nullptr);
-    EXPECT_EQ(aria::Object::as<ObjModule>(bA->value.as_obj()), a);
+    auto b_a = b->globals().find(Value::from_obj(new_string(vm.gc(), "A")));
+    ASSERT_NE(b_a, nullptr);
+    EXPECT_EQ(aria::Object::as<ObjModule>(b_a->value.as_obj()), a);
 }
 
 // 重复导入同一模块:第二次 IMPORT 命中 Loaded 模块(表查重复用),不再 run-once。检视 modules 中
@@ -1086,9 +1100,9 @@ TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
     const auto result = vm.interpret_from_path(main_path);
     ASSERT_EQ(result, aria::InterpretResult::Ok);
 
-    auto* helper = find_module_by_name(vm.modules(), "helper");
+    auto helper = find_module_by_name(vm.modules(), "helper");
     ASSERT_NE(helper, nullptr);
-    auto* x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
+    auto x_entry = helper->globals().find(Value::from_obj(new_string(vm.gc(), "x")));
     ASSERT_NE(x_entry, nullptr);
     EXPECT_EQ(x_entry->value.as_int(), 42);
     EXPECT_EQ(vm.modules().size(), 1u); // 仅 helper 一个被导入模块
@@ -1160,8 +1174,8 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
     ASSERT_FALSE(out.has_value()) << "expected error, got value";
     const auto& err = out.error();
     EXPECT_EQ(err.code(), ErrorCode::TypeMismatch);
-    // vm.fail 装箱路径带位置前缀(raise 一步烘齐):原生不进帧,顶帧即 caller,
-    // 位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line";CALL 失败同走
+    // vm.fail 装箱路径(消息无位置前缀,2026-09-10 起):原生不进帧,顶帧即 caller,
+    // 跟踪行位置 = CALL 站点行(本例行 1),合成模块退化 "<script>:line";CALL 失败同走
     // unwind(M3),未捕获尾部附 at <main> 跟踪行。
     EXPECT_EQ(err.message(), "Runtime: TypeMismatch fail_always always fails\n"
                              "  at <main> (<script>:1)");
@@ -1317,12 +1331,12 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
 
     // 结构:两闭包的 upvalues()[0] 同一 ObjUpvalue(经共享模块 m 的 globals 取回;
     // 存活链:m_guard -> module -> globals -> 闭包)。
-    auto* c1_entry = m->globals().find(Value::from_obj(new_string(gc, "c1")));
-    auto* c2_entry = m->globals().find(Value::from_obj(new_string(gc, "c2")));
+    auto c1_entry = m->globals().find(Value::from_obj(new_string(gc, "c1")));
+    auto c2_entry = m->globals().find(Value::from_obj(new_string(gc, "c2")));
     ASSERT_NE(c1_entry, nullptr);
     ASSERT_NE(c2_entry, nullptr);
-    auto* c1 = aria::Object::as<ObjClosure>(c1_entry->value.as_obj());
-    auto* c2 = aria::Object::as<ObjClosure>(c2_entry->value.as_obj());
+    auto c1 = aria::Object::as<ObjClosure>(c1_entry->value.as_obj());
+    auto c2 = aria::Object::as<ObjClosure>(c2_entry->value.as_obj());
     ASSERT_EQ(c1->upvalue_count(), usize{1});
     ASSERT_EQ(c2->upvalue_count(), usize{1});
     EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
@@ -1583,4 +1597,979 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(out.value().as_int(), 42); // 复用的链节点存活且指槽正确
+}
+
+// ============================================================
+// M5 类机制(阶段 2:VM 机制,手写 emit;编译器发射阶段 3 翻转)。全部跑在
+// AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼 bootstrap 根 /
+// 实例化快慢路径 / LOAD_FIELD 绑定 + 缓存回填 / 超类链的分配安全。
+// ============================================================
+
+// 无自定义 init 的类(无成员):LOAD_OBJECT + MAKE_CLASS 后 Foo() -- MAKE_CLASS seed 继承
+// Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native 同步
+// 调用(no-op 不写 slots[0],this 原样即返回值),不进帧、留空 ObjInstance。
+TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
+
+    auto&     gc       = vm.gc();
+    auto      fn       = new_function(gc, nullptr, 0);
+    auto      fn_guard = gc.make_guard(fn);
+    auto&     cu       = fn->unit();
+    const u16 foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);        // [Object]
+    emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // [instance](原生 no-op init 原样返回 this)
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out.value().is_obj());
+    auto inst = aria::Object::as<ObjInstance>(out.value().as_obj());
+    ASSERT_NE(inst, nullptr);
+    EXPECT_EQ(inst->cls()->name()->view(), "Foo");
+    EXPECT_EQ(inst->cls()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
+    // seed = Object 的原生 no-op init(MAKE_CLASS 继承,Value 经 === 判同):
+    EXPECT_TRUE(aria::value_identical(inst->cls()->init(), vm.object_class()->init()));
+    // no-op init 留空实例(无字段要初始化):任一名字 load_field 全链 miss(整表访问器
+    // fields() 已删,行为级钉法;miss 的 fail 装箱是分配点,实例先入根)。
+    auto ig   = gc.make_guard(inst);
+    auto nope = new_string(gc, "nope");
+    auto ng   = gc.make_guard(nope);
+    EXPECT_FALSE(inst->load_field(vm, nope).has_value());
+}
+
+// 自定义 init 带参:Foo(7) -- 槽 0 原位换实例后 call_closure 进方法帧 [this, a]
+// (this 替代 callee 占槽 0,实参槽位不动);init 内 this.tag = a(STORE_THIS_FIELD)
+// 落 fields 表、返回 this(LOAD_LOCAL 0 + RETURN);调用点取回实例后 LOAD_FIELD 读回
+// 字段(fields 命中)。
+TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
+
+    auto& gc    = vm.gc();
+    auto  init  = new_function(gc, new_string(gc, "init"), 1);
+    auto  guard = gc.make_guard(init);
+    {
+        auto&     icu = init->unit();
+        const u16 tag = icu.add_constant(Value::from_obj(new_string(gc, "tag")));
+        emit_local(icu, OpCode::LOAD_LOCAL, 1);         // [a](槽 1 = 实参;槽 0 = this)
+        emit_named(icu, OpCode::STORE_THIS_FIELD, tag); // [a](peek-store this.tag = a,值留栈)
+        icu.emit_op(OpCode::POP, 1);                    // []
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);         // [this]
+        icu.emit_op(OpCode::RETURN, 1);                 // 返回 this -> 实例
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 tag       = cu.add_constant(Value::from_obj(new_string(gc, "tag")));
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
+        emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name); // [Foo](注册 init,覆盖 seed)
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+        emit_imm(cu, 7);                                // [Foo, 7]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(1, 1);                      // [instance](init 帧返回 this)
+        emit_named(cu, OpCode::LOAD_FIELD, tag); // [7]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_TRUE(out.value().is_int());
+    EXPECT_EQ(out.value().as_int(), 7);
+}
+
+// 方法调用两步走:LOAD_FIELD 命中类表方法 -> 绑定 ObjBoundMethod(this=obj)并回填
+// fields 缓存 -> CALL 走 BOUND_METHOD 分支进方法帧([closure, this])。方法内
+// LOAD/STORE_THIS_FIELD 读写 this 字段;调用点用 DUP 保住实例副本跨 CALL,
+// 验证 this 突变对外可见。
+TEST_F(AriaVMStress, MethodCallMutatesThisField) {
+
+    auto& gc    = vm.gc();
+    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  guard = gc.make_guard(init);
+    {
+        auto&     icu    = init->unit();
+        const u16 x_name = icu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_imm(icu, 10);                                 // [10]
+        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name); // [10](this.x = 10)
+        icu.emit_op(OpCode::POP, 1);                       // []
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);            // [this]
+        icu.emit_op(OpCode::RETURN, 1);                    // 返回 this
+    }
+    auto m = new_function(gc, new_string(gc, "m"), 0);
+    guard.push(m);
+    {
+        auto&     mcu    = m->unit();
+        const u16 x_name = mcu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name);  // [x]
+        emit_imm(mcu, 1);                                  // [x, 1]
+        mcu.emit_op(OpCode::ADD, 1);                       // [x+1]
+        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name); // [x+1](写回,值留栈)
+        mcu.emit_op(OpCode::POP, 1);                       // []
+        mcu.emit_op(OpCode::LOAD_NIL, 1);                  // [nil]
+        mcu.emit_op(OpCode::RETURN, 1);                    // 方法返回 nil
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name); // init
+        emit_closure(cu, cu.add_constant(Value::from_obj(m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name); // m
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);    // []
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i](init:x=10)
+        cu.emit_op(OpCode::DUP, 1);                 // [i, i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name); // [i, bound]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i, nil](m 调毕,this.x=11)
+        cu.emit_op(OpCode::POP, 1);                 // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, x_name); // [11](读回突变后的字段)
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 11);
+}
+
+// 继承覆写 + super:Sub.m 经 LOAD_SUPER_METHOD 从 defining class 的父链(不含自身)
+// 取 Base 的被覆写实现、绑 this=帧槽 1 后 CALL;子调父结果 + 常量验证父实现真被调到。
+TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
+
+    auto& gc     = vm.gc();
+    auto  base_m = new_function(gc, new_string(gc, "m"), 0);
+    auto  guard  = gc.make_guard(base_m);
+    {
+        auto& bmu = base_m->unit();
+        emit_imm(bmu, 1);
+        bmu.emit_op(OpCode::RETURN, 1); // Base.m 返回 1
+    }
+    auto sub_m = new_function(gc, new_string(gc, "m"), 0);
+    guard.push(sub_m);
+    {
+        auto&     smu    = sub_m->unit();
+        const u16 m_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
+        emit_named(smu, OpCode::LOAD_SUPER_METHOD, m_name); // [super-bound]
+        smu.emit_op(OpCode::CALL, 1);
+        smu.emit_byte(0, 1);         // [1](Base.m 返回值)
+        emit_imm(smu, 10);           // [1, 10]
+        smu.emit_op(OpCode::ADD, 1); // [11]
+        smu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+        const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        // Base:m
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, base_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(base_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+        // Sub : Base(父类经 LOAD_GLOBAL 运行期解析),覆写 m
+        emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // [Base]
+        emit_named(cu, OpCode::MAKE_CLASS, sub_name);    // [Sub](seed = Base 的 init)
+        emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+        // Sub().m()
+        emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [11]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 11);
+
+    // 结构:Sub 的父链确指 Base(经共享 globals 取回类值)。
+    auto base_cls = aria::Object::as<ObjClass>(
+            fn->module()->globals().find(Value::from_obj(new_string(gc, "Base")))->value.as_obj());
+    auto sub_cls = aria::Object::as<ObjClass>(
+            fn->module()->globals().find(Value::from_obj(new_string(gc, "Sub")))->value.as_obj());
+    EXPECT_EQ(sub_cls->superclass(), base_cls);
+}
+
+// 类上赋值写遮蔽(读穿透、写遮蔽):Sub.x = v 落接收类(Sub)自身表 -- 继承名新建遮蔽键、
+// 父表不动;Sub.x 取新值、Base.x 不变;实例读取(沿链)亦见遮蔽后的新值。
+TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
+
+    auto&     gc        = vm.gc();
+    auto      m         = make_module(gc);
+    auto      m_guard   = gc.make_guard(m);
+    auto      fn        = make_function(gc, m, "<main>", 0);
+    auto      guard     = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+    const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+    const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    const u16 r1_name   = cu.add_constant(Value::from_obj(new_string(gc, "r1")));
+    const u16 r2_name   = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
+    const u16 r3_name   = cu.add_constant(Value::from_obj(new_string(gc, "r3")));
+    // Base:x = 1(静态)
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, base_name);
+    emit_imm(cu, 1);
+    emit_named(cu, OpCode::MAKE_STATIC, x_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+    // Sub : Base(无成员)
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+    emit_named(cu, OpCode::MAKE_CLASS, sub_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+    // Sub.x = 42:继承名新建遮蔽键
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
+    emit_imm(cu, 42);                               // [Sub, 42]
+    emit_named(cu, OpCode::STORE_FIELD, x_name);    // [42](单槽下移)
+    cu.emit_op(OpCode::POP, 1);                     // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+    emit_named(cu, OpCode::LOAD_FIELD, x_name);   // [42]
+    emit_global(cu, OpCode::DEF_GLOBAL, r1_name); // r1 = Sub.x(遮蔽键命中)
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+    emit_named(cu, OpCode::LOAD_FIELD, x_name);   // [1]
+    emit_global(cu, OpCode::DEF_GLOBAL, r2_name); // r2 = Base.x(父表未被波及)
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1);                           // [i]
+    emit_named(cu, OpCode::LOAD_FIELD, x_name);   // [42]
+    emit_global(cu, OpCode::DEF_GLOBAL, r3_name); // r3 = (Sub()).x(实例沿链读见遮蔽)
+    cu.emit_op(OpCode::LOAD_NIL, 1);
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+
+    auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value.as_int(); };
+    EXPECT_EQ(fetch("r1"), 42); // Sub.x 取遮蔽值
+    EXPECT_EQ(fetch("r2"), 1);  // Base.x 不变
+    EXPECT_EQ(fetch("r3"), 42); // 实例沿链读见遮蔽
+}
+
+// 类上赋值动态新增(2026-09-11 改定,原 ClassWriteRejectsNewMember 的「无 monkey-patch
+// 拒新增」废止):沿链全 miss 的新名字经 STORE_FIELD 落接收类自身表,类上读回即新值
+//(父类不可见由 test_objclass 层的 base miss 断言覆盖)。
+TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
+
+    auto&     gc        = vm.gc();
+    auto      fn        = new_function(gc, nullptr, 0);
+    auto      fn_guard  = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+    const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+    const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    const u16 brand     = cu.add_constant(Value::from_obj(new_string(gc, "brand")));
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, base_name);
+    emit_imm(cu, 1);
+    emit_named(cu, OpCode::MAKE_STATIC, x_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+    emit_named(cu, OpCode::MAKE_CLASS, sub_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
+    emit_imm(cu, 5);                                // [Sub, 5]
+    emit_named(cu, OpCode::STORE_FIELD, brand);     // [5]:新名落 Sub 自身表(恒成功)
+    cu.emit_op(OpCode::POP, 1);                     // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
+    emit_named(cu, OpCode::LOAD_FIELD, brand);      // [5]:读回新值
+    cu.emit_op(OpCode::RETURN, 1);                  // 返回 5
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 5);
+}
+
+// 方法经类上赋值改写(STORE_FIELD 类路径命中方法槽):bound 缓存取首解析快照 --
+// 改写前已绑定的实例沿用旧闭包,改写后新解析的实例取新闭包。
+TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
+
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc);
+    auto  m_guard = gc.make_guard(m);
+    auto  old_m   = make_function(gc, m, "old_m", 0);
+    auto  guard   = gc.make_guard(old_m);
+    {
+        old_m->unit().emit_op(OpCode::LOAD_IMM, 1);
+        old_m->unit().emit_byte(1, 1);
+        old_m->unit().emit_op(OpCode::RETURN, 1);
+    }
+    auto new_m = make_function(gc, m, "new_m", 0);
+    guard.push(new_m);
+    {
+        emit_imm(new_m->unit(), 2);
+        new_m->unit().emit_op(OpCode::RETURN, 1);
+    } // new_m 返回 2
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu      = fn->unit();
+        const u16 foo     = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 m_name  = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        const u16 b1_name = cu.add_constant(Value::from_obj(new_string(gc, "b1")));
+        const u16 b2_name = cu.add_constant(Value::from_obj(new_string(gc, "b2")));
+        const u16 r1_name = cu.add_constant(Value::from_obj(new_string(gc, "r1")));
+        const u16 r2_name = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
+        // Foo:m = old_m
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(old_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        // i1 = Foo();b1 = i1.m(首解析:绑 old 闭包 + 回填 fields 缓存)
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);         // [i1]
+        cu.emit_op(OpCode::DUP, 1); // [i1, i1]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, b1_name); // [i1]
+        // Foo.m = new_m 闭包(类上赋值改写方法槽)
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(new_m)));
+        emit_named(cu, OpCode::STORE_FIELD, m_name); // [new_m 值留栈]
+        cu.emit_op(OpCode::POP, 1);                  // [i1]
+        // i2 = Foo();b2 = i2.m(改写后的新解析:绑 new 闭包)
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [i1, i2]
+        cu.emit_op(OpCode::DUP, 1);
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, b2_name); // [i1]
+        // r1 = b1()(旧快照 -> 1);r2 = b2()(新解析 -> 2)
+        emit_global(cu, OpCode::LOAD_GLOBAL, b1_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);
+        emit_global(cu, OpCode::DEF_GLOBAL, r1_name); // [i1]
+        emit_global(cu, OpCode::LOAD_GLOBAL, b2_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);
+        emit_global(cu, OpCode::DEF_GLOBAL, r2_name); // []
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+
+    auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value; };
+    EXPECT_EQ(fetch("r1").as_int(), 1); // 已解析实例沿用旧绑定(首解析快照)
+    EXPECT_EQ(fetch("r2").as_int(), 2); // 新解析取改写后的新闭包
+    auto b1 = aria::Object::as<ObjBoundMethod>(fetch("b1").as_obj());
+    auto b2 = aria::Object::as<ObjBoundMethod>(fetch("b2").as_obj());
+    EXPECT_NE(b1->method().as_obj(), b2->method().as_obj()); // 两份绑定各持新旧闭包
+}
+
+// super 不污染动态派发缓存(铁则 2):Sub.m 内 super.m() 取被覆写前的父实现、绑 this
+// 后 CALL -- 若 super 命中被写进实例 fields,第二次 i.m() 会被缓存劫持到 Base.m
+// (结果 1 而非 51)。两次调用均为 51 即未污染。
+TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
+
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc);
+    auto  m_guard = gc.make_guard(m);
+    auto  base_m  = make_function(gc, m, "m", 0);
+    auto  guard   = gc.make_guard(base_m);
+    {
+        base_m->unit().emit_op(OpCode::LOAD_IMM, 1);
+        base_m->unit().emit_byte(1, 1);
+        base_m->unit().emit_op(OpCode::RETURN, 1);
+    }
+    auto sub_m = make_function(gc, m, "m", 0);
+    guard.push(sub_m);
+    {
+        auto&     smu    = sub_m->unit();
+        const u16 m_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
+        emit_named(smu, OpCode::LOAD_SUPER_METHOD, m_name);
+        smu.emit_op(OpCode::CALL, 1);
+        smu.emit_byte(0, 1); // [1](super.m() 的返回值)
+        emit_imm(smu, 50);
+        smu.emit_op(OpCode::ADD, 1); // [51]
+        smu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+        const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, base_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(base_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+        emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+        emit_named(cu, OpCode::MAKE_CLASS, sub_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+        emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);         // [i]
+        cu.emit_op(OpCode::DUP, 1); // [i, i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);         // [i, 51](第一次:super 命中,若被污染缓存则此调用已劫持)
+        cu.emit_op(OpCode::POP, 1); // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [51](第二次:若缓存被污染成 Base.m 则得 1)
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 51); // 两次均走 Sub.m(含 super 调父),缓存未被污染
+}
+
+// 深栈多临时值下的 STORE_FIELD 单槽下移:赋值两侧压多层临时值,若单槽下移
+// (peek(1)=peek(0)+drop)错位(如弹双槽/少弹)后续 ADD 链即错乱。
+TEST_F(AriaVMStress, StoreFieldDeepStackShift) {
+
+    auto&     gc        = vm.gc();
+    auto      m         = make_module(gc);
+    auto      m_guard   = gc.make_guard(m);
+    auto      fn        = make_function(gc, m, "<main>", 0);
+    auto      guard     = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+    const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    // 前言:Base:x = 0(静态,供深栈赋值改写)+ Foo(空类)
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, base_name);
+    emit_imm(cu, 0);
+    emit_named(cu, OpCode::MAKE_STATIC, x_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, foo);
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);
+    // 深栈:两层临时值(40/50)之下,先后做实例路径与类路径的 STORE_FIELD,
+    // 单槽下移(peek(1)=peek(0)+drop)错位即 ADD 链/读回错乱;验证值经 globals 读回。
+    const u16 r1_name = cu.add_constant(Value::from_obj(new_string(gc, "r1")));
+    const u16 r2_name = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
+    emit_imm(cu, 40);                          // [40]
+    emit_imm(cu, 50);                          // [40, 50]
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // 实例路径:i.x = 5(动态字段,即创建)
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1);         // [40, 50, i]
+    cu.emit_op(OpCode::DUP, 1); // [40, 50, i, i](留副本跨写)
+    emit_imm(cu, 5);
+    emit_named(cu, OpCode::STORE_FIELD, x_name);     // [40, 50, i, 5](弹 obj 副本,值留栈)
+    cu.emit_op(OpCode::POP, 1);                      // [40, 50, i](弹验证值)
+    emit_named(cu, OpCode::LOAD_FIELD, x_name);      // obj=peek(0)=i ✓ -> [40, 50, 5](fields 命中)
+    emit_global(cu, OpCode::DEF_GLOBAL, r1_name);    // r1 = i.x = 5
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // 类路径:Base.x = 7(深栈下移)
+    emit_imm(cu, 7);
+    emit_named(cu, OpCode::STORE_FIELD, x_name);     // [40, 50, 7]
+    cu.emit_op(OpCode::POP, 1);                      // [40, 50](弹类写验证值)
+    cu.emit_op(OpCode::POP, 1);                      // [40]
+    cu.emit_op(OpCode::POP, 1);                      // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // 类写读回
+    emit_named(cu, OpCode::LOAD_FIELD, x_name);      // [7]
+    emit_global(cu, OpCode::DEF_GLOBAL, r2_name);    // []
+    cu.emit_op(OpCode::LOAD_NIL, 1);
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+
+    auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value.as_int(); };
+    EXPECT_EQ(fetch("r1"), 5); // 实例写生效(fields 命中;未写则链 miss 报 UndefinedProperty)
+    EXPECT_EQ(fetch("r2"), 7); // 类写生效(读穿透,接收类自身槽更新)
+}
+
+// 实例方法内 LOAD/STORE_THIS_FIELD 深栈正确性:this 不经栈(取帧槽 1),值 peek-store
+// 留栈顶;方法帧中压多层临时值后读写 this 字段,栈高不错位。
+TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
+
+    auto& gc    = vm.gc();
+    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  guard = gc.make_guard(init);
+    {
+        auto&     icu    = init->unit();
+        const u16 x_name = icu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_imm(icu, 5);
+        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name); // this.x = 5
+        icu.emit_op(OpCode::POP, 1);
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);
+        icu.emit_op(OpCode::RETURN, 1);
+    }
+    auto m = new_function(gc, new_string(gc, "m"), 0);
+    guard.push(m);
+    {
+        auto&     mcu    = m->unit();
+        const u16 x_name = mcu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_imm(mcu, 60);                                 // [60]
+        emit_imm(mcu, 70);                                 // [60, 70]
+        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name);  // [60, 70, 5]
+        emit_imm(mcu, 1);                                  // [60, 70, 5, 1]
+        mcu.emit_op(OpCode::ADD, 1);                       // [60, 70, 6]
+        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name); // [60, 70, 6](值留栈)
+        mcu.emit_op(OpCode::ADD, 1);                       // [60, 76]
+        mcu.emit_op(OpCode::ADD, 1);                       // [136]
+        mcu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [i](init:x=5)
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [136](深栈下 this.x+1)
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 136);
+}
+
+// 实例字段遮蔽同名静态成员(铁则 3:fields 命中优先):init 内 this.x=9 落 fields 表,
+// 实例读 fields 命中得 9;类路径读静态表原槽仍得 1。
+TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
+
+    auto& gc    = vm.gc();
+    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  guard = gc.make_guard(init);
+    {
+        auto&     icu    = init->unit();
+        const u16 x_name = icu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_imm(icu, 9);
+        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name);
+        icu.emit_op(OpCode::POP, 1);
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);
+        icu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = new_function(gc, nullptr, 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+        // Foo:x = 1(静态)+ init(this.x = 9)
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_imm(cu, 1);
+        emit_named(cu, OpCode::MAKE_STATIC, x_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        // (Foo()).x - Foo.x == 8:fields 命中优先,静态回退不被实例写波及
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, x_name); // [9](fields 命中)
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        emit_named(cu, OpCode::LOAD_FIELD, x_name); // [9, 1](类路径静态直读)
+        cu.emit_op(OpCode::SUBTRACT, 1);            // [8]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 8);
+}
+
+// ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_METHOD 运行期防线)----
+
+// 对 nil 取字段 -> UndefinedProperty(nil 并入非对象统一文案「type Nil does not support
+// field access」,2026-09-10 化简:field 族不再特判 NilDereference,类型名 Nil 已可辨识)。
+TEST_F(AriaVMStress, LoadFieldOnNilErrors) {
+
+    auto&     gc       = vm.gc();
+    auto      fn       = new_function(gc, nullptr, 0);
+    auto      fn_guard = gc.make_guard(fn);
+    auto&     cu       = fn->unit();
+    const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    cu.emit_op(OpCode::LOAD_NIL, 1); // [nil]
+    emit_named(cu, OpCode::LOAD_FIELD, x);
+    cu.emit_op(OpCode::RETURN, 1); // 不可达
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+}
+
+// 对非对象非 nil 原语取字段 -> UndefinedProperty(文案:该类型不支持字段访问)。
+TEST_F(AriaVMStress, LoadFieldOnNonObjectErrors) {
+
+    auto&     gc       = vm.gc();
+    auto      fn       = new_function(gc, nullptr, 0);
+    auto      fn_guard = gc.make_guard(fn);
+    auto&     cu       = fn->unit();
+    const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    emit_imm(cu, 1); // [1]
+    emit_named(cu, OpCode::LOAD_FIELD, x);
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+}
+
+// 对 nil 写字段 -> UndefinedProperty(nil 并入非对象统一文案,同 LoadFieldOnNilErrors;
+// obj peek(1) 不弹,先于取值失败)。
+TEST_F(AriaVMStress, StoreFieldOnNilErrors) {
+
+    auto&     gc       = vm.gc();
+    auto      fn       = new_function(gc, nullptr, 0);
+    auto      fn_guard = gc.make_guard(fn);
+    auto&     cu       = fn->unit();
+    const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+    cu.emit_op(OpCode::LOAD_NIL, 1); // [nil]
+    emit_imm(cu, 1);                 // [nil, 1]
+    emit_named(cu, OpCode::STORE_FIELD, x);
+    cu.emit_op(OpCode::RETURN, 1); // 不可达
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+}
+
+// MAKE_CLASS 栈顶 super 非类值 -> TypeMismatch(superclass 须为类)。
+TEST_F(AriaVMStress, MakeClassNonClassSuperErrors) {
+
+    auto&     gc       = vm.gc();
+    auto      fn       = new_function(gc, nullptr, 0);
+    auto      fn_guard = gc.make_guard(fn);
+    auto&     cu       = fn->unit();
+    const u16 foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    emit_imm(cu, 1); // [1](非类值充当 super)
+    emit_named(cu, OpCode::MAKE_CLASS, foo);
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+}
+
+// 类上 init 赋值为非可调用值:init Value 化(2026-09-10 整改)后赋值**放行**
+// (store_field 同步 init_,表槽/init_ 一致),实例化时 call_value 分发报
+// CallNonCallable 兜底 -- 原「init 仅认闭包」的赋值点 TypeMismatch 特例已退役。
+TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
+
+    auto&     gc        = vm.gc();
+    auto      fn        = new_function(gc, nullptr, 0);
+    auto      fn_guard  = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, foo);        // [Foo]
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+    emit_imm(cu, 5);                                // [Foo, 5](非可调用值)
+    emit_named(cu, OpCode::STORE_FIELD, init_name); // [5](赋值放行:init_ 同步为 5)
+    cu.emit_op(OpCode::POP, 1);                     // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // 实例化:call_value(init_=5) -> CallNonCallable
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::CallNonCallable);
+}
+
+// 原 SuperOutsideMethodClosureFails / SuperInObjectMethodFails 两用例随 2026-09-10
+// 整改退役:LOAD_SUPER_METHOD 的 defining==nullptr / superclass==nullptr 是编译器
+// 保证的不变式(指令只在方法闭包体内发射;Object 的方法内用 super 由编译期
+// SuperNoBaseClass 挡),运行期防线由可 catch 的 raise 降为 ASSERT -- 语言写不出
+// 的形态直接 abort 暴露,不再构成运行期错误,无法以 interpret 结果断言。
+
+// 类成员图跨 GC 存活(白盒):类/方法闭包/绑定/实例经共享模块 globals 根可达,
+// run() 后显式 collect 字节数不减、对象图仍可遍历。stress 下每 new_object 已触发
+// collect,此处再钉一层「run 外显式 collect 不误伤已发布进模块 globals 的类图」。
+TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
+
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc);
+    auto  m_guard = gc.make_guard(m);
+    auto  init    = make_function(gc, m, "init", 0);
+    auto  guard   = gc.make_guard(init);
+    {
+        auto&     icu = init->unit();
+        const u16 tag = icu.add_constant(Value::from_obj(new_string(gc, "tag")));
+        emit_imm(icu, 3);
+        emit_named(icu, OpCode::STORE_THIS_FIELD, tag);
+        icu.emit_op(OpCode::POP, 1);
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);
+        icu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 tag       = cu.add_constant(Value::from_obj(new_string(gc, "tag")));
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);         // [i](init:tag=3)
+        cu.emit_op(OpCode::DUP, 1); // [i, i]
+        emit_named(cu, OpCode::LOAD_FIELD, init_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, init_name); // [i](b = i.init 绑定,入 globals)
+        cu.emit_op(OpCode::POP, 1);                     // []
+        cu.emit_op(OpCode::LOAD_NIL, 1);
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+
+    // run() 清场后经共享模块 globals 白盒取回绑定,验证类图根链完整。
+    auto b_entry = m->globals().find(Value::from_obj(new_string(gc, "init")));
+    ASSERT_NE(b_entry, nullptr);
+    auto b = aria::Object::as<ObjBoundMethod>(b_entry->value.as_obj());
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->method_name(), "init"); // 非虚取名:闭包方法取 fn 名
+
+    // run() 收尾 reset() 只清栈不回收:主入口闭包等栈级临时物已不可达但仍在堆上,
+    // 先 collect 清掉 run 期遗留,再钉住类图基线 -- 第二次 collect 字节数须不变。
+    gc.collect();
+    const usize before = gc.bytes_allocated();
+    gc.collect(); // 类值经 m_guard -> module -> globals -> 类表 -> init 闭包全链标根
+    EXPECT_EQ(gc.bytes_allocated(), before);
+
+    // collect 后对象图仍完好:绑定经 fields 缓存/表可达,字段值经协议读回一致
+    //(整表访问器 fields() 已删,改走 load_field;命中路径纯查询无分配,读安全)。
+    auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
+    ASSERT_NE(inst, nullptr);
+    EXPECT_EQ(inst->cls()->name()->view(), "Foo");
+    auto tag_v = inst->load_field(vm, new_string(gc, "tag"));
+    ASSERT_TRUE(tag_v.has_value());
+    EXPECT_EQ(tag_v->as_int(), 3);
+}
+
+// ============================================================
+// M5 泛化:native 方法(方法槽持 ObjNativeFn,绑定形态与闭包统一 --
+// uniform「可调用一律绑定」;调用约定 slots[0] = this 兼返回槽,见 ObjNativeFn 契约)。
+// ============================================================
+
+// echo_this():验证原生方法的绑定调用约定 -- VM 把绑定调用区槽 0(bound 对象)覆写为
+// receiver 后调用:原生读 slots[0] 即 this(校验为 ObjInstance)、返回值写 slots[0] 原地,
+// 实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
+bool echo_this_native(AriaVM& vm, Span<Value> slots) {
+    if (slots.size() - 1 != 0) {
+        return vm.fail(ErrorCode::WrongArity, "echo_this expects 0 args, got {}", slots.size() - 1);
+    }
+    if (!slots[0].is_obj() || slots[0].as_obj()->type() != aria::ObjType::INSTANCE) {
+        return vm.fail(ErrorCode::TypeMismatch, "echo_this receiver is not an instance");
+    }
+    slots[0] = Value::from_int(1); // 返回 1:覆写 this 槽(返回槽即原 this 位)
+    return true;
+}
+
+// 实例方法命中原生函数:LOAD_FIELD 绑定 ObjBoundMethod(原生)后 CALL 走 call_bound_method
+// 的原生分支 -- this 到位、返回槽覆写、stress 下 bound/类/缓存全程存活。
+TEST_F(AriaVMStress, NativeMethodBindsThis) {
+
+    auto&      gc       = vm.gc();
+    auto       fn       = new_function(gc, nullptr, 0);
+    auto       fn_guard = gc.make_guard(fn);
+    auto&      cu       = fn->unit();
+    const u16  foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16  m_name   = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+    const auto nf       = add_native_const(cu, gc, "echo_this", echo_this_native);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
+    emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);                         // [Foo, native](MAKE_METHOD 接受可调用值)
+    emit_named(cu, OpCode::MAKE_METHOD, m_name); // [Foo]
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);    // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1);                         // [i](快路径:无 init)
+    emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound-native](绑定 + 缓存回填)
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // [1](原生读 slots[0]=this,返回槽覆写)
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 1);
+}
+
+// 类路径读取(静态访问)取出裸原生值,不绑定 -- 直调时 slots[0] = callee(原生自身),
+// 非实例接收者,原生体内自查报 TypeMismatch。与实例路径(NativeMethodBindsThis)互补,
+// 钉死「绑定只发生在实例读取」的边界。
+TEST_F(AriaVMStress, NativeMethodClassAccessIsFreeCall) {
+
+    auto&      gc       = vm.gc();
+    auto       fn       = new_function(gc, nullptr, 0);
+    auto       fn_guard = gc.make_guard(fn);
+    auto&      cu       = fn->unit();
+    const u16  foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16  m_name   = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+    const auto nf       = add_native_const(cu, gc, "echo_this", echo_this_native);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, foo);
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);
+    emit_named(cu, OpCode::MAKE_METHOD, m_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);  // [Foo]
+    emit_named(cu, OpCode::LOAD_FIELD, m_name); // [native](类路径:裸值,无绑定无缓存)
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // 自由调用:slots[0] = callee(非实例) -> TypeMismatch
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+}
+
+// 静态槽持可调用值同样绑定(uniform「可调用一律绑定」规则,Python 函数语义):
+// MAKE_STATIC 存入原生,实例读取沿链命中 -> 绑定 this -> 调用成功。
+TEST_F(AriaVMStress, StaticSlotCallableBindsOnInstance) {
+
+    auto&      gc       = vm.gc();
+    auto       fn       = new_function(gc, nullptr, 0);
+    auto       fn_guard = gc.make_guard(fn);
+    auto&      cu       = fn->unit();
+    const u16  foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16  f_name   = cu.add_constant(Value::from_obj(new_string(gc, "f")));
+    const auto nf       = add_native_const(cu, gc, "echo_this", echo_this_native);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, foo);
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);                         // [Foo, native]
+    emit_named(cu, OpCode::MAKE_STATIC, f_name); // 静态槽存原生(var 声明 lowering 同形)
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1);                         // [i]
+    emit_named(cu, OpCode::LOAD_FIELD, f_name); // [bound-native](实例读取:沿链命中 -> 绑定)
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // [1]
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 1);
+}
+
+// super 沿链命中原生方法同样绑定(LOAD_SUPER_METHOD 从父类起查,绑 this=帧槽 1 后
+// CALL 走原生分支);不写 fields 缓存的铁则 2 对原生同样成立。
+TEST_F(AriaVMStress, SuperBindsNativeMethod) {
+
+    auto&     gc        = vm.gc();
+    auto      fn        = new_function(gc, nullptr, 0);
+    auto      fn_guard  = gc.make_guard(fn);
+    auto&     cu        = fn->unit();
+    const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+    const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+    const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+    // Base:m = echo_this(原生);Sub : Base,m 覆写为 super.m() 转发闭包
+    const auto nf = add_native_const(cu, gc, "echo_this", echo_this_native);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, base_name);
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);
+    emit_named(cu, OpCode::MAKE_METHOD, m_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+    // Sub.m(闭包):LOAD_SUPER_METHOD m -> super 绑定原生(this=Sub 实例)-> CALL -> 1
+    auto sub_m   = new_function(gc, new_string(gc, "m"), 0);
+    auto m_guard = gc.make_guard(sub_m);
+    {
+        auto&     smu     = sub_m->unit();
+        const u16 sm_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
+        emit_named(smu, OpCode::LOAD_SUPER_METHOD, sm_name);
+        smu.emit_op(OpCode::CALL, 1);
+        smu.emit_byte(0, 1); // [1](super 绑定的原生:slots[0] = this)
+        smu.emit_op(OpCode::RETURN, 1);
+    }
+    emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // [Base]
+    emit_named(cu, OpCode::MAKE_CLASS, sub_name);    // [Sub]
+    emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
+    emit_named(cu, OpCode::MAKE_METHOD, m_name);
+    emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1);                         // [i]
+    emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound(Sub.m 闭包)]
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // [1]
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 1);
+}
+
+// MAKE_METHOD("init") 配原生:init Value 化(2026-09-10 整改)后**合法** -- 注册即
+// 覆盖 MAKE_CLASS seed 同步 init_,实例化经 call_value 走 call_native:slots[0] = this(echo
+// 校验接收者是实例后覆写返回 1),原生 init 的返回值即实例化结果(嵌入 API 灵活性:
+// 不写槽即返回 this,写槽可返回任意值)。原「init 仅认闭包」拒写检查为死代码已删。
+TEST_F(AriaVMStress, NativeInitInstantiates) {
+
+    auto&      gc        = vm.gc();
+    auto       fn        = new_function(gc, nullptr, 0);
+    auto       fn_guard  = gc.make_guard(fn);
+    auto&      cu        = fn->unit();
+    const u16  foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+    const u16  init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+    const auto nf        = add_native_const(cu, gc, "echo_this", echo_this_native);
+    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);                            // [Foo, native]
+    emit_named(cu, OpCode::MAKE_METHOD, init_name); // [Foo](原生 init 注册,覆盖 seed)
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+    cu.emit_op(OpCode::CALL, 1);
+    cu.emit_byte(0, 1); // 实例化:原生 init 收 slots[0]=this(echo 校验后返回 1)
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.value().as_int(), 1); // 原生 init 的返回值即实例化结果
 }

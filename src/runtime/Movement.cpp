@@ -15,8 +15,10 @@ namespace aria {
     }
 
     // 修改栈顶帧(刚 acquire 的空帧)为对 closure 的调用。slots 按不变量设为 top - argc - 1
-    // (栈顶 [callee, a1..aN]:slots 指向槽 0 callee);VM 专有字段从 closure 解引用填充
+    // (栈顶 [callee, a1..aN]:slots 指向槽 0);VM 专有字段从 closure 解引用填充
     // (unit/module 缓存其 function 的,ip 指向 function 字节码起始)。
+    // 槽 0 的内容由调用方在进帧前写定:普通函数帧 = 闭包自身(栈上的 callee)、
+    // 方法帧 = this(接收者替代 bound 对象;闭包经 frame.closure 携带不上栈)。
     // module 缓存 fn->module(),供 LOAD/STORE/DEF_GLOBAL 定位当前模块 globals;
     // ip 指向 fn 字节码起始(RETURN/异常时按 ip 算 offset)。
     void Movement::init_frame_(CallFrame& f, ObjClosure* closure, const u8 argc) const {

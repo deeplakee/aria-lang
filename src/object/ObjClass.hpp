@@ -135,6 +135,11 @@ namespace aria {
     //     返回对象白色无根,调用方须立即发布进根(MAKE_CLASS 原槽写回即经值栈根)。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super);
+
+    // 工厂重载(StringView 名):name 经工厂内部 intern 并自行守卫(工厂守「自己创建的」),
+    //     调用方传文本即可,无需手动建串根化;super 的根化约定同上。委托显式名重载。
+    [[nodiscard]]
+    ObjClass* new_class(GC& gc, StringView name, ObjClass* super);
 } // namespace aria
 
 #endif // ARIA_OBJ_CLASS_HPP

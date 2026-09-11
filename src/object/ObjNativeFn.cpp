@@ -37,4 +37,12 @@ namespace aria {
         return new_native_fn(gc, name_str, fn);
     }
 
+    ObjNativeFn* new_native_fn(GC& gc, StringView name, NativeFn fn) {
+        // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
+        //(「每方守自己创建的」)。调用方传文本即可,无需手动建串根化。委托显式名重载。
+        const auto name_str = new_string(gc, name);
+        const auto guard    = gc.make_guard(name_str);
+        return new_native_fn(gc, name_str, fn);
+    }
+
 } // namespace aria

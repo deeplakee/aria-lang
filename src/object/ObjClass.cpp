@@ -76,4 +76,12 @@ namespace aria {
         return gc.new_object<ObjClass>(gc, name, super);
     }
 
+    ObjClass* new_class(GC& gc, StringView name, ObjClass* super) {
+        // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
+        //(「每方守自己创建的」);super 的根化约定同显式名重载。委托显式名重载。
+        const auto name_str = new_string(gc, name);
+        const auto guard    = gc.make_guard(name_str);
+        return new_class(gc, name_str, super);
+    }
+
 } // namespace aria

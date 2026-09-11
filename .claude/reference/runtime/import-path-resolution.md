@@ -15,7 +15,7 @@
    同一指针，模块表用 `===` 严格相等查表，天然去重；符号链接经 `weakly_canonical` 规避双加载。
 3. **模块表查表 + 压栈**：以绝对键 `ObjString*`（装箱为 `Value`）在 VM 模块表 `modules_`
    （`AriaHashTable`）里查；命中即复用模块对象并 `current_->push` 压栈（`IMPORT path:u16`，栈效应
-   `... -> [module]`）。绑定不在 IMPORT 内——交 CodeGen 按作用域经 `DEF_GLOBAL`（顶层）/ 值填槽
+   `... -> [module]`）。绑定不在 IMPORT 内--交 CodeGen 按作用域经 `DEF_GLOBAL`（顶层）/ 值填槽
    + `mark_initialized`（嵌套）走。未命中走 `load_module` 加载链路（见下）。
 
 模块表 `modules_`：键 = 绝对规范路径 `ObjString*`（intern），值 = `ObjModule*`，均装箱为
@@ -58,7 +58,7 @@
 2. **编译器相对 stdlib 目录**（约定，VM 构造时由 `fs::program_dir()` 推导，如
    `<exe_dir>/../share/aria/lib`，经 `weakly_canonical` 规范化后推入 `source_roots_[1..]`；
    确切路径待定）。
-3. **其余源根**（`-L` 标志、`ARIA_PATH` 环境变量等）—— 之后再加（同样入 `[1..]`）。
+3. **其余源根**（`-L` 标志、`ARIA_PATH` 环境变量等）-- 之后再加（同样入 `[1..]`）。
 
 存储为单一 `source_roots_`（`List<String>`），按槽位约定分区，无 flag / 无并列配置列表：
 `[0]` = 入口槽（构造占 cwd，`run()` 换成入口 `dir_`），`[1..]` = 配置根（stdlib / `-L` /
@@ -71,20 +71,15 @@
 > 变化；导入同目录兄弟须用 `import "./math"` 显式相对。这样把「同名劫持 stdlib」的潜在点
 > 从「任意子目录」收窄到「只有入口根目录」，且裸名行为可预测。
 >
-> 残余副作用：入口根目录下放一个 `math.aria` 仍会盖掉 stdlib `math`——这是「入口目录在
+> 残余副作用：入口根目录下放一个 `math.aria` 仍会盖掉 stdlib `math`--这是「入口目录在
 > `source_roots` 里」的固有后果，非此选择引入。
 
-> 注：`source_roots_` 存为 `List<String>`（路径元数据），非 `ObjString*`，不参与 GC 追踪——
+> 注：`source_roots_` 存为 `List<String>`（路径元数据），非 `ObjString*`，不参与 GC 追踪--
 > 它不作模块表键，仅解析器用。
 
 ## 相对路径 = 相对当前模块目录
 
-`./`、`../`、`.`、`..` 开头的路径相对**当前模块所在目录**解析：基 = `dirname(current_module_path)`
-（`current_module_path` = `frame.module->abs_path()` = `dir_ + "/" + name_ + ".aria"`，见
-`ObjModule::abs_path`；`dir_` = 模块文件所在目录、`name_` = 文件名去 `.aria` 后缀/stem）。
-`.aria` 后缀在末段，`dirname` 不受影响 -> `dirname(dir_ + "/" + name_ + ".aria")` = `dir_`
-（name_ 为单段 stem，无 `/`）。`dir_` 指针恒非空但内容可空（`new_module` 默认 cwd，cwd 不可用
-空串兜底），`abs_path()` 可返空串；相对分支对空基判空返 `nullopt`（拒绝锚定）。
+即「统一解析原语」的相对分支（细则见上），`.`/`..`/`./`/`../` 开头一律相对**当前模块所在目录**。
 
 例：当前模块 `dir_` = `/proj/lib`、`name_` = `main`（abs_path = `/proj/lib/main.aria`），
 `import "./helper"` -> 基 `dirname(/proj/lib/main.aria)` = `/proj/lib` = `dir_` -> `/proj/lib/helper.aria`。
@@ -115,7 +110,7 @@ dirname / stem 切分，由 `fs::module_name_and_dir` 按命中文件的绝对�
 - `name_` 兼作显示名（`to_string` / 报错渲染），不单独参与模块表查重。
 
 `run()` 时：`source_roots_[0]` = 入口模块 `dir_`（原地替换构造时的 cwd 占位），`[1..]`
-不动。`dir_` 指针恒非空、内容可空（cwd 不可用时空串兜底）——空串播种后裸名解析跳过空根。
+不动。`dir_` 指针恒非空、内容可空（cwd 不可用时空串兜底）--空串播种后裸名解析跳过空根。
 
 ## 模块表命中与未命中
 
@@ -123,18 +118,18 @@ IMPORT 以绝对键查 `modules_`：
 
 - **命中**（表内任意初始化进度，加载事实源 = 表成员资格、对象无状态字段）：复用该模块对象。
   - 体已跑完 = 完整模块。
-  - 正在 run-once = 循环导入命中的「半初始化对象」——按文法「允许循环导入，命中正在初始化的
+  - 正在 run-once = 循环导入命中的「半初始化对象」--按文法「允许循环导入，命中正在初始化的
     模块返回半初始化对象」直接用，不报错。
 - **未命中**（文件解析命中但模块未入表）：调 `load_module(key, path)` 得模块(已编译 `set_entry`，体待 run-once)，
   IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行
   一个函数,由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、
   改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`。**无递归 `dispatch_loop()`**。被导入模块的
   编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
-  `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `take_error` 取出);
+  `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `unwind()` 派发/物化);
   读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
   `import-handling-overview.md`「加载层接入位置」。
 - **解析失败**（无源根命中 `<base>/<spec>.aria`）：报 `ErrorCode::ModuleNotFound`
-  （`module not found: '<path>'`，经 `runtime_err` 烘 IMPORT 站点位置）。
+  （`module not found: '<path>'`，经 `fail` 烘 IMPORT 站点位置）。
 
 命中后，`current_->push(module)` 把模块对象压栈（`IMPORT path:u16`，栈效应 `... -> [module]`）；
 绑定交 CodeGen 按作用域走（顶层 `DEF_GLOBAL` / 嵌套值填槽 + `mark_initialized`）。

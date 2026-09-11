@@ -299,19 +299,4 @@ constexpr int kMaxSize = 1024;
 
 # AI Agent Guidelines
 
-当 AI 自动生成 C++ 代码时，默认遵循：
-
-```text
-Type              -> PascalCase
-Function          -> snake_case
-Variable          -> snake_case
-Member Variable   -> snake_case_
-Constant          -> kPascalCase
-Enum Value        -> PascalCase
-Namespace         -> lowercase
-Macro             -> ALL_CAPS
-Boolean           -> is_/has_/can_/should_
-```
-
-**不要混用 Google 风格、LLVM 风格和 Unreal 风格。**
-整个项目只采用这一套命名规则，并保持一致。
+当 AI 自动生成 C++ 代码时，默认遵循上文「Naming Rules」表。**不要混用 Google 风格、LLVM 风格和 Unreal 风格**--整个项目只采用这一套命名规则，并保持一致。

@@ -4,8 +4,8 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile 层（Token / Lexer / AST / Parser / AstVisitor / CodeGen / Compiler）、bytecode 层（OpCode X-Macro 单一事实源表 + CodeUnit / Disassembler 表驱动解码 + 异常记录表小节）、GC Phase 1 + 2、Object 子类型 ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException / ObjClosure / ObjUpvalue、AriaVM M1 主循环 + M2（模块表 / 源根 / `DEF/LOAD/STORE_GLOBAL` / builtins type·len·str·assert / `IMPORT` 磁盘加载全链 / 运行期报错位置由未捕获堆栈跟踪行标注，消息不含位置前缀）+ **M3 异常 try/catch/throw**（统一寄存器通道 + `unwind` 查异常记录表派发 / 跨帧 unwind / `THROW` 原值保类型 / re-throw 保码 / 未捕获逐帧堆栈跟踪；dispatch_loop 直报 Result 形态已全部退役）+ **M4 闭包**（「捕获即引用」语义：ObjClosure/ObjUpvalue、open upvalue 按槽址降序开链 + 值栈增长第三类重绑、`CLOSURE/LOAD_UPVALUE/STORE_UPVALUE/CLOSE_UPVALUE` 四指令、callable 收敛为闭包（`ObjFunction` 退为常量池内部物）、编译翻转 `resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭；无新增 opcode，Disassembler 零改动）。
-- **骨架待落地**：M5 类、M6 协程；CodeGen 对应特性占位 `NotImplemented`（编译期 Error），随 VM 里程碑逐个翻为真实发射。defer 善后机制已降级为可选后续（优先级最低，其他功能完成后另定，不绑定里程碑；try/finally 已裁撤的后继，见坑点文档「M3b finally 裁撤记录」）。
+- **已落地**：util / value / error / compile / bytecode 层、GC、Object 子类型（string / function / native / module / exception / closure / upvalue / class / instance / bound-method）、AriaVM M1 主循环、M2 模块表与 IMPORT、M3 异常 try/catch/throw、M4 闭包（捕获即引用）、M5 类的阶段 1-2（对象层 + VM 机制）。
+- **待落地**：M5 阶段 3 编译翻转（CodeGen 对应特性现占位 `NotImplemented` 编译期 Error）、M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 
 ## 文档与参考（按需加载）
@@ -30,10 +30,10 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 - `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
 - `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
-- `runtime/m4-closure-implementation-plan.md` -- M4 闭包实施计划（2026-09 定稿并已按四阶段全部落地：语义模型、三项设计决策与落地记录存档）。
-- `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（2026-09 定稿；阶段 1-2 对象层+VM 机制已落地、阶段 3 编译翻转待实施，M5 开工前重读：语义模型 + 六项设计决策——无 meta、静态与方法单表、构造期 bootstrap Object、bound-method 缓存进实例 fields 表（三铁则）、STORE_FIELD/MAKE_STATIC 镜像双指令、defining class 挂 ObjClosure）。
+- `runtime/m4-closure-implementation-plan.md` -- M4 闭包实施计划（已全部落地，存档）。
+- `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（阶段 1-2 已落地、阶段 3 编译翻转待实施；开工前重读语义模型与六项设计决策）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
-- `runtime/exception-implementation-pitfalls.md` -- M3 异常（try/catch/throw）踩坑归档（已落地；含 finally 裁撤记录与 defer 后继说明，及 M4 补录的 upvalue 关闭与 unwind 截栈/弹帧交互坑点，异常相关特性重启前重读）。
+- `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 
@@ -43,9 +43,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ### 软链接现状（单一事实源）
 
-- 根目录 `AGENTS.md` **软链** → `CLAUDE.md`：ZCode 的工作区指令入口与本文件同一内容，修改只改本文件。
-- `.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个相对软链）：ZCode 把同一份规则文件暴露为技能，按 frontmatter `description` 自动触发；`paths:` 字段仅 Claude Code 消费。util/value/error/compile/bytecode/runtime/object/memory 与规则文件同名，`core.md` 对应技能 `aria-core`。
-- 即两套 agent（Claude Code / ZCode）共享同一份本体文件，仓库内**无内容副本**。新增模块规则：建 `.claude/rules/<dir>.md`（frontmatter 带 name/description/paths），并补一条 `.zcode/skills/aria-<dir>/SKILL.md` 相对软链。
+- 根目录 `AGENTS.md` **软链** → `CLAUDE.md`（同一内容，修改只改本文件）；`.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个相对软链，与规则文件同名，`core.md` 对应技能 `aria-core`）：ZCode 把同一份规则文件暴露为技能、按 frontmatter `description` 自动触发，`paths:` 字段仅 Claude Code 消费。两套 agent（Claude Code / ZCode）共享同一份本体，仓库内**无内容副本**。
+- 新增模块规则：建 `.claude/rules/<dir>.md`（frontmatter 带 name/description/paths），并补一条 `.zcode/skills/aria-<dir>/SKILL.md` 相对软链。
 
 > 同步义务：改模块代码时同步更新对应 `.claude/rules/<dir>.md`；改设计时同步 `.claude/reference/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
 
@@ -79,17 +78,17 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.claude/rules/error.md`（读 `src/error/**` 时自动加载）。
 
-- **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 错误码到操作的映射），不关心位置与细节；`Error`（码 + `message_`，位置在构造期一次性烘焙为完整可读串，**不持 `SourceFile*`**，无悬空风险）是**边界与展示**的载体。注意 Error 的位置模型围绕编译期 `SourceLoc`（构造期烘 `path:line:col`）；运行期错误消息不含位置（位置由未捕获出口的堆栈跟踪行给出，2026-09-10 起），故**运行期错误不就地构造 Error**，Error 仅在 `dispatch_loop()` 未捕获出口物化（见通道 2）。
-- **四条错误通道**：
-  1. **`Result<T, Error>` 返回（编译期通道 + VM 边界返回类型）**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错 Result）。VM 侧 `run()`/`interpret` 的 `Result` 仅为未捕获出口的边界返回类型，**不用于 dispatch_loop 内部逐站传播**（运行期在途错误走通道 2）。
-  2. **VM 自管异常状态（运行期主通道，M3 已闭环）**：aria 的 throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，**错误实体是 `ObjException`**（携 `ErrorCode` + 完整烘焙消息 = 码类前缀 + 细节，**不含位置前缀**（2026-09-10 起，对齐 clox/Python「被抛出的错误只携带码与描述」惯例：位置由 `unwind` 未捕获出口的逐帧 at 跟踪行给出，THROW 原值不装箱、被导入模块编译错透传自带编译期位置，三路一致））。装箱为 Value 存入**当前执行上下文的挂起错误寄存器**（`Movement::pending_error_`，随 `current_` 走、VM 根 tracer 标根）：装箱入口 `AriaVM::raise(code, detail)` 一步烘齐（复用 `Error::make_message` 烘焙单点，不经 Error 对象中转）；原生函数与 `call_value` 族以 bool 成败信号共用（惯用法 `return vm.fail(...)`；`fail` 返 `FailSignal` 哨兵按调用点返回类型转换 false/nullptr/nullopt，失败出口一行收口）；dispatch_loop 内其余运行时错误站点经 `raise(code, fmt, ...)` 就地装箱（格式化归装箱入口）、用户 `throw` 经 `THROW` 弹值 `current_->raise(v)`（原值入寄存器不包，catch 绑原值保类型），raise 与 unwind 不融合，随后一律直接 `unwind()`（与 CALL 失败善后同形）。**派发与出口**：`AriaVM::unwind()` 自最内帧向外按帧 `last_ip` 反推 offset 查 CodeUnit 内**异常记录表**（`TryRecord{begin,end,handle,stack_depth}`，无 `SETUP_EXCEPT`/`END_EXCEPT` 操作码、不依赖 C++ 异常），命中即截值栈（`truncate_stack` 至 `slots + stack_depth`）跳 handler（异常值落 catch 参数槽），未命中逐帧 `exit_frame`；全未命中才物化 `Error`（匿名 `uncaught_error_parts` 反提拆 (码, 烘焙消息) 两件：ObjException 原码原消息、re-throw 保码；非 ObjException 兜底 `UncaughtException`，拼好跟踪后经 `Error::from_baked` 一次物化）并烘焙外->内逐帧 `at` 堆栈跟踪。落地状态见 `.claude/rules/runtime.md`「VM 异常通道（M3 已落地）」，设计见 vm-design.md §4.5-§4.8。
+- **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。运行期错误消息不含位置（位置由未捕获出口的堆栈跟踪行给出），故**运行期错误不就地构造 Error**，Error 仅在 `dispatch_loop()` 未捕获出口物化（见通道 2）。
+- **四条错误通道**（通道 2 落地状态见 `.claude/rules/runtime.md`「VM 异常通道」，设计见 vm-design.md §4.5-§4.8）：
+  1. **`Result<T, Error>` 返回**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错）。VM 侧 `run()` 的 `Result` 仅为未捕获出口的边界返回类型，不用于 dispatch_loop 内部逐站传播（在途错误走通道 2）。
+  2. **VM 自管异常状态（运行期主通道）**：aria 的 throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，不含位置前缀），装箱为 Value 存入当前执行上下文的挂起错误寄存器（`Movement::pending_error_`）。装箱入口 `AriaVM::raise(code, detail)`；原生函数与 `call_value` 族以 bool 为成败信号（惯用法 `return vm.fail(...)`，`FailSignal` 哨兵按调用点返回类型转 false/nullptr/nullopt）；用户 `throw` 经 `THROW` 原值入寄存器（catch 绑原值保类型）；装箱后一律直接 `unwind()`。`unwind()` 自最内帧向外按 `last_ip` 查 CodeUnit 异常记录表（`TryRecord`，无 `SETUP_EXCEPT` 指令、不依赖 C++ 异常）：命中截值栈跳 handler，全未命中才物化 `Error` 并烘焙外->内逐帧 `at` 堆栈跟踪。
   3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。
 
 ## 工具
 
 - **clang-format**（根目录 `.clang-format`，LLVM 风格 / 4 空格 / 120 列 / 命名空间全缩进）：`clang-format -i <file>` 原地格式化。编辑器保存时自动重排（如 `auto p`->`const auto p`）是项目风格，不要回退。
-- **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--header-only 头文件**不被任何编译 TU（直接或传递）include** 时会因拿不到编译参数报类型未定义假错；已被传递 include 的头 clangd 能推断参数（2026-09 实测 clangd 22：全部头文件 `clangd --check` 0 诊断假错，自含头即可）。疑似假错以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准；根治：尽早让某 .cpp include 一次（仅对确实不可达的头需要）。
+- **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--header-only 头文件**不被任何编译 TU（直接或传递）include** 时会因拿不到编译参数报类型未定义假错；已被传递 include 的头 clangd 能推断参数，自含头即可。疑似假错以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准；根治：尽早让某 .cpp include 一次（仅对确实不可达的头需要）。
 
 ## 命名（强制）
 

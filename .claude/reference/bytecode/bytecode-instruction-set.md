@@ -32,9 +32,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 
 `u8` 上限 256，当前 63 条，扩空间充裕。
 
-### 1.2 与 CLAUDE.md 的同步状态
-
-指令清单与 `.claude/rules/bytecode.md`、CLAUDE.md「文档与参考」的文档索引保持同步。当前已定决策：
+### 1.2 已定决策
 
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
@@ -269,9 +267,9 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | :--- | :--- | :--- | :--- |
 | `LOAD_OBJECT` | (无) | `[] -> [Object]` | 压栈内置 `Object` 根类（VM 内部指针，不经名字查，避免 shadow `Object` 名破坏隐式继承） |
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_OBJECT` |
-| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（2026-09-11 改定：**仅实例方法、仅收闭包**；静态方法 `fun` 改经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时覆盖工厂 seed 同步 `ObjClass.init_`（init Value 化）；`class` 留栈继续接收成员 |
-| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值（2026-09-11 改定）；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，2026-09-11 改定、不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈；不写 fields 缓存 |
+| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
+| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
+| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈；不写 fields 缓存 |
 | `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预留指令**（编译器不发射、VM 命中 `not_implemented`）：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能优化（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 创建 `ObjMap`，压栈 |
@@ -285,7 +283,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `IMPORT` | `path:u16` | `... -> [module]` | 解析 `path` 并复用/加载模块，把 `ObjModule` 压栈。绑定交后续 `DEF_GLOBAL`/值填槽按作用域走 |
 
-`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走——顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部）+ `mark_initialized`，与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
+`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走--顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部）+ `mark_initialized`，与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
 
 ### 4.16 异常
 
@@ -293,7 +291,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出（原值入挂起寄存器不包，catch 绑原值保类型）；`unwind` 查各帧 `try_records` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
 
-> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，每条记录含 `try` 起始/结束 `ip` + `handler ip` + `stack_depth`（帧深度由 unwind 遍历隐式决定、catch 参数槽由 handler 约定承载，均不入记录）。`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。M3 已落地：记录表结构与查表（`TryRecord{begin,end,handle,stack_depth}` + `find_try_handler` 返命中记录指针）+ CodeGen try/catch/throw 发射 + VM `unwind`（查表 + 逐帧回退 + 截栈跳 handler + 未捕获物化 Error 带堆栈跟踪）全链可用（见 §5.9/§6.1；`finally` 已裁撤、善后后继 defer 已降为可选后续不绑定 M4）。
+> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与查表见 §6.1，lowering 见 §5.9。
 
 ### 4.17 返回
 
@@ -397,7 +395,7 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ### 5.4 闭包 / upvalue
 
-已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFunction`，无前置 `LOAD_CONST`--旧 lowering 的 `LOAD_CONST fn_idx + CLOSURE` 双发属残留，定夺为仅 `CLOSURE`）：
+已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFunction`，无前置 `LOAD_CONST`）：
 
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
@@ -437,26 +435,26 @@ CALL argc              ; [r]
 
 静态变量**创建**经 `MAKE_STATIC`（eager 求值初始化器后存，见上文 lowering）；`Foo.x` 静态访问、`foo.x` 实例优先+静态回退（遮蔽）的 lowering 待 VM 精化：静态变量可视为类对象的字段（复用 `LOAD_FIELD`/`STORE_FIELD` 于 `ObjClass`），`foo.x` 在 `LOAD_FIELD` 未命中实例属性时回退查类静态。具体栈模式（`STORE_FIELD` 的 peek-store 与「class 始终留栈」的衔接，可能需 `DUP`/`POP` 或专用指令）留编译器实现时定；裸名解析见下文作用域模型（`LOAD_GLOBAL` 查模块全局，类静态经 `ClassName.x` 限定）。
 
-静态成员继承与缓存（编译期/VM 语义）：静态变量与静态方法经 `ObjClass.superclass_` 链继承（与实例方法分派同一机制、复用同一指针）。类成员读写取 Python/JS class attributes 语义（读穿透、写遮蔽，M5 决策补记 2026-09-09）：子类未重声明时读沿链穿透命中父类槽；类上赋值 `Sub.x = v` 落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许，2026-09-11 改定），方法槽亦允许改写（bound 缓存取首解析快照；"init" 赋值同步 `ObjClass.init_`）。类静态经 `ClassName.x` 限定访问（运行期走 super）、不在裸名作用域（见下文作用域模型）。方法查找靠内联缓存 / bound method 缓存加速：`obj.m` 返回绑实例的 bound method 对象，可缓存在实例查找表；闭包不可变，缓存安全。
+静态成员继承与缓存（编译期/VM 语义）：静态变量与静态方法经 `ObjClass.superclass_` 链继承（与实例方法分派同一机制、复用同一指针）。类成员读写取 Python/JS class attributes 语义（读穿透、写遮蔽）：子类未重声明时读沿链穿透命中父类槽；类上赋值 `Sub.x = v` 落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许），方法槽亦允许改写（bound 缓存取首解析快照；"init" 赋值同步 `ObjClass.init_`）。类静态经 `ClassName.x` 限定访问（运行期走 super）、不在裸名作用域（见下文作用域模型）。方法查找靠内联缓存 / bound method 缓存加速：`obj.m` 返回绑实例的 bound method 对象，可缓存在实例查找表；闭包不可变，缓存安全。
 
-Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Object 根类，统一继承链语义。**Bootstrap**：VM init 阶段、用户代码执行前，创建 Object--一个普通 `ObjClass`，`superclass_ = nil`（唯一 nil 超类的类），VM 成员单独持有（M5 决策 3：**不进 globals/builtins/任何模块**，裸名解析四层均够不到、正常代码访问不到，本段旧文「注册为全局名」措辞待阶段 4 随 §5.5 精化收回）。**编译器隐式超类**：`def Foo`（无显式父类）编译等价于 `def Foo : Object`，编译器填 Object 作隐式超类；`def Foo : Bar` 设 super=Bar（经 Bar 链最终到达 Object）。隐式 Object 引用经 `LOAD_OBJECT`（VM 内部指针，**不按名字查**）--Object 不入任何名字空间，用户 shadow 全局名无从谈起，继承机制天然免疫用户命名。**Object 方法集**：保持最小通用--`init`（no-op，返回 this）、`to_string`（如 `<ClassName>`），可再加 `equals`（引用相等）、`hash`（地址/id）、`class`（返 ObjClass）、`is_a(Class)`；每个方法被所有实例继承，谨慎加。Object **不带静态变量**（根类保持最小，静态会被全类经链共享）。Object 方法体内 `super` **非法**（它是根，无超类），编译期/VM 报错。`Object()` 实例化允许（permissive），产出持 Object 方法的最小 ObjInstance。**边界**：Object 统一的是用户定义类的实例（持 ObjClass 的 ObjInstance）。原始值（nil/bool/f64/int，NaN-boxing 内联载荷，非 Obj）不在 Object 层次内；内置 Obj 类型（ObjString/ObjList/ObjMap 等，C++ 类型带 ObjType tag、不持 ObjClass）暂亦不在内；纳入内置类型为 uniform OOP 目标方向（见下文）。链式查找（静态/实例方法/`foo.x` 回退/`init` 解析）统一终止于 Object（裸名走模块全局，不在此列）。
+Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Object 根类，统一继承链语义。**Bootstrap**：VM init 阶段、用户代码执行前，创建 Object--一个普通 `ObjClass`，`superclass_ = nil`（唯一 nil 超类的类），VM 成员单独持有（**不进 globals/builtins/任何模块**，裸名解析四层均够不到、正常代码访问不到）。**编译器隐式超类**：`def Foo`（无显式父类）编译等价于 `def Foo : Object`，编译器填 Object 作隐式超类；`def Foo : Bar` 设 super=Bar（经 Bar 链最终到达 Object）。隐式 Object 引用经 `LOAD_OBJECT`（VM 内部指针，**不按名字查**）--Object 不入任何名字空间，用户 shadow 全局名无从谈起，继承机制天然免疫用户命名。**Object 方法集**：保持最小通用--`init`（no-op，返回 this）、`to_string`（如 `<ClassName>`），可再加 `equals`（引用相等）、`hash`（地址/id）、`class`（返 ObjClass）、`is_a(Class)`；每个方法被所有实例继承，谨慎加。Object **不带静态变量**（根类保持最小，静态会被全类经链共享）。Object 方法体内 `super` **非法**（它是根，无超类），编译期/VM 报错。`Object()` 实例化允许（permissive），产出持 Object 方法的最小 ObjInstance。**边界**：Object 统一的是用户定义类的实例（持 ObjClass 的 ObjInstance）。原始值（nil/bool/f64/int，NaN-boxing 内联载荷，非 Obj）不在 Object 层次内；内置 Obj 类型（ObjString/ObjList/ObjMap 等，C++ 类型带 ObjType tag、不持 ObjClass）暂亦不在内；纳入内置类型为 uniform OOP 目标方向（见下文）。链式查找（静态/实例方法/`foo.x` 回退/`init` 解析）统一终止于 Object（裸名走模块全局，不在此列）。
 
-`init` 缓存与实例化路径（编译期/VM 语义；2026-09-10 整改定稿，2026-09-11 seed 收进构造函数）：`init` 不在实例化时查表，而在 **`ObjClass` 构造函数中自 super 派生**--ctor 初始化列表读 `super->init()`，super 非空出厂即继承（O(1) 不走链；原「MAKE_CLASS 指令层 seed（2026-09-10 自工厂移出）」改定收进对象构造），Object 根由 bootstrap 设原生 no-op `init`，`init_` 恒有值。`init_` 为 **Value**（闭包/原生皆可）：`Foo()` 实例化为槽 0 原位换实例 + `call_value(cls->init(), argc)` 通用分发三步 -- init 闭包进方法帧（编译器尾部 `LOAD_LOCAL 0; RETURN` 返 this）、原生同步调用（Object 的 no-op 不写 slots[0] 即返回 this）、非可调用值（类上赋 `Foo.init = 5` 放行）报 CallNonCallable 兜底。无指针同一性快路径（原生 no-op 调用开销可忽略，不值得特判）。aria 实例字段由 `init` 内 `this.x = ...` 动态设置，无自定义 `init` 的类本无字段要初始化。缓存失效：`def` 一次性定义方法集；类上赋值可改写方法槽（读穿透、写遮蔽，M5 决策补记）--已绑定实例不失效，bound 缓存取**首解析快照**语义（新解析见新闭包、旧实例沿用旧绑定）；"init" 赋值经 `ObjClass::set_field` 命中同步 `init_`（值形态不特判），表槽/init_ 一致始终成立。
+`init` 缓存与实例化路径（编译期/VM 语义）：`init` 不在实例化时查表，而在 **`ObjClass` 构造函数中自 super 派生**--ctor 初始化列表读 `super->init()`，super 非空出厂即继承（O(1) 不走链），Object 根由 bootstrap 设原生 no-op `init`，`init_` 恒有值。`init_` 为 **Value**（闭包/原生皆可）：`Foo()` 实例化为槽 0 原位换实例 + `call_value(cls->init(), argc)` 通用分发三步 -- init 闭包进方法帧（编译器尾部 `LOAD_LOCAL 0; RETURN` 返 this）、原生同步调用（Object 的 no-op 不写 slots[0] 即返回 this）、非可调用值（类上赋 `Foo.init = 5` 放行）报 CallNonCallable 兜底。无指针同一性快路径（原生 no-op 调用开销可忽略，不值得特判）。aria 实例字段由 `init` 内 `this.x = ...` 动态设置，无自定义 `init` 的类本无字段要初始化。缓存失效：`def` 一次性定义方法集；类上赋值可改写方法槽（读穿透、写遮蔽）--已绑定实例不失效，bound 缓存取**首解析快照**语义（新解析见新闭包、旧实例沿用旧绑定）；"init" 赋值经 `ObjClass::set_field` 命中同步 `init_`（值形态不特判），表槽/init_ 一致始终成立。
 
 **作用域模型：模块即命名空间 + 裸名走词法+模块全局**（编译期/VM 语义，Python/JS 路子）：
 
 - **模块 = 命名空间（非类）**：文件是一个模块，顶层 `var`/`fun`/`class` 是**模块级绑定**（模块全局），不是某个类的静态；顶层可执行语句编进模块体（`ObjFn`），导入时跑一次（run-once）。模块存于 VM 内部模块表，不是某个 root 类的静态。
-- **ObjClass 两指针**：`super`（继承）、`meta`（元类，uniform OOP 未来）。**无 enclosing 指针**--类不记词法外层。**两根**：`Object`（`super=nil`，继承终止）、`meta`（`meta=meta` 自指，元类终止，未来）。
+- **ObjClass 指针**：仅 `super`（继承），无 meta 元类指针（uniform OOP 未来需要时再增）。**根**：`Object`（`super=nil`，继承终止）。
 - **裸名解析（词法 + 模块全局，无类静态）**：编译期判定局部/参数 -> `LOAD_LOCAL`、upvalue -> `LOAD_UPVALUE`；否则发 `LOAD_GLOBAL`，运行期查**当前模块的全局表**。**不走 enclosing+super，不查类静态**--类静态不在裸名作用域。未命中则全局未定义（报错）。裸名只看：局部、upvalue（外围函数局部）、模块全局。
 - **裸名赋值与声明（写路径，与读对称）**：裸名赋值 `x = v`（无 `var`）走与读相同路径（`STORE_LOCAL` / `STORE_UPVALUE` / `STORE_GLOBAL` 查模块全局表），命中即写，未命中报错（不隐式创建，必须先 `var` 声明）。`STORE_UPVALUE` 与 `LOAD_UPVALUE` 对称（闭包变异）。`var` 声明：**函数体**=局部、**模块顶层**=模块全局、**类体**=静态（经 `ClassName.x` 访问，不进裸名）。实例字段写经 `STORE_FIELD`（`this.x = v` / `obj.x = v`，动态创建）。
 - **类静态访问（限定，运行期）**：`ClassName.x`--解析 `ClassName`（裸名，通常是模块全局或经全路径），再沿其 super 链查静态（含继承，共享槽语义），运行期。`this.x` / `obj.x`--实例访问，先查实例字段，未命中回退类静态（沿实例 class 的 super 链）。**裸名看不到类静态**，必须限定。
 - **嵌套类（全路径）**：`class B` 在 `class A` 内 -> `B` 是 `A` 的静态 `A.B`。从内部引用 `B` 须经全路径 `A.B`（限定访问，运行期查 `A` 的静态 `B`），**无 enclosing 链、无裸名**。模块顶层类是模块全局，裸名可访；嵌套类不是模块全局，须全路径。
 - **无 `This` 关键字**：自引用写类名（`Foo.x`）。
-- **方法闭包持 defining class（一职双任）**：super 来源（`LOAD_SUPER_FIELD` 的“父类来自当前闭包”）+ 方法性标记（读路径绑 this 判据，2026-09-11 改定）。**不再用于 enclosing 走链**（无 enclosing）。
+- **方法闭包持 defining class（一职双任）**：super 来源（`LOAD_SUPER_FIELD` 的“父类来自当前闭包”）+ 方法性标记（读路径绑 this 判据）。**不再用于 enclosing 走链**（无 enclosing）。
 - **`this`（实例，小写）为捕获 upvalue（arrow-function 语义）**：`this` 是实例方法的帧槽 0（首个具名局部）；嵌套函数引用 `this` 时，沿外围函数帧找最近的**实例方法**，把它的槽 0 捕获为 upvalue（`this` -> `LOAD_UPVALUE`，`.x` -> `LOAD_FIELD`）。若链上无实例方法（静态方法、顶层函数、或只嵌在静态方法里），`this` 不可用--编译期报错。静态方法本身无 `this`。
 - **`super` 边界**：`super.m()` 实例方法可用--用帧槽 0 的 `this` 调被覆写的实例方法（`LOAD_SUPER_FIELD` 从 defining class 的 super 起）；`super.x` 读父类成员（2026-09-11 改定：命中 defining class 戳定的方法闭包绑 this、静态槽（含持函数值的 var/静态方法/原生）原值直读，方法性看戳不看值类型）。静态方法无 `this`，super 仅在实例方法体内可用（编译期挡）。
 - **静态初始化时机（eager）**：静态变量的初始化器在类定义时求值（eager），非首次访问（lazy）。故 `class A { var x = B(); }` 要求 `B` 先于 `A` 定义；类定义顺序即静态初始化顺序。
-- **动态加静态**：允许（2026-09-11 改定，原「不支持 monkey-patch」废止）；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
+- **动态加静态**：允许；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
 - **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。
 
 **模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体/块内=局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽 + `mark_initialized`（嵌套）按作用域走），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。
@@ -532,15 +530,15 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程（M3 已落地，`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 未命中的帧 `exit_frame` 逐个弹出（顺路收集未捕获跟踪三元组）-> 命中帧处值栈 `truncate_stack(slots + stack_depth)` -> 压异常值（落 catch 参数槽）-> `ip = handle`；全帧未命中物化 `Error`（反提寄存器载荷）并烘焙外->内逐帧 `at` 堆栈跟踪。`finally` 已裁撤（2026-09，善后后继 defer 已降为可选后续、不再绑定 M4），unwind 流程不再含 finally 汇合点。
+`raise` 流程（`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 未命中的帧 `exit_frame` 逐个弹出（顺路收集未捕获跟踪三元组）-> 命中帧处值栈 `truncate_stack(slots + stack_depth)` -> 压异常值（落 catch 参数槽）-> `ip = handle`；全帧未命中物化 `Error`（反提寄存器载荷）并烘焙外->内逐帧 `at` 堆栈跟踪。`finally` 不支持（善后后继 defer 为可选后续），unwind 流程无 finally 汇合点。
 
 ## 6. 缺口分析（相对文法与 CLAUDE.md）
 
-### 6.1 异常记录表（已采纳方案，M3 已落地）
+### 6.1 异常记录表（已采纳方案，已落地）
 
 **决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。已落地全链：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle, stack_depth}`（按 `begin` 非降序，CodeGen 入口预插占位 + 结尾回填保证；`stack_depth` = try 入口局部数编译期快照，供值栈回退），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录，返 `Opt<const TryRecord*>` 指向命中记录；VM `unwind` 查表 + 逐帧回退 + 截栈跳 handler + 未捕获物化带堆栈跟踪（§5.9）；`THROW` 运行时语义（弹值入寄存器 + unwind，catch 绑原值保类型）；CodeGen try/catch（含嵌套）/throw 发射。待实现项：
 
-- `finally` -- 已裁撤（2026-09）：从文法移除、不再有 `NotImplemented` 占位；善后后继 defer 已降级为可选后续（其他功能完成后另定，不再绑定 M4），defer 的 unwind 途中执行语义届时细化。
+- `finally` -- 不做（已从文法移除，无占位）；善后后继 defer 为可选后续，defer 的 unwind 途中执行语义届时细化。
 
 详见 CLAUDE.md「错误处理」第 2 条。
 
@@ -613,7 +611,7 @@ code:
 | 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
 | 4 | `ADD` 重载 | 承载数值加 + 字符串/list 拼接 | 仅数值，拼接走内建 |
 | 5 | `INVOKE_METHOD` | 预留指令: 编译器不发射, VM `not_implemented` | 维持 `LOAD_FIELD`+`CALL` |
-| 6 | 异常机制 | CodeUnit 内记录表（M3 已落地; `finally` 已裁撤、后继 defer 已降为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
+| 6 | 异常机制 | CodeUnit 内记录表（已落地; `finally` 不做、后继 defer 为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |
 | 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |
 | 9 | 内建注册机制 | **已落地**: VM 级 builtins 表 + `LOAD_GLOBAL` 回退, 无新指令 | -- |

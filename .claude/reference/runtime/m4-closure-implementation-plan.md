@@ -31,10 +31,10 @@
 - **`Movement`**：
   - `CallFrame.function` 改名 `closure`（`ObjClosure*`；trivially-copyable 约束不破）；`enter_frame(ObjClosure*, argc)`，`init_frame_` 的 unit/module 从 `closure->function()` 取。
   - 开链：`ObjUpvalue* open_upvalues_` 链头 + `find_open_upvalue(Value* slot)`（降序链查等值复用）、`link_open_upvalue`（降序插入）、`close_upvalues(Value* from)`（闭所有 `location >= from`：迁值 + 摘链）、只读遍历口（tracer 用）。
-  - `grow_stack_`（Movement.hpp:238-262）：第三类重绑——搬运前走链把各 `location_ - old_base` 记入临时 `List<usize>`（链序两趟间稳定），搬运后逐节点 `set_location(new_base + offset)`；同步删「M4 落地后须重绑」预告注释（Movement.hpp:36-38、236-237）。
+  - `grow_stack_`（Movement.hpp:238-262）：第三类重绑--搬运前走链把各 `location_ - old_base` 记入临时 `List<usize>`（链序两趟间稳定），搬运后逐节点 `set_location(new_base + offset)`；同步删「M4 落地后须重绑」预告注释（Movement.hpp:36-38、236-237）。
   - `reset()`：先 `close_upvalues(buf_.data())` 再清场（HALT 不弹帧的收场安全网，防开指残留跨 run 复用栈区）。
 - **`AriaVM`**：
-  - `run_function`（AriaVM.cpp:442-456）：入口 fn 先包空闭包（`make_guard` 跨 `new_object`）再压栈进帧——顶层也闭包，`run(ObjFunction*)` 公开签名不动。
+  - `run_function`（AriaVM.cpp:442-456）：入口 fn 先包空闭包（`make_guard` 跨 `new_object`）再压栈进帧--顶层也闭包，`run(ObjFunction*)` 公开签名不动。
   - `call_value`（AriaVM.cpp:458-472）：+ `case CLOSURE -> call_closure`（arity/frames 检查照 call_function）；`case FUNCTION` 改临时 wrap（现场 `new_closure` + guard + 进帧），阶段 3 删。
   - 四 opcode 实装（替换 AriaVM.cpp:776-781、1066-1067 的 `not_implemented`）：
     - `CLOSURE`：u16 常量取 fn（`as<ObjFunction>`）-> `new_closure` 入 guard -> 遍历 `fn->upvalue_descs()`：`is_local` -> 槽址 = `frame.slots + index`，`find_open_upvalue` 复用否则 `new_upvalue` + `link`；否则复制 `frame.closure->upvalues()[index]`；逐个 push 进闭包数组（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）-> 压闭包值。
@@ -42,7 +42,7 @@
     - `STORE_UPVALUE idx`：peek-store（写 `value_slot()` 留栈顶值，与 STORE_LOCAL 同形）。
     - `CLOSE_UPVALUE`：`close_upvalues(top_ - 1)` + `pop()`（指令集 §4.4 语义：关指顶槽的 upvalue 并弹顶）。
   - 三处关闭挂点：RETURN 在 `exit_frame`（AriaVM.cpp:1187）前 `close_upvalues(frame.slots)`；`unwind` handler 命中在 `truncate_stack`（AriaVM.cpp:684）前 `close_upvalues(slots + stack_depth 的槽址)`；未命中在 `exit_frame`（AriaVM.cpp:691）前 `close_upvalues(frame.slots)`。
-  - vm_roots tracer（AriaVM.cpp:280-298）：沿 `current_` 链逐 Movement 标开链各节点（`mark_object`）——防「闭包已死而 upvalue 仍在链」的悬垂（clox 已知坑；vm-design M6 trace 清单本就含「open upvalue 链」）；同步删 AriaVM.hpp:41「open upvalues 留待 M4」类预告注释。
+  - vm_roots tracer（AriaVM.cpp:280-298）：沿 `current_` 链逐 Movement 标开链各节点（`mark_object`）--防「闭包已死而 upvalue 仍在链」的悬垂（clox 已知坑；vm-design M6 trace 清单本就含「open upvalue 链」）；同步删 AriaVM.hpp:41「open upvalues 留待 M4」类预告注释。
   - 消费点改写：trace_execution（AriaVM.cpp:229）与 RETURN 模块帧判定（AriaVM.cpp:1186）改走 closure（`closure->function()->name()`）。
 - **测试**（tests/runtime/test_ariavm.cpp，手写 emit）：捕获读/写、同槽捕获复用同一 `ObjUpvalue`、CLOSE 后读已迁值、open upvalue 下压 2048 值触发增长后仍读对（扩 `StackGrowsAndRebasesFrames` 模式）、unwind 跨帧关闭、AriaVMStress 下开链存活；`NotImplemented` 用例若占用了四 opcode 之一改用仍 fatal 的 M5 指令（MAKE_* 系）。
 - `rules/runtime.md`、`rules/memory.md` 同步（开链/重绑/tracer 落地状态）。
@@ -52,13 +52,13 @@
 - **`FunctionCtx`**：`List<UpvalueDesc> upvalues_` + `add_upvalue(desc) -> Opt<u8>`（同 `(is_local,index)` 去重复用；>255 返空）。
 - **`CodeGen`**：
   - `resolve_name_or_fail`（CodeGen.cpp:160-175）：Upvalue 占位分支接真递归 `resolve_upvalue`：enclosing 局部命中 -> 置该 ctx `Local.is_captured = true` + `{is_local=true, slot}`；否则递归 enclosing 的 upvalue -> `{is_local=false, idx}`；`add_upvalue` 满 -> `fail(TooManyUpvalues)`。
-  - `emit_load_var`/`emit_store_var` Upvalue case（CodeGen.cpp:275-276 / 293-294）：`LOAD_UPVALUE`/`STORE_UPVALUE`（u8 索引；不做 init 检查——捕获时序语义同 Lua，与全局路径一致）。
-  - `compile_function`：`LOAD_CONST fn_idx`（CodeGen.cpp:383-384）-> `CLOSURE fn_idx`；成功尾部把 `child->upvalues_` flush 进 `fn->upvalue_descs()`（发射先于子上下文创建不碍事——描述表在 ObjFunction 元数据，不在字节码流）。
+  - `emit_load_var`/`emit_store_var` Upvalue case（CodeGen.cpp:275-276 / 293-294）：`LOAD_UPVALUE`/`STORE_UPVALUE`（u8 索引；不做 init 检查--捕获时序语义同 Lua，与全局路径一致）。
+  - `compile_function`：`LOAD_CONST fn_idx`（CodeGen.cpp:383-384）-> `CLOSURE fn_idx`；成功尾部把 `child->upvalues_` flush 进 `fn->upvalue_descs()`（发射先于子上下文创建不碍事--描述表在 ObjFunction 元数据，不在字节码流）。
   - 新助手统一弹区清理发射（实施终态定名 `emit_pop_locals_to(target, line)`，取代旧「仅计数发射」的 pop_locals_to 助手；退出作用域 = 先发射 + `FunctionCtx::end_scope()` 收尾）：弹区局部自栈顶（最内）向外遍历，整区一条 `POP_N`（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（实施中定夺改语义为 Lua `OP_CLOSE` 式批量关闭：关闭所有槽址 >= 新栈顶的开 upvalue、无弹栈，弹区槽已在新栈顶之上不 push 不覆写即安全）。落点：`visitBlockNode` end_scope（CodeGen.cpp:464）、for/for-in 作用域出口（554/605）与 **for-in per-iteration 出口（596，每轮新鲜绑定语义）**、break/continue（614/624）、try 两 end_scope（690/699）。
 - **`ErrorCode.hpp`**：+ `TooManyUpvalues`（Semantic 类，照 TooManyParameters 模式：枚举 + to_string + category 映射）。
 - **`call_value` 删临时 FUNCTION wrap 分支**，default 的 CallNonCallable 消息更新（"closures / native functions"）；tests/runtime/test_ariavm.cpp 手写站点 `LOAD_CONST fn + CALL` -> `CLOSURE fn_idx + CALL`。
 - **测试**（tests/compile/test_codegen.cpp 端到端 + 反汇编文本）：计数器闭包（路线表验收样例：`fun make_counter() { var n = 0; return fun() { n = n + 1; return n; }; }`）、双闭包共享同一 upvalue、捕获后外层改值内层可见（引用语义）、块出作用域后闭包读已关值、嵌套具名 fun 递归自捕获（名字是外层局部经 upvalue 回递）、unwind 后幸存闭包读值；反汇编断言 CLOSURE 出现 / `LOAD_CONST fn` 消失 / per-iteration CLOSE_UPVALUE 位置；编译错 TooManyUpvalues（程序生成 256 个捕获的源码）。
-- 指令集文档 §4.4/§4.13/§5.4 标落地，修 §5.4 示例（删 `LOAD_CONST fn_idx` 行——定夺为 CLOSURE 自取常量，LOAD_CONST 行是旧 lowering 残留）；`rules/compile.md`、`rules/bytecode.md` 同步（捕获解析、CLOSE_UPVALUE 发射点、CLOSURE lowering）。
+- 指令集文档 §4.4/§4.13/§5.4 标落地，修 §5.4 示例（删 `LOAD_CONST fn_idx` 行--定夺为 CLOSURE 自取常量，LOAD_CONST 行是旧 lowering 残留）；`rules/compile.md`、`rules/bytecode.md` 同步（捕获解析、CLOSE_UPVALUE 发射点、CLOSURE lowering）。
 
 ### 阶段 4：文档收尾 + 全量验证
 

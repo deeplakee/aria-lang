@@ -25,7 +25,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 输出/调试 | `PRINT` `NOP` |
 | 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` |
 | 函数/闭包 | `CALL` `CLOSURE` |
-| 类/对象 | `LOAD_OBJECT` `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_METHOD` `INVOKE_METHOD`(预备) `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` |
+| 类/对象 | `LOAD_OBJECT` `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `INVOKE_METHOD`(预备) `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` |
 | 模块导入 | `IMPORT` |
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
@@ -269,15 +269,15 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | :--- | :--- | :--- | :--- |
 | `LOAD_OBJECT` | (无) | `[] -> [Object]` | 压栈内置 `Object` 根类（VM 内部指针，不经名字查，避免 shadow `Object` 名破坏隐式继承） |
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_OBJECT` |
-| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为方法 `name` 注册到 `class`（**静态方法与实例方法皆经此注册**，含 `init`）；区别仅在闭包是否绑 `this`：静态方法无 `this`、经 `ClassName.x` 访问静态；实例方法 `this` 占帧槽 0（方法帧 `[this, a1..aN]`）。`init` 命中时覆盖工厂 seed 同步 `ObjClass.init_`（init Value 化）；`class` 留栈继续接收成员 |
-| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量 `name` 存入 `class`（`var` 声明 lowering：eager 求值初始化器后存）；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_METHOD` | `name:u16` | `[] -> [bound]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；查方法 `name` 绑成 `ObjBoundMethod` 压栈供 `CALL` |
+| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（2026-09-11 改定：**仅实例方法、仅收闭包**；静态方法 `fun` 改经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时覆盖工厂 seed 同步 `ObjClass.init_`（init Value 化）；`class` 留栈继续接收成员 |
+| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值（2026-09-11 改定）；`class` 留栈继续接收成员 |
+| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，2026-09-11 改定、不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈；不写 fields 缓存 |
 | `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预留指令**（编译器不发射、VM 命中 `not_implemented`）：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能优化（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 创建 `ObjMap`，压栈 |
 | `MAKE_RANGE` | `flags:u8` | `[lo, hi] -> [range]` | 取栈顶 `lo, hi` 创建 `ObjRange`；`flags` 编码含/不含上界（`..` 含、`...` 不含）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
 
-def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_OBJECT` 装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）求值初始化器后经 `MAKE_STATIC` 存入类；静态方法（`funDecl`）与实例方法（`function`，含 `init`）各发 `MAKE_METHOD`，`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
+def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_OBJECT` 装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
 
 ### 4.15 模块导入
 
@@ -430,7 +430,7 @@ LOAD_GLOBAL "Foo"      ; [class]
 CALL argc              ; [instance] ; VM 见 ObjClass -> 新建 ObjInstance + 调 init
 
 # super.m(args)
-LOAD_SUPER_METHOD "m"  ; [bound]    ; this 来自帧槽 0, 父类来自当前闭包的 defining class
+LOAD_SUPER_FIELD "m"   ; [bound]    ; this 来自帧槽 0, 父类来自当前闭包的 defining class
 <args>                 ; [bound, a1..aN]
 CALL argc              ; [r]
 ```
@@ -452,9 +452,9 @@ Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Objec
 - **类静态访问（限定，运行期）**：`ClassName.x`--解析 `ClassName`（裸名，通常是模块全局或经全路径），再沿其 super 链查静态（含继承，共享槽语义），运行期。`this.x` / `obj.x`--实例访问，先查实例字段，未命中回退类静态（沿实例 class 的 super 链）。**裸名看不到类静态**，必须限定。
 - **嵌套类（全路径）**：`class B` 在 `class A` 内 -> `B` 是 `A` 的静态 `A.B`。从内部引用 `B` 须经全路径 `A.B`（限定访问，运行期查 `A` 的静态 `B`），**无 enclosing 链、无裸名**。模块顶层类是模块全局，裸名可访；嵌套类不是模块全局，须全路径。
 - **无 `This` 关键字**：自引用写类名（`Foo.x`）。
-- **ObjFn 持 defining class**：用于 `super`（`LOAD_SUPER_METHOD` 的“父类来自当前闭包”）。**不再用于 enclosing 走链**（无 enclosing）。
+- **方法闭包持 defining class（一职双任）**：super 来源（`LOAD_SUPER_FIELD` 的“父类来自当前闭包”）+ 方法性标记（读路径绑 this 判据，2026-09-11 改定）。**不再用于 enclosing 走链**（无 enclosing）。
 - **`this`（实例，小写）为捕获 upvalue（arrow-function 语义）**：`this` 是实例方法的帧槽 0（首个具名局部）；嵌套函数引用 `this` 时，沿外围函数帧找最近的**实例方法**，把它的槽 0 捕获为 upvalue（`this` -> `LOAD_UPVALUE`，`.x` -> `LOAD_FIELD`）。若链上无实例方法（静态方法、顶层函数、或只嵌在静态方法里），`this` 不可用--编译期报错。静态方法本身无 `this`。
-- **`super` 边界**：`super.m()` 仅实例方法可用--用帧槽 0 的 `this` 调被覆写的实例方法（`LOAD_SUPER_METHOD` 从 defining class 的 super 起）。访问父类静态直接 `ClassName.x`，**不支持 `super.x`**（避免额外复杂度）。静态方法无 `this`，`super` 非法。
+- **`super` 边界**：`super.m()` 实例方法可用--用帧槽 0 的 `this` 调被覆写的实例方法（`LOAD_SUPER_FIELD` 从 defining class 的 super 起）；`super.x` 读父类成员（2026-09-11 改定：命中 defining class 戳定的方法闭包绑 this、静态槽（含持函数值的 var/静态方法/原生）原值直读，方法性看戳不看值类型）。静态方法无 `this`，super 仅在实例方法体内可用（编译期挡）。
 - **静态初始化时机（eager）**：静态变量的初始化器在类定义时求值（eager），非首次访问（lazy）。故 `class A { var x = B(); }` 要求 `B` 先于 `A` 定义；类定义顺序即静态初始化顺序。
 - **动态加静态**：允许（2026-09-11 改定，原「不支持 monkey-patch」废止）；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
 - **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。

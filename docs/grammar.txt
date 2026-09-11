@@ -221,13 +221,15 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     （先查实例字段，未命中回退类静态）。裸名看不到类静态。
 #   - 嵌套类（全路径）：class B 在 class A 内 -> B 是 A 的静态 A.B，经 A.B 全路径引用，无
 #     enclosing 链、无裸名。模块顶层类是模块全局，裸名可访；嵌套类须全路径。
-#   - 方法闭包（ObjClosure）持 defining class：用于 super（LOAD_SUPER_METHOD，M5 阶段 1 定）。无 enclosing 走链。
+#   - 方法闭包（ObjClosure）持 defining class：一职双任——super 来源（LOAD_SUPER_FIELD）+ 方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经 MAKE_STATIC 不戳）。无 enclosing 走链。
 #   - this（实例，小写）为捕获 upvalue（arrow-function 语义）：this 是实例方法槽 0（方法帧 [this, a1..aN]，2026-09-10 改定）；嵌套函数
 #     引用 this 时，沿外围函数帧找最近的实例方法，捕获其槽 0 为 upvalue（this -> LOAD_UPVALUE，
 #     .x -> LOAD_FIELD）。链上无实例方法（静态方法 / 顶层 / 只嵌在静态方法里）则 this 不可用，
 #     编译期报错。静态方法本身无 this。
-#   - super 边界：super.m() 仅实例方法可用（槽 0 this 调被覆写实例方法）；父类静态直接
-#     ClassName.x，不支持 super.x。静态方法无 this，super 非法。
+#   - super 边界：super.m() 实例方法可用（槽 0 this 调被覆写实例方法）；super.x 读父类
+#     成员（2026-09-11 改定：LOAD_SUPER_FIELD 命中 defining class 戳定的方法闭包绑 this，
+#     静态槽（含持函数值的 var/静态方法/原生）原值直读，方法性看戳不看值类型）。
+#     静态方法无 this，super 非法（编译期挡）。
 #   - 静态初始化（eager）：静态初始化器类定义时求值，非首次访问；class A{var x=B();} 要求
 #     B 先于 A 定义。
 #   - 动态加静态：允许（2026-09-11 改定，原 monkey-patch 拒绝废止），Foo.newStatic=v（新名）落

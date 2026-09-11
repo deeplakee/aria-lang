@@ -21,15 +21,13 @@ namespace aria {
     }
 
     String ObjFunction::debug_repr() const {
-        // name_ 恒非空(ctor ASSERT):入口 `<main>`(主入口)/`<module>`(导入) / lambda `<anonymous>` / 具名声明名,统一
-        // `<fn name>`。
+        // name_ 恒非空(ctor ASSERT),统一 `<fn name>`。
         return std::format("<fn {}>", name_->view());
     }
 
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity) {
-        // 工厂不替调用方守卫入参:module 与 name 经 intern/模块表皆是 weak root,但本工厂只做一次
-        // new_object、无内部新建对象,故调用方须在调用前自行根化 module 与 name(跨 new_object 顶
-        // maybe_collect)。调用方裸持 fresh 对象直接传入是 bug,需 make_guard。
+        // 工厂不替调用方守卫入参:module 与 name 皆是 weak root,调用方须在调用前自行根化
+        //(契约见头注释)。调用方裸持 fresh 对象直接传入是 bug,需 make_guard。
         return gc.new_object<ObjFunction>(gc, module, name, arity);
     }
 

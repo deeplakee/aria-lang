@@ -19,17 +19,16 @@ using aria::Value;
 
 namespace {
 
-    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
-    // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放),
-    // 调用方跨 GC 点持有 m 须自行再守卫。默认名 "<script>"(M1 机制测试不关心模块归属,临时模块)。
+    // intern + 守卫 name,再调 new_module(2 参,dir 取 cwd)。返回的 m 未根,调用方跨
+    // GC 点持有须自行守卫。默认名 "<script>"(M1 机制测试不关心模块归属,临时模块)。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
         return new_module(gc, nm);
     }
 
-    // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 aria::new_function。工厂不再守卫入参,
-    // 故本助手显式守卫 m 与 name。m 须在 new_string(name) 之前入根(name 分配可能 collect 回收 m)。
+    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根
+    //(name 分配可能 collect 回收 m)。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
         auto nm    = new_string(gc, name);
@@ -38,9 +37,8 @@ namespace {
     }
 
     // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // 须先保 name 再 make_module -- make_module 内部分配在 stress GC 下会 collect,此时 name 仅
-    // 为裸局部指针(无根)会被扫掉(aria::new_function 不再自守卫入参,故本重载全程自守 name+m)。
-    // name=nullptr -> `<main>`(主入口单元统一名,ObjFunction ctor ASSERT name 非空)。
+    // 须先保 name 再 make_module -- 其内部分配在 stress GC 下会 collect,无根的裸局部 name
+    // 会被扫掉,故本重载全程自守 name+m。name=nullptr -> `<main>`(ctor ASSERT name 非空)。
     ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
         if (name == nullptr) {
             name = new_string(gc, "<main>");

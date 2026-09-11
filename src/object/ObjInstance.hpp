@@ -45,12 +45,10 @@ namespace aria {
 
         // 命名成员读取协议 override(LOAD_FIELD / LOAD_THIS_FIELD 统一语义):fields 命中
         // 优先(真字段遮蔽同名方法与缓存项,铁则 3)-> **委托类协议** ObjClass::load_field
-        // (沿类链读穿透直读,命中值原样回传;类协议不绑定不缓存;miss 已按类措辞就地 fail,
-        // nullopt ⟺ 已 fail,本 override 只透传信号 --成员表在类链上,miss 文案随宿主):
-        // 可调用值(闭包/原生)现场绑 this 并回填 fields 缓存(铁则 1:只缓存绑定方法,
-        // 快照语义),非可调用静态值直读不缓存。分配点(new_bound_method)的 GC 安全:本实例
-        // 与方法值经调用方根化(VM:实例在值栈/帧槽),upsert 回填走 trivial 分配不触 GC
-        //(GC 核心不变式)。
+        //(沿类链读穿透直读;miss 已按类措辞就地 fail,nullopt ⟺ 已 fail,本 override 只
+        // 透传信号 --成员表在类链上,文案随宿主):可调用值(闭包/原生)现场绑 this 并回填
+        // fields 缓存(铁则 1:只缓存绑定方法,快照语义),非可调用静态值直读不缓存。
+        // 分配点(new_bound_method)的 GC 安全与回填细节见 .cpp 实现注。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
@@ -67,8 +65,7 @@ namespace aria {
             return sizeof(ObjInstance);
         }
 
-        // 调试渲染:`<Foo instance>`(class_ 恒非空);基类 to_string 默认委托本方法,显示同
-        // 文案(未来用户类 __str__ 落地时在本类型 to_string 分叉,本方法保持惰性)。
+        // 调试渲染:`<Foo instance>`(class_ 恒非空);显示同文案(to_string 经基类默认委托)。
         [[nodiscard]]
         String debug_repr() const override;
 

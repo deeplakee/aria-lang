@@ -37,8 +37,8 @@ using aria::value_identical;
 
 namespace {
 
-    // intern + 守卫 name(super 非空时一并守卫),再调 new_class。工厂不再替调用方守卫入参,
-    // 故本助手显式守卫。返回的 cls 未根(守卫随函数退出释放),调用方跨 GC 点持有须自行守卫。
+    // intern + 守卫 name(super 非空时一并守卫),再调 new_class。返回的 cls 未根
+    //(守卫随函数退出释放),调用方跨 GC 点持有须自行守卫。
     ObjClass* make_class(GC& gc, StringView name, ObjClass* super = nullptr) {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
@@ -64,9 +64,8 @@ namespace {
         return new_closure(gc, fn);
     }
 
-    // 寄存器取件拆两件(码, 烘焙消息):协议 fail 契约(load 族 nullopt / store 族 false
-    // ⟺ 已 fail)的白盒检视面 --载荷已入 vm 主上下文挂起错误寄存器,take_error 取出为
-    // ObjException。调用前寄存器须已有载荷(先断言协议失败信号)。
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    //(协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.main_context().take_error();
         EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
@@ -86,8 +85,6 @@ TEST(ObjClass, Basics) {
     EXPECT_EQ(cls->type(), aria::ObjType::CLASS);
     EXPECT_EQ(cls->name(), name); // intern 同指针
     EXPECT_EQ(cls->superclass(), nullptr);
-    // (原 field().size()==0 惰性断言随整表访问器 field() 删除退役:成员表不对外暴露,
-    //  惰性建表属 AriaHashTable 自身的已测不变式,类层行为断言见 SetFieldThenLoadOwnTable。)
     EXPECT_TRUE(cls->init().is_nil()); // ctor 自 super 派生:根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
 }
 
@@ -100,10 +97,8 @@ TEST(ObjClass, SuperclassInjects) {
 }
 
 // set_field(创建/更新本类自身表)+ load_field 直读:创建后可读、覆写后读新值。
-// (原 upsert/find 槽指针白盒断言已随二者转私有退役,行为断言等价覆盖;field().size()
-//  表规模断言随整表访问器删除退役 --创建/覆写/读新值的行为等价覆盖见下。)
 TEST(ObjClass, SetFieldThenLoadOwnTable) {
-    AriaVM vm; // 协议签名收 AriaVM&(2026-09-10 二次整改)
+    AriaVM vm;
     auto&  gc  = vm.gc();
     auto   cls = make_class(gc, "Foo");
     auto   k   = new_string(gc, "x");
@@ -126,7 +121,7 @@ TEST(ObjClass, SetFieldThenLoadOwnTable) {
 }
 
 // 全链 miss:override 以类措辞就地 fail(nullopt ⟺ 已 fail),码 UndefinedProperty、
-// 消息含类 debug 渲染 --2026-09-10 二次整改:错误实体 ObjException 已在寄存器。
+// 消息含类 debug 渲染。
 TEST(ObjClass, LoadFieldMissFailsWithUndefinedProperty) {
     AriaVM vm;
     auto&  gc  = vm.gc();
@@ -212,9 +207,6 @@ TEST(ObjClass, DebugRender) {
 // stress GC:sub 为唯一根,superclass 链(经 superclass_)、静态值(长串)/方法闭包(defining
 // class 级联回 sub)/init 闭包(fn 持常量池长串)全部经 sub.trace 存活。守卫全部作用域弹出,
 // 断言压在 trace 覆盖上(漏标即丢)。
-// (init 经 set_field 落表 + 同步 init_:set_init 退役(2026-09-11,ctor 自 super 派生)后
-//  init_ 与表槽/super 派生值恒同值,mark_value(init_) 的「唯一保命路径」合成态不再可构造,
-//  init_ 标记经表槽路径覆盖,trace 侧保留该行作防御。)
 TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     AriaVM vm;
     auto&  gc = vm.gc();
@@ -266,8 +258,6 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
     EXPECT_TRUE(value_identical(sub->init(), Value::from_obj(init))); // set_field 同步:表槽/init_ 一致
     EXPECT_EQ(method->defining_class(), sub);
-    // (原 sub->field().size()==2 断言随整表访问器 field() 删除退役:两成员的存活已分别
-    //  经 load_field(vfound 值)与 method->defining_class()(表槽方法对象仍可读)行为钉住。)
     auto vfound = sub->load_field(vm, vkey);
     ASSERT_TRUE(vfound.has_value());
     EXPECT_TRUE(value_identical(*vfound, Value::from_obj(val)));
@@ -305,12 +295,12 @@ TEST(ObjClass, UnrootedClassSwept) {
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-// ---- 成员访问协议 override(2026-09-10 整改:VM 字段指令统一走虚函数协议)----
+// ---- 成员访问协议 override ----
 
-// 构造期 init 派生(2026-09-11 改定,set_init 与 MAKE_CLASS 指令层 seed 退役):ObjClass
-// 构造函数自 super 派生 init_ --super 非空出厂即继承父 init_ 当前值(快照语义:此后父
-// init 变更不传导);Object 根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
-//(VM 级行为仍由 InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉)。
+// 构造期 init 派生:ObjClass 构造函数自 super 派生 init_ --super 非空出厂即继承父 init_
+// 当前值(快照语义:此后父 init 变更不传导);Object 根态(super==nullptr)出厂 nil,由
+// bootstrap 经 set_field 设(VM 级行为由
+// InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉)。
 TEST(ObjClass, CtorDerivesInitFromSuper) {
     GC   gc;
     auto guard = gc.make_guard();
@@ -377,9 +367,9 @@ TEST(ObjClass, LoadFieldProtocolReadsThroughChain) {
     EXPECT_TRUE(msg.contains("<class Sub> has no member 'missing'"));
 }
 
-// store_field 写遮蔽 + 动态新增 + init 同步:新名字落本类自身表(2026-09-11 改定,原
-// 「全链 miss 拒新增」废止);继承名新建遮蔽键、父表不动;"init" 命中同步 init_(表槽/
-// init_ 一致由对象自维护)。恒成功;fail 通道经 base 读新名 miss 断言钉住(码 + 类措辞)。
+// store_field 写遮蔽 + 动态新增 + init 同步:新名字落本类自身表;继承名新建遮蔽键、父表
+// 不动;"init" 命中同步 init_(表槽/init_ 一致由对象自维护)。恒成功;fail 通道经 base 读
+// 新名 miss 断言钉住(码 + 类措辞)。
 TEST(ObjClass, StoreFieldShadowsCreatesAndSyncsInit) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -408,7 +398,7 @@ TEST(ObjClass, StoreFieldShadowsCreatesAndSyncsInit) {
     ASSERT_TRUE(parent_read.has_value());
     EXPECT_TRUE(value_identical(*parent_read, Value::from_obj(bv)));
 
-    // 新名字:动态新增落子表(2026-09-11 改定),读回即新值。
+    // 新名字:动态新增落子表,读回即新值。
     auto nk = new_string(gc, "nope");
     guard.push(nk);
     EXPECT_TRUE(sub->store_field(vm, nk, Value::from_int(1)));

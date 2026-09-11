@@ -26,17 +26,16 @@ using aria::value_identical;
 
 namespace {
 
-    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参,故本助手显式
-    // 守卫 name 跨 new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放),
-    // 调用方跨 GC 点持有 m 须自行再守卫。默认名 "<script>"(机制测试不关心模块归属,临时模块)。
+    // intern + 守卫 name,再调 new_module(2 参,dir 取 cwd)。返回的 m 未根,调用方跨
+    // GC 点持有须自行守卫。默认名 "<script>"(机制测试不关心模块归属,临时模块)。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
         return aria::new_module(gc, nm);
     }
 
-    // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 aria::new_function。工厂不再守卫入参,
-    // 故本助手显式守卫 m 与 name。m 须在 new_string(name) 之前入根(name 分配可能 collect 回收 m)。
+    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根
+    //(name 分配可能 collect 回收 m)。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
         auto nm    = new_string(gc, name);

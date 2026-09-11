@@ -53,8 +53,7 @@ namespace aria {
         String to_string() const override;
 
         // 调试渲染(repr 位):字面量形式 `"<转义内容>"`--util::escape_string 转义内部、外层
-        // 补双引号,反汇编常量池等调试上下文的字符串约定形态(原 value 层 format_string 的
-        // 职责下沉至此)。override Object::debug_repr 默认的 `<String at 0x...>`。
+        // 补双引号(反汇编常量池等调试上下文的字符串约定形态);显示与调试分叉故两者都 override。
         [[nodiscard]]
         String debug_repr() const override;
 

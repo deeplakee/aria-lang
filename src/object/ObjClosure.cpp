@@ -32,8 +32,8 @@ namespace aria {
     }
 
     ObjClosure* new_closure(GC& gc, ObjFunction* function) {
-        // 工厂不替调用方守卫入参:本工厂只做一次 new_object、无内部新建对象,调用方须在调用前
-        // 自行根化 function_(通常已入常量池)。返回对象白色无根,须立即发布进根。
+        // 工厂不替调用方守卫入参:调用方须在调用前自行根化 function_(通常已入常量池);
+        // 返回对象白色无根,须立即发布进根。
         return gc.new_object<ObjClosure>(gc, function);
     }
 

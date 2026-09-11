@@ -70,9 +70,8 @@ namespace {
         return new_instance(gc, cls);
     }
 
-    // 寄存器取件拆两件(码, 烘焙消息):协议 fail 契约(load 族 nullopt / store 族 false
-    // ⟺ 已 fail)的白盒检视面 --载荷已入 vm 主上下文挂起错误寄存器,take_error 取出为
-    // ObjException。调用前寄存器须已有载荷(先断言协议失败信号)。
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    //(协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.main_context().take_error();
         EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
@@ -91,12 +90,7 @@ TEST(ObjInstance, Basics) {
     EXPECT_TRUE(aria::Object::is<ObjInstance>(obj));
     EXPECT_EQ(obj->type(), aria::ObjType::INSTANCE);
     EXPECT_EQ(obj->cls(), cls);
-    // (原 fields().size()==0 惰性断言随整表访问器 fields() 删除退役:字段表不对外暴露,
-    //  空表行为由 LoadFieldBindsCachesAndReadsStatic 的 miss/不缓存断言行为级覆盖。)
 }
-
-// (原 FieldsUpsertAndFind 用例随整表访问器 fields() 删除退役:raw upsert/find 往返属
-//  AriaHashTable 自身的已测语义;实例字段读写的协议级行为覆盖见 StoreFieldDynamicUpsert。)
 
 TEST(ObjInstance, ToString) {
     GC   gc;
@@ -116,8 +110,7 @@ TEST(ObjInstance, DebugRender) {
 
 // stress GC:实例为唯一根,其类(经 class_)、字段长串、缓存 bound(经 fields 值级联,再经
 // bound.trace 级联其 method 闭包与 receiver 即本实例)全部存活。守卫全部作用域弹出,断言压在
-// trace 覆盖上(漏标即丢)。栽种走真实协议路径(字段经 store_field、缓存经 load_field 现场
-// 绑定 --整表访问器 fields() 已删,raw upsert 栽种随之退役)。
+// trace 覆盖上(漏标即丢)。栽种走真实协议路径(字段经 store_field、缓存经 load_field 现场绑定)。
 TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     AriaVM vm;
     auto&  gc = vm.gc();
@@ -182,13 +175,11 @@ TEST(ObjInstance, UnrootedInstanceSwept) {
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-// ---- 成员访问协议 override(2026-09-10 整改:绑定 + 缓存逻辑自 VM helper 迁入本类型;
-//      二次整改:错误通道翻 vm.fail 模型,miss 文案由 override 就地烘焙)----
+// ---- 成员访问协议 override ----
 
 // load_field 分流:fields 命中优先(铁则 3)→ 委托类协议(ObjClass::load_field 沿链读
-// 穿透直读,类协议不绑定不缓存):方法闭包(defining class 戳,2026-09-11 改定方法性看戳
-// 不看值类型)绑 this 并回填 fields 缓存(铁则 1,快照语义)、其余(静态方法 fun/lambda/
-// 原生/静态值)直读不缓存、全链 miss 随类措辞 fail(nullopt ⟺ 已 fail,本 override 只透传)。
+// 穿透直读,类协议不绑定不缓存):方法闭包(看 defining class 戳不看值类型)绑 this 并回填
+// fields 缓存(铁则 1,快照语义)、其余直读不缓存、全链 miss 随类措辞 fail(本 override 只透传)。
 TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -235,8 +226,7 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     ASSERT_TRUE(cached_read.has_value());
     EXPECT_TRUE(value_identical(*cached_read, *method_read)); // 同一缓存项(=== 指针相等)
 
-    // 静态槽持未戳闭包(lambda,无 defining class 戳):原值直读不绑定(方法性看戳不看
-    // 值类型,2026-09-11 改定 --函数值静态/静态方法经实例读回原值)。
+    // 静态槽持未戳闭包(lambda,无 defining class 戳):原值直读不绑定(方法性看戳不看值类型)。
     auto hkey = new_string(gc, "h");
     guard.push(hkey);
     auto lam = make_closure(gc, "h", 0);
@@ -246,8 +236,7 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     ASSERT_TRUE(lambda_read.has_value());
     EXPECT_TRUE(value_identical(*lambda_read, Value::from_obj(lam))); // === 原闭包,无 ObjBoundMethod 包装
 
-    // 真字段遮蔽同名方法与缓存项(铁则 3):this.m = 9 走 store_field 后读到字段值
-    //(整表访问器已删,原 raw upsert 栽种改为协议写路径,语义等价)。
+    // 真字段遮蔽同名方法与缓存项(铁则 3):this.m = 9 走 store_field 后读到字段值。
     EXPECT_TRUE(inst->store_field(vm, mkey, Value::from_int(9)));
     auto shadowed_read = inst->load_field(vm, mkey);
     ASSERT_TRUE(shadowed_read.has_value());

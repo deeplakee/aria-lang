@@ -12,8 +12,8 @@ namespace aria {
 
     ObjBoundMethod::ObjBoundMethod(Value method, Value receiver) :
         Object{ObjType::BOUND_METHOD}, method_{method}, receiver_{receiver} {
-        // method_ 须为可调用值(ctor ASSERT):闭包(字节码方法)或原生函数(内建方法)--
-        // 非可调用值没有绑定语义,静态值直读不走本类型。判定收口 is_callable_value。
+        // method_ 须为可调用值(ctor ASSERT):闭包或原生函数 -- 非可调用值没有绑定语义,
+        // 静态值直读不走本类型。判定收口 is_callable_value。
         ASSERT(is_callable_value(method), "ObjBoundMethod: method must be a callable (closure or native fn)");
     }
 

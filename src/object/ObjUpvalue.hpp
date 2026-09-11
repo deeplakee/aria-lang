@@ -88,8 +88,7 @@ namespace aria {
             return sizeof(ObjUpvalue);
         }
 
-        // 调试渲染:`<upvalue>` 稳定短文案。override Object::debug_repr 默认的地址型;基类
-        // to_string 默认委托本方法,随之同文案。
+        // 调试渲染:`<upvalue>` 稳定短文案(理由见类注释);显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 

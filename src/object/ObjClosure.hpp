@@ -11,31 +11,28 @@ namespace aria {
     class ObjUpvalue;
     class ObjClass;
 
-    // 闭包对象:函数 + 捕获的 upvalue 数组(ObjType::CLOSURE,M4 闭包)。
+    // 闭包对象:函数 + 捕获的 upvalue 数组(ObjType::CLOSURE)。
     //
     //   - function_:被包的 ObjFunction(字节码/常量/名字都在其上,恒非空,ctor ASSERT)。
-    //     callable 收敛为闭包后(M4 阶段 2 起),ObjFunction 退为常量池内部物,运行期一律以
-    //     ObjClosure 进帧。
+    //     ObjFunction 只是常量池内部物,运行期一律以 ObjClosure 进帧。
     //   - upvalues_:捕获数组,与 fn 的捕获描述表(ObjFunction::upvalue_descs())按下标一一对应。
     //     ctor 时为空,VM 执行 CLOSURE 指令时按描述表逐个后填(new_upvalue 建或沿开链复用),
     //     之后只读。
-    //   - defining_class_:方法闭包所属的 defining class(M5)。MAKE_METHOD 注册时 set,其余
+    //   - defining_class_:方法闭包所属的 defining class。MAKE_METHOD 注册时 set,其余
     //     闭包恒 nullptr(ctor 默认):一职双任 --super 来源(LOAD_SUPER_FIELD 从
-    //     frame.closure 直读它,沿其 superclass 链查被覆写前的实现)+ **方法性标记**(2026-09-11
-    //     改定:读路径 ObjInstance::load_field / LOAD_SUPER_FIELD 据非空判绑 this,不再按值
-    //     类型判别;MAKE_STATIC/类上赋值不戳 ⟹ 静态槽持函数值/lambda/原生恒原值直读)。
-    //     挂闭包而非 ObjFunction(共享编译期常量)的理由:M5 计划 §2.6 --
-    //     函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量,superclass 运行期解析可重绑,
-    //     戳共享 fn 会跨实例串链;闭包每实例一份,无共享可变状态。可为 nullptr(非方法闭包),
-    //     trace 容 nullptr。
+    //     frame.closure 直读它,沿其 superclass 链查被覆写前的实现)+ **方法性标记**(读路径
+    //     ObjInstance::load_field / LOAD_SUPER_FIELD 据非空判绑 this,不按值类型判别;
+    //     MAKE_STATIC/类上赋值不戳 ⟹ 静态槽持函数值/lambda/原生恒原值直读)。挂闭包而非
+    //     ObjFunction(共享编译期常量)的理由见 M5 计划 §2.6:函数体内 def 执行 N 次产生
+    //     N 个类共用同一 fn 常量,superclass 运行期解析可重绑,戳共享 fn 会跨实例串链;
+    //     闭包每实例一份,无共享可变状态。可为 nullptr(非方法闭包),trace 容 nullptr。
     //
     //   地址哈希型可变对象(走 Object{ObjType::CLOSURE} ctor);equals 保持默认地址相等--
     //     闭包按身份判等(同一 fn 的两次捕获是不同闭包)。
     //   final,不再派生;Array 成员自身禁拷贝/禁移动(同 ObjFunction 持 CodeUnit)。
     //   trace():标 function_ + 全部 upvalue(upvalue 再各自标其槽值/闭值)+ defining_class_
     //     (容 nullptr;方法闭包经此级联标所属类)。
-    //   to_string():委托 function_->to_string() 渲染 `<fn name>`(与纯函数同文案,
-    //     trace_execution 等调试输出兼容;闭包身份经 type()/type_name() 反射可见)。
+    //   to_string():委托 function_->to_string() 渲染 `<fn name>`(与纯函数同文案)。
     class ObjClosure final : public Object {
     public:
         ObjClosure(GC& gc, ObjFunction* function);
@@ -60,9 +57,8 @@ namespace aria {
         // CLOSURE 执行期逐个后填用(push 走 trivial 分配不触 GC,靠 GC 核心不变式免逐个守卫)。
         void add_upvalue(ObjUpvalue* uv);
 
-        // defining class(M5):方法闭包所属类,MAKE_METHOD 注册时 set,之后只读;
-        // 非方法闭包(静态方法 fun/lambda/其余)恒 nullptr(ctor 默认)。
-        // LOAD_SUPER_FIELD 从 frame.closure 直读(方法闭包恒有戳,编译器不变式)。
+        // defining class:方法闭包所属类(MAKE_METHOD 注册时 set,之后只读);非方法闭包恒
+        // nullptr(ctor 默认)。LOAD_SUPER_FIELD 从 frame.closure 直读(方法闭包恒有戳)。
         [[nodiscard]]
         ObjClass* defining_class() const noexcept {
             return defining_class_;
@@ -70,15 +66,14 @@ namespace aria {
 
         void set_defining_class(ObjClass* cls) noexcept { defining_class_ = cls; }
 
-        // 方法性标记(2026-09-11 改定):defining class 非空 ⟺ 方法闭包。读路径
-        //(ObjInstance::load_field / LOAD_SUPER_FIELD)据此绑 this,不再按值类型判别。
+        // 方法性标记:defining class 非空 ⟺ 方法闭包。读路径(ObjInstance::load_field /
+        // LOAD_SUPER_FIELD)据此绑 this,不按值类型判别。
         [[nodiscard]]
         bool is_method() const noexcept {
             return defining_class_ != nullptr;
         }
 
         // 标 function_ + 全部 upvalue + defining_class_(容 nullptr)。
-        // function_ 非空;mark_object 容 nullptr 仅防御。
         void trace(GC& gc) const noexcept override;
 
         // 壳定长(upvalues_ 内部 Array 自管理,~Array 级联释放)。

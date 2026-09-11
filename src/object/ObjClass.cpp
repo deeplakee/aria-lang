@@ -13,12 +13,10 @@ namespace aria {
         Object{ObjType::CLASS}, name_{name}, superclass_{super}, field_{&gc},
         init_{super != nullptr ? super->init() : Value::nil_val()} {
         // name_ 恒非空(ctor ASSERT,与 ObjModule::name_ 同模式);superclass_ 唯 Object 根为 nullptr。
-        // init_ 构造期自 super 派生(2026-09-11 改定,原「出厂恒 nil + 调用方 set_init seed」
-        // 废止):super 非空即继承父 init_ 当前值(快照语义 --此后父 init 经 MAKE_METHOD/
-        // 类上赋值变更不再传导),Object 根(super==nullptr)出厂 nil、由 bootstrap 经
-        // set_field 设。「建成的类 init_ 有值」对 MAKE_CLASS 建的类成为构造期结构保证,
-        // 不再依赖指令层补写。ctor 内读 super->init() 纯读无分配无 GC 点:值经调用方
-        // 根化的 super 可达,new_object 内部 maybe_collect 后 ctor 运行、其间无 GC 触发点。
+        // init_ 构造期自 super 派生:super 非空即继承父 init_ 当前值(快照语义 -- 此后父 init
+        // 变更不再传导),Object 根(super==nullptr)出厂 nil、由 bootstrap 经 set_field 设。
+        // ctor 内读 super->init() 纯读无分配无 GC 点:值经调用方根化的 super 可达,new_object
+        // 内部 maybe_collect 后 ctor 运行、其间无 GC 触发点。
         ASSERT(name != nullptr, "ObjClass name must not be null");
     }
 
@@ -33,7 +31,7 @@ namespace aria {
 
     void ObjClass::set_field(ObjString* name, Value value) {
         // 创建路径统一写入口(公开 API):落本类自身表(不沿链);"init" 同步 init_
-        // (表槽/init_ 一致由本入口自维护 --bootstrap / MAKE_METHOD / store_field 三路合流)。
+        //(表槽/init_ 一致由本入口自维护)。
         field_.upsert(Value::from_obj(name))->value = value; // 继承名/新名新建键、本类已有原槽更新、父表不动
         if (name->view() == "init") {
             init_ = value;
@@ -51,11 +49,9 @@ namespace aria {
     }
 
     bool ObjClass::store_field(AriaVM& vm, ObjString* name, Value value) {
-        // 类上赋值落本类自身表,恒成功:本类已有原槽更新、继承名/新名新建键遮蔽、父表不动
-        //(动态新增允许,2026-09-11 改定:原「全链 miss 拒新增」的无 monkey-patch 限制废止;
-        // var 声明与类上赋值同落 set_field 一张表)。vm 为协议签名统一保留,本 override 无
-        // fail 路径;upsert 走 trivial 分配不触 GC(GC 核心不变式:allocate/reallocate 永不
-        // 触发 GC),无 GC 点。
+        // 类上赋值落本类自身表,恒成功:原槽更新、继承名/新名新建键遮蔽、父表不动
+        //(动态新增允许)。vm 为协议签名统一保留,本 override 无 fail 路径;upsert 走
+        // trivial 分配不触 GC(GC 核心不变式),无 GC 点。
         set_field(name, value); // 继承名/新名新建键、本类已有原槽更新、父表不动;"init" 同步内聚于此
         return true;
     }
@@ -74,17 +70,14 @@ namespace aria {
 
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {
         // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 name 与 super(跨 new_object 顶 maybe_collect)。
-        // 工厂仍纯分配(与 new_function/new_closure 同纪律,语义不掺进工厂):init_ 出厂值
-        // 由 ObjClass 构造函数自 super 派生(2026-09-11 改定,原「出厂恒 nil、seed 责任在
-        // 调用方」废止)--继承属对象构造期自身状态初始化,super 非空出厂即继承、Object 根
-        // 态出厂 nil 由 bootstrap 经 set_field 设,「建成的类 init_ 有值」由 ctor 派生维持。
+        // 根化 name 与 super(跨 new_object 顶 maybe_collect)。init_ 出厂值由 ObjClass 构造
+        // 函数自 super 派生,工厂纯分配(详见头注释)。
         return gc.new_object<ObjClass>(gc, name, super);
     }
 
     ObjClass* new_class(GC& gc, const StringView name, ObjClass* super) {
-        // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
-        //(「每方守自己创建的」);super 的根化约定同显式名重载。委托显式名重载。
+        // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object;
+        // super 的根化约定同显式名重载。委托显式名重载。
         const auto name_str = new_string(gc, name);
         const auto guard    = gc.make_guard(name_str);
         return new_class(gc, name_str, super);

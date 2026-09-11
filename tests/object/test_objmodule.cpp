@@ -22,9 +22,7 @@ using aria::Value;
 
 namespace {
 
-    // intern + 守卫 name,再调 new_module。工厂不再替调用方守卫入参,故本助手显式守卫 name 跨
-    // new_module 内部 new_string(cwd)/new_object。返回的 m 未根(守卫随函数退出释放)。
-    // 2 参(无 dir):dir 取 cwd。3 参:dir 须由调用方传入(本助手先守 dir 再 new_string(name))。
+    // intern + 守卫 name,再调 new_module(2 参,dir 取 cwd)。返回的 m 未根。
     ObjModule* make_module(GC& gc, StringView name = "<script>") {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
@@ -38,8 +36,7 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // 指定模块的具名函数:intern + 守卫 name,守卫 m,调 new_function(aria::)。工厂不再守卫入参,
-    // 故本助手显式守卫 m 与 name。m 须在 new_string(name) 之前入根。
+    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
         auto nm    = new_string(gc, name);

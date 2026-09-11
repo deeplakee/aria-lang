@@ -10,36 +10,30 @@ namespace aria {
     class GC;
     class ObjString;
 
-    // 类对象:def 类的运行期载体(ObjType::CLASS)。语义模型(M5 定调,见 vm-design §6 / M5 计划):
+    // 类对象:def 类的运行期载体(ObjType::CLASS)。语义模型(见 vm-design §6 / M5 计划):
     // def 类 = 类级一张静态表 + superclass 单链;实例字段在 ObjInstance 的 fields 表,不在类上。
     //
     //   - name_:类名(intern 驻留,同指针)。显示名(to_string / 报错渲染)用;
     //     **指针恒非空**(构造期 ASSERT)。
-    //   - superclass_:父类。单链查找的链;唯一 super 为空者是 VM bootstrap 的 Object 根类
+    //   - superclass_:父类,单链查找的链;唯一 super 为空者是 VM bootstrap 的 Object 根类
     //     (链式查找统一终止于它)。运行期经 MAKE_CLASS 从栈上的父类值注入,此后不可变。
     //   - field_:类级成员表:静态变量 + 静态/实例方法同存一张表(M5 决策 2;命名用单数 field_
-    //     区分 ObjInstance 的实例字段表 fields_),键 intern
-    //     ObjString*,值为绑定 Value(方法槽的值是 ObjClosure,静态变量槽是任意 Value;区分在
-    //     值类型本身,表内无 tag)。MAKE_STATIC/MAKE_METHOD 与类上赋值(STORE_FIELD 类路径,
-    //     写遮蔽)统一经 set_field 写此表;沿链查找见私有 find_field(协议 override 的内部
-    //     底座,组合方一律委托 load_field 协议,零类外使用)。
+    //     区分 ObjInstance 的实例字段表 fields_),键 intern ObjString*,值为绑定 Value(方法槽
+    //     的值是 ObjClosure,静态变量槽是任意 Value;区分在值类型本身,表内无 tag)。
+    //     MAKE_STATIC/MAKE_METHOD 与类上赋值(STORE_FIELD 类路径)统一经 set_field 写此表;
+    //     沿链查找见私有 find_field(组合方一律委托 load_field 协议)。
     //     惰性分配(首次 upsert 才建表)。
-    //   - init_:构造器方法值(**Value**,init Value 化 2026-09-10:闭包或原生函数皆可,
-    //     实例化统一走 call_value 分发,不再特认闭包;类上赋非可调用值也放行,实例化时
-    //     call_value 自然报 CallNonCallable)。写点全在对象内:**构造期自 super 派生**
-    //     (ctor,2026-09-11 改定:原「出厂恒 nil + 对象外调用方 set_init seed」废止 --
-    //     seed 属对象自身状态初始化,归构造函数;工厂仍纯分配,亦不归指令层补写)+
-    //     **set_field 落表时同步**(name=="init" 即写 init_,MAKE_METHOD/store_field/
-    //     bootstrap 合流于此,表槽/init_ 一致由对象自维护)。super 非空出厂即继承父
-    //     init_ 当前值(快照语义:此后父 init 变更不再传导);Object 根(super==nullptr)
-    //     出厂 nil,由 bootstrap 经 set_field 设。「建成的类 init_ 有值」由 ctor 派生
-    //     维持。经类实例化(call_value CLASS 分支)取用。
+    //   - init_:构造器方法值(**Value**:闭包或原生函数皆可;类上赋非可调用值也放行,实例化
+    //     时 call_value 报 CallNonCallable 兜底)。写点全在对象内:**构造期自 super 派生**
+    //     (super 非空出厂即继承父 init_ 当前值,快照语义 -- 此后父 init 变更不再传导;
+    //     Object 根(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设)+
+    //     **set_field 落表时同步**(name=="init" 即写 init_,表槽/init_ 一致由对象自维护)。
+    //     经类实例化(call_value CLASS 分支)取用。
     //
     //   地址哈希型可变对象(走 Object{ObjType::CLASS} ctor);equals 保持默认地址相等--
     //     类按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
-    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_(ctor 自 super
-    //     派生、Object 根出厂 nil,mark_value 容 nil)+ 委托 field_.trace(gc)(遍历
-    //     占用槽 mark_value key+value;方法闭包的 defining_class 经 ObjClosure::trace 级标)。
+    //   trace():标 name_ + superclass_(容 nullptr:Object 根)+ init_ + 委托 field_.trace(gc)
+    //     (方法闭包的 defining_class 经 ObjClosure::trace 级标)。
     //   to_string():`<class Foo>`。
     class ObjClass final : public Object {
     public:
@@ -72,13 +66,11 @@ namespace aria {
         // 表槽存在则必与 init_ 同值)。永不失败;upsert 走 trivial 分配不触 GC,GC-pure。
         void set_field(ObjString* name, Value value);
 
-        // 构造器方法值(Value:闭包/原生函数;类上赋非可调用值亦放行,实例化时 call_value
-        //     分发报错兜底)。构造期自 super 派生(super 非空出厂即继承父 init_ 当前值;
-        //     Object 根 nil 由 bootstrap 经 set_field 设,写点见类注释);实例化取用。
-        //     **实例化机制接缝,非字段协议**:init 是构造器值,消费方是
-        //     call_value 的 CLASS 分支(callable 协议),不属 load_field/store_field 的
-        //     成员访问职责,故不经协议;成员表里的 "init" 槽与 init_ 的一致性由 set_field
-        //     同步自维护。
+        // 构造器方法值(闭包/原生;类上赋非可调用值亦放行,实例化时 call_value 报错兜底)。
+        // 构造期自 super 派生(快照语义;写点见类注释);实例化取用。**实例化机制接缝,
+        // 非字段协议**:init 的消费方是 call_value 的 CLASS 分支(callable 协议),不属
+        // load_field/store_field 的成员访问职责,故不经协议;"init" 槽与 init_ 的一致性
+        // 由 set_field 同步自维护。
         [[nodiscard]]
         Value init() const noexcept {
             return init_;
@@ -87,15 +79,13 @@ namespace aria {
         // 命名成员读取协议 override:沿链 find_field 读穿透直读 --静态值/静态方法闭包/原生
         // 原样取出,**不绑定不缓存**(静态方法无 this;类路径不经 ObjBoundMethod)。全链
         // miss:以类措辞 fail UndefinedProperty("<class X> has no member ...",nullopt ⟺
-        // 已 fail,渲染经 debug_repr);查找路径纯查询无分配,fail 装箱是
-        // 唯一分配点(2026-09-10 二次整改:错误通道由「类别返回 + VM 烘焙」翻为本模型)。
+        // 已 fail,渲染经 debug_repr);查找纯查询无分配,fail 装箱是唯一分配点。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
         // 命名成员写入协议 override:类上赋值落本类自身表,恒成功 --本类已有原槽更新、
-        // 继承名/新名新建键遮蔽、父表不动(动态新增允许,2026-09-11 改定:原「全链 miss
-        // 拒新增」的无 monkey-patch 限制废止);"init" 命中同步 init_。vm 为协议签名
-        // 统一保留(本 override 无 fail 路径);落表 upsert 走 trivial 分配不触 GC。
+        // 继承名/新名新建键遮蔽、父表不动(动态新增允许);"init" 命中同步 init_。vm 为
+        // 协议签名统一保留(本 override 无 fail 路径);落表 upsert 走 trivial 分配不触 GC。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
         // 标 name_ + superclass_(容 nullptr)+ mark_value(init_)+ field_(key+value)。
@@ -107,16 +97,14 @@ namespace aria {
             return sizeof(ObjClass);
         }
 
-        // 调试渲染:`<class Foo>`(name_ 恒非空,ctor ASSERT);基类 to_string 默认委托本方法,
-        // 显示同文案。
+        // 调试渲染:`<class Foo>`(name_ 恒非空,ctor ASSERT);显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 
     private:
         // 沿 super 链查(self 起,逐父向上):命中返回链上首个命中值的拷贝,未命中 nullopt
         //(拼写与协议 load 族一致)。**纯查询,无分配、不 fail** --私有,仅本类型
-        // load_field override 内部使用(读穿透);组合方(实例、
-        // super 站点)一律委托 load_field 协议,不触碰本表 --成员表不对外暴露,无友元。
+        // load_field override 内部使用;组合方(实例、super 站点)一律委托 load_field 协议。
         // field_ 惰性未建表时直接返 nullopt。
         [[nodiscard]]
         Opt<Value> find_field(ObjString* name) noexcept;
@@ -127,19 +115,17 @@ namespace aria {
         Value         init_;  // 构造器方法值(闭包/原生)
     };
 
-    // 工厂:分配 ObjClass(field_ 空态;init_ 由 **ObjClass 构造函数自 super 派生**
-    //     --2026-09-11 改定:super 非空出厂即继承父 init_ 当前值,Object 根态出厂 nil
-    //     由 bootstrap 经 set_field 设;工厂仍**只做一次 new_object、无内部新建对象**,
-    //     继承属对象构造期自身状态初始化,不掺工厂语义)。工厂不替调用方守卫入参
-    //     (「每方只守自己创建的」)--只做一次 new_object、无内部新建对象,**调用方须在调用前
-    //     自行根化 name 与 super**(跨 new_object 顶 maybe_collect;name 经 intern 是 weak root,
-    //     super 可能尚未入任何根,如 MAKE_CLASS peek-不弹栈纪律),与 new_function 同理。
-    //     返回对象白色无根,调用方须立即发布进根(MAKE_CLASS 原槽写回即经值栈根)。
+    // 工厂:分配 ObjClass(field_ 空态;init_ 由 **ObjClass 构造函数自 super 派生**,工厂
+    //     纯分配)。工厂不替调用方守卫入参(「每方只守自己创建的」)--只做一次 new_object、
+    //     无内部新建对象,**调用方须在调用前自行根化 name 与 super**(跨 new_object 顶
+    //     maybe_collect;name 经 intern 是 weak root,super 可能尚未入任何根,如 MAKE_CLASS
+    //     peek-不弹栈纪律),与 new_function 同理。返回对象白色无根,调用方须立即发布进根
+    //    (MAKE_CLASS 原槽写回即经值栈根)。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super);
 
-    // 工厂重载(StringView 名):name 经工厂内部 intern 并自行守卫(工厂守「自己创建的」),
-    //     调用方传文本即可,无需手动建串根化;super 的根化约定同上。委托显式名重载。
+    // 工厂重载(StringView 名):name 经工厂内部 intern 并自行守卫,调用方传文本即可;
+    //     super 的根化约定同上。委托显式名重载。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, StringView name, ObjClass* super);
 } // namespace aria

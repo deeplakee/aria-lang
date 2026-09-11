@@ -18,15 +18,15 @@ namespace aria {
 
     } // namespace
 
-    // 成员/下标访问协议与算术协议的**基类默认体**(2026-09-10 二次整改):定义移出头外 --
-    // 默认体经 AriaVM::fail 模板报错,而 AriaVM.hpp 经 ObjException.hpp 依赖 Object.hpp、
-    // 两头互不 include(环),虚函数默认实现只能落 .cpp。默认语义一律「本类型不支持」:
-    // vm.fail 就地烘焙文案入挂起错误寄存器,失败出口经 FailSignal 哨兵一行返回(契约见
-    // Object.hpp 协议注释:load 族 nullopt ⟺ 已 fail / store 族 false ⟺ 已 fail)。
+    // 成员/下标访问协议与算术协议的基类默认体:定义移出头外 -- 默认体经 AriaVM::fail 模板
+    // 报错,而 AriaVM.hpp 经 ObjException.hpp 依赖 Object.hpp、两头互不 include(环),虚函数
+    // 默认实现只能落 .cpp。默认语义一律「本类型不支持」:vm.fail 就地烘焙文案入挂起错误寄存器,
+    // 失败出口经 FailSignal 哨兵一行返回(契约见 Object.hpp 协议注释:load 族 nullopt ⟺ 已
+    // fail / store 族 false ⟺ 已 fail)。
 
     Opt<Value> Object::load_field(AriaVM& vm, ObjString* name) {
-        // 未 override 的类型(ObjString/ObjClosure/...)无命名成员语义:文案与 miss 语义
-        // 统一为「X has no member 'y'」(对象描述经 debug_repr,纯 C++ 惰性渲染契约)。
+        // 未 override 的类型无命名成员语义:文案统一为「X has no member 'y'」
+        //(对象描述经 debug_repr,纯 C++ 惰性渲染契约)。
         return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
@@ -58,8 +58,7 @@ namespace aria {
     }
 
     bool Object::op_call(AriaVM& vm, Span<Value> slots) {
-        // 基类默认:本类型不可调用(文案与 call_value 原默认逐字一致,消费方=call_value 的
-        // switch default)。slots 为调用区视图,本默认不读(vm 同样仅协议签名统一,均保留命名)。
+        // 基类默认:本类型不可调用(消费方 = call_value 的 switch default);slots 本默认不读。
         return vm.fail(ErrorCode::CallNonCallable,
                        "call non-callable {} (supports closures / native functions / classes / bound "
                        "methods only)",

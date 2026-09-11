@@ -32,10 +32,9 @@ namespace aria {
         if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
         }
-        // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,
-        //    2026-09-11 改定:方法性 = MAKE_METHOD 注册时戳,判别不再按值类型,经
+        // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,经
         //    is_method(Value) 一步判)现场绑定(this=本实例)并回填 fields 缓存(铁则 1:
-        //    只缓存绑定 --需要分配的--方法;快照语义同闭包,类上改写后新解析见新值);
+        //    只缓存绑定 --需要分配的--方法;快照语义,类上改写后新解析见新值);
         //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。GC 走查:new_bound_method
         //    是唯一分配点 --本实例经调用方根化,方法对象本体经本实例->class_ 链类表可达
         //    (本地 member 仅是值拷贝),name 经调用方(常量池)可达;绑定建成后回填 upsert
@@ -68,8 +67,8 @@ namespace aria {
     }
 
     ObjInstance* new_instance(GC& gc, ObjClass* cls) {
-        // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 cls(实例化路径 cls 在栈根化)。返回对象白色无根,建成即写栈(值栈根)。
+        // 工厂不替调用方守卫入参:调用方须在调用前自行根化 cls(实例化路径 cls 在栈根化);
+        // 返回对象白色无根,建成即写栈(值栈根)。
         return gc.new_object<ObjInstance>(gc, cls);
     }
 

@@ -35,9 +35,8 @@ namespace aria {
     //     lambda 名 `<anonymous>`(`<>` 是正常标识符中不可用的符号,具独特辨识度);具名函数为
     //     其声明名。统一模型:每个函数都有名字,ctor ASSERT 非空。to_string 渲染 `<fn name>`。
     //   - arity_:参数个数(u8,上限 255;编译期编译器保证不越界)。
-    //   - upvalue_descs_:捕获描述表(M4 闭包,编译期一次性 flush,运行期只读)。每条 UpvalueDesc
-    //     {is_local, index} 描述本函数的一个捕获:is_local=true 捕直接外围帧局部槽 index,
-    //     false 穿透复用外围闭包的第 index 个 upvalue。存元数据、不进字节码流,CLOSURE 保持
+    //   - upvalue_descs_:捕获描述表(编译期一次性 flush,运行期只读)。每条 UpvalueDesc
+    //     描述本函数的一个捕获(语义见上 struct 注);存元数据、不进字节码流,CLOSURE 保持
     //     定长 3B(ConstU16);与 ObjClosure::upvalues_ 按下标一一对应。描述项纯标量,trace 不标。
     //
     //   地址哈希型可变对象(走 Object{Kind} ctor);equals 保持默认地址相等--
@@ -97,9 +96,8 @@ namespace aria {
             return sizeof(ObjFunction);
         }
 
-        // 调试渲染:`<fn add>`(clox 风格);name_ 恒非空,统一 `<fn name>`(入口渲染 `<fn <main>>`/`<fn <module>>`、
-        // lambda 渲染 `<fn <anonymous>>`)。override Object::debug_repr 默认的 `<Function at 0x...>`;
-        // 基类 to_string 默认委托本方法,显示同文案。
+        // 调试渲染:`<fn add>`(clox 风格;入口渲染 `<fn <main>>`/`<fn <module>>`、
+        // lambda 渲染 `<fn <anonymous>>`);显示同文案(to_string 经基类默认委托)。
         [[nodiscard]]
         String debug_repr() const override;
 
@@ -111,10 +109,9 @@ namespace aria {
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
-    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。工厂不替调用方守卫入参--module 与 name 经
-    //        intern/模块表皆是 weak root,new_object 顶部 maybe_collect 可能回收未被根持有的两者,
-    //        但工厂只做一次 new_object、无内部新建对象,故**调用方须在调用前自行根化 module 与 name**
-    //        (跨 new_object)。即「每方只守卫自己创建的对象」:工厂不创建入参,不守卫。
+    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。工厂不替调用方守卫入参(「每方只守卫
+    //        自己创建的对象」:工厂不创建入参,不守卫)--module 与 name 经 intern/模块表
+    //        皆是 weak root,故**调用方须在调用前自行根化两者**(跨 new_object 顶 maybe_collect)。
     [[nodiscard]]
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity);
 

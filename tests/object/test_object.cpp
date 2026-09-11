@@ -24,9 +24,8 @@ using aria::Value;
 
 namespace {
 
-    // 寄存器取件拆两件(码, 烘焙消息):协议 fail 契约(load 族 nullopt / store 族 false
-    // ⟺ 已 fail)的白盒检视面 --载荷已入 vm 主上下文挂起错误寄存器,take_error 取出为
-    // ObjException。
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    //(协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.main_context().take_error();
         EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
@@ -37,7 +36,7 @@ namespace {
 
 } // namespace
 
-// Object::try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 null 入参)。
+// try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 null 入参)。
 
 TEST(ObjectTryAs, MatchReturnsPointer) {
     GC   gc;
@@ -64,14 +63,12 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
 }
 
-// 成员/下标访问协议与运算符协议的**基类默认**(2026-09-10 二次整改后形态):未 override 的
-// 子类型(ObjString 等)对协议操作一律 vm.fail 入寄存器后返失败信号 --load 族 nullopt、
-// store 族 false,消息由默认体就地烘焙(与 VM 原语路径 phrasing 一致)。load_index/
-// store_index 与 op_* 族同为备置 API(暂无 override/调用方,接线留容器里程碑),本测试钉住
-// 默认形态(码 + 文案子串)防止将来基类签名漂移。
+// 成员/下标访问/算术/可调用协议的**基类默认**(备置 API):未 override 的子类型(ObjString
+// 等)对协议操作一律 vm.fail 入寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试
+// 钉住默认形态(码 + 文案子串)防将来基类签名漂移。
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
-    AriaVM vm; // 协议签名收 AriaVM&(二次整改):分配经 vm.gc()、报错经 vm.fail
+    AriaVM vm; // 报错经 vm.fail 入挂起寄存器
     auto&  gc = vm.gc();
     auto   s  = new_string(gc, "hello");
     auto   sg = gc.make_guard(s);

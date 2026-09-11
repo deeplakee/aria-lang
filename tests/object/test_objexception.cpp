@@ -17,8 +17,7 @@ using aria::StringView;
 
 namespace {
 
-    // new_exception 的工厂入参是 StringView(内部自行 new_string 驻留并守卫),返回对象未根:
-    // 测试若跨分配继续用 e,须 make_guard 根化(同 new_module(StringView) 用法)。
+    // 工厂返回对象未根:测试若跨分配继续用 e,须 make_guard 根化(见 new_exception 头注释)。
     ObjException* make_exception(GC& gc, ErrorCode code, StringView message) {
         auto e     = new_exception(gc, code, message);
         auto guard = gc.make_guard(e); // 守卫随函数退出释放:调用方拿到的 e 未根,语义同工厂
@@ -67,9 +66,8 @@ TEST(ObjException, ToErrorCopiesBakedMessageVerbatim) {
 }
 
 TEST(ObjException, ToErrorRoundTrip) {
-    // 全链路回环:Error::from_detail(std::format 细节)烘焙 -> message_ 原样存 -> to_error
-    // 原样回传,与 from_detail 直构的 Error 逐字一致(未捕获异常的边界文案/测试断言在寄存器
-    // 载荷改为 Value 前后不漂移)。
+    // 全链路回环:Error::from_detail 烘焙 -> message_ 原样存 -> to_error 原样回传,
+    // 与 from_detail 直构的 Error 逐字一致。
     GC   gc;
     auto err = aria::Error::from_detail(
             ErrorCode::TypeMismatch,

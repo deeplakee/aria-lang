@@ -102,7 +102,7 @@ namespace aria {
     X(MAKE_CLASS, ConstU16)                \
     X(MAKE_METHOD, ConstU16)               \
     X(MAKE_STATIC, ConstU16)               \
-    X(LOAD_SUPER_METHOD, ConstU16)         \
+    X(LOAD_SUPER_FIELD, ConstU16)          \
     X(INVOKE_METHOD, Invoke)               \
     X(MAKE_LIST, U16)                      \
     X(MAKE_MAP, U16)                       \

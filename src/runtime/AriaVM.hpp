@@ -383,16 +383,17 @@ namespace aria {
         // 移入 override,执行体只透传 bool 信号);非对象守卫同 run_load_field。
         bool run_store_field(ObjString* name);
 
-        // LOAD_SUPER_METHOD 执行体:defining class 取 *current_ 顶帧 closure 直读(M5 决策 6
-        // -- 挂 ObjClosure 不挂共享 fn 常量,函数体内 def 执行 N 次产生 N 个类不串链),从其
-        // 父类起走 ObjClass::load_field 协议沿链读穿透(起点即 super,不含 defining 自身;
-        // 命中:静态值/方法闭包原样直读,类协议不绑定不缓存;miss:类措辞 fail 已入寄存器,
-        // 本执行体只透传信号,2026-09-10 二次整改后封装收口再翻为协议委托),命中可调用值
-        //(闭包或原生)绑 this=帧槽 0 压栈供 CALL;**不写 fields 缓存**(铁则 2:super
-        // 查到的是被覆写前的实现,写缓存会被 fields 命中劫持后续 obj.m 动态派发)。defining
-        // 非空/方法类恒有父是编译器保证的不变式(ASSERT 钉);命中静态值为语言可达错误,
-        // 经 fail 返 false。
-        bool run_load_super_method(ObjString* name);
+        // LOAD_SUPER_FIELD 执行体:defining class 取 *current_ 顶帧 closure 直读(M5 决策 6
+        // -- 方法闭包恒有戳(MAKE_METHOD 注册时设),编译器不变式 ASSERT 钉),从其父类起走
+        // ObjClass::load_field 协议沿链读穿透(起点即 super,不含 defining 自身;命中原样
+        // 直读,类协议不绑定不缓存;miss:类措辞 fail 已入寄存器,本执行体只透传信号)。
+        // 命中判定(2026-09-11 改定,方法性 = defining class 戳,不再按值类型判别,经
+        // is_method(Value) 一步判 --ObjBridge):命中方法闭包 -> 绑 this=帧槽 0 压栈供
+        // CALL;其余(静态方法 fun/持函数值的静态变量/原生/静态值)原值直读压栈;两者均
+        // **不写 fields 缓存**(铁则 2:super 查到的是被覆写前的实现,写缓存会被 fields
+        // 命中劫持后续 obj.m 动态派发)。defining/super 非空是编译器保证的不变式
+        //(ASSERT 钉);全链 miss 为语言可达错误,经协议 fail 返 false。
+        bool run_load_super_field(ObjString* name);
 
         // 自最内帧向外遍历帧链:每帧以 last_ip 反推 offset 查本帧 CodeUnit 异常记录表
         // (find_try_handler 取最内层覆盖),首命中即在该帧 unwind -- 截值栈到 frame.slots +

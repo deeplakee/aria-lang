@@ -114,16 +114,16 @@ TEST(ObjClass, SetFieldThenLoadOwnTable) {
 
     cls->set_field(k, Value::from_obj(v));
 
-    auto r = cls->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(v)));
+    auto initial_read = cls->load_field(vm, k);
+    ASSERT_TRUE(initial_read.has_value());
+    EXPECT_TRUE(value_identical(*initial_read, Value::from_obj(v)));
 
     auto v2  = new_string(gc, "a long static value string two");
     auto vg2 = gc.make_guard(v2);
     cls->set_field(k, Value::from_obj(v2)); // 覆写:原槽更新
-    r = cls->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(v2)));
+    auto rewritten_read = cls->load_field(vm, k);
+    ASSERT_TRUE(rewritten_read.has_value());
+    EXPECT_TRUE(value_identical(*rewritten_read, Value::from_obj(v2)));
 }
 
 // 全链 miss:override 以类措辞就地 fail(nullopt ⟺ 已 fail),码 UndefinedProperty、
@@ -157,16 +157,16 @@ TEST(ObjClass, LoadFieldReadsThroughChain) {
     auto vg = gc.make_guard(v1);
     super->set_field(k, Value::from_obj(v1));
 
-    auto r = sub->load_field(vm, k); // 穿透:子类读命中父表
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(v1)));
+    auto through_read = sub->load_field(vm, k); // 穿透:子类读命中父表
+    ASSERT_TRUE(through_read.has_value());
+    EXPECT_TRUE(value_identical(*through_read, Value::from_obj(v1)));
 
     auto v2  = new_string(gc, "a long static value string two"); // 父表原槽更新
     auto v2g = gc.make_guard(v2);
     super->set_field(k, Value::from_obj(v2));
-    r = sub->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(v2)));
+    auto updated_read = sub->load_field(vm, k);
+    ASSERT_TRUE(updated_read.has_value());
+    EXPECT_TRUE(value_identical(*updated_read, Value::from_obj(v2)));
 }
 
 // 写遮蔽:类上赋值 Sub.x = v(store_field 命中链上名字后 set_field 落接收类自身表)
@@ -189,13 +189,13 @@ TEST(ObjClass, ReshadowInsertsOwnKey) {
     auto v2g = gc.make_guard(v2);
     EXPECT_TRUE(sub->store_field(vm, k, Value::from_obj(v2))); // 写遮蔽落自身表
 
-    auto r = sub->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(v2))); // 子表新键遮蔽父表
+    auto shadowed_read = sub->load_field(vm, k);
+    ASSERT_TRUE(shadowed_read.has_value());
+    EXPECT_TRUE(value_identical(*shadowed_read, Value::from_obj(v2))); // 子表新键遮蔽父表
 
-    auto sr = super->load_field(vm, k);
-    ASSERT_TRUE(sr.has_value());
-    EXPECT_TRUE(value_identical(*sr, Value::from_obj(v1))); // 父表槽未被波及(写遮蔽不外溢)
+    auto parent_read = super->load_field(vm, k);
+    ASSERT_TRUE(parent_read.has_value());
+    EXPECT_TRUE(value_identical(*parent_read, Value::from_obj(v1))); // 父表槽未被波及(写遮蔽不外溢)
 }
 
 TEST(ObjClass, ToString) {
@@ -344,18 +344,18 @@ TEST(ObjClass, LoadFieldProtocolReadsThroughChain) {
     base->set_field(bk, Value::from_obj(bv));
 
     // 读穿透:子类读命中父表槽。
-    auto r = sub->load_field(vm, bk);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(bv)));
+    auto inherited_read = sub->load_field(vm, bk);
+    ASSERT_TRUE(inherited_read.has_value());
+    EXPECT_TRUE(value_identical(*inherited_read, Value::from_obj(bv)));
 
     auto sk = new_string(gc, "own");
     guard.push(sk);
     auto sv = new_string(gc, "sub static value string!!!!!!");
     guard.push(sv);
     sub->set_field(sk, Value::from_obj(sv));
-    r = sub->load_field(vm, sk);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv)));
+    auto own_read = sub->load_field(vm, sk);
+    ASSERT_TRUE(own_read.has_value());
+    EXPECT_TRUE(value_identical(*own_read, Value::from_obj(sv)));
 
     // 全链 miss:类措辞 fail(UndefinedProperty,消息含类 debug 渲染)。
     auto miss = new_string(gc, "missing");
@@ -389,25 +389,25 @@ TEST(ObjClass, StoreFieldShadowsCreatesAndSyncsInit) {
     auto sv = new_string(gc, "sub static value string!!!!!!");
     guard.push(sv);
     EXPECT_TRUE(sub->store_field(vm, bk, Value::from_obj(sv)));
-    auto r = sub->load_field(vm, bk);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv))); // 读到遮蔽值
+    auto shadowed_read = sub->load_field(vm, bk);
+    ASSERT_TRUE(shadowed_read.has_value());
+    EXPECT_TRUE(value_identical(*shadowed_read, Value::from_obj(sv))); // 读到遮蔽值
     // 父表原槽不波及:base 直读仍是原值。
-    auto br = base->load_field(vm, bk);
-    ASSERT_TRUE(br.has_value());
-    EXPECT_TRUE(value_identical(*br, Value::from_obj(bv)));
+    auto parent_read = base->load_field(vm, bk);
+    ASSERT_TRUE(parent_read.has_value());
+    EXPECT_TRUE(value_identical(*parent_read, Value::from_obj(bv)));
 
     // 新名字:动态新增落子表(2026-09-11 改定),读回即新值。
     auto nk = new_string(gc, "nope");
     guard.push(nk);
     EXPECT_TRUE(sub->store_field(vm, nk, Value::from_int(1)));
-    auto nr = sub->load_field(vm, nk);
-    ASSERT_TRUE(nr.has_value());
-    EXPECT_EQ(nr->as_int(), 1);
+    auto newkey_read = sub->load_field(vm, nk);
+    ASSERT_TRUE(newkey_read.has_value());
+    EXPECT_EQ(newkey_read->as_int(), 1);
 
     // 父类读不到新名:读穿透全链 miss(顺带钉 fail 通道:码 + 类措辞)。
-    auto br2 = base->load_field(vm, nk);
-    EXPECT_FALSE(br2.has_value());
+    auto parent_newname_read = base->load_field(vm, nk);
+    EXPECT_FALSE(parent_newname_read.has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("<class Base> has no member 'nope'"));

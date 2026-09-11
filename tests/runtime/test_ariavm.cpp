@@ -86,7 +86,7 @@ namespace {
     }
 
     // u16 名字操作数的类组/字段组指令(MAKE_CLASS/MAKE_METHOD/MAKE_STATIC/LOAD_FIELD/
-    // STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD/LOAD_SUPER_METHOD):op + 常量池
+    // STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD/LOAD_SUPER_FIELD):op + 常量池
     // ObjString 索引,与 emit_global 同形(DEF/LOAD/STORE_GLOBAL 用)。
     void emit_named(CodeUnit& cu, OpCode op, u16 name_idx, u32 line = 1) {
         cu.emit_op(op, line);
@@ -1749,8 +1749,8 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
     EXPECT_EQ(out.value().as_int(), 11);
 }
 
-// 继承覆写 + super:Sub.m 经 LOAD_SUPER_METHOD 从 defining class 的父链(不含自身)
-// 取 Base 的被覆写实现、绑 this=帧槽 1 后 CALL;子调父结果 + 常量验证父实现真被调到。
+// 继承覆写 + super:Sub.m 经 LOAD_SUPER_FIELD 从 defining class 的父链(不含自身)
+// 取 Base 的被覆写实现、绑 this=帧槽 0 后 CALL;子调父结果 + 常量验证父实现真被调到。
 TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
 
     auto& gc     = vm.gc();
@@ -1766,7 +1766,7 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
     {
         auto&     smu    = sub_m->unit();
         const u16 m_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
-        emit_named(smu, OpCode::LOAD_SUPER_METHOD, m_name); // [super-bound]
+        emit_named(smu, OpCode::LOAD_SUPER_FIELD, m_name); // [super-bound]
         smu.emit_op(OpCode::CALL, 1);
         smu.emit_byte(0, 1);         // [1](Base.m 返回值)
         emit_imm(smu, 10);           // [1, 10]
@@ -1903,8 +1903,10 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
     EXPECT_EQ(out.value().as_int(), 5);
 }
 
-// 方法经类上赋值改写(STORE_FIELD 类路径命中方法槽):bound 缓存取首解析快照 --
-// 改写前已绑定的实例沿用旧闭包,改写后新解析的实例取新闭包。
+// 方法经类上赋值改写(STORE_FIELD 类路径 = 静态写):旧解析沿用首解析绑定快照(bound);
+// 改写后新解析读回**原值**不绑定(赋值闭包无 defining class 戳 ⟹ 非方法槽,2026-09-11
+// 改定方法性看戳不看值类型),自由调用新值仍可执行。方法性随值携带:经类路径拷贝
+// MAKE_METHOD 出品的戳定闭包(如 Foo.m = Base.m)保方法性,赋 lambda/裸函数降为静态。
 TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
 
     auto& gc      = vm.gc();
@@ -1977,10 +1979,10 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
 
     auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value; };
     EXPECT_EQ(fetch("r1").as_int(), 1); // 已解析实例沿用旧绑定(首解析快照)
-    EXPECT_EQ(fetch("r2").as_int(), 2); // 新解析取改写后的新闭包
-    auto b1 = aria::Object::as<ObjBoundMethod>(fetch("b1").as_obj());
-    auto b2 = aria::Object::as<ObjBoundMethod>(fetch("b2").as_obj());
-    EXPECT_NE(b1->method().as_obj(), b2->method().as_obj()); // 两份绑定各持新旧闭包
+    const auto b2_v = fetch("b2");
+    EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);                  // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
+    EXPECT_EQ(aria::Object::as<ObjClosure>(b2_v.as_obj())->function(), new_m); // === new_m 闭包本体
+    EXPECT_EQ(fetch("r2").as_int(), 2);                                        // b2 自由调用仍执行新闭包(返回 2)
 }
 
 // super 不污染动态派发缓存(铁则 2):Sub.m 内 super.m() 取被覆写前的父实现、绑 this
@@ -2003,7 +2005,7 @@ TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
     {
         auto&     smu    = sub_m->unit();
         const u16 m_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
-        emit_named(smu, OpCode::LOAD_SUPER_METHOD, m_name);
+        emit_named(smu, OpCode::LOAD_SUPER_FIELD, m_name);
         smu.emit_op(OpCode::CALL, 1);
         smu.emit_byte(0, 1); // [1](super.m() 的返回值)
         emit_imm(smu, 50);
@@ -2212,7 +2214,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
     EXPECT_EQ(out.value().as_int(), 8);
 }
 
-// ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_METHOD 运行期防线)----
+// ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_FIELD 运行期防线)----
 
 // 对 nil 取字段 -> UndefinedProperty(nil 并入非对象统一文案「type Nil does not support
 // field access」,2026-09-10 化简:field 族不再特判 NilDereference,类型名 Nil 已可辨识)。
@@ -2314,7 +2316,7 @@ TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
 }
 
 // 原 SuperOutsideMethodClosureFails / SuperInObjectMethodFails 两用例随 2026-09-10
-// 整改退役:LOAD_SUPER_METHOD 的 defining==nullptr / superclass==nullptr 是编译器
+// 整改退役:LOAD_SUPER_FIELD 的 defining==nullptr / superclass==nullptr 是编译器
 // 保证的不变式(指令只在方法闭包体内发射;Object 的方法内用 super 由编译期
 // SuperNoBaseClass 挡),运行期防线由可 catch 的 raise 降为 ASSERT -- 语言写不出
 // 的形态直接 abort 暴露,不再构成运行期错误,无法以 interpret 结果断言。
@@ -2390,13 +2392,14 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 }
 
 // ============================================================
-// M5 泛化:native 方法(方法槽持 ObjNativeFn,绑定形态与闭包统一 --
-// uniform「可调用一律绑定」;调用约定 slots[0] = this 兼返回槽,见 ObjNativeFn 契约)。
+// M5 泛化:native 落表(原生值经 MAKE_STATIC/类上赋值落类表 = 静态槽语义,读恒原值
+// --方法性 = defining class 戳,2026-09-11 改定,原生方法绑定随 uniform 绑定废止;
+// 绑定形态 ObjBoundMethod 的原生分支仍由对象层直接构造覆盖,见 test_objboundmethod)。
 // ============================================================
 
-// echo_this():验证原生方法的绑定调用约定 -- VM 把绑定调用区槽 0(bound 对象)覆写为
-// receiver 后调用:原生读 slots[0] 即 this(校验为 ObjInstance)、返回值写 slots[0] 原地,
-// 实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
+// echo_this():验证原生的调用约定 -- 绑定调用(call_bound_method)时 VM 把调用区槽 0
+// (bound 对象)覆写为 receiver 后调用:原生读 slots[0] 即 this(校验为 ObjInstance)、
+// 返回值写 slots[0] 原地,实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
 bool echo_this_native(AriaVM& vm, Span<Value> slots) {
     if (slots.size() - 1 != 0) {
         return vm.fail(ErrorCode::WrongArity, "echo_this expects 0 args, got {}", slots.size() - 1);
@@ -2408,40 +2411,43 @@ bool echo_this_native(AriaVM& vm, Span<Value> slots) {
     return true;
 }
 
-// 实例方法命中原生函数:LOAD_FIELD 绑定 ObjBoundMethod(原生)后 CALL 走 call_bound_method
-// 的原生分支 -- this 到位、返回槽覆写、stress 下 bound/类/缓存全程存活。
-TEST_F(AriaVMStress, NativeMethodBindsThis) {
+// 静态槽持可调用值(原生经 MAKE_STATIC,var 声明/类上赋值同形)经实例读取**原值直读**
+//(方法性 = defining class 戳,2026-09-11 改定,不再按值类型绑定):读回值与常量池原生
+// === 同一对象,无 ObjBoundMethod 包装。原「静态槽持可调用值同样绑定」(uniform 绑定,
+// Python 函数语义)随方法性翻注册期戳废止。
+TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
 
     auto&      gc       = vm.gc();
     auto       fn       = new_function(gc, nullptr, 0);
     auto       fn_guard = gc.make_guard(fn);
     auto&      cu       = fn->unit();
     const u16  foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
-    const u16  m_name   = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+    const u16  f_name   = cu.add_constant(Value::from_obj(new_string(gc, "f")));
     const auto nf       = add_native_const(cu, gc, "echo_this", echo_this_native);
     cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
     emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
     cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);                         // [Foo, native](MAKE_METHOD 接受可调用值)
-    emit_named(cu, OpCode::MAKE_METHOD, m_name); // [Foo]
+    cu.emit_word(nf, 1);                         // [Foo, native]
+    emit_named(cu, OpCode::MAKE_STATIC, f_name); // 静态槽存原生(var 声明 lowering 同形)
     emit_global(cu, OpCode::DEF_GLOBAL, foo);    // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1);                         // [i](快路径:无 init)
-    emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound-native](绑定 + 缓存回填)
-    cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1); // [1](原生读 slots[0]=this,返回槽覆写)
+    emit_named(cu, OpCode::LOAD_FIELD, f_name); // [raw-native](实例读取:非方法槽 ⟹ 原值)
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(nf, 1);                 // [raw, native](常量池原值)
+    cu.emit_op(OpCode::STRICT_EQUAL, 1); // [true](同一对象,无绑定包装)
     cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 1);
+    EXPECT_TRUE(out.value().as_bool());
 }
 
 // 类路径读取(静态访问)取出裸原生值,不绑定 -- 直调时 slots[0] = callee(原生自身),
-// 非实例接收者,原生体内自查报 TypeMismatch。与实例路径(NativeMethodBindsThis)互补,
-// 钉死「绑定只发生在实例读取」的边界。
-TEST_F(AriaVMStress, NativeMethodClassAccessIsFreeCall) {
+// 非实例接收者,原生体内自查报 TypeMismatch。与实例路径(StaticCallableReadsRawOnInstance)
+// 互补,钉死「类表可调用值不因值类型被绑定」的边界。
+TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
 
     auto&      gc       = vm.gc();
     auto       fn       = new_function(gc, nullptr, 0);
@@ -2454,7 +2460,7 @@ TEST_F(AriaVMStress, NativeMethodClassAccessIsFreeCall) {
     emit_named(cu, OpCode::MAKE_CLASS, foo);
     cu.emit_op(OpCode::LOAD_CONST, 1);
     cu.emit_word(nf, 1);
-    emit_named(cu, OpCode::MAKE_METHOD, m_name);
+    emit_named(cu, OpCode::MAKE_STATIC, m_name);
     emit_global(cu, OpCode::DEF_GLOBAL, foo);
     emit_global(cu, OpCode::LOAD_GLOBAL, foo);  // [Foo]
     emit_named(cu, OpCode::LOAD_FIELD, m_name); // [native](类路径:裸值,无绑定无缓存)
@@ -2467,88 +2473,125 @@ TEST_F(AriaVMStress, NativeMethodClassAccessIsFreeCall) {
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
 
-// 静态槽持可调用值同样绑定(uniform「可调用一律绑定」规则,Python 函数语义):
-// MAKE_STATIC 存入原生,实例读取沿链命中 -> 绑定 this -> 调用成功。
-TEST_F(AriaVMStress, StaticSlotCallableBindsOnInstance) {
+// super 读静态方法(2026-09-11 改定:fun 静态经 MAKE_STATIC 注册,不戳 defining class):
+// LOAD_SUPER_FIELD 沿父链命中未戳闭包 -> 原值直读,与类路径裸读 === 同一闭包(方法性看
+// 戳不看值类型;原「原生方法经 super 绑定」随方法性翻注册期戳退役)。
+TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
 
-    auto&      gc       = vm.gc();
-    auto       fn       = new_function(gc, nullptr, 0);
-    auto       fn_guard = gc.make_guard(fn);
-    auto&      cu       = fn->unit();
-    const u16  foo      = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
-    const u16  f_name   = cu.add_constant(Value::from_obj(new_string(gc, "f")));
-    const auto nf       = add_native_const(cu, gc, "echo_this", echo_this_native);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
-    emit_named(cu, OpCode::MAKE_CLASS, foo);
-    cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);                         // [Foo, native]
-    emit_named(cu, OpCode::MAKE_STATIC, f_name); // 静态槽存原生(var 声明 lowering 同形)
-    emit_global(cu, OpCode::DEF_GLOBAL, foo);
-    emit_global(cu, OpCode::LOAD_GLOBAL, foo);
-    cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1);                         // [i]
-    emit_named(cu, OpCode::LOAD_FIELD, f_name); // [bound-native](实例读取:沿链命中 -> 绑定)
-    cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1); // [1]
-    cu.emit_op(OpCode::RETURN, 1);
-
-    const auto out = vm.run(fn);
-    ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 1);
-}
-
-// super 沿链命中原生方法同样绑定(LOAD_SUPER_METHOD 从父类起查,绑 this=帧槽 1 后
-// CALL 走原生分支);不写 fields 缓存的铁则 2 对原生同样成立。
-TEST_F(AriaVMStress, SuperBindsNativeMethod) {
-
-    auto&     gc        = vm.gc();
-    auto      fn        = new_function(gc, nullptr, 0);
-    auto      fn_guard  = gc.make_guard(fn);
-    auto&     cu        = fn->unit();
-    const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
-    const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
-    const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
-    // Base:m = echo_this(原生);Sub : Base,m 覆写为 super.m() 转发闭包
-    const auto nf = add_native_const(cu, gc, "echo_this", echo_this_native);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
-    emit_named(cu, OpCode::MAKE_CLASS, base_name);
-    cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);
-    emit_named(cu, OpCode::MAKE_METHOD, m_name);
-    emit_global(cu, OpCode::DEF_GLOBAL, base_name);
-    // Sub.m(闭包):LOAD_SUPER_METHOD m -> super 绑定原生(this=Sub 实例)-> CALL -> 1
-    auto sub_m   = new_function(gc, new_string(gc, "m"), 0);
-    auto m_guard = gc.make_guard(sub_m);
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc);
+    auto  m_guard = gc.make_guard(m);
+    auto  base_f  = make_function(gc, m, "f", 0);
+    auto  guard   = gc.make_guard(base_f);
     {
-        auto&     smu     = sub_m->unit();
-        const u16 sm_name = smu.add_constant(Value::from_obj(new_string(gc, "m")));
-        emit_named(smu, OpCode::LOAD_SUPER_METHOD, sm_name);
-        smu.emit_op(OpCode::CALL, 1);
-        smu.emit_byte(0, 1); // [1](super 绑定的原生:slots[0] = this)
+        emit_imm(base_f->unit(), 7);
+        base_f->unit().emit_op(OpCode::RETURN, 1); // Base.f 返回 7(未被本用例消费,钉可调用性)
+    }
+    auto sub_m = make_function(gc, m, "m", 0);
+    guard.push(sub_m);
+    {
+        auto&     smu    = sub_m->unit();
+        const u16 f_name = smu.add_constant(Value::from_obj(new_string(gc, "f")));
+        const u16 b_name = smu.add_constant(Value::from_obj(new_string(gc, "Base")));
+        emit_named(smu, OpCode::LOAD_SUPER_FIELD, f_name); // [raw](未戳闭包:原值直读)
+        emit_global(smu, OpCode::LOAD_GLOBAL, b_name);     // [raw, Base]
+        emit_named(smu, OpCode::LOAD_FIELD, f_name);       // [raw, raw2](类路径裸读)
+        smu.emit_op(OpCode::STRICT_EQUAL, 1);              // [true](=== 同一闭包,无绑定包装)
         smu.emit_op(OpCode::RETURN, 1);
     }
-    emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // [Base]
-    emit_named(cu, OpCode::MAKE_CLASS, sub_name);    // [Sub]
-    emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
-    emit_named(cu, OpCode::MAKE_METHOD, m_name);
-    emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
-    emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
-    cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1);                         // [i]
-    emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound(Sub.m 闭包)]
-    cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1); // [1]
-    cu.emit_op(OpCode::RETURN, 1);
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+        const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        const u16 f_name    = cu.add_constant(Value::from_obj(new_string(gc, "f")));
+        // Base:fun f(MAKE_STATIC 静态方法,不戳 defining class)
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, base_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(base_f)));
+        emit_named(cu, OpCode::MAKE_STATIC, f_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+        // Sub : Base,覆写 m(实例方法,MAKE_METHOD 戳)
+        emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+        emit_named(cu, OpCode::MAKE_CLASS, sub_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+        // (Sub()).m()
+        emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [true]
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_TRUE(out.value().as_bool());
+}
+
+// super 读静态成员(2026-09-11 改定:LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看
+// defining class 戳):Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈
+//(不绑定、不写 fields 缓存,铁则 2);返回值即父类静态,验证父链真被读到。
+TEST_F(AriaVMStress, SuperReadsStaticMember) {
+
+    auto& gc      = vm.gc();
+    auto  m       = make_module(gc);
+    auto  m_guard = gc.make_guard(m);
+    auto  sub_m   = make_function(gc, m, "m", 0);
+    auto  guard   = gc.make_guard(sub_m);
+    {
+        auto&     smu    = sub_m->unit();
+        const u16 x_name = smu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_named(smu, OpCode::LOAD_SUPER_FIELD, x_name); // [1](静态值直读)
+        smu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
+        const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
+        // Base:x = 1(静态)
+        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, base_name);
+        emit_imm(cu, 1);
+        emit_named(cu, OpCode::MAKE_STATIC, x_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, base_name);
+        // Sub : Base(无成员),覆写 m:super.x 直读
+        emit_global(cu, OpCode::LOAD_GLOBAL, base_name);
+        emit_named(cu, OpCode::MAKE_CLASS, sub_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(sub_m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
+        // (Sub()).m()
+        emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1);                         // [i]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [1](super.x 直读)
+        cu.emit_op(OpCode::RETURN, 1);
+    }
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out.value().as_int(), 1);
 }
 
-// MAKE_METHOD("init") 配原生:init Value 化(2026-09-10 整改)后**合法** -- 注册即
-// 覆盖 MAKE_CLASS seed 同步 init_,实例化经 call_value 走 call_native:slots[0] = this(echo
-// 校验接收者是实例后覆写返回 1),原生 init 的返回值即实例化结果(嵌入 API 灵活性:
-// 不写槽即返回 this,写槽可返回任意值)。原「init 仅认闭包」拒写检查为死代码已删。
+// 原生 init 注册走类上赋值路径(MAKE_METHOD 2026-09-11 起仅收闭包,原生落表经
+// STORE_FIELD):init Value 化(2026-09-10 整改)后**合法** -- set_field 命中 "init" 同步
+// init_,实例化经 call_value 走 call_native:slots[0] = this(echo 校验接收者是实例后覆写
+// 返回 1),原生 init 的返回值即实例化结果(嵌入 API 灵活性:不写槽即返回 this,写槽可
+// 返回任意值)。
 TEST_F(AriaVMStress, NativeInitInstantiates) {
 
     auto&      gc        = vm.gc();
@@ -2559,11 +2602,13 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     const u16  init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
     const auto nf        = add_native_const(cu, gc, "echo_this", echo_this_native);
     cu.emit_op(OpCode::LOAD_OBJECT, 1);
-    emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
+    emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
     cu.emit_op(OpCode::LOAD_CONST, 1);
     cu.emit_word(nf, 1);                            // [Foo, native]
-    emit_named(cu, OpCode::MAKE_METHOD, init_name); // [Foo](原生 init 注册,覆盖 seed)
-    emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
+    emit_named(cu, OpCode::STORE_FIELD, init_name); // [native](赋值放行:"init" 同步 init_)
+    cu.emit_op(OpCode::POP, 1);                     // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1); // 实例化:原生 init 收 slots[0]=this(echo 校验后返回 1)

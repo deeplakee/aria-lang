@@ -761,30 +761,31 @@ namespace aria {
         return true;
     }
 
-    bool AriaVM::run_load_super_method(ObjString* name) {
-        // LOAD_SUPER_METHOD 执行体([] -> [bound];契约见 AriaVM.hpp):defining class 从
-        // frame.closure 直读(挂闭包不挂共享 fn 常量,函数体内 def 执行 N 次产生 N 个类不
-        // 串链);从其父类起走 load_field 协议沿链查(命中:静态值/方法闭包原样直读,类协议
-        // 不绑定不缓存 --绑定与"不写 fields 缓存"由本站点自持;miss:类措辞 fail 已入
-        // 寄存器,nullopt ⟺ 已 fail,本函数只透传信号)。命中可调用值绑 this=帧槽 0 后压栈
-        // 供 CALL;**不写 fields 缓存**(铁则 2:super 查到的是被覆写前的实现,写缓存会被
-        // fields 命中劫持后续 obj.m 动态派发)。命中静态值(super.x 取 var 成员)是
-        // **语言可达**错误,raise 保留。
-        auto&      frame    = current_->frames().top();
-        const auto defining = frame.closure->defining_class();
-        ASSERT(defining != nullptr, "LOAD_SUPER_METHOD: closure has no defining class (compiler invariant)");
+    bool AriaVM::run_load_super_field(ObjString* name) {
+        // LOAD_SUPER_FIELD 执行体([] -> [v];契约见 AriaVM.hpp):defining class 从
+        // frame.closure 直读(方法闭包恒有戳 --MAKE_METHOD 注册时设,编译器不变式);从其
+        // 父类起走 load_field 协议沿链查(命中:值原样直读,类协议不绑定不缓存 --绑定与
+        // "不写 fields 缓存"由本站点自持;miss:类措辞 fail 已入寄存器,nullopt ⟺ 已 fail,
+        // 本函数只透传信号)。命中判定(2026-09-11 改定,方法性 = defining class 戳,不再按
+        // 值类型判别,经 is_method(Value) 一步判):命中方法闭包 → 绑 this=帧槽 0 压栈供
+        // CALL;其余(静态方法 fun/持函数值的静态变量/原生/静态值)原值直读压栈。两者均
+        // **不写 fields 缓存**(铁则 2:super 查到的是被覆写前的实现,写缓存会被 fields
+        // 命中劫持后续 obj.m 动态派发)。
+        const auto& frame    = current_->frames().top();
+        const auto  defining = frame.closure->defining_class();
+        ASSERT(defining != nullptr, "LOAD_SUPER_FIELD: closure has no defining class (compiler invariant)");
         const auto super = defining->superclass();
-        ASSERT(super != nullptr, "LOAD_SUPER_METHOD: method class has no superclass (compiler invariant)");
+        ASSERT(super != nullptr, "LOAD_SUPER_FIELD: method class has no superclass (compiler invariant)");
         const auto hit = super->load_field(*this, name); // 从父类起读穿透(类协议)
         if (!hit) {
             return false; // 载荷已在寄存器(类措辞 miss,契约透传)
         }
-        if (!is_callable_value(*hit)) {
-            return fail(ErrorCode::UndefinedProperty,
-                        "'{}' is not a method (static members are not accessible via super)", name->view());
+        if (const auto member = *hit; is_method(member)) {
+            // 方法命中:建成立即压栈(push 无 GC 点),this 经帧槽根化;方法对象经 super 链根可达(帧经 tracer 根)
+            current_->push(Value::from_obj(new_bound_method(gc_, member, frame.slots[0])));
+        } else {
+            current_->push(member); // 静态槽原值直读(push 无分配无 GC 点),不绑定不缓存(铁则 2)
         }
-        // 建成立即压栈(push 无 GC 点),this 经帧槽根化;方法对象经 super 链根可达(帧经 tracer 根)
-        current_->push(Value::from_obj(new_bound_method(gc_, *hit, frame.slots[0])));
         return true;
     }
 
@@ -1331,43 +1332,44 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_METHOD: {
-                    // name:u16;[class, method] -> [class]:方法注册(静态/实例方法同路,init 亦经
-                    // 此;方法帧槽 0 即 this,语义差异全在编译期)。方法值可为闭包或
-                    // 原生函数(M5 泛化:内建方法经原生承载,绑定形态统一 ObjBoundMethod)。
-                    // 编译器路径(值恒来自上一条 CLOSURE/内建注册),栈形经 ASSERT 钉 --
-                    // 语言写不出违例,不走可 catch 的 raise。完成后弹方法值留 class(class 留栈
-                    // 继续接收成员,镜像 MAKE_STATIC;set_field 的 upsert 走 trivial 分配不触
-                    // GC -- GC 核心不变式,peek 不弹的真实理由是栈效应)。注册副作用:set_field
-                    // 命中 "init" 同步 init_(值形态不特判,init Value 化:原生/非可调用亦放行,
-                    // 实例化时 call_value 分发兜底)+ 闭包戳 defining class(M5 决策 6 --
-                    // LOAD_SUPER_METHOD 从 frame.closure 直读;原生无 defining class 不戳)。
-                    const auto name = read_name(frame);
-                    auto       cls  = try_obj<ObjClass>(current_->peek(1));
+                    // name:u16;[class, closure] -> [class]:**普通方法(实例方法)注册**(2026-09-11
+                    // 改定:静态方法 fun 改经 MAKE_STATIC,本指令仅实例方法;仅收闭包 --方法性
+                    // 标记 = defining class 戳,原生落表走 MAKE_STATIC/类上赋值、读恒原值,
+                    // 原生方法绑定随补记一退役,内建类型方法留 uniform OOP 在对象协议内实现,
+                    // 不走 ObjClass 表)。编译器路径(值恒来自上一条 CLOSURE),栈形经 ASSERT 钉
+                    // --语言写不出违例,不走可 catch 的 raise。完成后弹方法值留 class(class
+                    // 留栈继续接收成员,镜像 MAKE_STATIC;set_field 的 upsert 走 trivial 分配
+                    // 不触 GC -- GC 核心不变式,peek 不弹的真实理由是栈效应)。注册副作用:
+                    // set_field 命中 "init" 同步 init_(值形态不特判,init Value 化)+ 闭包戳
+                    // defining class(M5 决策 6;一职双任 --super 来源 + 方法性标记,读路径
+                    // ObjInstance::load_field / LOAD_SUPER_FIELD 据非空判绑)。
+                    const auto cls    = try_obj<ObjClass>(current_->peek(1));
+                    const auto method = current_->peek(0);
                     ASSERT(cls != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
-                    const Value m_v = current_->peek(0);
-                    ASSERT(is_callable_value(m_v), "MAKE_METHOD: slot-0 is not a callable (malformed stack)");
-                    cls->set_field(name, m_v); // 落本类自身表;"init" 同步 init_(MAKE_CLASS seed 被覆盖)
-                    if (auto closure = try_obj<ObjClosure>(m_v)) {
-                        closure->set_defining_class(cls); // 裸写:MAKE_METHOD 注册时一次性 set,此后只读
-                    }
-                    current_->drop(1); // 弹方法值留 class:[class, method] -> [class]
+                    cls->set_field(read_name(frame), method);
+
+                    const auto closure = try_obj<ObjClosure>(method);
+                    ASSERT(closure != nullptr,
+                           "MAKE_METHOD: slot-0 is not a closure (method registration is closure-only)");
+                    closure->set_defining_class(cls);
+                    current_->drop(1);
                     break;
                 }
                 case OpCode::MAKE_STATIC: {
-                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明 lowering:eager
-                    // 求值初始化器后存)。与 MAKE_METHOD 同形(peek 不弹 + set_field + 弹 value
-                    // 留 class),无 defining class 戳;编译器路径,栈形 ASSERT 钉。
-                    const auto name = read_name(frame);
-                    auto       cls  = try_obj<ObjClass>(current_->peek(1));
+                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法
+                    // 同经此,阶段 3;不戳 defining class ⟹ 静态槽持函数值/lambda/原生读恒
+                    // 原值,方法性判别看戳不看值类型,2026-09-11 改定)。与 MAKE_METHOD 同形
+                    //(peek 不弹 + set_field + 弹 value 留 class);编译器路径,栈形 ASSERT 钉。
+                    const auto cls = try_obj<ObjClass>(current_->peek(1));
                     ASSERT(cls != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
-                    cls->set_field(name, current_->peek(0));
+                    cls->set_field(read_name(frame), current_->peek(0));
                     current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
                     break;
                 }
-                case OpCode::LOAD_SUPER_METHOD:
-                    // name:u16;[] -> [bound]。执行体收口于 run_load_super_method(协议沿链查 +
-                    // 绑定 this,不写 fields 缓存)。
-                    if (!run_load_super_method(read_name(frame))) {
+                case OpCode::LOAD_SUPER_FIELD:
+                    // name:u16;[] -> [v]。执行体收口于 run_load_super_field(协议沿链查 +
+                    // 方法闭包(defining class 戳)绑 this/其余原值直读,不写 fields 缓存)。
+                    if (!run_load_super_field(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u)); // 未捕获 -> 终止 dispatch_loop
                         }

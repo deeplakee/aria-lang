@@ -138,12 +138,13 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
         g.push(obj);
         method = make_closure(gc, "m", 0); // 建时 collect:cls/obj 经守卫存活
         g.push(method);
-        bkey = new_string(gc, "m"); // 建时 collect:在根者存活
+        method->set_defining_class(cls); // 戳方法性(MAKE_METHOD 注册等价形;不戳则 load_field 直读不绑定)
+        bkey = new_string(gc, "m");      // 建时 collect:在根者存活
         g.push(bkey);
         cls->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
-        auto r = obj->load_field(vm, bkey);            // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
-        ASSERT_TRUE(r.has_value());                    //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
-        bound = aria::Object::try_as<ObjBoundMethod>(r->as_obj());
+        auto bound_read = obj->load_field(vm, bkey);   // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
+        ASSERT_TRUE(bound_read.has_value());           //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
+        bound = aria::Object::try_as<ObjBoundMethod>(bound_read->as_obj());
         ASSERT_NE(bound, nullptr);
         fkey = new_string(gc, "x");
         g.push(fkey);
@@ -185,8 +186,9 @@ TEST(ObjInstance, UnrootedInstanceSwept) {
 //      二次整改:错误通道翻 vm.fail 模型,miss 文案由 override 就地烘焙)----
 
 // load_field 分流:fields 命中优先(铁则 3)→ 委托类协议(ObjClass::load_field 沿链读
-// 穿透直读,类协议不绑定不缓存):可调用值绑 this 并回填 fields 缓存(铁则 1,快照语义)、
-// 非可调用静态值直读不缓存、全链 miss 随类措辞 fail(nullopt ⟺ 已 fail,本 override 只透传)。
+// 穿透直读,类协议不绑定不缓存):方法闭包(defining class 戳,2026-09-11 改定方法性看戳
+// 不看值类型)绑 this 并回填 fields 缓存(铁则 1,快照语义)、其余(静态方法 fun/lambda/
+// 原生/静态值)直读不缓存、全链 miss 随类措辞 fail(nullopt ⟺ 已 fail,本 override 只透传)。
 TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -203,40 +205,53 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     auto sv = new_string(gc, "a static value string!!!!!!!!!!");
     guard.push(sv);
     cls->set_field(vkey, Value::from_obj(sv));
-    auto r = inst->load_field(vm, vkey);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv)));
+    auto static_read = inst->load_field(vm, vkey);
+    ASSERT_TRUE(static_read.has_value());
+    EXPECT_TRUE(value_identical(*static_read, Value::from_obj(sv)));
     auto sv2  = new_string(gc, "a static value string rewritten!!");
     auto sv2g = gc.make_guard(sv2);
     cls->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新(不缓存 ⟹ 实例再读见新值)
-    r = inst->load_field(vm, vkey);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_TRUE(value_identical(*r, Value::from_obj(sv2))); // 无陈旧缓存(铁则 1)
+    auto rewritten_read = inst->load_field(vm, vkey);
+    ASSERT_TRUE(rewritten_read.has_value());
+    EXPECT_TRUE(value_identical(*rewritten_read, Value::from_obj(sv2))); // 无陈旧缓存(铁则 1)
 
-    // 类表方法(闭包):绑定 ObjBoundMethod(receiver=inst)并回填 fields 缓存。
+    // 类表方法(闭包 + defining class 戳 = 方法性标记,对象层 MAKE_METHOD 注册等价形):
+    // 绑定 ObjBoundMethod(receiver=inst)并回填 fields 缓存。
     auto mkey = new_string(gc, "m");
     guard.push(mkey);
     auto method = make_closure(gc, "m", 0);
     guard.push(method);
+    method->set_defining_class(cls); // 戳定方法性(不戳则直读不绑,见下方 lambda 钉子)
     cls->set_field(mkey, Value::from_obj(method));
-    r = inst->load_field(vm, mkey);
-    ASSERT_TRUE(r.has_value());
-    auto bound = aria::Object::try_as<ObjBoundMethod>(r->as_obj());
+    auto method_read = inst->load_field(vm, mkey);
+    ASSERT_TRUE(method_read.has_value());
+    auto bound = aria::Object::try_as<ObjBoundMethod>(method_read->as_obj());
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst))); // this=本实例
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
 
     // 二次读同键:fields 命中优先,直取缓存项(不再新建绑定)。
-    auto r2 = inst->load_field(vm, mkey);
-    ASSERT_TRUE(r2.has_value());
-    EXPECT_TRUE(value_identical(*r2, *r)); // 同一缓存项(=== 指针相等)
+    auto cached_read = inst->load_field(vm, mkey);
+    ASSERT_TRUE(cached_read.has_value());
+    EXPECT_TRUE(value_identical(*cached_read, *method_read)); // 同一缓存项(=== 指针相等)
+
+    // 静态槽持未戳闭包(lambda,无 defining class 戳):原值直读不绑定(方法性看戳不看
+    // 值类型,2026-09-11 改定 --函数值静态/静态方法经实例读回原值)。
+    auto hkey = new_string(gc, "h");
+    guard.push(hkey);
+    auto lam = make_closure(gc, "h", 0);
+    guard.push(lam);
+    cls->set_field(hkey, Value::from_obj(lam));
+    auto lambda_read = inst->load_field(vm, hkey);
+    ASSERT_TRUE(lambda_read.has_value());
+    EXPECT_TRUE(value_identical(*lambda_read, Value::from_obj(lam))); // === 原闭包,无 ObjBoundMethod 包装
 
     // 真字段遮蔽同名方法与缓存项(铁则 3):this.m = 9 走 store_field 后读到字段值
     //(整表访问器已删,原 raw upsert 栽种改为协议写路径,语义等价)。
     EXPECT_TRUE(inst->store_field(vm, mkey, Value::from_int(9)));
-    r = inst->load_field(vm, mkey);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->as_int(), 9);
+    auto shadowed_read = inst->load_field(vm, mkey);
+    ASSERT_TRUE(shadowed_read.has_value());
+    EXPECT_EQ(shadowed_read->as_int(), 9);
 
     // 全链 miss:委托类协议,随类措辞 fail(UndefinedProperty,消息含宿主类 debug 渲染;
     // 实例不再自持措辞 --成员表在类链上,文案随宿主)。
@@ -262,11 +277,11 @@ TEST(ObjInstance, StoreFieldDynamicUpsert) {
     auto k = new_string(gc, "x");
     guard.push(k);
     EXPECT_TRUE(inst->store_field(vm, k, Value::from_int(1))); // 即创建
-    auto r = inst->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->as_int(), 1);
+    auto created_read = inst->load_field(vm, k);
+    ASSERT_TRUE(created_read.has_value());
+    EXPECT_EQ(created_read->as_int(), 1);
     EXPECT_TRUE(inst->store_field(vm, k, Value::from_int(2))); // 原槽更新
-    r = inst->load_field(vm, k);
-    ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->as_int(), 2);
+    auto updated_read = inst->load_field(vm, k);
+    ASSERT_TRUE(updated_read.has_value());
+    EXPECT_EQ(updated_read->as_int(), 2);
 }

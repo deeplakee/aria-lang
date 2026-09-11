@@ -28,20 +28,23 @@ namespace aria {
         //    自持实例措辞、不重复烘焙(成员表在类链上,miss 文案随宿主)。查找纯查询无分配;
         //    fail 装箱是分配点 --本实例经调用方根化(VM:LOAD_FIELD peek 在栈 / LOAD_THIS_FIELD
         //    帧槽 0 在栈)。
-        const auto r = class_->load_field(vm, name);
-        if (!r) {
+        const auto hit = class_->load_field(vm, name);
+        if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
         }
-        if (!is_callable_value(*r)) {
-            return *r; // 非可调用静态值:直读不缓存(铁则 1 --静态槽可变,值缓存进实例会读陈旧)
+        // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,
+        //    2026-09-11 改定:方法性 = MAKE_METHOD 注册时戳,判别不再按值类型,经
+        //    is_method(Value) 一步判)现场绑定(this=本实例)并回填 fields 缓存(铁则 1:
+        //    只缓存绑定 --需要分配的--方法;快照语义同闭包,类上改写后新解析见新值);
+        //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。GC 走查:new_bound_method
+        //    是唯一分配点 --本实例经调用方根化,方法对象本体经本实例->class_ 链类表可达
+        //    (本地 member 仅是值拷贝),name 经调用方(常量池)可达;绑定建成后回填 upsert
+        //    走 trivial 分配不触 GC(核心不变式),无守卫必要。
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member; // 非方法槽值:直读不缓存(铁则 1 --静态槽可变,值缓存进实例会读陈旧)
         }
-
-        // 3) 可调用方法命中(闭包或原生):现场绑定(this=本实例)并回填 fields 缓存
-        //    (铁则 1:只缓存绑定 --需要分配的--方法;快照语义同闭包,类上改写后新解析见新值)。
-        //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化,方法值经本实例
-        //    ->class_ 链类表可达(本地 r 仅是引用),name 经调用方(常量池)可达;绑定建成后
-        //    回填 upsert 走 trivial 分配不触 GC(GC 核心不变式),无守卫必要。
-        const auto bound = new_bound_method(vm.gc(), *r, Value::from_obj(this));
+        const auto bound = new_bound_method(vm.gc(), member, Value::from_obj(this));
         const auto entry = fields_.upsert(Value::from_obj(name));
         entry->value     = Value::from_obj(bound);
         return Value::from_obj(bound);

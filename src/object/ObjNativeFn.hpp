@@ -27,7 +27,8 @@ namespace aria {
     //       slots[1..argc] = 实参 a1..aN(a1 = slots[1], aN = slots[argc]);
     //       argc = slots.size() - 1。
     //     原生函数天然变参(不存 arity 字段),元数自查 args.size();固定元数内建在体内自查即可。
-    //     方法调用形态(M5 泛化,经 ObjBoundMethod 绑定,uniform「可调用一律绑定」):调用区
+    //     方法调用形态(M5 泛化,经 ObjBoundMethod 绑定;类表读路径 2026-09-11 起仅对
+    //     defining class 戳定的方法闭包绑 this,原生绑定形态由对象层直接构造承载):调用区
     //     [bound, a1..aN] 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生收到的
     //     slots[0] = this,同时仍是返回槽;实参槽位与自由调用一致(实参不动槽、无整形)。
     //     类路径/静态访问(`Foo.m`)取出裸原生值不绑定,slots[0] = 原生自身,与自由调用无异。

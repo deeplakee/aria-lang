@@ -937,7 +937,7 @@ namespace aria {
                 elements.push_back(pattern());
             } while (match(TokenType::Comma));
             // rest 之后必须紧跟 ']'，否则报 InvalidPattern。
-            if (rest.has_value() && !check(TokenType::RightBracket)) {
+            if (rest && !check(TokenType::RightBracket)) {
                 error(ErrorCode::InvalidPattern, "rest 模式 '...' 必须位于列表末尾");
             }
         }

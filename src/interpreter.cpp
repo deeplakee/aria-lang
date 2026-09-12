@@ -74,7 +74,7 @@ namespace aria {
             io::println("{}", cli.help());
             return 1;
         }
-        const auto& args = parsed.value();
+        const auto& args = *parsed;
         if (args.has("help")) {
             io::println("{}", cli.help());
             return 0;

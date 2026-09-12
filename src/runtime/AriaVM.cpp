@@ -252,7 +252,7 @@ namespace aria {
                 for (Value* p = m->stack_base(); p < m->stack_top(); ++p) {
                     g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
                 }
-                if (const auto& pending = m->pending_error(); pending.has_value()) {
+                if (const auto& pending = m->pending_error()) {
                     g.mark_value(*pending);
                 }
                 for (const auto& f: m->frames().span()) {
@@ -332,11 +332,11 @@ namespace aria {
         // 根化;source 须存活到本函数返回(编译期 Error 的 SourceLoc 指向它)。编译失败原样
         // 透传首错 Error,不进入执行。
         auto compiled = Compiler{gc_}.compile(source, module);
-        if (!compiled.has_value()) {
-            return std::unexpected(compiled.error());
+        if (!compiled) {
+            return std::unexpected(std::move(compiled).error());
         }
         // 内置函数不经此注册 -- VM 级 builtins_ 表由 ctor 一次性填充(见 Builtins.hpp)。
-        return run(compiled.value());
+        return run(*compiled);
     }
 
     InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule* module) {
@@ -346,12 +346,12 @@ namespace aria {
         // IMPORT 站点异常通道传播的被导入模块编译期错误（可被 try/catch 捕获，「可 catch 的错误」
         // 不构成 CompileError）。失败时渲染 Error 消息到 stderr，只回类别。
         auto compiled = Compiler{gc_}.compile(source, module);
-        if (!compiled.has_value()) {
+        if (!compiled) {
             io::println(stderr, "{}", compiled.error().message());
             return InterpretResult::CompileError;
         }
-        auto result = run(compiled.value());
-        if (!result.has_value()) {
+        auto result = run(*compiled);
+        if (!result) {
             io::println(stderr, "{}", result.error().message());
             return InterpretResult::RuntimeError;
         }
@@ -372,11 +372,11 @@ namespace aria {
     InterpretResult AriaVM::interpret_from_path(const StringView path) {
         // 读盘 + BOM 剥除 + CRLF 归一化 + UTF-8 校验。失败渲染路径并返 LoadError（无 SourceFile，无 SourceLoc）。
         auto loaded = SourceFile::from_path(path);
-        if (!loaded.has_value()) {
+        if (!loaded) {
             io::println(stderr, "无法加载源文件 '{}'", path);
             return InterpretResult::LoadError;
         }
-        SourceFile source = std::move(loaded.value());
+        SourceFile source = std::move(*loaded);
 
         // 入口模块身份（dirname + basename）：name = basename 去 .aria、dir = dirname(absolute(path))，
         // 拆分收口于 fs::module_name_and_dir。name 为空表路径非合法文件模块（目录 / 空 / 无文件名），

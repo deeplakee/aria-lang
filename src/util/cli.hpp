@@ -48,7 +48,7 @@ namespace aria::util {
             [[nodiscard]]
             bool has(const StringView name) const {
                 const auto idx = cli_->find_long(name);
-                if (!idx.has_value()) {
+                if (!idx) {
                     return false; // 未注册名
                 }
                 return slots_[*idx].state != Slot::Empty;
@@ -59,7 +59,7 @@ namespace aria::util {
             [[nodiscard]]
             Opt<String> get(const StringView name) const {
                 const auto idx = cli_->find_long(name);
-                if (!idx.has_value() || cli_->defs_[*idx].kind_ == Slot::Flag) {
+                if (!idx || cli_->defs_[*idx].kind_ == Slot::Flag) {
                     return std::nullopt; // 未注册，或命中的是 flag（无值）
                 }
                 // option / positional：已提供（含显式空串）才返回值
@@ -171,13 +171,13 @@ namespace aria::util {
 
                 if (arg.starts_with("--")) {
                     auto s = parse_long(result, arg, args, i);
-                    if (!s.has_value())
-                        return std::unexpected(s.error());
+                    if (!s)
+                        return std::unexpected(std::move(s).error());
                     step = *s;
                 } else if (arg.starts_with('-') && arg.size() > 1) {
                     auto s = parse_short(result, arg, args, i);
-                    if (!s.has_value())
-                        return std::unexpected(s.error());
+                    if (!s)
+                        return std::unexpected(std::move(s).error());
                     step = *s;
                 } else {
                     // 单独 "-"（size<=1）或普通实参 -> 位置参数
@@ -190,7 +190,7 @@ namespace aria::util {
             }
 
             // 缺失的必填位置参数 -> 错误（用 state 而非 value 判定，理由见 check_required）
-            if (const auto err = check_required(result); err.has_value()) {
+            if (const auto err = check_required(result)) {
                 return std::unexpected(*err);
             }
             return result;
@@ -352,7 +352,7 @@ namespace aria::util {
             const auto opt_name = opt.substr(0, eq_pos);
 
             const auto found = find_long_without_positional(opt_name);
-            if (!found.has_value()) {
+            if (!found) {
                 return std::unexpected(std::format("unknown option: --{}", opt_name));
             }
             const usize idx = *found;
@@ -383,7 +383,7 @@ namespace aria::util {
                 const char c = arg[j];
 
                 const auto found = find_short(c);
-                if (!found.has_value()) {
+                if (!found) {
                     return std::unexpected(std::format("unknown option: -{}", c));
                 }
                 const usize idx = *found;

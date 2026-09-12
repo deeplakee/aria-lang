@@ -201,7 +201,7 @@ namespace aria::fs {
         if (!exe) {
             return std::unexpected(exe.error());
         }
-        return stdfs::path{exe.value()}.parent_path().string();
+        return stdfs::path{*exe}.parent_path().string();
     }
 
     // 返回绝对路径（仅按当前工作目录补全，不解析符号链接与 "."/".."）
@@ -234,7 +234,7 @@ namespace aria::fs {
     [[nodiscard]]
     inline Pair<String, String> module_name_and_dir(const StringView path) {
         stdfs::path abs_p{String{path}};
-        if (const auto abs = absolute(path); abs.has_value()) {
+        if (const auto abs = absolute(path)) {
             abs_p = stdfs::path{*abs};
         }
         String name = abs_p.filename().stem().string(); // 剥最后一个扩展名（.aria -> 模块名）

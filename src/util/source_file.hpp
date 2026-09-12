@@ -134,7 +134,7 @@ namespace aria::src {
             if (!normalized) {
                 return std::unexpected(fs::FsErrCode::InvalidEncoding);
             }
-            return SourceFile{std::move(name_str), std::move(path_str), std::move(normalized.value())};
+            return SourceFile{std::move(name_str), std::move(path_str), std::move(*normalized)};
         }
 
     private:

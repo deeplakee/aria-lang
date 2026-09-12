@@ -13,19 +13,20 @@ namespace aria {
     Result<ObjFunction*, Error> Compiler::compile(SourceFile& source, ObjModule* module, const StringView entry_name) {
         // 1) 词法：SourceFile -> token 流（或 List<Error>，取首错）。
         auto lex = lexer_.tokenize(source);
-        if (!lex.has_value()) {
-            return std::unexpected(lex.error()[0]);
+        if (!lex) {
+            return std::unexpected(std::move(lex.error()[0]));
         }
 
         // 2) 语法：token 流 -> ProgramNode（或 List<Error>，取首错）。
-        auto parse = parser_.parse(std::move(lex.value()));
-        if (!parse.has_value()) {
-            return std::unexpected(parse.error()[0]);
+        auto parse = parser_.parse(std::move(*lex));
+        if (!parse) {
+            return std::unexpected(std::move(parse.error()[0]));
         }
 
         // 3) 代码生成：ProgramNode -> 入口 ObjFunction（或单 Error）。
+        auto    program = std::move(*parse);
         CodeGen codegen{gc_};
-        return codegen.compile(*parse.value(), module, entry_name);
+        return codegen.compile(*program, module, entry_name);
     }
 
 } // namespace aria

@@ -38,4 +38,9 @@ namespace aria {
         return gc.new_object<ObjException>(code, msg);
     }
 
+    ObjException* new_exception(GC& gc, const Error& error) {
+        // Error 公开构造面产物皆已烘焙完整消息,逐件转发原样装箱(契约见头文件声明处)。
+        return new_exception(gc, error.code(), error.message());
+    }
+
 } // namespace aria

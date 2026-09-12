@@ -564,8 +564,7 @@ namespace aria {
         //    module 此段仅由 guard 根化(尚未入表);source 须存活到 compile() 返回(Error 烘
         //    位置串需它)。entry 经 module->entry_ 根可达。
         if (auto compiled = Compiler{gc_}.compile(source, module, kModuleEntryName); !compiled) {
-            auto err = std::move(compiled.error());
-            current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
+            current_->raise(Value::from_obj(new_exception(gc_, compiled.error())));
             return nullptr;
         }
 

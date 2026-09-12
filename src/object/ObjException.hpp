@@ -85,6 +85,12 @@ namespace aria {
     [[nodiscard]]
     ObjException* new_exception(GC& gc, ErrorCode code, StringView message);
 
+    // Error 便捷重载:收**已烘焙完整消息**的 Error(Error 公开构造面 from_detail/from_baked
+    // 产物皆然),code + message 逐件转发上一形态,原样装箱不经 make_message 重烘(否则双重
+    // 前缀);与 to_error() 的 from_baked 反向桥对称(Error -> ObjException 方向)。
+    [[nodiscard]]
+    ObjException* new_exception(GC& gc, const Error& error);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_EXCEPTION_HPP

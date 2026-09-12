@@ -108,7 +108,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 类型（src/type.hpp）
 
-**不要直接用 `std::string`/`int`/`size_t` 等**，用别名：`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`（= `std::expected`）/`Opt<T>`。错误处理倾向 `Result` 返回而非抛异常。
+**不要直接用 `std::string`/`int`/`size_t` 等**，用别名：`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`（= `std::expected`）/`Opt<T>`。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
 
 ## 代码组织
 

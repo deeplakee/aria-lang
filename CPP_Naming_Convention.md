@@ -218,6 +218,40 @@ void op_mod(AriaVM& vm, Value rhs);
 
 ------
 
+# Optional/Result 用法
+
+> **`Opt<T>`/`Result<T,E>`（即 `std::optional`/`std::expected`）的判断、取值、移动按语境各定一式，全库一式。**
+> 核心依据：`.value()` 是抛异常的访问器（`bad_optional_access`/`bad_expected_access`），解释器路径无异常语义；`*`/`->` 天然表达「此处已检查过」。
+
+| 语境 | 规则 | 例 |
+| --- | --- | --- |
+| 布尔判断（`if`/`while`/三元条件/`&&`/`\|\|`/`!`） | 隐式转换，不写 `has_value()` | `if (!loaded)`、`if (rest && !check(x))` |
+| 取值（检查后） | `*res` 解值 / `res->member` 取成员，禁 `.value()` | `run(*compiled)`、`out->as_int()` |
+| 移出载荷 | 终局消费（返回/透传/装箱后不再用）**且**类型持堆资源才 move：`std::move(*res)` / `std::move(res).error()`；`Value`/标量等 trivially copyable 不 move | `SourceFile source = std::move(*loaded);` |
+| bool 作为值产出（`return bool`、`ASSERT`/`EXPECT` 宏实参、存 bool 变量） | `has_value()` 显式 | `return pending_error_.has_value();`、`ASSERT_TRUE(r.has_value())` |
+
+配套细则：
+
+- 嵌套解引用过噪（`**parse` 一类）时先落局部变量再解：`auto program = std::move(*parse);`，随后 `*program`。
+- `.error()` 透传给 `std::unexpected` / 装箱属终局消费，move 出：`return std::unexpected(std::move(res).error());`；仅读字段（`.message()` 等）不 move。
+- `std::error_code::value()` 等 std 类型自有方法与本规则无关，不在约束范围。
+
+```cpp
+// 不取
+if (!parsed.has_value()) { ... }        // 条件语境写 has_value()
+run(compiled.value());                  // .value() 抛异常且不表达「已检查」
+auto source = std::move(loaded.value()); // move 与取值分家用 .value()
+return std::unexpected(compiled.error()); // 终局透传漏 move(Error 持 String)
+
+// 取
+if (!parsed) { ... }
+run(*compiled);
+auto source = std::move(*loaded);
+return std::unexpected(std::move(compiled).error());
+```
+
+------
+
 # Naming Priorities
 
 当规则冲突时：

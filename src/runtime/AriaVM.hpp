@@ -89,9 +89,10 @@ namespace aria {
         AriaVM& operator=(AriaVM&&) = delete;
 
         // 把 fn 当程序入口在主上下文执行:入口纪律断言 + 源根入口槽 [0] 播种 + 前后 reset 清场
-        // + 委托私有 run_function(执行本体,见其注释)。重复调用先 reset 主上下文(HALT 收场的
-        // 上一轮不弹帧,不清场会把新帧叠在陈旧帧上);入口断言 current_ == &main_ctx_ 是切换
-        // 纪律不变式(run() 是唯一驱动入口,vm-design.md §4.9)。
+        // + 入口 fn 包空闭包(顶层也闭包,统一「帧 = 闭包」模型)+ 委托私有 run_closure(执行
+        // 本体,见其注释)。重复调用先 reset 主上下文(HALT 收场的上一轮不弹帧,不清场会把新帧
+        // 叠在陈旧帧上);入口断言 current_ == &main_ctx_ 是切换纪律不变式(run() 是唯一驱动
+        // 入口,vm-design.md §4.9)。
         //
         // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),不做逐指令越界设防。
         //
@@ -229,13 +230,13 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包)后压 callee,经 call_closure
-        // 进帧(进帧单点收束) -> dispatch_loop 主循环,作用于 *current_。run() 的被委托方,
-        // 亦是未来重入的接缝
-        // (原生回调调 aria 函数 / 嵌入宿主调函数,vm-design.md §4.7):故不播源根、不 reset
-        // (重入调用者的栈不可冲掉)、不断言主上下文;落地时升公开,并需 dispatch_loop 按基线
-        // 帧深退出(现仅 frames().empty() 返回,中途重入会穿掉调用者帧)。
-        Result<Value, Error> run_function(ObjFunction* fn);
+        // 执行本体(无入口装饰):压 callee 后经 call_closure 进帧(进帧单点收束) -> dispatch_loop
+        // 主循环,作用于 *current_。入参即闭包:callable 收敛为闭包(M4),重入调用方手里持有的
+        // 就是闭包,裸 ObjFunction 的现场包装归入口仪式 run()。run() 的被委托方,亦是未来重入
+        // 的接缝(原生回调调 aria 函数 / 嵌入宿主调函数,vm-design.md §4.7):故不播源根、
+        // 不 reset(重入调用者的栈不可冲掉)、不断言主上下文;落地时升公开,并需 dispatch_loop
+        // 按基线帧深退出(现仅 frames().empty() 返回,中途重入会穿掉调用者帧)。
+        Result<Value, Error> run_closure(ObjClosure* closure);
 
         // 主循环:驱动 *current_ 直到顶层返回/错误/显式停止。栈/帧/错误寄存器一律经 current_
         // 访问,与 raise 同源(语义统一)。模块体 run-once 经 IMPORT 未命中分支以普通函数调用
@@ -278,7 +279,7 @@ namespace aria {
         // 是否 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
 
-        // 闭包调用的进帧单点(运行期 call_value 分发与入口序章 run_function 共用):校验 arity +
+        // 闭包调用的进帧单点(运行期 call_value 分发与执行本体 run_closure 共用):校验 arity +
         // 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,参数即局部槽 1..argc;arity 等元数据经
         // closure->function() 取)。失败 raise WrongArity / StackOverflow 后返 false(bool
         // 契约见 call_value)。

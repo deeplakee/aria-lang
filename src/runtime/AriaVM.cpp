@@ -155,7 +155,7 @@ namespace aria {
         // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
         // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
         // 烘焙单点 make_message,与 from_detail 同源同串)。消费方:unwind 未捕获出口(拼好
-        // 跟踪)与 run_function 入口进帧失败(一帧未进,无跟踪),均经 Error::from_baked 一次
+        // 跟踪)与 run_closure 入口进帧失败(一帧未进,无跟踪),均经 Error::from_baked 一次
         // 物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value value) {
             if (const auto ex = try_obj<ObjException>(value)) {
@@ -394,10 +394,10 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
-        // 程序入口仪式:入口纪律断言 + 源根入口槽播种 + 前后清场;执行本体委托下方 run_function
-        // (仪式与本体分层)。进主循环前 current_ 必已归位 main_ctx_:run() 是唯一驱动入口,
-        // resume/yield 只换走 current_ 不产生新循环(vm-design.md §4.9),每次进 run() 必从主
-        // 上下文起步。
+        // 程序入口仪式:入口纪律断言 + 源根入口槽播种 + 前后清场 + 入口 fn 包空闭包(顶层也
+        // 闭包,统一「帧 = 闭包」模型),执行本体委托下方 run_closure(仪式与本体分层)。进主
+        // 循环前 current_ 必已归位 main_ctx_:run() 是唯一驱动入口,resume/yield 只换走
+        // current_ 不产生新循环(vm-design.md §4.9),每次进 run() 必从主上下文起步。
         ASSERT(current_ == &main_ctx_, "AriaVM::run: current_ is not main_ctx_ (unbalanced context switch)");
         // GC 已启用:值栈/帧经 vm_roots tracer 标根(见 ctor),IMPORT/DEF_GLOBAL 等已按「栈即根」
         // 前置编写(peek-not-pop)。
@@ -410,28 +410,28 @@ namespace aria {
         // 直接返回),不清场会把新帧叠在陈旧帧上、顶层 RETURN 后驱动陈旧帧的 ip。
         main_ctx_.reset();
 
+        // 包空闭包:fn 在 new_closure 顶 maybe_collect 时须有根(run() 路径经 module->entry_
+        // 模块根/测试 guard),此处 make_guard 兜底。闭包建成传入 run_closure 即压栈(push 无
+        // GC 点,入栈即经值栈 tracer 根化,建栈点与入栈点间无分配,无需跨 push 守卫)。
+        auto       fn_guard = gc_.make_guard(fn);
+        const auto closure  = new_closure(gc_, fn);
         // result 为值拷贝,下方清场不影响返回值;返回值若持对象,由调用方自行根化
         // (Guard / vm 存活),同既有契约。
-        auto result = run_function(fn);
+        auto result = run_closure(closure);
         // 结束再清场:确保 run() 外(后续 compile / 测试显式 collect)GC 不会经 tracer 标到陈旧
-        // 栈值。清场责任归本入口 -- run_function 无自清场(重入接缝不得 reset,见其注释)。
+        // 栈值。清场责任归本入口 -- run_closure 无自清场(重入接缝不得 reset,见其注释)。
         main_ctx_.reset();
         return result;
     }
 
-    Result<Value, Error> AriaVM::run_function(ObjFunction* fn) {
-        // 执行本体(无入口装饰):入口 fn 现场包空闭包(统一「帧 = 闭包」模型)后压 callee,经
-        // call_closure 进帧(进帧单点收束,与运行期调用同路)+ 驱动 dispatch_loop,作用于
-        // *current_(与 dispatch_loop/call_value 族/raise 的 current_ 纪律同源)。run() 的
-        // 被委托方,未来重入的接缝(vm-design.md §4.7):不播源根、不 reset(冲掉重入调用者的
-        // 栈)、不断言主上下文;落地时升公开。
+    Result<Value, Error> AriaVM::run_closure(ObjClosure* closure) {
+        // 执行本体(无入口装饰):压 callee 后经 call_closure 进帧(进帧单点收束,与运行期调用
+        // 同路)+ 驱动 dispatch_loop,作用于 *current_(与 dispatch_loop/call_value 族/raise 的
+        // current_ 纪律同源)。run() 的被委托方,未来重入的接缝(vm-design.md §4.7):不播源根、
+        // 不 reset(冲掉重入调用者的栈)、不断言主上下文;落地时升公开。
         //
-        // 根安全:fn 在 new_closure 顶 maybe_collect 时须有根(run() 路径经 module->entry_ 模块根
-        // /测试 guard,重入路径属调用方契约),此处 make_guard 兜底 -- 该 GC 点是 fn 唯一无根窗口
-        // (守卫真实承重)。闭包建成立即入栈:push 无 GC 点,入栈即经值栈 tracer 根化,无需跨 push
-        // 守卫;入帧后另有帧(tracer)双根。
-        auto       fn_guard = gc_.make_guard(fn);
-        const auto closure  = new_closure(gc_, fn);
+        // 根安全:入参 closure 须已根化 -- run() 路径建成即传入本函数压栈(push 无 GC 点,入栈
+        // 即经值栈 tracer 根化),入帧后另有帧(tracer)双根;重入路径属调用方契约。
         // 顶层入口无参数(argc 0):push callee 后经 call_closure 进帧,slots 指向槽 0(callee);
         // arity 0 由编译器合成入口时保证,帧满分支为重入接缝承重。
         current_->push(Value::from_obj(closure)); // callee 值躺在主帧槽 0(RETURN 时弹),入栈即根

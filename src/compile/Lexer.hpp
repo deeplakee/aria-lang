@@ -15,10 +15,12 @@ namespace aria {
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。
     //
-    // 生命周期：默认构造为空态；通过 tokenize(SourceFile&) 传入源文件、
-    // 初始化成员、扫描、扫完清空成员返回。Lexer 可复用（多次 tokenize 不同文件），
-    // 故以指针持有 SourceFile（nullptr 表空态，引用无法「清空」）；参数仍按
-    // 借用约定传引用（见 CPP_Naming_Convention.md Parameter Passing）。
+    // 生命周期：
+    //   - 默认构造为空态；通过 tokenize(SourceFile&) 传入源文件、初始化成员、扫描、扫完清空
+    //     成员返回。
+    //   - Lexer 可复用（多次 tokenize 不同文件），故以指针持有 SourceFile（nullptr 表空态，
+    //     引用无法「清空」）。
+    //   - 参数仍按借用约定传引用（见 CPP_Naming_Convention.md Parameter Passing）。
     //
     // 返回 Result<List<Token>, List<Error>>：
     //   - 所有词法错误（串未闭合等）一律作可恢复处理--
@@ -49,14 +51,22 @@ namespace aria {
         bool        is_fatal_; // 错误达上限，主循环应终止
 
         // --- 主循环与分支 ---
-        void run();                      // 主扫描循环
-        void skip_trivia();              // 跳过空白 + // / # 注释
-        void scan_number();              // 数字：分流 radix / decimal-or-float
-        void scan_radix_int();           // 0b/0o/0x 整数（入口 pos_ 即起点）
-        void scan_decimal_or_float();    // decimal / int 指数 / float（入口 pos_ 即起点）
-        void scan_string();              // plainString（含转义解析）
-        void scan_escape(String& value); // 串内转义解析（\" \' \\ n t r 0 \u{hex+}）
-        void scan_identifier();          // identifier / keyword / _
+        // 主扫描循环
+        void run();
+        // 跳过空白 + // / # 注释
+        void skip_trivia();
+        // 数字：分流 radix / decimal-or-float
+        void scan_number();
+        // 0b/0o/0x 整数（入口 pos_ 即起点）
+        void scan_radix_int();
+        // decimal / int 指数 / float（入口 pos_ 即起点）
+        void scan_decimal_or_float();
+        // plainString（含转义解析）
+        void scan_string();
+        // 串内转义解析（\" \' \\ n t r 0 \u{hex+}）
+        void scan_escape(String& value);
+        // identifier / keyword / _
+        void scan_identifier();
         void scan_operator_or_punct(utf8::codepoint cp);
 
 

@@ -21,15 +21,18 @@
 //   游标 current_fn_ctx_ 寄存于 ModuleCtx，CodeGen 经 cur_fn_ctx() 读取、compile_function 经
 //   mod_ctx_->current_fn_ctx_ 摆动；「当前 CodeUnit」不单独存，由 cur_cu() = &cur_fn_ctx()->fn_->unit()
 //   派生，随游标自动切换。
+//
 //   CodeGen 持 UPtr<ModuleCtx> mod_ctx_（ModuleCtx 一次性、不可移动；compile 入口 make_unique、遍历后
 //   reset() 即释放，~CodeGen 自动释放作安全网）。上下文与编译期错误的所有权约定：
 //   current_fn_ctx_ 兼拥有入口 fn 上下文、compile_function 子上下文成功路径手动 delete、出错路径
 //   交 ~ModuleCtx 沿 enclosing_ 链释放，详见 ModuleCtx.hpp。
+//
 //   **错误通道**：与 Parser 同--编译期深层
 //   fail() 抛 `AriaCompileException`（持 Error），自动 unwind 跨 visit 递归栈，compile() 顶层 catch 翻译为
 //   `Result<ObjFunction*, Error>`（成功返入口函数，失败返 unexpected(e.error())）。无需 error_ 成员 / ok()
-//   短路 / 各 visit 的 if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。局部 / 作用域 /
-//   循环 break-continue 的「登记」在 FunctionCtx、「发射」经 cur_cu() 下沉 CodeUnit（分工见
+//   短路 / 各 visit 的 if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。
+//
+//   局部 / 作用域 / 循环 break-continue 的「登记」在 FunctionCtx、「发射」经 cur_cu() 下沉 CodeUnit（分工见
 //   FunctionCtx.hpp 头注）。越界（超 64KB）由 CodeUnit 方法返 bool，CodeGen 翻译为 Error。
 //
 // 栈契约：每个 visitXxxNode 自知契约--ExprNode 子类留一值，StmtNode 子类留零值。
@@ -39,8 +42,9 @@
 //   module.entry_ -> 常量池 -> 嵌套 ObjFunction 常量池 -> ... 整链根化建设中 ObjFunction /
 //   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
 //   入池即经 module 根链可达。new_object -> add_constant 间走 trivial 分配(constants.push ->
-//   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。真 GC 触发点
-//   (new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
+//   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。
+//
+//   真 GC 触发点(new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
 //   调用方守卫入参(「每方只守自己创建的」),故调用方须自行 make_guard 根化传入的 module/name 入参；
 //   compile() 守 module 入临时根、compile_function 内部 intern name 成 ObjString* 并 make_guard
 //   跨 new_function + 体编译(compile_function 创建 name_str 即自守,visit 层只传 StringView 无需守卫)。
@@ -69,10 +73,11 @@ namespace aria {
         // lvalue 模式（赋值/复合赋值 lowering，见 compound-assignment-lowering.md）：访问节点据此分支。
         // flag 由 emit_lvalue 设置、由目标节点在入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load）--
         // 故子节点经 emit_expr 时 flag 已清空、不泄漏。emit_expr 入口 ASSERT lvalue_mode_ == Load，开发期
-        // 捕获漏 take 的 bug（非预防性赋值）。构造与 compile() 入口亦置 Load（防上次 throw 残留跨复用）。
-        //   Load   -- 默认 rvalue：visitIdentifierNode resolve + check_init[Local] + LOAD
-        //   Store  -- 赋值目标：resolve + STORE + mark_init[Local]（peek-store 留值）
-        //   Locate -- 预留位（当前无用，落入 Load 分支）。
+        // 捕获漏 take 的 bug（非预防性赋值）。构造与 compile() 入口亦置 Load（防上次 throw 残留跨复用）：
+        //
+        //   - Load -- 默认 rvalue：visitIdentifierNode resolve + check_init[Local] + LOAD
+        //   - Store -- 赋值目标：resolve + STORE + mark_init[Local]（peek-store 留值）
+        //   - Locate -- 预留位（当前无用，落入 Load 分支）。
         enum class LvalueMode : u8 { Load, Store, Locate };
 
     public:
@@ -195,9 +200,10 @@ namespace aria {
         // 自栈顶（最内）向外遍历 depth > target_depth 的局部尾段（活局部按 depth 非递减序排列，遇更浅者
         // 即止；slot 0 哑元 depth=0 恒在界外），整区一条 POP_N（被捕获局部一并计数），弹区含被捕获局部
         // 才追加一条 CLOSE_UPVALUE（批量关闭所有槽址 >= 新栈顶的开 upvalue，值迁入各自 upvalue 自持；
-        // 弹区槽已在新栈顶之上，不 push 不覆写即安全；对齐 Lua OP_CLOSE）。只发射不改登记：退出作用域
-        // 路径由随后的 FunctionCtx::end_scope 移除登记；break/continue 的登记本就须保留（跳转后语句仍在
-        // 作用域内）。
+        // 弹区槽已在新栈顶之上，不 push 不覆写即安全；对齐 Lua OP_CLOSE）。
+        //
+        // 只发射不改登记：退出作用域路径由随后的 FunctionCtx::end_scope 移除登记；break/continue 的
+        // 登记本就须保留（跳转后语句仍在作用域内）。
         void emit_pop_locals_to(u32 target_depth, u32 line) const;
 
         // --- 名字解析 ---
@@ -218,10 +224,12 @@ namespace aria {
         // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查 ctx->enclosing_
         // 的局部，命中 -> 置该局部 is_captured（槽将被捕获，作用域退出须 CLOSE_UPVALUE）+ ctx 登记
         // {is_local=true, slot}；未命中 -> 递归把 ctx->enclosing_ 当作待捕获函数解析（穿透捕获），
-        // 命中 -> ctx 登记 {is_local=false, 外层 upvalue 索引}。返回 ctx 视角的 upvalue 索引；无外层
-        // 函数可捕获（到 entry 之上）返 nullopt（调用方落全局）。登记经 add_upvalue_or_fail（容量
-        // 越界 fail TooManyUpvalues，nullopt 不外泄免被误读为「落全局」）。ctx == nullptr（递归到
-        // entry 之上）即不可捕获。
+        // 命中 -> ctx 登记 {is_local=false, 外层 upvalue 索引}。
+        //
+        // 返回 ctx 视角的 upvalue 索引；无外层函数可捕获（到 entry 之上）返 nullopt（调用方落全局）。
+        //
+        // 登记经 add_upvalue_or_fail（容量越界 fail TooManyUpvalues，nullopt 不外泄免被误读为「落全局」）。
+        // ctx == nullptr（递归到 entry 之上）即不可捕获。
         [[nodiscard]]
         Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, SourceLoc loc);
 
@@ -308,8 +316,10 @@ namespace aria {
         // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（见类首 GC 安全注）。
         // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
         // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
+        //
         // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（CLOSURE fn_idx:
         // 常量池取 fn 包 ObjClosure,按体编译期间登记的捕获描述表建 upvalue）。
+        //
         // decl_loc 为声明节点位置（visit 层经 node.loc() 传入），供 validate_params 报参数错;
         // 体发射行号仍取 body.loc_line()。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc);
@@ -323,7 +333,8 @@ namespace aria {
         }
 
         [[noreturn]]
-        void not_impl(ASTNode& node, StringView feature) const; // throw AriaCompileException(NotImplemented, loc, ...)
+        // throw AriaCompileException(NotImplemented, loc, ...)
+        void not_impl(ASTNode& node, StringView feature) const;
 
         // 同上，loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。
         [[noreturn]]

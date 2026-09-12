@@ -3,6 +3,7 @@
 
 // 单函数编译上下文：持当前函数的局部栈 / 作用域深度 / 循环上下文栈 / 捕获描述表 / 指向外层上下文。
 // 进 fun/lambda 压一层、退出弹一层（CodeGen 经 ModuleCtx::current_fn_ctx_ 持当前上下文指针）。
+//
 // 本类只负责「登记」（局部 / 作用域 / 循环 break-continue 的栈管理 / upvalue 捕获描述，并返回
 // 弹出数等数据）；「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
 //
@@ -36,12 +37,16 @@ namespace aria {
         bool   is_initialized = false;
     };
 
-    // 循环上下文（break / continue 回填）。简单聚合。
+    // 循环上下文（break / continue 回填）。简单聚合：
+    //   - loop_scope_depth：循环体所在 scope 深度（break/continue 弹局部至此）。
+    //   - continue_back_target：后向 continue 目标（while / for-in / for 无 incr）。
+    //   - continue_fwd_patches：前向 continue 回填（for 有 incr -> L_incr）。
+    //   - break_fwd_patches：待回填的 JUMP 占位偏移。
     struct LoopCtx {
-        u32         loop_scope_depth     = 0;            // 循环体所在 scope 深度（break/continue 弹局部至此）
-        Opt<u32>    continue_back_target = std::nullopt; // 后向 continue 目标（while / for-in / for 无 incr）
-        List<usize> continue_fwd_patches;                // 前向 continue 回填（for 有 incr -> L_incr）
-        List<usize> break_fwd_patches;                   // 待回填的 JUMP 占位偏移
+        u32         loop_scope_depth     = 0;
+        Opt<u32>    continue_back_target = std::nullopt;
+        List<usize> continue_fwd_patches;
+        List<usize> break_fwd_patches;
     };
 
     // 工厂：构造仅指定 loop_scope_depth 的新循环上下文（continue_back_target=nullopt、
@@ -92,9 +97,12 @@ namespace aria {
 
         // --- upvalue 登记（M4 闭包）---
         // 登记一条捕获描述，返回 upvalue 索引：同 (is_local,index) 已登记即复用其下标（同一局部
-        // 被多处引用只占一个 upvalue）；未登记则追加。upvalue 索引为 u8（LOAD/STORE_UPVALUE 操作
-        // 数域，可寻址 0..kMaxUpvalues），追加将越出索引域（size > kMaxUpvalues，即 256 条已满、
-        // 新条目 idx 将为 256）返 nullopt，由 CodeGen fail(TooManyUpvalues)。纯登记，不发射。
+        // 被多处引用只占一个 upvalue）；未登记则追加。
+        //
+        // upvalue 索引为 u8（LOAD/STORE_UPVALUE 操作数域，可寻址 0..kMaxUpvalues），追加将越出
+        // 索引域（size > kMaxUpvalues，即 256 条已满、新条目 idx 将为 256）返 nullopt，由 CodeGen
+        // fail(TooManyUpvalues)。纯登记，不发射。
+        //
         // 表本体 upvalues_ 见下方成员区。
         Opt<u8> add_upvalue(UpvalueDesc desc);
 

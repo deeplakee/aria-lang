@@ -21,10 +21,12 @@ namespace aria {
 
         // 容量上限(值即对应操作数/索引位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
         // 越界判定统一用 > 比较):
-        //   kMaxArity     -- 函数形参上限(ObjFunction arity 为 u8);
-        //   kMaxArguments -- 单次调用实参上限(CALL 操作数 u8);
-        //   kMaxConstants -- 常量池最大索引(u16 索引,即最多 65536 项);
-        //   kMaxLocals    -- 单函数局部最大槽号(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
+        //
+        //   - kMaxArity -- 函数形参上限(ObjFunction arity 为 u8);
+        //   - kMaxArguments -- 单次调用实参上限(CALL 操作数 u8);
+        //   - kMaxConstants -- 常量池最大索引(u16 索引,即最多 65536 项);
+        //   - kMaxLocals -- 单函数局部最大槽号(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
+        //
         // 语义名集中定义,使各检查点与报错文案共享同一来源,无散落魔数。单函数捕获 upvalue 上限
         // kMaxUpvalues 同属此纪律,因登记侧 FunctionCtx::add_upvalue 共用而定义于 FunctionCtx.hpp。
         constexpr u32 kMaxArity     = kU8OperandMax;
@@ -34,8 +36,9 @@ namespace aria {
 
         // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
         // 超出 -> NumberOutOfRange):
-        //   kIntMin -- -(2^47);
-        //   kIntMax -- 2^47 - 1.
+        //
+        //   - kIntMin -- -(2^47);
+        //   - kIntMax -- 2^47 - 1.
         constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
         constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
     } // namespace
@@ -308,8 +311,9 @@ namespace aria {
     void CodeGen::bind_pattern(PatternNode& node) {
         // 契约与值填槽模型见 CodeGen.hpp bind_pattern 注。
         if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
-            const auto slot = declare_local_or_fail(id->name, node.loc()); // 纯登记，slot = 值位置；值填槽不发指令
-            cur_fn_ctx()->mark_initialized(slot);                          // 值已在槽
+            // 纯登记，slot = 值位置；值填槽不发指令
+            const auto slot = declare_local_or_fail(id->name, node.loc());
+            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
             return;
         }
         const u32 line = node.loc_line();
@@ -484,7 +488,8 @@ namespace aria {
         emit_stmt(*node.then_branch);
         if (node.else_branch != nullptr) {
             const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
-            patch_jump_or_fail(jf, node.loc());                        // -> else
+            // -> else
+            patch_jump_or_fail(jf, node.loc());
             emit_stmt(*node.else_branch);
             patch_jump_or_fail(jend, node.loc()); // -> end
         } else {
@@ -573,14 +578,17 @@ namespace aria {
 
         // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无
         // STORE_LOCAL/POP）。
-        emit_expr(*node.iterable);                   // [iterable]（receiver）
+        // [iterable]（receiver）
+        emit_expr(*node.iterable);
         emit_method_call0("iter", line, node.loc()); // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = declare_local_or_fail("<iter>", node.loc());
         cur_fn_ctx()->mark_initialized(iter_var_slot); // 值已在槽
 
         const u32 l_start = cur_cu()->size();
-        cur_cu()->emit_load_local(iter_var_slot, line);                // [iter]（receiver）
-        emit_method_call0("has_next", line, node.loc());               // [bool]
+        // [iter]（receiver）
+        cur_cu()->emit_load_local(iter_var_slot, line);
+        // [bool]
+        emit_method_call0("has_next", line, node.loc());
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
         auto loop_ctx                 = make_loop_ctx(loop_scope);
@@ -592,7 +600,8 @@ namespace aria {
         begin_scope();
         cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
         emit_method_call0("next", line, node.loc());    // [value] 恰在 slot 位置
-        bind_pattern(*node.pattern);                    // id: declare 值填槽（不发指令）/ _: POP 丢弃
+        // id: declare 值填槽（不发指令）/ _: POP 丢弃
+        bind_pattern(*node.pattern);
         emit_stmt(*node.body);
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 
@@ -675,22 +684,24 @@ namespace aria {
         //   L_catch:                     ; unwind 截栈到 slots+stack_depth 后 push 异常值,
         //                                 ; 恰落 catch 参数槽(stack_depth) -- 无 STORE_LOCAL
         //   L_end:
+        //
         // 栈平衡:try 体 end_scope 与 catch 子句 end_scope(弹 e + catch 体局部)都回到
         // stack_depth,两路径在 L_end 齐平(坑 #10 校验)。
         const auto stack_depth = static_cast<u32>(cur_fn_ctx()->locals_.size()); // try 入口局部数(try scope 开前)
         const auto begin       = cur_cu()->size();
         const auto rec_idx     = cur_cu()->try_records.size();
-        cur_cu()->try_records.push(TryRecord{begin, 0, 0, 0}); // 预插占位(begin 已定,余待回填)
-        begin_scope();                                         // try 体 scope
+        // 预插占位(begin 已定,余待回填)
+        cur_cu()->try_records.push(TryRecord{begin, 0, 0, 0});
+        begin_scope();         // try 体 scope
         emit_stmt(*node.body); // 嵌套 try 在此编译,各自入口预插占位(begin > 本层)-> 整体升序(坑 #4)
         end_scope(line);
-        const auto end    = cur_cu()->size();
-        const auto jskip  = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
-        const auto handle = cur_cu()->size();                        // L_catch
+        const auto end   = cur_cu()->size();
+        const auto jskip = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
+        // L_catch
+        const auto handle = cur_cu()->size();
         begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
         const auto catch_slot = declare_local_or_fail(*node.catch_param, node.loc());
         cur_fn_ctx()->mark_initialized(catch_slot); // e 由 unwind 的 push 在运行期填槽(== stack_depth),
-                                                    // 编译期标已初始化放行 catch 体的读检查
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end
@@ -704,7 +715,8 @@ namespace aria {
         const u32 line = node.loc_line();
         // 求值抛出表达式后 THROW 弹值入寄存器,运行期由 unwind 查异常记录表派发(语义见
         // AriaVM dispatch_loop 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
-        emit_expr(*node.expr);                  // [v]
+        // [v]
+        emit_expr(*node.expr);
         cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
     }
 
@@ -972,7 +984,8 @@ namespace aria {
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else
         emit_expr(*node.then_branch);
         const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
-        patch_jump_or_fail(jf, node.loc());                        // -> else
+        // -> else
+        patch_jump_or_fail(jf, node.loc());
         emit_expr(*node.else_branch);
         patch_jump_or_fail(jend, node.loc()); // -> end
     }

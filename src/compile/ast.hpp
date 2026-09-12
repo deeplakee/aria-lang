@@ -76,11 +76,11 @@ namespace aria {
     // 分类基类
     // =========================================================================
     //
-    // StmtNode：语句基类。文法 declaration 产生式为 funDecl|defDecl|varDecl|statement--
-    //   声明即「可出现在 program/block 顶层的语句」，故 FunDeclNode/DefDeclNode/
-    //   VarDeclNode 亦为 StmtNode 的派生。ProgramNode 与 BlockNode 持 List<UPtr<StmtNode>>。
-    // ExprNode：表达式基类。
-    // PatternNode：解构模式基类（var 声明的 varTarget 与解构赋值右侧候选）。
+    //   - StmtNode：语句基类。文法 declaration 产生式为 funDecl|defDecl|varDecl|statement--
+    //     声明即「可出现在 program/block 顶层的语句」，故 FunDeclNode/DefDeclNode/
+    //     VarDeclNode 亦为 StmtNode 的派生。ProgramNode 与 BlockNode 持 List<UPtr<StmtNode>>。
+    //   - ExprNode：表达式基类。
+    //   - PatternNode：解构模式基类（var 声明的 varTarget 与解构赋值右侧候选）。
     //
     // 三者仅作分类标记、无额外数据，继承 ASTNode 的构造函数。
     //

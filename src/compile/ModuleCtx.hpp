@@ -10,8 +10,10 @@
 // （enclosing_==nullptr = entry）并赋值给它。它既是「入口 fn 上下文的所有者」，又是「当前编译到哪个
 // 函数」的游标。子函数上下文由 compile_function 用 `new` 分配、enclosing_ 回父、游标摆向子；**成功**
 // 路径 compile_function 还原游标并手动 `delete` 子，**出错**路径不还原游标、不 delete 子、直接 return
-// （出错即停 -- 见 CodeGen「出错即停」约定）。析构沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个
-// delete：成功时游标 = entry 仅删 entry，出错时游标停在 deepest 未释放子，走链释放整条活动链 + entry。
+// （出错即停 -- 见 CodeGen「出错即停」约定）。
+//
+// 析构沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个 delete：成功时游标 = entry 仅删 entry，
+// 出错时游标停在 deepest 未释放子，走链释放整条活动链 + entry。
 // 故只需一个成员，无需 owner + cursor 两指针，也无需「游标必回入口」的不变式。
 //
 // **出错即停**（CodeGen 约定）：编译期深层 fail() 抛 AriaCompileException（[[noreturn]]），自动 unwind
@@ -50,7 +52,8 @@ namespace aria {
         // ASSERT m.entry() 非空（调用方须先 set_entry）。定义于 .cpp。
         explicit ModuleCtx(ObjModule* module);
 
-        ~ModuleCtx(); // 定义于 .cpp：沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个 delete（无论游标在哪都对）
+        // 定义于 .cpp：沿 enclosing_ 链从 current_fn_ctx_ 走到 entry 逐个 delete（无论游标在哪都对）
+        ~ModuleCtx();
 
         ModuleCtx(const ModuleCtx&)            = delete;
         ModuleCtx& operator=(const ModuleCtx&) = delete;

@@ -72,7 +72,7 @@ def 类 = **类级一张静态表 + 每实例一张字段表 + superclass 单链
 
 ### 2.3 Object 构造期 bootstrap、单独存储
 
-与指令集 §4.15 `LOAD_OBJECT`「VM 内部指针，不经名字查，避免 shadow Object 名破坏隐式继承」的现行定义一致。bootstrap 内容：`ObjClass("Object", super=nullptr)` + **合成 no-op init 闭包**（`ObjFunction` arity 0、module nullptr、字节码手发 `LOAD_NIL; RETURN` -- 体内无名字解析故帧 module 空指针无害，tracer/mark 容 nullptr）+ 静态表 upsert("init", closure) + `init_` 指向它。VM 成员 `object_class_` 持有、vm_roots tracer 增标（§3 阶段 2）。
+与指令集 §4.15 `LOAD_OBJECT`「VM 内部指针，不经名字查，避免 shadow Object 名破坏隐式继承」的现行定义一致。bootstrap 内容：`ObjClass("Object", super=nullptr)` + **合成 no-op init 闭包**（`ObjFunction` arity 0、module nullptr、字节码手发 `LOAD_NIL; RETURN` -- 体内无名字解析故帧 module 空指针无害，tracer/mark 容 nullptr）+ 静态表 set("init", closure) + `init_` 指向它。VM 成员 `object_class_` 持有、vm_roots tracer 增标（§3 阶段 2）。
 
 ### 2.4 bound-method 缓存三铁则（写实例 fields 表）
 

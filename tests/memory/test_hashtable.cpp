@@ -29,14 +29,12 @@ namespace {
 
 } // namespace
 
-TEST(HashTable, UpsertInsertAndFind) {
+TEST(HashTable, SetInsertAndFind) {
     GC       gc;
     IntTable ht{&gc};
     EXPECT_TRUE(ht.empty());
     for (int i = 0; i < 20; ++i) {
-        auto e = ht.upsert(i);
-        ASSERT_NE(e, nullptr);
-        e->value = i * 10;
+        ht.set(i, i * 10);
     }
     EXPECT_EQ(ht.size(), 20u);
     for (int i = 0; i < 20; ++i) {
@@ -48,15 +46,14 @@ TEST(HashTable, UpsertInsertAndFind) {
     EXPECT_EQ(ht.find(999), nullptr);
 }
 
-TEST(HashTable, UpsertExistingPreservesValue) {
+TEST(HashTable, SetExistingOverwrites) {
     GC       gc;
     IntTable ht{&gc};
-    ht.upsert(5)->value = 50;
-    auto e              = ht.upsert(5); // 已存在
+    ht.set(5, 50);
+    ht.set(5, 999); // 已存在:原槽覆写
+    auto e = ht.find(5);
     ASSERT_NE(e, nullptr);
-    EXPECT_EQ(e->value, 50); // value 保留(未重置为 V{})
-    e->value = 999;          // 调用方覆写
-    EXPECT_EQ(ht.find(5)->value, 999);
+    EXPECT_EQ(e->value, 999);
     EXPECT_EQ(ht.size(), 1u); // 未新增
 }
 
@@ -64,7 +61,7 @@ TEST(HashTable, EraseMakesNotFound) {
     GC       gc;
     IntTable ht{&gc};
     for (int i = 0; i < 10; ++i) {
-        ht.upsert(i)->value = i;
+        ht.set(i, i);
     }
     EXPECT_EQ(ht.size(), 10u);
     EXPECT_TRUE(ht.erase(5));
@@ -84,13 +81,13 @@ TEST(HashTable, EraseAndReinsert) {
     GC       gc;
     IntTable ht{&gc};
     for (int i = 0; i < 6; ++i) {
-        ht.upsert(i)->value = i;
+        ht.set(i, i);
     }
     ht.erase(2);
     ht.erase(4);
     EXPECT_EQ(ht.size(), 4u);
-    ht.upsert(2)->value = 200; // 重新插入被删的键(复用墓碑)
-    ht.upsert(4)->value = 400;
+    ht.set(2, 200); // 重新插入被删的键(复用墓碑)
+    ht.set(4, 400);
     EXPECT_EQ(ht.find(2)->value, 200);
     EXPECT_EQ(ht.find(4)->value, 400);
     EXPECT_EQ(ht.size(), 6u);
@@ -100,14 +97,14 @@ TEST(HashTable, RehashGrowsCapacity) {
     GC       gc;
     IntTable ht{&gc};
     EXPECT_EQ(ht.capacity(), 0u);
-    ht.upsert(0);
+    ht.set(0, 0);
     EXPECT_EQ(ht.capacity(), 8u); // kInitialCap
     for (int i = 1; i < 7; ++i) {
-        ht.upsert(i); // count=7,projected=7 未超 7/8*8=7,不扩容
+        ht.set(i, i); // count=7,projected=7 未超 7/8*8=7,不扩容
     }
     EXPECT_EQ(ht.capacity(), 8u);
     EXPECT_EQ(ht.size(), 7u);
-    ht.upsert(7); // projected=8>7 -> 扩容到 16
+    ht.set(7, 7); // projected=8>7 -> 扩容到 16
     EXPECT_EQ(ht.capacity(), 16u);
     EXPECT_EQ(ht.size(), 8u);
     for (int i = 0; i < 8; ++i) {
@@ -119,14 +116,14 @@ TEST(HashTable, TombstoneCompact) {
     GC       gc;
     IntTable ht{&gc};
     for (int i = 0; i < 3; ++i) {
-        ht.upsert(i)->value = i; // cap=8,count=3
+        ht.set(i, i); // cap=8,count=3
     }
     ht.erase(0); // tomb=1,count=2
     ht.erase(1); // tomb=2,count=1
     EXPECT_EQ(ht.size(), 1u);
     EXPECT_EQ(ht.capacity(), 8u);
     // tomb=2 > cap/8=1,projected=1+2+1=4 <= 7 -> 下次插入原容 compact(清墓碑)
-    ht.upsert(100)->value = 100;
+    ht.set(100, 100);
     EXPECT_EQ(ht.capacity(), 8u); // 原容 compact,未扩容
     EXPECT_EQ(ht.find(2)->value, 2);
     EXPECT_EQ(ht.find(100)->value, 100);
@@ -138,7 +135,7 @@ TEST(HashTable, CollisionsTriangularProbing) {
     GC                                           gc;
     HashTable<int, int, CollidingIntHash, IntEq> ht{&gc};
     for (int i = 0; i < 6; ++i) {
-        ht.upsert(i)->value = i * 100; // cap=8 容纳 6(<7)
+        ht.set(i, i * 100); // cap=8 容纳 6(<7)
     }
     for (int i = 0; i < 6; ++i) {
         auto e = ht.find(i);
@@ -169,7 +166,7 @@ TEST(HashTable, ForEachOccupied) {
     GC       gc;
     IntTable ht{&gc};
     for (int i = 0; i < 10; ++i) {
-        ht.upsert(i)->value = i;
+        ht.set(i, i);
     }
     ht.erase(3);
     ht.erase(7);
@@ -188,12 +185,12 @@ TEST(HashTable, Clear) {
     GC       gc;
     IntTable ht{&gc};
     for (int i = 0; i < 10; ++i) {
-        ht.upsert(i)->value = i;
+        ht.set(i, i);
     }
     ht.clear();
     EXPECT_TRUE(ht.empty());
     EXPECT_EQ(ht.find(0), nullptr);
-    ht.upsert(42)->value = 420; // 清空后可重新使用
+    ht.set(42, 420); // 清空后可重新使用
     EXPECT_EQ(ht.find(42)->value, 420);
     EXPECT_EQ(ht.size(), 1u);
 }
@@ -204,7 +201,7 @@ TEST(HashTable, DtorReleasesMemory) {
     {
         IntTable ht{&gc};
         for (int i = 0; i < 100; ++i) {
-            ht.upsert(i)->value = i; // 多次扩容
+            ht.set(i, i); // 多次扩容
         }
         EXPECT_GT(gc.bytes_allocated(), before); // 分配了 ctrl_+entries_
     } // dtor 释放

@@ -72,14 +72,12 @@ TEST(ObjModule, ToString) {
     EXPECT_EQ(m->to_string(), "<module lib/utils>");
 }
 
-TEST(ObjModule, GlobalsUpsert) {
+TEST(ObjModule, GlobalsSet) {
     GC   gc;
     auto m = make_module(gc, "m");
     auto k = new_string(gc, "x");
     auto v = new_string(gc, "a long enough value string!!!");
-    auto e = m->globals().upsert(Value::from_obj(k));
-    ASSERT_NE(e, nullptr);
-    e->value   = Value::from_obj(v);
+    m->globals().set(Value::from_obj(k), Value::from_obj(v));
     auto found = m->globals().find(Value::from_obj(k));
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->value.as_obj(), v);
@@ -99,8 +97,7 @@ TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
     auto g_key = new_string(gc, "g");
     auto g_val = new_string(gc, "a long global value string!!!");
     m->set_entry(body);
-    auto ge   = m->globals().upsert(Value::from_obj(g_key));
-    ge->value = Value::from_obj(g_val);
+    m->globals().set(Value::from_obj(g_key), Value::from_obj(g_val));
 
     const usize before = gc.bytes_allocated();
     gc.collect(); // m 经 guard 标根 -> m.trace 标 name/body/g_key/g_val -> 全存活

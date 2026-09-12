@@ -31,7 +31,7 @@ namespace aria {
     //   与 VM safe point 触发。这不是性能取舍,而是与「link-on-alloc + publish-after」对象
     //   模型绑定的定义性约束:new_object 返回的对象白色、无根,要被「发布」进某个根(常量池/
     //   intern 池/值栈/globals 表)才真正安全,而发布动作本身就是一次 buffer 分配(Array::push /
-    //   InternPool::insert / HashTable::upsert)。若该分配会触发 GC,白色无根对象会被 sweep,
+    //   InternPool::insert / HashTable::set)。若该分配会触发 GC,白色无根对象会被 sweep,
     //   发布进去的即悬垂指针。故「fresh 对象裸持跨一次 buffer 分配再发布」的写法全靠此不变式
     //   免守卫,打破它会让所有此类未守卫站点同时悬垂;allocate/reallocate 是叶函数,无间接
     //   触发 GC 的现实路径。反向情形--裸持白色对象跨真 GC 点(new_object/new_string/emit_expr)
@@ -52,7 +52,7 @@ namespace aria {
         // ---- 类型化 trivial 分配 ----
         // 分配 count 个 T(= count*sizeof(T) 字节),失败走 fatal_error(OutOfMemory)。
         // **INVARIANT: 永不触发 GC(不调 maybe_collect)**--调用方可裸持白色对象跨本调用
-        // (Array::push / InternPool::insert / HashTable::upsert 等全靠此,见类注释核心不变式)。
+        // (Array::push / InternPool::insert / HashTable::set 等全靠此,见类注释核心不变式)。
         template<typename T>
         [[nodiscard]]
         T* allocate(usize count);

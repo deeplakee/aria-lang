@@ -18,9 +18,9 @@ namespace aria {
     //   - fields_:实例字段表(`init` 内 `this.x = ...` 落此,无字段预声明、动态)。键 intern
     //     ObjString*,值为绑定 Value。**bound-method 缓存同居此表**(M5 决策 4:与真字段同表
     //     同 keyspace;fields 命中优先即真字段遮蔽同名方法与缓存项,三铁则见 M5 计划 §2.4)。
-    //     惰性分配(首次 upsert 才建表)。**私有,不对外暴露**:成员读写一律走
+    //     惰性分配(首次 set 才建表)。**私有,不对外暴露**:成员读写一律走
     //     load_field/store_field 协议(LOAD_FIELD/STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD
-    //     与缓存回填 upsert 均在对象内完成),外部无整表访问器。
+    //     与缓存回填 set 均在对象内完成),外部无整表访问器。
     //
     //   地址哈希型可变对象(走 Object{ObjType::INSTANCE} ctor);equals 保持默认地址相等--
     //     实例按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
@@ -54,7 +54,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 命名成员写入协议 override:实例字段动态创建(无预声明),upsert 即写入,
+        // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,
         // 永不失败(恒 true;false ⟺ 已 fail)。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 

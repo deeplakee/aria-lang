@@ -574,10 +574,9 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
     auto path       = new_string(gc, "lib/utils");
     auto path_guard = gc.make_guard(path); // path 裸持跨 new_module 的 new_string(cwd)
     auto m          = new_module(gc, path);
-    path_guard.push(m); // m 裸持跨下方 modules_.upsert 的 hash 分配
+    path_guard.push(m); // m 裸持跨下方 modules_.set 的 hash 分配
     // 入模块表(键=path,值=m)
-    auto e   = vm.modules().upsert(Value::from_obj(path));
-    e->value = Value::from_obj(m);
+    vm.modules().set(Value::from_obj(path), Value::from_obj(m));
 
     // 给模块挂体 + 一条全局绑定,验证经模块表根 -> 模块 trace -> 子节点存活
     auto body = new_script(gc, m); // body 属于 m
@@ -585,8 +584,7 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
     auto g_key       = new_string(gc, "g");
     auto g_key_guard = gc.make_guard(g_key); // g_key 裸持跨下方 new_string(g_val)(stress collect)
     auto g_val       = new_string(gc, "a long global value string!!!");
-    auto ge          = m->globals().upsert(Value::from_obj(g_key));
-    ge->value        = Value::from_obj(g_val);
+    m->globals().set(Value::from_obj(g_key), Value::from_obj(g_val));
 
     const usize before = gc.bytes_allocated();
     gc.collect(); // 模块表=VM 根 -> 标 path+m -> m.trace 标 entry/globals -> 全存活
@@ -596,7 +594,7 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
     EXPECT_EQ(g_val->view(), "a long global value string!!!");
 }
 
-// DEF_GLOBAL 是唯一创建模块全局的入口(顶层 var 声明):弹值,以常量池 name 为键 upsert 入
+// DEF_GLOBAL 是唯一创建模块全局的入口(顶层 var 声明):弹值,以常量池 name 为键写入
 // 当前模块 globals。LOAD_GLOBAL 按名查表压入。
 TEST_F(AriaVMStress, DefAndLoadGlobal) {
 
@@ -692,10 +690,9 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     auto       key     = new_string(gc, key_str);
     dir_guard.push(key);
     auto m = make_module(gc, "lib/utils", dir_ptr); // 目标:dir=base, name=lib/utils
-    // 保 m 过 modules_.upsert 的 hash 分配
+    // 保 m 过 modules_.set 的 hash 分配
     dir_guard.push(m);
-    auto me   = vm.modules().upsert(Value::from_obj(key)); // 入表即「已加载」,无对象状态字段
-    me->value = Value::from_obj(m);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(m)); // 入表即「已加载」,无对象状态字段
 
     auto      mod       = new_disk_module(gc, "main", dir_ptr); // 入口:dir=base, name=main
     auto      fn        = new_script(gc, mod);
@@ -752,8 +749,7 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     dir_guard.push(key);
     auto m = make_module(gc, "lib/utils", dir_ptr);
     dir_guard.push(m);
-    auto me   = vm.modules().upsert(Value::from_obj(key));
-    me->value = Value::from_obj(m);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(m));
 
     auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr));
     auto      fn_guard  = gc.make_guard(fn);
@@ -790,8 +786,7 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     dir_guard.push(key);
     auto helper = make_module(gc, "lib/helper", dir_ptr);
     dir_guard.push(helper);
-    auto he   = vm.modules().upsert(Value::from_obj(key));
-    he->value = Value::from_obj(helper);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(helper));
 
     auto      mod       = new_disk_module(gc, "lib/main", dir_ptr);
     auto      fn        = new_script(gc, mod);
@@ -833,8 +828,7 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     dir_guard.push(key);
     auto target = make_module(gc, "lib/math", stdlib_ptr); // 目标:dir=stdlib, name=lib/math
     dir_guard.push(target);
-    auto te   = vm.modules().upsert(Value::from_obj(key));
-    te->value = Value::from_obj(target);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(target));
 
     auto fn = new_script(gc, new_disk_module(gc, "main", dir_ptr)); // 入口:dir=base
     // fn(+所属 module)裸持跨下方 new_string(path/alias)(stress collect)
@@ -870,8 +864,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     dir_guard.push(key);
     auto m = make_module(gc, "lib/math", dir_ptr);
     dir_guard.push(m);
-    auto me   = vm.modules().upsert(Value::from_obj(key));
-    me->value = Value::from_obj(m);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(m));
 
     auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr));
     auto      fn_guard  = gc.make_guard(fn);
@@ -907,8 +900,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     dir_guard.push(key);
     auto target = make_module(gc, "lib/math", dir_ptr);
     dir_guard.push(target);
-    auto te   = vm.modules().upsert(Value::from_obj(key));
-    te->value = Value::from_obj(target);
+    vm.modules().set(Value::from_obj(key), Value::from_obj(target));
 
     auto      mod       = new_disk_module(gc, "lib/main", dir_ptr);
     auto      fn        = new_script(gc, mod);

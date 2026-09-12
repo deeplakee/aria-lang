@@ -28,7 +28,7 @@ namespace aria {
     };
 
     // 绑定 Value 的 aria 哈希表:继承 HashTable<Value,Value,ValueHash,ValueEq> 的
-    //        Swiss Table 实现与接口(upsert/find/erase/for_each_occupied/size...),加 trace(GC&)
+    //        Swiss Table 实现与接口(set/find/erase/for_each_occupied/size...),加 trace(GC&)
     //        (遍历占用槽 mark_value key+value)。
     //
     //        分层:src/memory/ 的 HashTable<K,V,Hash,Eq> 对 K/V 完全通用(不知 Value);本类

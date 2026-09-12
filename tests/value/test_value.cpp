@@ -119,7 +119,7 @@ TEST(ValueEqual, ObjStringContent) {
 TEST(HashTableKey, IntAndFloatAreDifferentKeys) {
     GC            gc;
     AriaHashTable ht{&gc};
-    ht.upsert(Value::from_i32(1))->value = Value::from_i32(100);
+    ht.set(Value::from_i32(1), Value::from_i32(100));
     // int 1 与 f64 1.0 是不同键(哈希键用 === value_identical:类型严格)
     EXPECT_EQ(ht.find(Value::from_f64(1.0)), nullptr);
     auto found = ht.find(Value::from_i32(1));
@@ -131,7 +131,7 @@ TEST(HashTableKey, StringKeyByContentViaIntern) {
     GC            gc;
     auto          lock = gc.make_lock();
     AriaHashTable ht{&gc};
-    ht.upsert(Value::from_obj(new_string(gc, "key")))->value = Value::from_i32(42);
+    ht.set(Value::from_obj(new_string(gc, "key")), Value::from_i32(42));
     // 字符串键靠 intern 等价内容同指针 -> 按内容查到(=== 指针相等)
     auto found = ht.find(Value::from_obj(new_string(gc, "key")));
     ASSERT_NE(found, nullptr);

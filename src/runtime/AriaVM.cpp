@@ -287,7 +287,7 @@ namespace aria {
         // 不变式)。no-op 语义:原生收到 slots[0] = this(call_class 已把 callee 槽原位换实例),
         // 返回 true 不写槽 -- 槽 0 原样即返回实例,「Foo() 得实例」天然成立。
         //
-        // 类表 upsert("init", native) + init_ 指同一值(表槽/init_ 一致;其余类 ctor 自 super
+        // 类表 set("init", native) + init_ 指同一值(表槽/init_ 一致;其余类 ctor 自 super
         // 派生,set_field 命中 "init" 同步)。名串经工厂 StringView 重载内部 intern 自守;
         // "init" 表键经 intern 命中(与 init_native 的 name 串同指针,零分配)。
         auto guard = gc_.make_guard();
@@ -541,7 +541,7 @@ namespace aria {
 
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
         // IMPORT 未命中分支的加载层(契约与两类失败形态总览见 AriaVM.hpp 声明处注释)。
-        // canonical_path 已由调用方根化(IMPORT case 的 canonical_path_guard,跨本函数内 upsert)。
+        // canonical_path 已由调用方根化(IMPORT case 的 canonical_path_guard,跨本函数内 set)。
         // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 编译(set_entry) -> 入表。
         // 加载事实源 = modules_ 表成员资格(对象无状态字段):编译成功才入表,入表即「已编译
         // (体待 run-once 或已跑完)」,循环导入命中表内体执行中的对象即复用;失败一律不留表项,
@@ -562,7 +562,7 @@ namespace aria {
             return fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
-        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨编译/upsert。
+        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨编译/入表。
         auto module = new_module(gc_, name_str, dir_str);
         auto guard  = gc_.make_guard(module);
 
@@ -578,10 +578,9 @@ namespace aria {
 
         // 5. 入表:编译成功才占位 -- 失败(读盘/身份/编译)不留表项。循环导入语义不变:入表先于
         //    模块体 run-once(体在本函数返回后由 IMPORT 分支调起),体执行期间的再导入命中此表
-        //    项即复用半初始化对象。canonical_path 已由调用方根化;module 由 guard 根化,upsert
+        //    项即复用半初始化对象。canonical_path 已由调用方根化;module 由 guard 根化,set
         //    rehash 触 GC 时皆安全。
-        const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
-        mod_entry->value     = Value::from_obj(module);
+        modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         // 内置函数不经此注入 -- 由 VM 级 builtins_ 表统一承载,LOAD_GLOBAL 模块 globals 未命中后回退查之。
         return module;
     }
@@ -851,17 +850,14 @@ namespace aria {
                 }
                 case OpCode::DEF_GLOBAL: {
                     // [v] -> []:以常量池 name(ObjString,intern)为键在当前模块 globals 首次定义
-                    // (顶层 var 声明 -- 唯一创建全局的入口)。upsert:命中覆盖(重定义属编译期
+                    // (顶层 var 声明 -- 唯一创建全局的入口)。set:命中覆盖(重定义属编译期
                     // RedefinedVariable,运行期按定义处理),未命中插入。
                     //
-                    // 根安全(GC 已启用):upsert 可能 rehash 触 GC。name/key 经常量池链根;
-                    // v 用 peek 而非 pop -- 留 v 在值栈跨 upsert 的分配(先 pop 则 v 成裸局部,
-                    // collect 会回收成悬垂),upsert 返回后再写 e.value、drop。
-                    ObjString*  name  = read_name(frame);
-                    const Value key   = Value::from_obj(name);
-                    const Value value = current_->peek(0); // 先不弹:留 v 在栈上跨 upsert 的分配
-                    const auto  entry = frame.module->globals().upsert(key);
-                    entry->value      = value;
+                    // 根安全(GC 已启用):set 未命中插入可能 rehash 触 GC。name/key 经常量池链根;
+                    // v 用 peek 而非 pop -- 留 v 在值栈跨 set 的分配(先 pop 则 v 成裸局部,
+                    // collect 会回收成悬垂),set 返回后才 drop。
+                    ObjString* name = read_name(frame);
+                    frame.module->globals().set(Value::from_obj(name), current_->peek(0));
                     current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
@@ -1228,7 +1224,7 @@ namespace aria {
                     // name:u16;[class, closure] -> [class]:**实例方法注册**(静态方法 fun 经
                     // MAKE_STATIC;仅收闭包 -- 方法性标记 = defining class 戳,原生/静态槽读恒
                     // 原值)。编译器路径(值恒来自上一条 CLOSURE),栈形经 ASSERT 钉 -- 语言写不出
-                    // 违例,不走可 catch 的 raise。set_field 的 upsert 走 trivial 分配不触 GC,
+                    // 违例,不走可 catch 的 raise。set_field 的落表 set 走 trivial 分配不触 GC,
                     // peek 不弹的真实理由是栈效应(弹 value 留 class 继续接收成员)。
                     //
                     // 注册副作用:set_field 命中 "init" 同步 init_(值形态不特判)+ 闭包戳
@@ -1291,7 +1287,7 @@ namespace aria {
                     //
                     // 根安全(GC 已启用):path 经常量池根。canonical_path 经 new_string intern 驻留
                     //   (weak root,不保命),跨未命中分支内 load_module 的一串 new_* 分配须守 --
-                    //   canonical_path_guard 跨全程根化;modules_.upsert 等表 rehash 走 trivial 分配
+                    //   canonical_path_guard 跨全程根化;modules_.set 等表 rehash 走 trivial 分配
                     //   不触 GC,不是守卫承重点。命中/加载产出的 module 与 entry 经 modules_ 根可达,
                     //   入栈后另经值栈根。
                     ObjString* path = read_name(frame);
@@ -1307,7 +1303,7 @@ namespace aria {
                         break; // 已派发 handler:帧栈可能已截,循环顶重取
                     }
                     auto canonical_path = new_string(gc_, *canonical_path_str);
-                    auto guard = gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
+                    auto guard          = gc_.make_guard(canonical_path); // 跨 find / load_module 内 set(rehash 触 GC)
                     if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
                         module_entry != nullptr) {
                         // 命中(体待 run-once / 循环导入跑中 / 已跑完)复用:压模块值。

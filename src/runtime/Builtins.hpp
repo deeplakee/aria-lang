@@ -11,7 +11,7 @@ namespace aria {
     // 内置函数注册机制:把 type/len/str/assert 等内建原生函数注册进 **VM 级只读 builtins 表**
     // (设计见 .claude/reference/runtime/vm-design.md §7「VM 级 builtins 表 + LOAD_GLOBAL 回退」)。
     //
-    //   - 不引入 LOAD_BUILTIN 指令:内置经 new_native_fn 包成 ObjNativeFn 后按名 upsert 进
+    //   - 不引入 LOAD_BUILTIN 指令:内置经 new_native_fn 包成 ObjNativeFn 后按名写入
     //     AriaVM 的 builtins_ 表(全 VM 共享一份),用户代码经普通 LOAD_GLOBAL 解析 -- 先查当前
     //     模块 globals,miss 回退 builtins_(Python 式查找链)。不按模块注入:预填 globals 会在
     //     REPL 逐行 run() 时重注册、覆写用户 shadow,与「顶层 var 跨行保留」矛盾。

@@ -85,7 +85,7 @@ namespace aria::builtins {
 
     } // namespace
 
-    // 把全部内置按名 upsert 进 VM 级 builtins 表。由 AriaVM ctor 在 set_vm_roots 之后调用一次:
+    // 把全部内置按名写入 VM 级 builtins 表。由 AriaVM ctor 在 set_vm_roots 之后调用一次:
     // 每条 new_string/new_native_fn 各一次 new_object 顶 maybe_collect,在建对象经 make_guard
     // 双守卫根化,已入表条目经 vm_roots tracer 的 builtins_.trace 标根,注册内触 GC 安全;
     // intern 池保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
@@ -96,8 +96,7 @@ namespace aria::builtins {
             guard.push(name_obj);
             const auto fn_obj = new_native_fn(gc, name_obj, fn);
             guard.push(fn_obj);
-            const auto entry = builtins.upsert(Value::from_obj(name_obj));
-            entry->value     = Value::from_obj(fn_obj);
+            builtins.set(Value::from_obj(name_obj), Value::from_obj(fn_obj));
         }
     }
 

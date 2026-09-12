@@ -32,7 +32,7 @@ namespace aria {
     void ObjClass::set_field(ObjString* name, Value value) {
         // 创建路径统一写入口(公开 API):落本类自身表(不沿链);"init" 同步 init_
         //(表槽/init_ 一致由本入口自维护)。
-        field_.upsert(Value::from_obj(name))->value = value; // 继承名/新名新建键、本类已有原槽更新、父表不动
+        field_.set(Value::from_obj(name), value); // 继承名/新名新建键、本类已有原槽更新、父表不动
         if (name->view() == "init") {
             init_ = value;
         }
@@ -50,7 +50,7 @@ namespace aria {
 
     bool ObjClass::store_field(AriaVM& vm, ObjString* name, Value value) {
         // 类上赋值落本类自身表,恒成功:原槽更新、继承名/新名新建键遮蔽、父表不动
-        //(动态新增允许)。vm 为协议签名统一保留,本 override 无 fail 路径;upsert 走
+        //(动态新增允许)。vm 为协议签名统一保留,本 override 无 fail 路径;set 走
         // trivial 分配不触 GC(GC 核心不变式),无 GC 点。
         set_field(name, value); // 继承名/新名新建键、本类已有原槽更新、父表不动;"init" 同步内聚于此
         return true;

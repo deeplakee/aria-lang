@@ -173,7 +173,7 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 2. `fs::module_name_and_dir(canonical_path)` 派生身份 `{name=stem, dir=dirname}`（同入口约定，
    `abs_path()` 还原 canonical key）-> `new_module` + `make_guard`（guard 跨编译与入表）。
 3. `Compiler{gc_}.compile(source, module, "<module>")` 编译（`set_entry` 由 `CodeGen::init_module`
-   编译期挂入）；编译成功才 `modules_.upsert` 入表（供循环导入命中体执行中的对象；加载事实源 =
+   编译期挂入）；编译成功才 `modules_.set` 入表（供循环导入命中体执行中的对象；加载事实源 =
    表成员资格，对象无状态字段；失败一律不留表项，同路径重试重新加载），返回模块（体待 run-once）。
 4. IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧交主循环执行（run-once），其 RETURN
    按函数名 == `<module>` 判定模块体帧后压回模块对象；**无递归 `dispatch_loop()`**。
@@ -182,7 +182,7 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 寄存器，调用方 `unwind()` 派发/物化；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT
 站点位置，与 resolve_module 失败形态统一），编译期 Error 就地 `new_exception` 原样装配箱透传
 （含被导入文件位置，不重烘）。**根安全**：`canonical_path`(intern weak root) 经 IMPORT case 的
-`canonical_path_guard` 跨 `load_module` 内一串 new_* 分配根化；`modules_.upsert` 等 rehash 走
+`canonical_path_guard` 跨 `load_module` 内一串 new_* 分配根化；`modules_.set` 等 rehash 走
 trivial 分配不触 GC，不是守卫承重点；`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
 
 **后续缺口**：目录包 `index.aria` 查找、相对导入越出源根的检测（`weakly_canonical` 折叠 `..`

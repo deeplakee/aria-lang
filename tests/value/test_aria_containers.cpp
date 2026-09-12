@@ -63,14 +63,12 @@ TEST(AriaArray, UntracedElementsCollected) {
     EXPECT_TRUE(arr.empty());
 }
 
-TEST(AriaHashTable, UpsertFindErase) {
+TEST(AriaHashTable, SetFindErase) {
     GC            gc;
     AriaHashTable ht{&gc};
     auto          ka = new_string(gc, "key-a");
     auto          va = new_string(gc, "value-a long enough!!!");
-    auto          e  = ht.upsert(Value::from_obj(ka));
-    ASSERT_NE(e, nullptr);
-    e->value = Value::from_obj(va);
+    ht.set(Value::from_obj(ka), Value::from_obj(va));
     EXPECT_EQ(ht.size(), 1u);
 
     auto found = ht.find(Value::from_obj(ka));
@@ -78,10 +76,12 @@ TEST(AriaHashTable, UpsertFindErase) {
     EXPECT_EQ(found->key.as_obj(), ka);
     EXPECT_EQ(found->value.as_obj(), va);
 
-    // upsert 已有键:返回同 entry,value 保留(未重置为 V{})
-    auto e2 = ht.upsert(Value::from_obj(ka));
-    EXPECT_EQ(e2, e);
-    EXPECT_EQ(e2->value.as_obj(), va);
+    // set 已有键:原槽覆写(不新增)
+    auto va2 = new_string(gc, "value-a2 long enough!!");
+    ht.set(Value::from_obj(ka), Value::from_obj(va2));
+    auto e2 = ht.find(Value::from_obj(ka));
+    ASSERT_NE(e2, nullptr);
+    EXPECT_EQ(e2->value.as_obj(), va2);
     EXPECT_EQ(ht.size(), 1u);
 
     EXPECT_TRUE(ht.erase(Value::from_obj(ka)));
@@ -93,10 +93,10 @@ TEST(AriaHashTable, UpsertFindErase) {
 TEST(AriaHashTable, MixedValueTypesAsKeys) {
     GC            gc;
     AriaHashTable ht{&gc};
-    ht.upsert(Value::nil_val())->value       = Value::from_i32(1);
-    ht.upsert(Value::from_bool(true))->value = Value::from_i32(2);
-    ht.upsert(Value::from_i32(100))->value   = Value::from_i32(3);
-    ht.upsert(Value::from_f64(2.5))->value   = Value::from_i32(4);
+    ht.set(Value::nil_val(), Value::from_i32(1));
+    ht.set(Value::from_bool(true), Value::from_i32(2));
+    ht.set(Value::from_i32(100), Value::from_i32(3));
+    ht.set(Value::from_f64(2.5), Value::from_i32(4));
     EXPECT_EQ(ht.size(), 4u);
     EXPECT_EQ(ht.find(Value::nil_val())->value.as_int(), 1);
     EXPECT_EQ(ht.find(Value::from_bool(true))->value.as_int(), 2);
@@ -112,9 +112,9 @@ TEST(AriaHashTable, ManyEntriesRehash) {
     // (60 个 intern 串 + ht 分配会超 next_gc_,触发回收未根化的串)
     AriaHashTable ht{&gc};
     for (int i = 0; i < 30; ++i) {
-        auto k                               = new_string(gc, std::format("key-{}", i));
-        auto v                               = new_string(gc, std::format("value-{}", i));
-        ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
+        auto k = new_string(gc, std::format("key-{}", i));
+        auto v = new_string(gc, std::format("value-{}", i));
+        ht.set(Value::from_obj(k), Value::from_obj(v));
     }
     EXPECT_EQ(ht.size(), 30u);
     for (int i = 0; i < 30; ++i) {
@@ -129,9 +129,9 @@ TEST(AriaHashTable, ManyEntriesRehash) {
 TEST(AriaHashTable, TraceMarksKeysAndValues) {
     GC            gc;
     AriaHashTable ht{&gc};
-    auto          k                      = new_string(gc, "trace-key long enough!!!");
-    auto          v                      = new_string(gc, "trace-value long enough!");
-    ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
+    auto          k = new_string(gc, "trace-key long enough!!!");
+    auto          v = new_string(gc, "trace-value long enough!");
+    ht.set(Value::from_obj(k), Value::from_obj(v));
     ht.trace(gc); // 标记 k, v(模拟 owner ObjMap 调用)
     const usize before = gc.bytes_allocated();
     gc.collect();
@@ -142,9 +142,9 @@ TEST(AriaHashTable, TraceMarksKeysAndValues) {
 TEST(AriaHashTable, UntracedEntriesCollected) {
     GC            gc;
     AriaHashTable ht{&gc};
-    auto          k                      = new_string(gc, "untraced-key long enough");
-    auto          v                      = new_string(gc, "untraced-value long enuf");
-    ht.upsert(Value::from_obj(k))->value = Value::from_obj(v);
+    auto          k = new_string(gc, "untraced-key long enough");
+    auto          v = new_string(gc, "untraced-value long enuf");
+    ht.set(Value::from_obj(k), Value::from_obj(v));
     // 不 trace:ht 非 root,k/v 无根 -> collect 回收
     const usize before = gc.bytes_allocated();
     gc.collect();

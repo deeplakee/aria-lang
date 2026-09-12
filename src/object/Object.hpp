@@ -217,7 +217,7 @@ namespace aria {
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):返回 bool,false ⟺ 已 fail。
         // 基类默认:本类型不支持成员赋值,报 "type X does not support field access";
         // ObjClass 落本类自身表恒成功(继承名/新名新建键遮蔽);ObjInstance 动态字段
-        // upsert 永不失败(恒 true)。
+        // set 永不失败(恒 true)。
         [[nodiscard]]
         virtual bool store_field(AriaVM& vm, ObjString* name, Value value);
 

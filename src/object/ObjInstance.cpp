@@ -38,22 +38,21 @@ namespace aria {
         //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。
         //
         //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化,方法对象本体经本
-        //    实例->class_ 链类表可达(本地 member 仅是值拷贝),name 经调用方(常量池)可达;
-        //    绑定建成后回填 upsert 走 trivial 分配不触 GC(核心不变式),无守卫必要。
+        //    实例->class_ 链类表可达(本地 member 仅是值拷贝),name 经调用方(常量池/测试守卫)可达;
+        //    绑定建成后回填 set 走 trivial 分配不触 GC(核心不变式),无守卫必要。
         const auto member = *hit;
         if (!is_method(member)) {
             return member; // 非方法槽值:直读不缓存(铁则 1 --静态槽可变,值缓存进实例会读陈旧)
         }
         const auto bound = new_bound_method(vm.gc(), member, Value::from_obj(this));
-        const auto entry = fields_.upsert(Value::from_obj(name));
-        entry->value     = Value::from_obj(bound);
+        fields_.set(Value::from_obj(name), Value::from_obj(bound));
         return Value::from_obj(bound);
     }
 
     bool ObjInstance::store_field(AriaVM& vm, ObjString* name, Value value) {
-        // 实例字段动态(无预声明):upsert 即创建/更新,永不失败(恒 true;false ⟺ 已 fail)。
-        // upsert 走 trivial 分配不触 GC(GC 核心不变式)。
-        fields_.upsert(Value::from_obj(name))->value = value;
+        // 实例字段动态(无预声明):set 即创建/更新,永不失败(恒 true;false ⟺ 已 fail)。
+        // set 走 trivial 分配不触 GC(GC 核心不变式)。
+        fields_.set(Value::from_obj(name), value);
         return true;
     }
 

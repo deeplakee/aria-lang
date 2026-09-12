@@ -258,7 +258,7 @@ namespace aria {
         // **仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清
         // pending_error -- run 外直调的错误会被静默吞掉。
         //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作
-        //     modules_ 表键,又作读盘路径。**调用方须已根化**(跨本函数内 modules_.upsert 的
+        //     modules_ 表键,又作读盘路径。**调用方须已根化**(跨本函数内 modules_.set 的
         //     rehash 触 GC -- intern weak root 不保命)。
         //   - import_specifier:用户写的原始 import 串(报错消息用,如 "./helper")。
         ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
@@ -304,7 +304,7 @@ namespace aria {
 
         // Object 根类 bootstrap(M5 决策 3,ctor 一次调用):建 ObjClass("Object", super=nullptr)
         // + 原生 no-op init(init Value 化:无 ObjFunction/无模块,保 ObjFunction「module 恒非空」
-        // 不变式)并发布:upsert 进类表 init 槽 + init_ 指同一值(细节见定义处注释)。
+        // 不变式)并发布:set 进类表 init 槽 + init_ 指同一值(细节见定义处注释)。
         // 成员 object_class_ 单独持有、不进 builtins_/任何模块 globals(裸名解析
         // 局部->upvalue->全局->builtins 全部够不到,LOAD_OBJECT 直推成员,用户 shadow 全局名免疫)。
         void bootstrap_object_class();

@@ -820,7 +820,7 @@ TEST(CodeGen, BuiltinAssertFailWithMessage) {
 }
 
 TEST(CodeGen, BuiltinShadowedByUserGlobal) {
-    // 用户顶层 var 同名覆盖内置：DEF_GLOBAL 在运行期 upsert 覆写同名全局，内置被替换。
+    // 用户顶层 var 同名覆盖内置：DEF_GLOBAL 在运行期 set 覆写同名全局，内置被替换。
     // 内置仅注册进运行期 globals 表，不入编译期 defined_globals_，故 var len 不触发 RedefinedVariable。
     EXPECT_EQ(run_int("var len = 5; return len;"), 5);
     EXPECT_EQ(run_int("var type = 99; return type;"), 99);

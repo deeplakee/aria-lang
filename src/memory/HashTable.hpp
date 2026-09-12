@@ -43,7 +43,7 @@ namespace aria {
     class HashTable {
 
     public:
-        // 键值对条目(16B 当 K=V=Value)。find/upsert 返回指向它的指针。
+        // 键值对条目(16B 当 K=V=Value)。find 返回指向它的指针。
         struct Entry {
             K key;
             V value;
@@ -133,13 +133,12 @@ namespace aria {
             return nullptr; // 安全上限耗尽(不变式下不会到达)
         }
 
-        // find-or-insert:命中返回已有 Entry(保留其 value);未命中插入新 Entry
-        // (key 填入,value 值初始化为 V{},调用方负责覆写),返回指向它的指针。
-        // 可能触发 rehash(扩容或 compact),rehash 后 entries_/ctrl_ 指针改变。
-        // 注意:Value{} 零填充是 f64 0.0 非 nil,需要 nil 的场合调用方显式覆写。
-        Entry* upsert(const K& key) {
+        // 写入:命中覆写 value(原槽更新,find 路径零分配);未命中插入 (key, value)
+        // (可能触发 rehash 扩容或 compact,rehash 后 entries_/ctrl_ 指针改变)。
+        void set(const K& key, const V& value) {
             if (Entry* entry = find(key)) {
-                return entry; // 命中已有,value 保留
+                entry->value = value; // 命中:原槽覆写,无分配
+                return;
             }
             maybe_rehash_for_insert_(); // 确保有空槽(可能重分配)
             const u32   hash   = Hash{}(key);
@@ -157,19 +156,18 @@ namespace aria {
                     const usize insert_pos     = (tomb != kNpos) ? tomb : pos;
                     ctrl_[insert_pos]          = target;
                     entries_[insert_pos].key   = key;
-                    entries_[insert_pos].value = V{};
+                    entries_[insert_pos].value = value;
                     if (tomb != kNpos) {
                         --tombstones_; // 复用墓碑
                     }
                     ++count_;
-                    return &entries_[insert_pos];
+                    return;
                 }
                 if (byte == kCtrlDeleted && tomb == kNpos) {
                     tomb = pos; // 记首个墓碑,探到空槽时回退写入
                 }
             }
-            ASSERT(false, "HashTable::upsert: probe exhausted (invariant violated)");
-            return nullptr;
+            ASSERT(false, "HashTable::set: probe exhausted (invariant violated)");
         }
 
         // 擦除命中槽(置墓碑)。返回是否确实擦除。无需 nil-out entries_,trace 按 ctrl 跳过非占用槽。

@@ -253,8 +253,8 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     EXPECT_TRUE(msg.contains("<class Foo> has no member 'missing'"));
 }
 
-// store_field:实例字段动态 upsert,永不失败(恒 true;false ⟺ 已 fail)。
-TEST(ObjInstance, StoreFieldDynamicUpsert) {
+// store_field:实例字段动态 set,永不失败(恒 true;false ⟺ 已 fail)。
+TEST(ObjInstance, StoreFieldDynamicSet) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();

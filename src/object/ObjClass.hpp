@@ -22,7 +22,7 @@ namespace aria {
     //     的值是 ObjClosure,静态变量槽是任意 Value;区分在值类型本身,表内无 tag)。
     //     MAKE_STATIC/MAKE_METHOD 与类上赋值(STORE_FIELD 类路径)统一经 set_field 写此表;
     //     沿链查找见私有 find_field(组合方一律委托 load_field 协议)。
-    //     惰性分配(首次 upsert 才建表)。
+    //     惰性分配(首次 set 才建表)。
     //   - init_:构造器方法值(**Value**:闭包或原生函数皆可;类上赋非可调用值也放行,实例化
     //     时 call_value 报 CallNonCallable 兜底)。写点全在对象内:**构造期自 super 派生**
     //     (super 非空出厂即继承父 init_ 当前值,快照语义 -- 此后父 init 变更不再传导;
@@ -60,10 +60,10 @@ namespace aria {
         }
 
         // 写入本类自身表的 name 槽(创建或更新,**不沿链** --继承名/新名新建键遮蔽、本类
-        // 已有原槽更新、父表不动)。类成员**创建路径的唯一公开写入口**(upsert 内联于此,
+        // 已有原槽更新、父表不动)。类成员**创建路径的唯一公开写入口**(落表 set 内联于此,
         // 无独立辅助):MAKE_STATIC/MAKE_METHOD 注册、bootstrap 设 init 与 store_field
         // 落表三路共用;name=="init" 时同步 init_(表槽/init_ 一致性由本写入口自维护,
-        // 表槽存在则必与 init_ 同值)。永不失败;upsert 走 trivial 分配不触 GC,GC-pure。
+        // 表槽存在则必与 init_ 同值)。永不失败;set 走 trivial 分配不触 GC,GC-pure。
         void set_field(ObjString* name, Value value);
 
         // 构造器方法值(闭包/原生;类上赋非可调用值亦放行,实例化时 call_value 报错兜底)。
@@ -85,7 +85,7 @@ namespace aria {
 
         // 命名成员写入协议 override:类上赋值落本类自身表,恒成功 --本类已有原槽更新、
         // 继承名/新名新建键遮蔽、父表不动(动态新增允许);"init" 命中同步 init_。vm 为
-        // 协议签名统一保留(本 override 无 fail 路径);落表 upsert 走 trivial 分配不触 GC。
+        // 协议签名统一保留(本 override 无 fail 路径);落表 set 走 trivial 分配不触 GC。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
         // 标 name_ + superclass_(容 nullptr)+ mark_value(init_)+ field_(key+value)。

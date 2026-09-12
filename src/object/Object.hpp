@@ -164,12 +164,12 @@ namespace aria {
         }
 
         // 对象的调试渲染(repr 位):各子类型 override 自己的 debug 文案(ObjString 带引号转义 /
-        // ObjFunction `<fn name>` / ObjUpvalue `<upvalue>` 等),基类默认 = 地址型
-        // `<Type at 0xaddr>` 兜底。**override 契约 = 纯 C++ 惰性渲染**:只读自身成员造返回串
-        // (String 走 std::allocator,不触 GC 回收),绝不执行 aria 字节码 / 调 call_value 等
-        // 可重入 VM 的路径;override 集合编译期封闭(语言层无法新增 C++ 子类型),
-        // format_value_debug / trace_execution / 反汇编常量池等 dispatch_loop 内调试上下文经
-        // 虚分派调用安全(防重入由本契约维护)。
+        // ObjFunction `<fn name>` / ObjUpvalue `<upvalue>` 等),基类默认 = 地址型 `<Type at 0xaddr>` 兜底。
+        //
+        // **override 契约 = 纯 C++ 惰性渲染**:只读自身成员造返回串(String 走 std::allocator,
+        // 不触 GC 回收),绝不执行 aria 字节码 / 调 call_value 等可重入 VM 的路径;override 集合
+        // 编译期封闭(语言层无法新增 C++ 子类型),format_value_debug / trace_execution / 反汇编
+        // 常量池等 dispatch_loop 内调试上下文经虚分派调用安全(防重入由本契约维护)。
         [[nodiscard]]
         virtual String debug_repr() const {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
@@ -244,9 +244,12 @@ namespace aria {
         // **备置 API:接口已落地,暂无子类 override、暂无调用方**--VM 算术指令的接线留到
         // 容器里程碑/用户类运算符重载立项时:原语走原数值路径,对象操作数经本协议虚分派
         //(对象在左直调;在右的反射接法届时设计)。先备好接口,免得 VM 长出一组分型辅助方法。
+        //
         // 接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)--协议 miss 路径 fail 与结果路径
         // 分配均触 maybe_collect,弹栈裸局部会被回收(与 equals 的 GC-pure 契约相对:后者
-        // 在弹栈裸局部上被 EQUAL 调用、永不分配)。基类默认体定义在 Object.cpp,一律报
+        // 在弹栈裸局部上被 EQUAL 调用、永不分配)。
+        //
+        // 基类默认体定义在 Object.cpp,一律报
         // TypeMismatch "operator '...' requires numbers, got X and Y"(与 VM 原语路径文案
         // 一致)、op_negate 报 InvalidOperand "negate requires a number"。
         //////////////////////////
@@ -280,6 +283,7 @@ namespace aria {
         // **签名与 ObjNativeFn 契约同构**(`NativeFn = bool (*)(AriaVM&, Span<Value>)`):
         // 调用区 [callee, a1..aN] 的可写视图 --slots[0] = callee(双职:被调者/返回槽,
         // 写返回值即覆写 slots[0])、slots[1..size()-1] = 实参(argc = slots.size() - 1)。
+        //
         // 执行型协议(进帧/改栈/写返回槽)与 op_* 算术族(纯计算)分属两族:返回 bool --
         // true = 成功(返回值已写 slots[0]),false = 已 fail(载荷在挂起寄存器);覆写槽 0
         // 的特殊语义(如实例化原位换实例作 this)由 override 自定。

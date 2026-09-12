@@ -54,8 +54,9 @@ namespace aria {
     }
 
     bool CodeUnit::patch_jump(const usize src_off) {
-        const u32 base_off   = static_cast<u32>(src_off) + 2; // 偏移基准: 读完 u16 操作数后的 ip
-        const u32 target_off = size();                        // 跳转目标: 当前末尾
+        const u32 base_off = static_cast<u32>(src_off) + 2; // 偏移基准: 读完 u16 操作数后的 ip
+        // 跳转目标: 当前末尾
+        const u32 target_off = size();
         // 前向偏移:契约是 patch 时目标已发射(target_off >= base_off)。误用于反向时 u32 回绕成
         // 巨大值,恰好被下方 kMaxJumpOffset 上界兜住返 false(等效 emit_jump_back 的显式反向预检)。
         const u32 offset = target_off - base_off;

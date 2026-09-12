@@ -225,6 +225,7 @@ namespace aria {
     // 构造:成员初始化,再把 VM 根 tracer 注册进自有 GC,bootstrap Object 根类(先行使
     // object_class_ 进 tracer 根集),最后一次性注册 VM 级 builtins。tracer 为 lambda:[this]
     // 捕获,标记四类根:
+    //
     //   1) modules_:解释器级共享模块表(进而 trace 各模块 name_/dir_/entry_/globals_);
     //   2) builtins_:VM 级只读 builtins 表;
     //   3) object_class_:Object 根类(VM 成员单独持有,裸名解析四层全部够不到,须单独标根);
@@ -234,6 +235,7 @@ namespace aria {
     //        b) 各活动帧的 closure/module:直标更稳,免依赖「帧函数必在其父常量池」不变式;
     //        c) 挂起错误寄存器载荷:置入寄存器到 take_error 取出之间可能跨安全点分配,须标根;
     //        d) open upvalue 开链:闭包已死而 upvalue 仍在链的悬垂防线(clox 已知坑)。
+    //
     //      链尾断言恒 &main_ctx_:锁定「resume/yield 严格成对」的切换纪律(见 Movement.hpp)。
     // VM 持有 gc_(值成员),成员逆序析构下 gc_ 最后析构,tracer 与各成员同生共死,无需析构注销。
     AriaVM::AriaVM() :
@@ -283,6 +285,7 @@ namespace aria {
         // no-op init(Value 化:不合成 ObjFunction/字节码,保「ObjFunction::module 恒非空」全项目
         // 不变式)。no-op 语义:原生收到 slots[0] = this(call_class 已把 callee 槽原位换实例),
         // 返回 true 不写槽 -- 槽 0 原样即返回实例,「Foo() 得实例」天然成立。
+        //
         // 类表 upsert("init", native) + init_ 指同一值(表槽/init_ 一致;其余类 ctor 自 super
         // 派生,set_field 命中 "init" 同步)。名串经工厂 StringView 重载内部 intern 自守;
         // "init" 表键经 intern 命中(与 init_native 的 name 串同指针,零分配)。
@@ -420,6 +423,7 @@ namespace aria {
         // 进帧 + 驱动 dispatch_loop,作用于 *current_(与 dispatch_loop/call_value 族/raise 的
         // current_ 纪律同源)。run() 的被委托方,未来重入的接缝(vm-design.md §4.7):不播源根、
         // 不 reset(冲掉重入调用者的栈)、不断言主上下文;落地时升公开。
+        //
         // 根安全:fn 在 new_closure 顶 maybe_collect 时须有根(run() 路径经 module->entry_ 模块根
         // /测试 guard,重入路径属调用方契约),此处 make_guard 兜底 -- 该 GC 点是 fn 唯一无根窗口
         // (守卫真实承重)。闭包建成立即入栈:push 无 GC 点,入栈即经值栈 tracer 根化,无需跨 push
@@ -456,11 +460,13 @@ namespace aria {
     bool AriaVM::call_class(ObjClass* obj, const u8 argc) {
         // 类实例化(call_value CLASS 分支):new_instance 是唯一 GC 点(obj 经值栈根化),
         // instance 建成即写 callee 槽 -- **槽 0 原位换实例**(即新帧的 this / 原生 init 的
-        // slots[0]),余下交 call_value 通用分发,与 call_bound_method 同款「槽 0 调用方改写」
-        // 约定:init 为闭包则经 call_closure 进方法帧(编译器尾部 LOAD_LOCAL 0; RETURN 使 init
-        // 返回 this)、为原生则同步调用(no-op 不动 slots[0] 即返回实例)、为非可调用值(类上赋
-        // Foo.init = 5 经 store_field 放行)则 call_value 报 CallNonCallable 兜底。init_ 恒有值
-        // (ctor 自 super 派生/MAKE_METHOD 覆盖/类上赋值同步),无空判与快路径。
+        // slots[0]),余下交 call_value 通用分发,与 call_bound_method 同款「槽 0 调用方改写」约定:
+        //
+        // init 为闭包则经 call_closure 进方法帧(编译器尾部 LOAD_LOCAL 0; RETURN 使 init 返回
+        // this)、为原生则同步调用(no-op 不动 slots[0] 即返回实例)、为非可调用值(类上赋
+        // Foo.init = 5 经 store_field 放行)则 call_value 报 CallNonCallable 兜底。
+        //
+        // init_ 恒有值(ctor 自 super 派生/MAKE_METHOD 覆盖/类上赋值同步),无空判与快路径。
         const auto instance  = new_instance(gc_, obj);
         current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
         return call_value(obj->init(), argc);
@@ -471,6 +477,7 @@ namespace aria {
         // bound 对象 -- **原位覆写为 receiver**(this 替代 callee,实参槽位不动,零整形),余下
         // 交通用 call_value 分发:闭包走 call_closure 进方法帧(闭包经 frame.closure 携带不上栈)、
         // 原生走 call_native(槽 0 即原生契约的 this,兼返回槽)。
+        //
         // 方法值无需守卫:覆写槽 0 后唯一 GC 窗口是方法执行期 -- 闭包经 frame.closure 由帧 tracer
         // 标根;原生经类表槽可达(实例路径 this->fields 缓存回填了 bound、super 路径
         // frame.closure->defining_class 链),回收亦无害。
@@ -695,9 +702,11 @@ namespace aria {
     Opt<Error> AriaVM::unwind() {
         // 自最内帧向外遍历(pitfalls 坑 #13):每帧以 last_ip(顶帧 = 故障指令起始 / 外层帧 =
         // CALL 站点,均由 dispatch_loop 循环顶写好,坑 #2)反推 offset 查本帧异常记录表。
+        //
         // 首命中即在该帧 unwind -- 此前轮次已逐帧 exit_frame 弹掉全部内层帧,本帧即栈顶,
         // 无需 FrameStack::truncate。前提:寄存器已有载荷(契约见 AriaVM.hpp;take 后解引用
         // 空可选是 UB,入口断言把关 -- write 侧 Movement::raise 断言的 read 侧成对)。
+        //
         // 未捕获跟踪条目(仅本函数消费):fn/mod 物化路径只有 String 拼接、无 GC 分配点不悬垂;
         // ip_off 收集时就地换算 -- 帧随即被 exit_frame 弹掉,last_ip/unit 不可后取。
         struct TraceEntry {
@@ -1190,6 +1199,7 @@ namespace aria {
                     // peek super 不先弹 -- new_class 顶 maybe_collect,super 须仍在栈(「栈即根」);
                     // 非类值是**语言可达**错误(`var Bar = 5; def Foo : Bar` 合法 -- superclass
                     // 运行期才知值类型),故 raise 而非 ASSERT。name 经常量池可达,无需守卫。
+                    //
                     // 建成写回原槽([super] -> [class] 收口,class 即经值栈根);init 继承收进
                     // 对象构造 -- new_class 出厂即自 super 派生(此处 super 已验为类,沿链语义
                     // 天然成立),指令层零 seed 写点。
@@ -1210,9 +1220,10 @@ namespace aria {
                     // MAKE_STATIC;仅收闭包 -- 方法性标记 = defining class 戳,原生/静态槽读恒
                     // 原值)。编译器路径(值恒来自上一条 CLOSURE),栈形经 ASSERT 钉 -- 语言写不出
                     // 违例,不走可 catch 的 raise。set_field 的 upsert 走 trivial 分配不触 GC,
-                    // peek 不弹的真实理由是栈效应(弹 value 留 class 继续接收成员)。注册副作用:
-                    // set_field 命中 "init" 同步 init_(值形态不特判)+ 闭包戳 defining class
-                    // (M5 决策 6;一职双任 -- super 来源 + 方法性标记,读路径据非空判绑)。
+                    // peek 不弹的真实理由是栈效应(弹 value 留 class 继续接收成员)。
+                    //
+                    // 注册副作用:set_field 命中 "init" 同步 init_(值形态不特判)+ 闭包戳
+                    // defining class(M5 决策 6;一职双任 -- super 来源 + 方法性标记,读路径据非空判绑)。
                     const auto cls    = try_obj<ObjClass>(current_->peek(1));
                     const auto method = current_->peek(0);
                     ASSERT(cls != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");

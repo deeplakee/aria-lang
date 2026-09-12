@@ -4,7 +4,8 @@
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
 #include "memory/Array.hpp"
-#include "memory/GC.hpp" // Array<UpvalueDesc> 成员以 GC 为分配器,实例化点须 GC 完整(仓库约定:具体类自 include,不经容器传递)
+// Array<UpvalueDesc> 成员以 GC 为分配器,实例化点须 GC 完整(仓库约定:具体类自 include,不经容器传递)
+#include "memory/GC.hpp"
 #include "object/Object.hpp"
 
 namespace aria {

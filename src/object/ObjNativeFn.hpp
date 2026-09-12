@@ -22,6 +22,7 @@ namespace aria {
     //       slots[0]  = callee / **返回槽**(返回值直接写于此,省去 drop+push);
     //       slots[1..argc] = 实参;argc = slots.size() - 1。
     //     原生函数天然变参(不存 arity 字段),元数自查。
+    //
     //     方法调用形态(经 ObjBoundMethod 绑定):调用区槽 0 为 bound 对象,VM 调用前覆写为
     //     receiver -- 原生收到的 slots[0] = this,同时仍是返回槽;实参槽位与自由调用一致。
     //     类路径/静态访问(`Foo.m`)取出裸原生值不绑定,slots[0] = 原生自身,与自由调用无异。
@@ -36,6 +37,7 @@ namespace aria {
     //   用户 throw 的原值路由另走 Movement::raise(Value)。VM 在 CALL 后以返回的 bool 为成败
     //   信号:成功 drop argc;失败载荷留寄存器,调用方走 unwind 查异常记录表,全未命中物化为
     //   Error 从 run() 返回。故 Error 仅在出错时构造。
+    //
     //   分配安全:vm.fail 内 new_exception 可能触发 GC,值栈/帧/builtins_ 已接根,载荷入寄存器
     //   后经 VM 根 tracer 标根。
     //

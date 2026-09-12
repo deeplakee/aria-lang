@@ -52,9 +52,11 @@ namespace aria {
 
         // 细节语义(带位置):码 + SourceLoc + 细节,供词法/语法/语义阶段使用;与上一重载共名,
         // 以 loc 参数区分。构造期就地烘位置前缀(SourceFile 此刻存活,安全),此后不持
-        // SourceLoc/SourceFile*。空态 loc 无须特判:to_string 空态渲染空串、make_message 对
-        // 空位置串天然无前缀,空态 loc 与无 loc 自然合流(空态合法存在,如 CodeGen::fail 取
-        // node->loc() 即可能为空态)。detail 同上一重载(const String&,无默认值)。
+        // SourceLoc/SourceFile*。
+        //
+        // 空态 loc 无须特判:to_string 空态渲染空串、make_message 对空位置串天然无前缀,空态
+        // loc 与无 loc 自然合流(空态合法存在,如 CodeGen::fail 取 node->loc() 即可能为空态)。
+        // detail 同上一重载(const String&,无默认值)。
         // message_ 烘为 "path:line:col: Category: Name[ detail]"(空态 loc 无位置段)。
         [[nodiscard]]
         static Error from_detail(const ErrorCode code, const SourceLoc loc, const String& detail) {

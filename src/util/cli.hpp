@@ -3,13 +3,18 @@
 
 // 命令行参数解析器 Cli：链式注册 flag / option / positional 后 parse(argv)，
 // 返回独立 ParseResult（has / get / extra_args）；help() 渲染帮助文本。
+//
 // 定义与结果分离：Cli 仅持注册项（const 可重复 parse、互不污染），每次 parse 产出一个
 // ParseResult（持结果数组 + 指回 Cli 的非拥有 const Cli*，调用方须保证 Cli 在其使用期间存活）。
+//
 // 统一枚举 Slot 贯穿定义/结果两侧：定义侧 Def.kind_ 永非 Empty（ASSERT 把关）；
 // 结果侧 SlotEntry.state 用 Empty 表未提供、种类值表已提供（与 defs_ 同序、单数组）。
+//
 // 单一事实源：parse/has/get 仅依赖 defs_（线性扫描定位槽）；long_index_/short_index_ 仅注册期查重用。
 // flag/option/positional 共唯一长名空间；--name/-x 解析只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽。
+//
 // 内置 help flag（--help / -h）首个注册：命中即置位短路、视为成功（经 result.has("help") 取）。
+//
 // parse 首错即终止：返回 unexpected(首个错误消息)。值语义，纯解析工具，不打印、不退出。
 
 #include <algorithm>
@@ -400,7 +405,8 @@ namespace aria::util {
                     return std::unexpected(std::format("option -{} requires a value", c));
                 }
                 result.slots_[idx].state = Slot::Option; // 已提供（含 -o 后空串）
-                return Step::Continue;                   // 取值后结束本组（余下字符已作值）
+                // 取值后结束本组（余下字符已作值）
+                return Step::Continue;
             }
             return Step::Continue;
         }
@@ -460,11 +466,16 @@ namespace aria::util {
         static constexpr StringView kHelpDescription = "Show this help message";
         static constexpr StringView kOptValueSuffix  = " <VALUE>"; // option 行前缀尾部（Options 对齐宽度计入）
 
-        String                 program_name_;
-        String                 description_;
-        List<Def>              defs_; // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；解析侧唯一事实源
-        HashMap<String, usize> long_index_;  // 长名查重索引（仅注册期用，解析侧不读）
-        HashMap<char, usize>   short_index_; // 短名查重索引（仅注册期用，解析侧不读）
+        String program_name_;
+        String description_;
+
+        // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；解析侧唯一事实源
+        List<Def> defs_;
+
+        // 长名/短名查重索引（仅注册期用，解析侧不读）
+        HashMap<String, usize> long_index_;
+        HashMap<char, usize>   short_index_;
+
         // 不持解析结果：slots_/extra_args_ 随 ParseResult 走（定义/结果分离）
     };
 

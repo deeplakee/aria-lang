@@ -71,7 +71,6 @@ namespace aria {
         ModuloByZero,      // 模零
         KeyError,          // map 键不存在
         UndefinedVariable, // 引用未定义的变量/函数（全局名 LOAD/STORE_GLOBAL 运行期查表 miss；
-                           // 局部的未初始化读是编译期 UninitializedVariable，两者不同码）
         UndefinedProperty, // 对象无该字段/方法
         CallNonCallable,   // 调用非函数值
         WrongArity,        // 实参数量不符（含默认参数/varargs 填充后）

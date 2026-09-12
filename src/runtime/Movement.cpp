@@ -69,10 +69,12 @@ namespace aria {
     // 旧块,故指入旧块的 top_/活动帧 slots/open upvalue location_ 三类指针须重绑:搬运**前**
     // (old_base 仍存活、指针减法有定义)算好相对 old_base 的槽偏移,搬运**后**用
     // 「新基址 + 偏移」重建,全程不触碰 dangling 指针(对 dangling 指针做指针减法是 UB,
-    // [expr.add] p5;偏移须在搬运前算好,见 Buffer::reserve 注释)。open upvalue 链是第三类
-    // 重绑(M4):链节点是 GC 对象(非移动,mark-sweep 不搬块),链序两趟间稳定,偏移按链序
-    // 平行存取;暂存用 List(std::vector,与 GC 自身 scratch 容器同款;push_back 在 noexcept
-    // 函数内理论可抛 bad_alloc 终止进程 -- OOM 已是死局,与 Guard::push 的既有取舍一致)。
+    // [expr.add] p5;偏移须在搬运前算好,见 Buffer::reserve 注释)。
+    //
+    // open upvalue 链是第三类重绑(M4):链节点是 GC 对象(非移动,mark-sweep 不搬块),链序
+    // 两趟间稳定,偏移按链序平行存取;暂存用 List(std::vector,与 GC 自身 scratch 容器同款;
+    // push_back 在 noexcept 函数内理论可抛 bad_alloc 终止进程 -- OOM 已是死局,与 Guard::push
+    // 的既有取舍一致)。
     void Movement::grow_stack_() noexcept {
         const auto old_base    = buf_.data();
         const auto frame_count = frames_.size();

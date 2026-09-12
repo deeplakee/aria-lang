@@ -35,10 +35,11 @@ namespace aria {
         // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,经
         //    is_method(Value) 一步判)现场绑定(this=本实例)并回填 fields 缓存(铁则 1:
         //    只缓存绑定 --需要分配的--方法;快照语义,类上改写后新解析见新值);
-        //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。GC 走查:new_bound_method
-        //    是唯一分配点 --本实例经调用方根化,方法对象本体经本实例->class_ 链类表可达
-        //    (本地 member 仅是值拷贝),name 经调用方(常量池)可达;绑定建成后回填 upsert
-        //    走 trivial 分配不触 GC(核心不变式),无守卫必要。
+        //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。
+        //
+        //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化,方法对象本体经本
+        //    实例->class_ 链类表可达(本地 member 仅是值拷贝),name 经调用方(常量池)可达;
+        //    绑定建成后回填 upsert 走 trivial 分配不触 GC(核心不变式),无守卫必要。
         const auto member = *hit;
         if (!is_method(member)) {
             return member; // 非方法槽值:直读不缓存(铁则 1 --静态槽可变,值缓存进实例会读陈旧)

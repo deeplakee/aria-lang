@@ -132,17 +132,21 @@ namespace aria {
         }
 
         // 进帧:为对 closure 的调用 acquire 一个空帧并就位全部字段,与 exit_frame 成对,锁住
-        // 「栈顶帧 slots 即值栈本帧槽 0」的不变量。slots 按不变量设为 top - argc - 1(栈顶须形如
-        // [callee, a1..aN]:callee 在槽 0、参数即局部槽 1..argc);槽 0 的语义由调用方在进帧前
-        // 写定:普通帧 = 闭包自身(栈上的 callee),方法帧 = this(闭包经 frame.closure 携带不上栈,
-        // 对齐 clox 的方法帧形,两态共用本入口)。定义在 .cpp(需 ObjClosure 完整类型,
-        // 避免头文件拖入 object 树;arity/名字等元数据经 closure->function() 取)。
+        // 「栈顶帧 slots 即值栈本帧槽 0」的不变量。
+        //
+        // slots 按不变量设为 top - argc - 1(栈顶须形如 [callee, a1..aN]:callee 在槽 0、参数即
+        // 局部槽 1..argc);槽 0 的语义由调用方在进帧前写定:普通帧 = 闭包自身(栈上的 callee),
+        // 方法帧 = this(闭包经 frame.closure 携带不上栈,对齐 clox 的方法帧形,两态共用本入口)。
+        //
+        // 定义在 .cpp(需 ObjClosure 完整类型,避免头文件拖入 object 树;arity/名字等元数据经
+        // closure->function() 取)。
         void enter_frame(ObjClosure* closure, u8 argc);
 
         // ---- open upvalue 开链(M4)----
         // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 槽址最高);
         // 局部所在区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经 VM 根
         // tracer 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂(clox 已知坑)。
+        //
         // 「同一局部只有一份引用」不变式(「捕获即引用」的共享保证)由 capture_upvalue 单点
         // 收口:命中复用或建新插链,不存在绕过查链直接插链的旁路。
 

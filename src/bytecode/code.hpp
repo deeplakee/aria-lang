@@ -24,6 +24,7 @@ namespace aria {
     // 指令集单一事实源: 每行 X(枚举名, 操作数格式), 枚举顺序即 opcode 数值(首条 HALT 隐式为 0,
     // 依赖稠密递增)。OpCode / kOpCodeCount / kOpCodeNames / kOpCodeFormats 均由本表展开生成
     // (生成器宏用完即 #undef); 未来 computed goto 跳转表可同表再加一行消费(见 vm-design.md)。
+    //
     // 新增指令流程: 本表加一行(选既有 OpFormat 类别) -> AriaVM 加对应 case -> 文档
     // bytecode-instruction-set.md 同步; Disassembler 与名字/格式表零改动。
     // 续行符对齐交给 clang-format(RightAlignEscapedNewlines), 无需手工维护。

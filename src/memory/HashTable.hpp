@@ -54,6 +54,7 @@ namespace aria {
         //   0xFF        = 空槽(探针终止)
         //   0xFE        = 墓碑(已删除)
         //   0x00..0x7F  = 占用,低 7 位 = h2(部分哈希)
+        //
         // 高位 1 = 特殊(空/墓碑),高位 0 = 占用。target = ctrl_from_hash(hash)(高位 0),
         // 故 byte == target 只会命中占用槽,不会误中 kCtrlEmpty/kCtrlDeleted(它们高位 1)。
         static constexpr u8 kCtrlEmpty   = 0xFF;

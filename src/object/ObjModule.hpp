@@ -29,7 +29,7 @@ namespace aria {
     //   - entry_:模块体(顶层语句编进的 ObjFunction,arity 0、匿名;主入口名 `<main>` /
     //     导入名 `<module>`),导入时 run-once。保留不释放:trace 经它 reach 常量池;半初始化
     //     时 globals 未填满,常量池经 entry_ 仍可达,避免回收正在用的字面量。可为 nullptr
-    //    (未来目录包占位;当前总有体)。
+    //     (未来目录包占位;当前总有体)。
     //   - globals_:模块级绑定表(顶层 var/fun/def 的目标)。键为 ObjString*(经 intern,
     //     内容语义靠 === 同指针),值为绑定 Value。LOAD/STORE/DEF_GLOBAL 操作此表。惰性分配。
     //   - 加载事实源 = VM 模块表成员资格(未入表 = 未加载;不在对象上另设状态字段):run-once
@@ -107,9 +107,11 @@ namespace aria {
         String debug_repr() const override;
 
     private:
-        ObjString*    name_;  // 模块文件名去 .aria 后缀(intern 驻留;显示名 + 合成绝对路径用;指针恒非空,内容可空)
-        ObjString*    dir_;   // 模块文件所在目录(intern;合成绝对路径 + 相对导入基 + run() 播种源根;指针恒非空,内容可空)
-        ObjFunction*  entry_; // 模块体(run-once;可为 nullptr)
+        // 模块文件名去 .aria 后缀(intern 驻留;显示名 + 合成绝对路径用;指针恒非空,内容可空)
+        ObjString* name_;
+        // 模块文件所在目录(intern;合成绝对路径 + 相对导入基 + run() 播种源根;指针恒非空,内容可空)
+        ObjString*    dir_;
+        ObjFunction*  entry_;   // 模块体(run-once;可为 nullptr)
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 

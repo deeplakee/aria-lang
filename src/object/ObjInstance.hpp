@@ -43,12 +43,14 @@ namespace aria {
             return class_;
         }
 
-        // 命名成员读取协议 override(LOAD_FIELD / LOAD_THIS_FIELD 统一语义):fields 命中
-        // 优先(真字段遮蔽同名方法与缓存项,铁则 3)-> **委托类协议** ObjClass::load_field
-        //(沿类链读穿透直读;miss 已按类措辞就地 fail,nullopt ⟺ 已 fail,本 override 只
-        // 透传信号 --成员表在类链上,文案随宿主):可调用值(闭包/原生)现场绑 this 并回填
-        // fields 缓存(铁则 1:只缓存绑定方法,快照语义),非可调用静态值直读不缓存。
-        // 分配点(new_bound_method)的 GC 安全与回填细节见 .cpp 实现注。
+        // 命名成员读取协议 override(LOAD_FIELD / LOAD_THIS_FIELD 统一语义):fields 命中优先
+        //(真字段遮蔽同名方法与缓存项,铁则 3)-> **委托类协议** ObjClass::load_field(沿类链
+        // 读穿透直读;miss 已按类措辞就地 fail,nullopt ⟺ 已 fail,本 override 只透传信号 --
+        // 成员表在类链上,文案随宿主)。
+        //
+        // 命中处理:可调用值(闭包/原生)现场绑 this 并回填 fields 缓存(铁则 1:只缓存绑定
+        // 方法,快照语义),非可调用静态值直读不缓存。分配点(new_bound_method)的 GC 安全与
+        // 回填细节见 .cpp 实现注。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 

@@ -77,10 +77,12 @@ namespace aria {
 
     // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):内置原语与 format_value
     //   一致,Obj 走虚函数 debug_repr() 而非可重载的 to_string()(后者是未来用户类 __str__ 的
-    //   挂载点,可重载为运行 aria 字节码,调试上下文调用会重入 VM 致无限递归)。debug_repr 的
-    //   override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),语言层
-    //   无法新增 C++ 子类型,故虚分派绝不触用户重载;各类型 debug 文案由各子类型自己实现
-    //   (ObjString 带引号转义 / 函数类渲染 `<fn name>` / ObjUpvalue `<upvalue>` / 其余同显示文案)。
+    //   挂载点,可重载为运行 aria 字节码,调试上下文调用会重入 VM 致无限递归)。
+    //
+    //   debug_repr 的 override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见
+    //   Object.hpp),语言层无法新增 C++ 子类型,故虚分派绝不触用户重载;各类型 debug 文案由
+    //   各子类型自己实现(ObjString 带引号转义 / 函数类渲染 `<fn name>` / ObjUpvalue
+    //   `<upvalue>` / 其余同显示文案)。
     [[nodiscard]]
     String format_value_debug(Value value);
 

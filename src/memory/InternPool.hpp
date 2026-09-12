@@ -34,6 +34,7 @@ namespace aria {
     //   GC 的**值成员**,在 GC 类体内实例化--此刻 GC 尚不完整,而模板头约束在 Allocator.hpp
     //   上下文做名字查找(那里 GC 仅前向声明、看不到 allocate 成员),会判定不满足而报错;
     //   ctor 体内随具现化检查(GC.cpp 构造 intern_ 时 GC 已完整),既保留概念强制又能作成员。
+    //
     //   头循环同因:本头只前向声明 GC(供默认模板实参)、include ObjString.hpp(方法体调
     //   view/hash/is_marked);调 allocate/deallocate 的成员在实例化点具现化,届时 Alloc 必已
     //   完整(同 HashTable)。

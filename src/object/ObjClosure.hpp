@@ -2,7 +2,9 @@
 #define ARIA_OBJ_CLOSURE_HPP
 
 #include "memory/Array.hpp"
-#include "memory/GC.hpp" // Array<ObjUpvalue*> 成员以 GC 为分配器,实例化点须 GC 完整(仓库约定:具体类自 include,不经容器传递)
+// Array<ObjUpvalue*> 成员以 GC 为分配器,实例化点须 GC 完整
+// (仓库约定:具体类自 include,不经容器传递)
+#include "memory/GC.hpp"
 #include "object/Object.hpp"
 
 namespace aria {
@@ -30,6 +32,7 @@ namespace aria {
     //   地址哈希型可变对象(走 Object{ObjType::CLOSURE} ctor);equals 保持默认地址相等--
     //     闭包按身份判等(同一 fn 的两次捕获是不同闭包)。
     //   final,不再派生;Array 成员自身禁拷贝/禁移动(同 ObjFunction 持 CodeUnit)。
+    //
     //   trace():标 function_ + 全部 upvalue(upvalue 再各自标其槽值/闭值)+ defining_class_
     //     (容 nullptr;方法闭包经此级联标所属类)。
     //   to_string():委托 function_->to_string() 渲染 `<fn name>`(与纯函数同文案)。

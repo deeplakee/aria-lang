@@ -115,12 +115,14 @@ namespace aria {
         Value         init_;  // 构造器方法值(闭包/原生)
     };
 
-    // 工厂:分配 ObjClass(field_ 空态;init_ 由 **ObjClass 构造函数自 super 派生**,工厂
-    //     纯分配)。工厂不替调用方守卫入参(「每方只守自己创建的」)--只做一次 new_object、
-    //     无内部新建对象,**调用方须在调用前自行根化 name 与 super**(跨 new_object 顶
-    //     maybe_collect;name 经 intern 是 weak root,super 可能尚未入任何根,如 MAKE_CLASS
-    //     peek-不弹栈纪律),与 new_function 同理。返回对象白色无根,调用方须立即发布进根
-    //    (MAKE_CLASS 原槽写回即经值栈根)。
+    // 工厂:分配 ObjClass(field_ 空态;init_ 由 **ObjClass 构造函数自 super 派生**,工厂纯分配)。
+    //
+    // 工厂不替调用方守卫入参(「每方只守自己创建的」)--只做一次 new_object、无内部新建对象,
+    // **调用方须在调用前自行根化 name 与 super**(跨 new_object 顶 maybe_collect;name 经
+    // intern 是 weak root,super 可能尚未入任何根,如 MAKE_CLASS peek-不弹栈纪律),与
+    // new_function 同理。
+    //
+    // 返回对象白色无根,调用方须立即发布进根(MAKE_CLASS 原槽写回即经值栈根)。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super);
 

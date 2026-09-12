@@ -66,8 +66,10 @@ namespace aria {
 
     void GC::delete_object(Object* obj) noexcept {
         ASSERT(obj != nullptr, "null object");
-        const usize sz = obj->size();                   // 虚调用,必须在 ~Object 前
-        obj->~Object();                                 // 级联释放子内存(Array / long_chars_)
+        // 虚调用,必须在 ~Object 前
+        const usize sz = obj->size();
+        // 级联释放子内存(Array / long_chars_)
+        obj->~Object();
         deallocate<u8>(reinterpret_cast<u8*>(obj), sz); // 释放壳
     }
 

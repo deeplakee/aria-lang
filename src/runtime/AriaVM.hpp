@@ -92,7 +92,9 @@ namespace aria {
         // + 委托私有 run_function(执行本体,见其注释)。重复调用先 reset 主上下文(HALT 收场的
         // 上一轮不弹帧,不清场会把新帧叠在陈旧帧上);入口断言 current_ == &main_ctx_ 是切换
         // 纪律不变式(run() 是唯一驱动入口,vm-design.md §4.9)。
+        //
         // 注:fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),不做逐指令越界设防。
+        //
         // 返回 Result<Value, Error>:成功为返回值,失败为未捕获的运行时错误
         // (M6 协程挂起将扩三态,见 vm-design.md §3)。
         Result<Value, Error> run(ObjFunction* fn);
@@ -146,6 +148,7 @@ namespace aria {
         //   单点)合成完整消息,new_exception 装箱入寄存器。**消息不含位置前缀**:被抛出的错误
         //   只携带码与描述(对齐 clox/Python 惯例),位置由 unwind 未捕获出口的逐帧 at 跟踪行
         //   给出。不经 Error 对象中转 -- Error 只在边界出现(Result 出口 / 未捕获出口物化)。
+        //
         //   返回 void -- 纯副作用操作(raise 必 raise),失败信号惯用法由 fail 承载(FailSignal
         //   按调用点上下文转 false/nullptr/nullopt)。Movement::raise(Value)(存原值不包)是
         //   用户 throw 的路由,不经本 VM 层 API。
@@ -210,10 +213,11 @@ namespace aria {
 
         // 源根列表(解释器级):裸名导入(import "lib/utils")的搜索路径根目录,语义对齐 Python
         // sys.path -- 解析器沿各源根找 <源根>/<spec>.aria,首个存在者命中(详见
-        // .claude/reference/runtime/import-path-resolution.md)。模块表键为命中文件的绝对规范路径
-        // (源根不进键)。布局:[0] = 入口槽(构造时 cwd 占位,run() 时被入口模块 dir_ 原地替换);
-        // [1..] = 配置根(见 set_source_roots)。存为 List<String>(路径元数据,非 ObjString*,
-        // 不参与 GC 追踪 -- 仅解析器用,不作模块表键)。
+        // .claude/reference/runtime/import-path-resolution.md)。
+        //
+        // 模块表键为命中文件的绝对规范路径(源根不进键)。布局:[0] = 入口槽(构造时 cwd 占位,
+        // run() 时被入口模块 dir_ 原地替换);[1..] = 配置根(见 set_source_roots)。存为
+        // List<String>(路径元数据,非 ObjString*,不参与 GC 追踪 -- 仅解析器用,不作模块表键)。
         [[nodiscard]]
         const List<String>& source_roots() const noexcept {
             return source_roots_;
@@ -242,10 +246,12 @@ namespace aria {
         // (入口名 <module>,即 aria.hpp kModuleEntryName)-> 返回模块对象(已 set_entry)。
         // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
         // 其 RETURN 按函数名 == <module> 判定后压回模块对象。
+        //
         // 错误契约与 call_value 族同构:return nullptr ⟺ 错误载荷已 raise 入 *current_ 寄存器,
         // 调用方 take_error 取出沿 runtime_err 传播。两类失败:读盘失败/名字无效经 fail 烘位置
         // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令);被导入模块的编译期 Error 就地
         // new_exception 原样装配箱透传(from_baked 语义不重烘,位置指向被导入文件内部)。
+        //
         // **仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清
         // pending_error -- run 外直调的错误会被静默吞掉。
         //   - canonical_path:命中文件的绝对规范路径(intern ObjString*),一身二任 -- 既作
@@ -264,6 +270,7 @@ namespace aria {
         // 分派到对应 call_* 子例程,其余经 Object::op_call 协议基类默认报 CallNonCallable(未来
         // 可调用新类型 override op_call 即接入,不改本 switch)。M4 起 callable 收敛为闭包,
         // ObjFunction 退为常量池内部物、不以 callable 值上栈。
+        //
         // 作用于 *current_(与 dispatch_loop 同源)。返回 bool 为成败信号,契约:
         // return false ⟺ 错误载荷已 raise 进 *current_ 的挂起错误寄存器,调用方据 bool 决定
         // 是否 take_error 取出沿 runtime_err 传播。
@@ -312,10 +319,12 @@ namespace aria {
         bool run_binary_numeric();
 
         // ---- 类与对象(M5):field 族指令执行体 ----
+        //
         // 与 run_binary_numeric/call_value 族同款 bool 契约:失败载荷已在 *current_ 挂起寄存器
         // -- 对象协议失败由 override 内 vm.fail 就地烘焙,非对象守卫由执行体 fail,执行体只透传
         // 信号。THIS 对(LOAD/STORE_THIS_FIELD)不设执行体:编译器不变式保证 this 恒实例,
         // 无 nil/原语守卫,case 内直调协议。
+        //
         // LOAD_FIELD 执行体(name 操作数已读出):peek obj 不弹,经 Object::load_field 虚函数
         // 协议解析,结果写回原槽([obj] -> [v])。peek 不弹 -- 协议内分配跨 GC 须 this 在栈
         // (「栈即根」)。非对象(含 nil)是协议外的原语,文案留本执行体;对象 miss 的文案由
@@ -329,11 +338,13 @@ namespace aria {
 
         // LOAD_SUPER_FIELD 执行体:defining class 取 *current_ 顶帧 closure 直读(方法闭包恒有
         // 戳(MAKE_METHOD 注册时设),编译器不变式 ASSERT 钉),从其父类起走 ObjClass::load_field
-        // 协议沿链读穿透(起点即 super,不含 defining 自身;类协议不绑定不缓存)。命中方法闭包
-        // -> 绑 this=帧槽 0 压栈供 CALL;其余(静态方法 fun/持函数值的静态变量/原生/静态值)
-        // 原值直读压栈;两者均**不写 fields 缓存**(铁则 2:super 查到的是被覆写前的实现,写
-        // 缓存会被 fields 命中劫持后续 obj.m 动态派发)。defining/super 非空是编译器保证的
-        // 不变式;全链 miss 为语言可达错误,经协议 fail 返 false。
+        // 协议沿链读穿透(起点即 super,不含 defining 自身;类协议不绑定不缓存)。
+        //
+        // 命中方法闭包 -> 绑 this=帧槽 0 压栈供 CALL;其余(静态方法 fun/持函数值的静态变量/
+        // 原生/静态值)原值直读压栈;两者均**不写 fields 缓存**(铁则 2:super 查到的是被覆写前
+        // 的实现,写缓存会被 fields 命中劫持后续 obj.m 动态派发)。
+        //
+        // defining/super 非空是编译器保证的不变式;全链 miss 为语言可达错误,经协议 fail 返 false。
         bool run_load_super_field(ObjString* name);
 
         // 自最内帧向外遍历帧链:每帧以 last_ip 反推 offset 查本帧 CodeUnit 异常记录表
@@ -343,25 +354,30 @@ namespace aria {
         // 从寄存器反提载荷为 (码, 烘焙消息) 两件(uncaught_error_parts),逐帧跟踪烘焙
         // "\n  at <fn> (<loc>)" 进消息尾部(收集序内->外,渲染反转为外->内,Python 式
         // most recent call last),经 Error::from_baked 一次物化返回。
+        //
         // 前提:寄存器已有载荷(raise/fail/THROW 已入),本函数不构造载荷 -- 入口断言把关
         // (write 侧 Movement::raise 空寄存器断言的 read 侧成对)。帧内 last_ip 由 dispatch_loop
         // 循环顶写(顶帧 = 故障指令,外层帧 = CALL 站点,坑 #2),无参数。
         Opt<Error> unwind();
 
-        GC       gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
+        GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
+
         Movement main_ctx_;
+
         // 当前执行上下文:dispatch_loop 主循环 / call_value 族 / raise 的作用对象,构造即指
         // &main_ctx_,一律直接经 current_ 访问(语义统一,无入口快照)。M6 单循环切换模型见
         // vm-design.md §4.9。
-        Movement*     current_;
-        AriaHashTable modules_;  // 模块表(M2:解释器级共享 + GC 根)
+        Movement* current_;
+
+        AriaHashTable modules_;  // 模块表(解释器级共享 + GC 根)
         AriaHashTable builtins_; // VM 级只读 builtins 表(构造期一次填充 + GC 根,LOAD_GLOBAL 回退查)
+
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_);[1..]=配置根(stdlib/-L/环境变量)
         List<String> source_roots_;
-        // Object 根类(M5 决策 3):VM 构造期 bootstrap、单独持有,不进 builtins_/任何模块
-        // globals,tracer 第 4 根。声明不写默认值(复杂类成员初始化统一收敛进构造函数):
-        // bootstrap 前的空态 nullptr 由构造函数初始化列表显式置,供 tracer 先行注册后
-        // register_builtins 触 GC 时 mark_object 容 nullptr。
+
+        // Object 根类(M5 决策 3):构造期 bootstrap、单独持有,不进 builtins_/任何模块 globals
+        // (LOAD_OBJECT 直推;tracer 第 4 根);bootstrap 前的空态 nullptr 由构造函数初始化列表
+        // 显式置,供 tracer 先行注册后 register_builtins 触 GC 时 mark_object 容 nullptr。
         ObjClass* object_class_;
     };
 

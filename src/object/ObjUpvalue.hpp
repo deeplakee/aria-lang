@@ -24,6 +24,7 @@ namespace aria {
     //   地址哈希型可变对象(走 Object{ObjType::UPVALUE} ctor);equals 保持默认地址相等。
     //   final,不再派生;非拷贝/非移动--upvalue 按身份共享(同一局部同一份引用),浅拷贝会
     //   破坏开链与 VM 侧「复用同一对象」不变式。
+    //
     //   trace():标 *value_slot()(open 标栈槽内值 / closed 标 closed_;栈槽内的 Value 可能
     //   装箱任意对象)。upvalue 本体从不出现在 aria 值面(语言层不可见),debug_repr 渲染
     //   `<upvalue>` 稳定短文案(地址型描述噪声大且地址不稳)。

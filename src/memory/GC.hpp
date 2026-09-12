@@ -89,6 +89,7 @@ namespace aria {
         // C++ 局部变量持有的、尚未入值栈的对象/值,在分配序列间保护其不被回收。
         // 对外只暴露 Guard / make_guard RAII API(构造时 push,析构时 pop;禁拷贝/移动);
         // 底层 push_temp_root/pop_temp_root 为私有,由 Guard 内部调用。
+        //
         // 生存期须严格嵌套(temp_roots_ 是朴素栈,析构只从尾部弹 count_ 个、无归属校验):
         // A push 后 B push、A 先析构会弹掉 B 的根,无断言可拦。
         class Guard {
@@ -205,16 +206,17 @@ namespace aria {
         static constexpr usize kInitialGcThreshold = 1024 * 4;
         static constexpr usize kGcGrowFactor       = 2;
 
-        Object*                  objects_head_;
-        usize                    bytes_allocated_;
-        usize                    next_gc_;
-        bool                     is_stress_;
-        u32                      lock_count_;      // GC 禁用计数(>0 禁用,支持嵌套 disable/enable)
-        List<Object*>            gray_stack_;      // GC scratch,不计入 bytes_allocated_
-        List<Value>              temp_roots_;      // GC scratch,不计入 bytes_allocated_
-        InternPool<GC>           intern_;          // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
-        std::function<void(GC&)> vm_roots_tracer_; // VM 根标记回调(modules_ + builtins_ + current_
-                                                   // 执行链上各上下文值栈/活动帧/挂起错误寄存器;AriaVM 注册,可为空)
+        Object*        objects_head_;
+        usize          bytes_allocated_;
+        usize          next_gc_;
+        bool           is_stress_;
+        u32            lock_count_; // GC 禁用计数(>0 禁用,支持嵌套 disable/enable)
+        List<Object*>  gray_stack_; // GC scratch,不计入 bytes_allocated_
+        List<Value>    temp_roots_; // GC scratch,不计入 bytes_allocated_
+        InternPool<GC> intern_;     // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
+        // VM 根标记回调(modules_ + builtins_ + current_ 执行链上各上下文值栈/活动帧/
+        // 挂起错误寄存器;AriaVM 注册,可为空)
+        std::function<void(GC&)> vm_roots_tracer_;
     };
 
     // ---- 模板实现 ----

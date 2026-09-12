@@ -242,8 +242,8 @@ namespace aria {
         // 对象 -- 无递归调用。
         Result<Value, Error> dispatch_loop();
 
-        // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 入表占位 -> 编译
-        // (入口名 <module>,即 aria.hpp kModuleEntryName)-> 返回模块对象(已 set_entry)。
+        // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译(入口名 <module>,
+        // 即 aria.hpp kModuleEntryName)-> 编译成功才入表 -> 返回模块对象(已 set_entry)。
         // **仅加载与编译**,不执行模块体 -- run-once 由调用方(IMPORT 分支)以普通函数调用进帧驱动,
         // 其 RETURN 按函数名 == <module> 判定后压回模块对象。
         //
@@ -251,6 +251,7 @@ namespace aria {
         // 调用方 take_error 取出沿 runtime_err 传播。两类失败:读盘失败/名字无效经 fail 烘位置
         // (raise 时顶帧即导入方帧,last_ip 指本 IMPORT 指令);被导入模块的编译期 Error 就地
         // new_exception 原样装配箱透传(from_baked 语义不重烘,位置指向被导入文件内部)。
+        // 失败一律不留表项(编译成功才入表),同路径重试重新加载。
         //
         // **仅限 dispatch_loop 驱动期调用**:寄存器随 *current_ 走,run() 入口 reset 会清
         // pending_error -- run 外直调的错误会被静默吞掉。

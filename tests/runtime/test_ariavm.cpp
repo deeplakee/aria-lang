@@ -1009,6 +1009,39 @@ TEST_F(AriaVMStress, ImportModuleCompileErrorPropagates) {
     EXPECT_EQ(result, aria::InterpretResult::RuntimeError);
 }
 
+// 被导入模块编译失败不留表项:catch 首次 IMPORT 的编译错误后,同路径重试仍重新加载编译、再次
+// 报错(修复前占位模块留表,重试命中半初始化空模块静默「成功」)。
+TEST_F(AriaVMStress, ImportModuleCompileErrorNotCached) {
+
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "helper.aria", "var = 5;"); // 语法错:var 后期望标识符
+    const auto main_path = write_aria(base, "main.aria",
+                                      "try {\n"
+                                      "    import \"./helper\" as H1;\n"
+                                      "} catch (e) {\n"
+                                      "}\n"
+                                      "try {\n"
+                                      "    import \"./helper\" as H2;\n"
+                                      "    return 0;\n" // 仅残留占位模块被复用才会走到这
+                                      "} catch (e) {\n"
+                                      "    return 1;\n"
+                                      "}\n");
+
+    auto loaded = aria::SourceFile::from_path(main_path);
+    ASSERT_TRUE(loaded.has_value());
+    aria::SourceFile source = std::move(loaded.value());
+    auto             dir    = new_string(vm.gc(), base);
+    auto             module = make_module(vm.gc(), "main", dir); // dir 先入根,make_module 内部自守
+    auto             guard  = vm.gc().make_guard(module);
+    const auto       out    = vm.run(source, module);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out.value().is_int());
+    EXPECT_EQ(out.value().as_int(), 1); // 重试仍报编译错误,未静默复用空模块
+
+    EXPECT_EQ(find_module_by_name(vm.modules(), "helper"), nullptr); // 编译失败不留表项
+}
+
 // 被导入模块运行期错误(模块体 run-once 期间)经 Error 原样透传:helper `var x = 1/0;`(整除零)
 // -> interpret 返 RuntimeError。
 TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {

@@ -534,45 +534,47 @@ namespace aria {
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
         // IMPORT 未命中分支的加载层(契约与两类失败形态总览见 AriaVM.hpp 声明处注释)。
         // canonical_path 已由调用方根化(IMPORT case 的 canonical_path_guard,跨本函数内 upsert)。
-        // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 入表占位 -> 编译(set_entry)。
-        // 加载事实源 = modules_ 表成员资格(对象无状态字段):入表即「已加载(体待 run-once 或
-        // 已跑完)」,循环导入命中表内半初始化对象即复用。
+        // 步骤:读盘 -> 派生模块身份 -> new_module + 自守 -> 编译(set_entry) -> 入表。
+        // 加载事实源 = modules_ 表成员资格(对象无状态字段):编译成功才入表,入表即「已编译
+        // (体待 run-once 或已跑完)」,循环导入命中表内体执行中的对象即复用;失败一律不留表项,
+        // 同路径重试重新加载。
 
         // 1. 读盘:BOM 剥除 + CRLF->LF + UTF-8 校验。resolve_module 已 exists-check,但读盘/
         //    编码仍可能失败(权限竞争 / 非法 UTF-8)。失败报 ModuleNotFound(带路径)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
-        if (!loaded_src.has_value()) {
+        if (!loaded_src) {
             return fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
         }
-        SourceFile source = std::move(loaded_src.value());
+        SourceFile source = std::move(*loaded_src);
 
         // 2. 派生模块身份 {name=stem, dir=dirname}:abs_path() = dir_ + "/" + name_ + ".aria"
         //    还原 canonical key,相对导入基(dirname)正确。
-        auto [name_s, dir_s] = fs::module_name_and_dir(canonical_path->view());
-        if (name_s.empty()) {
+        const auto [name_str, dir_str] = fs::module_name_and_dir(canonical_path->view());
+        if (name_str.empty()) {
             return fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
-        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨 upsert/编译。
-        auto module = new_module(gc_, name_s, dir_s);
+        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨编译/upsert。
+        auto module = new_module(gc_, name_str, dir_str);
         auto guard  = gc_.make_guard(module);
 
-        // 4. 入表占位:模块体尚未跑,但表内已有 -- 循环导入命中此半初始化对象直接复用。
-        //    canonical_path 已由调用方根化;module 由上方 guard 根化,upsert rehash 触 GC 时皆安全。
-        const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
-        mod_entry->value     = Value::from_obj(module);
-
-        // 5. 编译:入口 ObjFunction 名 kModuleEntryName("<module>"),CodeGen::init_module 已
+        // 4. 编译:入口 ObjFunction 名 kModuleEntryName("<module>"),CodeGen::init_module 已
         //    module.set_entry。编译期 Error(位置指向被导入文件内部)就地 new_exception 装箱入
         //    寄存器(from_baked 语义,消息不重烘 -- 不经 AriaVM::raise 会叠上导入方站点前缀)。
-        //    module 双重根化(guard + modules_ 表);source 须存活到 compile() 返回(Error 烘
+        //    module 此段仅由 guard 根化(尚未入表);source 须存活到 compile() 返回(Error 烘
         //    位置串需它)。entry 经 module->entry_ 根可达。
-        Compiler compiler{gc_};
-        if (auto compiled = compiler.compile(source, module, kModuleEntryName); !compiled) {
-            auto err = std::move(compiled).error();
+        if (auto compiled = Compiler{gc_}.compile(source, module, kModuleEntryName); !compiled) {
+            auto err = std::move(compiled.error());
             current_->raise(Value::from_obj(new_exception(gc_, err.code(), err.message())));
             return nullptr;
         }
+
+        // 5. 入表:编译成功才占位 -- 失败(读盘/身份/编译)不留表项。循环导入语义不变:入表先于
+        //    模块体 run-once(体在本函数返回后由 IMPORT 分支调起),体执行期间的再导入命中此表
+        //    项即复用半初始化对象。canonical_path 已由调用方根化;module 由 guard 根化,upsert
+        //    rehash 触 GC 时皆安全。
+        const auto mod_entry = modules_.upsert(Value::from_obj(canonical_path));
+        mod_entry->value     = Value::from_obj(module);
         // 内置函数不经此注入 -- 由 VM 级 builtins_ 表统一承载,LOAD_GLOBAL 模块 globals 未命中后回退查之。
         return module;
     }
@@ -1272,9 +1274,10 @@ namespace aria {
                     // CodeGen 按作用域走（IMPORT 仅负责「取模块对象」）。解析按
                     // .claude/reference/runtime/import-path-resolution.md:相对基 = 当前模块目录、
                     // 裸名基 = source_roots，键 = 绝对规范路径（见 resolve_module）。
-                    //   - 命中（表内任意初始化进度）：复用模块对象 -- 命中正在 run-once 的模块即
-                    //     循环导入，按文法返回半初始化对象。加载事实源 = 表成员资格。
-                    //   - 未命中：load_module（读盘 -> 编译 -> 入表占位）后，以其 entry 作一次
+                    //   - 命中（编译成功才入表,表内进度只有模块体执行:待 run-once / 循环导入正在
+                    //     run-once / 已跑完）：复用模块对象 -- 命中正在 run-once 的模块即循环导
+                    //     入，按文法返回半初始化对象。加载事实源 = 表成员资格。
+                    //   - 未命中：load_module（读盘 -> 编译 -> 编译成功后入表）后，以其 entry 作一次
                     //     **普通函数调用**进帧 -- 模块体 run-once 即执行一个函数，其 RETURN 按
                     //     函数名 == <module> 判定后弹弃返回值、压回模块对象，故命中/未命中两分支
                     //     栈效应统一为 [..., module]。无递归 dispatch_loop()。
@@ -1300,7 +1303,7 @@ namespace aria {
                     auto guard = gc_.make_guard(canonical_path); // 跨 find / load_module 内 upsert(rehash 触 GC)
                     if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
                         module_entry != nullptr) {
-                        // 命中(体已跑完 / 循环导入半初始化)复用:压模块值。
+                        // 命中(体待 run-once / 循环导入跑中 / 已跑完)复用:压模块值。
                         current_->push(module_entry->value);
                         break;
                     }
@@ -1314,8 +1317,9 @@ namespace aria {
                     }
                     // 模块体 run-once = 一次普通 0 参函数调用(见 case 头注释)。根安全:entry 经
                     // module->entry_ 根可达;闭包建成立即压栈即根化。
-                    ObjFunction* entry   = module->entry();
-                    const auto   closure = new_closure(gc_, entry);
+                    ObjFunction* entry = module->entry();
+                    ASSERT(entry != nullptr, "load_module 返回非空模块须已 set_entry");
+                    const auto closure = new_closure(gc_, entry);
                     current_->push(Value::from_obj(closure)); // callee 压栈
                     if (!call_closure(closure, 0)) {
                         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。

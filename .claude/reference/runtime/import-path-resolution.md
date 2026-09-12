@@ -116,7 +116,7 @@ dirname / stem 切分，由 `fs::module_name_and_dir` 按命中文件的绝对�
 
 IMPORT 以绝对键查 `modules_`：
 
-- **命中**（表内任意初始化进度，加载事实源 = 表成员资格、对象无状态字段）：复用该模块对象。
+- **命中**（编译成功才入表，故表内任意执行进度：体待 run-once / 正在 run-once / 已跑完；加载事实源 = 表成员资格、对象无状态字段）：复用该模块对象。
   - 体已跑完 = 完整模块。
   - 正在 run-once = 循环导入命中的「半初始化对象」--按文法「允许循环导入，命中正在初始化的
     模块返回半初始化对象」直接用，不报错。
@@ -168,7 +168,7 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()
   `ObjModule::dir_`/`name_` + `abs_path()`（合成绝对路径，`dir_` 指针恒非空、内容可空 --
   `new_module` 默认 cwd）、`.aria` 后缀剥离、模块表命中复用（含循环导入半初始化）、循环导入语义、**未命中分支
   加载链路**（`load_module`：读文件 → `Compiler::compile` 编为被导入模块 CodeUnit（入口名 `<module>`、
-  `set_entry`）→ 入表占位；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其
+  `set_entry`）→ 编译成功才入表；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其
   RETURN 按函数名 == `<module>` 判定模块体帧后压回模块对象,无递归 `dispatch_loop()`）。
 - **解析缓存**：IMPORT 重复执行同一 specifier 需避免重复 stat。计划加一层缓存，键
   `(当前模块绝对目录, specifier ObjString*)` -> 已解析绝对键 `ObjString*`，命中即跳过磁盘。

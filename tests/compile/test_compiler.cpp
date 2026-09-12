@@ -32,13 +32,16 @@ namespace {
     // 检视期间存活--否则辅助函数返回即销毁局部 vm/source -> GC 回收对象悬垂。
     // Error 构造期已把位置烘成自有串、不再指向 SourceFile，故 SourceFile 的存活只关涉 GC 对象
     // （ObjFunction 等）的检视，与 Error 无关；unique_ptr 持堆稳定地址仍为 GC 对象地址稳定所需。
+    // 转发 has_value/error 并提供 bool/->/* ，调用点按 Result 惯用法访问（CPP_Naming_Convention
+    // 「Optional/Result 用法」：取值 */->，判断隐式 bool，不设 .value()）。
     struct RunResult {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
         Result<Value, Error>        result;
         bool                        has_value() const noexcept { return result.has_value(); }
-        Value&                      value() noexcept { return result.value(); }
-        const Value&                value() const noexcept { return result.value(); }
+        explicit                    operator bool() const noexcept { return has_value(); }
+        Value*                      operator->() noexcept { return &*result; }
+        Value&                      operator*() noexcept { return *result; }
         Error&                      error() noexcept { return result.error(); }
         const Error&                error() const noexcept { return result.error(); }
     };
@@ -88,7 +91,7 @@ namespace {
     i64 run_int(std::string_view src) {
         auto out = run_source(src);
         EXPECT_TRUE(out.has_value()) << "expected success";
-        return out.has_value() ? out.value().as_int() : 0;
+        return out ? out->as_int() : 0;
     }
 
 } // namespace

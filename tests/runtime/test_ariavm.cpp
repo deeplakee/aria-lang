@@ -273,8 +273,8 @@ TEST_F(AriaVMStress, Arithmetic) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 7);
+    EXPECT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 7);
 }
 
 TEST_F(AriaVMStress, F64ConstantAndPromotion) {
@@ -294,8 +294,8 @@ TEST_F(AriaVMStress, F64ConstantAndPromotion) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_TRUE(out.value().is_f64());
-    EXPECT_DOUBLE_EQ(out.value().as_f64(), 3.0);
+    EXPECT_TRUE(out->is_f64());
+    EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
 TEST_F(AriaVMStress, WhileLoopWithJumps) {
@@ -348,7 +348,7 @@ TEST_F(AriaVMStress, WhileLoopWithJumps) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 6);
+    EXPECT_EQ(out->as_int(), 6);
 }
 
 TEST_F(AriaVMStress, FunctionCall) {
@@ -374,7 +374,7 @@ TEST_F(AriaVMStress, FunctionCall) {
 
     const auto out = vm.run(main_fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 7);
+    EXPECT_EQ(out->as_int(), 7);
     EXPECT_EQ(vm.main_context().stack_size(), usize{0}); // callee 与帧已清干净
     EXPECT_TRUE(vm.main_context().frames().empty());
 }
@@ -403,8 +403,8 @@ TEST_F(AriaVMStress, StackGrowsAndRebasesFrames) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 42);
+    EXPECT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 42);
     EXPECT_GT(vm.main_context().stack_capacity(), usize{1024}); // 增长确已发生
 }
 
@@ -427,8 +427,8 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
 
         const auto out = vm.run(fn);
         ASSERT_TRUE(out.has_value());
-        EXPECT_TRUE(out.value().is_bool());
-        EXPECT_TRUE(out.value().as_bool());
+        EXPECT_TRUE(out->is_bool());
+        EXPECT_TRUE(out->as_bool());
     }
     // nil && x -> nil(被测值 nil 为假,OR_POP 命中跳转留 nil)
     {
@@ -448,7 +448,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
 
         const auto out = vm.run(fn);
         ASSERT_TRUE(out.has_value());
-        EXPECT_TRUE(out.value().is_nil());
+        EXPECT_TRUE(out->is_nil());
     }
     // !nil -> true(0 为真:0 为真,NOT 后为 false)
     {
@@ -463,7 +463,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
 
         const auto out = vm.run(fn);
         ASSERT_TRUE(out.has_value());
-        EXPECT_TRUE(out.value().as_bool());
+        EXPECT_TRUE(out->as_bool());
     }
 }
 
@@ -482,7 +482,7 @@ TEST_F(AriaVMStress, EqualitySemantics) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_TRUE(out.value().as_bool());
+    EXPECT_TRUE(out->as_bool());
 }
 
 TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
@@ -613,7 +613,7 @@ TEST_F(AriaVMStress, DefAndLoadGlobal) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 42);
+    EXPECT_EQ(out->as_int(), 42);
 }
 
 // STORE_GLOBAL 是赋值路径(peek-store,留值):命中已有条目则更新,不创建。
@@ -637,7 +637,7 @@ TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 2);
+    EXPECT_EQ(out->as_int(), 2);
 }
 
 // 赋值不隐式创建(grammar.txt §445):STORE_GLOBAL 未定义全局 -> UndefinedVariable。
@@ -711,8 +711,8 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), m); // 取回的是预注册模块对象
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 取回的是预注册模块对象
 }
 
 // IMPORT 解析失败(无源根命中 nope/missing.aria)且无嵌入层加载 -> ModuleNotFound。
@@ -768,8 +768,8 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), m); // 折 "." 后命中同一模块
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 折 "." 后命中同一模块
 }
 
 // IMPORT 相对路径解析:导入函数所属模块 dir_ = base、name_ = lib/main,"./helper" 相对当前
@@ -807,8 +807,8 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), helper); // 相对解析后命中 base/lib/helper
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), helper); // 相对解析后命中 base/lib/helper
 }
 
 // IMPORT 裸名沿 source_roots 逐根搜索(对齐 Python sys.path 顺序搜索):入口根无
@@ -850,8 +850,8 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), target); // 入口根未命中,落 stdlib 命中
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), target); // 入口根未命中,落 stdlib 命中
 }
 
 // IMPORT 末尾 ".aria" 后缀可选:"lib/math" 与 "lib/math.aria" 归一为同一文件。
@@ -886,8 +886,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), m); // 剥 .aria 后命中同一文件键
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 剥 .aria 后命中同一文件键
 }
 
 // IMPORT 相对路径 + .aria 后缀组合:导入方 dir_ = base、name_ = lib/main,"./math.aria"
@@ -924,8 +924,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out.value().as_obj()), target); // 相对 + 剥 .aria -> base/lib/math
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), target); // 相对 + 剥 .aria -> base/lib/math
 }
 
 // 源根列表在 run() 时按 [入口模块 dir_, stdlib 目录] 播种:入口模块 dir_ = base、name_ = main
@@ -1030,14 +1030,14 @@ TEST_F(AriaVMStress, ImportModuleCompileErrorNotCached) {
 
     auto loaded = aria::SourceFile::from_path(main_path);
     ASSERT_TRUE(loaded.has_value());
-    aria::SourceFile source = std::move(loaded.value());
+    aria::SourceFile source = std::move(*loaded);
     auto             dir    = new_string(vm.gc(), base);
     auto             module = make_module(vm.gc(), "main", dir); // dir 先入根,make_module 内部自守
     auto             guard  = vm.gc().make_guard(module);
     const auto       out    = vm.run(source, module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 1); // 重试仍报编译错误,未静默复用空模块
+    ASSERT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 1); // 重试仍报编译错误,未静默复用空模块
 
     EXPECT_EQ(find_module_by_name(vm.modules(), "helper"), nullptr); // 编译失败不留表项
 }
@@ -1069,14 +1069,14 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
 
     auto loaded = aria::SourceFile::from_path(main_path);
     ASSERT_TRUE(loaded.has_value());
-    aria::SourceFile source = std::move(loaded.value());
+    aria::SourceFile source = std::move(*loaded);
     auto             dir    = new_string(vm.gc(), base);
     auto             module = make_module(vm.gc(), "main", dir); // dir 先入根,make_module 内部自守
     auto             guard  = vm.gc().make_guard(module);
     const auto       out    = vm.run(source, module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out.value().is_obj());
-    const auto thrown = aria::Object::as<ObjString>(out.value().as_obj());
+    ASSERT_TRUE(out->is_obj());
+    const auto thrown = aria::Object::as<ObjString>(out->as_obj());
     ASSERT_NE(thrown, nullptr);
     EXPECT_EQ(thrown->view(), "boom");
 
@@ -1157,8 +1157,8 @@ TEST_F(AriaVMStress, NativeFnSlot0Return) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << "expected success, got error";
-    ASSERT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 42);
+    ASSERT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 42);
 }
 
 // 无参原生:CALL 0,slots 仅含槽 0,写返回值后 drop(0)。
@@ -1182,8 +1182,8 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 42);
+    ASSERT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 42);
 }
 
 // 原生函数侧信道报错:vm.fail 写寄存器,run() 取出作未捕获 Error 返回。
@@ -1298,7 +1298,7 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 6); // 1+2+3:三次自增写同一 upvalue、读回递增
+    EXPECT_EQ(out->as_int(), 6); // 1+2+3:三次自增写同一 upvalue、读回递增
 }
 
 // 同槽捕获复用:一次 make_counter 建两个闭包(c1/c2 入模块 globals),
@@ -1364,7 +1364,7 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 3); // 行为:共享(c1 两次自增,c2 读到 3)
+    EXPECT_EQ(out->as_int(), 3); // 行为:共享(c1 两次自增,c2 读到 3)
 
     // 结构:两闭包的 upvalues()[0] 同一 ObjUpvalue(经共享模块 m 的 globals 取回;
     // 存活链:m_guard -> module -> globals -> 闭包)。
@@ -1419,7 +1419,7 @@ TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 17); // 8+9:CLOSE 后读写均在 closed_ 上持续
+    EXPECT_EQ(out->as_int(), 17); // 8+9:CLOSE 后读写均在 closed_ 上持续
 }
 
 // open upvalue 指着的栈被压 2048 个临时值触发两轮 2x 增长(1024->2048->4096):
@@ -1463,7 +1463,7 @@ TEST_F(AriaVMStress, StackGrowsRebasesOpenUpvalues) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 42);
+    EXPECT_EQ(out->as_int(), 42);
     EXPECT_GT(vm.main_context().stack_capacity(), usize{2048}); // 增长确已发生(两轮)
 }
 
@@ -1535,7 +1535,7 @@ TEST_F(AriaVMStress, UnwindClosesCapturedUpvalue) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 43); // 42+1:未命中路径关闭已生效
+    EXPECT_EQ(out->as_int(), 43); // 42+1:未命中路径关闭已生效
 }
 
 // unwind 命中路径关闭:try 体局部(slot2)被捕获、闭包存 globals 后 throw --
@@ -1596,7 +1596,7 @@ TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 5); // 命中路径关闭已生效(否则读到被覆写的 nil)
+    EXPECT_EQ(out->as_int(), 5); // 命中路径关闭已生效(否则读到被覆写的 nil)
 }
 
 // 开链存活(clox 已知坑的防线):第一个闭包建完立即丢弃(无根),其 upvalue 仍开着挂在链上;
@@ -1639,7 +1639,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out.value().as_int(), 42); // 复用的链节点存活且指槽正确
+    EXPECT_EQ(out->as_int(), 42); // 复用的链节点存活且指槽正确
 }
 
 // ============================================================
@@ -1668,8 +1668,8 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out.value().is_obj());
-    auto inst = aria::Object::as<ObjInstance>(out.value().as_obj());
+    ASSERT_TRUE(out->is_obj());
+    auto inst = aria::Object::as<ObjInstance>(out->as_obj());
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->cls()->name()->view(), "Foo");
     EXPECT_EQ(inst->cls()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
@@ -1726,8 +1726,8 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_TRUE(out.value().is_int());
-    EXPECT_EQ(out.value().as_int(), 7);
+    EXPECT_TRUE(out->is_int());
+    EXPECT_EQ(out->as_int(), 7);
 }
 
 // 方法调用两步走:LOAD_FIELD 命中类表方法 -> 绑定 ObjBoundMethod(this=obj)并回填
@@ -1797,7 +1797,7 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 11);
+    EXPECT_EQ(out->as_int(), 11);
 }
 
 // 继承覆写 + super:Sub.m 经 LOAD_SUPER_FIELD 从 defining class 的父链(不含自身)
@@ -1857,7 +1857,7 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 11);
+    EXPECT_EQ(out->as_int(), 11);
 
     // 结构:Sub 的父链确指 Base(经共享 globals 取回类值)。
     auto base_cls = aria::Object::as<ObjClass>(
@@ -1957,7 +1957,7 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 5);
+    EXPECT_EQ(out->as_int(), 5);
 }
 
 // 方法经类上赋值改写(STORE_FIELD 类路径 = 静态写):旧解析沿用首解析绑定快照(bound);
@@ -2106,7 +2106,7 @@ TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 51); // 两次均走 Sub.m(含 super 调父),缓存未被污染
+    EXPECT_EQ(out->as_int(), 51); // 两次均走 Sub.m(含 super 调父),缓存未被污染
 }
 
 // 深栈多临时值下的 STORE_FIELD 单槽下移:赋值两侧压多层临时值,若单槽下移
@@ -2231,7 +2231,7 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 136);
+    EXPECT_EQ(out->as_int(), 136);
 }
 
 // 实例字段遮蔽同名静态成员(铁则 3:fields 命中优先):init 内 this.x=9 落 fields 表,
@@ -2280,7 +2280,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 8);
+    EXPECT_EQ(out->as_int(), 8);
 }
 
 // ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_FIELD 运行期防线)----
@@ -2508,7 +2508,7 @@ TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_TRUE(out.value().as_bool());
+    EXPECT_TRUE(out->as_bool());
 }
 
 // 类路径读取(静态访问)取出裸原生值,不绑定 -- 直调时 slots[0] = callee(原生自身),
@@ -2599,7 +2599,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_TRUE(out.value().as_bool());
+    EXPECT_TRUE(out->as_bool());
 }
 
 // super 读静态成员(LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看 defining class 戳):
@@ -2652,7 +2652,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 1);
+    EXPECT_EQ(out->as_int(), 1);
 }
 
 // 原生 init 注册走类上赋值路径(MAKE_METHOD 仅收闭包,原生落表经 STORE_FIELD):
@@ -2685,5 +2685,5 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 1); // 原生 init 的返回值即实例化结果
+    EXPECT_EQ(out->as_int(), 1); // 原生 init 的返回值即实例化结果
 }

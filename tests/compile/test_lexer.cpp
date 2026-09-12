@@ -47,7 +47,7 @@ namespace {
         Lexer lexer;
         auto  result = lexer.tokenize(lexed->sf);
         EXPECT_TRUE(result.has_value()) << "期望 tokenize 成功";
-        lexed->tokens = result.has_value() ? std::move(result.value()) : List<Token>{};
+        lexed->tokens = result ? std::move(*result) : List<Token>{};
         return lexed;
     }
 
@@ -58,7 +58,7 @@ namespace {
         Lexer lexer;
         auto  result = lexer.tokenize(lexed->sf);
         EXPECT_FALSE(result.has_value()) << "期望 tokenize 失败";
-        lexed->errors = result.has_value() ? List<Error>{} : std::move(result.error());
+        lexed->errors = result ? List<Error>{} : std::move(result.error());
         return lexed;
     }
 } // namespace
@@ -195,7 +195,7 @@ TEST(LexerIdentifier, LoneUnderscore) {
     Lexer      lexer;
     auto       result = lexer.tokenize(sf);
     ASSERT_TRUE(result.has_value());
-    const auto& tokens = result.value();
+    const auto& tokens = *result;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokenType::Underscore);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"_"});

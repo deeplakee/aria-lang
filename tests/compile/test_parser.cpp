@@ -63,13 +63,13 @@ namespace {
         p->sf  = SourceFile{String{"t"}, String{"t"}, String{src}};
         Lexer lexer;
         auto  lex = lexer.tokenize(p->sf);
-        if (!lex.has_value()) {
+        if (!lex) {
             // 词法错误直接作为解析失败返回（测试用源码应词法合法）。
             p->result = std::unexpected(std::move(lex.error()));
             return p;
         }
         Parser parser;
-        p->result = parser.parse(std::move(lex.value()));
+        p->result = parser.parse(std::move(*lex));
         return p;
     }
 
@@ -77,10 +77,10 @@ namespace {
     String dump_ok(StringView src) {
         auto p = parse_src(src);
         EXPECT_TRUE(p->result.has_value()) << "期望解析成功: " << src;
-        if (!p->result.has_value()) {
+        if (!p->result) {
             return {};
         }
-        return p->result.value()->dump(0);
+        return (*p->result)->dump(0);
     }
 
     void expect_has(const String& haystack, StringView needle) {
@@ -90,7 +90,7 @@ namespace {
     // 取程序的第一个顶层声明（已断言解析成功且有声明）。
     const StmtNode* first_decl(const UPtr<Parsed>& p) {
         EXPECT_TRUE(p->result.has_value());
-        auto& decls = p->result.value()->declarations;
+        auto& decls = (*p->result)->declarations;
         EXPECT_FALSE(decls.empty());
         return decls.empty() ? nullptr : decls[0].get();
     }
@@ -103,13 +103,13 @@ namespace {
 TEST(ParserBasic, EmptyProgram) {
     auto p = parse_src("");
     ASSERT_TRUE(p->result.has_value());
-    EXPECT_EQ(p->result.value()->declarations.size(), 0u);
+    EXPECT_EQ((*p->result)->declarations.size(), 0u);
 }
 
 TEST(ParserBasic, EmptyProgramTrivia) {
     auto p = parse_src("// only a comment\n  \n");
     ASSERT_TRUE(p->result.has_value());
-    EXPECT_EQ(p->result.value()->declarations.size(), 0u);
+    EXPECT_EQ((*p->result)->declarations.size(), 0u);
 }
 
 TEST(ParserBasic, Literals) {

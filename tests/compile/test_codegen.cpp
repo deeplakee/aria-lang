@@ -44,28 +44,31 @@ namespace {
         SourceFile file{"<test>", "<test>", aria::String{src}};
         Lexer      lexer;
         auto       lex = lexer.tokenize(file);
-        if (!lex.has_value()) {
-            return std::unexpected(lex.error()[0]);
+        if (!lex) {
+            return std::unexpected(std::move(lex.error()[0]));
         }
         Parser parser;
-        auto   parse = parser.parse(std::move(lex.value()));
-        if (!parse.has_value()) {
-            return std::unexpected(parse.error()[0]);
+        auto   parse = parser.parse(std::move(*lex));
+        if (!parse) {
+            return std::unexpected(std::move(parse.error()[0]));
         }
+        auto    program = std::move(*parse);
         CodeGen codegen{gc};
-        return codegen.compile(*parse.value(), module);
+        return codegen.compile(*program, module);
     }
 
     // run_source / compile_only 各自持有一个 AriaVM（进而持其 GC），并随结果一并返回，
     // 使返回值中引用的 GC 对象（ObjString 常量、Obj 返回值）在调用方检视期间存活--
     // 否则辅助函数返回即销毁局部 vm -> GC 回收 -> 悬垂引用（use-after-free）。
-    // 转发 has_value/value/error 以便调用点直接当 Result 用。
+    // 转发 has_value/error 并提供 bool/->/* ，调用点按 Result 惯用法访问（CPP_Naming_Convention
+    // 「Optional/Result 用法」：取值 */->，判断隐式 bool，不设 .value()）。
     struct RunResult {
         std::unique_ptr<AriaVM> vm;
         Result<Value, Error>    result;
         bool                    has_value() const noexcept { return result.has_value(); }
-        Value&                  value() noexcept { return result.value(); }
-        const Value&            value() const noexcept { return result.value(); }
+        explicit                operator bool() const noexcept { return has_value(); }
+        Value*                  operator->() noexcept { return &*result; }
+        Value&                  operator*() noexcept { return *result; }
         Error&                  error() noexcept { return result.error(); }
         const Error&            error() const noexcept { return result.error(); }
     };
@@ -74,7 +77,7 @@ namespace {
         std::unique_ptr<AriaVM>     vm;
         Result<ObjFunction*, Error> result;
         bool                        has_value() const noexcept { return result.has_value(); }
-        ObjFunction*                value() const noexcept { return result.value(); }
+        ObjFunction*                operator->() const noexcept { return *result; }
         Error&                      error() noexcept { return result.error(); }
         const Error&                error() const noexcept { return result.error(); }
     };
@@ -91,10 +94,10 @@ namespace {
         auto guard    = gc.make_guard(mod_name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
         auto module   = new_module(gc, mod_name);
         auto compiled = compile_source(gc, module, src);
-        if (!compiled.has_value()) {
+        if (!compiled) {
             return RunResult{std::move(vm), std::unexpected(compiled.error())};
         }
-        auto result = vm->run(compiled.value()); // vm 活着时取结果
+        auto result = vm->run(*compiled); // vm 活着时取结果
         return RunResult{std::move(vm), std::move(result)};
     }
 
@@ -115,7 +118,7 @@ namespace {
     i64 run_int(std::string_view src) {
         auto out = run_source(src);
         EXPECT_TRUE(out.has_value()) << "expected success";
-        return out.has_value() ? out.value().as_int() : 0;
+        return out ? out->as_int() : 0;
     }
 
 } // namespace
@@ -138,53 +141,53 @@ TEST(CodeGen, IntDivAndMod) {
 TEST(CodeGen, FloatConstantAndPromotion) {
     auto out = run_source("return 2.5 + 0.5;");
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_f64());
-    EXPECT_DOUBLE_EQ(out.value().as_f64(), 3.0);
+    ASSERT_TRUE(out->is_f64());
+    EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
 TEST(CodeGen, IntFloatPromotion) {
     auto out = run_source("return 1 + 2.0;");
     ASSERT_TRUE(out.has_value());
-    ASSERT_TRUE(out.value().is_f64());
-    EXPECT_DOUBLE_EQ(out.value().as_f64(), 3.0);
+    ASSERT_TRUE(out->is_f64());
+    EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
 TEST(CodeGen, ComparisonAndEquality) {
     auto gt = run_source("return 3 > 2;");
     ASSERT_TRUE(gt.has_value());
-    ASSERT_TRUE(gt.value().is_bool());
-    EXPECT_TRUE(gt.value().as_bool());
+    ASSERT_TRUE(gt->is_bool());
+    EXPECT_TRUE(gt->as_bool());
 
     auto lt = run_source("return 1 < 0;");
     ASSERT_TRUE(lt.has_value());
-    ASSERT_TRUE(lt.value().is_bool());
-    EXPECT_FALSE(lt.value().as_bool());
+    ASSERT_TRUE(lt->is_bool());
+    EXPECT_FALSE(lt->as_bool());
 
-    EXPECT_TRUE(run_source("return 1 == 1;").value().as_bool());
-    EXPECT_FALSE(run_source("return 1 != 1;").value().as_bool());
+    EXPECT_TRUE((*run_source("return 1 == 1;")).as_bool());
+    EXPECT_FALSE((*run_source("return 1 != 1;")).as_bool());
     // 严格相等：1 === 1.0 为假（类型不同）
-    EXPECT_FALSE(run_source("return 1 === 1.0;").value().as_bool());
-    EXPECT_TRUE(run_source("return 1 !== 1.0;").value().as_bool());
+    EXPECT_FALSE((*run_source("return 1 === 1.0;")).as_bool());
+    EXPECT_TRUE((*run_source("return 1 !== 1.0;")).as_bool());
 }
 
 TEST(CodeGen, Literals) {
     auto t = run_source("return true;");
     ASSERT_TRUE(t.has_value());
-    ASSERT_TRUE(t.value().is_bool());
-    EXPECT_TRUE(t.value().as_bool());
+    ASSERT_TRUE(t->is_bool());
+    EXPECT_TRUE(t->as_bool());
 
     auto f = run_source("return false;");
     ASSERT_TRUE(f.has_value());
-    EXPECT_FALSE(f.value().as_bool());
+    EXPECT_FALSE(f->as_bool());
 
     auto n = run_source("return nil;");
     ASSERT_TRUE(n.has_value());
-    EXPECT_TRUE(n.value().is_nil());
+    EXPECT_TRUE(n->is_nil());
 
     auto s = run_source("return \"hello\";");
     ASSERT_TRUE(s.has_value());
-    ASSERT_TRUE(s.value().is_obj());
-    EXPECT_EQ(aria::format_value(s.value()), "hello");
+    ASSERT_TRUE(s->is_obj());
+    EXPECT_EQ(aria::format_value(*s), "hello");
 }
 
 TEST(CodeGen, UnaryMinusAndNot) {
@@ -192,10 +195,10 @@ TEST(CodeGen, UnaryMinusAndNot) {
     EXPECT_EQ(run_int("return -(-3);"), 3);
     auto nt = run_source("return !false;");
     ASSERT_TRUE(nt.has_value());
-    ASSERT_TRUE(nt.value().is_bool());
-    EXPECT_TRUE(nt.value().as_bool());
+    ASSERT_TRUE(nt->is_bool());
+    EXPECT_TRUE(nt->as_bool());
     // Lua 真值：!nil -> true
-    EXPECT_TRUE(run_source("return !nil;").value().as_bool());
+    EXPECT_TRUE((*run_source("return !nil;")).as_bool());
 }
 
 // ============================================================
@@ -206,25 +209,25 @@ TEST(CodeGen, LogicShortCircuit) {
     // nil || 5 -> 5（nil 假，求 rhs 留值）
     auto or1 = run_source("return nil || 5;");
     ASSERT_TRUE(or1.has_value());
-    ASSERT_TRUE(or1.value().is_int());
-    EXPECT_EQ(or1.value().as_int(), 5);
+    ASSERT_TRUE(or1->is_int());
+    EXPECT_EQ(or1->as_int(), 5);
 
     // true || x -> true（短路，不求 x）
     auto or2 = run_source("return true || nil;");
     ASSERT_TRUE(or2.has_value());
-    ASSERT_TRUE(or2.value().is_bool());
-    EXPECT_TRUE(or2.value().as_bool());
+    ASSERT_TRUE(or2->is_bool());
+    EXPECT_TRUE(or2->as_bool());
 
     // nil && 5 -> nil（短路假，留 lhs）
     auto and1 = run_source("return nil && 5;");
     ASSERT_TRUE(and1.has_value());
-    EXPECT_TRUE(and1.value().is_nil());
+    EXPECT_TRUE(and1->is_nil());
 
     // 3 && 5 -> 5（lhs 真，求 rhs）
     auto and2 = run_source("return 3 && 5;");
     ASSERT_TRUE(and2.has_value());
-    ASSERT_TRUE(and2.value().is_int());
-    EXPECT_EQ(and2.value().as_int(), 5);
+    ASSERT_TRUE(and2->is_int());
+    EXPECT_EQ(and2->as_int(), 5);
 }
 
 // ============================================================
@@ -260,8 +263,8 @@ TEST(CodeGen, PreIncDec) {
     // 前置 ++ 作为表达式留新值
     auto e = run_source("var a = 5; return ++a;");
     ASSERT_TRUE(e.has_value());
-    ASSERT_TRUE(e.value().is_int());
-    EXPECT_EQ(e.value().as_int(), 6);
+    ASSERT_TRUE(e->is_int());
+    EXPECT_EQ(e->as_int(), 6);
 }
 
 // ============================================================
@@ -459,7 +462,7 @@ TEST(CodeGen, UpvalueWriteThrough) {
 TEST(CodeGen, ForInDisassembly) {
     auto compiled = compile_only("for (x in iter) { print x; }");
     ASSERT_TRUE(compiled.has_value());
-    const auto text = compiled.value()->unit().disassemble("<test>");
+    const auto text = compiled->unit().disassemble("<test>");
     // 迭代协议：LOAD_FIELD "iter" / "has_next" / "next" + CALL
     EXPECT_NE(text.find("LOAD_FIELD"), aria::String::npos);
     EXPECT_NE(text.find("iter"), aria::String::npos);
@@ -473,7 +476,7 @@ TEST(CodeGen, ForInDisassembly) {
 TEST(CodeGen, ImportEmitsImport) {
     auto compiled = compile_only("import \"lib/utils\" as U;");
     ASSERT_TRUE(compiled.has_value());
-    const auto text = compiled.value()->unit().disassemble("<test>");
+    const auto text = compiled->unit().disassemble("<test>");
     EXPECT_NE(text.find("IMPORT"), aria::String::npos);
     EXPECT_NE(text.find("lib/utils"), aria::String::npos);
     EXPECT_NE(text.find("DEF_GLOBAL"), aria::String::npos); // 顶层经 DEF_GLOBAL 绑全局
@@ -483,7 +486,7 @@ TEST(CodeGen, ImportEmitsImport) {
 TEST(CodeGen, ClosureDisassembly) {
     auto compiled = compile_only("fun make() { var x = 1; return fun() { return x; }; }");
     ASSERT_TRUE(compiled.has_value());
-    const auto text = compiled.value()->unit().disassemble("<test>");
+    const auto text = compiled->unit().disassemble("<test>");
     EXPECT_NE(text.find("CLOSURE"), aria::String::npos); // 函数值经 CLOSURE 上栈
     EXPECT_EQ(text.find("LOAD_CONST"), aria::String::npos)
             << "入口 unit 不应再发 LOAD_CONST fn（x=1 走 LOAD_IMM,无其他常量加载）";
@@ -494,7 +497,7 @@ TEST(CodeGen, ClosureDisassembly) {
 TEST(CodeGen, ForInPerIterationCloseUpvalue) {
     auto compiled = compile_only("for (x in iter) { var f = fun() { return x; }; }");
     ASSERT_TRUE(compiled.has_value());
-    const auto text        = compiled.value()->unit().disassemble("<test>");
+    const auto text        = compiled->unit().disassemble("<test>");
     const auto closure_pos = text.find("CLOSURE");
     const auto close_pos   = text.find("CLOSE_UPVALUE");
     const auto back_pos    = text.find("JUMP_BACK");
@@ -509,7 +512,7 @@ TEST(CodeGen, ForInPerIterationCloseUpvalue) {
 TEST(CodeGen, ForInNoCloseWithoutCapture) {
     auto compiled = compile_only("for (x in iter) { print x; }");
     ASSERT_TRUE(compiled.has_value());
-    const auto text = compiled.value()->unit().disassemble("<test>");
+    const auto text = compiled->unit().disassemble("<test>");
     EXPECT_EQ(text.find("CLOSE_UPVALUE"), aria::String::npos);
 }
 
@@ -548,7 +551,7 @@ TEST(CodeGen, ImportNestedInFunction) {
 TEST(CodeGen, ImportNestedInBlock) {
     auto c = compile_only("{ import \"lib/u\" as U; }");
     ASSERT_TRUE(c.has_value()) << "块内 import 应编译成功（绑局部）";
-    const auto text = c.value()->unit().disassemble("<test>");
+    const auto text = c->unit().disassemble("<test>");
     EXPECT_NE(text.find("IMPORT"), aria::String::npos);
     EXPECT_EQ(text.find("DEF_GLOBAL"), aria::String::npos) << "嵌套 import 不走 DEF_GLOBAL";
 }
@@ -768,10 +771,10 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 
 TEST(CodeGen, BuiltinType) {
     // type(x) -> 值的精确类型名（PascalCase）。Int/Bool/Nil/String 各一。
-    EXPECT_EQ(aria::format_value(run_source("return type(42);").value()), "Int");
-    EXPECT_EQ(aria::format_value(run_source("return type(true);").value()), "Bool");
-    EXPECT_EQ(aria::format_value(run_source("return type(nil);").value()), "Nil");
-    EXPECT_EQ(aria::format_value(run_source("return type(\"x\");").value()), "String");
+    EXPECT_EQ(aria::format_value((*run_source("return type(42);"))), "Int");
+    EXPECT_EQ(aria::format_value((*run_source("return type(true);"))), "Bool");
+    EXPECT_EQ(aria::format_value((*run_source("return type(nil);"))), "Nil");
+    EXPECT_EQ(aria::format_value((*run_source("return type(\"x\");"))), "String");
 }
 
 TEST(CodeGen, BuiltinLen) {
@@ -789,9 +792,9 @@ TEST(CodeGen, BuiltinLenNonString) {
 
 TEST(CodeGen, BuiltinStr) {
     // str(x) -> 可读渲染（同 PRINT / format_value）。
-    EXPECT_EQ(aria::format_value(run_source("return str(nil);").value()), "nil");
-    EXPECT_EQ(aria::format_value(run_source("return str(42);").value()), "42");
-    EXPECT_EQ(aria::format_value(run_source("return str(true);").value()), "true");
+    EXPECT_EQ(aria::format_value((*run_source("return str(nil);"))), "nil");
+    EXPECT_EQ(aria::format_value((*run_source("return str(42);"))), "42");
+    EXPECT_EQ(aria::format_value((*run_source("return str(true);"))), "true");
 }
 
 TEST(CodeGen, BuiltinAssertPass) {
@@ -858,14 +861,14 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
 
     auto c1 = compile_source(gc, module, "var len = 5;");
     ASSERT_TRUE(c1.has_value());
-    auto r1 = vm->run(c1.value());
+    auto r1 = vm->run(*c1);
     ASSERT_TRUE(r1.has_value()) << r1.error().message();
 
     auto c2 = compile_source(gc, module, "return len;");
     ASSERT_TRUE(c2.has_value());
-    auto r2 = vm->run(c2.value());
+    auto r2 = vm->run(*c2);
     ASSERT_TRUE(r2.has_value()) << r2.error().message();
-    EXPECT_EQ(r2.value().as_int(), 5); // 非内置 <fn len>
+    EXPECT_EQ(r2->as_int(), 5); // 非内置 <fn len>
 }
 
 TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
@@ -893,7 +896,7 @@ TEST(CodeGen, ThrowStringCaughtBindsValue) {
     auto out = run_source("try { throw \"boom\"; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     // 渲染即串内容，证绑的是 ObjString 原值（非消息串）。
-    EXPECT_EQ(aria::format_value(out.value()), "boom");
+    EXPECT_EQ(aria::format_value(*out), "boom");
 }
 
 TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
@@ -911,8 +914,8 @@ TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
     // 消息不含位置前缀，同 Python str(e)，位置只在未捕获出口的 at 跟踪行给出）。
     auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out.value().is_obj());
-    const auto ex = aria::Object::as<aria::ObjException>(out.value().as_obj());
+    ASSERT_TRUE(out->is_obj());
+    const auto ex = aria::Object::as<aria::ObjException>(out->as_obj());
     ASSERT_NE(ex, nullptr);
     EXPECT_EQ(ex->code(), ErrorCode::DivisionByZero);
     EXPECT_EQ(ex->to_string(), "Runtime: DivisionByZero integer division by zero");
@@ -934,21 +937,21 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(out.value()), "Runtime: TypeMismatch len requires a string, got Nil");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string, got Nil");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
     // 嵌套 try：内层捕获（find_try_handler 取最内层覆盖区间）。
     auto out = run_source("try { try { throw 1; } catch (i) { return i; } } catch (o) { return 2; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 1);
+    EXPECT_EQ(out->as_int(), 1);
 }
 
 TEST(CodeGen, NestedTryOuterCatchesInnerRethrow) {
     // 内层 catch re-throw：THROW 指令在 catch 体（本层区间之外、外层区间之内）-> 外层捕获。
     auto out = run_source("try { try { throw 1; } catch (i) { throw i; } } catch (o) { return o + 10; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 11);
+    EXPECT_EQ(out->as_int(), 11);
 }
 
 TEST(CodeGen, CrossFrameCatch) {
@@ -956,7 +959,7 @@ TEST(CodeGen, CrossFrameCatch) {
     // 截值栈到 frame.slots + stack_depth，异常值 push 落 catch 参数槽。
     auto out = run_source("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(out.value()), "cross");
+    EXPECT_EQ(aria::format_value(*out), "cross");
 }
 
 TEST(CodeGen, DeepCallChainUnwind) {
@@ -978,7 +981,7 @@ try {
 }
 )");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 7);
+    EXPECT_EQ(out->as_int(), 7);
 }
 
 TEST(CodeGen, TryBodyLocalsDiscardedOnUnwind) {
@@ -998,7 +1001,7 @@ try {
 }
 )");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out.value().as_int(), 8);
+    EXPECT_EQ(out->as_int(), 8);
 }
 
 TEST(CodeGen, UncaughtStackTraceListsFramesOuterToInner) {
@@ -1034,7 +1037,7 @@ TEST(CodeGen, TryCatchEmitsTryRecordAndThrow) {
     // slot 0 哑元 = 1）；反汇编出现 try records 小节（非空才列）。
     auto c = compile_only("try { throw 1; } catch (e) { print e; }");
     ASSERT_TRUE(c.has_value()) << c.error().message();
-    const auto& cu = c.value()->unit();
+    const auto& cu = c->unit();
     ASSERT_EQ(cu.try_records.size(), 1u);
     const auto& rec = cu.try_records[0];
     EXPECT_LT(rec.begin, rec.end);
@@ -1050,7 +1053,7 @@ TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
     // try 前有语句，begin 严格递增。
     auto c = compile_only("try { print 0; try { print 1; } catch (a) { print 2; } } catch (b) { print 3; }");
     ASSERT_TRUE(c.has_value()) << c.error().message();
-    const auto& recs = c.value()->unit().try_records;
+    const auto& recs = c->unit().try_records;
     ASSERT_EQ(recs.size(), 2u);
     EXPECT_LT(recs[0].begin, recs[1].begin);
     EXPECT_LT(recs[1].begin, recs[0].end); // 内层起点在外层区间内

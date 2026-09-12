@@ -181,12 +181,12 @@ TEST(CodeUnit, TryRecordFindHandler) {
     // 命中返记录指针: handle 与 stack_depth 一并暴露给 unwind
     // 区间前
     EXPECT_FALSE(cu.find_try_handler(0).has_value());
-    EXPECT_EQ(cu.find_try_handler(10).value()->handle, 200u);    // A 起点(含)
-    EXPECT_EQ(cu.find_try_handler(29).value()->stack_depth, 2u); // A 内、B 前
-    EXPECT_EQ(cu.find_try_handler(30).value()->handle, 150u);    // B 起点(最内层)
-    EXPECT_EQ(cu.find_try_handler(59).value()->stack_depth, 5u); // B 内
-    EXPECT_EQ(cu.find_try_handler(60).value()->handle, 200u);    // B 结束(不含) -> 回到 A
-    EXPECT_EQ(cu.find_try_handler(99).value()->stack_depth, 2u); // A 内
-    EXPECT_FALSE(cu.find_try_handler(100).has_value());          // A 结束(不含)
-    EXPECT_FALSE(cu.find_try_handler(500).has_value());          // 区间外
+    EXPECT_EQ((*cu.find_try_handler(10))->handle, 200u);    // A 起点(含)
+    EXPECT_EQ((*cu.find_try_handler(29))->stack_depth, 2u); // A 内、B 前
+    EXPECT_EQ((*cu.find_try_handler(30))->handle, 150u);    // B 起点(最内层)
+    EXPECT_EQ((*cu.find_try_handler(59))->stack_depth, 5u); // B 内
+    EXPECT_EQ((*cu.find_try_handler(60))->handle, 200u);    // B 结束(不含) -> 回到 A
+    EXPECT_EQ((*cu.find_try_handler(99))->stack_depth, 2u); // A 内
+    EXPECT_FALSE(cu.find_try_handler(100).has_value());     // A 结束(不含)
+    EXPECT_FALSE(cu.find_try_handler(500).has_value());     // 区间外
 }

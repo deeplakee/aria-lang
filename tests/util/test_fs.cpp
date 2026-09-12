@@ -93,7 +93,7 @@ TEST(FsAbsolute, EmptyPath) {
     auto r = fs::absolute("");
     // 空路径行为依赖 std::filesystem，只断言不崩溃并返回值
     // （某些实现可能成功返回当前目录，某些可能失败）
-    if (r.has_value()) {
+    if (r) {
         SUCCEED();
     } else {
         SUCCEED();
@@ -123,7 +123,7 @@ TEST(FsResolve, NonexistentTrailingSucceeds) {
 TEST(FsResolve, FullyMissingPathLexicalNormalized) {
     auto r = fs::resolve("/nope/nope", "x/y");
     // weakly_canonical：已不存在部分不解析符号链接，仍返回词法规范化的绝对路径
-    if (r.has_value()) {
+    if (r) {
         EXPECT_NE(r->find("x"), String::npos);
     }
 }

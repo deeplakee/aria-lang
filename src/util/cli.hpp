@@ -386,8 +386,7 @@ namespace aria::util {
                 if (!found.has_value()) {
                     return std::unexpected(std::format("unknown option: -{}", c));
                 }
-                const usize idx  = *found;
-                const Slot  kind = defs_[idx].kind_;
+                const usize idx = *found;
 
                 if (defs_[idx].kind_ == Slot::Flag) {
                     result.slots_[idx].state = Slot::Flag;

@@ -436,7 +436,7 @@ namespace aria {
     // not_impl
     // ============================================================
 
-    void CodeGen::not_impl(ASTNode& node, StringView feature) const {
+    void CodeGen::not_impl(const ASTNode& node, StringView feature) const {
         fail(ErrorCode::NotImplemented, node.loc(), "{} 尚未支持", feature);
     }
 

@@ -136,7 +136,8 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
         g.push(bkey);
         cls->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
         auto bound_read = obj->load_field(vm, bkey);   // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
-        ASSERT_TRUE(bound_read.has_value());           //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
+        //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
+        ASSERT_TRUE(bound_read.has_value());
         bound = aria::Object::try_as<ObjBoundMethod>(bound_read->as_obj());
         ASSERT_NE(bound, nullptr);
         fkey = new_string(gc, "x");

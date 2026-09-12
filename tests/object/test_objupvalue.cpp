@@ -81,11 +81,12 @@ TEST(ObjUpvalue, NextChain) {
 TEST(ObjUpvalue, TraceMarksSlotValueWhileOpen) {
     GC gc;
     gc.set_stress(true);
-    Value v     = Value::nil_val();
-    auto  uv    = new_upvalue(gc, &v);
-    auto  guard = gc.make_guard(uv);                                         // upvalue 入临时根(跨后续任何分配)
-    auto  s     = new_string(gc, "captured long string beyond sso padding"); // 建时 collect:uv 已根
-    v           = Value::from_obj(s);
+    Value v  = Value::nil_val();
+    auto  uv = new_upvalue(gc, &v);
+    // upvalue 入临时根(跨后续任何分配)
+    auto guard = gc.make_guard(uv);
+    auto s     = new_string(gc, "captured long string beyond sso padding"); // 建时 collect:uv 已根
+    v          = Value::from_obj(s);
     (void) new_string(gc, "trigger"); // stress collect:串经 uv->trace 存活
     EXPECT_EQ(s->view(), "captured long string beyond sso padding");
     EXPECT_TRUE(value_identical(*uv->value_slot(), Value::from_obj(s)));
@@ -101,7 +102,8 @@ TEST(ObjUpvalue, TraceMarksClosedValue) {
         auto  guard = gc.make_guard(s); // 串跨 uv 的 new_object(stress collect)须先根化
         Value v     = Value::from_obj(s);
         uv          = new_upvalue(gc, &v); // 建时 collect:s 经 guard 存活
-        uv->close();                       // 值迁入 closed_
+        // 值迁入 closed_
+        uv->close();
     } // guard 释放:s 此后仅经 uv.closed_ 可达
     auto guard = gc.make_guard(uv);
     (void) new_string(gc, "trigger"); // stress collect:closed 值经 uv->trace 存活

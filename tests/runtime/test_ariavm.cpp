@@ -159,10 +159,13 @@ namespace {
     //
     // 设计见 .claude/reference/runtime/import-path-resolution.md:IMPORT 把 specifier 解析为命中
     // 文件的绝对规范路径(weakly_canonical)作模块表键;模块绝对路径 = dir_ + "/" + name_ + ".aria",
-    // run() 把入口模块 dir_ 播种为 source_roots_[0]。测试需:真实临时文件让 exists-check 命中、
-    // 按解析出的绝对键预注册合成模块入 modules_、给模块设 dir_/name_。macOS 下 testing::TempDir()
-    // 常落在符号链接后(/var -> /private/var),基准须先 weakly_canonical 规范化,保证预注册键与
-    // resolve_module 输出逐字节一致。
+    // run() 把入口模块 dir_ 播种为 source_roots_[0]。
+    //
+    // 测试需:真实临时文件让 exists-check 命中、按解析出的绝对键预注册合成模块入 modules_、
+    // 给模块设 dir_/name_。
+    //
+    // macOS 下 testing::TempDir() 常落在符号链接后(/var -> /private/var),基准须先 weakly_canonical
+    // 规范化,保证预注册键与 resolve_module 输出逐字节一致。
 
     // 按「套件名_用例名」建独立子目录并返回其规范绝对路径:TempDir() 全程序共享、跨运行不清理,
     // 各测试直接建同路径文件会互相污染(如依赖「lib/math.aria 不存在」的用例);按用例名隔离后
@@ -260,11 +263,12 @@ TEST_F(AriaVMStress, Arithmetic) {
     auto  fn       = new_function(gc, nullptr, 0);
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
-    emit_imm(cu, 1);                 // [1]
-    emit_imm(cu, 2);                 // [1, 2]
-    emit_imm(cu, 3);                 // [1, 2, 3]
-    cu.emit_op(OpCode::MULTIPLY, 1); // [1, 6]
-    cu.emit_op(OpCode::ADD, 1);      // [7]
+    emit_imm(cu, 1); // [1]
+    emit_imm(cu, 2); // [1, 2]
+    emit_imm(cu, 3); // [1, 2, 3]
+    // [1, 6]
+    cu.emit_op(OpCode::MULTIPLY, 1);
+    cu.emit_op(OpCode::ADD, 1); // [7]
     cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);
@@ -533,7 +537,8 @@ TEST_F(AriaVMStress, WrongArityIsUncaught) {
     auto  fn_guard = gc.make_guard(fn);
     auto& cu       = fn->unit();
     emit_closure(cu, cu.add_constant(Value::from_obj(two))); // [closure]
-    emit_imm(cu, 1);                                         // 只给 1 个参数
+    // 只给 1 个参数
+    emit_imm(cu, 1);
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(1, 1);
     cu.emit_op(OpCode::RETURN, 1);
@@ -600,7 +605,8 @@ TEST_F(AriaVMStress, DefAndLoadGlobal) {
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
-    emit_imm(cu, 42);                        // [42]
+    // [42]
+    emit_imm(cu, 42);
     emit_global(cu, OpCode::DEF_GLOBAL, x);  // [] 定义 x=42
     emit_global(cu, OpCode::LOAD_GLOBAL, x); // [42]
     cu.emit_op(OpCode::RETURN, 1);
@@ -619,9 +625,11 @@ TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
-    emit_imm(cu, 1);                          // [1]
-    emit_global(cu, OpCode::DEF_GLOBAL, x);   // [] x=1
-    emit_imm(cu, 2);                          // [2]
+    // [1]
+    emit_imm(cu, 1);
+    emit_global(cu, OpCode::DEF_GLOBAL, x); // [] x=1
+    // [2]
+    emit_imm(cu, 2);
     emit_global(cu, OpCode::STORE_GLOBAL, x); // [2] peek-store x=2
     cu.emit_op(OpCode::POP, 1);               // []
     emit_global(cu, OpCode::LOAD_GLOBAL, x);  // [2]
@@ -640,7 +648,8 @@ TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
     auto      fn_guard = gc.make_guard(fn);
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
-    emit_imm(cu, 1);                          // [1]
+    // [1]
+    emit_imm(cu, 1);
     emit_global(cu, OpCode::STORE_GLOBAL, x); // 未定义 -> UndefinedVariable(peek 不弹)
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -682,8 +691,9 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     const auto key_str = touch_aria(base, "lib/utils.aria");
     auto       key     = new_string(gc, key_str);
     dir_guard.push(key);
-    auto m = make_module(gc, "lib/utils", dir_ptr);        // 目标:dir=base, name=lib/utils
-    dir_guard.push(m);                                     // 保 m 过 modules_.upsert 的 hash 分配
+    auto m = make_module(gc, "lib/utils", dir_ptr); // 目标:dir=base, name=lib/utils
+    // 保 m 过 modules_.upsert 的 hash 分配
+    dir_guard.push(m);
     auto me   = vm.modules().upsert(Value::from_obj(key)); // 入表即「已加载」,无对象状态字段
     me->value = Value::from_obj(m);
 
@@ -693,7 +703,8 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/utils")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "Utils")));
-    emit_import(cu, path_idx);                       // IMPORT "lib/utils" -> [module]
+    // IMPORT "lib/utils" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "Utils" = module
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -749,7 +760,8 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/./utils")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "Utils")));
-    emit_import(cu, path_idx);                       // IMPORT "lib/./utils" -> [module]
+    // IMPORT "lib/./utils" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "Utils"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -787,7 +799,8 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./helper")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "H")));
-    emit_import(cu, path_idx);                       // IMPORT "./helper" -> [module]
+    // IMPORT "./helper" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "H"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -823,12 +836,14 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     auto te   = vm.modules().upsert(Value::from_obj(key));
     te->value = Value::from_obj(target);
 
-    auto      fn        = new_script(gc, new_disk_module(gc, "main", dir_ptr)); // 入口:dir=base
-    auto      fn_guard  = gc.make_guard(fn); // fn(+所属 module)裸持跨下方 new_string(path/alias)(stress collect)
+    auto fn = new_script(gc, new_disk_module(gc, "main", dir_ptr)); // 入口:dir=base
+    // fn(+所属 module)裸持跨下方 new_string(path/alias)(stress collect)
+    auto      fn_guard  = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math"))); // 裸路径
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx);                       // IMPORT "lib/math" -> [module]
+    // IMPORT "lib/math" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -863,7 +878,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "lib/math.aria")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx);                       // IMPORT "lib/math.aria" -> [module]
+    // IMPORT "lib/math.aria" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -900,7 +916,8 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     auto&     cu        = fn->unit();
     const u16 path_idx  = cu.add_constant(Value::from_obj(new_string(gc, "./math.aria")));
     const u16 alias_idx = cu.add_constant(Value::from_obj(new_string(gc, "M")));
-    emit_import(cu, path_idx);                       // IMPORT "./math.aria" -> [module]
+    // IMPORT "./math.aria" -> [module]
+    emit_import(cu, path_idx);
     emit_global(cu, OpCode::DEF_GLOBAL, alias_idx);  // []  绑全局 "M"
     emit_global(cu, OpCode::LOAD_GLOBAL, alias_idx); // [module]
     cu.emit_op(OpCode::RETURN, 1);
@@ -1186,12 +1203,15 @@ TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
 // incr 闭包体(arity 0,捕获 uv0 = 外层局部 n):
 //   n += 1 经 LOAD_UPVALUE/STORE_UPVALUE(peek-store 写穿),返回新值。
 void emit_incr_body(CodeUnit& cu) {
-    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0);  // [n]
-    emit_imm(cu, 1);                            // [n, 1]
-    cu.emit_op(OpCode::ADD, 1);                 // [n+1]
+    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0); // [n]
+    // [n, 1]
+    emit_imm(cu, 1);
+    // [n+1]
+    cu.emit_op(OpCode::ADD, 1);
     emit_upvalue(cu, OpCode::STORE_UPVALUE, 0); // [n+1](写穿到 uv0)
-    cu.emit_op(OpCode::POP, 1);                 // []
-    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0);  // [n]
+    // []
+    cu.emit_op(OpCode::POP, 1);
+    emit_upvalue(cu, OpCode::LOAD_UPVALUE, 0); // [n]
     cu.emit_op(OpCode::RETURN, 1);
 }
 
@@ -1211,12 +1231,14 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
     {
         auto&      ocu      = outer->unit();
         const auto incr_idx = ocu.add_constant(Value::from_obj(incr));
-        ocu.emit_op(OpCode::LOAD_NIL, 1);        // [nil@slot1]  n 的槽(值填槽)
-        emit_imm(ocu, 0);                        // [nil, 0]
-        emit_local(ocu, OpCode::STORE_LOCAL, 1); // slot1 = 0
-        ocu.emit_op(OpCode::POP, 1);             // top=slot1 之上,n=0
-        emit_closure(ocu, incr_idx);             // [c](捕获 slot1)
-        ocu.emit_op(OpCode::RETURN, 1);          // 返回 c;n 的 upvalue 随 RETURN 关闭迁移
+        ocu.emit_op(OpCode::LOAD_NIL, 1); // [nil@slot1]  n 的槽(值填槽)
+        // [nil, 0]
+        emit_imm(ocu, 0);
+        // slot1 = 0
+        emit_local(ocu, OpCode::STORE_LOCAL, 1);
+        ocu.emit_op(OpCode::POP, 1);    // top=slot1 之上,n=0
+        emit_closure(ocu, incr_idx);    // [c](捕获 slot1)
+        ocu.emit_op(OpCode::RETURN, 1); // 返回 c;n 的 upvalue 随 RETURN 关闭迁移
     }
 
     auto fn = new_function(gc, nullptr, 0);
@@ -1227,9 +1249,10 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
         cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = counter 存储槽
         emit_closure(cu, outer_idx);     // [nil, closure]
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                     // [nil, counter](CALL 消费 callee 槽,闭包须存槽复用)
-        emit_local(cu, OpCode::STORE_LOCAL, 1); // counter 入 slot1
-        cu.emit_op(OpCode::POP, 1);             // [counter@slot1]
+        cu.emit_byte(0, 1); // [nil, counter](CALL 消费 callee 槽,闭包须存槽复用)
+        // counter 入 slot1
+        emit_local(cu, OpCode::STORE_LOCAL, 1);
+        cu.emit_op(OpCode::POP, 1); // [counter@slot1]
         for (int i = 0; i < 3; ++i) {
             emit_local(cu, OpCode::LOAD_LOCAL, 1); // 重取闭包再调
             cu.emit_op(OpCode::CALL, 1);
@@ -1270,11 +1293,13 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
         emit_imm(ocu, 0);
         emit_local(ocu, OpCode::STORE_LOCAL, 1);
         ocu.emit_op(OpCode::POP, 1);
-        emit_closure(ocu, incr_idx);                   // [c1]
-        emit_global(ocu, OpCode::DEF_GLOBAL, c1_name); // []
-        emit_closure(ocu, incr_idx);                   // [c2](同槽,find 复用同一 uv)
-        emit_global(ocu, OpCode::DEF_GLOBAL, c2_name); // []
-        ocu.emit_op(OpCode::LOAD_NIL, 1);              // [nil]
+        emit_closure(ocu, incr_idx); // [c1]
+        // []
+        emit_global(ocu, OpCode::DEF_GLOBAL, c1_name);
+        emit_closure(ocu, incr_idx); // [c2](同槽,find 复用同一 uv)
+        // []
+        emit_global(ocu, OpCode::DEF_GLOBAL, c2_name);
+        ocu.emit_op(OpCode::LOAD_NIL, 1); // [nil]
         ocu.emit_op(OpCode::RETURN, 1);
     }
 
@@ -1297,9 +1322,10 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [2]
         cu.emit_op(OpCode::POP, 1);
-        emit_global(cu, OpCode::LOAD_GLOBAL, c2_name); // [c2]
-        cu.emit_op(OpCode::CALL, 1);                   // c2 读同一 n(已被 c1 加到 2)-> 3
-        cu.emit_byte(0, 1);                            // [3]
+        // [c2]
+        emit_global(cu, OpCode::LOAD_GLOBAL, c2_name);
+        cu.emit_op(OpCode::CALL, 1); // c2 读同一 n(已被 c1 加到 2)-> 3
+        cu.emit_byte(0, 1);          // [3]
         cu.emit_op(OpCode::RETURN, 1);
     }
 
@@ -1339,12 +1365,15 @@ TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
         const auto c_name   = cu.add_constant(Value::from_obj(new_string(gc, "c")));
         cu.emit_op(OpCode::LOAD_NIL, 1); // slot1 = n(被捕获局部)
         emit_imm(cu, 7);
-        emit_local(cu, OpCode::STORE_LOCAL, 1);      // n=7(经槽上方临时 peek-store)
-        cu.emit_op(OpCode::POP, 1);                  // top=slot2,slot1=7
-        emit_closure(cu, incr_idx);                  // [c](uv 指向 slot1,开链)
+        emit_local(cu, OpCode::STORE_LOCAL, 1); // n=7(经槽上方临时 peek-store)
+        // top=slot2,slot1=7
+        cu.emit_op(OpCode::POP, 1);
+        // [c](uv 指向 slot1,开链)
+        emit_closure(cu, incr_idx);
         emit_global(cu, OpCode::DEF_GLOBAL, c_name); // [] c 入 globals
-        cu.emit_op(OpCode::POP, 1);                  // 弹 slot1 的槽(编译器 emit_pop_locals_to 镜像:count==1 降级 POP)
-        cu.emit_op(OpCode::CLOSE_UPVALUE, 1);        // 批量关槽址 >= 新栈顶的开 uv(7 迁入 closed_),无弹栈
+        // 弹 slot1 的槽(编译器 emit_pop_locals_to 镜像:count==1 降级 POP)
+        cu.emit_op(OpCode::POP, 1);
+        cu.emit_op(OpCode::CLOSE_UPVALUE, 1); // 批量关槽址 >= 新栈顶的开 uv(7 迁入 closed_),无弹栈
         emit_global(cu, OpCode::LOAD_GLOBAL, c_name);
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [8](读 closed_ 7 -> +1)
@@ -1429,7 +1458,8 @@ TEST_F(AriaVMStress, UnwindClosesCapturedUpvalue) {
         emit_imm(tcu, 42);
         emit_local(tcu, OpCode::STORE_LOCAL, 1);
         tcu.emit_op(OpCode::POP, 1);
-        emit_closure(tcu, incr_idx);                  // [c]
+        // [c]
+        emit_closure(tcu, incr_idx);
         emit_global(tcu, OpCode::DEF_GLOBAL, c_name); // c 入共享模块 globals(幸存载体)
         const auto boom_idx = tcu.add_constant(Value::from_obj(new_string(gc, "boom")));
         emit_const(tcu, boom_idx);      // [str]
@@ -1503,7 +1533,8 @@ TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
         emit_imm(cu, 5);
         emit_local(cu, OpCode::STORE_LOCAL, 2); // n=5 @slot2
         cu.emit_op(OpCode::POP, 1);
-        emit_closure(cu, reader_idx);                // [c] uv -> slot2(捕获 index 2)
+        // [c] uv -> slot2(捕获 index 2)
+        emit_closure(cu, reader_idx);
         emit_global(cu, OpCode::DEF_GLOBAL, r_name); // c 入 globals
         const auto x_idx = cu.add_constant(Value::from_obj(new_string(gc, "x")));
         emit_const(cu, x_idx);            // [str]
@@ -1562,10 +1593,11 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
         emit_imm(cu, 42);
         emit_local(cu, OpCode::STORE_LOCAL, 1);
         cu.emit_op(OpCode::POP, 1);
-        emit_closure(cu, reader_idx);                // [c1] uv 开、链上
-        cu.emit_op(OpCode::POP, 1);                  // c1 死(无根),uv 仍开
-        emit_closure(cu, reader_idx);                // GC 窗口:uv 仅链引用 -> tracer 必须标链
-        emit_global(cu, OpCode::DEF_GLOBAL, r_name); // c2(与死 c1 共享同一 uv)入 globals
+        emit_closure(cu, reader_idx); // [c1] uv 开、链上
+        cu.emit_op(OpCode::POP, 1);   // c1 死(无根),uv 仍开
+        emit_closure(cu, reader_idx); // GC 窗口:uv 仅链引用 -> tracer 必须标链
+        // c2(与死 c1 共享同一 uv)入 globals
+        emit_global(cu, OpCode::DEF_GLOBAL, r_name);
         emit_global(cu, OpCode::LOAD_GLOBAL, r_name);
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [42]
@@ -1631,9 +1663,10 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
         const u16 tag = icu.add_constant(Value::from_obj(new_string(gc, "tag")));
         emit_local(icu, OpCode::LOAD_LOCAL, 1);         // [a](槽 1 = 实参;槽 0 = this)
         emit_named(icu, OpCode::STORE_THIS_FIELD, tag); // [a](peek-store this.tag = a,值留栈)
-        icu.emit_op(OpCode::POP, 1);                    // []
-        emit_local(icu, OpCode::LOAD_LOCAL, 0);         // [this]
-        icu.emit_op(OpCode::RETURN, 1);                 // 返回 this -> 实例
+        // []
+        icu.emit_op(OpCode::POP, 1);
+        emit_local(icu, OpCode::LOAD_LOCAL, 0); // [this]
+        icu.emit_op(OpCode::RETURN, 1);         // 返回 this -> 实例
     }
 
     auto fn = new_function(gc, nullptr, 0);
@@ -1649,9 +1682,11 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
         emit_named(cu, OpCode::MAKE_METHOD, init_name); // [Foo](注册 init,覆盖 seed)
         emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
-        emit_imm(cu, 7);                                // [Foo, 7]
+        // [Foo, 7]
+        emit_imm(cu, 7);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(1, 1);                      // [instance](init 帧返回 this)
+        // [instance](init 帧返回 this)
+        cu.emit_byte(1, 1);
         emit_named(cu, OpCode::LOAD_FIELD, tag); // [7]
         cu.emit_op(OpCode::RETURN, 1);
     }
@@ -1674,24 +1709,28 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
     {
         auto&     icu    = init->unit();
         const u16 x_name = icu.add_constant(Value::from_obj(new_string(gc, "x")));
-        emit_imm(icu, 10);                                 // [10]
-        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name); // [10](this.x = 10)
-        icu.emit_op(OpCode::POP, 1);                       // []
-        emit_local(icu, OpCode::LOAD_LOCAL, 0);            // [this]
-        icu.emit_op(OpCode::RETURN, 1);                    // 返回 this
+        emit_imm(icu, 10); // [10]
+        // [10](this.x = 10)
+        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name);
+        icu.emit_op(OpCode::POP, 1); // []
+        // [this]
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);
+        icu.emit_op(OpCode::RETURN, 1); // 返回 this
     }
     auto m = new_function(gc, new_string(gc, "m"), 0);
     guard.push(m);
     {
         auto&     mcu    = m->unit();
         const u16 x_name = mcu.add_constant(Value::from_obj(new_string(gc, "x")));
-        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name);  // [x]
-        emit_imm(mcu, 1);                                  // [x, 1]
-        mcu.emit_op(OpCode::ADD, 1);                       // [x+1]
-        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name); // [x+1](写回,值留栈)
-        mcu.emit_op(OpCode::POP, 1);                       // []
-        mcu.emit_op(OpCode::LOAD_NIL, 1);                  // [nil]
-        mcu.emit_op(OpCode::RETURN, 1);                    // 方法返回 nil
+        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name); // [x]
+        // [x, 1]
+        emit_imm(mcu, 1);
+        mcu.emit_op(OpCode::ADD, 1); // [x+1]
+        // [x+1](写回,值留栈)
+        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name);
+        mcu.emit_op(OpCode::POP, 1);      // []
+        mcu.emit_op(OpCode::LOAD_NIL, 1); // [nil]
+        mcu.emit_op(OpCode::RETURN, 1);   // 方法返回 nil
     }
 
     auto fn = new_function(gc, nullptr, 0);
@@ -1711,13 +1750,15 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
         emit_global(cu, OpCode::DEF_GLOBAL, foo);    // []
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i](init:x=10)
-        cu.emit_op(OpCode::DUP, 1);                 // [i, i]
-        emit_named(cu, OpCode::LOAD_FIELD, m_name); // [i, bound]
+        cu.emit_byte(0, 1);         // [i](init:x=10)
+        cu.emit_op(OpCode::DUP, 1); // [i, i]
+        // [i, bound]
+        emit_named(cu, OpCode::LOAD_FIELD, m_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i, nil](m 调毕,this.x=11)
-        cu.emit_op(OpCode::POP, 1);                 // [i]
-        emit_named(cu, OpCode::LOAD_FIELD, x_name); // [11](读回突变后的字段)
+        cu.emit_byte(0, 1);         // [i, nil](m 调毕,this.x=11)
+        cu.emit_op(OpCode::POP, 1); // [i]
+        // [11](读回突变后的字段)
+        emit_named(cu, OpCode::LOAD_FIELD, x_name);
         cu.emit_op(OpCode::RETURN, 1);
     }
 
@@ -1773,7 +1814,8 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
         // Sub().m()
         emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i]
+        // [i]
+        cu.emit_byte(0, 1);
         emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [11]
@@ -1820,9 +1862,11 @@ TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
     emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
     // Sub.x = 42:继承名新建遮蔽键
     emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
-    emit_imm(cu, 42);                               // [Sub, 42]
-    emit_named(cu, OpCode::STORE_FIELD, x_name);    // [42](单槽下移)
-    cu.emit_op(OpCode::POP, 1);                     // []
+    // [Sub, 42]
+    emit_imm(cu, 42);
+    emit_named(cu, OpCode::STORE_FIELD, x_name); // [42](单槽下移)
+    // []
+    cu.emit_op(OpCode::POP, 1);
     emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
     emit_named(cu, OpCode::LOAD_FIELD, x_name);   // [42]
     emit_global(cu, OpCode::DEF_GLOBAL, r1_name); // r1 = Sub.x(遮蔽键命中)
@@ -1831,7 +1875,8 @@ TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
     emit_global(cu, OpCode::DEF_GLOBAL, r2_name); // r2 = Base.x(父表未被波及)
     emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
     cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1);                           // [i]
+    // [i]
+    cu.emit_byte(0, 1);
     emit_named(cu, OpCode::LOAD_FIELD, x_name);   // [42]
     emit_global(cu, OpCode::DEF_GLOBAL, r3_name); // r3 = (Sub()).x(实例沿链读见遮蔽)
     cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -1867,12 +1912,15 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
     emit_named(cu, OpCode::MAKE_CLASS, sub_name);
     emit_global(cu, OpCode::DEF_GLOBAL, sub_name);
     emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
-    emit_imm(cu, 5);                                // [Sub, 5]
-    emit_named(cu, OpCode::STORE_FIELD, brand);     // [5]:新名落 Sub 自身表(恒成功)
-    cu.emit_op(OpCode::POP, 1);                     // []
+    // [Sub, 5]
+    emit_imm(cu, 5);
+    emit_named(cu, OpCode::STORE_FIELD, brand); // [5]:新名落 Sub 自身表(恒成功)
+    // []
+    cu.emit_op(OpCode::POP, 1);
     emit_global(cu, OpCode::LOAD_GLOBAL, sub_name); // [Sub]
     emit_named(cu, OpCode::LOAD_FIELD, brand);      // [5]:读回新值
-    cu.emit_op(OpCode::RETURN, 1);                  // 返回 5
+    // 返回 5
+    cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
@@ -1929,7 +1977,8 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);
         emit_closure(cu, cu.add_constant(Value::from_obj(new_m)));
         emit_named(cu, OpCode::STORE_FIELD, m_name); // [new_m 值留栈]
-        cu.emit_op(OpCode::POP, 1);                  // [i1]
+        // [i1]
+        cu.emit_op(OpCode::POP, 1);
         // i2 = Foo();b2 = i2.m(改写后的新解析:绑 new 闭包)
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);
         cu.emit_op(OpCode::CALL, 1);
@@ -1956,9 +2005,11 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
     auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value; };
     EXPECT_EQ(fetch("r1").as_int(), 1); // 已解析实例沿用旧绑定(首解析快照)
     const auto b2_v = fetch("b2");
-    EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);                  // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
+    // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
+    EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);
     EXPECT_EQ(aria::Object::as<ObjClosure>(b2_v.as_obj())->function(), new_m); // === new_m 闭包本体
-    EXPECT_EQ(fetch("r2").as_int(), 2);                                        // b2 自由调用仍执行新闭包(返回 2)
+    // b2 自由调用仍执行新闭包(返回 2)
+    EXPECT_EQ(fetch("r2").as_int(), 2);
 }
 
 // super 不污染动态派发缓存(铁则 2):Sub.m 内 super.m() 取被覆写前的父实现、绑 this
@@ -2051,23 +2102,28 @@ TEST_F(AriaVMStress, StoreFieldDeepStackShift) {
     // 单槽下移(peek(1)=peek(0)+drop)错位即 ADD 链/读回错乱;验证值经 globals 读回。
     const u16 r1_name = cu.add_constant(Value::from_obj(new_string(gc, "r1")));
     const u16 r2_name = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
-    emit_imm(cu, 40);                          // [40]
-    emit_imm(cu, 50);                          // [40, 50]
-    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // 实例路径:i.x = 5(动态字段,即创建)
+    emit_imm(cu, 40); // [40]
+    emit_imm(cu, 50); // [40, 50]
+    // 实例路径:i.x = 5(动态字段,即创建)
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo);
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1);         // [40, 50, i]
     cu.emit_op(OpCode::DUP, 1); // [40, 50, i, i](留副本跨写)
     emit_imm(cu, 5);
-    emit_named(cu, OpCode::STORE_FIELD, x_name);     // [40, 50, i, 5](弹 obj 副本,值留栈)
-    cu.emit_op(OpCode::POP, 1);                      // [40, 50, i](弹验证值)
+    emit_named(cu, OpCode::STORE_FIELD, x_name); // [40, 50, i, 5](弹 obj 副本,值留栈)
+    // [40, 50, i](弹验证值)
+    cu.emit_op(OpCode::POP, 1);
     emit_named(cu, OpCode::LOAD_FIELD, x_name);      // obj=peek(0)=i ✓ -> [40, 50, 5](fields 命中)
     emit_global(cu, OpCode::DEF_GLOBAL, r1_name);    // r1 = i.x = 5
     emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // 类路径:Base.x = 7(深栈下移)
     emit_imm(cu, 7);
-    emit_named(cu, OpCode::STORE_FIELD, x_name);     // [40, 50, 7]
-    cu.emit_op(OpCode::POP, 1);                      // [40, 50](弹类写验证值)
-    cu.emit_op(OpCode::POP, 1);                      // [40]
-    cu.emit_op(OpCode::POP, 1);                      // []
+    emit_named(cu, OpCode::STORE_FIELD, x_name); // [40, 50, 7]
+    // [40, 50](弹类写验证值)
+    cu.emit_op(OpCode::POP, 1);
+    // [40]
+    cu.emit_op(OpCode::POP, 1);
+    // []
+    cu.emit_op(OpCode::POP, 1);
     emit_global(cu, OpCode::LOAD_GLOBAL, base_name); // 类写读回
     emit_named(cu, OpCode::LOAD_FIELD, x_name);      // [7]
     emit_global(cu, OpCode::DEF_GLOBAL, r2_name);    // []
@@ -2103,14 +2159,17 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
     {
         auto&     mcu    = m->unit();
         const u16 x_name = mcu.add_constant(Value::from_obj(new_string(gc, "x")));
-        emit_imm(mcu, 60);                                 // [60]
-        emit_imm(mcu, 70);                                 // [60, 70]
-        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name);  // [60, 70, 5]
-        emit_imm(mcu, 1);                                  // [60, 70, 5, 1]
-        mcu.emit_op(OpCode::ADD, 1);                       // [60, 70, 6]
-        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name); // [60, 70, 6](值留栈)
-        mcu.emit_op(OpCode::ADD, 1);                       // [60, 76]
-        mcu.emit_op(OpCode::ADD, 1);                       // [136]
+        emit_imm(mcu, 60); // [60]
+        emit_imm(mcu, 70); // [60, 70]
+        // [60, 70, 5]
+        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name);
+        // [60, 70, 5, 1]
+        emit_imm(mcu, 1);
+        mcu.emit_op(OpCode::ADD, 1); // [60, 70, 6]
+        // [60, 70, 6](值留栈)
+        emit_named(mcu, OpCode::STORE_THIS_FIELD, x_name);
+        mcu.emit_op(OpCode::ADD, 1); // [60, 76]
+        mcu.emit_op(OpCode::ADD, 1); // [136]
         mcu.emit_op(OpCode::RETURN, 1);
     }
 
@@ -2177,7 +2236,8 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
         // (Foo()).x - Foo.x == 8:fields 命中优先,静态回退不被实例写波及
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i]
+        // [i]
+        cu.emit_byte(0, 1);
         emit_named(cu, OpCode::LOAD_FIELD, x_name); // [9](fields 命中)
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);
         emit_named(cu, OpCode::LOAD_FIELD, x_name); // [9, 1](类路径静态直读)
@@ -2237,7 +2297,8 @@ TEST_F(AriaVMStress, StoreFieldOnNilErrors) {
     auto&     cu       = fn->unit();
     const u16 x        = cu.add_constant(Value::from_obj(new_string(gc, "x")));
     cu.emit_op(OpCode::LOAD_NIL, 1); // [nil]
-    emit_imm(cu, 1);                 // [nil, 1]
+    // [nil, 1]
+    emit_imm(cu, 1);
     emit_named(cu, OpCode::STORE_FIELD, x);
     cu.emit_op(OpCode::RETURN, 1); // 不可达
 
@@ -2274,13 +2335,15 @@ TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
     const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
     cu.emit_op(OpCode::LOAD_OBJECT, 1);
-    emit_named(cu, OpCode::MAKE_CLASS, foo);        // [Foo]
-    emit_global(cu, OpCode::DEF_GLOBAL, foo);       // []
-    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
-    emit_imm(cu, 5);                                // [Foo, 5](非可调用值)
+    emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
+    emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
+    // [Foo, 5](非可调用值)
+    emit_imm(cu, 5);
     emit_named(cu, OpCode::STORE_FIELD, init_name); // [5](赋值放行:init_ 同步为 5)
-    cu.emit_op(OpCode::POP, 1);                     // []
-    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+    // []
+    cu.emit_op(OpCode::POP, 1);
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1); // 实例化:call_value(init_=5) -> CallNonCallable
     cu.emit_op(OpCode::RETURN, 1);
@@ -2327,7 +2390,8 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
         cu.emit_op(OpCode::DUP, 1); // [i, i]
         emit_named(cu, OpCode::LOAD_FIELD, init_name);
         emit_global(cu, OpCode::DEF_GLOBAL, init_name); // [i](b = i.init 绑定,入 globals)
-        cu.emit_op(OpCode::POP, 1);                     // []
+        // []
+        cu.emit_op(OpCode::POP, 1);
         cu.emit_op(OpCode::LOAD_NIL, 1);
         cu.emit_op(OpCode::RETURN, 1);
     }
@@ -2394,15 +2458,18 @@ TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
     cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
     emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
     cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);                         // [Foo, native]
+    // [Foo, native]
+    cu.emit_word(nf, 1);
     emit_named(cu, OpCode::MAKE_STATIC, f_name); // 静态槽存原生(var 声明 lowering 同形)
     emit_global(cu, OpCode::DEF_GLOBAL, foo);    // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
     cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1);                         // [i](快路径:无 init)
+    // [i](快路径:无 init)
+    cu.emit_byte(0, 1);
     emit_named(cu, OpCode::LOAD_FIELD, f_name); // [raw-native](实例读取:非方法槽 ⟹ 原值)
     cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);                 // [raw, native](常量池原值)
+    // [raw, native](常量池原值)
+    cu.emit_word(nf, 1);
     cu.emit_op(OpCode::STRICT_EQUAL, 1); // [true](同一对象,无绑定包装)
     cu.emit_op(OpCode::RETURN, 1);
 
@@ -2489,7 +2556,8 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
         // (Sub()).m()
         emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i]
+        // [i]
+        cu.emit_byte(0, 1);
         emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [true]
@@ -2541,7 +2609,8 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
         // (Sub()).m()
         emit_global(cu, OpCode::LOAD_GLOBAL, sub_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);                         // [i]
+        // [i]
+        cu.emit_byte(0, 1);
         emit_named(cu, OpCode::LOAD_FIELD, m_name); // [bound](绑 Sub.m)
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1); // [1](super.x 直读)
@@ -2571,10 +2640,12 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
     cu.emit_op(OpCode::LOAD_CONST, 1);
-    cu.emit_word(nf, 1);                            // [Foo, native]
+    // [Foo, native]
+    cu.emit_word(nf, 1);
     emit_named(cu, OpCode::STORE_FIELD, init_name); // [native](赋值放行:"init" 同步 init_)
-    cu.emit_op(OpCode::POP, 1);                     // []
-    emit_global(cu, OpCode::LOAD_GLOBAL, foo);      // [Foo]
+    // []
+    cu.emit_op(OpCode::POP, 1);
+    emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
     cu.emit_op(OpCode::CALL, 1);
     cu.emit_byte(0, 1); // 实例化:原生 init 收 slots[0]=this(echo 校验后返回 1)
     cu.emit_op(OpCode::RETURN, 1);

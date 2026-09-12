@@ -119,10 +119,12 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
     guard.push(c);
     auto constant = new_string(gc, "a long constant string beyond sso padding");
     fn->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
-    Value v  = Value::nil_val();
-    auto  uv = new_upvalue(gc, &v);                                                 // 建时 collect:fn/c 经 guard 存活
-    c->add_upvalue(uv);                                                             // 先入 c(根可达)再跨 GC
-    v = Value::from_obj(new_string(gc, "captured long string beyond sso padding")); // 建时 collect:uv 经 c 存活
+    Value v = Value::nil_val();
+    // 建时 collect:fn/c 经 guard 存活
+    auto uv = new_upvalue(gc, &v);
+    c->add_upvalue(uv); // 先入 c(根可达)再跨 GC
+    // 建时 collect:uv 经 c 存活
+    v = Value::from_obj(new_string(gc, "captured long string beyond sso padding"));
     (void) new_string(gc, "trigger"); // stress collect:全链经 c.trace 存活
     EXPECT_EQ(c->function(), fn);
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");

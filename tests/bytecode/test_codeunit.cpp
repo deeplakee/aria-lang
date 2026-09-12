@@ -129,7 +129,8 @@ TEST(CodeUnit, PatchWordBackfillKeepsLineTable) {
     CodeUnit cu{&gc};
     cu.emit_op(OpCode::JUMP_FALSE, 5);  // offset 0, line 5
     const usize patch = cu.code.size(); // = 1
-    cu.emit_word(0, 5);                 // offset 1,2 占位, line 5
+    // offset 1,2 占位, line 5
+    cu.emit_word(0, 5);
     EXPECT_EQ(patch, 1u);
 
     // 回填: 小端覆写 2 字节(裸字段)
@@ -178,7 +179,8 @@ TEST(CodeUnit, TryRecordFindHandler) {
     cu.try_records.push(TryRecord{.begin = 30, .end = 60, .handle = 150, .stack_depth = 5});
 
     // 命中返记录指针: handle 与 stack_depth 一并暴露给 unwind
-    EXPECT_FALSE(cu.find_try_handler(0).has_value());            // 区间前
+    // 区间前
+    EXPECT_FALSE(cu.find_try_handler(0).has_value());
     EXPECT_EQ(cu.find_try_handler(10).value()->handle, 200u);    // A 起点(含)
     EXPECT_EQ(cu.find_try_handler(29).value()->stack_depth, 2u); // A 内、B 前
     EXPECT_EQ(cu.find_try_handler(30).value()->handle, 150u);    // B 起点(最内层)

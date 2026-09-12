@@ -76,7 +76,8 @@ TEST(Disassembler, JumpFwdFormat) {
     GC         gc;
     CodeUnit   cu{&gc};
     const auto src = cu.emit_jump(OpCode::JUMP_TRUE, 1); // 占位 off=0
-    cu.emit_byte(0xAA, 1);                               // 填 2 字节再回填: base=3, target=5 -> off=2
+    // 填 2 字节再回填: base=3, target=5 -> off=2
+    cu.emit_byte(0xAA, 1);
     cu.emit_byte(0xBB, 1);
     ASSERT_TRUE(cu.patch_jump(src));
     EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "JUMP_TRUE         0002 -> 0005");

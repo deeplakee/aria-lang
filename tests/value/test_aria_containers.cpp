@@ -107,9 +107,10 @@ TEST(AriaHashTable, MixedValueTypesAsKeys) {
 }
 
 TEST(AriaHashTable, ManyEntriesRehash) {
-    GC            gc;
-    auto          lock = gc.make_lock(); // 禁用 GC:本测关注 HashTable rehash,不测 GC 交互
-    AriaHashTable ht{&gc};               // (60 个 intern 串 + ht 分配会超 next_gc_,触发回收未根化的串)
+    GC   gc;
+    auto lock = gc.make_lock(); // 禁用 GC:本测关注 HashTable rehash,不测 GC 交互
+    // (60 个 intern 串 + ht 分配会超 next_gc_,触发回收未根化的串)
+    AriaHashTable ht{&gc};
     for (int i = 0; i < 30; ++i) {
         auto k                               = new_string(gc, std::format("key-{}", i));
         auto v                               = new_string(gc, std::format("value-{}", i));

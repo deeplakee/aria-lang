@@ -44,14 +44,15 @@ namespace {
 
     // 单个语料用例：脚本路径 + 判定所需全部静态信息（collect 期一次备齐，用例体零 IO）。
     struct CorpusCase {
-        String       path;           // 脚本绝对路径（喂给 interpret_from_path）
-        String       rel_path;       // 相对语料根路径（分类依据；失败消息展示）
-        String       name;           // ctest 用例名：rel_path 去 .aria 后缀、/ 换 _
-        CaseKind     kind;           // 判定类别
-        bool         has_golden;     // positive：存在同名 .out golden（捕获 stdout 比对）
-        String       golden;         // .out 全文（逐字节比对）
-        bool         has_err;        // runtime 负向：存在同名 .err（捕获 stderr 比对）
-        List<String> err_substrings; // .err 每行一个子串，全部须出现在 stderr
+        String   path;       // 脚本绝对路径（喂给 interpret_from_path）
+        String   rel_path;   // 相对语料根路径（分类依据；失败消息展示）
+        String   name;       // ctest 用例名：rel_path 去 .aria 后缀、/ 换 _
+        CaseKind kind;       // 判定类别
+        bool     has_golden; // positive：存在同名 .out golden（捕获 stdout 比对）
+        String   golden;     // .out 全文（逐字节比对）
+        bool     has_err;    // runtime 负向：存在同名 .err（捕获 stderr 比对）
+        // .err 每行一个子串，全部须出现在 stderr
+        List<String> err_substrings;
     };
 
     // gtest 参数打印：失败消息里展示相对路径即可定位，不倾倒全文。

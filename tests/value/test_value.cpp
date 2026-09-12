@@ -103,7 +103,8 @@ TEST(ValueEqual, ObjStringContent) {
     // 非 intern 路径:不同指针、等价内容 -> == 仍 true(ObjString::equals 比内容)
     auto c = gc.new_object<ObjString>(gc, "hello");
     auto d = gc.new_object<ObjString>(gc, "hello");
-    EXPECT_NE(c, d);                                                       // 非 intern:不同指针
+    // 非 intern:不同指针
+    EXPECT_NE(c, d);
     EXPECT_TRUE(value_equal(Value::from_obj(c), Value::from_obj(d)));      // 内容相等
     EXPECT_FALSE(value_identical(Value::from_obj(c), Value::from_obj(d))); // 指针不等
     // 不同内容

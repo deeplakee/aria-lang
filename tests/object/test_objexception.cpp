@@ -84,7 +84,8 @@ TEST(ObjException, ToErrorLeavesGc) {
     GC   gc;
     auto e         = make_exception(gc, ErrorCode::StackOverflow, "Runtime: StackOverflow call frame stack overflow");
     auto converted = e->to_error(); // 先取走 Error 副本
-    gc.collect();                   // e 无根 -> 回收;intern 的 message 无其它根 -> 一并摘除
+    // e 无根 -> 回收;intern 的 message 无其它根 -> 一并摘除
+    gc.collect();
     EXPECT_EQ(converted.code(), ErrorCode::StackOverflow);
     EXPECT_EQ(converted.message(), "Runtime: StackOverflow call frame stack overflow");
 }

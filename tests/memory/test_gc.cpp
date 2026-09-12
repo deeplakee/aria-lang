@@ -69,7 +69,7 @@ TEST(GcAlloc, ReallocToZeroFrees) {
 }
 
 TEST(ObjString, ShortIsInline) {
-    GC    gc;
+    GC   gc;
     auto s = new_string(gc, kShort);
     EXPECT_FALSE(s->is_long());
     EXPECT_EQ(s->length(), kShort.size());
@@ -77,7 +77,7 @@ TEST(ObjString, ShortIsInline) {
 }
 
 TEST(ObjString, LongIsSeparate) {
-    GC    gc;
+    GC   gc;
     auto s = new_string(gc, kLong);
     EXPECT_TRUE(s->is_long());
     EXPECT_EQ(s->length(), kLong.size());
@@ -85,7 +85,7 @@ TEST(ObjString, LongIsSeparate) {
 }
 
 TEST(ObjString, HashStableForEqualContent) {
-    GC    gc;
+    GC   gc;
     auto a = new_string(gc, "same content here!!!!");
     auto b = new_string(gc, "same content here!!!!");
     EXPECT_EQ(a->hash(), b->hash());
@@ -117,16 +117,16 @@ TEST(GcCollect, TempRootSurvives) {
     GC gc;
     gc.set_stress(true);
     auto s     = new_string(gc, kLong);
-    auto  guard = gc.make_guard(s);    // 保护
+    auto guard = gc.make_guard(s);    // 保护
     (void) new_string(gc, "trigger"); // 触发 GC:s 被标根 -> 存活
-    EXPECT_EQ(s->view(), kLong);       // 未被释放,访问安全
+    EXPECT_EQ(s->view(), kLong);      // 未被释放,访问安全
 }
 
 TEST(GcCollect, SweepResetsMarks) {
     GC gc;
     gc.set_stress(true);
     auto s     = new_string(gc, kLong);
-    auto  guard = gc.make_guard(s);
+    auto guard = gc.make_guard(s);
     (void) new_string(gc, "trigger"); // GC:s 存活,is_marked 复位
     EXPECT_FALSE(s->is_marked());
 }
@@ -146,7 +146,7 @@ TEST(GcCollect, GuardBalancesTempRoots) {
 }
 
 TEST(Object, AddressHashCtor) {
-    GC    gc;
+    GC   gc;
     auto a = gc.new_object<ObjDummy>();
     auto b = gc.new_object<ObjDummy>();
     EXPECT_EQ(a->hash(), a->hash()); // 同一对象哈希稳定
@@ -159,7 +159,7 @@ TEST(GcLock, DisablePreventsCollect) {
     gc.disable_gc();
     (void) new_string(gc, kLong); // 无根;stress 本应回收,但 GC 禁用 -> 保留
     const usize before = gc.bytes_allocated();
-    (void) new_string(gc, "trigger");       // stress 触发 collect,但锁住 -> 不回收
+    (void) new_string(gc, "trigger");        // stress 触发 collect,但锁住 -> 不回收
     EXPECT_GE(gc.bytes_allocated(), before); // 未回收
     gc.enable_gc();
     (void) new_string(gc, "trigger2"); // 恢复 GC,stress 触发 -> kLong/trigger 回收
@@ -171,7 +171,8 @@ TEST(GcLock, ExplicitCollectRespectsLock) {
     (void) new_string(gc, kLong); // 无根
     gc.disable_gc();
     const usize before = gc.bytes_allocated();
-    gc.collect();                            // 显式,但锁住 -> no-op
+    // 显式,但锁住 -> no-op
+    gc.collect();
     EXPECT_EQ(gc.bytes_allocated(), before); // 未回收
     gc.enable_gc();
     gc.collect(); // 恢复 -> 回收

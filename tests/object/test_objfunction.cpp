@@ -135,10 +135,11 @@ TEST(ObjFunction, ModuleBackref) {
 // trace 标 module_:fn 入根 -> fn.trace 标 module_ -> 模块(及模块 name_)存活。
 // 验证 module <-> entry 环不影响 mark-sweep(module_ 不被根,仅经 fn.trace 可达)。
 TEST(ObjFunction, TraceMarksModule) {
-    GC          gc;
-    auto        m      = make_module(gc, "lib/utils"); // 模块不单独根
-    auto        fn     = make_function(gc, m, "f", 0); // m 经 make_function 内部 guard 存活至 fn 入根
-    auto        guard  = gc.make_guard(fn);            // 仅根 fn:m 须经 fn.trace(module_) 存活
+    GC   gc;
+    auto m  = make_module(gc, "lib/utils"); // 模块不单独根
+    auto fn = make_function(gc, m, "f", 0); // m 经 make_function 内部 guard 存活至 fn 入根
+    // 仅根 fn:m 须经 fn.trace(module_) 存活
+    auto        guard  = gc.make_guard(fn);
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_EQ(gc.bytes_allocated(), before); // m + m->name_ 经 fn.trace 存活

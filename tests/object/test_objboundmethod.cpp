@@ -170,8 +170,10 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
         g.push(method);
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         g.push(constant);
-        method->function()->unit().add_constant(Value::from_obj(constant));           // push 走 trivial 分配不触 GC
-        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时 collect:经守卫存活
+        // push 走 trivial 分配不触 GC
+        method->function()->unit().add_constant(Value::from_obj(constant));
+        // 建时 collect:经守卫存活
+        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
         g.push(bound);
         // 作用域退出:全部临时根弹出,method/inst/cls 此后仅经 bound.trace 可达
     }

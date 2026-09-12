@@ -229,8 +229,9 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包)后压 callee + enter_frame
-        // 进帧 -> dispatch_loop 主循环,作用于 *current_。run() 的被委托方,亦是未来重入的接缝
+        // 执行本体(无入口装饰):入口 fn 现场包空闭包(顶层也闭包)后压 callee,经 call_closure
+        // 进帧(进帧单点收束) -> dispatch_loop 主循环,作用于 *current_。run() 的被委托方,
+        // 亦是未来重入的接缝
         // (原生回调调 aria 函数 / 嵌入宿主调函数,vm-design.md §4.7):故不播源根、不 reset
         // (重入调用者的栈不可冲掉)、不断言主上下文;落地时升公开,并需 dispatch_loop 按基线
         // 帧深退出(现仅 frames().empty() 返回,中途重入会穿掉调用者帧)。
@@ -277,9 +278,10 @@ namespace aria {
         // 是否 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
 
-        // 闭包调用:校验 arity + 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,参数即局部槽
-        // 1..argc;arity 等元数据经 closure->function() 取)。失败 raise WrongArity /
-        // StackOverflow 后返 false(bool 契约见 call_value)。
+        // 闭包调用的进帧单点(运行期 call_value 分发与入口序章 run_function 共用):校验 arity +
+        // 帧栈未溢出后 enter_frame 进帧(callee 在槽 0,参数即局部槽 1..argc;arity 等元数据经
+        // closure->function() 取)。失败 raise WrongArity / StackOverflow 后返 false(bool
+        // 契约见 call_value)。
         bool call_closure(ObjClosure* obj, u8 argc);
 
         // 原生函数调用:同步调用 obj->fn(),不进帧;原生函数自身以 bool 为成败信号、返回值写槽 0、

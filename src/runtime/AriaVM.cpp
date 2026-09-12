@@ -151,11 +151,12 @@ namespace aria {
             return std::format("{}:{}", module->abs_path(), line);
         }
 
-        // 把寄存器取出的载荷拆为未捕获出口要用的 (码, 完整烘焙消息) 两件:ObjException 直取
+        // 把寄存器取出的载荷拆为 (码, 完整烘焙消息) 两件:ObjException 直取
         // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
         // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
-        // 烘焙单点 make_message,与 from_detail 同源同串)。仅 unwind 未捕获出口一处消费:
-        // 拼好跟踪后经 Error::from_baked 一次物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
+        // 烘焙单点 make_message,与 from_detail 同源同串)。消费方:unwind 未捕获出口(拼好
+        // 跟踪)与 run_function 入口进帧失败(一帧未进,无跟踪),均经 Error::from_baked 一次
+        // 物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value value) {
             if (const auto ex = try_obj<ObjException>(value)) {
                 return {ex->code(), String{ex->message()->view()}};
@@ -419,10 +420,11 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run_function(ObjFunction* fn) {
-        // 执行本体(无入口装饰):入口 fn 现场包空闭包(统一「帧 = 闭包」模型)后压 callee +
-        // 进帧 + 驱动 dispatch_loop,作用于 *current_(与 dispatch_loop/call_value 族/raise 的
-        // current_ 纪律同源)。run() 的被委托方,未来重入的接缝(vm-design.md §4.7):不播源根、
-        // 不 reset(冲掉重入调用者的栈)、不断言主上下文;落地时升公开。
+        // 执行本体(无入口装饰):入口 fn 现场包空闭包(统一「帧 = 闭包」模型)后压 callee,经
+        // call_closure 进帧(进帧单点收束,与运行期调用同路)+ 驱动 dispatch_loop,作用于
+        // *current_(与 dispatch_loop/call_value 族/raise 的 current_ 纪律同源)。run() 的
+        // 被委托方,未来重入的接缝(vm-design.md §4.7):不播源根、不 reset(冲掉重入调用者的
+        // 栈)、不断言主上下文;落地时升公开。
         //
         // 根安全:fn 在 new_closure 顶 maybe_collect 时须有根(run() 路径经 module->entry_ 模块根
         // /测试 guard,重入路径属调用方契约),此处 make_guard 兜底 -- 该 GC 点是 fn 唯一无根窗口
@@ -430,9 +432,15 @@ namespace aria {
         // 守卫;入帧后另有帧(tracer)双根。
         auto       fn_guard = gc_.make_guard(fn);
         const auto closure  = new_closure(gc_, fn);
-        // 顶层入口无参数:slots 指向槽 0(callee)。
+        // 顶层入口无参数(argc 0):push callee 后经 call_closure 进帧,slots 指向槽 0(callee);
+        // arity 0 由编译器合成入口时保证,帧满分支为重入接缝承重。
         current_->push(Value::from_obj(closure)); // callee 值躺在主帧槽 0(RETURN 时弹),入栈即根
-        current_->enter_frame(closure, 0);
+        if (!call_closure(closure, 0)) {
+            // 进帧失败(重入路径帧满为真实分支):寄存器载荷拆 (码, 烘焙消息) 直转 Result --
+            // 不经 unwind(重入时帧栈叠着调用者的帧,弹不得),一帧未进亦无跟踪可烘。
+            const auto [code, msg] = uncaught_error_parts(*current_->take_error());
+            return runtime_err(Error::from_baked(code, msg));
+        }
         return dispatch_loop();
     }
 
@@ -759,7 +767,7 @@ namespace aria {
         // 永不重入;M6 前 call_native 断言锁「原生调用不得换走 current_」。见 vm-design.md §4.9。
 
         while (true) {
-            // 不变式:此处帧栈恒非空(run() 先 enter_frame 才进本循环;唯一弹空帧的 RETURN 顶层
+            // 不变式:此处帧栈恒非空(run() 经 call_closure 进帧才进本循环;唯一弹空帧的 RETURN 顶层
             // 分支立即 return;CALL/IMPORT 切帧后 break 回到循环顶重取)。
             // 取指前记本帧指令起始指针:报错定位的行号锚点 -- 顶帧报错即故障指令、call_*/原生
             // 失败即 CALL 站点(被调帧未进 / 原生不进帧,顶帧仍是 caller);M3 unwind 查表同用

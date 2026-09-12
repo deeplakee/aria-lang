@@ -30,15 +30,15 @@ namespace aria {
         return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
-    bool Object::store_field(AriaVM& vm, ObjString* name, Value value) {
+    bool Object::store_field(AriaVM& vm, ObjString* name, const Value value) {
         return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name());
     }
 
-    Opt<Value> Object::load_index(AriaVM& vm, Value key) {
+    Opt<Value> Object::load_index(AriaVM& vm, const Value key) {
         return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 
-    bool Object::store_index(AriaVM& vm, Value key, Value value) {
+    bool Object::store_index(AriaVM& vm, const Value key, const Value value) {
         return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 

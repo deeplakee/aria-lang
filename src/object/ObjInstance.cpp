@@ -49,7 +49,7 @@ namespace aria {
         return Value::from_obj(bound);
     }
 
-    bool ObjInstance::store_field(AriaVM& vm, ObjString* name, Value value) {
+    bool ObjInstance::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 实例字段动态(无预声明):set 即创建/更新,永不失败(恒 true;false ⟺ 已 fail)。
         // set 走 trivial 分配不触 GC(GC 核心不变式)。
         fields_.set(Value::from_obj(name), value);

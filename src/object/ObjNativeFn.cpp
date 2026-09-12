@@ -23,13 +23,13 @@ namespace aria {
         return std::format("<fn {}>", name_->view());
     }
 
-    ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn) {
+    ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
         // 工厂不替调用方守卫入参:本工厂只做一次 new_object、无内部新建对象,调用方须在调用前自行
         // 根化 name(跨 new_object 顶 maybe_collect)。fn 为标量,无需入根。
         return gc.new_object<ObjNativeFn>(name, fn);
     }
 
-    ObjNativeFn* new_native_fn(GC& gc, NativeFn fn) {
+    ObjNativeFn* new_native_fn(GC& gc, const NativeFn fn) {
         // 匿名重载:name_str 是本函数内部新建,工厂自行守卫跨下方 new_object(「每方守自己创建的」)。
         // 调用方传 fn 即可,无需手动建串根化。委托显式名重载。
         const auto name_str = new_string(gc, kAnonymousName);
@@ -37,7 +37,7 @@ namespace aria {
         return new_native_fn(gc, name_str, fn);
     }
 
-    ObjNativeFn* new_native_fn(GC& gc, StringView name, NativeFn fn) {
+    ObjNativeFn* new_native_fn(GC& gc, const StringView name, const NativeFn fn) {
         // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
         //(「每方守自己创建的」)。调用方传文本即可,无需手动建串根化。委托显式名重载。
         const auto name_str = new_string(gc, name);

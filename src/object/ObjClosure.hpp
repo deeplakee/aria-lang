@@ -12,6 +12,7 @@ namespace aria {
     class ObjFunction;
     class ObjUpvalue;
     class ObjClass;
+    class ObjString;
 
     // 闭包对象:函数 + 捕获的 upvalue 数组(ObjType::CLOSURE)。
     //
@@ -45,6 +46,11 @@ namespace aria {
         ObjFunction* function() const noexcept {
             return function_;
         }
+
+        // 名字访问器:闭包的名 = 被包函数的名(intern 驻留,恒非空),与 ObjFunction/ObjNativeFn
+        // 等的 name() 同约定。定义在 .cpp(需 ObjFunction 完整类型)。
+        [[nodiscard]]
+        ObjString* name() const noexcept;
 
         // 捕获数组(与 fn.upvalue_descs() 按下标对应;CLOSURE 执行期逐个后填,之后只读)。
         [[nodiscard]]

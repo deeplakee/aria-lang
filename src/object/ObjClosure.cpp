@@ -17,6 +17,11 @@ namespace aria {
         upvalues_.push(uv);
     }
 
+    ObjString* ObjClosure::name() const noexcept {
+        // function_ 恒非空(ctor ASSERT),函数名恒非空(ObjFunction ctor ASSERT),故指针恒非空。
+        return function_->name();
+    }
+
     void ObjClosure::trace(GC& gc) const noexcept {
         gc.mark_object(function_);
         for (ObjUpvalue* uv: upvalues_) { // const Array<T*> 遍历出的元素是 T*(指针本身 const,不传染 pointee)

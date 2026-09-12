@@ -8,6 +8,7 @@
 namespace aria {
 
     class GC;
+    class ObjString;
 
     // 绑定方法对象:被绑定的方法值 + 绑定的接收者(ObjType::BOUND_METHOD)。`obj.m` 命中类表
     // 方法时由 LOAD_FIELD 现场绑定(new_bound_method),call_value BOUND_METHOD 分支解包进帧/直调。
@@ -22,7 +23,7 @@ namespace aria {
     //   地址哈希型可变对象(走 Object{ObjType::BOUND_METHOD} ctor);equals 保持默认地址相等--
     //     绑定按身份判等(同一方法绑不同实例是不同对象)。final。
     //   trace():mark_value(method_) + mark_value(receiver_)。
-    //   debug_repr():`<bound method m>`(m 经非虚 method_name 取名);基类 to_string 默认
+    //   debug_repr():`<bound method m>`(m 经非虚 name() 取名);基类 to_string 默认
     //     委托之,显示同文案。
     class ObjBoundMethod final : public Object {
     public:
@@ -46,10 +47,11 @@ namespace aria {
             return receiver_;
         }
 
-        // 方法名的非虚读取(闭包取 fn 名、原生取 name_,与 debug_repr 渲染同源)。
-        // 定义在 .cpp(需 ObjClosure/ObjNativeFn 完整类型)。
+        // 名字访问器:绑定的方法对象之名(闭包取 fn 名、原生取 name_,intern 驻留恒非空),
+        // 与 ObjFunction/ObjClosure 等的 name() 同约定;非虚、定义在 .cpp(需 ObjClosure/
+        // ObjNativeFn 完整类型),与 debug_repr 渲染同源。
         [[nodiscard]]
-        StringView method_name() const noexcept;
+        ObjString* name() const noexcept;
 
         void trace(GC& gc) const noexcept override;
 

@@ -22,18 +22,18 @@ namespace aria {
         gc.mark_value(receiver_); // receiver 装箱任意值,mark_value 分派
     }
 
-    StringView ObjBoundMethod::method_name() const noexcept {
-        // 非虚读取:闭包取 fn 名、原生取 name_(两者皆 intern 驻留恒非空,视图稳定到串亡)。
+    ObjString* ObjBoundMethod::name() const noexcept {
+        // 非虚读取:闭包取 fn 名、原生取 name_(两者皆 intern 驻留恒非空,指针随宿主对象保命)。
         const auto m = method_.as_obj();
         if (m->type() == ObjType::CLOSURE) {
-            return as<ObjClosure>(m)->function()->name()->view();
+            return as<ObjClosure>(m)->name();
         }
-        return as<ObjNativeFn>(m)->name()->view();
+        return as<ObjNativeFn>(m)->name();
     }
 
     String ObjBoundMethod::debug_repr() const {
-        // 渲染方法名,与 <fn m> 渲染族同源(经非虚 method_name 取名)。
-        return std::format("<bound method {}>", method_name());
+        // 渲染方法名,与 <fn m> 渲染族同源(经非虚 name() 取名)。
+        return std::format("<bound method {}>", name()->view());
     }
 
     ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver) {

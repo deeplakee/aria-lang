@@ -496,8 +496,8 @@ namespace aria {
     bool AriaVM::call_closure(ObjClosure* obj, const u8 argc) {
         if (const auto arity = obj->function()->arity(); arity != argc) {
             // 报错带函数名:实例化经 call_class 委托至此,init 的元数错误同样指名("function 'init' ...")。
-            return fail(ErrorCode::WrongArity, "function '{}' expects {} args, got {}", obj->function()->name()->view(),
-                        arity, argc);
+            return fail(ErrorCode::WrongArity, "function '{}' expects {} args, got {}", obj->name()->view(), arity,
+                        argc);
         }
 
         if (current_->frames_full()) {
@@ -1354,7 +1354,7 @@ namespace aria {
                     // 「返回模块」,使 IMPORT 的栈效应在命中/未命中两分支统一为 [..., module]。
                     // 先取 module 与 fn 名再 exit_frame:exit_frame 后 frame 引用悬垂。
                     auto mod     = frame.module;
-                    auto fn_name = frame.closure->function()->name()->view();
+                    auto fn_name = frame.closure->name()->view();
                     current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
                     if (current_->frames().empty()) {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果

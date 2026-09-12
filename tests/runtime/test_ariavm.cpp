@@ -2429,7 +2429,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     ASSERT_NE(b_entry, nullptr);
     auto b = aria::Object::as<ObjBoundMethod>(b_entry->value.as_obj());
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(b->method_name(), "init"); // 非虚取名:闭包方法取 fn 名
+    EXPECT_EQ(b->name()->view(), "init"); // 非虚取名:闭包方法取 fn 名
 
     // run() 收尾 reset() 只清栈不回收:主入口闭包等栈级临时物已不可达但仍在堆上,
     // 先 collect 清掉 run 期遗留,再钉住类图基线 -- 第二次 collect 字节数须不变。

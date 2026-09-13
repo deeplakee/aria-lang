@@ -16,29 +16,18 @@
 namespace aria {
 
     namespace {
-        // 匿名函数名 kAnonymousName("<anonymous>")与入口名 <main>/<module> 均为项目级保留名(aria.hpp);
-        // compile_function 据匿名名判定「lambda -> 留栈不绑定」。
-
-        // 容量上限(值即对应操作数/索引位宽上限,位宽事实源见 CodeUnit.hpp 的 kU8OperandMax/kU16OperandMax;
-        // 越界判定统一用 > 比较):
-        //
-        //   - kMaxArity -- 函数形参上限(ObjFunction arity 为 u8);
-        //   - kMaxArguments -- 单次调用实参上限(CALL 操作数 u8);
-        //   - kMaxConstants -- 常量池最大索引(u16 索引,即最多 65536 项);
-        //   - kMaxLocals -- 单函数局部最大槽号(u16 槽,含 slot 0 哑元,故用户局部最多 65535).
-        //
-        // 语义名集中定义,使各检查点与报错文案共享同一来源,无散落魔数。单函数捕获 upvalue 上限
-        // kMaxUpvalues 同属此纪律,因登记侧 FunctionCtx::add_upvalue 共用而定义于 FunctionCtx.hpp。
+        // 容量上限(值即操作数/索引位宽上限,事实源见 CodeUnit.hpp 的 kU8/kU16OperandMax;
+        // 越界统一用 > 比较):kMaxArity 形参(u8)、kMaxArguments 实参(CALL 操作数 u8)、
+        // kMaxConstants 常量池(u16 索引)、kMaxLocals 局部槽(u16,含 slot 0 哑元)。语义名
+        // 集中定义使检查点与报错文案同源;kMaxUpvalues 同纪律,因登记侧共用而定义于
+        // FunctionCtx.hpp。
         constexpr u32 kMaxArity     = kU8OperandMax;
         constexpr u32 kMaxArguments = kU8OperandMax;
         constexpr u32 kMaxConstants = kU16OperandMax;
         constexpr u32 kMaxLocals    = kU16OperandMax;
 
         // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
-        // 超出 -> NumberOutOfRange):
-        //
-        //   - kIntMin -- -(2^47);
-        //   - kIntMax -- 2^47 - 1.
+        // 超出 -> NumberOutOfRange)。
         constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
         constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
     } // namespace
@@ -129,9 +118,7 @@ namespace aria {
     }
 
     void CodeGen::emit_pop_locals_to(const u32 target_depth, const u32 line) const {
-        // 弹区清理统一发射口（POP_N / CLOSE_UPVALUE 的机制与「只发射不改登记」见头注）。
-        // 补充：CLOSE_UPVALUE 只关不弹（弹栈全由 POP_N 承担），且两指令均无分配无安全点、
-        // 其间无任何触发点。
+        // CLOSE_UPVALUE 只关不弹（弹栈全由 POP_N 承担），两指令均无分配无安全点。
         u32  count        = 0; // 弹区局部总数（含被捕获者，POP_N 计数）
         bool has_captured = false;
         for (const auto& local: std::views::reverse(cur_fn_ctx()->locals_)) {
@@ -176,10 +163,8 @@ namespace aria {
     }
 
     Opt<u8> CodeGen::resolve_upvalue(FunctionCtx* ctx, const StringView name, const SourceLoc loc) {
-        // 算法契约（clox resolveUpvalue 递归形、捕获即引用）见 CodeGen.hpp resolve_upvalue 注。
-        // 此处补充两点运行期事实：穿透捕获登记的 {is_local=false, idx} 在 CLOSURE 执行时复制外围
-        // 闭包的同下标 upvalue（同一 ObjUpvalue 指针）；add_upvalue_or_fail 把容量越界翻译为 fail
-        // （nullopt 只表「无外层可捕获 -> 落全局」，不外泄越界信号，否则捕获引用静默串台全局）。
+        // 算法契约见 CodeGen.hpp。add_upvalue_or_fail 把容量越界翻译为 fail -- nullopt 只表
+        // 「无外层可捕获 -> 落全局」,不外泄越界信号(否则捕获引用静默串台全局)。
         if (ctx == nullptr || ctx->enclosing_ == nullptr) {
             return std::nullopt;
         }
@@ -205,21 +190,18 @@ namespace aria {
     // ============================================================
 
     void CodeGen::patch_jump_or_fail(const usize src_off, const SourceLoc loc) const {
-        // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
         if (!cur_cu()->patch_jump(src_off)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "跳转偏移超过 64KB");
         }
     }
 
     void CodeGen::emit_jump_back_or_fail(const u32 target_off, const u32 line, const SourceLoc loc) const {
-        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
         if (!cur_cu()->emit_jump_back(target_off, line)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "回边偏移超过 64KB");
         }
     }
 
     void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc loc) const {
-        // declare_global 重定义 -> fail RedefinedVariable（文案收口于此）。
         if (!mod_ctx_->declare_global(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name);
         }
@@ -379,9 +361,8 @@ namespace aria {
         const auto fn         = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
-        // CLOSURE fn_idx（不再 LOAD_CONST fn）:VM 执行时取常量池 ObjFunction 现场包 ObjClosure,
-        // 按本函数捕获描述表(体编译期间经 resolve_upvalue 登记、下方 flush 进 fn->upvalue_descs_)
-        // 逐个建/复用 upvalue。捕获描述存 ObjFunction 元数据、不进字节码流,故 CLOSURE 定长 3B。
+        // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
+        // fn->upvalue_descs_)逐个建/复用 upvalue(表在元数据不进字节码流,CLOSURE 定长 3B)。
         cur_cu()->emit_op(OpCode::CLOSURE, line);
         cur_cu()->emit_word(fn_idx, line);
 

@@ -1,55 +1,28 @@
 #ifndef ARIA_CODEGEN_HPP
 #define ARIA_CODEGEN_HPP
 
-// 字节码代码生成器：单遍遍历 AST（继承 AstVisitor），在一次访问中同时完成
-//   - 名字解析（局部 / upvalue / 模块全局；捕获即引用，resolve_upvalue 递归登记捕获描述）
-//   - 语义检查（首错即止，详见各 visit 内联检查）
-//   - 字节码发射（经 cur_cu() 写当前函数的 CodeUnit；emit 编码逻辑下沉 CodeUnit）
-// 把 ProgramNode 编译为模块入口 ObjFunction（arity 0，名 <main>，主入口模块体包装）。
+// 字节码代码生成器：单遍遍历 AST（继承 AstVisitor），一次访问中同时完成名字解析（局部 /
+//   upvalue / 模块全局，捕获即引用）、语义检查（首错即止）、字节码发射（经 cur_cu() 写当前
+//   CodeUnit），把 ProgramNode 编译为模块入口 ObjFunction（arity 0）。
 //
-// 设计要点：
-//   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。
-//   - 全骨架 + 可跑子集：42 个 visitXxxNode 全部 override；核心特性完整发射，
-//     依赖未落地 VM 里程碑的特性（类 / list / map / field / index / match 等）
+//   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。42 个
+//     visitXxxNode 全部 override；依赖未落地 VM 里程碑的特性（list/map/index/match 等）
 //     占位 not_impl（编译期 NotImplemented Error），随 VM 推进逐个翻为真实发射。
-//   - 首错即止：错误通道详见下方「错误通道」段。
+//   - 状态分离：每函数状态收口 FunctionCtx、每模块状态（含当前函数游标 current_fn_ctx_）
+//     收口 ModuleCtx，形成「模块 > 函数 > 作用域」三层；「当前 CodeUnit」不单独存，由
+//     cur_cu() = &cur_fn_ctx()->fn_->unit() 派生随游标切换。所有权：CodeGen 持
+//     UPtr<ModuleCtx>（compile 入口 make_unique），出错路径交 ~ModuleCtx 沿 enclosing_ 链
+//     释放，详见 ModuleCtx.hpp。
+//   - **错误通道**：深层 fail() 抛 AriaCompileException（持 Error）自动 unwind 跨 visit
+//     递归栈，compile() 顶层 catch 翻译为 Result -- 无需 error_ 成员 / ok() 短路守卫，
+//     首个错误自然即止。
+//   - 栈契约：ExprNode 子类留一值、StmtNode 子类留零值；父节点经 emit_expr/emit_stmt 编排。
 //
-// 状态分离：每函数的可变状态（局部栈 / 作用域深度 / 循环上下文栈 / 外层链）收口于
-//   FunctionCtx（见 compile/FunctionCtx.hpp）；每模块状态（模块句柄 + 当前函数上下文游标
-//   current_fn_ctx_ + 顶层全局名注册表）收口于 ModuleCtx（见 compile/ModuleCtx.hpp），
-//   形成「模块 > 函数 > 作用域」三层。「当前函数」不作 CodeGen 成员--
-//   游标 current_fn_ctx_ 寄存于 ModuleCtx，CodeGen 经 cur_fn_ctx() 读取、compile_function 经
-//   mod_ctx_->current_fn_ctx_ 摆动；「当前 CodeUnit」不单独存，由 cur_cu() = &cur_fn_ctx()->fn_->unit()
-//   派生，随游标自动切换。
-//
-//   CodeGen 持 UPtr<ModuleCtx> mod_ctx_（ModuleCtx 一次性、不可移动；compile 入口 make_unique、遍历后
-//   reset() 即释放，~CodeGen 自动释放作安全网）。上下文与编译期错误的所有权约定：
-//   current_fn_ctx_ 兼拥有入口 fn 上下文、compile_function 子上下文成功路径手动 delete、出错路径
-//   交 ~ModuleCtx 沿 enclosing_ 链释放，详见 ModuleCtx.hpp。
-//
-//   **错误通道**：与 Parser 同--编译期深层
-//   fail() 抛 `AriaCompileException`（持 Error），自动 unwind 跨 visit 递归栈，compile() 顶层 catch 翻译为
-//   `Result<ObjFunction*, Error>`（成功返入口函数，失败返 unexpected(e.error())）。无需 error_ 成员 / ok()
-//   短路 / 各 visit 的 if(!ok()) return 守卫--throw 即 unwind，首个错误自然即止。
-//
-//   局部 / 作用域 / 循环 break-continue 的「登记」在 FunctionCtx、「发射」经 cur_cu() 下沉 CodeUnit（分工见
-//   FunctionCtx.hpp 头注）。越界（超 64KB）由 CodeUnit 方法返 bool，CodeGen 翻译为 Error。
-//
-// 栈契约：每个 visitXxxNode 自知契约--ExprNode 子类留一值，StmtNode 子类留零值。
-// 父节点在 visit 体内显式调 emit_expr/emit_stmt 编排子节点；出错由 fail() 抛异常自动 unwind，无需逐调用短路。
-//
-// GC 安全：compile() 入口 gc_.make_guard(module) 把 module 入临时根贯穿全程。经
-//   module.entry_ -> 常量池 -> 嵌套 ObjFunction 常量池 -> ... 整链根化建设中 ObjFunction /
-//   常量池 ObjString；每个子 fn 在 compile_function 起始即 add_constant 入父常量池(先于编译体)，
-//   入池即经 module 根链可达。new_object -> add_constant 间走 trivial 分配(constants.push ->
-//   reallocate)，按 GC 核心不变式不触发 GC，故 fn 跨该窗口无需守卫(见 GC.hpp)。
-//
-//   真 GC 触发点(new_object 顶部 maybe_collect)的守卫：工厂(new_function/new_native_fn/new_module)不再替
-//   调用方守卫入参(「每方只守自己创建的」),故调用方须自行 make_guard 根化传入的 module/name 入参；
-//   compile() 守 module 入临时根、compile_function 内部 intern name 成 ObjString* 并 make_guard
-//   跨 new_function + 体编译(compile_function 创建 name_str 即自守,visit 层只传 StringView 无需守卫)。
-//   visitVarDeclNode（顶层）/visitImportStmtNode 的名字经 add_name_or_fail 在 emit_expr 之后入池
-//   （new_string 结果立即 add_constant，trivial push 不触发 GC，见 GC.hpp 核心不变式），无需守卫。
+// GC 安全：compile() 入口 make_guard(module) 贯穿全程，建设中 ObjFunction/常量池经
+//   module.entry_ 根链可达（子 fn 编译起始即 add_constant 入父池，先于编译体）；new_object
+//   -> add_constant 间走 trivial 分配不触 GC（GC 核心不变式），fn 跨该窗口免守卫。真触发点
+//   （new_object 顶 maybe_collect）前的入参根化：compile() 守 module、compile_function 自守
+//   intern 的 name 串，visit 层只传 StringView 无需守卫。
 
 #include "aria.hpp"
 #include "bytecode/code.hpp"
@@ -70,14 +43,10 @@ namespace aria {
     class CodeUnit;
 
     class CodeGen final : public AstVisitor {
-        // lvalue 模式（赋值/复合赋值 lowering，见 compound-assignment-lowering.md）：访问节点据此分支。
-        // flag 由 emit_lvalue 设置、由目标节点在入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load）--
-        // 故子节点经 emit_expr 时 flag 已清空、不泄漏。emit_expr 入口 ASSERT lvalue_mode_ == Load，开发期
-        // 捕获漏 take 的 bug（非预防性赋值）。构造与 compile() 入口亦置 Load（防上次 throw 残留跨复用）：
-        //
-        //   - Load -- 默认 rvalue：visitIdentifierNode resolve + check_init[Local] + LOAD
-        //   - Store -- 赋值目标：resolve + STORE + mark_init[Local]（peek-store 留值）
-        //   - Locate -- 预留位（当前无用，落入 Load 分支）。
+        // lvalue 模式（见 compound-assignment-lowering.md）：flag 由 emit_lvalue 设置、目标节点
+        // 入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load，子节点不泄漏；emit_expr 入口
+        // ASSERT == Load 钉漏 take；构造与 compile() 入口复位防 throw 残留）。Load = rvalue、
+        // Store = 赋值目标（peek-store 留值）、Locate = 预留位。
         enum class LvalueMode : u8 { Load, Store, Locate };
 
     public:
@@ -86,11 +55,9 @@ namespace aria {
         // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
         explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
 
-        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名 entry_name）。
-        //   - entry_name：入口函数名（intern）。主入口模块传 <main>（默认）；运行期导入模块传 <module>
-        //     （由 VM 加载层调用，区别于主入口，对齐 CPython 模块体 code object 同名）。
-        // 整个编译期 module 入临时根（GC 启用，见上「GC 安全」）。成功返回入口函数（已 module.set_entry）；失败返回首错
-        // Error。
+        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名 entry_name：主入口
+        // <main>（默认）、运行期导入模块 <module>，对齐 CPython 模块体 code object 同名）。
+        // 成功返回入口函数（已 set_entry）；失败返回首错 Error。
         Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule* module,
                                             StringView entry_name = kMainEntryName);
 
@@ -192,18 +159,16 @@ namespace aria {
         // cur_fn_ctx()->begin_scope()
         void begin_scope() const;
 
-        // 退出作用域（块 / for / for-in / try 共用）：先 emit_pop_locals_to(scope_depth_ - 1) 发射弹区清理
-        // （is_captured 判定需完整 locals_），再 FunctionCtx::end_scope() 收尾（--scope_depth_ + 移除登记）。
+        // 退出作用域（块 / for / for-in / try 共用）：先 emit_pop_locals_to 发射弹区清理
+        // （is_captured 判定需完整 locals_），再 FunctionCtx::end_scope() 收尾（移除登记）。
         void end_scope(u32 line) const;
 
-        // 弹区清理统一发射口（退出作用域与 break/continue 共用，退出作用域由 end_scope 补登记收尾）：
-        // 自栈顶（最内）向外遍历 depth > target_depth 的局部尾段（活局部按 depth 非递减序排列，遇更浅者
-        // 即止；slot 0 哑元 depth=0 恒在界外），整区一条 POP_N（被捕获局部一并计数），弹区含被捕获局部
-        // 才追加一条 CLOSE_UPVALUE（批量关闭所有槽址 >= 新栈顶的开 upvalue，值迁入各自 upvalue 自持；
-        // 弹区槽已在新栈顶之上，不 push 不覆写即安全；对齐 Lua OP_CLOSE）。
-        //
-        // 只发射不改登记：退出作用域路径由随后的 FunctionCtx::end_scope 移除登记；break/continue 的
-        // 登记本就须保留（跳转后语句仍在作用域内）。
+        // 弹区清理统一发射口（退出作用域与 break/continue 共用）：自栈顶向外取 depth >
+        // target_depth 的局部尾段（活局部按 depth 非递减序，slot 0 哑元恒在界外），整区一条
+        // POP_N（被捕获局部一并计数）；弹区含被捕获局部才追加 CLOSE_UPVALUE（槽址 >= 新栈顶
+        // 的开 upvalue 批量关闭，弹区槽已在新栈顶之上，不 push 不覆写即安全，对齐 Lua
+        // OP_CLOSE)。只发射不改登记：退出作用域由 end_scope 收尾，break/continue 的登记本就
+        // 须保留（跳转后语句仍在作用域内）。
         void emit_pop_locals_to(u32 target_depth, u32 line) const;
 
         // --- 名字解析 ---
@@ -221,15 +186,11 @@ namespace aria {
         [[nodiscard]]
         ResolvedVar resolve_name_or_fail(StringView name, SourceLoc loc);
 
-        // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查 ctx->enclosing_
-        // 的局部，命中 -> 置该局部 is_captured（槽将被捕获，作用域退出须 CLOSE_UPVALUE）+ ctx 登记
-        // {is_local=true, slot}；未命中 -> 递归把 ctx->enclosing_ 当作待捕获函数解析（穿透捕获），
-        // 命中 -> ctx 登记 {is_local=false, 外层 upvalue 索引}。
-        //
-        // 返回 ctx 视角的 upvalue 索引；无外层函数可捕获（到 entry 之上）返 nullopt（调用方落全局）。
-        //
-        // 登记经 add_upvalue_or_fail（容量越界 fail TooManyUpvalues，nullopt 不外泄免被误读为「落全局」）。
-        // ctx == nullptr（递归到 entry 之上）即不可捕获。
+        // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查
+        // ctx->enclosing_ 的局部，命中 -> 置 is_captured + 登记 {is_local=true, slot}；未命中
+        // -> 递归把 enclosing 当待捕获函数解析（穿透捕获），命中 -> 登记 {is_local=false, 外层
+        // 索引}。返回 ctx 视角的 upvalue 索引；到 entry 之上无可捕获返 nullopt（调用方落全局）。
+        // 登记经 add_upvalue_or_fail（容量越界 fail TooManyUpvalues）。
         [[nodiscard]]
         Opt<u8> resolve_upvalue(FunctionCtx* ctx, StringView name, SourceLoc loc);
 
@@ -246,36 +207,28 @@ namespace aria {
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
         void patch_jump_or_fail(usize src_off, SourceLoc loc) const;
 
-        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge「回边偏移超过 64KB」。
-        // 比 patch_jump 多一个 line 参数--emit_jump_back 要发射 JUMP_BACK 指令(line 供其行号),而
-        // patch_jump 只回填占位不发射,故无需 line。
+        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge。比 patch_jump
+        // 多 line 参数:要发射 JUMP_BACK 指令(line 供其行号)。
         void emit_jump_back_or_fail(u32 target_off, u32 line, SourceLoc loc) const;
 
-        // declare_global 已存在(重定义) -> fail RedefinedVariable「重复定义全局变量」。与
-        // declare_local_or_fail 对称(局部/全局重定义检查各一)，declare_global 返 bool、单一失败，
-        // 故为 void 封装(无解包)，文案收口于此。
+        // declare_global 已存在(重定义) -> fail RedefinedVariable。
         void declare_global_or_fail(StringView name, SourceLoc loc) const;
 
-        // --- lvalue（复合赋值 lowering，见 compound-assignment-lowering.md）---
-        // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 是合法左值种类（放行，由各自 visit 节点
-        // 处理 load/store 或 not_impl）；其余节点种类 -> InvalidAssignmentTarget。由 emit_lvalue 在分派前
-        // 调用：复合/前置自增自减的首次 emit_lvalue(Load) 先于 rhs，普通 = 的 emit_lvalue(Store) 后于 rhs
-        // （非法左值在 rhs 编译后才抛，字节码随 throw 丢弃）。Field/Index 的 not_impl 由 visit 节点分派时抛。
+        // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 放行（由各自 visit 处理），
+        // 其余 -> InvalidAssignmentTarget。非法左值在 rhs 编译后才抛（普通 = 的 emit_lvalue(Store)
+        // 后于 rhs），字节码随 throw 丢弃。
         void validate_lvalue_target(ExprNode& target) const;
 
-        // 以给定 lvalue 模式分派目标节点：先 validate_lvalue_target(n) 验证左值种类，再设置 lvalue_mode_ 后
-        // n.accept(*this)（不在分派后恢复--清空职责交给目标节点的 take_lvalue_mode()）。
+        // 以给定 lvalue 模式分派目标节点：先 validate_lvalue_target，再置 lvalue_mode_ 后
+        // n.accept(*this)（清空职责交给目标节点的 take_lvalue_mode()）。
         void emit_lvalue(ExprNode& node, LvalueMode mode);
 
-        // 目标节点（visitIdentifierNode 等）入口调用：返回当前 lvalue_mode_ 并清空为 Load（一次性 take）。
-        // 节点据返回值分支 Load/Store；清空确保子节点经 emit_expr 时 flag 已为 Load、不泄漏。对 lvalue_mode_
-        // 的直接读写收口于此与 emit_lvalue，访问节点不直接触碰该成员。
+        // 目标节点入口调用：返回当前 lvalue_mode_ 并清空为 Load（一次性 take，防子节点泄漏）。
+        // lvalue_mode_ 的读写收口于此与 emit_lvalue。
         LvalueMode take_lvalue_mode();
 
-        // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0。receiver 由调用方在调用前
-        // 压栈（emit_expr / emit_load_local 等），调用后栈顶即方法返回值（[receiver] -> [retval]）。
-        // 封装 for-in 的 iter()/has_next()/next() 三处同型 LOAD_FIELD+CALL 0 模式；name 入常量池经
-        // add_name_or_fail（溢出即 fail）。
+        // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0（[receiver] -> [retval]）。
+        // 封装 for-in 的 iter()/has_next()/next() 三处同型模式。
         void emit_method_call0(StringView name, u32 line, SourceLoc loc) const;
 
         // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
@@ -312,16 +265,11 @@ namespace aria {
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
-        // name 为函数名 StringView（恒非空:具名 fun 为声明名、lambda 为 `<anonymous>`、入口为 `<main>`），
-        // 内部 new_string intern 成 ObjString* 并 make_guard 跨 new_function + 体编译（见类首 GC 安全注）。
-        // name == `<anonymous>` -> lambda:函数值留栈不绑定名字;否则具名 fun 绑定到模块全局(顶层)或局部(嵌套)
-        // （`<>` 标识符不可用,仅 visitLambdaExprNode 产生 `<anonymous>`,故 name 即 lambda 判据）。
-        //
-        // body 为函数体 BlockNode;完成后切回父上下文。函数值已在父序列压栈（CLOSURE fn_idx:
-        // 常量池取 fn 包 ObjClosure,按体编译期间登记的捕获描述表建 upvalue）。
-        //
-        // decl_loc 为声明节点位置（visit 层经 node.loc() 传入），供 validate_params 报参数错;
-        // 体发射行号仍取 body.loc_line()。
+        // name 为函数名 StringView（具名 fun 声明名 / lambda `<anonymous>` / 入口 `<main>`;`<>`
+        // 标识符不可用,故 name 即 lambda 判据）。内部 intern name 并 make_guard 跨 new_function +
+        // 体编译（见类首 GC 安全注）。lambda 函数值留栈不绑定名字;具名 fun 绑定到全局(顶层)或
+        // 局部(嵌套)。完成后切回父上下文,函数值已在父序列压栈（CLOSURE 按捕获描述表建 upvalue）。
+        // decl_loc 供 validate_params 报参数错;体发射行号取 body.loc_line()。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc);
 
         // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result；throw 即 unwind，

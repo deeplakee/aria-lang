@@ -135,14 +135,6 @@ namespace aria {
         return src_[index];
     }
 
-    utf8::codepoint Lexer::peek_codepoint(const usize ahead) const noexcept {
-        const usize index = pos_ + ahead;
-        if (index >= src_.size()) {
-            return 0;
-        }
-        return utf8::decode_one(src_, index).first;
-    }
-
     void Lexer::advance(const usize n) noexcept {
         ASSERT(pos_ + n <= src_.size(), "Lexer::advance 推进越界");
         pos_ += n;

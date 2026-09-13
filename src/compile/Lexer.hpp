@@ -82,10 +82,6 @@ namespace aria {
         [[nodiscard]]
         char peek_byte(usize ahead = 0) const noexcept;
 
-        // 前瞻码点（不推进 pos_）。用于标识符/数字前瞻。
-        [[nodiscard]]
-        utf8::codepoint peek_codepoint(usize ahead = 0) const noexcept;
-
         // 推进游标 n 字节。含越界断言（pos_+n <= src_.size()），调试期捕获推进过头。
         // 多字节推进（+= 2/+= 3/+= len）统一走此；单字节 ++pos_ 循环内可保留。
         void advance(usize n = 1) noexcept;

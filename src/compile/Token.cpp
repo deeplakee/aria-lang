@@ -44,8 +44,6 @@ namespace aria {
         switch (type) {
             case TokenType::Eof:
                 return "Eof";
-            case TokenType::Error:
-                return "Error";
             case TokenType::Integer:
                 return "Integer";
             case TokenType::Float:
@@ -180,14 +178,6 @@ namespace aria {
         return "Unknown";
     }
 
-    StringView Token::error_message() const noexcept {
-        if (type_ != TokenType::Error) {
-            return {};
-        }
-        const auto msg_ptr = std::get_if<String>(&value_);
-        return msg_ptr ? StringView{*msg_ptr} : StringView{};
-    }
-
     i64 Token::int_value() const noexcept {
         if (type_ != TokenType::Integer) {
             return 0;
@@ -212,115 +202,15 @@ namespace aria {
         return sval_ptr ? StringView{*sval_ptr} : StringView{};
     }
 
-    bool Token::is_literal() const noexcept {
-        // 分类依据见 Token.hpp is_literal 注。
-        switch (type_) {
-            case TokenType::Integer:
-            case TokenType::Float:
-            case TokenType::String:
-            case TokenType::Identifier:
-            case TokenType::Underscore:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    bool Token::is_keyword() const noexcept {
-        switch (type_) {
-            case TokenType::Fun:
-            case TokenType::Def:
-            case TokenType::Var:
-            case TokenType::If:
-            case TokenType::Else:
-            case TokenType::While:
-            case TokenType::For:
-            case TokenType::In:
-            case TokenType::Break:
-            case TokenType::Continue:
-            case TokenType::Return:
-            case TokenType::Import:
-            case TokenType::As:
-            case TokenType::Try:
-            case TokenType::Catch:
-            case TokenType::Throw:
-            case TokenType::Print:
-            case TokenType::Nil:
-            case TokenType::True:
-            case TokenType::False:
-            case TokenType::This:
-            case TokenType::Super:
-            case TokenType::Match:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    bool Token::is_operator() const noexcept {
-        switch (type_) {
-            case TokenType::Plus:
-            case TokenType::Minus:
-            case TokenType::Star:
-            case TokenType::Slash:
-            case TokenType::Percent:
-            case TokenType::PlusEqual:
-            case TokenType::MinusEqual:
-            case TokenType::StarEqual:
-            case TokenType::SlashEqual:
-            case TokenType::PercentEqual:
-            case TokenType::Equal:
-            case TokenType::EqualEqual:
-            case TokenType::EqualEqualEqual:
-            case TokenType::BangEqual:
-            case TokenType::BangEqualEqual:
-            case TokenType::Bang:
-            case TokenType::Greater:
-            case TokenType::GreaterEqual:
-            case TokenType::Less:
-            case TokenType::LessEqual:
-            case TokenType::AndAnd:
-            case TokenType::OrOr:
-            case TokenType::PlusPlus:
-            case TokenType::MinusMinus:
-            case TokenType::FatArrow:
-            case TokenType::DotDot:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    bool Token::is_punctuation() const noexcept {
-        switch (type_) {
-            case TokenType::LeftParen:
-            case TokenType::RightParen:
-            case TokenType::LeftBrace:
-            case TokenType::RightBrace:
-            case TokenType::LeftBracket:
-            case TokenType::RightBracket:
-            case TokenType::Comma:
-            case TokenType::Colon:
-            case TokenType::Semicolon:
-            case TokenType::Dot:
-            case TokenType::DotDotDot:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     String Token::to_string() const {
         String lexeme_info = lexeme_.empty() ? std::format("{:<13}", token_type_name(type_))
                                              : std::format("{:<13} '{}'", token_type_name(type_), lexeme_);
-        // 字面量附带解析值，便于调试；Error 附带消息
+        // 字面量附带解析值，便于调试
         switch (type_) {
             case TokenType::Integer:
                 return std::format("{} = {}", lexeme_info, int_value());
             case TokenType::Float:
                 return std::format("{} = {}", lexeme_info, float_value());
-            case TokenType::Error:
-                return std::format("{}: {}", lexeme_info, error_message());
             default:
                 return lexeme_info;
         }

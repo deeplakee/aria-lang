@@ -15,11 +15,10 @@ namespace aria {
     //   - 运算符（算术 / 复合赋值 / 比较 / 逻辑 / 自增自减 / =>）
     //   - 标点（括号 / 逗号 / 冒号 / 分号 / 点 / ...）
     //   - 字面量（整数 / 浮点 / 字符串 / 标识符 / _ 占位符）
-    //   - 特殊（EOF / 词法错误）
+    //   - 特殊（EOF）
     enum class TokenType : u8 {
         // --- 特殊 ---
         Eof,
-        Error,
 
         // --- 字面量 ---
         Integer,
@@ -99,7 +98,7 @@ namespace aria {
     //   - monostate：非字面量 token（关键字 / 运算符 / 标点 / EOF）
     //   - i64：Integer（文法约定 int 为 i48，此处用 i64 容纳，越界在语义阶段处理）
     //   - f64：Float
-    //   - String：String 字面量（转义已解析）；Error token 复用此槽存放错误信息
+    //   - String：String 字面量（转义已解析）
     using TokenValue = std::variant<std::monostate, i64, f64, String>;
 
     // 词法单元：lexer 产出的最小语法单位。
@@ -134,12 +133,6 @@ namespace aria {
             return Token{TokenType::String, lexeme, loc, std::move(value)};
         }
 
-        // 词法错误 token：message 存于 value_ 的 String 槽，lexeme 留空。
-        [[nodiscard]]
-        static Token make_error(String message, const SourceLoc loc) {
-            return Token{TokenType::Error, {}, loc, std::move(message)};
-        }
-
         [[nodiscard]]
         TokenType type() const noexcept {
             return type_;
@@ -170,15 +163,6 @@ namespace aria {
             return type_ == TokenType::Eof;
         }
 
-        [[nodiscard]]
-        bool is_error() const noexcept {
-            return type_ == TokenType::Error;
-        }
-
-        // 取错误信息（仅 Error token 有效）。
-        [[nodiscard]]
-        StringView error_message() const noexcept;
-
         // 取整数/浮点字面量值（仅对应类型有效，其余返回 0）。
         [[nodiscard]]
         i64 int_value() const noexcept;
@@ -189,22 +173,6 @@ namespace aria {
         // 取已解析字符串内容（仅 String token 有效，其余返回空串）。
         [[nodiscard]]
         StringView string_value() const noexcept;
-
-        // --- 类型分类（基于 TokenType） ---
-        // 词法层「值/名」分类（Integer/Float/String/Identifier/Underscore），与
-        // is_keyword/is_operator/is_punctuation 正交互补。注意这是词法概念，与文法产生式
-        // literal（编译期常量，更窄）不同--文法 literal 的判断留给 parser。
-        [[nodiscard]]
-        bool is_literal() const noexcept;
-
-        [[nodiscard]]
-        bool is_keyword() const noexcept;
-
-        [[nodiscard]]
-        bool is_operator() const noexcept;
-
-        [[nodiscard]]
-        bool is_punctuation() const noexcept;
 
         // 调试用：返回形如 `Integer '42'` 的可读表示。
         [[nodiscard]]

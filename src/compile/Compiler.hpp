@@ -17,9 +17,8 @@
 //     不外返；编译失败返回的 Error 在构造期已把位置烘进自有 message_ 串、不持 SourceFile*。故 source
 //     只须存活到 compile() 返回（烘焙在此时完成），返回的 Error / ObjFunction 均不依赖 source，调用方
 //     可立即释放或 move 它（Error 已不指向其 content）。
-//   - 可复用：Lexer / Parser 均按「空态可复用」设计（tokenize / parse 扫完即清空成员），作为本类成员
-//     跨多次 compile() 复用（如 REPL 逐行重编译）。CodeGen 一次性、状态局限单次编译（持 UPtr<ModuleCtx>），
-//     故每次 compile() 内就地构造。
+//   - 单遍一次性：Lexer / Parser / CodeGen 均每次 compile() 内就地构造，状态局限单次编译
+//     （CodeGen 持 UPtr<ModuleCtx>），无跨 compile() 复用。
 //   - GC 同源：构造取 GC&（与 VM 同一 GC），编译期分配的 ObjFunction / ObjString 归此 GC、与后续 run()
 //     同源。编译期 GC 已启用--CodeGen::compile 入口 make_guard(module) 自守 module，故调用方无需为编译期
 //     再守模块（module 须是 GC 管理的合法 ObjModule）。
@@ -30,8 +29,6 @@
 
 #include "aria.hpp"
 #include "common.hpp"
-#include "compile/Lexer.hpp"
-#include "compile/Parser.hpp"
 #include "error/Error.hpp"
 #include "util/source_file.hpp"
 
@@ -64,10 +61,6 @@ namespace aria {
 
     private:
         GC& gc_;
-
-        // 可复用词法/语法分析器（跨多次 compile() 复用，tokenize/parse 扫完即清空成员）。
-        Lexer  lexer_;
-        Parser parser_;
     };
 
 } // namespace aria

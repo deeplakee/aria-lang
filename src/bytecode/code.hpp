@@ -108,32 +108,26 @@ namespace aria {
     /* ---- return ---- */                 \
     X(RETURN, Simple)
 
-    enum class OpCode : u8 {
 #define ARIA_OP_ENUM(name, format) name,
-        ARIA_OPCODE_LIST(ARIA_OP_ENUM)
+    enum class OpCode : u8 { ARIA_OPCODE_LIST(ARIA_OP_ENUM) };
 #undef ARIA_OP_ENUM
-    };
 
     // 指令总数(= X 表行数):opcode 字节越界判定等用,替代对枚举稠密(上界 = 末条枚举值)的依赖。
-    constexpr usize kOpCodeCount = 0
 #define ARIA_OP_COUNT(name, format) +1
-            ARIA_OPCODE_LIST(ARIA_OP_COUNT)
+    constexpr usize kOpCodeCount = 0 ARIA_OPCODE_LIST(ARIA_OP_COUNT);
 #undef ARIA_OP_COUNT
-            ;
 
     // opcode -> 名字 / 操作数格式查表(数组显式以 kOpCodeCount 定界,表行数与枚举条数不一致即编译错)。
     // 供 Disassembler 等冷路径消费;VM 热路径不查表(操作数读取内联在各 case)。
-    inline constexpr const char* kOpCodeNames[kOpCodeCount] = {
 #define ARIA_OP_NAME(name, format) #name,
-            ARIA_OPCODE_LIST(ARIA_OP_NAME)
+    inline constexpr StringView kOpCodeNames[kOpCodeCount] = {ARIA_OPCODE_LIST(ARIA_OP_NAME)};
 #undef ARIA_OP_NAME
-    };
 
-    inline constexpr OpFormat kOpCodeFormats[kOpCodeCount] = {
 #define ARIA_OP_FORMAT(name, format) OpFormat::format,
-            ARIA_OPCODE_LIST(ARIA_OP_FORMAT)
+    inline constexpr OpFormat kOpCodeFormats[kOpCodeCount] = {ARIA_OPCODE_LIST(ARIA_OP_FORMAT)};
 #undef ARIA_OP_FORMAT
-    };
+
+#undef ARIA_OPCODE_LIST
 
 } // namespace aria
 

@@ -45,6 +45,7 @@ add_library(aria_core STATIC
         src/memory/InternPool.hpp
         src/compile/Token.cpp
         src/compile/Token.hpp
+        src/compile/TokenType.hpp
         src/compile/Lexer.cpp
         src/compile/Lexer.hpp
         src/compile/Parser.cpp

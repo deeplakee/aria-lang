@@ -3,106 +3,13 @@
 
 #include <variant>
 #include "common.hpp"
+#include "compile/TokenType.hpp"
 #include "util/source_file.hpp"
 
 namespace aria {
     // 将 SourceLoc 引入 aria 命名空间，便于本模块直接使用（source_file 相关类型
     // 位于 aria::src 下，引用需分别 using）。
     using src::SourceLoc;
-
-    // 词法单元类型。覆盖文法（docs/grammar.txt）中的全部终结符：
-    //   - 关键字（fun/def/var/... 共 23 个，见文末「关键字」清单）
-    //   - 运算符（算术 / 复合赋值 / 比较 / 逻辑 / 自增自减 / =>）
-    //   - 标点（括号 / 逗号 / 冒号 / 分号 / 点 / ...）
-    //   - 字面量（整数 / 浮点 / 字符串 / 标识符 / _ 占位符）
-    //   - 特殊（EOF）
-    enum class TokenType : u8 {
-        // --- 特殊 ---
-        Eof,
-
-        // --- 字面量 ---
-        Integer,
-        Float,
-        String, // 字符串字面量（"..." / '...'），转义已解析
-        Identifier,
-        Underscore, // 单独的 "_"，占位/通配符
-
-        // --- 关键字 ---
-        Fun,      // "fun"   函数声明 / lambda 表达式
-        Def,      // "def"   类型/类声明（静态成员 + 实例方法）
-        Var,      // "var"   变量声明
-        If,       // "if"    if 语句 / if 表达式
-        Else,     // "else"  if 的 else 分支
-        While,    // "while" while 循环
-        For,      // "for"   for / for-in 循环
-        In,       // "in"    for-in 遍历
-        Break,    // "break"
-        Continue, // "continue"
-        Return,   // "return"
-        Import,   // "import" 模块导入
-        As,       // "as"     import 的别名
-        Try,      // "try"    异常处理
-        Catch,    // "catch"
-        Throw,    // "throw"  抛出异常
-        Print,    // "print"  打印语句
-        Nil,      // "nil"    空值字面量
-        True,     // "true"   布尔真字面量
-        False,    // "false"  布尔假字面量
-        This,     // "this"   当前实例
-        Super,    // "super"  父类方法
-        Match,    // "match"  match 语句 / match 表达式
-
-        // --- 运算符 ---
-        Plus,            // +
-        Minus,           // -
-        Star,            // *
-        Slash,           // /
-        Percent,         // %
-        PlusEqual,       // +=
-        MinusEqual,      // -=
-        StarEqual,       // *=
-        SlashEqual,      // /=
-        PercentEqual,    // %=
-        Equal,           // =
-        EqualEqual,      // ==
-        EqualEqualEqual, // ===
-        BangEqual,       // !=
-        BangEqualEqual,  // !==
-        Bang,            // !
-        Greater,         // >
-        GreaterEqual,    // >=
-        Less,            // <
-        LessEqual,       // <=
-        AndAnd,          // &&
-        OrOr,            // ||
-        PlusPlus,        // ++
-        MinusMinus,      // --
-        FatArrow,        // =>
-        DotDot,          // ..  区间（含上界，a..b）
-
-        // --- 标点 ---
-        LeftParen,    // (
-        RightParen,   // )
-        LeftBrace,    // {
-        RightBrace,   // }
-        LeftBracket,  // [
-        RightBracket, // ]
-        Comma,        // ,
-        Colon,        // :
-        Semicolon,    // ;
-        Dot,          // .
-        DotDotDot,    // ...
-    };
-
-    // TokenType 的可读名映射（如 "Integer"、"FatArrow"）；Token::to_string 渲染与
-    // Parser 错误信息复用。
-    [[nodiscard]]
-    StringView to_string(TokenType type) noexcept;
-
-    // 关键字查表：若 lexeme 是关键字则返回对应 TokenType，否则返回 std::nullopt。
-    // 大小写敏感，最长匹配由 lexer 保证（调用前已切出完整 identifier）。
-    [[nodiscard]]
-    Opt<TokenType> lookup_keyword(StringView lexeme) noexcept;
 
     // 字面量 token 携带的解析值：
     //   - monostate：非字面量 token（关键字 / 运算符 / 标点 / EOF）

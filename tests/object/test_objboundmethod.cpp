@@ -71,11 +71,11 @@ namespace {
 TEST(ObjBoundMethod, Basics) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
-    auto mg     = gc.make_guard(method);
+    auto guard  = gc.make_guard(method);
     auto cls    = make_class(gc, "Foo");
-    auto cg     = gc.make_guard(cls);
-    auto inst   = make_instance(gc, cls);
-    mg.push(inst);
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时(非 stress)无 collect
     EXPECT_TRUE(aria::Object::is<ObjBoundMethod>(bound));
@@ -88,13 +88,13 @@ TEST(ObjBoundMethod, Basics) {
 TEST(ObjBoundMethod, IdentitySemantics) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
-    auto mg     = gc.make_guard(method);
+    auto guard  = gc.make_guard(method);
     auto cls    = make_class(gc, "Foo");
-    auto cg     = gc.make_guard(cls);
-    auto i1     = make_instance(gc, cls);
-    mg.push(i1);
+    guard.push(cls);
+    auto i1 = make_instance(gc, cls);
+    guard.push(i1);
     auto i2 = make_instance(gc, cls);
-    mg.push(i2);
+    guard.push(i2);
 
     auto b1 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i1));
     auto b2 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i2));
@@ -107,11 +107,11 @@ TEST(ObjBoundMethod, IdentitySemantics) {
 TEST(ObjBoundMethod, ToString) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
-    auto mg     = gc.make_guard(method);
+    auto guard  = gc.make_guard(method);
     auto cls    = make_class(gc, "Foo");
-    auto cg     = gc.make_guard(cls);
-    auto inst   = make_instance(gc, cls);
-    mg.push(inst);
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(bound->to_string(), "<bound method m>");
 }
@@ -123,8 +123,8 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
     auto native = new_native_fn(gc, "echo", noop_native); // StringView 重载:名字经工厂内部 intern 并自守
     auto guard  = gc.make_guard(native); // native 是 weak root,跨下方 make_class/make_instance 分配先保
     auto cls    = make_class(gc, "Foo");
-    auto cg     = gc.make_guard(cls);
-    auto inst   = make_instance(gc, cls);
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
     guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));
@@ -137,11 +137,11 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
 TEST(ObjBoundMethod, DebugRender) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
-    auto mg     = gc.make_guard(method);
+    auto guard  = gc.make_guard(method);
     auto cls    = make_class(gc, "Foo");
-    auto cg     = gc.make_guard(cls);
-    auto inst   = make_instance(gc, cls);
-    mg.push(inst);
+    guard.push(cls);
+    auto inst = make_instance(gc, cls);
+    guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
 }
@@ -159,26 +159,26 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
     ObjString*      constant = nullptr;
     ObjBoundMethod* bound    = nullptr;
     {
-        auto g = gc.make_guard();
-        cls    = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
-        g.push(cls);
+        auto guard = gc.make_guard();
+        cls        = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
+        guard.push(cls);
         inst = make_instance(gc, cls); // 建时 collect:cls 经守卫存活
-        g.push(inst);
+        guard.push(inst);
         method = make_closure(gc, "m", 1); // 建时 collect:cls/inst 经守卫存活
-        g.push(method);
+        guard.push(method);
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
-        g.push(constant);
+        guard.push(constant);
         // push 走 trivial 分配不触 GC
         method->function()->unit().add_constant(Value::from_obj(constant));
         // 建时 collect:经守卫存活
         bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
-        g.push(bound);
+        guard.push(bound);
         // 作用域退出:全部临时根弹出,method/inst/cls 此后仅经 bound.trace 可达
     }
-    auto        guard   = gc.make_guard(bound);      // 只根 bound
-    const auto  trigger = new_string(gc, "trigger"); // stress collect:全链经 bound.trace 存活
-    auto        tg      = gc.make_guard(trigger);    // 触发串入根:不被下方 collect 回收
-    const usize before  = gc.bytes_allocated();
+    auto       guard   = gc.make_guard(bound);      // 只根 bound
+    const auto trigger = new_string(gc, "trigger"); // stress collect:全链经 bound.trace 存活
+    guard.push(trigger);                            // 触发串入根:不被下方 collect 回收
+    const usize before = gc.bytes_allocated();
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));

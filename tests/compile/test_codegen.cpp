@@ -83,7 +83,7 @@ namespace {
 
     // 端到端：源码 -> 编译 -> VM 运行。返回 RunResult（持 vm 活到调用方检视完返回值）。
     // stress GC：每次 new_object / 循环回边都 collect，主动锻炼 compile+run 的 GC 根接线，
-    // 暴露缺失根（裸指针跨分配）的 bug。module 经 compile() 的 module_guard 根化、值栈/帧经
+    // 暴露缺失根（裸指针跨分配）的 bug。module 经 compile() 的 guard 根化、值栈/帧经
     // vm_roots tracer 标根，故 stress 下安全。
     RunResult run_source(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();

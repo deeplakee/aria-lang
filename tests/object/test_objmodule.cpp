@@ -45,9 +45,9 @@ namespace {
 
 TEST(ObjModule, Basics) {
     GC   gc;
-    auto name       = new_string(gc, "lib/utils");
-    auto name_guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
-    auto m          = new_module(gc, name);
+    auto name  = new_string(gc, "lib/utils");
+    auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto m     = new_module(gc, name);
     EXPECT_TRUE(aria::Object::is<ObjModule>(m));
     EXPECT_EQ(m->type(), aria::ObjType::MODULE);
     EXPECT_EQ(m->name(), name);     // intern 同指针
@@ -85,10 +85,10 @@ TEST(ObjModule, GlobalsSet) {
 // 三类子节点(name/body/g_key/g_val)存活。验证 trace 覆盖完整。
 TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
     GC   gc;
-    auto name       = new_string(gc, "lib/utils");
-    auto name_guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
-    auto m          = new_module(gc, name);
-    auto guard      = gc.make_guard(m); // 模块入临时根:collect -> mark_roots_ -> trace_gray_ -> m.trace
+    auto name  = new_string(gc, "lib/utils");
+    auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto m     = new_module(gc, name);
+    guard.push(m); // 模块入临时根:collect -> mark_roots_ -> trace_gray_ -> m.trace
 
     auto body  = make_function(gc, m, "body", 0); // body 属于 m
     auto g_key = new_string(gc, "g");

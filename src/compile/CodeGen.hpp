@@ -127,7 +127,7 @@ namespace aria {
         UPtr<ModuleCtx> mod_ctx_;
 
         // 模块初始化（compile 入口调用）：建入口函数（名 entry_name）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
-        // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 module_guard）。
+        // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 guard）。
         ObjFunction* init_module(ObjModule* module, StringView entry_name);
 
         // 当前函数上下文游标与当前 CodeUnit（均由 mod_ctx_ 游标派生，见类首「状态分离」段）。

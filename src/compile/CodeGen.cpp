@@ -39,7 +39,7 @@ namespace aria {
     Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule* module,
                                                  const StringView entry_name) {
         // module 入临时根贯穿全程（根化链与各守卫窗口见类首「GC 安全」注）。
-        const auto module_guard = gc_.make_guard(module);
+        const auto guard = gc_.make_guard(module);
 
         // 防御：lvalue_mode_ 复位为 Load（构造已置；此处防上一次 compile() throw 后残留跨复用）。
         lvalue_mode_ = LvalueMode::Load;
@@ -356,9 +356,9 @@ namespace aria {
         const u32  line = body.loc_line();
 
         // name_str 在下方 new_function 调用中可能被回收,故 make_guard 保护
-        const auto name_str   = new_string(gc_, name);
-        auto       name_guard = gc_.make_guard(name_str);
-        const auto fn         = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
+        const auto name_str = new_string(gc_, name);
+        const auto guard    = gc_.make_guard(name_str);
+        const auto fn       = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进

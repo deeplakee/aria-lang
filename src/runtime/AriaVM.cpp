@@ -368,9 +368,9 @@ namespace aria {
 
         // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底;建成传入
         // run_closure 即压栈(push 无 GC 点,入栈即根化)。
-        auto       fn_guard = gc_.make_guard(fn);
-        const auto closure  = new_closure(gc_, fn);
-        auto       result   = run_closure(closure); // 值拷贝,下方清场不影响返回值;持对象由调用方根化
+        auto       guard   = gc_.make_guard(fn);
+        const auto closure = new_closure(gc_, fn);
+        auto       result  = run_closure(closure); // 值拷贝,下方清场不影响返回值;持对象由调用方根化
         // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值(清场归本入口,run_closure 为
         // 重入接缝不自清)。
         main_ctx_.reset();

@@ -78,9 +78,9 @@ namespace {
 
 TEST(ObjClass, Basics) {
     GC   gc;
-    auto name       = new_string(gc, "Foo");
-    auto name_guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_class
-    auto cls        = new_class(gc, name, nullptr);
+    auto name  = new_string(gc, "Foo");
+    auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_class
+    auto cls   = new_class(gc, name, nullptr);
     EXPECT_TRUE(aria::Object::is<ObjClass>(cls));
     EXPECT_EQ(cls->type(), aria::ObjType::CLASS);
     EXPECT_EQ(cls->name(), name); // intern 同指针
@@ -91,7 +91,7 @@ TEST(ObjClass, Basics) {
 TEST(ObjClass, SuperclassInjects) {
     GC   gc;
     auto super = make_class(gc, "Base");
-    auto sg    = gc.make_guard(super);
+    auto guard = gc.make_guard(super);
     auto cls   = make_class(gc, "Foo", super);
     EXPECT_EQ(cls->superclass(), super);
 }
@@ -99,12 +99,12 @@ TEST(ObjClass, SuperclassInjects) {
 // set_field(创建/更新本类自身表)+ load_field 直读:创建后可读、覆写后读新值。
 TEST(ObjClass, SetFieldThenLoadOwnTable) {
     AriaVM vm;
-    auto&  gc  = vm.gc();
-    auto   cls = make_class(gc, "Foo");
-    auto   k   = new_string(gc, "x");
-    auto   kg  = gc.make_guard(k);
-    auto   v   = new_string(gc, "a long static value string!!!");
-    auto   vg  = gc.make_guard(v);
+    auto&  gc    = vm.gc();
+    auto   cls   = make_class(gc, "Foo");
+    auto   k     = new_string(gc, "x");
+    auto   guard = gc.make_guard(k);
+    auto   v     = new_string(gc, "a long static value string!!!");
+    guard.push(v);
 
     cls->set_field(k, Value::from_obj(v));
 
@@ -112,8 +112,8 @@ TEST(ObjClass, SetFieldThenLoadOwnTable) {
     ASSERT_TRUE(initial_read.has_value());
     EXPECT_TRUE(value_identical(*initial_read, Value::from_obj(v)));
 
-    auto v2  = new_string(gc, "a long static value string two");
-    auto vg2 = gc.make_guard(v2);
+    auto v2 = new_string(gc, "a long static value string two");
+    guard.push(v2);
     cls->set_field(k, Value::from_obj(v2)); // 覆写:原槽更新
     auto rewritten_read = cls->load_field(vm, k);
     ASSERT_TRUE(rewritten_read.has_value());
@@ -124,11 +124,11 @@ TEST(ObjClass, SetFieldThenLoadOwnTable) {
 // 消息含类 debug 渲染。
 TEST(ObjClass, LoadFieldMissFailsWithUndefinedProperty) {
     AriaVM vm;
-    auto&  gc  = vm.gc();
-    auto   cls = make_class(gc, "Foo");
-    auto   cg  = gc.make_guard(cls); // miss 的 fail 装箱是分配点:类须在根
-    auto   k   = new_string(gc, "nope");
-    auto   kg  = gc.make_guard(k);
+    auto&  gc    = vm.gc();
+    auto   cls   = make_class(gc, "Foo");
+    auto   guard = gc.make_guard(cls); // miss 的 fail 装箱是分配点:类须在根
+    auto   k     = new_string(gc, "nope");
+    guard.push(k);
     EXPECT_FALSE(cls->load_field(vm, k).has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
@@ -141,22 +141,22 @@ TEST(ObjClass, LoadFieldReadsThroughChain) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   super = make_class(gc, "Base");
-    auto   sg    = gc.make_guard(super);
+    auto   guard = gc.make_guard(super);
     auto   sub   = make_class(gc, "Sub", super);
-    sg.push(sub);
+    guard.push(sub);
 
-    auto k  = new_string(gc, "x");
-    auto kg = gc.make_guard(k);
+    auto k = new_string(gc, "x");
+    guard.push(k);
     auto v1 = new_string(gc, "a long static value string one");
-    auto vg = gc.make_guard(v1);
+    guard.push(v1);
     super->set_field(k, Value::from_obj(v1));
 
     auto through_read = sub->load_field(vm, k); // 穿透:子类读命中父表
     ASSERT_TRUE(through_read.has_value());
     EXPECT_TRUE(value_identical(*through_read, Value::from_obj(v1)));
 
-    auto v2  = new_string(gc, "a long static value string two"); // 父表原槽更新
-    auto v2g = gc.make_guard(v2);
+    auto v2 = new_string(gc, "a long static value string two"); // 父表原槽更新
+    guard.push(v2);
     super->set_field(k, Value::from_obj(v2));
     auto updated_read = sub->load_field(vm, k);
     ASSERT_TRUE(updated_read.has_value());
@@ -169,18 +169,18 @@ TEST(ObjClass, ReshadowInsertsOwnKey) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   super = make_class(gc, "Base");
-    auto   sg    = gc.make_guard(super);
+    auto   guard = gc.make_guard(super);
     auto   sub   = make_class(gc, "Sub", super);
-    sg.push(sub);
+    guard.push(sub);
 
-    auto k  = new_string(gc, "x");
-    auto kg = gc.make_guard(k);
+    auto k = new_string(gc, "x");
+    guard.push(k);
     auto v1 = new_string(gc, "a long static value string one");
-    auto vg = gc.make_guard(v1);
+    guard.push(v1);
     super->set_field(k, Value::from_obj(v1));
 
-    auto v2  = new_string(gc, "a long static value string two");
-    auto v2g = gc.make_guard(v2);
+    auto v2 = new_string(gc, "a long static value string two");
+    guard.push(v2);
     EXPECT_TRUE(sub->store_field(vm, k, Value::from_obj(v2))); // 写遮蔽落自身表
 
     auto shadowed_read = sub->load_field(vm, k);
@@ -222,36 +222,36 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     ObjString*  val      = nullptr;
     ObjString*  constant = nullptr;
     {
-        auto g = gc.make_guard();
-        super  = make_class(gc, "Base"); // 建时 collect:name 经助手内守卫
-        g.push(super);
+        auto guard = gc.make_guard();
+        super      = make_class(gc, "Base"); // 建时 collect:name 经助手内守卫
+        guard.push(super);
         sub = make_class(gc, "Sub", super); // 建时 collect:super 经守卫存活
-        g.push(sub);
+        guard.push(sub);
         method = make_closure(gc, "m", 0); // 建时 collect:super/sub 经守卫存活
-        g.push(method);
+        guard.push(method);
         method->set_defining_class(sub);
         init = make_closure(gc, "init", 0);
-        g.push(init);
+        guard.push(init);
         ikey = new_string(gc, "init");
-        g.push(ikey);
+        guard.push(ikey);
         sub->set_field(ikey, Value::from_obj(init)); // 落表 + 同步 init_(set_field 单一写入口)
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
-        g.push(constant);
+        guard.push(constant);
         init->function()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
         mkey = new_string(gc, "m");
-        g.push(mkey);
+        guard.push(mkey);
         vkey = new_string(gc, "x");
-        g.push(vkey);
+        guard.push(vkey);
         val = new_string(gc, "a long static value string!!!"); // 建时 collect:在根者存活
-        g.push(val);
+        guard.push(val);
         sub->set_field(mkey, Value::from_obj(method)); // 建表/rehash 非 GC 点(trivial 分配)
         sub->set_field(vkey, Value::from_obj(val));
         // 作用域退出:全部临时根弹出,super/method/init/val 此后仅经 sub.trace 可达
     }
-    auto        guard   = gc.make_guard(sub);        // 只根 sub
-    const auto  trigger = new_string(gc, "trigger"); // stress collect:全链经 sub.trace 存活
-    auto        tg      = gc.make_guard(trigger);    // 触发串入根:不被下方 collect 回收
-    const usize before  = gc.bytes_allocated();
+    auto       guard   = gc.make_guard(sub);        // 只根 sub
+    const auto trigger = new_string(gc, "trigger"); // stress collect:全链经 sub.trace 存活
+    guard.push(trigger);                            // 触发串入根:不被下方 collect 回收
+    const usize before = gc.bytes_allocated();
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
     EXPECT_EQ(sub->superclass(), super); // 父类经链标存活
@@ -270,11 +270,11 @@ TEST(ObjClass, DefiningClassSurvivesViaClosureTrace) {
     ObjClass*   cls    = nullptr;
     ObjClosure* method = nullptr;
     {
-        auto cls_guard = gc.make_guard();
-        cls            = make_class(gc, "K");
-        cls_guard.push(cls);
-        method       = make_closure(gc, "m", 0);
-        auto m_guard = gc.make_guard(method);
+        auto guard = gc.make_guard();
+        cls        = make_class(gc, "K");
+        guard.push(cls);
+        method = make_closure(gc, "m", 0);
+        guard.push(method);
         method->set_defining_class(cls);
         // 作用域退出:cls/method 的临时根全部弹出,二者此后仅经 method->defining_class_ 相连
     }

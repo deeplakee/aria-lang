@@ -69,11 +69,11 @@ TEST(ObjectTryAs, ConstOverload) {
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器
-    auto&  gc = vm.gc();
-    auto   s  = new_string(gc, "hello");
-    auto   sg = gc.make_guard(s);
-    auto   k  = new_string(gc, "len");
-    auto   kg = gc.make_guard(k);
+    auto&  gc    = vm.gc();
+    auto   s     = new_string(gc, "hello");
+    auto   guard = gc.make_guard(s);
+    auto   k     = new_string(gc, "len");
+    guard.push(k);
 
     // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
     // store = "type X does not support field access"。

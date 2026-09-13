@@ -30,24 +30,19 @@ namespace {
     // 返回的 m 未根,调用方跨 GC 点持有须自行守卫。默认名 "<script>"(临时模块)。
     ObjModule* make_module(GC& gc, StringView name = "<script>") { return aria::new_module(gc, name); }
 
-    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根
-    //(name 分配可能 collect 回收 m)。
+    // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
+    // collect 回收 m)。返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
-        auto nm    = new_string(gc, name);
-        guard.push(nm);
-        return aria::new_function(gc, m, nm, arity);
+        return aria::new_function(gc, m, name, arity);
     }
 
-    // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // name=nullptr -> `<main>`(主入口单元统一名,ObjFunction ctor ASSERT name 非空)。
-    ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
-        if (name == nullptr) {
-            name = new_string(gc, "<main>");
-        }
-        auto guard = gc.make_guard(name);
+    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
+    // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
+    // 扫掉;name 串由工厂内部 intern 并自守。
+    ObjFunction* new_function(GC& gc, StringView name, u8 arity) {
         auto m     = make_module(gc);
-        guard.push(m);
+        auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
     }
 
@@ -56,7 +51,7 @@ namespace {
 // 基础:包住 fn,upvalues_ 空态(CLOSURE 执行期才逐个后填)。
 TEST(ObjClosure, WrapsFunction) {
     GC   gc;
-    auto fn = new_function(gc, new_string(gc, "add"), 2);
+    auto fn = new_function(gc, "add", 2);
     auto c  = new_closure(gc, fn);
     EXPECT_TRUE(aria::Object::is<ObjClosure>(c));
     EXPECT_EQ(c->type(), aria::ObjType::CLOSURE);
@@ -69,7 +64,7 @@ TEST(ObjClosure, WrapsFunction) {
 // 捕获数组:逐个后填,按下标可取。
 TEST(ObjClosure, AddUpvaluesInOrder) {
     GC    gc;
-    auto  fn    = new_function(gc, new_string(gc, "f"), 0);
+    auto  fn    = new_function(gc, "f", 0);
     auto  c     = new_closure(gc, fn);
     auto  guard = gc.make_guard(c); // 习惯性守卫(非 stress 下无 GC 触发)
     Value a     = Value::from_i32(1);
@@ -86,7 +81,7 @@ TEST(ObjClosure, AddUpvaluesInOrder) {
 // debug_repr 直取 function_ 名渲染 `<fn name>`,与纯函数同文案;to_string 经基类默认委托之。
 TEST(ObjClosure, DebugReprSameAsFunction) {
     GC   gc;
-    auto fn = new_function(gc, new_string(gc, "add"), 0);
+    auto fn = new_function(gc, "add", 0);
     auto c  = new_closure(gc, fn);
     EXPECT_EQ(c->to_string(), "<fn add>");
     // 调试渲染同文案(format_value_debug 经 debug_repr 虚分派)。
@@ -96,7 +91,7 @@ TEST(ObjClosure, DebugReprSameAsFunction) {
 // 身份语义:同一 fn 的两次捕获是不同闭包;equals/=== 均按地址。
 TEST(ObjClosure, IdentitySemantics) {
     GC   gc;
-    auto fn = new_function(gc, new_string(gc, "f"), 0);
+    auto fn = new_function(gc, "f", 0);
     auto c1 = new_closure(gc, fn);
     auto c2 = new_closure(gc, fn);
     EXPECT_NE(c1, c2);
@@ -109,7 +104,7 @@ TEST(ObjClosure, IdentitySemantics) {
 TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
     GC gc;
     gc.set_stress(true);
-    auto fn    = new_function(gc, new_string(gc, "f"), 0);
+    auto fn    = new_function(gc, "f", 0);
     auto guard = gc.make_guard(fn);   // stress 下先根化 fn(c 建好后另经 c 可达)
     auto c     = new_closure(gc, fn); // 建时 collect:fn 经 guard 存活
     guard.push(c);
@@ -132,7 +127,7 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
 // 无根闭包被 sweep(闭包壳 + fn 壳 + CodeUnit 内部 Array)。
 TEST(ObjClosure, UnrootedClosureSwept) {
     GC   gc;
-    auto fn = new_function(gc, new_string(gc, "f"), 0);
+    auto fn = new_function(gc, "f", 0);
     (void) new_closure(gc, fn); // 两者皆无根
     const usize before = gc.bytes_allocated();
     gc.collect();

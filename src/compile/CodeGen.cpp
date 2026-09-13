@@ -71,11 +71,8 @@ namespace aria {
     }
 
     // 建模块入口函数 + set_entry + 构造 ModuleCtx（契约见 CodeGen.hpp init_module 注）。
-    // 工厂不守入参，故入口名须显式 make_guard 跨 new_function 的 new_object。
     ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
-        const auto name  = new_string(gc_, entry_name);
-        const auto guard = gc_.make_guard(name);
-        const auto entry = new_function(gc_, module, name, 0);
+        const auto entry = new_function(gc_, module, entry_name, 0);
         module->set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
         return entry;
@@ -355,10 +352,7 @@ namespace aria {
         const auto loc  = body.loc();
         const u32  line = body.loc_line();
 
-        // name_str 在下方 new_function 调用中可能被回收,故 make_guard 保护
-        const auto name_str = new_string(gc_, name);
-        const auto guard    = gc_.make_guard(name_str);
-        const auto fn       = new_function(gc_, mod_ctx_->module_, name_str, static_cast<u8>(params.size()));
+        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进

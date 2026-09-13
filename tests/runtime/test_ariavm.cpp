@@ -125,32 +125,25 @@ namespace {
     }
 
     // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
-    // 返回白色,调用方自守。
+    // 返回白色,调用方自守。m 未根须自守:工厂内 intern name 与 new_object 均 GC 点。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
-        auto nm    = new_string(gc, name);
-        guard.push(nm);
-        return aria::new_function(gc, m, nm, arity);
+        return aria::new_function(gc, m, name, arity);
     }
 
-    // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。全程自守 name+m(stress GC 下
-    // 中途分配会 collect,裸局部指针无根会被扫掉)。name=nullptr -> `<main>`。
-    ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
-        if (name == nullptr) {
-            name = new_string(gc, "<main>");
-        }
-        auto guard = gc.make_guard(name);
+    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
+    // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
+    // 扫掉;name 串由工厂内部 intern 并自守。
+    ObjFunction* new_function(GC& gc, StringView name, u8 arity) {
         auto m     = make_module(gc);
-        guard.push(m);
+        auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
     }
 
     // 指定模块的匿名入口单元(`<main>` 名,arity 0)。
     ObjFunction* new_script(GC& gc, ObjModule* m) {
-        auto guard = gc.make_guard(m);
-        auto name  = new_string(gc, "<main>");
-        guard.push(name);
-        return aria::new_function(gc, m, name, 0);
+        auto guard = gc.make_guard(m); // m 未根:工厂内 intern 与 new_object 均 GC 点
+        return aria::new_function(gc, m, "<main>", 0);
     }
 
     // ---- IMPORT 路径解析测试辅助 ----
@@ -257,7 +250,7 @@ protected:
 TEST_F(AriaVMStress, Arithmetic) {
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     emit_imm(cu, 1); // [1]
@@ -277,7 +270,7 @@ TEST_F(AriaVMStress, Arithmetic) {
 TEST_F(AriaVMStress, F64ConstantAndPromotion) {
 
     auto&      gc    = vm.gc();
-    auto       fn    = new_function(gc, nullptr, 0);
+    auto       fn    = new_function(gc, "<main>", 0);
     auto       guard = gc.make_guard(fn);
     auto&      cu    = fn->unit();
     const auto c25   = cu.add_constant(Value::from_f64(2.5));
@@ -300,7 +293,7 @@ TEST_F(AriaVMStress, WhileLoopWithJumps) {
     // 序言的两次 LOAD_NIL 预留局部区(slots[1..3)):槽 0 是 callee,临时值在保留区之上压栈不覆写局部。
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -351,7 +344,7 @@ TEST_F(AriaVMStress, WhileLoopWithJumps) {
 TEST_F(AriaVMStress, FunctionCall) {
 
     auto& gc    = vm.gc();
-    auto  add   = new_function(gc, new_string(gc, "add"), 2);
+    auto  add   = new_function(gc, "add", 2);
     auto  guard = gc.make_guard(add); // add 裸持跨下方 main_fn 的 new_function(stress collect)
     auto& acu   = add->unit();
     emit_local(acu, OpCode::LOAD_LOCAL, 1); // 参数 1 在槽 1(槽 0 是 callee)
@@ -359,7 +352,7 @@ TEST_F(AriaVMStress, FunctionCall) {
     acu.emit_op(OpCode::ADD, 1);
     acu.emit_op(OpCode::RETURN, 1);
 
-    auto       main_fn = new_function(gc, nullptr, 0);
+    auto       main_fn = new_function(gc, "<main>", 0);
     auto&      mcu     = main_fn->unit();
     const auto idx     = mcu.add_constant(Value::from_obj(add));
     emit_closure(mcu, idx); // [closure]
@@ -380,7 +373,7 @@ TEST_F(AriaVMStress, StackGrowsAndRebasesFrames) {
     // 压入超过初始容量(1024)的临时值触发值栈 2x 增长;增长后读取局部,验证帧的 slots 指针已重定位。
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 1); // 预留局部槽 1(槽 0 是 callee)
@@ -410,7 +403,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc    = vm.gc();
-        auto  fn    = new_function(gc, nullptr, 0);
+        auto  fn    = new_function(gc, "<main>", 0);
         auto  guard = gc.make_guard(fn);
         auto& cu    = fn->unit();
         cu.emit_op(OpCode::LOAD_FALSE, 1);
@@ -431,7 +424,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc    = vm.gc();
-        auto  fn    = new_function(gc, nullptr, 0);
+        auto  fn    = new_function(gc, "<main>", 0);
         auto  guard = gc.make_guard(fn);
         auto& cu    = fn->unit();
         cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -451,7 +444,7 @@ TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
     {
 
         auto& gc    = vm.gc();
-        auto  fn    = new_function(gc, nullptr, 0);
+        auto  fn    = new_function(gc, "<main>", 0);
         auto  guard = gc.make_guard(fn);
         auto& cu    = fn->unit();
         cu.emit_op(OpCode::LOAD_NIL, 1);
@@ -468,7 +461,7 @@ TEST_F(AriaVMStress, EqualitySemantics) {
     // 1 == 1.0 内容相等为 true;1 === 1.0 严格相等为 false
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     emit_imm(cu, 1);
@@ -485,7 +478,7 @@ TEST_F(AriaVMStress, EqualitySemantics) {
 TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     cu.emit_op(OpCode::LOAD_NIL, 3); // 行 3:验证直报站点位置前缀取故障指令行
@@ -505,7 +498,7 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
 TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     emit_imm(cu, 1);
@@ -524,13 +517,13 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
 TEST_F(AriaVMStress, WrongArityIsUncaught) {
 
     auto& gc    = vm.gc();
-    auto  two   = new_function(gc, new_string(gc, "two"), 2);
+    auto  two   = new_function(gc, "two", 2);
     auto  guard = gc.make_guard(two); // two 裸持跨下方 fn 的 new_function(stress collect)
     auto& tcu   = two->unit();
     tcu.emit_op(OpCode::LOAD_NIL, 1);
     tcu.emit_op(OpCode::RETURN, 1);
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     auto& cu = fn->unit();
     emit_closure(cu, cu.add_constant(Value::from_obj(two))); // [closure]
@@ -549,7 +542,7 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
     // fn 直接调用自己(arity 0),永不返回 -> 值栈/帧栈溢出
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     emit_closure(cu, cu.add_constant(Value::from_obj(fn))); // 常量池引用自己(每次调用现场包新闭包)
@@ -596,7 +589,7 @@ TEST_F(AriaVMStress, ModuleTableIsGcRoot) {
 TEST_F(AriaVMStress, DefAndLoadGlobal) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -616,7 +609,7 @@ TEST_F(AriaVMStress, DefAndLoadGlobal) {
 TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -639,7 +632,7 @@ TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
 TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -657,7 +650,7 @@ TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
 TEST_F(AriaVMStress, LoadGlobalUndefinedErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -948,7 +941,7 @@ TEST_F(AriaVMStress, SourceRootSeededWithCwdForScriptEntry) {
     vm.set_source_roots({}); // 隔离:仅入口槽,免默认 stdlib
     auto& gc = vm.gc();
 
-    auto  fn = new_function(gc, nullptr, 0); // make_module -> <script>, dir_ = cwd
+    auto  fn = new_function(gc, "<main>", 0); // make_module -> <script>, dir_ = cwd
     auto& cu = fn->unit();
     cu.emit_op(OpCode::HALT, 1);
 
@@ -1133,7 +1126,7 @@ TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
 TEST_F(AriaVMStress, NativeFnSlot0Return) {
 
     auto&      gc     = vm.gc();
-    auto       fn     = new_function(gc, nullptr, 0);
+    auto       fn     = new_function(gc, "<main>", 0);
     auto       guard  = gc.make_guard(fn);
     auto&      cu     = fn->unit();
     const auto nf_idx = add_native_const(cu, gc, "double", double_native);
@@ -1154,7 +1147,7 @@ TEST_F(AriaVMStress, NativeFnSlot0Return) {
 TEST_F(AriaVMStress, NativeFnZeroArity) {
 
     auto& gc    = vm.gc();
-    auto  fn    = new_function(gc, nullptr, 0);
+    auto  fn    = new_function(gc, "<main>", 0);
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     // 复用 double_native 但传 0 参:它会因 argc != 1 报错 -- 故另造一个无参内建。
@@ -1179,7 +1172,7 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
 TEST_F(AriaVMStress, NativeFnSideChannelError) {
 
     auto&      gc     = vm.gc();
-    auto       fn     = new_function(gc, nullptr, 0);
+    auto       fn     = new_function(gc, "<main>", 0);
     auto       guard  = gc.make_guard(fn);
     auto&      cu     = fn->unit();
     const auto nf_idx = add_native_const(cu, gc, "fail_always", fail_always_native);
@@ -1202,7 +1195,7 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
 TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
 
     auto&      gc     = vm.gc();
-    auto       fn     = new_function(gc, nullptr, 0);
+    auto       fn     = new_function(gc, "<main>", 0);
     auto       guard  = gc.make_guard(fn);
     auto&      cu     = fn->unit();
     const auto nf_idx = add_native_const(cu, gc, "double", double_native);
@@ -1243,12 +1236,12 @@ void emit_incr_body(CodeUnit& cu) {
 TEST_F(AriaVMStress, ClosureCounterSharedState) {
 
     auto& gc    = vm.gc();
-    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  incr  = new_function(gc, "incr", 0);
     auto  guard = gc.make_guard(incr);
     emit_incr_body(incr->unit());
     capture_local(incr, 1); // 捕 make_counter 的槽 1(n)
 
-    auto outer = new_function(gc, new_string(gc, "make_counter"), 0);
+    auto outer = new_function(gc, "make_counter", 0);
     guard.push(outer);
     {
         auto&      ocu      = outer->unit();
@@ -1263,7 +1256,7 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
         ocu.emit_op(OpCode::RETURN, 1); // 返回 c;n 的 upvalue 随 RETURN 关闭迁移
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&      cu        = fn->unit();
@@ -1296,7 +1289,7 @@ TEST_F(AriaVMStress, ClosureCounterSharedState) {
 TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
 
     auto& gc    = vm.gc();
-    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  incr  = new_function(gc, "incr", 0);
     auto  guard = gc.make_guard(incr);
     emit_incr_body(incr->unit());
     capture_local(incr, 1);
@@ -1374,12 +1367,12 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
 TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
 
     auto& gc    = vm.gc();
-    auto  incr  = new_function(gc, new_string(gc, "incr"), 0);
+    auto  incr  = new_function(gc, "incr", 0);
     auto  guard = gc.make_guard(incr);
     emit_incr_body(incr->unit());
     capture_local(incr, 1);
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&      cu       = fn->unit();
@@ -1416,7 +1409,7 @@ TEST_F(AriaVMStress, CloseUpvalueReadsMigratedValue) {
 TEST_F(AriaVMStress, StackGrowsRebasesOpenUpvalues) {
 
     auto& gc     = vm.gc();
-    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  reader = new_function(gc, "reader", 0);
     auto  guard  = gc.make_guard(reader);
     {
         auto& rcu = reader->unit();
@@ -1425,7 +1418,7 @@ TEST_F(AriaVMStress, StackGrowsRebasesOpenUpvalues) {
     }
     capture_local(reader, 1);
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&      cu         = fn->unit();
@@ -1533,7 +1526,7 @@ TEST_F(AriaVMStress, UnwindClosesCapturedUpvalue) {
 TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
 
     auto& gc     = vm.gc();
-    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  reader = new_function(gc, "reader", 0);
     auto  guard  = gc.make_guard(reader);
     {
         auto& rcu = reader->unit();
@@ -1542,7 +1535,7 @@ TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
     }
     capture_local(reader, 2); // 捕 main 的 slot2(try 体局部 n;非 slot1 -- 那是 catch 参数槽)
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&      cu         = fn->unit();
@@ -1595,7 +1588,7 @@ TEST_F(AriaVMStress, UnwindHitClosesTryBodyUpvalue) {
 TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 
     auto& gc     = vm.gc();
-    auto  reader = new_function(gc, new_string(gc, "reader"), 0);
+    auto  reader = new_function(gc, "reader", 0);
     auto  guard  = gc.make_guard(reader);
     {
         auto& rcu = reader->unit();
@@ -1604,7 +1597,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
     }
     capture_local(reader, 1);
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&      cu         = fn->unit();
@@ -1643,7 +1636,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 foo   = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
@@ -1679,7 +1672,7 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
 
     auto& gc    = vm.gc();
-    auto  init  = new_function(gc, new_string(gc, "init"), 1);
+    auto  init  = new_function(gc, "init", 1);
     auto  guard = gc.make_guard(init);
     {
         auto&     icu = init->unit();
@@ -1692,7 +1685,7 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
         icu.emit_op(OpCode::RETURN, 1);         // 返回 this -> 实例
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&     cu        = fn->unit();
@@ -1727,7 +1720,7 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
 TEST_F(AriaVMStress, MethodCallMutatesThisField) {
 
     auto& gc    = vm.gc();
-    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  init  = new_function(gc, "init", 0);
     auto  guard = gc.make_guard(init);
     {
         auto&     icu    = init->unit();
@@ -1740,7 +1733,7 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
         emit_local(icu, OpCode::LOAD_LOCAL, 0);
         icu.emit_op(OpCode::RETURN, 1); // 返回 this
     }
-    auto m = new_function(gc, new_string(gc, "m"), 0);
+    auto m = new_function(gc, "m", 0);
     guard.push(m);
     {
         auto&     mcu    = m->unit();
@@ -1756,7 +1749,7 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
         mcu.emit_op(OpCode::RETURN, 1);   // 方法返回 nil
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&     cu        = fn->unit();
@@ -1795,14 +1788,14 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
 TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
 
     auto& gc     = vm.gc();
-    auto  base_m = new_function(gc, new_string(gc, "m"), 0);
+    auto  base_m = new_function(gc, "m", 0);
     auto  guard  = gc.make_guard(base_m);
     {
         auto& bmu = base_m->unit();
         emit_imm(bmu, 1);
         bmu.emit_op(OpCode::RETURN, 1); // Base.m 返回 1
     }
-    auto sub_m = new_function(gc, new_string(gc, "m"), 0);
+    auto sub_m = new_function(gc, "m", 0);
     guard.push(sub_m);
     {
         auto&     smu    = sub_m->unit();
@@ -1815,7 +1808,7 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
         smu.emit_op(OpCode::RETURN, 1);
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&     cu        = fn->unit();
@@ -1919,7 +1912,7 @@ TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
 TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
 
     auto&     gc        = vm.gc();
-    auto      fn        = new_function(gc, nullptr, 0);
+    auto      fn        = new_function(gc, "<main>", 0);
     auto      guard     = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
@@ -2166,7 +2159,7 @@ TEST_F(AriaVMStress, StoreFieldDeepStackShift) {
 TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
 
     auto& gc    = vm.gc();
-    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  init  = new_function(gc, "init", 0);
     auto  guard = gc.make_guard(init);
     {
         auto&     icu    = init->unit();
@@ -2177,7 +2170,7 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
         emit_local(icu, OpCode::LOAD_LOCAL, 0);
         icu.emit_op(OpCode::RETURN, 1);
     }
-    auto m = new_function(gc, new_string(gc, "m"), 0);
+    auto m = new_function(gc, "m", 0);
     guard.push(m);
     {
         auto&     mcu    = m->unit();
@@ -2196,7 +2189,7 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
         mcu.emit_op(OpCode::RETURN, 1);
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&     cu        = fn->unit();
@@ -2229,7 +2222,7 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
 TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
 
     auto& gc    = vm.gc();
-    auto  init  = new_function(gc, new_string(gc, "init"), 0);
+    auto  init  = new_function(gc, "init", 0);
     auto  guard = gc.make_guard(init);
     {
         auto&     icu    = init->unit();
@@ -2241,7 +2234,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
         icu.emit_op(OpCode::RETURN, 1);
     }
 
-    auto fn = new_function(gc, nullptr, 0);
+    auto fn = new_function(gc, "<main>", 0);
     guard.push(fn);
     {
         auto&     cu        = fn->unit();
@@ -2280,7 +2273,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
 TEST_F(AriaVMStress, LoadFieldOnNilErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -2297,7 +2290,7 @@ TEST_F(AriaVMStress, LoadFieldOnNilErrors) {
 TEST_F(AriaVMStress, LoadFieldOnNonObjectErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -2315,7 +2308,7 @@ TEST_F(AriaVMStress, LoadFieldOnNonObjectErrors) {
 TEST_F(AriaVMStress, StoreFieldOnNilErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 x     = cu.add_constant(Value::from_obj(new_string(gc, "x")));
@@ -2334,7 +2327,7 @@ TEST_F(AriaVMStress, StoreFieldOnNilErrors) {
 TEST_F(AriaVMStress, MakeClassNonClassSuperErrors) {
 
     auto&     gc    = vm.gc();
-    auto      fn    = new_function(gc, nullptr, 0);
+    auto      fn    = new_function(gc, "<main>", 0);
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 foo   = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
@@ -2352,7 +2345,7 @@ TEST_F(AriaVMStress, MakeClassNonClassSuperErrors) {
 TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
 
     auto&     gc        = vm.gc();
-    auto      fn        = new_function(gc, nullptr, 0);
+    auto      fn        = new_function(gc, "<main>", 0);
     auto      guard     = gc.make_guard(fn);
     auto&     cu        = fn->unit();
     const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
@@ -2472,7 +2465,7 @@ bool echo_this_native(AriaVM& vm, Span<Value> slots) {
 TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
 
     auto&      gc     = vm.gc();
-    auto       fn     = new_function(gc, nullptr, 0);
+    auto       fn     = new_function(gc, "<main>", 0);
     auto       guard  = gc.make_guard(fn);
     auto&      cu     = fn->unit();
     const u16  foo    = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
@@ -2507,7 +2500,7 @@ TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
 TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
 
     auto&      gc     = vm.gc();
-    auto       fn     = new_function(gc, nullptr, 0);
+    auto       fn     = new_function(gc, "<main>", 0);
     auto       guard  = gc.make_guard(fn);
     auto&      cu     = fn->unit();
     const u16  foo    = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
@@ -2652,7 +2645,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
 TEST_F(AriaVMStress, NativeInitInstantiates) {
 
     auto&      gc        = vm.gc();
-    auto       fn        = new_function(gc, nullptr, 0);
+    auto       fn        = new_function(gc, "<main>", 0);
     auto       guard     = gc.make_guard(fn);
     auto&      cu        = fn->unit();
     const u16  foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));

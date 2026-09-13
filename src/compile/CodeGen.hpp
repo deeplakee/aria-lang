@@ -21,8 +21,8 @@
 // GC 安全：compile() 入口 make_guard(module) 贯穿全程，建设中 ObjFunction/常量池经
 //   module.entry_ 根链可达（子 fn 编译起始即 add_constant 入父池，先于编译体）；new_object
 //   -> add_constant 间走 trivial 分配不触 GC（GC 核心不变式），fn 跨该窗口免守卫。真触发点
-//   （new_object 顶 maybe_collect）前的入参根化：compile() 守 module、compile_function 自守
-//   intern 的 name 串，visit 层只传 StringView 无需守卫。
+//   （new_object 顶 maybe_collect）前的入参根化：compile() 守 module；name 串由工厂
+//   StringView 重载 intern 并自守（工厂守「自己创建的」），visit 层只传 StringView 无需守卫。
 
 #include "aria.hpp"
 #include "bytecode/code.hpp"
@@ -266,8 +266,8 @@ namespace aria {
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
         // name 为函数名 StringView（具名 fun 声明名 / lambda `<anonymous>` / 入口 `<main>`;`<>`
-        // 标识符不可用,故 name 即 lambda 判据）。内部 intern name 并 make_guard 跨 new_function +
-        // 体编译（见类首 GC 安全注）。lambda 函数值留栈不绑定名字;具名 fun 绑定到全局(顶层)或
+        // 标识符不可用,故 name 即 lambda 判据）。name 建串与守卫收口在工厂 StringView 重载内
+        // （工厂守「自己创建的」,见类首 GC 安全注）。lambda 函数值留栈不绑定名字;具名 fun 绑定到全局(顶层)或
         // 局部(嵌套)。完成后切回父上下文,函数值已在父序列压栈（CLOSURE 按捕获描述表建 upvalue）。
         // decl_loc 供 validate_params 报参数错;体发射行号取 body.loc_line()。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc);

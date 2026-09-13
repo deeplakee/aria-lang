@@ -23,25 +23,19 @@ namespace {
     // 返回的 m 未根,调用方跨 GC 点持有须自行守卫。默认名 "<script>"(临时模块)。
     ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
 
-    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根
-    //(name 分配可能 collect 回收 m)。
+    // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
+    // collect 回收 m)。返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
-        auto nm    = new_string(gc, name);
-        guard.push(nm);
-        return aria::new_function(gc, m, nm, arity);
+        return aria::new_function(gc, m, name, arity);
     }
 
-    // 3 参便利重载:造临时模块 + 委托 4 参 aria::new_function。屏蔽全局 aria::new_function。
-    // 须先保 name 再 make_module -- 其内部分配在 stress GC 下会 collect,无根的裸局部 name
-    // 会被扫掉,故本重载全程自守 name+m。name=nullptr -> `<main>`(ctor ASSERT name 非空)。
-    ObjFunction* new_function(GC& gc, ObjString* name, u8 arity) {
-        if (name == nullptr) {
-            name = new_string(gc, "<main>");
-        }
-        auto guard = gc.make_guard(name);
+    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
+    // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
+    // 扫掉;name 串由工厂内部 intern 并自守。
+    ObjFunction* new_function(GC& gc, StringView name, u8 arity) {
         auto m     = make_module(gc);
-        guard.push(m);
+        auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
     }
 
@@ -50,7 +44,7 @@ namespace {
 TEST(ObjFunction, Basics) {
     GC   gc;
     auto name = new_string(gc, "add");
-    auto fn   = new_function(gc, name, 2);
+    auto fn   = new_function(gc, name->view(), 2);
     EXPECT_TRUE(aria::Object::is<ObjFunction>(fn));
     EXPECT_EQ(fn->type(), aria::ObjType::FUNCTION);
     EXPECT_EQ(fn->name(), name); // 同名 intern 同指针
@@ -62,7 +56,7 @@ TEST(ObjFunction, Basics) {
 
 TEST(ObjFunction, EmitIntoUnit) {
     GC    gc;
-    auto  fn = new_function(gc, new_string(gc, "mul"), 1);
+    auto  fn = new_function(gc, "mul", 1);
     auto& cu = fn->unit();
     cu.emit_op(aria::OpCode::LOAD_CONST, 3);
     cu.emit_word(cu.add_constant(Value::from_i32(42)), 3);
@@ -75,31 +69,29 @@ TEST(ObjFunction, EmitIntoUnit) {
 
 TEST(ObjFunction, ToString) {
     GC   gc;
-    auto fn = new_function(gc, new_string(gc, "add"), 0);
+    auto fn = new_function(gc, "add", 0);
     EXPECT_EQ(fn->to_string(), "<fn add>");
 
-    auto script = new_function(gc, nullptr, 0); // 匿名入口单元(<main> 名)
+    auto script = new_function(gc, "<main>", 0); // 匿名入口单元(<main> 名)
     EXPECT_EQ(script->to_string(), "<fn <main>>");
 }
 
 TEST(ObjFunction, TraceMarksNameAndConstants) {
     GC gc;
     gc.set_stress(true);
-    auto name  = new_string(gc, "add");
-    auto fn    = new_function(gc, name, 2);
+    auto fn    = new_function(gc, "add", 2);
     auto guard = gc.make_guard(fn); // stress 下后续任何 new_object 都会 collect,先保住 fn
     // 长串常量(独立 buffer,被回收则内容不可访问)
     auto constant = new_string(gc, "a long constant string beyond sso");
     fn->unit().add_constant(Value::from_obj(constant));
     (void) new_string(gc, "trigger"); // stress 触发 collect:name/常量须经 fn 的 trace 存活
-    EXPECT_EQ(fn->name(), name);
-    EXPECT_EQ(name->view(), "add");
+    EXPECT_EQ(fn->name()->view(), "add");
     EXPECT_EQ(constant->view(), "a long constant string beyond sso");
 }
 
 TEST(ObjFunction, UnrootedFunctionSwept) {
     GC gc;
-    (void) new_function(gc, new_string(gc, "f"), 0); // 无根
+    (void) new_function(gc, "f", 0); // 无根
     const usize before = gc.bytes_allocated();
     gc.collect(); // 壳 + CodeUnit 内部 Array(此处未 emit,容量 0)回收
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -108,15 +100,14 @@ TEST(ObjFunction, UnrootedFunctionSwept) {
 TEST(ObjFunction, SweptAfterGuardReleased) {
     GC gc;
     gc.set_stress(true);
-    auto name = new_string(gc, "add");
-    auto fn   = new_function(gc, name, 0);
+    auto fn = new_function(gc, "add", 0);
     {
         auto guard = gc.make_guard(fn);
         (void) new_string(gc, "trigger"); // GC:fn 存活
         EXPECT_EQ(fn->to_string(), "<fn add>");
     } // guard 析构 pop 临时根 -> fn 不再受保护
     const usize before = gc.bytes_allocated();
-    (void) new_string(gc, "trigger2"); // GC:fn 与 name(无引用)回收
+    (void) new_string(gc, "trigger2"); // GC:fn 与其 name 串(无引用)回收
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 

@@ -48,13 +48,12 @@ namespace {
         return new_class(gc, nm, super);
     }
 
-    // 临时模块 + 具名函数:intern + 守卫均收口在助手内(机制测试不关心模块归属)。
+    // 临时模块 + 具名函数:守卫收口在助手内(机制测试不关心模块归属)。m 未根须自守:
+    // 工厂内 intern name 与 new_object 均 GC 点。返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, StringView name, u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
-        auto nm    = new_string(gc, name);
-        guard.push(nm);
-        return new_function(gc, m, nm, arity);
+        return new_function(gc, m, name, arity);
     }
 
     // 具名闭包:fn 经守卫跨 new_closure。返回的闭包未根,fn 经其可达。

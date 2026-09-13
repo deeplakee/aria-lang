@@ -33,12 +33,11 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根。
+    // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
+    // collect 回收 m)。返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
         auto guard = gc.make_guard(m);
-        auto nm    = new_string(gc, name);
-        guard.push(nm);
-        return new_function(gc, m, nm, arity);
+        return new_function(gc, m, name, arity);
     }
 
 } // namespace

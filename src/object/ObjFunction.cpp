@@ -31,4 +31,12 @@ namespace aria {
         return gc.new_object<ObjFunction>(gc, module, name, arity);
     }
 
+    ObjFunction* new_function(GC& gc, ObjModule* module, const StringView name, const u8 arity) {
+        // 便捷重载:name 串由工厂自己创建,自守跨下方 new_object(守「自己创建的」);
+        // module 仍须调用方根化,契约同 ObjString* 版。
+        const auto name_str = new_string(gc, name);
+        const auto guard    = gc.make_guard(name_str);
+        return new_function(gc, module, name_str, arity);
+    }
+
 } // namespace aria

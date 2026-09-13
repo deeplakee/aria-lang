@@ -13,20 +13,15 @@ namespace aria {
 
     // 实例对象:类经实例化(call_value CLASS 分支)的产物(ObjType::INSTANCE)。
     //
-    //   - class_:所属类(实例方法派发 / 字段未命中沿类链查静态表的起点),构造注入、不可变,
-    //     **恒非空**(构造期 ASSERT)。
+    //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变,恒非空
+    //     (构造期 ASSERT)。
     //   - fields_:实例字段表(`init` 内 `this.x = ...` 落此,无字段预声明、动态)。键 intern
-    //     ObjString*,值为绑定 Value。**bound-method 缓存同居此表**(M5 决策 4:与真字段同表
-    //     同 keyspace;fields 命中优先即真字段遮蔽同名方法与缓存项,三铁则见 M5 计划 §2.4)。
-    //     惰性分配(首次 set 才建表)。**私有,不对外暴露**:成员读写一律走
-    //     load_field/store_field 协议(LOAD_FIELD/STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD
-    //     与缓存回填 set 均在对象内完成),外部无整表访问器。
+    //     ObjString*,值 Value。**bound-method 缓存同居此表**(与真字段同表同 keyspace,
+    //     fields 命中优先即真字段遮蔽同名方法与缓存项,三铁则见 M5 计划 §2.4)。惰性分配。
+    //     **私有不对外暴露**:成员读写一律走 load_field/store_field 协议,外部无整表访问器。
     //
-    //   地址哈希型可变对象(走 Object{ObjType::INSTANCE} ctor);equals 保持默认地址相等--
-    //     实例按身份判等,无内容相等语义。final,不再派生;AriaHashTable 成员自身禁拷贝/禁移动。
-    //   trace():标 class_ + 委托 fields_.trace(gc)(遍历占用槽 mark_value key+value;缓存
-    //     的 bound-method 经此级联标,GC 侧零额外负担)。
-    //   to_string():`<Foo instance>`。
+    //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(缓存的
+    //   bound-method 经值级联标);to_string = `<Foo instance>`。
     class ObjInstance final : public Object {
     public:
         explicit ObjInstance(GC& gc, ObjClass* cls);
@@ -43,14 +38,10 @@ namespace aria {
             return class_;
         }
 
-        // 命名成员读取协议 override(LOAD_FIELD / LOAD_THIS_FIELD 统一语义):fields 命中优先
-        //(真字段遮蔽同名方法与缓存项,铁则 3)-> **委托类协议** ObjClass::load_field(沿类链
-        // 读穿透直读;miss 已按类措辞就地 fail,nullopt ⟺ 已 fail,本 override 只透传信号 --
-        // 成员表在类链上,文案随宿主)。
-        //
-        // 命中处理:可调用值(闭包/原生)现场绑 this 并回填 fields 缓存(铁则 1:只缓存绑定
-        // 方法,快照语义),非可调用静态值直读不缓存。分配点(new_bound_method)的 GC 安全与
-        // 回填细节见 .cpp 实现注。
+        // 命名成员读取协议 override:fields 命中优先(真字段遮蔽方法与缓存项)-> **委托类协议**
+        // ObjClass::load_field 沿链读穿透(miss 的类措辞 fail 随协议传播)。命中可调用值现场
+        // 绑 this 并回填 fields 缓存(快照语义),非可调用静态值直读不缓存;分配点 GC 安全
+        // 与回填细节见 .cpp。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 

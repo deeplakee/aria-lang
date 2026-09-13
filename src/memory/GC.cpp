@@ -97,8 +97,6 @@ namespace aria {
         objects_head_ = nullptr;
     }
 
-    void GC::push_temp_root(const Value value) noexcept { temp_roots_.push_back(value); }
-
     void GC::push_temp_root(Object* object) noexcept { temp_roots_.push_back(Value::from_obj(object)); }
 
     void GC::pop_temp_root(const usize count) noexcept {

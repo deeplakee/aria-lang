@@ -63,8 +63,8 @@ namespace aria {
         }
 
         // 整段追加(append 语义,接在 len_ 之后,不改写已有元素):一次扩容 + 单次 memcpy,
-        // 替代逐元素 push 循环。参数收 Span<const T> 泛化源:List(std::vector)/裸数组/
-        // 本类 span() 皆可隐式转换。空 src 直接返回(size 0 的 memcpy 传 nullptr 属无效参数)。
+        // 替代逐元素 push 循环。参数收 Span<const T> 泛化源:List(std::vector)/裸数组
+        // 皆可隐式转换。空 src 直接返回(size 0 的 memcpy 传 nullptr 属无效参数)。
         void copy_from(Span<const T> src) {
             if (src.empty()) {
                 return;
@@ -133,16 +133,6 @@ namespace aria {
         [[nodiscard]]
         const T* data() const noexcept {
             return buf_.data();
-        }
-
-        [[nodiscard]]
-        Span<T> span() noexcept {
-            return {buf_.data(), len_};
-        }
-
-        [[nodiscard]]
-        Span<const T> span() const noexcept {
-            return {buf_.data(), len_};
         }
 
         // 迭代器:存储连续,直接以裸指针为迭代器(兼容 range-for 与 <algorithm>)。

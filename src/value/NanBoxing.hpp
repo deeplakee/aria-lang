@@ -190,25 +190,6 @@ namespace aria::nanboxing {
             return u64_to_ptr(bits_ & kPayload);
         }
 
-        // --- raw access & equality -------------------------------------------
-        [[nodiscard]]
-        constexpr u64 bits() const noexcept {
-            return bits_;
-        }
-
-        [[nodiscard]]
-        static constexpr Value from_bits(const u64 bits) noexcept {
-            return Value{bits};
-        }
-
-        // Bitwise equality. Note: two f64 NaNs compare unequal under `==` but here
-        // identical bit patterns are equal, and -0.0 != 0.0 in bits. Use as_f64()
-        // and float comparison if you need IEEE numeric semantics.
-        [[nodiscard]]
-        constexpr bool same_bits(const Value other) const noexcept {
-            return bits_ == other.bits_;
-        }
-
         static constexpr const char* type_name(const Type t) noexcept {
             switch (t) {
                 case Type::Nil:

@@ -22,9 +22,8 @@ namespace aria {
     // Value 操作(哈希 / 相等)
     //
     //   值语义收口于 Value 层:声明在此,定义在 Value.cpp。VM 的 EQUAL(==)/STRICT_EQUAL(===)
-    //   直接调用;AriaHashTable 的 ValueHash/ValueEq 包装这些自由函数。基于两表示共有的
-    //   type()/as_*() API,**不**依赖 NanBoxing 专属的 bits()/same_bits()(TagValue 未提供,
-    //   故两表示都编译)。
+    //   直接调用;AriaHashTable 的 ValueHash/ValueEq 包装这些自由函数。只用两表示共有的
+    //   type()/as_*() API,不引入任一表示的专属 API(故两表示都编译)。
     //
     //   双相等体系(语言 == 与 === 的语义来源):
     //   - value_equal(== 内容相等):Nil/Bool 类型严格按值;Int/F64 **跨类型 IEEE 数值**

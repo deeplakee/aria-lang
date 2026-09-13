@@ -86,7 +86,7 @@ namespace aria {
         void collect();
 
         // ---- temp roots ----
-        // C++ 局部变量持有的、尚未入值栈的对象/值,在分配序列间保护其不被回收。
+        // C++ 局部变量持有的、尚未入值栈的对象,在分配序列间保护其不被回收。
         // 对外只暴露 Guard / make_guard RAII API(构造时 push,析构时 pop;禁拷贝/移动);
         // 底层 push_temp_root/pop_temp_root 为私有,由 Guard 内部调用。
         //
@@ -95,8 +95,6 @@ namespace aria {
         class Guard {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}
-
-            Guard(GC* gc, const Value value) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(value); }
 
             Guard(GC* gc, Object* object) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(object); }
 
@@ -111,11 +109,6 @@ namespace aria {
             Guard& operator=(const Guard&) = delete;
             Guard& operator=(Guard&&)      = delete;
 
-            void push(const Value value) noexcept {
-                gc_->push_temp_root(value);
-                ++count_;
-            }
-
             void push(Object* object) noexcept {
                 gc_->push_temp_root(object);
                 ++count_;
@@ -129,11 +122,6 @@ namespace aria {
         [[nodiscard]]
         Guard make_guard() noexcept {
             return Guard{this};
-        }
-
-        [[nodiscard]]
-        Guard make_guard(const Value value) noexcept {
-            return Guard{this, value};
         }
 
         [[nodiscard]]
@@ -198,8 +186,7 @@ namespace aria {
         void delete_object(Object* obj) noexcept;
 
         // ---- temp roots 底层(由 Guard 调用)----
-        // Value 与 Object* 双重载,内部统一存为 Value(Object* 经 from_obj 装箱)。
-        void push_temp_root(Value value) noexcept;
+        // Object* 经 from_obj 装箱为 Value 存储。
         void push_temp_root(Object* object) noexcept;
         void pop_temp_root(usize count = 1) noexcept;
 

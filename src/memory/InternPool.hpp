@@ -158,16 +158,6 @@ namespace aria {
             }
         }
 
-        [[nodiscard]]
-        usize size() const noexcept {
-            return count_;
-        }
-
-        [[nodiscard]]
-        usize capacity() const noexcept {
-            return cap_;
-        }
-
     private:
         void grow_and_rehash_(const usize new_cap) {
             ObjString** old_slots = slots_;

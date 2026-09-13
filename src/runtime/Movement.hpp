@@ -1,6 +1,7 @@
 #ifndef ARIA_MOVEMENT_HPP
 #define ARIA_MOVEMENT_HPP
 
+#include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
 #include "memory/Buffer.hpp"
 #include "memory/GC.hpp"
@@ -9,7 +10,6 @@
 
 namespace aria {
 
-    class CodeUnit;
     class ObjClosure;
     class ObjFunction;
     class ObjModule;
@@ -112,10 +112,21 @@ namespace aria {
             return *(top_ - 1 - n);
         }
 
-        // 截断值栈顶到 new_size(相对 stack_base 的槽位数,须 <= 当前 stack_size)。异常 unwind
-        // 的帧内回退入口:截掉 try 体临时值与本帧残留,保留 handler 帧的 callee/参数/已声明局部;
-        // 帧栈回退归 FrameStack::truncate,两者组成 unwind 的完整回退。
-        void truncate_stack(const usize new_size) noexcept { set_stack_top_(buf_.data() + new_size); }
+        // 异常派发:回退到第 n 帧(含)并把该帧转入 record 的 catch handler。frames_.truncate
+        // 一步弃内层帧(此时栈顶未动,被弃槽区全存活);close_upvalues(catch 槽) 按槽址一关到底
+        // -- >= catch 槽的全部开指(被弃帧的与其 try 体段的,含内层闭包跨捕获)一并迁移关闭,
+        // catch 槽本身尚无开指、可捕获性保留;值栈顶再截到 catch 参数槽,置 ip 跳 record.handle,
+        // 寄存器载荷 push 落槽(取走后至 push 无分配,不失根)。全帧未命中不走本函数,交 reset()。
+        void unwind_to_handler(const usize n, const TryRecord& record) noexcept {
+            ASSERT(n < frames_.size(), "unwind_to_handler: frame index out of range");
+            frames_.truncate(n + 1);
+            CallFrame& frame      = frames_.top();
+            const auto catch_slot = frame.slots + record.stack_depth;
+            close_upvalues(catch_slot);
+            set_stack_top_(catch_slot);
+            frame.ip = frame.unit->code.data() + record.handle;
+            push(*take_error());
+        }
 
         // ---- 帧栈 ----
 
@@ -150,9 +161,9 @@ namespace aria {
         ObjUpvalue* capture_upvalue(GC& gc, Value* slot) noexcept;
 
         // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_(close),并整段摘链。挂点:
-        // exit_frame 内置(本帧区间;RETURN 与 unwind 未命中经此)/显式 CLOSE_UPVALUE(top - 1)/
-        // unwind 命中(slots + stack_depth,先于截栈,handler 帧不退不经 exit_frame)/reset(全链)。
-        // 降序不变式下 >= from 恒为链头连续前缀。
+        // exit_frame 内置(本帧区间;RETURN 经此)/显式 CLOSE_UPVALUE(top - 1)/unwind_to_handler
+        // (catch 槽,一关到底覆盖被弃帧与 try 体段)/reset(全链)。降序不变式下 >= from 恒为
+        // 链头连续前缀。
         void close_upvalues(const Value* from) noexcept;
 
         // 只读链头(VM 根 tracer 遍历标根用;节点 next 经 ObjUpvalue::next_open)。返非 const 指针:
@@ -222,7 +233,8 @@ namespace aria {
         void init_frame_(CallFrame& f, ObjClosure* closure, u8 argc) const;
 
         // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 Movement 内部独占
-        // (exit_frame / truncate_stack),不对外暴露,收紧「值栈顶只由 Movement 自身改」的边界。
+        // (exit_frame / unwind_to_handler / reset),不对外暴露,收紧「值栈顶只由 Movement
+        // 自身改」的边界。
         void set_stack_top_(Value* t) noexcept {
             ASSERT(t >= buf_.data() && t <= top_, "Movement::set_stack_top_ out of range");
             top_ = t;

@@ -613,9 +613,8 @@ namespace aria {
     }
 
     Opt<Error> AriaVM::unwind() {
-        // 前提:寄存器已有载荷(入口断言把关)。首命中即在该帧 unwind -- 此前轮次已逐帧
-        // exit_frame 弹掉全部内层帧,本帧即栈顶,无需 truncate。跟踪条目就地收集(帧随即被弹,
-        // last_ip/unit 不可后取);物化路径只有 String 拼接,无 GC 分配点不悬垂。
+        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发,
+        // 全未命中交 reset 清场。
         struct TraceEntry {
             ObjFunction* fn;     // 帧函数(名字渲染)
             ObjModule*   mod;    // 帧模块(位置串渲染,module_loc)
@@ -624,28 +623,28 @@ namespace aria {
 
         ASSERT(current_->has_error(), "unwind: no pending payload");
         List<TraceEntry> trace; // 收集序:内 -> 外;物化时反转为外 -> 内(Python 式 most recent call last)
-        while (!current_->frames().empty()) {
-            auto& [closure, unit, module, ip, slots, last_ip] = current_->frames().top();
+
+        // 自最内(栈顶)向外搜索 try 记录;命中帧保留 -- handler 偏移与栈基址都属于它。
+        auto& frames = current_->frames();
+        for (usize i = frames.size() - 1; i < frames.size(); --i) { // 无符号反向:下溢即终止
+            auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
             const auto ip_off                                 = static_cast<u32>(last_ip - unit->code.data());
             if (const auto rec = unit->find_try_handler(ip_off)) {
-                // 命中 handler:先关被丢弃区间的开指(槽区尚存活,迁值读安全),再截值栈到
-                // slots + stack_depth(相对本帧 slots 的偏移,非全局基址),ip 跳 handler;载荷
-                // push 落 catch 参数槽,take 到 push 之间无分配,不失根。
-                const auto record = *rec;
-                current_->close_upvalues(slots + record->stack_depth);
-                current_->truncate_stack(static_cast<usize>(slots + record->stack_depth - current_->stack_base()));
-                ip = unit->code.data() + record->handle;
-                current_->push(*current_->take_error());
-                return std::nullopt; // 已派发 handler,调用方 break 回循环顶重取帧(坑 #11)
+                // 命中:回退到命中帧并转入 catch handler(弃内层帧+帧内截到 catch 参数槽+ip
+                // 跳+载荷落槽,统一在 Movement::unwind_to_handler)。调用方 break 回循环顶重取
+                // 帧(坑 #11)。
+                current_->unwind_to_handler(i, **rec);
+                return std::nullopt;
             }
-            // 未命中:帧即将被弹,先记跟踪三元组再退帧(exit_frame 内置关本帧区间开指)。
             trace.push_back(TraceEntry{closure->function(), module, ip_off});
-            current_->exit_frame();
         }
 
-        // 全帧未命中 -> 未捕获:拆 (码, 消息),跟踪逐帧烘焙进消息尾部(透传的编译期 Error
-        // 不经本路径,无跟踪),from_baked 一次物化。trace 恒非空(调用点帧栈非空不变式)。
+        // 全帧未命中 -> 未捕获:reset 一次清场(全链开指关闭+清帧+栈复位+清寄存器前的载荷
+        // 已先行取走),拆 (码, 消息) 逐帧烘焙跟踪行物化(透传的编译期 Error 不经本路径,无
+        // 跟踪)。trace 恒非空(调用点帧栈非空不变式);物化路径仅 std::string 拼接,无 GC
+        // 分配点,fn/mod 裸指针不悬垂。
         auto [code, msg] = uncaught_error_parts(*current_->take_error());
+        current_->reset();
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
             const auto line = fn->unit().line_for_offset(ip_off);
             msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(mod, line));

@@ -223,13 +223,14 @@ namespace aria {
         // 会被 fields 命中劫持后续 obj.m 动态派发)。全链 miss 为语言可达错误,经协议 fail。
         bool run_load_super_field(ObjString* name);
 
-        // 自最内帧向外按 last_ip 查各帧 CodeUnit 异常记录表(find_try_handler 取最内层覆盖),
-        // 首命中即在该帧 unwind -- 截值栈、ip 跳 handler、寄存器载荷 push 落 catch 参数槽,
-        // 返 nullopt(已派发,调用方 continue);未命中的帧先记跟踪三元组(fn/mod/ip_off)再
-        // exit_frame 继续外层。全帧未命中 -> 未捕获:从寄存器反提载荷拆 (码, 烘焙消息) 两件,
-        // 逐帧烘焙 "\n  at <fn> (<loc>)" 进消息尾部(收集序内->外,渲染反转外->内,Python 式),
-        // 经 Error::from_baked 一次物化返回。前提:寄存器已有载荷(入口断言把关);帧内 last_ip
-        // 由 dispatch_loop 循环顶写(顶帧 = 故障指令,外层帧 = CALL 站点)。
+        // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
+        // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
+        // 回退到命中帧并转入 catch handler(弃内层帧、帧内截到 catch 参数槽、ip 跳、载荷落槽,
+        // 统一在 Movement),返 nullopt(调用方 break 回循环顶重取帧,坑 #11);全帧未命中 ->
+        // reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息) 两件,逐帧烘焙 "\n  at <fn> (<loc>)"
+        // 进消息尾部(收集序内->外,渲染反转外->内,Python 式),经 Error::from_baked 一次物化
+        // 返回。前提:寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写
+        // (顶帧 = 故障指令,外层帧 = CALL 站点)。
         Opt<Error> unwind();
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)

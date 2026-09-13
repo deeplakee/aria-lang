@@ -46,9 +46,6 @@ namespace aria {
         const Token& peek(usize ahead = 0) const noexcept;
 
         [[nodiscard]]
-        TokenType peek_type(usize ahead = 0) const noexcept;
-
-        [[nodiscard]]
         bool check(TokenType t) const noexcept;
 
         [[nodiscard]]

@@ -122,11 +122,9 @@ namespace aria {
         return tokens_[idx];
     }
 
-    TokenType Parser::peek_type(const usize ahead) const noexcept { return peek(ahead).type(); }
+    bool Parser::check(const TokenType t) const noexcept { return peek().is(t); }
 
-    bool Parser::check(const TokenType t) const noexcept { return peek_type() == t; }
-
-    bool Parser::check_next(const TokenType t) const noexcept { return peek_type(1) == t; }
+    bool Parser::check_next(const TokenType t) const noexcept { return peek(1).is(t); }
 
     bool Parser::match(const TokenType t) noexcept {
         if (check(t)) {
@@ -165,7 +163,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, std::format("期望 {} 但遇到文件结束", what));
         }
-        error(ErrorCode::ExpectedToken, std::format("期望 {} 但遇到 '{}'", what, to_string(peek_type())));
+        error(ErrorCode::ExpectedToken, std::format("期望 {} 但遇到 '{}'", what, to_string(peek().type())));
     }
 
     String Parser::expect_identifier() {
@@ -176,7 +174,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望标识符但遇到文件结束");
         }
-        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符但遇到 '{}'", to_string(peek_type())));
+        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符但遇到 '{}'", to_string(peek().type())));
     }
 
     void Parser::synchronize() {
@@ -186,12 +184,12 @@ namespace aria {
         }
         while (!is_at_end()) {
             // 恰在消费 ';' 之后判定（previous 而非 peek）： ';' 本身被丢弃，从下一 token 续扫。
-            if (pos_ > 0 && previous().type() == TokenType::Semicolon) {
+            if (pos_ > 0 && previous().is(TokenType::Semicolon)) {
                 return;
             }
             // 同步点集合须与 statement() 的分派集保持一致：statement 认哪些语句起首关键字，
             // 这里就恢复到哪些（漏一个即少一个恢复点）。
-            switch (peek_type()) {
+            switch (peek().type()) {
                 case TokenType::Fun:
                 case TokenType::Def:
                 case TokenType::Var:
@@ -318,7 +316,7 @@ namespace aria {
                 members.push_back(DefMember{.kind = DefMember::Kind::InstanceMethod, .node = std::move(fn)});
             } else {
                 error(ErrorCode::ExpectedToken,
-                      std::format("def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek_type())));
+                      std::format("def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek().type())));
             }
         }
         expect(TokenType::RightBrace, "'}'");
@@ -348,7 +346,7 @@ namespace aria {
     // ============================================================
 
     UPtr<StmtNode> Parser::statement() {
-        switch (peek_type()) {
+        switch (peek().type()) {
             case TokenType::Print:
                 return print_stmt();
             case TokenType::If:
@@ -471,14 +469,14 @@ namespace aria {
         }
         const TokenType t = tokens_[cursor].type();
         if (t == TokenType::Underscore || t == TokenType::Identifier) {
-            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].type() == TokenType::In;
+            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].is(TokenType::In);
         }
         if (t == TokenType::LeftBracket) {
             usize depth = 0;
             for (; cursor < tokens_.size(); ++cursor) {
-                if (tokens_[cursor].type() == TokenType::LeftBracket) {
+                if (tokens_[cursor].is(TokenType::LeftBracket)) {
                     ++depth;
-                } else if (tokens_[cursor].type() == TokenType::RightBracket) {
+                } else if (tokens_[cursor].is(TokenType::RightBracket)) {
                     --depth;
                     if (depth == 0) {
                         break;
@@ -488,7 +486,7 @@ namespace aria {
             if (depth != 0) {
                 return false; // 括号不配对，交由后续解析报错
             }
-            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].type() == TokenType::In;
+            return cursor + 1 < tokens_.size() && tokens_[cursor + 1].is(TokenType::In);
         }
         return false;
     }
@@ -750,7 +748,7 @@ namespace aria {
 
     UPtr<ExprNode> Parser::primary() {
         const SourceLoc loc = peek().loc();
-        switch (peek_type()) {
+        switch (peek().type()) {
             case TokenType::Integer: {
                 const Token& t = advance();
                 return std::make_unique<IntegerLiteralNode>(loc, t.int_value());
@@ -804,7 +802,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望表达式却遇到文件结束");
         }
-        error(ErrorCode::ExpectedExpression, std::format("期望表达式却遇到 '{}'", to_string(peek_type())));
+        error(ErrorCode::ExpectedExpression, std::format("期望表达式却遇到 '{}'", to_string(peek().type())));
     }
 
     UPtr<ExprNode> Parser::list_expr() {
@@ -920,7 +918,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望标识符或模式却遇到文件结束");
         }
-        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符或模式却遇到 '{}'", to_string(peek_type())));
+        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符或模式却遇到 '{}'", to_string(peek().type())));
     }
 
     UPtr<ListPatternNode> Parser::list_pattern() {

@@ -83,10 +83,9 @@ namespace aria {
             return buf_.capacity();
         }
 
-        // 压栈:先写值、再按需 2x 增长 -- 使 value 先入活跃区随值栈根存活,避免「先增长后写」
-        // 时 value 仍为未根局部、若增长触发 GC 而被回收。当前 grow_stack_ -> reallocate 永不
-        // 触发 GC(GC.hpp 核心不变式),此序为与「栈即根」纪律一致的前瞻防御。先写不越界:
-        // 进 push 时必有空槽(top_ < base+cap 为不变式,见构造/reset/grow 的维持)。
+        // 压栈:先写值、再按需 2x 增长 -- 使 value 先入活跃区随值栈根存活,与「栈即根」纪律
+        // 一致(当前 grow 永不触 GC,此序为前瞻防御)。进 push 时必有空槽(top_ < base+cap
+        // 为不变式,见构造/reset/grow 的维持),先写不越界。
         void push(const Value value) noexcept {
             *top_++ = value;
             if (top_ == buf_.data() + buf_.capacity()) {
@@ -114,9 +113,8 @@ namespace aria {
         }
 
         // 截断值栈顶到 new_size(相对 stack_base 的槽位数,须 <= 当前 stack_size)。异常 unwind
-        // 的帧内回退入口:截掉 try 体临时值与本帧残留,保留 handler 帧的 callee/参数/已声明局部
-        // (截点 frame.slots + stack_depth 由调用方算好)。帧栈回退归 FrameStack::truncate,两者
-        // 组成 unwind 的完整回退(pitfalls 坑 #6/#14)。
+        // 的帧内回退入口:截掉 try 体临时值与本帧残留,保留 handler 帧的 callee/参数/已声明局部;
+        // 帧栈回退归 FrameStack::truncate,两者组成 unwind 的完整回退。
         void truncate_stack(const usize new_size) noexcept { set_stack_top_(buf_.data() + new_size); }
 
         // ---- 帧栈 ----
@@ -132,28 +130,22 @@ namespace aria {
         }
 
         // 进帧:为对 closure 的调用 acquire 一个空帧并就位全部字段,与 exit_frame 成对,锁住
-        // 「栈顶帧 slots 即值栈本帧槽 0」的不变量。
-        //
-        // slots 按不变量设为 top - argc - 1(栈顶须形如 [callee, a1..aN]:callee 在槽 0、参数即
-        // 局部槽 1..argc);槽 0 的语义由调用方在进帧前写定:普通帧 = 闭包自身(栈上的 callee),
-        // 方法帧 = this(闭包经 frame.closure 携带不上栈,对齐 clox 的方法帧形,两态共用本入口)。
-        //
-        // 定义在 .cpp(需 ObjClosure 完整类型,避免头文件拖入 object 树;arity/名字等元数据经
-        // closure->function() 取)。
+        // 「栈顶帧 slots 即值栈本帧槽 0」不变量。slots 按不变量设为 top - argc - 1(栈顶须形如
+        // [callee, a1..aN]);槽 0 语义由调用方在进帧前写定:普通帧 = 闭包自身,方法帧 = this
+        // (闭包经 frame.closure 携带不上栈,两态共用本入口)。定义在 .cpp(需 ObjClosure
+        // 完整类型,避免头文件拖入 object 树)。
         void enter_frame(ObjClosure* closure, u8 argc);
 
         // ---- open upvalue 开链(M4)----
-        // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 槽址最高);
-        // 局部所在区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经 VM 根
-        // tracer 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂(clox 已知坑)。
-        //
-        // 「同一局部只有一份引用」不变式(「捕获即引用」的共享保证)由 capture_upvalue 单点
-        // 收口:命中复用或建新插链,不存在绕过查链直接插链的旁路。
+        // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 最高);局部所在
+        // 区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经 VM 根 tracer
+        // 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂。「同一局部只有一份引用」不变式由
+        // capture_upvalue 单点收口(命中复用或建新插链,无旁路)。
 
         // 捕获:沿降序链一趟完成查等值与插链点定位,等值即复用(内外层共享同一 ObjUpvalue)、
         // 更小/链尾则建新并在该处插链;即使链上出现同槽双节点(不变式被破)也命中复用(自愈)。
-        // gc 由调用方(VM 驱动)传入 -- 对象分配语义归 VM;建新到插链之间无任何分配点(白色
-        // 窗口,不被 sweep),入链后即经 tracer 根化。定义在 .cpp(需 ObjUpvalue 完整类型)。
+        // 建新到插链之间无分配点(白色窗口不被 sweep),入链后即经 tracer 根化。定义在 .cpp
+        // (需 ObjUpvalue 完整类型)。
         [[nodiscard]]
         ObjUpvalue* capture_upvalue(GC& gc, Value* slot) noexcept;
 
@@ -184,13 +176,10 @@ namespace aria {
         // ---- 挂起错误寄存器(侧信道)----
         // 原生函数等冷路径错误不走返回类型(避免把约 56B 的 Error 编进热路径返回值),经 raise
         // 写入本寄存器;VM 在 CALL 等安全点检查 has_error() 后用 take_error() 取出传播。寄存器
-        // 置于执行上下文:错误状态随上下文走,M6 协程期各协程独立 raise/检查,互不串扰。
-        //   - 载荷类型(M3 起)为 Value:VM 检测到的运行时错误与原生函数报错装箱为 ObjException
-        //     (码 + 完整烘焙消息)后写入;aria 语言 throw 抛任意值(THROW 原值入寄存器,
-        //     catch 绑原值保类型)。寄存器置入后即由 VM 根 tracer 标 pending_error() 保命,
-        //     取出前跨安全点分配不回收载荷。
-        //   - raise:写入,断言当前无挂起错误(防嵌套 raise 未被取走就再 raise)。
-        //     has_error / take_error / clear_error 供 VM 安全点查询/取出/清空;reset() 一并清空。
+        // 随上下文走(M6 协程期各协程独立 raise/检查)。载荷为 Value:VM/原生错误装箱
+        // ObjException 后写入,aria throw 原值入寄存器(catch 绑原值保类型);置入后由 VM 根
+        // tracer 标根,取出前跨安全点分配不回收。raise 断言当前无挂起(防嵌套 raise 未取走
+        // 就再 raise);reset() 一并清空。
 
         void raise(Value err) noexcept {
             ASSERT(!pending_error_.has_value(),
@@ -218,10 +207,9 @@ namespace aria {
         }
 
         // ---- 协程 resume 链(M6 前置落地)----
-        // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B。
-        // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文(previous_ 恒 nullptr);
-        // VM 根 tracer 据此沿链逐个标根,并以链尾断言锁定切换纪律。切换收口在 AriaVM
-        // (current_),Movement 不自切;M6 前链长恒 1(仅主上下文),字段为契约占位。
+        // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
+        // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
+        // (current_),Movement 不自切;M6 前链长恒 1,字段为契约占位。
         [[nodiscard]]
         Movement* previous() const noexcept {
             return previous_;
@@ -250,9 +238,8 @@ namespace aria {
         Value*                           top_; // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
         FrameStack<CallFrame, kFrameMax> frames_;
         ObjUpvalue*                      open_upvalues_; // open upvalue 开链头(按槽址降序;nullptr 空链)
-        Opt<Value>                       pending_error_; // 挂起错误寄存器(侧信道;载荷为 Value,置入后由
-                                                         // VM 根 tracer 标根,见上挂起错误寄存器注释)
-        Movement* previous_; // resume 链:恢复者上下文(主上下文恒 nullptr 链尾;见上协程 resume 链注释)
+        Opt<Value>                       pending_error_; // 挂起错误寄存器(置入后由 VM 根 tracer 标根)
+        Movement*                        previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
     };
 
     // VMContext 是 Movement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用

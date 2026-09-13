@@ -7,7 +7,7 @@
 using namespace aria;
 
 namespace {
-    String write_temp_file(const String& name, StringView content) {
+    String write_temp_file(const String& name, const StringView content) {
         String        path = testing::TempDir() + "/" + name;
         std::ofstream f(path, std::ios::binary | std::ios::trunc);
         f.write(content.data(), static_cast<std::streamoff>(content.size()));

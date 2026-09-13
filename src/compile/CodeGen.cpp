@@ -345,7 +345,7 @@ namespace aria {
     }
 
     void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
-                                   SourceLoc decl_loc) {
+                                   const SourceLoc decl_loc) {
         // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
         validate_params(params, decl_loc);
 
@@ -411,11 +411,11 @@ namespace aria {
     // not_impl
     // ============================================================
 
-    void CodeGen::not_impl(const ASTNode& node, StringView feature) const {
+    void CodeGen::not_impl(const ASTNode& node, const StringView feature) const {
         fail(ErrorCode::NotImplemented, node.loc(), "{} 尚未支持", feature);
     }
 
-    void CodeGen::not_impl(SourceLoc loc, StringView feature) const {
+    void CodeGen::not_impl(const SourceLoc loc, const StringView feature) const {
         // loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。与 ASTNode& 重载同一消息格式。
         fail(ErrorCode::NotImplemented, loc, "{} 尚未支持", feature);
     }

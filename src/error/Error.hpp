@@ -120,7 +120,7 @@ namespace aria {
     private:
         // 原始构造(唯一默认形态):直接收 code + **最终消息串**,不经 make_message、不做任何加工。
         // 公开构造面一律走上方静态工厂(组件构造经 make_message,成品串经 from_baked)。
-        Error(ErrorCode code, String message) : code_{code}, message_{std::move(message)} {}
+        Error(const ErrorCode code, String message) : code_{code}, message_{std::move(message)} {}
 
         ErrorCode code_;
         String    message_;

@@ -96,7 +96,7 @@ namespace aria {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}
 
-            Guard(GC* gc, Value value) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(value); }
+            Guard(GC* gc, const Value value) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(value); }
 
             Guard(GC* gc, Object* object) noexcept : gc_{gc}, count_{1} { gc_->push_temp_root(object); }
 
@@ -111,7 +111,7 @@ namespace aria {
             Guard& operator=(const Guard&) = delete;
             Guard& operator=(Guard&&)      = delete;
 
-            void push(Value value) noexcept {
+            void push(const Value value) noexcept {
                 gc_->push_temp_root(value);
                 ++count_;
             }
@@ -132,7 +132,7 @@ namespace aria {
         }
 
         [[nodiscard]]
-        Guard make_guard(Value value) noexcept {
+        Guard make_guard(const Value value) noexcept {
             return Guard{this, value};
         }
 
@@ -147,7 +147,7 @@ namespace aria {
         }
 
         // 运行期压力开关(测试用):开启后每次 new_object 强制 collect。
-        void set_stress(bool enabled) noexcept { is_stress_ = enabled; }
+        void set_stress(const bool enabled) noexcept { is_stress_ = enabled; }
 
         // ---- GC 禁用锁(单线程,计数器实现,支持嵌套)----
         // collect() 在 lock_count_>0 时跳过(临界区不回收);maybe_collect 经 collect() 间接受控。

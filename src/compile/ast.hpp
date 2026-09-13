@@ -37,7 +37,7 @@ namespace aria {
     // 不得比所引用的 SourceFile 活得更久（同 Token::lexeme_ 约束）。
     struct ASTNode {
         ASTNode() noexcept = default;
-        explicit ASTNode(SourceLoc loc) noexcept : loc_{loc} {}
+        explicit ASTNode(const SourceLoc loc) noexcept : loc_{loc} {}
         virtual ~ASTNode() = default;
 
         // 节点不可拷贝、不可移动：节点总是经 UPtr 在堆上分配，移动的只是指针
@@ -52,7 +52,7 @@ namespace aria {
             return loc_;
         }
 
-        void set_loc(SourceLoc loc) noexcept { loc_ = loc; }
+        void set_loc(const SourceLoc loc) noexcept { loc_ = loc; }
 
         // 行号（1-based；空态 / 无效为 0，不做兜底，直接取 loc 原值）。
         [[nodiscard]]
@@ -271,7 +271,7 @@ namespace aria {
 
     // ProgramNode：program -> declaration*。整个编译单元的根，持顶层声明（StmtNode）列表。
     struct ProgramNode : ASTNode {
-        ProgramNode(SourceLoc loc, List<UPtr<StmtNode>> declarations) :
+        ProgramNode(const SourceLoc loc, List<UPtr<StmtNode>> declarations) :
             ASTNode{loc}, declarations{std::move(declarations)} {}
 
         [[nodiscard]]
@@ -288,7 +288,8 @@ namespace aria {
 
     // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
-        BlockNode(SourceLoc loc, List<UPtr<StmtNode>> statements) : StmtNode{loc}, statements{std::move(statements)} {}
+        BlockNode(const SourceLoc loc, List<UPtr<StmtNode>> statements) :
+            StmtNode{loc}, statements{std::move(statements)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -300,7 +301,7 @@ namespace aria {
 
     // 表达式语句：expression ";"。
     struct ExprStmtNode : StmtNode {
-        ExprStmtNode(SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
+        ExprStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -312,7 +313,7 @@ namespace aria {
 
     // print 语句：print expression ";"。
     struct PrintStmtNode : StmtNode {
-        PrintStmtNode(SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
+        PrintStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -324,7 +325,7 @@ namespace aria {
 
     // if 语句：if (cond) stmt (else stmt)?。else_branch 缺省表无 else。
     struct IfStmtNode : StmtNode {
-        IfStmtNode(SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> then_branch, UPtr<StmtNode> else_branch) :
+        IfStmtNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> then_branch, UPtr<StmtNode> else_branch) :
             StmtNode{loc}, condition{std::move(cond)}, then_branch{std::move(then_branch)},
             else_branch{std::move(else_branch)} {}
 
@@ -340,7 +341,7 @@ namespace aria {
 
     // while 语句：while (cond) stmt。
     struct WhileStmtNode : StmtNode {
-        WhileStmtNode(SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> body) :
+        WhileStmtNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> body) :
             StmtNode{loc}, condition{std::move(cond)}, body{std::move(body)} {}
 
         [[nodiscard]]
@@ -356,7 +357,7 @@ namespace aria {
     //   - init：varDecl / exprStmt / 空（";"）。统一为 StmtNode（nullptr 表空 init）。
     //   - condition / increment：nullptr 表省略。
     struct ForStmtNode : StmtNode {
-        ForStmtNode(SourceLoc loc, UPtr<StmtNode> init, UPtr<ExprNode> condition, UPtr<ExprNode> increment,
+        ForStmtNode(const SourceLoc loc, UPtr<StmtNode> init, UPtr<ExprNode> condition, UPtr<ExprNode> increment,
                     UPtr<StmtNode> body) :
             StmtNode{loc}, init{std::move(init)}, condition{std::move(condition)}, increment{std::move(increment)},
             body{std::move(body)} {}
@@ -375,7 +376,7 @@ namespace aria {
     // for-in 语句：for (pattern in expr) stmt。pattern 为循环目标（identifier/"_"/listPattern），
     // 绑 next() 的值；listPattern 按位置解构（[k,v] 绑 next()[0]/[1]）。
     struct ForInStmtNode : StmtNode {
-        ForInStmtNode(SourceLoc loc, UPtr<PatternNode> pattern, UPtr<ExprNode> iterable, UPtr<StmtNode> body) :
+        ForInStmtNode(const SourceLoc loc, UPtr<PatternNode> pattern, UPtr<ExprNode> iterable, UPtr<StmtNode> body) :
             StmtNode{loc}, pattern{std::move(pattern)}, iterable{std::move(iterable)}, body{std::move(body)} {}
 
         [[nodiscard]]
@@ -410,7 +411,7 @@ namespace aria {
 
     // return 语句：return expression? ";"。value 缺省表无返回值。
     struct ReturnStmtNode : StmtNode {
-        ReturnStmtNode(SourceLoc loc, UPtr<ExprNode> value) : StmtNode{loc}, value{std::move(value)} {}
+        ReturnStmtNode(const SourceLoc loc, UPtr<ExprNode> value) : StmtNode{loc}, value{std::move(value)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -424,7 +425,7 @@ namespace aria {
     //   - path：字符串字面量解析后的内容（模块路径）。
     //   - alias：绑定模块的本地名。
     struct ImportStmtNode : StmtNode {
-        ImportStmtNode(SourceLoc loc, String path, String alias) :
+        ImportStmtNode(const SourceLoc loc, String path, String alias) :
             StmtNode{loc}, path{std::move(path)}, alias{std::move(alias)} {}
 
         [[nodiscard]]
@@ -440,7 +441,7 @@ namespace aria {
     //   - catch_param / catch_body 成对出现（parser 保证），均缺省表无 catch。
     //   - 语义阶段保证 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
-        TryStmtNode(SourceLoc loc, UPtr<BlockNode> body, Opt<String> catch_param, UPtr<BlockNode> catch_body) :
+        TryStmtNode(const SourceLoc loc, UPtr<BlockNode> body, Opt<String> catch_param, UPtr<BlockNode> catch_body) :
             StmtNode{loc}, body{std::move(body)}, catch_param{std::move(catch_param)},
             catch_body{std::move(catch_body)} {}
 
@@ -456,7 +457,7 @@ namespace aria {
 
     // throw 语句：throw expression ";"。
     struct ThrowStmtNode : StmtNode {
-        ThrowStmtNode(SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
+        ThrowStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -468,7 +469,7 @@ namespace aria {
 
     // match 语句：match (expr) { matchArm+ }。分支为 statement（MatchArm.body）。
     struct MatchStmtNode : StmtNode {
-        MatchStmtNode(SourceLoc loc, UPtr<ExprNode> subject, List<MatchArm> arms) :
+        MatchStmtNode(const SourceLoc loc, UPtr<ExprNode> subject, List<MatchArm> arms) :
             StmtNode{loc}, subject{std::move(subject)}, arms{std::move(arms)} {}
 
         [[nodiscard]]
@@ -484,7 +485,7 @@ namespace aria {
 
     // 函数声明：fun identifier params block。
     struct FunDeclNode : StmtNode {
-        FunDeclNode(SourceLoc loc, String name, List<Param> params, UPtr<BlockNode> body) :
+        FunDeclNode(const SourceLoc loc, String name, List<Param> params, UPtr<BlockNode> body) :
             StmtNode{loc}, name{std::move(name)}, params{std::move(params)}, body{std::move(body)} {}
 
         [[nodiscard]]
@@ -502,7 +503,7 @@ namespace aria {
     //   - members：体内成员列表（DefMember，按出现顺序保留）。三种成员：
     //     StaticVar（var 声明）/ StaticMethod（fun 声明）/ InstanceMethod（裸 identifier 方法）。
     struct DefDeclNode : StmtNode {
-        DefDeclNode(SourceLoc loc, String name, Opt<String> superclass, List<DefMember> members) :
+        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<DefMember> members) :
             StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)} {}
 
         [[nodiscard]]
@@ -518,7 +519,7 @@ namespace aria {
     // var 声明：var varTarget ("=" expr)? ("," ...)* ";"。
     //   - bindings：每个 VarBinding 含一个 target（identifier 或 pattern）与可选初始化。
     struct VarDeclNode : StmtNode {
-        VarDeclNode(SourceLoc loc, List<VarBinding> bindings) : StmtNode{loc}, bindings{std::move(bindings)} {}
+        VarDeclNode(const SourceLoc loc, List<VarBinding> bindings) : StmtNode{loc}, bindings{std::move(bindings)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -539,7 +540,7 @@ namespace aria {
 
     // 整数字面量。文法 int 为 i48，此处用 i64 容纳，越界留语义阶段处理。
     struct IntegerLiteralNode : ExprNode {
-        IntegerLiteralNode(SourceLoc loc, i64 value) noexcept : ExprNode{loc}, value{value} {}
+        IntegerLiteralNode(const SourceLoc loc, const i64 value) noexcept : ExprNode{loc}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -551,7 +552,7 @@ namespace aria {
 
     // 浮点字面量（f64）。
     struct FloatLiteralNode : ExprNode {
-        FloatLiteralNode(SourceLoc loc, f64 value) noexcept : ExprNode{loc}, value{value} {}
+        FloatLiteralNode(const SourceLoc loc, const f64 value) noexcept : ExprNode{loc}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -563,7 +564,7 @@ namespace aria {
 
     // 字符串字面量。value 为 lexer 解析转义后的内容（非源码原文）。
     struct StringLiteralNode : ExprNode {
-        StringLiteralNode(SourceLoc loc, String value) : ExprNode{loc}, value{std::move(value)} {}
+        StringLiteralNode(const SourceLoc loc, String value) : ExprNode{loc}, value{std::move(value)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -575,7 +576,7 @@ namespace aria {
 
     // 布尔字面量：true / false。
     struct BoolLiteralNode : ExprNode {
-        BoolLiteralNode(SourceLoc loc, bool value) noexcept : ExprNode{loc}, value{value} {}
+        BoolLiteralNode(const SourceLoc loc, const bool value) noexcept : ExprNode{loc}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -597,7 +598,7 @@ namespace aria {
 
     // 标识符引用。name 为源码 identifier 文本。
     struct IdentifierNode : ExprNode {
-        IdentifierNode(SourceLoc loc, String name) : ExprNode{loc}, name{std::move(name)} {}
+        IdentifierNode(const SourceLoc loc, String name) : ExprNode{loc}, name{std::move(name)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -636,7 +637,7 @@ namespace aria {
     // 二元运算表达式：logic_or / logic_and / equality / comparison / term / factor
     // 各层统一为一个节点，运算种类由 op 区分（左结合，parser 已构建左倾树）。
     struct BinaryExprNode : ExprNode {
-        BinaryExprNode(SourceLoc loc, Op::Binary op, UPtr<ExprNode> lhs, UPtr<ExprNode> rhs) :
+        BinaryExprNode(const SourceLoc loc, const Op::Binary op, UPtr<ExprNode> lhs, UPtr<ExprNode> rhs) :
             ExprNode{loc}, op{op}, lhs{std::move(lhs)}, rhs{std::move(rhs)} {}
 
         [[nodiscard]]
@@ -651,7 +652,7 @@ namespace aria {
 
     // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary，左值合法性留语义阶段。
     struct UnaryExprNode : ExprNode {
-        UnaryExprNode(SourceLoc loc, Op::Unary op, UPtr<ExprNode> operand) :
+        UnaryExprNode(const SourceLoc loc, const Op::Unary op, UPtr<ExprNode> operand) :
             ExprNode{loc}, op{op}, operand{std::move(operand)} {}
 
         [[nodiscard]]
@@ -666,7 +667,7 @@ namespace aria {
     // 赋值（含复合赋值）：target op= value。
     // target 为左值表达式（identifier / obj.field / obj[index]），合法性留语义阶段。
     struct AssignmentNode : ExprNode {
-        AssignmentNode(SourceLoc loc, Op::Assignment op, UPtr<ExprNode> target, UPtr<ExprNode> value) :
+        AssignmentNode(const SourceLoc loc, const Op::Assignment op, UPtr<ExprNode> target, UPtr<ExprNode> value) :
             ExprNode{loc}, op{op}, target{std::move(target)}, value{std::move(value)} {}
 
         [[nodiscard]]
@@ -681,7 +682,7 @@ namespace aria {
 
     // 解构赋值：listPattern = expression。
     struct DestructureAssignmentNode : ExprNode {
-        DestructureAssignmentNode(SourceLoc loc, UPtr<PatternNode> target, UPtr<ExprNode> value) :
+        DestructureAssignmentNode(const SourceLoc loc, UPtr<PatternNode> target, UPtr<ExprNode> value) :
             ExprNode{loc}, target{std::move(target)}, value{std::move(value)} {}
 
         [[nodiscard]]
@@ -695,7 +696,7 @@ namespace aria {
 
     // 函数调用：callee(args)。args 为实参列表（空表表无参）。
     struct CallNode : ExprNode {
-        CallNode(SourceLoc loc, UPtr<ExprNode> callee, List<UPtr<ExprNode>> args) :
+        CallNode(const SourceLoc loc, UPtr<ExprNode> callee, List<UPtr<ExprNode>> args) :
             ExprNode{loc}, callee{std::move(callee)}, args{std::move(args)} {}
 
         [[nodiscard]]
@@ -709,7 +710,7 @@ namespace aria {
 
     // 字段访问：object.name。
     struct FieldAccessNode : ExprNode {
-        FieldAccessNode(SourceLoc loc, UPtr<ExprNode> object, String name) :
+        FieldAccessNode(const SourceLoc loc, UPtr<ExprNode> object, String name) :
             ExprNode{loc}, object{std::move(object)}, name{std::move(name)} {}
 
         [[nodiscard]]
@@ -723,7 +724,7 @@ namespace aria {
 
     // 下标访问：object[index]。
     struct IndexAccessNode : ExprNode {
-        IndexAccessNode(SourceLoc loc, UPtr<ExprNode> object, UPtr<ExprNode> index) :
+        IndexAccessNode(const SourceLoc loc, UPtr<ExprNode> object, UPtr<ExprNode> index) :
             ExprNode{loc}, object{std::move(object)}, index{std::move(index)} {}
 
         [[nodiscard]]
@@ -739,7 +740,8 @@ namespace aria {
 
     // 列表字面量：[e, e, ...]。
     struct ListExprNode : ExprNode {
-        ListExprNode(SourceLoc loc, List<UPtr<ExprNode>> elements) : ExprNode{loc}, elements{std::move(elements)} {}
+        ListExprNode(const SourceLoc loc, List<UPtr<ExprNode>> elements) :
+            ExprNode{loc}, elements{std::move(elements)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -751,7 +753,7 @@ namespace aria {
 
     // map 字面量：{ k: v, ... }。键为任意 expression（运行时求值）。
     struct MapExprNode : ExprNode {
-        MapExprNode(SourceLoc loc, List<MapEntry> entries) : ExprNode{loc}, entries{std::move(entries)} {}
+        MapExprNode(const SourceLoc loc, List<MapEntry> entries) : ExprNode{loc}, entries{std::move(entries)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -763,7 +765,7 @@ namespace aria {
 
     // 区间表达式：a..b（含上界）/ a...b（不含上界）。产生 range 对象，VM 未实现。
     struct RangeExprNode : ExprNode {
-        RangeExprNode(SourceLoc loc, bool is_exclusive, UPtr<ExprNode> lower, UPtr<ExprNode> upper) :
+        RangeExprNode(const SourceLoc loc, const bool is_exclusive, UPtr<ExprNode> lower, UPtr<ExprNode> upper) :
             ExprNode{loc}, is_exclusive{is_exclusive}, lower{std::move(lower)}, upper{std::move(upper)} {}
 
         [[nodiscard]]
@@ -779,7 +781,7 @@ namespace aria {
     // if 表达式：if (cond) { then } else { else }。
     // 文法 ifExpr 分支为单表达式块（{ expression }），故 then/else 直接为 ExprNode。
     struct IfExprNode : ExprNode {
-        IfExprNode(SourceLoc loc, UPtr<ExprNode> cond, UPtr<ExprNode> then_branch, UPtr<ExprNode> else_branch) :
+        IfExprNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<ExprNode> then_branch, UPtr<ExprNode> else_branch) :
             ExprNode{loc}, condition{std::move(cond)}, then_branch{std::move(then_branch)},
             else_branch{std::move(else_branch)} {}
 
@@ -795,7 +797,7 @@ namespace aria {
 
     // lambda 表达式：fun params block。
     struct LambdaExprNode : ExprNode {
-        LambdaExprNode(SourceLoc loc, List<Param> params, UPtr<BlockNode> body) :
+        LambdaExprNode(const SourceLoc loc, List<Param> params, UPtr<BlockNode> body) :
             ExprNode{loc}, params{std::move(params)}, body{std::move(body)} {}
 
         [[nodiscard]]
@@ -809,7 +811,7 @@ namespace aria {
 
     // match 表达式：match (subject) { pat => expr ... }。
     struct MatchExprNode : ExprNode {
-        MatchExprNode(SourceLoc loc, UPtr<ExprNode> subject, List<MatchExprArm> arms) :
+        MatchExprNode(const SourceLoc loc, UPtr<ExprNode> subject, List<MatchExprArm> arms) :
             ExprNode{loc}, subject{std::move(subject)}, arms{std::move(arms)} {}
 
         [[nodiscard]]
@@ -831,7 +833,7 @@ namespace aria {
 
     // 标识符模式：绑定该名字。
     struct IdentifierPatternNode : PatternNode {
-        IdentifierPatternNode(SourceLoc loc, String name) : PatternNode{loc}, name{std::move(name)} {}
+        IdentifierPatternNode(const SourceLoc loc, String name) : PatternNode{loc}, name{std::move(name)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -855,7 +857,7 @@ namespace aria {
     //   - elements：位置模式列表（可含 WildcardPatternNode 占位）。
     //   - rest：收集剩余 list[i..] 为新 list 的名字；nullopt 表无 rest（忽略剩余）。
     struct ListPatternNode : PatternNode {
-        ListPatternNode(SourceLoc loc, List<UPtr<PatternNode>> elements, Opt<String> rest) :
+        ListPatternNode(const SourceLoc loc, List<UPtr<PatternNode>> elements, Opt<String> rest) :
             PatternNode{loc}, elements{std::move(elements)}, rest{std::move(rest)} {}
 
         [[nodiscard]]

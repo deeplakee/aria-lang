@@ -181,7 +181,7 @@ namespace aria {
         // tracer 标根,取出前跨安全点分配不回收。raise 断言当前无挂起(防嵌套 raise 未取走
         // 就再 raise);reset() 一并清空。
 
-        void raise(Value err) noexcept {
+        void raise(const Value err) noexcept {
             ASSERT(!pending_error_.has_value(),
                    "Movement::raise: pending error already set (take/clear before re-raise)");
             pending_error_ = err;

@@ -23,7 +23,7 @@ using TokType = aria::TokenType;
 
 namespace {
     // 辅助：从源码内容构造一个名为 "t" 的 SourceFile（免文件 IO）。
-    SourceFile make_src(StringView content) { return SourceFile{String{"t"}, String{"t"}, String{content}}; }
+    SourceFile make_src(const StringView content) { return SourceFile{String{"t"}, String{"t"}, String{content}}; }
 
     // tokenize 结果：需持有 SourceFile，因为 Token::lexeme 是指向其 content 的
     // StringView（生命周期约束：lexeme 不得比 SourceFile 活得久，且 SSO 短串
@@ -41,7 +41,7 @@ namespace {
     };
 
     // 辅助：tokenize 并断言成功，返回堆上 {sf, tokens}。
-    UPtr<Lexed> lex_ok(StringView content) {
+    UPtr<Lexed> lex_ok(const StringView content) {
         auto lexed = std::make_unique<Lexed>();
         lexed->sf  = make_src(content); // sf 就位（此后不再 move）
         Lexer lexer;
@@ -52,7 +52,7 @@ namespace {
     }
 
     // 辅助：tokenize 并断言失败，返回堆上 {sf, errors}。
-    UPtr<LexErrors> lex_err(StringView content) {
+    UPtr<LexErrors> lex_err(const StringView content) {
         auto lexed = std::make_unique<LexErrors>();
         lexed->sf  = make_src(content);
         Lexer lexer;

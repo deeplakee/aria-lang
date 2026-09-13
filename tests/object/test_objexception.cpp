@@ -18,7 +18,7 @@ using aria::StringView;
 namespace {
 
     // 工厂返回对象未根:测试若跨分配继续用 e,须 make_guard 根化(见 new_exception 头注释)。
-    ObjException* make_exception(GC& gc, ErrorCode code, StringView message) {
+    ObjException* make_exception(GC& gc, const ErrorCode code, const StringView message) {
         auto e     = new_exception(gc, code, message);
         auto guard = gc.make_guard(e); // 守卫随函数退出释放:调用方拿到的 e 未根,语义同工厂
         return e;

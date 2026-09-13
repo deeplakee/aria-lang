@@ -8,7 +8,7 @@
 
 namespace aria {
 
-    ObjFunction::ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity) :
+    ObjFunction::ObjFunction(GC& gc, ObjModule* module, ObjString* name, const u8 arity) :
         Object{ObjType::FUNCTION}, unit_{&gc}, module_{module}, name_{name}, arity_{arity}, upvalue_descs_{&gc} {
         ASSERT(module != nullptr, "ObjFunction: module must not be null (every function belongs to a module)");
         ASSERT(name != nullptr, "ObjFunction: name must not be null (entry=<main>, lambda=<anonymous>)");

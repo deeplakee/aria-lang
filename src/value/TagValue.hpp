@@ -41,12 +41,12 @@ namespace aria::tagvalue {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bool(bool value) noexcept {
+        static constexpr Value from_bool(const bool value) noexcept {
             return Value{value};
         }
 
         [[nodiscard]]
-        static constexpr Value from_f64(f64 value) noexcept {
+        static constexpr Value from_f64(const f64 value) noexcept {
             // 规范化 NaN 到单一 bit pattern(0x7ff8...,与 NanBoxing 一致),消除两表示分叉:
             // value_identical(===) 按位比较,规范化后任意两个 NaN bit 相等 -> NaN===NaN true。
             if (value != value) {
@@ -56,12 +56,12 @@ namespace aria::tagvalue {
         }
 
         [[nodiscard]]
-        static constexpr Value from_int(i64 value) noexcept {
+        static constexpr Value from_int(const i64 value) noexcept {
             return Value{value};
         }
 
         [[nodiscard]]
-        static constexpr Value from_i32(i32 value) noexcept {
+        static constexpr Value from_i32(const i32 value) noexcept {
             return Value{static_cast<i64>(value)};
         }
 
@@ -134,7 +134,7 @@ namespace aria::tagvalue {
             return type_name(tag_);
         }
 
-        static constexpr const char* type_name(Type t) noexcept {
+        static constexpr const char* type_name(const Type t) noexcept {
             switch (t) {
                 case Type::Nil:
                     return "Nil";

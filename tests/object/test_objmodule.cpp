@@ -24,9 +24,9 @@ namespace {
 
     // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
     // 返回的 m 未根,调用方跨 GC 点持有须自行守卫。默认名 "<script>"(临时模块)。
-    ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
+    ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
-    ObjModule* make_module(GC& gc, StringView name, ObjString* dir) {
+    ObjModule* make_module(GC& gc, const StringView name, ObjString* dir) {
         auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
         guard.push(nm);
@@ -35,7 +35,7 @@ namespace {
 
     // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
     // collect 回收 m)。返回白色,调用方自守。
-    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+    ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
         return new_function(gc, m, name, arity);
     }

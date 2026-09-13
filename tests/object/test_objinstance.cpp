@@ -45,14 +45,14 @@ namespace {
 
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
     // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根。
-    ObjClass* make_class(GC& gc, StringView name, ObjClass* super = nullptr) {
+    ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
         auto guard = gc.make_guard(super);
         return new_class(gc, name, super);
     }
 
     // 临时模块 + 具名闭包:守卫收口在助手内。返回的闭包未根,fn 经其可达。m 未根须自守:
     // 工厂内 intern name 与 new_object 均 GC 点。
-    ObjClosure* make_closure(GC& gc, StringView name, u8 arity) {
+    ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
         auto fn    = new_function(gc, m, name, arity);

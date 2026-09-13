@@ -18,7 +18,7 @@ namespace {
     }
 
     // 便利：从字符串字面量写文件（按 UTF-8 字节）
-    String write_temp_file(const String& name, StringView content) {
+    String write_temp_file(const String& name, const StringView content) {
         std::vector<u8> bytes(content.begin(), content.end());
         return write_temp_file(name, bytes);
     }
@@ -138,7 +138,7 @@ TEST(SourceFileFromPath, ValidUtf8Accepted) {
 
 class SourceFileLines : public ::testing::Test {
 protected:
-    SourceFile make(StringView content) { return SourceFile{"t", "t", String{content}}; }
+    SourceFile make(const StringView content) { return SourceFile{"t", "t", String{content}}; }
 };
 
 TEST_F(SourceFileLines, EmptyIsZeroLines) { EXPECT_EQ(make("").line_count(), 0u); }
@@ -191,7 +191,7 @@ TEST_F(SourceFileLines, EmptyLineInMiddle) {
 
 class SourceFileLocate : public ::testing::Test {
 protected:
-    SourceFile make(StringView content) { return SourceFile{"t", "t", String{content}}; }
+    SourceFile make(const StringView content) { return SourceFile{"t", "t", String{content}}; }
 };
 
 TEST_F(SourceFileLocate, AsciiPositions) {

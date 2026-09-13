@@ -92,9 +92,9 @@ namespace aria {
         Object() = delete;
 
         // 内容哈希型(ObjString/ObjRange 等不可变对象):显式传算好的内容哈希。
-        Object(u32 hash, ObjType type) noexcept : Object{nullptr, hash, type, false} {}
+        Object(const u32 hash, const ObjType type) noexcept : Object{nullptr, hash, type, false} {}
         // 地址哈希型(可变对象默认):用对象地址算哈希(this 在 init list 中仅取地址,合法)。
-        explicit Object(ObjType type) noexcept : Object{nullptr, util::hash_addr(this), type, false} {}
+        explicit Object(const ObjType type) noexcept : Object{nullptr, util::hash_addr(this), type, false} {}
 
         virtual ~Object() = default;
 
@@ -296,7 +296,7 @@ namespace aria {
         bool    is_marked_;
 
     private:
-        Object(Object* next, u32 hash, ObjType type, bool is_marked) noexcept :
+        Object(Object* next, const u32 hash, const ObjType type, const bool is_marked) noexcept :
             next_{next}, hash_{hash}, type_{type}, is_marked_{is_marked} {}
     };
 

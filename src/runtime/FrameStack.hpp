@@ -44,7 +44,7 @@ namespace aria {
         }
 
         // 任意截断到 n（n <= 当前计数）。供异常 unwind 一步跨越多帧。
-        void truncate(usize n) noexcept {
+        void truncate(const usize n) noexcept {
             ASSERT(n <= count_, "FrameStack truncate: n exceeds current size");
             count_ = n;
         }

@@ -40,21 +40,21 @@ namespace {
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
     // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根
     //(守卫随函数退出释放),调用方跨 GC 点持有须自行守卫。
-    ObjClass* make_class(GC& gc, StringView name, ObjClass* super = nullptr) {
+    ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
         auto guard = gc.make_guard(super);
         return new_class(gc, name, super);
     }
 
     // 临时模块 + 具名函数:守卫收口在助手内(机制测试不关心模块归属)。m 未根须自守:
     // 工厂内 intern name 与 new_object 均 GC 点。返回白色,调用方自守。
-    ObjFunction* make_function(GC& gc, StringView name, u8 arity) {
+    ObjFunction* make_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
         return new_function(gc, m, name, arity);
     }
 
     // 具名闭包:fn 经守卫跨 new_closure。返回的闭包未根,fn 经其可达。
-    ObjClosure* make_closure(GC& gc, StringView name, u8 arity) {
+    ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto fn    = make_function(gc, name, arity);
         auto guard = gc.make_guard(fn);
         return new_closure(gc, fn);

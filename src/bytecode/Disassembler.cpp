@@ -29,7 +29,7 @@ namespace aria {
         // Object.hpp/Value.hpp 注释);字符串走 ObjString::debug_repr 的带引号转义形态。
 
         // 把 opcode 名与操作数段拼成一行:左对齐 16 列的 op_name,空操作数即裸名,末尾尾随空格裁掉。
-        String join_line(StringView op_name, const StringView operands) {
+        String join_line(const StringView op_name, const StringView operands) {
             String line = std::format("{:<16}", op_name);
             if (!operands.empty()) {
                 line.append("  ").append(operands);
@@ -41,7 +41,7 @@ namespace aria {
         }
 
         // 无操作数指令(HALT / LOAD_NIL / LOAD_TRUE / ... / RETURN)。
-        String simple_instruction(StringView op_name) { return std::format("{}", op_name); }
+        String simple_instruction(const StringView op_name) { return std::format("{}", op_name); }
 
     } // namespace
 

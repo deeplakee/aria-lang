@@ -284,7 +284,7 @@ namespace aria::utf8 {
         using iterator_category = std::forward_iterator_tag;
 
         constexpr iterator() noexcept : str_{}, pos_{0} {}
-        constexpr explicit iterator(StringView s, usize pos = 0) noexcept : str_{s}, pos_{pos} {}
+        constexpr explicit iterator(const StringView s, const usize pos = 0) noexcept : str_{s}, pos_{pos} {}
 
         [[nodiscard]]
         constexpr codepoint operator*() const noexcept {
@@ -323,7 +323,7 @@ namespace aria::utf8 {
     // 用法： for (auto cp : utf8::view(str)) { ... }
     class view {
     public:
-        constexpr explicit view(StringView s) noexcept : str_(s) {}
+        constexpr explicit view(const StringView str) noexcept : str_(str) {}
 
         [[nodiscard]]
         constexpr iterator begin() const noexcept {

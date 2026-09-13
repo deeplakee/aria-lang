@@ -18,7 +18,7 @@ using aria::Value;
 
 namespace {
     // 小端读 2 字节(测试辅助, 裸字段移位)。
-    [[nodiscard]] u16 read_word_le(const CodeUnit& cu, usize off) {
+    [[nodiscard]] u16 read_word_le(const CodeUnit& cu, const usize off) {
         return static_cast<u16>(static_cast<u16>(cu.code[off]) | (static_cast<u16>(cu.code[off + 1]) << 8));
     }
 } // namespace

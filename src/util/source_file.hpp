@@ -225,7 +225,7 @@ namespace aria::src {
         SourceLoc() noexcept : src_{nullptr}, line_col_{0, 0} {}
 
         // 真实位置构造：src 必须非空（断言保证），line_col 为已解析的行列。
-        SourceLoc(SourceFile* src, LineCol line_col) noexcept : src_{src}, line_col_{line_col} {
+        SourceLoc(SourceFile* src, const LineCol line_col) noexcept : src_{src}, line_col_{line_col} {
             ASSERT(src != nullptr, "SourceLoc 需要非空 src 指针");
         }
 

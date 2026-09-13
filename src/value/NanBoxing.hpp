@@ -72,12 +72,12 @@ namespace aria::nanboxing {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bool(bool value) noexcept {
+        static constexpr Value from_bool(const bool value) noexcept {
             return Value{value ? kTrueBits : kFalseBits};
         }
 
         [[nodiscard]]
-        static constexpr Value from_f64(f64 value) noexcept {
+        static constexpr Value from_f64(const f64 value) noexcept {
             // Canonicalize any NaN to the hardware quiet NaN so it can never be
             // mistaken for a boxed value on the way back out.
             if (value != value) {
@@ -95,7 +95,7 @@ namespace aria::nanboxing {
         }
 
         [[nodiscard]]
-        static constexpr Value from_i32(i32 value) noexcept {
+        static constexpr Value from_i32(const i32 value) noexcept {
             return from_int(value); // i32 always fits in the 48-bit payload
         }
 
@@ -197,7 +197,7 @@ namespace aria::nanboxing {
         }
 
         [[nodiscard]]
-        static constexpr Value from_bits(u64 bits) noexcept {
+        static constexpr Value from_bits(const u64 bits) noexcept {
             return Value{bits};
         }
 
@@ -205,11 +205,11 @@ namespace aria::nanboxing {
         // identical bit patterns are equal, and -0.0 != 0.0 in bits. Use as_f64()
         // and float comparison if you need IEEE numeric semantics.
         [[nodiscard]]
-        constexpr bool same_bits(Value other) const noexcept {
+        constexpr bool same_bits(const Value other) const noexcept {
             return bits_ == other.bits_;
         }
 
-        static constexpr const char* type_name(Type t) noexcept {
+        static constexpr const char* type_name(const Type t) noexcept {
             switch (t) {
                 case Type::Nil:
                     return "Nil";
@@ -226,12 +226,12 @@ namespace aria::nanboxing {
         }
 
     private:
-        explicit constexpr Value(u64 bits) noexcept : bits_(bits) {}
+        explicit constexpr Value(const u64 bits) noexcept : bits_(bits) {}
 
-        static u64 f64_to_u64(f64 value) { return std::bit_cast<u64>(value); }
-        static f64 u64_to_f64(u64 bits) { return std::bit_cast<f64>(bits); }
+        static u64 f64_to_u64(const f64 value) { return std::bit_cast<u64>(value); }
+        static f64 u64_to_f64(const u64 bits) { return std::bit_cast<f64>(bits); }
         static u64 ptr_to_u64(Obj object) { return static_cast<u64>(reinterpret_cast<uintptr_t>(object)); }
-        static Obj u64_to_ptr(u64 bits) { return reinterpret_cast<Obj>(bits); }
+        static Obj u64_to_ptr(const u64 bits) { return reinterpret_cast<Obj>(bits); }
 
         u64 bits_;
     };

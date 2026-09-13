@@ -58,7 +58,7 @@ namespace {
     };
 
     // 词法 + 语法分析。SourceFile 就位后再 tokenize（避免 SSO 短串 move 后 view 悬空）。
-    UPtr<Parsed> parse_src(StringView src) {
+    UPtr<Parsed> parse_src(const StringView src) {
         auto p = std::make_unique<Parsed>();
         p->sf  = SourceFile{String{"t"}, String{"t"}, String{src}};
         Lexer lexer;
@@ -74,7 +74,7 @@ namespace {
     }
 
     // 断言解析成功，返回程序 dump 文本（独立 String，不依赖 SourceFile 存活）。
-    String dump_ok(StringView src) {
+    String dump_ok(const StringView src) {
         auto p = parse_src(src);
         EXPECT_TRUE(p->result.has_value()) << "期望解析成功: " << src;
         if (!p->result) {
@@ -83,7 +83,7 @@ namespace {
         return (*p->result)->dump(0);
     }
 
-    void expect_has(const String& haystack, StringView needle) {
+    void expect_has(const String& haystack, const StringView needle) {
         EXPECT_NE(haystack.find(needle), String::npos) << "missing: " << needle;
     }
 

@@ -71,7 +71,7 @@ namespace {
     const SourceLoc kLoc{};
 
     // 便利工厂（同 test_ast.cpp）。
-    UPtr<IntegerLiteralNode>    i64lit(i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
+    UPtr<IntegerLiteralNode>    i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
     UPtr<IdentifierNode>        ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
     UPtr<IdentifierPatternNode> id_pat(String name) {
         return std::make_unique<IdentifierPatternNode>(kLoc, std::move(name));

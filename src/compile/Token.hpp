@@ -114,28 +114,29 @@ namespace aria {
 
         // 构造一个不带字面量值的 token（关键字 / 运算符 / 标点 / Identifier /
         // Underscore / Eof）。
-        Token(TokenType type, StringView lexeme, SourceLoc loc) noexcept : Token{type, lexeme, loc, {}} {}
+        Token(const TokenType type, const StringView lexeme, const SourceLoc loc) noexcept :
+            Token{type, lexeme, loc, {}} {}
 
         // --- 字面量 token 的工厂 ---
         [[nodiscard]]
-        static Token make_integer(i64 value, StringView lexeme, SourceLoc loc) noexcept {
+        static Token make_integer(const i64 value, const StringView lexeme, const SourceLoc loc) noexcept {
             return Token{TokenType::Integer, lexeme, loc, value};
         }
 
         [[nodiscard]]
-        static Token make_float(f64 value, StringView lexeme, SourceLoc loc) noexcept {
+        static Token make_float(const f64 value, const StringView lexeme, const SourceLoc loc) noexcept {
             return Token{TokenType::Float, lexeme, loc, value};
         }
 
         // value 为已解析转义后的字符串内容；lexeme 保留原始源码文本。
         [[nodiscard]]
-        static Token make_string(String value, StringView lexeme, SourceLoc loc) {
+        static Token make_string(String value, const StringView lexeme, const SourceLoc loc) {
             return Token{TokenType::String, lexeme, loc, std::move(value)};
         }
 
         // 词法错误 token：message 存于 value_ 的 String 槽，lexeme 留空。
         [[nodiscard]]
-        static Token make_error(String message, SourceLoc loc) {
+        static Token make_error(String message, const SourceLoc loc) {
             return Token{TokenType::Error, {}, loc, std::move(message)};
         }
 
@@ -160,7 +161,7 @@ namespace aria {
         }
 
         [[nodiscard]]
-        bool is(TokenType t) const noexcept {
+        bool is(const TokenType t) const noexcept {
             return type_ == t;
         }
 
@@ -211,7 +212,7 @@ namespace aria {
 
     private:
         // 全参私有构造函数：所有初始化在此收口。
-        Token(TokenType type, StringView lexeme, SourceLoc loc, TokenValue value) noexcept :
+        Token(const TokenType type, const StringView lexeme, const SourceLoc loc, TokenValue value) noexcept :
             type_{type}, loc_{loc}, lexeme_{lexeme}, value_{std::move(value)} {}
 
         TokenType  type_;

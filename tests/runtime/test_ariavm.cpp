@@ -50,37 +50,37 @@ using aria::Value;
 namespace {
 
     // LOAD_IMM 的 i8 立即数(经 emit_byte 写入)。
-    void emit_imm(CodeUnit& cu, i8 v, u32 line = 1) {
+    void emit_imm(CodeUnit& cu, const i8 v, const u32 line = 1) {
         cu.emit_op(OpCode::LOAD_IMM, line);
         cu.emit_byte(static_cast<u8>(v), line);
     }
 
     // 局部槽的 u8 短操作数指令(LOAD_LOCAL/STORE_LOCAL)。
-    void emit_local(CodeUnit& cu, OpCode op, u8 slot, u32 line = 1) {
+    void emit_local(CodeUnit& cu, const OpCode op, const u8 slot, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_byte(slot, line);
     }
 
     // 回填一条 u16 跳转偏移(编译器 backpatch 的手写版;偏移以读完操作数后 ip 为基准)。
-    void patch_word(CodeUnit& cu, usize operand_offset, u16 word) {
+    void patch_word(CodeUnit& cu, const usize operand_offset, const u16 word) {
         cu.code[operand_offset]     = static_cast<u8>(word & 0xFF);
         cu.code[operand_offset + 1] = static_cast<u8>(word >> 8);
     }
 
     // u16 名字操作数指令(DEF/LOAD/STORE_GLOBAL):op + u16 常量池索引(名字 ObjString)。
-    void emit_global(CodeUnit& cu, OpCode op, u16 name_idx, u32 line = 1) {
+    void emit_global(CodeUnit& cu, const OpCode op, const u16 name_idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_word(name_idx, line);
     }
 
     // u8 upvalue 索引指令(LOAD_UPVALUE/STORE_UPVALUE)。
-    void emit_upvalue(CodeUnit& cu, OpCode op, u8 idx, u32 line = 1) {
+    void emit_upvalue(CodeUnit& cu, const OpCode op, const u8 idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_byte(idx, line);
     }
 
     // CLOSURE fn:u16(常量池 ObjFunction 索引):VM 按 fn->upvalue_descs() 建捕获,压闭包值。
-    void emit_closure(CodeUnit& cu, u16 fn_idx, u32 line = 1) {
+    void emit_closure(CodeUnit& cu, const u16 fn_idx, const u32 line = 1) {
         cu.emit_op(OpCode::CLOSURE, line);
         cu.emit_word(fn_idx, line);
     }
@@ -88,23 +88,23 @@ namespace {
     // u16 名字操作数的类组/字段组指令(MAKE_CLASS/MAKE_METHOD/MAKE_STATIC/LOAD_FIELD/
     // STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD/LOAD_SUPER_FIELD):op + 常量池
     // ObjString 索引,与 emit_global 同形(DEF/LOAD/STORE_GLOBAL 用)。
-    void emit_named(CodeUnit& cu, OpCode op, u16 name_idx, u32 line = 1) {
+    void emit_named(CodeUnit& cu, const OpCode op, const u16 name_idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_word(name_idx, line);
     }
 
     // LOAD_CONST idx:u16(压常量池 idx 处的值)。
-    void emit_const(CodeUnit& cu, u16 idx, u32 line = 1) {
+    void emit_const(CodeUnit& cu, const u16 idx, const u32 line = 1) {
         cu.emit_op(OpCode::LOAD_CONST, line);
         cu.emit_word(idx, line);
     }
 
     // 给 fn 追加一条捕获描述:is_local=true 捕直接外围帧局部槽 index(测试只用到此形态)。
-    void capture_local(ObjFunction* fn, u16 index) { fn->upvalue_descs().push(UpvalueDesc{true, index}); }
+    void capture_local(ObjFunction* fn, const u16 index) { fn->upvalue_descs().push(UpvalueDesc{true, index}); }
 
     // IMPORT path:u16(常量池 ObjString 索引)。压模块值于栈顶（[...] -> [..., module]）；绑定由
     // 调用方按作用域经 DEF_GLOBAL / 值填槽自行完成。
-    void emit_import(CodeUnit& cu, u16 path_idx, u32 line = 1) {
+    void emit_import(CodeUnit& cu, const u16 path_idx, const u32 line = 1) {
         cu.emit_op(OpCode::IMPORT, line);
         cu.emit_word(path_idx, line);
     }
@@ -112,12 +112,12 @@ namespace {
     // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
     // 默认 "<script>"(临时模块,dir_ 走 cwd,run() 替换 source_roots_[0])。返回的 m 未根,
     // 调用方跨 GC 点持有须自行再守卫。
-    ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
+    ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
     // 显式目录版:intern + 守卫 name,先守 dir 再 new_string(name),调 new_module(3-arg)。
     // 工厂不再替调用方守卫入参(本文件收 ObjString* 入参的各 make_*/new_* 助手同理,下文不再
     // 赘述),返回的 m 未根,调用方跨 GC 点持有须自行再守卫。
-    ObjModule* make_module(GC& gc, StringView name, ObjString* dir) {
+    ObjModule* make_module(GC& gc, const StringView name, ObjString* dir) {
         auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
         guard.push(nm);
@@ -126,7 +126,7 @@ namespace {
 
     // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
     // 返回白色,调用方自守。m 未根须自守:工厂内 intern name 与 new_object 均 GC 点。
-    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+    ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
     }
@@ -134,7 +134,7 @@ namespace {
     // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
     // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
     // 扫掉;name 串由工厂内部 intern 并自守。
-    ObjFunction* new_function(GC& gc, StringView name, u8 arity) {
+    ObjFunction* new_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
@@ -191,7 +191,7 @@ namespace {
 
     // 在 VM 模块表 modules 里按模块显示名(name_->view())查找模块对象;未命中返 nullptr。
     // 加载层测试经 interpret_from_path 跑完后,用此白盒检视被导入模块的 state / globals。
-    ObjModule* find_module_by_name(aria::AriaHashTable& modules, StringView name) {
+    ObjModule* find_module_by_name(aria::AriaHashTable& modules, const StringView name) {
         ObjModule* found = nullptr;
         modules.for_each_occupied([&](const Value& /*key*/, const Value& val) {
             auto m = aria::Object::as<ObjModule>(val.as_obj());

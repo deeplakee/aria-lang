@@ -71,7 +71,7 @@ namespace {
     const SourceLoc kLoc{};
 
     // 便利工厂。
-    UPtr<IntegerLiteralNode>    i64lit(i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
+    UPtr<IntegerLiteralNode>    i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
     UPtr<IdentifierNode>        ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
     UPtr<StringLiteralNode>     strlit(String v) { return std::make_unique<StringLiteralNode>(kLoc, std::move(v)); }
     UPtr<IdentifierPatternNode> id_pat(String name) {
@@ -79,7 +79,7 @@ namespace {
     }
 
     // 子串断言：避免引入 gmock（HasSubstr），用 String::find 手工检查。
-    void expect_has(const String& haystack, StringView needle) {
+    void expect_has(const String& haystack, const StringView needle) {
         EXPECT_NE(haystack.find(needle), String::npos) << "missing: " << needle;
     }
 

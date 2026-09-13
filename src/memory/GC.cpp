@@ -8,7 +8,7 @@ namespace aria {
 
     GC::~GC() { free_all_(); }
 
-    void GC::mark_value(Value value) noexcept {
+    void GC::mark_value(const Value value) noexcept {
         if (value.is_obj()) {
             mark_object(value.as_obj());
         }
@@ -97,11 +97,11 @@ namespace aria {
         objects_head_ = nullptr;
     }
 
-    void GC::push_temp_root(Value value) noexcept { temp_roots_.push_back(value); }
+    void GC::push_temp_root(const Value value) noexcept { temp_roots_.push_back(value); }
 
     void GC::push_temp_root(Object* object) noexcept { temp_roots_.push_back(Value::from_obj(object)); }
 
-    void GC::pop_temp_root(usize count) noexcept {
+    void GC::pop_temp_root(const usize count) noexcept {
         ASSERT(count <= temp_roots_.size(), "pop_temp_root: count exceeds size");
         temp_roots_.resize(temp_roots_.size() - count);
     }

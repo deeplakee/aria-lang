@@ -276,7 +276,7 @@ namespace aria {
         // 首个错误自然即止，详见类首「错误通道」注释）---
         template<typename... Args>
         [[noreturn]]
-        void fail(ErrorCode code, const SourceLoc loc, std::format_string<Args...> fmt, Args&&... args) const {
+        void fail(const ErrorCode code, const SourceLoc loc, std::format_string<Args...> fmt, Args&&... args) const {
             throw AriaCompileException{Error::from_detail(code, loc, std::format(fmt, std::forward<Args>(args)...))};
         }
 

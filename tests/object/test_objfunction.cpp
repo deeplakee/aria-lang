@@ -21,11 +21,11 @@ namespace {
 
     // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
     // 返回的 m 未根,调用方跨 GC 点持有须自行守卫。默认名 "<script>"(临时模块)。
-    ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
+    ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
     // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
     // collect 回收 m)。返回白色,调用方自守。
-    ObjFunction* make_function(GC& gc, ObjModule* m, StringView name, u8 arity) {
+    ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);
     }
@@ -33,7 +33,7 @@ namespace {
     // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
     // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
     // 扫掉;name 串由工厂内部 intern 并自守。
-    ObjFunction* new_function(GC& gc, StringView name, u8 arity) {
+    ObjFunction* new_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity);

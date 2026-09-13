@@ -156,11 +156,11 @@ namespace aria {
     // 错误记账
     // ============================================================
 
-    Error Lexer::make_error(ErrorCode code, SourceSpan span, const String& msg) const {
+    Error Lexer::make_error(const ErrorCode code, const SourceSpan span, const String& msg) const {
         return Error::from_detail(code, loc_at(span.start), msg);
     }
 
-    void Lexer::error(ErrorCode code, SourceSpan span, const String& msg) {
+    void Lexer::error(const ErrorCode code, const SourceSpan span, const String& msg) {
         errors_.push_back(make_error(code, span, msg));
         if (errors_.size() >= kMaxErrors) {
             is_fatal_ = true;

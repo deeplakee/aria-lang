@@ -40,7 +40,7 @@ namespace aria {
         return std::nullopt;
     }
 
-    StringView token_type_name(const TokenType type) noexcept {
+    StringView to_string(const TokenType type) noexcept {
         switch (type) {
             case TokenType::Eof:
                 return "Eof";
@@ -203,8 +203,9 @@ namespace aria {
     }
 
     String Token::to_string() const {
-        String lexeme_info = lexeme_.empty() ? std::format("{:<13}", token_type_name(type_))
-                                             : std::format("{:<13} '{}'", token_type_name(type_), lexeme_);
+        // 类作用域内 to_string 查到成员自身即停，须限定到命名空间作用域的自由函数（同 Object::type_name）。
+        String lexeme_info = lexeme_.empty() ? std::format("{:<13}", aria::to_string(type_))
+                                             : std::format("{:<13} '{}'", aria::to_string(type_), lexeme_);
         // 字面量附带解析值，便于调试
         switch (type_) {
             case TokenType::Integer:

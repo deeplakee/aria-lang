@@ -94,6 +94,16 @@ namespace aria {
         DotDotDot,    // ...
     };
 
+    // TokenType 的可读名映射（如 "Integer"、"FatArrow"）；Token::to_string 渲染与
+    // Parser 错误信息复用。
+    [[nodiscard]]
+    StringView to_string(TokenType type) noexcept;
+
+    // 关键字查表：若 lexeme 是关键字则返回对应 TokenType，否则返回 std::nullopt。
+    // 大小写敏感，最长匹配由 lexer 保证（调用前已切出完整 identifier）。
+    [[nodiscard]]
+    Opt<TokenType> lookup_keyword(StringView lexeme) noexcept;
+
     // 字面量 token 携带的解析值：
     //   - monostate：非字面量 token（关键字 / 运算符 / 标点 / EOF）
     //   - i64：Integer（文法约定 int 为 i48，此处用 i64 容纳，越界在语义阶段处理）
@@ -160,7 +170,7 @@ namespace aria {
 
         [[nodiscard]]
         bool is_eof() const noexcept {
-            return type_ == TokenType::Eof;
+            return is(TokenType::Eof);
         }
 
         // 取整数/浮点字面量值（仅对应类型有效，其余返回 0）。
@@ -188,15 +198,6 @@ namespace aria {
         StringView lexeme_;
         TokenValue value_;
     };
-
-    // 将 TokenType 转为可读名称（如 "Integer"、"FatArrow"、"LeftParen"），用于错误信息与调试。
-    [[nodiscard]]
-    StringView token_type_name(TokenType type) noexcept;
-
-    // 关键字查表：若 lexeme 是关键字则返回对应 TokenType，否则返回 std::nullopt。
-    // 大小写敏感，最长匹配由 lexer 保证（调用前已切出完整 identifier）。
-    [[nodiscard]]
-    Opt<TokenType> lookup_keyword(StringView lexeme) noexcept;
 
 } // namespace aria
 

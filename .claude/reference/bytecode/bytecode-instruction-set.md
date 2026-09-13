@@ -152,7 +152,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 upsert 当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
+| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 set 写入当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
 | `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（type/len/str/assert），再 miss 报 `UndefinedVariable` |
 | `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals 表；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var` 声明），不回退 builtins |
 

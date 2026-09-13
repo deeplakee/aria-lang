@@ -13,7 +13,7 @@
 
 1. **Upvalue 用指针式表示 + 按槽址降序的开链**：open 态持 `Value* location`（指入值栈），closed 态持值。`grow_stack_` 增第三类重绑（搬运前走链记偏移、搬运后重算，与现有 top_/slots 同法，约 8 行）。理由：指令集 §4.4「开指栈槽」、gc-implementation-plan Phase 4、vm-design §4.1 全部按此模型预写，且 clox/Wren/Lua 皆指针式；热路径 LOAD/STORE_UPVALUE 零额外算术。索引式省重绑但每次访问多一次加法且偏离全部文档，不取。
 2. **捕获描述表存 ObjFunction 元数据**（指令集 §4.13 已定稿，照办）：`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`；`is_local=true` 捕外层帧槽 index，`false` 穿透复用外层闭包的 upvalue index。不进字节码流，`CLOSURE` 保持定长 3B（ConstU16），Disassembler 零改动。
-3. **callable 收敛为闭包**：`CallFrame.function: ObjFunction*` -> `ObjClosure* closure`（顶层入口也闭包，`run_function` 内包一个空 upvalue 的闭包进帧）；翻转后 `call_value` 删 FUNCTION 直调分支（`ObjFunction` 退为常量池内部物，不再以可调用值上栈）。迁移期临时保留一个「FUNCTION 现场包闭包」分支，使旧 lowering 与既有测试在阶段 2 后仍然全绿，阶段 3 随编译翻转删除。
+3. **callable 收敛为闭包**：`CallFrame.function: ObjFunction*` -> `ObjClosure* closure`（顶层入口也闭包，入口仪式 `run()` 包一个空 upvalue 的闭包再委托 `run_closure`）；翻转后 `call_value` 删 FUNCTION 直调分支（`ObjFunction` 退为常量池内部物，不再以可调用值上栈）。迁移期临时保留一个「FUNCTION 现场包闭包」分支，使旧 lowering 与既有测试在阶段 2 后仍然全绿，阶段 3 随编译翻转删除。
 
 ## 3. 实施阶段
 
@@ -34,7 +34,7 @@
   - `grow_stack_`（Movement.hpp:238-262）：第三类重绑--搬运前走链把各 `location_ - old_base` 记入临时 `List<usize>`（链序两趟间稳定），搬运后逐节点 `set_location(new_base + offset)`；同步删「M4 落地后须重绑」预告注释（Movement.hpp:36-38、236-237）。
   - `reset()`：先 `close_upvalues(buf_.data())` 再清场（HALT 不弹帧的收场安全网，防开指残留跨 run 复用栈区）。
 - **`AriaVM`**：
-  - `run_function`（AriaVM.cpp:442-456）：入口 fn 先包空闭包（`make_guard` 跨 `new_object`）再压栈进帧--顶层也闭包，`run(ObjFunction*)` 公开签名不动。
+  - `run()`：入口 fn 先包空闭包（`make_guard` 跨 `new_object`）再委托 `run_closure` 进帧--顶层也闭包，`run(ObjFunction*)` 公开签名不动。
   - `call_value`（AriaVM.cpp:458-472）：+ `case CLOSURE -> call_closure`（arity/frames 检查照 call_function）；`case FUNCTION` 改临时 wrap（现场 `new_closure` + guard + 进帧），阶段 3 删。
   - 四 opcode 实装（替换 AriaVM.cpp:776-781、1066-1067 的 `not_implemented`）：
     - `CLOSURE`：u16 常量取 fn（`as<ObjFunction>`）-> `new_closure` 入 guard -> 遍历 `fn->upvalue_descs()`：`is_local` -> 槽址 = `frame.slots + index`，`find_open_upvalue` 复用否则 `new_upvalue` + `link`；否则复制 `frame.closure->upvalues()[index]`；逐个 push 进闭包数组（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）-> 压闭包值。

@@ -283,11 +283,11 @@ endif()
 
 > **落地偏差(相对下文设计描述)**:
 > 1. **trace 放 AriaHashTable,非 HashTable**:下文 HashTable 段画了 `trace`(直访 `ctrl_`/`entries_`)。实际为守住「`src/memory/` 值无关」分层,`HashTable` **不** include `Value.hpp`、无 `trace`;改提供 public `for_each_occupied(Fn&&)`,`AriaHashTable::trace` 经它调 `mark_value`。`AriaArray::trace` 同理(直接遍历 `Array<Value>`)。
-> 2. **`upsert` 替代 find+insert**:下文示意「调用方先 `find` 查重,未命中才 `insert`」。实际 `HashTable` 提供 `Entry* upsert(const K&)`(find-or-insert,命中返回已有 Entry 保留其 value,未命中插入 `value=V{}`),消除「必须先 find」前置条件与重复插入风险;另提供只读 `find` 与 `erase(key)`。
+> 2. **`set` 收单步写入**:下文示意「调用方先 `find` 查重,未命中才 `insert`」。实际 `HashTable` 提供 `void set(const K&, const V&)`(命中原槽覆写、未命中插入带值,单步完成),消除「必须先 find」前置条件与重复插入风险;另提供只读 `find` 与 `erase(key)`。
 > 3. **ValueHash/ValueEq provisional 落地**:下文说这两个 functor「随 ObjMap 落地」(Phase 3)。但 Phase 2 要让 `AriaHashTable` 可编译可测,故提供 provisional 版(基于两表示共有的 `type()`/`as_*()`,**不**用 NanBoxing 专属的 `bits()`/`same_bits()`--TagValue 未提供,故两表示都编译):Obj 用 `as_obj()->hash()`(ObjString 即内容 FNV-1a)/ 指针相等(intern 后等价内容同指针)。provisional 点(int 1 vs f64 1.0 不同键、f64 NaN 未规范化)留 Phase 3 随 ObjMap 精化。**值操作收口于 Value 层**:`value_hash`/`value_equal` 自由函数声明在 `value/Value.hpp`、定义在 `value/Value.cpp`(`<bit>`/`Object.hpp` 依赖置于 `.cpp`,不污染被广泛 include 的 `Value.hpp`);`ValueHash`/`ValueEq` 为 `AriaHashTable.hpp` 内的内联包装(仅 AriaHashTable 用,转发到自由函数)。
 > 4. **GC↔InternPool 头循环**:GC 持 `InternPool` 值成员(GC.hpp 需 InternPool 完整),InternPool 方法用 `gc_->allocate`(需 GC 完整)。现行解法:InternPool 为 header-only 模板 `InternPool<Alloc = GC>`,头循环靠模板延后具现化 + ctor 函数体内 `static_assert` 打破(同 `Object.hpp` 对 GC 的处理)。
 > 5. **GC 暴露 `intern_find`/`intern_insert`** 委托 `intern_`(保持 private),`new_string` 经此驻留。`collect` 在 `trace_gray_` 后、`sweep_` 前调 `intern_.remove_white()`。
-> 6. **`find` 内部算哈希**:下文设计 `find(const K&, u32 hash)` 收哈希参数;实际 `find(const K&)`/`upsert` 内部调 HashFunctor 算哈希,调用方免传。
+> 6. **`find` 内部算哈希**:下文设计 `find(const K&, u32 hash)` 收哈希参数;实际 `find(const K&)`/`set` 内部调 HashFunctor 算哈希,调用方免传。
 > 7. **判满公式**:`(count_ + tombstones_ + 1) * 8 > cap_ * 7`(含本次插入),非下文示意 `count_ + tombstones_ > cap_ * 7/8`。
 
 #### 文件位置与分层
@@ -454,7 +454,7 @@ class InternPool {
 
 | 文件 | 说明 |
 | :--- | :--- |
-| `src/memory/HashTable.hpp` | 通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq>`(header-only,值无关,`upsert`/`find`/`erase`/`for_each_occupied`) |
+| `src/memory/HashTable.hpp` | 通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq>`(header-only,值无关,`set`/`find`/`erase`/`for_each_occupied`) |
 | `src/memory/InternPool.hpp` | 字符串驻留池(低位标签,weak root;header-only 模板,头循环经模板延后具现化 + ctor `static_assert` 打破) |
 | `src/value/AriaArray.hpp` | `AriaArray : public Array<Value>` + `trace` |
 | `src/value/AriaHashTable.hpp` | `AriaHashTable : public HashTable<Value,Value,ValueHash,ValueEq>` + `trace`;含 `ValueHash`/`ValueEq` 内联包装(转发到 value_hash/value_identical,哈希键用 ===) |
@@ -491,5 +491,4 @@ class InternPool {
 - **`is_long()` 派生而非存储**:`ObjString` 不可变(length_ 构造后不变),派生安全。若有可变长度的未来子类型,需重新评估。
 - **InternPool 是 weak root,不钉住驻留串**:驻留串的生命周期由「真实根」决定(值栈/globals 等),驻留池只去重不保活。无根的驻留串会在下次 collect 经 `remove_white` 摘表项 + sweep 释放。**故 `new_string` 返回的裸 `ObjString*` 跨任何分配序列必须自行根化(Guard/入值栈)**,否则可能被回收成悬垂(与 Phase 1 同一纪律,intern 不改此)。
 - **`AriaArray`/`AriaHashTable` 非 Object,GC 不自动 trace 它们**:它们是 C++ 类(继承 `Array<Value>`/`HashTable<...>`),不链入对象链表、不进 `mark_roots_`。其 `trace(GC&)` 须由 owner(Phase 3 的 `ObjList`/`ObjMap`,Object 子类型)在 collect 的 trace 阶段调用。在此之前,持有 `AriaArray`/`AriaHashTable` 局部变量**不会**根化其元素--元素对象需另行根化(或禁用 GC 隔离测试)。
-- **`HashTable::upsert` 新条目 value 初始化为 `V{}`**:`Value{}` 是 f64 0.0 非 nil(NanBoxing);需要 nil 的场合调用方 upsert 后显式覆写 `value`。命中已有键时 value 保留(不重置)。
 - **`HashTable`/`InternPool` 两块独立分配**:各持 `ctrl_`+`entries_`(HashTable)/`slots_`(InternPool),rehash 时一起重分配 + 重插 + 释放旧。`ctrl_` memset 0xFF(kEmpty)、`slots_` memset 0(nullptr)。**不走 `Array<T>`**(rehash 要按新容量重算位置,memcpy 会放错)。

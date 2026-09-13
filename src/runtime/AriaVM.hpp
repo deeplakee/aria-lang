@@ -90,17 +90,7 @@ namespace aria {
         }
 
         [[nodiscard]]
-        const GC& gc() const noexcept {
-            return gc_;
-        }
-
-        [[nodiscard]]
         Movement& main_context() noexcept {
-            return main_ctx_;
-        }
-
-        [[nodiscard]]
-        const Movement& main_context() const noexcept {
             return main_ctx_;
         }
 
@@ -131,32 +121,10 @@ namespace aria {
             return modules_;
         }
 
-        [[nodiscard]]
-        const AriaHashTable& modules() const noexcept {
-            return modules_;
-        }
-
-        // VM 级只读 builtins 表:LOAD_GLOBAL 在模块 globals 未命中后回退查(Python 式查找链),
-        // 构造期 register_builtins 一次填充。
-        [[nodiscard]]
-        AriaHashTable& builtins() noexcept {
-            return builtins_;
-        }
-
-        [[nodiscard]]
-        const AriaHashTable& builtins() const noexcept {
-            return builtins_;
-        }
-
         // Object 根类:LOAD_OBJECT 直推;单独持有不进 builtins_/任何模块 globals(用户
         // shadow 全局名免疫)。
         [[nodiscard]]
         ObjClass* object_class() noexcept {
-            return object_class_;
-        }
-
-        [[nodiscard]]
-        const ObjClass* object_class() const noexcept {
             return object_class_;
         }
 

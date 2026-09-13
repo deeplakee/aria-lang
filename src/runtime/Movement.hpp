@@ -197,8 +197,6 @@ namespace aria {
             return std::exchange(pending_error_, std::nullopt);
         }
 
-        void clear_error() noexcept { pending_error_.reset(); }
-
         // 挂起载荷的只读引用(为空态时无值)。供 VM 根 tracer 标根用(take_error 取走会清空,
         // 不能经它只读查询)。
         [[nodiscard]]

@@ -102,8 +102,6 @@ namespace aria {
         SourceTooLarge,    // 单个源文件过大
     };
 
-    using ErrCode = ErrorCode;
-
     // 错误大类可读名（如 "Syntax"）。
     [[nodiscard]]
     constexpr StringView to_string(const ErrorCategory c) noexcept {

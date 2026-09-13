@@ -1,7 +1,6 @@
 #ifndef ARIA_UTF8_HPP
 #define ARIA_UTF8_HPP
 
-#include <iterator>
 #include "common.hpp"
 
 namespace aria::utf8 {
@@ -10,9 +9,6 @@ namespace aria::utf8 {
 
     // 替换码点 U+FFFD，用于替换非法的 UTF-8 序列
     inline constexpr codepoint kReplacementChar = 0xFFFD;
-
-    // UTF-8 序列的字节长度上限
-    inline constexpr usize kMaxSeqLen = 4;
 
     namespace detail {
         // 该字节是否为 UTF-8 序列的起始字节（ASCII 或多字节首字节）
@@ -115,20 +111,6 @@ namespace aria::utf8 {
         return {cp, need};
     }
 
-    // 解码整个字符串为码点序列（非法序列被替换为 kReplacementChar）。
-    // 需区分「是否含非法序列」时用 is_valid。
-    [[nodiscard]]
-    inline List<codepoint> decode(const StringView str) {
-        List<codepoint> out;
-        out.reserve(str.size());
-        for (usize i = 0; i < str.size();) {
-            const auto [cp, n] = decode_one(str, i);
-            out.push_back(cp);
-            i += n;
-        }
-        return out;
-    }
-
     // 校验 str 是否为合法的 UTF-8 文本（无非法字节、无超长编码、无代理区码点）
     [[nodiscard]]
     constexpr bool is_valid(const StringView str) noexcept {
@@ -159,25 +141,6 @@ namespace aria::utf8 {
         return true;
     }
 
-    // 计算码点数量，不分配。不校验续接字节：非法序列按首字节名义长度整段计 1，
-    // 故与 decode 的替换展开计数不等价，仅对合法输入两者一致。
-    [[nodiscard]]
-    constexpr usize count(const StringView str) noexcept {
-        usize n = 0;
-        for (usize i = 0; i < str.size();) {
-            const u8 lead = static_cast<u8>(str[i]);
-            if (lead < 0x80) {
-                ++i;
-                ++n;
-                continue;
-            }
-            const u8 need = detail::seq_len_from_lead(lead);
-            i += (need == 0) ? 1 : need;
-            ++n;
-        }
-        return n;
-    }
-
     // 将一个码点编码为 UTF-8 字节串。非法码点（>0x10FFFF 或代理区）返回空串。
     [[nodiscard]]
     constexpr String encode(const codepoint cp) {
@@ -206,12 +169,6 @@ namespace aria::utf8 {
 
 
     // 码点分类工具，供 tokenizer 判定字符类别时使用
-
-    // 是否 ASCII 字母或数字（即 [A-Za-z0-9]）
-    [[nodiscard]]
-    constexpr bool is_alnum(const codepoint cp) noexcept {
-        return (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
-    }
 
     // 是否 Unicode 字母（Lu/Ll/Lt/Lm/Lo）。ASCII 范围内精确判定，
     // 其余通过 Unicode 分配区间近似，避免引入庞大的 Unicode 数据表。
@@ -271,78 +228,6 @@ namespace aria::utf8 {
         // Unicode 空白/分隔符区间（近似，不含全角空格 U+3000 之外的特殊情况）
         return (cp >= 0x1680 && cp <= 0x200A) || cp == 0x202F || cp == 0x205F || cp == 0x3000;
     }
-
-
-    // 前向码点迭代器：对一个 UTF-8 字符串视图逐码点遍历。
-    // 非法字节会被当作 kReplacementChar 迭代一次（advance 一个字节）。
-    class iterator {
-    public:
-        using value_type        = codepoint;
-        using difference_type   = isize;
-        using pointer           = const codepoint*;
-        using reference         = codepoint;
-        using iterator_category = std::forward_iterator_tag;
-
-        constexpr iterator() noexcept : str_{}, pos_{0} {}
-        constexpr explicit iterator(const StringView s, const usize pos = 0) noexcept : str_{s}, pos_{pos} {}
-
-        [[nodiscard]]
-        constexpr codepoint operator*() const noexcept {
-            return decode_one(str_, pos_).first;
-        }
-
-        constexpr iterator& operator++() noexcept {
-            const usize n = decode_one(str_, pos_).second;
-            pos_ += n;
-            return *this;
-        }
-
-        constexpr iterator operator++(int) noexcept { // NOLINT(cert-dcl21-cpp)
-            iterator tmp = *this;
-            ++(*this);
-            return tmp;
-        }
-
-        [[nodiscard]]
-        constexpr bool operator==(const iterator& other) const noexcept {
-            return pos_ == other.pos_;
-        }
-
-        // 当前已消费到的字节偏移
-        [[nodiscard]]
-        constexpr usize byte_offset() const noexcept {
-            return pos_;
-        }
-
-    private:
-        StringView str_;
-        usize      pos_;
-    };
-
-    // 码点视图：把一个 UTF-8 字符串包装为可遍历的码点区间。
-    // 用法： for (auto cp : utf8::view(str)) { ... }
-    class view {
-    public:
-        constexpr explicit view(const StringView str) noexcept : str_(str) {}
-
-        [[nodiscard]]
-        constexpr iterator begin() const noexcept {
-            return iterator{str_, 0};
-        }
-
-        [[nodiscard]]
-        constexpr iterator end() const noexcept {
-            return iterator{str_, str_.size()};
-        }
-
-        [[nodiscard]]
-        constexpr StringView str() const noexcept {
-            return str_;
-        }
-
-    private:
-        StringView str_;
-    };
 } // namespace aria::utf8
 
 #endif // ARIA_UTF8_HPP

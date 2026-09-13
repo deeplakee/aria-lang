@@ -17,11 +17,6 @@ namespace aria::src {
     struct SourceSpan {
         usize start = 0;
         usize end   = 0;
-
-        [[nodiscard]]
-        constexpr usize length() const noexcept {
-            return end - start;
-        }
     };
 
     // 行/列位置（1-based，符合大多数编辑器与编译器习惯）。

@@ -12,10 +12,6 @@ if(ARIA_USE_TAGVALUE)
     add_compile_definitions(ARIA_USE_TAGVALUE)
 endif()
 
-#add_library(fmt INTERFACE)
-#target_include_directories(fmt INTERFACE third/fmt)
-#target_compile_definitions(fmt INTERFACE FMT_HEADER_ONLY)
-
 add_subdirectory(third/isocline)
 
 
@@ -102,7 +98,6 @@ add_library(aria_core STATIC
 
 target_include_directories(aria_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
-#target_link_libraries(aria_core fmt)
 if (NOT WIN32)
     target_link_libraries(aria_core PRIVATE m)
 endif ()

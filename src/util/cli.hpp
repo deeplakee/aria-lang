@@ -10,7 +10,7 @@
 // 统一枚举 Slot 贯穿定义/结果两侧：定义侧 Def.kind_ 永非 Empty（ASSERT 把关）；
 // 结果侧 SlotEntry.state 用 Empty 表未提供、种类值表已提供（与 defs_ 同序、单数组）。
 //
-// 单一事实源：parse/has/get 仅依赖 defs_（线性扫描定位槽）；long_index_/short_index_ 仅注册期查重用。
+// 单一事实源：注册查重与解析定位全部走 defs_ 线性扫描（register_name 复用 find_long/find_short）。
 // flag/option/positional 共唯一长名空间；--name/-x 解析只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽。
 //
 // 内置 help flag（--help / -h）首个注册：命中即置位短路、视为成功（经 result.has("help") 取）。
@@ -98,17 +98,16 @@ namespace aria::util {
         // 构建器：注册 flag / option / positional
         // ============================================================
 
-        explicit Cli(const StringView program_name = "") :
-            program_name_{program_name}, description_{}, defs_{}, long_index_{}, short_index_{} {
+        explicit Cli(const StringView program_name = "") : program_name_{program_name}, description_{}, defs_{} {
             register_builtin_help();
         }
 
         // 注册布尔开关：--verbose / -v（short_name 传 '\0' 表示无短名）
         Cli& add_flag(const StringView long_name, const StringView description, const char short_name = '\0') {
-            const usize idx = defs_.size();
-            // emplace_back 抛出（OOM）时该条目随 defs_ 一起回滚（值类型，无指针泄漏）：aria 视 OOM 为 fatal 量级
+            // 查重须先于 emplace（扫 defs_，后插自撞）；emplace_back 抛出（OOM）时该条目随 defs_
+            // 一起回滚（值类型，无指针泄漏）：aria 视 OOM 为 fatal 量级
+            register_name(long_name, short_name);
             defs_.emplace_back(long_name, short_name, description, "", false, Slot::Flag);
-            register_name(long_name, idx, short_name);
             return *this;
         }
 
@@ -116,18 +115,16 @@ namespace aria::util {
         // default_value 仅用于 help() 展示，get() 未提供时返回 nullopt（调用方以 value_or 提供 fallback）。
         Cli& add_option(const StringView long_name, const StringView description, const StringView default_value = "",
                         const char short_name = '\0') {
-            const usize idx = defs_.size();
+            register_name(long_name, short_name);
             defs_.emplace_back(long_name, short_name, description, default_value, false, Slot::Option);
-            register_name(long_name, idx, short_name);
             return *this;
         }
 
         // 注册位置参数（按出现顺序填充；is_required=false 时可缺省）
         Cli& add_positional(const StringView name, const StringView description, const bool is_required = true) {
-            const usize idx = defs_.size();
+            // positional 长名入唯一名字空间（查重）；--name/-x 解析不匹配 positional（见 find_long_without_positional）
+            register_name(name, '\0');
             defs_.emplace_back(name, '\0', description, "", is_required, Slot::Positional);
-            // positional 长名入唯一名字空间；--name/-x 解析不匹配 positional（见 find_long_without_positional）
-            register_name(name, idx, '\0');
             return *this;
         }
 
@@ -436,27 +433,25 @@ namespace aria::util {
             return std::nullopt;
         }
 
-        // 注册名入查重索引（长名 + 短名，共用一个长名空间）。跨/同 kind 重名、占用 --help/-h 保留名
-        // 均为调用方编程错误，注册期 ASSERT 拒绝；NDEBUG 下首个注册生效。索引仅注册期查重用，解析侧唯一定位源是 defs_。
+        // 注册名查重（长名 + 短名，共用一个长名空间；须在 defs_ emplace 之前调用，查重扫 defs_）。
+        // 重名（含占用内置 --help/-h）为调用方编程错误，注册期 ASSERT 拒绝；NDEBUG 下首个注册
+        // 生效（解析侧 find_long/find_short 取首个匹配）。
         // ASSERT 的 message 经宏文本替换进失败分支，std::format 仅失败时构造。
-        void register_name(const StringView long_name, const usize idx, const char short_name) {
-            [[maybe_unused]] const bool long_inserted = long_index_.emplace(String{long_name}, idx).second;
-            ASSERT(long_inserted, std::format("arg 名 {} 重复注册", long_name).c_str());
+        void register_name(const StringView long_name, const char short_name) const {
+            ASSERT(!find_long(long_name), std::format("arg 名 {} 重复注册", long_name).c_str());
 
             if (short_name == '\0') {
                 return;
             }
 
-            [[maybe_unused]] const bool short_inserted = short_index_.emplace(short_name, idx).second;
-            ASSERT(short_inserted, std::format("arg 短名 -{} 重复注册", short_name).c_str());
+            ASSERT(!find_short(short_name), std::format("arg 短名 -{} 重复注册", short_name).c_str());
         }
 
         // 注册内置 help flag 为 defs_[0]（构造共用：恒居 help() 渲染首位，parse 命中即短路）。
-        // 不经 register_name（其保留名 ASSERT 专挡用户占 --help/-h），直连索引。
+        // 首个注册空表查重自然通过；后续用户注册 help/-h 撞重名 ASSERT。
         void register_builtin_help() {
+            register_name(kHelpLongName, kHelpShortName);
             defs_.emplace_back(kHelpLongName, kHelpShortName, kHelpDescription, "", false, Slot::Flag);
-            long_index_.emplace(String{kHelpLongName}, 0);
-            short_index_.emplace(kHelpShortName, 0);
         }
 
         // 内置 help flag 的固定身份（构造时首个注册，parse 命中即置位短路）
@@ -468,12 +463,8 @@ namespace aria::util {
         String program_name_;
         String description_;
 
-        // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；解析侧唯一事实源
+        // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；注册查重与解析定位唯一事实源
         List<Def> defs_;
-
-        // 长名/短名查重索引（仅注册期用，解析侧不读）
-        HashMap<String, usize> long_index_;
-        HashMap<char, usize>   short_index_;
 
         // 不持解析结果：slots_/extra_args_ 随 ParseResult 走（定义/结果分离）
     };

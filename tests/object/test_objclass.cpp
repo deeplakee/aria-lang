@@ -37,15 +37,12 @@ using aria::value_identical;
 
 namespace {
 
-    // intern + 守卫 name(super 非空时一并守卫),再调 new_class。返回的 cls 未根
+    // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
+    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根
     //(守卫随函数退出释放),调用方跨 GC 点持有须自行守卫。
     ObjClass* make_class(GC& gc, StringView name, ObjClass* super = nullptr) {
-        auto nm    = new_string(gc, name);
-        auto guard = gc.make_guard(nm);
-        if (super != nullptr) {
-            guard.push(super); // super 跨 new_object 须根化
-        }
-        return new_class(gc, nm, super);
+        auto guard = gc.make_guard(super);
+        return new_class(gc, name, super);
     }
 
     // 临时模块 + 具名函数:守卫收口在助手内(机制测试不关心模块归属)。m 未根须自守:

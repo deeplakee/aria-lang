@@ -1,6 +1,6 @@
 // bench/hashtable_bench.cpp
 //
-// HashTable 性能基准:测量 upsert / find-hit / find-miss / erase 的吞吐,
+// HashTable 性能基准:测量 set / find-hit / find-miss / erase 的吞吐,
 // 对比良好哈希(IntHash)与弱哈希(WeakHash,探测链更长),并附非计时正确性校验。
 //
 // 仅用 GC 作 Trivial 分配器(allocate/deallocate,不触发 GC 回收 -- 本测不调 new_object),
@@ -70,7 +70,7 @@ namespace {
         GC             gc;
         IntTable<Hash> ht{&gc};
         for (usize i = 0; i < n; ++i) {
-            ht.upsert(static_cast<int>(i))->value = static_cast<int>(i) * 7;
+            ht.set(static_cast<int>(i), static_cast<int>(i) * 7);
         }
         BENCH_CHECK(ht.size() == n, "size after insert");
 
@@ -113,7 +113,7 @@ namespace {
             IntTable<Hash> ht{&gc};
             best = std::min(best, elapsed_nanos([&] {
                                 for (usize i = 0; i < n; ++i) {
-                                    ht.upsert(static_cast<int>(i))->value = static_cast<int>(i);
+                                    ht.set(static_cast<int>(i), static_cast<int>(i));
                                 }
                             }));
         }
@@ -125,7 +125,7 @@ namespace {
         GC             gc;
         IntTable<Hash> ht{&gc};
         for (usize i = 0; i < n; ++i) {
-            ht.upsert(static_cast<int>(i))->value = static_cast<int>(i);
+            ht.set(static_cast<int>(i), static_cast<int>(i));
         }
         double best = std::numeric_limits<double>::max();
         for (int t = 0; t < trials; ++t) {
@@ -147,7 +147,7 @@ namespace {
         GC             gc;
         IntTable<Hash> ht{&gc};
         for (usize i = 0; i < n; ++i) {
-            ht.upsert(static_cast<int>(i))->value = static_cast<int>(i);
+            ht.set(static_cast<int>(i), static_cast<int>(i));
         }
         double best = std::numeric_limits<double>::max();
         for (int t = 0; t < trials; ++t) {
@@ -171,7 +171,7 @@ namespace {
             GC             gc;
             IntTable<Hash> ht{&gc};
             for (usize i = 0; i < n; ++i) { // 构建不计入计时
-                ht.upsert(static_cast<int>(i))->value = static_cast<int>(i);
+                ht.set(static_cast<int>(i), static_cast<int>(i));
             }
             best = std::min(best, elapsed_nanos([&] {
                                 for (usize i = 0; i < n; ++i) {
@@ -188,7 +188,7 @@ namespace {
         GC             gc;
         IntTable<Hash> ht{&gc};
         for (usize i = 0; i < n; ++i) {
-            ht.upsert(static_cast<int>(i))->value = 0;
+            ht.set(static_cast<int>(i), 0);
         }
         const double load = static_cast<double>(n) / static_cast<double>(ht.capacity());
         println("# hash={:<8} N={:<8} cap={:<8} load={:.3f}", hash_name, n, ht.capacity(), load);

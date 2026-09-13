@@ -109,16 +109,14 @@ namespace {
         cu.emit_word(path_idx, line);
     }
 
-    // 测试便利:intern + 守卫 name,再调 new_module(2-arg)。工厂不再替调用方守卫入参
-    // (本文件各 make_*/new_* 助手同理,下文不再赘述),返回的 m 未根,调用方跨 GC 点持有
-    // 须自行再守卫。默认 "<script>"(临时模块,dir_ 走 cwd,run() 替换 source_roots_[0])。
-    ObjModule* make_module(GC& gc, StringView name = "<script>") {
-        auto nm    = new_string(gc, name);
-        auto guard = gc.make_guard(nm);
-        return new_module(gc, nm); // dir 缺省 -> cwd(失败时空串兜底)
-    }
+    // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
+    // 默认 "<script>"(临时模块,dir_ 走 cwd,run() 替换 source_roots_[0])。返回的 m 未根,
+    // 调用方跨 GC 点持有须自行再守卫。
+    ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
 
     // 显式目录版:intern + 守卫 name,先守 dir 再 new_string(name),调 new_module(3-arg)。
+    // 工厂不再替调用方守卫入参(本文件收 ObjString* 入参的各 make_*/new_* 助手同理,下文不再
+    // 赘述),返回的 m 未根,调用方跨 GC 点持有须自行再守卫。
     ObjModule* make_module(GC& gc, StringView name, ObjString* dir) {
         auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
@@ -237,11 +235,10 @@ namespace {
         return vm.fail(ErrorCode::TypeMismatch, "fail_always always fails");
     }
 
-    // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。
+    // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。name 经
+    // new_native_fn 的 StringView 重载内部 intern 并自守;add_constant 为 trivial push 无 GC 点。
     u16 add_native_const(CodeUnit& cu, GC& gc, const char* name, NativeFn fn) {
-        auto nm    = new_string(gc, name);
-        auto guard = gc.make_guard(nm); // name 是 weak root,new_native_fn 顶 maybe_collect 前先保
-        auto nf    = new_native_fn(gc, nm, fn);
+        const auto nf = new_native_fn(gc, name, fn);
         return cu.add_constant(Value::from_obj(nf));
     }
 

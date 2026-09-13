@@ -120,13 +120,11 @@ TEST(ObjBoundMethod, ToString) {
 // name() 非虚取名分派(闭包 fn 名 / 原生 name_),to_string 与调试渲染同文案。
 TEST(ObjBoundMethod, NativeMethodBinding) {
     GC   gc;
-    auto nm     = new_string(gc, "echo");
-    auto guard  = gc.make_guard(nm);
-    auto native = new_native_fn(gc, nm, noop_native);
-    guard.push(native);
-    auto cls  = make_class(gc, "Foo");
-    auto cg   = gc.make_guard(cls);
-    auto inst = make_instance(gc, cls);
+    auto native = new_native_fn(gc, "echo", noop_native); // StringView 重载:名字经工厂内部 intern 并自守
+    auto guard  = gc.make_guard(native); // native 是 weak root,跨下方 make_class/make_instance 分配先保
+    auto cls    = make_class(gc, "Foo");
+    auto cg     = gc.make_guard(cls);
+    auto inst   = make_instance(gc, cls);
     guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));

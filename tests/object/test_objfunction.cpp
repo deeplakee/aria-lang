@@ -19,13 +19,9 @@ using aria::Value;
 
 namespace {
 
-    // intern + 守卫 name,再调 new_module(2 参,dir 取 cwd)。返回的 m 未根,调用方跨
-    // GC 点持有须自行守卫。默认名 "<script>"(M1 机制测试不关心模块归属,临时模块)。
-    ObjModule* make_module(GC& gc, StringView name = "<script>") {
-        auto nm    = new_string(gc, name);
-        auto guard = gc.make_guard(nm);
-        return new_module(gc, nm);
-    }
+    // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
+    // 返回的 m 未根,调用方跨 GC 点持有须自行守卫。默认名 "<script>"(临时模块)。
+    ObjModule* make_module(GC& gc, StringView name = "<script>") { return new_module(gc, name); }
 
     // 指定模块的具名函数:显式守卫 m 与 name -- m 须在 new_string(name) 之前入根
     //(name 分配可能 collect 回收 m)。

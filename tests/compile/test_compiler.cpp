@@ -20,7 +20,6 @@ using aria::Error;
 using aria::ErrorCode;
 using aria::i64;
 using aria::new_module;
-using aria::new_string;
 using aria::ObjFunction;
 using aria::Result;
 using aria::SourceFile;
@@ -54,9 +53,7 @@ namespace {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto mod_name = new_string(gc, "<test>");
-        auto guard    = gc.make_guard(mod_name); // 工厂不守入参:name 裸持跨 new_module 的 new_string(cwd)
-        auto module   = new_module(gc, mod_name);
+        auto module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
         // 实际源文件：调用方构造（测试用 "<test>" 作 name/path，真实入口用文件路径）。堆地址稳定。
         auto source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
         auto result = vm->run(*source, module); // 编译并执行
@@ -74,17 +71,14 @@ namespace {
     };
 
     CompileFail compile_fail(std::string_view src) {
-        auto     vm       = std::make_unique<AriaVM>();
-        auto&    gc       = vm->gc();
-        auto     mod_name = new_string(gc, "<test>");
-        auto     guard    = gc.make_guard(mod_name);
-        auto     module   = new_module(gc, mod_name);
-        auto     source   = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
+        auto     vm     = std::make_unique<AriaVM>();
+        auto&    gc     = vm->gc();
+        auto     module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto     source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
         Compiler compiler{gc};
         auto     compiled = compiler.compile(*source, module);
         EXPECT_FALSE(compiled.has_value());
-        // guard 释放临时根；module 仍由 GC 管理。error 的 SourceLoc 指向 *source，source 经 unique_ptr 存活故可渲染。
-        (void) guard;
+        // module 仍由 GC 管理。error 的 SourceLoc 指向 *source，source 经 unique_ptr 存活故可渲染。
         return CompileFail{std::move(vm), std::move(source), std::move(compiled)};
     }
 

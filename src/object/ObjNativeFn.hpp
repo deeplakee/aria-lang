@@ -82,8 +82,8 @@ namespace aria {
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn);
 
-    // 工厂重载(匿名):name 取 kAnonymousName("<anonymous>",`<>` 不可作标识符故具辨识度),
-    //   工厂内部驻留并自行守卫。委托上者。
+    // 工厂重载(匿名):name 取 kAnonymousName("<anonymous>",`<>` 不可作标识符故具辨识度)。
+    //   委托 StringView 名重载(声明于下),驻留与守卫由其内部完成。
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, NativeFn fn);
 

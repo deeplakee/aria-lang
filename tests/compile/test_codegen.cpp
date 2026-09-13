@@ -27,7 +27,6 @@ using aria::GC;
 using aria::i64;
 using aria::Lexer;
 using aria::new_module;
-using aria::new_string;
 using aria::ObjFunction;
 using aria::ObjModule;
 using aria::Parser;
@@ -90,9 +89,7 @@ namespace {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto mod_name = new_string(gc, "<test>");
-        auto guard    = gc.make_guard(mod_name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
-        auto module   = new_module(gc, mod_name);
+        auto module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
         auto compiled = compile_source(gc, module, src);
         if (!compiled) {
             return RunResult{std::move(vm), std::unexpected(compiled.error())};
@@ -107,9 +104,7 @@ namespace {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto mod_name = new_string(gc, "<test>");
-        auto guard    = gc.make_guard(mod_name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
-        auto module   = new_module(gc, mod_name);
+        auto module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
         auto compiled = compile_source(gc, module, src);
         return Compiled{std::move(vm), std::move(compiled)};
     }
@@ -855,9 +850,7 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
     auto  vm = std::make_unique<AriaVM>();
     auto& gc = vm->gc();
     gc.set_stress(true);
-    auto mod_name = new_string(gc, "<test>");
-    auto guard    = gc.make_guard(mod_name);
-    auto module   = new_module(gc, mod_name);
+    auto module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
 
     auto c1 = compile_source(gc, module, "var len = 5;");
     ASSERT_TRUE(c1.has_value());

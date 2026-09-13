@@ -41,19 +41,16 @@ namespace {
     // 注意：返回的 ObjFunction 及其常量池 ObjString 归属调用方提供的 vm 的 GC，须在 vm 存活期间使用。
     Result<ObjFunction*, Error> compile_source(GC& gc, ObjModule* module, std::string_view src) {
         SourceFile file{"<test>", "<test>", aria::String{src}};
-        Lexer      lexer;
-        auto       lex = lexer.tokenize(file);
+        auto       lex = Lexer::tokenize(file);
         if (!lex) {
             return std::unexpected(std::move(lex.error()[0]));
         }
-        Parser parser;
-        auto   parse = parser.parse(std::move(*lex));
+        auto parse = Parser::parse(std::move(*lex));
         if (!parse) {
             return std::unexpected(std::move(parse.error()[0]));
         }
-        auto    program = std::move(*parse);
-        CodeGen codegen{gc};
-        return codegen.compile(*program, module);
+        auto program = std::move(*parse);
+        return CodeGen::compile(gc, *program, module, aria::kMainEntryName);
     }
 
     // run_source / compile_only 各自持有一个 AriaVM（进而持其 GC），并随结果一并返回，

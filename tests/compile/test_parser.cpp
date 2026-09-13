@@ -59,17 +59,15 @@ namespace {
 
     // 词法 + 语法分析。SourceFile 就位后再 tokenize（避免 SSO 短串 move 后 view 悬空）。
     UPtr<Parsed> parse_src(const StringView src) {
-        auto p = std::make_unique<Parsed>();
-        p->sf  = SourceFile{String{"t"}, String{"t"}, String{src}};
-        Lexer lexer;
-        auto  lex = lexer.tokenize(p->sf);
+        auto p   = std::make_unique<Parsed>();
+        p->sf    = SourceFile{String{"t"}, String{"t"}, String{src}};
+        auto lex = Lexer::tokenize(p->sf);
         if (!lex) {
             // 词法错误直接作为解析失败返回（测试用源码应词法合法）。
             p->result = std::unexpected(std::move(lex.error()));
             return p;
         }
-        Parser parser;
-        p->result = parser.parse(std::move(*lex));
+        p->result = Parser::parse(std::move(*lex));
         return p;
     }
 

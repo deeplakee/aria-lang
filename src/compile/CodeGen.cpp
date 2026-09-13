@@ -36,13 +36,17 @@ namespace aria {
     // 入口
     // ============================================================
 
-    Result<ObjFunction*, Error> CodeGen::compile(const ProgramNode& program, ObjModule* module,
+    // 静态服务入口：一次性对象上跑单次编译（契约见 CodeGen.hpp compile 注）。
+    Result<ObjFunction*, Error> CodeGen::compile(GC& gc, const ProgramNode& program, ObjModule* module,
                                                  const StringView entry_name) {
+        CodeGen self{gc};
+        return self.generate_bytecode(program, module, entry_name);
+    }
+
+    Result<ObjFunction*, Error> CodeGen::generate_bytecode(const ProgramNode& program, ObjModule* module,
+                                                           const StringView entry_name) {
         // module 入临时根贯穿全程（根化链与各守卫窗口见类首「GC 安全」注）。
         const auto guard = gc_.make_guard(module);
-
-        // 防御：lvalue_mode_ 复位为 Load（构造已置；此处防上一次 compile() throw 后残留跨复用）。
-        lvalue_mode_ = LvalueMode::Load;
 
         const auto entry = init_module(module, entry_name);
 
@@ -56,8 +60,8 @@ namespace aria {
             cur_cu()->emit_op(OpCode::LOAD_NIL, line);
             cur_cu()->emit_op(OpCode::RETURN, line);
         } catch (AriaCompileException& e) {
-            // 出错即 unwind 到此：~ModuleCtx 沿 enclosing_ 链释放入口 + 出错未还原的子上下文。
-            mod_ctx_.reset();
+            // 出错即 unwind 到此：随一次性对象析构，~ModuleCtx 沿 enclosing_ 链释放
+            // 入口 + 出错未还原的子上下文。
             return std::unexpected(e.error());
         }
 
@@ -66,7 +70,7 @@ namespace aria {
         io::println(stderr, "{}", cur_cu()->disassemble(entry_name));
 #endif
 
-        mod_ctx_.reset(); // 释放本模块上下文（含入口 fn 上下文）；游标随之失效但不再读
+        // mod_ctx_ 随一次性对象析构释放（~ModuleCtx 沿 enclosing_ 链），无需显式 reset。
         return entry;
     }
 

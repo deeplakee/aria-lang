@@ -16,6 +16,8 @@
 //   - **错误通道**：深层 fail() 抛 AriaCompileException（持 Error）自动 unwind 跨 visit
 //     递归栈，compile() 顶层 catch 翻译为 Result -- 无需 error_ 成员 / ok() 短路守卫，
 //     首个错误自然即止。
+//   - 静态服务入口：compile(GC&, ...) 内部一次性构造（私有构造），无空态、无复用；
+//     lvalue_mode_ 等状态构造置初值，无跨次残留。
 //   - 栈契约：ExprNode 子类留一值、StmtNode 子类留零值；父节点经 emit_expr/emit_stmt 编排。
 //
 // GC 安全：compile() 入口 make_guard(module) 贯穿全程，建设中 ObjFunction/常量池经
@@ -45,21 +47,18 @@ namespace aria {
     class CodeGen final : public AstVisitor {
         // lvalue 模式（见 compound-assignment-lowering.md）：flag 由 emit_lvalue 设置、目标节点
         // 入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load，子节点不泄漏；emit_expr 入口
-        // ASSERT == Load 钉漏 take；构造与 compile() 入口复位防 throw 残留）。Load = rvalue、
+        // ASSERT == Load 钉漏 take；构造置 Load，一次性对象无跨次残留）。Load = rvalue、
         // Store = 赋值目标（peek-store 留值）、Locate = 预留位。
         enum class LvalueMode : u8 { Load, Store, Locate };
 
     public:
-        CodeGen() = delete;
-
-        // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
-        explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
-
-        // 编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名 entry_name：主入口
-        // <main>（默认）、运行期导入模块 <module>，对齐 CPython 模块体 code object 同名）。
+        // 静态服务入口：编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名
+        // entry_name：主入口 kMainEntryName（<main>）、运行期导入模块 kModuleEntryName（<module>，
+        // 对齐 CPython 模块体 code object 同名），无默认值（调用方意图显式））。gc 为编译期分配的
+        // ObjFunction / ObjString 归属（与后续 run() 同源）。内部一次性构造，无空态、无复用。
         // 成功返回入口函数（已 set_entry）；失败返回首错 Error。
-        Result<ObjFunction*, Error> compile(const ProgramNode& program, ObjModule* module,
-                                            StringView entry_name = kMainEntryName);
+        static Result<ObjFunction*, Error> compile(GC& gc, const ProgramNode& program, ObjModule* module,
+                                                   StringView entry_name);
 
         ~CodeGen() override                    = default;
         CodeGen(const CodeGen&)                = delete;
@@ -118,6 +117,10 @@ namespace aria {
         void visitListPatternNode(ListPatternNode& node) override;
 
     private:
+        // 一次性实例：仅静态入口 compile 构造（编译期分配的 ObjFunction / ObjString 归 gc，
+        // 与后续 run() 同源）。
+        explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
+
         GC& gc_;
 
         // 当前 lvalue 模式（语义与 take/set 纪律见类首 LvalueMode 注）。
@@ -126,8 +129,13 @@ namespace aria {
         // 模块编译上下文（所有权与生命期见类首「状态分离」段与 compile/ModuleCtx.hpp）。
         UPtr<ModuleCtx> mod_ctx_;
 
-        // 模块初始化（compile 入口调用）：建入口函数（名 entry_name）+ set_entry + 构造 ModuleCtx（创建入口 fn 上下文、
-        // 游标就位），返回入口函数。须在 module 已根化下调用（compile() 的 guard）。
+        // 静态入口 compile 的实例侧实现：把 ProgramNode 生成为字节码（单遍合一，名字解析
+        // /语义检查随发射同遍完成）。
+        Result<ObjFunction*, Error> generate_bytecode(const ProgramNode& program, ObjModule* module,
+                                                      StringView entry_name);
+
+        // 模块初始化（generate_bytecode 入口调用）：建入口函数（名 entry_name）+ set_entry + 构造 ModuleCtx（创建入口
+        // fn 上下文、 游标就位），返回入口函数。须在 module 已根化下调用（generate_bytecode 的 guard）。
         ObjFunction* init_module(ObjModule* module, StringView entry_name);
 
         // 当前函数上下文游标与当前 CodeUnit（均由 mod_ctx_ 游标派生，见类首「状态分离」段）。

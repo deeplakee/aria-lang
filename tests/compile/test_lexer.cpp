@@ -42,10 +42,9 @@ namespace {
 
     // 辅助：tokenize 并断言成功，返回堆上 {sf, tokens}。
     UPtr<Lexed> lex_ok(const StringView content) {
-        auto lexed = std::make_unique<Lexed>();
-        lexed->sf  = make_src(content); // sf 就位（此后不再 move）
-        Lexer lexer;
-        auto  result = lexer.tokenize(lexed->sf);
+        auto lexed  = std::make_unique<Lexed>();
+        lexed->sf   = make_src(content); // sf 就位（此后不再 move）
+        auto result = Lexer::tokenize(lexed->sf);
         EXPECT_TRUE(result.has_value()) << "期望 tokenize 成功";
         lexed->tokens = result ? std::move(*result) : List<Token>{};
         return lexed;
@@ -53,10 +52,9 @@ namespace {
 
     // 辅助：tokenize 并断言失败，返回堆上 {sf, errors}。
     UPtr<LexErrors> lex_err(const StringView content) {
-        auto lexed = std::make_unique<LexErrors>();
-        lexed->sf  = make_src(content);
-        Lexer lexer;
-        auto  result = lexer.tokenize(lexed->sf);
+        auto lexed  = std::make_unique<LexErrors>();
+        lexed->sf   = make_src(content);
+        auto result = Lexer::tokenize(lexed->sf);
         EXPECT_FALSE(result.has_value()) << "期望 tokenize 失败";
         lexed->errors = result ? List<Error>{} : std::move(result.error());
         return lexed;
@@ -192,8 +190,7 @@ TEST(LexerIdentifier, Basic) {
 TEST(LexerIdentifier, LoneUnderscore) {
     // 内联以排除 helper 的生命周期干扰
     SourceFile sf{String{"t"}, String{"t"}, String{"_"}};
-    Lexer      lexer;
-    auto       result = lexer.tokenize(sf);
+    auto       result = Lexer::tokenize(sf);
     ASSERT_TRUE(result.has_value());
     const auto& tokens = *result;
     ASSERT_EQ(tokens.size(), 2u);
@@ -576,9 +573,8 @@ TEST(LexerError, LoneAmpersand) {
 
 TEST(LexerRecovery, ContinueAfterRecoverable) {
     // @ 是 InvalidCharacter（可恢复），应继续扫到 42
-    SourceFile sf = make_src("@ 42");
-    Lexer      lexer;
-    auto       result = lexer.tokenize(sf);
+    SourceFile sf     = make_src("@ 42");
+    auto       result = Lexer::tokenize(sf);
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
     ASSERT_FALSE(errors.empty());
@@ -587,18 +583,16 @@ TEST(LexerRecovery, ContinueAfterRecoverable) {
 
 TEST(LexerRecovery, MultipleErrorsCollected) {
     // 两个非法字符 @ 和 ?
-    SourceFile sf = make_src("@ ?");
-    Lexer      lexer;
-    auto       result = lexer.tokenize(sf);
+    SourceFile sf     = make_src("@ ?");
+    auto       result = Lexer::tokenize(sf);
     ASSERT_FALSE(result.has_value());
     EXPECT_GE(result.error().size(), 2u);
 }
 
 TEST(LexerRecovery, UnterminatedStringContinuesScanning) {
     // 未闭合串遇裸换行：记 UnterminatedString（跨行）后跨过换行继续扫，收集到后续 @ 的 InvalidCharacter。
-    SourceFile sf = make_src("\"abc\n@");
-    Lexer      lexer;
-    auto       result = lexer.tokenize(sf);
+    SourceFile sf     = make_src("\"abc\n@");
+    auto       result = Lexer::tokenize(sf);
     ASSERT_FALSE(result.has_value());
     const auto& errors = result.error();
     ASSERT_GE(errors.size(), 2u);
@@ -620,9 +614,8 @@ TEST(LexerRecovery, MaxErrorsCapStopsScan) {
     for (usize i = 0; i < 100; ++i) {
         src += "@ ";
     }
-    SourceFile sf = make_src(src);
-    Lexer      lexer;
-    auto       result = lexer.tokenize(sf);
+    SourceFile sf     = make_src(src);
+    auto       result = Lexer::tokenize(sf);
     ASSERT_FALSE(result.has_value());
     // 错误数受上限约束（不应到 100）
     EXPECT_LE(result.error().size(), 64u); // 上限 32，留余量（达上限后不再记账）

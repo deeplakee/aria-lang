@@ -24,18 +24,18 @@ namespace aria {
     //
     // 生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc
     // （含 SourceFile*）提供，故调用方须保证 SourceFile 在解析期间存活（同 Lexer
-    //  的生命周期约束）。Parser 可复用（多次 parse）。
+    //  的生命周期约束）。
     class Parser {
     public:
-        // 空态构造：成员全空，待 parse 注入 token 流。
-        Parser() noexcept;
-
-        // 解析 token 流为 Program AST。扫完清空成员。返回程序或错误集合。
-        [[nodiscard]]
-        Result<UPtr<ProgramNode>, List<Error>> parse(List<Token> tokens);
+        // 静态服务入口：解析 token 流为 Program AST，返回程序或错误集合。
+        // 内部一次性构造（私有构造），无空态、无复用。
+        static Result<UPtr<ProgramNode>, List<Error>> parse(List<Token> tokens);
 
     private:
-        // --- 扫描状态（parse 注入，扫完清空）---
+        // 一次性实例：构造即注入 token 流，仅静态入口 parse 构造。
+        explicit Parser(List<Token> tokens) noexcept;
+
+        // --- 扫描状态（构造注入）---
         List<Token> tokens_;
         usize       pos_;
         List<Error> errors_;

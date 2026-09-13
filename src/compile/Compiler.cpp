@@ -9,28 +9,23 @@
 
 namespace aria {
 
-    Compiler::Compiler(GC& gc) noexcept : gc_{gc} {}
-
     // 端到端：tokenize -> parse -> CodeGen::compile，各阶段首错即止（契约见 Compiler.hpp compile 注）。
-    Result<ObjFunction*, Error> Compiler::compile(SourceFile& source, ObjModule* module, const StringView entry_name) {
+    Result<ObjFunction*, Error> Compiler::compile(GC& gc, SourceFile& source, ObjModule* module,
+                                                  const StringView entry_name) {
         // 1) 词法：SourceFile -> token 流（或 List<Error>，取首错）。
-        Lexer lexer;
-        auto  lex = lexer.tokenize(source);
-        if (!lex) {
-            return std::unexpected(std::move(lex.error()[0]));
+        auto tokens = Lexer::tokenize(source);
+        if (!tokens) {
+            return std::unexpected(std::move(tokens.error()[0]));
         }
 
         // 2) 语法：token 流 -> ProgramNode（或 List<Error>，取首错）。
-        Parser parser;
-        auto   parse = parser.parse(std::move(*lex));
-        if (!parse) {
-            return std::unexpected(std::move(parse.error()[0]));
+        auto ast = Parser::parse(std::move(*tokens));
+        if (!ast) {
+            return std::unexpected(std::move(ast.error()[0]));
         }
 
-        // 3) 代码生成：ProgramNode -> 入口 ObjFunction（或单 Error）。
-        auto    program = std::move(*parse);
-        CodeGen codegen{gc_};
-        return codegen.compile(*program, module, entry_name);
+        // 3) 代码生成：AST -> 入口 ObjFunction（或单 Error）。
+        return CodeGen::compile(gc, **ast, module, entry_name);
     }
 
 } // namespace aria

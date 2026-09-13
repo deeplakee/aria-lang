@@ -17,11 +17,11 @@
 //     不外返；编译失败返回的 Error 在构造期已把位置烘进自有 message_ 串、不持 SourceFile*。故 source
 //     只须存活到 compile() 返回（烘焙在此时完成），返回的 Error / ObjFunction 均不依赖 source，调用方
 //     可立即释放或 move 它（Error 已不指向其 content）。
-//   - 单遍一次性：Lexer / Parser / CodeGen 均每次 compile() 内就地构造，状态局限单次编译
-//     （CodeGen 持 UPtr<ModuleCtx>），无跨 compile() 复用。
-//   - GC 同源：构造取 GC&（与 VM 同一 GC），编译期分配的 ObjFunction / ObjString 归此 GC、与后续 run()
-//     同源。编译期 GC 已启用--CodeGen::compile 入口 make_guard(module) 自守 module，故调用方无需为编译期
-//     再守模块（module 须是 GC 管理的合法 ObjModule）。
+//   - 静态服务：Lexer / Parser / CodeGen 为静态入口（tokenize / parse / compile，内部一次性构造）；
+//     Compiler 无状态，compile 同为静态入口，无跨 compile() 复用。
+//   - GC 同源：compile 的 gc 参数（与 VM 同一 GC），编译期分配的 ObjFunction / ObjString 归此 GC、
+//     与后续 run() 同源。编译期 GC 已启用--CodeGen::compile 入口 make_guard(module) 自守 module，
+//     故调用方无需为编译期再守模块（module 须是 GC 管理的合法 ObjModule）。
 //
 // 与 CodeGen 的分工：CodeGen 是「AST -> CodeUnit（包在 ObjFunction）」代码生成器；Compiler 是
 // 「SourceFile -> AST」(Lexer/Parser) + 「调 CodeGen 产出 ObjFunction」编排层；不做磁盘 I/O
@@ -40,27 +40,14 @@ namespace aria {
 
     class Compiler {
     public:
-        Compiler() = delete;
-
-        // 以 VM 的 GC 构造（编译期分配的 ObjFunction / ObjString 归此 GC，与后续 run() 同源）。
-        explicit Compiler(GC& gc) noexcept;
-
-        Compiler(const Compiler&)                = delete;
-        Compiler& operator=(const Compiler&)     = delete;
-        Compiler(Compiler&&) noexcept            = delete;
-        Compiler& operator=(Compiler&&) noexcept = delete;
-
-        // 编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 entry_name，模块体包装，已
-        // module.set_entry）。source / module 的生命期与 GC 契约见类注「设计要点」。
-        //   - entry_name：入口函数名。主入口模块传 <main>（默认）；运行期导入模块传 <module>（由 VM 加载层
-        //     调用时显式传入，区别于主入口）。
+        // 静态服务入口：编译源文件 source 到模块 module 的入口 ObjFunction（arity 0、名 entry_name，
+        // 模块体包装，已 module.set_entry）。gc 为编译期分配的 ObjFunction / ObjString 归属（与后续
+        // run() 同源）。source / module 的生命期与 GC 契约见类注「设计要点」。
+        //   - entry_name：入口函数名，无默认值（调用方意图显式）：主入口模块传 kMainEntryName（<main>）；
+        //     运行期导入模块传 kModuleEntryName（<module>，由 VM 加载层传入，区别于主入口）。
         // 成功返回入口 ObjFunction*（归属 gc，须在 gc 存活期间使用）；失败返回首错 Error。
-        [[nodiscard]]
-        Result<ObjFunction*, Error> compile(SourceFile& source, ObjModule* module,
-                                            StringView entry_name = kMainEntryName);
-
-    private:
-        GC& gc_;
+        static Result<ObjFunction*, Error> compile(GC& gc, SourceFile& source, ObjModule* module,
+                                                   StringView entry_name);
     };
 
 } // namespace aria

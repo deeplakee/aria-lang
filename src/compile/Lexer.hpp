@@ -15,12 +15,9 @@ namespace aria {
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。
     //
-    // 生命周期：
-    //   - 默认构造为空态；通过 tokenize(SourceFile&) 传入源文件、初始化成员、扫描、扫完清空
-    //     成员返回。
-    //   - Lexer 可复用（多次 tokenize 不同文件），故以指针持有 SourceFile（nullptr 表空态，
-    //     引用无法「清空」）。
-    //   - 参数仍按借用约定传引用（见 CPP_Naming_Convention.md Parameter Passing）。
+    // 静态服务入口 tokenize(SourceFile&)：内部一次性构造（私有构造），扫完即销毁--
+    // 无空态、无复用。源文件按借用约定传引用（见 CPP_Naming_Convention.md Parameter
+    // Passing），扫描期间须存活。
     //
     // 返回 Result<List<Token>, List<Error>>：
     //   - 所有词法错误（串未闭合等）一律作可恢复处理--
@@ -31,20 +28,19 @@ namespace aria {
     // 扫描基于 utf8::decode_one 按码点推进；src_ 底层 String 以 '\0' 结尾，可作哨兵。
     class Lexer {
     public:
-        // 空态构造：成员全空，待 tokenize 注入 SourceFile。
-        Lexer() noexcept;
-
-        // 对 src 做词法分析。扫完清空成员。返回 token 流或错误集合。
-        [[nodiscard]]
-        Result<List<Token>, List<Error>> tokenize(SourceFile& src);
+        // 对 src 做词法分析，返回 token 流或错误集合。
+        static Result<List<Token>, List<Error>> tokenize(SourceFile& src);
 
     private:
         // 错误上限：errors_ 达此数即置 is_fatal_ 停止扫描，避免级联刷屏。
         static constexpr usize kMaxErrors = 32;
 
-        // 扫描状态（tokenize 注入，扫完清空）
-        SourceFile* source_; // nullptr 表空态；扫描期指向 src
-        StringView  src_;    // = source_->content()，'\0' 结尾可作哨兵
+        // 一次性实例：构造即注入扫描状态，仅静态入口 tokenize 构造。
+        explicit Lexer(SourceFile& src) noexcept;
+
+        // 扫描状态（构造注入）
+        SourceFile& source_; // 借用，扫描期存活
+        StringView  src_;    // = source_.content()，'\0' 结尾可作哨兵
         usize       pos_;    // 字节游标
         List<Token> tokens_;
         List<Error> errors_;

@@ -94,33 +94,19 @@ namespace aria {
     // 构造与入口
     // ============================================================
 
-    Lexer::Lexer() noexcept : source_{nullptr}, src_{}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
+    // 一次性实例：构造即注入扫描状态（契约见 Lexer.hpp 构造注）。
+    Lexer::Lexer(SourceFile& src) noexcept :
+        source_{src}, src_{src.content()}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
 
     Result<List<Token>, List<Error>> Lexer::tokenize(SourceFile& src) {
-        source_   = &src;
-        src_      = src.content();
-        pos_      = 0;
-        is_fatal_ = false;
-
-        run();
+        Lexer lexer{src};
+        lexer.run();
 
         // 存在任何错误（含达上限 is_fatal_，此时 errors_ 必非空）-> 返回错误集合；否则 token 流。
-        List<Token> out_tokens = std::move(tokens_);
-        List<Error> out_errors = std::move(errors_);
-        const bool  had_error  = !out_errors.empty();
-
-        // 清空成员，回到空态供复用
-        source_   = nullptr;
-        src_      = {};
-        pos_      = 0;
-        is_fatal_ = false;
-        tokens_.clear();
-        errors_.clear();
-
-        if (had_error) {
-            return std::unexpected(std::move(out_errors));
+        if (!lexer.errors_.empty()) {
+            return std::unexpected(std::move(lexer.errors_));
         }
-        return out_tokens;
+        return std::move(lexer.tokens_);
     }
 
     // ============================================================
@@ -142,7 +128,7 @@ namespace aria {
 
     bool Lexer::is_eof() const noexcept { return pos_ >= src_.size(); }
 
-    SourceLoc Lexer::loc_at(const usize offset) const { return SourceLoc{source_, source_->locate(offset)}; }
+    SourceLoc Lexer::loc_at(const usize offset) const { return SourceLoc{&source_, source_.locate(offset)}; }
 
     // ============================================================
     // 错误记账

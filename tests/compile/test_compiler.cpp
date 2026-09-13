@@ -71,12 +71,11 @@ namespace {
     };
 
     CompileFail compile_fail(std::string_view src) {
-        auto     vm     = std::make_unique<AriaVM>();
-        auto&    gc     = vm->gc();
-        auto     module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
-        auto     source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
-        Compiler compiler{gc};
-        auto     compiled = compiler.compile(*source, module);
+        auto  vm       = std::make_unique<AriaVM>();
+        auto& gc       = vm->gc();
+        auto  module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto  source   = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
+        auto  compiled = Compiler::compile(gc, *source, module, aria::kMainEntryName);
         EXPECT_FALSE(compiled.has_value());
         // module 仍由 GC 管理。error 的 SourceLoc 指向 *source，source 经 unique_ptr 存活故可渲染。
         return CompileFail{std::move(vm), std::move(source), std::move(compiled)};

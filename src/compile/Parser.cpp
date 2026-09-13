@@ -84,28 +84,23 @@ namespace aria {
     // 构造与入口
     // ============================================================
 
-    Parser::Parser() noexcept : tokens_{}, pos_{0}, errors_{} {}
+    // 一次性实例：构造即注入 token 流（契约见 Parser.hpp 构造注）。
+    Parser::Parser(List<Token> tokens) noexcept : tokens_{std::move(tokens)}, pos_{0}, errors_{} {}
 
     Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token> tokens) {
-        tokens_ = std::move(tokens);
-        pos_    = 0;
-        errors_.clear();
+        Parser parser{std::move(tokens)};
 
         UPtr<ProgramNode> prog;
         try {
-            prog = program();
+            prog = parser.program();
         } catch (const AriaCompileException& e) {
             // 兜底：program() 内 declaration() 已捕获常规错误；此处仅防御异常逃逸。
-            errors_.push_back(e.error());
+            parser.errors_.push_back(e.error());
             prog = nullptr;
         }
 
-        List<Error> out_errors = std::move(errors_);
-        tokens_.clear();
-        pos_ = 0;
-
-        if (!out_errors.empty()) {
-            return std::unexpected(std::move(out_errors));
+        if (!parser.errors_.empty()) {
+            return std::unexpected(std::move(parser.errors_));
         }
         return prog;
     }

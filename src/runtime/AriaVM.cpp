@@ -304,7 +304,7 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(SourceFile& source, ObjModule* module) {
-        auto compiled = Compiler{gc_}.compile(source, module);
+        auto compiled = Compiler::compile(gc_, source, module, kMainEntryName);
         if (!compiled) {
             return std::unexpected(std::move(compiled).error());
         }
@@ -312,7 +312,7 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_run(SourceFile& source, ObjModule* module) {
-        auto compiled = Compiler{gc_}.compile(source, module);
+        auto compiled = Compiler::compile(gc_, source, module, kMainEntryName);
         if (!compiled) {
             io::println(stderr, "{}", compiled.error().message());
             return InterpretResult::CompileError;
@@ -486,7 +486,7 @@ namespace aria {
         // 4. 编译(入口名 kModuleEntryName,CodeGen::init_module 已 set_entry)。编译期 Error
         //    就地 new_exception 装箱透传(消息不重烘,位置指向被导入文件内部);module 尚未
         //    入表仅由 guard 根化,source 须存活到 compile() 返回。
-        if (auto compiled = Compiler{gc_}.compile(source, module, kModuleEntryName); !compiled) {
+        if (auto compiled = Compiler::compile(gc_, source, module, kModuleEntryName); !compiled) {
             current_->raise(Value::from_obj(new_exception(gc_, compiled.error())));
             return nullptr;
         }

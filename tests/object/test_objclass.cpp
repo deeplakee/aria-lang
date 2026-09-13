@@ -38,7 +38,7 @@ using aria::value_identical;
 namespace {
 
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
-    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根
+    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 klass 未根
     //(守卫随函数退出释放),调用方跨 GC 点持有须自行守卫。
     ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
         auto guard = gc.make_guard(super);
@@ -76,42 +76,42 @@ TEST(ObjClass, Basics) {
     GC   gc;
     auto name  = new_string(gc, "Foo");
     auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_class
-    auto cls   = new_class(gc, name, nullptr);
-    EXPECT_TRUE(aria::Object::is<ObjClass>(cls));
-    EXPECT_EQ(cls->type(), aria::ObjType::CLASS);
-    EXPECT_EQ(cls->name(), name); // intern 同指针
-    EXPECT_EQ(cls->superclass(), nullptr);
-    EXPECT_TRUE(cls->init().is_nil()); // ctor 自 super 派生:根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
+    auto klass = new_class(gc, name, nullptr);
+    EXPECT_TRUE(aria::Object::is<ObjClass>(klass));
+    EXPECT_EQ(klass->type(), aria::ObjType::CLASS);
+    EXPECT_EQ(klass->name(), name); // intern 同指针
+    EXPECT_EQ(klass->superclass(), nullptr);
+    EXPECT_TRUE(klass->init().is_nil()); // ctor 自 super 派生:根态(super==nullptr)出厂 nil,由 bootstrap 经 set_field 设
 }
 
 TEST(ObjClass, SuperclassInjects) {
     GC   gc;
     auto super = make_class(gc, "Base");
     auto guard = gc.make_guard(super);
-    auto cls   = make_class(gc, "Foo", super);
-    EXPECT_EQ(cls->superclass(), super);
+    auto klass = make_class(gc, "Foo", super);
+    EXPECT_EQ(klass->superclass(), super);
 }
 
 // set_field(创建/更新本类自身表)+ load_field 直读:创建后可读、覆写后读新值。
 TEST(ObjClass, SetFieldThenLoadOwnTable) {
     AriaVM vm;
     auto&  gc    = vm.gc();
-    auto   cls   = make_class(gc, "Foo");
+    auto   klass = make_class(gc, "Foo");
     auto   k     = new_string(gc, "x");
     auto   guard = gc.make_guard(k);
     auto   v     = new_string(gc, "a long static value string!!!");
     guard.push(v);
 
-    cls->set_field(k, Value::from_obj(v));
+    klass->set_field(k, Value::from_obj(v));
 
-    auto initial_read = cls->load_field(vm, k);
+    auto initial_read = klass->load_field(vm, k);
     ASSERT_TRUE(initial_read.has_value());
     EXPECT_TRUE(value_identical(*initial_read, Value::from_obj(v)));
 
     auto v2 = new_string(gc, "a long static value string two");
     guard.push(v2);
-    cls->set_field(k, Value::from_obj(v2)); // 覆写:原槽更新
-    auto rewritten_read = cls->load_field(vm, k);
+    klass->set_field(k, Value::from_obj(v2)); // 覆写:原槽更新
+    auto rewritten_read = klass->load_field(vm, k);
     ASSERT_TRUE(rewritten_read.has_value());
     EXPECT_TRUE(value_identical(*rewritten_read, Value::from_obj(v2)));
 }
@@ -121,11 +121,11 @@ TEST(ObjClass, SetFieldThenLoadOwnTable) {
 TEST(ObjClass, LoadFieldMissFailsWithUndefinedProperty) {
     AriaVM vm;
     auto&  gc    = vm.gc();
-    auto   cls   = make_class(gc, "Foo");
-    auto   guard = gc.make_guard(cls); // miss 的 fail 装箱是分配点:类须在根
+    auto   klass = make_class(gc, "Foo");
+    auto   guard = gc.make_guard(klass); // miss 的 fail 装箱是分配点:类须在根
     auto   k     = new_string(gc, "nope");
     guard.push(k);
-    EXPECT_FALSE(cls->load_field(vm, k).has_value());
+    EXPECT_FALSE(klass->load_field(vm, k).has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("<class Foo> has no member 'nope'"));
@@ -190,14 +190,14 @@ TEST(ObjClass, ReshadowInsertsOwnKey) {
 
 TEST(ObjClass, ToString) {
     GC   gc;
-    auto cls = make_class(gc, "Foo");
-    EXPECT_EQ(cls->to_string(), "<class Foo>");
+    auto klass = make_class(gc, "Foo");
+    EXPECT_EQ(klass->to_string(), "<class Foo>");
 }
 
 TEST(ObjClass, DebugRender) {
     GC   gc;
-    auto cls = make_class(gc, "Foo");
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(cls)), "<class Foo>"); // 调试渲染同文案
+    auto klass = make_class(gc, "Foo");
+    EXPECT_EQ(aria::format_value_debug(Value::from_obj(klass)), "<class Foo>"); // 调试渲染同文案
 }
 
 // stress GC:sub 为唯一根,superclass 链(经 superclass_)、静态值(长串)/方法闭包(defining
@@ -263,23 +263,23 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
 // --静态方法闭包经 Foo.m 上栈时类亡指针不悬垂(M5 计划 §2.6)。
 TEST(ObjClass, DefiningClassSurvivesViaClosureTrace) {
     GC          gc;
-    ObjClass*   cls    = nullptr;
+    ObjClass*   klass  = nullptr;
     ObjClosure* method = nullptr;
     {
         auto guard = gc.make_guard();
-        cls        = make_class(gc, "K");
-        guard.push(cls);
+        klass      = make_class(gc, "K");
+        guard.push(klass);
         method = make_closure(gc, "m", 0);
         guard.push(method);
-        method->set_defining_class(cls);
-        // 作用域退出:cls/method 的临时根全部弹出,二者此后仅经 method->defining_class_ 相连
+        method->set_defining_class(klass);
+        // 作用域退出:klass/method 的临时根全部弹出,二者此后仅经 method->defining_class_ 相连
     }
     auto        guard  = gc.make_guard(method); // 只根闭包
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_EQ(gc.bytes_allocated(), before);
-    EXPECT_EQ(method->defining_class(), cls);
-    EXPECT_EQ(cls->name()->view(), "K"); // 类经闭包 trace 存活,其 name_ 级联存活
+    EXPECT_EQ(method->defining_class(), klass);
+    EXPECT_EQ(klass->name()->view(), "K"); // 类经闭包 trace 存活,其 name_ 级联存活
 }
 
 // 未根类被 sweep。

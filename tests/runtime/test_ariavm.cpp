@@ -1653,10 +1653,10 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     ASSERT_TRUE(out->is_obj());
     auto inst = aria::Object::as<ObjInstance>(out->as_obj());
     ASSERT_NE(inst, nullptr);
-    EXPECT_EQ(inst->cls()->name()->view(), "Foo");
-    EXPECT_EQ(inst->cls()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
+    EXPECT_EQ(inst->klass()->name()->view(), "Foo");
+    EXPECT_EQ(inst->klass()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
     // seed = Object 的原生 no-op init(MAKE_CLASS 继承,Value 经 === 判同):
-    EXPECT_TRUE(aria::value_identical(inst->cls()->init(), vm.object_class()->init()));
+    EXPECT_TRUE(aria::value_identical(inst->klass()->init(), vm.object_class()->init()));
     // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
     // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
     guard.push(inst);
@@ -2433,7 +2433,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     //(命中路径纯查询无分配,读安全)。
     auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
     ASSERT_NE(inst, nullptr);
-    EXPECT_EQ(inst->cls()->name()->view(), "Foo");
+    EXPECT_EQ(inst->klass()->name()->view(), "Foo");
     auto tag_v = inst->load_field(vm, new_string(gc, "tag"));
     ASSERT_TRUE(tag_v.has_value());
     EXPECT_EQ(tag_v->as_int(), 3);

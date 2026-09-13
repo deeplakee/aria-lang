@@ -21,8 +21,8 @@ namespace aria {
     }
 
     Opt<Value> ObjClass::find_field(ObjString* name) noexcept {
-        for (auto cls = this; cls != nullptr; cls = cls->superclass_) {
-            if (const auto entry = cls->field_.find(Value::from_obj(name))) {
+        for (auto klass = this; klass != nullptr; klass = klass->superclass_) {
+            if (const auto entry = klass->field_.find(Value::from_obj(name))) {
                 return entry->value; // 读穿透:链上首个命中值(拷出;写另经 set_field 落接收类)
             }
         }

@@ -11,9 +11,9 @@
 
 namespace aria {
 
-    ObjInstance::ObjInstance(GC& gc, ObjClass* cls) : Object{ObjType::INSTANCE}, class_{cls}, fields_{&gc} {
+    ObjInstance::ObjInstance(GC& gc, ObjClass* klass) : Object{ObjType::INSTANCE}, class_{klass}, fields_{&gc} {
         // class_ 恒非空(ctor ASSERT):实例必有类。
-        ASSERT(cls != nullptr, "ObjInstance class must not be null");
+        ASSERT(klass != nullptr, "ObjInstance class must not be null");
     }
 
     Opt<Value> ObjInstance::load_field(AriaVM& vm, ObjString* name) {
@@ -66,10 +66,10 @@ namespace aria {
         return std::format("<{} instance>", class_->name()->view());
     }
 
-    ObjInstance* new_instance(GC& gc, ObjClass* cls) {
-        // 工厂不替调用方守卫入参:调用方须在调用前自行根化 cls(实例化路径 cls 在栈根化);
+    ObjInstance* new_instance(GC& gc, ObjClass* klass) {
+        // 工厂不替调用方守卫入参:调用方须在调用前自行根化 klass(实例化路径 klass 在栈根化);
         // 返回对象白色无根,建成即写栈(值栈根)。
-        return gc.new_object<ObjInstance>(gc, cls);
+        return gc.new_object<ObjInstance>(gc, klass);
     }
 
 } // namespace aria

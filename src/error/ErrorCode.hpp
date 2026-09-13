@@ -260,8 +260,8 @@ namespace aria {
 
     // 错误码所属大类。
     [[nodiscard]]
-    constexpr ErrorCategory category_of(const ErrorCode c) noexcept {
-        switch (c) {
+    constexpr ErrorCategory category_of(const ErrorCode code) noexcept {
+        switch (code) {
             case ErrorCode::Ok:
                 return ErrorCategory::Ok;
             // Syntax

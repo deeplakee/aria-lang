@@ -67,7 +67,7 @@ namespace aria {
             return defining_class_;
         }
 
-        void set_defining_class(ObjClass* cls) noexcept { defining_class_ = cls; }
+        void set_defining_class(ObjClass* klass) noexcept { defining_class_ = klass; }
 
         // 方法性标记:defining class 非空 ⟺ 方法闭包。
         [[nodiscard]]

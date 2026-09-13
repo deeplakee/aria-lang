@@ -273,12 +273,12 @@ namespace aria {
 
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
         guard.push(init_native);
-        auto cls = new_class(gc_, "Object", nullptr); // Object 根:super==nullptr,不经 MAKE_CLASS,init 由本函数设
-        guard.push(cls);
+        const auto klass = new_class(gc_, "Object", nullptr);
+        guard.push(klass);
         const auto init_key = new_string(gc_, "init");
         guard.push(init_key);
-        cls->set_field(init_key, Value::from_obj(init_native));
-        object_class_ = cls; // 发布进 VM 成员:此后经 tracer 第 4 根保命
+        klass->set_field(init_key, Value::from_obj(init_native));
+        object_class_ = klass; // 发布进 VM 成员:此后经 tracer 第 4 根保命
     }
 
     void AriaVM::init_source_roots() {
@@ -1068,8 +1068,8 @@ namespace aria {
                     // (superclass 运行期才知值类型),故 raise 而非 ASSERT。建成写回原槽;
                     // init 继承收进对象构造(new_class 出厂即自 super 派生),指令层零 seed 写点。
                     if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
-                        const auto cls    = new_class(gc_, read_name(frame), super);
-                        current_->peek(0) = Value::from_obj(cls);
+                        const auto klass  = new_class(gc_, read_name(frame), super);
+                        current_->peek(0) = Value::from_obj(klass);
                         break;
                     }
 
@@ -1084,24 +1084,24 @@ namespace aria {
                     // 仅收闭包 -- 方法性 = defining class 戳)。栈形经 ASSERT 钉(值恒来自上一条
                     // CLOSURE,语言写不出违例)。副作用:set_field 命中 "init" 同步 init_ + 闭包戳
                     // defining class(一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
-                    const auto cls    = try_obj<ObjClass>(current_->peek(1));
+                    const auto klass  = try_obj<ObjClass>(current_->peek(1));
                     const auto method = current_->peek(0);
-                    ASSERT(cls != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
-                    cls->set_field(read_name(frame), method);
+                    ASSERT(klass != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
+                    klass->set_field(read_name(frame), method);
 
                     const auto closure = try_obj<ObjClosure>(method);
                     ASSERT(closure != nullptr,
                            "MAKE_METHOD: slot-0 is not a closure (method registration is closure-only)");
-                    closure->set_defining_class(cls);
+                    closure->set_defining_class(klass);
                     current_->drop(1);
                     break;
                 }
                 case OpCode::MAKE_STATIC: {
                     // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法
                     // 同经此;不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
-                    const auto cls = try_obj<ObjClass>(current_->peek(1));
-                    ASSERT(cls != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
-                    cls->set_field(read_name(frame), current_->peek(0));
+                    const auto klass = try_obj<ObjClass>(current_->peek(1));
+                    ASSERT(klass != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
+                    klass->set_field(read_name(frame), current_->peek(0));
                     current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
                     break;
                 }

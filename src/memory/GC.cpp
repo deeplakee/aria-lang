@@ -106,8 +106,8 @@ namespace aria {
         temp_roots_.resize(temp_roots_.size() - count);
     }
 
-    ObjString* GC::intern_find(const StringView src) const noexcept { return intern_.find(src); }
+    ObjString* GC::intern_find(const StringView str) const noexcept { return intern_.find(str); }
 
-    void GC::intern_insert(ObjString* s) { intern_.insert(s); }
+    void GC::intern_insert(ObjString* str) { intern_.insert(str); }
 
 } // namespace aria

@@ -37,7 +37,7 @@ using aria::value_identical;
 namespace {
 
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
-    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根。
+    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 klass 未根。
     ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
         auto guard = gc.make_guard(super);
         return new_class(gc, name, super);
@@ -53,10 +53,10 @@ namespace {
         return new_closure(gc, fn);
     }
 
-    // 实例:守卫 cls 跨 new_instance。返回的 inst 未根。
-    ObjInstance* make_instance(GC& gc, ObjClass* cls) {
-        auto guard = gc.make_guard(cls);
-        return new_instance(gc, cls);
+    // 实例:守卫 klass 跨 new_instance。返回的 inst 未根。
+    ObjInstance* make_instance(GC& gc, ObjClass* klass) {
+        auto guard = gc.make_guard(klass);
+        return new_instance(gc, klass);
     }
 
     // 原生方法绑定测试用的空实现(NativeFn 契约形;绑定测试不实际调用)。
@@ -68,9 +68,9 @@ TEST(ObjBoundMethod, Basics) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
     auto guard  = gc.make_guard(method);
-    auto cls    = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时(非 stress)无 collect
@@ -85,11 +85,11 @@ TEST(ObjBoundMethod, IdentitySemantics) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
     auto guard  = gc.make_guard(method);
-    auto cls    = make_class(gc, "Foo");
-    guard.push(cls);
-    auto i1 = make_instance(gc, cls);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto i1 = make_instance(gc, klass);
     guard.push(i1);
-    auto i2 = make_instance(gc, cls);
+    auto i2 = make_instance(gc, klass);
     guard.push(i2);
 
     auto b1 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i1));
@@ -104,9 +104,9 @@ TEST(ObjBoundMethod, ToString) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
     auto guard  = gc.make_guard(method);
-    auto cls    = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(bound->to_string(), "<bound method m>");
@@ -118,9 +118,9 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
     GC   gc;
     auto native = new_native_fn(gc, "echo", noop_native); // StringView 重载:名字经工厂内部 intern 并自守
     auto guard  = gc.make_guard(native); // native 是 weak root,跨下方 make_class/make_instance 分配先保
-    auto cls    = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));
@@ -134,9 +134,9 @@ TEST(ObjBoundMethod, DebugRender) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
     auto guard  = gc.make_guard(method);
-    auto cls    = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
@@ -149,18 +149,18 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
     GC gc;
     gc.set_stress(true);
 
-    ObjClass*       cls      = nullptr;
+    ObjClass*       klass    = nullptr;
     ObjInstance*    inst     = nullptr;
     ObjClosure*     method   = nullptr;
     ObjString*      constant = nullptr;
     ObjBoundMethod* bound    = nullptr;
     {
         auto guard = gc.make_guard();
-        cls        = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
-        guard.push(cls);
-        inst = make_instance(gc, cls); // 建时 collect:cls 经守卫存活
+        klass      = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
+        guard.push(klass);
+        inst = make_instance(gc, klass); // 建时 collect:klass 经守卫存活
         guard.push(inst);
-        method = make_closure(gc, "m", 1); // 建时 collect:cls/inst 经守卫存活
+        method = make_closure(gc, "m", 1); // 建时 collect:klass/inst 经守卫存活
         guard.push(method);
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         guard.push(constant);
@@ -169,7 +169,7 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
         // 建时 collect:经守卫存活
         bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
         guard.push(bound);
-        // 作用域退出:全部临时根弹出,method/inst/cls 此后仅经 bound.trace 可达
+        // 作用域退出:全部临时根弹出,method/inst/klass 此后仅经 bound.trace 可达
     }
     auto       guard   = gc.make_guard(bound);      // 只根 bound
     const auto trigger = new_string(gc, "trigger"); // stress collect:全链经 bound.trace 存活
@@ -180,16 +180,16 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
-    EXPECT_EQ(inst->cls(), cls);
-    EXPECT_EQ(cls->name()->view(), "Foo");
+    EXPECT_EQ(inst->klass(), klass);
+    EXPECT_EQ(klass->name()->view(), "Foo");
 }
 
 // 未根绑定方法被 sweep。
 TEST(ObjBoundMethod, UnrootedBoundMethodSwept) {
     GC   gc;
     auto method = make_closure(gc, "m", 1);
-    auto cls    = make_class(gc, "orphan");
-    auto inst   = make_instance(gc, cls);
+    auto klass  = make_class(gc, "orphan");
+    auto inst   = make_instance(gc, klass);
     (void) new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 全链无根
     const usize before = gc.bytes_allocated();
     gc.collect();

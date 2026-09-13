@@ -24,7 +24,7 @@ namespace aria {
     //   bound-method 经值级联标);to_string = `<Foo instance>`。
     class ObjInstance final : public Object {
     public:
-        explicit ObjInstance(GC& gc, ObjClass* cls);
+        explicit ObjInstance(GC& gc, ObjClass* klass);
         ~ObjInstance() override = default; // fields_ 持 GC* 级联自释放;class_ 是 GC 对象,不归本类释放
 
         ObjInstance(const ObjInstance&)            = delete;
@@ -34,7 +34,7 @@ namespace aria {
 
         // 所属类(构造注入、不可变:实例不换类,故无 setter)。
         [[nodiscard]]
-        ObjClass* cls() const noexcept {
+        ObjClass* klass() const noexcept {
             return class_;
         }
 
@@ -69,9 +69,9 @@ namespace aria {
 
     // 工厂:分配 ObjInstance(fields_ 空态)。shell 单次分配、无内部二级分配 ==> 工厂内无中间
     //     GC 点;工厂不替调用方守卫入参(「每方只守自己创建的」),调用方须在调用前自行根化
-    //     cls(实例化路径 cls 在栈根化)。返回对象白色无根,建成即写栈(值栈根)。
+    //     klass(实例化路径 klass 在栈根化)。返回对象白色无根,建成即写栈(值栈根)。
     [[nodiscard]]
-    ObjInstance* new_instance(GC& gc, ObjClass* cls);
+    ObjInstance* new_instance(GC& gc, ObjClass* klass);
 
 } // namespace aria
 

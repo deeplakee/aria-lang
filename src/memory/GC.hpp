@@ -178,9 +178,9 @@ namespace aria {
         // 委托给 intern_ 成员(保持 private)。new_string 经此实现驻留:命中返回已有串,
         // 未命中 new_object 后 insert。驻留池不进 mark_roots_,collect 在 sweep 前调
         // intern_.remove_white() 摘除白色表项防悬垂。
-        [[nodiscard]] ObjString* intern_find(StringView src) const noexcept;
+        [[nodiscard]] ObjString* intern_find(StringView str) const noexcept;
 
-        void intern_insert(ObjString* s);
+        void intern_insert(ObjString* str);
 
         // ---- VM 根 ----
         // 解释器级共享状态(模块表等)经 std::function 回调接入 mark_roots_(组合而非继承:

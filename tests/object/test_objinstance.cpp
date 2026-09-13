@@ -44,7 +44,7 @@ using aria::value_identical;
 namespace {
 
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
-    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 cls 未根。
+    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 klass 未根。
     ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
         auto guard = gc.make_guard(super);
         return new_class(gc, name, super);
@@ -60,10 +60,10 @@ namespace {
         return new_closure(gc, fn);
     }
 
-    // 实例:守卫 cls 跨 new_instance。返回的 inst 未根,调用方跨 GC 点持有须自行守卫。
-    ObjInstance* make_instance(GC& gc, ObjClass* cls) {
-        auto guard = gc.make_guard(cls);
-        return new_instance(gc, cls);
+    // 实例:守卫 klass 跨 new_instance。返回的 inst 未根,调用方跨 GC 点持有须自行守卫。
+    ObjInstance* make_instance(GC& gc, ObjClass* klass) {
+        auto guard = gc.make_guard(klass);
+        return new_instance(gc, klass);
     }
 
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
@@ -80,27 +80,27 @@ namespace {
 
 TEST(ObjInstance, Basics) {
     GC   gc;
-    auto cls   = make_class(gc, "Foo");
-    auto guard = gc.make_guard(cls);
-    auto obj   = new_instance(gc, cls);
+    auto klass = make_class(gc, "Foo");
+    auto guard = gc.make_guard(klass);
+    auto obj   = new_instance(gc, klass);
     EXPECT_TRUE(aria::Object::is<ObjInstance>(obj));
     EXPECT_EQ(obj->type(), aria::ObjType::INSTANCE);
-    EXPECT_EQ(obj->cls(), cls);
+    EXPECT_EQ(obj->klass(), klass);
 }
 
 TEST(ObjInstance, ToString) {
     GC   gc;
-    auto cls   = make_class(gc, "Foo");
-    auto guard = gc.make_guard(cls);
-    auto obj   = new_instance(gc, cls);
+    auto klass = make_class(gc, "Foo");
+    auto guard = gc.make_guard(klass);
+    auto obj   = new_instance(gc, klass);
     EXPECT_EQ(obj->to_string(), "<Foo instance>");
 }
 
 TEST(ObjInstance, DebugRender) {
     GC   gc;
-    auto cls   = make_class(gc, "Foo");
-    auto guard = gc.make_guard(cls);
-    auto obj   = new_instance(gc, cls);
+    auto klass = make_class(gc, "Foo");
+    auto guard = gc.make_guard(klass);
+    auto obj   = new_instance(gc, klass);
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(obj)), "<Foo instance>"); // 调试渲染同文案
 }
 
@@ -112,7 +112,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     auto&  gc = vm.gc();
     gc.set_stress(true);
 
-    ObjClass*       cls    = nullptr;
+    ObjClass*       klass  = nullptr;
     ObjInstance*    obj    = nullptr;
     ObjClosure*     method = nullptr;
     ObjBoundMethod* bound  = nullptr;
@@ -121,18 +121,18 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     ObjString*      fval   = nullptr;
     {
         auto guard = gc.make_guard();
-        cls        = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
-        guard.push(cls);
-        obj = make_instance(gc, cls); // 建时 collect:cls 经守卫存活
+        klass      = make_class(gc, "Foo"); // 建时 collect:name 经助手内守卫
+        guard.push(klass);
+        obj = make_instance(gc, klass); // 建时 collect:klass 经守卫存活
         guard.push(obj);
-        method = make_closure(gc, "m", 0); // 建时 collect:cls/obj 经守卫存活
+        method = make_closure(gc, "m", 0); // 建时 collect:klass/obj 经守卫存活
         guard.push(method);
-        method->set_defining_class(cls); // 戳方法性(MAKE_METHOD 注册等价形;不戳则 load_field 直读不绑定)
-        bkey = new_string(gc, "m");      // 建时 collect:在根者存活
+        method->set_defining_class(klass); // 戳方法性(MAKE_METHOD 注册等价形;不戳则 load_field 直读不绑定)
+        bkey = new_string(gc, "m");        // 建时 collect:在根者存活
         guard.push(bkey);
-        cls->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
-        auto bound_read = obj->load_field(vm, bkey);   // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
-        //   new_bound_method 分配时 obj/cls/method 皆在根,安全)
+        klass->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
+        auto bound_read = obj->load_field(vm, bkey);     // 绑定 + 回填 fields 缓存(真实缓存路径;stress 下
+        //   new_bound_method 分配时 obj/klass/method 皆在根,安全)
         ASSERT_TRUE(bound_read.has_value());
         bound = aria::Object::try_as<ObjBoundMethod>(bound_read->as_obj());
         ASSERT_NE(bound, nullptr);
@@ -141,7 +141,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
         fval = new_string(gc, "a long field value string!!!"); // 建时 collect:在根者存活
         guard.push(fval);
         EXPECT_TRUE(obj->store_field(vm, fkey, Value::from_obj(fval))); // 真字段写入
-        // 作用域退出:全部临时根弹出,cls/method/bound/fval 此后仅经 obj.trace 可达
+        // 作用域退出:全部临时根弹出,klass/method/bound/fval 此后仅经 obj.trace 可达
     }
     auto       guard   = gc.make_guard(obj);        // 只根实例
     const auto trigger = new_string(gc, "trigger"); // stress collect:全链经 obj.trace 存活
@@ -149,8 +149,8 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
     const usize before = gc.bytes_allocated();
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
-    EXPECT_EQ(obj->cls(), cls);
-    EXPECT_EQ(cls->name()->view(), "Foo"); // 类经实例存活,其 name_ 级联存活
+    EXPECT_EQ(obj->klass(), klass);
+    EXPECT_EQ(klass->name()->view(), "Foo"); // 类经实例存活,其 name_ 级联存活
     EXPECT_EQ(fval->view(), "a long field value string!!!");
     auto bfound = obj->load_field(vm, bkey); // fields 命中:collect 后缓存 bound 原样直取
     ASSERT_TRUE(bfound.has_value());
@@ -165,8 +165,8 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndCachedBound) {
 // 未根实例被 sweep(壳 + 其 class_/fields 值若无他根一并回收)。
 TEST(ObjInstance, UnrootedInstanceSwept) {
     GC   gc;
-    auto cls = make_class(gc, "orphan");
-    (void) make_instance(gc, cls); // 双双无根
+    auto klass = make_class(gc, "orphan");
+    (void) make_instance(gc, klass); // 双双无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -182,9 +182,9 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
 
-    auto cls = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
 
     // 类表静态值:直读、不缓存 --行为钉法:类上覆写后实例再读到新值(若被缓存则读陈旧)。
@@ -192,13 +192,13 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     guard.push(vkey);
     auto sv = new_string(gc, "a static value string!!!!!!!!!!");
     guard.push(sv);
-    cls->set_field(vkey, Value::from_obj(sv));
+    klass->set_field(vkey, Value::from_obj(sv));
     auto static_read = inst->load_field(vm, vkey);
     ASSERT_TRUE(static_read.has_value());
     EXPECT_TRUE(value_identical(*static_read, Value::from_obj(sv)));
     auto sv2 = new_string(gc, "a static value string rewritten!!");
     guard.push(sv2);
-    cls->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新(不缓存 ⟹ 实例再读见新值)
+    klass->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新(不缓存 ⟹ 实例再读见新值)
     auto rewritten_read = inst->load_field(vm, vkey);
     ASSERT_TRUE(rewritten_read.has_value());
     EXPECT_TRUE(value_identical(*rewritten_read, Value::from_obj(sv2))); // 无陈旧缓存(铁则 1)
@@ -209,8 +209,8 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     guard.push(mkey);
     auto method = make_closure(gc, "m", 0);
     guard.push(method);
-    method->set_defining_class(cls); // 戳定方法性(不戳则直读不绑,见下方 lambda 钉子)
-    cls->set_field(mkey, Value::from_obj(method));
+    method->set_defining_class(klass); // 戳定方法性(不戳则直读不绑,见下方 lambda 钉子)
+    klass->set_field(mkey, Value::from_obj(method));
     auto method_read = inst->load_field(vm, mkey);
     ASSERT_TRUE(method_read.has_value());
     auto bound = aria::Object::try_as<ObjBoundMethod>(method_read->as_obj());
@@ -228,7 +228,7 @@ TEST(ObjInstance, LoadFieldBindsCachesAndReadsStatic) {
     guard.push(hkey);
     auto lam = make_closure(gc, "h", 0);
     guard.push(lam);
-    cls->set_field(hkey, Value::from_obj(lam));
+    klass->set_field(hkey, Value::from_obj(lam));
     auto lambda_read = inst->load_field(vm, hkey);
     ASSERT_TRUE(lambda_read.has_value());
     EXPECT_TRUE(value_identical(*lambda_read, Value::from_obj(lam))); // === 原闭包,无 ObjBoundMethod 包装
@@ -255,9 +255,9 @@ TEST(ObjInstance, StoreFieldDynamicSet) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
 
-    auto cls = make_class(gc, "Foo");
-    guard.push(cls);
-    auto inst = make_instance(gc, cls);
+    auto klass = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
     guard.push(inst);
 
     auto k = new_string(gc, "x");

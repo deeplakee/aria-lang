@@ -30,6 +30,61 @@ namespace aria {
         // 超出 -> NumberOutOfRange)。
         constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
         constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
+
+        // 二元 op -> 发射 OpCode（visitBinaryExprNode 与复合赋值共用单源）。域为 13 个值产
+        // op；Or/And 走短路分支（emit_jump + JUMP_*_OR_POP 留值跳转）不经此，OpCode 亦无
+        // 单条逻辑码 -> UNREACHABLE。
+        OpCode binary_opcode(const Op::Binary op) noexcept {
+            switch (op) {
+                case Op::Binary::EqualEqual:
+                    return OpCode::EQUAL;
+                case Op::Binary::EqualEqualEqual:
+                    return OpCode::STRICT_EQUAL;
+                case Op::Binary::BangEqual:
+                    return OpCode::NOT_EQUAL;
+                case Op::Binary::BangEqualEqual:
+                    return OpCode::STRICT_NOT_EQUAL;
+                case Op::Binary::Greater:
+                    return OpCode::GREATER;
+                case Op::Binary::GreaterEqual:
+                    return OpCode::GREATER_EQUAL;
+                case Op::Binary::Less:
+                    return OpCode::LESS;
+                case Op::Binary::LessEqual:
+                    return OpCode::LESS_EQUAL;
+                case Op::Binary::Plus:
+                    return OpCode::ADD;
+                case Op::Binary::Minus:
+                    return OpCode::SUBTRACT;
+                case Op::Binary::Star:
+                    return OpCode::MULTIPLY;
+                case Op::Binary::Slash:
+                    return OpCode::DIVIDE;
+                case Op::Binary::Percent:
+                    return OpCode::MOD;
+                default:
+                    UNREACHABLE();
+            }
+        }
+
+        // 复合赋值 op -> 对应二元 op（经 binary_opcode 与二元表达式共用发射）。文法仅算术
+        // 五种复合（Parser::assignment_op 为咽喉点）；= 不入表（visitAssignmentNode 直走 store）。
+        Op::Binary compound_op(const Op::Assignment op) noexcept {
+            switch (op) {
+                case Op::Assignment::PlusAssign:
+                    return Op::Binary::Plus;
+                case Op::Assignment::MinusAssign:
+                    return Op::Binary::Minus;
+                case Op::Assignment::StarAssign:
+                    return Op::Binary::Star;
+                case Op::Assignment::SlashAssign:
+                    return Op::Binary::Slash;
+                case Op::Assignment::PercentAssign:
+                    return Op::Binary::Percent;
+                default:
+                    UNREACHABLE();
+            }
+        }
     } // namespace
 
     // ============================================================
@@ -826,49 +881,7 @@ namespace aria {
             return;
         }
         emit_expr(*node.rhs);
-        switch (node.op) {
-            case Op::Binary::EqualEqual:
-                cur_cu()->emit_op(OpCode::EQUAL, line);
-                return;
-            case Op::Binary::EqualEqualEqual:
-                cur_cu()->emit_op(OpCode::STRICT_EQUAL, line);
-                return;
-            case Op::Binary::BangEqual:
-                cur_cu()->emit_op(OpCode::NOT_EQUAL, line);
-                return;
-            case Op::Binary::BangEqualEqual:
-                cur_cu()->emit_op(OpCode::STRICT_NOT_EQUAL, line);
-                return;
-            case Op::Binary::Greater:
-                cur_cu()->emit_op(OpCode::GREATER, line);
-                return;
-            case Op::Binary::GreaterEqual:
-                cur_cu()->emit_op(OpCode::GREATER_EQUAL, line);
-                return;
-            case Op::Binary::Less:
-                cur_cu()->emit_op(OpCode::LESS, line);
-                return;
-            case Op::Binary::LessEqual:
-                cur_cu()->emit_op(OpCode::LESS_EQUAL, line);
-                return;
-            case Op::Binary::Plus:
-                cur_cu()->emit_op(OpCode::ADD, line);
-                return;
-            case Op::Binary::Minus:
-                cur_cu()->emit_op(OpCode::SUBTRACT, line);
-                return;
-            case Op::Binary::Star:
-                cur_cu()->emit_op(OpCode::MULTIPLY, line);
-                return;
-            case Op::Binary::Slash:
-                cur_cu()->emit_op(OpCode::DIVIDE, line);
-                return;
-            case Op::Binary::Percent:
-                cur_cu()->emit_op(OpCode::MOD, line);
-                return;
-            default:
-                UNREACHABLE();
-        }
+        cur_cu()->emit_op(binary_opcode(node.op), line);
     }
 
     void CodeGen::visitUnaryExprNode(UnaryExprNode& node) {
@@ -909,25 +922,7 @@ namespace aria {
         // 复合赋值：load target -> value -> op -> store target（Identifier 重 resolve 廉价，locator-once 自然成立）
         emit_lvalue(*node.target, LvalueMode::Load);
         emit_expr(*node.value);
-        switch (node.op) {
-            case Op::Assignment::PlusAssign:
-                cur_cu()->emit_op(OpCode::ADD, line);
-                break;
-            case Op::Assignment::MinusAssign:
-                cur_cu()->emit_op(OpCode::SUBTRACT, line);
-                break;
-            case Op::Assignment::StarAssign:
-                cur_cu()->emit_op(OpCode::MULTIPLY, line);
-                break;
-            case Op::Assignment::SlashAssign:
-                cur_cu()->emit_op(OpCode::DIVIDE, line);
-                break;
-            case Op::Assignment::PercentAssign:
-                cur_cu()->emit_op(OpCode::MOD, line);
-                break;
-            default:
-                UNREACHABLE();
-        }
+        cur_cu()->emit_op(binary_opcode(compound_op(node.op)), line);
         emit_lvalue(*node.target, LvalueMode::Store);
     }
 

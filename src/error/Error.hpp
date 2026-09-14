@@ -41,12 +41,12 @@ namespace aria {
         // ---- 构造工厂(唯一公开构造面;语义在工厂名上自文档化,构造点无法拼写错语义)----
 
         // 细节语义(无位置):码 + 细节,供内部/资源错误或不关心位置的场景使用。
-        // detail 是「只读组件」(被 make_message 烘进 message_,本身不存储),故取 const String&
-        // 而非 by-value--避免 lvalue 调用点多付一次参数拷贝(烘进 message_ 的那份省不掉)。
+        // detail 是「只读组件」(被 make_message 烘进 message_,本身不存储):取 StringView,
+        // 字面量/格式化临时零额外构造直传,烘进 message_ 的那份拷贝省不掉。
         // detail **不设默认值**:detail 是错误的唯一上下文载体,有意为空须显式传 {} / "",
         // 强制每个报错点说出发生了什么。message_ 烘为 "Category: Name[ detail]"。
         [[nodiscard]]
-        static Error from_detail(const ErrorCode code, const String& detail) {
+        static Error from_detail(const ErrorCode code, const StringView detail) {
             return Error{code, make_message(code, detail)};
         }
 
@@ -56,10 +56,10 @@ namespace aria {
         //
         // 空态 loc 无须特判:to_string 空态渲染空串、make_message 对空位置串天然无前缀,空态
         // loc 与无 loc 自然合流(空态合法存在,如 CodeGen::fail 取 node->loc() 即可能为空态)。
-        // detail 同上一重载(const String&,无默认值)。
+        // detail 同上一重载(StringView,无默认值)。
         // message_ 烘为 "path:line:col: Category: Name[ detail]"(空态 loc 无位置段)。
         [[nodiscard]]
-        static Error from_detail(const ErrorCode code, const SourceLoc loc, const String& detail) {
+        static Error from_detail(const ErrorCode code, const SourceLoc loc, const StringView detail) {
             return Error{code, make_message(code, loc.to_string(), detail)};
         }
 

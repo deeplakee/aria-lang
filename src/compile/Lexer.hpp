@@ -67,11 +67,8 @@ namespace aria {
 
 
         // --- 错误记账 ---
-        void error(ErrorCode code, SourceSpan span, const String& msg);
-
-        // 构造带 source_ 的 Error（构造期把 SourceLoc 烘进 message_，含 path:line:col 前缀）。
-        [[nodiscard]]
-        Error make_error(ErrorCode code, SourceSpan span, const String& msg) const;
+        // 记入一条错误：span 起点解析为 SourceLoc，经 Error::from_detail 构造期烘进 message_。
+        void error(ErrorCode code, SourceSpan span, StringView msg);
 
         // --- 游标辅助 ---
         // 越界（pos_+ahead >= src_.size()）返回 '\0' 哨兵，安全。

@@ -147,18 +147,14 @@ namespace aria {
     // 错误与期待
     // ============================================================
 
-    void Parser::error(const ErrorCode code, String msg) const {
-        throw AriaCompileException{Error::from_detail(code, peek().loc(), msg)};
-    }
-
     const Token& Parser::expect(const TokenType t, const StringView what) {
         if (check(t)) {
             return advance();
         }
         if (is_at_end()) {
-            error(ErrorCode::UnexpectedEof, std::format("期望 {} 但遇到文件结束", what));
+            error(ErrorCode::UnexpectedEof, "期望 {} 但遇到文件结束", what);
         }
-        error(ErrorCode::ExpectedToken, std::format("期望 {} 但遇到 '{}'", what, to_string(peek().type())));
+        error(ErrorCode::ExpectedToken, "期望 {} 但遇到 '{}'", what, to_string(peek().type()));
     }
 
     String Parser::expect_identifier() {
@@ -169,7 +165,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望标识符但遇到文件结束");
         }
-        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符但遇到 '{}'", to_string(peek().type())));
+        error(ErrorCode::ExpectedIdentifier, "期望标识符但遇到 '{}'", to_string(peek().type()));
     }
 
     void Parser::synchronize() {
@@ -310,8 +306,7 @@ namespace aria {
                 auto fn = std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody));
                 members.push_back(DefMember{.kind = DefMember::Kind::InstanceMethod, .node = std::move(fn)});
             } else {
-                error(ErrorCode::ExpectedToken,
-                      std::format("def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek().type())));
+                error(ErrorCode::ExpectedToken, "def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek().type()));
             }
         }
         expect(TokenType::RightBrace, "'}'");
@@ -797,7 +792,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望表达式却遇到文件结束");
         }
-        error(ErrorCode::ExpectedExpression, std::format("期望表达式却遇到 '{}'", to_string(peek().type())));
+        error(ErrorCode::ExpectedExpression, "期望表达式却遇到 '{}'", to_string(peek().type()));
     }
 
     UPtr<ExprNode> Parser::list_expr() {
@@ -913,7 +908,7 @@ namespace aria {
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "期望标识符或模式却遇到文件结束");
         }
-        error(ErrorCode::ExpectedIdentifier, std::format("期望标识符或模式却遇到 '{}'", to_string(peek().type())));
+        error(ErrorCode::ExpectedIdentifier, "期望标识符或模式却遇到 '{}'", to_string(peek().type()));
     }
 
     UPtr<ListPatternNode> Parser::list_pattern() {

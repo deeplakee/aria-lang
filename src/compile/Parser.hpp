@@ -67,8 +67,13 @@ namespace aria {
         // --- 错误与期待 ---
         // 以当前 token 位置构造 Error 并抛 AriaCompileException（[[noreturn]]），
         // 由 declaration() 捕获。EOF 时改报 UnexpectedEof。
+        // 形态与 CodeGen::fail 同构（变参 std::format_string，格式化归报错入口）。
+        template<typename... Args>
         [[noreturn]]
-        void error(ErrorCode code, String msg) const;
+        void error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
+            throw AriaCompileException{
+                    Error::from_detail(code, peek().loc(), std::format(fmt, std::forward<Args>(args)...))};
+        }
 
         // 期待特定 token：匹配则消费并返回；否则报 ExpectedToken/UnexpectedEof 抛出。
         const Token& expect(TokenType t, StringView what);

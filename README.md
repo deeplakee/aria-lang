@@ -49,7 +49,7 @@ src/
   runtime/   FrameStack / Movement / AriaVM / Builtins
 tests/      Google Test 单测（按 tests/<module>/ 分目录）
 bench/      性能基准（独立可执行）
-third/      isocline（REPL）
+external/   isocline（REPL）
 docs/       grammar.txt（语言文法规范）
 ```
 

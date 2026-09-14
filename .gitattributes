@@ -1,2 +1,2 @@
 * text=auto eol=lf
-third/** -text
+external/** -text

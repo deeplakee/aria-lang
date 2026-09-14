@@ -61,7 +61,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
   cmake --build build/tagvalue --target aria_tests -j
   ctest --test-dir build/tagvalue --output-on-failure
   ```
-- 依赖 `third/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
+- 依赖 `external/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
 
 ## Git 提交纪律（强制）
 

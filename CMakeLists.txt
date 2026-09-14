@@ -12,7 +12,7 @@ if(ARIA_USE_TAGVALUE)
     add_compile_definitions(ARIA_USE_TAGVALUE)
 endif()
 
-add_subdirectory(third/isocline)
+add_subdirectory(external/isocline)
 
 
 add_library(aria_core STATIC

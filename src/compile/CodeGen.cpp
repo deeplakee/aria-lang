@@ -435,7 +435,7 @@ namespace aria {
 
         // 切到子函数上下文并摆动游标:cu 由游标派生,随游标自动切到子 unit,无需 save/restore。
         // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。
-        const auto child          = new FunctionCtx{*cur_fn_ctx(), fn};
+        const auto child          = new FunctionCtx{fn, cur_fn_ctx()};
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& param: params) {
             // 形参即函数前 n 个局部变量(slot 1..n);重名已在上方检查,故直接 add_local 无需再查。
@@ -537,7 +537,7 @@ namespace aria {
         emit_expr(*node.condition);
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
-        auto loop_ctx                 = make_loop_ctx(cur_fn_ctx()->scope_depth_);
+        auto loop_ctx                 = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_};
         loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
@@ -566,7 +566,7 @@ namespace aria {
             jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
         }
         // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳 L_cond。
-        auto loop_ctx = make_loop_ctx(loop_scope);
+        auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope};
         if (!has_incr) {
             loop_ctx.continue_back_target = l_cond; // 无 incr: continue 后向跳 L_cond
         } // 有 incr: 留空，走前向 continue_fwd_patches -> L_incr
@@ -625,7 +625,7 @@ namespace aria {
         emit_method_call0("has_next", line, node.loc());
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
 
-        auto loop_ctx                 = make_loop_ctx(loop_scope);
+        auto loop_ctx                 = LoopCtx{.loop_scope_depth = loop_scope};
         loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start（has_next 判断处）
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 

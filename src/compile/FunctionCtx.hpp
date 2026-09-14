@@ -47,26 +47,13 @@ namespace aria {
         List<usize> break_fwd_patches;
     };
 
-    // 工厂：构造仅指定 loop_scope_depth 的新循环上下文,集中收口全字段初始化;调用方按循环
-    // 类型赋 continue_back_target(while/for-in -> L_start、for 无 incr -> L_cond;for 有 incr
-    // 留空走前向 patch)。
-    [[nodiscard]]
-    inline LoopCtx make_loop_ctx(const u32 loop_scope_depth) {
-        return {.loop_scope_depth     = loop_scope_depth,
-                .continue_back_target = std::nullopt,
-                .continue_fwd_patches = {},
-                .break_fwd_patches    = {}};
-    }
-
     class FunctionCtx {
     public:
         FunctionCtx() = delete;
 
-        // 入口 <main> 上下文（enclosing_=nullptr = entry）。
-        explicit FunctionCtx(ObjFunction* fn);
-
-        // 嵌套函数上下文（enclosing_ 指向外层）。
-        FunctionCtx(FunctionCtx& enclosing, ObjFunction* fn);
+        // 单构造：enclosing 为 nullptr 即入口 <main> 上下文（enclosing_=nullptr = entry），
+        // 否则嵌套函数上下文（指向外层）。
+        explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing = nullptr);
 
         FunctionCtx(const FunctionCtx&)                = delete;
         FunctionCtx& operator=(const FunctionCtx&)     = delete;

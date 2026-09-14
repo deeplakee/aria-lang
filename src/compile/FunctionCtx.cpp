@@ -10,13 +10,8 @@ namespace aria {
     // 构造
     // ============================================================
 
-    FunctionCtx::FunctionCtx(ObjFunction* fn) : enclosing_{nullptr}, fn_{fn}, scope_depth_{0} {
-        auto this_ = Local{.name = String{}, .depth = 0, .is_captured = false, .is_initialized = true};
-        locals_.push_back(std::move(this_)); // 哑元：slot 0 = callee
-    }
-
-    FunctionCtx::FunctionCtx(FunctionCtx& enclosing, ObjFunction* fn) :
-        enclosing_{&enclosing}, fn_{fn}, scope_depth_{0} {
+    FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing) :
+        enclosing_{enclosing}, fn_{fn}, scope_depth_{0} {
         auto this_ = Local{.name = String{}, .depth = 0, .is_captured = false, .is_initialized = true};
         locals_.push_back(std::move(this_)); // 哑元：slot 0 = callee
     }

@@ -244,6 +244,21 @@ namespace aria {
         String dump(usize indent) const;
     };
 
+    // DefMember::Kind 可读名（如 "StaticVar"）；switch 不加 default，新增枚举值由 -Wswitch
+    // 提示遗漏，UNREACHABLE 收尾在 switch 之后（同 Op::to_string/ErrorCode/TokenType 先例）。
+    [[nodiscard]]
+    constexpr StringView to_string(const DefMember::Kind kind) noexcept {
+        switch (kind) {
+            case DefMember::Kind::StaticVar:
+                return "StaticVar";
+            case DefMember::Kind::StaticMethod:
+                return "StaticMethod";
+            case DefMember::Kind::InstanceMethod:
+                return "InstanceMethod";
+        }
+        UNREACHABLE();
+    }
+
     // =========================================================================
     // dump 基础设施
     // =========================================================================
@@ -259,6 +274,54 @@ namespace aria {
             write_indent(out, indent);
             out.append(content);
             out.push_back('\n');
+        }
+
+        // 可渲染子项：有 dump(usize) const 成员（ASTNode 子类与 Param/MatchArm/MapEntry/
+        // DefMember 等值子项）。
+        template<typename T>
+        concept Dumpable = requires(const T& value, const usize indent) { value.dump(indent); };
+
+        // 空安全子项渲染，按子项形态自动分派：UPtr 子项 null 跳过（覆盖 UPtr<ExprNode>/
+        // <StmtNode>/<BlockNode>/<PatternNode> 等）；值子项；列表子项（UPtr 列表逐元素
+        // 判空、值列表直接展开）。
+        template<Dumpable T>
+        String dump_child(const usize indent, const UPtr<T>& node) {
+            return node ? node->dump(indent) : "";
+        }
+
+        template<Dumpable T>
+        String dump_child(const usize indent, const T& value) {
+            return value.dump(indent);
+        }
+
+        template<Dumpable T>
+        String dump_child(const usize indent, const List<UPtr<T>>& nodes) {
+            String out;
+            for (const auto& node: nodes) {
+                if (node) {
+                    out += node->dump(indent);
+                }
+            }
+            return out;
+        }
+
+        template<Dumpable T>
+        String dump_child(const usize indent, const List<T>& values) {
+            String out;
+            for (const auto& value: values) {
+                out += value.dump(indent);
+            }
+            return out;
+        }
+
+        // 节点 dump 收口：写自身头行后逐子项渲染（子项缩进 = 节点缩进 + 1），返回子树文本。
+        // 各节点 dump 体由此缩为一行；条件拼 header 与形态特例留在调用点。
+        template<typename... Kids>
+        String dump_node(const usize indent, const StringView header, const Kids&... kids) {
+            String out;
+            write_line(out, indent, header);
+            ((out += dump_child(indent + 1, kids)), ...);
+            return out;
         }
 
     } // namespace detail::ast

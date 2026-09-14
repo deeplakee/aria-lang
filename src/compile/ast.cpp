@@ -92,90 +92,42 @@ namespace aria {
 
     // =========================================================================
     // 共享辅助类型的 dump
-    // =========================================================================
-    //
-    // 每个 dump 构造本地 String out：先写自身头行（write_line），再 out += 子节点 dump(…)
-    // 拼接子树文本，最后返回 out。
+    // dump 统一经 dump_node 收口：写自身头行后逐子项渲染（UPtr 空安全 / 值 / 列表自动分派，
+    // 子项缩进 +1）；条件拼 header 在调用点拼好后传入。基础设施
+    // （write_indent/write_line/dump_child/dump_node）见 ast.hpp。
 
     String Param::dump(const usize indent) const {
-        String       out;
-        const String header =
-                is_varargs ? std::format("Param name={} (varargs)", name) : std::format("Param name={}", name);
-        detail::ast::write_line(out, indent, header);
-        if (default_value) {
-            out += default_value->dump(indent + 1);
-        }
-        return out;
+        String header = std::format("Param name={}", name);
+        header        = is_varargs ? header + " (varargs)" : header;
+        return detail::ast::dump_node(indent, header, default_value);
     }
 
+    // "_" 通配（value=nullptr）渲染为无子项的专用头行；null 子项经 dump_child 落空串，两种
+    // 形态同行收口。
     String MatchPattern::dump(const usize indent) const {
-        String out;
-        if (!value) {
-            detail::ast::write_line(out, indent, "MatchPattern _ (wildcard)");
-            return out;
-        }
-        detail::ast::write_line(out, indent, "MatchPattern");
-        out += value->dump(indent + 1);
-        return out;
+        return detail::ast::dump_node(indent, value ? "MatchPattern" : "MatchPattern _ (wildcard)", value);
     }
 
     String MatchArm::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "MatchArm");
-        out += pattern.dump(indent + 1);
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "MatchArm", pattern, body);
     }
 
     String MatchExprArm::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "MatchExprArm");
-        out += pattern.dump(indent + 1);
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "MatchExprArm", pattern, body);
     }
 
     String VarBinding::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "VarBinding");
-        if (target) {
-            out += target->dump(indent + 1);
-        }
-        if (initializer) {
-            out += initializer->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "VarBinding", target, initializer);
     }
 
-    String MapEntry::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "MapEntry");
-        if (key) {
-            out += key->dump(indent + 1);
-        }
-        if (value) {
-            out += value->dump(indent + 1);
-        }
-        return out;
-    }
+    String MapEntry::dump(const usize indent) const { return detail::ast::dump_node(indent, "MapEntry", key, value); }
 
     // =========================================================================
     // ProgramNode dump
     // =========================================================================
 
     String ProgramNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("Program decls={}", declarations.size()));
-        for (const auto& d: declarations) {
-            if (d) {
-                out += d->dump(indent + 1);
-            }
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("Program decls={}", declarations.size()), declarations);
     }
 
     // =========================================================================
@@ -183,212 +135,78 @@ namespace aria {
     // =========================================================================
 
     String BlockNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("Block stmts={}", statements.size()));
-        for (const auto& s: statements) {
-            if (s) {
-                out += s->dump(indent + 1);
-            }
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("Block stmts={}", statements.size()), statements);
     }
 
-    String ExprStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ExprStmt");
-        if (expr) {
-            out += expr->dump(indent + 1);
-        }
-        return out;
-    }
+    String ExprStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ExprStmt", expr); }
 
-    String PrintStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "PrintStmt");
-        if (expr) {
-            out += expr->dump(indent + 1);
-        }
-        return out;
-    }
+    String PrintStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "PrintStmt", expr); }
 
     String IfStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "IfStmt");
-        if (condition) {
-            out += condition->dump(indent + 1);
-        }
-        if (then_branch) {
-            out += then_branch->dump(indent + 1);
-        }
-        if (else_branch) {
-            out += else_branch->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "IfStmt", condition, then_branch, else_branch);
     }
 
     String WhileStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "WhileStmt");
-        if (condition) {
-            out += condition->dump(indent + 1);
-        }
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "WhileStmt", condition, body);
     }
 
     String ForStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ForStmt");
-        if (init) {
-            out += init->dump(indent + 1);
-        }
-        if (condition) {
-            out += condition->dump(indent + 1);
-        }
-        if (increment) {
-            out += increment->dump(indent + 1);
-        }
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "ForStmt", init, condition, increment, body);
     }
 
     String ForInStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ForInStmt");
-        if (pattern) {
-            out += pattern->dump(indent + 1);
-        }
-        if (iterable) {
-            out += iterable->dump(indent + 1);
-        }
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "ForInStmt", pattern, iterable, body);
     }
 
-    String BreakStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "BreakStmt");
-        return out;
-    }
+    String BreakStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "BreakStmt"); }
 
-    String ContinueStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ContinueStmt");
-        return out;
-    }
+    String ContinueStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ContinueStmt"); }
 
     String ReturnStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ReturnStmt");
-        if (value) {
-            out += value->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "ReturnStmt", value);
     }
 
     String ImportStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("ImportStmt path={} as={}", path, alias));
-        return out;
+        return detail::ast::dump_node(indent, std::format("ImportStmt path={} as={}", path, alias));
     }
 
+    // catch 子树是「Catch param=... 标签行 + 体」的标准 dump_node 形态（标签行在 +1、体在
+    // +2）；catch_body 判空由 dump_child 的 UPtr 空安全承担，catch_param 缺省时无 catch 子树。
     String TryStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "TryStmt");
-        if (body) {
-            out += body->dump(indent + 1);
-        }
+        String out = detail::ast::dump_node(indent, "TryStmt", body);
         if (catch_param) {
-            detail::ast::write_line(out, indent + 1, std::format("Catch param={}", *catch_param));
-            if (catch_body) {
-                out += catch_body->dump(indent + 2);
-            }
+            out += detail::ast::dump_node(indent + 1, std::format("Catch param={}", *catch_param), catch_body);
         }
         return out;
     }
 
-    String ThrowStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ThrowStmt");
-        if (expr) {
-            out += expr->dump(indent + 1);
-        }
-        return out;
-    }
+    String ThrowStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ThrowStmt", expr); }
 
     String MatchStmtNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("MatchStmt arms={}", arms.size()));
-        if (subject) {
-            out += subject->dump(indent + 1);
-        }
-        for (const auto& arm: arms) {
-            out += arm.dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("MatchStmt arms={}", arms.size()), subject, arms);
     }
 
     // --- 声明节点 dump ---
 
     String FunDeclNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("FunDecl name={} params={}", name, params.size()));
-        for (const auto& p: params) {
-            out += p.dump(indent + 1);
-        }
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("FunDecl name={} params={}", name, params.size()), params,
+                                      body);
     }
 
     String DefMember::dump(const usize indent) const {
-        String     out;
-        StringView kind_name;
-        switch (kind) {
-            case Kind::StaticVar:
-                kind_name = "StaticVar";
-                break;
-            case Kind::StaticMethod:
-                kind_name = "StaticMethod";
-                break;
-            case Kind::InstanceMethod:
-                kind_name = "InstanceMethod";
-                break;
-        }
-        detail::ast::write_line(out, indent, std::format("DefMember kind={}", kind_name));
-        if (node) {
-            out += node->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("DefMember kind={}", to_string(kind)), node);
     }
 
     String DefDeclNode::dump(const usize indent) const {
-        String out;
         String header = std::format("DefDecl name={}", name);
         if (superclass) {
             header += std::format(" super={}", *superclass);
         }
-        detail::ast::write_line(out, indent, header);
-        for (const auto& m: members) {
-            out += m.dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, header, members);
     }
 
     String VarDeclNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("VarDecl bindings={}", bindings.size()));
-        for (const auto& b: bindings) {
-            out += b.dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("VarDecl bindings={}", bindings.size()), bindings);
     }
 
     // =========================================================================
@@ -396,202 +214,82 @@ namespace aria {
     // =========================================================================
 
     String IntegerLiteralNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("IntegerLiteral {}", value));
-        return out;
+        return detail::ast::dump_node(indent, std::format("IntegerLiteral {}", value));
     }
 
     String FloatLiteralNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("FloatLiteral {}", value));
-        return out;
+        return detail::ast::dump_node(indent, std::format("FloatLiteral {}", value));
     }
 
     String StringLiteralNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("StringLiteral \"{}\"", value));
-        return out;
+        return detail::ast::dump_node(indent, std::format("StringLiteral \"{}\"", value));
     }
 
     String BoolLiteralNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("BoolLiteral {}", value ? "true" : "false"));
-        return out;
+        return detail::ast::dump_node(indent, std::format("BoolLiteral {}", value ? "true" : "false"));
     }
 
-    String NilLiteralNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "NilLiteral");
-        return out;
-    }
+    String NilLiteralNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "NilLiteral"); }
 
     String IdentifierNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("Identifier {}", name));
-        return out;
+        return detail::ast::dump_node(indent, std::format("Identifier {}", name));
     }
 
-    String ThisExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "ThisExpr");
-        return out;
-    }
+    String ThisExprNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ThisExpr"); }
 
-    String SuperExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "SuperExpr");
-        return out;
-    }
+    String SuperExprNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "SuperExpr"); }
 
     String BinaryExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("BinaryExpr op={}", Op::to_string(op)));
-        if (lhs) {
-            out += lhs->dump(indent + 1);
-        }
-        if (rhs) {
-            out += rhs->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("BinaryExpr op={}", Op::to_string(op)), lhs, rhs);
     }
 
     String UnaryExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("UnaryExpr op={}", Op::to_string(op)));
-        if (operand) {
-            out += operand->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("UnaryExpr op={}", Op::to_string(op)), operand);
     }
 
     String AssignmentNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("Assignment op={}", Op::to_string(op)));
-        if (target) {
-            out += target->dump(indent + 1);
-        }
-        if (value) {
-            out += value->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("Assignment op={}", Op::to_string(op)), target, value);
     }
 
     String DestructureAssignmentNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "DestructureAssignment");
-        if (target) {
-            out += target->dump(indent + 1);
-        }
-        if (value) {
-            out += value->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "DestructureAssignment", target, value);
     }
 
     String CallNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("Call args={}", args.size()));
-        if (callee) {
-            out += callee->dump(indent + 1);
-        }
-        for (const auto& arg: args) {
-            if (arg) {
-                out += arg->dump(indent + 1);
-            }
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("Call args={}", args.size()), callee, args);
     }
 
     String FieldAccessNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("FieldAccess name={}", name));
-        if (object) {
-            out += object->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("FieldAccess name={}", name), object);
     }
 
     String IndexAccessNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "IndexAccess");
-        if (object) {
-            out += object->dump(indent + 1);
-        }
-        if (index) {
-            out += index->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "IndexAccess", object, index);
     }
 
     String ListExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("ListExpr elements={}", elements.size()));
-        for (const auto& e: elements) {
-            if (e) {
-                out += e->dump(indent + 1);
-            }
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("ListExpr elements={}", elements.size()), elements);
     }
 
     String MapExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("MapExpr entries={}", entries.size()));
-        for (const auto& entry: entries) {
-            out += entry.dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("MapExpr entries={}", entries.size()), entries);
     }
 
     String RangeExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("RangeExpr {}", is_exclusive ? "exclusive" : "inclusive"));
-        if (lower) {
-            out += lower->dump(indent + 1);
-        }
-        if (upper) {
-            out += upper->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("RangeExpr {}", is_exclusive ? "exclusive" : "inclusive"),
+                                      lower, upper);
     }
 
     String IfExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "IfExpr");
-        if (condition) {
-            out += condition->dump(indent + 1);
-        }
-        if (then_branch) {
-            out += then_branch->dump(indent + 1);
-        }
-        if (else_branch) {
-            out += else_branch->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, "IfExpr", condition, then_branch, else_branch);
     }
 
     String LambdaExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("LambdaExpr params={}", params.size()));
-        for (const auto& p: params) {
-            out += p.dump(indent + 1);
-        }
-        if (body) {
-            out += body->dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("LambdaExpr params={}", params.size()), params, body);
     }
 
     String MatchExprNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("MatchExpr arms={}", arms.size()));
-        if (subject) {
-            out += subject->dump(indent + 1);
-        }
-        for (const auto& arm: arms) {
-            out += arm.dump(indent + 1);
-        }
-        return out;
+        return detail::ast::dump_node(indent, std::format("MatchExpr arms={}", arms.size()), subject, arms);
     }
 
     // =========================================================================
@@ -599,30 +297,19 @@ namespace aria {
     // =========================================================================
 
     String IdentifierPatternNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, std::format("IdentifierPattern name={}", name));
-        return out;
+        return detail::ast::dump_node(indent, std::format("IdentifierPattern name={}", name));
     }
 
     String WildcardPatternNode::dump(const usize indent) const {
-        String out;
-        detail::ast::write_line(out, indent, "WildcardPattern _");
-        return out;
+        return detail::ast::dump_node(indent, "WildcardPattern _");
     }
 
     String ListPatternNode::dump(const usize indent) const {
-        String out;
         String header = std::format("ListPattern elements={}", elements.size());
         if (rest) {
             header += std::format(" rest={}", *rest);
         }
-        detail::ast::write_line(out, indent, header);
-        for (const auto& e: elements) {
-            if (e) {
-                out += e->dump(indent + 1);
-            }
-        }
-        return out;
+        return detail::ast::dump_node(indent, header, elements);
     }
 
     // =========================================================================

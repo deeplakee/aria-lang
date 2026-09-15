@@ -267,6 +267,10 @@ namespace aria {
 
         void emit_stmt(StmtNode& node); // n.accept(*this)，不留值
 
+        // 可选表达式发射：expr 非空 emit_expr（留一值），空则 LOAD_NIL 兜底（var 无初始化器填槽、
+        // return 缺省返回值共用）。line 由调用点定（声明行或逐绑定节点行），不从 expr 推。
+        void emit_expr_or_nil(ExprNode* expr, u32 line);
+
         // --- 函数编译（FunDecl / Lambda 共用）---
         // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；默认参数 / varargs
         // -> not_impl；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，首错即 fail / not_impl 抛出。

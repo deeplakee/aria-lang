@@ -378,6 +378,14 @@ namespace aria {
 
     void CodeGen::emit_stmt(StmtNode& node) { node.accept(*this); }
 
+    void CodeGen::emit_expr_or_nil(ExprNode* expr, const u32 line) {
+        if (expr != nullptr) {
+            emit_expr(*expr);
+        } else {
+            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+        }
+    }
+
     // ============================================================
     // 函数编译（FunDecl / Lambda 共用）
     // ============================================================
@@ -435,7 +443,7 @@ namespace aria {
 
         // 切到子函数上下文并摆动游标:cu 由游标派生,随游标自动切到子 unit,无需 save/restore。
         // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。
-        const auto child          = new FunctionCtx{fn, cur_fn_ctx()};
+        const auto child          = new FunctionCtx{fn, cur_fn_ctx(), FnKind::Function};
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& param: params) {
             // 形参即函数前 n 个局部变量(slot 1..n);重名已在上方检查,故直接 add_local 无需再查。
@@ -676,11 +684,7 @@ namespace aria {
     void CodeGen::visitReturnStmtNode(ReturnStmtNode& node) {
         const u32 line = node.loc_line();
         // 入口 <main> 亦为函数，故顶层 return 合法（cur_fn_ctx()->fn_ 恒非空）。
-        if (node.value != nullptr) {
-            emit_expr(*node.value);
-        } else {
-            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
-        }
+        emit_expr_or_nil(node.value.get(), line);
         cur_cu()->emit_op(OpCode::RETURN, line);
     }
 
@@ -775,22 +779,14 @@ namespace aria {
                 // 顶层 var -> 模块全局（DEF_GLOBAL 弹值定义）。name 在 emit_expr 之后入池
                 // （无需守卫，见类首 GC 安全注），与 visitImportStmtNode 顶层分支同形。
                 declare_global_or_fail(id->name, id->loc());
-                if (initializer != nullptr) {
-                    emit_expr(*initializer);
-                } else {
-                    cur_cu()->emit_op(OpCode::LOAD_NIL, line);
-                }
+                emit_expr_or_nil(initializer.get(), line);
                 const auto name_idx = add_name_or_fail(id->name, id->loc());
                 cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
                 cur_cu()->emit_word(name_idx, line);
             } else {
-                // 嵌套 var -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注；无初始化器 LOAD_NIL 填槽）。
+                // 嵌套 var -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注）。
                 const auto slot = declare_local_or_fail(id->name, id->loc());
-                if (initializer != nullptr) {
-                    emit_expr(*initializer); // 值恰好压在 slot（不变式：declare 与 init 相邻）
-                } else {
-                    cur_cu()->emit_op(OpCode::LOAD_NIL, id->loc_line()); // 无初始化器：nil 填槽
-                }
+                emit_expr_or_nil(initializer.get(), id->loc_line()); // 值恰好压在 slot（不变式：declare 与 init 相邻）
                 cur_fn_ctx()->mark_initialized(slot);
             }
         }

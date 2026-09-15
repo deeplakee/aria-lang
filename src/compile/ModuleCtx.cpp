@@ -13,7 +13,7 @@ namespace aria {
 
     ModuleCtx::ModuleCtx(ObjModule* module) : module_{module} {
         ASSERT(module->entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
-        current_fn_ctx_ = new FunctionCtx(module->entry());
+        current_fn_ctx_ = new FunctionCtx(module->entry(), nullptr, FnKind::Function);
     }
 
     // 沿 enclosing_ 链逐个 delete（成功 / 出错两路径的游标位置分析见头注）；先存 next 再 delete

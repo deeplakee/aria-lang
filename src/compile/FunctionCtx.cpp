@@ -10,10 +10,16 @@ namespace aria {
     // 构造
     // ============================================================
 
-    FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing) :
-        enclosing_{enclosing}, fn_{fn}, scope_depth_{0} {
-        auto this_ = Local{.name = String{}, .depth = 0, .is_captured = false, .is_initialized = true};
-        locals_.push_back(std::move(this_)); // 哑元：slot 0 = callee
+    FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
+        enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
+        // 槽 0：实例方法族 = 具名局部 this（caller 压 receiver 占此槽，恒已初始化）；其余 = 哑元
+        // callee（空名，词法不可达，用户代码不可引用）。this 为关键字不会与用户标识符撞名
+        // （kThisName 注），可安全参与局部查名与捕获。
+        auto slot0 = Local{.name           = is_method(kind) ? String{kThisName} : String{},
+                           .depth          = 0,
+                           .is_captured    = false,
+                           .is_initialized = true};
+        locals_.push_back(std::move(slot0));
     }
 
     // ============================================================

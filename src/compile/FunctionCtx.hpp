@@ -15,6 +15,7 @@
 // 循环上下文栈随函数走：进新函数即得空 loop_stack_，故 break/continue 不会跨函数绑定到
 // 外层循环（函数边界天然隔离循环上下文）。
 
+#include "compile/FnKind.hpp"
 #include "object/ObjFunction.hpp"
 #include "type.hpp"
 
@@ -24,6 +25,11 @@ namespace aria {
     // 故容量 = 上限 + 1:第 256 个捕获 idx=255 仍合法,第 257 个越界被拒)。与 CodeGen 的
     // kMax* 同一「上限位置」语义家族;因登记侧 add_upvalue 与报错文案共用而定义于本头。
     constexpr u32 kMaxUpvalues = kU8OperandMax;
+
+    // this 局部名:实例方法帧槽 0 的具名局部。this 是关键字(Lexer 产出 This 关键字 token),
+    // 不可能与用户标识符撞名,可安全作局部登记名参与 find_local / resolve_upvalue(嵌套函数
+    // 引用 this 即沿 ctx 链捕获其槽 0,M4 机制零改动复用)。
+    constexpr StringView kThisName = "this";
 
     // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured/is_initialized=false。
     // is_initialized：定义但未初始化（declare_local_or_fail 置 false）；初始化器求值 / 无初始化器发
@@ -52,8 +58,9 @@ namespace aria {
         FunctionCtx() = delete;
 
         // 单构造：enclosing 为 nullptr 即入口 <main> 上下文（enclosing_=nullptr = entry），
-        // 否则嵌套函数上下文（指向外层）。
-        explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing = nullptr);
+        // 否则嵌套函数上下文（指向外层）。kind 为函数种类（默认普通函数；实例方法时槽 0 =
+        // 具名局部 this，见 FnKind 注）。
+        explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, FnKind kind);
 
         FunctionCtx(const FunctionCtx&)                = delete;
         FunctionCtx& operator=(const FunctionCtx&)     = delete;
@@ -107,6 +114,7 @@ namespace aria {
         // &fn_->unit()，随 ModuleCtx 游标），不缓存于本类。
         FunctionCtx*      enclosing_;
         ObjFunction*      fn_;
+        FnKind            kind_;
         List<Local>       locals_;
         u32               scope_depth_;
         Stack<LoopCtx>    loop_stack_;

@@ -35,8 +35,8 @@ namespace aria {
     // REPL 合成模块名:逐行复用单模块使顶层 var 跨行持久;SourceFile 名同步用之。
     constexpr StringView kReplModuleName = "<repl>";
 
-    // 匿名函数名:lambda(ObjFunction)与匿名原生函数(ObjNativeFn)共用;
-    // compile_function 据名判定「lambda 留栈作表达式值不绑定」,具名/匿名发射分岔依赖此名。
+    // 匿名函数名:lambda(ObjFunction)与匿名原生函数(ObjNativeFn)共用,供 `<fn ...>` 渲染与
+    // 堆栈跟踪;具名/留栈的分岔判定已由 FnKind::Lambda 承担,名字仅作显示。
     constexpr StringView kAnonymousName = "<anonymous>";
 
     // 实例方法构造角色名:parser 据裸方法名烙 FnKind::InitMethod(隐式返回尾返 this),runtime

@@ -7,6 +7,8 @@
 
 namespace aria {
 
+    using detail::ast::dump_node;
+
     // =========================================================================
     // ASTNode
     // =========================================================================
@@ -99,35 +101,29 @@ namespace aria {
     String Param::dump(const usize indent) const {
         String header = std::format("Param name={}", name);
         header        = is_varargs ? header + " (varargs)" : header;
-        return detail::ast::dump_node(indent, header, default_value);
+        return dump_node(indent, header, default_value);
     }
 
     // "_" 通配（value=nullptr）渲染为无子项的专用头行；null 子项经 dump_child 落空串，两种
     // 形态同行收口。
     String MatchPattern::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, value ? "MatchPattern" : "MatchPattern _ (wildcard)", value);
+        return dump_node(indent, value ? "MatchPattern" : "MatchPattern _ (wildcard)", value);
     }
 
-    String MatchArm::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "MatchArm", pattern, body);
-    }
+    String MatchArm::dump(const usize indent) const { return dump_node(indent, "MatchArm", pattern, body); }
 
-    String MatchExprArm::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "MatchExprArm", pattern, body);
-    }
+    String MatchExprArm::dump(const usize indent) const { return dump_node(indent, "MatchExprArm", pattern, body); }
 
-    String VarBinding::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "VarBinding", target, initializer);
-    }
+    String VarBinding::dump(const usize indent) const { return dump_node(indent, "VarBinding", target, initializer); }
 
-    String MapEntry::dump(const usize indent) const { return detail::ast::dump_node(indent, "MapEntry", key, value); }
+    String MapEntry::dump(const usize indent) const { return dump_node(indent, "MapEntry", key, value); }
 
     // =========================================================================
     // ProgramNode dump
     // =========================================================================
 
     String ProgramNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("Program decls={}", declarations.size()), declarations);
+        return dump_node(indent, std::format("Program decls={}", declarations.size()), declarations);
     }
 
     // =========================================================================
@@ -135,66 +131,58 @@ namespace aria {
     // =========================================================================
 
     String BlockNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("Block stmts={}", statements.size()), statements);
+        return dump_node(indent, std::format("Block stmts={}", statements.size()), statements);
     }
 
-    String ExprStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ExprStmt", expr); }
+    String ExprStmtNode::dump(const usize indent) const { return dump_node(indent, "ExprStmt", expr); }
 
-    String PrintStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "PrintStmt", expr); }
+    String PrintStmtNode::dump(const usize indent) const { return dump_node(indent, "PrintStmt", expr); }
 
     String IfStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "IfStmt", condition, then_branch, else_branch);
+        return dump_node(indent, "IfStmt", condition, then_branch, else_branch);
     }
 
-    String WhileStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "WhileStmt", condition, body);
-    }
+    String WhileStmtNode::dump(const usize indent) const { return dump_node(indent, "WhileStmt", condition, body); }
 
     String ForStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "ForStmt", init, condition, increment, body);
+        return dump_node(indent, "ForStmt", init, condition, increment, body);
     }
 
     String ForInStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "ForInStmt", pattern, iterable, body);
+        return dump_node(indent, "ForInStmt", pattern, iterable, body);
     }
 
-    String BreakStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "BreakStmt"); }
+    String BreakStmtNode::dump(const usize indent) const { return dump_node(indent, "BreakStmt"); }
 
-    String ContinueStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ContinueStmt"); }
+    String ContinueStmtNode::dump(const usize indent) const { return dump_node(indent, "ContinueStmt"); }
 
-    String ReturnStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "ReturnStmt", value);
-    }
+    String ReturnStmtNode::dump(const usize indent) const { return dump_node(indent, "ReturnStmt", value); }
 
     String ImportStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("ImportStmt path={} as={}", path, alias));
+        return dump_node(indent, std::format("ImportStmt path={} as={}", path, alias));
     }
 
     // catch 子树是「Catch param=... 标签行 + 体」的标准 dump_node 形态（标签行在 +1、体在
     // +2）；catch_body 判空由 dump_child 的 UPtr 空安全承担，catch_param 缺省时无 catch 子树。
     String TryStmtNode::dump(const usize indent) const {
-        String out = detail::ast::dump_node(indent, "TryStmt", body);
+        String out = dump_node(indent, "TryStmt", body);
         if (catch_param) {
-            out += detail::ast::dump_node(indent + 1, std::format("Catch param={}", *catch_param), catch_body);
+            out += dump_node(indent + 1, std::format("Catch param={}", *catch_param), catch_body);
         }
         return out;
     }
 
-    String ThrowStmtNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ThrowStmt", expr); }
+    String ThrowStmtNode::dump(const usize indent) const { return dump_node(indent, "ThrowStmt", expr); }
 
     String MatchStmtNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("MatchStmt arms={}", arms.size()), subject, arms);
+        return dump_node(indent, std::format("MatchStmt arms={}", arms.size()), subject, arms);
     }
 
     // --- 声明节点 dump ---
 
     String FunDeclNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("FunDecl name={} params={}", name, params.size()), params,
-                                      body);
-    }
-
-    String DefMember::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("DefMember kind={}", to_string(kind)), node);
+        return dump_node(indent, std::format("FunDecl name={} params={} kind={}", name, params.size(), to_string(kind)),
+                         params, body);
     }
 
     String DefDeclNode::dump(const usize indent) const {
@@ -202,11 +190,15 @@ namespace aria {
         if (superclass) {
             header += std::format(" super={}", *superclass);
         }
-        return detail::ast::dump_node(indent, header, members);
+        return dump_node(indent, header, members);
     }
 
     String VarDeclNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("VarDecl bindings={}", bindings.size()), bindings);
+        return dump_node(indent, std::format("VarDecl bindings={}", bindings.size()), bindings);
+    }
+
+    String StaticVarMemberNode::dump(const usize indent) const {
+        return dump_node(indent, std::format("StaticVarMember name={}", name), initializer);
     }
 
     // =========================================================================
@@ -214,82 +206,79 @@ namespace aria {
     // =========================================================================
 
     String IntegerLiteralNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("IntegerLiteral {}", value));
+        return dump_node(indent, std::format("IntegerLiteral {}", value));
     }
 
     String FloatLiteralNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("FloatLiteral {}", value));
+        return dump_node(indent, std::format("FloatLiteral {}", value));
     }
 
     String StringLiteralNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("StringLiteral \"{}\"", value));
+        return dump_node(indent, std::format("StringLiteral \"{}\"", value));
     }
 
     String BoolLiteralNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("BoolLiteral {}", value ? "true" : "false"));
+        return dump_node(indent, std::format("BoolLiteral {}", value ? "true" : "false"));
     }
 
-    String NilLiteralNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "NilLiteral"); }
+    String NilLiteralNode::dump(const usize indent) const { return dump_node(indent, "NilLiteral"); }
 
     String IdentifierNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("Identifier {}", name));
+        return dump_node(indent, std::format("Identifier {}", name));
     }
 
-    String ThisExprNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "ThisExpr"); }
+    String ThisExprNode::dump(const usize indent) const { return dump_node(indent, "ThisExpr"); }
 
-    String SuperExprNode::dump(const usize indent) const { return detail::ast::dump_node(indent, "SuperExpr"); }
+    String SuperExprNode::dump(const usize indent) const { return dump_node(indent, "SuperExpr"); }
 
     String BinaryExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("BinaryExpr op={}", Op::to_string(op)), lhs, rhs);
+        return dump_node(indent, std::format("BinaryExpr op={}", Op::to_string(op)), lhs, rhs);
     }
 
     String UnaryExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("UnaryExpr op={}", Op::to_string(op)), operand);
+        return dump_node(indent, std::format("UnaryExpr op={}", Op::to_string(op)), operand);
     }
 
     String AssignmentNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("Assignment op={}", Op::to_string(op)), target, value);
+        return dump_node(indent, std::format("Assignment op={}", Op::to_string(op)), target, value);
     }
 
     String DestructureAssignmentNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "DestructureAssignment", target, value);
+        return dump_node(indent, "DestructureAssignment", target, value);
     }
 
     String CallNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("Call args={}", args.size()), callee, args);
+        return dump_node(indent, std::format("Call args={}", args.size()), callee, args);
     }
 
     String FieldAccessNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("FieldAccess name={}", name), object);
+        return dump_node(indent, std::format("FieldAccess name={}", name), object);
     }
 
-    String IndexAccessNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "IndexAccess", object, index);
-    }
+    String IndexAccessNode::dump(const usize indent) const { return dump_node(indent, "IndexAccess", object, index); }
 
     String ListExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("ListExpr elements={}", elements.size()), elements);
+        return dump_node(indent, std::format("ListExpr elements={}", elements.size()), elements);
     }
 
     String MapExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("MapExpr entries={}", entries.size()), entries);
+        return dump_node(indent, std::format("MapExpr entries={}", entries.size()), entries);
     }
 
     String RangeExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("RangeExpr {}", is_exclusive ? "exclusive" : "inclusive"),
-                                      lower, upper);
+        return dump_node(indent, std::format("RangeExpr {}", is_exclusive ? "exclusive" : "inclusive"), lower, upper);
     }
 
     String IfExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "IfExpr", condition, then_branch, else_branch);
+        return dump_node(indent, "IfExpr", condition, then_branch, else_branch);
     }
 
     String LambdaExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("LambdaExpr params={}", params.size()), params, body);
+        return dump_node(indent, std::format("LambdaExpr params={}", params.size()), params, body);
     }
 
     String MatchExprNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("MatchExpr arms={}", arms.size()), subject, arms);
+        return dump_node(indent, std::format("MatchExpr arms={}", arms.size()), subject, arms);
     }
 
     // =========================================================================
@@ -297,19 +286,17 @@ namespace aria {
     // =========================================================================
 
     String IdentifierPatternNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, std::format("IdentifierPattern name={}", name));
+        return dump_node(indent, std::format("IdentifierPattern name={}", name));
     }
 
-    String WildcardPatternNode::dump(const usize indent) const {
-        return detail::ast::dump_node(indent, "WildcardPattern _");
-    }
+    String WildcardPatternNode::dump(const usize indent) const { return dump_node(indent, "WildcardPattern _"); }
 
     String ListPatternNode::dump(const usize indent) const {
         String header = std::format("ListPattern elements={}", elements.size());
         if (rest) {
             header += std::format(" rest={}", *rest);
         }
-        return detail::ast::dump_node(indent, header, elements);
+        return dump_node(indent, header, elements);
     }
 
     // =========================================================================
@@ -337,6 +324,7 @@ namespace aria {
     void FunDeclNode::accept(AstVisitor& visitor) { visitor.visitFunDeclNode(*this); }
     void DefDeclNode::accept(AstVisitor& visitor) { visitor.visitDefDeclNode(*this); }
     void VarDeclNode::accept(AstVisitor& visitor) { visitor.visitVarDeclNode(*this); }
+    void StaticVarMemberNode::accept(AstVisitor& visitor) { visitor.visitStaticVarMemberNode(*this); }
 
     void IntegerLiteralNode::accept(AstVisitor& visitor) { visitor.visitIntegerLiteralNode(*this); }
     void FloatLiteralNode::accept(AstVisitor& visitor) { visitor.visitFloatLiteralNode(*this); }

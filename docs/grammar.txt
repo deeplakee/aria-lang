@@ -21,7 +21,8 @@ defaultParam   -> identifier "=" expression
 varargs        -> "..." identifier
 
 defDecl        -> "def" identifier ( ":" identifier )? "{" member* "}"
-member         -> varDecl | funDecl | function
+member         -> memberVar | funDecl | function
+memberVar      -> "var" identifier ( "=" expression )? ";"
 
 varDecl        -> "var" varBinding ( "," varBinding )* ";"
 varBinding     -> varTarget ( "=" expression )?
@@ -187,8 +188,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # unwind 时 LIFO 执行）；defer 已降为可选后续（优先级最低，其他功能完成后另定，2026-09
 # 决定不再绑定 M4），细节重启设计时定。
 #
-# def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> varDecl | funDecl | function）--
-#   - varDecl（var ...;）-> 静态变量，属类本身（Foo.x 读写）。
+# def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> memberVar | funDecl | function）--
+#   - memberVar（var name (= expr)?;）-> 静态变量，属类本身（Foo.x 读写）。窄形态：var 后仅单
+#     标识符，不支持语句级 varDecl 的多绑定与解构 pattern（成员模型是类对象上的具名槽，名字一等）。
 #   - funDecl（fun name() {...}，带 fun 关键字）-> 静态方法，无 this 绑定，经 ClassName.x 访问静态成员。
 #   - function（name() {...}，无 fun 关键字）-> 实例方法，有 this 绑定（原 class 体方法形式）。
 #   体内裸名解析顺序：局部变量 -> upvalue -> 模块全局（类静态不在裸名作用域，经 ClassName.x）。Foo(args) 实例化；实例方法经

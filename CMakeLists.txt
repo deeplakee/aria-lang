@@ -53,6 +53,7 @@ add_library(aria_core STATIC
         src/compile/ast.hpp
         src/compile/ast.cpp
         src/compile/AstVisitor.hpp
+        src/compile/FnKind.hpp
         src/compile/FunctionCtx.cpp
         src/compile/FunctionCtx.hpp
         src/compile/ModuleCtx.cpp

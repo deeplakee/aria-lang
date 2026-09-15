@@ -12,7 +12,6 @@ using aria::BinaryExprNode;
 using aria::BlockNode;
 using aria::CallNode;
 using aria::DefDeclNode;
-using aria::DefMember;
 using aria::DestructureAssignmentNode;
 using aria::Error;
 using aria::ErrorCode;
@@ -435,18 +434,18 @@ TEST(ParserDecl, VarPatternWithRestAndHole) {
 
 TEST(ParserDecl, Fun) {
     const String out = dump_ok("fun id(x) { return x; }");
-    expect_has(out, "FunDecl name=id params=1");
+    expect_has(out, "FunDecl name=id params=1 kind=Function");
     expect_has(out, "ReturnStmt");
 }
 
 TEST(ParserDecl, FunNoParams) {
     const String out = dump_ok("fun f() { print 1; }");
-    expect_has(out, "FunDecl name=f params=0");
+    expect_has(out, "FunDecl name=f params=0 kind=Function");
 }
 
 TEST(ParserDecl, FunDefaultParams) {
     const String out = dump_ok("fun f(a, b = 2, c = 3) { }");
-    expect_has(out, "FunDecl name=f params=3");
+    expect_has(out, "FunDecl name=f params=3 kind=Function");
     // b、c 有默认值（dump 中 Param 下挂 default 子树）
     expect_has(out, "IntegerLiteral 2");
     expect_has(out, "IntegerLiteral 3");
@@ -465,8 +464,7 @@ TEST(ParserDecl, FunVarargsOnly) {
 TEST(ParserDecl, DefWithSuper) {
     const String out = dump_ok("def Dog : Animal { bark() { print \"woof\"; } }");
     expect_has(out, "DefDecl name=Dog super=Animal");
-    expect_has(out, "DefMember kind=InstanceMethod");
-    expect_has(out, "FunDecl name=bark params=0");
+    expect_has(out, "FunDecl name=bark params=0 kind=Method");
     expect_has(out, "StringLiteral \"woof\"");
 }
 
@@ -478,20 +476,23 @@ TEST(ParserDecl, DefNoSuper) {
 TEST(ParserDecl, DefMultipleInstanceMethods) {
     // 实例方法：裸 identifier（无 fun 关键字），按文法 function -> identifier params block
     const String out = dump_ok("def C { a() { } b(x) { } }");
-    expect_has(out, "DefMember kind=InstanceMethod");
-    expect_has(out, "FunDecl name=a params=0");
-    expect_has(out, "FunDecl name=b params=1");
+    expect_has(out, "FunDecl name=a params=0 kind=Method");
+    expect_has(out, "FunDecl name=b params=1 kind=Method");
 }
 
 TEST(ParserDecl, DefStaticVarAndStaticMethod) {
     // var -> 静态变量；fun name() -> 静态方法；裸 name() -> 实例方法
     const String out = dump_ok("def C { var x = 1; fun s() { } m() { } }");
-    expect_has(out, "DefMember kind=StaticVar");
-    expect_has(out, "VarDecl bindings=1");
-    expect_has(out, "DefMember kind=StaticMethod");
-    expect_has(out, "FunDecl name=s params=0");
-    expect_has(out, "DefMember kind=InstanceMethod");
-    expect_has(out, "FunDecl name=m params=0");
+    expect_has(out, "StaticVarMember name=x");
+    expect_has(out, "FunDecl name=s params=0 kind=StaticMethod");
+    expect_has(out, "FunDecl name=m params=0 kind=Method");
+}
+
+TEST(ParserDecl, DefInitMethodStamping) {
+    // 裸方法名为 init -> InitMethod 构造角色（返回尾返回 this）；fun init() 仍为静态方法。
+    const String out = dump_ok("def C { init() { } fun init() { } }");
+    expect_has(out, "FunDecl name=init params=0 kind=InitMethod");
+    expect_has(out, "FunDecl name=init params=0 kind=StaticMethod");
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +642,7 @@ TEST(ParserStmt, Block) {
 
 TEST(ParserStmt, NestedBlocksAndScope) {
     const String out = dump_ok("fun f() { if (c) { print 1; } }");
-    expect_has(out, "FunDecl name=f params=0");
+    expect_has(out, "FunDecl name=f params=0 kind=Function");
     expect_has(out, "IfStmt");
     expect_has(out, "Block stmts=1");
 }
@@ -662,6 +663,23 @@ TEST(ParserError, DefBodyFunMustBeNamed) {
     // def 体内 fun 后须跟方法名；fun '('（lambda）不得作成员，由 fun_decl 的
     // expect_identifier 兜底报 ExpectedIdentifier（无须 def_decl 显式 check_next）。
     auto p = parse_src("def C { fun () { } }");
+    ASSERT_FALSE(p->result.has_value());
+    ASSERT_FALSE(p->result.error().empty());
+    EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedIdentifier);
+}
+
+TEST(ParserError, DefBodyVarMultiBindingRejected) {
+    // memberVar 窄形态：var 后仅单标识符绑定；语句级 varDecl 的多绑定在成员位不收，
+    // member_var 就地报 ExpectedToken（解析期拒绝，非编译期 not_impl）。
+    auto p = parse_src("def C { var a = 1, b = 2; }");
+    ASSERT_FALSE(p->result.has_value());
+    ASSERT_FALSE(p->result.error().empty());
+    EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedToken);
+}
+
+TEST(ParserError, DefBodyVarPatternRejected) {
+    // 解构 pattern 不是合法成员：memberVar 只收标识符。
+    auto p = parse_src("def C { var [a, b] = f(); }");
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedIdentifier);

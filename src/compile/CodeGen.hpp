@@ -87,6 +87,7 @@ namespace aria {
         void visitFunDeclNode(FunDeclNode& node) override;
         void visitDefDeclNode(DefDeclNode& node) override;
         void visitVarDeclNode(VarDeclNode& node) override;
+        void visitStaticVarMemberNode(StaticVarMemberNode& node) override;
 
         // --- 表达式节点 ---
         void visitIntegerLiteralNode(IntegerLiteralNode& node) override;

@@ -3,6 +3,8 @@
 #include <format>
 #include <utility>
 
+#include "aria.hpp"
+
 namespace aria {
 
     namespace {
@@ -222,7 +224,7 @@ namespace aria {
         try {
             // fun + 标识符 -> 函数声明；fun + '(' -> lambda 表达式语句（走 statement）。
             if (check(TokenType::Fun) && check_next(TokenType::Identifier)) {
-                return fun_decl();
+                return fun_decl(FnKind::Function);
             }
             if (check(TokenType::Def)) {
                 return def_decl();
@@ -238,13 +240,13 @@ namespace aria {
         }
     }
 
-    UPtr<FunDeclNode> Parser::fun_decl() {
+    UPtr<FunDeclNode> Parser::fun_decl(const FnKind kind) {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Fun, "\"fun\"");
         String          name = expect_identifier();
         List<Param>     ps   = params();
         UPtr<BlockNode> body = block();
-        return std::make_unique<FunDeclNode>(loc, std::move(name), std::move(ps), std::move(body));
+        return std::make_unique<FunDeclNode>(loc, std::move(name), std::move(ps), std::move(body), kind);
     }
 
     List<Param> Parser::params() {
@@ -287,30 +289,45 @@ namespace aria {
         String      name       = expect_identifier();
         Opt<String> superclass = match(TokenType::Colon) ? Opt{expect_identifier()} : std::nullopt;
         expect(TokenType::LeftBrace, "'{'");
-        // def 体：(varDecl | funDecl | function)*。按首 token 分派成员种类：
-        //   - var 声明 -> 静态变量（StaticVar）；
+        // def 体：(memberVar | funDecl | function)*。按首 token 分派成员种类：
+        //   - var 声明 -> 静态变量（StaticVar，窄形态 memberVar，见 member_var 注）；
         //   - fun 声明 -> 静态方法（StaticMethod，无 this）；
-        //   - 裸 identifier（identifier params block）-> 实例方法（InstanceMethod，有 this）。
+        //   - 裸 identifier（identifier params block）-> 实例方法（有 this；名为 init 烙
+        //     InitMethod 构造角色）。
         // 其余 token 走 else 报错。
-        List<DefMember> members;
+        List<UPtr<StmtNode>> members;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
             if (check(TokenType::Var)) {
-                members.push_back(DefMember{.kind = DefMember::Kind::StaticVar, .node = var_decl()});
+                members.push_back(member_var());
             } else if (check(TokenType::Fun)) {
-                members.push_back(DefMember{.kind = DefMember::Kind::StaticMethod, .node = fun_decl()});
+                members.push_back(fun_decl(FnKind::StaticMethod));
             } else if (check(TokenType::Identifier)) {
                 const SourceLoc mloc  = peek().loc();
                 String          mname = expect_identifier();
                 List<Param>     mps   = params();
                 UPtr<BlockNode> mbody = block();
-                auto fn = std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody));
-                members.push_back(DefMember{.kind = DefMember::Kind::InstanceMethod, .node = std::move(fn)});
+                // init 是语言级构造角色:裸方法名为 kInitName -> InitMethod(返回尾返回 this),其余实例方法。
+                const auto kind = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
+                members.push_back(
+                        std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody), kind));
             } else {
                 error(ErrorCode::ExpectedToken, "def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek().type()));
             }
         }
         expect(TokenType::RightBrace, "'}'");
         return std::make_unique<DefDeclNode>(loc, std::move(name), std::move(superclass), std::move(members));
+    }
+
+    UPtr<StaticVarMemberNode> Parser::member_var() {
+        // memberVar -> "var" identifier ("=" expression)? ";"。类体静态变量成员节点：单标识符绑定；
+        // 语句级 varDecl 的多绑定/解构 pattern 在成员位不收，就地语法错（成员是类对象上的具名槽，
+        // 名字一等，见 grammar.txt member 注）。
+        const SourceLoc loc = peek().loc();
+        expect(TokenType::Var, "\"var\"");
+        String         name = expect_identifier();
+        UPtr<ExprNode> init = match(TokenType::Equal) ? expression() : nullptr;
+        expect(TokenType::Semicolon, "';'");
+        return std::make_unique<StaticVarMemberNode>(loc, std::move(name), std::move(init));
     }
 
     UPtr<VarDeclNode> Parser::var_decl() {

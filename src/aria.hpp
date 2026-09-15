@@ -39,6 +39,11 @@ namespace aria {
     // compile_function 据名判定「lambda 留栈作表达式值不绑定」,具名/匿名发射分岔依赖此名。
     constexpr StringView kAnonymousName = "<anonymous>";
 
+    // 实例方法构造角色名:parser 据裸方法名烙 FnKind::InitMethod(隐式返回尾返 this),runtime
+    // 据名维护类 init_ 槽(ObjClass::set_field 内聚同步)。"init" 本身是普通标识符,构造角色
+    // 由出现位置(def 体裸方法位)与名字共同判定。
+    constexpr StringView kInitName = "init";
+
     // ---- 产品标识与部署约定 ----
 
     // 产品名:CLI 程序名(util::Cli)与 REPL 提示符句柄(isocline)共用。

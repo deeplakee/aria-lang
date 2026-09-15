@@ -15,12 +15,12 @@ using aria::BreakStmtNode;
 using aria::CallNode;
 using aria::ContinueStmtNode;
 using aria::DefDeclNode;
-using aria::DefMember;
 using aria::DestructureAssignmentNode;
 using aria::ExprNode;
 using aria::ExprStmtNode;
 using aria::FieldAccessNode;
 using aria::FloatLiteralNode;
+using aria::FnKind;
 using aria::ForInStmtNode;
 using aria::ForStmtNode;
 using aria::FunDeclNode;
@@ -51,6 +51,7 @@ using aria::ProgramNode;
 using aria::RangeExprNode;
 using aria::ReturnStmtNode;
 using aria::SourceLoc;
+using aria::StaticVarMemberNode;
 using aria::StmtNode;
 using aria::String;
 using aria::StringLiteralNode;
@@ -109,6 +110,7 @@ namespace {
         void visitFunDeclNode(FunDeclNode&) override { visited_.push_back("FunDeclNode"); }
         void visitDefDeclNode(DefDeclNode&) override { visited_.push_back("DefDeclNode"); }
         void visitVarDeclNode(VarDeclNode&) override { visited_.push_back("VarDeclNode"); }
+        void visitStaticVarMemberNode(StaticVarMemberNode&) override { visited_.push_back("StaticVarMemberNode"); }
 
         // --- 表达式节点 ---
         void visitIntegerLiteralNode(IntegerLiteralNode&) override { visited_.push_back("IntegerLiteralNode"); }
@@ -185,9 +187,12 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     expect_visit(std::make_unique<MatchStmtNode>(kLoc, ident("s"), List<MatchArm>{}), "MatchStmtNode");
 
     // 声明
-    expect_visit(std::make_unique<FunDeclNode>(kLoc, String{"f"}, List<Param>{}, empty_block()), "FunDeclNode");
-    expect_visit(std::make_unique<DefDeclNode>(kLoc, String{"C"}, Opt<String>{}, List<DefMember>{}), "DefDeclNode");
+    expect_visit(std::make_unique<FunDeclNode>(kLoc, String{"f"}, List<Param>{}, empty_block(), FnKind::Function),
+                 "FunDeclNode");
+    expect_visit(std::make_unique<DefDeclNode>(kLoc, String{"C"}, Opt<String>{}, List<UPtr<StmtNode>>{}),
+                 "DefDeclNode");
     expect_visit(std::make_unique<VarDeclNode>(kLoc, List<VarBinding>{}), "VarDeclNode");
+    expect_visit(std::make_unique<StaticVarMemberNode>(kLoc, String{"x"}, i64lit(1)), "StaticVarMemberNode");
 }
 
 TEST(AstVisitorDispatch, Expressions) {

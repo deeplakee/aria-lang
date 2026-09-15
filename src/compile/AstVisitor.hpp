@@ -38,6 +38,7 @@ namespace aria {
     struct FunDeclNode;
     struct DefDeclNode;
     struct VarDeclNode;
+    struct StaticVarMemberNode;
 
     // --- 表达式节点（ExprNode 派生） ---
     struct IntegerLiteralNode;
@@ -75,23 +76,24 @@ namespace aria {
         virtual void visitProgramNode(ProgramNode& node) = 0;
 
         // --- 语句节点 ---
-        virtual void visitBlockNode(BlockNode& node)               = 0;
-        virtual void visitExprStmtNode(ExprStmtNode& node)         = 0;
-        virtual void visitPrintStmtNode(PrintStmtNode& node)       = 0;
-        virtual void visitIfStmtNode(IfStmtNode& node)             = 0;
-        virtual void visitWhileStmtNode(WhileStmtNode& node)       = 0;
-        virtual void visitForStmtNode(ForStmtNode& node)           = 0;
-        virtual void visitForInStmtNode(ForInStmtNode& node)       = 0;
-        virtual void visitBreakStmtNode(BreakStmtNode& node)       = 0;
-        virtual void visitContinueStmtNode(ContinueStmtNode& node) = 0;
-        virtual void visitReturnStmtNode(ReturnStmtNode& node)     = 0;
-        virtual void visitImportStmtNode(ImportStmtNode& node)     = 0;
-        virtual void visitTryStmtNode(TryStmtNode& node)           = 0;
-        virtual void visitThrowStmtNode(ThrowStmtNode& node)       = 0;
-        virtual void visitMatchStmtNode(MatchStmtNode& node)       = 0;
-        virtual void visitFunDeclNode(FunDeclNode& node)           = 0;
-        virtual void visitDefDeclNode(DefDeclNode& node)           = 0;
-        virtual void visitVarDeclNode(VarDeclNode& node)           = 0;
+        virtual void visitBlockNode(BlockNode& node)                     = 0;
+        virtual void visitExprStmtNode(ExprStmtNode& node)               = 0;
+        virtual void visitPrintStmtNode(PrintStmtNode& node)             = 0;
+        virtual void visitIfStmtNode(IfStmtNode& node)                   = 0;
+        virtual void visitWhileStmtNode(WhileStmtNode& node)             = 0;
+        virtual void visitForStmtNode(ForStmtNode& node)                 = 0;
+        virtual void visitForInStmtNode(ForInStmtNode& node)             = 0;
+        virtual void visitBreakStmtNode(BreakStmtNode& node)             = 0;
+        virtual void visitContinueStmtNode(ContinueStmtNode& node)       = 0;
+        virtual void visitReturnStmtNode(ReturnStmtNode& node)           = 0;
+        virtual void visitImportStmtNode(ImportStmtNode& node)           = 0;
+        virtual void visitTryStmtNode(TryStmtNode& node)                 = 0;
+        virtual void visitThrowStmtNode(ThrowStmtNode& node)             = 0;
+        virtual void visitMatchStmtNode(MatchStmtNode& node)             = 0;
+        virtual void visitFunDeclNode(FunDeclNode& node)                 = 0;
+        virtual void visitDefDeclNode(DefDeclNode& node)                 = 0;
+        virtual void visitVarDeclNode(VarDeclNode& node)                 = 0;
+        virtual void visitStaticVarMemberNode(StaticVarMemberNode& node) = 0;
 
         // --- 表达式节点 ---
         virtual void visitIntegerLiteralNode(IntegerLiteralNode& node)               = 0;

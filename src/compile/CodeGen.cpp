@@ -796,6 +796,11 @@ namespace aria {
         }
     }
 
+    void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
+        // 成员分派不可达：def 编译仍 not_impl（visitDefDeclNode 在先抛出）；占位待阶段 3 翻转。
+        not_impl(node, "类静态变量成员");
+    }
+
     // ============================================================
     // 表达式节点
     // ============================================================

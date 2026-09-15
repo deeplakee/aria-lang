@@ -13,13 +13,13 @@ using aria::BreakStmtNode;
 using aria::CallNode;
 using aria::ContinueStmtNode;
 using aria::DefDeclNode;
-using aria::DefMember;
 using aria::DestructureAssignmentNode;
 using aria::ExprNode;
 using aria::ExprStmtNode;
 using aria::f64;
 using aria::FieldAccessNode;
 using aria::FloatLiteralNode;
+using aria::FnKind;
 using aria::ForInStmtNode;
 using aria::ForStmtNode;
 using aria::FunDeclNode;
@@ -364,27 +364,25 @@ TEST(AstDisplay, FunDecl) {
     body_stmts.push_back(std::make_unique<ReturnStmtNode>(kLoc, ident("x")));
     auto body = std::make_unique<BlockNode>(kLoc, std::move(body_stmts));
 
-    FunDeclNode  node{kLoc, String{"id"}, std::move(params), std::move(body)};
+    FunDeclNode  node{kLoc, String{"id"}, std::move(params), std::move(body), FnKind::Function};
     const String out = dump_str(node);
-    expect_has(out, "FunDecl name=id params=1");
+    expect_has(out, "FunDecl name=id params=1 kind=Function");
     expect_has(out, "ReturnStmt");
 }
 
 TEST(AstDisplay, DefDecl) {
-    List<DefMember> members;
-    // bark() { print "woof"; }  -- 实例方法（InstanceMethod）
+    List<UPtr<StmtNode>> members;
+    // bark() { print "woof"; }  -- 实例方法（Method）
     List<UPtr<StmtNode>> bark_body_stmts;
     bark_body_stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, strlit("woof")));
     auto bark_body = std::make_unique<BlockNode>(kLoc, std::move(bark_body_stmts));
-    members.push_back(DefMember{
-            .kind = DefMember::Kind::InstanceMethod,
-            .node = std::make_unique<FunDeclNode>(kLoc, String{"bark"}, List<Param>{}, std::move(bark_body))});
+    members.push_back(
+            std::make_unique<FunDeclNode>(kLoc, String{"bark"}, List<Param>{}, std::move(bark_body), FnKind::Method));
 
     DefDeclNode  node{kLoc, String{"Dog"}, Opt<String>{String{"Animal"}}, std::move(members)};
     const String out = dump_str(node);
     expect_has(out, "DefDecl name=Dog super=Animal");
-    expect_has(out, "DefMember kind=InstanceMethod");
-    expect_has(out, "FunDecl name=bark params=0");
+    expect_has(out, "FunDecl name=bark params=0 kind=Method");
     expect_has(out, "StringLiteral \"woof\"");
 }
 

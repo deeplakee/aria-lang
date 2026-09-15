@@ -2,6 +2,7 @@
 
 #include <format>
 
+#include "aria.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
@@ -30,10 +31,10 @@ namespace aria {
     }
 
     void ObjClass::set_field(ObjString* name, const Value value) {
-        // 创建路径统一写入口(公开 API):落本类自身表(不沿链);"init" 同步 init_
+        // 创建路径统一写入口(公开 API):落本类自身表(不沿链);构造角色名同步 init_
         //(表槽/init_ 一致由本入口自维护)。
         field_.set(Value::from_obj(name), value); // 继承名/新名新建键、本类已有原槽更新、父表不动
-        if (name->view() == "init") {
+        if (name->view() == kInitName) {
             init_ = value;
         }
     }

@@ -2,6 +2,7 @@
 #define ARIA_AST_HPP
 
 #include "common.hpp"
+#include "compile/FnKind.hpp"
 #include "util/source_file.hpp"
 
 namespace aria {
@@ -228,37 +229,6 @@ namespace aria {
         String dump(usize indent) const;
     };
 
-    // def 声明体的成员：静态变量 / 静态方法 / 实例方法（见 DefDeclNode）。
-    //   - StaticVar：var 声明（varDecl），编译为类上的静态变量。
-    //   - StaticMethod：fun 声明（funDecl，带 fun 关键字），无 this 绑定，靠裸名访问静态成员。
-    //   - InstanceMethod：方法（identifier params block，无 fun 关键字），有 this 绑定。
-    // node 统一为 StmtNode：StaticVar 持 VarDeclNode；StaticMethod/InstanceMethod 持 FunDeclNode。
-    // 按出现顺序保留，以支撑静态变量初始化顺序（前一静态变量可被后续初始化器引用）。
-    struct DefMember {
-        enum class Kind : u8 { StaticVar, StaticMethod, InstanceMethod };
-
-        Kind           kind;
-        UPtr<StmtNode> node;
-
-        [[nodiscard]]
-        String dump(usize indent) const;
-    };
-
-    // DefMember::Kind 可读名（如 "StaticVar"）；switch 不加 default，新增枚举值由 -Wswitch
-    // 提示遗漏，UNREACHABLE 收尾在 switch 之后（同 Op::to_string/ErrorCode/TokenType 先例）。
-    [[nodiscard]]
-    constexpr StringView to_string(const DefMember::Kind kind) noexcept {
-        switch (kind) {
-            case DefMember::Kind::StaticVar:
-                return "StaticVar";
-            case DefMember::Kind::StaticMethod:
-                return "StaticMethod";
-            case DefMember::Kind::InstanceMethod:
-                return "InstanceMethod";
-        }
-        UNREACHABLE();
-    }
-
     // =========================================================================
     // dump 基础设施
     // =========================================================================
@@ -277,7 +247,7 @@ namespace aria {
         }
 
         // 可渲染子项：有 dump(usize) const 成员（ASTNode 子类与 Param/MatchArm/MapEntry/
-        // DefMember 等值子项）。
+        // VarBinding 等值子项）。
         template<typename T>
         concept Dumpable = requires(const T& value, const usize indent) { value.dump(indent); };
 
@@ -544,10 +514,10 @@ namespace aria {
 
     // --- 声明节点（StmtNode 派生：声明即「可出现在 program/block 顶层的语句」） ---
 
-    // 函数声明：fun identifier params block。
+    // 函数声明：fun identifier params block。kind 见 FnKind。
     struct FunDeclNode : StmtNode {
-        FunDeclNode(const SourceLoc loc, String name, List<Param> params, UPtr<BlockNode> body) :
-            StmtNode{loc}, name{std::move(name)}, params{std::move(params)}, body{std::move(body)} {}
+        FunDeclNode(const SourceLoc loc, String name, List<Param> params, UPtr<BlockNode> body, const FnKind kind) :
+            StmtNode{loc}, name{std::move(name)}, params{std::move(params)}, body{std::move(body)}, kind{kind} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -557,14 +527,17 @@ namespace aria {
         String          name;
         List<Param>     params;
         UPtr<BlockNode> body;
+        FnKind          kind;
     };
 
-    // def 声明："def" identifier (":" identifier)? "{" (varDecl | funDecl | function)* "}"。
+    // def 声明："def" identifier (":" identifier)? "{" (memberVar | funDecl | function)* "}"。
     //   - superclass：nullopt 表无父类（无 ":"）；实例方法经此继承，super 仍可用。
-    //   - members：体内成员列表（DefMember，按出现顺序保留）。三种成员：
-    //     StaticVar（var 声明）/ StaticMethod（fun 声明）/ InstanceMethod（裸 identifier 方法）。
+    //   - members：体内成员列表（按出现顺序保留，支撑静态变量初始化顺序--前一静态变量可被后续
+    //     初始化器引用）。三种成员节点：StaticVarMemberNode（静态变量）/ FunDeclNode
+    //     kind=StaticMethod（fun 声明，无 this 绑定）/ FunDeclNode kind=Method（裸
+    //     identifier 方法，有 this 绑定；名为 init 烙 InitMethod 构造角色）。
     struct DefDeclNode : StmtNode {
-        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<DefMember> members) :
+        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<UPtr<StmtNode>> members) :
             StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)} {}
 
         [[nodiscard]]
@@ -572,9 +545,9 @@ namespace aria {
 
         void accept(AstVisitor& visitor) override;
 
-        String          name;
-        Opt<String>     superclass;
-        List<DefMember> members;
+        String               name;
+        Opt<String>          superclass;
+        List<UPtr<StmtNode>> members;
     };
 
     // var 声明：var varTarget ("=" expr)? ("," ...)* ";"。
@@ -588,6 +561,21 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         List<VarBinding> bindings;
+    };
+
+    // def 体静态变量成员：memberVar -> "var" identifier ("=" expression)? ";"。成员专用窄节点，
+    // 语句级 varDecl 的多绑定/解构 pattern 由文法在成员位拒绝（Parser::member_var）。
+    struct StaticVarMemberNode : StmtNode {
+        StaticVarMemberNode(const SourceLoc loc, String name, UPtr<ExprNode> initializer) :
+            StmtNode{loc}, name{std::move(name)}, initializer{std::move(initializer)} {}
+
+        [[nodiscard]]
+        String dump(usize indent) const override;
+
+        void accept(AstVisitor& visitor) override;
+
+        String         name;
+        UPtr<ExprNode> initializer;
     };
 
     // =========================================================================

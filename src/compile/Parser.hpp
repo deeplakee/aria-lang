@@ -94,14 +94,21 @@ namespace aria {
         [[nodiscard]]
         UPtr<StmtNode> declaration();
 
+        // kind 按出现位置定：语句位 funDecl -> Function；def 体 funDecl -> StaticMethod（裸方法
+        // 不经此，def_decl 直接构造 Method/InitMethod 节点）。
         [[nodiscard]]
-        UPtr<FunDeclNode> fun_decl();
+        UPtr<FunDeclNode> fun_decl(FnKind kind);
 
         [[nodiscard]]
         List<Param> params();
 
         [[nodiscard]]
         UPtr<DefDeclNode> def_decl();
+
+        // def 体静态变量成员（memberVar -> "var" identifier ("=" expression)? ";"）：单标识符绑定，
+        // 语句级 varDecl 的多绑定/解构 pattern 在成员位不收（成员是类对象上的具名槽，名字一等）。
+        [[nodiscard]]
+        UPtr<StaticVarMemberNode> member_var();
 
         [[nodiscard]]
         UPtr<VarDeclNode> var_decl();

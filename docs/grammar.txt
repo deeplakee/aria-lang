@@ -66,8 +66,9 @@ value          -> primary ( args | "." identifier | "[" expression "]" )*
 args           -> "(" ( expression ( "," expression )* )? ")"
 
 primary        -> number | string | identifier | "nil" | "false" | "true"
-               | "this" | "super" | parenExpr | listExpr | mapExpr | ifExpr | lambdaExpr | matchExpr
+               | "this" | superExpr | parenExpr | listExpr | mapExpr | ifExpr | lambdaExpr | matchExpr
 
+superExpr      -> "super" "." identifier
 parenExpr      -> "(" expression ")"
 listExpr       -> "[" ( expression ( "," expression )* )? "]"
 mapExpr        -> "{" ( pair ( "," pair )* )? "}"
@@ -112,7 +113,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # 总则：本文法描述 parse tree 形态，不编码语义约束。下列语义检查推迟到语义分析 /
 # 字节码生成阶段：左值/右值合法性（assignment 左操作数须为 identifier / obj.field /
-# obj[index]）、super 须为 super.method(...) 形态、break/continue 须在循环内、
+# obj[index]）、break/continue 须在循环内、
 # return 须在函数内、try 须有 catch、默认值表达式不得引用同函数参数。
 #
 # 复合赋值求值不变式：E1 op= E2 等价于 E1 = E1 op E2，但左值 E1 只求值一次（C 标准

@@ -667,15 +667,19 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
     };
 
-    // super 表达式。文法要求 super 须为 super.method(...) 形态（语义阶段校验），
-    // AST 层仅作 callee 标记--作为 FieldAccessNode(SuperExprNode, method) 的 object 出现。
+    // super 成员表达式：super "." identifier（文法单形，裸 super 解析期不收）。成员名烙进
+    // 节点本体；读/调编译（语境检查 + LOAD_SUPER_FIELD）见 CodeGen visitSuperExprNode，
+    // super.m(args) 经 visitCallNode 通用路径复用本 visit。写形态非左值（validate_lvalue_target
+    // 拒绝）。
     struct SuperExprNode : ExprNode {
-        using ExprNode::ExprNode;
+        SuperExprNode(const SourceLoc loc, String name) : ExprNode{loc}, name{std::move(name)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
+
+        String name;
     };
 
     // ----- 运算符表达式 -----

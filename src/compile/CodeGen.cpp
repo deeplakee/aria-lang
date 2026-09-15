@@ -234,6 +234,17 @@ namespace aria {
         return std::nullopt;
     }
 
+    CodeGen::ResolvedVar CodeGen::resolve_this_or_fail(const SourceLoc loc) {
+        // this 专用解析（契约见 CodeGen.hpp 注）：链上找不到实例方法即 fail，永不落全局。
+        if (const auto slot = cur_fn_ctx()->find_local(kThisName)) {
+            return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *slot};
+        }
+        if (const auto upvalue_idx = resolve_upvalue(cur_fn_ctx(), kThisName, loc)) {
+            return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = *upvalue_idx};
+        }
+        fail(ErrorCode::ThisOutsideClass, loc, "this 不在实例方法内");
+    }
+
     u8 CodeGen::add_upvalue_or_fail(FunctionCtx* ctx, const UpvalueDesc desc, const SourceLoc loc) const {
         if (const auto idx = ctx->add_upvalue(desc)) {
             return *idx;
@@ -260,6 +271,20 @@ namespace aria {
     void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc loc) const {
         if (!mod_ctx_->declare_global(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name);
+        }
+    }
+
+    void CodeGen::bind_stack_value(const StringView name, const SourceLoc loc) const {
+        // 契约见 CodeGen.hpp bind_stack_value 注；行号就地取 loc（声明行）。
+        const u32 line = static_cast<u32>(loc.line());
+        if (mod_ctx_->is_global_scope()) {
+            declare_global_or_fail(name, loc);
+            const auto name_idx = add_name_or_fail(name, loc);
+            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
+            cur_cu()->emit_word(name_idx, line); // 弹值定义全局
+        } else {
+            const auto slot = declare_local_or_fail(name, loc);
+            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
         }
     }
 
@@ -303,6 +328,8 @@ namespace aria {
         cur_cu()->emit_op(OpCode::CALL, line);
         cur_cu()->emit_byte(0, line);
     }
+
+    bool CodeGen::is_in_method() const { return is_method(cur_fn_ctx()->kind_); }
 
     void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line, const SourceLoc loc) const {
         // 契约见 CodeGen.hpp emit_load_var 注。
@@ -412,41 +439,54 @@ namespace aria {
     }
 
     void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
-                                   const SourceLoc decl_loc) {
+                                   const SourceLoc decl_loc, const FnKind kind) {
         // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
         validate_params(params, decl_loc);
 
-        const auto loc  = body.loc();
-        const u32  line = body.loc_line();
+        // 声明区发射（CLOSURE/绑定/注册）行号与报错位置统一取声明处 decl_loc--声明语句的执行点在
+        // 声明首 token（fun 关键字/成员名,与 var/def/import 绑定取语句行的惯例一致）;体尾隐式返回
+        // 属体区,行号取 body。
+        const u32 decl_line = static_cast<u32>(decl_loc.line());
+        const u32 line      = body.loc_line();
 
         const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
-        const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), loc);
+        const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
         // fn->upvalue_descs_)逐个建/复用 upvalue(表在元数据不进字节码流,CLOSURE 定长 3B)。
-        cur_cu()->emit_op(OpCode::CLOSURE, line);
-        cur_cu()->emit_word(fn_idx, line);
+        cur_cu()->emit_op(OpCode::CLOSURE, decl_line);
+        cur_cu()->emit_word(fn_idx, decl_line);
 
-        // lambda(name == `<anonymous>`)留栈作表达式值不绑定，故可以跳过;具名 fun 绑定全局/局部。
-        if (name != kAnonymousName) {
-            if (mod_ctx_->is_global_scope()) {
-                declare_global_or_fail(name, loc);
-                const auto name_idx = add_name_or_fail(name, loc);
-                cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-                cur_cu()->emit_word(name_idx, line);
-            } else {
-                // 嵌套 fun -> 局部(值填槽:fn 已压在 slot 位置,declare 登记该 slot 即该局部,无 store/pop)
-                const auto slot = declare_local_or_fail(name, loc);
-                cur_fn_ctx()->mark_initialized(slot);
+        // kind 全分派（穷尽 switch,-Wswitch 提示漏项）：具名 fun（Function）绑定到全局（顶层）或
+        // 局部（嵌套,值填槽）;Lambda 留栈作表达式值不绑定;方法三态留栈不绑定,就地注册——fun 静态
+        // MAKE_STATIC 不戳 defining class（静态槽读恒原值）,实例方法族 MAKE_METHOD 戳（VM 侧方法性
+        // 标记 + super 来源）。分派都在 CLOSURE 之后、子上下文建立之前:局部绑定须先于体编译,体内
+        // 自引用此名时父帧局部须已登记且已初始化（嵌套具名函数递归自捕获）。
+        switch (kind) {
+            case FnKind::Function:
+                bind_stack_value(name, decl_loc); // [closure] -> [] 全局 DEF_GLOBAL / 局部值填槽
+                break;
+            case FnKind::Lambda:
+                break; // 留栈作 lambda 表达式值,不绑定
+            case FnKind::StaticMethod:
+            case FnKind::Method:
+            case FnKind::InitMethod: {
+                // 类成员注册:[class, closure] -> [class],class 值留栈跨整个类体。
+                const auto member_op  = kind == FnKind::StaticMethod ? OpCode::MAKE_STATIC : OpCode::MAKE_METHOD;
+                const auto member_idx = add_name_or_fail(name, decl_loc);
+                cur_cu()->emit_op(member_op, decl_line);
+                cur_cu()->emit_word(member_idx, decl_line); // [class]
+                break;
             }
         }
 
         // 切到子函数上下文并摆动游标:cu 由游标派生,随游标自动切到子 unit,无需 save/restore。
-        // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。
-        const auto child          = new FunctionCtx{fn, cur_fn_ctx(), FnKind::Function};
+        // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。kind 随上下文:
+        // 实例方法族槽 0 = 具名局部 this(帧 [this, a1..aN],arity 不含 this)。
+        const auto child          = new FunctionCtx{fn, cur_fn_ctx(), kind};
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& param: params) {
-            // 形参即函数前 n 个局部变量(slot 1..n);重名已在上方检查,故直接 add_local 无需再查。
+            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在上方检查,故直接 add_local 无需再查。
             const auto slot = cur_fn_ctx()->add_local(param.name);
             cur_fn_ctx()->mark_initialized(slot);
         }
@@ -456,8 +496,14 @@ namespace aria {
 
         // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
 
-        // 隐式 return nil(兜底;显式 return 后为死代码,无害)。
-        cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+        // 隐式 return 尾:init 方法返回 this(实例化不变式 Foo() 得实例——call_class 槽 0 原位换
+        // 实例后以返回值为实例化结果,LOAD_LOCAL 0 即 this);其余返回 nil(兜底;显式 return 后为
+        // 死代码,无害)。
+        if (kind == FnKind::InitMethod) {
+            cur_cu()->emit_load_local(0, line);
+        } else {
+            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+        }
         cur_cu()->emit_op(OpCode::RETURN, line);
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
@@ -695,18 +741,8 @@ namespace aria {
         const auto path_idx = add_name_or_fail(node.path, node.loc());
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line); // [module]
-        if (mod_ctx_->is_global_scope()) {
-            // 顶层 import -> 模块全局。path 已先入池经 module 根链可达，故 alias 的 new_string
-            // 不会回收已入池的 path。
-            declare_global_or_fail(node.alias, node.loc());
-            const auto alias_idx = add_name_or_fail(node.alias, node.loc());
-            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-            cur_cu()->emit_word(alias_idx, line); // []  弹值定义全局
-        } else {
-            // 嵌套 import -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注）。
-            const auto slot = declare_local_or_fail(node.alias, node.loc());
-            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
-        }
+        // path 已先入池经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path（类首 GC 安全注）。
+        bind_stack_value(node.alias, node.loc()); // [module] -> [] DEF_GLOBAL 弹值 / 值填槽
     }
 
     void CodeGen::visitTryStmtNode(TryStmtNode& node) {
@@ -762,10 +798,39 @@ namespace aria {
 
     void CodeGen::visitFunDeclNode(FunDeclNode& node) {
         // name 由 compile_function 内部 intern + make_guard，此处只传 StringView；node.loc() 作 decl_loc。
-        compile_function(node.name, node.params, *node.body, node.loc());
+        // 五种 kind 的绑定/注册分派收口在 compile_function（穷尽 switch，见其注）。
+        compile_function(node.name, node.params, *node.body, node.loc(), node.kind);
     }
 
-    void CodeGen::visitDefDeclNode(DefDeclNode& node) { not_impl(node, "def 类与对象"); }
+    void CodeGen::visitDefDeclNode(DefDeclNode& node) {
+        const u32 line = node.loc_line();
+
+        // ① superclass:有 -> 裸名解析 + 读取(运行期解析 superclass 值,跨模块导入类可用;非类值
+        //    由运行期 MAKE_CLASS 报 TypeMismatch;编译期不查全局,未命中沿用运行期 UndefinedVariable);
+        //    无 -> LOAD_OBJECT(def Foo 等价 def Foo : Object)。
+        if (node.superclass) {
+            const auto resolved = resolve_name_or_fail(*node.superclass, node.loc());
+            emit_load_var(resolved, line, node.loc()); // [super]
+        } else {
+            cur_cu()->emit_op(OpCode::LOAD_OBJECT, line); // [Object]
+        }
+
+        // ② MAKE_CLASS name:peek superclass 建类写回原槽,class 值留栈跨整个类体。
+        const auto name_idx = add_name_or_fail(node.name, node.loc());
+        cur_cu()->emit_op(OpCode::MAKE_CLASS, line);
+        cur_cu()->emit_word(name_idx, line); // [class]
+
+        // ③ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
+        //    accept 分派(静态变量 -> visitStaticVarMemberNode,fun/方法 -> visitFunDeclNode 按节点
+        //    kind)。成员重名不查重:成员即表写入(与体外 Foo.x = v 同形态),后写遮蔽,见 grammar。
+        for (const auto& member: node.members) {
+            member->accept(*this);
+        }
+
+        // ④ 尾绑定:类体全部建成,异常路径半成品类随 unwind 截栈丢弃后类名从未绑定。类名经
+        //    MAKE_CLASS 已入池,全局腿 bind_stack_value 再入池一次（常量池不去重,同全局引用常态）。
+        bind_stack_value(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值 / 值填槽
+    }
 
     void CodeGen::visitVarDeclNode(VarDeclNode& node) {
         const u32 line = node.loc_line();
@@ -793,8 +858,14 @@ namespace aria {
     }
 
     void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
-        // 成员分派不可达：def 编译仍 not_impl（visitDefDeclNode 在先抛出）；占位待阶段 3 翻转。
-        not_impl(node, "类静态变量成员");
+        // 静态变量成员（def 体 var）：求值初始化器(无则 nil)+ MAKE_STATIC。eager 语义随 lowering
+        // 自然成立(初始化器在类定义点求值);初始化器在 enclosing 作用域解析名字(类名尚未绑定,
+        // 自引用 -> 运行期 UndefinedVariable)。
+        const u32 line = node.loc_line();
+        emit_expr_or_nil(node.initializer.get(), line); // [class, v]
+        const auto member_idx = add_name_or_fail(node.name, node.loc());
+        cur_cu()->emit_op(OpCode::MAKE_STATIC, line);
+        cur_cu()->emit_word(member_idx, line); // [class]
     }
 
     // ============================================================
@@ -861,9 +932,26 @@ namespace aria {
         UNREACHABLE();
     }
 
-    void CodeGen::visitThisExprNode(ThisExprNode& node) { not_impl(node, "this（类与对象）"); }
+    void CodeGen::visitThisExprNode(ThisExprNode& node) {
+        // this 是关键字非标识符:专用解析(resolve_this_or_fail,沿 ctx 链找最近实例方法、嵌套
+        // 经 upvalue 捕获、永不落全局),发射同普通局部读取(Local 恒槽 0 / Upvalue 捕获索引)。
+        const auto resolved = resolve_this_or_fail(node.loc());
+        emit_load_var(resolved, node.loc_line(), node.loc());
+    }
 
-    void CodeGen::visitSuperExprNode(SuperExprNode& node) { not_impl(node, "super（类与对象）"); }
+    void CodeGen::visitSuperExprNode(SuperExprNode& node) {
+        // super.成员（文法单形，Load rvalue 读）：语境检查（仅直接方法帧可承载——嵌套函数/静态
+        // 方法/顶层一律禁）后发 LOAD_SUPER_FIELD，方法闭包由 VM 绑 this 成 bound method、静态槽
+        // 原值直读。super.m(args) 经 visitCallNode 通用路径复用本 visit（emit_expr(callee) 出
+        // [bound] 后 args + CALL），无特判分支；写形态非左值（validate_lvalue_target 拒绝）。
+        if (!is_in_method()) {
+            fail(ErrorCode::SuperOutsideMethod, node.loc(), "super 不在实例方法内");
+        }
+        const auto name_idx = add_name_or_fail(node.name, node.loc());
+        const u32  line     = node.loc_line();
+        cur_cu()->emit_op(OpCode::LOAD_SUPER_FIELD, line);
+        cur_cu()->emit_word(name_idx, line); // [bound]
+    }
 
     void CodeGen::visitBinaryExprNode(BinaryExprNode& node) {
         const u32 line = node.loc_line();
@@ -966,8 +1054,9 @@ namespace aria {
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode& node) {
-        // lambda 判据即 name == `<anonymous>`（机制见 compile_function 注）；decl_loc 同 visitFunDeclNode。
-        compile_function(kAnonymousName, node.params, *node.body, node.loc());
+        // 名字恒为 kAnonymousName（`<>` 非法标识符，供 <fn ...> 渲染与堆栈跟踪）；留栈不绑定由
+        // Lambda 态表达。decl_loc 同 visitFunDeclNode。
+        compile_function(kAnonymousName, node.params, *node.body, node.loc(), FnKind::Lambda);
     }
 
     void CodeGen::visitMatchExprNode(MatchExprNode& node) { not_impl(node, "match 表达式"); }

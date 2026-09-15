@@ -696,12 +696,6 @@ TEST(CodeGen, ErrNumberOutOfRange) {
     EXPECT_EQ(c.error().code(), ErrorCode::NumberOutOfRange);
 }
 
-TEST(CodeGen, ErrNotImplementedDef) {
-    auto c = compile_only("def X { }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
-}
-
 TEST(CodeGen, ErrNotImplementedListLiteral) {
     auto c = compile_only("return [1, 2, 3];");
     ASSERT_FALSE(c.has_value());
@@ -1048,4 +1042,95 @@ TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
     EXPECT_LT(recs[0].begin, recs[1].begin);
     EXPECT_LT(recs[1].begin, recs[0].end); // 内层起点在外层区间内
     EXPECT_LT(recs[1].end, recs[0].end);
+}
+
+// ============================================================
+// M5 类与对象（阶段 3 编译翻转）
+// ============================================================
+
+// 空类 + 隐式 Object 根继承：无成员无 init，实例化走 bootstrap 的原生 no-op init。
+TEST(CodeGen, EmptyDefInstantiates) { EXPECT_EQ(run_int("def X { } var x = X(); return 1;"), 1); }
+
+// def 体内 throw（成员初始化器经 lambda 调用抛出）：半成品类随 unwind 截栈丢弃、类名从未
+// 绑定（TryRecord.stack_depth 记在 def 语句前，异常白赚语义）。
+TEST(CodeGen, DefThrowLeavesClassUnbound) {
+    EXPECT_EQ(run_int(R"(
+var made = 0;
+try {
+    def Boom { var x = (fun() { throw "boom"; })(); }
+    made = 1;
+} catch (e) { }
+var bound = 0;
+try { var probe = Boom; bound = 1; } catch (e2) { }
+return made * 10 + bound;
+)"),
+              0);
+}
+
+// superclass 运行期解析：非类值 -> MAKE_CLASS 报 TypeMismatch（编译期不查全局，未命中沿用
+// 运行期 UndefinedVariable）。
+TEST(CodeGen, SuperclassNotAClassIsRuntimeError) {
+    auto out = run_source("var B = 5; def F : B { } return 1;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+}
+
+// ---- 编译期错误 ----
+
+// this 在类外（普通函数 / 顶层 / 静态方法）：沿 ctx 链无实例方法，永不落全局。
+TEST(CodeGen, ErrThisOutsideClassInFunction) {
+    auto c = compile_only("fun f() { return this; }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ThisOutsideClass);
+}
+
+TEST(CodeGen, ErrThisOutsideClassAtTopLevel) {
+    auto c = compile_only("var x = this;");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ThisOutsideClass);
+}
+
+TEST(CodeGen, ErrThisOutsideClassInStaticMethod) {
+    auto c = compile_only("def F { fun s() { return this; } }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ThisOutsideClass);
+}
+
+// super 编译期禁于非直接方法帧（2026-09-14 拍板）：顶层 fun / 静态方法 / 实例方法内嵌套
+// lambda / super.x 读取形态同判据（visitSuperExprNode 单点检查）。
+TEST(CodeGen, ErrSuperOutsideMethodInFunction) {
+    auto c = compile_only("fun f() { return super.m(); }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::SuperOutsideMethod);
+}
+
+TEST(CodeGen, ErrSuperOutsideMethodInStaticMethod) {
+    auto c = compile_only("def F { fun s() { return super.m(); } }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::SuperOutsideMethod);
+}
+
+TEST(CodeGen, ErrSuperOutsideMethodInNestedLambda) {
+    auto c = compile_only("def F { m() { return (fun() { return super.m(); })(); } }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::SuperOutsideMethod);
+}
+
+TEST(CodeGen, ErrSuperFieldReadOutsideMethod) {
+    auto c = compile_only("var y = super.x;");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::SuperOutsideMethod);
+}
+
+// super 写形态非左值 -> InvalidAssignmentTarget（裸 super 已是解析错误，见 test_parser）。
+TEST(CodeGen, ErrSuperFieldStoreInvalidTarget) {
+    auto c = compile_only("def F { m() { super.x = 1; } }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::InvalidAssignmentTarget);
+}
+
+TEST(CodeGen, ErrSuperCompoundInvalidTarget) {
+    auto c = compile_only("def F { m() { super.x += 1; } }");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::InvalidAssignmentTarget);
 }

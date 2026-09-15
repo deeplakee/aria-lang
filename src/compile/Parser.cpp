@@ -784,9 +784,13 @@ namespace aria {
             case TokenType::This:
                 advance();
                 return std::make_unique<ThisExprNode>(loc);
-            case TokenType::Super:
+            case TokenType::Super: {
                 advance();
-                return std::make_unique<SuperExprNode>(loc);
+                // superExpr 单形（super "." identifier，见 grammar.txt）：裸 super 文法不收，
+                // expect(Dot) 报 ExpectedToken；成员名经 expect_identifier。
+                expect(TokenType::Dot, "'.'");
+                return std::make_unique<SuperExprNode>(loc, expect_identifier());
+            }
             case TokenType::LeftParen: {
                 advance();
                 UPtr<ExprNode> e = expression(); // parenExpr 不设独立节点

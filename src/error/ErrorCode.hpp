@@ -61,7 +61,6 @@ namespace aria {
     X(DefaultAfterPlain, Syntax)  /* 默认参数后不得再有无默认参数（文法强制顺序） */                             \
     /* ========== SEMANTIC ERROR（语义分析阶段，多为文法明确推迟到语义阶段的检查）========== */                  \
     X(InvalidAssignmentTarget, Semantic) /* 赋值左值须为 identifier / obj.field / obj[index] */                  \
-    X(InvalidSuperUse, Semantic)         /* super 须为 super.method(...) 形态 */                                 \
     X(SuperOutsideMethod, Semantic)      /* super 出现在非方法上下文 */                                          \
     X(ThisOutsideClass, Semantic)        /* this 出现在类外 */                                                   \
     X(BreakOutsideLoop, Semantic)        /* break 须在循环内 */                                                  \
@@ -74,7 +73,6 @@ namespace aria {
     X(RedefinedVariable, Semantic)       /* 同作用域重复定义变量 */                                              \
     X(UninitializedVariable, Semantic)   /* 使用定义但未初始化的局部（如 var x = x + 1 自引用） */               \
     X(RedefinedClass, Semantic)          /* 重复定义类 */                                                        \
-    X(RedefinedMember, Semantic)         /* 类内重复的方法/字段 */                                               \
     X(NumberOutOfRange, Semantic)        /* 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理） */             \
     X(NotImplemented, Semantic)          /* 功能尚未实现（CodeGen 占位；经 Error 通道均编译期，故归语义阶段） */ \
     /* ========== RUNTIME ERROR（运行时阶段）========== */                                                       \

@@ -204,7 +204,7 @@ TEST(AstVisitorDispatch, Expressions) {
     expect_visit(std::make_unique<NilLiteralNode>(kLoc), "NilLiteralNode");
     expect_visit(ident("x"), "IdentifierNode");
     expect_visit(std::make_unique<ThisExprNode>(kLoc), "ThisExprNode");
-    expect_visit(std::make_unique<SuperExprNode>(kLoc), "SuperExprNode");
+    expect_visit(std::make_unique<SuperExprNode>(kLoc, String{"m"}), "SuperExprNode");
 
     // 运算符表达式
     expect_visit(std::make_unique<BinaryExprNode>(kLoc, aria::Op::Binary::Plus, i64lit(1), i64lit(2)),

@@ -118,7 +118,6 @@ TEST(ParserBasic, Literals) {
     expect_has(dump_ok("nil;"), "NilLiteral");
     expect_has(dump_ok("x;"), "Identifier x");
     expect_has(dump_ok("this;"), "ThisExpr");
-    expect_has(dump_ok("super;"), "SuperExpr");
 }
 
 TEST(ParserBasic, ParenDoesNotMakeNode) {
@@ -282,11 +281,11 @@ TEST(ParserPostfix, Chained) {
 }
 
 TEST(ParserPostfix, SuperMethodCall) {
-    // super.foo() -> FieldAccess(Super, foo) -> Call
+    // super.foo() -> SuperExpr（完整形态一处收口）-> Call（super.m(args) 调用无 FieldAccess 层）
     const String out = dump_ok("super.foo();");
-    expect_has(out, "SuperExpr");
-    expect_has(out, "FieldAccess name=foo");
+    expect_has(out, "SuperExpr name=foo");
     expect_has(out, "Call args=0");
+    EXPECT_EQ(out.find("FieldAccess"), String::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +682,15 @@ TEST(ParserError, DefBodyVarPatternRejected) {
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedIdentifier);
+}
+
+TEST(ParserError, SuperRequiresDotMember) {
+    // superExpr 单形（super "." identifier）：裸 super 文法不收，解析期 ExpectedToken
+    // （原语义阶段 InvalidSuperUse 随节点收口退役）。
+    auto p = parse_src("var x = super;");
+    ASSERT_FALSE(p->result.has_value());
+    ASSERT_FALSE(p->result.error().empty());
+    EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedToken);
 }
 
 TEST(ParserError, ExpectedExpression) {

@@ -195,6 +195,13 @@ namespace aria {
         [[nodiscard]]
         ResolvedVar resolve_name_or_fail(StringView name, SourceLoc loc);
 
+        // this 专用解析（this 是关键字非标识符，永不落全局）：沿 fn ctx 链找名为 kThisName 的
+        // 局部（最近实例方法的帧槽 0，arrow 语义）——当前帧命中 -> Local；外层命中 -> 经
+        // resolve_upvalue 捕获（index=本函数 upvalue 索引，M4 机制零改动穿透）；链上无实例方法
+        // -> fail ThisOutsideClass（静态方法/顶层/只嵌在普通函数里皆然）。
+        [[nodiscard]]
+        ResolvedVar resolve_this_or_fail(SourceLoc loc);
+
         // 递归解析「ctx 体内引用 name 应捕获的 upvalue」（clox resolveUpvalue）：先查
         // ctx->enclosing_ 的局部，命中 -> 置 is_captured + 登记 {is_local=true, slot}；未命中
         // -> 递归把 enclosing 当待捕获函数解析（穿透捕获），命中 -> 登记 {is_local=false, 外层
@@ -223,6 +230,14 @@ namespace aria {
         // declare_global 已存在(重定义) -> fail RedefinedVariable。
         void declare_global_or_fail(StringView name, SourceLoc loc) const;
 
+        // 栈顶值绑定收口（fun/def/import 三处共用）：把栈顶的值按 name 绑为当前作用域的变量——
+        // 全局 -> declare 判重 + add_name 入池 + DEF_GLOBAL 弹值定义；局部 -> 值填槽 declare +
+        // mark_initialized（值恰在槽位）。行号与判重/入池报错位置取 loc（声明行）现场求值。全局腿
+        // 每次绑定各自入池（常量池不去重，与 resolve_name_or_fail 全局分支每次引用入池同常态）。
+        // var 不经此：其初始化器发射嵌在两腿之间（局部须先 declare 预留槽再求值填槽、全局判重先于
+        // 初始化器编译），见 visitVarDeclNode。
+        void bind_stack_value(StringView name, SourceLoc loc) const;
+
         // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 放行（由各自 visit 处理），
         // 其余 -> InvalidAssignmentTarget。非法左值在 rhs 编译后才抛（普通 = 的 emit_lvalue(Store)
         // 后于 rhs），字节码随 throw 丢弃。
@@ -239,6 +254,12 @@ namespace aria {
         // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0（[receiver] -> [retval]）。
         // 封装 for-in 的 iter()/has_next()/next() 三处同型模式。
         void emit_method_call0(StringView name, u32 line, SourceLoc loc) const;
+
+        // 当前帧是否为直接方法帧（is_method(kind_)，槽 0 即具名局部 this）。visitSuperExprNode
+        // （super.成员 语境检查）与 FieldAccess 的 THIS_FIELD 系分岔共用判据；「沿链找最近实例
+        // 方法」的 this 捕获由 resolve_this_or_fail 承担，本谓词恒判当前帧。
+        [[nodiscard]]
+        bool is_in_method() const;
 
         // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
         // 仅做检查并报错，不发射。
@@ -267,23 +288,30 @@ namespace aria {
 
         void emit_stmt(StmtNode& node); // n.accept(*this)，不留值
 
-        // 可选表达式发射：expr 非空 emit_expr（留一值），空则 LOAD_NIL 兜底（var 无初始化器填槽、
-        // return 缺省返回值共用）。line 由调用点定（声明行或逐绑定节点行），不从 expr 推。
+        // 可选表达式发射：expr 非空 emit_expr（留一值），空则 LOAD_NIL 兜底（var/静态成员无初始化器
+        // 填槽、return 缺省返回值共用）。line 由调用点定（声明行或逐绑定节点行），不从 expr 推。
         void emit_expr_or_nil(ExprNode* expr, u32 line);
 
-        // --- 函数编译（FunDecl / Lambda 共用）---
+        // --- 函数编译（FunDecl / Lambda / 类成员方法共用）---
         // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；默认参数 / varargs
         // -> not_impl；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，首错即 fail / not_impl 抛出。
         // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body.loc()（body 的 '{'），
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
-        // name 为函数名 StringView（具名 fun 声明名 / lambda `<anonymous>` / 入口 `<main>`;`<>`
-        // 标识符不可用,故 name 即 lambda 判据）。name 建串与守卫收口在工厂 StringView 重载内
-        // （工厂守「自己创建的」,见类首 GC 安全注）。lambda 函数值留栈不绑定名字;具名 fun 绑定到全局(顶层)或
-        // 局部(嵌套)。完成后切回父上下文,函数值已在父序列压栈（CLOSURE 按捕获描述表建 upvalue）。
-        // decl_loc 供 validate_params 报参数错;体发射行号取 body.loc_line()。
-        void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc);
+        // name 为函数名 StringView（具名 fun 声明名 / lambda kAnonymousName / 入口 `<main>` / 类成员
+        // 方法名;`<>` 标识符不可用,合成名仅 VM 侧可达）。name 建串与守卫收口在工厂 StringView
+        // 重载内（工厂守「自己创建的」,见类首 GC 安全注）。kind 为函数种类（见 FnKind.hpp）,决定
+        // 后 CLOSURE 分派（穷尽 switch 一处收口）与帧形态:Function 绑定到全局(顶层)或局部(嵌套,
+        // 值填槽);Lambda 留栈作表达式值;StaticMethod 发 MAKE_STATIC(不戳 defining class,静态槽读
+        // 恒原值)、Method/InitMethod 发 MAKE_METHOD(戳 defining class = 方法性标记 + super 来源),
+        // 名字照常进 ObjFunction 供 <fn m> 渲染与堆栈跟踪;子上下文槽 0 形态（实例方法族 = 具名局部
+        // this，见 is_method）;隐式返回尾（InitMethod 返回 this）。完成后切回父上下文,函数值已在父
+        // 序列压栈（CLOSURE 按捕获描述表建 upvalue）。decl_loc 供 validate_params 报参数错;声明区
+        // 发射（CLOSURE/绑定/注册）的行号与报错位置统一取 decl_loc,隐式返回尾行号取 body.loc_line()。
+        // 无默认值,调用处显式写明。
+        void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc,
+                              FnKind kind);
 
         // --- 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result；throw 即 unwind，
         // 首个错误自然即止，详见类首「错误通道」注释）---

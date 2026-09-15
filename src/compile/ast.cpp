@@ -229,7 +229,9 @@ namespace aria {
 
     String ThisExprNode::dump(const usize indent) const { return dump_node(indent, "ThisExpr"); }
 
-    String SuperExprNode::dump(const usize indent) const { return dump_node(indent, "SuperExpr"); }
+    String SuperExprNode::dump(const usize indent) const {
+        return dump_node(indent, std::format("SuperExpr name={}", name));
+    }
 
     String BinaryExprNode::dump(const usize indent) const {
         return dump_node(indent, std::format("BinaryExpr op={}", Op::to_string(op)), lhs, rhs);

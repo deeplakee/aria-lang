@@ -116,7 +116,7 @@ TEST(AstDisplay, Literals) {
     EXPECT_EQ(dump_str(NilLiteralNode{kLoc}), "NilLiteral\n");
     EXPECT_EQ(dump_str(*ident("x")), "Identifier x\n");
     EXPECT_EQ(dump_str(ThisExprNode{kLoc}), "ThisExpr\n");
-    EXPECT_EQ(dump_str(SuperExprNode{kLoc}), "SuperExpr\n");
+    EXPECT_EQ(dump_str(SuperExprNode{kLoc, String{"m"}}), "SuperExpr name=m\n");
 }
 
 TEST(AstDisplay, FloatLiteral) {

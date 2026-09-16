@@ -5,7 +5,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 ## 当前进度
 
 - **已落地**：util / value / error / compile / bytecode 层、GC、Object 子类型（string / function / native / module / exception / closure / upvalue / class / instance / bound-method）、AriaVM M1 主循环、M2 模块表与 IMPORT、M3 异常 try/catch/throw、M4 闭包（捕获即引用）、M5 类（阶段 1-3：对象层 + VM 机制 + 编译翻转）。
-- **待落地**：M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
+- **待落地**：P0 语言面补齐（先行：批 1-2 编译器前置批——默认参数 / match，继而批 3+ 集合与内置方法对象地基；计划见 `.claude/reference/runtime/collections-builtin-methods-plan.md`），其后 M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 
 ## 文档与参考（按需加载）
@@ -35,6 +35,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存三铁则、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
+- `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划（批 1-2 编译器前置批：默认参数 / match 降糖；批 3-9：方法机制两层分派、迭代协议、下标语义与集合/内置方法各批）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 

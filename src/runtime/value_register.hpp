@@ -21,8 +21,9 @@ namespace aria {
     // 偏移常量 k<名字>Offset(如 kObjectClassOffset,值 = 枚举值,即寄存器组内格位):scoped
     // enum 不隐式转整型,C++ 侧数组下标与 LOAD_REG 操作数发射统一走常量,免逐点
     // std::to_underlying。
-#define ARIA_VALUE_REGISTER_LIST(X) \
-    X(ObjectClass) /* Object 根类(def 无 super 父类;VM bootstrap 填充,原 LOAD_OBJECT 收编) */
+#define ARIA_VALUE_REGISTER_LIST(X)                                                           \
+    X(ObjectClass) /* Object 根类(def 无 super 父类;VM bootstrap 填充,原 LOAD_OBJECT 收编) */ \
+    X(DefaultMark) /* 缺参印章(私有 no-op native,call_closure 垫充未传槽;不注册 builtins 用户不可达) */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

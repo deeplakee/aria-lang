@@ -197,6 +197,10 @@ namespace aria {
         // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
+        // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
+        // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。
+        void bootstrap_default_mark();
+
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包,collect 时标四类
         // 根 -- modules_ / builtins_ / registers_(一趟循环逐格 mark_value,未填格 nil 对非
         // 对象 no-op)/ current_ 执行链(值栈/各帧 closure+module/挂起错误寄存器/open upvalue

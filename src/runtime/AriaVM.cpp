@@ -258,6 +258,7 @@ namespace aria {
         // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
         // 新单例随其批次在此加一行。
         bootstrap_object_class();
+        bootstrap_default_mark();
     }
 
     void AriaVM::hook_vm_roots() {
@@ -308,6 +309,14 @@ namespace aria {
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
         klass->set_field(init_key, Value::from_obj(init_native));
         registers_[kObjectClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_default_mark() {
+        // 缺参印章:私有 no-op native(语义即空操作:返回 true 不写返回槽;正常路径永不被
+        // 调用)。身份判等的未传槽标记,不注册进 builtins/模块表,语言不可达 -- 实参显式传
+        // 任意函数值,身份均异于印章,不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
+        const auto default_mark        = new_native_fn(gc_, "<default>", [](AriaVM&, Span<Value>) { return true; });
+        registers_[kDefaultMarkOffset] = Value::from_obj(default_mark);
     }
 
     void AriaVM::init_source_roots() {

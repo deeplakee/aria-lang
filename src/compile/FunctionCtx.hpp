@@ -8,9 +8,9 @@
 // 弹出数等数据）；「发射」（emit_op / 跳转回填 / 错误）仍由 CodeGen 负责。
 //
 // 局部栈（clox 风格）：locals_[0] = 哑元（slot 0 = callee，隐含不命名）；
-//   1..A = 形参（caller 压栈，编译期 add_local 登记后 mark_initialized）；
-//   A+1.. = 函数体局部（CodeGen::declare_local_or_fail 仅登记并标「定义但未初始化」，不发指令；
-//     调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized，无 store/pop、不预占槽）。
+//   1..A = 形参（caller 压栈，编译期 add_local 登记）；
+//   A+1.. = 函数体局部（值填槽：值先压栈，add_local 登记槽位 = 当前栈高 = 值所在位置，
+//     登记即初始化；无 store/pop、不预占槽）。
 //
 // 循环上下文栈随函数走：进新函数即得空 loop_stack_，故 break/continue 不会跨函数绑定到
 // 外层循环（函数边界天然隔离循环上下文）。
@@ -31,14 +31,11 @@ namespace aria {
     // 引用 this 即沿 ctx 链捕获其槽 0,M4 机制零改动复用)。
     constexpr StringView kThisName = "this";
 
-    // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured/is_initialized=false。
-    // is_initialized：定义但未初始化（declare_local_or_fail 置 false）；初始化器求值 / 无初始化器发
-    // LOAD_NIL 后由调用方 mark_initialized 置 true。读取未初始化局部 -> CodeGen 报 UninitializedVariable。
+    // 局部变量条目（slot 0 = 哑元 callee）。简单聚合，默认 is_captured=false。
     struct Local {
         String name;
-        u32    depth          = 0;
-        bool   is_captured    = false;
-        bool   is_initialized = false;
+        u32    depth       = 0;
+        bool   is_captured = false;
     };
 
     // 循环上下文（break / continue 回填）。简单聚合：
@@ -71,16 +68,10 @@ namespace aria {
         // 压 Local{name, scope_depth_}，返回 slot = locals_.size()-1（纯登记，不发射、不查重）。
         u16 add_local(StringView name);
 
+
         // 当前作用域是否已定义同名局部（外层同名允许 shadow）。
         [[nodiscard]]
         bool is_defined_in_scope(StringView name) const;
-
-        // 标记局部已初始化（初始化器求值 / 无初始化器发 LOAD_NIL / 赋值后调用）。
-        void mark_initialized(u16 slot);
-
-        // 局部是否已初始化（读取前由 CodeGen 检查，未初始化 -> fail UninitializedVariable）。
-        [[nodiscard]]
-        bool is_initialized(u16 slot) const;
 
         // 当前函数局部查表，返最近一个同名局部 slot（最内层）；未命中返 nullopt。
         [[nodiscard]]

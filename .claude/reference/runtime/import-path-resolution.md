@@ -16,7 +16,7 @@
 3. **模块表查表 + 压栈**：以绝对键 `ObjString*`（装箱为 `Value`）在 VM 模块表 `modules_`
    （`AriaHashTable`）里查；命中即复用模块对象并 `current_->push` 压栈（`IMPORT path:u16`，栈效应
    `... -> [module]`）。绑定不在 IMPORT 内--交 CodeGen 按作用域经 `DEF_GLOBAL`（顶层）/ 值填槽
-   + `mark_initialized`（嵌套）走。未命中走 `load_module` 加载链路（见下）。
+   （嵌套）走。未命中走 `load_module` 加载链路（见下）。
 
 模块表 `modules_`：键 = 绝对规范路径 `ObjString*`（intern），值 = `ObjModule*`，均装箱为
 `Value` 入 `AriaHashTable`。`modules_` 经 VM 根 tracer 纳入 GC（`gc_.set_vm_roots`）。
@@ -132,7 +132,7 @@ IMPORT 以绝对键查 `modules_`：
   （`module not found: '<path>'`，经 `fail` 烘 IMPORT 站点位置）。
 
 命中后，`current_->push(module)` 把模块对象压栈（`IMPORT path:u16`，栈效应 `... -> [module]`）；
-绑定交 CodeGen 按作用域走（顶层 `DEF_GLOBAL` / 嵌套值填槽 + `mark_initialized`）。
+绑定交 CodeGen 按作用域走（顶层 `DEF_GLOBAL` / 嵌套值填槽）。
 
 ## 根安全
 

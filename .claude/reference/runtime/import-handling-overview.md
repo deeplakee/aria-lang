@@ -86,7 +86,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 > `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`
 > 发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽
-> + `mark_initialized`）。
+>。
 
 ## ③ 字节码
 
@@ -139,7 +139,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 > **按作用域绑定**：`IMPORT path:u16` 仅取模块对象压栈，不带 `alias` 操作数。CodeGen
 > `visitImportStmtNode` 按 `is_global_scope()` 分派（与 `var`/`fun` 同形 lowering）：顶层
 > `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
-> （值填槽）+ `mark_initialized`。对齐文法「绑模块到当前作用域（函数体=局部）」。
+> （值填槽）。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
 **根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()` 不持 `LockGuard`；path 经常量池根；`canonical_path` 经 intern weak root 加 guard；命中分支的 module 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
 

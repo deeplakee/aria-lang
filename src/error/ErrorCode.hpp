@@ -71,7 +71,6 @@ namespace aria {
     X(DuplicateParam, Semantic)          /* 同函数形参重名 */                                                    \
     X(UndefinedType, Semantic)           /* 引用未定义的类名 */                                                  \
     X(RedefinedVariable, Semantic)       /* 同作用域重复定义变量 */                                              \
-    X(UninitializedVariable, Semantic)   /* 使用定义但未初始化的局部（如 var x = x + 1 自引用） */               \
     X(RedefinedClass, Semantic)          /* 重复定义类 */                                                        \
     X(NumberOutOfRange, Semantic)        /* 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理） */             \
     X(NotImplemented, Semantic)          /* 功能尚未实现（CodeGen 占位；经 Error 通道均编译期，故归语义阶段） */ \

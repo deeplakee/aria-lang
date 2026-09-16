@@ -31,10 +31,10 @@ TEST(Interpret, StringOk) {
     EXPECT_EQ(vm.interpret_from_src("return 1 + 2 * 3;"), InterpretResult::Ok);
 }
 
-// 字符串源：函数体内局部自引用 -> 编译期 UninitializedVariable -> CompileError。
+// 字符串源：语法错误（缺右操作数）-> CompileError。
 TEST(Interpret, StringCompileError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("fun f() { var x = x + 1; }"), InterpretResult::CompileError);
+    EXPECT_EQ(vm.interpret_from_src("var x = ;"), InterpretResult::CompileError);
 }
 
 // 字符串源：整除零 -> 运行期错误 -> RuntimeError。

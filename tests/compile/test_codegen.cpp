@@ -549,8 +549,8 @@ TEST(CodeGen, ErrRedefinedImportAlias) {
     EXPECT_EQ(c.error().code(), ErrorCode::RedefinedVariable);
 }
 
-// 嵌套 import（函数体内）按当前作用域绑局部：IMPORT 压值在 declare 的 slot（值填槽）+
-// mark_initialized，无 DEF_GLOBAL，编译成功。IMPORT 在嵌套函数 f 自己的 unit 里（不在入口
+// 嵌套 import（函数体内）按当前作用域绑局部：IMPORT 压值在 declare 的 slot（值填槽），
+// 无 DEF_GLOBAL，编译成功。IMPORT 在嵌套函数 f 自己的 unit 里（不在入口
 // unit），故此处只验编译成功，字节码形状由 ImportNestedInBlock 在入口 unit 验。
 TEST(CodeGen, ImportNestedInFunction) {
     auto c = compile_only("fun f() { import \"lib/u\" as U; }");
@@ -566,35 +566,36 @@ TEST(CodeGen, ImportNestedInBlock) {
     EXPECT_EQ(text.find("DEF_GLOBAL"), aria::String::npos) << "嵌套 import 不走 DEF_GLOBAL";
 }
 
-// 使用「定义但未初始化」的局部 -> UninitializedVariable（Python 风格 definite-assignment）。
-// 典型：初始化器中自引用（declare 已标记未初始化，init 尚未完成时读取）。
-TEST(CodeGen, ErrUninitializedVariableSelfRef) {
-    auto c = compile_only("fun f() { var x = x + 1; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::UninitializedVariable);
+// var 自引用：声明名在初始化器求值后才登记，init 里的 x 沿 resolve 链落外层。函数内无外层
+// x -> 落全局，双 miss 抛运行期 UndefinedVariable（definite-assignment 已退役，编译期放行）。
+TEST(CodeGen, VarSelfRefUndefinedGlobalAtRuntime) {
+    auto out = run_source("fun f() { var x = x + 1; return x; } return f();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
 
-TEST(CodeGen, ErrUninitializedVariableBareSelf) {
-    auto c = compile_only("fun f() { var x = x; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::UninitializedVariable);
+// 捕获语义钉子：外层 x 是 make 的局部，g 的 init `x + 1` 经 upvalue 捕获读外层 x，随后登记
+// g 自己的局部 x -> g 的 x = 外层 x + 1，「新 x 用外层 x」语义成立。
+TEST(CodeGen, VarInitCapturesOuterScope) {
+    EXPECT_EQ(run_int(R"(
+fun make() {
+    var x = 1;
+    fun g() { var x = x + 1; return x; }
+    return g();
+}
+return make();
+)"),
+              2);
 }
 
-// 复合赋值 / 前置自增在自身初始化器中读取未初始化局部（经 emit_load 读点检查）。
-TEST(CodeGen, ErrUninitializedVariablePreIncInInit) {
-    auto c = compile_only("fun f() { var x = ++x; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::UninitializedVariable);
-}
-
-// var x; 无初始化器 -> LOAD_NIL 填槽并标记初始化，后续读取合法（nil）。
+// var x; 无初始化器 -> LOAD_NIL 填槽，后续读取合法（nil）。
 TEST(CodeGen, VarNoInitializerReadsNil) {
     auto c = compile_only("fun f() { var x; var y = x; return y; }");
-    ASSERT_TRUE(c.has_value()) << "var x; 后读取应合法（nil），不应报 UninitializedVariable";
+    ASSERT_TRUE(c.has_value()) << "var x; 后读取应合法（nil）";
 }
 
 TEST(CodeGen, VarNoInitializerRuntimeNil) {
-    // 局部 var x; 使 x = nil（LOAD_NIL 填槽 + mark_init）；x == nil 成立 -> 返回 1。
+    // 局部 var x; 使 x = nil（LOAD_NIL 填槽）；x == nil 成立 -> 返回 1。
     EXPECT_EQ(run_int("fun f() { var x; if (x == nil) { return 1; } return 0; } return f();"), 1);
 }
 

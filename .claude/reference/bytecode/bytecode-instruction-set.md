@@ -136,7 +136,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
 
-**局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。读取未初始化局部由读点 `load_local` 检查 `is_initialized` 报 `UninitializedVariable`，避免读到未填充槽。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
+**局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
 
 ### 4.4 Upvalue 与闭包
 
@@ -283,7 +283,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `IMPORT` | `path:u16` | `... -> [module]` | 解析 `path` 并复用/加载模块，把 `ObjModule` 压栈。绑定交后续 `DEF_GLOBAL`/值填槽按作用域走 |
 
-`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走--顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部）+ `mark_initialized`，与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
+`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走--顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部），与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
 
 ### 4.16 异常
 
@@ -457,7 +457,7 @@ Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Objec
 - **动态加静态**：允许；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
 - **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。
 
-**模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体/块内=局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽 + `mark_initialized`（嵌套）按作用域走），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。
+**模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--解释器标准库 `lib` 路径 + 入口文件所在目录（环境变量源根留待后续）；每个文件记住自己所属的源根。导入只用字符串路径，**不支持裸名 `import foo`**：`import "lib/utils" as Utils`（绝对，从源根列表搜 `lib/utils.aria`，加载该模块、跑其模块体 run-once）、`import "./utils" as U` / `import "../lib/x" as X`（相对当前文件目录）、`import "lib" as Lib`（目录包导入，`Lib` 绑该包、跑其 index 模块体若有）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层=模块全局、函数体/块内=局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽（嵌套）按作用域走），不解析路径算模块名、必须显式起别名。**相对导入不得越出当前文件所属源根**--`../` 爬到源根之上即报错（源根外文件无自然模块路径；要引用源根外文件用绝对导入命中其他源根，或把目录加进源根列表）。**目录 = 包**（模块查找路径结构，非嵌套类）：`lib/utils.aria` 是包 `lib` 下的模块 `utils`，`import "lib/utils" as Utils` 找到它；`import "lib" as Lib` 导入整个包。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。边界：符号链接按规范路径判定（源根内 symlink 指向外部仍算越出）；重叠源根按列表顺序首次命中。标记文件（`aria.toml`/`.ariaroot`）作源根是未来 `aria run` 项目级执行的特性，暂不支持。
 
 **目标方向：uniform OOP（Design B）**：aria 的方向是把内置类型也纳入 aria 类体系--每个内置 Obj 类型配一个 `ObjClass`（String/List/Map 继承 Object），`class_` 进 Object 头，方法统一走 `class_->lookup` 分派，内置类型继承 Object 的公共方法。原始值（nil/bool/f64/int）进一步可经 tag->class 映射（Num/Bool 类）获得方法分派而不装箱（Wren 路子），仍保 NaN-boxing 内联存储。性能上走 CPython 式 intrinsic 做热路径--统一语义为规约、intrinsic 为快路径，二者兼得；`+8B class_` 只落 Obj、不落原始值，代价 bounded。此为方向性目标，尚未实现；落地前可先用 Design A（内置保持特殊、虚 `op_get_field`）作 interim，不阻塞迁移（`op_get_field` 接口保持、内部从虚派发换类表查找）。
 

@@ -105,8 +105,8 @@ STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)
 | 目标节点·形态 | 模式 | 发射的指令 | 栈变化 |
 | :--- | :--- | :--- | :--- |
 | Identifier·任意 | Prepare | no-op(locator 编译期常量,无接收者可备) | -- |
-| Identifier·局部 | Load | 编译期读点查 `is_initialized`(未初始化 -> `UninitializedVariable`)+ `LOAD_LOCAL slot` | [] -> [v] |
-| Identifier·局部 | Store | `STORE_LOCAL slot` + 编译期 `mark_initialized` | [v] -> [v](peek-store) |
+| Identifier·局部 | Load | `LOAD_LOCAL slot` | [] -> [v] |
+| Identifier·局部 | Store | `STORE_LOCAL slot` | [v] -> [v](peek-store) |
 | Identifier·upvalue | Load | `LOAD_UPVALUE idx` | [] -> [v] |
 | Identifier·upvalue | Store | `STORE_UPVALUE idx`(写穿外层槽/已关 cell;不查 init、不 mark) | [v] -> [v](peek-store) |
 | Identifier·全局 | Load | `LOAD_GLOBAL name_idx` | [] -> [v] |

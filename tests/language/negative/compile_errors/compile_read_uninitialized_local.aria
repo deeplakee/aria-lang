@@ -1,5 +1,0 @@
-// 钉住：函数体内读未初始化局部（var x = x + 1 的右值 x）为编译期错误 UninitializedVariable。
-fun f() {
-    var x = x + 1;
-    return x;
-}

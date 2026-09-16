@@ -122,8 +122,7 @@ visitTryStmtNode:
   const usize jskip = cur_cu()->emit_jump(OpCode::JUMP, line);
   const u32 handle = cur_cu()->size();
   begin_scope();
-  const u16 catch_slot = declare_local_or_fail(*node->catch_param, node->loc());
-  cur_fn_ctx()->mark_initialized(catch_slot);
+  const u16 catch_slot = define_local_or_fail(*node->catch_param, node->loc());
   emit_stmt(node->catch_body.get());
   end_scope(line);
   patch_jump_or_fail(jskip, node->loc());
@@ -272,8 +271,7 @@ const u32 end = cur_cu()->size();
 const usize jskip = cur_cu()->emit_jump(OpCode::JUMP, line);  // 正常跳过 catch
 const u32 handle = cur_cu()->size();                         // L_catch(unwind 已 push 落 e 槽)
 begin_scope();                       // catch 子句 scope(包 e + catch 体)
-const u16 catch_slot = declare_local_or_fail(*node->catch_param, node->loc());
-cur_fn_ctx()->mark_initialized(catch_slot);  // catch 体可读 e(== stack_depth);无 STORE_LOCAL
+const u16 catch_slot = define_local_or_fail(*node->catch_param, node->loc());
 emit_stmt(node->catch_body.get());
 end_scope(line);                     // 弹 catch 体局部 + e -> 栈高 stack_depth
 patch_jump_or_fail(jskip, node->loc());      // 正常路径 -> L_end(此处栈高 stack_depth)
@@ -284,7 +282,7 @@ cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
 
 **栈平衡校验**：正常路径 try 体 `end_scope` 弹至 `stack_depth`；异常路径 catch 子句 `end_scope` 弹至 `stack_depth`（`e` + catch 体局部）；两路径在 `L_end` 均栈高 `stack_depth`，齐平。
 
-**注意**：`catch_slot` 在 lowering 里仍由 `declare_local_or_fail` 拿到（catch 体经 `LOAD_LOCAL catch_slot` 读 `e`），但它 == `stack_depth`，**只编译期用、不入 `TryRecord`**。`mark_initialized` 在 `declare_local` 后立即调（`e` 由 unwind 的 push 在运行期填，编译期标已初始化以放行 catch 体的读检查）。
+**注意**：`catch_slot` 在 lowering 里仍由 `define_local_or_fail` 拿到（catch 体经 `LOAD_LOCAL catch_slot` 读 `e`），但它 == `stack_depth`，**只编译期用、不入 `TryRecord`**。`e` 由 unwind 的 push 在运行期填槽）。
 
 **核对（已读 `FunctionCtx.cpp` 现有实现；M4 起收口为单方法 `FunctionCtx::end_scope()`，原 `end_scope_pop_count`/`pop_locals_deeper_than` 两步合并）**：`end_scope` **真正 `locals_.pop_back()` 移除**原 scope 局部（非只减 `scope_depth_`），故 `locals_.size()` 精确反映当前活局部、**无陈旧项堆积**。`stack_depth = cur_fn_ctx()->locals_.size()`（try 体 `begin_scope` 前快照）= try 入口活局部数 = 下一可用 slot = catch 参数槽。try 体 `end_scope` 弹回 `stack_depth`，catch 参数 `add_local` 后 `locals_.size() == stack_depth + 1`、catch 参数 slot == `stack_depth`。定稿成立，无问题。
 

@@ -12,13 +12,11 @@ namespace aria {
 
     FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
         enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
-        // 槽 0：实例方法族 = 具名局部 this（caller 压 receiver 占此槽，恒已初始化）；其余 = 哑元
+        // 槽 0：实例方法族 = 具名局部 this（caller 压 receiver 占此槽）；其余 = 哑元
         // callee（空名，词法不可达，用户代码不可引用）。this 为关键字不会与用户标识符撞名
         // （kThisName 注），可安全参与局部查名与捕获。
-        auto slot0 = Local{.name           = is_method(kind) ? String{kThisName} : String{},
-                           .depth          = 0,
-                           .is_captured    = false,
-                           .is_initialized = true};
+        auto name  = is_method(kind) ? String{kThisName} : String{};
+        auto slot0 = Local{.name = std::move(name), .depth = 0, .is_captured = false};
         locals_.push_back(std::move(slot0));
     }
 
@@ -27,10 +25,11 @@ namespace aria {
     // ============================================================
 
     u16 FunctionCtx::add_local(const StringView name) {
-        auto local = Local{.name = String{name}, .depth = scope_depth_, .is_captured = false, .is_initialized = false};
+        auto local = Local{.name = String{name}, .depth = scope_depth_, .is_captured = false};
         locals_.push_back(std::move(local));
         return static_cast<u16>(locals_.size() - 1);
     }
+
 
     bool FunctionCtx::is_defined_in_scope(const StringView name) const {
         for (const auto& local: std::views::reverse(locals_)) {
@@ -43,10 +42,6 @@ namespace aria {
         }
         return false;
     }
-
-    void FunctionCtx::mark_initialized(const u16 slot) { locals_[slot].is_initialized = true; }
-
-    bool FunctionCtx::is_initialized(const u16 slot) const { return locals_[slot].is_initialized; }
 
     Opt<u16> FunctionCtx::find_local(const StringView name) const {
         // 从内向外查找（高索引 = 更内层作用域），首个命中即最内层同名局部，早退。

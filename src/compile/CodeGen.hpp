@@ -164,10 +164,10 @@ namespace aria {
         u16 add_name_or_fail(StringView name, SourceLoc loc) const;
 
         // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
-        // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记并标「定义但未初始化」
-        // （不发指令）。调用方在初始化器求值 / 无初始化器发 LOAD_NIL 后 mark_initialized。
-        [[nodiscard]]
-        u16 declare_local_or_fail(StringView name, SourceLoc loc) const;
+        // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记（不发指令），返回
+        // 登记槽位（= 值所在位置）。值填槽时序契约：调用方保证值已压栈，登记即初始化，无独立
+        // init 状态。不标 [[nodiscard]]：值填槽调用方多数无需槽位（值已在槽），丢弃合法。
+        u16 define_local_or_fail(StringView name, SourceLoc loc) const;
 
         // cur_fn_ctx()->begin_scope()
         void begin_scope() const;
@@ -234,12 +234,12 @@ namespace aria {
         // declare_global 已存在(重定义) -> fail RedefinedVariable。
         void declare_global_or_fail(StringView name, SourceLoc loc) const;
 
-        // 栈顶值绑定收口（fun/def/import 三处共用）：把栈顶的值按 name 绑为当前作用域的变量——
-        // 全局 -> declare 判重 + add_name 入池 + DEF_GLOBAL 弹值定义；局部 -> 值填槽 declare +
-        // mark_initialized（值恰在槽位）。行号与判重/入池报错位置取 loc（声明行）现场求值。全局腿
-        // 每次绑定各自入池（常量池不去重，与 resolve_name_or_fail 全局分支每次引用入池同常态）。
-        // var 不经此：其初始化器发射嵌在两腿之间（局部须先 declare 预留槽再求值填槽、全局判重先于
-        // 初始化器编译），见 visitVarDeclNode。
+        // 栈顶值绑定收口（var/fun/def/import 四处共用）：把栈顶的值按 name 绑为当前作用域的
+        // 变量——全局 -> declare 判重 + add_name 入池 + DEF_GLOBAL 弹值定义；局部 -> 值填槽
+        // declare（登记即初始化，值恰在槽位）。行号与判重/入池报错位置取 loc（声明行）现场求值。
+        // 全局腿每次绑定各自入池（常量池不去重，与 resolve_name_or_fail 全局分支每次引用入池同
+        // 常态）。var 的初始化器先于本调用求值（声明名在 init 求值后才登记，init 里的同名引用沿
+        // resolve 链落外层），见 visitVarDeclNode。
         void bind_stack_value(StringView name, SourceLoc loc) const;
 
         // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 放行（由各自 visit 处理），
@@ -273,25 +273,21 @@ namespace aria {
         [[nodiscard]]
         bool is_in_method() const;
 
-        // 读点 init 检查：读未初始化局部 -> fail UninitializedVariable（definite-assignment）。
-        // 仅做检查并报错，不发射。
-        void check_local_initialized(u16 slot, SourceLoc loc) const;
+        // 按已解析变量发射读取（Load / Locate）：Local emit_load_local；Global LOAD_GLOBAL；
+        // Upvalue LOAD_UPVALUE（u8 upvalue 索引；捕获时序语义同 Lua，与全局路径一致）。
+        // visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 / upvalue 索引 /
+        // 全局名字常量池索引。
+        void emit_load_var(const ResolvedVar& var, u32 line) const;
 
-        // 按已解析变量发射读取（Load / Locate）：Local 先读点 init 检查再 emit_load_local；Global
-        // LOAD_GLOBAL；Upvalue LOAD_UPVALUE（u8 upvalue 索引；不做 init 检查--捕获时序语义同 Lua，
-        // 与全局路径一致）。visitIdentifierNode 经 switch(mode) 分派至此。var.index 为局部槽 /
-        // upvalue 索引 / 全局名字常量池索引；loc 供 check_local_initialized 复用。
-        void emit_load_var(const ResolvedVar& var, u32 line, SourceLoc loc) const;
-
-        // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local + mark_initialized
-        // （赋值即初始化，不做 init 检查）；Global STORE_GLOBAL；Upvalue STORE_UPVALUE（u8 upvalue
-        // 索引，peek-store 写穿外层槽/已关值，不做 init 检查、不 mark_initialized--upvalue 索引非本帧局部槽）。
-        void emit_store_var(const ResolvedVar& var, u32 line, SourceLoc loc) const;
+        // 按已解析变量发射写入（Store，peek-store 留栈顶值）：Local emit_store_local；Global
+        // STORE_GLOBAL；Upvalue STORE_UPVALUE（u8 upvalue 索引，peek-store 写穿外层槽/已关值
+        // --upvalue 索引非本帧局部槽）。
+        void emit_store_var(const ResolvedVar& var, u32 line) const;
 
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
         // 值填槽模型：声明时值已在栈顶，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
-        // IdentifierPattern -> declare_local_or_fail 值填槽 + mark_initialized（不发指令）；WildcardPattern -> POP
+        // IdentifierPattern -> define_local_or_fail 值填槽（不发指令）；WildcardPattern -> POP
         // 丢弃； ListPattern -> not_impl。行号取自 pat.loc_line()（仅 _/ListPattern 分支发射时用）。
         void bind_pattern(PatternNode& node);
 

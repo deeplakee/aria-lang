@@ -190,16 +190,16 @@ namespace aria {
         }
     }
 
-    u16 CodeGen::declare_local_or_fail(const StringView name, const SourceLoc loc) const {
+    u16 CodeGen::define_local_or_fail(const StringView name, const SourceLoc loc) const {
         // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
-        // 仅登记不发指令；mark_initialized 时机见 CodeGen.hpp declare_local_or_fail 注。
+        // 仅登记不发指令（值填槽：调用方保证值已压栈、登记槽位即值位置，登记即初始化）。
         if (cur_fn_ctx()->is_defined_in_scope(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
         }
         if (cur_fn_ctx()->locals_.size() > kMaxLocals) {
             fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>{})", kMaxLocals);
         }
-        return cur_fn_ctx()->add_local(name); // 纯登记，is_initialized 默认 false
+        return cur_fn_ctx()->add_local(name); // 纯登记
     }
 
     // ============================================================
@@ -283,21 +283,13 @@ namespace aria {
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(name_idx, line); // 弹值定义全局
         } else {
-            const auto slot = declare_local_or_fail(name, loc);
-            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
+            define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
         }
     }
 
     // ============================================================
     // lvalue / 局部槽 load-store
     // ============================================================
-
-    void CodeGen::check_local_initialized(const u16 slot, const SourceLoc loc) const {
-        // 读点 init 检查：使用定义但未初始化的局部 -> UninitializedVariable（Python 风格 definite-assignment）。
-        if (!cur_fn_ctx()->is_initialized(slot)) {
-            fail(ErrorCode::UninitializedVariable, loc, "使用未初始化的变量: {}", cur_fn_ctx()->locals_[slot].name);
-        }
-    }
 
     void CodeGen::validate_lvalue_target(ExprNode& target) const {
         if (dynamic_cast<IdentifierNode*>(&target) != nullptr) {
@@ -331,11 +323,10 @@ namespace aria {
 
     bool CodeGen::is_in_method() const { return is_method(cur_fn_ctx()->kind_); }
 
-    void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line, const SourceLoc loc) const {
+    void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line) const {
         // 契约见 CodeGen.hpp emit_load_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
-                check_local_initialized(slot, loc);
                 cur_cu()->emit_load_local(slot, line);
                 return;
             case ResolvedVar::Kind::Global:
@@ -350,12 +341,11 @@ namespace aria {
         UNREACHABLE();
     }
 
-    void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line, const SourceLoc loc) const {
+    void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line) const {
         // 契约见 CodeGen.hpp emit_store_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
                 cur_cu()->emit_store_local(slot, line);
-                cur_fn_ctx()->mark_initialized(slot);
                 return;
             case ResolvedVar::Kind::Global:
                 cur_cu()->emit_op(OpCode::STORE_GLOBAL, line);
@@ -376,9 +366,8 @@ namespace aria {
     void CodeGen::bind_pattern(PatternNode& node) {
         // 契约与值填槽模型见 CodeGen.hpp bind_pattern 注。
         if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
-            // 纯登记，slot = 值位置；值填槽不发指令
-            const auto slot = declare_local_or_fail(id->name, node.loc());
-            cur_fn_ctx()->mark_initialized(slot); // 值已在槽
+            // 值填槽：declare 登记的 slot 即值位置，不发指令
+            define_local_or_fail(id->name, node.loc());
             return;
         }
         const u32 line = node.loc_line();
@@ -487,8 +476,7 @@ namespace aria {
         mod_ctx_->current_fn_ctx_ = child;
         for (const auto& param: params) {
             // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在上方检查,故直接 add_local 无需再查。
-            const auto slot = cur_fn_ctx()->add_local(param.name);
-            cur_fn_ctx()->mark_initialized(slot);
+            cur_fn_ctx()->add_local(param.name);
         }
 
         // 编译体（BlockNode 自带 scope）。
@@ -668,9 +656,8 @@ namespace aria {
         // STORE_LOCAL/POP）。
         // [iterable]（receiver）
         emit_expr(*node.iterable);
-        emit_method_call0("iter", line, node.loc()); // [iter_obj] 恰在 slot 位置
-        const u16 iter_var_slot = declare_local_or_fail("<iter>", node.loc());
-        cur_fn_ctx()->mark_initialized(iter_var_slot); // 值已在槽
+        emit_method_call0("iter", line, node.loc());                          // [iter_obj] 恰在 slot 位置
+        const u16 iter_var_slot = define_local_or_fail("<iter>", node.loc()); // 值已在槽位，登记即初始化
 
         const u32 l_start = cur_cu()->size();
         // [iter]（receiver）
@@ -774,8 +761,7 @@ namespace aria {
         // L_catch
         const auto handle = cur_cu()->size();
         begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
-        const auto catch_slot = declare_local_or_fail(*node.catch_param, node.loc());
-        cur_fn_ctx()->mark_initialized(catch_slot); // e 由 unwind 的 push 在运行期填槽(== stack_depth),
+        define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end
@@ -810,7 +796,7 @@ namespace aria {
         //    无 -> LOAD_OBJECT(def Foo 等价 def Foo : Object)。
         if (node.superclass) {
             const auto resolved = resolve_name_or_fail(*node.superclass, node.loc());
-            emit_load_var(resolved, line, node.loc()); // [super]
+            emit_load_var(resolved, line); // [super]
         } else {
             cur_cu()->emit_op(OpCode::LOAD_OBJECT, line); // [Object]
         }
@@ -833,27 +819,17 @@ namespace aria {
     }
 
     void CodeGen::visitVarDeclNode(VarDeclNode& node) {
-        const u32 line = node.loc_line();
         for (const auto& [target, initializer]: node.bindings) {
             // 仅 IdentifierPattern 可跑；ListPattern -> not_impl。
             const auto id = dynamic_cast<IdentifierPatternNode*>(target.get());
             if (id == nullptr) {
                 not_impl(*target, "列表模式解构 var 声明");
             }
-            if (mod_ctx_->is_global_scope()) {
-                // 顶层 var -> 模块全局（DEF_GLOBAL 弹值定义）。name 在 emit_expr 之后入池
-                // （无需守卫，见类首 GC 安全注），与 visitImportStmtNode 顶层分支同形。
-                declare_global_or_fail(id->name, id->loc());
-                emit_expr_or_nil(initializer.get(), line);
-                const auto name_idx = add_name_or_fail(id->name, id->loc());
-                cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-                cur_cu()->emit_word(name_idx, line);
-            } else {
-                // 嵌套 var -> 局部（值填槽，模型见 CodeGen.hpp bind_pattern 注）。
-                const auto slot = declare_local_or_fail(id->name, id->loc());
-                emit_expr_or_nil(initializer.get(), id->loc_line()); // 值恰好压在 slot（不变式：declare 与 init 相邻）
-                cur_fn_ctx()->mark_initialized(slot);
-            }
+            // 初始化器先于声明名求值，绑定与 fun/def/import 同收 bind_stack_value：init 不登记
+            // 当前帧局部，求值后栈高 == locals_.size()，值恰在 declare 槽位（值填槽）；init 里的
+            // 同名引用沿 resolve 链落外层（遮蔽场合捕获外层、落全局则运行期 UndefinedVariable）。
+            emit_expr_or_nil(initializer.get(), id->loc_line());
+            bind_stack_value(id->name, id->loc());
         }
     }
 
@@ -926,10 +902,10 @@ namespace aria {
                 return;
             case LvalueMode::Load:
             case LvalueMode::Locate:
-                emit_load_var(resolved, line, node.loc());
+                emit_load_var(resolved, line);
                 return;
             case LvalueMode::Store:
-                emit_store_var(resolved, line, node.loc());
+                emit_store_var(resolved, line);
                 return;
         }
         UNREACHABLE();
@@ -939,7 +915,7 @@ namespace aria {
         // this 是关键字非标识符:专用解析(resolve_this_or_fail,沿 ctx 链找最近实例方法、嵌套
         // 经 upvalue 捕获、永不落全局),发射同普通局部读取(Local 恒槽 0 / Upvalue 捕获索引)。
         const auto resolved = resolve_this_or_fail(node.loc());
-        emit_load_var(resolved, node.loc_line(), node.loc());
+        emit_load_var(resolved, node.loc_line());
     }
 
     void CodeGen::visitSuperExprNode(SuperExprNode& node) {

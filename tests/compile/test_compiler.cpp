@@ -105,13 +105,14 @@ TEST(Compiler, GlobalsAndWhile) {
     EXPECT_EQ(run_int("var x = 0; var i = 1; while (i <= 5) { x = x + i; i = i + 1; } return x;"), 15);
 }
 
-// 编译失败：函数体内局部自引用（局部做编译期 init 追踪）-> 首错 UninitializedVariable。
-// （顶层 var x = x + 1 是全局自引用，编译期合法、运行期才 UndefinedVariable，故须置于函数体内。）
-TEST(Compiler, CompileErrorUninitialized) {
-    auto fail = compile_fail("fun f() { var x = x + 1; }");
-    ASSERT_EQ(fail.error().code(), ErrorCode::UninitializedVariable);
-    // Error 构造期已把位置烘进自有消息串（含源名 <test>），message() 不依赖 SourceFile 存活、不应崩溃。
-    const auto rendered = fail.error().message();
+// var 自引用：声明名在初始化器求值后才登记，init 里的 x 落全局（无则双 miss）-> 运行期
+// UndefinedVariable。Error 构造期已把位置烘进自有消息串（含源名 <test>），message() 不依赖
+// SourceFile 存活、不应崩溃。
+TEST(Compiler, VarSelfRefRuntimeError) {
+    auto out = run_source("fun f() { var x = x + 1; return x; } return f();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
+    const auto rendered = out.error().message();
     EXPECT_NE(rendered.find("<test>"), std::string::npos);
 }
 

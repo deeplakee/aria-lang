@@ -1,0 +1,7 @@
+// 钉住：函数体内 var 自引用（var x = x + 1，无外层 x）——声明名在初始化器求值后才登记，
+// init 的 x 沿 resolve 链落全局，双 miss 抛运行期 UndefinedVariable。
+fun f() {
+    var x = x + 1;
+    return x;
+}
+f();

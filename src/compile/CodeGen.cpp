@@ -916,11 +916,14 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierNode(IdentifierNode& node) {
-        // 入口 take：按 mode 分派 Load/Store（Locate 预留位，同 Load）。
+        // 入口 take：Prepare = no-op（locator 是槽位/捕获索引/全局名，编译期常量，无接收者可备）；
+        // Locate（复合赋值/前置自增定位腿）与 Load 同形——重解析免费，无副本可留。
         const auto mode     = take_lvalue_mode();
         const u32  line     = node.loc_line();
         const auto resolved = resolve_name_or_fail(node.name, node.loc());
         switch (mode) {
+            case LvalueMode::Prepare:
+                return;
             case LvalueMode::Load:
             case LvalueMode::Locate:
                 emit_load_var(resolved, line, node.loc());
@@ -986,9 +989,10 @@ namespace aria {
                 return;
             case Op::Unary::PreInc:
             case Op::Unary::PreDec: {
-                // E += 1 / E -= 1。统一压 +1，由 ADD/SUBTRACT 决定方向--
-                // 若 PreDec 压 -1 再 SUBTRACT 会算成 E - (-1) = E + 1，方向反。
-                emit_lvalue(*node.operand, LvalueMode::Load);
+                // E += 1 / E -= 1，复合赋值同族：定位腿走 Locate（运行时 locator 得 <obj> DUP
+                // LOAD_FIELD 副本；编译期常量 locator 在目标节点内折叠为 Load 同形）。统一压 +1，
+                // 由 ADD/SUBTRACT 决定方向--若 PreDec 压 -1 再 SUBTRACT 会算成 E - (-1) = E + 1，方向反。
+                emit_lvalue(*node.operand, LvalueMode::Locate);
                 cur_cu()->emit_op(OpCode::LOAD_IMM, line);
                 cur_cu()->emit_byte(1, line);
                 cur_cu()->emit_op(node.op == Op::Unary::PreInc ? OpCode::ADD : OpCode::SUBTRACT, line);
@@ -1003,13 +1007,18 @@ namespace aria {
     void CodeGen::visitAssignmentNode(AssignmentNode& node) {
         const u32 line = node.loc_line();
         if (node.op == Op::Assignment::Assign) {
-            // 普通 =：value -> store（peek-store 留值）
+            // 普通 =：Prepare（接收者准备，编译期常量 locator 目标恒 no-op）-> <e> -> Store。
+            // STORE_FIELD 栈形 [obj, v] -> [v] 要求接收者先于值入栈，发射权在首腿的目标节点；
+            // 与复合赋值只差中间腿（值 vs op）。
+            emit_lvalue(*node.target, LvalueMode::Prepare);
             emit_expr(*node.value);
             emit_lvalue(*node.target, LvalueMode::Store);
             return;
         }
-        // 复合赋值：load target -> value -> op -> store target（Identifier 重 resolve 廉价，locator-once 自然成立）
-        emit_lvalue(*node.target, LvalueMode::Load);
+        // 复合赋值：Locate -> <e> -> op -> Store。定位腿 emit_lvalue(Locate)：运行时 locator
+        // （FieldAccess）得 <obj> DUP LOAD_FIELD 副本跨腿复用；编译期常量 locator（Identifier/
+        // 帧内 this.x）在目标节点内折叠为 Load 同形，重解析免费。
+        emit_lvalue(*node.target, LvalueMode::Locate);
         emit_expr(*node.value);
         cur_cu()->emit_op(binary_opcode(compound_op(node.op)), line);
         emit_lvalue(*node.target, LvalueMode::Store);
@@ -1031,7 +1040,69 @@ namespace aria {
         cur_cu()->emit_byte(static_cast<u8>(node.args.size()), line);
     }
 
-    void CodeGen::visitFieldAccessNode(FieldAccessNode& node) { not_impl(node, "字段访问（LOAD_FIELD 未由 VM 实现）"); }
+    bool CodeGen::try_emit_this_field(const FieldAccessNode& node, const LvalueMode mode, const u32 line) const {
+        // this.x 且 this 为当前帧局部（直接实例方法帧）-> THIS_FIELD 系指令，this 取帧槽 0 不经
+        // 栈。返回是否命中本形态（未命中交调用方走一般经栈路径）。Prepare = no-op（无接收者可
+        // 备，名字进池留给读/写腿，池内去重）；Locate 与 Load 同形——写腿不经栈取 this（槽 0
+        // 编译期常量），定位腿发 DUP 副本反而滞留（无人消费）。
+        if (dynamic_cast<ThisExprNode*>(node.object.get()) == nullptr || !is_in_method()) {
+            return false;
+        }
+        const auto name_idx = add_name_or_fail(node.name, node.loc());
+        switch (mode) {
+            case LvalueMode::Prepare:
+                return true; // 本腿零指令
+            case LvalueMode::Load:
+            case LvalueMode::Locate:
+                cur_cu()->emit_op(OpCode::LOAD_THIS_FIELD, line);
+                cur_cu()->emit_word(name_idx, line); // [..] -> [.., v]
+                return true;
+            case LvalueMode::Store:
+                cur_cu()->emit_op(OpCode::STORE_THIS_FIELD, line);
+                cur_cu()->emit_word(name_idx, line); // [v] -> [v]，peek-store 留值
+                return true;
+        }
+        UNREACHABLE();
+    }
+
+    void CodeGen::visitFieldAccessNode(FieldAccessNode& node) {
+        // 四模式（take 入口取）：Load = rvalue 读；Prepare = 定位准备（只发接收者，普通 = 首腿）；
+        // Store = 赋值目标（只发 store 指令，值由调用方压在栈顶）；Locate = 复合赋值/前置自增
+        // 定位腿。super.成员 不经此（独立 SuperExprNode）。
+        const auto mode = take_lvalue_mode();
+        const u32  line = node.loc_line();
+        if (try_emit_this_field(node, mode, line)) {
+            return;
+        }
+
+        // 一般对象/嵌套捕获 this，接收者经栈（捕获 this 走 LOAD_UPVALUE，一般对象各自发射）；
+        // 各臂自带完整发射序列。
+        const auto name_idx = add_name_or_fail(node.name, node.loc());
+        switch (mode) {
+            case LvalueMode::Prepare:
+                // 普通 = 首腿：只发接收者（为 Store 腿垫栈），不读值
+                emit_expr(*node.object); // [obj]
+                return;
+            case LvalueMode::Load:
+                emit_expr(*node.object); // [obj]
+                cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
+                cur_cu()->emit_word(name_idx, line); // [obj.x]
+                return;
+            case LvalueMode::Store:
+                // 接收者已由 Prepare 腿压在值下，只发 store 指令
+                cur_cu()->emit_op(OpCode::STORE_FIELD, line);
+                cur_cu()->emit_word(name_idx, line); // [obj, v] -> [v]
+                return;
+            case LvalueMode::Locate:
+                // DUP 副本供本节点 Store 腿复用，locator 单次求值（compound-assignment-lowering.md §4.2）
+                emit_expr(*node.object);              // [obj]
+                cur_cu()->emit_op(OpCode::DUP, line); // [obj, obj]
+                cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
+                cur_cu()->emit_word(name_idx, line); // [obj, obj.x]
+                return;
+        }
+        UNREACHABLE();
+    }
 
     void CodeGen::visitIndexAccessNode(IndexAccessNode& node) { not_impl(node, "下标访问（LOAD_INDEX 未由 VM 实现）"); }
 

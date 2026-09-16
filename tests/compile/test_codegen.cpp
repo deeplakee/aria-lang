@@ -113,6 +113,24 @@ namespace {
         return out ? out->as_int() : 0;
     }
 
+    // 逐行扫描 disassembly 文本，断言存在「含 first 的行，其紧邻下一行含 second」的相邻对
+    // （指令相邻形态断言，反汇编形状测试用）。
+    bool lines_adjacent(const aria::String& text, const std::string_view first, const std::string_view second) {
+        for (aria::usize pos = text.find(first); pos != aria::String::npos; pos = text.find(first, pos + 1)) {
+            const aria::usize line_end = text.find('\n', pos);
+            if (line_end == aria::String::npos) {
+                return false; // first 在末行，无下一行
+            }
+            const aria::usize next_begin = line_end + 1;
+            const aria::usize next_end   = text.find('\n', next_begin);
+            const aria::usize second_pos = text.find(second, next_begin);
+            if (second_pos != aria::String::npos && (next_end == aria::String::npos || second_pos < next_end)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 } // namespace
 
 // ============================================================
@@ -702,12 +720,6 @@ TEST(CodeGen, ErrNotImplementedListLiteral) {
     EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
 }
 
-TEST(CodeGen, ErrNotImplementedFieldAccess) {
-    auto c = compile_only("var a = 1; return a.x;");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
-}
-
 TEST(CodeGen, ErrNotImplementedMatch) {
     auto c = compile_only("match (1) { 1 => { print 1; } }");
     ASSERT_FALSE(c.has_value());
@@ -1133,4 +1145,293 @@ TEST(CodeGen, ErrSuperCompoundInvalidTarget) {
     auto c = compile_only("def F { m() { super.x += 1; } }");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::InvalidAssignmentTarget);
+}
+
+// ---- 字段访问 / 方法调用（visitFieldAccessNode 三模式 + visitCallNode 通用路径）----
+
+// 路线表验收样例 1：类定义 + 实例化（init 带参、this 字段读写、方法调用）。
+TEST(CodeGen, ClassInstantiateAndMethodCall) {
+    EXPECT_EQ(run_int(R"(
+def Point {
+    init(x, y) { this.x = x; this.y = y; }
+    sum() { return this.x + this.y; }
+}
+var p = Point(3, 4);
+return p.sum();
+)"),
+              7);
+}
+
+// 路线表验收样例 2/3：继承 + super（init 经构造函数沿链派生、覆写后 super.get() 调父实现）。
+TEST(CodeGen, InheritanceAndSuperCall) {
+    EXPECT_EQ(run_int(R"(
+def Base {
+    init() { this.v = 1; }
+    get() { return this.v; }
+}
+def Sub : Base {
+    get() { return super.get() + 10; }
+}
+var s = Sub();
+return s.get();
+)"),
+              11);
+}
+
+// 路线表验收样例 4：静态成员（var 静态 eager 求值 + fun 静态方法 + 类上赋值原槽更新）。
+TEST(CodeGen, StaticVarAndStaticMethod) {
+    EXPECT_EQ(run_int(R"(
+def Counter {
+    var count = 10;
+    fun get() { return Counter.count; }
+}
+var a = Counter.count;
+Counter.count = 20;
+var b = Counter.get();
+return a + b;
+)"),
+              30);
+}
+
+// 类成员读穿透 / 写遮蔽：Sub.tag 读沿链命中 Base，赋值落 Sub 自身表，Base 不变。
+TEST(CodeGen, StaticReadThroughWriteShadow) {
+    EXPECT_EQ(run_int(R"(
+def Base { var tag = 1; }
+def Sub : Base { }
+var a = Sub.tag;
+Sub.tag = 2;
+return a * 100 + Sub.tag * 10 + Base.tag;
+)"),
+              121);
+}
+
+// 实例字段遮蔽类静态：fields 命中优先，类表不受实例赋值影响。
+TEST(CodeGen, InstanceFieldShadowsStatic) {
+    EXPECT_EQ(run_int(R"(
+def F {
+    var v = 5;
+    get() { return this.v; }
+}
+var f = F();
+f.v = 7;
+return f.v + F.v + f.get();
+)"),
+              19);
+}
+
+// this 嵌套捕获（arrow 语义）：lambda 内 this.x 经 upvalue 读写仍落原实例（退化路径
+// LOAD_UPVALUE this + LOAD/STORE_FIELD）。
+TEST(CodeGen, ThisNestedCapture) {
+    EXPECT_EQ(run_int(R"(
+def P {
+    init(x) { this.x = x; }
+    bump() { (fun() { this.x = this.x + 1; })(); return this.x; }
+}
+var p = P(1);
+p.bump();
+return p.bump();
+)"),
+              3);
+}
+
+// 方法返回后经 this upvalue 延迟调用：帧已退、upvalue 已 close 迁出，闭包仍绑原实例。
+TEST(CodeGen, DelayedCallViaThisUpvalue) {
+    EXPECT_EQ(run_int(R"(
+def Box {
+    init(v) { this.v = v; }
+    binder() { return fun() { return this.v; }; }
+}
+var b = Box(42);
+var delayed = b.binder();
+return delayed();
+)"),
+              42);
+}
+
+// super 不污染动态派发（bound 缓存铁则 2）：super.m 绑父实现后，s.m 仍派发子类覆写。
+TEST(CodeGen, SuperDoesNotPolluteDynamicDispatch) {
+    EXPECT_EQ(run_int(R"(
+def Base { m() { return 1; } }
+def Sub : Base {
+    m() { return 10 + super.m(); }
+    callSuper() { return super.m(); }
+}
+var s = Sub();
+return s.callSuper() + s.m();
+)"),
+              12);
+}
+
+// 动态新增（2026-09-11 改定）：类上 / 实例上赋新名成员均落接收方自身表。
+TEST(CodeGen, DynamicMemberAdd) {
+    EXPECT_EQ(run_int(R"(
+def F { }
+F.extra = 9;
+var f = F();
+f.field = 4;
+return F.extra + f.field;
+)"),
+              13);
+}
+
+// 嵌套函数内 super 禁（2026-09-14 拍板）的等价写法：先取后用（super.m 取 bound method 值，
+// 闭包内延迟调用）。
+TEST(CodeGen, SuperMethodTakeThenUse) {
+    EXPECT_EQ(run_int(R"(
+def Base { m() { return 5; } }
+def Sub : Base {
+    run() {
+        var mth = super.m;
+        var g = fun() { return mth(); };
+        return g();
+    }
+}
+return Sub().run();
+)"),
+              5);
+}
+
+// 函数内 def：类值填槽绑局部，返回类后照常实例化。
+TEST(CodeGen, DefInFunctionBindsLocal) {
+    EXPECT_EQ(run_int(R"(
+fun make() {
+    def Inner { m() { return 3; } }
+    return Inner;
+}
+var K = make();
+return K().m();
+)"),
+              3);
+}
+
+// M5 落地后用户定义类即可迭代：iter/has_next/next 经 LOAD_FIELD 返 bound method + CALL
+// （内建 list/map/string 迭代仍待容器里程碑）。
+TEST(CodeGen, UserClassForIn) {
+    EXPECT_EQ(run_int(R"(
+def Three {
+    init() { this.i = 0; }
+    iter() { return this; }
+    has_next() { return this.i < 3; }
+    next() { this.i = this.i + 1; return this.i - 1; }
+}
+var sum = 0;
+for (x in Three()) { sum = sum + x; }
+return sum;
+)"),
+              3);
+}
+
+// 字段访问运行期错误：原语类型不支持字段访问（nil 与原语同走 UndefinedProperty 统一文案）。
+TEST(CodeGen, FieldAccessOnPrimitiveIsRuntimeError) {
+    auto out = run_source("var a = 1; return a.x;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+}
+
+// ---- 复合赋值 / 前置自增的字段腿（Locate 启用，compound-assignment-lowering.md §4.2）----
+
+// 实例字段复合赋值与前置自增：<obj> DUP LOAD_FIELD ... STORE_FIELD，locator 单次求值。
+TEST(CodeGen, CompoundAssignOnInstanceField) {
+    EXPECT_EQ(run_int(R"(
+def C { init() { this.n = 10; } }
+var c = C();
+c.n += 5;
+++c.n;
+return c.n;
+)"),
+              16);
+}
+
+// this 字段复合赋值：定位腿折叠 THIS_FIELD Load 形（locator = this 槽位，DUP 副本无人消费故不发）。
+TEST(CodeGen, CompoundAssignOnThisField) {
+    EXPECT_EQ(run_int(R"(
+def C2 {
+    init() { this.n = 7; }
+    bump() { this.n += 3; ++this.n; return this.n; }
+}
+var c2 = C2();
+return c2.bump();
+)"),
+              11);
+}
+
+// this 字段复合赋值作非末位实参：定位腿折叠 THIS_FIELD Load 形（无 DUP 副本滞留），栈形不偏移——
+// 副本滞留会把 callee 槽顶成 Int（CallNonCallable）或把前面实参顶错位。
+TEST(CodeGen, ThisFieldCompoundAsCallArg) {
+    EXPECT_EQ(run_int(R"(
+fun h(a, b) { return a * 100 + b; }
+def C {
+    init() { this.n = 7; }
+    bump() { return h(1, this.n += 3); }
+}
+var c = C();
+return c.bump();
+)"),
+              110);
+}
+
+// 类静态字段复合赋值：locator = 类名（全局重解析），读穿透 / 写遮蔽与普通赋值同路。
+TEST(CodeGen, CompoundAssignOnStaticField) {
+    EXPECT_EQ(run_int(R"(
+def S { var v = 100; }
+S.v += 1;
+return S.v;
+)"),
+              101);
+}
+
+// locator 单次求值：复合赋值字段腿的接收者表达式（带副作用的调用）只跑一次。
+TEST(CodeGen, CompoundFieldLocatorEvaluatedOnce) {
+    EXPECT_EQ(run_int(R"(
+var calls = 0;
+def C { init() { this.n = 100; } }
+var holder = C();
+fun get() { calls = calls + 1; return holder; }
+get().n += 5;
+return calls * 1000 + holder.n;
+)"),
+              1105);
+}
+
+// 成员即表写入（RedefinedMember 退役）：重名后写遮蔽，类静态读回取后值。
+TEST(CodeGen, MemberDuplicateShadowsPrevious) {
+    EXPECT_EQ(run_int(R"(
+def C { var v = 1; var v = 2; }
+return C.v;
+)"),
+              2);
+}
+
+// ---- 反汇编形状 ----
+
+// def 反汇编：LOAD_OBJECT -> MAKE_CLASS；成员序与源序一致（静态 var 先于方法）；方法闭包
+// CLOSURE 与 MAKE_METHOD/MAKE_STATIC 相邻；类绑定 DEF_GLOBAL 恰一次（方法体在各自 unit，
+// 无 DEF_GLOBAL 混入成员发射）。
+TEST(CodeGen, DefDisassembly) {
+    auto compiled = compile_only(R"(
+def Animal {
+    var kind = 1;
+    fun static_get() { return Animal.kind; }
+    init(name) { this.name = name; }
+    speak() { return 2; }
+}
+)");
+    ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
+    const auto text = compiled->unit().disassemble("<test>");
+    ASSERT_NE(text.find("LOAD_OBJECT"), aria::String::npos);
+    ASSERT_NE(text.find("MAKE_CLASS"), aria::String::npos);
+    EXPECT_LT(text.find("LOAD_OBJECT"), text.find("MAKE_CLASS"));
+    // 成员序：静态 var（MAKE_STATIC）先于首个方法闭包（CLOSURE）。
+    ASSERT_NE(text.find("MAKE_STATIC"), aria::String::npos);
+    ASSERT_NE(text.find("CLOSURE"), aria::String::npos);
+    EXPECT_LT(text.find("MAKE_STATIC"), text.find("CLOSURE"));
+    // 方法闭包与注册指令相邻（每指令一行）。
+    EXPECT_TRUE(lines_adjacent(text, "CLOSURE", "MAKE_STATIC")); // static_get（fun 静态）
+    EXPECT_TRUE(lines_adjacent(text, "CLOSURE", "MAKE_METHOD")); // init / speak（实例方法）
+    // 类绑定 DEF_GLOBAL 恰一次。
+    aria::usize def_global_count = 0;
+    for (aria::usize pos = 0; (pos = text.find("DEF_GLOBAL", pos)) != aria::String::npos; pos += 10) {
+        ++def_global_count;
+    }
+    EXPECT_EQ(def_global_count, 1u);
 }

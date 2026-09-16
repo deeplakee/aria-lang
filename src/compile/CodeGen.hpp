@@ -47,9 +47,13 @@ namespace aria {
     class CodeGen final : public AstVisitor {
         // lvalue 模式（见 compound-assignment-lowering.md）：flag 由 emit_lvalue 设置、目标节点
         // 入口经 take_lvalue_mode() 一次性 take（取值并清空为 Load，子节点不泄漏；emit_expr 入口
-        // ASSERT == Load 钉漏 take；构造置 Load，一次性对象无跨次残留）。Load = rvalue、
-        // Store = 赋值目标（peek-store 留值）、Locate = 预留位。
-        enum class LvalueMode : u8 { Load, Store, Locate };
+        // ASSERT == Load 钉漏 take；构造置 Load，一次性对象无跨次残留）。Load = rvalue 读、
+        // Prepare = 定位准备（只发接收者，普通 = 首腿；编译期常量 locator 目标恒 no-op）、
+        // Store = 赋值目标（peek-store 留值）、Locate = 复合赋值/前置自增的定位腿。定位腿形态
+        // 按 locator 性质分流：运行时 locator（一般对象/捕获 this 的 FieldAccess、IndexAccess）
+        // 经 DUP/DUP2 副本跨腿复用；编译期常量 locator（Identifier、帧内 this.x）无副本可留，
+        // 定位腿与 Load 同形（目标节点 switch 内折叠）。
+        enum class LvalueMode : u8 { Load, Prepare, Store, Locate };
 
     public:
         // 静态服务入口：编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名
@@ -239,8 +243,8 @@ namespace aria {
         void bind_stack_value(StringView name, SourceLoc loc) const;
 
         // 验证赋值左值种类合法：Identifier/FieldAccess/IndexAccess 放行（由各自 visit 处理），
-        // 其余 -> InvalidAssignmentTarget。非法左值在 rhs 编译后才抛（普通 = 的 emit_lvalue(Store)
-        // 后于 rhs），字节码随 throw 丢弃。
+        // 其余 -> InvalidAssignmentTarget。两种赋值的首腿（普通 = 的 Prepare/复合的 Locate）均
+        // 先于 rhs 抛错，字节码随 throw 丢弃。
         void validate_lvalue_target(ExprNode& target) const;
 
         // 以给定 lvalue 模式分派目标节点：先 validate_lvalue_target，再置 lvalue_mode_ 后
@@ -250,6 +254,14 @@ namespace aria {
         // 目标节点入口调用：返回当前 lvalue_mode_ 并清空为 Load（一次性 take，防子节点泄漏）。
         // lvalue_mode_ 的读写收口于此与 emit_lvalue。
         LvalueMode take_lvalue_mode();
+
+        // this.x 且 this 为当前帧局部（直接实例方法帧）的 THIS_FIELD 系发射（四模式，语义见类首
+        // LvalueMode 注）：Prepare = no-op（this 不经栈，无接收者可备）；Load/Locate 同发
+        // LOAD_THIS_FIELD（Locate 折叠：写腿不经栈取 this，槽 0 编译期常量）；Store =
+        // STORE_THIS_FIELD（peek-store）。命中返回 true；一般对象/嵌套捕获 this 返回 false，
+        // 交调用方走一般经栈路径。
+        [[nodiscard]]
+        bool try_emit_this_field(const FieldAccessNode& node, LvalueMode mode, u32 line) const;
 
         // 在栈顶 receiver 上调用 0 参方法 name：LOAD_FIELD name; CALL 0（[receiver] -> [retval]）。
         // 封装 for-in 的 iter()/has_next()/next() 三处同型模式。

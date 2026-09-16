@@ -47,14 +47,14 @@ STORE_LOCAL x    ; []         (upvalue: STORE_UPVALUE;global: STORE_GLOBAL)
 
 ### 4.2 字段 `obj.f op= e`
 
-`DUP` 保 `obj` 跨过 load 供 store 复用:
+`DUP` 保 `obj` 跨过 load 供 store 复用（`STORE_FIELD` 为 peek-store：`[obj, v] -> [v]` 弹 obj 留 v，赋值表达式留新值）：
 ```
 <obj>            ; [obj]
 DUP              ; [obj, obj]
 LOAD_FIELD "f"   ; [obj, obj.f]
 <e>              ; [obj, obj.f, e]
 <op>             ; [obj, obj.f op e]
-STORE_FIELD "f"  ; []
+STORE_FIELD "f"  ; [obj.f op e]    消耗 (obj, 新值)，留新值
 ```
 
 ### 4.3 下标 `obj[idx] op= e`
@@ -67,7 +67,7 @@ DUP2             ; [obj, idx, obj, idx]
 LOAD_INDEX       ; [obj, idx, obj[idx]]  消耗顶层一对,留下复制对
 <e>              ; [obj, idx, obj[idx], e]
 <op>             ; [obj, idx, obj[idx] op e]
-STORE_INDEX      ; []    消耗留下的 (obj,idx) 与新值
+STORE_INDEX      ; [newval]    消耗留下的 (obj,idx) 与新值,留新值(peek-store 同族)
 ```
 
 > `LOAD_INDEX`/`STORE_INDEX` 的栈操作数顺序以 VM 实现为准;上表假设两者都从栈顶取 `(obj, idx)` 对、`STORE_INDEX` 额外取其下方的值。实现时若顺序不同,`DUP2` 后的栈布局相应调整,但"locator 只求值一次"不变。
@@ -99,12 +99,82 @@ STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)
 字节码编译器(CodeGen)把 load/store 的发射收归到访问节点,经上下文 flag `LvalueMode{Load,Store,Locate}`(CodeGen 成员 `lvalue_mode_`,默认 `Load`)告诉目标节点当前作为 load 还是 store:
 
 - `emit_lvalue(node, mode)`:`validate_lvalue_target(node)` 后设置 `lvalue_mode_`、`node->accept(*this)` 分派(不在分派后恢复)。目标节点入口经 `take_lvalue_mode()` 一次性 take(取值并清空为 `Load`),故子节点经 `emit_expr` 时 flag 已清空、不泄漏。`emit_expr` 入口 `ASSERT(lvalue_mode_ == Load)` 开发期捕获漏 take 的 bug。
-- `validate_lvalue_target(target)`(dynamic_cast 守卫):Identifier/Field/Index 三种合法左值种类放行(未实现的由各自 visit 节点分派时 `not_impl`)、其余 -> `InvalidAssignmentTarget`;由 `emit_lvalue` 在分派前调用(复合/前置自增自减首次 `Load` 先于 rhs,普通 `=` 的 `Store` 后于 rhs,非法左值在 rhs 编译后才抛、字节码随 throw 丢弃)。
-- `visitIdentifierNode` 入口 `take_lvalue_mode()` 取模式并清空,据返回值分支:`Store` = resolve + STORE(peek-store 留值,Local 另 `mark_initialized`);`Load` = resolve + LOAD(Local 另读点 `is_initialized` 检查)。`Locate` 预留同 Load。
-- 普通 `lhs = e`:`<e>` 压值 -> `emit_lvalue(lhs, Store)`(peek-store)。
-- 复合 `lhs op= e`:`emit_lvalue(lhs, Load)` -> `<e>` -> `<op>` -> `emit_lvalue(lhs, Store)`。Load 与 Store 各 resolve 一次,对 Identifier(局部槽 / 全局名,编译期常量)重新 resolve 廉价且无副作用,"locator 只求值一次"自然成立;Field/Index 的运行时 locator(receiver/idx)则由 `Locate` 模式单次求值并经 `DUP`/`DUP2` 留 VM 栈、Load/Store 复用栈上副本(见 §4.2/§4.3),非编译期 stash。
+- `validate_lvalue_target(target)`(dynamic_cast 守卫):Identifier/Field/Index 三种合法左值种类放行(未实现的由各自 visit 节点分派时 `not_impl`)、其余 -> `InvalidAssignmentTarget`;由 `emit_lvalue` 在分派前调用(两种赋值首腿——普通 = 的 `Prepare`/复合与前置自增自减的 `Locate`——均先于 rhs 抛错,字节码随 throw 丢弃)。
+- 两个 take 点(`visitIdentifierNode` / `visitFieldAccessNode`)按模式分派,全组合速查(其余节点经 `emit_expr` 时 flag 已清空为 `Load`)。记号:`resolve`/`name_idx`/init 登记均为编译期动作零指令;`<X>` = 发射子表达式 X(值压栈);peek-store = 读栈顶写回存储但不弹,值留栈作赋值表达式值;Prepare = 定位准备腿(只发接收者不读值,普通 = 首腿);「同形 Load」= 编译期常量 locator 的定位腿在节点 switch 内折叠为 Load 形(无运行时副本可留,见行内注):
 
-即 Identifier 的 locator-once 由"resolve 廉价可重做"体现,Field/Index 的 locator-once 由"VM 栈 DUP 复用"体现;两者都不靠编译期缓存 locator 描述。`Locate` 当前不使用,预留给 Field/Index 落地。
+| 目标节点·形态 | 模式 | 发射的指令 | 栈变化 |
+| :--- | :--- | :--- | :--- |
+| Identifier·任意 | Prepare | no-op(locator 编译期常量,无接收者可备) | -- |
+| Identifier·局部 | Load | 编译期读点查 `is_initialized`(未初始化 -> `UninitializedVariable`)+ `LOAD_LOCAL slot` | [] -> [v] |
+| Identifier·局部 | Store | `STORE_LOCAL slot` + 编译期 `mark_initialized` | [v] -> [v](peek-store) |
+| Identifier·upvalue | Load | `LOAD_UPVALUE idx` | [] -> [v] |
+| Identifier·upvalue | Store | `STORE_UPVALUE idx`(写穿外层槽/已关 cell;不查 init、不 mark) | [v] -> [v](peek-store) |
+| Identifier·全局 | Load | `LOAD_GLOBAL name_idx` | [] -> [v] |
+| Identifier·全局 | Store | `STORE_GLOBAL name_idx` | [v] -> [v](peek-store) |
+| Identifier·任意 | Locate | 与 Load 同形(resolve + 同一 LOAD_*;locator = 槽位/捕获索引/全局名,编译期常量重解析免费) | [] -> [v] |
+| FieldAccess·帧内 this | Prepare | no-op(this 取帧槽 0 不经栈,无接收者可备) | -- |
+| FieldAccess·帧内 this | Load | `LOAD_THIS_FIELD name_idx`(this 取帧槽 0 不经栈) | [] -> [v] |
+| FieldAccess·帧内 this | Store | `STORE_THIS_FIELD name_idx`(字段不存在动态创建) | [v] -> [v](peek-store) |
+| FieldAccess·帧内 this | Locate | 与 Load 同形(`LOAD_THIS_FIELD`;写腿不经栈取 this,发 DUP 副本反而滞留无人消费) | [] -> [v] |
+| FieldAccess·一般对象/捕获 this | Prepare | 只发 `<object>`(普通 = 首腿;不进名字池、不读值) | [] -> [obj] |
+| FieldAccess·一般对象/捕获 this | Load | `<object>` + `LOAD_FIELD name_idx` | [] -> [obj] -> [obj.x] |
+| FieldAccess·一般对象/捕获 this | Store | 只发 `STORE_FIELD name_idx`(接收者已由 Prepare 腿压在值下) | [obj, v] -> [v](弹接收者留新值) |
+| FieldAccess·一般对象/捕获 this | Locate | `<object>` + `DUP` + `LOAD_FIELD name_idx`(副本垫底,供本节点 Store 腿复用) | [] -> [obj] -> [obj, obj] -> [obj, obj.x] |
+| IndexAccess(待容器里程碑接线) | Prepare | 只发 `<obj>` `<idx>`(为 Store 腿备对) | [] -> [obj] -> [obj, idx] |
+| IndexAccess(待容器里程碑接线) | Load | `<obj>` + `<idx>` + `LOAD_INDEX` | [obj, idx] -> [obj, idx, obj[idx]] |
+| IndexAccess(待容器里程碑接线) | Store | 只发 `STORE_INDEX`(obj/idx 已由 Prepare 腿备好) | [obj, idx, v] -> [v](peek-store) |
+| IndexAccess(待容器里程碑接线) | Locate | `<obj>` + `<idx>` + `DUP2` + `LOAD_INDEX`(复制对垫底) | [obj, idx] -> [obj, idx, obj, idx] -> [obj, idx, obj[idx]] |
+
+  `super.成员` 不经 FieldAccess(独立 `SuperExprNode`,Load-only,写形态被 validate 拒绝)。生产侧三形对称,只差首腿与中间腿:普通 `=` = Prepare -> `<e>` -> Store;复合 `op=` = Locate -> `<e>` -> op -> Store;`++`/`--` = Locate -> `LOAD_IMM 1` -> op -> Store。
+
+- 三腿拼装逐行示例,右注标出该行由哪条腿产出(模式只作用于 `emit_lvalue` 分派的目标节点;`<e>` 值腿走 `emit_expr` 恒 Load 语境,运算指令无模式;编译期常量 locator 的 Locate 腿在节点 switch 内折叠为 Load 同形):
+
+`obj.f += e`(一般对象,Locate 腿的 DUP 副本由 Store 腿消费):
+```
+<object>            ; [obj]              Locate 腿(Locate 分派)发 object 子表达式
+DUP                 ; [obj, obj]         Locate 腿:副本垫底
+LOAD_FIELD f        ; [obj, obj.f]       Locate 腿:读旧值
+<e>                 ; [obj, obj.f, e]    值腿(emit_expr,恒 Load 语境)
+ADD                 ; [obj, new]         运算(无模式)
+STORE_FIELD f       ; [new]              Store 腿(Store 分派):弹 (副本, 新值),留新值 = 赋值表达式的值
+```
+
+`this.x += e`(帧内 this,定位腿折叠 Load 形,全程无 DUP):
+```
+LOAD_THIS_FIELD x   ; [old]              Locate 腿(Locate 分派,帧内 this 折叠 THIS_FIELD Load 形)
+<e>                 ; [old, e]           值腿(emit_expr,恒 Load 语境)
+ADD                 ; [new]              运算(无模式)
+STORE_THIS_FIELD x  ; [new]              Store 腿(Store 分派,THIS_FIELD Store 形):peek-store,this 取帧槽 0
+```
+
+`x += e`(Identifier,定位腿折叠 Load 形):
+```
+LOAD_LOCAL x        ; [old]              Locate 腿(Locate 分派,折叠同 Load)
+<e>                 ; [old, e]           值腿(emit_expr,恒 Load 语境)
+ADD                 ; [new]              运算(无模式)
+STORE_LOCAL x       ; [new]              Store 腿(Store 分派):peek-store
+```
+
+`++obj.f`(前置自增,留新值即表达式值;语句上下文值被丢弃补一条 POP):
+```
+<object>            ; [obj]              Locate 腿(Locate 分派)发 object 子表达式
+DUP                 ; [obj, obj]         Locate 腿:副本垫底
+LOAD_FIELD f        ; [obj, obj.f]       Locate 腿:读旧值
+LOAD_IMM 1          ; [obj, obj.f, 1]    常量腿(++ 固定压 1)
+ADD                 ; [obj, new]         运算(无模式)
+STORE_FIELD f       ; [new]              Store 腿(Store 分派):弹 (副本, 新值),留新值
+```
+
+普通 `obj.f = e`(Prepare 首腿由节点发接收者;Store 腿只发 STORE_FIELD):
+```
+<object>            ; [obj]              Prepare 腿(Prepare 分派):只发接收者
+<e>                 ; [obj, e]           值腿(emit_expr,恒 Load 语境)
+STORE_FIELD f       ; [e]                Store 腿(Store 分派):只发这一条
+```
+- 普通 `lhs = e`：`emit_lvalue(lhs, Prepare)` -> `<e>` -> `emit_lvalue(lhs, Store)`(peek-store)。Prepare = 定位准备腿，只发 locator 的运行时部分（一般对象/捕获 this 的 `<obj>`；Identifier/帧内 this 的 locator 编译期常量，臂恒 no-op）——`STORE_FIELD` 栈形 `[obj, v] -> [v]` 要求接收者先于值入栈，接收者发射权归目标节点；帧内 this 的写腿 `STORE_THIS_FIELD` 不经栈取 this。与复合赋值只差中间腿（值 vs op）。
+- 复合 `lhs op= e`：`emit_lvalue(lhs, Locate)` -> `<e>` -> `<op>` -> `emit_lvalue(lhs, Store)`。生产侧统一发 `Locate`;目标节点按 locator 性质分派:编译期常量(Identifier;帧内 this 的 FieldAccess)定位腿与 `Load` 同形——重 resolve 廉价且无副作用,"locator 只求值一次"自然成立;运行时 locator(Field/Index)以 `Locate` 单次求值、经 `DUP`/`DUP2` 留 VM 栈、Load/Store 复用栈上副本(见 §4.2/§4.3),非编译期 stash。前置 `++`/`--` 同族,首腿同为 `Locate`(§5)。
+
+即 locator-once 按 locator 性质两路实现:编译期常量(Identifier、帧内 this)走"重 resolve 廉价可重做",定位腿与 `Load` 同形(无副本可留);运行时 locator(Field/Index)走"VM 栈 DUP/DUP2 复用";两者都不靠编译期缓存 locator 描述。`Locate` 已随 M5 类落地启用:一般对象定位腿发 `<obj> DUP LOAD_FIELD`,帧内 this 定位腿折叠 `LOAD_THIS_FIELD`(写 `STORE_THIS_FIELD` 不经栈取 this);IndexAccess 的 DUP2 形态(§4.3)待容器里程碑接线。
 
 ## 7. 不要这么做
 

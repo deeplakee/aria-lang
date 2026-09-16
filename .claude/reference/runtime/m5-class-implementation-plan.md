@@ -47,7 +47,7 @@
 > **决策补记（2026-09-11，super 静态访问放开 + 方法性注册期定 --用户驱动）**：三项改定。
 > ① **方法性判别翻注册期戳**：读路径（`ObjInstance::load_field` / super 站点）不再按值类型（is_callable_value）判「可绑定」，改判 **defining class 非空的 ObjClosure = 方法闭包**（MAKE_METHOD 注册时戳，戳一职双任：super 来源 + 方法性标记，判别谓词 `is_method(Value)` 收口 ObjBridge；MAKE_STATIC/类上赋值不戳 ⟹ 静态槽持函数值/lambda/原生恒原值直读）。原「静态槽持可调用值经实例读取同样绑定（Python 函数语义）」（补记一）随之废止：函数值静态/静态方法经 obj./super. 读回原值；类上赋值改写方法槽后新解析按静态读原值（方法性随值携带 --类路径拷贝 MAKE_METHOD 出品的戳定闭包如 `Foo.m = Base.m` 保方法性）。
 > ② **fun 静态方法改经 MAKE_STATIC 注册**（不戳 defining class；fun 体内 super 本就编译期禁，defining class 对它无用）；MAKE_METHOD 收紧为**仅收闭包**（普通方法 = 戳定闭包；原生落表走 MAKE_STATIC/类上赋值，读恒原值；原生方法绑定随 ① 退役 --内建类型方法留 uniform OOP 在对象协议内实现、不走 ObjClass 表；MAKE_METHOD("init") 配原生的注册形态随之退役，原生 init 经类上赋值路径同步 init_）。
-> ③ **`LOAD_SUPER_METHOD` 更名 `LOAD_SUPER_FIELD`**（super 静态访问放开后语义 = 沿父链读成员：方法闭包绑 this、静态槽原值直读，与 LOAD_FIELD 实例路径同构的「super 链读」家族；opcode 数值不变，Disassembler 零改动）。原「static members are not accessible via super」站点文案与补记四「super 命中静态值」raise 列举随本条退役（存档留痕）；阶段 3 随动：`visitFieldAccessNode` Load 模式的 SuperExpr 分支由「fail InvalidSuperUse 兜底」改为发射同指令（指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 的处理随阶段 3 定）。（查找+绑定留在 VM 执行体站点 --2026-09-11 二次复盘定形：load_super_field 式对象层封装收 (vm, name, receiver) 三参、泄漏帧语境，不取。）
+> ③ **`LOAD_SUPER_METHOD` 更名 `LOAD_SUPER_FIELD`**（super 静态访问放开后语义 = 沿父链读成员：方法闭包绑 this、静态槽原值直读，与 LOAD_FIELD 实例路径同构的「super 链读」家族；opcode 数值不变，Disassembler 零改动）。原「static members are not accessible via super」站点文案与补记四「super 命中静态值」raise 列举随本条退役（存档留痕）；阶段 3 随动：`visitSuperExprNode` 单点承载，Load 模式发射同指令（指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 已拍板编译期禁于嵌套函数（2026-09-14，见阶段 3 首条拍板））。（查找+绑定留在 VM 执行体站点 --2026-09-11 二次复盘定形：load_super_field 式对象层封装收 (vm, name, receiver) 三参、泄漏帧语境，不取。）
 >
 > **范围裁定**：嵌套类**不在本里程碑**（Parser def 体成员分派只收 var/fun/裸标识符，「def 体内只允许 var/fun/方法」，Parser.cpp:308-322；grammar member 列表同 -- 嵌套类 bullet 的语义描述留档为后继方向）。容器三件套（`MAKE_LIST/MAP/RANGE`）、`LOAD/STORE_INDEX`、`INVOKE_METHOD`（维持预留不发射）、match、默认参数/varargs 均不在 M5。
 
@@ -87,8 +87,6 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 ### 2.5 镜像双指令（本次对话定夺，完整论证不重复）
 
 静态成员的「创建」（类体内，栈 `[class, v]`）与「赋值」（体外 `Foo.x = v`，栈 `[class, v]`）**栈进同形、出口要求互反**（创建留 class 弹 v、赋值弹 class 留 v）。单一栈形态服务不了两者：复用 peek-store `STORE_FIELD` 于创建需每成员 `DUP class + 尾 POP` 两条凑指令；改弹净形态 `[obj,v]->[]` 则赋值表达式约定（值留栈顶）迫使**热路径**每次字段赋值多一次 `DUP` 右值。故取专用指令 `MAKE_STATIC/MAKE_METHOD [class,v] -> [class]`（与 `STORE_FIELD` 互为镜像），两场景均零冗余，成本落一次性路径。VM 实现各一行：`MAKE_STATIC` = 写表 + `top_--`；`STORE_FIELD` = 写表 + `stack[top_-2]=stack[top_-1]; top_--`（单槽下移）。`STORE_INDEX [obj,idx,v] -> [v]`（下移两槽）同族，容器里程碑沿用此模式。
-
-「class 留栈」的真实工程点不在指令而在 **CodeGen 栈高记账**：class 是跨整个类体的被持有临时值（非具名局部、无登记），期间所有成员初始化器临时值压其上，须持有计数 RAII 保证每成员发射完栈高回到 held+1，漏记一次则后续槽号与 TryRecord.stack_depth 全错位。
 
 ### 2.6 defining class 挂 ObjClosure
 
@@ -131,19 +129,25 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 
 ### 阶段 3：compile 翻转
 
-- **`FunctionCtx` 增 `FnKind`**（Function/StaticMethod/InstanceMethod，ctx 链上可查 -- this/super 语境判定沿 enclosing 链找最近 InstanceMethod 需要它）+ `kThisName = "this"`；InstanceMethod 编译时先 `add_local("this")`（槽 0）再形参（随至 1..n，slot>=256 走既有 `_L` 机制），arity 计数不含 this。
+> **拍板（2026-09-14，嵌套函数中的 this/super）**：
+> - **this 支持嵌套捕获**（arrow 语义，与 Wren 同形）：方法帧槽 0 = 具名局部 "this"（关键字，不可能与用户标识符撞名，`FnKind` 支撑）；普通函数/静态方法/入口的槽 0 仍为哑元（现状即空串名，词法不可达，用户代码不可引用）。嵌套函数引用 this 沿 ctx 链找最近实例方法、经既有 `resolve_upvalue` 捕获其槽 0（M4 机制零改动，穿透捕获）；链上无实例方法 -> `ThisOutsideClass`，永不落全局。方法返回后闭包延迟调用：this upvalue 经 close 迁出存活，测试钉子覆盖。
+> - **super 编译期禁于嵌套函数**：消费点（`visitFieldAccessNode` Load 的 SuperExpr 分支 + `visitCallNode` 的 super 调用分支）判据 = **当前帧 kind == InstanceMethod（直接方法帧）**，与 this 的「沿链找最近」判据有意不对称（this 允许捕获：栈槽值可 upvalue 化；super 禁止捕获：(defining class, this) 二元组的 defining class 无槽可捕）。静态方法/顶层/嵌套函数一律 `SuperOutsideMethod`（复用预置码，零新增）；裸 super 恒 `InvalidSuperUse`。表达力无损：super 全部合法形态是静态命名成员读/调（无 `super[k]` 动态形态），bound method 取值时刻即固定 (defining class, this)，故「先取后用」（`var m = super.m;` 后闭包内 `m()`）语义等价，grammar 说明节明示该等价写法。
+> - **否决的替代路线（存档留痕）**：Wren 式 superclass 常量池烘焙（wren `wrenBindMethodCode` 于方法绑定时刻扫字节码回填 SUPER 常量槽、CODE_CLOSURE 递归进嵌套 fn、receiver 显式压栈）--机制成立、支持嵌套 super，但绑定时刻回填字节码过于 tricky，且表达力经先取后用无损，不值 LOAD_SUPER_FIELD 加常量操作数 + MAKE_METHOD 回填扫描的改动面；defining class 戳复制给嵌套闭包亦否（is_method 谓词一职双任，嵌套闭包带戳会被误判方法性）。
+
+- **`FunctionCtx` 增 `FnKind`**（Function/StaticMethod/InstanceMethod，ctx 链上可查 -- this 沿链找最近实例方法 / super 判当前帧 kind（直接方法帧），两判据都需要它）+ `kThisName = "this"`；InstanceMethod 编译时先 `add_local("this")`（槽 0）再形参（随至 1..n，slot>=256 走既有 `_L` 机制），arity 计数不含 this。
 - **`compile_function`（CodeGen.cpp:424-493）签名增 kind 形参**（默认 Function）；绑定步骤按三态分派：具名声明（现行为）/ lambda 留栈 / **Method 留栈不绑定**（类成员闭包由 MAKE_METHOD 消费；名字照常进 ObjFunction 供 `<fn m>` 渲染与堆栈跟踪）。
-- **`visitDefDeclNode`（CodeGen.cpp:791）**：① 成员名去重（发射前静态检查，`RedefinedMember` -- ErrorCode.hpp:67 已预置，同名 var/fun/方法混报）② superclass：有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析，跨模块导入类可用；非类值运行期 MAKE_CLASS 报 TypeMismatch；编译期不查全局 -- UndefinedType 枚举保留不启用，未命中沿用运行期 UndefinedVariable）；无 -> `LOAD_OBJECT` ③ `MAKE_CLASS name`（名入常量池）④ **持有计数 RAII**（§2.5：类体发射期间栈高 held+1，每成员发射完断言复位）⑤ 成员按序：StaticVar/StaticMethod -> 求值初始化器（无则 `LOAD_NIL`）/ 发 `CLOSURE`（留栈）+ `MAKE_STATIC`（fun 不戳 defining class ⟹ 静态槽读恒原值，2026-09-11 改定）；InstanceMethod -> `compile_function(..., kind)` 发 `CLOSURE`（留栈）+ `MAKE_METHOD`（戳 defining class = 方法性标记） ⑥ 尾绑定按语境：顶层 -> `DEF_GLOBAL`（弹）；函数/块内 -> `declare_local_or_fail` + `mark_initialized`（**值填槽** -- 类值已在栈顶槽位，同嵌套 fun 机制）。顶层类名重绑定经 `declare_global_or_fail` 既有报错（RedefinedVariable 家族；RedefinedClass 枚举保留不启用，避免同义码分叉）。
+- **`visitDefDeclNode`（CodeGen.cpp:791）**（成员即表写入,与体外 Foo.x = v 同形态,重名后写遮蔽不查重,RedefinedMember 退役）= ① superclass：有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析，跨模块导入类可用；非类值运行期 MAKE_CLASS 报 TypeMismatch；编译期不查全局 -- UndefinedType 枚举保留不启用，未命中沿用运行期 UndefinedVariable）；无 -> `LOAD_OBJECT` ② `MAKE_CLASS name`（名入常量池）③ 成员按序逐个 `member->accept` 自分派：StaticVarMemberNode -> 求值初始化器（无则 nil）+ `MAKE_STATIC`（eager 语义见下注）；FunDeclNode -> `visitFunDeclNode` 透传节点自带 `FnKind`，绑定/注册分派收口在 `compile_function` 穷尽 switch：StaticMethod 发 `CLOSURE`（留栈）+ `MAKE_STATIC`（fun 不戳 defining class ⟹ 静态槽读恒原值，2026-09-11 改定）；Method/InitMethod -> 发 `CLOSURE`（留栈）+ `MAKE_METHOD`（戳 defining class = 方法性标记） ④ 尾绑定（`bind_stack_value`）：顶层 -> `DEF_GLOBAL`（弹）；函数/块内 -> 值填槽（**值填槽不变式** -- 类值已在栈顶槽位，同嵌套 fun 机制）。顶层类名重绑定经 `declare_global_or_fail` 既有报错（RedefinedVariable 家族；RedefinedClass 枚举保留不启用，避免同义码分叉）。
   - eager 静态语义随 lowering 自然成立：初始化器在类定义点求值、类名未绑定前体内裸名自引用 -> 运行期 UndefinedVariable（与 grammar「要求 B 先于 A 定义」一致）。
   - **异常语义白赚**（记入测试勿实现）：成员初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未绑定（TryRecord.stack_depth 记在 def 语句前）。
 - **`visitThisExprNode`（:895）-> 专用 `resolve_this_or_fail`**：沿 fn ctx 链找名为 "this" 的局部 -- 当前帧命中 -> `emit_load_var`（LOAD_LOCAL 0，this 占方法帧槽 0）；enclosing 命中 -> 经既有 `resolve_upvalue` 捕获（LOAD_UPVALUE，**M4 机制零改动复用**）；链上无 -> `fail ThisOutsideClass`（ErrorCode.hpp:55 预置）。**永不落全局**（this 是关键字非标识符，不复用 resolve_name_or_fail 的全局兜底）。
-- **`visitSuperExprNode`（:897）-> `fail InvalidSuperUse`**（super 须为 super.method(...) 形态）。
-- **`visitFieldAccessNode`（:1039）三模式**（take_lvalue_mode）：
-  - Load：object 为 ThisExpr 且 this 解析为**当前帧局部** -> `LOAD_THIS_FIELD`（优化）；this 为 upvalue（嵌套函数）-> `LOAD_UPVALUE this + LOAD_FIELD`（退化 -- THIS_FIELD 系指令 this 取槽 0 只对直接方法体成立）；object 为 SuperExpr -> `LOAD_SUPER_FIELD`（2026-09-11 改定 `super.x` 静态读取放开：方法闭包（defining class 戳）绑 this、静态槽原值直读；指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 的处理随阶段 3 定）；一般 -> emit object + `LOAD_FIELD`。
+- **`visitSuperExprNode`（:897）-> super.成员 文法单形（裸 super 解析期 ExpectedToken）**：语境检查（SuperOutsideMethod）+ `LOAD_SUPER_FIELD`（方法闭包绑 this、静态槽原值直读）；super.m(args) 调用经 visitCallNode 通用路径复用本 visit，无特判分支。
+- **`visitFieldAccessNode`（:1039）四模式**（take_lvalue_mode；帧内 this.x 形态封装 `try_emit_this_field`）：
+  - Prepare（普通 = 首腿，compound-assignment-lowering.md §6）：只发接收者不读值——一般对象/嵌套捕获 this 发 `<obj>`；帧内 this / Identifier no-op（locator 编译期常量，无接收者可备）。
+  - Load：object 为 ThisExpr 且 this 解析为**当前帧局部** -> `LOAD_THIS_FIELD`（优化）；this 为 upvalue（嵌套函数）-> `LOAD_UPVALUE this + LOAD_FIELD`（退化 -- THIS_FIELD 系指令 this 取槽 0 只对直接方法体成立）；object 为 SuperExpr -> `LOAD_SUPER_FIELD`（2026-09-11 改定 `super.x` 静态读取放开：方法闭包（defining class 戳）绑 this、静态槽原值直读；指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 已拍板编译期禁于嵌套函数（2026-09-14，见阶段 3 首条拍板））；一般 -> emit object + `LOAD_FIELD`。
   - Store：object 为 ThisExpr（局部）-> `STORE_THIS_FIELD`；其余同形退化 -> `STORE_FIELD`。
-  - **Locate（启用 compound-assignment-lowering.md §4.2 预留方案）**：`obj.f op= e` -> `<obj> DUP LOAD_FIELD f <e> <op> STORE_FIELD f`（locator 单次求值，DUP 副本跨 load/store 复用）；`this.f op= e` -> `<this> DUP LOAD_FIELD ... STORE_FIELD`（locator = this 槽位/捕获索引，重解析廉价 -- 同 Identifier 的 locator-once 语义，不走 THIS_FIELD 系）；前置 `++/--` 同族走复合赋值既有机制。
-- **`visitCallNode`（:1025）**：callee 为 `FieldAccessNode(SuperExprNode, m)` -> 先判语境（fn ctx 链无最近 InstanceMethod -> `SuperOutsideMethod`，ErrorCode.hpp:54 预置）-> `LOAD_SUPER_FIELD m` + args + `CALL`；其余 callee 走通用路径（FieldAccess(This,·) 经 visit 正常发射 LOAD_THIS_FIELD/退化，无需特判）。
-- **测试**（tests/compile/test_codegen.cpp 端到端 + 反汇编文本）：路线表验收四样例（类定义/实例化/继承/super）；静态共享槽与遮蔽、实例字段遮蔽静态、this 嵌套捕获（lambda 内 this.x 读写）、super 不污染动态派发、动态新增（原 monkey-patch 拒绝翻为新增成功，2026-09-11 改定）、RedefinedMember、ThisOutsideClass/SuperOutsideMethod/InvalidSuperUse 编译错、def 体内 throw 后类名未绑定、函数内 def（值填槽局部类）、反汇编断言（LOAD_OBJECT/MAKE_CLASS/MAKE_METHOD/MAKE_STATIC 出现、成员序正确、方法 CLOSURE+MAKE_METHOD 相邻、无 DEF_GLOBAL 混入方法发射）。
+  - **Locate（启用 compound-assignment-lowering.md §4.2 预留方案）**：`obj.f op= e` -> `<obj> DUP LOAD_FIELD f <e> <op> STORE_FIELD f`（locator 单次求值，DUP 副本跨 load/store 复用）；`this.f op= e` -> `LOAD_THIS_FIELD ... STORE_THIS_FIELD`（定位腿折叠 THIS_FIELD Load 形 -- locator = 槽 0 编译期常量，重解析廉价，DUP 副本无人消费）；前置 `++/--` 同族走复合赋值既有机制。
+- **`visitCallNode`（:1025）**：callee 为 `FieldAccessNode(SuperExprNode, m)` -> 先判语境（当前帧 kind 非 InstanceMethod -> `SuperOutsideMethod`，ErrorCode.hpp:54 预置；原「沿链找最近 InstanceMethod」判据会误放行嵌套函数，2026-09-14 拍板收紧为直接方法帧，见阶段 3 首条拍板）-> `LOAD_SUPER_FIELD m` + args + `CALL`；其余 callee 走通用路径（FieldAccess(This,·) 经 visit 正常发射 LOAD_THIS_FIELD/退化，无需特判）。
+- **测试**（tests/compile/test_codegen.cpp 端到端 + 反汇编文本）：路线表验收四样例（类定义/实例化/继承/super）；静态共享槽与遮蔽、实例字段遮蔽静态、this 嵌套捕获（lambda 内 this.x 读写）、嵌套函数内 super 禁 + 先取后用等价样例（`var m = super.m;` 后闭包调用）、方法返回后经 this upvalue 延迟调用仍绑原实例、super 不污染动态派发、动态新增（原 monkey-patch 拒绝翻为新增成功，2026-09-11 改定）、RedefinedMember、ThisOutsideClass/SuperOutsideMethod/SuperFieldStoreInvalidTarget/SuperCompoundInvalidTarget 编译错、def 体内 throw 后类名未绑定、函数内 def（值填槽局部类）、反汇编断言（LOAD_OBJECT/MAKE_CLASS/MAKE_METHOD/MAKE_STATIC 出现、成员序正确、方法 CLOSURE+MAKE_METHOD 相邻、无 DEF_GLOBAL 混入方法发射）。
 - `rules/compile.md`（FnKind/this 解析/Locate 启用/defDecl lowering）同步；compound-assignment-lowering.md「Locate 当前不使用」翻已启用。
 
 ### 阶段 4：文档收尾 + 全量验证
@@ -160,4 +164,4 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 - 路线表 M5 标准：类定义/实例化/继承/super 样例通过。
 - 双值表示配置 ctest 全绿（机制测试覆盖：实例化快/慢路径、方法调用与 this 字段、继承/super、共享槽、缓存三铁则、GC stress 存活）。
 - 零新增 opcode（九条早已预留，`kOpCodeCount=63` 不变），Disassembler 零改动。
-- **错误码零新增**（InvalidSuperUse/SuperOutsideMethod/ThisOutsideClass/RedefinedMember + NilDereference/UndefinedProperty/SuperNoBaseClass/TypeMismatch/InvalidState 均已预置于 ErrorCode.hpp）。
+- **错误码零新增**（SuperOutsideMethod/ThisOutsideClass/RedefinedVariable + NilDereference/UndefinedProperty/SuperNoBaseClass/TypeMismatch/InvalidState 均已预置于 ErrorCode.hpp）。

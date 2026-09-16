@@ -67,6 +67,7 @@ namespace aria {
         String const_instruction(StringView op_name);
         String jump_forward(StringView op_name);
         String jump_back(StringView op_name);
+        String register_instruction(StringView op_name);
         String import_instruction(StringView op_name);
         String invoke_instruction(StringView op_name);
     };

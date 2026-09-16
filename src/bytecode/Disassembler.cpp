@@ -4,6 +4,7 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
+#include "runtime/value_register.hpp"
 #include "util/util.hpp"
 #include "value/Value.hpp"
 
@@ -87,6 +88,18 @@ namespace aria {
             return join_line(op_name, truncated());
         }
         return join_line(op_name, std::format("{:02X}", to_u32(read_u8())));
+    }
+
+    // LOAD_REG:u8 寄存器索引 + 寄存器可读名注释(名字表与索引常量同源,value_register.hpp)。
+    String Disassembler::register_instruction(const StringView op_name) {
+        if (is_truncated(1)) {
+            return join_line(op_name, truncated());
+        }
+        const u8 raw = read_u8();
+        if (raw >= kValueRegisterCount) {
+            return join_line(op_name, std::format("{:02X}  ; <bad reg {}>", to_u32(raw), to_u32(raw)));
+        }
+        return join_line(op_name, std::format("{:02X}  ; {}", to_u32(raw), to_string(static_cast<ValueRegister>(raw))));
     }
 
     // 双字节 u16 槽/计数:{:04X}。
@@ -184,6 +197,8 @@ namespace aria {
                 return jump_back(op_name);
             case OpFormat::RangeFlags:
                 return make_range(op_name);
+            case OpFormat::RegU8:
+                return register_instruction(op_name);
             case OpFormat::Import:
                 return import_instruction(op_name);
             case OpFormat::Invoke:

@@ -24,6 +24,7 @@ using aria::CodeUnit;
 using aria::ErrorCode;
 using aria::GC;
 using aria::i8;
+using aria::kObjectClassOffset;
 using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
@@ -1630,7 +1631,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 // 实例化快慢路径 / LOAD_FIELD 绑定 + 缓存回填 / 超类链的分配安全。
 // ============================================================
 
-// 无自定义 init 的类(无成员):LOAD_OBJECT + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
+// 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
 // Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native 同步
 // 调用(no-op 不写 slots[0],this 原样即返回值),不进帧、留空 ObjInstance。
 TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
@@ -1640,7 +1641,8 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     auto      guard = gc.make_guard(fn);
     auto&     cu    = fn->unit();
     const u16 foo   = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);        // [Object]
+    cu.emit_op(OpCode::LOAD_REG, 1); // [Object]
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
     emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
@@ -1663,6 +1665,23 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     auto nope = new_string(gc, "nope");
     guard.push(nope);
     EXPECT_FALSE(inst->load_field(vm, nope).has_value());
+}
+
+// 值寄存器组:LOAD_REG ObjectClass 压 Object 根类(regs_[ObjectClass],bootstrap 填充;
+// 值经 === 判同),退役 LOAD_OBJECT 的直推路径由此承载。
+TEST_F(AriaVMStress, LoadRegPushesObjectClass) {
+    auto& gc    = vm.gc();
+    auto  fn    = new_function(gc, "<main>", 0);
+    auto  guard = gc.make_guard(fn);
+    auto& cu    = fn->unit();
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1); // [] -> [Object]
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(out->as_obj(), vm.object_class()); // === 指针相等:寄存器值即 Object 根类
 }
 
 // 自定义 init 带参:Foo(7) -- 槽 0 原位换实例后 call_closure 进方法帧 [this, a]
@@ -1692,7 +1711,8 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
         const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
         const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
         const u16 tag       = cu.add_constant(Value::from_obj(new_string(gc, "tag")));
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
+        cu.emit_op(OpCode::LOAD_REG, 1); // [Object]
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
         emit_closure(cu, cu.add_constant(Value::from_obj(init)));
         emit_named(cu, OpCode::MAKE_METHOD, init_name); // [Foo](注册 init,覆盖 seed)
@@ -1757,7 +1777,8 @@ TEST_F(AriaVMStress, MethodCallMutatesThisField) {
         const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
         const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo);
         emit_closure(cu, cu.add_constant(Value::from_obj(init)));
         emit_named(cu, OpCode::MAKE_METHOD, init_name); // init
@@ -1816,7 +1837,8 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
         const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
         // Base:m
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, base_name);
         emit_closure(cu, cu.add_constant(Value::from_obj(base_m)));
         emit_named(cu, OpCode::MAKE_METHOD, m_name);
@@ -1867,7 +1889,8 @@ TEST_F(AriaVMStress, ClassWriteShadowsInheritedMember) {
     const u16 r2_name   = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
     const u16 r3_name   = cu.add_constant(Value::from_obj(new_string(gc, "r3")));
     // Base:x = 1(静态)
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, base_name);
     emit_imm(cu, 1);
     emit_named(cu, OpCode::MAKE_STATIC, x_name);
@@ -1919,7 +1942,8 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
     const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
     const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
     const u16 brand     = cu.add_constant(Value::from_obj(new_string(gc, "brand")));
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, base_name);
     emit_imm(cu, 1);
     emit_named(cu, OpCode::MAKE_STATIC, x_name);
@@ -1977,7 +2001,8 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
         const u16 r1_name = cu.add_constant(Value::from_obj(new_string(gc, "r1")));
         const u16 r2_name = cu.add_constant(Value::from_obj(new_string(gc, "r2")));
         // Foo:m = old_m
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo);
         emit_closure(cu, cu.add_constant(Value::from_obj(old_m)));
         emit_named(cu, OpCode::MAKE_METHOD, m_name);
@@ -2063,7 +2088,8 @@ TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
         const u16 base_name = cu.add_constant(Value::from_obj(new_string(gc, "Base")));
         const u16 sub_name  = cu.add_constant(Value::from_obj(new_string(gc, "Sub")));
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, base_name);
         emit_closure(cu, cu.add_constant(Value::from_obj(base_m)));
         emit_named(cu, OpCode::MAKE_METHOD, m_name);
@@ -2106,12 +2132,14 @@ TEST_F(AriaVMStress, StoreFieldDeepStackShift) {
     const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
     // 前言:Base:x = 0(静态,供深栈赋值改写)+ Foo(空类)
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, base_name);
     emit_imm(cu, 0);
     emit_named(cu, OpCode::MAKE_STATIC, x_name);
     emit_global(cu, OpCode::DEF_GLOBAL, base_name);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo);
     emit_global(cu, OpCode::DEF_GLOBAL, foo);
     // 深栈:两层临时值(40/50)之下,先后做实例路径与类路径的 STORE_FIELD,
@@ -2196,7 +2224,8 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
         const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
         const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo);
         emit_closure(cu, cu.add_constant(Value::from_obj(init)));
         emit_named(cu, OpCode::MAKE_METHOD, init_name);
@@ -2242,7 +2271,8 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
         const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
         const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
         // Foo:x = 1(静态)+ init(this.x = 9)
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo);
         emit_imm(cu, 1);
         emit_named(cu, OpCode::MAKE_STATIC, x_name);
@@ -2350,7 +2380,8 @@ TEST_F(AriaVMStress, ClassInitAssignNonCallableErrorsOnInstantiate) {
     auto&     cu        = fn->unit();
     const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
     emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
@@ -2395,7 +2426,8 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
         const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
         const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
         const u16 tag       = cu.add_constant(Value::from_obj(new_string(gc, "tag")));
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, foo);
         emit_closure(cu, cu.add_constant(Value::from_obj(init)));
         emit_named(cu, OpCode::MAKE_METHOD, init_name);
@@ -2471,7 +2503,8 @@ TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
     const u16  foo    = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16  f_name = cu.add_constant(Value::from_obj(new_string(gc, "f")));
     const auto nf     = add_native_const(cu, gc, "echo_this", echo_this_native);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);      // [Object]
+    cu.emit_op(OpCode::LOAD_REG, 1); // [Object]
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo); // [Foo]
     cu.emit_op(OpCode::LOAD_CONST, 1);
     // [Foo, native]
@@ -2506,7 +2539,8 @@ TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
     const u16  foo    = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16  m_name = cu.add_constant(Value::from_obj(new_string(gc, "m")));
     const auto nf     = add_native_const(cu, gc, "echo_this", echo_this_native);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo);
     cu.emit_op(OpCode::LOAD_CONST, 1);
     cu.emit_word(nf, 1);
@@ -2558,7 +2592,8 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
         const u16 f_name    = cu.add_constant(Value::from_obj(new_string(gc, "f")));
         // Base:fun f(MAKE_STATIC 静态方法,不戳 defining class)
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, base_name);
         emit_closure(cu, cu.add_constant(Value::from_obj(base_f)));
         emit_named(cu, OpCode::MAKE_STATIC, f_name);
@@ -2611,7 +2646,8 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
         const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
         const u16 x_name    = cu.add_constant(Value::from_obj(new_string(gc, "x")));
         // Base:x = 1(静态)
-        cu.emit_op(OpCode::LOAD_OBJECT, 1);
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
         emit_named(cu, OpCode::MAKE_CLASS, base_name);
         emit_imm(cu, 1);
         emit_named(cu, OpCode::MAKE_STATIC, x_name);
@@ -2651,7 +2687,8 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     const u16  foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
     const u16  init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
     const auto nf        = add_native_const(cu, gc, "echo_this", echo_this_native);
-    cu.emit_op(OpCode::LOAD_OBJECT, 1);
+    cu.emit_op(OpCode::LOAD_REG, 1);
+    cu.emit_byte(kObjectClassOffset, 1);
     emit_named(cu, OpCode::MAKE_CLASS, foo);   // [Foo]
     emit_global(cu, OpCode::DEF_GLOBAL, foo);  // []
     emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]

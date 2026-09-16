@@ -85,14 +85,13 @@ namespace aria::builtins {
 
     } // namespace
 
-    // 把全部内置按名写入 VM 级 builtins 表。由 AriaVM ctor 在 set_vm_roots 之后调用一次:
-    // 每条 new_native_fn 一次 new_object 顶 maybe_collect,在建对象经 make_guard 根化,已入表
-    // 条目经 vm_roots tracer 的 builtins_.trace 标根,注册内触 GC 安全;StringView 重载经
-    // intern 池建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
+    // 把全部内置按名写入 VM 级 builtins 表。由 AriaVM ctor 在 tracer 挂接后于**构造临界区
+    // (GC 挂起)内**调用一次:new_native_fn 的白色对象免逐个守卫(窗口内回收不可达),建成即
+    // 入表、入表条目经 vm_roots tracer 的 builtins_.trace 标根;StringView 重载经 intern 池
+    // 建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
     void register_builtins(GC& gc, AriaHashTable& builtins) {
         for (const auto& [name, fn]: kBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);
-            const auto guard  = gc.make_guard(fn_obj);
             builtins.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
         }
     }

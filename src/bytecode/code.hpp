@@ -41,6 +41,7 @@ namespace aria {
     X(LOAD_TRUE, Simple)                   \
     X(LOAD_FALSE, Simple)                  \
     X(LOAD_IMM, ImmI8)                     \
+    X(LOAD_REG, U8)                        \
     X(LOAD_LOCAL, U8)                      \
     X(STORE_LOCAL, U8)                     \
     X(LOAD_LOCAL_L, U16)                   \
@@ -92,7 +93,6 @@ namespace aria {
     X(CALL, U8)                            \
     X(CLOSURE, ConstU16)                   \
     /* ---- classes & objects ---- */      \
-    X(LOAD_OBJECT, Simple)                 \
     X(MAKE_CLASS, ConstU16)                \
     X(MAKE_METHOD, ConstU16)               \
     X(MAKE_STATIC, ConstU16)               \

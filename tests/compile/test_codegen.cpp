@@ -1405,7 +1405,7 @@ return C.v;
 
 // ---- 反汇编形状 ----
 
-// def 反汇编：LOAD_OBJECT -> MAKE_CLASS；成员序与源序一致（静态 var 先于方法）；方法闭包
+// def 反汇编：LOAD_REG ObjectClass -> MAKE_CLASS；成员序与源序一致（静态 var 先于方法）；方法闭包
 // CLOSURE 与 MAKE_METHOD/MAKE_STATIC 相邻；类绑定 DEF_GLOBAL 恰一次（方法体在各自 unit，
 // 无 DEF_GLOBAL 混入成员发射）。
 TEST(CodeGen, DefDisassembly) {
@@ -1419,9 +1419,9 @@ def Animal {
 )");
     ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
     const auto text = compiled->unit().disassemble("<test>");
-    ASSERT_NE(text.find("LOAD_OBJECT"), aria::String::npos);
+    ASSERT_NE(text.find("LOAD_REG"), aria::String::npos);
     ASSERT_NE(text.find("MAKE_CLASS"), aria::String::npos);
-    EXPECT_LT(text.find("LOAD_OBJECT"), text.find("MAKE_CLASS"));
+    EXPECT_LT(text.find("LOAD_REG"), text.find("MAKE_CLASS"));
     // 成员序：静态 var（MAKE_STATIC）先于首个方法闭包（CLOSURE）。
     ASSERT_NE(text.find("MAKE_STATIC"), aria::String::npos);
     ASSERT_NE(text.find("CLOSURE"), aria::String::npos);

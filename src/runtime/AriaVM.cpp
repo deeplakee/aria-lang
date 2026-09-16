@@ -36,6 +36,17 @@ namespace aria {
 
     namespace {
 
+        // 寄存器组初值:全表灌 nil。Value{} 零填充并非 nil(NaN-boxing 下是 f64 0.0,见
+        // NanBoxing.hpp 注),未填格须是合法 Value 才能被 tracer 与 dispatch 安全触碰,故构造
+        // 期经本工厂在初始化列表一步到位;各批 bootstrap 逐格覆写。
+        Vector<Value, kValueRegisterCount> make_nil_registers() noexcept {
+            Vector<Value, kValueRegisterCount> regs{};
+            for (auto& r: regs) {
+                r = Value::nil_val();
+            }
+            return regs;
+        }
+
         // 读 1 字节操作数(假定字节码良构),推进 ip。
         u8 read_u8(CallFrame& frame) noexcept { return *frame.ip++; }
 
@@ -223,62 +234,80 @@ namespace aria {
 
     } // namespace
 
-    // 构造:成员初始化 -> 注册 VM 根 tracer -> bootstrap Object 根类(先入根集)-> 注册
-    // builtins。tracer 标四类根:modules_ / builtins_ / object_class_(单独持有,裸名解析
-    // 够不到,须单独标)/ current_ 执行链沿 previous_ 逐个标 -- 值栈(run() 期局部/实参/
-    // 临时只活在栈上,是最关键的缺失根)、各帧 closure/module、挂起错误寄存器、open upvalue
-    // 开链(闭包已死而 upvalue 仍在链的悬垂防线)。链尾断言恒 &main_ctx_,锁定「resume/
-    // yield 严格成对」切换纪律。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
+    // 构造:成员初始化(registers_ 经 make_nil_registers 全表灌 nil)-> 注册 VM 根 tracer ->
+    // bootstrap 寄存器组(Object 根类入格,先入根集)-> 注册 builtins。gc_ 值成员居声明首,
+    // 逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
         gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
-        object_class_{nullptr} {
+        registers_{make_nil_registers()} {
+        hook_vm_roots();
+        init_source_roots();
+        {
+            // 构造临界区:GC 挂起,窗口内回收不可达(bytes_allocated_ 自零起步、bootstrap 总
+            // 分配远小于 kInitialGcThreshold,且锁兜底 -- 将来 bootstrap 变重亦不破),窗口内
+            // 创建的白对象免逐个守卫;**解锁前须全部发布进 tracer 可达的家**(registers_ /
+            // builtins_,tracer 已挂接)。
+            const auto lock = gc_.make_lock();
+            bootstrap_registers();
+            builtins::register_builtins(gc_, builtins_);
+        }
+    }
 
+    void AriaVM::bootstrap_registers() {
+        // 值寄存器组 bootstrap 编排:逐格初始化全部 VM 单例对象。须在 ctor 构造临界区(GC
+        // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
+        // 新单例随其批次在此加一行。
+        bootstrap_object_class();
+    }
+
+    void AriaVM::hook_vm_roots() {
+        // VM 根 tracer:collect 时标四类根。①modules_ / ②builtins_(表内容);③registers_
+        // (值寄存器组,一趟循环逐格 mark_value,未填格 nil 对非对象 no-op);④current_ 执行
+        // 链沿 previous_ 逐个标 -- 值栈(run() 期局部/实参/临时只活在栈上,是最关键的缺失
+        // 根)、各帧 closure/module、挂起错误寄存器、open upvalue 开链(闭包已死而 upvalue
+        // 仍在链的悬垂防线)。链尾断言恒 &main_ctx_,锁定「resume/yield 严格成对」切换纪律。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
-            g.mark_object(object_class_);
+            for (const auto& reg: registers_) {
+                g.mark_value(reg);
+            }
             [[maybe_unused]] Movement* tail = nullptr;
-            for (Movement* m = current_; m != nullptr; m = m->previous()) {
-                for (Value* p = m->stack_base(); p < m->stack_top(); ++p) {
+            for (auto m = current_; m != nullptr; m = m->previous()) {
+                for (auto p = m->stack_base(); p < m->stack_top(); ++p) {
                     g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+                }
+                for (const auto& frame: m->frames().span()) {
+                    g.mark_object(frame.closure); // trace 级联标 function/upvalues;容 nullptr
+                    g.mark_object(frame.module);
+                }
+                // 开链节点可能仅被本链引用(闭包已死),须单独标根(mark 幂等,双标无害)。
+                for (auto upvalue = m->open_upvalues(); upvalue != nullptr; upvalue = upvalue->next_open()) {
+                    g.mark_object(upvalue);
                 }
                 if (const auto& pending = m->pending_error()) {
                     g.mark_value(*pending);
-                }
-                for (const auto& f: m->frames().span()) {
-                    g.mark_object(f.closure); // trace 级联标 function/upvalues;容 nullptr
-                    g.mark_object(f.module);
-                }
-                // 开链节点可能仅被本链引用(闭包已死),须单独标根(mark 幂等,双标无害)。
-                for (ObjUpvalue* uv = m->open_upvalues(); uv != nullptr; uv = uv->next_open()) {
-                    g.mark_object(uv);
                 }
                 tail = m;
             }
             ASSERT(tail == &main_ctx_, "VM roots: context chain must terminate at main_ctx_");
         });
+    }
 
-        init_source_roots();
-        bootstrap_object_class();
-        // builtins 一次性注册:在建对象经 Builtins.cpp 内 guard 根化,入表后经 tracer 标根。
-        builtins::register_builtins(gc_, builtins_);
+    ObjClass* AriaVM::object_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kObjectClassOffset].as_obj());
     }
 
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
         // 原样即返回实例)。set_field 命中 "init" 同步 init_;"init" 键经 intern 命中
-        // init_native 的 name 串,零分配。
-        auto guard = gc_.make_guard();
-
+        // init_native 的 name 串,零分配。须在 ctor 构造临界区内调用,创建免守卫。
+        const auto klass       = new_class(gc_, "Object", nullptr);
+        const auto init_key    = new_string(gc_, "init");
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
-        guard.push(init_native);
-        const auto klass = new_class(gc_, "Object", nullptr);
-        guard.push(klass);
-        const auto init_key = new_string(gc_, "init");
-        guard.push(init_key);
         klass->set_field(init_key, Value::from_obj(init_native));
-        object_class_ = klass; // 发布进 VM 成员:此后经 tracer 第 4 根保命
+        registers_[kObjectClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::init_source_roots() {
@@ -298,8 +327,8 @@ namespace aria {
 
     void AriaVM::set_source_roots(List<String> roots) noexcept {
         source_roots_.resize(1);
-        for (auto& r: roots) {
-            source_roots_.push_back(std::move(r));
+        for (auto& root: roots) {
+            source_roots_.push_back(std::move(root));
         }
     }
 
@@ -695,6 +724,12 @@ namespace aria {
                     current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
                     break;
                 }
+                case OpCode::LOAD_REG: {
+                    // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表
+                    // 枚举值,编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
+                    current_->push(registers_[read_u8(frame)]);
+                    break;
+                }
                 case OpCode::LOAD_LOCAL: {
                     const u8 slot = read_u8(frame);
                     current_->push(frame.slots[slot]);
@@ -1057,10 +1092,6 @@ namespace aria {
                 }
 
                 // ---- 类与对象(M5 阶段 2:VM 机制落地,编译器发射阶段 3 翻转)----
-                case OpCode::LOAD_OBJECT:
-                    // [] -> [Object]:压 Object 根类(不经名字查,用户 shadow 免疫)。
-                    current_->push(Value::from_obj(object_class_));
-                    break;
                 case OpCode::MAKE_CLASS: {
                     // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶
                     // maybe_collect 须 super 在栈(「栈即根」);非类值是**语言可达**错误

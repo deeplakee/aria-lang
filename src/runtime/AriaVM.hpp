@@ -7,6 +7,7 @@
 // raise 模板头内内联装箱需 ObjException 完整类型(其依赖已经 GC.hpp 传递拉入)。
 #include "object/ObjException.hpp"
 #include "runtime/Movement.hpp"
+#include "runtime/value_register.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
 
@@ -50,10 +51,11 @@ namespace aria {
     // 解释器:持解释器级共享状态,驱动 Movement 执行字节码(阶段路线见 vm-design.md §6)。
     // 循环状态全部取自 *current_(单一主上下文 main_ctx_;M6 resume/yield 只换走 current_,
     // dispatch_loop 永不重入,§4.9)。GC 根经 std::function tracer 注册进自有 gc_(组合而非
-    // 继承:GC 不识 VM 类型),collect 时标 modules_/builtins_/object_class_ + current_ 沿链
-    // 各上下文的值栈/帧/开 upvalue 链/挂起错误寄存器;成员声明序 gc_ 居首保证析构逆序下
-    // tracer 与各成员同生共死。异常通道:运行时错误统一 raise 入寄存器后经 unwind 查
-    // CodeUnit 异常记录表派发。
+    // 继承:GC 不识 VM 类型),collect 时标 modules_/builtins_/registers_(值寄存器组一趟
+    // 循环) + current_ 执行链沿 previous_ 逐个标 -- 值栈(run() 期局部/实参/临时只活在栈上,
+    // 是最关键的缺失根)、各帧 closure/module、挂起错误寄存器、open upvalue 开链(闭包已死
+    // 而 upvalue 仍在链的悬垂防线)。成员声明序 gc_ 居首保证析构逆序下 tracer 与各成员同生
+    // 共死。异常通道:运行时错误统一 raise 入寄存器后经 unwind 查 CodeUnit 异常记录表派发。
     class AriaVM {
     public:
         AriaVM();
@@ -121,12 +123,11 @@ namespace aria {
             return modules_;
         }
 
-        // Object 根类:LOAD_OBJECT 直推;单独持有不进 builtins_/任何模块 globals(用户
-        // shadow 全局名免疫)。
+        // Object 根类:寄存器 ObjectClass 唯一存放(LOAD_REG 直推);不进 builtins_/任何模块
+        // globals(用户 shadow 全局名免疫)。定义在 .cpp(Object::as 需 ObjClass 完整类型,
+        // 头内只留声明,同 cur_cu 先例)。
         [[nodiscard]]
-        ObjClass* object_class() noexcept {
-            return object_class_;
-        }
+        ObjClass* object_class() const noexcept;
 
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
@@ -186,9 +187,21 @@ namespace aria {
         // call_value 分发。方法值无需守卫:覆写后经类表槽/缓存可达。
         bool call_bound_method(const ObjBoundMethod* obj, u8 argc);
 
-        // Object 根类 bootstrap(ctor 一次调用):建 ObjClass("Object", super=nullptr) + 原生
-        // no-op init(无 ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与 init_。
+        // 值寄存器组 bootstrap 编排(ctor 一次调用):逐格初始化全部 VM 单例对象。须在 ctor
+        // 构造临界区(GC 挂起)内调用,创建免守卫;各单例的创建与入格收口在 bootstrap_<单例>
+        // 系列函数,本函数只管编排;新单例随其批次在此加一行(印章随批 1、MatchNoArm 随批 2、
+        // 各类 class 随批 4+)。
+        void bootstrap_registers();
+
+        // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
+        // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
         void bootstrap_object_class();
+
+        // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包,collect 时标四类
+        // 根 -- modules_ / builtins_ / registers_(一趟循环逐格 mark_value,未填格 nil 对非
+        // 对象 no-op)/ current_ 执行链(值栈/各帧 closure+module/挂起错误寄存器/open upvalue
+        // 开链)。
+        void hook_vm_roots();
 
         // 源根默认值初始化(ctor 一次调用):入口槽 [0] 占位 cwd + 配置根 [1..] = 编译器相对
         // stdlib 源根。
@@ -247,9 +260,10 @@ namespace aria {
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_),[1..]=配置根(stdlib/-L/环境变量)。
         List<String> source_roots_;
 
-        // Object 根类:构造期 bootstrap、单独持有(tracer 第 4 根);空态 nullptr 供 tracer
-        // 先行注册后 register_builtins 触 GC 时容 null。
-        ObjClass* object_class_;
+        // 值寄存器组:VM 单例值统一存放表(唯一存放处;注册表单一事实源见
+        // runtime/value_register.hpp)。构造期经 make_nil_registers 全表灌 nil(Value{} 非
+        // nil),bootstrap 逐格覆写;tracer 一趟循环标根。
+        Vector<Value, kValueRegisterCount> registers_;
     };
 
     // move 删除被移除时在此炸出,防静默变可移动后的悬垂 UB。

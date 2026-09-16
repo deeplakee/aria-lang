@@ -9,6 +9,7 @@
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/value_register.hpp"
 #include "util/util.hpp"
 
 #include <format>
@@ -793,12 +794,14 @@ namespace aria {
 
         // ① superclass:有 -> 裸名解析 + 读取(运行期解析 superclass 值,跨模块导入类可用;非类值
         //    由运行期 MAKE_CLASS 报 TypeMismatch;编译期不查全局,未命中沿用运行期 UndefinedVariable);
-        //    无 -> LOAD_OBJECT(def Foo 等价 def Foo : Object)。
+        //    无 -> LOAD_REG ObjectClass(def Foo 等价 def Foo : Object;根类在值寄存器组,
+        //    按索引加载不经名字查,用户 shadow 免疫)。
         if (node.superclass) {
             const auto resolved = resolve_name_or_fail(*node.superclass, node.loc());
             emit_load_var(resolved, line); // [super]
         } else {
-            cur_cu()->emit_op(OpCode::LOAD_OBJECT, line); // [Object]
+            cur_cu()->emit_op(OpCode::LOAD_REG, line); // [Object]
+            cur_cu()->emit_byte(kObjectClassOffset, line);
         }
 
         // ② MAKE_CLASS name:peek superclass 建类写回原槽,class 值留栈跨整个类体。

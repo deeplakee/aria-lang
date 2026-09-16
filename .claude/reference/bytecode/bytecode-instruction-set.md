@@ -88,15 +88,17 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 - `...` 表示无关的更深栈内容（省略）。
 - 形如 `[a, b] -> [c]`：弹出 `a,b`，压入 `c`，净效应 -1。
 
-### 3.1 STORE 系列统一「peek-store」约定（建议，待决）
+### 3.1 STORE 系列统一「peek-store」约定（已落地）
 
-文法 `expression -> assignment`，赋值是**表达式**，须产出值（`x = e` 的值即 `e` 的值；`x += e`、`++x` 返回新值，见 `compound-assignment-lowering.md` §5）。为此建议所有 `STORE_*` 统一为 **peek-store**：**只消费定位元（locator），保留被存值于栈顶**。
+文法 `expression -> assignment`，赋值是**表达式**，须产出值（`x = e` 的值即 `e` 的值；`x += e`、`++x` 返回新值，见 `compound-assignment-lowering.md` §5）。为此所有 `STORE_*` 统一为 **peek-store**：**只消费定位元（locator），保留被存值于栈顶**。
 
 | 指令 | 栈效应（peek-store） |
 | :--- | :--- |
 | `STORE_LOCAL` / `STORE_UPVALUE` / `STORE_GLOBAL` / `STORE_THIS_FIELD` | `[v] -> [v]` |
 | `STORE_FIELD idx` | `[obj, v] -> [v]` |
 | `STORE_INDEX` | `[obj, idx, v] -> [v]` |
+
+> `STORE_FIELD` 接收者为 `ObjClass` 时即类上赋值 -- `MAKE_STATIC` 的镜像形态（写遮蔽落接收类自身表，见 §5.5）。
 
 语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。此约定**消解** `compound-assignment-lowering.md` §5 末尾「STORE 留值与否未决」的备注：采用留值，§4 各序列的末尾 `[]` 应理解为「语句上下文补 `POP` 后」的形态。详见 §5.3。
 
@@ -185,7 +187,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压入 `this.name`（`this` 取自帧槽 0，不压栈） |
 | `STORE_THIS_FIELD` | `name:u16` | `[v] -> [v]` | peek-store 到 `this.name` |
 
-纯 `this` 表达式（`ThisExprNode`）在实例方法体内拟编译为 `LOAD_LOCAL 1`；嵌套函数引用 `this` 捕获为 upvalue（见 §5.5）。当前类/`this` 相关 visit 未落地（M5），编译器暂不发射。
+纯 `this` 表达式经专用解析（沿 fn ctx 链找最近实例方法）：当前帧命中 -> `LOAD_LOCAL 0`；嵌套函数 -> 捕获为 upvalue（`LOAD_UPVALUE`，见 §5.5）。
 
 ### 4.9 算术 / 比较 / 逻辑
 
@@ -417,8 +419,8 @@ LOAD_GLOBAL "Bar"      ; [super]    ; 显式父类（def Foo 无父类时改发 
 MAKE_CLASS "Foo"       ; [class]    ; 弹 super 创建 Foo
 LOAD_IMM 1             ; [class, 1] ; var x = 1
 MAKE_STATIC "x"        ; [class]    ; 存为静态变量 x
-MAKE_METHOD "s"        ; [class]    ; 静态方法: 闭包不绑 this
-MAKE_METHOD "init"     ; [class]    ; 实例方法: init, this 占帧槽 0（命中 init 覆盖工厂 seed）
+MAKE_STATIC "s"        ; [class]    ; 静态方法: fun 经 MAKE_STATIC, 不戳 defining class
+MAKE_METHOD "init"     ; [class]    ; 实例方法: this 占帧槽 0（命中同步 init_）
 MAKE_METHOD "m"        ; [class]    ; 实例方法
 STORE_GLOBAL "Foo"     ; []         ; 绑类名 (或 STORE_LOCAL)
 
@@ -433,9 +435,9 @@ LOAD_SUPER_FIELD "m"   ; [bound]    ; this 来自帧槽 0, 父类来自当前闭
 CALL argc              ; [r]
 ```
 
-静态变量**创建**经 `MAKE_STATIC`（eager 求值初始化器后存，见上文 lowering）；`Foo.x` 静态访问、`foo.x` 实例优先+静态回退（遮蔽）的 lowering 待 VM 精化：静态变量可视为类对象的字段（复用 `LOAD_FIELD`/`STORE_FIELD` 于 `ObjClass`），`foo.x` 在 `LOAD_FIELD` 未命中实例属性时回退查类静态。具体栈模式（`STORE_FIELD` 的 peek-store 与「class 始终留栈」的衔接，可能需 `DUP`/`POP` 或专用指令）留编译器实现时定；裸名解析见下文作用域模型（`LOAD_GLOBAL` 查模块全局，类静态经 `ClassName.x` 限定）。
+静态变量**创建**经 `MAKE_STATIC`（eager 求值初始化器后存，见上文 lowering）；静态访问与实例回退复用字段指令：`Foo.x` / `foo.x` 读均发 `LOAD_FIELD`（对象层 `load_field` 协议 -- 实例先查 fields 表、未命中沿类链查静态，读穿透），写发 `STORE_FIELD`（接收者为 `ObjClass` 时写遮蔽落自身表，即上节 `MAKE_STATIC` 镜像形态）；裸名解析见下文作用域模型（`LOAD_GLOBAL` 查模块全局，类静态经 `ClassName.x` 限定）。
 
-静态成员继承与缓存（编译期/VM 语义）：静态变量与静态方法经 `ObjClass.superclass_` 链继承（与实例方法分派同一机制、复用同一指针）。类成员读写取 Python/JS class attributes 语义（读穿透、写遮蔽）：子类未重声明时读沿链穿透命中父类槽；类上赋值 `Sub.x = v` 落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许），方法槽亦允许改写（bound 缓存取首解析快照；"init" 赋值同步 `ObjClass.init_`）。类静态经 `ClassName.x` 限定访问（运行期走 super）、不在裸名作用域（见下文作用域模型）。方法查找靠内联缓存 / bound method 缓存加速：`obj.m` 返回绑实例的 bound method 对象，可缓存在实例查找表；闭包不可变，缓存安全。
+静态成员继承与缓存（编译期/VM 语义）：静态变量与静态方法经 `ObjClass.superclass_` 链继承（与实例方法分派同一机制、复用同一指针）。类成员读写取 Python/JS class attributes 语义（读穿透、写遮蔽）：子类未重声明时读沿链穿透命中父类槽；类上赋值 `Sub.x = v` 落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许），方法槽亦允许改写（bound 缓存取首解析快照；"init" 赋值同步 `ObjClass.init_`）。类静态经 `ClassName.x` 限定访问（运行期走 super）、不在裸名作用域（见下文作用域模型）。bound method 缓存（写实例 fields 表，与真字段同表同 keyspace）三铁则：① 只缓存绑定方法、不缓存静态值（静态槽可变，值缓存会读到陈旧数据）；② `LOAD_SUPER_FIELD` 不写缓存（super 查到的是被覆写**前**的实现，写表会劫持 `obj.m` 动态派发，只有 `obj.m` 动态路径命中类表方法才回填）；③ fields 命中优先（真字段遮蔽同名方法/缓存项）。缓存取**首解析快照**语义（类上改写方法槽后新解析见新闭包、已解析实例沿用旧绑定，免失效机制）；闭包不可变，缓存安全。
 
 Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Object 根类，统一继承链语义。**Bootstrap**：VM init 阶段、用户代码执行前，创建 Object--一个普通 `ObjClass`，`superclass_ = nil`（唯一 nil 超类的类），VM 成员单独持有（**不进 globals/builtins/任何模块**，裸名解析四层均够不到、正常代码访问不到）。**编译器隐式超类**：`def Foo`（无显式父类）编译等价于 `def Foo : Object`，编译器填 Object 作隐式超类；`def Foo : Bar` 设 super=Bar（经 Bar 链最终到达 Object）。隐式 Object 引用经 `LOAD_OBJECT`（VM 内部指针，**不按名字查**）--Object 不入任何名字空间，用户 shadow 全局名无从谈起，继承机制天然免疫用户命名。**Object 方法集**：保持最小通用--`init`（no-op，返回 this）、`to_string`（如 `<ClassName>`），可再加 `equals`（引用相等）、`hash`（地址/id）、`class`（返 ObjClass）、`is_a(Class)`；每个方法被所有实例继承，谨慎加。Object **不带静态变量**（根类保持最小，静态会被全类经链共享）。Object 方法体内 `super` **非法**（它是根，无超类），编译期/VM 报错。`Object()` 实例化允许（permissive），产出持 Object 方法的最小 ObjInstance。**边界**：Object 统一的是用户定义类的实例（持 ObjClass 的 ObjInstance）。原始值（nil/bool/f64/int，NaN-boxing 内联载荷，非 Obj）不在 Object 层次内；内置 Obj 类型（ObjString/ObjList/ObjMap 等，C++ 类型带 ObjType tag、不持 ObjClass）暂亦不在内；纳入内置类型为 uniform OOP 目标方向（见下文）。链式查找（静态/实例方法/`foo.x` 回退/`init` 解析）统一终止于 Object（裸名走模块全局，不在此列）。
 

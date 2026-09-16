@@ -1,6 +1,6 @@
 # M5 类与对象实施计划
 
-> 状态：**已定稿、未实施**（2026-09-09）。M5 开工前重读。验收 = 路线表 M5 样例（类定义/实例化/继承/super）+ 默认与 `build/tagvalue` 双配置 ctest 全绿 + `--eval` 冒烟。
+> 状态：**已定稿并已落地**（阶段 1-2 于 2026-09-11，阶段 3 编译翻转于 2026-09-15/16 分批落地；验收 = 路线表 M5 样例 + 默认与 `build/tagvalue` 双配置 ctest 全绿）。
 > 行号锚点基于定稿时 HEAD（commit `cc7d927`），后续改动会使行号漂移，定位以符号/描述为准。
 >
 > **决策记录（2026-09-09，六项定夺）**：
@@ -156,7 +156,7 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 - grammar.txt def 节：「ObjFn 持 defining class」改写为闭包持（措辞级）；嵌套类 bullet 加 parser 现状注（member 分派无 defDecl，语义描述为后继方向）。
 - vm-design §6 M5 行标已落地；§4 相应小节（callable 清单加 CLASS/BOUND_METHOD、this 槽 0、Movement tracer 第 4 根）；gc-implementation-plan 对应行。
 - rules/object/compile/runtime/memory 落地状态复核；CLAUDE.md/README 进度行（已落地补 M5，待续收敛 M6 协程）；文档索引本计划条目改「定稿并已落地」。
-- 坑点文档补录（预期高发区：bound 缓存与遮蔽交互、MAKE_CLASS/MAKE_METHOD peek-不弹栈纪律、init seed 时序、Locate 模式与既有复合赋值机制的合流）。
+- 坑点文档补录（预期高发区：bound 缓存与遮蔽交互、MAKE_CLASS/MAKE_METHOD peek-不弹栈纪律、init seed 时序、Locate 模式与既有复合赋值机制的合流）-- 已补录至 `class-implementation-pitfalls.md`。
 - 全量验证：默认与 `build/tagvalue` 双配置 ctest 全绿；`--eval` 冒烟：类定义+实例化、继承+super、静态共享槽、this 嵌套捕获、（顺带）**用户类可迭代 for-in**（iter/has_next/next 经 LOAD_FIELD 返绑定方法 + CALL -- M5 落地后用户定义类即可迭代，内建 list/map/string 迭代仍待容器里程碑）。
 
 ## 4. 验收

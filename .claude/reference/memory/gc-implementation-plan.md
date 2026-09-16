@@ -17,7 +17,7 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 | :--- | :--- | :--- |
 | **Phase 1** | `Array<T>` + GC(模板分配器 + mark-sweep + 临时根 + `new_object`)+ `ObjString`(SSO,**无驻留**)+ 测试 | 已落地 |
 | Phase 2 | `HashTable`(Swiss Table)+ intern 驻留池 + 值绑定容器(`AriaArray`/`AriaHashTable`) | 已落地 |
-| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn`/`ObjException` 已落地;`ObjClosure`/`ObjUpvalue` 已随 M4 闭包落地(2026-09,`ObjFunction` 的捕获描述表 `UpvalueDesc` 同批);`ObjList`/`ObjMap`/`ObjClass`/`ObjInstance`/`ObjBoundMethod` 待后续 | 部分落地 |
+| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn`/`ObjException` 已落地;`ObjClosure`/`ObjUpvalue` 已随 M4 闭包落地(2026-09,`ObjFunction` 的捕获描述表 `UpvalueDesc` 同批);`ObjClass`/`ObjInstance`/`ObjBoundMethod` 已随 M5 类落地(2026-09);`ObjList`/`ObjMap` 待容器里程碑 | 部分落地 |
 | Phase 4 | `Movement`(有栈协程,VM 持 `current_`)+ VM 根(`current_` 单根;协程经对象图可达,M6 定稿不设 `movements_` 并集,见 vm-design.md §4.9)+ safe point | 部分前拉:值栈/帧经 vm_roots tracer 标根 + `JUMP_BACK` safe point 已落地(开发期即开 GC);open upvalue 链亦已随 M4 落地并经 tracer 标根;`ObjMovement : Object` + 协程根收敛仍待 M6 |
 
 > intern 延后到 Phase 2:它依赖 HashTable,而 HashTable 是 Phase 1 之后的下一个产物(与 Array 平级、并列的通用容器,不依赖 Array)。Phase 1 不引入 `std::unordered_map` 占位代码,GC 核心(分配计数 / mark-sweep / 临时根 / ObjString 析构)已可独立测试。

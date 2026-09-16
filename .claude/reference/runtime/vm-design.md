@@ -42,7 +42,7 @@ struct CallFrame {
     CodeUnit*    unit;      // 缓存 closure->function()->unit(),省每条指令一跳
     ObjModule*   module;    // 缓存 closure->function()->module(),供 *_GLOBAL 定位模块 globals
     u8*          ip;        // 裸指针最快;raise 等冷路径按需算 offset
-    Value*       slots;     // 本帧局部基址(callee=槽0、参数从槽 1 起、局部)
+    Value*       slots;     // 本帧局部基址(普通帧 callee=槽0、方法帧 this=槽0(M5),参数从槽 1 起、局部)
     u8*          last_ip;   // 最近取指指令起始(行号/unwind 查表锚点)
 };
 
@@ -50,6 +50,8 @@ struct CallFrame {
 class AriaVM {
     GC               gc_;          // VM 拥有 GC 值成员(已定:每 VM 一个 GC)
     AriaHashTable    modules_;     // 模块表(键=规范路径 ObjString*、值=ObjModule*,均装箱 Value)
+    AriaHashTable    builtins_;    // VM 级只读内建表(LOAD_GLOBAL 模块 globals 未命中回退查此,§7)
+    ObjClass*        object_class_;// Object 根类(M5:VM 成员单独持有、不入任何名字空间;GC tracer 第 4 根,§4.6)
     Movement         main_ctx_;    // 主上下文(值栈 + 帧栈;M6 协程期升级 ObjMovement : Object)
     Movement*        current_;     // 当前执行上下文(已落地:构造指 &main_ctx_;M6 单循环切换:resume/yield 原生函数在 CALL 善后点换指/回退,§4.9)
     List<String>     source_roots_;// 源根列表([0]=入口根、[1..]=配置根)
@@ -57,7 +59,7 @@ class AriaVM {
 
     ExecOutcome run();             // 驱动直到根上下文 返回/挂起(Yielded)/未捕获异常(§4.9)
     void        raise(ErrorCode, StringView detail); // 装箱入挂起寄存器,一步烘齐(§4.8);失败信号惯用法由 fail 承载(哨兵按调用点返回类型转 false/nullptr/nullopt,`return vm.fail(...)` 一行)
-    bool        call_value(Value callee, u8 argc); // CALL 与嵌入 API 共用;bool 成败信号,失败载荷在挂起寄存器(§4.7)
+    bool        call_value(Value callee, u8 argc); // CALL 与嵌入 API 共用;callee 分发闭包/原生/ObjClass(实例化)/ObjBoundMethod(M5);bool 成败信号,失败载荷在挂起寄存器(§4.7)
 };
 
 // run() 的结果:为什么停下来。协程挂起的表达即在此
@@ -98,7 +100,7 @@ struct ExecOutcome {
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)
 
-> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时沿 `current_` -> `previous_` 执行链逐个标各上下文值栈 `[base, top)` + 各活动帧 `closure`/`module` + 挂起错误寄存器 + open upvalue 开链(「闭包已死而 upvalue 仍在链」的悬垂防线)+ `modules_`/`builtins_`(现为单节点 main_ctx_);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表,协程根收敛为 `current_`(tracer 保留其 `-> previous_` 链遍历以覆盖不入堆的 main_ctx_,挂起协程走对象图;`contexts_` 与链尾断言退役,§4.9)。下方描述为 M6 目标形态。
+> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时沿 `current_` -> `previous_` 执行链逐个标各上下文值栈 `[base, top)` + 各活动帧 `closure`/`module` + 挂起错误寄存器 + open upvalue 开链(「闭包已死而 upvalue 仍在链」的悬垂防线)+ `modules_`/`builtins_`/`object_class_`(M5 Object 根类,VM 成员单独持有);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表,协程根收敛为 `current_`(tracer 保留其 `-> previous_` 链遍历以覆盖不入堆的 main_ctx_,挂起协程走对象图;`contexts_` 与链尾断言退役,§4.9)。下方描述为 M6 目标形态。
 
 - 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure`(trace 级联标 function 与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
@@ -218,7 +220,7 @@ if (obj->fn()(*this, slots)) {
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。当时的收敛项现状:
 
 - **不继承 Object**:值栈/帧/open upvalue 开链已经 vm_roots tracer 接 GC 根(见 §4.6「已前拉」),`run()` 不禁 GC,`JUMP_BACK` 已是 safe point;M6 才升级 `ObjMovement : Object` 入对象链表(trace 收口到对象自身),协程根收敛 `current_` 单根(§4.9 定稿,不设 movements_ 并集)。
-- **闭包已闭环(M4)**:`CallFrame` 持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包),`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 四指令实装,open upvalue 开链 + 值栈增长第三类重绑已落地(见 §4.1 与 `m4-closure-implementation-plan.md` 落地记录);M5 类指令(九 opcode)已于阶段 2 实装(见 `m5-class-implementation-plan.md`),编译器发射待阶段 3 翻转。
+- **闭包已闭环(M4)**:`CallFrame` 持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包),`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 四指令实装,open upvalue 开链 + 值栈增长第三类重绑已落地(见 §4.1 与 `m4-closure-implementation-plan.md` 落地记录);M5 类指令(九 opcode)已于阶段 2 实装、编译发射经阶段 3 翻转落地(见 `m5-class-implementation-plan.md`)。
 - **异常已闭环(M3)**:挂起错误寄存器升为运行期主通道,`unwind` 查表派发(见 §4.5 与坑点文档)。
 - `dispatch_loop()` 永不重入(M6 单循环切换模型,§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
 
@@ -230,10 +232,10 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式)。实施计划与落地记录见 `m4-closure-implementation-plan.md`(defer 为可选后续) | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
-| **M5 类与对象(阶段 1-2 已落地:对象层+VM 机制;编译翻转阶段 3 待)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5;实施计划见 `m5-class-implementation-plan.md`,六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
+| **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5;实施计划见 `m5-class-implementation-plan.md`,六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC 根收敛 `current_` 单根(协程经对象图可达)、**单循环切换模型**(§4.9):`coroutine.resume/yield/status` 原生函数 + CALL 善后点采用新 `current_` + RETURN 完成切回解链、`run()` 扩三态 `ExecOutcome`(`Yielded` = 根挂起) | 协程生成器样例;stress GC 下多协程无悬垂 |
 
-顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,42 个 visit)。
+顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,43 个 visit)。
 
 ### M1 验证状态
 

@@ -315,17 +315,35 @@ namespace aria {
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
+        // CLOSURE 后函数值的绑定/注册分派（穷尽 switch,-Wswitch 提示漏项；行号与报错位置现场
+        // 取 decl_loc）：具名 fun（Function）绑定到全局（顶层）或局部（嵌套,值填槽,经
+        // bind_stack_value）；Lambda 留栈作表达式值不绑定；方法三态留栈不绑定、就地注册——fun
+        // 静态 MAKE_STATIC 不戳 defining class（静态槽读恒原值）,实例方法族 MAKE_METHOD 戳
+        // （VM 侧方法性标记 + super 来源）。调用时序（CLOSURE 之后、子上下文建立之前）见
+        // compile_function 注。
+        void bind_function_value(FnKind kind, StringView name, SourceLoc loc) const;
+
+        // 形参登记 + 缺省序言（印章方案）：单循环按声明序交错——带默认值的参数先发印章判等
+        // 序言（未传槽判等命中才求值默认值 STORE_LOCAL 换入,语义见 cpp 注）、后 add_local 登记
+        // 本参数名（slot 1..n,槽 0 = this/哑元）。交错时序保证缺省表达式可引用前序参数、自身/
+        // 后序参数名字对解析结构性不可见。decl_loc 供序言行号与跳转回填报错（现场 .line() 求值）。
+        // 须在子上下文就位后、体编译前调用。
+        void compile_params(const List<Param>& params, SourceLoc loc);
+
+        // 函数体尾隐式返回：init 方法返回 this（实例化不变式 Foo() 得实例——call_class 槽 0 原位换
+        // 实例后以返回值为实例化结果，LOAD_LOCAL 0 即 this），其余返回 nil（显式 return 后为死
+        // 代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标函数上下文就位后调用；行号由调用点定
+        // （体尾取 body.loc_line()，入口取 program.loc_line()）。
+        void emit_implicit_return(u32 line) const;
+
         // name 为函数名 StringView（具名 fun 声明名 / lambda kAnonymousName / 入口 `<main>` / 类成员
         // 方法名;`<>` 标识符不可用,合成名仅 VM 侧可达）。name 建串与守卫收口在工厂 StringView
         // 重载内（工厂守「自己创建的」,见类首 GC 安全注）。kind 为函数种类（见 FnKind.hpp）,决定
-        // 后 CLOSURE 分派（穷尽 switch 一处收口）与帧形态:Function 绑定到全局(顶层)或局部(嵌套,
-        // 值填槽);Lambda 留栈作表达式值;StaticMethod 发 MAKE_STATIC(不戳 defining class,静态槽读
-        // 恒原值)、Method/InitMethod 发 MAKE_METHOD(戳 defining class = 方法性标记 + super 来源),
-        // 名字照常进 ObjFunction 供 <fn m> 渲染与堆栈跟踪;子上下文槽 0 形态（实例方法族 = 具名局部
-        // this，见 is_method）;隐式返回尾（InitMethod 返回 this）。完成后切回父上下文,函数值已在父
-        // 序列压栈（CLOSURE 按捕获描述表建 upvalue）。decl_loc 供 validate_params 报参数错;声明区
-        // 发射（CLOSURE/绑定/注册）的行号与报错位置统一取 decl_loc,隐式返回尾行号取 body.loc_line()。
-        // 无默认值,调用处显式写明。
+        // CLOSURE 后的绑定/注册分派（收口 bind_function_value）与帧形态:子上下文槽 0 形态（实例
+        // 方法族 = 具名局部 this，见 is_method）;隐式返回尾（InitMethod 返回 this）。完成后切回父
+        // 上下文,函数值已在父序列压栈（CLOSURE 按捕获描述表建 upvalue）。decl_loc 供 validate_params
+        // 报参数错;声明区发射（CLOSURE/绑定/注册）的行号与报错位置统一取 decl_loc,隐式返回尾行号
+        // 取 body.loc_line()。无默认值,调用处显式写明。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc,
                               FnKind kind);
 

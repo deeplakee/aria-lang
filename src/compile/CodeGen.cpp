@@ -86,6 +86,20 @@ namespace aria {
                     UNREACHABLE();
             }
         }
+
+        // min_arity = 必传参数数 = 首个带默认值参数之前的参数个数(文法定序 plain -> default
+        // -> varargs,缺省块连续居后由 Parser 保证;varargs 已被 validate_params 拒绝)。纯读
+        // params 不触碰编译器状态,调用方须已过 validate_params(size <= kMaxArity,u8 不溢出)。
+        u8 min_arity(const List<Param>& params) noexcept {
+            u8 count = 0;
+            for (const auto& param: params) {
+                if (param.default_value != nullptr) {
+                    break;
+                }
+                ++count;
+            }
+            return count;
+        }
     } // namespace
 
     // ============================================================
@@ -111,10 +125,7 @@ namespace aria {
             for (const auto& decl: program.declarations) {
                 emit_stmt(*decl);
             }
-            // 隐式 return nil（无显式 return 时的兜底；显式 return 后为死代码，无害）。
-            const u32 line = program.loc_line();
-            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
-            cur_cu()->emit_op(OpCode::RETURN, line);
+            emit_implicit_return(program.loc_line());
         } catch (AriaCompileException& e) {
             // 出错即 unwind 到此：随一次性对象析构，~ModuleCtx 沿 enclosing_ 链释放
             // 入口 + 出错未还原的子上下文。
@@ -347,7 +358,7 @@ namespace aria {
                 return;
             case ResolvedVar::Kind::Upvalue:
                 cur_cu()->emit_op(OpCode::LOAD_UPVALUE, line);
-                cur_cu()->emit_byte(static_cast<u8>(slot), line); // 索引域由 add_upvalue 容量检查保证 <= u8
+                cur_cu()->emit_byte(slot, line); // 索引域由 add_upvalue 容量检查保证 <= u8
                 return;
         }
         UNREACHABLE();
@@ -365,7 +376,7 @@ namespace aria {
                 return;
             case ResolvedVar::Kind::Upvalue:
                 cur_cu()->emit_op(OpCode::STORE_UPVALUE, line);
-                cur_cu()->emit_byte(static_cast<u8>(slot), line); // 索引域由 add_upvalue 容量检查保证 <= u8
+                cur_cu()->emit_byte(slot, line); // 索引域由 add_upvalue 容量检查保证 <= u8
                 return;
         }
         UNREACHABLE();
@@ -439,6 +450,69 @@ namespace aria {
         }
     }
 
+    void CodeGen::bind_function_value(const FnKind kind, const StringView name, const SourceLoc loc) const {
+        // 具名 fun（Function）绑定到全局（顶层）或局部（嵌套,值填槽）;Lambda 留栈作表达式值
+        // 不绑定;方法三态留栈不绑定,就地注册——fun 静态 MAKE_STATIC 不戳 defining class（静态槽
+        // 读恒原值）,实例方法族 MAKE_METHOD 戳（VM 侧方法性标记 + super 来源）。名字照常进
+        // ObjFunction 供 <fn m> 渲染与堆栈跟踪。
+        const u32 line = static_cast<u32>(loc.line());
+        switch (kind) {
+            case FnKind::Function:
+                bind_stack_value(name, loc); // [closure] -> [] 全局 DEF_GLOBAL / 局部值填槽
+                break;
+            case FnKind::Lambda:
+                break; // 留栈作 lambda 表达式值,不绑定
+            case FnKind::StaticMethod:
+            case FnKind::Method:
+            case FnKind::InitMethod: {
+                // 类成员注册:[class, closure] -> [class],class 值留栈跨整个类体。
+                const auto member_op  = kind == FnKind::StaticMethod ? OpCode::MAKE_STATIC : OpCode::MAKE_METHOD;
+                const auto member_idx = add_name_or_fail(name, loc);
+                cur_cu()->emit_op(member_op, line);
+                cur_cu()->emit_word(member_idx, line); // [class]
+                break;
+            }
+        }
+    }
+
+    void CodeGen::compile_params(const List<Param>& params, const SourceLoc loc) {
+        // 参数登记与缺省序言单循环交错、按声明序:先编缺省表达式、后登记本参数名 --
+        // 前序参数已登记,缺省表达式可引用(序言从左到右求值,轮到本槽时前序槽必已就位,
+        // 对前序参数赋值亦合法);自身/后序参数未登记,名字对解析结构性不可见,按常规链
+        // 落外层/全局(同 Python/C++ 默认值作用域语义),印章不可达,无需检查兜底。
+        //
+        // 缺省序言(印章方案):call_closure 已把未传槽 [argc+1..n] 垫充缺省印章(寄存器
+        // DefaultMark),逐缺省槽 LOAD_LOCAL 与印章 EQUAL 身份判等,命中(未传)才求值默认值
+        // STORE_LOCAL 换入,实参在位则跳过 -- 默认值只在未传时求值。全为既有指令
+        // (JUMP_FALSE 弹比较结果),逐槽栈形平衡,序言后栈空。
+        const u32 line = static_cast<u32>(loc.line());
+        for (usize i = 0; i < params.size(); ++i) {
+            const auto& param = params[i];
+            if (param.default_value != nullptr) {
+                const u16 slot = i + 1; // 参数槽 1..n(槽 0 = this/哑元)
+                cur_cu()->emit_load_local(slot, line);
+                cur_cu()->emit_op(OpCode::LOAD_REG, line);
+                cur_cu()->emit_byte(kDefaultMarkOffset, line);
+                cur_cu()->emit_op(OpCode::EQUAL, line);
+                const auto skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+                emit_expr(*param.default_value);
+                cur_cu()->emit_store_local(slot, line); // peek-store 换入参数槽
+                patch_jump_or_fail(skip, loc);
+            }
+            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在 validate_params 检查,直接登记。
+            cur_fn_ctx()->add_local(param.name);
+        }
+    }
+
+    void CodeGen::emit_implicit_return(const u32 line) const {
+        if (cur_fn_ctx()->kind_ == FnKind::InitMethod) {
+            cur_cu()->emit_load_local(0, line);
+        } else {
+            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+        }
+        cur_cu()->emit_op(OpCode::RETURN, line);
+    }
+
     void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
                                    const SourceLoc decl_loc, const FnKind kind) {
         // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
@@ -450,16 +524,7 @@ namespace aria {
         const u32 decl_line = static_cast<u32>(decl_loc.line());
         const u32 line      = body.loc_line();
 
-        // min_arity = 必传参数数 = 首个带默认值参数之前的参数个数(文法定序 plain -> default
-        // -> varargs,缺省块连续居后由 Parser 保证;varargs 已被 validate_params 拒绝)。
-        u8 min_arity = 0;
-        for (const auto& param: params) {
-            if (param.default_value != nullptr) {
-                break;
-            }
-            ++min_arity;
-        }
-        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()), min_arity);
+        const auto fn = new_function(gc_, mod_ctx_->module_, name, params.size(), min_arity(params));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
@@ -467,28 +532,9 @@ namespace aria {
         cur_cu()->emit_op(OpCode::CLOSURE, decl_line);
         cur_cu()->emit_word(fn_idx, decl_line);
 
-        // kind 全分派（穷尽 switch,-Wswitch 提示漏项）：具名 fun（Function）绑定到全局（顶层）或
-        // 局部（嵌套,值填槽）;Lambda 留栈作表达式值不绑定;方法三态留栈不绑定,就地注册——fun 静态
-        // MAKE_STATIC 不戳 defining class（静态槽读恒原值）,实例方法族 MAKE_METHOD 戳（VM 侧方法性
-        // 标记 + super 来源）。分派都在 CLOSURE 之后、子上下文建立之前:局部绑定须先于体编译,体内
-        // 自引用此名时父帧局部须已登记且已初始化（嵌套具名函数递归自捕获）。
-        switch (kind) {
-            case FnKind::Function:
-                bind_stack_value(name, decl_loc); // [closure] -> [] 全局 DEF_GLOBAL / 局部值填槽
-                break;
-            case FnKind::Lambda:
-                break; // 留栈作 lambda 表达式值,不绑定
-            case FnKind::StaticMethod:
-            case FnKind::Method:
-            case FnKind::InitMethod: {
-                // 类成员注册:[class, closure] -> [class],class 值留栈跨整个类体。
-                const auto member_op  = kind == FnKind::StaticMethod ? OpCode::MAKE_STATIC : OpCode::MAKE_METHOD;
-                const auto member_idx = add_name_or_fail(name, decl_loc);
-                cur_cu()->emit_op(member_op, decl_line);
-                cur_cu()->emit_word(member_idx, decl_line); // [class]
-                break;
-            }
-        }
+        // 分派须在 CLOSURE 之后、子上下文建立之前：局部绑定先于体编译，体内自引用此名时
+        // 父帧局部须已登记且已初始化（嵌套具名函数递归自捕获）。
+        bind_function_value(kind, name, decl_loc);
 
         // 切到子函数上下文并摆动游标:cu 由游标派生,随游标自动切到子 unit,无需 save/restore。
         // new 分配(非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定)。kind 随上下文:
@@ -496,46 +542,13 @@ namespace aria {
         const auto child          = new FunctionCtx{fn, cur_fn_ctx(), kind};
         mod_ctx_->current_fn_ctx_ = child;
 
-        // 参数登记与缺省序言单循环交错、按声明序:先编缺省表达式、后登记本参数名 --
-        // 前序参数已登记,缺省表达式可引用(序言从左到右求值,轮到本槽时前序槽必已就位,
-        // 对前序参数赋值亦合法);自身/后序参数未登记,名字对解析结构性不可见,按常规链
-        // 落外层/全局(同 Python/C++ 默认值作用域语义),印章不可达,无需检查兜底。
-        //
-        // 缺省序言(印章方案):call_closure 已把未传槽 [argc+1..n] 垫充缺省印章(寄存器
-        // DefaultMark),逐缺省槽 LOAD_LOCAL 与印章 EQUAL 身份判等,命中(未传)才求值默认值
-        // STORE_LOCAL 换入,实参在位则跳过 -- 默认值只在未传时求值。全为既有指令
-        // (JUMP_FALSE 弹比较结果),逐槽栈形平衡,序言后栈空。
-        for (usize i = 0; i < params.size(); ++i) {
-            const auto& param = params[i];
-            if (param.default_value != nullptr) {
-                const auto slot = static_cast<u16>(i + 1); // 参数槽 1..n(槽 0 = this/哑元)
-                cur_cu()->emit_load_local(slot, decl_line);
-                cur_cu()->emit_op(OpCode::LOAD_REG, decl_line);
-                cur_cu()->emit_byte(kDefaultMarkOffset, decl_line);
-                cur_cu()->emit_op(OpCode::EQUAL, decl_line);
-                const auto skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, decl_line);
-                emit_expr(*param.default_value);
-                cur_cu()->emit_store_local(slot, decl_line); // peek-store 换入参数槽
-                patch_jump_or_fail(skip, decl_loc);
-            }
-            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在 validate_params 检查,直接登记。
-            cur_fn_ctx()->add_local(param.name);
-        }
+        // 形参登记与缺省序言收口 compile_params（单循环交错,语义见其注）。
+        compile_params(params, decl_loc);
 
         // 编译体（BlockNode 自带 scope）。
-        emit_stmt(body);
-
         // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
-
-        // 隐式 return 尾:init 方法返回 this(实例化不变式 Foo() 得实例——call_class 槽 0 原位换
-        // 实例后以返回值为实例化结果,LOAD_LOCAL 0 即 this);其余返回 nil(兜底;显式 return 后为
-        // 死代码,无害)。
-        if (kind == FnKind::InitMethod) {
-            cur_cu()->emit_load_local(0, line);
-        } else {
-            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
-        }
-        cur_cu()->emit_op(OpCode::RETURN, line);
+        emit_stmt(body);
+        emit_implicit_return(line);
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
         // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
@@ -1045,7 +1058,7 @@ namespace aria {
             emit_expr(*arg);
         }
         cur_cu()->emit_op(OpCode::CALL, line);
-        cur_cu()->emit_byte(static_cast<u8>(node.args.size()), line);
+        cur_cu()->emit_byte(node.args.size(), line);
     }
 
     bool CodeGen::try_emit_this_field(const FieldAccessNode& node, const LvalueMode mode, const u32 line) const {

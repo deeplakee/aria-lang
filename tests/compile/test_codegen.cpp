@@ -727,8 +727,150 @@ TEST(CodeGen, ErrNotImplementedMatch) {
     EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
 }
 
-TEST(CodeGen, ErrNotImplementedDefaultParam) {
-    auto c = compile_only("fun f(a, b = 1) { return b; }");
+// ============================================================
+// 默认参数（印章方案：call_closure 垫充 + 序言身份判等换值）
+// ============================================================
+
+TEST(CodeGen, DefaultParamFillAndExplicitArg) {
+    // 未传走默认;实参在位则实参胜出。
+    EXPECT_EQ(run_int("fun add(a, b = 2) { return a + b; } return add(1);"), 3);
+    EXPECT_EQ(run_int("fun add(a, b = 2) { return a + b; } return add(1, 10);"), 11);
+}
+
+TEST(CodeGen, DefaultParamLeftToRightFill) {
+    // 连续缺省按声明序补齐:实参依次填靠前槽,余下槽走默认。
+    EXPECT_EQ(run_int("fun f(a, b = 20, c = 30) { return a * 10000 + b * 100 + c; } return f(1);"), 12030);
+    EXPECT_EQ(run_int("fun f(a, b = 20, c = 30) { return a * 10000 + b * 100 + c; } return f(1, 2);"), 10230);
+    EXPECT_EQ(run_int("fun f(a, b = 20, c = 30) { return a * 10000 + b * 100 + c; } return f(1, 2, 3);"), 10203);
+}
+
+TEST(CodeGen, DefaultParamIndirectCall) {
+    // 经变量(裸闭包)与经 bound method 间接调用,垫充路径与直接调用一致。
+    EXPECT_EQ(run_int("fun f(a, b = 7) { return a + b; } var g = f; return g(1);"), 8);
+    EXPECT_EQ(run_int("def C { m(a, b = 7) { return a + b; } } var o = C(); return o.m(1);"), 8);
+    // 取出 bound method 后延迟调用:槽 0 = this 在位,缺省垫充同构适用。
+    EXPECT_EQ(run_int("def C { m(a, b = 7) { return a + b; } } var o = C(); var f = o.m; return f(2);"), 9);
+}
+
+TEST(CodeGen, DefaultParamOnInit) {
+    // init 缺省参数:call_class 换实例进槽 0 后走 call_closure,垫充同路。
+    EXPECT_EQ(run_int("def P { init(x, y = 5) { this.x = x; this.y = y; } } var p = P(1); return p.x * 10 + p.y;"), 15);
+    EXPECT_EQ(run_int("def P { init(x, y = 5) { this.x = x; this.y = y; } } var p = P(1, 2); return p.x * 10 + p.y;"),
+              12);
+}
+
+TEST(CodeGen, DefaultParamLambdaAndNestedCapture) {
+    // lambda 形参同用 compile_function,缺省发射一致。
+    EXPECT_EQ(run_int("var f = fun(a, b = 2) { return a + b; }; return f(1);"), 3);
+    // 嵌套函数经 upvalue 捕获参数不受自引用检查限制(调用时参数已在位)。
+    EXPECT_EQ(run_int("fun f(a, b = (fun() { return a; })() + 1) { return a * 10 + b; } return f(3);"), 34);
+}
+
+TEST(CodeGen, DefaultParamSideEffectOnlyWhenMissing) {
+    // 默认值表达式仅在实际未传时求值。
+    auto out = run_source("var n = 0;"
+                          "fun bump() { n = n + 1; return 100; }"
+                          "fun f(a, b = bump()) { return b; }"
+                          "var r1 = f(1, 9);" // b 实参在位,bump 不执行
+                          "var v1 = n;"
+                          "var r2 = f(1);" // b 未传,bump 执行
+                          "var v2 = n;"
+                          "return r1 * 1000 + v1 * 100 + r2 * 10 + v2;");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out->as_int(), 10001); // r1=9, v1=0, r2=100, v2=1
+}
+
+TEST(CodeGen, DefaultParamFunctionArgNotMisjudged) {
+    // 实参为原生函数值(与印章同类型)不误判未传:身份判等,函数值非印章。
+    auto out = run_source("fun f(g = 1) { return g; }"
+                          "var with_fn = f(len);"
+                          "var with_default = f();"
+                          "var r = 0;"
+                          "if (with_fn === len) { r = r + 100; }" // 函数实参原样透传
+                          "return r + with_default;");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out->as_int(), 101);
+}
+
+TEST(CodeGen, DefaultParamOuterScopeStillReachable) {
+    // 自引用检查仅限本函数参数槽:外层局部(经 upvalue)与全局照常可达。
+    EXPECT_EQ(run_int("var v = 10; fun f(a = v) { return a; } return f();"), 10);
+    EXPECT_EQ(run_int("fun outer() { var v = 10; fun inner(a = v) { return a; } return inner(); } return outer();"),
+              10);
+}
+
+TEST(CodeGen, DefaultParamWrongArityRange) {
+    // 低于 min_arity / 高于 arity 均报 WrongArity;有缺省参数报区间文案。
+    auto lo = run_source("fun f(a, b = 2) { return b; } return f();");
+    ASSERT_FALSE(lo.has_value());
+    EXPECT_EQ(lo.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(lo.error().message().find("expects 1 to 2 args, got 0"), std::string::npos);
+
+    auto hi = run_source("fun f(a, b = 2) { return b; } return f(1, 2, 3);");
+    ASSERT_FALSE(hi.has_value());
+    EXPECT_EQ(hi.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(hi.error().message().find("expects 1 to 2 args, got 3"), std::string::npos);
+}
+
+TEST(CodeGen, DefaultParamSingularArityMessageKept) {
+    // 无缺省参数(min_arity == arity)保持单数文案,区间文案仅在真有缺省时出现。
+    auto out = run_source("fun f(a) { return a; } return f();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(out.error().message().find("expects 1 args, got 0"), std::string::npos);
+}
+
+// 序言形态:逐缺省槽 LOAD_LOCAL -> LOAD_REG DefaultMark -> EQUAL -> JUMP_FALSE -> 默认值
+// 表达式 -> STORE_LOCAL。全为既有指令,栈形平衡(序言后栈空)。
+TEST(CodeGen, DefaultParamPrologueDisassembly) {
+    auto c = compile_only("fun f(a, b = 5) { return b; } return f(1);");
+    ASSERT_TRUE(c.has_value()) << c.error().message();
+    // 序言发射在子函数 f 的 unit 内(入口 unit 只有 CLOSURE/调用序列):经入口常量池取 f 的
+    // ObjFunction 再反汇编其 unit。
+    const ObjFunction* f = nullptr;
+    for (const auto& v: c->unit().constants) {
+        if (v.is_obj() && aria::Object::is<ObjFunction>(v.as_obj())) {
+            f = aria::Object::as<ObjFunction>(v.as_obj());
+        }
+    }
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->arity(), 2);
+    EXPECT_EQ(f->min_arity(), 1); // 必传 a,缺省 b
+    const auto text = f->unit().disassemble("f");
+    EXPECT_NE(text.find("LOAD_LOCAL"), aria::String::npos);
+    EXPECT_NE(text.find("LOAD_REG"), aria::String::npos);
+    EXPECT_NE(text.find("DefaultMark"), aria::String::npos); // 寄存器可读名入反汇编注释
+    EXPECT_NE(text.find("EQUAL"), aria::String::npos);
+    EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
+    EXPECT_NE(text.find("STORE_LOCAL"), aria::String::npos);
+}
+
+TEST(CodeGen, DefaultParamReferencesEarlierParam) {
+    // 前序参数在缺省表达式中可引用:序言从左到右求值,轮到本槽时前序槽必已就位。
+    EXPECT_EQ(run_int("fun f(a, b = a * 2) { return b; } return f(21);"), 42);
+    // 链式缺省:后一个缺省引用前一个缺省参数。
+    EXPECT_EQ(run_int("fun f(a = 1, b = a * 2, c = b + 1) { return a * 100 + b * 10 + c; } return f();"), 123);
+    EXPECT_EQ(run_int("fun f(a = 1, b = a * 2, c = b + 1) { return a * 100 + b * 10 + c; } return f(5);"), 611);
+}
+
+TEST(CodeGen, DefaultParamMutationOfEarlierParam) {
+    // 缺省表达式内对前序参数赋值合法(普通局部语义),表达式值为所赋值。
+    EXPECT_EQ(run_int("fun f(a, b = (a = 1)) { return a * 10 + b; } return f(5);"), 11);
+}
+
+TEST(CodeGen, DefaultParamUnregisteredFallsToGlobal) {
+    // 自身/后序参数未登记,名字按常规解析链落外层/全局(Python/C++ 默认值作用域同款):
+    // 无同名全局 -> 缺省被求值时 UndefinedVariable;有同名全局 -> 用全局值(不指向参数)。
+    auto out = run_source("fun f(a = b, b = 2) { return b; } return f();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
+    EXPECT_EQ(run_int("var b = 9; fun f(a = b, b = 2) { return a * 10 + b; } return f();"), 92);
+    EXPECT_EQ(run_int("var a = 7; fun f(a = a) { return a; } return f();"), 7);
+}
+
+TEST(CodeGen, ErrNotImplementedVarargs) {
+    // 默认参数已落地;varargs 仍待批 4(list 载体)。
+    auto c = compile_only("fun f(a, ...rest) { return a; }");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
 }

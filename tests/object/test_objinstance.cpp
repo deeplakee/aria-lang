@@ -55,7 +55,7 @@ namespace {
     ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
-        auto fn    = new_function(gc, m, name, arity);
+        auto fn    = new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
         guard.push(fn);
         return new_closure(gc, fn);
     }

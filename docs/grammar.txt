@@ -165,7 +165,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # 默认参数：paramsBody 顺序固定 plainParams -> defaultParams -> varargs，文法强制默认
 # 参数后不得有无默认参数。默认值在调用且该参数未传时求值，可与 varargs 共存（按位置
-# 填充，未传走默认，剩余进 varargs）。
+# 填充，未传走默认，剩余进 varargs）。默认值表达式可引用先于它的参数（按声明序求值，
+# 轮到本参数时前序必已就位）；引用自身或后序参数时该名字未就位，按常规解析链落外层
+# /全局（不指向参数）。
 #
 # map 键为任意 Value（HashMap<Value,Value>）：mapExpr 的键是任意 expression（运行时求值）。
 #

@@ -67,7 +67,6 @@ namespace aria {
     X(ContinueOutsideLoop, Semantic)     /* continue 须在循环内 */                                               \
     X(ReturnOutsideFunction, Semantic)   /* return 须在函数内 */                                                 \
     X(TryWithoutHandler, Semantic)       /* try 须有 catch */                                                    \
-    X(DefaultParamSelfRef, Semantic)     /* 默认值表达式引用了同函数的参数 */                                    \
     X(DuplicateParam, Semantic)          /* 同函数形参重名 */                                                    \
     X(UndefinedType, Semantic)           /* 引用未定义的类名 */                                                  \
     X(RedefinedVariable, Semantic)       /* 同作用域重复定义变量 */                                              \

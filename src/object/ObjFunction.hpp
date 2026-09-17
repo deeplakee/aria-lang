@@ -36,6 +36,8 @@ namespace aria {
     //     lambda 名 `<anonymous>`(`<>` 是正常标识符中不可用的符号,具独特辨识度);具名函数为
     //     其声明名。统一模型:每个函数都有名字,ctor ASSERT 非空。to_string 渲染 `<fn name>`。
     //   - arity_:参数个数(u8,上限 255;编译期编译器保证不越界)。
+    //   - min_arity_:必传参数数(u8,<= arity_;差额即带默认值参数)。调用实参数落在
+    //     [min_arity, arity] 才合法,不足段由 call_closure 以缺省印章垫充、函数序言换默认值。
     //   - upvalue_descs_:捕获描述表(编译期一次性 flush,运行期只读)。每条 UpvalueDesc
     //     描述本函数的一个捕获(语义见上 struct 注);存元数据、不进字节码流,CLOSURE 保持
     //     定长 3B(ConstU16);与 ObjClosure::upvalues_ 按下标一一对应。描述项纯标量,trace 不标。
@@ -47,7 +49,7 @@ namespace aria {
     //     (两者皆 GC 对象,各自由 sweep 整体回收,~ObjFunction 不释放 module_)。
     class ObjFunction final : public Object {
     public:
-        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity);
+        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity);
         ~ObjFunction() override = default; // CodeUnit / upvalue_descs_ 级联自释放,无额外子内存
 
         [[nodiscard]]
@@ -68,6 +70,12 @@ namespace aria {
         [[nodiscard]]
         u8 arity() const noexcept {
             return arity_;
+        }
+
+        // 必传参数数(<= arity,差额为带默认值参数);call_closure 区间检查下界。
+        [[nodiscard]]
+        u8 min_arity() const noexcept {
+            return min_arity_;
         }
 
         // 所属模块(词法归属,构造时确定、不可变、非空),供 VM 定位模块 globals。
@@ -107,6 +115,7 @@ namespace aria {
         ObjModule*         module_; // 所属模块(非空,构造时传入)
         ObjString*         name_;
         u8                 arity_;
+        u8                 min_arity_;
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
@@ -115,10 +124,10 @@ namespace aria {
     //        皆是 weak root,故**调用方须在调用前自行根化两者**(跨 new_object 顶 maybe_collect)。
     // StringView 便捷重载:内部 intern name 并自守(工厂守「自己创建的」),调用方只需根化 module。
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity);
+    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity);
 
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, StringView name, u8 arity);
+    ObjFunction* new_function(GC& gc, ObjModule* module, StringView name, u8 arity, u8 min_arity);
 
 } // namespace aria
 

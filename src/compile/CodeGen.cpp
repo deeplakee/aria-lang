@@ -132,7 +132,8 @@ namespace aria {
 
     // 建模块入口函数 + set_entry + 构造 ModuleCtx（契约见 CodeGen.hpp init_module 注）。
     ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
-        const auto entry = new_function(gc_, module, entry_name, 0);
+        // 入口无参,min_arity = arity
+        const auto entry = new_function(gc_, module, entry_name, 0, 0);
         module->set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
         return entry;
@@ -284,7 +285,7 @@ namespace aria {
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(name_idx, line); // 弹值定义全局
         } else {
-            define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
+            (void) define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
         }
     }
 
@@ -368,7 +369,7 @@ namespace aria {
         // 契约与值填槽模型见 CodeGen.hpp bind_pattern 注。
         if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
             // 值填槽：declare 登记的 slot 即值位置，不发指令
-            define_local_or_fail(id->name, node.loc());
+            (void) define_local_or_fail(id->name, node.loc());
             return;
         }
         const u32 line = node.loc_line();
@@ -414,8 +415,8 @@ namespace aria {
         }
 
         for (const auto& param: params) {
-            if (param.is_varargs || param.default_value != nullptr) {
-                not_impl(loc, "默认参数 / varargs");
+            if (param.is_varargs) {
+                not_impl(loc, "varargs");
             }
         }
 
@@ -439,7 +440,16 @@ namespace aria {
         const u32 decl_line = static_cast<u32>(decl_loc.line());
         const u32 line      = body.loc_line();
 
-        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()));
+        // min_arity = 必传参数数 = 首个带默认值参数之前的参数个数(文法定序 plain -> default
+        // -> varargs,缺省块连续居后由 Parser 保证;varargs 已被 validate_params 拒绝)。
+        u8 min_arity = 0;
+        for (const auto& param: params) {
+            if (param.default_value != nullptr) {
+                break;
+            }
+            ++min_arity;
+        }
+        const auto fn = new_function(gc_, mod_ctx_->module_, name, static_cast<u8>(params.size()), min_arity);
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
@@ -475,8 +485,30 @@ namespace aria {
         // 实例方法族槽 0 = 具名局部 this(帧 [this, a1..aN],arity 不含 this)。
         const auto child          = new FunctionCtx{fn, cur_fn_ctx(), kind};
         mod_ctx_->current_fn_ctx_ = child;
-        for (const auto& param: params) {
-            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在上方检查,故直接 add_local 无需再查。
+
+        // 参数登记与缺省序言单循环交错、按声明序:先编缺省表达式、后登记本参数名 --
+        // 前序参数已登记,缺省表达式可引用(序言从左到右求值,轮到本槽时前序槽必已就位,
+        // 对前序参数赋值亦合法);自身/后序参数未登记,名字对解析结构性不可见,按常规链
+        // 落外层/全局(同 Python/C++ 默认值作用域语义),印章不可达,无需检查兜底。
+        //
+        // 缺省序言(印章方案):call_closure 已把未传槽 [argc+1..n] 垫充缺省印章(寄存器
+        // DefaultMark),逐缺省槽 LOAD_LOCAL 与印章 EQUAL 身份判等,命中(未传)才求值默认值
+        // STORE_LOCAL 换入,实参在位则跳过 -- 默认值只在未传时求值。全为既有指令
+        // (JUMP_FALSE 弹比较结果),逐槽栈形平衡,序言后栈空。
+        for (usize i = 0; i < params.size(); ++i) {
+            const auto& param = params[i];
+            if (param.default_value != nullptr) {
+                const auto slot = static_cast<u16>(i + 1); // 参数槽 1..n(槽 0 = this/哑元)
+                cur_cu()->emit_load_local(slot, decl_line);
+                cur_cu()->emit_op(OpCode::LOAD_REG, decl_line);
+                cur_cu()->emit_byte(kDefaultMarkOffset, decl_line);
+                cur_cu()->emit_op(OpCode::EQUAL, decl_line);
+                const auto skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, decl_line);
+                emit_expr(*param.default_value);
+                cur_cu()->emit_store_local(slot, decl_line); // peek-store 换入参数槽
+                patch_jump_or_fail(skip, decl_loc);
+            }
+            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在 validate_params 检查,直接登记。
             cur_fn_ctx()->add_local(param.name);
         }
 
@@ -762,7 +794,7 @@ namespace aria {
         // L_catch
         const auto handle = cur_cu()->size();
         begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
-        define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
+        (void) define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end

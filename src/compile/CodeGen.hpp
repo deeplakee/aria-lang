@@ -167,6 +167,7 @@ namespace aria {
         // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记（不发指令），返回
         // 登记槽位（= 值所在位置）。值填槽时序契约：调用方保证值已压栈，登记即初始化，无独立
         // init 状态。不标 [[nodiscard]]：值填槽调用方多数无需槽位（值已在槽），丢弃合法。
+        [[nodiscard]]
         u16 define_local_or_fail(StringView name, SourceLoc loc) const;
 
         // cur_fn_ctx()->begin_scope()
@@ -301,8 +302,9 @@ namespace aria {
         void emit_expr_or_nil(ExprNode* expr, u32 line);
 
         // --- 函数编译（FunDecl / Lambda / 类成员方法共用）---
-        // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；默认参数 / varargs
-        // -> not_impl；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，首错即 fail / not_impl 抛出。
+        // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；varargs
+        // -> not_impl（默认参数已落地发射）；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，
+        // 首错即 fail / not_impl 抛出。
         // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body.loc()（body 的 '{'），
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;

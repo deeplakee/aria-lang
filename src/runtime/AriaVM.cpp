@@ -464,16 +464,30 @@ namespace aria {
     }
 
     bool AriaVM::call_closure(ObjClosure* obj, const u8 argc) {
-        if (const auto arity = obj->function()->arity(); arity != argc) {
-            // 报错带函数名:实例化经 call_class 委托至此,init 的元数错误同样指名("function 'init' ...")。
-            return fail(ErrorCode::WrongArity, "function '{}' expects {} args, got {}", obj->name()->view(), arity,
-                        argc);
+        // 元数区间检查 [min_arity, arity](差额为带默认值参数):无缺省报单数文案,有缺省
+        // 报区间文案。函数名不进文案(函数可匿名,名字不保证有意义);调用归属由未捕获出口
+        // 的堆栈跟踪行给出,与「运行期错误消息不含位置」同一约定。
+        const auto fn    = obj->function();
+        const auto arity = fn->arity();
+        if (const auto min_arity = fn->min_arity(); argc < min_arity || argc > arity) {
+            if (min_arity == arity) {
+                return fail(ErrorCode::WrongArity, "expects {} args, got {}", arity, argc);
+            }
+            return fail(ErrorCode::WrongArity, "expects {} to {} args, got {}", min_arity, arity, argc);
         }
 
         if (current_->frames_full()) {
             return fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
-        current_->enter_frame(obj, argc);
+
+        // 缺省垫充:未传槽 [argc+1..arity] 压入缺省印章,函数序言按身份判等现场换默认值。
+        // 垫充同时把栈顶从实参深度补齐到满参深度 -- 体局部槽号按满参编(参数槽 1..n、体局部
+        // 自 n+1 起),补齐后体局部才落对槽;方法帧槽 0 = this 同构适用。
+        const auto missing = static_cast<u8>(arity - argc);
+        for (u8 i = 0; i < missing; ++i) {
+            current_->push(registers_[kDefaultMarkOffset]);
+        }
+        current_->enter_frame(obj, arity);
         return true;
     }
 

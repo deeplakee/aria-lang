@@ -172,8 +172,10 @@ namespace aria {
         // 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
 
-        // 闭包调用的进帧单点(call_value 分发与 run_closure 共用):校验 arity 与帧栈未溢出后
-        // 进帧(callee 在槽 0,参数即局部槽 1..argc)。失败 raise WrongArity/StackOverflow。
+        // 闭包调用的进帧单点(call_value 分发与 run_closure 共用):实参数区间检查
+        // [min_arity, arity] 与帧栈未溢出校验后,把未传槽 [argc+1..arity] 垫充缺省印章
+        //(补齐到满参深度)再进帧(callee 在槽 0,参数即局部槽 1..arity);序言按身份判等
+        // 换默认值。失败 raise WrongArity/StackOverflow。
         bool call_closure(ObjClosure* obj, u8 argc);
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传(契约见 ObjNativeFn.hpp)。

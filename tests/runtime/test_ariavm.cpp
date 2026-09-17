@@ -129,7 +129,7 @@ namespace {
     // 返回白色,调用方自守。m 未根须自守:工厂内 intern name 与 new_object 均 GC 点。
     ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity);
+        return aria::new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
     }
 
     // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
@@ -138,13 +138,13 @@ namespace {
     ObjFunction* new_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity);
+        return aria::new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
     }
 
     // 指定模块的匿名入口单元(`<main>` 名,arity 0)。
     ObjFunction* new_script(GC& gc, ObjModule* m) {
         auto guard = gc.make_guard(m); // m 未根:工厂内 intern 与 new_object 均 GC 点
-        return aria::new_function(gc, m, "<main>", 0);
+        return aria::new_function(gc, m, "<main>", 0, 0);
     }
 
     // ---- IMPORT 路径解析测试辅助 ----

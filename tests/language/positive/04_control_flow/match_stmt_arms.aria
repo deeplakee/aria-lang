@@ -1,0 +1,31 @@
+// 钉住：match 语句按臂序首中即停、"_" 兜底、臂体为语句（块臂多语句、throw 臂）。
+var r = 0;
+match (1) { 1 => r = 1; 2 => r = 2; _ => r = 3; }
+assert(r == 1);
+match (99) { 1 => r = 1; _ => r = 9; }
+assert(r == 9);
+# 块臂：多语句
+match (2) { 1 => r = 1; 2 => { r = 4; r = r + 1; } _ => r = 0; }
+assert(r == 5);
+# 首中即停：同值双臂取前
+var s = 0;
+match (1) { 1 => s = 1; 1 => s = 2; _ => s = 3; }
+assert(s == 1);
+# 通配臂恒末臂（其后臂为编译错 UnreachableArm，见 negative/compile_errors）
+var w = 0;
+match (9) { 5 => w = 6; _ => w = 5; }
+assert(w == 5);
+# 臂体内 throw 由 try/catch 接住（原值保类型）
+try { match (1) { 1 => throw "boom"; 2 => r = 7; } } catch (e) { r = r + 100; }
+assert(r == 105);
+# 臂体内 break/continue：命中臂入口 subject 已消费，弹区与普通语句位一致
+var hits = 0;
+for (var i = 0; i < 4; i += 1) {
+    match (i) { 2 => break; _ => hits += 1; }
+}
+assert(hits == 2);
+var seen = 0;
+for (var i = 0; i < 4; i += 1) {
+    match (i) { 1 => continue; _ => seen += 10; }
+}
+assert(seen == 30);

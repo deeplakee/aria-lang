@@ -259,6 +259,7 @@ namespace aria {
         // 新单例随其批次在此加一行。
         bootstrap_object_class();
         bootstrap_default_mark();
+        bootstrap_match_no_arm();
     }
 
     void AriaVM::hook_vm_roots() {
@@ -317,6 +318,15 @@ namespace aria {
         // 任意函数值,身份均异于印章,不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
         const auto default_mark        = new_native_fn(gc_, "<default>", [](AriaVM&, Span<Value>) { return true; });
         registers_[kDefaultMarkOffset] = Value::from_obj(default_mark);
+    }
+
+    void AriaVM::bootstrap_match_no_arm() {
+        // match 兜底异常:全臂未命中时 LOAD_REG + THROW 抛出的共享单例(消息静态、无 subject
+        // 插值;不注册 builtins 用户不可达,catch 绑到的即本对象)。消息按 raise 同源形态烘焙。
+        // 须在 ctor 构造临界区内调用,创建免守卫。
+        const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
+        const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
+        registers_[kMatchNoArmOffset] = Value::from_obj(no_arm);
     }
 
     void AriaVM::init_source_roots() {

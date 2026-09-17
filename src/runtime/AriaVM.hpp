@@ -212,6 +212,10 @@ namespace aria {
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。
         void bootstrap_default_mark();
 
+        // match 兜底异常 bootstrap:铸共享 ObjException(MatchNoArm,消息静态)入寄存器
+        // MatchNoArm 格。全臂未命中由字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
+        void bootstrap_match_no_arm();
+
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包,collect 时标四类
         // 根 -- modules_ / builtins_ / registers_(一趟循环逐格 mark_value,未填格 nil 对非
         // 对象 no-op)/ current_ 执行链(值栈/各帧 closure+module/挂起错误寄存器/open upvalue

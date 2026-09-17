@@ -721,12 +721,6 @@ TEST(CodeGen, ErrNotImplementedListLiteral) {
     EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
 }
 
-TEST(CodeGen, ErrNotImplementedMatch) {
-    auto c = compile_only("match (1) { 1 => { print 1; } }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
-}
-
 // ============================================================
 // 默认参数（印章方案：call_closure 垫充 + 序言身份判等换值）
 // ============================================================
@@ -883,6 +877,118 @@ TEST(CodeGen, ErrStopOnNestedLambdaInExpr) {
     auto c = compile_only("for (var i = 0; i < 3; i = i + 1) { var x = 1 + (fun() { break; })(); }");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::BreakOutsideLoop);
+}
+
+// ============================================================
+// match（纯降糖：subject 驻栈 + DUP 逐臂比较 + 共享 MatchNoArm 兜底异常）
+// ============================================================
+
+TEST(CodeGen, MatchStmtFirstArmHit) {
+    EXPECT_EQ(run_int("var r = 0; match (1) { 1 => r = 1; 2 => r = 2; _ => r = 3; } return r;"), 1);
+}
+
+TEST(CodeGen, MatchStmtWildcardFallback) {
+    EXPECT_EQ(run_int("var r = 0; match (99) { 1 => r = 1; _ => r = 2; } return r;"), 2);
+}
+
+TEST(CodeGen, MatchStmtBlockArm) {
+    // 块臂（多语句 statement）与语句臂同链；块臂净零值不破栈。
+    EXPECT_EQ(run_int("var r = 0; match (2) { 1 => r = 1; 2 => { r = 2; r = r + 10; } _ => r = 3; } return r;"), 12);
+}
+
+TEST(CodeGen, MatchStmtNoArmThrowsMatchNoArm) {
+    auto out = run_source("match (99) { 1 => 2; }");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::MatchNoArm);
+    EXPECT_NE(out.error().message().find("no arm matched"), std::string::npos);
+}
+
+TEST(CodeGen, MatchNoArmCatchableAndShared) {
+    // 兜底异常是寄存器里的共享单例:可被 try/catch 捕获(catch 绑原值),两次抛出身份恒一。
+    auto out = run_source(R"(
+        var e1 = nil;
+        var e2 = nil;
+        try { match (9) { 1 => 2; } } catch (e) { e1 = e; }
+        try { match (8) { 1 => 2; } } catch (e) { e2 = e; }
+        if (e1 === e2) { return 7; }
+        return 0;
+    )");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out->as_int(), 7);
+}
+
+TEST(CodeGen, MatchExprTakesValue) { EXPECT_EQ(run_int("return match (2) { 1 => 10 2 => 20 _ => 30 };"), 20); }
+
+TEST(CodeGen, MatchExprInVarInitializer) {
+    // 值填槽窗口:降糖不登记任何局部(无隐藏临时),var 初始化器内槽位无错位;臂体读外层局部。
+    EXPECT_EQ(run_int("fun f() { var a = 1; var x = match (a) { 1 => a + 10 _ => 0 }; return x; } return f();"), 11);
+}
+
+TEST(CodeGen, MatchExprAsCallArg) {
+    // 表达式位置嵌套在运算实参窗口,subject 驻栈与外层运算值共存。
+    EXPECT_EQ(run_int("return 1 + match (2) { 2 => 3 _ => 4 };"), 4);
+}
+
+TEST(CodeGen, MatchSubjectEvaluatedOnce) {
+    // subject 求值恰一次(DUP 副本跨臂比较);同模式双臂首中即停。
+    EXPECT_EQ(run_int(R"(
+        var calls = 0;
+        fun bump() { calls = calls + 1; return 7; }
+        var v = 0;
+        match (bump()) { 1 => v = 1; 7 => v = 2; 7 => v = 4; _ => v = 3; }
+        return calls * 10 + v;
+    )"),
+              12);
+}
+
+TEST(CodeGen, MatchPatternLazyShortCircuit) {
+    // 惰性:命中臂之后的模式不求值(calls 恒 0);未命中臂的模式恰求值一次。
+    EXPECT_EQ(run_int(R"(
+        var calls = 0;
+        fun p() { calls = calls + 1; return 5; }
+        var v = 0;
+        match (1) { 1 => v = 1; p() => v = 2; _ => v = 3; }
+        return calls * 10 + v;
+    )"),
+              1);
+    EXPECT_EQ(run_int(R"(
+        var calls = 0;
+        fun p() { calls = calls + 1; return 5; }
+        var v = 0;
+        match (3) { 1 => v = 1; p() => v = 2; 3 => v = 3; _ => v = 4; }
+        return calls * 10 + v;
+    )"),
+              13);
+}
+
+TEST(CodeGen, ErrUnreachableArmAfterWildcard) {
+    // 通配臂恒末臂:其后臂任何输入下不可达,编译期拒绝(静默截断会吞臂序 bug);双通配同理。
+    auto s = compile_only("match (1) { _ => 2; 3 => 4; }");
+    ASSERT_FALSE(s.has_value());
+    EXPECT_EQ(s.error().code(), ErrorCode::UnreachableArm);
+    auto d = compile_only("match (1) { _ => 2; _ => 3; }");
+    ASSERT_FALSE(d.has_value());
+    EXPECT_EQ(d.error().code(), ErrorCode::UnreachableArm);
+    auto e = compile_only("return match (1) { _ => 2 3 => 4 };");
+    ASSERT_FALSE(e.has_value());
+    EXPECT_EQ(e.error().code(), ErrorCode::UnreachableArm);
+}
+
+TEST(CodeGen, MatchDisassembly) {
+    auto compiled = compile_only(R"(
+        match (1) { 1 => print 1; 2 => print 2; _ => print 3; }
+    )");
+    ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
+    const auto text = compiled->unit().disassemble("<test>");
+    // 逐臂链形态:每臂 DUP -> EQUAL -> JUMP_FALSE(未命中) -> POP(丢弃 subject) -> 臂体;
+    // 兜底 LOAD_REG MatchNoArm -> THROW 相邻。
+    EXPECT_TRUE(lines_adjacent(text, "EQUAL", "JUMP_FALSE"));
+    EXPECT_TRUE(lines_adjacent(text, "JUMP_FALSE", "POP"));
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_REG", "THROW"));
+    EXPECT_NE(text.find("MatchNoArm"), aria::String::npos);
+    // 链先于兜底,兜底先于 L_end 汇合。
+    EXPECT_LT(text.find("DUP"), text.find("LOAD_REG"));
+    EXPECT_LT(text.find("JUMP_FALSE"), text.find("LOAD_REG"));
 }
 
 // ============================================================

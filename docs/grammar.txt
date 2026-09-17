@@ -178,7 +178,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # match：多分支按值匹配（if-else 链的语法糖，当前不支持解构模式）。从上到下取第一
 # 个匹配分支执行/取值。matchPattern：expression（运行时求值后与 subject 比较相等，
-# 非绑定）或 "_"（通配兜底）。无匹配且无 "_" -> 运行时错误。可作语句（matchStmt，
+# 非绑定）或 "_"（通配兜底）。通配臂只能最后一条（其后臂任何输入下不可达，编译期
+# UnreachableArm 拒绝，故 "_" 至多一条）。无匹配且无 "_" -> 运行时错误。可作语句（matchStmt，
 # 分支为单条 statement--多语句需用 block 包裹（block 亦属 statement））与表达式（matchExpr，分支为 expression，无花括号）。
 # "=>" 为新引入符号。
 #

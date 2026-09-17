@@ -818,7 +818,60 @@ namespace aria {
         cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
     }
 
-    void CodeGen::visitMatchStmtNode(MatchStmtNode& node) { not_impl(node, "match 语句"); }
+    template<typename Arm>
+    void CodeGen::validate_match_arms(const List<Arm>& arms) const {
+        for (usize i = 1; i < arms.size(); ++i) {
+            if (arms[i - 1].pattern.value == nullptr) {
+                fail(ErrorCode::UnreachableArm, arms[i].body->loc(), "通配臂后的分支不可达");
+            }
+        }
+    }
+
+    // match 降糖总口(模板定义,MatchStmtNode/MatchExprNode 两实例化点即下方两 visit):纯降糖
+    // 零新指令,subject 求值一次驻留栈上跨臂复用(无隐藏临时局部,命中臂入口 POP 消费,全臂未命中
+    // 由 THROW 的 unwind 清栈),逐臂展开「DUP + 模式 + EQUAL + 未命中跳下臂」链。语句臂净零值、
+    // 表达式臂每臂恰一值(臂体不登记局部,值填槽的 var 初始化器窗口无错位)。
+    template<typename Node>
+    void CodeGen::emit_match(Node& node) {
+        validate_match_arms(node.arms);
+        const u32 line = node.line();
+        // [s]
+        emit_expr(*node.subject);
+        List<u32> end_jumps; // 各臂命中路径 -> L_end
+        Opt<u32>  miss_jump; // 上臂 JUMP_FALSE 占位(通配臂无),回填到下臂起点
+        for (const auto& [pattern, body]: node.arms) {
+            if (const auto taken = util::take(miss_jump)) {
+                patch_jump_or_fail(*taken, node.loc()); // 上臂未命中 -> 本臂
+            }
+            if (pattern.value != nullptr) {             // "_" 通配:不比较直入
+                cur_cu()->emit_op(OpCode::DUP, line);   // [s, s] 副本供比较,subject 本尊保留
+                emit_expr(*pattern.value);              // [s, s, p]
+                cur_cu()->emit_op(OpCode::EQUAL, line); // [s, bool]
+                // 未命中 -> 下臂
+                miss_jump = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+            }
+            cur_cu()->emit_op(OpCode::POP, line); // 命中:[s] -> [] 丢弃 subject 进臂体
+            emit_arm_body(*body);
+            const u32 end_jump = cur_cu()->emit_jump(OpCode::JUMP, line);
+            end_jumps.push_back(end_jump); // -> L_end(越兜底)
+        }
+        // 全臂未命中:LOAD_REG 抛共享 MatchNoArm 异常,THROW 后 unwind 接管不落 L_end。
+        if (miss_jump) {
+            patch_jump_or_fail(*miss_jump, node.loc()); // 末臂未命中 -> 兜底
+        }
+        cur_cu()->emit_op(OpCode::LOAD_REG, line); // [e] 共享异常单例
+        cur_cu()->emit_byte(kMatchNoArmOffset, line);
+        cur_cu()->emit_op(OpCode::THROW, line); // [] 弹 e 入挂起寄存器,unwind
+        for (const u32 jump: end_jumps) {
+            patch_jump_or_fail(jump, node.loc()); // -> L_end
+        }
+    }
+
+    void CodeGen::emit_arm_body(StmtNode& body) { emit_stmt(body); }
+
+    void CodeGen::emit_arm_body(ExprNode& body) { emit_expr(body); }
+
+    void CodeGen::visitMatchStmtNode(MatchStmtNode& node) { emit_match(node); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode& node) {
         // name 由 compile_function 内部 intern + make_guard，此处只传 StringView；node.loc() 作 decl_loc。
@@ -1146,7 +1199,7 @@ namespace aria {
         compile_function(kAnonymousName, node.params, *node.body, node.loc(), FnKind::Lambda);
     }
 
-    void CodeGen::visitMatchExprNode(MatchExprNode& node) { not_impl(node, "match 表达式"); }
+    void CodeGen::visitMatchExprNode(MatchExprNode& node) { emit_match(node); }
 
     // ============================================================
     // 解构模式节点

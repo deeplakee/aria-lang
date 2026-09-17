@@ -67,6 +67,7 @@ namespace aria {
     X(ContinueOutsideLoop, Semantic)     /* continue 须在循环内 */                                               \
     X(ReturnOutsideFunction, Semantic)   /* return 须在函数内 */                                                 \
     X(TryWithoutHandler, Semantic)       /* try 须有 catch */                                                    \
+    X(UnreachableArm, Semantic)          /* match 通配臂后仍有臂（死臂；_ 恒末臂、至多一条） */                  \
     X(DuplicateParam, Semantic)          /* 同函数形参重名 */                                                    \
     X(UndefinedType, Semantic)           /* 引用未定义的类名 */                                                  \
     X(RedefinedVariable, Semantic)       /* 同作用域重复定义变量 */                                              \

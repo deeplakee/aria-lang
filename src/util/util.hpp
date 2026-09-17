@@ -172,6 +172,14 @@ namespace aria::util {
         return top;
     }
 
+    // 取走 optional 当前值并置空:返回被取走的 Opt<T>(可能为空)。Rust Option::take 同名同义;
+    // std::optional 无对应成员原语,故收口 std::exchange 习语在此供共用。
+    template<typename T>
+    [[nodiscard]]
+    Opt<T> take(Opt<T>& opt) {
+        return std::exchange(opt, std::nullopt);
+    }
+
     // 把 u32 按"低位在前"(小端序)拆成 4 字节:索引 0 为最低字节。
     [[nodiscard]]
     inline Vector<u8, 4> split_dword(const u32 word) noexcept {

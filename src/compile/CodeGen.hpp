@@ -315,6 +315,25 @@ namespace aria {
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
+        // match 语义检查（emit_match 开头调用）：通配臂后不得再有臂——死臂任何输入下不可达，
+        // 静默截断会吞臂序 bug，故编译期拒绝（_ 恒末臂、至多一条）。只读 arms、不触碰编译器状态，
+        // 首个死臂即 fail（loc 取其 body）。模板吃两种臂类型（MatchArm/MatchExprArm 的
+        // pattern/body 同形），定义在 .cpp（仅 CodeGen.cpp 实例化）。
+        template<typename Arm>
+        void validate_match_arms(const List<Arm>& arms) const;
+
+        // match 降糖总口（两 visit 委派，模板吃 MatchStmtNode/MatchExprNode 同形字段 subject/arms）：
+        // 先 validate_match_arms，随后 subject 求值一次、逐臂「DUP + 模式 + EQUAL + 未命中跳下臂」
+        // 链 + 兜底抛共享 MatchNoArm（发射形态见 .cpp 定义处注释）。臂体经 emit_arm_body 按臂类型
+        // 重载分派。定义在 .cpp（仅 CodeGen.cpp 实例化）。
+        template<typename Node>
+        void emit_match(Node& node);
+
+        // emit_match 臂体分派：语句臂走 emit_stmt（净零值），表达式臂走 emit_expr（每臂恰一值）。
+        void emit_arm_body(StmtNode& body);
+
+        void emit_arm_body(ExprNode& body);
+
         // CLOSURE 后函数值的绑定/注册分派（穷尽 switch,-Wswitch 提示漏项；行号与报错位置现场
         // 取 decl_loc）：具名 fun（Function）绑定到全局（顶层）或局部（嵌套,值填槽,经
         // bind_stack_value）；Lambda 留栈作表达式值不绑定；方法三态留栈不绑定、就地注册——fun

@@ -477,29 +477,31 @@ CALL argc              ; [r]
 
 `INVOKE_METHOD`（合并 `LOAD_FIELD`+`CALL`，少一次压绑方法、省一次 dispatch）已作为**预留指令**加入：当前模型无法编译期区分方法调用与属性访问，编译器暂不发射、VM 命中 `not_implemented` 终止；现状靠 `LOAD_FIELD`+`CALL` 保证正确性（见 §6.2）。for-in 的 `iter`/`has_next`/`next` 同此路径。
 
-### 5.7 match（糖 -> if-else 链）
+### 5.7 match（糖 -> 逐臂比较链，已落地）
 
-match 无独立指令，按 arm 顺序生成「求值模式 -> `EQUAL`（== 内容相等，见 §4.9）-> 命中跳转」链，subject 须跨 arm 保留：
+match 无独立指令：subject 求值一次驻留栈上（in-flight 临时，无隐藏局部；命中臂入口 `POP` 消费，全臂未命中由 `THROW` 的 unwind 清栈），逐臂展开「`DUP` 复制 subject + 模式表达式 + `EQUAL`（== 内容相等，见 §4.9）+ `JUMP_FALSE` 未命中跳下臂」链：
 
 ```
 <subject>              ; [s]
 # arm 1 (模式 p1)
-<p1>                   ; [s, p1]
-EQUAL                  ; [bool]
-JUMP_TRUE L_arm1       ; []  (弹 bool; s 保留)
-# arm 2 ... 同上
-JUMP L_default         ; 无匹配 (无 "_" -> 运行时错误)
-L_arm1:
-POP                    ; []  (丢弃 subject)
+DUP                    ; [s, s]  副本供比较,subject 本尊保留
+<p1>                   ; [s, s, p1]
+EQUAL                  ; [s, bool]
+JUMP_FALSE L_arm2      ; [s]     未命中 -> 下臂
+POP                    ; []      命中:丢弃 subject 进臂体
 <body1>
 JUMP L_end
-L_default:             ; "_" 兜底 arm
+L_arm2:                # "_" 臂:无比较,POP 直入臂体
 POP                    ; []
-<body_default>
+<body2>
+JUMP L_end
+L_noarm:               # 全臂未命中
+LOAD_REG MatchNoArm    ; [e]     共享 ObjException(VM bootstrap 铸造,消息静态)
+THROW                  ; []      弹 e 入挂起寄存器,unwind 接管不落 L_end
 L_end:
 ```
 
-matchExpr 同理，分支体为表达式（留值），需在各 arm 末尾统一栈深度。
+matchStmt 与 matchExpr 同构：臂体分别为语句（净零值）/ 单表达式（每臂恰一值），`L_end` 汇合点栈深各自还原（语句 0 / 表达式 +1）。臂间无分隔符；通配臂恒末臂（其后臂任何输入下不可达，编译期 `UnreachableArm` 拒绝，故 `_` 至多一条），`_` 末臂在场时兜底尾为死码仍统一发射；pattern 按臂序惰性求值（命中即停，后臂模式不求值）。
 
 ### 5.8 解构赋值 `listPattern = expr`
 

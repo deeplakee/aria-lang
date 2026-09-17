@@ -6,6 +6,7 @@
 #include "memory/Buffer.hpp"
 #include "memory/GC.hpp"
 #include "runtime/FrameStack.hpp"
+#include "util/util.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -205,7 +206,7 @@ namespace aria {
 
         [[nodiscard]]
         Opt<Value> take_error() noexcept {
-            return std::exchange(pending_error_, std::nullopt);
+            return util::take(pending_error_);
         }
 
         // 挂起载荷的只读引用(为空态时无值)。供 VM 根 tracer 标根用(take_error 取走会清空,

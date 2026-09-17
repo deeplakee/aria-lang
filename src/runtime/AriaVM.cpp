@@ -549,6 +549,34 @@ namespace aria {
         return module;
     }
 
+    bool AriaVM::run_import(const ObjString* path) {
+        // 契约见 AriaVM.hpp;三类失败点(解析/加载/进帧)一律 return false(载荷已 raise),
+        // unwind 留 dispatch_loop 调用点。
+        const auto& frame = current_->frames().top(); // 导入方帧:abs_path 作相对解析基;进帧后不再引用
+        // 相对分支取当前模块 dirname 作基;dir_ 可空时 abs_path 返空串,相对分支拒绝。
+        const auto canonical_path_str = resolve_module(path->view(), frame.module->abs_path(), source_roots_);
+        if (!canonical_path_str) {
+            return fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
+        }
+        const auto canonical_path = new_string(gc_, *canonical_path_str);
+        auto       guard          = gc_.make_guard(canonical_path); // 跨 find / load_module 内 set(rehash 触 GC)
+        if (const auto module_entry = modules_.find(Value::from_obj(canonical_path)); module_entry != nullptr) {
+            current_->push(module_entry->value); // 命中:体执行中即循环导入,复用半初始化对象
+            return true;
+        }
+        const auto module = load_module(canonical_path, path->view());
+        if (module == nullptr) {
+            return false; // 载荷已在寄存器
+        }
+        // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
+        const auto entry = module->entry();
+        ASSERT(entry != nullptr, "load_module 返回非空模块须已 set_entry");
+        const auto closure = new_closure(gc_, entry);
+        current_->push(Value::from_obj(closure));
+        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
+        return call_closure(closure, 0);
+    }
+
     template<OpCode Op>
     bool AriaVM::run_binary_numeric() {
         // 双 Int 走整数路径,任一 F64 升浮点(int 除/模零报错,% 为 C++ 语义,f64 按 IEEE)。
@@ -1177,54 +1205,15 @@ namespace aria {
                     not_implemented("MAKE_RANGE");
 
                 // ---- 模块导入 ----
-                case OpCode::IMPORT: {
-                    // path:u16;解析后把命中的 ObjModule 压栈,绑定交 CodeGen 按作用域走。
-                    //   - 命中(表内进度只有模块体执行):复用模块对象 -- 命中正在 run-once 的
-                    //     模块即循环导入,按文法返回半初始化对象。加载事实源 = 表成员资格。
-                    //   - 未命中:load_module 后以 entry 作一次普通函数调用进帧 -- 模块体
-                    //     run-once 即执行一个函数,RETURN 按函数名 == <module> 判定压回模块
-                    //     对象,两分支栈效应统一 [..., module],无递归 dispatch_loop()。
-                    // 根安全:canonical_path 经 intern 驻留是 weak root,guard 跨全程根化;
-                    //   module 与 entry 经 modules_ 根可达。
-                    ObjString* path = read_name(frame);
-                    // 相对分支取当前模块 dirname 作基;dir_ 可空时 abs_path 返空串,相对分支拒绝。
-                    const auto canonical_path_str =
-                            resolve_module(path->view(), frame.module->abs_path(), source_roots_);
-                    if (!canonical_path_str) {
-                        raise(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
-                    }
-                    auto canonical_path = new_string(gc_, *canonical_path_str);
-                    auto guard          = gc_.make_guard(canonical_path); // 跨 find / load_module 内 set(rehash 触 GC)
-                    if (const auto module_entry = modules_.find(Value::from_obj(canonical_path));
-                        module_entry != nullptr) {
-                        current_->push(module_entry->value);
-                        break;
-                    }
-                    ObjModule* module = load_module(canonical_path, path->view());
-                    if (module == nullptr) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
-                    }
-                    // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
-                    ObjFunction* entry = module->entry();
-                    ASSERT(entry != nullptr, "load_module 返回非空模块须已 set_entry");
-                    const auto closure = new_closure(gc_, entry);
-                    current_->push(Value::from_obj(closure));
-                    if (!call_closure(closure, 0)) {
-                        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
+                case OpCode::IMPORT:
+                    // path:u16;[..., module]。执行体收口于 run_import。
+                    if (!run_import(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
                     }
                     break;
-                }
 
                 // ---- 异常 ----
                 case OpCode::THROW: {

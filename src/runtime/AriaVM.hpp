@@ -152,6 +152,15 @@ namespace aria {
         // 模块对象 -- 无递归调用。
         Result<Value, Error> dispatch_loop();
 
+        // IMPORT 执行体(path 已读出):resolve_module 解析 specifier -> new_string intern 后
+        // guard 根化 -> modules_ 查表(命中复用压栈;命中体执行中的对象即循环导入,按文法得
+        // 半初始化对象)-> 未命中 load_module 后以 entry 现场包闭包经 call_closure 进帧
+        // run-once(模块体 RETURN 按函数名 == <module> 弹弃返回值压回模块对象,两分支栈效应
+        // 统一 [..., module],无递归 dispatch_loop())。bool 契约同 call_* 族:false ⟺ 载荷已
+        // raise(解析/加载/进帧三类失败点),unwind 留 dispatch_loop 调用点;仅限 dispatch_loop
+        // 驱动期调用(同 load_module)。
+        bool run_import(const ObjString* path);
+
         // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译(入口名 <module>)
         // -> **编译成功才入表** -> 返回模块对象(已 set_entry)。只加载与编译,不执行模块体 --
         // run-once 由调用方进帧驱动。nullptr ⟺ 载荷已 raise:读盘失败/名字无效经 fail 烘位置

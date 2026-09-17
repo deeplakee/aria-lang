@@ -1,5 +1,6 @@
 #include "compile/CodeGen.hpp"
 
+#include <limits>
 #include <memory>
 #include <ranges>
 
@@ -896,7 +897,7 @@ namespace aria {
     void CodeGen::visitIntegerLiteralNode(IntegerLiteralNode& node) {
         const u32 line  = node.line();
         const i64 value = node.value;
-        if (value >= -128 && value <= 127) {
+        if (value >= std::numeric_limits<i8>::min() && value <= std::numeric_limits<i8>::max()) {
             // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经
             // i8 保证符号语义、再转 u8 写字节（免窄化告警）。范围外的整数走常量池 LOAD_CONST。
             cur_cu()->emit_op(OpCode::LOAD_IMM, line);

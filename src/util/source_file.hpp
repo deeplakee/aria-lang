@@ -105,7 +105,7 @@ namespace aria::src {
             }
             // upper_bound 给出第一个起始偏移 > offset 的行；
             // 它的前一行（0-based line_idx）即为 offset 所属行。
-            auto line_idx = static_cast<u32>(std::ranges::upper_bound(line_starts_, offset) - line_starts_.begin());
+            u32 line_idx = static_cast<u32>(std::ranges::upper_bound(line_starts_, offset) - line_starts_.begin());
             if (line_idx > 0) {
                 --line_idx; // 落到所属行（0-based）
             }

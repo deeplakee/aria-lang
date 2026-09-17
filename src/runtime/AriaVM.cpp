@@ -680,7 +680,7 @@ namespace aria {
         auto& frames = current_->frames();
         for (usize i = frames.size() - 1; i < frames.size(); --i) { // 无符号反向:下溢即终止
             auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
-            const auto ip_off                                 = static_cast<u32>(last_ip - unit->code.data());
+            const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
             if (const auto rec = unit->find_try_handler(ip_off)) {
                 // 命中:回退到命中帧并转入 catch handler(弃内层帧+帧内截到 catch 参数槽+ip
                 // 跳+载荷落槽,统一在 Movement::unwind_to_handler)。调用方 break 回循环顶重取
@@ -698,7 +698,7 @@ namespace aria {
         auto [code, msg] = uncaught_error_parts(*current_->take_error());
         current_->reset();
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
-            const auto line = fn->unit().line_for_offset(ip_off);
+            const u32 line = fn->unit().line_for_offset(ip_off);
             msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(mod, line));
         }
         return Error::from_baked(code, msg);
@@ -1036,19 +1036,19 @@ namespace aria {
                 // ---- 控制流(u16 无符号;前向 JUMP* ip+=off,后向 JUMP_BACK ip-=off;
                 //      偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)----
                 case OpCode::JUMP: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     frame.ip += off;
                     break;
                 }
                 case OpCode::JUMP_TRUE: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     if (is_truthy(current_->pop())) {
                         frame.ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_TRUE_OR_POP: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     if (is_truthy(current_->peek(0))) {
                         frame.ip += off; // 命中:不弹,被测值即结果
                     } else {
@@ -1057,14 +1057,14 @@ namespace aria {
                     break;
                 }
                 case OpCode::JUMP_FALSE: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     if (!is_truthy(current_->pop())) {
                         frame.ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE_OR_POP: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     if (!is_truthy(current_->peek(0))) {
                         frame.ip += off; // 命中:不弹,被测值即结果
                     } else {
@@ -1073,7 +1073,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::JUMP_BACK: {
-                    const auto off = read_u16(frame);
+                    const u16 off = read_u16(frame);
                     frame.ip -= off;
                     // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 引用跨调用有效。
                     gc_.maybe_collect();

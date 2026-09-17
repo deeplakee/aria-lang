@@ -15,6 +15,7 @@ using aria::OpCode;
 using aria::OpFormat;
 using aria::String;
 using aria::u16;
+using aria::u32;
 using aria::u8;
 using aria::usize;
 using aria::Value;
@@ -73,9 +74,9 @@ TEST(Disassembler, ImmI8Format) {
 }
 
 TEST(Disassembler, JumpFwdFormat) {
-    GC         gc;
-    CodeUnit   cu{&gc};
-    const auto src = cu.emit_jump(OpCode::JUMP_TRUE, 1); // 占位 off=0
+    GC        gc;
+    CodeUnit  cu{&gc};
+    const u32 src = cu.emit_jump(OpCode::JUMP_TRUE, 1); // 占位 off=0
     // 填 2 字节再回填: base=3, target=5 -> off=2
     cu.emit_byte(0xAA, 1);
     cu.emit_byte(0xBB, 1);

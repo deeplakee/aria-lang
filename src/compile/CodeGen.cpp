@@ -287,7 +287,7 @@ namespace aria {
         emit_jump_back_or_fail(loop_ctx.back_target, loc);
 
         // exit
-        for (const auto fp: loop_ctx.exit_fwd_patches) {
+        for (const u32 fp: loop_ctx.exit_fwd_patches) {
             patch_jump_or_fail(fp, loc); // -> L_end
         }
     }
@@ -495,7 +495,7 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::LOAD_REG, line);
                 cur_cu()->emit_byte(kDefaultMarkOffset, line);
                 cur_cu()->emit_op(OpCode::EQUAL, line);
-                const auto skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+                const u32 skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
                 emit_expr(*param.default_value);
                 cur_cu()->emit_store_local(slot, line); // peek-store 换入参数槽
                 patch_jump_or_fail(skip, loc);
@@ -519,19 +519,13 @@ namespace aria {
         // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
         validate_params(params, decl_loc);
 
-        // 声明区发射（CLOSURE/绑定/注册）行号与报错位置统一取声明处 decl_loc--声明语句的执行点在
-        // 声明首 token（fun 关键字/成员名,与 var/def/import 绑定取语句行的惯例一致）;体尾隐式返回
-        // 属体区,行号取 body。
-        const u32 decl_line = decl_loc.line();
-        const u32 body_line = body.line();
-
         const auto fn = new_function(gc_, mod_ctx_->module_, name, params.size(), min_arity(params));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
         // fn->upvalue_descs_)逐个建/复用 upvalue(表在元数据不进字节码流,CLOSURE 定长 3B)。
-        cur_cu()->emit_op(OpCode::CLOSURE, decl_line);
-        cur_cu()->emit_word(fn_idx, decl_line);
+        cur_cu()->emit_op(OpCode::CLOSURE, decl_loc.line());
+        cur_cu()->emit_word(fn_idx, decl_loc.line());
 
         // 分派须在 CLOSURE 之后、子上下文建立之前：局部绑定先于体编译，体内自引用此名时
         // 父帧局部须已登记且已初始化（嵌套具名函数递归自捕获）。
@@ -549,7 +543,7 @@ namespace aria {
         // 编译体（BlockNode 自带 scope）。
         // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
         emit_stmt(body);
-        emit_implicit_return(body_line);
+        emit_implicit_return(body.line());
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
         // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
@@ -617,10 +611,10 @@ namespace aria {
     void CodeGen::visitIfStmtNode(IfStmtNode& node) {
         const u32 line = node.line();
         emit_expr(*node.condition);
-        const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else / end
+        const u32 jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else / end
         emit_stmt(*node.then_branch);
         if (node.else_branch != nullptr) {
-            const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
+            const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
             // -> else
             patch_jump_or_fail(jf, node.loc());
             emit_stmt(*node.else_branch);
@@ -635,7 +629,7 @@ namespace aria {
         auto      loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
                                      .back_target      = cur_cu()->size()}; // 循环头 = 条件起点 = continue 后向目标
         emit_expr(*node.condition);
-        const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+        const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
@@ -661,7 +655,7 @@ namespace aria {
         }
         if (has_cond) {
             emit_expr(*node.condition);
-            const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+            const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
             loop_ctx.exit_fwd_patches.push_back(patch);
         } // 无 cond: exit 列表空，收尾只有回边 + break 回填
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
@@ -671,7 +665,7 @@ namespace aria {
         // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
         if (loop_ctx.continue_fwd_patches) {
-            for (const auto patch: *loop_ctx.continue_fwd_patches) {
+            for (const u32 patch: *loop_ctx.continue_fwd_patches) {
                 patch_jump_or_fail(patch, node.loc()); // -> L_incr
             }
         }
@@ -712,7 +706,7 @@ namespace aria {
         cur_cu()->emit_load_local(iter_var_slot, line);
         // [bool]
         emit_method_call0("has_next", line, node.loc());
-        const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+        const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 
@@ -739,7 +733,7 @@ namespace aria {
         }
         auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
         emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
-        const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_end（回填）
+        const u32 patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_end（回填）
         loop_ctx.exit_fwd_patches.push_back(patch);
     }
 
@@ -751,7 +745,7 @@ namespace aria {
         auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
         emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
         if (loop_ctx.continue_fwd_patches) {
-            const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_incr（回填）
+            const u32 patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_incr（回填）
             loop_ctx.continue_fwd_patches->push_back(patch);
         } else {
             emit_jump_back_or_fail(loop_ctx.back_target, node.loc()); // 后向跳循环头（条件判断处）
@@ -793,17 +787,17 @@ namespace aria {
         // 栈平衡:try 体 end_scope 与 catch 子句 end_scope(弹 e + catch 体局部)都回到
         // stack_depth,两路径在 L_end 齐平(坑 #10 校验)。
         const auto stack_depth = static_cast<u32>(cur_fn_ctx()->locals_.size()); // try 入口局部数(try scope 开前)
-        const auto begin       = cur_cu()->size();
+        const u32  begin       = cur_cu()->size();
         const auto rec_idx     = cur_cu()->try_records.size();
         // 预插占位(begin 已定,余待回填)
         cur_cu()->try_records.push(TryRecord{begin, 0, 0, 0});
         begin_scope();         // try 体 scope
         emit_stmt(*node.body); // 嵌套 try 在此编译,各自入口预插占位(begin > 本层)-> 整体升序(坑 #4)
         end_scope(line);
-        const auto end   = cur_cu()->size();
-        const auto jskip = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
+        const u32 end   = cur_cu()->size();
+        const u32 jskip = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
         // L_catch
-        const auto handle = cur_cu()->size();
+        const u32 handle = cur_cu()->size();
         begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
         (void) define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
@@ -983,13 +977,13 @@ namespace aria {
         emit_expr(*node.lhs);
         // 短路逻辑运算：lhs 真假跳留值、跳过 rhs；否则弹 lhs 求 rhs。跳转回填到 rhs 之后（L_end）。
         if (node.op == Op::Binary::Or) {
-            const auto j = cur_cu()->emit_jump(OpCode::JUMP_TRUE_OR_POP, line);
+            const u32 j = cur_cu()->emit_jump(OpCode::JUMP_TRUE_OR_POP, line);
             emit_expr(*node.rhs);
             patch_jump_or_fail(j, node.loc()); // -> L_end（rhs 之后）
             return;
         }
         if (node.op == Op::Binary::And) {
-            const auto j = cur_cu()->emit_jump(OpCode::JUMP_FALSE_OR_POP, line);
+            const u32 j = cur_cu()->emit_jump(OpCode::JUMP_FALSE_OR_POP, line);
             emit_expr(*node.rhs);
             patch_jump_or_fail(j, node.loc()); // -> L_end（rhs 之后）
             return;
@@ -1137,9 +1131,9 @@ namespace aria {
     void CodeGen::visitIfExprNode(IfExprNode& node) {
         const u32 line = node.line();
         emit_expr(*node.condition);
-        const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else
+        const u32 jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else
         emit_expr(*node.then_branch);
-        const auto jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
+        const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
         // -> else
         patch_jump_or_fail(jf, node.loc());
         emit_expr(*node.else_branch);

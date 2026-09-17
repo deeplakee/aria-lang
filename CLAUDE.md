@@ -68,7 +68,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 ## Git 提交纪律（强制）
 
 - **改动完成不自行 commit**：代码/文档改完、验证全绿后即向用户报告并停手，改动留在工作区等 review；用户明确说提交（「commit」/「提交吧」等）后才执行 `git commit`。不抢先 `git add` 备提交。
-- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `GIT_COMMIT_CONVENTION.md` 成文：`<type>(<scope>): <subject>` 标题行（type 固定九类枚举，subject 中文动词短语 ≤ 72 列）+ body 三段骨架（`动机:` / `改动:` / `验证:`，取舍与顺带可选），验证行写实际执行的 ctest 结果与 clang-format 幂等；只写落地事实；动机直述理由，禁「(用户拍板)」式过程注记与模板尾巴。
+- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `GIT_COMMIT_CONVENTION.md` 成文：`<type>(<scope>): <subject>` 标题行（type 固定九类枚举，subject 中文动词短语 ≤ 72 列）+ body 三段骨架（`动机:` / `改动:` / `验证:`，取舍与顺带可选），验证行写实际执行的 ctest 结果与 clang-format 幂等；只写落地事实；动机直述理由，禁「(用户拍板)」式过程注记与模板尾巴，禁里程碑/阶段号/计划名等规划词汇。
 
 ## 输出与格式化（强制）
 

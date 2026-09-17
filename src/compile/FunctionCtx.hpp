@@ -40,14 +40,17 @@ namespace aria {
 
     // 循环上下文（break / continue 回填）。简单聚合：
     //   - loop_scope_depth：循环体所在 scope 深度（break/continue 弹局部至此）。
-    //   - continue_back_target：后向 continue 目标（while / for-in / for 无 incr）。
-    //   - continue_fwd_patches：前向 continue 回填（for 有 incr -> L_incr）。
-    //   - break_fwd_patches：待回填的 JUMP 占位偏移。
+    //   - back_target：循环头（条件求值点,while/for-in 的 L_start、for 的 L_cond）——所有循环公有的
+    //     唯一编译期已知跳转目标：回边恒跳此，后向 continue 亦跳此。
+    //   - continue_fwd_patches：前向 continue 占位偏移（-> L_incr），nullopt = 本循环无前向通道
+    //     （continue 后向跳 back_target）；仅 for 带 incr 在入栈前 emplace 打开。
+    //   - exit_fwd_patches：前向退出占位偏移（循环头条件假跳 JUMP_FALSE + 各 break 的 JUMP），
+    //     循环收尾 emit_loop_backedge_and_exits 统一回填 -> L_end。
     struct LoopCtx {
-        u32         loop_scope_depth     = 0;
-        Opt<u32>    continue_back_target = std::nullopt;
-        List<usize> continue_fwd_patches;
-        List<usize> break_fwd_patches;
+        u32              loop_scope_depth     = 0;
+        u32              back_target          = 0;
+        Opt<List<usize>> continue_fwd_patches = std::nullopt;
+        List<usize>      exit_fwd_patches;
     };
 
     class FunctionCtx {

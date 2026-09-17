@@ -228,9 +228,15 @@ namespace aria {
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
         void patch_jump_or_fail(usize src_off, SourceLoc loc) const;
 
-        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge。比 patch_jump
-        // 多 line 参数:要发射 JUMP_BACK 指令(line 供其行号)。
-        void emit_jump_back_or_fail(u32 target_off, u32 line, SourceLoc loc) const;
+        // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge。要发射
+        // JUMP_BACK 指令,行号现场取 loc(各调用点行号与 loc 同源,均取节点行)。
+        void emit_jump_back_or_fail(u32 target_off, SourceLoc loc) const;
+
+        // 循环收尾统一发射口（while/for/for-in 收尾共用）：先发 JUMP_BACK 回边（目标 =
+        // loop_ctx.back_target，所有循环公有的循环头），再把 exit 回填列表逐个回填 -> L_end。
+        // for 的 continue 前向回填须先于递增发射（时序见 visitForStmtNode），不入本口、由调用点
+        // 先行处理。
+        void emit_loop_backedge_and_exits(const LoopCtx& loop_ctx, SourceLoc loc) const;
 
         // declare_global 已存在(重定义) -> fail RedefinedVariable。
         void declare_global_or_fail(StringView name, SourceLoc loc) const;

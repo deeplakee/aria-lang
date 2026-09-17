@@ -264,9 +264,19 @@ namespace aria {
         }
     }
 
-    void CodeGen::emit_jump_back_or_fail(const u32 target_off, const u32 line, const SourceLoc loc) const {
-        if (!cur_cu()->emit_jump_back(target_off, line)) {
+    void CodeGen::emit_jump_back_or_fail(const u32 target_off, const SourceLoc loc) const {
+        if (!cur_cu()->emit_jump_back(target_off, loc.line())) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "回边偏移超过 64KB");
+        }
+    }
+
+    void CodeGen::emit_loop_backedge_and_exits(const LoopCtx& loop_ctx, const SourceLoc loc) const {
+        // backedge
+        emit_jump_back_or_fail(loop_ctx.back_target, loc);
+
+        // exit
+        for (const auto fp: loop_ctx.exit_fwd_patches) {
+            patch_jump_or_fail(fp, loc); // -> L_end
         }
     }
 
@@ -607,22 +617,17 @@ namespace aria {
     }
 
     void CodeGen::visitWhileStmtNode(WhileStmtNode& node) {
-        const u32 line    = node.loc_line();
-        const u32 l_start = cur_cu()->size();
+        const u32 line     = node.loc_line();
+        auto      loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
+                                     .back_target      = cur_cu()->size()}; // 循环头 = 条件起点 = continue 后向目标
         emit_expr(*node.condition);
-        const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
-
-        auto loop_ctx                 = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_};
-        loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start
+        const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+        loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
-        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
+        loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
 
-        emit_jump_back_or_fail(l_start, line, node.loc());
-        patch_jump_or_fail(jf, node.loc()); // -> L_end
-        for (const auto bp: loop.break_fwd_patches) {
-            patch_jump_or_fail(bp, node.loc());
-        }
+        emit_loop_backedge_and_exits(loop_ctx, node.loc());
     }
 
     void CodeGen::visitForStmtNode(ForStmtNode& node) {
@@ -632,40 +637,35 @@ namespace aria {
         if (node.init != nullptr) {
             emit_stmt(*node.init);
         }
-        const u32  l_cond   = cur_cu()->size();
         const bool has_cond = node.condition != nullptr;
         const bool has_incr = node.increment != nullptr;
-        Opt<usize> jf; // 条件假跳 L_end 占位；无 cond 时留空（永不回填）
+        // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳循环头（back_target）。
+        // 循环头 = 条件起点 = L_cond
+        auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};
+        if (has_incr) {
+            loop_ctx.continue_fwd_patches.emplace(); // 打开前向 continue 通道
+        }
         if (has_cond) {
             emit_expr(*node.condition);
-            jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
-        }
-        // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳 L_cond。
-        auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope};
-        if (!has_incr) {
-            loop_ctx.continue_back_target = l_cond; // 无 incr: continue 后向跳 L_cond
-        } // 有 incr: 留空，走前向 continue_fwd_patches -> L_incr
+            const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+            loop_ctx.exit_fwd_patches.push_back(patch);
+        } // 无 cond: exit 列表空，收尾只有回边 + break 回填
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
-        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
+        loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
 
         // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
         // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
-        for (const auto patch: loop.continue_fwd_patches) {
-            patch_jump_or_fail(patch, node.loc()); // -> L_incr
+        if (loop_ctx.continue_fwd_patches) {
+            for (const auto patch: *loop_ctx.continue_fwd_patches) {
+                patch_jump_or_fail(patch, node.loc()); // -> L_incr
+            }
         }
         if (has_incr) {
             emit_expr(*node.increment);
             cur_cu()->emit_op(OpCode::POP, line);
         }
-        emit_jump_back_or_fail(l_cond, line, node.loc());
-
-        if (jf) {
-            patch_jump_or_fail(*jf, node.loc()); // -> L_end
-        }
-        for (const auto bp: loop.break_fwd_patches) {
-            patch_jump_or_fail(bp, node.loc()); // -> L_end
-        }
+        emit_loop_backedge_and_exits(loop_ctx, node.loc());
         end_scope(line);
     }
 
@@ -692,15 +692,14 @@ namespace aria {
         emit_method_call0("iter", line, node.loc());                          // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = define_local_or_fail("<iter>", node.loc()); // 值已在槽位，登记即初始化
 
-        const u32 l_start = cur_cu()->size();
+        // 循环头 = has_next 判断处
+        auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};
         // [iter]（receiver）
         cur_cu()->emit_load_local(iter_var_slot, line);
         // [bool]
         emit_method_call0("has_next", line, node.loc());
-        const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end
-
-        auto loop_ctx                 = LoopCtx{.loop_scope_depth = loop_scope};
-        loop_ctx.continue_back_target = l_start; // continue 后向跳 L_start（has_next 判断处）
+        const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+        loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 
         // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
@@ -713,13 +712,9 @@ namespace aria {
         emit_stmt(*node.body);
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 
-        const auto loop = util::pop_top(cur_fn_ctx()->loop_stack_);
+        loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
 
-        emit_jump_back_or_fail(l_start, line, node.loc());
-        patch_jump_or_fail(jf, node.loc()); // -> L_end
-        for (const auto bp: loop.break_fwd_patches) {
-            patch_jump_or_fail(bp, node.loc());
-        }
+        emit_loop_backedge_and_exits(loop_ctx, node.loc());
         end_scope(line); // for-in：POP_N 弹 <iter>
     }
 
@@ -728,9 +723,10 @@ namespace aria {
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::BreakOutsideLoop, node.loc(), "break 不在循环内");
         }
-        auto& loop = cur_fn_ctx()->loop_stack_.top();
-        emit_pop_locals_to(loop.loop_scope_depth, line);
-        loop.break_fwd_patches.push_back(cur_cu()->emit_jump(OpCode::JUMP, line)); // -> L_end（回填）
+        auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
+        emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
+        const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_end（回填）
+        loop_ctx.exit_fwd_patches.push_back(patch);
     }
 
     void CodeGen::visitContinueStmtNode(ContinueStmtNode& node) {
@@ -738,12 +734,13 @@ namespace aria {
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::ContinueOutsideLoop, node.loc(), "continue 不在循环内");
         }
-        auto& loop = cur_fn_ctx()->loop_stack_.top();
-        emit_pop_locals_to(loop.loop_scope_depth, line);
-        if (loop.continue_back_target) {
-            emit_jump_back_or_fail(*loop.continue_back_target, line, node.loc());
+        auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
+        emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
+        if (loop_ctx.continue_fwd_patches) {
+            const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_incr（回填）
+            loop_ctx.continue_fwd_patches->push_back(patch);
         } else {
-            loop.continue_fwd_patches.push_back(cur_cu()->emit_jump(OpCode::JUMP, line)); // -> L_incr（回填）
+            emit_jump_back_or_fail(loop_ctx.back_target, node.loc()); // 后向跳循环头（条件判断处）
         }
     }
 

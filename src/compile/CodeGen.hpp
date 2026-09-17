@@ -295,7 +295,7 @@ namespace aria {
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
         // 值填槽模型：声明时值已在栈顶，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
         // IdentifierPattern -> define_local_or_fail 值填槽（不发指令）；WildcardPattern -> POP
-        // 丢弃； ListPattern -> not_impl。行号取自 pat.loc_line()（仅 _/ListPattern 分支发射时用）。
+        // 丢弃； ListPattern -> not_impl。行号取自 pat.line()（仅 _/ListPattern 分支发射时用）。
         void bind_pattern(PatternNode& node);
 
         // --- 遍历入口（薄包装：accept 双分派）---
@@ -333,7 +333,7 @@ namespace aria {
         // 函数体尾隐式返回：init 方法返回 this（实例化不变式 Foo() 得实例——call_class 槽 0 原位换
         // 实例后以返回值为实例化结果，LOAD_LOCAL 0 即 this），其余返回 nil（显式 return 后为死
         // 代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标函数上下文就位后调用；行号由调用点定
-        // （体尾取 body.loc_line()，入口取 program.loc_line()）。
+        // （体尾取 body.line()，入口取 program.line()）。
         void emit_implicit_return(u32 line) const;
 
         // name 为函数名 StringView（具名 fun 声明名 / lambda kAnonymousName / 入口 `<main>` / 类成员
@@ -343,7 +343,7 @@ namespace aria {
         // 方法族 = 具名局部 this，见 is_method）;隐式返回尾（InitMethod 返回 this）。完成后切回父
         // 上下文,函数值已在父序列压栈（CLOSURE 按捕获描述表建 upvalue）。decl_loc 供 validate_params
         // 报参数错;声明区发射（CLOSURE/绑定/注册）的行号与报错位置统一取 decl_loc,隐式返回尾行号
-        // 取 body.loc_line()。无默认值,调用处显式写明。
+        // 取 body.line()。无默认值,调用处显式写明。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc,
                               FnKind kind);
 

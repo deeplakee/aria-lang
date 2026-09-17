@@ -125,7 +125,7 @@ namespace aria {
             for (const auto& decl: program.declarations) {
                 emit_stmt(*decl);
             }
-            emit_implicit_return(program.loc_line());
+            emit_implicit_return(program.line());
         } catch (AriaCompileException& e) {
             // 出错即 unwind 到此：随一次性对象析构，~ModuleCtx 沿 enclosing_ 链释放
             // 入口 + 出错未还原的子上下文。
@@ -393,7 +393,7 @@ namespace aria {
             (void) define_local_or_fail(id->name, node.loc());
             return;
         }
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         if (dynamic_cast<WildcardPatternNode*>(&node) != nullptr) {
             cur_cu()->emit_op(OpCode::POP, line);
             return;
@@ -522,7 +522,7 @@ namespace aria {
         // 声明首 token（fun 关键字/成员名,与 var/def/import 绑定取语句行的惯例一致）;体尾隐式返回
         // 属体区,行号取 body。
         const u32 decl_line = decl_loc.line();
-        const u32 line      = body.loc_line();
+        const u32 body_line = body.line();
 
         const auto fn = new_function(gc_, mod_ctx_->module_, name, params.size(), min_arity(params));
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
@@ -548,7 +548,7 @@ namespace aria {
         // 编译体（BlockNode 自带 scope）。
         // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
         emit_stmt(body);
-        emit_implicit_return(line);
+        emit_implicit_return(body_line);
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
         // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
@@ -593,7 +593,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitBlockNode(BlockNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         begin_scope();
         for (const auto& stmt: node.statements) {
             emit_stmt(*stmt);
@@ -602,19 +602,19 @@ namespace aria {
     }
 
     void CodeGen::visitExprStmtNode(ExprStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr(*node.expr);
         cur_cu()->emit_op(OpCode::POP, line);
     }
 
     void CodeGen::visitPrintStmtNode(PrintStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr(*node.expr);
         cur_cu()->emit_op(OpCode::PRINT, line);
     }
 
     void CodeGen::visitIfStmtNode(IfStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr(*node.condition);
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else / end
         emit_stmt(*node.then_branch);
@@ -630,7 +630,7 @@ namespace aria {
     }
 
     void CodeGen::visitWhileStmtNode(WhileStmtNode& node) {
-        const u32 line     = node.loc_line();
+        const u32 line     = node.line();
         auto      loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
                                      .back_target      = cur_cu()->size()}; // 循环头 = 条件起点 = continue 后向目标
         emit_expr(*node.condition);
@@ -644,7 +644,7 @@ namespace aria {
     }
 
     void CodeGen::visitForStmtNode(ForStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         begin_scope();
         const u32 loop_scope = cur_fn_ctx()->scope_depth_;
         if (node.init != nullptr) {
@@ -683,7 +683,7 @@ namespace aria {
     }
 
     void CodeGen::visitForInStmtNode(ForInStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // 等价形式（lowering 蓝图）：
         //   {                                     // for-in scope（整循环存活）
         //     var <iter> = <iterable>.iter();       // <iter> 隐藏局部（"<iter>" 含 <> 不可作标识符，不撞用户名）
@@ -732,7 +732,7 @@ namespace aria {
     }
 
     void CodeGen::visitBreakStmtNode(BreakStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::BreakOutsideLoop, node.loc(), "break 不在循环内");
         }
@@ -743,7 +743,7 @@ namespace aria {
     }
 
     void CodeGen::visitContinueStmtNode(ContinueStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
             fail(ErrorCode::ContinueOutsideLoop, node.loc(), "continue 不在循环内");
         }
@@ -758,14 +758,14 @@ namespace aria {
     }
 
     void CodeGen::visitReturnStmtNode(ReturnStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // 入口 <main> 亦为函数，故顶层 return 合法（cur_fn_ctx()->fn_ 恒非空）。
         emit_expr_or_nil(node.value.get(), line);
         cur_cu()->emit_op(OpCode::RETURN, line);
     }
 
     void CodeGen::visitImportStmtNode(ImportStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // IMPORT path:u16 压模块值于栈顶；绑定与 var/fun 同形：顶层 -> DEF_GLOBAL alias，嵌套 -> 值填槽。
         // path/alias 经 add_name_or_fail（无需守卫，见类首 GC 安全注）。
         const auto path_idx = add_name_or_fail(node.path, node.loc());
@@ -776,7 +776,7 @@ namespace aria {
     }
 
     void CodeGen::visitTryStmtNode(TryStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // try 须有 catch（parse 层允许无 catch，语义收口在此）。
         if (node.catch_body == nullptr) {
             fail(ErrorCode::TryWithoutHandler, node.loc(), "try 须有 catch");
@@ -815,7 +815,7 @@ namespace aria {
     }
 
     void CodeGen::visitThrowStmtNode(ThrowStmtNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // 求值抛出表达式后 THROW 弹值入寄存器,运行期由 unwind 查异常记录表派发(语义见
         // AriaVM dispatch_loop 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
         // [v]
@@ -832,7 +832,7 @@ namespace aria {
     }
 
     void CodeGen::visitDefDeclNode(DefDeclNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
 
         // ① superclass:有 -> 裸名解析 + 读取(运行期解析 superclass 值,跨模块导入类可用;非类值
         //    由运行期 MAKE_CLASS 报 TypeMismatch;编译期不查全局,未命中沿用运行期 UndefinedVariable);
@@ -873,7 +873,7 @@ namespace aria {
             // 初始化器先于声明名求值，绑定与 fun/def/import 同收 bind_stack_value：init 不登记
             // 当前帧局部，求值后栈高 == locals_.size()，值恰在 declare 槽位（值填槽）；init 里的
             // 同名引用沿 resolve 链落外层（遮蔽场合捕获外层、落全局则运行期 UndefinedVariable）。
-            emit_expr_or_nil(initializer.get(), id->loc_line());
+            emit_expr_or_nil(initializer.get(), id->line());
             bind_stack_value(id->name, id->loc());
         }
     }
@@ -882,7 +882,7 @@ namespace aria {
         // 静态变量成员（def 体 var）：求值初始化器(无则 nil)+ MAKE_STATIC。eager 语义随 lowering
         // 自然成立(初始化器在类定义点求值);初始化器在 enclosing 作用域解析名字(类名尚未绑定,
         // 自引用 -> 运行期 UndefinedVariable)。
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr_or_nil(node.initializer.get(), line); // [class, v]
         const auto member_idx = add_name_or_fail(node.name, node.loc());
         cur_cu()->emit_op(OpCode::MAKE_STATIC, line);
@@ -894,7 +894,7 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitIntegerLiteralNode(IntegerLiteralNode& node) {
-        const u32 line  = node.loc_line();
+        const u32 line  = node.line();
         const i64 value = node.value;
         if (value >= -128 && value <= 127) {
             // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经
@@ -913,26 +913,26 @@ namespace aria {
     }
 
     void CodeGen::visitFloatLiteralNode(FloatLiteralNode& node) {
-        const u32  line = node.loc_line();
+        const u32  line = node.line();
         const auto idx  = add_constant_or_fail(Value::from_f64(node.value), node.loc());
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
     }
 
     void CodeGen::visitStringLiteralNode(StringLiteralNode& node) {
-        const u32  line = node.loc_line();
+        const u32  line = node.line();
         const auto idx  = add_name_or_fail(node.value, node.loc());
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
     }
 
     void CodeGen::visitBoolLiteralNode(BoolLiteralNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         cur_cu()->emit_op(node.value ? OpCode::LOAD_TRUE : OpCode::LOAD_FALSE, line);
     }
 
     void CodeGen::visitNilLiteralNode(NilLiteralNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         cur_cu()->emit_op(OpCode::LOAD_NIL, line);
     }
 
@@ -940,7 +940,7 @@ namespace aria {
         // 入口 take：Prepare = no-op（locator 是槽位/捕获索引/全局名，编译期常量，无接收者可备）；
         // Locate（复合赋值/前置自增定位腿）与 Load 同形——重解析免费，无副本可留。
         const auto mode     = take_lvalue_mode();
-        const u32  line     = node.loc_line();
+        const u32  line     = node.line();
         const auto resolved = resolve_name_or_fail(node.name, node.loc());
         switch (mode) {
             case LvalueMode::Prepare:
@@ -960,7 +960,7 @@ namespace aria {
         // this 是关键字非标识符:专用解析(resolve_this_or_fail,沿 ctx 链找最近实例方法、嵌套
         // 经 upvalue 捕获、永不落全局),发射同普通局部读取(Local 恒槽 0 / Upvalue 捕获索引)。
         const auto resolved = resolve_this_or_fail(node.loc());
-        emit_load_var(resolved, node.loc_line());
+        emit_load_var(resolved, node.line());
     }
 
     void CodeGen::visitSuperExprNode(SuperExprNode& node) {
@@ -972,13 +972,13 @@ namespace aria {
             fail(ErrorCode::SuperOutsideMethod, node.loc(), "super 不在实例方法内");
         }
         const auto name_idx = add_name_or_fail(node.name, node.loc());
-        const u32  line     = node.loc_line();
+        const u32  line     = node.line();
         cur_cu()->emit_op(OpCode::LOAD_SUPER_FIELD, line);
         cur_cu()->emit_word(name_idx, line); // [bound]
     }
 
     void CodeGen::visitBinaryExprNode(BinaryExprNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr(*node.lhs);
         // 短路逻辑运算：lhs 真假跳留值、跳过 rhs；否则弹 lhs 求 rhs。跳转回填到 rhs 之后（L_end）。
         if (node.op == Op::Binary::Or) {
@@ -998,7 +998,7 @@ namespace aria {
     }
 
     void CodeGen::visitUnaryExprNode(UnaryExprNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         switch (node.op) {
             case Op::Unary::Minus:
                 emit_expr(*node.operand);
@@ -1026,7 +1026,7 @@ namespace aria {
     }
 
     void CodeGen::visitAssignmentNode(AssignmentNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         if (node.op == Op::Assignment::Assign) {
             // 普通 =：Prepare（接收者准备，编译期常量 locator 目标恒 no-op）-> <e> -> Store。
             // STORE_FIELD 栈形 [obj, v] -> [v] 要求接收者先于值入栈，发射权在首腿的目标节点；
@@ -1048,7 +1048,7 @@ namespace aria {
     void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode& node) { not_impl(node, "解构赋值"); }
 
     void CodeGen::visitCallNode(CallNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         // 实参上限 kMaxArguments（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
         if (node.args.size() > kMaxArguments) {
             fail(ErrorCode::TooManyArguments, node.loc(), "实参数超过 {}", kMaxArguments);
@@ -1091,7 +1091,7 @@ namespace aria {
         // Store = 赋值目标（只发 store 指令，值由调用方压在栈顶）；Locate = 复合赋值/前置自增
         // 定位腿。super.成员 不经此（独立 SuperExprNode）。
         const auto mode = take_lvalue_mode();
-        const u32  line = node.loc_line();
+        const u32  line = node.line();
         if (try_emit_this_field(node, mode, line)) {
             return;
         }
@@ -1134,7 +1134,7 @@ namespace aria {
     void CodeGen::visitRangeExprNode(RangeExprNode& node) { not_impl(node, "区间表达式"); }
 
     void CodeGen::visitIfExprNode(IfExprNode& node) {
-        const u32 line = node.loc_line();
+        const u32 line = node.line();
         emit_expr(*node.condition);
         const auto jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else
         emit_expr(*node.then_branch);

@@ -56,7 +56,7 @@ namespace aria {
         // 行号（1-based；空态 / 无效为 0，不做兜底，直接取 loc 原值）。
         [[nodiscard]]
         u32 loc_line() const noexcept {
-            return static_cast<u32>(loc_.line());
+            return loc_.line();
         }
 
         [[nodiscard]]

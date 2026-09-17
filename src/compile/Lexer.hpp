@@ -41,7 +41,7 @@ namespace aria {
         // 扫描状态（构造注入）
         SourceFile& source_; // 借用，扫描期存活
         StringView  src_;    // = source_.content()，'\0' 结尾可作哨兵
-        usize       pos_;    // 字节游标
+        u32         pos_;    // 字节游标
         List<Token> tokens_;
         List<Error> errors_;
         bool        is_fatal_; // 错误达上限，主循环应终止
@@ -73,11 +73,11 @@ namespace aria {
         // --- 游标辅助 ---
         // 越界（pos_+ahead >= src_.size()）返回 '\0' 哨兵，安全。
         [[nodiscard]]
-        char peek_byte(usize ahead = 0) const noexcept;
+        char peek_byte(u32 ahead = 0) const noexcept;
 
         // 推进游标 n 字节。含越界断言（pos_+n <= src_.size()），调试期捕获推进过头。
         // 多字节推进（+= 2/+= 3/+= len）统一走此；单字节 ++pos_ 循环内可保留。
-        void advance(usize n = 1) noexcept;
+        void advance(u32 n = 1) noexcept;
 
         // 当 pred(当前字节) 为真且未到 EOF 时，逐字节推进 pos_，直至 pred 假或 EOF。
         // 用于「连续消费满足某谓词的字节」循环（如数字序列、注释到行尾、\u{...} 收集 hex）。
@@ -94,7 +94,7 @@ namespace aria {
 
         // 把字节偏移解析为 SourceLoc（token 位置构造用）。
         [[nodiscard]]
-        SourceLoc loc_at(usize offset) const;
+        SourceLoc loc_at(u32 offset) const;
     };
 
 } // namespace aria

@@ -49,12 +49,12 @@ namespace aria::utf8 {
 
 
     // 解码位于 str[offset] 处的一个 UTF-8 序列。
-    // 返回 {码点, 消费的字节数}：合法序列返回真实码点与字节数；
+    // 返回 {码点, 消费的字节数}（字节数 0..4，u8 即够）：合法序列返回真实码点与字节数；
     // 遇到非法字节时返回 {kReplacementChar, 1}（只吞掉一个坏字节，便于继续扫描）。
     // offset 超出范围（>= str.size()）时返回 {kReplacementChar, 0}，不进行任何读取；
     // 正常使用时调用方应保证 offset < str.size()，此时返回的字节数 >= 1。
     [[nodiscard]]
-    constexpr Pair<codepoint, usize> decode_one(const StringView str, const usize offset = 0) noexcept {
+    constexpr Pair<codepoint, u8> decode_one(const StringView str, const usize offset = 0) noexcept {
         if (offset >= str.size()) {
             return {kReplacementChar, 0};
         }

@@ -113,22 +113,22 @@ namespace aria {
     // 游标辅助
     // ============================================================
 
-    char Lexer::peek_byte(const usize ahead) const noexcept {
-        const usize index = pos_ + ahead;
+    char Lexer::peek_byte(const u32 ahead) const noexcept {
+        const u32 index = pos_ + ahead;
         if (index >= src_.size()) {
             return '\0';
         }
         return src_[index];
     }
 
-    void Lexer::advance(const usize n) noexcept {
+    void Lexer::advance(const u32 n) noexcept {
         ASSERT(pos_ + n <= src_.size(), "Lexer::advance 推进越界");
         pos_ += n;
     }
 
     bool Lexer::is_eof() const noexcept { return pos_ >= src_.size(); }
 
-    SourceLoc Lexer::loc_at(const usize offset) const { return SourceLoc{&source_, source_.locate(offset)}; }
+    SourceLoc Lexer::loc_at(const u32 offset) const { return SourceLoc{&source_, source_.locate(offset)}; }
 
     // ============================================================
     // 错误记账
@@ -178,7 +178,7 @@ namespace aria {
         if (is_fatal_) {
             return; // 致命错误，不补 Eof
         }
-        const usize eof = src_.size();
+        const u32 eof = src_.size();
         tokens_.push_back(Token{TokenType::Eof, {}, loc_at(eof)});
     }
 
@@ -214,10 +214,10 @@ namespace aria {
     }
 
     void Lexer::scan_radix_int() {
-        const usize start = pos_;         // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
-        const char  tag   = peek_byte(1); // b/B/o/O/x/X
-        const int   base  = (tag == 'b' || tag == 'B') ? 2 : (tag == 'o' || tag == 'O') ? 8 : 16;
-        pos_              = start + 2; // 消费前缀 0x/0b/0o
+        const u32  start = pos_;         // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
+        const char tag   = peek_byte(1); // b/B/o/O/x/X
+        const int  base  = (tag == 'b' || tag == 'B') ? 2 : (tag == 'o' || tag == 'O') ? 8 : 16;
+        pos_             = start + 2; // 消费前缀 0x/0b/0o
 
         // 前缀后必须紧跟一个进制数字（文法：0x[0-9a-fA-F]... 至少一位，首字符不能是 _）。
         // 直接断言，避免循环消费后再判，报错更早更准。
@@ -247,9 +247,9 @@ namespace aria {
     void Lexer::scan_decimal_or_float() {
         // 按 整数 -> 小数 -> 指数 顺序线性扫描。has_dot/has_exp 决定最终是 float 还是 int。
         // 调用方（主循环）保证进入时以数字开头，故整数部分至少一位，无需 has_digit 校验。
-        const usize start   = pos_; // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
-        bool        has_dot = false;
-        bool        has_exp = false;
+        const u32 start   = pos_; // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
+        bool      has_dot = false;
+        bool      has_exp = false;
 
         // 整数部分：消费连续的数字与 _（入口必是数字，故非空；_ 位置合法性由 validate_underscores 校验）
         conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
@@ -264,7 +264,7 @@ namespace aria {
 
         // 指数部分：当前是 e/E。含指数一律作 float。e 后须有数字，否则回退把 e 留下。
         if (peek_byte(0) == 'e' || peek_byte(0) == 'E') {
-            const usize exp_pos = pos_;
+            const u32 exp_pos = pos_;
             ++pos_; // 消费 e/E
             if (peek_byte(0) == '+' || peek_byte(0) == '-') {
                 ++pos_;
@@ -312,8 +312,8 @@ namespace aria {
     // ============================================================
 
     void Lexer::scan_string() {
-        const usize start = pos_;
-        const char  quote = src_[pos_];
+        const u32  start = pos_;
+        const char quote = src_[pos_];
         ++pos_; // 消费开引号
 
         String value;
@@ -393,7 +393,7 @@ namespace aria {
 
                 // 收集 } 前的字符到 lex（与数字扫描一致：遇终止符停）。
                 // 非 hex 字符（如 \u{12g}）留给 from_chars 检测。
-                const usize start = pos_;
+                const u32 start = pos_;
                 conditional_advance(ARIA_CHAR_PRED_REF(ch != '}'));
 
                 if (peek_byte(0) != '}') {
@@ -439,7 +439,7 @@ namespace aria {
     // ============================================================
 
     void Lexer::scan_identifier() {
-        const usize start = pos_;
+        const u32 start = pos_;
         advance(utf8::decode_one(src_, start).second); // 消费首码点（主循环已判 is_id_start）
         while (!is_eof()) {
             const auto [cp, len] = utf8::decode_one(src_, pos_);
@@ -470,18 +470,18 @@ namespace aria {
     // ============================================================
 
     void Lexer::scan_operator_or_punct(const utf8::codepoint cp) {
-        const usize start = pos_;
+        const u32 start = pos_;
 
         // 多字节非法字符 -> InvalidCharacter
         if (cp >= 0x80) {
-            const usize len = utf8::decode_one(src_, pos_).second;
+            const u8 len = utf8::decode_one(src_, pos_).second;
             error(ErrorCode::InvalidCharacter, SourceSpan{start, start + len}, "非法字符");
             advance(len); // 推进一个码点确保前进
             return;
         }
 
         const auto make_token = [&](const TokenType t) {
-            const usize end = pos_;
+            const u32 end = pos_;
             tokens_.emplace_back(t, StringView{src_.data() + start, end - start}, loc_at(start));
         };
 

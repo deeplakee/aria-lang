@@ -299,7 +299,7 @@ namespace aria {
 
     void CodeGen::bind_stack_value(const StringView name, const SourceLoc loc) const {
         // 契约见 CodeGen.hpp bind_stack_value 注；行号就地取 loc（声明行）。
-        const u32 line = static_cast<u32>(loc.line());
+        const u32 line = loc.line();
         if (mod_ctx_->is_global_scope()) {
             declare_global_or_fail(name, loc);
             const auto name_idx = add_name_or_fail(name, loc);
@@ -455,7 +455,7 @@ namespace aria {
         // 不绑定;方法三态留栈不绑定,就地注册——fun 静态 MAKE_STATIC 不戳 defining class（静态槽
         // 读恒原值）,实例方法族 MAKE_METHOD 戳（VM 侧方法性标记 + super 来源）。名字照常进
         // ObjFunction 供 <fn m> 渲染与堆栈跟踪。
-        const u32 line = static_cast<u32>(loc.line());
+        const u32 line = loc.line();
         switch (kind) {
             case FnKind::Function:
                 bind_stack_value(name, loc); // [closure] -> [] 全局 DEF_GLOBAL / 局部值填槽
@@ -485,7 +485,7 @@ namespace aria {
         // DefaultMark),逐缺省槽 LOAD_LOCAL 与印章 EQUAL 身份判等,命中(未传)才求值默认值
         // STORE_LOCAL 换入,实参在位则跳过 -- 默认值只在未传时求值。全为既有指令
         // (JUMP_FALSE 弹比较结果),逐槽栈形平衡,序言后栈空。
-        const u32 line = static_cast<u32>(loc.line());
+        const u32 line = loc.line();
         for (usize i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
             if (param.default_value != nullptr) {
@@ -521,7 +521,7 @@ namespace aria {
         // 声明区发射（CLOSURE/绑定/注册）行号与报错位置统一取声明处 decl_loc--声明语句的执行点在
         // 声明首 token（fun 关键字/成员名,与 var/def/import 绑定取语句行的惯例一致）;体尾隐式返回
         // 属体区,行号取 body。
-        const u32 decl_line = static_cast<u32>(decl_loc.line());
+        const u32 decl_line = decl_loc.line();
         const u32 line      = body.loc_line();
 
         const auto fn = new_function(gc_, mod_ctx_->module_, name, params.size(), min_arity(params));

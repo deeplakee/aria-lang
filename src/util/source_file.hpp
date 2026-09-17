@@ -15,14 +15,14 @@ namespace aria::src {
 
     // 源码中的一段：半开区间 [start, end)。token 与 AST 节点用它记录范围。
     struct SourceSpan {
-        usize start = 0;
-        usize end   = 0;
+        u32 start = 0;
+        u32 end   = 0;
     };
 
     // 行/列位置（1-based，符合大多数编辑器与编译器习惯）。
     struct LineCol {
-        usize line = 1; // 行号，从 1 开始
-        usize col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
+        u32 line = 1; // 行号，从 1 开始
+        u32 col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
     };
 
     // 源文件信息：保存文件名、路径与内容。
@@ -70,21 +70,21 @@ namespace aria::src {
         // 行数。与 wc -l 在“内容以 LF 结尾”时一致；最后一行即便没有结尾 LF
         // 也算一行；末尾的 LF 不产生额外的空行。空内容返回 0。
         [[nodiscard]]
-        usize line_count() const {
+        u32 line_count() const {
             ensure_line_starts();
-            return line_starts_.size();
+            return static_cast<u32>(line_starts_.size());
         }
 
         // 取第 line 行（1-based）的内容（不含行尾 LF）。越界返回空串。
         [[nodiscard]]
-        StringView line(const usize line) const {
+        StringView line(const u32 line) const {
             ensure_line_starts();
             if (line == 0 || line > line_starts_.size()) {
                 return {};
             }
-            const usize begin = line_starts_[line - 1];
+            const u32 begin = line_starts_[line - 1];
             // 到行尾 LF 前为止；不能直接用下一行起点 - 1，末行可能没有行尾 LF。
-            usize end = begin;
+            u32 end = begin;
             while (end < content_.size() && content_[end] != '\n') {
                 ++end;
             }
@@ -95,23 +95,23 @@ namespace aria::src {
         // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1），
         // 对齐编辑器光标停在文件末尾的行为，便于报 unexpected EOF 时给出合理位置。
         [[nodiscard]]
-        LineCol locate(usize offset) const {
+        LineCol locate(u32 offset) const {
             ensure_line_starts();
             if (offset > content_.size()) {
-                offset = content_.size();
+                offset = static_cast<u32>(content_.size());
             }
             if (offset == content_.size()) {
-                return {line_starts_.size() + 1, 1};
+                return {line_count() + 1, 1};
             }
             // upper_bound 给出第一个起始偏移 > offset 的行；
             // 它的前一行（0-based line_idx）即为 offset 所属行。
-            auto line_idx = static_cast<usize>(std::ranges::upper_bound(line_starts_, offset) - line_starts_.begin());
+            auto line_idx = static_cast<u32>(std::ranges::upper_bound(line_starts_, offset) - line_starts_.begin());
             if (line_idx > 0) {
                 --line_idx; // 落到所属行（0-based）
             }
-            const usize line_off = line_starts_[line_idx];
+            const u32 line_off = line_starts_[line_idx];
             // 列 = 该行内 [line_off, offset) 的码点数 + 1
-            const usize col = count_codepoints(content_, line_off, offset) + 1;
+            const u32 col = count_codepoints(content_, line_off, offset) + 1;
             return {line_idx + 1, col};
         }
 
@@ -145,8 +145,8 @@ namespace aria::src {
         //   "a\nb"   -> [0, 2]   (2 行，末行未终止)
         //   "a\n"    -> [0]      (1 行)
         //   ""       -> []       (0 行)
-        mutable List<usize> line_starts_;
-        mutable bool        is_line_starts_built_ = false;
+        mutable List<u32> line_starts_;
+        mutable bool      is_line_starts_built_ = false;
 
         void ensure_line_starts() const {
             if (is_line_starts_built_) {
@@ -158,7 +158,7 @@ namespace aria::src {
                 return;
             }
             line_starts_.push_back(0);
-            for (usize i = 0; i + 1 < content_.size(); ++i) {
+            for (u32 i = 0; i + 1 < content_.size(); ++i) {
                 if (content_[i] == '\n') {
                     line_starts_.push_back(i + 1);
                 }
@@ -167,9 +167,9 @@ namespace aria::src {
         }
 
         // 统计 content 在 [begin, end) 内的码点数（用于把字节列换算成码点列）
-        static usize count_codepoints(const StringView content, const usize begin, const usize end) {
-            usize n = 0;
-            usize i = begin;
+        static u32 count_codepoints(const StringView content, const u32 begin, const u32 end) {
+            u32 n = 0;
+            u32 i = begin;
             while (i < end) {
                 const auto [_, len] = utf8::decode_one(content, i);
                 i += len;
@@ -236,7 +236,7 @@ namespace aria::src {
 
         // 行号（1-based；空态 / 无效为 0，调用方按需处理）。
         [[nodiscard]]
-        usize line() const noexcept {
+        u32 line() const noexcept {
             return line_col_.line;
         }
 
@@ -248,7 +248,7 @@ namespace aria::src {
             if (src_ == nullptr) {
                 return {};
             }
-            const auto part = [](const usize value) -> String { return value == 0 ? "?" : std::format("{}", value); };
+            const auto part = [](const u32 value) -> String { return value == 0 ? "?" : std::format("{}", value); };
             const auto [line, col] = line_col_;
             return std::format("{}:{}:{}", src_->path(), part(line), part(col));
         }

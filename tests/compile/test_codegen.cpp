@@ -662,7 +662,7 @@ TEST(CodeGen, ErrTooManyUpvalues) {
 }
 
 // 容量下界钉子:恰 256 个不同捕获(索引 0..255 用满 u8 索引域,kMaxUpvalues=255 为上限位置、
-// 容量 = 上限 + 1,对齐 kMaxConstants 允许 65536 项与 clox UINT8_COUNT)合法编译且运行正确--
+// 索引域 256 项,对齐 kMaxConstants 允许 65536 项)合法编译且运行正确--
 // 勿把边界「修正」为 255(那会白禁合法索引 255)。
 TEST(CodeGen, ExactlyMaxUpvaluesCompiles) {
     std::string src = "fun outer() {";

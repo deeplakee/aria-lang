@@ -6,11 +6,11 @@
 namespace aria {
 
     namespace {
-        // 编码上限(源自 CodeUnit.hpp 的位宽事实源 kU8OperandMax/kU16OperandMax, 越界判定统一用 > 比较)。
+        // 编码上限(源自 CodeUnit.hpp 的位宽事实源, 值即上限位置, 越界判定直接与上限比较)。
         constexpr u32 kMaxPopChunk       = kU8OperandMax;
         constexpr u32 kMaxShortLocalSlot = kU8OperandMax;
         constexpr u32 kMaxJumpOffset     = kU16OperandMax;
-        constexpr u32 kMaxConstantCount  = kU16OperandMax + 1;
+        constexpr u32 kMaxConstantIndex  = kU16OperandMax;
     } // namespace
 
     CodeUnit::CodeUnit(GC* gc) noexcept : code{gc}, constants{gc}, lines{gc}, try_records{gc} {}
@@ -105,7 +105,7 @@ namespace aria {
     // ---- 常量池 ----
 
     u16 CodeUnit::add_constant(const Value value) {
-        ASSERT(constants.size() < kMaxConstantCount, "constant pool overflow (>65535 constants)");
+        ASSERT(constants.size() <= kMaxConstantIndex, "constant pool overflow (>65535 constants)");
         const auto idx = static_cast<u16>(constants.size());
         constants.push(value);
         return idx;

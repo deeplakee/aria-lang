@@ -204,11 +204,11 @@ namespace aria {
         [[maybe_unused]] void trace_execution(Movement& ctx) {
             auto&       frames = ctx.frames();
             const auto& frame  = frames.top();
-            const auto  ip_off = static_cast<usize>(frame.ip - frame.unit->code.data());
+            const auto  ip_off = static_cast<u32>(frame.ip - frame.unit->code.data());
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
             io::print(stderr, "[trace] {}  {} @{:04X}  {}\n", frame.module->to_string(),
-                      frame.closure->function()->to_string(), static_cast<u32>(ip_off), instr);
+                      frame.closure->function()->to_string(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。

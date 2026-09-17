@@ -17,9 +17,9 @@ clox 风格的解法是「**占位 + 回填**」：遇到 `break`/`continue` 先
 struct LoopCtx {
     u32              loop_scope_depth = 0;            // 循环体所在 scope 深度（break/continue 弹局部至此）
     u32              back_target      = 0;            // 循环头（条件求值点）：回边恒跳此，后向 continue 亦跳此
-    Opt<List<usize>> continue_fwd_patches;            // 前向 continue 回填（for 有 incr -> L_incr）；
+    Opt<List<u32>>   continue_fwd_patches;            // 前向 continue 回填（for 有 incr -> L_incr）；
                                                       // nullopt = 本循环无前向通道（continue 后向跳 back_target）
-    List<usize>      exit_fwd_patches;                // 前向退出占位（循环头条件假跳 JUMP_FALSE + 各 break 的 JUMP）
+    List<u32>        exit_fwd_patches;                // 前向退出占位（循环头条件假跳 JUMP_FALSE + 各 break 的 JUMP）
 };
 ```
 

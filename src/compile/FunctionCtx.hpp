@@ -47,10 +47,10 @@ namespace aria {
     //   - exit_fwd_patches：前向退出占位偏移（循环头条件假跳 JUMP_FALSE + 各 break 的 JUMP），
     //     循环收尾 emit_loop_backedge_and_exits 统一回填 -> L_end。
     struct LoopCtx {
-        u32              loop_scope_depth     = 0;
-        u32              back_target          = 0;
-        Opt<List<usize>> continue_fwd_patches = std::nullopt;
-        List<usize>      exit_fwd_patches;
+        u32            loop_scope_depth     = 0;
+        u32            back_target          = 0;
+        Opt<List<u32>> continue_fwd_patches = std::nullopt;
+        List<u32>      exit_fwd_patches;
     };
 
     class FunctionCtx {

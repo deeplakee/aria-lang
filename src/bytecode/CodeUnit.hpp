@@ -72,10 +72,10 @@ namespace aria {
         // 分块 emit POP_N(每块<=255);chunk==1 时降级为 POP(1B,免操作数)。偏移基准 = 读 u16 操作数后的 ip。
         void emit_pop_n(u32 count, u32 line);
         // 发 op + 占位 u16,返回占位偏移 src_off(供 patch_jump 回填)。无越界。
-        usize emit_jump(OpCode op, u32 line);
+        u32 emit_jump(OpCode op, u32 line);
         // 前向回填 src_off 处占位为 target_off - base_off(base_off = 读完 u16 操作数后的 ip,即偏移基准);
         //   越界(>65535)返 false(不写),成功返 true。
-        bool patch_jump(usize src_off);
+        bool patch_jump(u32 src_off);
         // 后向:emit JUMP_BACK + (base_off - target_off)(base_off = 读完 u16 操作数后的 ip);
         //   越界(反向/超 64KB)emit 占位 word 0 后返 false。
         bool emit_jump_back(u32 target_off, u32 line);
@@ -97,7 +97,7 @@ namespace aria {
         // 查 `offset` 所属行号(RLE 二分:最大 entry.offset <= offset 的 line)。
         // 空表或 offset 在首条之前返回 0(未知行)。
         [[nodiscard]]
-        u32 line_for_offset(usize offset) const noexcept;
+        u32 line_for_offset(u32 offset) const noexcept;
 
         // ---- 异常记录表 ----
         // 按 ip 查最近覆盖的 try 记录(嵌套取最内层), 返回指向命中记录的指针(unwind 读 handle 与

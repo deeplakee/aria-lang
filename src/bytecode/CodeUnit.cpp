@@ -46,15 +46,15 @@ namespace aria {
         }
     }
 
-    usize CodeUnit::emit_jump(const OpCode op, const u32 line) {
+    u32 CodeUnit::emit_jump(const OpCode op, const u32 line) {
         emit_op(op, line);
-        const usize src_off = size(); // 跳转源: 占位偏移, 供 patch_jump 回填
-        emit_word(0, line);           // 占位
+        const u32 src_off = size(); // 跳转源: 占位偏移, 供 patch_jump 回填
+        emit_word(0, line);         // 占位
         return src_off;
     }
 
-    bool CodeUnit::patch_jump(const usize src_off) {
-        const u32 base_off = static_cast<u32>(src_off) + 2; // 偏移基准: 读完 u16 操作数后的 ip
+    bool CodeUnit::patch_jump(const u32 src_off) {
+        const u32 base_off = src_off + 2; // 偏移基准: 读完 u16 操作数后的 ip
         // 跳转目标: 当前末尾
         const u32 target_off = size();
         // 前向偏移:契约是 patch 时目标已发射(target_off >= base_off)。误用于反向时 u32 回绕成
@@ -113,7 +113,7 @@ namespace aria {
 
     // ---- 行号 ----
 
-    u32 CodeUnit::line_for_offset(const usize offset) const noexcept {
+    u32 CodeUnit::line_for_offset(const u32 offset) const noexcept {
         // RLE 二分: 找最大的 entry.offset <= offset, 返回其 line。
         // 表按 offset 单调(只追加), 用 upper_bound 取首个 offset > target 的位置, 其前一条即答案。
         if (lines.empty()) {
@@ -123,7 +123,7 @@ namespace aria {
         usize high = lines.size();
         while (low < high) {
             const usize mid = low + (high - low) / 2;
-            if (static_cast<usize>(lines[mid].offset) <= offset) {
+            if (lines[mid].offset <= offset) {
                 low = mid + 1;
             } else {
                 high = mid;
@@ -171,11 +171,10 @@ namespace aria {
     // ---- 私有 ----
 
     void CodeUnit::record_line_(const u32 line) noexcept {
-        const usize offset = code.size();
         if (!lines.empty() && lines.top().line == line) {
             return; // 同行: RLE 覆盖, 不追加
         }
-        lines.push({.offset = static_cast<u32>(offset), .line = line});
+        lines.push({.offset = size(), .line = line});
     }
 
 } // namespace aria

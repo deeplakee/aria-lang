@@ -38,12 +38,12 @@ namespace aria {
         // 每行的指令段一致,不含偏移前缀/行号/换行)。仅推进内部游标越过该指令(不动调用方 offset)。
         // offset 须 < code.size()。供 VM 执行跟踪(DEBUG_TRACE_EXECUTION)逐指令打印,免为跟踪复制解码表。
         [[nodiscard]]
-        static String disassembleInstruction(const CodeUnit* codeunit, usize offset);
+        static String disassembleInstruction(const CodeUnit* codeunit, u32 offset);
 
     private:
         const CodeUnit* codeunit_;
         StringView      name_;
-        usize           offset_; // 解码游标,指向当前待解码字节
+        u32             offset_; // 解码游标,指向当前待解码字节
 
         // ---- 底层读取(推进 offset_) ----
         [[nodiscard]]
@@ -53,7 +53,7 @@ namespace aria {
         [[nodiscard]]
         String truncated() noexcept;
         [[nodiscard]]
-        bool is_truncated(usize need) const noexcept;
+        bool is_truncated(u32 need) const noexcept;
         // 常量索引的注释渲染(只读,不推进 offset_;名字索引格式 ConstU16 与 LOAD_CONST/CLOSURE 共用)。
         [[nodiscard]]
         String format_constant(u16 idx) const;

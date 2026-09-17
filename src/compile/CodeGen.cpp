@@ -269,7 +269,7 @@ namespace aria {
     // 跳转回填 / 全局登记失败翻译
     // ============================================================
 
-    void CodeGen::patch_jump_or_fail(const usize src_off, const SourceLoc loc) const {
+    void CodeGen::patch_jump_or_fail(const u32 src_off, const SourceLoc loc) const {
         if (!cur_cu()->patch_jump(src_off)) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "跳转偏移超过 64KB");
         }

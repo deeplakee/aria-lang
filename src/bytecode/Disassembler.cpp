@@ -58,12 +58,12 @@ namespace aria {
 
     // 操作数读取越界(残缺字节码)时:把 offset_ 推到末尾停解码,返回 <truncated> 作为操作数段。
     String Disassembler::truncated() noexcept {
-        offset_ = codeunit_->code.size();
+        offset_ = static_cast<u32>(codeunit_->code.size());
         return "<truncated>";
     }
 
     // 越界预检:读取 need 字节是否会越过末尾(残缺字节码将被截断)。
-    bool Disassembler::is_truncated(const usize need) const noexcept { return offset_ + need > codeunit_->code.size(); }
+    bool Disassembler::is_truncated(const u32 need) const noexcept { return offset_ + need > codeunit_->code.size(); }
 
     // 常量/名字索引的注释渲染(供 LOAD_CONST/CLOSURE 及全部名字索引指令):按 idx 取常量,
     // 越界退化为 <bad idx>。只读,不推进 offset_。
@@ -239,11 +239,11 @@ namespace aria {
         out += "\ncode:\n";
         Opt<u32> prev_line = std::nullopt;
         while (offset_ < codeunit_->code.size()) {
-            const usize  ip       = offset_;
+            const u32    ip       = offset_;
             const u32    line     = codeunit_->line_for_offset(ip);
             const String line_col = prev_line == line ? String{"   |"} : std::format("{:>4}", line);
             prev_line             = line;
-            out += std::format("{:04X} {} {}\n", static_cast<u32>(ip), line_col, dis_instruction());
+            out += std::format("{:04X} {} {}\n", ip, line_col, dis_instruction());
         }
         out += "\n== end ==\n";
         return out;
@@ -253,7 +253,7 @@ namespace aria {
         return Disassembler{codeunit, name}.disassemble();
     }
 
-    String Disassembler::disassembleInstruction(const CodeUnit* codeunit, const usize offset) {
+    String Disassembler::disassembleInstruction(const CodeUnit* codeunit, const u32 offset) {
         // 构造一次性 Disassembler,把内部游标拨到 offset,解码单条指令后丢弃。不依赖 name(disassemble
         // 才用),故传空。offset 合法性由调用方保证(VM 执行跟踪处 ip 必指向有效 opcode)。
         Disassembler d{codeunit, {}};

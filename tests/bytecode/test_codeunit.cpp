@@ -12,13 +12,14 @@ using aria::ObjString;
 using aria::OpCode;
 using aria::TryRecord;
 using aria::u16;
+using aria::u32;
 using aria::u8;
 using aria::usize;
 using aria::Value;
 
 namespace {
     // 小端读 2 字节(测试辅助, 裸字段移位)。
-    [[nodiscard]] u16 read_word_le(const CodeUnit& cu, const usize off) {
+    [[nodiscard]] u16 read_word_le(const CodeUnit& cu, const u32 off) {
         return static_cast<u16>(static_cast<u16>(cu.code[off]) | (static_cast<u16>(cu.code[off + 1]) << 8));
     }
 } // namespace
@@ -70,7 +71,7 @@ TEST(CodeUnit, LineTableRleDedupSameLine) {
     cu.emit_byte(0x00, 1);
     cu.emit_byte(0x01, 1);
     cu.emit_byte(0x02, 1);
-    for (usize i = 0; i < 3; ++i) {
+    for (u32 i = 0; i < 3; ++i) {
         EXPECT_EQ(cu.line_for_offset(i), 1u);
     }
 }
@@ -127,8 +128,8 @@ TEST(CodeUnit, PatchWordBackfillKeepsLineTable) {
     // 跳转占位 + 回填: patch 不动行号表
     GC       gc;
     CodeUnit cu{&gc};
-    cu.emit_op(OpCode::JUMP_FALSE, 5);  // offset 0, line 5
-    const usize patch = cu.code.size(); // = 1
+    cu.emit_op(OpCode::JUMP_FALSE, 5); // offset 0, line 5
+    const u32 patch = cu.code.size();  // = 1
     // offset 1,2 占位, line 5
     cu.emit_word(0, 5);
     EXPECT_EQ(patch, 1u);

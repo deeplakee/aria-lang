@@ -226,7 +226,7 @@ namespace aria {
         // declare_global），无解包值，故为 void 封装。文案收口于此。
 
         // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
-        void patch_jump_or_fail(usize src_off, SourceLoc loc) const;
+        void patch_jump_or_fail(u32 src_off, SourceLoc loc) const;
 
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge。要发射
         // JUMP_BACK 指令,行号现场取 loc(各调用点行号与 loc 同源,均取节点行)。

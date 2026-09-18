@@ -1259,7 +1259,7 @@ namespace aria {
                     // 无 GC 点);n 已由编译器上限检查保证 <= 栈深,字节码良构。
                     const u16  count = read_u16(frame);
                     const auto list  = new_list(gc_);
-                    list->elements().copy_from(Span<const Value>{current_->stack_top() - count, count});
+                    list->elements().copy_from({current_->stack_top() - count, count});
                     current_->drop(count);
                     current_->push(Value::from_obj(list));
                     break;

@@ -88,7 +88,7 @@ namespace aria::src {
         // 将字节偏移解析为 1-based 行号（行表二分 + 单条行缓存 LineCache；offset 超出范围时钳制到内容末尾）。
         // offset == content.size()（EOF）返回 line_count() + 1，与 locate 的「EOF 落在下一行第 1 列」
         // 约定一致（对齐编辑器光标停文件末尾，报 unexpected EOF 更准）。
-        // AST 遍历按源序逐节点求行号，故缓存命中率极高（4.75 MB 源实测：命中约 1.7 ns/次、未命中二分约 17 ns/次）。
+        // AST 遍历按源序逐节点求行号，缓存命中率极高，故这条热路径只需一次区间比较。
         [[nodiscard]]
         u32 line_at(const u32 offset) const {
             if (offset >= content_.size()) {
@@ -230,7 +230,7 @@ namespace aria::src {
     // clang 的 SourceLocation 都只存偏移）：扫描器热路径只推游标、不必在推进时维护任何计数，于是
     // 回退/前瞻天然自由（位置就是个整数，存一份就能回），也不存在「某条推进路径漏记账」这类 bug 面。
     // 行列的代价被挪到真正需要它们的消费点上：
-    //   - line()  -- 行表二分 + 单条行缓存，逐发射节点调用的热路径（CodeGen 每节点一次），实测约 1.7 ns/次；
+    //   - line()  -- 行表二分 + 单条行缓存，逐发射节点调用的热路径（CodeGen 每节点一次）；
     //   - line_col() / to_string()  -- 列要在行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲染与测试调用；
     //     不要在逐 token 循环里读列（那会把 O(n²) 放回来）。
     //

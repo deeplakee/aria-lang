@@ -47,10 +47,9 @@ namespace aria::utf8 {
         }
 
         // 非 ASCII 慢路径：解码 str[offset] 处的多字节序列（lead = 该字节，已由 decode_one 判定 >= 0x80）。
-        // ARIA_NOINLINE 的理由：decode_one 在每个调用点都会被内联展开，而调用点绝大多数（实测 95%）
-        // 走 ASCII 快路径，长度表/续接校验/组装/双重校验这套只贡献代码体积 -- 移出内联后词法各形态
-        // 快 3-12%（视输入形态，数字见 .claude/reference/compile/lexer-notes.md §5）。放 detail 不放
-        // 公开面：调用方只需 decode_one，本函数是它的实现分片。
+        // ARIA_NOINLINE 的理由：decode_one 在每个调用点都会被内联展开，而调用点绝大多数走 ASCII 快路径，
+        // 长度表/续接校验/组装/双重校验这套只贡献代码体积 -- 移出内联即把冷路径的展开从热路径里拿掉。
+        // 放 detail 不放公开面：调用方只需 decode_one，本函数是它的实现分片。
         [[nodiscard]] ARIA_NOINLINE constexpr Pair<codepoint, u8>
         decode_multibyte(const StringView str, const usize offset, const u8 lead) noexcept {
             const u8 need = seq_len_from_lead(lead);

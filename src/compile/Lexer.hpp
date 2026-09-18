@@ -107,7 +107,7 @@ namespace aria {
 
         // 消费满足 pred 的连续码点（pred 收码点），直至 pred 假或 EOF：逐码点解码（ASCII 走 decode_one
         // 内部快路径）、整码点一步推进，故游标不会停在码点中间。此处不另开 ASCII 分支--本模板在每个
-        // 调用点展开，多一条路径的代码体积比省下的那点解码更贵（实测常规源快约 5%，见 lexer-notes §3）。
+        // 调用点展开，多一条路径的代码体积比省下的那点解码更贵。
         // 循环体需额外副作用（如设标志）的场景不适用，仍手写循环。
         template<typename Pred>
         void consume_codepoints(Pred pred) {

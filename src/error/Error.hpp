@@ -14,7 +14,6 @@ namespace aria {
     // aria::src 下，引用需分别 using）。
     using src::SourceFile;
     using src::SourceLoc;
-    using src::SourceSpan;
 
     // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与
     // 运行期未捕获出口的边界物化形态--运行期在途错误实体是 ObjException（存挂起错误寄存器，

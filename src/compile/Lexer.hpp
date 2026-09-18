@@ -8,10 +8,9 @@
 
 namespace aria {
 
-    // 将 SourceSpan / SourceLoc 引入 aria 命名空间（见 CLAUDE.md：source_file 相关
+    // 将 SourceLoc 引入 aria 命名空间（见 CLAUDE.md：source_file 相关
     // 类型位于 aria::src 下，引用需分别 using）。
     using src::SourceLoc;
-    using src::SourceSpan;
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。
     //
@@ -71,8 +70,8 @@ namespace aria {
 
 
         // --- 错误记账 ---
-        // 记入一条错误：span 起点解析为 SourceLoc，经 Error::from_detail 构造期烘进 message_。
-        void error(ErrorCode code, SourceSpan span, StringView msg);
+        // 记入一条错误：offset 解析为 SourceLoc，经 Error::from_detail 构造期烘进 message_。
+        void error(ErrorCode code, StringView msg, u32 offset);
 
         // --- 游标辅助 ---
         // 越界（pos_+ahead >= src_.size()）返回 '\0' 哨兵，安全。

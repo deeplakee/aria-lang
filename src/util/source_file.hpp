@@ -13,12 +13,6 @@ namespace aria::src {
 
     namespace stdfs = std::filesystem;
 
-    // 源码中的一段：半开区间 [start, end)。token 与 AST 节点用它记录范围。
-    struct SourceSpan {
-        u32 start = 0;
-        u32 end   = 0;
-    };
-
     // 行/列位置（1-based，符合大多数编辑器与编译器习惯）。
     struct LineCol {
         u32 line = 1; // 行号，从 1 开始

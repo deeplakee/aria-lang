@@ -715,12 +715,6 @@ TEST(CodeGen, ErrNumberOutOfRange) {
     EXPECT_EQ(c.error().code(), ErrorCode::NumberOutOfRange);
 }
 
-TEST(CodeGen, ErrNotImplementedListLiteral) {
-    auto c = compile_only("return [1, 2, 3];");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
-}
-
 // ============================================================
 // 默认参数（印章方案：call_closure 垫充 + 序言身份判等换值）
 // ============================================================
@@ -1182,7 +1176,7 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string, got Nil");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string or list, got Nil");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
@@ -1683,4 +1677,89 @@ def Animal {
         ++def_global_count;
     }
     EXPECT_EQ(def_global_count, 1u);
+}
+
+// ============================================================
+// list 字面量(值表示 + MAKE_LIST + len/str/print)
+// ============================================================
+
+// 字面量求值:元素按序求值、恰好各一次(经全局计数器观察副作用),渲染保序。
+TEST(CodeGen, ListLiteralElementsEvaluatedInOrder) {
+    EXPECT_EQ(run_int(R"(
+var n = 0;
+fun f() { n = n + 1; return n * 10; }
+var xs = [f(), f(), f()];
+if (n != 3) { return -1; }
+if (str(xs) != "[10, 20, 30]") { return -2; }
+return n;
+)"),
+              3);
+}
+
+// 空字面量与嵌套:嵌套字符串走 debug 形(带引号),嵌套 list 递归渲染。
+TEST(CodeGen, ListLiteralEmptyAndNested) {
+    EXPECT_EQ(aria::format_value(*run_source("return [];")), "[]");
+    EXPECT_EQ(aria::format_value(*run_source(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
+}
+
+// len:list 元素数;str/print 走同一渲染位。
+TEST(CodeGen, ListLen) {
+    EXPECT_EQ(run_int("return len([]);"), 0);
+    EXPECT_EQ(run_int("return len([10, 20, 30]);"), 3);
+    EXPECT_EQ(run_int("return len([[], [1]]);"), 2);
+}
+
+// len 类型面:非 string/list 报 TypeMismatch(运行期)。
+TEST(CodeGen, ListLenTypeMismatch) {
+    auto out = run_source("return len(1);");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+}
+
+// == 按内容递归;=== 恒指针;自比较 == 快速路径。
+TEST(CodeGen, ListEqualityContentVsIdentity) {
+    EXPECT_TRUE((*run_source("return [1, [2]] == [1, [2]];")).as_bool()); // 嵌套递归
+    EXPECT_FALSE((*run_source("return [1] == [2];")).as_bool());
+    EXPECT_FALSE((*run_source("return [1, 2] == [1, 2, 3];")).as_bool()); // 长度不等
+    EXPECT_FALSE((*run_source(R"(return [1] === [1];)")).as_bool());      // 两字面量两对象
+    EXPECT_TRUE((*run_source("var xs = [1]; return xs == xs;")).as_bool());
+    EXPECT_TRUE((*run_source("var xs = [1]; return xs === xs;")).as_bool());
+    EXPECT_FALSE((*run_source("return [1] == \"1\";")).as_bool()); // 跨类型
+}
+
+// list 作一等值:实参传递、经变量返回、跨 GC 点存活(run_source 开 stress GC,
+// 元素串经 MAKE_LIST「栈即根」+ ObjList::trace 级联保命)。
+TEST(CodeGen, ListPassingAndGcStress) {
+    EXPECT_EQ(aria::format_value(*run_source(R"(
+fun echo(xs) { return xs; }
+var kept = ["aaa", ["bbb", "ccc"]];
+return echo(kept);
+)")),
+              "[\"aaa\", [\"bbb\", \"ccc\"]]");
+}
+
+// 元素数超容量(65536 个,MAKE_LIST 操作数 u16 上限 65535 之外) -> TooManyElements
+//(先检后发:emit 前即报,不先发 6 万多个元素表达式)。源逐元素换行:单行巨串会引爆
+// SourceFile::locate 逐 token 行内列号计数(既有 O(n^2) 形态,见 batch 报告)。
+TEST(CodeGen, ErrTooManyElements) {
+    std::string src = "[";
+    for (int i = 0; i < 65535; ++i) {
+        src += "1,\n";
+    }
+    src += "1];"; // 65535 + 1 = 65536 个元素
+    auto c = compile_only(src);
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::TooManyElements);
+}
+
+// 容量下界钉子:恰 65535 个元素(MAKE_LIST 操作数 u16 上限位置)合法编译且运行正确 --
+// 勿把边界「修正」为 65534(那会白禁合法操作数 65535)。源逐元素换行(同 ErrTooManyElements,
+// 避开 locate 单行列号 O(n^2) 形态)。
+TEST(CodeGen, ExactlyMaxListElementsCompiles) {
+    std::string src = "return len([";
+    for (int i = 0; i < 65534; ++i) {
+        src += "1,\n";
+    }
+    src += "1]);"; // 65534 + 1 = 65535 个元素
+    EXPECT_EQ(run_int(src), 65535);
 }

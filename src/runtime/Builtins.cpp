@@ -2,6 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjList.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
@@ -26,7 +27,7 @@ namespace aria::builtins {
             return true;
         }
 
-        // len(x) -> 整数:当前仅支持 String(返 UTF-8 字节数,即 ObjString::length());List/Map 随后。
+        // len(x) -> 整数:String 返 UTF-8 字节数(ObjString::length()),List 返元素数;Map 随后。
         bool len_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -37,7 +38,11 @@ namespace aria::builtins {
                 slots[0] = Value::from_int(static_cast<i64>(s->length()));
                 return true;
             }
-            return vm.fail(ErrorCode::TypeMismatch, "len requires a string, got {}", type_name(v));
+            if (const auto list = try_obj<ObjList>(v)) {
+                slots[0] = Value::from_int(static_cast<i64>(list->elements().size()));
+                return true;
+            }
+            return vm.fail(ErrorCode::TypeMismatch, "len requires a string or list, got {}", type_name(v));
         }
 
         // str(x) -> 字符串:值的可读渲染(复用 format_value,与 PRINT 一致)。

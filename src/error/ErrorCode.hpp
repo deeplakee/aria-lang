@@ -108,6 +108,7 @@ namespace aria {
     X(TooManyArguments, Resource)  /* 单次调用实参数超限（CALL 操作数 u8 上限 255） */                           \
     X(TooManyParameters, Resource) /* 函数形参数超限（arity u8 上限 255） */                                     \
     X(TooManyUpvalues, Resource)   /* upvalue 数超限 */                                                          \
+    X(TooManyElements, Resource)   /* 集合字面量元素数超限（MAKE_LIST/MAKE_MAP 操作数 u16 上限） */              \
     X(SourceTooLarge, Resource)    /* 单个源文件过大 */
 
 #define ARIA_ERROR_ENUM(name, category) name,

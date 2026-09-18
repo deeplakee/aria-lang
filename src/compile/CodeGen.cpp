@@ -20,13 +20,14 @@ namespace aria {
     namespace {
         // 容量上限(值即操作数/索引位宽上限,事实源见 CodeUnit.hpp 的 kU8/kU16OperandMax;
         // 越界统一用 > 比较):kMaxArity 形参(u8)、kMaxArguments 实参(CALL 操作数 u8)、
-        // kMaxConstants 常量池(u16 索引)、kMaxLocals 局部槽(u16,含 slot 0 哑元)。语义名
-        // 集中定义使检查点与报错文案同源;kMaxUpvalues 同纪律,因登记侧共用而定义于
-        // FunctionCtx.hpp。
-        constexpr u32 kMaxArity     = kU8OperandMax;
-        constexpr u32 kMaxArguments = kU8OperandMax;
-        constexpr u32 kMaxConstants = kU16OperandMax;
-        constexpr u32 kMaxLocals    = kU16OperandMax;
+        // kMaxConstants 常量池(u16 索引)、kMaxListElements 列表字面量元素数(MAKE_LIST
+        // 操作数 u16)、kMaxLocals 局部槽(u16,含 slot 0 哑元)。语义名集中定义使检查点与
+        // 报错文案同源;kMaxUpvalues 同纪律,因登记侧共用而定义于 FunctionCtx.hpp。
+        constexpr u32 kMaxArity        = kU8OperandMax;
+        constexpr u32 kMaxArguments    = kU8OperandMax;
+        constexpr u32 kMaxConstants    = kU16OperandMax;
+        constexpr u32 kMaxListElements = kU16OperandMax;
+        constexpr u32 kMaxLocals       = kU16OperandMax;
 
         // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
         // 超出 -> NumberOutOfRange)。
@@ -1175,7 +1176,19 @@ namespace aria {
 
     void CodeGen::visitIndexAccessNode(IndexAccessNode& node) { not_impl(node, "下标访问（LOAD_INDEX 未由 VM 实现）"); }
 
-    void CodeGen::visitListExprNode(ListExprNode& node) { not_impl(node, "列表字面量"); }
+    void CodeGen::visitListExprNode(ListExprNode& node) {
+        const u32 line = node.line();
+        // 元素数上限 kMaxListElements(MAKE_LIST 操作数 u16):先检后发,避免 emit 完数万个
+        // 元素表达式才报错(visitCallNode 同款)。
+        if (node.elements.size() > kMaxListElements) {
+            fail(ErrorCode::TooManyElements, node.loc(), "列表元素数超过 {}", kMaxListElements);
+        }
+        for (const auto& element: node.elements) {
+            emit_expr(*element);
+        }
+        cur_cu()->emit_op(OpCode::MAKE_LIST, line);
+        cur_cu()->emit_word(node.elements.size(), line); // [v1..vn] -> [list]
+    }
 
     void CodeGen::visitMapExprNode(MapExprNode& node) { not_impl(node, "map 字面量"); }
 

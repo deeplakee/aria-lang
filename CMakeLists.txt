@@ -87,6 +87,8 @@ add_library(aria_core STATIC
         src/object/ObjFunction.hpp
         src/object/ObjInstance.cpp
         src/object/ObjInstance.hpp
+        src/object/ObjList.cpp
+        src/object/ObjList.hpp
         src/object/ObjModule.cpp
         src/object/ObjModule.hpp
         src/object/ObjNativeFn.cpp

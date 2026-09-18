@@ -19,6 +19,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
+#include "object/ObjList.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -1207,8 +1208,17 @@ namespace aria {
                     break;
                 case OpCode::INVOKE_METHOD:
                     not_implemented("INVOKE_METHOD");
-                case OpCode::MAKE_LIST:
-                    not_implemented("MAKE_LIST");
+                case OpCode::MAKE_LIST: {
+                    // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect
+                    // (「栈即根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内
+                    // 无 GC 点);n 已由编译器上限检查保证 <= 栈深,字节码良构。
+                    const u16  count = read_u16(frame);
+                    const auto list  = new_list(gc_);
+                    list->elements().copy_from(Span<const Value>{current_->stack_top() - count, count});
+                    current_->drop(count);
+                    current_->push(Value::from_obj(list));
+                    break;
+                }
                 case OpCode::MAKE_MAP:
                     not_implemented("MAKE_MAP");
                 case OpCode::MAKE_RANGE:

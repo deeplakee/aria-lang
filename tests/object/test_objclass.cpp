@@ -50,7 +50,7 @@ namespace {
     ObjFunction* make_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
-        return new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
+        return new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
     // 具名闭包:fn 经守卫跨 new_closure。返回的闭包未根,fn 经其可达。

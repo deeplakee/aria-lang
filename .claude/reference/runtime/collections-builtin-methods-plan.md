@@ -87,7 +87,7 @@
 | 1 | 值寄存器组底座(`LOAD_REG` + 收编 `LOAD_OBJECT`)+ 默认参数(§4.1;varargs 拆至批 4) | §4.1 |
 | 2 | match 语句 / 表达式(§4.2) | §4.2 |
 | 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + len/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
-| 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体 + 装配指令)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
+| 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体,call_closure 打包段)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
 | 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 解构 `[k,v]` |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
@@ -129,7 +129,20 @@
 > NotIterable/IteratorProtocol 预留码旁,两码仍不接线)。forIn 走通 list;基线实测用户类自实现三方法在子批 ②
 > 之前 forIn 即可走通(降糖对两类来源不可区分),钉进测试防回归。测试 21 新:Compiler.ForIn*/Manual/
 > NextExhausted*/UserClass 等 12 端到端 + ObjIterator/ObjListIterator 9 对象级(bootstrap 契约/恒绑定/游标推进/
-> 越界 fail-fast/双迭代器独立/trace stress)。**② 在工作区待 review(双配置 869/869 绿)**。
+> 越界 fail-fast/双迭代器独立/trace stress)。**② 已落库 529705b(2026-09-19 提交)**。
+
+> **落地状态(2026-09-19,批 4 子批 ③「varargs」)**:rest 参数以 list 为载体落地,零新指令、零文法改动。①ObjFunction 增
+> `is_varargs_` 标志,`arity_` 语义精确化为**固定参数数**(不含 rest,帧参数槽深 = arity + is_varargs),工厂尾参显式传
+>(min_arity 先例,src 两处 + 测试助手八处随改);②CodeGen 三处:validate_params 删 varargs 拒绝循环(ErrNotImplementedVarargs
+> 钉随翻转换 VarargsCompiles 正钉)、min_arity 遇 varargs 即止(rest 永非必传)、compile_function 传固定参数数与标志;
+> rest 在编译侧就是末位普通局部槽,零发射;③call_closure:varargs 分流元数检查(只保下界,文案 "expects at least N args,
+> got K"),垫充不变(仅补固定缺省槽),新增打包段(超出 arity 的实参 `new_list`+`copy_from` 整段收集,白色 list 随即
+> drop+push 入栈根,MAKE_LIST case 同构;无多余实参铸空表),`enter_frame` 槽深 = arity + is_varargs。原稿「装配指令」修正为
+> 装配段(字节码侧无 argc 源,LOAD_ARGC 已否;§4.3 表行同步)。rest 每次调用新铸、可被闭包捕获、方法帧同构适用。
+> 测试 11 增(Compiler.Varargs* 9 端到端 + CodeGen.VarargsCompiles + ObjFunction.VarargsFlag)。Review 改定(2026-09-19):call_closure
+> 拆编排形(对标旧版 aria vm.cpp call_function 的 pack_varargs/create_call_frame 分层)——元数检查收 check_arity、
+> 缺省垫充+varargs 打包+槽深推导收 prepare_call_args(返回帧参数槽深),call_closure 只剩四行编排。批 4 至此收官
+>(本子批工作区待 review,双配置 879/879 绿);CLAUDE.md/README 进度行已同步(批 1-4 落地,待批 5+)。
 
 ## 5. 参照
 

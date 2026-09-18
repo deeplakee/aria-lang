@@ -90,12 +90,12 @@ namespace aria {
         }
 
         // min_arity = 必传参数数 = 首个带默认值参数之前的参数个数(文法定序 plain -> default
-        // -> varargs,缺省块连续居后由 Parser 保证;varargs 已被 validate_params 拒绝)。纯读
-        // params 不触碰编译器状态,调用方须已过 validate_params(size <= kMaxArity,u8 不溢出)。
+        // -> varargs,缺省块连续居后由 Parser 保证;rest 参数遇之即止 --varargs 永非必传)。
+        // 纯读 params 不触碰编译器状态,调用方须已过 validate_params(size <= kMaxArity,u8 不溢出)。
         u8 min_arity(const List<Param>& params) noexcept {
             u8 count = 0;
             for (const auto& param: params) {
-                if (param.default_value != nullptr) {
+                if (param.default_value != nullptr || param.is_varargs) {
                     break;
                 }
                 ++count;
@@ -145,8 +145,8 @@ namespace aria {
 
     // 建模块入口函数 + set_entry + 构造 ModuleCtx（契约见 CodeGen.hpp init_module 注）。
     ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
-        // 入口无参,min_arity = arity
-        const auto entry = new_function(gc_, module, entry_name, 0, 0);
+        // 入口无参,min_arity = arity、无 varargs
+        const auto entry = new_function(gc_, module, entry_name, 0, 0, false);
         module->set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
         return entry;
@@ -432,15 +432,9 @@ namespace aria {
     // ============================================================
 
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc loc) const {
-        // 契约见 CodeGen.hpp validate_params 注；此处只读 params，不触碰编译器状态。
+        // 契约见 CodeGen.hpp validate_params 注;此处只读 params,不触碰编译器状态。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
-        }
-
-        for (const auto& param: params) {
-            if (param.is_varargs) {
-                not_impl(loc, "varargs");
-            }
         }
 
         for (usize i = 0; i < params.size(); ++i) {
@@ -520,7 +514,12 @@ namespace aria {
         // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
         validate_params(params, decl_loc);
 
-        const auto fn = new_function(gc_, mod_ctx_->module_, name, params.size(), min_arity(params));
+        // varargs 恒末位(Parser 结构性保证):arity 为**固定参数数**(rest 不计 --帧参数槽深
+        // = arity + is_varargs,rest 槽的值由 call_closure 打包多余实参为 list 就位);is_varargs
+        // 随工厂进 ObjFunction,call_closure 据此分流元数检查(只保下界)。
+        const bool has_varargs = !params.empty() && params.back().is_varargs;
+        const auto fixed_arity = static_cast<u8>(params.size() - (has_varargs ? 1 : 0));
+        const auto fn = new_function(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
         // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进

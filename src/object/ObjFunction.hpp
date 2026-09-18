@@ -35,9 +35,14 @@ namespace aria {
     //   - name_:ObjString*(经 intern 驻留,同名同指针;恒非空)。模块入口函数名 `<main>`(主入口)/`<module>`(导入)、
     //     lambda 名 `<anonymous>`(`<>` 是正常标识符中不可用的符号,具独特辨识度);具名函数为
     //     其声明名。统一模型:每个函数都有名字,ctor ASSERT 非空。to_string 渲染 `<fn name>`。
-    //   - arity_:参数个数(u8,上限 255;编译期编译器保证不越界)。
+    //   - arity_:固定参数数(u8,上限 255;编译期编译器保证不越界)。**不含 rest 参数**:
+    //     varargs 函数的帧参数槽深 = arity + is_varargs(rest 是末位的一个普通局部槽,
+    //     值由 call_closure 打包多余实参为 list 就位)。
     //   - min_arity_:必传参数数(u8,<= arity_;差额即带默认值参数)。调用实参数落在
-    //     [min_arity, arity] 才合法,不足段由 call_closure 以缺省印章垫充、函数序言换默认值。
+    //     [min_arity, arity] 才合法,不足段由 call_closure 以缺省印章垫充、函数序言换默认值;
+    //     varargs 函数无上界(多余实参进 rest)。
+    //   - is_varargs_:varargs 函数标志(末位参数为 ...rest)。call_closure 据此分流元数
+    //     检查(只保下界)并把超出 arity 的实参打包成 list 压入 rest 槽;每次调用新铸。
     //   - upvalue_descs_:捕获描述表(编译期一次性 flush,运行期只读)。每条 UpvalueDesc
     //     描述本函数的一个捕获(语义见上 struct 注);存元数据、不进字节码流,CLOSURE 保持
     //     定长 3B(ConstU16);与 ObjClosure::upvalues_ 按下标一一对应。描述项纯标量,trace 不标。
@@ -49,7 +54,7 @@ namespace aria {
     //     (两者皆 GC 对象,各自由 sweep 整体回收,~ObjFunction 不释放 module_)。
     class ObjFunction final : public Object {
     public:
-        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity);
+        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
         ~ObjFunction() override = default; // CodeUnit / upvalue_descs_ 级联自释放,无额外子内存
 
         [[nodiscard]]
@@ -76,6 +81,13 @@ namespace aria {
         [[nodiscard]]
         u8 min_arity() const noexcept {
             return min_arity_;
+        }
+
+        // varargs 函数标志(末位参数为 ...rest):call_closure 只保元数下界、多余实参打包
+        // 成 list 压入 rest 槽(槽深 = arity + 1)。
+        [[nodiscard]]
+        bool is_varargs() const noexcept {
+            return is_varargs_;
         }
 
         // 所属模块(词法归属,构造时确定、不可变、非空),供 VM 定位模块 globals。
@@ -116,6 +128,7 @@ namespace aria {
         ObjString*         name_;
         u8                 arity_;
         u8                 min_arity_;
+        bool               is_varargs_;    // varargs 函数(...rest;帧槽深 = arity + 1)
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
@@ -124,10 +137,10 @@ namespace aria {
     //        皆是 weak root,故**调用方须在调用前自行根化两者**(跨 new_object 顶 maybe_collect)。
     // StringView 便捷重载:内部 intern name 并自守(工厂守「自己创建的」),调用方只需根化 module。
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity);
+    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
 
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, StringView name, u8 arity, u8 min_arity);
+    ObjFunction* new_function(GC& gc, ObjModule* module, StringView name, u8 arity, u8 min_arity, bool is_varargs);
 
 } // namespace aria
 

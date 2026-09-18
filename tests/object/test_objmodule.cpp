@@ -37,7 +37,7 @@ namespace {
     // collect 回收 m)。返回白色,调用方自守。
     ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
-        return new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
+        return new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
 } // namespace

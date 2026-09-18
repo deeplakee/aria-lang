@@ -24,10 +24,10 @@ namespace {
     ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
     // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
-    // collect 回收 m)。返回白色,调用方自守。
+    // collect 回收 m)。返回白色,调用方自守。无缺省、无 varargs。
     ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
+        return aria::new_function(gc, m, name, arity, arity, false); // min_arity = arity
     }
 
     // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
@@ -36,10 +36,27 @@ namespace {
     ObjFunction* new_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity, arity); // 无缺省,min_arity = arity
+        return aria::new_function(gc, m, name, arity, arity, false); // min_arity = arity
     }
 
 } // namespace
+
+// varargs 标志:工厂尾参入对象;arity 语义为**固定参数数**(rest 不计,帧槽深 = arity + 1)。
+TEST(ObjFunction, VarargsFlag) {
+    GC   gc;
+    auto m      = make_module(gc);
+    auto guard  = gc.make_guard(m);
+    auto var_fn = aria::new_function(gc, m, "f", 2, 1, true);
+    guard.push(var_fn);
+    EXPECT_TRUE(var_fn->is_varargs());
+    EXPECT_EQ(var_fn->arity(), 2); // rest 不计
+    EXPECT_EQ(var_fn->min_arity(), 1);
+
+    auto plain = aria::new_function(gc, m, "g", 3, 3, false);
+    guard.push(plain);
+    EXPECT_FALSE(plain->is_varargs());
+    EXPECT_EQ(plain->arity(), 3);
+}
 
 TEST(ObjFunction, Basics) {
     GC   gc;

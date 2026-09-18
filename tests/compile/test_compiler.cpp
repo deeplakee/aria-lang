@@ -275,3 +275,64 @@ TEST(Compiler, ForInUnderStressGc) {
                       "1; } return s;"),
               120);
 }
+
+// ---- varargs(...rest:list 载体,call_closure 打包多余实参) ----
+
+// 多余实参按序收集进 rest(list;下标可断言)。
+TEST(Compiler, VarargsCollectsExtras) {
+    EXPECT_EQ(
+            run_int("fun f(a, b, ...rest) { return rest[0] * 100 + rest[1] * 10 + rest[2]; } return f(1, 2, 3, 4, 5);"),
+            345);
+}
+
+// 无多余实参:rest 为空 list(恒 list 非 nil);len 观察。
+TEST(Compiler, VarargsEmptyRest) {
+    EXPECT_EQ(run_int("fun f(a, ...rest) { return a * 10 + len(rest); } return f(7);"), 70);
+}
+
+// 默认参数与 varargs 共存矩阵:全传 / 只传必传(缺省走默认 + 空 rest)/ 恰传固定数。
+TEST(Compiler, VarargsWithDefaults) {
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1, 2, 3, 4, 5);"), 6);
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1);"), 11);
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1, 2);"), 3);
+}
+
+// 纯 varargs(零固定参数):零参与多参皆合法。
+TEST(Compiler, VarargsPureRest) {
+    EXPECT_EQ(run_int("fun g(...xs) { return len(xs); } return g() * 10 + g(1, 2, 3);"), 3);
+}
+
+// 元数下界仍守(必传不足报 WrongArity 至少式文案);上界取消(8 参照常)。
+TEST(Compiler, VarargsArityBound) {
+    auto out = run_source("fun f(a, ...rest) { return a; } return f();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(out.error().message().find("expects at least 1 args, got 0"), std::string::npos);
+
+    EXPECT_EQ(run_int("fun f(a, ...rest) { return len(rest); } return f(1, 2, 3, 4, 5, 6, 7, 8);"), 7);
+}
+
+// rest 每次调用新铸:对它 push 不外泄、两次调用互不相干。
+TEST(Compiler, VarargsFreshListPerCall) {
+    EXPECT_EQ(run_int("fun f(...xs) { xs.push(99); return len(xs); } var a = f(1); var b = f(1); return a * 10 + b;"),
+              22);
+}
+
+// rest 是普通局部槽,可被闭包捕获。
+TEST(Compiler, VarargsCapturedByClosure) {
+    EXPECT_EQ(run_int("fun f(...xs) { var c = fun() { return len(xs); }; return c() + xs[0]; } return f(5, 6);"), 7);
+}
+
+// 方法帧同构适用(槽 0 = this 后照常收集)。
+TEST(Compiler, VarargsMethodFrame) {
+    EXPECT_EQ(run_int("def Box { init(a, ...rest) { this.a = a; this.n = len(rest); } } var b = Box(1, 2, 3); return "
+                      "b.a * 10 + b.n;"),
+              12);
+}
+
+// stress GC 下反复打包:多余实参「栈即根」跨 new_list、白色 list 即写回栈的根化路径。
+TEST(Compiler, VarargsUnderStressGc) {
+    EXPECT_EQ(run_int("fun f(...xs) { var s = 0; for (x in xs) { s = s + x; } return s; } var t = 0; var i = 0; "
+                      "while (i < 20) { t = t + f(i, i + 1, i + 2); i = i + 1; } return t;"),
+              630);
+}

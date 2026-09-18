@@ -506,31 +506,60 @@ namespace aria {
         return call_value(obj->method(), argc);
     }
 
-    bool AriaVM::call_closure(ObjClosure* obj, const u8 argc) {
-        // 元数区间检查 [min_arity, arity](差额为带默认值参数):无缺省报单数文案,有缺省
-        // 报区间文案。函数名不进文案(函数可匿名,名字不保证有意义);调用归属由未捕获出口
-        // 的堆栈跟踪行给出,与「运行期错误消息不含位置」同一约定。
-        const auto fn    = obj->function();
-        const auto arity = fn->arity();
-        if (const auto min_arity = fn->min_arity(); argc < min_arity || argc > arity) {
+    bool AriaVM::check_arity(const ObjFunction* fn, const u8 argc) {
+        // 契约与文案见 AriaVM.hpp check_arity 注。检查纯读,无分配。
+        const auto arity     = fn->arity();
+        const auto min_arity = fn->min_arity();
+        if (fn->is_varargs()) {
+            if (argc < min_arity) {
+                return fail(ErrorCode::WrongArity, "expects at least {} args, got {}", min_arity, argc);
+            }
+            return true;
+        }
+        if (argc < min_arity || argc > arity) {
             if (min_arity == arity) {
                 return fail(ErrorCode::WrongArity, "expects {} args, got {}", arity, argc);
             }
             return fail(ErrorCode::WrongArity, "expects {} to {} args, got {}", min_arity, arity, argc);
         }
+        return true;
+    }
 
-        if (current_->frames_full()) {
-            return fail(ErrorCode::StackOverflow, "call frame stack overflow");
-        }
+    u8 AriaVM::prepare_call_args(const ObjFunction* fn, const u8 argc) {
+        // 契约见 AriaVM.hpp prepare_call_args 注。GC 走查:new_list 是唯一分配点 --额外
+        // 实参 peek 在栈(「栈即根」),copy_from 走 trivial 分配不触 GC,白色 list 随即
+        // drop+push 入值栈根,窗口内无 GC 点(MAKE_LIST case 同构);垫充压寄存器单例无分配。
+        const auto arity = fn->arity();
 
-        // 缺省垫充:未传槽 [argc+1..arity] 压入缺省印章,函数序言按身份判等现场换默认值。
-        // 垫充同时把栈顶从实参深度补齐到满参深度 -- 体局部槽号按满参编(参数槽 1..n、体局部
-        // 自 n+1 起),补齐后体局部才落对槽;方法帧槽 0 = this 同构适用。
-        const auto missing = static_cast<u8>(arity - argc);
+        // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
+        const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
         for (u8 i = 0; i < missing; ++i) {
             current_->push(registers_[kDefaultMarkOffset]);
         }
-        current_->enter_frame(obj, arity);
+
+        // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
+        if (fn->is_varargs()) {
+            const auto extras = argc > arity ? static_cast<u8>(argc - arity) : u8{0};
+            const auto rest   = new_list(gc_);
+            rest->elements().copy_from({current_->stack_top() - extras, extras});
+            current_->drop(extras);
+            current_->push(Value::from_obj(rest));
+            return static_cast<u8>(arity + 1);
+        }
+        return arity;
+    }
+
+    bool AriaVM::call_closure(ObjClosure* obj, const u8 argc) {
+        // 编排:元数检查 -> 帧余量检查 -> 实参整形 -> 进帧;bool 契约同 call_* 族
+        //(false ⟺ 载荷已 raise)。
+        const auto fn = obj->function();
+        if (!check_arity(fn, argc)) {
+            return false;
+        }
+        if (current_->frames_full()) {
+            return fail(ErrorCode::StackOverflow, "call frame stack overflow");
+        }
+        current_->enter_frame(obj, prepare_call_args(fn, argc));
         return true;
     }
 

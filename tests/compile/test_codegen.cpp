@@ -856,11 +856,10 @@ TEST(CodeGen, DefaultParamUnregisteredFallsToGlobal) {
     EXPECT_EQ(run_int("var a = 7; fun f(a = a) { return a; } return f();"), 7);
 }
 
-TEST(CodeGen, ErrNotImplementedVarargs) {
-    // 默认参数已落地;varargs 仍待批 4(list 载体)。
-    auto c = compile_only("fun f(a, ...rest) { return a; }");
-    ASSERT_FALSE(c.has_value());
-    EXPECT_EQ(c.error().code(), ErrorCode::NotImplemented);
+TEST(CodeGen, VarargsCompiles) {
+    // varargs 已落地(list 载体):编译通过即可(行为面由 Compiler.Varargs* 端到端覆盖)。
+    auto c = compile_only("fun f(a, b = 2, ...rest) { return a; }");
+    EXPECT_TRUE(c.has_value());
 }
 
 // 出错即停 + ~ModuleCtx 沿 enclosing_ 链释放：lambda（表达式位）体内 break 触发 BreakOutsideLoop

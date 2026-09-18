@@ -193,11 +193,25 @@ namespace aria {
         // 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
 
-        // 闭包调用的进帧单点(call_value 分发与 run_closure 共用):实参数区间检查
-        // [min_arity, arity] 与帧栈未溢出校验后,把未传槽 [argc+1..arity] 垫充缺省印章
-        //(补齐到满参深度)再进帧(callee 在槽 0,参数即局部槽 1..arity);序言按身份判等
-        // 换默认值。失败 raise WrongArity/StackOverflow。
+        // 闭包调用的进帧单点(call_value 分发与 run_closure 共用),只编排:元数检查
+        //(check_arity)-> 帧余量检查 -> 实参整形(prepare_call_args,缺省垫充/varargs
+        // 打包)再进帧(callee 在槽 0,参数即局部槽 1..n)。失败 raise WrongArity/
+        // StackOverflow。
         bool call_closure(ObjClosure* obj, u8 argc);
+
+        // call_closure 辅助:元数检查。普通函数区间 [min_arity, arity](差额为带默认值
+        // 参数),无缺省报单数文案、有缺省报区间文案;varargs 函数只保下界(多余实参由
+        // prepare_call_args 打包进 rest,无上界,上限即 CALL 操作数 u8)。函数名不进文案
+        //(函数可匿名);调用归属由未捕获出口的堆栈跟踪行给出。
+        bool check_arity(const ObjFunction* fn, u8 argc);
+
+        // call_closure 辅助:实参整形 --把调用区栈顶从实参深度整形成帧参数槽深并返回槽深。
+        // ①缺省垫充:未传的固定参数槽压入缺省印章,函数序言按身份判等现场换默认值,栈顶
+        // 同时补齐到固定参数深度(体局部槽号按满参编,参数槽 1..n、体局部自 n+1 起;方法帧
+        // 槽 0 = this 同构适用);②varargs 打包:超出固定参数数的实参整段收集为新 list 压入
+        // rest 槽(帧槽深 = arity + 1;无多余实参铸空表 --rest 恒为 list 非 nil,每次调用
+        // 新铸)。
+        u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传(契约见 ObjNativeFn.hpp)。
         bool call_native(const ObjNativeFn* obj, u8 argc);

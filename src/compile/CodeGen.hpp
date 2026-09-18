@@ -308,9 +308,9 @@ namespace aria {
         void emit_expr_or_nil(ExprNode* expr, u32 line);
 
         // --- 函数编译（FunDecl / Lambda / 类成员方法共用）---
-        // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；varargs
-        // -> not_impl（默认参数已落地发射）；形参重名 -> DuplicateParam。只读 params、不触碰编译器状态，
-        // 首错即 fail / not_impl 抛出。
+        // 形参合法性检查（compile_function 编译体前调用）：>kMaxArity -> TooManyParameters；
+        // 形参重名 -> DuplicateParam（varargs 恒末位由 Parser 结构性保证，rest 与默认参数
+        // 共存的语义见 grammar.txt）。只读 params、不触碰编译器状态，首错即 fail 抛出。
         // loc 为声明节点位置（fun 关键字，compile_function 经 decl_loc 传入）而非 body.loc()（body 的 '{'），
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;

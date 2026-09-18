@@ -31,7 +31,7 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
-        // 整数键:非整数 TypeMismatch;越界/负数 IndexOutOfBounds(越界值与长度就地拼进文案)。
+        // 整数键:非整数 TypeMismatch;越界/负数 IndexOutOfBounds(越界值就地拼进文案)。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }

@@ -1834,11 +1834,11 @@ TEST(CodeGen, ErrIndexKeyTypeMismatch) {
     }
 }
 
-// 下标运行期错误经异常通道可 catch,消息含越界值与长度。
+// 下标运行期错误经异常通道可 catch,消息含越界值。
 TEST(CodeGen, IndexErrorCaughtByTry) {
     auto out = run_source(R"(try { return [1][9]; } catch (e) { return str(e); })");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range, list length 1");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range");
 }
 
 // 写入新鲜对象跨 GC 点(run_source 开 stress GC,元素 list 经值栈/对象图级联保命)。

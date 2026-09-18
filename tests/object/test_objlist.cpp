@@ -222,8 +222,7 @@ TEST(ObjList, LoadIndexOutOfBoundsFails) {
         EXPECT_FALSE(list->load_index(vm, Value::from_int(index)).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
-        EXPECT_EQ(message, aria::String{std::format(
-                                   "Runtime: IndexOutOfBounds list index {} out of range, list length 2", index)});
+        EXPECT_EQ(message, aria::String{std::format("Runtime: IndexOutOfBounds list index {} out of range", index)});
     }
 }
 

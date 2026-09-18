@@ -337,12 +337,14 @@ namespace aria {
                 scan_escape(value);
                 continue;
             }
-            // 普通字符（含多字节 UTF-8）：原样追加
-            const auto [_, len] = utf8::decode_one(src_, pos_);
-            for (usize i = 0; i < len; ++i) {
-                value.push_back(src_[pos_ + i]);
-            }
-            advance(len);
+            // 普通字符段（含多字节 UTF-8）：消费到分隔符（引号 / 反斜杠 / 换行）或 EOF，整段原样追加。
+            // 分隔符都是 ASCII、UTF-8 续接字节恒 >= 0x80，故按字节消费不会停在码点中间，也不需解码
+            // （只需跳过）--用 consume_u8 而非 consume_codepoints：后者每个多字节码点要解码一次，长串
+            // 实测约慢一倍（见 lexer-notes §2）。
+            const u32 run_begin = pos_;
+            const u8  delim     = static_cast<u8>(quote);
+            consume_u8([delim](const u8 byte) { return byte != delim && byte != '\\' && byte != '\n'; });
+            value.append(src_.data() + run_begin, pos_ - run_begin);
         }
 
         const auto lex = StringView{src_.data() + start, pos_ - start};

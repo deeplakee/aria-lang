@@ -85,29 +85,33 @@ namespace aria {
         // 多字节推进（进制前缀 / 多字符运算符 / decode 长度）统一走此。
         void advance(u32 n = 1) noexcept;
 
-        // 当 pred(当前字节) 为真且未到 EOF 时逐字节推进 pos_，直至 pred 假或 EOF。遇非 ASCII 字节
-        // 即停（停在码点起始字节上，游标仍在码点边界）。用于文法上只含 ASCII 的序列（数字与下划线、
-        // 进制数字）；含非 ASCII 字符集的序列（标识符续接、注释体）须用 consume_codepoints。
+        // 只消费 ASCII 字节（pred 收 char）：即 consume_u8 加一道 ASCII 守卫，故遇非 ASCII 字节必停，
+        // 且停在码点起始字节上（游标仍在码点边界--UTF-8 续接字节恒 >= 0x80）。用于文法上只含 ASCII 的
+        // 序列（数字与下划线、进制数字）；含非 ASCII 字符集的序列（标识符续接、注释体）须用
+        // consume_codepoints。
         template<typename Pred>
         void consume_ascii(Pred pred) {
-            while (!is_eof() && static_cast<u8>(src_[pos_]) < 0x80 && pred(src_[pos_])) {
+            consume_u8([pred](const u8 byte) { return byte < 0x80 && pred(static_cast<char>(byte)); });
+        }
+
+        // 按裸字节消费：pred 收 u8，谓词为真即推进一字节，直至 pred 假或 EOF。**不保证游标落在码点
+        // 边界上**--谓词若对 >= 0x80 的字节为真，游标会停进多字节码点中间（后续扫描将把它当非法字符）。
+        // 故只在「停点必为 ASCII」时使用（如字符串正文按引号/反斜杠/换行分隔符切段）；需要边界保证
+        // 或只需 ASCII 时用 consume_ascii（它的实现就是在本函数之上加一道 ASCII 守卫）。
+        template<typename Pred>
+        void consume_u8(Pred pred) {
+            while (!is_eof() && pred(static_cast<u8>(src_[pos_]))) {
                 advance();
             }
         }
 
-        // 消费满足 pred 的连续码点（pred 收码点，ASCII 与多字节一致判定），直至 pred 假或 EOF。
-        // ASCII 字节走 advance() 快路径、非 ASCII 解码一次后整码点前进，故游标不会停在码点中间。
+        // 消费满足 pred 的连续码点（pred 收码点），直至 pred 假或 EOF：逐码点解码（ASCII 走 decode_one
+        // 内部快路径）、整码点一步推进，故游标不会停在码点中间。此处不另开 ASCII 分支--本模板在每个
+        // 调用点展开，多一条路径的代码体积比省下的那点解码更贵（实测常规源快约 5%，见 lexer-notes §3）。
         // 循环体需额外副作用（如设标志）的场景不适用，仍手写循环。
         template<typename Pred>
         void consume_codepoints(Pred pred) {
             while (!is_eof()) {
-                if (const u8 byte = static_cast<u8>(src_[pos_]); byte < 0x80) {
-                    if (!pred(static_cast<utf8::codepoint>(byte))) {
-                        return;
-                    }
-                    advance();
-                    continue;
-                }
                 const auto [cp, len] = utf8::decode_one(src_, pos_);
                 if (!pred(cp)) {
                     return;

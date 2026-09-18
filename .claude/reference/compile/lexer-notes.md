@@ -90,7 +90,7 @@
 三条推论：
 
 1. **95% 的调用是单字节 ASCII**，执行路径只有「边界检查 + 取字节 + 比较 + 返回」。所以成本主要不在执行，而在 **`decode_one` 的函数体在每个调用点被内联展开** —— 多字节那套长度表、续接校验、组装 switch、双重校验在每个站点都占据代码空间。
-2. 佐证：把多字节慢路径移出内联（`[[gnu::noinline]] constexpr` 的 `detail::decode_slow`，ASCII 快路径保持内联，`[[nodiscard]]` 与 `constexpr` 均不变）实测 ASCII 源 20.0 → 19.0–19.5 ms、CJK 源 12.4 → 11.8–11.9 ms，各约 **5%**，且不需要改任何调用点。代价：`[[gnu::noinline]]` 是 GCC/Clang 方言，跨平台需在 `sys.hpp` 加宏（MSVC 用 `__declspec(noinline)`）。
+2. **据此已落地热/冷拆分**：多字节慢路径移出为 `detail::decode_multibyte`（`ARIA_NOINLINE`，定义在 `common.hpp`：`_MSC_VER` 走 `__declspec`、否则 `__attribute__`），`decode_one` 只留边界检查 + 首字节判定 + ASCII 返回；`[[nodiscard]]`、`constexpr`、全部调用点均不变。实测：ASCII 常规源 20.1–20.3 → 19.4–19.6 ms（-3~4%）、单行密集 10.1–10.3 → 8.9–9.2 ms（-10~12%）、CJK 密集源 12.6–12.8 → 11.6–12.0 ms（-5~8%）。等价性用穷举对拍验收：17 字节表（ASCII / 续接 / 超长编码 C0-C1 / 2-3-4 字节边界 / 代理区首字节 / F5-FF）× 长度 1-4 的全部组合 × 全部偏移，共 43.8 万次 `decode_one` 调用与全部 `is_valid` 结果逐字节一致。
 3. `skip_trivia` 的逐字符解码占调用数 45%，但把它改成字节级分派实测**更慢**（§3）—— 与「调用便宜、函数体贵」一致：要减的是代码体积，不是调用次数。
 
 若将来重构 utf8 解码（表驱动 / 状态机）：

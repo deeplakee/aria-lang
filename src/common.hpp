@@ -42,6 +42,14 @@ namespace aria {
         } while (false)
 #endif
 
+// 禁止内联：用于热/冷路径分离--把冷路径移出热函数的内联展开，控制热路径代码体积（典型场景见
+// utf8::decode_one 的多字节慢路径）。MSVC（含 clang-cl）走 __declspec，GCC/Clang 走 attribute。
+#if defined(_MSC_VER)
+    #define ARIA_NOINLINE __declspec(noinline)
+#else
+    #define ARIA_NOINLINE __attribute__((noinline))
+#endif
+
 } // namespace aria
 
 #endif // ARIA_COMMON_HPP

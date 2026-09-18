@@ -45,6 +45,60 @@ namespace aria::utf8 {
         constexpr u8 cont_bits(const u8 byte) noexcept {
             return static_cast<u8>(byte & 0x3F);
         }
+
+        // 非 ASCII 慢路径：解码 str[offset] 处的多字节序列（lead = 该字节，已由 decode_one 判定 >= 0x80）。
+        // ARIA_NOINLINE 的理由：decode_one 在每个调用点都会被内联展开，而调用点绝大多数（实测 95%）
+        // 走 ASCII 快路径，长度表/续接校验/组装/双重校验这套只贡献代码体积 -- 移出内联后词法各形态
+        // 快 3-12%（视输入形态，数字见 .claude/reference/compile/lexer-notes.md §5）。放 detail 不放
+        // 公开面：调用方只需 decode_one，本函数是它的实现分片。
+        [[nodiscard]] ARIA_NOINLINE constexpr Pair<codepoint, u8>
+        decode_multibyte(const StringView str, const usize offset, const u8 lead) noexcept {
+            const u8 need = seq_len_from_lead(lead);
+            if (need == 0 || offset + need > str.size()) {
+                return {kReplacementChar, 1};
+            }
+
+            for (u8 i = 1; i < need; ++i) {
+                if (!is_cont_byte(static_cast<u8>(str[offset + i]))) {
+                    return {kReplacementChar, 1};
+                }
+            }
+
+            codepoint cp = 0;
+            switch (need) {
+                case 2:
+                    cp = static_cast<codepoint>(lead & 0x1F) << 6 | cont_bits(static_cast<u8>(str[offset + 1]));
+                    break;
+                case 3:
+                    cp = (static_cast<codepoint>(lead & 0x0F) << 12) |
+                         (static_cast<codepoint>(cont_bits(static_cast<u8>(str[offset + 1]))) << 6) |
+                         cont_bits(static_cast<u8>(str[offset + 2]));
+                    break;
+                case 4:
+                    cp = (static_cast<codepoint>(lead & 0x07) << 18) |
+                         (static_cast<codepoint>(cont_bits(static_cast<u8>(str[offset + 1]))) << 12) |
+                         (static_cast<codepoint>(cont_bits(static_cast<u8>(str[offset + 2]))) << 6) |
+                         cont_bits(static_cast<u8>(str[offset + 3]));
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+
+            // 最短编码校验：码点不得低于当前长度能表示的下界
+            constexpr codepoint kMin2 = 0x80;
+            constexpr codepoint kMin3 = 0x800;
+            constexpr codepoint kMin4 = 0x10000;
+            if ((need == 2 && cp < kMin2) || (need == 3 && cp < kMin3) || (need == 4 && cp < kMin4)) {
+                return {kReplacementChar, 1};
+            }
+
+            // 超出 Unicode 范围或代理区码点非法
+            if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+                return {kReplacementChar, 1};
+            }
+
+            return {cp, need};
+        }
     } // namespace detail
 
 
@@ -53,62 +107,19 @@ namespace aria::utf8 {
     // 遇到非法字节时返回 {kReplacementChar, 1}（只吞掉一个坏字节，便于继续扫描）。
     // offset 超出范围（>= str.size()）时返回 {kReplacementChar, 0}，不进行任何读取；
     // 正常使用时调用方应保证 offset < str.size()，此时返回的字节数 >= 1。
+    //
+    // ASCII 快路径就地内联，多字节交 detail::decode_multibyte（ARIA_NOINLINE）--源码主体是 ASCII，
+    // 于是每个调用点只多出几条指令，而不必携带整套多字节解码代码。
     [[nodiscard]]
     constexpr Pair<codepoint, u8> decode_one(const StringView str, const usize offset = 0) noexcept {
         if (offset >= str.size()) {
             return {kReplacementChar, 0};
         }
-        // ASCII 快速路径
         const u8 lead = static_cast<u8>(str[offset]);
         if (lead < 0x80) {
             return {static_cast<codepoint>(lead), 1};
         }
-
-        const u8 need = detail::seq_len_from_lead(lead);
-        if (need == 0 || offset + need > str.size()) {
-            return {kReplacementChar, 1};
-        }
-
-        for (u8 i = 1; i < need; ++i) {
-            if (!detail::is_cont_byte(static_cast<u8>(str[offset + i]))) {
-                return {kReplacementChar, 1};
-            }
-        }
-
-        codepoint cp = 0;
-        switch (need) {
-            case 2:
-                cp = static_cast<codepoint>(lead & 0x1F) << 6 | detail::cont_bits(static_cast<u8>(str[offset + 1]));
-                break;
-            case 3:
-                cp = (static_cast<codepoint>(lead & 0x0F) << 12) |
-                     (static_cast<codepoint>(detail::cont_bits(static_cast<u8>(str[offset + 1]))) << 6) |
-                     detail::cont_bits(static_cast<u8>(str[offset + 2]));
-                break;
-            case 4:
-                cp = (static_cast<codepoint>(lead & 0x07) << 18) |
-                     (static_cast<codepoint>(detail::cont_bits(static_cast<u8>(str[offset + 1]))) << 12) |
-                     (static_cast<codepoint>(detail::cont_bits(static_cast<u8>(str[offset + 2]))) << 6) |
-                     detail::cont_bits(static_cast<u8>(str[offset + 3]));
-                break;
-            default:
-                UNREACHABLE();
-        }
-
-        // 最短编码校验：码点不得低于当前长度能表示的下界
-        constexpr codepoint kMin2 = 0x80;
-        constexpr codepoint kMin3 = 0x800;
-        constexpr codepoint kMin4 = 0x10000;
-        if ((need == 2 && cp < kMin2) || (need == 3 && cp < kMin3) || (need == 4 && cp < kMin4)) {
-            return {kReplacementChar, 1};
-        }
-
-        // 超出 Unicode 范围或代理区码点非法
-        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-            return {kReplacementChar, 1};
-        }
-
-        return {cp, need};
+        return detail::decode_multibyte(str, offset, lead);
     }
 
     // 校验 str 是否为合法的 UTF-8 文本（无非法字节、无超长编码、无代理区码点）

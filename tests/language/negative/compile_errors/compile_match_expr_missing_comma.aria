@@ -1,0 +1,2 @@
+// 钉住：match 表达式臂间漏写 "," 分隔 -> 语法错（解析期 ExpectedToken）。
+var x = match (1) { 1 => 10 _ => 0 };

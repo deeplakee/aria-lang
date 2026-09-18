@@ -394,7 +394,7 @@ TEST(ParserCompound, Lambda) {
 }
 
 TEST(ParserCompound, MatchExpr) {
-    const String out = dump_ok("var r = match (x) { 1 => 10 _ => 0 };");
+    const String out = dump_ok("var r = match (x) { 1 => 10, _ => 0 };");
     expect_has(out, "MatchExpr arms=2");
     expect_has(out, "MatchPattern _ (wildcard)");
 }
@@ -744,6 +744,24 @@ TEST(ParserError, ExpectedTokenSemicolon) {
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedToken);
+}
+
+TEST(ParserError, MatchExprArmSeparator) {
+    // matchExpr 臂间强制 ','：漏写报 ExpectedToken 且消息指向 ','。
+    {
+        auto p = parse_src("var x = match (1) { 1 => 10 _ => 0 };");
+        ASSERT_FALSE(p->result.has_value());
+        ASSERT_FALSE(p->result.error().empty());
+        EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedToken);
+        EXPECT_NE(p->result.error()[0].message().find("','"), String::npos);
+    }
+    // 尾逗号不允许：',' 后无臂可解析，报 ExpectedExpression。
+    {
+        auto p = parse_src("var x = match (1) { 1 => 10, };");
+        ASSERT_FALSE(p->result.has_value());
+        ASSERT_FALSE(p->result.error().empty());
+        EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedExpression);
+    }
 }
 
 TEST(ParserError, DefaultAfterPlain) {

@@ -882,7 +882,8 @@ namespace aria {
         expect(TokenType::LeftBrace, "'{'");
         List<MatchExprArm> arms;
         arms.push_back(match_expr_arm()); // matchExprArm+：至少一条
-        while (!check(TokenType::RightBrace) && !is_at_end()) {
+        while (!check(TokenType::RightBrace)) {
+            expect(TokenType::Comma, "','"); // 臂间以 ',' 分隔，不允许尾逗号
             arms.push_back(match_expr_arm());
         }
         expect(TokenType::RightBrace, "'}'");

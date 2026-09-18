@@ -917,16 +917,16 @@ TEST(CodeGen, MatchNoArmCatchableAndShared) {
     EXPECT_EQ(out->as_int(), 7);
 }
 
-TEST(CodeGen, MatchExprTakesValue) { EXPECT_EQ(run_int("return match (2) { 1 => 10 2 => 20 _ => 30 };"), 20); }
+TEST(CodeGen, MatchExprTakesValue) { EXPECT_EQ(run_int("return match (2) { 1 => 10, 2 => 20, _ => 30 };"), 20); }
 
 TEST(CodeGen, MatchExprInVarInitializer) {
     // 值填槽窗口:降糖不登记任何局部(无隐藏临时),var 初始化器内槽位无错位;臂体读外层局部。
-    EXPECT_EQ(run_int("fun f() { var a = 1; var x = match (a) { 1 => a + 10 _ => 0 }; return x; } return f();"), 11);
+    EXPECT_EQ(run_int("fun f() { var a = 1; var x = match (a) { 1 => a + 10, _ => 0 }; return x; } return f();"), 11);
 }
 
 TEST(CodeGen, MatchExprAsCallArg) {
     // 表达式位置嵌套在运算实参窗口,subject 驻栈与外层运算值共存。
-    EXPECT_EQ(run_int("return 1 + match (2) { 2 => 3 _ => 4 };"), 4);
+    EXPECT_EQ(run_int("return 1 + match (2) { 2 => 3, _ => 4 };"), 4);
 }
 
 TEST(CodeGen, MatchSubjectEvaluatedOnce) {
@@ -969,7 +969,7 @@ TEST(CodeGen, ErrUnreachableArmAfterWildcard) {
     auto d = compile_only("match (1) { _ => 2; _ => 3; }");
     ASSERT_FALSE(d.has_value());
     EXPECT_EQ(d.error().code(), ErrorCode::UnreachableArm);
-    auto e = compile_only("return match (1) { _ => 2 3 => 4 };");
+    auto e = compile_only("return match (1) { _ => 2, 3 => 4 };");
     ASSERT_FALSE(e.has_value());
     EXPECT_EQ(e.error().code(), ErrorCode::UnreachableArm);
 }

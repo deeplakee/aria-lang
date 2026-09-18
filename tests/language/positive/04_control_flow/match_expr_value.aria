@@ -1,24 +1,24 @@
-// 钉住：match 表达式取值、臂间无分隔、subject 单次求值、pattern 惰性、== 内容相等。
-assert(match (2) { 1 => 10 2 => 20 _ => 30 } == 20);
+// 钉住：match 表达式取值、臂间 "," 分隔、subject 单次求值、pattern 惰性、== 内容相等。
+assert(match (2) { 1 => 10, 2 => 20, _ => 30 } == 20);
 # var 初始化器窗口：臂体读外层局部（降糖不登记任何局部，槽位无错位）
 var a = 1;
-var x = match (a) { 1 => a + 10 _ => 0 };
+var x = match (a) { 1 => a + 10, _ => 0 };
 assert(x == 11);
 # 实参窗口：subject 驻栈与外层运算值共存
-assert(1 + match (2) { 2 => 3 _ => 4 } == 4);
+assert(1 + match (2) { 2 => 3, _ => 4 } == 4);
 # == 内容相等：Int/F64 跨类型
-assert(match (1) { 2 => 0 1.0 => 1 } == 1);
+assert(match (1) { 2 => 0, 1.0 => 1 } == 1);
 # 字符串模式
-assert(match ("hi") { "bye" => 0 "hi" => 1 _ => 2 } == 1);
+assert(match ("hi") { "bye" => 0, "hi" => 1, _ => 2 } == 1);
 # subject 恰一次求值（DUP 副本跨臂比较）
 var calls = 0;
 fun bump() { calls += 1; return 7; }
-var v = match (bump()) { 1 => 1 7 => 2 _ => 3 };
+var v = match (bump()) { 1 => 1, 7 => 2, _ => 3 };
 assert(calls == 1);
 assert(v == 2);
 # pattern 惰性：命中臂之后的模式不求值
 var pcalls = 0;
 fun p() { pcalls += 1; return 5; }
-var w = match (1) { 1 => 100 p() => 200 _ => 300 };
+var w = match (1) { 1 => 100, p() => 200, _ => 300 };
 assert(w == 100);
 assert(pcalls == 0);

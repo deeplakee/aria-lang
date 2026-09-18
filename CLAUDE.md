@@ -38,6 +38,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划（批 1-2 编译器前置批：默认参数 / match 降糖；批 3-9：方法机制两层分派、迭代协议、下标语义与集合/内置方法各批）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
+- `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 
 ### 语言文法 `docs/grammar.txt`
 

@@ -140,6 +140,42 @@ TEST(ObjList, DebugRepr) {
     EXPECT_EQ(aria::format_value(Value::from_obj(list)), "[1, \"ab\", nil, [2]]"); // str/print 位
 }
 
+// 环防护:自引用/互环在渲染路径上重遇即截断 "[...]"(PrintGuard,防无限递归栈溢出)。
+TEST(ObjList, DebugReprSelfCycleTruncates) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_list(gc, guard);
+    a->elements().push(Value::from_int(1));
+    a->elements().push(Value::from_obj(a));
+    EXPECT_EQ(a->debug_repr(), "[1, [...]]");
+    EXPECT_EQ(aria::format_value(Value::from_obj(a)), "[1, [...]]"); // print/str 位经 to_string 同路
+    EXPECT_EQ(a->debug_repr(), "[1, [...]]");                        // 前次守卫已出栈,再次渲染不受影响
+}
+
+TEST(ObjList, DebugReprMutualCycleTruncates) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_list(gc, guard);
+    auto b     = make_list(gc, guard);
+    a->elements().push(Value::from_int(1));
+    a->elements().push(Value::from_obj(b));
+    b->elements().push(Value::from_obj(a));
+    EXPECT_EQ(a->debug_repr(), "[1, [[...]]]"); // a -> b -> a:在 b 内重遇 a 截断
+    EXPECT_EQ(b->debug_repr(), "[[1, [...]]]"); // b -> a -> b:在 a 内重遇 b 截断
+}
+
+// 守卫出栈正确性:同一非环内层 list 渲染两次,第二次不得误判环。
+TEST(ObjList, DebugReprSharedElementRendersTwice) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto inner = make_list(gc, guard);
+    inner->elements().push(Value::from_int(7));
+    auto outer = make_list(gc, guard);
+    outer->elements().push(Value::from_obj(inner));
+    outer->elements().push(Value::from_obj(inner));
+    EXPECT_EQ(outer->debug_repr(), "[[7], [7]]");
+}
+
 // stress GC:list 为唯一根,元素长串经 elements_.trace 存活;漏标即丢。
 TEST(ObjList, TraceStressKeepsElements) {
     GC gc;

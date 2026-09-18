@@ -150,7 +150,8 @@ namespace aria {
         // 调试渲染(repr 位),基类默认地址型 `<Type at 0xaddr>`。**override 契约 = 纯 C++
         // 惰性渲染**:只读自身成员造返回串,绝不执行 aria 字节码/调可重入 VM 的路径 --
         // format_value_debug / trace_execution 等在 dispatch_loop 内的调试上下文经虚分派
-        // 调用,防重入由本契约维护(override 集合编译期封闭)。
+        // 调用,防重入由本契约维护(override 集合编译期封闭)。递归渲染子值者(容器)入口
+        // 另须挂 PrintGuard 防环:元素重遇在印对象即截断 "[...]",否则无限递归栈溢出。
         [[nodiscard]]
         virtual String debug_repr() const {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));

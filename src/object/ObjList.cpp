@@ -2,6 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/PrintGuard.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/Value.hpp"
 
@@ -56,6 +57,12 @@ namespace aria {
     }
 
     String ObjList::debug_repr() const {
+        // 环防护:自引用/互环时本 list 已在渲染路径上,截断 "[...]"(先查后挂,顺序反了
+        // 自身即命中);不截断则元素重遇无限递归栈溢出。
+        if (PrintGuard::is_cycle(this)) {
+            return "[...]";
+        }
+        const PrintGuard guard{this};
         // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归 debug_repr)。
         String repr = "[";
         for (usize index = 0; index < elements_.size(); ++index) {

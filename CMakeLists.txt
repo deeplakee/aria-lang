@@ -97,6 +97,7 @@ add_library(aria_core STATIC
         src/object/ObjException.hpp
         src/object/ObjUpvalue.cpp
         src/object/ObjUpvalue.hpp
+        src/object/PrintGuard.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
 )

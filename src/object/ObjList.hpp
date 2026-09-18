@@ -18,7 +18,8 @@ namespace aria {
     //     `===` 恒指针(value_identical,不经本类)。
     //   - trace():委托 elements_.trace(遍历元素 mark_value)。
     //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免
-    //     `[1, ab]` 歧义;嵌套 list 递归);显示同文案(to_string 经基类默认委托)。
+    //     `[1, ab]` 歧义;嵌套 list 递归);入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,
+    //     Python 同款);显示同文案(to_string 经基类默认委托)。
     class ObjList final : public Object {
     public:
         // 元素表惰性增长,ctor 只绑分配器(首字节预留由 copy_from/push 的扩容路径自理)。

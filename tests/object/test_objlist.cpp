@@ -1,17 +1,30 @@
 #include <gtest/gtest.h>
 
+#include <format>
+
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
+#include "runtime/AriaVM.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
+using aria::AriaVM;
+using aria::ErrorCode;
 using aria::GC;
+using aria::i64;
 using aria::new_list;
 using aria::new_string;
+using aria::ObjException;
 using aria::ObjList;
 using aria::ObjString;
+using aria::Pair;
+using aria::String;
 using aria::StringView;
+using aria::try_obj;
 using aria::usize;
 using aria::Value;
 using aria::value_equal;
@@ -31,6 +44,16 @@ namespace {
         auto list = new_list(gc);
         guard.push(list);
         return list;
+    }
+
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    //(协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
+    Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
+        auto payload = vm.main_context().take_error();
+        EXPECT_TRUE(payload.has_value());
+        const auto ex = try_obj<ObjException>(*payload);
+        EXPECT_NE(ex, nullptr);
+        return {ex->code(), String{ex->message()->view()}};
     }
 
 } // namespace
@@ -155,4 +178,69 @@ TEST(ObjList, UnrootedListSwept) {
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
+}
+
+// ---- 下标协议(load_index/store_index) ----
+
+TEST(ObjList, LoadIndexReads) {
+    AriaVM      vm;
+    auto&       gc    = vm.gc();
+    auto        guard = gc.make_guard();
+    auto        list  = make_list(gc, guard);
+    const Value src[] = {Value::from_int(10), Value::from_int(20)};
+    list->elements().copy_from(src);
+    auto first = list->load_index(vm, Value::from_int(0));
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->as_int(), 10);
+    auto second = list->load_index(vm, Value::from_int(1));
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(second->as_int(), 20);
+}
+
+TEST(ObjList, LoadIndexNonIntKeyFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    list->elements().push(Value::from_int(1));
+    for (const Value key: {Value::from_f64(1.5), Value::nil_val(), Value::from_bool(true)}) {
+        EXPECT_FALSE(list->load_index(vm, key).has_value());
+        const auto [code, message] = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::TypeMismatch);
+        EXPECT_EQ(message, "Runtime: TypeMismatch list index must be an integer, got " + String{aria::type_name(key)});
+    }
+}
+
+TEST(ObjList, LoadIndexOutOfBoundsFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    list->elements().push(Value::from_int(1));
+    list->elements().push(Value::from_int(2));
+    for (const i64 index: {2, -1}) {
+        EXPECT_FALSE(list->load_index(vm, Value::from_int(index)).has_value());
+        const auto [code, message] = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
+        EXPECT_EQ(message, aria::String{std::format(
+                                   "Runtime: IndexOutOfBounds list index {} out of range, list length 2", index)});
+    }
+}
+
+TEST(ObjList, StoreIndexWritesAndChecks) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    list->elements().push(Value::from_int(1));
+    EXPECT_TRUE(list->store_index(vm, Value::from_int(0), Value::from_int(9)));
+    EXPECT_EQ(list->elements()[0].as_int(), 9);
+
+    // 键检查同读:非整数 TypeMismatch、越界 IndexOutOfBounds,失败不写不动长度(不自动增长)。
+    EXPECT_FALSE(list->store_index(vm, Value::from_f64(0.5), Value::from_int(0)));
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
+    EXPECT_FALSE(list->store_index(vm, Value::from_int(1), Value::from_int(0)));
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    EXPECT_EQ(list->elements().size(), 1u);
+    EXPECT_EQ(list->elements()[0].as_int(), 9);
 }

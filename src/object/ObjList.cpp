@@ -1,6 +1,8 @@
 #include "object/ObjList.hpp"
 
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "runtime/AriaVM.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -25,6 +27,31 @@ namespace aria {
                 return false;
             }
         }
+        return true;
+    }
+
+    Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
+        // 整数键:非整数 TypeMismatch;越界/负数 IndexOutOfBounds(越界值与长度就地拼进文案)。
+        if (!key.is_int()) {
+            return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
+        }
+        const i64 index = key.as_int();
+        if (index < 0 || static_cast<u64>(index) >= elements_.size()) {
+            return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", index);
+        }
+        return elements_[static_cast<usize>(index)];
+    }
+
+    bool ObjList::store_index(AriaVM& vm, const Value key, const Value value) {
+        // 键检查同读;不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
+        if (!key.is_int()) {
+            return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
+        }
+        const i64 index = key.as_int();
+        if (index < 0 || static_cast<u64>(index) >= elements_.size()) {
+            return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", index);
+        }
+        elements_[static_cast<usize>(index)] = value;
         return true;
     }
 

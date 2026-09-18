@@ -55,6 +55,15 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
+        // 下标读取:整数键,越界/负数 IndexOutOfBounds、非整数键 TypeMismatch(越界值与
+        // 长度就地拼进文案);查读无分配。
+        [[nodiscard]]
+        Opt<Value> load_index(AriaVM& vm, Value key) override;
+
+        // 下标写入:键检查同读,不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
+        [[nodiscard]]
+        bool store_index(AriaVM& vm, Value key, Value value) override;
+
         // 调试渲染:`[1, "ab"]`;显示同文案。
         [[nodiscard]]
         String debug_repr() const override;

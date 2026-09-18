@@ -1174,7 +1174,36 @@ namespace aria {
         UNREACHABLE();
     }
 
-    void CodeGen::visitIndexAccessNode(IndexAccessNode& node) { not_impl(node, "下标访问（LOAD_INDEX 未由 VM 实现）"); }
+    void CodeGen::visitIndexAccessNode(IndexAccessNode& node) {
+        // 四模式(take 入口取,visitFieldAccessNode 同款):Load = rvalue 读;Prepare = 普通 =
+        // 首腿(只发 obj + idx 备对,不读值);Store = 只发 STORE_INDEX(obj/idx 由 Prepare 腿
+        // 备好);Locate = 复合赋值/前置自增定位腿,DUP2 复制 (obj, idx) 对跨过 load 供 Store 腿
+        // 复用,locator 单次求值(compound-assignment-lowering.md §4.3)。各臂自带完整发射序列。
+        const auto mode = take_lvalue_mode();
+        const u32  line = node.line();
+        switch (mode) {
+            case LvalueMode::Prepare:
+                emit_expr(*node.object); // [obj]
+                emit_expr(*node.index);  // [obj, idx]
+                return;
+            case LvalueMode::Load:
+                emit_expr(*node.object);
+                emit_expr(*node.index);                      // [obj, idx]
+                cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [obj[idx]]
+                return;
+            case LvalueMode::Store:
+                // obj/idx 已由 Prepare 腿压在值下,只发 store 指令
+                cur_cu()->emit_op(OpCode::STORE_INDEX, line); // [obj, idx, v] -> [v]
+                return;
+            case LvalueMode::Locate:
+                emit_expr(*node.object);
+                emit_expr(*node.index);                      // [obj, idx]
+                cur_cu()->emit_op(OpCode::DUP2, line);       // [obj, idx, obj, idx]
+                cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [obj, idx, obj[idx]]
+                return;
+        }
+        UNREACHABLE();
+    }
 
     void CodeGen::visitListExprNode(ListExprNode& node) {
         const u32 line = node.line();

@@ -683,6 +683,37 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_load_index() {
+        // 契约见 AriaVM.hpp;非对象守卫同 run_load_field(文案与协议基类默认同串)。
+        const Value idx = current_->peek(0);
+        const Value obj = current_->peek(1);
+        if (!obj.is_obj()) {
+            return fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
+        }
+        if (const auto result = obj.as_obj()->load_index(*this, idx)) {
+            current_->peek(1) = *result; // 写回 obj 槽再弹 idx:[obj, idx] -> [v]
+            current_->drop(1);
+            return true;
+        }
+        return false; // 载荷已在寄存器
+    }
+
+    bool AriaVM::run_store_index() {
+        // 契约见 AriaVM.hpp;非对象守卫同 run_load_index。
+        const Value value = current_->peek(0);
+        const Value idx   = current_->peek(1);
+        const Value obj   = current_->peek(2);
+        if (!obj.is_obj()) {
+            return fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
+        }
+        if (!obj.as_obj()->store_index(*this, idx, value)) {
+            return false; // 载荷已在寄存器
+        }
+        current_->peek(2) = value; // 值下移两格:弹 obj、idx 留 v,[obj, idx, v] -> [v]
+        current_->drop(2);
+        return true;
+    }
+
     bool AriaVM::run_load_super_field(ObjString* name) {
         // 契约见 AriaVM.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
         const auto& frame    = current_->frames().top();
@@ -896,9 +927,23 @@ namespace aria {
                     }
                     break;
                 case OpCode::LOAD_INDEX:
-                    not_implemented("LOAD_INDEX");
+                    // [obj, idx] -> [v]。执行体收口于 run_load_index。
+                    if (!run_load_index()) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
+                    }
+                    break;
                 case OpCode::STORE_INDEX:
-                    not_implemented("STORE_INDEX");
+                    // [obj, idx, v] -> [v](peek-store)。执行体收口于 run_store_index。
+                    if (!run_store_index()) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
+                    }
+                    break;
                 case OpCode::LOAD_THIS_FIELD: {
                     // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
                     // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。

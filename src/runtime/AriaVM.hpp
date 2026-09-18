@@ -255,6 +255,17 @@ namespace aria {
         // 会被 fields 命中劫持后续 obj.m 动态派发)。全链 miss 为语言可达错误,经协议 fail。
         bool run_load_super_field(ObjString* name);
 
+        // ---- 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族 ----
+
+        // LOAD_INDEX 执行体(操作数全在栈上):peek (obj, idx) 经 Object::load_index 协议,
+        // 结果写回 obj 槽再弹 idx([obj, idx] -> [v]);非对象(含 nil)文案留执行体,对象侧
+        // 越界/键类型文案由 override 就地烘焙。
+        bool run_load_index();
+
+        // STORE_INDEX 执行体:peek (obj, idx, v) 经 Object::store_index 协议,完成时值下移
+        // 两格留 v([obj, idx, v] -> [v],peek-store -- 赋值表达式约定)。
+        bool run_store_index();
+
         // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
         // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
         // 回退到命中帧并转入 catch handler(弃内层帧、帧内截到 catch 参数槽、ip 跳、载荷落槽,

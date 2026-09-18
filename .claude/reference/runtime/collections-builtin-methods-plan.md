@@ -96,6 +96,16 @@
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
 
+> **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
+> 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
+> `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发
+>(`kMaxListElements`=65535 超限报新码 `TooManyElements`,Resource 类)+ len 增 List 分支(消息改 string or list)、
+> str/print 经 debug_repr 零改动。后半 = `LOAD_INDEX`/`STORE_INDEX`(执行体 `run_load_index`/`run_store_index`,
+> 统一走 `Object::load_index/store_index` 协议,list override:整数键,越界/负数 IndexOutOfBounds(越界值与长度
+> 就地拼文案)、非整数 TypeMismatch、store 不自动增长;非对象守卫文案留执行体,与 field 族同款)+ 下标四模式
+> lowering(Prepare 备 obj+idx 对/Locate `DUP2`+`LOAD_INDEX` 留副本对,locator-once)。既有性能坑随边界测试
+> 暴露并记档:`SourceFile::locate` 逐 token 行内列号计数,单行长源文件 O(n^2)(测试侧逐元素换行规避,未修)。
+
 ## 5. 参照
 
 - `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。

@@ -1763,3 +1763,90 @@ TEST(CodeGen, ExactlyMaxListElementsCompiles) {
     src += "1]);"; // 65534 + 1 = 65535 个元素
     EXPECT_EQ(run_int(src), 65535);
 }
+
+// ---- 下标读写(LOAD_INDEX/STORE_INDEX + 下标四模式 lowering) ----
+
+// 读:常量键/变量键/嵌套链式。
+TEST(CodeGen, IndexRead) {
+    EXPECT_EQ(run_int("return [10, 20, 30][1];"), 20);
+    EXPECT_EQ(run_int("return [[1, 2], [3, 4]][1][0];"), 3);
+    EXPECT_EQ(run_int("var xs = [5, 6]; var i = 1; return xs[i];"), 6);
+}
+
+// 写:普通 = 三腿(Prepare 备 obj+idx 对 -> 值 -> Store)。
+TEST(CodeGen, IndexWrite) {
+    EXPECT_EQ(run_int(R"(
+var xs = [1, 2];
+xs[0] = 9;
+xs[2 - 1] = xs[0] + 1;
+return xs[0] + xs[1];
+)"),
+              19);
+}
+
+// STORE_INDEX peek-store 留值:下标赋值作为表达式,值为所存值。
+TEST(CodeGen, IndexAssignExpressionValue) { EXPECT_EQ(run_int("var xs = [1]; return (xs[0] = 5) + xs[0];"), 10); }
+
+// 复合赋值与前置自增:Locate 腿 DUP2 保 (obj, idx) 对,Store 腿复用。
+TEST(CodeGen, CompoundAssignOnIndex) {
+    EXPECT_EQ(run_int(R"(
+var xs = [1, 2];
+xs[0] += 5;
+xs[1] *= 3;
+return xs[0] + xs[1];
+)"),
+              12);
+    EXPECT_EQ(run_int("var xs = [5]; ++xs[0]; return xs[0];"), 6);
+}
+
+// locator-once:下标表达式 f() 在复合赋值中只求值一次(单调性经全局计数器观察)。
+TEST(CodeGen, CompoundIndexLocatorEvaluatedOnce) {
+    EXPECT_EQ(run_int(R"(
+var xs = [1];
+var n = 0;
+fun f() { n = n + 1; return 0; }
+xs[f()] += 1;
+return n * 100 + xs[0];
+)"),
+              102);
+}
+
+// 越界:读/负数/写都报 IndexOutOfBounds(运行期,可 catch)。
+TEST(CodeGen, ErrIndexOutOfBounds) {
+    auto read = run_source("return [1][5];");
+    ASSERT_FALSE(read.has_value());
+    EXPECT_EQ(read.error().code(), ErrorCode::IndexOutOfBounds);
+    auto negative = run_source("return [1, 2][0 - 1];");
+    ASSERT_FALSE(negative.has_value());
+    EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
+    auto store = run_source("var xs = [1]; xs[3] = 1; return 0;");
+    ASSERT_FALSE(store.has_value());
+    EXPECT_EQ(store.error().code(), ErrorCode::IndexOutOfBounds);
+}
+
+// 键类型:非整数键(f64/nil/bool)与非下标类型(原语)都报 TypeMismatch。
+TEST(CodeGen, ErrIndexKeyTypeMismatch) {
+    for (const std::string_view src:
+         {"return [1][1.5];", "return [1][nil];", "return [1][true];", "var x = 1; return x[0];"}) {
+        auto out = run_source(src);
+        ASSERT_FALSE(out.has_value()) << src;
+        EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch) << src;
+    }
+}
+
+// 下标运行期错误经异常通道可 catch,消息含越界值与长度。
+TEST(CodeGen, IndexErrorCaughtByTry) {
+    auto out = run_source(R"(try { return [1][9]; } catch (e) { return str(e); })");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range, list length 1");
+}
+
+// 写入新鲜对象跨 GC 点(run_source 开 stress GC,元素 list 经值栈/对象图级联保命)。
+TEST(CodeGen, IndexWriteGcStress) {
+    EXPECT_EQ(aria::format_value(*run_source(R"(
+var xs = [[1], [2]];
+xs[0] = ["aa", xs[1]];
+return xs;
+)")),
+              "[[\"aa\", [2]], [2]]");
+}

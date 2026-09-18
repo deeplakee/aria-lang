@@ -5,6 +5,7 @@
 #include "compile/Token.hpp"
 #include "error/Error.hpp"
 #include "util/source_file.hpp"
+#include "util/utf8.hpp"
 
 namespace aria {
 
@@ -24,7 +25,8 @@ namespace aria {
     //   - 为缓解级联错误设错误上限 kMaxErrors，达上限即停。
     //   - 有任何错误 -> unexpected(List<Error>)；无错 -> 完整 token 流（含末尾 Eof）。
     //
-    // 扫描基于 utf8::decode_one 按码点推进；src_ 底层 String 以 '\0' 结尾，可作哨兵。
+    // 扫描基于 utf8::decode_one 按码点推进（ASCII 走其内部快路径）；src_ 底层 String 以
+    // '\0' 结尾，可作哨兵。
     //
     // 位置模型：token 位置 = 起点字节偏移（扫描期间已有的 start），行列由 SourceLoc 在消费点派生
     // （成本契约见 source_file.hpp）--词法期不维护任何行列计数，故游标推进就是普通的字节推进，
@@ -66,7 +68,8 @@ namespace aria {
         void scan_escape(String& value);
         // identifier / keyword / _
         void scan_identifier();
-        void scan_operator_or_punct(utf8::codepoint cp);
+        // 运算符 / 标点（最长匹配）；非 ASCII 码点记 InvalidCharacter
+        void scan_operator_or_punct();
 
 
         // --- 错误记账 ---
@@ -82,14 +85,34 @@ namespace aria {
         // 多字节推进（进制前缀 / 多字符运算符 / decode 长度）统一走此。
         void advance(u32 n = 1) noexcept;
 
-        // 当 pred(当前码点首字节) 为真且未到 EOF 时，逐码点推进 pos_，直至 pred 假或 EOF。用于
-        // 「连续消费满足某谓词的码点」循环（如数字序列、注释到行尾、\u{...} 收集 hex）--谓词按首
-        // 字节判定、多字节码点整吞一步，故游标不会停在码点中间。循环体需额外副作用（如设标志）
-        // 的场景不适用，仍手写循环。
+        // 当 pred(当前字节) 为真且未到 EOF 时逐字节推进 pos_，直至 pred 假或 EOF。遇非 ASCII 字节
+        // 即停（停在码点起始字节上，游标仍在码点边界）。用于文法上只含 ASCII 的序列（数字与下划线、
+        // 进制数字）；含非 ASCII 字符集的序列（标识符续接、注释体）须用 consume_codepoints。
         template<typename Pred>
-        void conditional_advance(Pred pred) {
-            while (!is_eof() && pred(src_[pos_])) {
-                advance(utf8::decode_one(src_, pos_).second);
+        void consume_ascii(Pred pred) {
+            while (!is_eof() && static_cast<u8>(src_[pos_]) < 0x80 && pred(src_[pos_])) {
+                advance();
+            }
+        }
+
+        // 消费满足 pred 的连续码点（pred 收码点，ASCII 与多字节一致判定），直至 pred 假或 EOF。
+        // ASCII 字节走 advance() 快路径、非 ASCII 解码一次后整码点前进，故游标不会停在码点中间。
+        // 循环体需额外副作用（如设标志）的场景不适用，仍手写循环。
+        template<typename Pred>
+        void consume_codepoints(Pred pred) {
+            while (!is_eof()) {
+                if (const u8 byte = static_cast<u8>(src_[pos_]); byte < 0x80) {
+                    if (!pred(static_cast<utf8::codepoint>(byte))) {
+                        return;
+                    }
+                    advance();
+                    continue;
+                }
+                const auto [cp, len] = utf8::decode_one(src_, pos_);
+                if (!pred(cp)) {
+                    return;
+                }
+                advance(len);
             }
         }
 

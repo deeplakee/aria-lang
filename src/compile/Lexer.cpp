@@ -2,10 +2,6 @@
 #include <charconv>
 #include "util/utf8.hpp"
 
-// 生成按引用捕获的 char 谓词 lambda（消除 conditional_advance 一类调用点的样板噪音）；
-// 非此场景勿滥用宏。
-#define ARIA_CHAR_PRED_REF(cond) [&](const char ch) { return (cond); }
-
 namespace aria {
 
     // ============================================================
@@ -170,7 +166,7 @@ namespace aria {
             }
 
             // 含 lone & | 等非法字符的 InvalidCharacter 兜底
-            scan_operator_or_punct(cp);
+            scan_operator_or_punct();
         }
 
         if (is_fatal_) {
@@ -189,9 +185,9 @@ namespace aria {
                 advance(len);
                 continue;
             }
-            // // 或 # 到行尾
+            // // 或 # 到行尾（换行留给下一轮按空白跳过）
             if ((cp == '/' && peek_byte(1) == '/') || cp == '#') {
-                conditional_advance(ARIA_CHAR_PRED_REF(ch != '\n'));
+                consume_codepoints([](const utf8::codepoint cp) { return cp != '\n'; });
                 continue;
             }
             break;
@@ -226,7 +222,7 @@ namespace aria {
             return;
         }
         // 消费后续的数字与 _（_ 位置合法性由 validate_underscores 校验）
-        conditional_advance(ARIA_CHAR_PRED_REF(is_radix_digit(base, ch) || ch == '_'));
+        consume_ascii([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
 
         const auto lex        = StringView{src_.data() + start, pos_ - start};
         const auto lex_no_tag = StringView{src_.data() + start + 2, pos_ - start - 2}; // 剥掉 2 字节前缀
@@ -252,14 +248,14 @@ namespace aria {
         bool      has_exp = false;
 
         // 整数部分：消费连续的数字与 _（入口必是数字，故非空；_ 位置合法性由 validate_underscores 校验）
-        conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
+        consume_ascii([](const char ch) { return is_digit(ch) || ch == '_'; });
 
         // 小数部分：仅当 . 后紧跟数字时才消费（禁止 5. / 1. 这类点后无数字的不完整浮点；
         // . 后非数字则不消费，把 . 留给 operator/punct，如 5.foo 走字段访问）。
         if (peek_byte(0) == '.' && is_digit(peek_byte(1))) {
             has_dot = true;
             advance(); // 消费 .
-            conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
+            consume_ascii([](const char ch) { return is_digit(ch) || ch == '_'; });
         }
 
         // 指数部分：当前是 e/E。含指数一律作 float。e 后须有数字，否则回退把 e 留下。
@@ -394,7 +390,7 @@ namespace aria {
                 // 收集 } 前的字符到 lex（与数字扫描一致：遇终止符停）。
                 // 非 hex 字符（如 \u{12g}）留给 from_chars 检测。
                 const u32 start = pos_;
-                conditional_advance(ARIA_CHAR_PRED_REF(ch != '}'));
+                consume_codepoints([](const utf8::codepoint cp) { return cp != '}'; });
 
                 if (peek_byte(0) != '}') {
                     // \u{...} 到 EOF 也无 }
@@ -439,15 +435,8 @@ namespace aria {
 
     void Lexer::scan_identifier() {
         const u32 start = pos_;
-        advance(utf8::decode_one(src_, start).second); // 消费首码点（主循环已判 is_id_start）
-        while (!is_eof()) {
-            const auto [cp, len] = utf8::decode_one(src_, pos_);
-            if (utf8::is_id_continue(cp)) {
-                advance(len);
-            } else {
-                break;
-            }
-        }
+        // 主循环已判 is_id_start，而 is_id_continue 对起始字符恒真，故首码点由本循环一并消费
+        consume_codepoints(utf8::is_id_continue);
 
         const auto lex = StringView{src_.data() + start, pos_ - start};
 
@@ -468,10 +457,10 @@ namespace aria {
     // 运算符 / 标点（最长匹配）
     // ============================================================
 
-    void Lexer::scan_operator_or_punct(const utf8::codepoint cp) {
+    void Lexer::scan_operator_or_punct() {
         const u32 start = pos_;
-        // 多字节非法字符 -> InvalidCharacter
-        if (cp >= 0x80) {
+        // 非 ASCII 码点 -> InvalidCharacter（主循环已判定它不是空白/数字/标识符起始）
+        if (static_cast<u8>(src_[pos_]) >= 0x80) {
             const u8 len = utf8::decode_one(src_, pos_).second;
             error(ErrorCode::InvalidCharacter, "非法字符", start);
             advance(len); // 推进一个码点确保前进
@@ -483,7 +472,7 @@ namespace aria {
             tokens_.emplace_back(t, StringView{src_.data() + start, end - start}, SourceLoc{&source_, start});
         };
 
-        switch (static_cast<char>(cp)) {
+        switch (static_cast<char>(src_[pos_])) {
             case '+':
                 if (peek_byte(1) == '=') {
                     advance(2);
@@ -656,5 +645,3 @@ namespace aria {
     }
 
 } // namespace aria
-
-#undef ARIA_CHAR_PRED_REF

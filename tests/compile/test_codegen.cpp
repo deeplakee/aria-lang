@@ -1739,12 +1739,11 @@ return echo(kept);
 }
 
 // 元素数超容量(65536 个,MAKE_LIST 操作数 u16 上限 65535 之外) -> TooManyElements
-//(先检后发:emit 前即报,不先发 6 万多个元素表达式)。源逐元素换行:单行巨串会引爆
-// SourceFile::locate 逐 token 行内列号计数(既有 O(n^2) 形态,见 batch 报告)。
+//(先检后发:emit 前即报,不先发 6 万多个元素表达式)。
 TEST(CodeGen, ErrTooManyElements) {
     std::string src = "[";
     for (int i = 0; i < 65535; ++i) {
-        src += "1,\n";
+        src += "1,";
     }
     src += "1];"; // 65535 + 1 = 65536 个元素
     auto c = compile_only(src);
@@ -1753,12 +1752,11 @@ TEST(CodeGen, ErrTooManyElements) {
 }
 
 // 容量下界钉子:恰 65535 个元素(MAKE_LIST 操作数 u16 上限位置)合法编译且运行正确 --
-// 勿把边界「修正」为 65534(那会白禁合法操作数 65535)。源逐元素换行(同 ErrTooManyElements,
-// 避开 locate 单行列号 O(n^2) 形态)。
+// 勿把边界「修正」为 65534(那会白禁合法操作数 65535)。
 TEST(CodeGen, ExactlyMaxListElementsCompiles) {
     std::string src = "return len([";
     for (int i = 0; i < 65534; ++i) {
-        src += "1,\n";
+        src += "1,";
     }
     src += "1]);"; // 65534 + 1 = 65535 个元素
     EXPECT_EQ(run_int(src), 65535);

@@ -256,43 +256,55 @@ TEST_F(SourceFileLocate, MultiByteColNotByteCol) {
     EXPECT_EQ(lcx.col, 3u);
 }
 
+// line_at 是行号派生的公共入口（含单条行缓存与 EOF 约定）：逐偏移须与 locate 的行号一致，
+// 回跳访问（缓存命中路径）与越界钳制不得改变语义。
+TEST_F(SourceFileLocate, LineAtAgreesWithLocateIncludingEof) {
+    auto sf = make("a\nbb\nccc");
+    EXPECT_EQ(sf.line_at(0), 1u);
+    EXPECT_EQ(sf.line_at(2), 2u);   // 'bb' 行
+    EXPECT_EQ(sf.line_at(5), 3u);   // 'ccc' 行
+    EXPECT_EQ(sf.line_at(0), 1u);   // 回跳到已缓存行之前
+    EXPECT_EQ(sf.line_at(8), 4u);   // EOF（size == 8）：下一行
+    EXPECT_EQ(sf.line_at(999), 4u); // 越界钳制到末尾
+
+    for (u32 offset = 0; offset <= sf.content().size(); ++offset) {
+        EXPECT_EQ(sf.line_at(offset), sf.locate(offset).line) << "offset=" << offset;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // SourceLoc
 // ---------------------------------------------------------------------------
-
-TEST(SourceLoc, ToStringValid) {
-    SourceFile sf{"main.aria", "/path/to/main.aria", "abc"};
-    SourceLoc  loc{&sf, LineCol{3, 5}};
-    EXPECT_EQ(loc.to_string(), "/path/to/main.aria:3:5");
+TEST(SourceLoc, ToStringDerivesFromOffset) {
+    // 位置只存偏移，行列在渲染时派生：偏移 6 是第 2 行第 3 列（'f'）
+    SourceFile sf{"main.aria", "/path/to/main.aria", "abc\ndef"};
+    SourceLoc  loc{&sf, 6};
+    EXPECT_EQ(loc.to_string(), "/path/to/main.aria:2:3");
 }
 
-TEST(SourceLoc, ToStringInvalidLine) {
-    SourceFile sf{"t", "t", "abc"};
-    SourceLoc  loc{&sf, LineCol{0, 5}};
-    EXPECT_EQ(loc.to_string(), "t:?:5");
-}
-
-TEST(SourceLoc, ToStringInvalidCol) {
-    SourceFile sf{"t", "t", "abc"};
-    SourceLoc  loc{&sf, LineCol{3, 0}};
-    EXPECT_EQ(loc.to_string(), "t:3:?");
-}
-
-TEST(SourceLoc, ToStringInvalidBoth) {
-    SourceFile sf{"t", "t", "abc"};
-    SourceLoc  loc{&sf, LineCol{0, 0}};
-    EXPECT_EQ(loc.to_string(), "t:?:?");
+TEST(SourceLoc, ToStringAtEofIsNextLineCol1) {
+    // 偏移 == 内容末尾沿用 locate 约定：下一行第 1 列
+    SourceFile sf{"t", "t", "abc\ndef"};
+    SourceLoc  loc{&sf, 7};
+    EXPECT_EQ(loc.to_string(), "t:3:1");
 }
 
 TEST(SourceLoc, AccessorsAndEmptyState) {
-    SourceFile sf{"t", "t", "abc"};
-    SourceLoc  loc{&sf, LineCol{2, 7}};
+    SourceFile sf{"t", "t", "abc\ndef"};
+    SourceLoc  loc{&sf, 5}; // 第 2 行第 2 列（'e'）
     EXPECT_EQ(loc.source(), &sf);
+    EXPECT_EQ(loc.offset(), 5u);
+    EXPECT_EQ(loc.line(), 2u);
     EXPECT_EQ(loc.line_col().line, 2u);
-    EXPECT_EQ(loc.line_col().col, 7u);
+    EXPECT_EQ(loc.line_col().col, 2u);
 
-    // 默认构造为空态（src=nullptr）：空态即「无位置」，to_string 渲染空串（语义见 source_file.hpp）。
+    // 默认构造为空态（src=nullptr）：空态即「无位置」，无偏移也无行列，to_string 渲染空串
+    // （语义见 source_file.hpp）。
     SourceLoc empty;
     EXPECT_EQ(empty.source(), nullptr);
+    EXPECT_EQ(empty.offset(), 0u);
+    EXPECT_EQ(empty.line(), 0u);
+    EXPECT_EQ(empty.line_col().line, 0u);
+    EXPECT_EQ(empty.line_col().col, 0u);
     EXPECT_EQ(empty.to_string(), "");
 }

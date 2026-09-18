@@ -128,14 +128,12 @@ namespace aria {
 
     bool Lexer::is_eof() const noexcept { return pos_ >= src_.size(); }
 
-    SourceLoc Lexer::loc_at(const u32 offset) const { return SourceLoc{&source_, source_.locate(offset)}; }
-
     // ============================================================
     // 错误记账
     // ============================================================
 
     void Lexer::error(const ErrorCode code, const SourceSpan span, const StringView msg) {
-        errors_.push_back(Error::from_detail(code, loc_at(span.start), msg));
+        errors_.push_back(Error::from_detail(code, SourceLoc{&source_, span.start}, msg));
         if (errors_.size() >= kMaxErrors) {
             is_fatal_ = true;
         }
@@ -178,8 +176,10 @@ namespace aria {
         if (is_fatal_) {
             return; // 致命错误，不补 Eof
         }
+        // EOF token 位置 = 内容末尾偏移；其行列由 SourceLoc 派生为「下一行第 1 列」
+        // （编辑器光标停文件末尾的约定，见 source_file.hpp line_at）。
         const u32 eof = src_.size();
-        tokens_.push_back(Token{TokenType::Eof, {}, loc_at(eof)});
+        tokens_.push_back(Token{TokenType::Eof, {}, SourceLoc{&source_, eof}});
     }
 
     void Lexer::skip_trivia() {
@@ -214,10 +214,10 @@ namespace aria {
     }
 
     void Lexer::scan_radix_int() {
-        const u32  start = pos_;         // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
+        const u32  start = pos_;         // 入口即起点；后续 pos_ 推进，span/lexeme/token 位置用 start
         const char tag   = peek_byte(1); // b/B/o/O/x/X
         const int  base  = (tag == 'b' || tag == 'B') ? 2 : (tag == 'o' || tag == 'O') ? 8 : 16;
-        pos_             = start + 2; // 消费前缀 0x/0b/0o
+        advance(2); // 消费前缀 0x/0b/0o
 
         // 前缀后必须紧跟一个进制数字（文法：0x[0-9a-fA-F]... 至少一位，首字符不能是 _）。
         // 直接断言，避免循环消费后再判，报错更早更准。
@@ -241,13 +241,13 @@ namespace aria {
             error(ErrorCode::InvalidNumber, SourceSpan{start, pos_}, "数字字面量解析失败");
             return;
         }
-        tokens_.push_back(Token::make_integer(value, lex, loc_at(start)));
+        tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
     }
 
     void Lexer::scan_decimal_or_float() {
         // 按 整数 -> 小数 -> 指数 顺序线性扫描。has_dot/has_exp 决定最终是 float 还是 int。
         // 调用方（主循环）保证进入时以数字开头，故整数部分至少一位，无需 has_digit 校验。
-        const u32 start   = pos_; // 入口即起点；后续 pos_ 推进，span/lexeme 用 start
+        const u32 start   = pos_; // 入口即起点；后续 pos_ 推进，span/lexeme/token 位置用 start
         bool      has_dot = false;
         bool      has_exp = false;
 
@@ -258,23 +258,23 @@ namespace aria {
         // . 后非数字则不消费，把 . 留给 operator/punct，如 5.foo 走字段访问）。
         if (peek_byte(0) == '.' && is_digit(peek_byte(1))) {
             has_dot = true;
-            ++pos_; // 消费 .
+            advance(); // 消费 .
             conditional_advance(ARIA_CHAR_PRED_REF(is_digit(ch) || ch == '_'));
         }
 
         // 指数部分：当前是 e/E。含指数一律作 float。e 后须有数字，否则回退把 e 留下。
         if (peek_byte(0) == 'e' || peek_byte(0) == 'E') {
-            const u32 exp_pos = pos_;
-            ++pos_; // 消费 e/E
+            const u32 exp_pos = pos_; // 回退点：位置状态只有偏移，回退即改游标，无需还原其他状态
+            advance();                // 消费 e/E
             if (peek_byte(0) == '+' || peek_byte(0) == '-') {
-                ++pos_;
+                advance();
             }
             bool exp_digit = false;
             while (!is_eof() && (is_digit(src_[pos_]) || src_[pos_] == '_')) {
                 if (is_digit(src_[pos_])) {
                     exp_digit = true;
                 }
-                ++pos_;
+                advance();
             }
             if (exp_digit) {
                 has_exp = true;
@@ -296,14 +296,14 @@ namespace aria {
                 error(ErrorCode::InvalidNumber, SourceSpan{start, pos_}, "浮点字面量解析失败");
                 return;
             }
-            tokens_.push_back(Token::make_float(value, lex, loc_at(start)));
+            tokens_.push_back(Token::make_float(value, lex, SourceLoc{&source_, start}));
         } else {
             i64 value = 0;
             if (!parse_int(lex, 10, value)) {
                 error(ErrorCode::InvalidNumber, SourceSpan{start, pos_}, "数字字面量解析失败");
                 return;
             }
-            tokens_.push_back(Token::make_integer(value, lex, loc_at(start)));
+            tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
         }
     }
 
@@ -314,7 +314,7 @@ namespace aria {
     void Lexer::scan_string() {
         const u32  start = pos_;
         const char quote = src_[pos_];
-        ++pos_; // 消费开引号
+        advance(); // 消费开引号
 
         String value;
         while (true) {
@@ -330,11 +330,11 @@ namespace aria {
             if (c == '\n') {
                 // 裸换行：记错后推进到换行后，主循环从下一行继续
                 error(ErrorCode::UnterminatedString, SourceSpan{start, pos_}, "字符串跨行未闭合");
-                ++pos_; // 跨过换行，让后续能继续扫
+                advance(); // 跨过换行，让后续能继续扫
                 return;
             }
             if (c == quote) {
-                ++pos_; // 消费闭引号
+                advance(); // 消费闭引号
                 break;
             }
             if (c == '\\') {
@@ -350,21 +350,21 @@ namespace aria {
         }
 
         const auto lex = StringView{src_.data() + start, pos_ - start};
-        tokens_.push_back(Token::make_string(std::move(value), lex, loc_at(start)));
+        tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, start}));
     }
 
     // 解析转义序列（pos_ 指向 '\\'）。
     // 成功追加到 value；可恢复错误（InvalidEscape）记账后追加原样继续；
     // 遇 EOF（\ 在串尾）不报错，由 scan_string 的 is_eof 统一报"字符串未闭合"。
     void Lexer::scan_escape(String& value) {
-        ++pos_; // 消费 '\'
+        advance(); // 消费 '\'
         if (is_eof()) {
             return; // 串未闭合，交给 scan_string 报错
         }
 
         const auto append_simple = [&](const char ch) {
             value.push_back(ch);
-            ++pos_;
+            advance();
         };
 
         switch (const char c = src_[pos_]) {
@@ -383,13 +383,13 @@ namespace aria {
             case '0':
                 return append_simple('\0');
             case 'u': {
-                ++pos_; // 消费 u
+                advance(); // 消费 u
                 if (peek_byte(0) != '{') {
                     error(ErrorCode::InvalidEscape, SourceSpan{pos_ - 1, pos_}, "\\u 转义缺少 '{'");
                     value += "\\u";
                     return;
                 }
-                ++pos_; // 消费 {
+                advance(); // 消费 {
 
                 // 收集 } 前的字符到 lex（与数字扫描一致：遇终止符停）。
                 // 非 hex 字符（如 \u{12g}）留给 from_chars 检测。
@@ -402,7 +402,7 @@ namespace aria {
                     value += "\\u";
                     return;
                 }
-                ++pos_; // 消费 }
+                advance(); // 消费 }
 
                 // 用 from_chars 直接解析 hex 内容为码点（不剥 _：文法 hex+ 不含 _，
                 // 故 \u{1_2} 非法；from_chars 遇非 hex 字符或 _ 会停下，ptr != last 即报错）。
@@ -429,7 +429,7 @@ namespace aria {
                 error(ErrorCode::InvalidEscape, SourceSpan{pos_ - 1, pos_ + 1}, "未识别的转义序列");
                 value.push_back('\\');
                 value.push_back(c);
-                ++pos_;
+                advance(); // 消费该字符
                 return;
         }
     }
@@ -454,15 +454,15 @@ namespace aria {
 
         // 单独 _ -> Underscore
         if (lex.size() == 1 && lex[0] == '_') {
-            tokens_.emplace_back(TokenType::Underscore, lex, loc_at(start));
+            tokens_.emplace_back(TokenType::Underscore, lex, SourceLoc{&source_, start});
             return;
         }
         // 关键字优先于 identifier
         if (const auto kw = lookup_keyword(lex)) {
-            tokens_.emplace_back(*kw, lex, loc_at(start));
+            tokens_.emplace_back(*kw, lex, SourceLoc{&source_, start});
             return;
         }
-        tokens_.emplace_back(TokenType::Identifier, lex, loc_at(start));
+        tokens_.emplace_back(TokenType::Identifier, lex, SourceLoc{&source_, start});
     }
 
     // ============================================================
@@ -471,7 +471,6 @@ namespace aria {
 
     void Lexer::scan_operator_or_punct(const utf8::codepoint cp) {
         const u32 start = pos_;
-
         // 多字节非法字符 -> InvalidCharacter
         if (cp >= 0x80) {
             const u8 len = utf8::decode_one(src_, pos_).second;
@@ -482,7 +481,7 @@ namespace aria {
 
         const auto make_token = [&](const TokenType t) {
             const u32 end = pos_;
-            tokens_.emplace_back(t, StringView{src_.data() + start, end - start}, loc_at(start));
+            tokens_.emplace_back(t, StringView{src_.data() + start, end - start}, SourceLoc{&source_, start});
         };
 
         switch (static_cast<char>(cp)) {
@@ -494,7 +493,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::PlusPlus);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Plus);
                 }
                 return;
@@ -506,7 +505,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::MinusMinus);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Minus);
                 }
                 return;
@@ -515,7 +514,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::StarEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Star);
                 }
                 return;
@@ -524,7 +523,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::SlashEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Slash);
                 }
                 return;
@@ -533,7 +532,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::PercentEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Percent);
                 }
                 return;
@@ -548,7 +547,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::FatArrow);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Equal);
                 }
                 return;
@@ -560,7 +559,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::BangEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Bang);
                 }
                 return;
@@ -569,7 +568,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::GreaterEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Greater);
                 }
                 return;
@@ -578,7 +577,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::LessEqual);
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Less);
                 }
                 return;
@@ -587,7 +586,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::AndAnd);
                 } else {
-                    ++pos_;
+                    advance();
                     error(ErrorCode::InvalidCharacter, SourceSpan{start, pos_}, "单独的 '&' 非法");
                 }
                 return;
@@ -596,7 +595,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::OrOr);
                 } else {
-                    ++pos_;
+                    advance();
                     error(ErrorCode::InvalidCharacter, SourceSpan{start, pos_}, "单独的 '|' 非法");
                 }
                 return;
@@ -610,48 +609,48 @@ namespace aria {
                         make_token(TokenType::DotDot);
                     }
                 } else {
-                    ++pos_;
+                    advance();
                     make_token(TokenType::Dot);
                 }
                 return;
             case '(':
-                ++pos_;
+                advance();
                 make_token(TokenType::LeftParen);
                 return;
             case ')':
-                ++pos_;
+                advance();
                 make_token(TokenType::RightParen);
                 return;
             case '{':
-                ++pos_;
+                advance();
                 make_token(TokenType::LeftBrace);
                 return;
             case '}':
-                ++pos_;
+                advance();
                 make_token(TokenType::RightBrace);
                 return;
             case '[':
-                ++pos_;
+                advance();
                 make_token(TokenType::LeftBracket);
                 return;
             case ']':
-                ++pos_;
+                advance();
                 make_token(TokenType::RightBracket);
                 return;
             case ',':
-                ++pos_;
+                advance();
                 make_token(TokenType::Comma);
                 return;
             case ':':
-                ++pos_;
+                advance();
                 make_token(TokenType::Colon);
                 return;
             case ';':
-                ++pos_;
+                advance();
                 make_token(TokenType::Semicolon);
                 return;
             default:
-                ++pos_;
+                advance();
                 error(ErrorCode::InvalidCharacter, SourceSpan{start, pos_}, "非法字符");
                 return;
         }

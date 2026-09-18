@@ -26,6 +26,10 @@ namespace aria {
     //   - 有任何错误 -> unexpected(List<Error>)；无错 -> 完整 token 流（含末尾 Eof）。
     //
     // 扫描基于 utf8::decode_one 按码点推进；src_ 底层 String 以 '\0' 结尾，可作哨兵。
+    //
+    // 位置模型：token 位置 = 起点字节偏移（扫描期间已有的 start），行列由 SourceLoc 在消费点派生
+    // （成本契约见 source_file.hpp）--词法期不维护任何行列计数，故游标推进就是普通的字节推进，
+    // 回退/前瞻也不需要还原状态。
     class Lexer {
     public:
         // 对 src 做词法分析，返回 token 流或错误集合。
@@ -75,26 +79,23 @@ namespace aria {
         [[nodiscard]]
         char peek_byte(u32 ahead = 0) const noexcept;
 
-        // 推进游标 n 字节。含越界断言（pos_+n <= src_.size()），调试期捕获推进过头。
-        // 多字节推进（+= 2/+= 3/+= len）统一走此；单字节 ++pos_ 循环内可保留。
+        // 推进游标 n 字节。含越界断言（pos_ + n <= src_.size()），调试期捕获推进过头。
+        // 多字节推进（进制前缀 / 多字符运算符 / decode 长度）统一走此。
         void advance(u32 n = 1) noexcept;
 
-        // 当 pred(当前字节) 为真且未到 EOF 时，逐字节推进 pos_，直至 pred 假或 EOF。
-        // 用于「连续消费满足某谓词的字节」循环（如数字序列、注释到行尾、\u{...} 收集 hex）。
-        // 循环体需额外副作用（如设标志）的场景不适用，仍手写循环。
+        // 当 pred(当前码点首字节) 为真且未到 EOF 时，逐码点推进 pos_，直至 pred 假或 EOF。用于
+        // 「连续消费满足某谓词的码点」循环（如数字序列、注释到行尾、\u{...} 收集 hex）--谓词按首
+        // 字节判定、多字节码点整吞一步，故游标不会停在码点中间。循环体需额外副作用（如设标志）
+        // 的场景不适用，仍手写循环。
         template<typename Pred>
         void conditional_advance(Pred pred) {
             while (!is_eof() && pred(src_[pos_])) {
-                ++pos_;
+                advance(utf8::decode_one(src_, pos_).second);
             }
         }
 
         [[nodiscard]]
         bool is_eof() const noexcept;
-
-        // 把字节偏移解析为 SourceLoc（token 位置构造用）。
-        [[nodiscard]]
-        SourceLoc loc_at(u32 offset) const;
     };
 
 } // namespace aria

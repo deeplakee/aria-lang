@@ -503,6 +503,44 @@ TEST(LexerLoc, Precise) {
     EXPECT_EQ(tokens[1].loc().line_col().col, 4u);
 }
 
+TEST(LexerLoc, TracksAcrossLinesAndCodepoints) {
+    // token 位置由起点偏移派生：换行归位、多字节码点按 1 列计，与 locate 行首计数逐位一致
+    const auto  lexed  = lex_ok("ab\n中文 12");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 4u); // ab / 中文 / 12 / Eof
+    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
+    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
+    EXPECT_EQ(tokens[1].loc().line_col().line, 2u); // 中文起于 2 行 1 列
+    EXPECT_EQ(tokens[1].loc().line_col().col, 1u);
+    EXPECT_EQ(tokens[2].loc().line_col().line, 2u); // 空格后 12 在 2 行 4 列
+    EXPECT_EQ(tokens[2].loc().line_col().col, 4u);
+    EXPECT_EQ(tokens[3].type(), TokenType::Eof);
+}
+
+TEST(LexerLoc, RadixFloatAndCommentLines) {
+    // 注释体（含多字节）跨过不影响位置派生：行尾换行即归位；进制/浮点 token 位置仍精确
+    const auto  lexed  = lex_ok("0x1F // 中文注释\n1.5e2");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 3u); // 0x1F / 1.5e2 / Eof
+    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
+    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
+    EXPECT_EQ(tokens[1].loc().line_col().line, 2u);
+    EXPECT_EQ(tokens[1].loc().line_col().col, 1u);
+}
+
+TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
+    // e 后无数字回退只改游标（位置无其他状态可还原）：后续 token 不串列
+    const auto  lexed  = lex_ok("1e 2");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 4u); // 1 / e / 2 / Eof
+    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
+    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
+    EXPECT_EQ(tokens[1].loc().line_col().line, 1u); // 回退后 e 起于 1 行 2 列
+    EXPECT_EQ(tokens[1].loc().line_col().col, 2u);
+    EXPECT_EQ(tokens[2].loc().line_col().line, 1u);
+    EXPECT_EQ(tokens[2].loc().line_col().col, 4u);
+}
+
 // ---------------------------------------------------------------------------
 // 边界
 // ---------------------------------------------------------------------------

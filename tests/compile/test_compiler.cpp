@@ -188,3 +188,90 @@ TEST(Compiler, ListInitResolvesToObjectRootNoOp) {
 TEST(Compiler, ListMethodLoopUnderStressGc) {
     EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
 }
+
+// ---- forIn 与迭代协议（ObjIterator 子类 / iter / has_next / next / IterationExhausted） ----
+
+// forIn 求和:list 走通内置迭代协议（降糖蓝图:iter/has_next/next 三方法调用）。
+TEST(Compiler, ForInSumsList) {
+    EXPECT_EQ(run_int("var sum = 0; for (x in [10, 20, 30]) { sum = sum + x; } return sum;"), 60);
+}
+
+// 空表零轮,循环从未进体。
+TEST(Compiler, ForInEmptyListZeroRounds) { EXPECT_EQ(run_int("var n = 0; for (x in []) { n = n + 1; } return n;"), 0); }
+
+// 嵌套遍历同一 list:两个迭代器游标独立,互不串扰。
+TEST(Compiler, ForInNestedSameList) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var n = 0; for (x in xs) { for (y in xs) { n = n + 1; } } return n;"), 9);
+}
+
+// break/continue:continue 跳回 has_next 判断,break 跳出并弹 <iter>（LoopCtx 代弹）。
+TEST(Compiler, ForInBreakContinue) {
+    EXPECT_EQ(run_int("var s = 0; for (x in [1, 2, 3, 4, 5]) { if (x == 2) { continue; } if (x == 4) { break; } s = s "
+                      "+ x; } return s;"),
+              4);
+}
+
+// 手写迭代:iter/has_next/next 是普通方法,while 驱动与 forIn 同协议。
+TEST(Compiler, ManualWhileIteration) {
+    EXPECT_EQ(run_int("var it = [5, 6].iter(); var s = 0; while (it.has_next()) { s = s + it.next(); } return s;"), 11);
+}
+
+// 协议方法是一等值:取出再调用,恒作用于原 receiver。
+TEST(Compiler, IteratorMethodFirstClass) {
+    EXPECT_EQ(run_int("var it = [7, 8].iter(); var n = it.next; return n() + n();"), 15);
+}
+
+// iter() 每次返回新迭代器（=== 按身份）。
+TEST(Compiler, IterReturnsFreshIterator) {
+    EXPECT_EQ(run_int("var xs = [1]; if (xs.iter() === xs.iter()) { return 0; } return 1;"), 1);
+}
+
+// next 越界抛 IterationExhausted:未捕获走 RuntimeError,消息可核对。
+TEST(Compiler, NextExhaustedIsRuntimeError) {
+    auto out = run_source("var it = [1].iter(); it.next(); return it.next();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IterationExhausted);
+    EXPECT_NE(out.error().message().find("iterator exhausted"), std::string::npos);
+}
+
+// IterationExhausted 可 catch（fail-fast 与异常通道合流）。
+TEST(Compiler, NextExhaustedCatchable) {
+    EXPECT_EQ(run_int("var it = [1].iter(); it.next(); var caught = 0; try { it.next(); } catch (e) { caught = 1; } "
+                      "return caught;"),
+              1);
+}
+
+// 用户类实现协议三方法:与内置 list 同一降糖路径（编译器零魔法,协议对两类来源不可区分）。
+TEST(Compiler, UserClassIterableSamePath) {
+    EXPECT_EQ(run_int("def Counter {\n"
+                      "    init() { this.i = 0; }\n"
+                      "    iter() { return this; }\n"
+                      "    has_next() { return this.i < 3; }\n"
+                      "    next() { var v = this.i; this.i = this.i + 1; return v; }\n"
+                      "}\n"
+                      "var sum = 0;\n"
+                      "for (x in Counter()) { sum = sum + x; }\n"
+                      "return sum;"),
+              3);
+}
+
+// 不可迭代:原语走 LOAD_FIELD 非对象守卫;对象无 iter 方法则类措辞 miss（均 UndefinedProperty,
+// NotIterable/IteratorProtocol 两码预留不接线）。
+TEST(Compiler, ForInNotIterableFails) {
+    auto primitive = run_source("var z = 0; for (x in 5) { z = z + 1; } return 1;");
+    ASSERT_FALSE(primitive.has_value());
+    EXPECT_EQ(primitive.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(primitive.error().message().find("type Int does not support field access"), std::string::npos);
+
+    auto missing = run_source("def NoIter { init() { } } for (x in NoIter()) { } return 1;");
+    ASSERT_FALSE(missing.has_value());
+    EXPECT_EQ(missing.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(missing.error().message().find("<class NoIter> has no member 'iter'"), std::string::npos);
+}
+
+// stress GC 下反复 forIn:迭代器对象、<iter> 局部、每轮 bound 物化的根化路径。
+TEST(Compiler, ForInUnderStressGc) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var s = 0; var i = 0; while (i < 20) { for (x in xs) { s = s + x; } i = i + "
+                      "1; } return s;"),
+              120);
+}

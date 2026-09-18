@@ -75,23 +75,24 @@ namespace aria {
     X(NumberOutOfRange, Semantic)        /* 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理） */             \
     X(NotImplemented, Semantic)          /* 功能尚未实现（CodeGen 占位；经 Error 通道均编译期，故归语义阶段） */ \
     /* ========== RUNTIME ERROR（运行时阶段）========== */                                                       \
-    X(TypeMismatch, Runtime)      /* 运算/操作的类型不符（如 number + 非数） */                                  \
-    X(InvalidOperand, Runtime)    /* 一元操作数非法（如对非数取负） */                                           \
-    X(IndexOutOfBounds, Runtime)  /* list 下标越界（含解构元素不足） */                                          \
-    X(DivisionByZero, Runtime)    /* 除零 */                                                                     \
-    X(ModuloByZero, Runtime)      /* 模零 */                                                                     \
-    X(KeyError, Runtime)          /* map 键不存在 */                                                             \
-    X(UndefinedVariable, Runtime) /* 引用未定义的变量/函数（运行期查表 miss） */                                 \
-    X(UndefinedProperty, Runtime) /* 对象无该字段/方法 */                                                        \
-    X(CallNonCallable, Runtime)   /* 调用非函数值 */                                                             \
-    X(WrongArity, Runtime)        /* 实参数量不符（含默认参数/varargs 填充后） */                                \
-    X(NotIterable, Runtime)       /* forIn 目标不可遍历 */                                                       \
-    X(IteratorProtocol, Runtime)  /* has_next/next 缺失或返回类型错 */                                           \
-    X(MatchNoArm, Runtime)        /* match 无匹配分支且无 "_" 兜底 */                                            \
-    X(SuperNoBaseClass, Runtime)  /* super 无父类可访问 */                                                       \
-    X(UncaughtException, Runtime) /* 用户 throw 的值未被 catch 捕获 */                                           \
-    X(StackOverflow, Runtime)     /* 递归过深 */                                                                 \
-    X(CircularImport, Runtime)    /* import 形成循环 */                                                          \
+    X(TypeMismatch, Runtime)       /* 运算/操作的类型不符（如 number + 非数） */                                 \
+    X(InvalidOperand, Runtime)     /* 一元操作数非法（如对非数取负） */                                          \
+    X(IndexOutOfBounds, Runtime)   /* list 下标越界（含解构元素不足） */                                         \
+    X(DivisionByZero, Runtime)     /* 除零 */                                                                    \
+    X(ModuloByZero, Runtime)       /* 模零 */                                                                    \
+    X(KeyError, Runtime)           /* map 键不存在 */                                                            \
+    X(UndefinedVariable, Runtime)  /* 引用未定义的变量/函数（运行期查表 miss） */                                \
+    X(UndefinedProperty, Runtime)  /* 对象无该字段/方法 */                                                       \
+    X(CallNonCallable, Runtime)    /* 调用非函数值 */                                                            \
+    X(WrongArity, Runtime)         /* 实参数量不符（含默认参数/varargs 填充后） */                               \
+    X(NotIterable, Runtime)        /* forIn 目标不可遍历 */                                                      \
+    X(IteratorProtocol, Runtime)   /* has_next/next 缺失或返回类型错 */                                          \
+    X(IterationExhausted, Runtime) /* 迭代器耗尽后调用 next */                                                   \
+    X(MatchNoArm, Runtime)         /* match 无匹配分支且无 "_" 兜底 */                                           \
+    X(SuperNoBaseClass, Runtime)   /* super 无父类可访问 */                                                      \
+    X(UncaughtException, Runtime)  /* 用户 throw 的值未被 catch 捕获 */                                          \
+    X(StackOverflow, Runtime)      /* 递归过深 */                                                                \
+    X(CircularImport, Runtime)     /* import 形成循环 */                                                         \
     /* ========== INTERNAL ERROR（解释器不变式）========== */                                                    \
     X(Unreachable, Internal)          /* 逻辑上不可达的代码被执行 */                                             \
     X(AssertionFailed, Internal)      /* 内部断言失败 */                                                         \

@@ -6,6 +6,7 @@
 #include "object/ObjList.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/Object.hpp"
+#include "object/iterator/ObjListIterator.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/Value.hpp"
 
@@ -51,11 +52,25 @@ namespace aria {
             NativeFn   fn;
         };
 
+        // iter() -> 迭代器:铸造 ObjListIterator(list 与其迭代器成对,铸造口按类型解开
+        // receiver)。GC 时序:list 在 slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,
+        // 中间无 GC 点;此后 list 经迭代器 trace 可达。
+        bool iter_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
+            }
+            const auto list = Object::as<ObjList>(slots[0].as_obj());
+            slots[0]        = Value::from_obj(new_list_iterator(vm.gc(), list));
+            return true;
+        }
+
         // list 方法表:注册进 List bootstrap 类(kBuiltins 同款循环)。注册名经 new_native_fn
         // 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同指针,查表按指针命中。
         constexpr ListMethodEntry kListMethods[] = {
                 {"push", push_fn},
                 {"pop", pop_fn},
+                {"iter", iter_fn},
         };
 
     } // namespace

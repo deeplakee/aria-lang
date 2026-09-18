@@ -29,6 +29,7 @@ add_executable(aria_tests
         object/test_objclosure.cpp
         object/test_objfunction.cpp
         object/test_objinstance.cpp
+        object/test_objiterator.cpp
         object/test_objlist.cpp
         object/test_objmodule.cpp
         object/test_objnativefn.cpp

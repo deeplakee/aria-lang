@@ -26,6 +26,7 @@
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
 #include "runtime/Builtins.hpp"
+#include "runtime/IteratorMethods.hpp"
 #include "runtime/ListMethods.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
@@ -261,6 +262,7 @@ namespace aria {
         // 新单例随其批次在此加一行。
         bootstrap_object_class();
         bootstrap_list_class();
+        bootstrap_iterator_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
     }
@@ -307,6 +309,10 @@ namespace aria {
         return Object::as<ObjClass>(registers_[kListClassOffset].as_obj());
     }
 
+    ObjClass* AriaVM::iterator_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kIteratorClassOffset].as_obj());
+    }
+
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
@@ -327,6 +333,16 @@ namespace aria {
         const auto klass = new_class(gc_, "List", object_class());
         register_list_methods(gc_, klass);
         registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_iterator_class() {
+        // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next,方法体是 ObjIterator
+        // 引擎缝虚函数的薄壳,住 runtime/IteratorMethods),经 ObjIterator::load_field 查表
+        // 命中后恒绑定触达;不注册 builtins/模块 globals。super 挂 Object 根,类名与 type()
+        // 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 标根。
+        const auto klass = new_class(gc_, "Iterator", object_class());
+        register_iterator_methods(gc_, klass);
+        registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {

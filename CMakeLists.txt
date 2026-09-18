@@ -67,6 +67,8 @@ add_library(aria_core STATIC
         src/runtime/Builtins.cpp
         src/runtime/Builtins.hpp
         src/runtime/FrameStack.hpp
+        src/runtime/IteratorMethods.cpp
+        src/runtime/IteratorMethods.hpp
         src/runtime/ListMethods.cpp
         src/runtime/ListMethods.hpp
         src/runtime/Movement.cpp
@@ -101,6 +103,10 @@ add_library(aria_core STATIC
         src/object/ObjUpvalue.cpp
         src/object/ObjUpvalue.hpp
         src/object/PrintGuard.hpp
+        src/object/iterator/ObjIterator.cpp
+        src/object/iterator/ObjIterator.hpp
+        src/object/iterator/ObjListIterator.cpp
+        src/object/iterator/ObjListIterator.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
 )

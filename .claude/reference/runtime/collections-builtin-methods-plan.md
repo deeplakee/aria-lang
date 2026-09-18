@@ -24,7 +24,7 @@
 - **注册面**:每类型一个 `register_<type>_methods(GC&, ObjClass*)`,住 runtime 层每类型一个 `<Type>Methods.{hpp,cpp}`(2026-09-18 review 改定:方法面是 VM 侧语言面、object 层保持纯表示,对标 `Builtins.cpp` 先例;方法体同文件,VM 只编排)。内部 `new_native_fn` + `set_field`,对标 `Builtins.cpp` 的 kBuiltins 循环;注册名必经 intern 池——与 CodeGen `LOAD_FIELD` 常量同指针,`===` 查表成立(Builtins.cpp 先例)。
 - **tracer**:vm_roots 加 `mark_object`(各 bootstrap 类),对标 `object_class_` 第 4 根。
 - **调用链零改动**:`call_bound_method`(槽 0 覆写 receiver)→ `call_value` → `call_native`(`slots[0]` = this 兼返回槽),M5 已通;`ObjBoundMethod` 的 receiver Value 泛化即为此留的缝。
-- **GC 纪律**:bootstrap 期在 ctor 构造临界区(GC 挂起,`make_lock`)内免守卫、建成发布进寄存器组/表(tracer 恒标);`LOAD_FIELD` 绑定路径的 bound 对象白色,接收者在栈(peek 不弹)、方法值经类链可达,返回值写回原槽根化(与实例路径同纪律);list_iter 覆写时序:source 在 `slots[0]` 被覆写前仍为根,建成后先写槽发布再返回,中间无 GC 点。
+- **GC 纪律**:bootstrap 期在 ctor 构造临界区(GC 挂起,`make_lock`)内免守卫、建成发布进寄存器组/表(tracer 恒标);`LOAD_FIELD` 绑定路径的 bound 对象白色,接收者在栈(peek 不弹)、方法值经类链可达,返回值写回原槽根化(与实例路径同纪律);iter_fn 覆写时序:被遍历 list 在 `slots[0]` 被覆写前仍为根,迭代器建成后先写槽发布再返回,中间无 GC 点。
 
 ## 2. 迭代协议
 
@@ -32,7 +32,7 @@
 
 **决策 D2(2026-09-16 拍板):协议三方法是方法表方法,不为迭代协议另开 Object 虚函数**。协议经既有 `load_field` 协议缝解析;理由:①方法必须一等(`var n = it.next; n()` 虚函数做不了);②与用户类统一,单一派发路径;③VM 内部无迭代消费者(解构走下标、GC 不迭代),双通道纯漂移风险;④决定性论据(拍板补记):能实现 iter 的对象必已支持 load_field、必已有方法表——协议放表内是自然归宿。「iter 做成虚函数」方案已否决(消费者不对称:op_add/load_index 的消费者是 VM 自身 opcode,iter 的消费者是编译产物与用户代码,虚函数会把用户类 iterable 排除/迫使 forIn 分叉;引擎侧 C++ 迭代便利留 stdlib 批按需另议,不入语言协议)。M6 红利:生成器 = Movement 类表挂 `next/has_next` 原生,forIn 零改动消费。
 
-**迭代器表示:单一 `ObjIterator`**(对齐预留的单数 `ObjType::ITERATOR`):`{source: Value, cursor: u64}`。source ∈ list/string/range/map;cursor 分别为元素下标/字节偏移/区间当前值/表槽位扫描下标(Swiss table 逐 ctrl 扫描,u64 游标够用)。`has_next`/`next` 原生单点按 source 四分支;不设每源迭代器类(四个机械同构类无语义增益)。`trace` 标 source。迭代器对象不可省:游标状态须随迭代器走——容器不可自带游标(嵌套遍历同一列表互不串扰),「每次 iter() 产出一个带自己游标的小对象」是协议的结构必需,与派发机制选择无关。批 4 bootstrap List + Iterator 两类(String 空类表无验证价值,随批 6 带方法进场)。
+**迭代器表示:每源迭代器子类 + 引擎缝虚函数**(2026-09-18 拍板改定,推翻早稿「单一 ObjIterator{source: Value, cursor: u64} + 原生按 source 四分支」——类型标签结构体与手写 switch 违背引擎缝「不按子类型分型」的架构;跨语言对照 Python/JS/Java/C#/C++ 均为每源独立迭代器对象 + 统一虚契约;C++ 迭代器因「GC 一等 Value/指针悬垂于元素缓冲扩容/用户类统一协议」三硬点不可直接用,但其「每类型自己的表示 + 统一契约」思想即本方案的运行期对应物):`ObjIterator` 基类(共享单数 `ObjType::ITERATOR`,`type(it)` 恒 "Iterator")钉引擎缝纯虚 `has_next() const noexcept -> bool`(纯查询无分配无 fail,不收 vm)/`next(AriaVM&) -> Opt<Value>`(越界 `return vm.fail(IterationExhausted)` 一行,FailSignal 哨兵)/`trace`(纯虚钉「各子类标各自的源」,忘标 = 编译错);`load_field` override 基类一次(直调 Iterator 类协议查表 + 自持绑定,全子类共享);debug_repr "<iterator>"。各源自持自然游标、源码住 `src/object/iterator/`(每源一对文件):ObjListIterator{list, 元素下标}/ObjStringIterator(批 6){str, 字节偏移,码点步进}/ObjMapIterator(批 5){map, 槽位扫描}/ObjRangeIterator(批 7){区间当前值,无 source 对象}。has_next/next 语言方法面经 Iterator 类表恒绑定(原生是虚缝薄壳,分派编译期封闭,无 switch 无 default);每集合的 iter 与其迭代器子类成对出生(铸造口按类型解开 receiver),批 5-7 只加子类、IteratorMethods 零改。迭代器对象不可省(早稿论证保持):游标状态须随迭代器走——容器不可自带游标(嵌套遍历同一列表互不串扰),「每次 iter() 产出一个带自己游标的小对象」是协议的结构必需,与派发机制选择无关。批 4 bootstrap List + Iterator 两类(String 空类表无验证价值,随批 6 带方法进场)。
 
 - **D3(2026-09-16):`next()` 越界抛 `IterationExhausted`(新码,fail-fast)**。nil 哨兵否决理由:aria list 可合法存 nil,哨兵与真实 nil 元素不可区分(Lua 的 nil 哨兵依赖「表不能存 nil」前提,aria 无此前提);forIn 靠 has_next 把关,越界仅手写滥用时发生,静默吞 bug 劣于报错。
 - **D4(2026-09-16):map 迭代序 unspecified**,产出 `[k, v]` 二元 list(文法「元组」,无 tuple 类型,list 承载,每步一次小分配)。理由(拍板):非定序哈希表是性能上的正确选择,用户不应依赖这一边缘暧昧、各语言/实现标准不一的特性。插序将来另批(需额外内存)。
@@ -119,7 +119,17 @@
 > `new_bound_method` 由各类型 override 自持,override 直调 `ObjClass::load_field`,与实例路径完全同形);② 方法面
 > 迁出 ObjList.cpp,住 `runtime/ListMethods.{hpp,cpp}`(方法面是 VM 侧语言面,object 层保持纯表示,后续各类型
 > 方法批同型)。
-> 子批余项:② `ObjIterator` + iter/has_next/next + forIn 走通;③ varargs。
+> 子批余项:③ varargs。
+
+> **落地状态(2026-09-18,批 4 子批 ②「迭代协议」)**:迭代器表示按当日改定落地(每源子类 + 引擎缝,见 §2)。
+> `src/object/iterator/` 新目录:ObjIterator 基类(纯虚 has_next/next/trace + size,load_field 基类一次全子类共享)
+> + ObjListIterator{list, 下标};`runtime/IteratorMethods.{hpp,cpp}`(has_next/next 两薄壳原生,kIteratorMethods 表
+> 循环)+ ListMethods 增 iter(铸造口按类型解开 receiver,建成即写回槽发布);寄存器 IteratorClass 格 +
+> bootstrap_iterator_class + iterator_class() 访问器;新码 IterationExhausted("iterator exhausted",插在
+> NotIterable/IteratorProtocol 预留码旁,两码仍不接线)。forIn 走通 list;基线实测用户类自实现三方法在子批 ②
+> 之前 forIn 即可走通(降糖对两类来源不可区分),钉进测试防回归。测试 21 新:Compiler.ForIn*/Manual/
+> NextExhausted*/UserClass 等 12 端到端 + ObjIterator/ObjListIterator 9 对象级(bootstrap 契约/恒绑定/游标推进/
+> 越界 fail-fast/双迭代器独立/trace stress)。**② 在工作区待 review(双配置 869/869 绿)**。
 
 ## 5. 参照
 

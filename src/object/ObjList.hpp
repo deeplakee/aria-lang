@@ -15,7 +15,8 @@ namespace aria {
     //
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素
     //     value_equal(嵌套 list 经各自 equals 递归),value_equal 无分配、GC-pure 契约保持;
-    //     `===` 恒指针(value_identical,不经本类)。
+    //     入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);`===` 恒指针
+    //     (value_identical,不经本类)。
     //   - trace():委托 elements_.trace(遍历元素 mark_value)。
     //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免
     //     `[1, ab]` 歧义;嵌套 list 递归);入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,

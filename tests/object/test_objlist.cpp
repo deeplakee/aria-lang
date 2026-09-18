@@ -176,6 +176,52 @@ TEST(ObjList, DebugReprSharedElementRendersTwice) {
     EXPECT_EQ(outer->debug_repr(), "[[7], [7]]");
 }
 
+// ---- equals 环闭合(EqualGuard) ----
+
+// 同指针快速路径先于环闭合链:自环 == 自身不进链。
+TEST(ObjList, EqualsSelfCycleFastPath) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_list(gc, guard);
+    a->elements().push(Value::from_obj(a));
+    EXPECT_TRUE(a->equals(a));
+    EXPECT_TRUE(value_equal(Value::from_obj(a), Value::from_obj(a)));
+}
+
+// 互环判等走余归纳:a=[b], b=[a], c=[c] 展开为同一棵无限树,两两判真;链摘净后重跑一致。
+TEST(ObjList, EqualsMutualCycleCoinductive) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_list(gc, guard);
+    auto b     = make_list(gc, guard);
+    auto c     = make_list(gc, guard);
+    a->elements().push(Value::from_obj(b));
+    b->elements().push(Value::from_obj(a));
+    c->elements().push(Value::from_obj(c));
+    EXPECT_TRUE(a->equals(b));
+    EXPECT_TRUE(value_equal(Value::from_obj(a), Value::from_obj(c)));
+    EXPECT_TRUE(value_equal(Value::from_obj(b), Value::from_obj(c)));
+    EXPECT_TRUE(a->equals(b));
+}
+
+// 环闭合不吞差异:环同尾异判 false,环对非环判 false。
+TEST(ObjList, EqualsCycleDifferenceStillSeen) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_list(gc, guard);
+    auto b     = make_list(gc, guard);
+    a->elements().push(Value::from_obj(a));
+    a->elements().push(Value::from_int(1));
+    b->elements().push(Value::from_obj(b));
+    b->elements().push(Value::from_int(2));
+    EXPECT_FALSE(value_equal(Value::from_obj(a), Value::from_obj(b)));
+    auto self1 = make_list(gc, guard);
+    self1->elements().push(Value::from_obj(self1));
+    auto two = make_list(gc, guard);
+    two->elements().push(Value::from_int(2));
+    EXPECT_FALSE(value_equal(Value::from_obj(self1), Value::from_obj(two)));
+}
+
 // stress GC:list 为唯一根,元素长串经 elements_.trace 存活;漏标即丢。
 TEST(ObjList, TraceStressKeepsElements) {
     GC gc;

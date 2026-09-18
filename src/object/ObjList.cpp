@@ -2,6 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/EqualGuard.hpp"
 #include "object/PrintGuard.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/Value.hpp"
@@ -18,11 +19,16 @@ namespace aria {
         if (this == other) {
             return true;
         }
+        // 环闭合:同对重遇已在比较链上,视为相等(余归纳,正则树同构);互环否则无限互递归。
+        if (EqualGuard::is_cycle(this, other)) {
+            return true;
+        }
         const auto list = try_as<ObjList>(other);
         if (list == nullptr || elements_.size() != list->elements_.size()) {
             return false;
         }
-        // 逐元素 value_equal:嵌套 list 经各自 equals 递归;value_equal 无分配,GC-pure 契约保持。
+        const EqualGuard guard{this, other};
+        // 逐元素 value_equal:嵌套 list 经各自 equals 递归;value_equal 无 GC 分配,GC-pure 契约保持。
         for (usize index = 0; index < elements_.size(); ++index) {
             if (!value_equal(elements_[index], list->elements_[index])) {
                 return false;

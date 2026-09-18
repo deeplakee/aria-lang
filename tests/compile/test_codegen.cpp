@@ -1841,6 +1841,19 @@ TEST(CodeGen, IndexErrorCaughtByTry) {
     EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range");
 }
 
+// 互环 == 判等(余归纳:同对重遇视为相等,两环展开同一棵无限树);EQUAL 弹栈后操作数
+// 无根,equals 全程零分配方可在 stress GC 下存活。
+TEST(CodeGen, CycleEqualsCoinductive) {
+    auto out = run_source(R"(
+var a = [1];
+var b = [2];
+a[0] = b;
+b[0] = a;
+return a == b;
+)");
+    EXPECT_EQ(aria::format_value(*out), "true");
+}
+
 // 写入新鲜对象跨 GC 点(run_source 开 stress GC,元素 list 经值栈/对象图级联保命)。
 TEST(CodeGen, IndexWriteGcStress) {
     EXPECT_EQ(aria::format_value(*run_source(R"(

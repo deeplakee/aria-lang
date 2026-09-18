@@ -73,6 +73,7 @@ add_library(aria_core STATIC
         src/error/ErrorCode.hpp
         src/error/Error.hpp
         src/error/AriaException.hpp
+        src/object/EqualGuard.hpp
         src/object/Object.cpp
         src/object/Object.hpp
         src/object/ObjBoundMethod.cpp

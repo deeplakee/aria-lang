@@ -91,7 +91,7 @@ namespace aria {
         // consume_codepoints。
         template<typename Pred>
         void consume_ascii(Pred pred) {
-            consume_u8([pred](const u8 byte) { return byte < 0x80 && pred(static_cast<char>(byte)); });
+            consume_u8([pred](const u8 byte) { return utf8::is_ascii(byte) && pred(static_cast<char>(byte)); });
         }
 
         // 按裸字节消费：pred 收 u8，谓词为真即推进一字节，直至 pred 假或 EOF。**不保证游标落在码点

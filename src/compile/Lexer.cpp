@@ -461,7 +461,7 @@ namespace aria {
     void Lexer::scan_operator_or_punct() {
         const u32 start = pos_;
         // 非 ASCII 码点 -> InvalidCharacter（主循环已判定它不是空白/数字/标识符起始）
-        if (static_cast<u8>(src_[pos_]) >= 0x80) {
+        if (!utf8::is_ascii(src_[pos_])) {
             const u8 len = utf8::decode_one(src_, pos_).second;
             error(ErrorCode::InvalidCharacter, "非法字符", start);
             advance(len); // 推进一个码点确保前进

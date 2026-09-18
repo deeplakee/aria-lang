@@ -10,6 +10,19 @@ namespace aria::utf8 {
     // 替换码点 U+FFFD，用于替换非法的 UTF-8 序列
     inline constexpr codepoint kReplacementChar = 0xFFFD;
 
+    // 该字节是否为 ASCII（0xxxxxxx，即单字节码点的首字节）。字节有两种来路--`StringView` 按 char 取、
+    // 解码内部按 u8 取--两个重载把这层窄化收进来，字节级 ASCII 边界就只写这一次（char 可能带符号，
+    // 故先窄化再比）。码点域的分类判定（`is_alpha` 等）比的是码点，不走这里。
+    [[nodiscard]]
+    constexpr bool is_ascii(const u8 byte) noexcept {
+        return byte < 0x80;
+    }
+
+    [[nodiscard]]
+    constexpr bool is_ascii(const char ch) noexcept {
+        return is_ascii(static_cast<u8>(ch));
+    }
+
     namespace detail {
         // 该字节是否为 UTF-8 序列的起始字节（ASCII 或多字节首字节）
         [[nodiscard]]
@@ -115,7 +128,7 @@ namespace aria::utf8 {
             return {kReplacementChar, 0};
         }
         const u8 lead = static_cast<u8>(str[offset]);
-        if (lead < 0x80) {
+        if (is_ascii(lead)) {
             return {static_cast<codepoint>(lead), 1};
         }
         return detail::decode_multibyte(str, offset, lead);
@@ -126,7 +139,7 @@ namespace aria::utf8 {
     constexpr bool is_valid(const StringView str) noexcept {
         for (usize i = 0; i < str.size();) {
             const u8 lead = static_cast<u8>(str[i]);
-            if (lead < 0x80) {
+            if (is_ascii(lead)) {
                 ++i;
                 continue;
             }

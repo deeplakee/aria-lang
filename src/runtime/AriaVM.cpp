@@ -26,6 +26,7 @@
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
 #include "runtime/Builtins.hpp"
+#include "runtime/ListMethods.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -259,6 +260,7 @@ namespace aria {
         // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
         // 新单例随其批次在此加一行。
         bootstrap_object_class();
+        bootstrap_list_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
     }
@@ -301,6 +303,10 @@ namespace aria {
         return Object::as<ObjClass>(registers_[kObjectClassOffset].as_obj());
     }
 
+    ObjClass* AriaVM::list_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kListClassOffset].as_obj());
+    }
+
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
@@ -311,6 +317,16 @@ namespace aria {
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
         klass->set_field(init_key, Value::from_obj(init_native));
         registers_[kObjectClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_list_class() {
+        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定触达;
+        // 不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根(计划 D1),
+        // 类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer
+        // 的 registers_ 一趟循环标根(tracer 零改动)。
+        const auto klass = new_class(gc_, "List", object_class());
+        register_list_methods(gc_, klass);
+        registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {

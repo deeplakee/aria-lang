@@ -24,7 +24,8 @@ namespace aria {
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                     \
     X(ObjectClass) /* Object 根类(def 无 super 父类;VM bootstrap 填充,原 LOAD_OBJECT 收编) */           \
     X(DefaultMark) /* 缺参印章(私有 no-op native,call_closure 垫充未传槽;不注册 builtins 用户不可达) */ \
-    X(MatchNoArm)  /* match 全臂未命中兜底异常(共享 ObjException;LOAD_REG + THROW 抛出) */
+    X(MatchNoArm)  /* match 全臂未命中兜底异常(共享 ObjException;LOAD_REG + THROW 抛出) */              \
+    X(ListClass)   /* List bootstrap 类(内置 list 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

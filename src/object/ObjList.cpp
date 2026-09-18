@@ -3,6 +3,8 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/EqualGuard.hpp"
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/PrintGuard.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/Value.hpp"
@@ -60,6 +62,21 @@ namespace aria {
         }
         elements_[static_cast<usize>(index)] = value;
         return true;
+    }
+
+    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {
+        // 内置侧两步,与实例路径同构(先委托类协议查表、后自己绑定,同 ObjInstance::load_field
+        // 形):VM 的 List bootstrap 类经 ObjClass::load_field 沿链读穿透,miss 类措辞 fail 随
+        // 协议透传;命中即恒绑定 this --内置类表条目全为原生函数、恒为方法,判别无须戳(表
+        // 契约由 register_list_methods 唯一写入口维持)。GC 走查:new_bound_method 是唯一分配
+        // 点 --receiver(this)经调用方 peek 在栈(栈即根)、klass 经 VM 寄存器组根、命中值本体
+        // 经类链 field_ 表可达(本地 hit 仅是值拷贝);bound 白色建成由 run_load_field 写回原槽
+        // 根化。内置侧无 fields 缓存,每次取方法现场物化。
+        const auto hit = vm.list_class()->load_field(vm, name);
+        if (!hit) {
+            return std::nullopt; // 已 fail(契约透传)
+        }
+        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }
 
     String ObjList::debug_repr() const {

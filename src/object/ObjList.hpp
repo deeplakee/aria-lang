@@ -10,8 +10,8 @@ namespace aria {
     class GC;
 
     // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序
-    // 存 AriaArray(MAKE_LIST 一次整段拷入;下标读写经 load_index/store_index 协议 override,
-    // 待后续批接线)。
+    // 存 AriaArray(MAKE_LIST 一次整段拷入)。下标读写经 load_index/store_index 协议 override;
+    // 命名成员(push/pop 等)经 load_field 委托 VM 的 List bootstrap 类方法表恒绑定。
     //
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素
     //     value_equal(嵌套 list 经各自 equals 递归),value_equal 无分配、GC-pure 契约保持;
@@ -33,7 +33,7 @@ namespace aria {
         ObjList(ObjList&&)                 = delete;
         ObjList& operator=(ObjList&&)      = delete;
 
-        // 元素表(非常量供填充:MAKE_LIST 的 copy_from 与后续 push/pop 方法批;对标
+        // 元素表(非常量供填充:MAKE_LIST 的 copy_from 与 push/pop 方法;对标
         // ObjModule::globals 的容器成员直曝)。
         [[nodiscard]]
         AriaArray& elements() noexcept {
@@ -65,6 +65,13 @@ namespace aria {
         // 下标写入:键检查同读,不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
+
+        // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjInstance::load_field
+        // 形)--先委托 VM 的 List bootstrap 类协议(ObjClass::load_field 沿链查表,miss 类
+        // 措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不
+        // override:基类默认「does not support field access」即正确行为(不可变成员面)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
         // 调试渲染:`[1, "ab"]`;显示同文案。
         [[nodiscard]]

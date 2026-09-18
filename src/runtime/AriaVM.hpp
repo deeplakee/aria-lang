@@ -129,6 +129,12 @@ namespace aria {
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
+        // List bootstrap 类:寄存器 ListClass 唯一存放(内置 list 的语言方法面,注册入口
+        // register_list_methods 住 runtime/ListMethods);ObjList::load_field 经它取自身类。
+        // 同 object_class 先例。
+        [[nodiscard]]
+        ObjClass* list_class() const noexcept;
+
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
         // 命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。
@@ -207,6 +213,10 @@ namespace aria {
         // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
         // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
         void bootstrap_object_class();
+
+        // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
+        // (register_list_methods),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
+        void bootstrap_list_class();
 
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。

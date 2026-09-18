@@ -4,8 +4,11 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjList.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
@@ -18,8 +21,10 @@ using aria::GC;
 using aria::i64;
 using aria::new_list;
 using aria::new_string;
+using aria::ObjBoundMethod;
 using aria::ObjException;
 using aria::ObjList;
+using aria::ObjNativeFn;
 using aria::ObjString;
 using aria::Pair;
 using aria::String;
@@ -324,4 +329,79 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(list->elements().size(), 1u);
     EXPECT_EQ(list->elements()[0].as_int(), 9);
+}
+
+// ---- 命名成员协议(load_field → VM 的 List bootstrap 类) ----
+
+// bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根(计划 D1)。
+TEST(ObjList, BootstrapClassContract) {
+    AriaVM vm;
+    auto*  list_class = vm.list_class();
+    ASSERT_NE(list_class, nullptr);
+    EXPECT_EQ(list_class->name()->view(), "List");
+    EXPECT_EQ(list_class->superclass(), vm.object_class());
+}
+
+// 命中恒绑定:bound 的 receiver 是本 list、method 是类表内的原生函数(注册名 intern 同指针,
+// load_field 传入的 new_string("push") 与注册名命中)。
+TEST(ObjList, LoadFieldBindsNativeToReceiver) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    auto   bound = list->load_field(vm, new_string(gc, "push"));
+    ASSERT_TRUE(bound.has_value());
+    guard.push(bound->as_obj()); // bound 白色,入临时根再检视
+    const auto method = try_obj<ObjBoundMethod>(*bound);
+    ASSERT_NE(method, nullptr);
+    EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(list)));
+    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    ASSERT_NE(native, nullptr);
+    EXPECT_EQ(native->name()->view(), "push");
+}
+
+// init 沿链解析到 Object 根的 no-op init(List 表自身无 init;调用返回 receiver 自身的语义
+// 钉在 Compiler.ListInitResolvesToObjectRootNoOp)。
+TEST(ObjList, LoadFieldInitResolvesToObjectRoot) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    auto   bound = list->load_field(vm, new_string(gc, "init"));
+    ASSERT_TRUE(bound.has_value());
+    guard.push(bound->as_obj());
+    const auto method = try_obj<ObjBoundMethod>(*bound);
+    ASSERT_NE(method, nullptr);
+    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    ASSERT_NE(native, nullptr);
+    EXPECT_EQ(native->name()->view(), "init");
+}
+
+// miss:类措辞 fail 随协议透传(基类默认拿 receiver debug_repr 当主语的旧文案不复存在)。
+TEST(ObjList, LoadFieldMissFailsWithClassWording) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    EXPECT_FALSE(list->load_field(vm, new_string(gc, "nope")).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <class List> has no member 'nope'");
+}
+
+// stress collect 后类链仍解析:bootstrap 类经寄存器组根、方法原生经类链 field_ 表级联标根。
+TEST(ObjList, BootstrapSurvivesStressCollect) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto&      gc      = vm.gc();
+    auto       guard   = gc.make_guard();
+    auto       list    = make_list(gc, guard);
+    const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
+    guard.push(trigger);
+    auto bound = list->load_field(vm, new_string(gc, "pop"));
+    ASSERT_TRUE(bound.has_value());
+    guard.push(bound->as_obj());
+    const auto method = try_obj<ObjBoundMethod>(*bound);
+    ASSERT_NE(method, nullptr);
+    EXPECT_EQ(method->name()->view(), "pop"); // name() 经 bound 的原生取名,存活即链完好
 }

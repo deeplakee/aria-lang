@@ -8,7 +8,7 @@
 
 - **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index` + `op_*` 运算符族 + `op_call`。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
 - **语言方法面(类表)**:语言可见方法(`s.upper`、`it.next`、`xs.iter`)一律住 `ObjClass` 表。内置类型由 VM 构造期 bootstrap 类承载(`string_class_`/`list_class_`/`map_class_`/`range_class_`/`iterator_class_`,对标既有 `object_class_`;GC 经 vm_roots tracer 标根,先例同)。
-- **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包——形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 `new_bound_method(命中值, receiver)`」,五种类型收口为内置侧专用 helper `load_builtin_member(vm, klass, receiver, name)`(住 ObjClass.hpp),每类型一行委托。
+- **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包——形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 override 自持 `new_bound_method(命中值, receiver)`」,查表即直调类协议(2026-09-18 review 改定:曾收口的内置侧专用 helper `load_builtin_member` 经两轮收窄后整体删除,各类型 override 直调 `ObjClass::load_field`,与实例路径「先委托类协议、后自己绑定」完全同形)。
 - **与实例路径不同构,不硬合**:实例路径的绑定判别是闭包戳(`is_method`)+ fields 缓存回填(M5 语义);内置类表全是原生函数,`is_method` 恒 false,戳判别不可复用。两路共享的只有 `ObjClass::load_field` 这层(本来就是共享);实例路径保持现状不动,内置侧另立 helper——「共享绑定 helper 自 ObjInstance 提炼」的早期设想作废。
 - **`store_field` 不 override**:基类默认「type X does not support field access」即内置类型的正确行为(不可变/无名成员)。
 
@@ -21,7 +21,7 @@
 ### 1.1 落地要点(批 4 契约)
 
 - **VM 成员与构造序**:`list_class_`/`iterator_class_`(批 4;`string_`/`map_`/`range_class_` 随批 5-7 出生即用)。ctor 里 `bootstrap_builtin_classes()` 排在 `bootstrap_object_class()` 之后(super = Object 先建)、`register_builtins` 之前。
-- **注册面**:每类型一个 `register_<type>_methods(GC&, ObjClass&)`,住该类型 .cpp(方法体同文件,VM 只编排)。内部 `new_native_fn` + `set_field`,对标 `Builtins.cpp` 的 kBuiltins 循环;注册名必经 intern 池——与 CodeGen `LOAD_FIELD` 常量同指针,`===` 查表成立(Builtins.cpp 先例)。
+- **注册面**:每类型一个 `register_<type>_methods(GC&, ObjClass*)`,住 runtime 层每类型一个 `<Type>Methods.{hpp,cpp}`(2026-09-18 review 改定:方法面是 VM 侧语言面、object 层保持纯表示,对标 `Builtins.cpp` 先例;方法体同文件,VM 只编排)。内部 `new_native_fn` + `set_field`,对标 `Builtins.cpp` 的 kBuiltins 循环;注册名必经 intern 池——与 CodeGen `LOAD_FIELD` 常量同指针,`===` 查表成立(Builtins.cpp 先例)。
 - **tracer**:vm_roots 加 `mark_object`(各 bootstrap 类),对标 `object_class_` 第 4 根。
 - **调用链零改动**:`call_bound_method`(槽 0 覆写 receiver)→ `call_value` → `call_native`(`slots[0]` = this 兼返回槽),M5 已通;`ObjBoundMethod` 的 receiver Value 泛化即为此留的缝。
 - **GC 纪律**:bootstrap 期在 ctor 构造临界区(GC 挂起,`make_lock`)内免守卫、建成发布进寄存器组/表(tracer 恒标);`LOAD_FIELD` 绑定路径的 bound 对象白色,接收者在栈(peek 不弹)、方法值经类链可达,返回值写回原槽根化(与实例路径同纪律);list_iter 覆写时序:source 在 `slots[0]` 被覆写前仍为根,建成后先写槽发布再返回,中间无 GC 点。
@@ -87,7 +87,7 @@
 | 1 | 值寄存器组底座(`LOAD_REG` + 收编 `LOAD_OBJECT`)+ 默认参数(§4.1;varargs 拆至批 4) | §4.1 |
 | 2 | match 语句 / 表达式(§4.2) | §4.2 |
 | 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + len/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
-| 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator + `load_builtin_member`)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体 + 装配指令)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
+| 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体 + 装配指令)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
 | 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 解构 `[k,v]` |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
@@ -105,6 +105,21 @@
 > 就地拼文案)、非整数 TypeMismatch、store 不自动增长;非对象守卫文案留执行体,与 field 族同款)+ 下标四模式
 > lowering(Prepare 备 obj+idx 对/Locate `DUP2`+`LOAD_INDEX` 留副本对,locator-once)。既有性能坑随边界测试
 > 暴露并记档:`SourceFile::locate` 逐 token 行内列号计数,单行长源文件 O(n^2)(测试侧逐元素换行规避,未修)。
+
+> **落地状态(2026-09-18,批 4 子批 ①「方法机制地基」)**:List bootstrap 类(寄存器 ListClass 格,super 挂
+> Object 根)+ `ObjList::load_field` 两步 override(直调 `ObjClass::load_field` 查表,命中自持
+> `new_bound_method` 恒绑定)+ `register_list_methods`(push/pop,kListMethods 表循环)+ `list_class()`
+> 薄 accessor(ObjList 不持 class_ 成员,类型→类映射收敛 VM 侧)。与计划三处出入:①tracer 零改动(§1.1
+> 「vm_roots 加 mark_object」写在批 1 寄存器组落地前,registers_ 一趟循环已覆盖);②IteratorClass 未随本批
+> bootstrap(类表空、无消费者,随子批 ② ObjIterator 出生);③`register_<type>_methods` 形参按参数传递规范取
+> `ObjClass*`(计划原文 `ObjClass&`)。push 返回 nil(Python append 同款)、pop 空表 IndexOutOfBounds
+>("pop from empty list")。`xs.foo` 报错主语随 override 从 receiver debug_repr 变为 `<class List>`(类措辞,
+> 与实例路径对齐);D1 毛边 `xs.init()` 返回 receiver 自身已钉测试;bound 无缓存 v1 接受(循环取方法 stress
+> GC 用例钉根化路径)。Review 三改(2026-09-18):① `load_builtin_member` 收窄为纯查表后整体删除(绑定
+> `new_bound_method` 由各类型 override 自持,override 直调 `ObjClass::load_field`,与实例路径完全同形);② 方法面
+> 迁出 ObjList.cpp,住 `runtime/ListMethods.{hpp,cpp}`(方法面是 VM 侧语言面,object 层保持纯表示,后续各类型
+> 方法批同型)。
+> 子批余项:② `ObjIterator` + iter/has_next/next + forIn 走通;③ varargs。
 
 ## 5. 参照
 

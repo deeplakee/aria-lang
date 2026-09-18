@@ -121,3 +121,70 @@ TEST(Compiler, CompileErrorSyntax) {
     auto fail = compile_fail("var = ");
     EXPECT_FALSE(fail.error().code() == ErrorCode::Ok);
 }
+
+// ---- list 方法（push/pop：内置侧方法机制，LOAD_FIELD 恒绑定 + 原生 slots[0]=receiver） ----
+
+// push 追加到末尾、接受任意 Value、返回 nil（变更方法不鼓励链式）。
+TEST(Compiler, ListPushAppendsAndReturnsNil) {
+    EXPECT_EQ(run_int("var xs = [1, 2]; var r = xs.push(3); if (r == nil) { return xs[2]; } return -1;"), 3);
+    EXPECT_EQ(run_int(R"(var xs = [1]; xs.push("ab"); xs.push(nil); xs.push([2]); return len(xs);)"), 4);
+}
+
+// pop 移除并返回末元素，长度随之缩减。
+TEST(Compiler, ListPopReturnsLastAndShrinks) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var last = xs.pop(); return last * 10 + len(xs);"), 32);
+}
+
+// 元数检查：push 恰 1 参、pop 恰 0 参（文案 builtins 同款）。
+TEST(Compiler, ListMethodWrongArity) {
+    auto push = run_source("var xs = [1]; return xs.push();");
+    ASSERT_FALSE(push.has_value());
+    EXPECT_EQ(push.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(push.error().message().find("push expects 1 argument, got 0"), std::string::npos);
+
+    auto pop = run_source("var xs = [1]; return xs.pop(9);");
+    ASSERT_FALSE(pop.has_value());
+    EXPECT_EQ(pop.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(pop.error().message().find("pop expects no arguments, got 1"), std::string::npos);
+}
+
+// pop 空表：IndexOutOfBounds（nil 哨兵不可行 --list 可合法存 nil，fail-fast）。
+TEST(Compiler, ListPopEmptyFails) {
+    auto out = run_source("var xs = []; return xs.pop();");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out.error().message().find("pop from empty list"), std::string::npos);
+}
+
+// 恒绑定：取出方法值再调用，仍作用于原 receiver（内置类表条目全为方法）。
+TEST(Compiler, ListMethodBoundToReceiver) {
+    EXPECT_EQ(run_int("var xs = [1]; var f = xs.push; f(2); return xs[1];"), 2);
+}
+
+// 成员 miss：类措辞随协议传播（与实例路径 obj.x 的报错形态一致）。
+TEST(Compiler, ListMemberMissFailsWithClassWording) {
+    auto out = run_source("var xs = [1]; return xs.foo;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(out.error().message().find("<class List> has no member 'foo'"), std::string::npos);
+}
+
+// 成员写入不受支持：store_field 不 override，基类默认即正确行为（不可变成员面）。
+TEST(Compiler, ListMemberStoreNotSupported) {
+    auto out = run_source("var xs = [1]; xs.foo = 2; return 1;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(out.error().message().find("type List does not support field access"), std::string::npos);
+}
+
+// init 沿链解析到 Object 根的 no-op init：不动槽 0（已是 receiver），调用返回 receiver 自身
+// （计划 D1 已知悉接受的小语义毛边，钉住防无声漂移）。
+TEST(Compiler, ListInitResolvesToObjectRootNoOp) {
+    EXPECT_EQ(run_int("var xs = [1]; if (xs.init() === xs) { return 1; } return 0;"), 1);
+}
+
+// 循环内反复取方法（每次现场物化 bound 对象）+ stress GC（run_source 默认开）：
+// bound 白色建成即写回原槽根化、方法原生经寄存器组 -> 类链可达。
+TEST(Compiler, ListMethodLoopUnderStressGc) {
+    EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
+}

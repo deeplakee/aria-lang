@@ -67,6 +67,8 @@ add_library(aria_core STATIC
         src/runtime/Builtins.cpp
         src/runtime/Builtins.hpp
         src/runtime/FrameStack.hpp
+        src/runtime/ListMethods.cpp
+        src/runtime/ListMethods.hpp
         src/runtime/Movement.cpp
         src/runtime/Movement.hpp
         src/runtime/value_register.hpp

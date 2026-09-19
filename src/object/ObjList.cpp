@@ -41,15 +41,16 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
-        // 整数键:非整数 TypeMismatch;越界/负数 IndexOutOfBounds(越界值就地拼进文案)。
+        // 整数键:非整数 TypeMismatch;负下标从尾计数、归一化后越界 IndexOutOfBounds
+        //(文案报原始键值)。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
-        const i64 index = key.as_int();
-        if (index < 0 || static_cast<u64>(index) >= elements_.size()) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", index);
+        const i64 raw = key.as_int();
+        if (const auto slot = util::resolve_index(raw, elements_.size())) {
+            return elements_[*slot];
         }
-        return elements_[static_cast<usize>(index)];
+        return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
     bool ObjList::store_index(AriaVM& vm, const Value key, const Value value) {
@@ -57,12 +58,12 @@ namespace aria {
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
-        const i64 index = key.as_int();
-        if (index < 0 || static_cast<u64>(index) >= elements_.size()) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", index);
+        const i64 raw = key.as_int();
+        if (const auto slot = util::resolve_index(raw, elements_.size())) {
+            elements_[*slot] = value;
+            return true;
         }
-        elements_[static_cast<usize>(index)] = value;
-        return true;
+        return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
     Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {

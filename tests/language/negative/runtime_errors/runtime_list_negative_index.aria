@@ -1,3 +1,3 @@
-// 钉住：负数下标越界报 IndexOutOfBounds（无 Python 式负索引）。
+// 钉住：负下标从尾计数（-1 = 末元素），但归一化后仍越界（< -len）报 IndexOutOfBounds。
 var xs = [1, 2];
-var a = xs[-1];
+var a = xs[-3];

@@ -51,18 +51,16 @@ namespace aria {
 
     Opt<Value> ObjString::load_index(AriaVM& vm, const Value key) {
         // 整数键 = 字节域(计划 D5,与 len 同域):产出单字节 1-char string;多字节序列
-        // 中间字节取该字节自身(字节契约的自然结果,非完整字符)。非整数 TypeMismatch、
-        // 越界/负数 IndexOutOfBounds(越界值就地拼进文案,同 list)。
+        // 中间字节取该字节自身(字节契约的自然结果,非完整字符)。非整数 TypeMismatch;
+        // 负下标从尾计数、归一化后越界 IndexOutOfBounds(文案报原始键值,同 list)。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "string index must be an integer, got {}", aria::type_name(key));
         }
-        const i64 index = key.as_int();
-        if (index < 0 || static_cast<u64>(index) >= length_) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", index);
+        const i64 raw = key.as_int();
+        if (const auto slot = util::resolve_index(raw, length_)) {
+            return Value::from_obj(new_string(vm.gc(), view()[*slot]));
         }
-        // GC 走查:receiver 经调用方值栈 peek 为根(「栈即根」),new_string 的 intern 查找
-        // 与分配均在其后;新串白色建成由 run_load_index 写回原槽根化。
-        return Value::from_obj(new_string(vm.gc(), view().substr(index, 1)));
+        return vm.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", raw);
     }
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
@@ -95,6 +93,11 @@ namespace aria {
         const auto s = gc.new_object<ObjString>(gc, src); // 顶部 maybe_collect 在 s 诞生前完成
         gc.intern_insert(s);
         return s;
+    }
+
+    ObjString* new_string(GC& gc, const char ch) {
+        // 委托 StringView 版(驻留池同一入口);&ch 取局部地址仅同步使用,无悬垂窗口。
+        return new_string(gc, StringView{&ch, 1});
     }
 
 } // namespace aria

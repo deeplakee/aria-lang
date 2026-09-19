@@ -189,6 +189,28 @@ TEST(Compiler, ListMethodLoopUnderStressGc) {
     EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
 }
 
+// ---- 负下标（从尾计数：-1 末元素、-len 首元素；归一化后越界 fail-fast 报原始键值） ----
+
+// 读对称:xs[-1] = 末元素、xs[-len] = 首元素。
+TEST(Compiler, ListNegativeIndexReads) {
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[-1];"), 30);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[-3];"), 10);
+}
+
+// 写对称:xs[-1] = v 覆写末槽;复合赋值走同一归一化(locator 读改写单链)。
+TEST(Compiler, ListNegativeIndexWrites) {
+    EXPECT_EQ(run_int("var xs = [10, 20]; xs[-1] = 99; return xs[1];"), 99);
+    EXPECT_EQ(run_int("var xs = [10, 20]; xs[-1] += 5; return xs[-1];"), 25);
+}
+
+// 越界:归一化后仍负(< -len)即报错,文案报用户写的原始负值。
+TEST(Compiler, ListNegativeIndexBoundsFail) {
+    auto out = run_source("var xs = [1, 2]; return xs[-3];");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out.error().message().find("list index -3 out of range"), std::string::npos);
+}
+
 // ---- forIn 与迭代协议（ObjIterator 子类 / iter / has_next / next / IterationExhausted） ----
 
 // forIn 求和:list 走通内置迭代协议（降糖蓝图:iter/has_next/next 三方法调用）。
@@ -563,6 +585,17 @@ TEST(Compiler, StringSubscriptIsByteSemantics) {
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out_of_range.error().message().find("string index 5 out of range"), std::string::npos);
+}
+
+// s[-i]:负下标从尾计数(同 list),-1 末字节、-len 首字节;越界报原始负值。
+TEST(Compiler, StringNegativeIndexReads) {
+    EXPECT_EQ(run_int(R"(if ("hello"[-1] == "o") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello"[-5] == "h") { return 1; } return 0;)"), 1);
+
+    auto out = run_source(R"(return "hi"[-3];)");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out.error().message().find("string index -3 out of range"), std::string::npos);
 }
 
 // string 不可变:下标写恒 TypeMismatch。

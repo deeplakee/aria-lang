@@ -305,12 +305,32 @@ TEST(ObjList, LoadIndexOutOfBoundsFails) {
     auto   list  = make_list(gc, guard);
     list->elements().push(Value::from_int(1));
     list->elements().push(Value::from_int(2));
-    for (const i64 index: {2, -1}) {
+    for (const i64 index: {2, -3}) {
         EXPECT_FALSE(list->load_index(vm, Value::from_int(index)).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
         EXPECT_EQ(message, aria::String{std::format("Runtime: IndexOutOfBounds list index {} out of range", index)});
     }
+}
+
+// 负下标从尾计数:-1 = 末元素、-len = 首元素;-len-1 归一化后仍负即越界(文案报原始键值)。
+TEST(ObjList, LoadIndexNegativeReadsFromTail) {
+    AriaVM      vm;
+    auto&       gc    = vm.gc();
+    auto        guard = gc.make_guard();
+    auto        list  = make_list(gc, guard);
+    const Value src[] = {Value::from_int(10), Value::from_int(20), Value::from_int(30)};
+    list->elements().copy_from(src);
+    auto last = list->load_index(vm, Value::from_int(-1));
+    ASSERT_TRUE(last.has_value());
+    EXPECT_EQ(last->as_int(), 30);
+    auto first = list->load_index(vm, Value::from_int(-3));
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->as_int(), 10);
+    EXPECT_FALSE(list->load_index(vm, Value::from_int(-4)).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
+    EXPECT_EQ(message, "Runtime: IndexOutOfBounds list index -4 out of range");
 }
 
 TEST(ObjList, StoreIndexWritesAndChecks) {
@@ -329,6 +349,23 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(list->elements().size(), 1u);
     EXPECT_EQ(list->elements()[0].as_int(), 9);
+}
+
+// 负下标写对称:xs[-1] = v 覆写末槽;越界不写不动长度。
+TEST(ObjList, StoreIndexNegativeWritesFromTail) {
+    AriaVM      vm;
+    auto&       gc    = vm.gc();
+    auto        guard = gc.make_guard();
+    auto        list  = make_list(gc, guard);
+    const Value src[] = {Value::from_int(1), Value::from_int(2)};
+    list->elements().copy_from(src);
+    EXPECT_TRUE(list->store_index(vm, Value::from_int(-1), Value::from_int(9)));
+    EXPECT_EQ(list->elements()[1].as_int(), 9);
+    EXPECT_TRUE(list->store_index(vm, Value::from_int(-2), Value::from_int(8)));
+    EXPECT_EQ(list->elements()[0].as_int(), 8);
+    EXPECT_FALSE(list->store_index(vm, Value::from_int(-3), Value::from_int(0)));
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    EXPECT_EQ(list->elements().size(), 2u);
 }
 
 // ---- 命名成员协议(load_field → VM 的 List bootstrap 类) ----

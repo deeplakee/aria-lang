@@ -1815,12 +1815,13 @@ return n * 100 + xs[0];
               102);
 }
 
-// 越界:读/负数/写都报 IndexOutOfBounds(运行期,可 catch)。
+// 越界:读/负数越界/写都报 IndexOutOfBounds(运行期,可 catch);负下标从尾计数合法,
+// 归一化后仍越界(< -len)才报。
 TEST(CodeGen, ErrIndexOutOfBounds) {
     auto read = run_source("return [1][5];");
     ASSERT_FALSE(read.has_value());
     EXPECT_EQ(read.error().code(), ErrorCode::IndexOutOfBounds);
-    auto negative = run_source("return [1, 2][0 - 1];");
+    auto negative = run_source("return [1, 2][0 - 3];");
     ASSERT_FALSE(negative.has_value());
     EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
     auto store = run_source("var xs = [1]; xs[3] = 1; return 0;");

@@ -187,6 +187,19 @@ namespace aria::util {
                 static_cast<u8>((word >> 24) & 0xFF)};
     }
 
+    // 下标负索引解析(从尾计数约定,list/string 下标与切片共用):-1 = 末元素、-size =
+    // 首元素,正数原样;归一化后 < 0 或 >= size 即越界(nullopt)。纯换算无分配无 fail,
+    // 报错文案由调用方就地烘焙(报原始键值)。raw 负支加法不下溢(size <= i64max)。
+    [[nodiscard]]
+    inline Opt<usize> resolve_index(const i64 raw, const usize size) noexcept {
+        const auto signed_size = static_cast<i64>(size);
+        const i64  index       = raw < 0 ? raw + signed_size : raw;
+        if (index < 0 || index >= signed_size) {
+            return std::nullopt;
+        }
+        return index;
+    }
+
     // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面
     // 集合方法的共用底座;元素序 = range 迭代序)。transform 接收元素、返回可拼进 String
     // 的值(通常 String)。

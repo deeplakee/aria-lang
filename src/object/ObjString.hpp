@@ -103,6 +103,10 @@ namespace aria {
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView src);
 
+    // 单字节串便捷重载(下标读产出形态):委托 StringView 版,同样经驻留池。
+    [[nodiscard]]
+    ObjString* new_string(GC& gc, char ch);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_STRING_HPP

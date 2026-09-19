@@ -204,11 +204,18 @@
 >(list/string) → 批 3 无上界开区间(文法 `term?` + flags unbounded 位 + ObjRange has_high_) → 批 4 切片
 >(list 下标 Range 分支,消费批 2+3)。
 >
-> **批 1(倒序)已落地(工作区待 review)**:ObjRangeIterator 加 forward_(构造期 from<=to 定向)+ has_next
-> 方向比较 + next 按方向推进;端点改名 low/high→from/to(字段/访问器/MAKE_RANGE 局部/工厂/instruction-set
-> 规格用语全链);ObjRange.hpp/迭代器头注释翻转;测试翻转 2(EmptyRangeZeroRounds→EmptyExclusive
-> ZeroRounds 只留 5...5、语料 range_forin 空区间段)+ 新增 3(对象级 ReversedInclusive/ReversedExclusive +
-> 端到端 ReversedSums);文档同步 grammar.txt 区间注释/instruction-set §6.3/CLAUDE.md/README 进度行。
+> **批 1(倒序)已落库 f078221(2026-09-19,双配置 997/997 绿)**:ObjRangeIterator 加 forward_(构造期 from<=to
+> 定向)+ has_next 方向比较 + next 按方向推进;端点改名 low/high→from/to(字段/访问器/MAKE_RANGE 局部/工厂/
+> instruction-set 规格用语全链;start/end 的 end 有 C++ one-past 条件反射、begin/end 与容器迭代器撞语境,均否);
+> 测试翻转 2(EmptyRangeZeroRounds→EmptyExclusiveZeroRounds 只留 5...5、语料 range_forin 空区间段)+ 新增 3
+>(对象级 ReversedInclusive/ReversedExclusive + 端到端 ReversedSums);grammar/instruction-set §6.3/进度行同步。
+>
+> **批 2(负下标)已落地(工作区待 review)**:从尾计数 idx+len 一次到位(list 读/写 + string 读,string 写恒
+> TypeMismatch 不变;map 任意键不涉)——归一化三处就地字面重复(行数过小不抽),raw=i64min 负支和恒不下溢
+> (len<=i64max);越界 fail-fast 报**原始键值**(list index -3 out of range)。测试:对象级翻转 2(越界钉子 -1→
+> -len-1)+ 新增 3(LoadIndexNegativeReadsFromTail/StoreIndexNegativeWritesFromTail/ObjString 负下标)+ 端到端
+> 4(读写对称/复合赋值同归一化/越界文案/string 负下标);语料翻转 1(runtime_list_negative_index 改 -len-1 形)+
+> 正向段(list_subscript_read_write 负下标读写)。
 
 ## 5. 参照
 

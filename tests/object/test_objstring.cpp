@@ -109,12 +109,32 @@ TEST(ObjString, LoadIndexOutOfBoundsFails) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi"); // 长度 2
-    for (const i64 index: {2, -1}) {
+    for (const i64 index: {2, -3}) {
         EXPECT_FALSE(s->load_index(vm, Value::from_int(index)).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
         EXPECT_EQ(message, aria::String{std::format("Runtime: IndexOutOfBounds string index {} out of range", index)});
     }
+}
+
+// 负下标从尾计数(同 list):-1 = 末字节、-len = 首字节;-len-1 归一化后仍负即越界。
+TEST(ObjString, LoadIndexNegativeReadsFromTail) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "hello");
+    auto   last  = s->load_index(vm, Value::from_int(-1));
+    ASSERT_TRUE(last.has_value());
+    const auto tail = aria::Object::try_as<ObjString>(last->as_obj());
+    ASSERT_NE(tail, nullptr);
+    EXPECT_EQ(tail->view(), "o");
+    auto first = s->load_index(vm, Value::from_int(-5));
+    ASSERT_TRUE(first.has_value());
+    const auto head = aria::Object::try_as<ObjString>(first->as_obj());
+    ASSERT_NE(head, nullptr);
+    EXPECT_EQ(head->view(), "h");
+    EXPECT_FALSE(s->load_index(vm, Value::from_int(-6)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
 // string 不可变:下标写恒报错(定向文案,键值不检查)。

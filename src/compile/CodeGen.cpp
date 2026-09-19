@@ -493,6 +493,7 @@ namespace aria {
                 const u32 skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
                 emit_expr(*param.default_value);
                 cur_cu()->emit_store_local(slot, line); // peek-store 换入参数槽
+                cur_cu()->emit_op(OpCode::POP, line);   // STORE_LOCAL 不弹,弹掉求值副本恢复「栈高 == 已填槽数」
                 patch_jump_or_fail(skip, loc);
             }
             // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在 validate_params 检查,直接登记。

@@ -808,6 +808,13 @@ TEST(CodeGen, DefaultParamSingularArityMessageKept) {
     EXPECT_NE(out.error().message().find("expects 1 args, got 0"), std::string::npos);
 }
 
+TEST(CodeGen, DefaultParamFillKeepsSlotInvariantWithBodyLocals) {
+    // 缺省序言求值路径的栈平衡回归:STORE_LOCAL 为 peek 不弹,须弹掉求值副本恢复
+    // 「栈高 == 已填槽数」,否则体 var 声明值填槽错位(var 读到默认值残留)。
+    EXPECT_EQ(run_int("fun f(n, m = n + 2) { var a = 100; var b = 7; return a + b + n + m; } return f(1);"), 111);
+    EXPECT_EQ(run_int("fun f(n, m = n + 2) { var a = 100; var b = 7; return a + b + n + m; } return f(1, 2);"), 110);
+}
+
 // 序言形态:逐缺省槽 LOAD_LOCAL -> LOAD_REG DefaultMark -> EQUAL -> JUMP_FALSE -> 默认值
 // 表达式 -> STORE_LOCAL。全为既有指令,栈形平衡(序言后栈空)。
 TEST(CodeGen, DefaultParamPrologueDisassembly) {

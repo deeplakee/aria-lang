@@ -1,4 +1,4 @@
-#include "runtime/ListMethods.hpp"
+#include "runtime/builtins/ListBuiltins.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -50,7 +50,7 @@ namespace aria {
             return true;
         }
 
-        struct ListMethodEntry {
+        struct ListBuiltinEntry {
             StringView name;
             NativeFn   fn;
         };
@@ -89,7 +89,7 @@ namespace aria {
 
         // list 方法表:注册进 List bootstrap 类(kBuiltins 同款循环)。注册名经 new_native_fn
         // 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同指针,查表按指针命中。
-        constexpr ListMethodEntry kListMethods[] = {
+        constexpr ListBuiltinEntry kListBuiltins[] = {
                 {"push", push_fn},
                 {"pop", pop_fn},
                 {"join", join_fn},
@@ -98,8 +98,8 @@ namespace aria {
 
     } // namespace
 
-    void register_list_methods(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kListMethods) {
+    void register_list_builtins(GC& gc, ObjClass* klass) {
+        for (const auto& [name, fn]: kListBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }

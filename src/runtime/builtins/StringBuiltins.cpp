@@ -1,4 +1,4 @@
-#include "runtime/StringMethods.hpp"
+#include "runtime/builtins/StringBuiltins.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -260,7 +260,7 @@ namespace aria {
         }
 
         // iter() -> 迭代器:铸造 ObjStringIterator(string 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 ListMethods::iter_fn:str 在 slots[0] 于栈根,迭代器白色建成
+        // receiver)。GC 时序同 ListBuiltins::iter_fn:str 在 slots[0] 于栈根,迭代器白色建成
         // 先写回槽发布再返回,中间无 GC 点;此后 str 经迭代器 trace 可达。
         bool iter_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -272,15 +272,15 @@ namespace aria {
             return true;
         }
 
-        struct StringMethodEntry {
+        struct StringBuiltinEntry {
             StringView name;
             NativeFn   fn;
         };
 
-        // string 方法表:注册进 String bootstrap 类(kListMethods 同款循环)。注册名经
+        // string 方法表:注册进 String bootstrap 类(kListBuiltins 同款循环)。注册名经
         // new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同
         // 指针,查表按指针命中。
-        constexpr StringMethodEntry kStringMethods[] = {
+        constexpr StringBuiltinEntry kStringBuiltins[] = {
                 {"upper", upper_fn},         {"lower", lower_fn},
                 {"trim", trim_fn},           {"split", split_fn},
                 {"find", find_fn},           {"replace", replace_fn},
@@ -291,8 +291,8 @@ namespace aria {
 
     } // namespace
 
-    void register_string_methods(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kStringMethods) {
+    void register_string_builtins(GC& gc, ObjClass* klass) {
+        for (const auto& [name, fn]: kStringBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }

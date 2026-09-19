@@ -13,7 +13,7 @@ namespace aria {
     // 引擎缝。每源一个小子类、各持自然游标(list 下标 / string 字节偏移 / map 槽位 / range
     // 区间当前值,源码同目录),基类只钉三件契约:has_next 纯查询、next 越界 fail、trace 标
     // 各自的源(纯虚钉住,忘标 = 编译错)。语言方法面(has_next/next 经 Iterator bootstrap
-    // 类表恒绑定,原生是本缝的薄壳)住 runtime/IteratorMethods;load_field override 基类一次,
+    // 类表恒绑定,原生是本缝的薄壳)住 runtime/builtins/IteratorBuiltins;load_field override 基类一次,
     // 全子类共享。debug_repr 渲染 "<iterator>"(对标 <upvalue> 稳定短文案);equals 默认地址
     // 判等(同一容器的两个迭代器是不同对象)。
     class ObjIterator : public Object {

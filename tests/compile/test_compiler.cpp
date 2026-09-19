@@ -544,7 +544,7 @@ TEST(Compiler, StringMemberMissFailsWithClassWording) {
 }
 
 // 迭代器一等性:it.next 取出方法值调用;循环取方法 stress GC(bound 物化根化路径)。
-TEST(Compiler, StringMethodsUnderStressGc) {
+TEST(Compiler, StringBuiltinsUnderStressGc) {
     EXPECT_EQ(run_int(R"(var it = "abc".iter(); var n1 = it.next; if (n1() == "a" && it.has_next()) { return 1; } )"
                       R"(return 0;)"),
               1);

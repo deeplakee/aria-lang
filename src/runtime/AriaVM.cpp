@@ -27,11 +27,11 @@
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
-#include "runtime/Builtins.hpp"
-#include "runtime/IteratorMethods.hpp"
-#include "runtime/ListMethods.hpp"
-#include "runtime/MapMethods.hpp"
-#include "runtime/StringMethods.hpp"
+#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/IteratorBuiltins.hpp"
+#include "runtime/builtins/ListBuiltins.hpp"
+#include "runtime/builtins/MapBuiltins.hpp"
+#include "runtime/builtins/StringBuiltins.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -343,17 +343,17 @@ namespace aria {
         // 类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer
         // 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "List", object_class());
-        register_list_methods(gc_, klass);
+        register_list_builtins(gc_, klass);
         registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_iterator_class() {
         // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next,方法体是 ObjIterator
-        // 引擎缝虚函数的薄壳,住 runtime/IteratorMethods),经 ObjIterator::load_field 查表
+        // 引擎缝虚函数的薄壳,住 runtime/builtins/IteratorBuiltins),经 ObjIterator::load_field 查表
         // 命中后恒绑定触达;不注册 builtins/模块 globals。super 挂 Object 根,类名与 type()
         // 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 标根。
         const auto klass = new_class(gc_, "Iterator", object_class());
-        register_iterator_methods(gc_, klass);
+        register_iterator_builtins(gc_, klass);
         registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
@@ -363,7 +363,7 @@ namespace aria {
         //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
         // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "Map", object_class());
-        register_map_methods(gc_, klass);
+        register_map_builtins(gc_, klass);
         registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
@@ -373,7 +373,7 @@ namespace aria {
         //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
         // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "String", object_class());
-        register_string_methods(gc_, klass);
+        register_string_builtins(gc_, klass);
         registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 

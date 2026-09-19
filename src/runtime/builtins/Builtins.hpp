@@ -14,6 +14,11 @@ namespace aria {
     // globals 会在 REPL 逐行 run() 时重注册、覆写用户 shadow。shadow 语义:用户顶层 var 经
     // DEF_GLOBAL 写模块 globals 优先命中;内置不入编译期 defined_globals_,不触发
     // RedefinedVariable;STORE_GLOBAL 不回退 builtins(赋值不隐式创建)。
+    //
+    // 本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局
+    // 自由函数表**(本文件,LOAD_GLOBAL 回退触达);**XXXBuiltins = XXX 类型的内建方法面**
+    //(List/Map/Iterator/String,恒经 bootstrap 类表分派、恒绑定 receiver)。前缀有无即
+    // 两类机制的区分。
     namespace builtins {
 
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次(在建对象经 make_guard

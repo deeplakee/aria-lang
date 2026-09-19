@@ -130,25 +130,25 @@ namespace aria {
         ObjClass* object_class() const noexcept;
 
         // List bootstrap 类:寄存器 ListClass 唯一存放(内置 list 的语言方法面,注册入口
-        // register_list_methods 住 runtime/ListMethods);ObjList::load_field 经它取自身类。
+        // register_list_builtins 住 runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。
         // 同 object_class 先例。
         [[nodiscard]]
         ObjClass* list_class() const noexcept;
 
         // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放(迭代器的语言方法面,注册
-        // 入口 register_iterator_methods 住 runtime/IteratorMethods);ObjIterator::load_field
+        // 入口 register_iterator_builtins 住 runtime/builtins/IteratorBuiltins);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
 
         // Map bootstrap 类:寄存器 MapClass 唯一存放(内置 map 的语言方法面,注册入口
-        // register_map_methods 住 runtime/MapMethods);ObjMap::load_field 经它取自身类。
+        // register_map_builtins 住 runtime/builtins/MapBuiltins);ObjMap::load_field 经它取自身类。
         // 同 object_class 先例。
         [[nodiscard]]
         ObjClass* map_class() const noexcept;
 
         // String bootstrap 类:寄存器 StringClass 唯一存放(内置 string 的语言方法面,注册
-        // 入口 register_string_methods 住 runtime/StringMethods);ObjString::load_field 经它
+        // 入口 register_string_builtins 住 runtime/builtins/StringBuiltins);ObjString::load_field 经它
         // 取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
@@ -247,19 +247,19 @@ namespace aria {
         void bootstrap_object_class();
 
         // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
-        // (register_list_methods),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
+        // (register_list_builtins),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
         void bootstrap_list_class();
 
         // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根)并注册方法面
-        //(register_iterator_methods),发布进寄存器 IteratorClass 格。
+        //(register_iterator_builtins),发布进寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
 
         // Map bootstrap 类:建 ObjClass("Map", super=Object 根)并注册方法面
-        //(register_map_methods),发布进寄存器 MapClass 格。
+        //(register_map_builtins),发布进寄存器 MapClass 格。
         void bootstrap_map_class();
 
         // String bootstrap 类:建 ObjClass("String", super=Object 根)并注册方法面
-        //(register_string_methods),发布进寄存器 StringClass 格。
+        //(register_string_builtins),发布进寄存器 StringClass 格。
         void bootstrap_string_class();
 
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽

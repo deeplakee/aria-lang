@@ -64,17 +64,17 @@ add_library(aria_core STATIC
         src/compile/Compiler.hpp
         src/runtime/AriaVM.cpp
         src/runtime/AriaVM.hpp
-        src/runtime/Builtins.cpp
-        src/runtime/Builtins.hpp
+        src/runtime/builtins/Builtins.cpp
+        src/runtime/builtins/Builtins.hpp
         src/runtime/FrameStack.hpp
-        src/runtime/IteratorMethods.cpp
-        src/runtime/IteratorMethods.hpp
-        src/runtime/ListMethods.cpp
-        src/runtime/ListMethods.hpp
-        src/runtime/MapMethods.cpp
-        src/runtime/MapMethods.hpp
-        src/runtime/StringMethods.cpp
-        src/runtime/StringMethods.hpp
+        src/runtime/builtins/IteratorBuiltins.cpp
+        src/runtime/builtins/IteratorBuiltins.hpp
+        src/runtime/builtins/ListBuiltins.cpp
+        src/runtime/builtins/ListBuiltins.hpp
+        src/runtime/builtins/MapBuiltins.cpp
+        src/runtime/builtins/MapBuiltins.hpp
+        src/runtime/builtins/StringBuiltins.cpp
+        src/runtime/builtins/StringBuiltins.hpp
         src/runtime/Movement.cpp
         src/runtime/Movement.hpp
         src/runtime/value_register.hpp

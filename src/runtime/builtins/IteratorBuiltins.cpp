@@ -1,4 +1,4 @@
-#include "runtime/IteratorMethods.hpp"
+#include "runtime/builtins/IteratorBuiltins.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -45,7 +45,7 @@ namespace aria {
             return true;
         }
 
-        struct IteratorMethodEntry {
+        struct IteratorBuiltinEntry {
             StringView name;
             NativeFn   fn;
         };
@@ -53,15 +53,15 @@ namespace aria {
         // 迭代器方法表:注册进 Iterator bootstrap 类(kBuiltins 同款循环)。注册名经
         // new_native_fn 的 StringView 重载 intern,与 CodeGen forIn 降糖(emit_method_call0)
         // 发射的同名常量同指针,查表按指针命中。
-        constexpr IteratorMethodEntry kIteratorMethods[] = {
+        constexpr IteratorBuiltinEntry kIteratorBuiltins[] = {
                 {"has_next", has_next_fn},
                 {"next", next_fn},
         };
 
     } // namespace
 
-    void register_iterator_methods(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kIteratorMethods) {
+    void register_iterator_builtins(GC& gc, ObjClass* klass) {
+        for (const auto& [name, fn]: kIteratorBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }

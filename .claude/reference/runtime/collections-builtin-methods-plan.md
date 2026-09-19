@@ -216,6 +216,28 @@
 > -len-1)+ 新增 3(LoadIndexNegativeReadsFromTail/StoreIndexNegativeWritesFromTail/ObjString 负下标)+ 端到端
 > 4(读写对称/复合赋值同归一化/越界文案/string 负下标);语料翻转 1(runtime_list_negative_index 改 -len-1 形)+
 > 正向段(list_subscript_read_write 负下标读写)。
+>
+> **批 3(无上界开区间)已落库 0e67f21**:文法 `term?` + MAKE_RANGE flags unbounded 位 + ObjRange `to_` 改 Opt<i64>
+> (`5..` ≡ `5...` ctor 归一)+ 迭代器无上界 has_next 恒真 + debug_repr `3..`;内容哈希/equals 含 has_high_。
+>
+> **批 4(切片)已落地(工作区待 review,双配置 1021/1021 绿)**:list 的 `load_index` 加 Range 键分支 → `slice()`
+> 铸新 list 段拷(MAKE_LIST 同构 GC 纪律:receiver/key 皆在栈为根、段拷 trivial 不触 GC、新 list 白色由
+> run_load_index 写回原槽根化);越界 fail-fast(静态文案 `slice index out of range`);`store_index` 对 Range 键
+> 不定向报错,落整数键检查统一文案(切片写 v1 只读);`xs[a..b] = ...` 不做。
+>
+> **切片端点表示(2026-09-19 拍板改定)**:`resolve_slice_bounds` 返回 `Opt<Pair<usize, usize>>` = **归一化端点对
+> (from, to)**(两端点各自经 `util::resolve_index` 从尾计数 + 越界判定,无上界取末元素),**含否上界不折算进返回
+> 值**——折算挪到消费端(`count = is_exclusive() ? to - from : to - from + 1`,两端相等即空切片 count 0),
+> 方向由端点对大小关系自带(正序 from<=to、逆序 from>to)。取代早稿的 `Pair<i64,i64>` 有符号闭区间(其
+> `end = to - 1` 是推导值、to_index==0 时探到 -1,是 usize 装不下的根因;改 u64 会让 `xs[-1...0]` 这类经
+> `Array::ensure_capacity` 回绕成死循环,实测确认且现有测试全绿掩盖)。拍板理由:①两端点都是实元素位置、
+> 无推导值 ⇒ 负值从表示层消失、无哨兵无回绕;②v2 逆序切片零表示层包袱(只删 resolve 里的 `*from > *to`
+> 拒绝行 + 消费端按方向反向写入),与批 1「range 方向由端点推断」同一判据;③顺带修掉 review 版真缺陷:
+> 早稿按**原始端点**判倒序,`xs[1..-1]`/`xs[0..-1]`/`xs[1..-2]`(正起点配负终点)被误报 `slice index out of
+> range`,改按归一化端点判后正常(实测补钉);同一改动下 `xs[-1..0]`/`xs[-2...0]`(原始端点递增、归一化后倒序)
+> 从静默产空 list 收紧为与 `xs[2..0]` 同类报错。测试:对象级 SliceNegativeEndpoints 增混合正负端点 2、
+> SliceReversedRangeFails 增归一化倒序 1;编译级 ListSliceReads/ListSliceFails 各增;语料 list_slice.aria 增
+> 混合正负段 + 新增 `runtime_list_slice_reversed_negative_start` 负例对。
 
 ## 5. 参照
 

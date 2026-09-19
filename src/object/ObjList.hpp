@@ -8,6 +8,7 @@
 namespace aria {
 
     class GC;
+    class ObjRange;
 
     // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序
     // 存 AriaArray(MAKE_LIST 一次整段拷入)。下标读写经 load_index/store_index 协议 override;
@@ -57,12 +58,14 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 下标读取:整数键,越界/负数 IndexOutOfBounds、非整数键 TypeMismatch(越界值就地
-        // 拼进文案);查读无分配。
+        // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range
+        // 报错、v1 只读;见 slice);整数键,越界/负数 IndexOutOfBounds、非整数键
+        // TypeMismatch(越界值就地拼进文案);查读无分配。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 
         // 下标写入:键检查同读,不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
+        // Range 键 = 切片写:v1 只读,定向 TypeMismatch。
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
@@ -79,6 +82,11 @@ namespace aria {
 
     private:
         AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
+
+        // 切片(Range 键):槽位区间解析收口匿名 ns 的 resolve_slice_bounds(倒序拒绝、从尾
+        // 计数、含否折算),本函数只管铸新 list 段拷。
+        [[nodiscard]]
+        Opt<Value> slice(AriaVM& vm, const ObjRange* range);
     };
 
     // 工厂:分配空 ObjList。只做一次 new_object、无内部新建对象,无入参对象可守;返回对象

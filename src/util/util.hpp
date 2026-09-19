@@ -200,6 +200,19 @@ namespace aria::util {
         return index;
     }
 
+    // 重载:端点可空(range 终点语义,nullopt = 无上界)--空即「到末元素」(size-1;空容器
+    // 无末元素,同 nullopt),有值委托标量版(从尾计数 + 越界判定)。
+    [[nodiscard]]
+    inline Opt<usize> resolve_index(const Opt<i64> raw, const usize size) noexcept {
+        if (!raw) {
+            if (size == 0) {
+                return std::nullopt;
+            }
+            return size - 1;
+        }
+        return resolve_index(*raw, size);
+    }
+
     // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面
     // 集合方法的共用底座;元素序 = range 迭代序)。transform 接收元素、返回可拼进 String
     // 的值(通常 String)。

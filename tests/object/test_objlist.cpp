@@ -9,6 +9,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
@@ -20,6 +21,7 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::i64;
 using aria::new_list;
+using aria::new_range;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
@@ -49,6 +51,27 @@ namespace {
         auto list = new_list(gc);
         guard.push(list);
         return list;
+    }
+
+    // 建 [10..50] 五元素 list 并入根(切片测试用)。
+    ObjList* make_five(GC& gc, GC::Guard& guard) {
+        auto        list  = make_list(gc, guard);
+        const Value src[] = {Value::from_int(10), Value::from_int(20), Value::from_int(30), Value::from_int(40),
+                             Value::from_int(50)};
+        list->elements().copy_from(src);
+        return list;
+    }
+
+    // 切片取件:产出新 list 的元素逐个比对(调用方保证成功)。
+    void expect_slice(AriaVM& vm, ObjList* list, aria::ObjRange* range, const aria::List<i64>& expected) {
+        const auto result = list->load_index(vm, Value::from_obj(range));
+        ASSERT_TRUE(result.has_value());
+        const auto sliced = try_obj<ObjList>(*result);
+        ASSERT_NE(sliced, nullptr);
+        ASSERT_EQ(sliced->elements().size(), expected.size());
+        for (usize index = 0; index < expected.size(); ++index) {
+            EXPECT_EQ(sliced->elements()[index].as_int(), expected[index]);
+        }
     }
 
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
@@ -352,6 +375,110 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
 }
 
 // 负下标写对称:xs[-1] = v 覆写末槽;越界不写不动长度。
+// ---- 切片(Range 键:含否上界/无上界/负端点/空切片/倒序拒绝/越界 fail-fast/只读) ----
+
+TEST(ObjList, SliceYieldsNewList) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, 1, 3, false);
+    guard.push(r1);
+    expect_slice(vm, list, r1, {20, 30, 40}); // xs[1..3] 闭区间
+    auto r2 = new_range(gc, 1, 3, true);
+    guard.push(r2);
+    expect_slice(vm, list, r2, {20, 30}); // xs[1...3] 半开
+    auto r3 = new_range(gc, 3);
+    guard.push(r3);
+    expect_slice(vm, list, r3, {40, 50}); // xs[3..] 无上界到末尾
+    auto r4 = new_range(gc, 0);
+    guard.push(r4);
+    expect_slice(vm, list, r4, {10, 20, 30, 40, 50}); // xs[0..] 全表
+}
+
+TEST(ObjList, SliceNegativeEndpoints) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, -3);
+    guard.push(r1);
+    expect_slice(vm, list, r1, {30, 40, 50}); // xs[-3..] 尾三
+    auto r2 = new_range(gc, -1);
+    guard.push(r2);
+    expect_slice(vm, list, r2, {50}); // xs[-1..] 末元素
+    auto r3 = new_range(gc, -3, -1, false);
+    guard.push(r3);
+    expect_slice(vm, list, r3, {30, 40, 50}); // xs[-3..-1]
+    // 正起点配负终点:原始端点递减,归一化后仍正序,不得被判成倒序。
+    auto r4 = new_range(gc, 1, -1, false);
+    guard.push(r4);
+    expect_slice(vm, list, r4, {20, 30, 40, 50}); // xs[1..-1] 第二个到最后一个
+    auto r5 = new_range(gc, 0, -1, true);
+    guard.push(r5);
+    expect_slice(vm, list, r5, {10, 20, 30, 40}); // xs[0...-1] 末元素不含
+}
+
+TEST(ObjList, SliceEmptyAndSingle) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, 2, 2, true);
+    guard.push(r1);
+    expect_slice(vm, list, r1, {}); // xs[2...2] 空 range 产空 list
+    auto r2 = new_range(gc, 2, 2, false);
+    guard.push(r2);
+    expect_slice(vm, list, r2, {30}); // xs[2..2] 单元素
+}
+
+TEST(ObjList, SliceReversedRangeFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, 3, 1, false);
+    guard.push(r1);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
+    EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice index out of range");
+    // 原始端点递增但从尾计数后越过终点(归一化 from=4 > to=0):同判倒序,不产空 list。
+    auto r2 = new_range(gc, -1, 0, true);
+    guard.push(r2);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+}
+
+TEST(ObjList, SliceOutOfBoundsFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, 0, 10, false);
+    guard.push(r1);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    auto r2 = new_range(gc, -6);
+    guard.push(r2);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+}
+
+TEST(ObjList, StoreSliceFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   range = new_range(gc, 0, 2, false);
+    guard.push(range);
+    // Range 键写不特殊对待:落整数键检查的统一文案(切片写不设定向错)。
+    EXPECT_FALSE(list->store_index(vm, Value::from_obj(range), Value::from_int(9)));
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch list index must be an integer, got Range");
+}
+
 TEST(ObjList, StoreIndexNegativeWritesFromTail) {
     AriaVM      vm;
     auto&       gc    = vm.gc();

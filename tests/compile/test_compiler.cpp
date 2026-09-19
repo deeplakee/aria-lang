@@ -211,6 +211,44 @@ TEST(Compiler, ListNegativeIndexBoundsFail) {
     EXPECT_NE(out.error().message().find("list index -3 out of range"), std::string::npos);
 }
 
+// ---- 切片（range 作下标键：含否上界/无上界/负端点/倒序拒绝/只读） ----
+
+// 切片产出新 list:闭区间/半开/无上界/负端点;len 与 forIn 消费切片结果。
+TEST(Compiler, ListSliceReads) {
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; var s = xs[1..3]; return s[0] * 100 + s[1] * 10 + s[2];"), 2340);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40]; return len(xs[1...3]);"), 2);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return len(xs[-2..]);"), 2);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return len(xs[2...2]);"), 0);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; var t = 0; for (x in xs[-2..]) { t = t + x; } return t;"), 50);
+    // 正起点配负终点(原始端点递减、归一化后正序):方向按归一化端点判,不误报倒序。
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return len(xs[1..-1]);"), 4);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return xs[1..-2][0] * 10 + xs[1..-2][1];"), 230);
+}
+
+// 切片错误面:倒序 range 报 forward、越界 fail-fast、切片写定向拒绝。
+TEST(Compiler, ListSliceFails) {
+    auto reversed = run_source("var xs = [1, 2, 3]; return xs[2..0];");
+    ASSERT_FALSE(reversed.has_value());
+    EXPECT_EQ(reversed.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(reversed.error().message().find("slice index out of range"), std::string::npos);
+
+    auto out_of_range = run_source("var xs = [1, 2, 3]; return xs[0..10];");
+    ASSERT_FALSE(out_of_range.has_value());
+    EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out_of_range.error().message().find("slice index out of range"), std::string::npos);
+
+    // 原始端点递增但从尾计数后越过终点:按归一化端点判倒序(与 xs[2..0] 同类)。
+    auto reversed_from_tail = run_source("var xs = [1, 2, 3]; return xs[-1...0];");
+    ASSERT_FALSE(reversed_from_tail.has_value());
+    EXPECT_EQ(reversed_from_tail.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(reversed_from_tail.error().message().find("slice index out of range"), std::string::npos);
+
+    auto store = run_source("var xs = [1, 2, 3]; xs[0..2] = [9]; return 0;");
+    ASSERT_FALSE(store.has_value());
+    EXPECT_EQ(store.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(store.error().message().find("list index must be an integer, got Range"), std::string::npos);
+}
+
 // ---- forIn 与迭代协议（ObjIterator 子类 / iter / has_next / next / IterationExhausted） ----
 
 // forIn 求和:list 走通内置迭代协议（降糖蓝图:iter/has_next/next 三方法调用）。

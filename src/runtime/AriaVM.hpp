@@ -129,17 +129,17 @@ namespace aria {
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
-        // List bootstrap 类:寄存器 ListClass 唯一存放(内置 list 的语言方法面,注册入口
-        // register_list_builtins 住 runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。
-        // 同 object_class 先例。
-        [[nodiscard]]
-        ObjClass* list_class() const noexcept;
-
         // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放(迭代器的语言方法面,注册
         // 入口 register_iterator_builtins 住 runtime/builtins/IteratorBuiltins);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
+
+        // List bootstrap 类:寄存器 ListClass 唯一存放(内置 list 的语言方法面,注册入口
+        // register_list_builtins 住 runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。
+        // 同 object_class 先例。
+        [[nodiscard]]
+        ObjClass* list_class() const noexcept;
 
         // Map bootstrap 类:寄存器 MapClass 唯一存放(内置 map 的语言方法面,注册入口
         // register_map_builtins 住 runtime/builtins/MapBuiltins);ObjMap::load_field 经它取自身类。
@@ -246,13 +246,13 @@ namespace aria {
         // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
-        // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
-        // (register_list_builtins),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
-        void bootstrap_list_class();
-
         // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根)并注册方法面
         //(register_iterator_builtins),发布进寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
+
+        // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
+        // (register_list_builtins),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
+        void bootstrap_list_class();
 
         // Map bootstrap 类:建 ObjClass("Map", super=Object 根)并注册方法面
         //(register_map_builtins),发布进寄存器 MapClass 格。

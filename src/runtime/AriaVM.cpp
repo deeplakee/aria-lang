@@ -265,8 +265,8 @@ namespace aria {
         // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
         // 新单例随其批次在此加一行。
         bootstrap_object_class();
-        bootstrap_list_class();
         bootstrap_iterator_class();
+        bootstrap_list_class();
         bootstrap_map_class();
         bootstrap_string_class();
         bootstrap_default_mark();
@@ -311,12 +311,12 @@ namespace aria {
         return Object::as<ObjClass>(registers_[kObjectClassOffset].as_obj());
     }
 
-    ObjClass* AriaVM::list_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kListClassOffset].as_obj());
-    }
-
     ObjClass* AriaVM::iterator_class() const noexcept {
         return Object::as<ObjClass>(registers_[kIteratorClassOffset].as_obj());
+    }
+
+    ObjClass* AriaVM::list_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kListClassOffset].as_obj());
     }
 
     ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset].as_obj()); }
@@ -337,16 +337,6 @@ namespace aria {
         registers_[kObjectClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
-    void AriaVM::bootstrap_list_class() {
-        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定触达;
-        // 不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根(计划 D1),
-        // 类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer
-        // 的 registers_ 一趟循环标根(tracer 零改动)。
-        const auto klass = new_class(gc_, "List", object_class());
-        register_list_builtins(gc_, klass);
-        registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
-    }
-
     void AriaVM::bootstrap_iterator_class() {
         // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next,方法体是 ObjIterator
         // 引擎缝虚函数的薄壳,住 runtime/builtins/IteratorBuiltins),经 ObjIterator::load_field 查表
@@ -355,6 +345,16 @@ namespace aria {
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_builtins(gc_, klass);
         registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_list_class() {
+        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定触达;
+        // 不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根(计划 D1),
+        // 类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer
+        // 的 registers_ 一趟循环标根(tracer 零改动)。
+        const auto klass = new_class(gc_, "List", object_class());
+        register_list_builtins(gc_, klass);
+        registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_map_class() {

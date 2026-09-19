@@ -68,7 +68,7 @@
 
 ### 4.2 批 2:match 语句 / 表达式(编译器前置批)
 
-> **落地状态(2026-09-17)**:批 2 已全部落地(795 绿,工作区待 review)。对草稿形态一处改定:subject 不入隐藏临时局部,改驻留栈上 in-flight(逐臂 `DUP` 副本比较、命中臂入口 `POP` 消费、未命中路径由 `THROW` 的 unwind 清栈)——隐藏临时局部在 matchExpr 的 `L_end` 汇合点下压着臂值,弹区清理会连同臂值一起弹掉(值填槽窗口局限,即 2026-09-14 回退决策点名的窗口);in-flight 零局部登记,窗口无错位。其余同草稿:`JUMP_FALSE` 逐臂链 + `_` 直入 + `LOAD_REG MatchNoArm; THROW` 共享单例(值寄存器注册表加行 + `bootstrap_match_no_arm`,消息按 make_message 同源烘焙 `Runtime: MatchNoArm no arm matched`)。
+> **落地状态(2026-09-17)**:批 2 已全部落地。对草稿形态一处改定:subject 不入隐藏临时局部,改驻留栈上 in-flight(逐臂 `DUP` 副本比较、命中臂入口 `POP` 消费、未命中路径由 `THROW` 的 unwind 清栈)——隐藏临时局部在 matchExpr 的 `L_end` 汇合点下压着臂值,弹区清理会连同臂值一起弹掉(值填槽窗口局限,即 2026-09-14 回退决策点名的窗口);in-flight 零局部登记,窗口无错位。其余同草稿:`JUMP_FALSE` 逐臂链 + `_` 直入 + `LOAD_REG MatchNoArm; THROW` 共享单例(值寄存器注册表加行 + `bootstrap_match_no_arm`,消息按 make_message 同源烘焙 `Runtime: MatchNoArm no arm matched`)。
 > 通配臂恒末臂(2026-09-17 拍板,拒绝路线):其后臂任何输入下不可达,静默截断会吞臂序 bug,
 > 故编译期拒绝——新码 `UnreachableArm`(Semantic),模板辅助 `validate_match_arms`(validate_params
 > 同款,两臂类型同 pattern/body 形)折入模板总口 `emit_match` 开头;多 `_` 由同条检查一并拒绝。

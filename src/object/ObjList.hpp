@@ -58,14 +58,14 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range
-        // 报错、v1 只读;见 slice);整数键,越界/负数 IndexOutOfBounds、非整数键
+        // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range 产
+        // 出倒序段、只读;见 slice);整数键,越界/负数 IndexOutOfBounds、非整数键
         // TypeMismatch(越界值就地拼进文案);查读无分配。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 
         // 下标写入:键检查同读,不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
-        // Range 键 = 切片写:v1 只读,定向 TypeMismatch。
+        // Range 键不特殊对待,落整数键检查的统一文案(切片写只读)。
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
@@ -83,8 +83,8 @@ namespace aria {
     private:
         AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
 
-        // 切片(Range 键):槽位区间解析收口匿名 ns 的 resolve_slice_bounds(倒序拒绝、从尾
-        // 计数、含否折算),本函数只管铸新 list 段拷。
+        // 切片(Range 键):端点对解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、含否
+        // 与方向的折算在消费端),本函数只管按方向铸新 list 段拷。
         [[nodiscard]]
         Opt<Value> slice(AriaVM& vm, const ObjRange* range);
     };

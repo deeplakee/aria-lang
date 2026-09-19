@@ -199,3 +199,53 @@ TEST(Array, CopyFromEmptyNoOp) {
     EXPECT_EQ(buf[0], 7);
     EXPECT_EQ(buf.capacity(), cap_before);
 }
+
+TEST(Array, CopyReversedFromReversesOrder) {
+    GC              gc;
+    Array<int>      buf{&gc};
+    const List<int> src{10, 20, 30}; // 源段升序给出,消费序相反
+    buf.copy_reversed_from(src);
+    ASSERT_EQ(buf.size(), 3u);
+    EXPECT_EQ(buf[0], 30);
+    EXPECT_EQ(buf[1], 20);
+    EXPECT_EQ(buf[2], 10);
+}
+
+TEST(Array, CopyReversedFromAppendsAfterExisting) {
+    GC              gc;
+    Array<int>      buf{&gc};
+    const List<int> src{2, 3, 4};
+    buf.push(1);
+    buf.copy_reversed_from(src); // append 语义:接在已有元素之后,不改写
+    ASSERT_EQ(buf.size(), 4u);
+    EXPECT_EQ(buf[0], 1);
+    EXPECT_EQ(buf[1], 4);
+    EXPECT_EQ(buf[2], 3);
+    EXPECT_EQ(buf[3], 2);
+}
+
+TEST(Array, CopyReversedFromTriggersGrowth) {
+    GC         gc;
+    Array<int> buf{&gc};
+    List<int>  src(100); // fill 构造走小括号({100} 会成单元素 initializer_list)
+    for (usize i = 0; i < 100; ++i) {
+        src[i] = static_cast<int>(i);
+    }
+    buf.copy_reversed_from(src); // 8 -> 128 跨多次几何扩容,reallocate 搬迁后数据须完好
+    ASSERT_EQ(buf.size(), 100u);
+    for (usize i = 0; i < 100; ++i) {
+        EXPECT_EQ(buf[i], static_cast<int>(99 - i));
+    }
+}
+
+TEST(Array, CopyReversedFromEmptyNoOp) {
+    GC              gc;
+    Array<int>      buf{&gc};
+    const List<int> empty{};
+    buf.push(7);
+    const usize cap_before = buf.capacity();
+    buf.copy_reversed_from(empty); // 空 src 零操作:不扩容不改内容
+    EXPECT_EQ(buf.size(), 1u);
+    EXPECT_EQ(buf[0], 7);
+    EXPECT_EQ(buf.capacity(), cap_before);
+}

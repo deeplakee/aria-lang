@@ -375,7 +375,7 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
 }
 
 // 负下标写对称:xs[-1] = v 覆写末槽;越界不写不动长度。
-// ---- 切片(Range 键:含否上界/无上界/负端点/空切片/倒序拒绝/越界 fail-fast/只读) ----
+// ---- 切片(Range 键:含否上界/无上界/负端点/空切片/倒序产出/越界 fail-fast/只读) ----
 
 TEST(ObjList, SliceYieldsNewList) {
     AriaVM vm;
@@ -432,22 +432,30 @@ TEST(ObjList, SliceEmptyAndSingle) {
     expect_slice(vm, list, r2, {30}); // xs[2..2] 单元素
 }
 
-TEST(ObjList, SliceReversedRangeFails) {
+TEST(ObjList, SliceReversedRangeYieldsReversedOrder) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_five(gc, guard);
     auto   r1    = new_range(gc, 3, 1, false);
     guard.push(r1);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
-    const auto [code, message] = take_pending_error(vm);
-    EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
-    EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice index out of range");
-    // 原始端点递增但从尾计数后越过终点(归一化 from=4 > to=0):同判倒序,不产空 list。
-    auto r2 = new_range(gc, -1, 0, true);
+    expect_slice(vm, list, r1, {40, 30, 20}); // xs[3..1] 倒序闭区间
+    auto r2 = new_range(gc, 3, 1, true);
     guard.push(r2);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
-    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    expect_slice(vm, list, r2, {40, 30}); // xs[3...1] 倒序半开(少走终点 1)
+    auto r3 = new_range(gc, 4, 0, false);
+    guard.push(r3);
+    expect_slice(vm, list, r3, {50, 40, 30, 20, 10}); // 全表倒序
+    auto r4 = new_range(gc, -1, -3, false);
+    guard.push(r4);
+    expect_slice(vm, list, r4, {50, 40, 30}); // 负端点倒序
+    // 原始端点递增但从尾计数后越过终点(归一化 from=4 > to=0):同判倒序,产出倒序段。
+    auto r5 = new_range(gc, -1, 0, true);
+    guard.push(r5);
+    expect_slice(vm, list, r5, {50, 40, 30, 20});
+    auto r6 = new_range(gc, 2, 2, true);
+    guard.push(r6);
+    expect_slice(vm, list, r6, {}); // 两端相等不含上界:两方向同一个空切片判据
 }
 
 TEST(ObjList, SliceOutOfBoundsFails) {

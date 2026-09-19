@@ -67,18 +67,14 @@ namespace aria {
 
     Opt<Pair<usize, usize>> resolve_slice_bounds(const ObjRange* range, const usize size) noexcept {
         // 两端点各自归一化(从尾计数 + 越界判定);无上界经 Opt 重载取末元素。空容器任何端点
-        // 都解析不出(与单下标空表行为一致),故空表切片自然落 nullopt。
+        // 都解析不出(与单下标空表行为一致),故空表切片自然落 nullopt。方向不进返回值 --
+        // 归一化端点的大小关系即方向(原始端点可因从尾计数翻转,故不按原始值判)。
         const auto from = util::resolve_index(range->from(), size);
         if (!from) {
             return std::nullopt;
         }
         const auto to = util::resolve_index(range->to(), size);
         if (!to) {
-            return std::nullopt;
-        }
-        // 方向由归一化端点大小关系自带(原始端点可因从尾计数翻转,故按归一化值判);倒序切片
-        // v1 不做,与越界同为「无法形成合法区间」。
-        if (*from > *to) {
             return std::nullopt;
         }
         return Pair{*from, *to};

@@ -96,9 +96,10 @@ namespace aria {
 
     // 切片端点解析:range + 容器 size -> 归一化端点对 (from, to)(均为合法元素下标;无上界取
     // 末元素)。两端点都是实元素位置、含否不折算进返回值,故方向由二者大小关系自带(正序
-    // from <= to、逆序 from > to),不含上界只在消费端折算 count 时去掉终点那一个元素(两端
-    // 相等即空切片)。端点从尾计数(resolve_index);端点越界、倒序 range(v1 不做)与空容器同
-    // 为 nullopt --「无法形成合法区间」是唯一失败,报错由调用方就地烘焙。纯换算无分配无 fail。
+    // from <= to 产出正序段、倒序 from > to 产出倒序段,与 range 迭代同一判据),不含上界只在
+    // 消费端折算 count 时去掉终点那一个元素(两端相等即空切片)。端点从尾计数(resolve_index);
+    // 端点越界与空容器为 nullopt --「无法形成合法区间」是唯一失败,报错由调用方就地烘焙。
+    // 纯换算无分配无 fail。
     [[nodiscard]]
     Opt<Pair<usize, usize>> resolve_slice_bounds(const ObjRange* range, usize size) noexcept;
 

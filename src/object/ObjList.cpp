@@ -73,22 +73,26 @@ namespace aria {
     }
 
     Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
-        // 端点解析收口 resolve_slice_bounds(纯换算):nullopt = 无法形成合法区间(倒序或
-        // 越界),唯一失败报错就地烘焙(静态文案不插端点值)。
+        // 端点解析收口 resolve_slice_bounds(纯换算):nullopt = 无法形成合法区间(端点越界或
+        // 空容器),唯一失败报错就地烘焙(静态文案不插端点值)。
         const auto bounds = resolve_slice_bounds(range, elements_.size());
         if (!bounds) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
         }
-        // 端点对 -> 元素段:含上界两端都取,不含上界舍弃终点那一个元素(两端相等即空切片,
-        // count 0 走空 list)。
+        // 源段 = 自 from 走 to(方向与 range 迭代同一判据);不含上界少走迭代序末元素,两端相
+        // 等即空切片 -- 空段拷零操作,故无须先行判空。
         const auto [from, to] = *bounds;
-        const usize count     = range->is_exclusive() ? to - from : to - from + 1;
-        // GC 走查:receiver 经调用方值栈 peek 为根、range 经 key 栈根,new_list 顶部
-        // maybe_collect 安全;元素段拷 trivial 不触 GC;新 list 白色由 run_load_index 写回
-        // 原槽根化。
-        const auto list = new_list(vm.gc());
-        if (count > 0) {
-            list->elements().copy_from({&elements_[from], count});
+        const bool  exclusive = range->is_exclusive();
+        const usize count     = util::abs_diff(from, to) + (exclusive ? 0 : 1);
+        // GC 走查:receiver 与 range 经调用方值栈为根,new_list 顶部 maybe_collect 安全;段拷
+        // trivial 不触 GC;新 list 白色由 run_load_index 写回原槽根化。
+        const auto list  = new_list(vm.gc());
+        auto&      array = list->elements();
+        if (from <= to) {
+            array.copy_from({&elements_[from], count}); // 正序:升序源段自 from 起(被跳过的 to 在高端)
+        } else {
+            // 倒序:升序源段自低端的 to 起(被跳过的 to 在低端,须让开一位),由 Array 反转追加
+            array.copy_reversed_from({&elements_[to + exclusive], count});
         }
         return Value::from_obj(list);
     }

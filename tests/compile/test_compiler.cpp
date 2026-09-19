@@ -211,9 +211,9 @@ TEST(Compiler, ListNegativeIndexBoundsFail) {
     EXPECT_NE(out.error().message().find("list index -3 out of range"), std::string::npos);
 }
 
-// ---- 切片（range 作下标键：含否上界/无上界/负端点/倒序拒绝/只读） ----
+// ---- 切片（range 作下标键：含否上界/无上界/负端点/倒序产出/只读） ----
 
-// 切片产出新 list:闭区间/半开/无上界/负端点;len 与 forIn 消费切片结果。
+// 切片产出新 list:闭区间/半开/无上界/负端点/倒序;len 与 forIn 消费切片结果。
 TEST(Compiler, ListSliceReads) {
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; var s = xs[1..3]; return s[0] * 100 + s[1] * 10 + s[2];"), 2340);
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40]; return len(xs[1...3]);"), 2);
@@ -223,25 +223,19 @@ TEST(Compiler, ListSliceReads) {
     // 正起点配负终点(原始端点递减、归一化后正序):方向按归一化端点判,不误报倒序。
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return len(xs[1..-1]);"), 4);
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return xs[1..-2][0] * 10 + xs[1..-2][1];"), 230);
+    // 倒序 range 作下标:切片按倒序产出(方向判据与 range 迭代同一套)。
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; var t = 0; for (x in xs[3..1]) { t = t * 10 + x; } return t;"),
+              4320);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[2..0][0];"), 30);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return len(xs[-1...0]);"), 4);
 }
 
-// 切片错误面:倒序 range 报 forward、越界 fail-fast、切片写定向拒绝。
+// 切片错误面:端点越界 fail-fast、切片写落整数键统一文案。
 TEST(Compiler, ListSliceFails) {
-    auto reversed = run_source("var xs = [1, 2, 3]; return xs[2..0];");
-    ASSERT_FALSE(reversed.has_value());
-    EXPECT_EQ(reversed.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(reversed.error().message().find("slice index out of range"), std::string::npos);
-
     auto out_of_range = run_source("var xs = [1, 2, 3]; return xs[0..10];");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out_of_range.error().message().find("slice index out of range"), std::string::npos);
-
-    // 原始端点递增但从尾计数后越过终点:按归一化端点判倒序(与 xs[2..0] 同类)。
-    auto reversed_from_tail = run_source("var xs = [1, 2, 3]; return xs[-1...0];");
-    ASSERT_FALSE(reversed_from_tail.has_value());
-    EXPECT_EQ(reversed_from_tail.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(reversed_from_tail.error().message().find("slice index out of range"), std::string::npos);
 
     auto store = run_source("var xs = [1, 2, 3]; xs[0..2] = [9]; return 0;");
     ASSERT_FALSE(store.has_value());

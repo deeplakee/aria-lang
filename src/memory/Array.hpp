@@ -1,6 +1,8 @@
 #ifndef ARIA_ARRAY_HPP
 #define ARIA_ARRAY_HPP
 
+#include <ranges>
+
 #include "common.hpp"
 #include "memory/Allocator.hpp"
 #include "memory/Buffer.hpp"
@@ -72,6 +74,19 @@ namespace aria {
             ensure_capacity(len_ + src.size());
             std::memcpy(buf_.data() + len_, src.data(), src.size() * sizeof(T));
             len_ += src.size();
+        }
+
+        // 整段倒序追加(append 语义,接在 len_ 之后,不改写已有元素):源段按逆序落位,即把
+        // src 反转后接尾,与 copy_from 同族(源段仍以升序 Span 给出,只是消费序相反),一次
+        // 扩容 + 逐元素拷(逆序无法 memcpy)。空 src 直接返回。
+        void copy_reversed_from(Span<const T> src) {
+            if (src.empty()) {
+                return;
+            }
+            ensure_capacity(len_ + src.size());
+            for (const T& element: std::views::reverse(src)) {
+                buf_.data()[len_++] = element;
+            }
         }
 
         // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);已分配指针可能

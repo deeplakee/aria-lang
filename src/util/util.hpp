@@ -187,6 +187,13 @@ namespace aria::util {
                 static_cast<u8>((word >> 24) & 0xFF)};
     }
 
+    // 两下标距离(绝对值差):取大减小,无符号域恒不下溢。命名随 C++26 std::abs_diff(同义,
+    // 标准库就位后可直接替换)。纯换算无分配。
+    [[nodiscard]]
+    constexpr usize abs_diff(const usize lhs, const usize rhs) noexcept {
+        return lhs <= rhs ? rhs - lhs : lhs - rhs;
+    }
+
     // 下标负索引解析(从尾计数约定,list/string 下标与切片共用):-1 = 末元素、-size =
     // 首元素,正数原样;归一化后 < 0 或 >= size 即越界(nullopt)。纯换算无分配无 fail,
     // 报错文案由调用方就地烘焙(报原始键值)。raw 负支加法不下溢(size <= i64max)。

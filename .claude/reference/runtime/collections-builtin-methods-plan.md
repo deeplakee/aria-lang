@@ -220,10 +220,10 @@
 > **批 3(无上界开区间)已落库 0e67f21**:文法 `term?` + MAKE_RANGE flags unbounded 位 + ObjRange `to_` 改 Opt<i64>
 > (`5..` ≡ `5...` ctor 归一)+ 迭代器无上界 has_next 恒真 + debug_repr `3..`;内容哈希/equals 含 has_high_。
 >
-> **批 4(切片)已落地(工作区待 review,双配置 1021/1021 绿)**:list 的 `load_index` 加 Range 键分支 → `slice()`
+> **批 4(切片)已落库 f0c3854(双配置 1021/1021 绿)**:list 的 `load_index` 加 Range 键分支 → `slice()`
 > 铸新 list 段拷(MAKE_LIST 同构 GC 纪律:receiver/key 皆在栈为根、段拷 trivial 不触 GC、新 list 白色由
 > run_load_index 写回原槽根化);越界 fail-fast(静态文案 `slice index out of range`);`store_index` 对 Range 键
-> 不定向报错,落整数键检查统一文案(切片写 v1 只读);`xs[a..b] = ...` 不做。
+> 不特殊对待,落整数键检查统一文案(切片只读);`xs[a..b] = ...` 不做。
 >
 > **切片端点表示(2026-09-19 拍板改定)**:`resolve_slice_bounds` 返回 `Opt<Pair<usize, usize>>` = **归一化端点对
 > (from, to)**(两端点各自经 `util::resolve_index` 从尾计数 + 越界判定,无上界取末元素),**含否上界不折算进返回
@@ -235,9 +235,24 @@
 > 拒绝行 + 消费端按方向反向写入),与批 1「range 方向由端点推断」同一判据;③顺带修掉 review 版真缺陷:
 > 早稿按**原始端点**判倒序,`xs[1..-1]`/`xs[0..-1]`/`xs[1..-2]`(正起点配负终点)被误报 `slice index out of
 > range`,改按归一化端点判后正常(实测补钉);同一改动下 `xs[-1..0]`/`xs[-2...0]`(原始端点递增、归一化后倒序)
-> 从静默产空 list 收紧为与 `xs[2..0]` 同类报错。测试:对象级 SliceNegativeEndpoints 增混合正负端点 2、
-> SliceReversedRangeFails 增归一化倒序 1;编译级 ListSliceReads/ListSliceFails 各增;语料 list_slice.aria 增
-> 混合正负段 + 新增 `runtime_list_slice_reversed_negative_start` 负例对。
+> 从静默产空 list 收紧为与 `xs[2..0]` 同类报错(v1 期判定;批 4 续打开倒序后二者同属倒序切片)。测试:对象级
+> SliceNegativeEndpoints 增混合正负端点 2、SliceReversedRangeFails 增归一化倒序 1;编译级 ListSliceReads/
+> ListSliceFails 各增;语料 list_slice.aria 增混合正负段 + 新增 `runtime_list_slice_reversed_negative_start` 负例对
+> (该负例对随批 4 续删除,见下段)。
+>
+> **批 4 续(倒序切片)已落地**:倒序 range 作下标不再拒绝,产出**倒序段**--`resolve_slice_bounds` 删掉
+> `*from > *to` 拒绝行(方向不进返回值,端点对大小关系即方向,与批 1「range 方向由端点推断」同一判据,故
+> `xs[3..1]` 与 `for (i in 3..1)` 走同一方向);消费端 `slice` 的 count 改为双向 `util::abs_diff(from, to) +
+> (exclusive ? 0 : 1)`(不含上界少走迭代序末元素,两端相等即空切片,两方向同一个式子),拷贝按方向分流:
+> 正序走 `copy_from` 整段一次拷,倒序走 `Array::copy_reversed_from` 反转追加(源段以升序 Span 给出,自低端的
+> `to` 起、不含上界让开一位即 `to + exclusive`;两个 arm 皆 trivial 分配不触 GC,GC 走查不变;空段两路皆零
+> 操作,故消费端不必先行判空)。配套抽出两件工具:`util::abs_diff`(取大减小的两下标距离,命名对齐 C++26
+> `std::abs_diff`)与 `Array::copy_reversed_from`(倒序版 `copy_from`,逆序遍历经 `std::views::reverse`,与仓库既
+> 有逆序遍历同一形态)。失败面收窄为空表与端点越界两类,`slice index out of range` 文案覆盖完整(不再兼表倒序)。
+> 测试翻转:对象级 `SliceReversedRangeFails` → `SliceReversedRangeYieldsReversedOrder`(6 例:闭/半开倒序、全表
+> 倒序、负端点倒序、归一化后倒序、空切片);编译级 `ListSliceFails` 的两条倒序断言迁入 `ListSliceReads`(for
+> 迭代倒序段序位 + 端点取值 + 长度);`Array::copy_reversed_from` 4 例(反转序/append/跨扩容/空 src);语料两个
+> 倒序负例对删除、断言并入 `list_slice.aria` 正向段(语料用例数 1021 → 1019)。
 
 ## 5. 参照
 

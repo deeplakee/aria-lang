@@ -58,7 +58,7 @@ logic_or       -> logic_and ( "||" logic_and )*
 logic_and      -> equality ( "&&" equality )*
 equality       -> comparison ( ( "!=" | "==" | "!==" | "===" ) comparison )*
 comparison     -> range ( ( ">" | ">=" | "<" | "<=" ) range )*
-range          -> term ( ( ".." | "..." ) term )?
+range          -> term ( ( ".." | "..." ) term? )?
 term           -> factor ( ( "-" | "+" ) factor )*
 factor         -> unary ( ( "/" | "*" | "%" ) unary )*
 unary          -> ( "-" | "!" | "++" | "--" ) unary | value
@@ -134,9 +134,11 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # Int/F64 跨类型 IEEE 数值、Obj 调 Object::equals 虚函数)、=== 严格相等(value_identical，
 # 类型严格、f64 按位、Obj 指针)；!= / !== 分别为 == / === 的取反（NOT_EQUAL /
 # STRICT_NOT_EQUAL）。逻辑运算 (||/&&) 短路求值。前置 ++/-- 作用于后续 unary（自增/自减），
-# 左值合法性留语义阶段。区间 a..b（含上界）/ a...b（不含上界）产生 range 对象，非结合
-# （a..b..c 非法）；a > b 时迭代方向为倒序（10..1 产出 10→1；不含上界 10...1 产出 10→2，
-# 即递减到 b+1；空区间只剩 a == b 且不含上界）；... 兼作 rest/varargs 前缀，按位置消歧。
+# 左值合法性留语义阶段。区间 a..b（含上界）/ a...b（不含上界）/ a.. 或 a...（无上界开
+# 区间，两者语义同义）产生 range 对象，非结合（a..b..c 非法）；a > b 时迭代方向为倒序
+# （10..1 产出 10→1；不含上界 10...1 产出 10→2，即递减到 b+1；空区间只剩 a == b 且不含
+# 上界）；无上界区间迭代 has_next 恒真（无限序列，边界由消费方自理）、方向恒正序；
+# ... 兼作 rest/varargs 前缀，按位置消歧。
 #
 # 分号与空语句：除 varDecl/print/return/break/continue/throw/import 外，多数语句通过
 # exprStmt 要求结尾 ";"。forStmt 的 init 部分允许 ";" 表示空 init。单独 ";"（空语句）

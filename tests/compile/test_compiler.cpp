@@ -425,6 +425,20 @@ TEST(Compiler, RangeNonIntBoundsTypeMismatch) {
     EXPECT_NE(out.error().message().find("range bounds must be integers"), std::string::npos);
 }
 
+// 无上界开区间:绑定后 forIn + break 自理边界;from.. 与 from... 同义(equals 相等、
+// str 渲染 from..)。
+TEST(Compiler, RangeUnboundedBindsAndBreaks) {
+    EXPECT_EQ(run_int("var r = 0..; var n = 0; for (i in r) { if (i >= 5) { break; } n = n + 1; } return n;"), 5);
+    EXPECT_EQ(run_int("var n = 0; for (i in 3...) { if (i > 5) { break; } n = n * 10 + i; } return n;"), 345);
+}
+
+// 无上界拼写同义:0.. == 0...;与有界端点(含 0)不相等;str 渲染 0..。
+TEST(Compiler, RangeUnboundedSpellingEquivalent) {
+    EXPECT_EQ(run_int("if (0.. == 0...) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("if (0.. == 0..0) { return 0; } return 1;"), 1);
+    EXPECT_EQ(run_int(R"(if (str(0..) == "0..") { return 1; } return 0;)"), 1);
+}
+
 // stress GC 下 range 反复构造 + forIn:端点 peek 在栈跨 new_range、迭代器白色建成的发布路径。
 TEST(Compiler, RangeForInUnderStressGc) {
     EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { for (j in 0..9) { s = s + j; } i = i + 1; } return s;"),

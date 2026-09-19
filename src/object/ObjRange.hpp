@@ -9,10 +9,11 @@ namespace aria {
     class AriaVM;
     class ObjString;
 
-    // range 对象(ObjType::RANGE):`a..b`(含上界)/ `a...b`(不含上界)的运行期载体,两端点
-    // 整数 + 含否上界,壳定长纯值(无外挂 buffer、无子对象)。语言方法面只 iter 一个:经
+    // range 对象(ObjType::RANGE):`a..b`(含上界)/ `a...b`(不含上界)/ `a..`(无上界)的
+    // 运行期载体,壳定长纯值(无外挂 buffer、无子对象)。语言方法面只 iter 一个:经
     // load_field 委托 VM 的 Range bootstrap 类表命中后恒绑定;迭代器不持源对象,构造期把
-    // 三标量拷走自足(见 ObjRangeIterator)。
+    // 端点标量拷走自足(见 ObjRangeIterator)。无上界开区间 to_ 为空(类型即契约),含否
+    // 上界无意义,ctor 内归一 is_exclusive_ = false(`5..` 与 `5...` 是同一个值)。
     //
     //   - 内容哈希型不可变对象(Object ctor 注释名单):哈希构造期烘焙(两端点与含否上界
     //     折叠过 avalanche);equals 按内容(同为 range 且三字段全等),`===` 恒指针。无子
@@ -28,6 +29,9 @@ namespace aria {
     public:
         ObjRange(i64 from, i64 to, bool is_exclusive);
 
+        // 无上界开区间(from..):is_exclusive_ 构造期归一为 false(含否上界无意义)。
+        ObjRange(i64 from);
+
         ~ObjRange() override = default;
 
         ObjRange(const ObjRange&)            = delete;
@@ -40,8 +44,9 @@ namespace aria {
             return from_;
         }
 
+        // 上界端点;nullopt = 无上界开区间(from..)。
         [[nodiscard]]
-        i64 to() const noexcept {
+        Opt<i64> to() const noexcept {
             return to_;
         }
 
@@ -70,20 +75,24 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 调试渲染:0..10 / 0...10 式。
+        // 调试渲染:0..10 / 0...10 / 0..(无上界)式。
         [[nodiscard]]
         String debug_repr() const override;
 
     private:
-        i64  from_;         // 区间下界(含)
-        i64  to_;           // 区间上界(含否由 is_exclusive_ 定)
-        bool is_exclusive_; // true: a...b(不含上界);false: a..b(含上界)
+        i64      from_;         // 区间起点端点(恒有)
+        Opt<i64> to_;           // 区间终点端点;nullopt = 无上界开区间
+        bool     is_exclusive_; // true: from...to(不含上界);false: from..to(含上界);无上界恒 false
     };
 
     // 工厂:分配 ObjRange。纯值无入参对象可守;返回对象白色无根,调用方建成即发布进根
-    //(MAKE_RANGE:两端点是小整数非对象,值栈无对象根义务,铸完 drop+push 窗口内无 GC 点)。
+    //(MAKE_RANGE:端点是小整数非对象,值栈无对象根义务,铸完 drop+push 窗口内无 GC 点)。
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from, i64 to, bool is_exclusive);
+
+    // 无上界开区间重载(MAKE_RANGE unbounded 位)。
+    [[nodiscard]]
+    ObjRange* new_range(GC& gc, i64 from);
 
 } // namespace aria
 

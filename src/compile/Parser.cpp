@@ -80,6 +80,7 @@ namespace aria {
                     UNREACHABLE();
             }
         }
+
     } // namespace
 
     // ============================================================
@@ -675,16 +676,28 @@ namespace aria {
 
     // 区间：a..b（含上界）/ a...b（不含上界）。非结合（单层），rhs 调 term 不调 range。
     // ... 与 rest/varargs 前缀复用 DotDotDot，按位置消歧（表达式中缀 vs 模式/参数前缀）。
+    // 无上界：.. / ... 后不跟表达式即省 upper（a.. / a...，两者语义同义）。
     UPtr<ExprNode> Parser::range() {
         const SourceLoc loc   = peek().loc();
         UPtr<ExprNode>  lower = term();
         if (match(TokenType::DotDot) || match(TokenType::DotDotDot)) {
-            const bool     is_exclusive = previous().is(TokenType::DotDotDot);
-            UPtr<ExprNode> upper        = term();
-            return std::make_unique<RangeExprNode>(loc, is_exclusive, std::move(lower), std::move(upper));
+            const bool is_exclusive = previous().is(TokenType::DotDotDot);
+            // 无上界走试探:term() 能解析则收 upper;失败即 .. / ... 后不跟表达式,回滚
+            // 游标判无上界。error() 是 const [[noreturn]] 纯抛出(errors_ 记账只在
+            // declaration() 恢复点),试探期零副作用,回滚仅需游标;试探吞错语义:upper 位
+            // 表达式本身残缺(如 0..(1+) 也落此路,报错移到外层语法错,仍显性。
+            const usize save = pos_;
+            try {
+                UPtr<ExprNode> upper = term();
+                return std::make_unique<RangeExprNode>(loc, is_exclusive, std::move(lower), std::move(upper));
+            } catch (const AriaCompileException&) {
+                pos_ = save;
+                return std::make_unique<RangeExprNode>(loc, is_exclusive, std::move(lower), nullptr);
+            }
         }
         return lower;
     }
+
 
     UPtr<ExprNode> Parser::term() {
         const SourceLoc loc  = peek().loc();

@@ -1392,10 +1392,26 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_RANGE: {
-                    // flags:u8;[from, to] -> [range]:两端点 peek 在栈跨 new_range 顶部
+                    // flags:u8。有界 [from, to] -> [range]:两端点 peek 在栈跨 new_range 顶部
                     // maybe_collect(「栈即根」,均小整数非对象);铸完 drop 2 再 push(窗口内
-                    // 无 GC 点)。flags 位义见 code.hpp kRangeFlagExclusive。
-                    const u8    flags     = read_u8(frame);
+                    // 无 GC 点)。无上界 [from] -> [range]:单值 peek/drop,unbounded 位分流。
+                    // flags 位义见 code.hpp kRangeFlagExclusive/kRangeFlagUnbounded。
+                    const u8 flags = read_u8(frame);
+                    if ((flags & kRangeFlagUnbounded) != 0) {
+                        const Value from = current_->peek(0);
+                        if (!from.is_int()) {
+                            // 非整数端点 TypeMismatch,静态文案不插端点值。
+                            raise(ErrorCode::TypeMismatch, "range bounds must be integers");
+                            if (auto u = unwind()) {
+                                return runtime_err(std::move(*u));
+                            }
+                            break;
+                        }
+                        const auto range = new_range(gc_, from.as_int());
+                        current_->drop(1);
+                        current_->push(Value::from_obj(range));
+                        break;
+                    }
                     const bool  exclusive = (flags & kRangeFlagExclusive) != 0;
                     const Value to        = current_->peek(0);
                     const Value from      = current_->peek(1);

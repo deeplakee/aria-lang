@@ -30,6 +30,17 @@ var down = 0;
 for (i in 5..3) { down = down * 10 + i; }
 assert(down == 543);
 
+// 无上界开区间：from.. 与 from... 同义（equals 相等、渲染 from..）；has_next 恒真，
+// 边界由消费方自理（break）。方向恒正序（无终点可倒）。
+assert((0.. == 0...));
+var inf = 0..;
+var n = 0;
+for (i in inf) { if (i >= 5) { break; } n = n + 1; }
+assert(n == 5);
+var m = 0;
+for (i in 3...) { if (i > 5) { break; } m = m * 10 + i; }
+assert(m == 345);
+
 var single = 0;
 for (i in 5..5) { single = single * 10 + i; }
 assert(single == 5);

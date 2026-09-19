@@ -6,14 +6,18 @@
 
 namespace aria {
 
-    ObjRangeIterator::ObjRangeIterator(const i64 from, const i64 to, const bool is_exclusive) :
-        ObjIterator{}, current_{from}, to_{to}, is_exclusive_{is_exclusive}, forward_{from <= to} {}
+    ObjRangeIterator::ObjRangeIterator(const i64 from, const Opt<i64> to, const bool is_exclusive) :
+        ObjIterator{}, current_{from}, to_{to}, is_exclusive_{is_exclusive}, forward_{!to.has_value() || from <= *to} {}
 
     bool ObjRangeIterator::has_next() const noexcept {
-        // 正向:含上界 current<=to / 不含 current<to;倒向(from>to):含上界 current>=to
-        // / 不含 current>to。空区间只剩 from==to 且不含上界(5...5),两向首问即 false,零迭代。
-        return forward_ ? (is_exclusive_ ? current_ < to_ : current_ <= to_)
-                        : (is_exclusive_ ? current_ > to_ : current_ >= to_);
+        // 无上界:has_next 恒真(无限序列,消费方自理边界)。正向:含上界 current<=to /
+        // 不含 current<to;倒向(from>to):含上界 current>=to / 不含 current>to。空区间只剩
+        // from==to 且不含上界(5...5),两向首问即 false,零迭代。
+        if (!to_) {
+            return true;
+        }
+        return forward_ ? (is_exclusive_ ? current_ < *to_ : current_ <= *to_)
+                        : (is_exclusive_ ? current_ > *to_ : current_ >= *to_);
     }
 
     Opt<Value> ObjRangeIterator::next(AriaVM& vm) {

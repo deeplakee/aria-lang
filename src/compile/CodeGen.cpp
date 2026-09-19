@@ -1239,9 +1239,17 @@ namespace aria {
     void CodeGen::visitRangeExprNode(RangeExprNode& node) {
         const u32 line = node.line();
         emit_expr(*node.lower);
-        emit_expr(*node.upper); // 端点左→右下栈,成 MAKE_RANGE 的 [lo, hi] 栈形
+        if (node.upper == nullptr) {
+            // 无上界开区间:压 [from] 单值,编 unbounded 位(含否上界无意义,不编 exclusive 位)。
+            // [from] -> [range]
+            cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
+            cur_cu()->emit_byte(kRangeFlagUnbounded, line);
+            return;
+        }
+        // [from, to] -> [range]
+        emit_expr(*node.upper); // 端点左→右下栈,成 MAKE_RANGE 的 [from, to] 栈形
         cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
-        cur_cu()->emit_byte(node.is_exclusive ? kRangeFlagExclusive : 0x00, line); // [lo, hi] -> [range]
+        cur_cu()->emit_byte(node.is_exclusive ? kRangeFlagExclusive : kRangeFlagInclusive, line);
     }
 
     void CodeGen::visitIfExprNode(IfExprNode& node) {

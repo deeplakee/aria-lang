@@ -47,6 +47,13 @@ namespace {
         return range;
     }
 
+    // 建无上界 range 并入根(白色对象守卫)。
+    ObjRange* make_unbounded_range(GC& gc, GC::Guard& guard, const i64 from) {
+        auto range = new_range(gc, from);
+        guard.push(range);
+        return range;
+    }
+
     // 建迭代器并入根(迭代器白色,守卫后检视/推进)。
     ObjRangeIterator* make_range_iterator(GC& gc, GC::Guard& guard, ObjRange* range) {
         auto iter = new_range_iterator(gc, range);
@@ -129,6 +136,34 @@ TEST(ObjRange, DebugReprMatchesSourceSpelling) {
     EXPECT_EQ(exclusive->debug_repr(), "0...10");
     EXPECT_EQ(negatives->debug_repr(), "-2..3");
     EXPECT_EQ(reversed->debug_repr(), "5..3"); // 倒序区间原样渲染两端点
+}
+
+// 无上界开区间:to_ 为空(类型即契约)、含否上界归一 false、debug_repr 渲染 from..。
+TEST(ObjRange, UnboundedBasics) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto range = make_unbounded_range(gc, guard, 5);
+    EXPECT_FALSE(range->to().has_value());
+    EXPECT_FALSE(range->is_exclusive()); // ctor 归一:5.. 与 5... 同义
+    EXPECT_EQ(range->debug_repr(), "5..");
+    EXPECT_EQ(range->from(), 5);
+    EXPECT_EQ(range->size(), sizeof(ObjRange));
+}
+
+// 无上界 equals/hash:同为无界且起点相等才等;与有界(含 0 端点)可区分。
+TEST(ObjRange, UnboundedEqualsAndHash) {
+    GC   gc;
+    auto guard = gc.make_guard();
+    auto a     = make_unbounded_range(gc, guard, 3);
+    auto b     = make_unbounded_range(gc, guard, 3);
+    auto other = make_unbounded_range(gc, guard, 4);
+    auto to_it = make_range(gc, guard, 3, 0, false);
+    auto excl  = make_range(gc, guard, 3, 0, true);
+    EXPECT_TRUE(a->equals(b));
+    EXPECT_FALSE(a->equals(other));
+    EXPECT_FALSE(a->equals(to_it)); // 无界 vs 有界 ..0
+    EXPECT_FALSE(a->equals(excl));  // 无界 vs 有界 ...0
+    EXPECT_NE(a->hash(), to_it->hash());
 }
 
 // ---- 命名成员协议(load_field → VM 的 Range bootstrap 类) ----
@@ -297,6 +332,33 @@ TEST(ObjRangeIterator, TwoIteratorsCursorsIndependent) {
     EXPECT_EQ(take_next(vm, it1), 0);
     EXPECT_EQ(take_next(vm, it1), 1);
     EXPECT_EQ(take_next(vm, it2), 0); // it2 游标未受 it1 推进影响
+}
+
+// 无上界开区间:has_next 恒真、方向恒正序,连续推进递增(取样 1000 次仍无尽)。
+TEST(ObjRangeIterator, UnboundedHasNextAlwaysTrue) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   range = make_unbounded_range(gc, guard, 0);
+    auto   iter  = make_range_iterator(gc, guard, range);
+    for (i64 expected = 0; expected < 1000; ++expected) {
+        ASSERT_TRUE(iter->has_next());
+        EXPECT_EQ(take_next(vm, iter), expected);
+    }
+    EXPECT_TRUE(iter->has_next());
+}
+
+// 无上界起点可为负:-2.. 产出 -2, -1, 0, ...(取样校验)。
+TEST(ObjRangeIterator, UnboundedFromNegative) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   range = make_unbounded_range(gc, guard, -2);
+    auto   iter  = make_range_iterator(gc, guard, range);
+    for (i64 expected = -2; expected < 100; ++expected) {
+        ASSERT_TRUE(iter->has_next());
+        EXPECT_EQ(take_next(vm, iter), expected);
+    }
 }
 
 // stress collect 下迭代器存活:标量自足无子对象,guard 持根跑完整个迭代。

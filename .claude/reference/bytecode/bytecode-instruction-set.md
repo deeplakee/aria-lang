@@ -276,7 +276,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `INVOKE_METHOD` | `name:u16`, `argc:u8` | `[obj, a1..aN] -> [r]` | **预留指令**（编译器不发射、VM 命中 `not_implemented`）：合并「取方法 `name` + `CALL argc`」，直接在实例上查方法并调用。因当前无法编译期区分方法调用与属性访问，编译器暂不发射；语义等同 `LOAD_FIELD name`（返绑定方法）+ `CALL argc`，留作性能优化（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
-| `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` | 取栈顶 `from, to` 创建 `ObjRange`（字段同名）；`flags` 编码含/不含上界（`..` 含、`...` 不含）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
+| `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 取栈顶 `from, to`（或 unbounded 时单值 `from`）创建 `ObjRange`（字段同名）；`flags` 位义见 `code.hpp`（`..` 含、`...` 不含、无上界不编含否位）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
 
 def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_REG`（寄存器 `ObjectClass`）装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
 
@@ -553,7 +553,7 @@ L_end:
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
-文法 `range -> term (".."|"...") term`，AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[from, to] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`：0x00 含上界、0x01 不含）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），迭代方向由端点推断（from>to 倒序，`10..1` 产出 10→1、`10...1` 产出 10→2），空区间只剩 from==to 且不含上界。步长等扩展留内建或后续指令。
+文法 `range -> term (".."|"...") term`，AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[from, to] -> [range]` / 无上界 `[from] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`/`kRangeFlagUnbounded`：0x00 含上界、0x01 不含、0x02 无上界（`from..` 与 `from...` 同义，含否位不编）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），迭代方向由端点推断（from>to 倒序，`10..1` 产出 10→1、`10...1` 产出 10→2），空区间只剩 from==to 且不含上界。步长等扩展留内建或后续指令。
 
 ### 6.4 内建函数与 rest 切片
 

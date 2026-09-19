@@ -1236,7 +1236,13 @@ namespace aria {
         cur_cu()->emit_word(node.entries.size(), line); // [k1,v1..kn,vn] -> [map]
     }
 
-    void CodeGen::visitRangeExprNode(RangeExprNode& node) { not_impl(node, "区间表达式"); }
+    void CodeGen::visitRangeExprNode(RangeExprNode& node) {
+        const u32 line = node.line();
+        emit_expr(*node.lower);
+        emit_expr(*node.upper); // 端点左→右下栈,成 MAKE_RANGE 的 [lo, hi] 栈形
+        cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
+        cur_cu()->emit_byte(node.is_exclusive ? kRangeFlagExclusive : 0x00, line); // [lo, hi] -> [range]
+    }
 
     void CodeGen::visitIfExprNode(IfExprNode& node) {
         const u32 line = node.line();

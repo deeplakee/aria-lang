@@ -1,0 +1,2 @@
+// 钉住：range 端点必须为整数（MAKE_RANGE 执行体验证，f64/string 端点 TypeMismatch）。
+var r = 1.5..10;

@@ -816,7 +816,7 @@ namespace aria {
         List<MapEntry> entries;
     };
 
-    // 区间表达式：a..b（含上界）/ a...b（不含上界）。产生 range 对象，VM 未实现。
+    // 区间表达式：a..b（含上界）/ a...b（不含上界）。产生 range 对象（MAKE_RANGE 发射）。
     struct RangeExprNode : ExprNode {
         RangeExprNode(const SourceLoc loc, const bool is_exclusive, UPtr<ExprNode> lower, UPtr<ExprNode> upper) :
             ExprNode{loc}, is_exclusive{is_exclusive}, lower{std::move(lower)}, upper{std::move(upper)} {}

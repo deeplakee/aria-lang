@@ -213,7 +213,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负 |
 
-> 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（指令已加入 `code.hpp`，待 `ObjRange` 落地后启用编译，见 §6.3）。
+> 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（`flags` 位义见 `code.hpp` `kRangeFlagExclusive`，落地形态见 §6.3）。
 
 ### 4.10 栈操作
 
@@ -553,7 +553,7 @@ L_end:
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
-文法 `range -> term (".."|"...") term`，AST 有 `RangeExprNode`，`ObjType::RANGE` 已预留。`MAKE_RANGE flags:u8`（`[lo, hi] -> [range]`，`flags` 编码含/不含上界）**已加入 `code.hpp`**（见 §4.14）。待 `ObjRange` 落地后即可编译区间表达式；for-in 遍历区间由 `ObjRange` 实现迭代协议。步长等扩展留内建或后续指令。
+文法 `range -> term (".."|"...") term`，AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[lo, hi] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`：0x00 含上界、0x01 不含）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），空区间（lo>hi，或 lo==hi 且不含）迭代零轮。步长等扩展留内建或后续指令。
 
 ### 6.4 内建函数与 rest 切片
 

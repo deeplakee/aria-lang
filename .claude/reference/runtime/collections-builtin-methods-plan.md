@@ -176,6 +176,23 @@
 > string_print_format golden/runtime_string_split_empty/runtime_string_subscript_assign 负 .err);存量翻转一
 >(ObjectProtocolDefaults 基类默认钉子 string 换 Module)。string 的 + 拼接(op_add)不在批 6,仍基类默认报错。
 
+> **落地状态(2026-09-19,批 7)**:批 7 已全部落地(工作区待 review,双配置 994/994 绿)。走查五拍板(2026-09-19,
+> 全按建议):①空区间(low>high 含上界,或 low==high 不含上界)迭代零轮(Python/Rust 同款,端点是运行期值不设预判义务);
+> ②非整数端点 TypeMismatch("range bounds must be integers",静态文案不插端点值;review 改定,原双值插值方案作废);
+> ③RangeFlags 位义 0x00 含上界/0x01 不含上界(常量 `kRangeFlagExclusive` 收口 code.hpp X 表后,编译发射与 VM
+> 解码同源);④v1 方法面仅 iter(len/下标/contains 不做,基类默认报错;解构 rest 切片若借 range+下标承载再议);
+> ⑤TagValue 配置下算术回绕推满上界的理论边不设防(整数域 i48 规格兜底,与 map 迭代中变更同级不承诺)。
+> 落地面:ObjRange 纯值壳定长(low/high/is_exclusive,内容哈希构造期烘焙、equals 按内容三字段全等、debug_repr
+> `0..10`/`0...10` 与源码拼写一致、trace 空体、store_field/下标/op_* 走基类默认)+ ObjRangeIterator(第五对,
+> **唯一无源对象者**:构造期拷三标量自足,不持指针、trace 空体;iter_fn 覆写 slots[0] 后源 range 可回收,标量
+> 自足不受影响)+ MAKE_RANGE 执行体(端点 peek 在栈跨 new_range,验整数铸完 drop+push,窗口内无 GC 点;无 u16
+> 计数、零上限检查——惰性两端点无物化)+ CodeGen visitRangeExprNode 翻转(端点左→右发射 + flags 字节)+
+> Range bootstrap(寄存器 RangeClass 格 + bootstrap_range_class + RangeBuiltins 单 iter 方法表)+ parser 非结合
+> 确认(rhs 调 term 不调 range,结构性防住 `a..b..c`)。测试 27 新(test_objrange 15 含哈希确定性/空区间/双迭代器
+> 独立/stress + Compiler.Range* 8 + 语料 4:range_forin/range_print_format golden/runtime_range_bounds_type_
+> mismatch 负 .err/compile_range_non_associative 负);存量翻转一(Interpret.StringNotImplementedIsCompileError
+> 钉子样本 `print 1..2` 退役换解构赋值,机制仍在)。
+
 ## 5. 参照
 
 - `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。

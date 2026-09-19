@@ -130,6 +130,9 @@ namespace aria {
 
 #undef ARIA_OPCODE_LIST
 
+    // MAKE_RANGE flags 位义:0x00 含上界(..)、0x01 不含上界(...)。编译发射与 VM 解码同源。
+    inline constexpr u8 kRangeFlagExclusive = 0x01;
+
 } // namespace aria
 
 #endif // ARIA_CODE_HPP

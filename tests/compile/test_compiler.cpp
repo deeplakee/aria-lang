@@ -349,6 +349,59 @@ TEST(Compiler, MapLiteralAndForInUnderStressGc) {
               60);
 }
 
+// ---- range(区间对象:MAKE_RANGE 发射 + 迭代协议,.. 含上界 / ... 不含) ----
+
+// forIn 求和:含上界 0..5 产出 0..5 六值,不含上界 0...5 产出 0..4 五值。
+TEST(Compiler, RangeForInSums) {
+    EXPECT_EQ(run_int("var s = 0; for (i in 0..5) { s = s + i; } return s;"), 15);
+    EXPECT_EQ(run_int("var s = 0; for (i in 0...5) { s = s + i; } return s;"), 10);
+}
+
+// 空区间零迭代:lo>hi(含上界)与 lo==hi(不含上界)首问即 false,循环体零轮。
+TEST(Compiler, RangeForInEmptyZeroRounds) {
+    EXPECT_EQ(run_int("var n = 0; for (i in 5..3) { n = n + 1; } return n;"), 0);
+    EXPECT_EQ(run_int("var n = 0; for (i in 5...5) { n = n + 1; } return n;"), 0);
+}
+
+// 单值区间:5..5 恰一轮、循环变量取 5(含上界的 lo==hi)。
+TEST(Compiler, RangeForInSingleValue) {
+    EXPECT_EQ(run_int("var n = 0; var last = 0; for (i in 5..5) { n = n + 1; last = i; } return n * 10 + last;"), 15);
+}
+
+// 端点是运行期值:全局变量端点、算术表达式端点(优先级 range 低于比较,端点吃满 term)。
+TEST(Compiler, RangeComputedBounds) {
+    EXPECT_EQ(run_int("var lo = 2; var hi = 6; var s = 0; for (i in lo...hi) { s = s + i; } return s;"), 14);
+    EXPECT_EQ(run_int("var s = 0; for (i in 1 + 1..2 * 3) { s = s + i; } return s;"), 20);
+    EXPECT_EQ(run_int("var s = 0; for (i in -2..2) { s = s + i; } return s;"), 0);
+}
+
+// range 作值:绑定变量后可反复迭代(每次 iter 新铸迭代器,游标互不串扰)。
+TEST(Compiler, RangeAsValueReiterated) {
+    EXPECT_EQ(run_int("var r = 2..4; var s = 0; for (i in r) { s = s + i; } for (i in r) { s = s + i; } return s;"),
+              18);
+}
+
+// 相等 ==:按内容(端点与含否上界全等);=== 恒指针。
+TEST(Compiler, RangeEqualityIsContent) {
+    EXPECT_EQ(run_int("if (0..10 == 0..10) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("if (0..10 == 0...10) { return 0; } return 1;"), 1);
+    EXPECT_EQ(run_int("if (0..10 === 0..10) { return 0; } return 1;"), 1);
+}
+
+// 非整数端点:TypeMismatch,双值 debug 形文案(执行体就地烘焙)。
+TEST(Compiler, RangeNonIntBoundsTypeMismatch) {
+    auto out = run_source("return 1.5..10;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(out.error().message().find("range bounds must be integers"), std::string::npos);
+}
+
+// stress GC 下 range 反复构造 + forIn:端点 peek 在栈跨 new_range、迭代器白色建成的发布路径。
+TEST(Compiler, RangeForInUnderStressGc) {
+    EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { for (j in 0..9) { s = s + j; } i = i + 1; } return s;"),
+              900);
+}
+
 // ---- varargs(...rest:list 载体,call_closure 打包多余实参) ----
 
 // 多余实参按序收集进 rest(list;下标可断言)。

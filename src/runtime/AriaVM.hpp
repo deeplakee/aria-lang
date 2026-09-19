@@ -153,6 +153,12 @@ namespace aria {
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
 
+        // Range bootstrap 类:寄存器 RangeClass 唯一存放(内置 range 的语言方法面,注册
+        // 入口 register_range_builtins 住 runtime/builtins/RangeBuiltins);ObjRange::load_field 经它
+        // 取自身类。同 object_class 先例。
+        [[nodiscard]]
+        ObjClass* range_class() const noexcept;
+
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
         // 命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。
@@ -261,6 +267,10 @@ namespace aria {
         // String bootstrap 类:建 ObjClass("String", super=Object 根)并注册方法面
         //(register_string_builtins),发布进寄存器 StringClass 格。
         void bootstrap_string_class();
+
+        // Range bootstrap 类:建 ObjClass("Range", super=Object 根)并注册方法面
+        //(register_range_builtins),发布进寄存器 RangeClass 格。
+        void bootstrap_range_class();
 
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。

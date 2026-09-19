@@ -73,6 +73,8 @@ add_library(aria_core STATIC
         src/runtime/builtins/ListBuiltins.hpp
         src/runtime/builtins/MapBuiltins.cpp
         src/runtime/builtins/MapBuiltins.hpp
+        src/runtime/builtins/RangeBuiltins.cpp
+        src/runtime/builtins/RangeBuiltins.hpp
         src/runtime/builtins/StringBuiltins.cpp
         src/runtime/builtins/StringBuiltins.hpp
         src/runtime/Movement.cpp
@@ -106,6 +108,8 @@ add_library(aria_core STATIC
         src/object/ObjNativeFn.hpp
         src/object/ObjException.cpp
         src/object/ObjException.hpp
+        src/object/ObjRange.cpp
+        src/object/ObjRange.hpp
         src/object/ObjUpvalue.cpp
         src/object/ObjUpvalue.hpp
         src/object/PrintGuard.hpp
@@ -115,6 +119,8 @@ add_library(aria_core STATIC
         src/object/iterator/ObjListIterator.hpp
         src/object/iterator/ObjMapIterator.cpp
         src/object/iterator/ObjMapIterator.hpp
+        src/object/iterator/ObjRangeIterator.cpp
+        src/object/iterator/ObjRangeIterator.hpp
         src/object/iterator/ObjStringIterator.cpp
         src/object/iterator/ObjStringIterator.hpp
         src/bytecode/Disassembler.cpp

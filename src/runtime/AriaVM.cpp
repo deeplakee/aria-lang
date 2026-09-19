@@ -23,14 +23,17 @@
 #include "object/ObjMap.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
+#include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/builtins/Builtins.hpp"
 #include "runtime/builtins/IteratorBuiltins.hpp"
 #include "runtime/builtins/ListBuiltins.hpp"
 #include "runtime/builtins/MapBuiltins.hpp"
+#include "runtime/builtins/RangeBuiltins.hpp"
 #include "runtime/builtins/StringBuiltins.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
@@ -269,6 +272,7 @@ namespace aria {
         bootstrap_list_class();
         bootstrap_map_class();
         bootstrap_string_class();
+        bootstrap_range_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
     }
@@ -325,6 +329,10 @@ namespace aria {
         return Object::as<ObjClass>(registers_[kStringClassOffset].as_obj());
     }
 
+    ObjClass* AriaVM::range_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kRangeClassOffset].as_obj());
+    }
+
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
@@ -375,6 +383,16 @@ namespace aria {
         const auto klass = new_class(gc_, "String", object_class());
         register_string_builtins(gc_, klass);
         registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_range_class() {
+        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后
+        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
+        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
+        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        const auto klass = new_class(gc_, "Range", object_class());
+        register_range_builtins(gc_, klass);
+        registers_[kRangeClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {
@@ -1373,8 +1391,27 @@ namespace aria {
                     current_->push(Value::from_obj(map));
                     break;
                 }
-                case OpCode::MAKE_RANGE:
-                    not_implemented("MAKE_RANGE");
+                case OpCode::MAKE_RANGE: {
+                    // flags:u8;[low, high] -> [range]:两端点 peek 在栈跨 new_range 顶部
+                    // maybe_collect(「栈即根」,均小整数非对象);铸完 drop 2 再 push(窗口内
+                    // 无 GC 点)。flags 位义见 code.hpp kRangeFlagExclusive。
+                    const u8    flags     = read_u8(frame);
+                    const bool  exclusive = (flags & kRangeFlagExclusive) != 0;
+                    const Value high      = current_->peek(0);
+                    const Value low       = current_->peek(1);
+                    if (!low.is_int() || !high.is_int()) {
+                        // 非整数端点 TypeMismatch,静态文案不插端点值。
+                        raise(ErrorCode::TypeMismatch, "range bounds must be integers");
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
+                    }
+                    const auto range = new_range(gc_, low.as_int(), high.as_int(), exclusive);
+                    current_->drop(2);
+                    current_->push(Value::from_obj(range));
+                    break;
+                }
 
                 // ---- 模块导入 ----
                 case OpCode::IMPORT:

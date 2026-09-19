@@ -1,0 +1,59 @@
+// 钉住：range 迭代——for (i in a..b) 含上界产出 a..b，for (i in a...b) 不含上界产出 a..b-1；
+# 空区间（lo>hi 含上界 / lo==hi 不含上界）迭代零轮；端点是运行期值；迭代器直取游标独立。
+var s = 0;
+for (i in 0..5) {
+    s = s + i;
+}
+assert(s == 15);
+
+var t = 0;
+for (i in 0...5) {
+    t = t + i;
+}
+assert(t == 10);
+
+var rounds = 0;
+for (i in 5..3) { rounds = rounds + 1; }
+assert(rounds == 0);
+for (i in 5...5) { rounds = rounds + 1; }
+assert(rounds == 0);
+
+var single = 0;
+for (i in 5..5) { single = single * 10 + i; }
+assert(single == 5);
+
+// 端点是运行期值：变量端点、表达式端点、负数端点（优先级 range 低于比较，端点吃满 term）。
+var lo = 2;
+var hi = 6;
+var u = 0;
+for (i in lo...hi) { u = u + i; }
+assert(u == 14);
+
+var w = 0;
+for (i in 1 + 1..2 * 3) { w = w + i; }
+assert(w == 20);
+
+var neg = 0;
+for (i in -2..2) { neg = neg + i; }
+assert(neg == 0);
+
+// range 作值：绑定变量后反复迭代，每次 iter 新铸迭代器、游标互不串扰。
+var r = 2..4;
+var twice = 0;
+for (i in r) { twice = twice + i; }
+for (i in r) { twice = twice + i; }
+assert(twice == 18);
+
+// 迭代器对象直取：双迭代器互不串扰；耗尽后 has_next 恒 false。
+var it1 = r.iter();
+var it2 = r.iter();
+it1.next();
+assert(it2.has_next() == true);
+while (it1.has_next()) { it1.next(); }
+assert(it1.has_next() == false);
+assert(it2.has_next() == true);
+
+// 相等 ==：按内容（端点与含否上界全等）；=== 恒指针。
+assert(0..10 == 0..10);
+assert(0..10 != 0...10);
+assert((0..10) === (0..10) == false);

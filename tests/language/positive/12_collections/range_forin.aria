@@ -1,5 +1,6 @@
 // 钉住：range 迭代——for (i in a..b) 含上界产出 a..b，for (i in a...b) 不含上界产出 a..b-1；
-# 空区间（lo>hi 含上界 / lo==hi 不含上界）迭代零轮；端点是运行期值；迭代器直取游标独立。
+# low > high 时方向推断为倒序（10..1 产出 10→1、10...1 产出 10→2）；空区间（lo==hi 且
+# 不含上界）迭代零轮；端点是运行期值；迭代器直取游标独立。
 var s = 0;
 for (i in 0..5) {
     s = s + i;
@@ -13,10 +14,21 @@ for (i in 0...5) {
 assert(t == 10);
 
 var rounds = 0;
-for (i in 5..3) { rounds = rounds + 1; }
-assert(rounds == 0);
 for (i in 5...5) { rounds = rounds + 1; }
 assert(rounds == 0);
+
+// 倒序：方向由端点推断，含上界 10..1 产出 10→1，不含上界 10...1 产出 10→2。
+var rsum = 0;
+for (i in 10..1) { rsum = rsum + i; }
+assert(rsum == 55);
+
+var rexo = 0;
+for (i in 10...1) { rexo = rexo + i; }
+assert(rexo == 54);
+
+var down = 0;
+for (i in 5..3) { down = down * 10 + i; }
+assert(down == 543);
 
 var single = 0;
 for (i in 5..5) { single = single * 10 + i; }

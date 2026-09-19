@@ -357,10 +357,17 @@ TEST(Compiler, RangeForInSums) {
     EXPECT_EQ(run_int("var s = 0; for (i in 0...5) { s = s + i; } return s;"), 10);
 }
 
-// 空区间零迭代:lo>hi(含上界)与 lo==hi(不含上界)首问即 false,循环体零轮。
+// 空区间零迭代:仅 low==high 且不含上界(5...5)首问即 false,循环体零轮。
 TEST(Compiler, RangeForInEmptyZeroRounds) {
-    EXPECT_EQ(run_int("var n = 0; for (i in 5..3) { n = n + 1; } return n;"), 0);
     EXPECT_EQ(run_int("var n = 0; for (i in 5...5) { n = n + 1; } return n;"), 0);
+}
+
+// 倒序:low>high 方向推断为递减,含上界 10..1 产出 10→1(求和 55),不含上界 10...1 产出
+// 10→2(求和 54);5..3 三轮末值 3。
+TEST(Compiler, RangeForInReversedSums) {
+    EXPECT_EQ(run_int("var s = 0; for (i in 10..1) { s = s + i; } return s;"), 55);
+    EXPECT_EQ(run_int("var s = 0; for (i in 10...1) { s = s + i; } return s;"), 54);
+    EXPECT_EQ(run_int("var n = 0; var last = 0; for (i in 5..3) { n = n + 1; last = i; } return n * 10 + last;"), 33);
 }
 
 // 单值区间:5..5 恰一轮、循环变量取 5(含上界的 lo==hi)。

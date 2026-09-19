@@ -193,6 +193,23 @@
 > mismatch 负 .err/compile_range_non_associative 负);存量翻转一(Interpret.StringNotImplementedIsCompileError
 > 钉子样本 `print 1..2` 退役换解构赋值,机制仍在)。
 
+> **后继演进(批 7 收官后 range 四批扩展,已拍板;本段记批 1)**:三方向跨语言对照呈报后拍板——①倒序走
+> **端点自动推断**(low>high 即倒序,`10..1` 产出 10→1、不含上界 `10...1` 递减到 high+1 产出 10→2;**翻转批 7
+> 空区间拍板**:空区间只剩 low==high 且不含上界;ObjRange 本体零改动,方向住迭代器构造期,内容哈希/equals 不变,
+> 10..1 != 1..10;主流语言几乎全拒绝端点推断方向,空区间语义为其代价,直觉优先);端点命名改 **from/to**
+>(批 1 review:倒序后 low/high 的「大小序」假设名不副实,from/to 零方向假设——start/end 的 end 有 C++
+> one-past 条件反射、begin/end 与容器 begin()/end() 撞语境,均否);②切片越界 fail-fast 不采
+> Python 钳制;③**单下标负数一并支持**(从尾计数 idx+len,推翻「单下标维持报错」建议——要做就做全套,list/string
+> 下标读写对称);④倒序 range 作下标 v1 报错,倒序切片后议。批次:批 1 倒序 range → 批 2 负下标全套
+>(list/string) → 批 3 无上界开区间(文法 `term?` + flags unbounded 位 + ObjRange has_high_) → 批 4 切片
+>(list 下标 Range 分支,消费批 2+3)。
+>
+> **批 1(倒序)已落地(工作区待 review)**:ObjRangeIterator 加 forward_(构造期 from<=to 定向)+ has_next
+> 方向比较 + next 按方向推进;端点改名 low/high→from/to(字段/访问器/MAKE_RANGE 局部/工厂/instruction-set
+> 规格用语全链);ObjRange.hpp/迭代器头注释翻转;测试翻转 2(EmptyRangeZeroRounds→EmptyExclusive
+> ZeroRounds 只留 5...5、语料 range_forin 空区间段)+ 新增 3(对象级 ReversedInclusive/ReversedExclusive +
+> 端到端 ReversedSums);文档同步 grammar.txt 区间注释/instruction-set §6.3/CLAUDE.md/README 进度行。
+
 ## 5. 参照
 
 - `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。

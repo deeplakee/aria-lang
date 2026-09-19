@@ -41,8 +41,8 @@ using aria::value_identical;
 namespace {
 
     // 建 range 并入根(白色对象守卫,对标 test_objmap 的 make_map)。
-    ObjRange* make_range(GC& gc, GC::Guard& guard, const i64 low, const i64 high, const bool is_exclusive) {
-        auto range = new_range(gc, low, high, is_exclusive);
+    ObjRange* make_range(GC& gc, GC::Guard& guard, const i64 from, const i64 to, const bool is_exclusive) {
+        auto range = new_range(gc, from, to, is_exclusive);
         guard.push(range);
         return range;
     }
@@ -82,8 +82,8 @@ TEST(ObjRange, Basics) {
     EXPECT_TRUE(aria::Object::is<ObjRange>(range));
     EXPECT_EQ(range->type(), aria::ObjType::RANGE);
     EXPECT_EQ(range->type_name(), aria::StringView{"Range"});
-    EXPECT_EQ(range->low(), 0);
-    EXPECT_EQ(range->high(), 10);
+    EXPECT_EQ(range->from(), 0);
+    EXPECT_EQ(range->to(), 10);
     EXPECT_FALSE(range->is_exclusive());
     EXPECT_EQ(range->size(), sizeof(ObjRange)); // 壳定长,无外挂 buffer
 }
@@ -124,11 +124,11 @@ TEST(ObjRange, DebugReprMatchesSourceSpelling) {
     auto inclusive = make_range(gc, guard, 0, 10, false);
     auto exclusive = make_range(gc, guard, 0, 10, true);
     auto negatives = make_range(gc, guard, -2, 3, false);
-    auto empty     = make_range(gc, guard, 5, 3, false);
+    auto reversed  = make_range(gc, guard, 5, 3, false);
     EXPECT_EQ(inclusive->debug_repr(), "0..10");
     EXPECT_EQ(exclusive->debug_repr(), "0...10");
     EXPECT_EQ(negatives->debug_repr(), "-2..3");
-    EXPECT_EQ(empty->debug_repr(), "5..3"); // 空区间原样渲染两端点
+    EXPECT_EQ(reversed->debug_repr(), "5..3"); // 倒序区间原样渲染两端点
 }
 
 // ---- 命名成员协议(load_field → VM 的 Range bootstrap 类) ----
@@ -218,21 +218,46 @@ TEST(ObjRangeIterator, ExclusiveExcludesUpper) {
     EXPECT_FALSE(iter->has_next());
 }
 
-// 空区间零迭代:low>high(含上界)与 low==high(不含上界)首问即 false。
-TEST(ObjRangeIterator, EmptyRangeZeroRounds) {
+// 空区间零迭代:from>to(含上界)与 from==to(不含上界)首问即 false。
+// 空区间零迭代:仅 from==to 且不含上界(5...5)首问即 false。
+TEST(ObjRangeIterator, EmptyExclusiveZeroRounds) {
+    AriaVM vm;
+    auto&  gc        = vm.gc();
+    auto   guard     = gc.make_guard();
+    auto   half_open = make_range(gc, guard, 5, 5, true);
+    auto   it        = make_range_iterator(gc, guard, half_open);
+    EXPECT_FALSE(it->has_next());
+}
+
+// 倒序:from>to 构造期定向,含上界 10..1 产出 10→1。
+TEST(ObjRangeIterator, ReversedInclusiveYieldsDescending) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
-    auto   empty = make_range(gc, guard, 5, 3, false);
-    auto   it1   = make_range_iterator(gc, guard, empty);
-    EXPECT_FALSE(it1->has_next());
-
-    auto half_open = make_range(gc, guard, 5, 5, true);
-    auto it2       = make_range_iterator(gc, guard, half_open);
-    EXPECT_FALSE(it2->has_next());
+    auto   range = make_range(gc, guard, 10, 1, false);
+    auto   iter  = make_range_iterator(gc, guard, range);
+    for (i64 expected = 10; expected >= 1; --expected) {
+        ASSERT_TRUE(iter->has_next());
+        EXPECT_EQ(take_next(vm, iter), expected);
+    }
+    EXPECT_FALSE(iter->has_next());
 }
 
-// 单值区间:5..5 恰一个 5(含上界的 low==high)。
+// 倒序不含上界:10...1 产出 10→2(递减到 to+1)。
+TEST(ObjRangeIterator, ReversedExclusiveExcludesLower) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   range = make_range(gc, guard, 10, 1, true);
+    auto   iter  = make_range_iterator(gc, guard, range);
+    for (i64 expected = 10; expected >= 2; --expected) {
+        ASSERT_TRUE(iter->has_next());
+        EXPECT_EQ(take_next(vm, iter), expected);
+    }
+    EXPECT_FALSE(iter->has_next());
+}
+
+// 单值区间:5..5 恰一个 5(含上界的 from==to)。
 TEST(ObjRangeIterator, SingleValueInclusive) {
     AriaVM vm;
     auto&  gc    = vm.gc();

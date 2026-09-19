@@ -21,11 +21,12 @@ namespace aria {
     //     op_* 运算符(v1 无此需求;instruction-set §6.4 的解构 rest 切片若借 range+下标
     //     承载再议)。
     //   - debug_repr():`0..10` / `0...10` 式,与源码拼写一致;显示同文案(基类默认委托,
-    //     无 string 式显示/调试分叉)。空区间(low > high,或 low == high 且不含上界)合法,
-    //     迭代零次(Python/Rust 同款)。
+    //     无 string 式显示/调试分叉)。from > to 即倒序区间(10..1 迭代产出 10→1,方向由
+    //     迭代器推断,本体字段原样存,10..1 != 1..10);空区间只剩 from == to 且不含上界,
+    //     迭代零次。
     class ObjRange final : public Object {
     public:
-        ObjRange(i64 low, i64 high, bool is_exclusive);
+        ObjRange(i64 from, i64 to, bool is_exclusive);
 
         ~ObjRange() override = default;
 
@@ -35,13 +36,13 @@ namespace aria {
         ObjRange& operator=(ObjRange&&)      = delete;
 
         [[nodiscard]]
-        i64 low() const noexcept {
-            return low_;
+        i64 from() const noexcept {
+            return from_;
         }
 
         [[nodiscard]]
-        i64 high() const noexcept {
-            return high_;
+        i64 to() const noexcept {
+            return to_;
         }
 
         [[nodiscard]]
@@ -74,15 +75,15 @@ namespace aria {
         String debug_repr() const override;
 
     private:
-        i64  low_;          // 区间下界(含)
-        i64  high_;         // 区间上界(含否由 is_exclusive_ 定)
+        i64  from_;         // 区间下界(含)
+        i64  to_;           // 区间上界(含否由 is_exclusive_ 定)
         bool is_exclusive_; // true: a...b(不含上界);false: a..b(含上界)
     };
 
     // 工厂:分配 ObjRange。纯值无入参对象可守;返回对象白色无根,调用方建成即发布进根
     //(MAKE_RANGE:两端点是小整数非对象,值栈无对象根义务,铸完 drop+push 窗口内无 GC 点)。
     [[nodiscard]]
-    ObjRange* new_range(GC& gc, i64 low, i64 high, bool is_exclusive);
+    ObjRange* new_range(GC& gc, i64 from, i64 to, bool is_exclusive);
 
 } // namespace aria
 

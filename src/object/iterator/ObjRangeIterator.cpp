@@ -6,12 +6,14 @@
 
 namespace aria {
 
-    ObjRangeIterator::ObjRangeIterator(const i64 low, const i64 high, const bool is_exclusive) :
-        ObjIterator{}, current_{low}, high_{high}, is_exclusive_{is_exclusive} {}
+    ObjRangeIterator::ObjRangeIterator(const i64 from, const i64 to, const bool is_exclusive) :
+        ObjIterator{}, current_{from}, to_{to}, is_exclusive_{is_exclusive}, forward_{from <= to} {}
 
     bool ObjRangeIterator::has_next() const noexcept {
-        // 含上界 current<=high / 不含 current<high;low>high(或 low==high 且不含)首问即 false,零迭代。
-        return is_exclusive_ ? current_ < high_ : current_ <= high_;
+        // 正向:含上界 current<=to / 不含 current<to;倒向(from>to):含上界 current>=to
+        // / 不含 current>to。空区间只剩 from==to 且不含上界(5...5),两向首问即 false,零迭代。
+        return forward_ ? (is_exclusive_ ? current_ < to_ : current_ <= to_)
+                        : (is_exclusive_ ? current_ > to_ : current_ >= to_);
     }
 
     Opt<Value> ObjRangeIterator::next(AriaVM& vm) {
@@ -21,8 +23,12 @@ namespace aria {
         }
         const auto value = Value::from_int(current_);
         // 整数域 i48(NaN-boxing payload + 字面量编译期上限)兜底,推进永不溢出;TagValue
-        // 配置下算术回绕推满上界的理论边不设防(批 7 拍板,与 map 迭代中变更同级不承诺)。
-        ++current_;
+        // 配置下算术回绕推满端点的理论边不设防(与 map 迭代中变更同级不承诺)。
+        if (forward_) {
+            ++current_;
+        } else {
+            --current_;
+        }
         return value;
     }
 
@@ -30,7 +36,7 @@ namespace aria {
 
     ObjRangeIterator* new_range_iterator(GC& gc, const ObjRange* range) {
         // 工厂只读源的三标量,不持有(见头注释)。
-        return gc.new_object<ObjRangeIterator>(range->low(), range->high(), range->is_exclusive());
+        return gc.new_object<ObjRangeIterator>(range->from(), range->to(), range->is_exclusive());
     }
 
 } // namespace aria

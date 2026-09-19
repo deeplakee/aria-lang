@@ -1,0 +1,10 @@
+// 钉住：string 方法的 print 渲染——结果串显示形（无引号）、list 的 split 结果
+# 嵌套 debug 形（元素带引号）；配 .out golden（实测生成）。
+print("abc".upper());
+print("  hi ".trim());
+print("aaa".replace("a", "bb"));
+print("hello".substring(1, 3));
+print(["a", "b"].join("-"));
+print([1, "x"].join(","));
+print("héllo".codepoint_at(1));
+print("héllo".split("l"));

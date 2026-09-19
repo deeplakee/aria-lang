@@ -4,6 +4,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/ObjBridge.hpp"
@@ -12,9 +13,11 @@
 using aria::AriaVM;
 using aria::ErrorCode;
 using aria::GC;
+using aria::new_module;
 using aria::new_string;
 using aria::ObjException;
 using aria::ObjFunction;
+using aria::ObjModule;
 using aria::ObjString;
 using aria::Pair;
 using aria::Span;
@@ -63,40 +66,43 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
 }
 
-// 成员/下标访问/算术/可调用协议的**基类默认**(备置 API):未 override 的子类型(ObjString
+// 成员/下标访问/算术/可调用协议的**基类默认**(备置 API):未 override 的子类型(ObjModule
 // 等)对协议操作一律 vm.fail 入寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试
-// 钉住默认形态(码 + 文案子串)防将来基类签名漂移。
+// 钉住默认形态(码 + 文案子串)防将来基类签名漂移(string 自批 6 起带下标/成员 override,
+// 钉子换仍无 override 的 Module;算术协议 string 仍走默认)。
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器
     auto&  gc    = vm.gc();
     auto   s     = new_string(gc, "hello");
     auto   guard = gc.make_guard(s);
-    auto   k     = new_string(gc, "len");
+    auto   m     = new_module(gc, "<test>");
+    guard.push(m);
+    auto k = new_string(gc, "len");
     guard.push(k);
 
     // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
     // store = "type X does not support field access"。
-    EXPECT_FALSE(s->load_field(vm, k).has_value());
+    EXPECT_FALSE(m->load_field(vm, k).has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("has no member 'len'"));
 
-    EXPECT_FALSE(s->store_field(vm, k, Value::from_int(1)));
+    EXPECT_FALSE(m->store_field(vm, k, Value::from_int(1)));
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
-    EXPECT_TRUE(msg.contains("type String does not support field access"));
+    EXPECT_TRUE(msg.contains("type Module does not support field access"));
 
     // 下标协议默认(备置):"type X does not support subscript access"。
-    EXPECT_FALSE(s->load_index(vm, Value::from_int(0)).has_value());
+    EXPECT_FALSE(m->load_index(vm, Value::from_int(0)).has_value());
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_TRUE(msg.contains("type String does not support subscript access"));
+    EXPECT_TRUE(msg.contains("type Module does not support subscript access"));
 
-    EXPECT_FALSE(s->store_index(vm, Value::from_int(0), Value::from_int(1)));
+    EXPECT_FALSE(m->store_index(vm, Value::from_int(0), Value::from_int(1)));
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_TRUE(msg.contains("type String does not support subscript access"));
+    EXPECT_TRUE(msg.contains("type Module does not support subscript access"));
 
     // 算术协议默认(备置):"operator '+' requires numbers, got X and Y"(与 VM 原语路径
     // run_binary_numeric 的 TypeMismatch 文案一致)、一元 "negate requires a number, got X"。

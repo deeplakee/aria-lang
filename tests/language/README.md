@@ -24,6 +24,7 @@ tests/language/
     10_integration/          # 多特性组合的综合小程序
     11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
     12_collections/          # list 字面量/下标/push/pop/迭代器协议
+    13_strings/              # string 方法面/字节下标/码点迭代
   negative/
     compile_errors/          # compile_*.aria -> 期待 CompileError
     runtime_errors/          # runtime_*.aria -> 期待 RuntimeError（可配 .err）

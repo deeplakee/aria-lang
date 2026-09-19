@@ -35,6 +35,7 @@ add_executable(aria_tests
         object/test_objmodule.cpp
         object/test_objnativefn.cpp
         object/test_objexception.cpp
+        object/test_objstring.cpp
         object/test_objupvalue.cpp
         # memory
         memory/test_array.cpp

@@ -13,7 +13,9 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjIterator.hpp"
 #include "object/iterator/ObjListIterator.hpp"
+#include "object/iterator/ObjStringIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "util/utf8.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
@@ -23,12 +25,14 @@ using aria::GC;
 using aria::new_list;
 using aria::new_list_iterator;
 using aria::new_string;
+using aria::new_string_iterator;
 using aria::ObjBoundMethod;
 using aria::ObjException;
 using aria::ObjList;
 using aria::ObjListIterator;
 using aria::ObjNativeFn;
 using aria::ObjString;
+using aria::ObjStringIterator;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
@@ -217,4 +221,105 @@ TEST(ObjListIterator, TraceStressKeepsSource) {
     const auto survived = aria::Object::try_as<ObjString>(second->as_obj());
     ASSERT_NE(survived, nullptr);
     EXPECT_EQ(survived->view(), "element string");
+}
+
+// ---- ObjStringIterator(码点步进,产出 1-char string) ----
+
+namespace {
+
+    // 建 string 迭代器并入临时根(断言期存活;str 由调用方另守)。
+    ObjStringIterator* make_string_iterator(GC& gc, GC::Guard& guard, ObjString* str) {
+        auto iter = new_string_iterator(gc, str);
+        guard.push(iter);
+        return iter;
+    }
+
+} // namespace
+
+// 游标按码点推进:产出逐码点的 1-char string,取尽后 has_next 恒 false。
+TEST(ObjStringIterator, CursorYieldsCharStrings) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   str   = make_string(gc, guard, "abc");
+    auto   iter  = make_string_iterator(gc, guard, str);
+    for (const StringView expected: {"a", "b", "c"}) {
+        ASSERT_TRUE(iter->has_next());
+        const auto item = iter->next(vm);
+        ASSERT_TRUE(item.has_value());
+        const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+        ASSERT_NE(ch, nullptr);
+        EXPECT_EQ(ch->view(), expected);
+    }
+    EXPECT_FALSE(iter->has_next());
+}
+
+// 多字节码点整步跨过:"héllo" 的 é 是 2 字节,迭代产出 5 个码点串(字节长 6,步数 5)。
+TEST(ObjStringIterator, MultibyteCodepointStepping) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   str   = make_string(gc, guard, "h\xC3\xA9llo");
+    ASSERT_EQ(str->length(), 6u); // 字节域
+    auto iter = make_string_iterator(gc, guard, str);
+
+    const StringView expected[] = {"h", "\xC3\xA9", "l", "l", "o"};
+    for (const StringView want: expected) {
+        ASSERT_TRUE(iter->has_next());
+        const auto item = iter->next(vm);
+        ASSERT_TRUE(item.has_value());
+        const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+        ASSERT_NE(ch, nullptr);
+        EXPECT_EQ(ch->view(), want);
+    }
+    EXPECT_FALSE(iter->has_next()); // 5 步取尽(非 6 步) --码点域,整步跨过双字节
+}
+
+// 空串:has_next 恒 false;next 越界 fail-fast(IterationExhausted)。
+TEST(ObjStringIterator, NextPastEndFailsFast) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   str   = make_string(gc, guard, "");
+    auto   iter  = make_string_iterator(gc, guard, str);
+    EXPECT_FALSE(iter->has_next());
+    EXPECT_FALSE(iter->next(vm).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::IterationExhausted);
+    EXPECT_EQ(message, "Runtime: IterationExhausted iterator exhausted");
+}
+
+// 双迭代器游标独立:一个取尽不影响另一个从头取。
+TEST(ObjStringIterator, TwoIteratorsCursorsIndependent) {
+    AriaVM vm;
+    auto&  gc     = vm.gc();
+    auto   guard  = gc.make_guard();
+    auto   str    = make_string(gc, guard, "ab");
+    auto   first  = make_string_iterator(gc, guard, str);
+    auto   second = make_string_iterator(gc, guard, str);
+    ASSERT_TRUE(first->next(vm).has_value());
+    ASSERT_TRUE(first->next(vm).has_value());
+    EXPECT_FALSE(first->has_next()); // first 取尽
+    EXPECT_TRUE(second->has_next()); // second 不受影响
+}
+
+// stress GC:迭代器为唯一根,str 经 trace 级联存活;产出串铸造不触 GC 丢对象。
+TEST(ObjStringIterator, TraceStressKeepsSource) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto&              gc   = vm.gc();
+    ObjStringIterator* iter = nullptr;
+    {
+        auto guard = gc.make_guard();
+        auto str   = make_string(gc, guard, "stress");
+        iter       = make_string_iterator(gc, guard, str);
+    }
+    auto       guard   = gc.make_guard(iter);       // 只根迭代器:str 仅经 iter->trace 可达
+    const auto trigger = new_string(gc, "trigger"); // stress collect
+    guard.push(trigger);
+    const auto item = iter->next(vm);
+    ASSERT_TRUE(item.has_value());
+    const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+    ASSERT_NE(ch, nullptr);
+    EXPECT_EQ(ch->view(), "s");
 }

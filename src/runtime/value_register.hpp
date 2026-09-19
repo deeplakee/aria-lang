@@ -27,7 +27,8 @@ namespace aria {
     X(MatchNoArm)    /* match 全臂未命中兜底异常(共享 ObjException;LOAD_REG + THROW 抛出) */                       \
     X(ListClass)     /* List bootstrap 类(内置 list 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */ \
     X(IteratorClass) /* Iterator bootstrap 类(迭代器的语言方法面 has_next/next,super 挂 Object 根;纯 C++ 存取) */  \
-    X(MapClass)      /* Map bootstrap 类(内置 map 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */
+    X(MapClass)      /* Map bootstrap 类(内置 map 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */   \
+    X(StringClass)   /* String bootstrap 类(内置 string 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

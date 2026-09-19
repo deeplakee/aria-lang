@@ -81,6 +81,7 @@ namespace aria {
     X(DivisionByZero, Runtime)     /* 除零 */                                                                    \
     X(ModuloByZero, Runtime)       /* 模零 */                                                                    \
     X(KeyError, Runtime)           /* map 键不存在 */                                                            \
+    X(EmptyPattern, Runtime)       /* 空模式串（split 分隔符 / replace 匹配串为空） */                           \
     X(UndefinedVariable, Runtime)  /* 引用未定义的变量/函数（运行期查表 miss） */                                \
     X(UndefinedProperty, Runtime)  /* 对象无该字段/方法 */                                                       \
     X(CallNonCallable, Runtime)    /* 调用非函数值 */                                                            \

@@ -1,0 +1,28 @@
+// 钉住：string 的下标与迭代——s[i] 字节域产出单字节 1-char string、多字节中间字节
+# 取该字节自身（对象级另有字节值钉子）；forIn 逐码点产出 1-char string、双字节整步
+# 跨过；string 不可变（写恒报错，负向语料另配）。
+assert("hello"[1] == "e");
+assert(len("héllo") == 6);          // 字节域（len 与 s[i] 同域，D5）
+assert(len("héllo"[1]) == 1);       // 单字节产出
+
+var n = 0;
+var first = "";
+for (ch in "héllo") {
+    if (n == 0) { first = ch; }
+    n = n + 1;
+}
+assert(n == 5);                      // 码点域：字节 6、码点 5
+assert(first == "h");
+
+var mid = "";
+var i = 0;
+for (ch in "héllo") {
+    if (i == 1) { mid = ch; }
+    i = i + 1;
+}
+assert(mid == "é");                  // 双字节码点整步产出
+
+// 迭代器一等性：next 取出方法值调用
+var it = "ab".iter();
+var nxt = it.next;
+assert(nxt() == "a" && it.has_next() && it.next() == "b" && !it.has_next());

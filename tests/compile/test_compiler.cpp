@@ -409,3 +409,146 @@ TEST(Compiler, VarargsUnderStressGc) {
                       "while (i < 20) { t = t + f(i, i + 1, i + 2); i = i + 1; } return t;"),
               630);
 }
+
+// ---- string 方法面（字节下标/码点迭代/11 方法；下标域 = 字节,计划 D5） ----
+
+// upper/lower:ASCII 逐字节转换,非字母字节原样。
+TEST(Compiler, StringUpperLowerAscii) {
+    EXPECT_EQ(run_int(R"(if ("abc".upper() == "ABC") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("aBc1".upper() == "ABC1") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("XYZ".lower() == "xyz") { return 1; } return 0;)"), 1);
+}
+
+// trim:去首尾 ASCII 空白,全空白返空串。
+TEST(Compiler, StringTrimAsciiWhitespace) {
+    EXPECT_EQ(run_int(R"(if ("  hi ".trim() == "hi") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("\t\n hi \r\n".trim() == "hi") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("   ".trim() == "") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("a b".trim() == "a b") { return 1; } return 0;)"), 1); // 中间空白不动
+}
+
+// split:保留空段、空串输入切出 [""],空分隔符 EmptyPattern。
+TEST(Compiler, StringSplitKeepsEmptySegments) {
+    EXPECT_EQ(run_int(R"(var parts = "a,,b".split(","); if (len(parts) == 3 && parts[0] == "a" && parts[1] == "" && )"
+                      R"(parts[2] == "b") { return 1; } return 0;)"),
+              1);
+    EXPECT_EQ(run_int(R"(var one = "".split(","); if (len(one) == 1 && one[0] == "") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("x=y=z".split("=")[1] == "y") { return 1; } return 0;)"), 1);
+
+    auto empty = run_source(R"(return "ab".split("");)");
+    ASSERT_FALSE(empty.has_value());
+    EXPECT_EQ(empty.error().code(), ErrorCode::EmptyPattern);
+    EXPECT_NE(empty.error().message().find("split separator must not be empty"), std::string::npos);
+}
+
+// find:首现字节下标,未命中 -1。
+TEST(Compiler, StringFindReturnsByteIndexOrMinusOne) {
+    EXPECT_EQ(run_int(R"(return "hello".find("llo");)"), 2);
+    EXPECT_EQ(run_int(R"(return "hello".find("x");)"), -1);
+    EXPECT_EQ(run_int(R"(return "aaa".find("a");)"), 0);
+}
+
+// replace:全部替换,空匹配串 EmptyPattern。
+TEST(Compiler, StringReplaceAll) {
+    EXPECT_EQ(run_int(R"(if ("aaa".replace("a", "bb") == "bbbbbb") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("abc".replace("x", "y") == "abc") { return 1; } return 0;)"), 1);
+
+    auto empty = run_source(R"(return "ab".replace("", "x");)");
+    ASSERT_FALSE(empty.has_value());
+    EXPECT_EQ(empty.error().code(), ErrorCode::EmptyPattern);
+    EXPECT_NE(empty.error().message().find("replace pattern must not be empty"), std::string::npos);
+}
+
+// substring:1/2 参双形态,字节区间 [start, end);越界(含负数)IndexOutOfBounds。
+TEST(Compiler, StringSubstringRangeChecked) {
+    EXPECT_EQ(run_int(R"(if ("hello".substring(1) == "ello") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello".substring(1, 3) == "el") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello".substring(2, 2) == "") { return 1; } return 0;)"), 1);
+
+    auto out_of_range = run_source(R"(return "hello".substring(3, 9);)");
+    ASSERT_FALSE(out_of_range.has_value());
+    EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
+
+    auto negative = run_source(R"(return "hello".substring(-1);)");
+    ASSERT_FALSE(negative.has_value());
+    EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
+}
+
+// starts_with/ends_with:字节前后缀,空串前缀恒真。
+TEST(Compiler, StringStartsAndEndsWith) {
+    EXPECT_EQ(run_int(R"(if ("hello".starts_with("he") && !"hello".starts_with("el")) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello".ends_with("lo") && !"hello".ends_with("el")) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("".starts_with("") && "hi".starts_with("")) { return 1; } return 0;)"), 1);
+}
+
+// codepoint_at:码点序号索引(区别于字节下标 s[i]) --héllo 的 codepoint_at(1) 是 é 的
+// 码点值,而非中间字节;越界 IndexOutOfBounds。
+TEST(Compiler, StringCodepointAtIndexesByCodepoint) {
+    EXPECT_EQ(run_int(R"(return "héllo".codepoint_at(1);)"), 0xE9);
+    EXPECT_EQ(run_int(R"(return "abc".codepoint_at(2);)"), 'c');
+
+    auto out_of_range = run_source(R"(return "héllo".codepoint_at(5);)");
+    ASSERT_FALSE(out_of_range.has_value());
+    EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
+}
+
+// s[i]:字节域,产出单字节 1-char string;越界 IndexOutOfBounds。多字节中间字节的取值
+// 语义钉在对象级(ObjString.LoadIndexMidSequenceByteYieldsItself,字面量无 \x 转义故
+// 端到端只钉单字节产出)。
+TEST(Compiler, StringSubscriptIsByteSemantics) {
+    EXPECT_EQ(run_int(R"(if ("hello"[1] == "e") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if (len("héllo") == 6 && len("héllo"[1]) == 1) { return 1; } return 0;)"), 1);
+
+    auto out_of_range = run_source(R"(return "hi"[5];)");
+    ASSERT_FALSE(out_of_range.has_value());
+    EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out_of_range.error().message().find("string index 5 out of range"), std::string::npos);
+}
+
+// string 不可变:下标写恒 TypeMismatch。
+TEST(Compiler, StringImmutableStoreFails) {
+    auto out = run_source(R"(var s = "hi"; s[0] = "H"; return s;)");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(out.error().message().find("string does not support subscript assignment"), std::string::npos);
+}
+
+// forIn string:逐码点产出 1-char string(文法「string->字符」,D5)。产出验证用赋值 +
+// 比较(string 的 + 拼接运算符不在批 6 范围,仍是基类默认报错)。
+TEST(Compiler, ForInStringYieldsCharStrings) {
+    EXPECT_EQ(run_int(R"(var first = ""; var n = 0; for (ch in "abc") { if (n == 0) { first = ch; } n = n + 1; } )"
+                      R"(if (first == "a" && n == 3) { return 1; } return 0;)"),
+              1);
+    // 多字节整步跨过:héllo 字节长 6、码点 5,计数 5(码点域)。
+    EXPECT_EQ(run_int(R"(var n = 0; for (ch in "héllo") { n = n + 1; } return n;)"), 5);
+    EXPECT_EQ(
+            run_int(R"(var all_eq = true; var i = 0; for (ch in "héllo") { if (i == 1 && ch != "é") { all_eq = false; } )"
+                    R"(i = i + 1; } if (all_eq) { return 1; } return 0;)"),
+            1);
+}
+
+// join:list 方法,元素宽松经 format_value 转 string;空 list 返空串;空 sep 粘合。
+TEST(Compiler, StringJoinOnListReceiver) {
+    EXPECT_EQ(run_int(R"(if (["a", "b", "c"].join("-") == "a-b-c") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if (["a", "b"].join("") == "ab") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ([].join(",") == "") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ([1, "x", nil].join(",") == "1,x,nil") { return 1; } return 0;)"), 1); // 宽松转 string
+}
+
+// 成员 miss:类措辞随协议传播(与 list/map 同文案形)。
+TEST(Compiler, StringMemberMissFailsWithClassWording) {
+    auto out = run_source(R"(return "hi".nope;)");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(out.error().message().find("<class String> has no member 'nope'"), std::string::npos);
+}
+
+// 迭代器一等性:it.next 取出方法值调用;循环取方法 stress GC(bound 物化根化路径)。
+TEST(Compiler, StringMethodsUnderStressGc) {
+    EXPECT_EQ(run_int(R"(var it = "abc".iter(); var n1 = it.next; if (n1() == "a" && it.has_next()) { return 1; } )"
+                      R"(return 0;)"),
+              1);
+    EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { s = s + len(\"ab\".upper().trim()); i = i + 1; } "
+                      "return s;"),
+              40);
+}

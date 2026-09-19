@@ -20,6 +20,11 @@ namespace aria {
     //
     //   Phase 2 起接 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,
     //   未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
+    //
+    //   下标读经 load_index 协议 override:整数键 = 字节语义(计划 D5,与 len 同域),产出
+    //   单字节 1-char string;多字节序列中间字节取该字节自身(字节契约的自然结果)。下标
+    //   写恒报错(string 不可变,TypeMismatch 定向文案)。命名成员经 load_field 委托 VM 的
+    //   String bootstrap 类方法表恒绑定(两步,同 ObjList/ObjMap 形)。
     class ObjString final : public Object {
     public:
         static constexpr usize kShortCapacity = 15;
@@ -75,6 +80,23 @@ namespace aria {
         usize size() const noexcept override {
             return sizeof(ObjString);
         }
+
+        // 下标读取:整数键(字节域,D5),产出单字节 1-char string;非整数 TypeMismatch、
+        // 越界/负数 IndexOutOfBounds;多字节序列中间字节取该字节自身(字节契约的自然
+        // 结果)。查读含一次 new_string(intern)分配:receiver 经调用方值栈为根。
+        [[nodiscard]]
+        Opt<Value> load_index(AriaVM& vm, Value key) override;
+
+        // 下标写入:string 不可变,恒 TypeMismatch 定向文案。
+        [[nodiscard]]
+        bool store_index(AriaVM& vm, Value key, Value value) override;
+
+        // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjList::load_field
+        // 形)--先委托 VM 的 String bootstrap 类协议(ObjClass::load_field 沿链查表,miss
+        // 类措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不
+        // override:基类默认「does not support field access」即内置类型的正确行为。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
     };
 
     // 工厂:返回内容等于 src 的 ObjString*。经 GC 驻留池:命中返回已有串,未命中分配+驻留。

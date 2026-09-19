@@ -73,6 +73,8 @@ add_library(aria_core STATIC
         src/runtime/ListMethods.hpp
         src/runtime/MapMethods.cpp
         src/runtime/MapMethods.hpp
+        src/runtime/StringMethods.cpp
+        src/runtime/StringMethods.hpp
         src/runtime/Movement.cpp
         src/runtime/Movement.hpp
         src/runtime/value_register.hpp
@@ -113,6 +115,8 @@ add_library(aria_core STATIC
         src/object/iterator/ObjListIterator.hpp
         src/object/iterator/ObjMapIterator.cpp
         src/object/iterator/ObjMapIterator.hpp
+        src/object/iterator/ObjStringIterator.cpp
+        src/object/iterator/ObjStringIterator.hpp
         src/bytecode/Disassembler.cpp
         src/bytecode/Disassembler.hpp
 )

@@ -5,7 +5,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 ## 当前进度
 
 - **已落地**：util / value / error / compile / bytecode 层、GC、Object 子类型（string / function / native / module / exception / closure / upvalue / class / instance / bound-method）、AriaVM M1 主循环、M2 模块表与 IMPORT、M3 异常 try/catch/throw、M4 闭包（捕获即引用）、M5 类（阶段 1-3：对象层 + VM 机制 + 编译翻转）。
-- **待落地**：P0 语言面补齐（批 1-5 已落地：值寄存器组底座 + 默认参数、match 降糖、list 值表示与下标、方法机制与迭代协议（bootstrap 类 + 每源迭代器子类）+ varargs、map 字面量/下标与迭代产出 `[k, v]`；待批 6+：string 方法、ObjRange、解构、INVOKE_METHOD 性能批；计划见 `.claude/reference/runtime/collections-builtin-methods-plan.md`），其后 M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
+- **待落地**：P0 语言面补齐（批 1-6 已落地：值寄存器组底座 + 默认参数、match 降糖、list 值表示与下标、方法机制与迭代协议（bootstrap 类 + 每源迭代器子类）+ varargs、map 字面量/下标与迭代产出 `[k, v]`、string 方法面（字节下标/码点迭代/11 方法）+ list join；待批 7+：ObjRange、解构、INVOKE_METHOD 性能批；计划见 `.claude/reference/runtime/collections-builtin-methods-plan.md`），其后 M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 
 ## 文档与参考（按需加载）

@@ -160,6 +160,22 @@
 > 语义同 std::unordered_map 惯例),util 增 join(range, delimiter, transform),两处 debug_repr/equals/trace/
 > ObjMapIterator 游标全部换装,三原语退役。
 
+> **落地状态(2026-09-19,批 6)**:批 6 已全部落地(工作区待 review,双配置 967/967 绿)。语义十拍板(2026-09-19
+> 走查呈报,用户全按建议):①upper/lower v1 ASCII only(Unicode casing 需 case 表后续批);②trim 空白 = ASCII
+> 六字符;③空模式串报错 + 新码 `EmptyPattern`(Runtime,插 KeyError 旁,split 空 sep 与 replace 空 old 共用);
+> ④split 保留空段("a,,b"->["a","","b"],空串输入->[\"\"],Python/JS 同款);⑤join receiver 挂 list、元素宽松经
+> format_value(JS 式,空 sep 合法、空 list 返空串)——批 5 收官铺的 util::join 底座在此兑现;⑥find 未命中返
+> -1(单参,字节下标);⑦replace 全部替换;⑧substring 越界(含负数)报 IndexOutOfBounds 不钳制,argc 1/2 双形态;
+> ⑨迭代与 s[i] 产出 1-char string;⑩cp 方法 v1 只 codepoint_at(i)->int(码点序号索引,O(i) 扫描无偏移表)。
+> 落地面:ObjString 三 override(下标读整数键字节域产出单字节 1-char 串/写恒 TypeMismatch "string does not
+> support subscript assignment"/load_field 两步委托 String 类)+ ObjStringIterator{str, 字节偏移}(decode_one
+> 码点步进,utf8::encode 铸 1-char 串;src/object/iterator/ 第四对)+ String bootstrap(寄存器 StringClass 格 +
+> bootstrap_string_class + StringMethods 11 方法表)+ ListMethods 增 join_fn。GC 模式:单输出方法 receiver 在
+> slots[0] 覆写前经栈根;split 先拷内容进 C++ String(非 GC 内存)再 list 先发布后逐段铸造段串。测试 33 新
+>(test_objstring 8 + ObjStringIterator 5 + Compiler.String* 14 + 语料 5:string_methods/string_subscript_iter/
+> string_print_format golden/runtime_string_split_empty/runtime_string_subscript_assign 负 .err);存量翻转一
+>(ObjectProtocolDefaults 基类默认钉子 string 换 Module)。string 的 + 拼接(op_add)不在批 6,仍基类默认报错。
+
 ## 5. 参照
 
 - `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。

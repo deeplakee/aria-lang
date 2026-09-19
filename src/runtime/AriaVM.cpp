@@ -31,6 +31,7 @@
 #include "runtime/IteratorMethods.hpp"
 #include "runtime/ListMethods.hpp"
 #include "runtime/MapMethods.hpp"
+#include "runtime/StringMethods.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -267,6 +268,7 @@ namespace aria {
         bootstrap_list_class();
         bootstrap_iterator_class();
         bootstrap_map_class();
+        bootstrap_string_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
     }
@@ -319,6 +321,10 @@ namespace aria {
 
     ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset].as_obj()); }
 
+    ObjClass* AriaVM::string_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kStringClassOffset].as_obj());
+    }
+
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
@@ -359,6 +365,16 @@ namespace aria {
         const auto klass = new_class(gc_, "Map", object_class());
         register_map_methods(gc_, klass);
         registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_string_class() {
+        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后
+        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
+        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
+        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        const auto klass = new_class(gc_, "String", object_class());
+        register_string_methods(gc_, klass);
+        registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {

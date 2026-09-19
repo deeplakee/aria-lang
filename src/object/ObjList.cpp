@@ -7,6 +7,7 @@
 #include "object/ObjClass.hpp"
 #include "object/PrintGuard.hpp"
 #include "runtime/AriaVM.hpp"
+#include "util/util.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -86,16 +87,8 @@ namespace aria {
             return "[...]";
         }
         const PrintGuard guard{this};
-        // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归 debug_repr)。
-        String repr = "[";
-        for (usize index = 0; index < elements_.size(); ++index) {
-            if (index != 0) {
-                repr += ", ";
-            }
-            repr += format_value_debug(elements_[index]);
-        }
-        repr += ']';
-        return repr;
+        // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归)。
+        return "[" + util::join(elements_, ", ", format_value_debug) + "]";
     }
 
     ObjList* new_list(GC& gc) {

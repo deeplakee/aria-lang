@@ -7,6 +7,7 @@
 #include "object/ObjClass.hpp"
 #include "object/PrintGuard.hpp"
 #include "runtime/AriaVM.hpp"
+#include "util/util.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -30,12 +31,10 @@ namespace aria {
             return false;
         }
         const EqualGuard guard{this, other};
-        // 逐键槽位扫描(next_occupied 支持首个 miss 即早退):键命中按表内语义 ===(find 即
+        // 逐键 range-for(首个 miss 即 return 退出):键命中按表内语义 ===(find 即
         // value_identical 匹配),值 value_equal(嵌套容器经各自 equals 递归);find/value_equal
         // 均无 GC 分配,GC-pure 契约保持。
-        for (usize slot = table_.next_occupied(0); slot != AriaHashTable::kNpos;
-             slot       = table_.next_occupied(slot + 1)) {
-            const auto& [key, value] = table_.entry_at(slot);
+        for (const auto& [key, value]: table_) {
             if (const auto entry = map->table_.find(key); entry == nullptr || !value_equal(value, entry->value)) {
                 return false;
             }
@@ -82,20 +81,11 @@ namespace aria {
         }
         const PrintGuard guard{this};
         // {"a": 1} 式:键值均走 format_value_debug(嵌套字符串带引号;嵌套容器递归 debug_repr);
-        // 遍历序随占用槽(渲染序 unspecified,与迭代序同属计划 D4)。
-        String repr  = "{";
-        bool   first = true;
-        table_.for_each_occupied([&repr, &first](const Value& key, const Value& value) {
-            if (!first) {
-                repr += ", ";
-            }
-            first = false;
-            repr += format_value_debug(key);
-            repr += ": ";
-            repr += format_value_debug(value);
-        });
-        repr += '}';
-        return repr;
+        // 渲染序随占用槽(unspecified,与迭代序同属计划 D4)。
+        const auto entry_repr = [](const AriaHashTable::Entry& entry) {
+            return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
+        };
+        return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
 
     ObjMap* new_map(GC& gc) {

@@ -162,25 +162,6 @@ TEST(HashTable, EmptyTableOps) {
     ht.clear(); // 不崩
 }
 
-TEST(HashTable, ForEachOccupied) {
-    GC       gc;
-    IntTable ht{&gc};
-    for (int i = 0; i < 10; ++i) {
-        ht.set(i, i);
-    }
-    ht.erase(3);
-    ht.erase(7);
-    int sum_keys = 0, sum_vals = 0, count = 0;
-    ht.for_each_occupied([&](const int& k, const int& v) {
-        sum_keys += k;
-        sum_vals += v;
-        ++count;
-    });
-    EXPECT_EQ(count, 8);     // 10 - 2 删除
-    EXPECT_EQ(sum_keys, 35); // 0..9 去掉 3,7 = 45-10
-    EXPECT_EQ(sum_vals, 35); // 值同键
-}
-
 TEST(HashTable, Clear) {
     GC       gc;
     IntTable ht{&gc};
@@ -208,38 +189,43 @@ TEST(HashTable, DtorReleasesMemory) {
     EXPECT_EQ(gc.bytes_allocated(), before); // 全部归还
 }
 
-// ---- 槽位扫描原语(next_occupied/entry_at,map 迭代器与 ObjMap::equals 的游标缝) ----
+// ---- 槽位迭代器(begin/end,跳空槽/墓碑;ObjMap 迭代游标与 trace 的扫描缝) ----
 
-TEST(HashTable, NextOccupiedScansForward) {
+TEST(HashTable, IteratorScansOccupiedSlots) {
     GC       gc;
     IntTable ht{&gc};
-    EXPECT_EQ(ht.next_occupied(0), IntTable::kNpos); // 空表:无占用槽
+    EXPECT_TRUE(ht.begin() == ht.end()); // 空表:无占用槽,begin 即 end
 
-    ht.set(1, 10); // 单元素:全程恰一个占用槽,任意 from 命中或 kNpos
-    const auto only = ht.next_occupied(0);
-    ASSERT_NE(only, IntTable::kNpos);
-    EXPECT_EQ(ht.next_occupied(only + 1), IntTable::kNpos);
-    EXPECT_EQ(ht.next_occupied(only), only);                     // from 含自身
-    EXPECT_EQ(ht.next_occupied(ht.capacity()), IntTable::kNpos); // from 到界即耗尽
+    ht.set(1, 10); // 单元素:全程恰一次解引用
+    auto it = ht.begin();
+    ASSERT_TRUE(it != ht.end());
+    EXPECT_EQ(it->key, 1);
+    EXPECT_EQ(it->value, 10);
+    ++it;
+    EXPECT_TRUE(it == ht.end());
 
-    // 多元素:槽位扫描逐个命中,槽序访问键值;erase 的槽被跳过(墓碑非占用)。
+    // 多元素:槽位序逐个命中,erase 的槽被跳过(墓碑非占用)。
     ht.set(2, 20);
     ht.set(3, 30);
     ht.erase(2);
     int visited = 0;
-    for (usize slot = ht.next_occupied(0); slot != IntTable::kNpos; slot = ht.next_occupied(slot + 1)) {
+    for (const auto& entry: ht) {
+        EXPECT_EQ(entry.key * 10, entry.value);
         ++visited;
-        EXPECT_EQ(ht.entry_at(slot).key * 10, ht.entry_at(slot).value);
     }
     EXPECT_EQ(visited, 2); // 3 - 1 删除
 }
 
-TEST(HashTable, EntryAtReadsKeyAndValue) {
+TEST(HashTable, IteratorStructuredBindingReadsKeyAndValue) {
     GC       gc;
     IntTable ht{&gc};
     ht.set(7, 70);
-    const auto slot = ht.next_occupied(0);
-    ASSERT_NE(slot, IntTable::kNpos);
-    EXPECT_EQ(ht.entry_at(slot).key, 7);
-    EXPECT_EQ(ht.entry_at(slot).value, 70);
+    ht.set(9, 90);
+    int sum_keys = 0, sum_vals = 0;
+    for (const auto& [key, value]: ht) {
+        sum_keys += key;
+        sum_vals += value;
+    }
+    EXPECT_EQ(sum_keys, 16);
+    EXPECT_EQ(sum_vals, 160);
 }

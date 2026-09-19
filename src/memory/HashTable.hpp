@@ -81,6 +81,20 @@ namespace aria {
         usize  tombstones_; // 墓碑数
 
         static constexpr usize kInitialCap = 8;
+        static constexpr usize kNpos       = static_cast<usize>(-1);
+
+        // 从 from 起(含)找下一占用槽的槽位索引,无则 cap_(与 end 哨兵同值,迭代器推进
+        // 单点共用:begin 首扫与 const_iterator::operator++)。只看 ctrl 不加载非占用
+        // Entry,空/墓碑槽里是垃圾也安全。
+        [[nodiscard]]
+        usize next_occupied_from_(const usize from) const noexcept {
+            for (usize i = from; i < cap_; ++i) {
+                if (ctrl_is_occupied(ctrl_[i])) {
+                    return i;
+                }
+            }
+            return cap_;
+        }
 
     public:
         explicit HashTable(Alloc* alloc) noexcept :
@@ -207,37 +221,52 @@ namespace aria {
             return count_ == 0;
         }
 
-        // 遍历所有占用槽(供 trace / 调试)。fn 接收 (const K&, const V&)。
-        // 只看 ctrl,不加载非占用 Entry,故空/墓碑槽里是垃圾也安全。
-        template<typename Fn>
-        void for_each_occupied(Fn&& fn) const noexcept {
-            for (usize i = 0; i < cap_; ++i) {
-                if (ctrl_is_occupied(ctrl_[i])) {
-                    fn(entries_[i].key, entries_[i].value);
-                }
+        // 只读槽位迭代器(begin/end 语义,消费场景全只读故不设非 const 版):跳过空槽与
+        // 墓碑,operator* 取占用槽 Entry。迭代序 = 槽位序(map 语言面迭代序 unspecified,
+        // 契约见计划 D4/ObjMapIterator);失效语义同 std::unordered_map 惯例 --erase 使
+        // 被删元素失效,rehash/compact 搬迁槽位使全部迭代器失效,迭代中变更容器不设防。
+        // 对称基线:Array 的 begin/end/cbegin/cend。
+        class const_iterator {
+        public:
+            const Entry& operator*() const {
+                ASSERT(ht_->ctrl_is_occupied(ht_->ctrl_[slot_]), "HashTable::const_iterator: slot is not occupied");
+                return ht_->entries_[slot_];
             }
+
+            const Entry* operator->() const { return &operator*(); }
+
+            const_iterator& operator++() {
+                slot_ = ht_->next_occupied_from_(slot_ + 1);
+                return *this;
+            }
+
+            [[nodiscard]]
+            bool operator==(const const_iterator& rhs) const noexcept {
+                return slot_ == rhs.slot_;
+            }
+
+            [[nodiscard]]
+            bool operator!=(const const_iterator& rhs) const noexcept {
+                return slot_ != rhs.slot_;
+            }
+
+            // 仅 HashTable 的 begin/end 构造;slot 语义不对外承诺(越界/非占用槽行为由
+            // ASSERT 钉住)。
+            explicit const_iterator(const HashTable* ht, const usize slot) noexcept : ht_{ht}, slot_{slot} {}
+
+        private:
+            const HashTable* ht_;
+            usize            slot_;
+        };
+
+        [[nodiscard]]
+        const_iterator begin() const noexcept {
+            return const_iterator{this, next_occupied_from_(0)};
         }
 
-        static constexpr usize kNpos = static_cast<usize>(-1);
-
-        // 从 from 起(含)找下一占用槽的槽位索引,无则 kNpos(map 槽位扫描迭代器的游标
-        // 原语,ObjMap::equals 同用)。只看 ctrl 不加载非占用 Entry,空/墓碑槽里是垃圾
-        // 也安全(同 for_each_occupied)。
         [[nodiscard]]
-        usize next_occupied(const usize from) const noexcept {
-            for (usize i = from; i < cap_; ++i) {
-                if (ctrl_is_occupied(ctrl_[i])) {
-                    return i;
-                }
-            }
-            return kNpos;
-        }
-
-        // 占用槽条目访问(slot 须为 next_occupied 的返回值;两原语成对消费,索引恒新鲜)。
-        [[nodiscard]]
-        const Entry& entry_at(const usize slot) const noexcept {
-            ASSERT(ctrl_is_occupied(ctrl_[slot]), "HashTable::entry_at: slot is not occupied");
-            return entries_[slot];
+        const_iterator end() const noexcept {
+            return const_iterator{this, cap_};
         }
 
     private:

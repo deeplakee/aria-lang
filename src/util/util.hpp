@@ -186,6 +186,24 @@ namespace aria::util {
         return {static_cast<u8>(word & 0xFF), static_cast<u8>((word >> 8) & 0xFF), static_cast<u8>((word >> 16) & 0xFF),
                 static_cast<u8>((word >> 24) & 0xFF)};
     }
+
+    // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面
+    // 集合方法的共用底座;元素序 = range 迭代序)。transform 接收元素、返回可拼进 String
+    // 的值(通常 String)。
+    template<typename Range, typename Fn>
+    [[nodiscard]]
+    String join(const Range& range, const StringView delimiter, Fn&& transform) {
+        String out;
+        bool   first = true;
+        for (const auto& element: range) {
+            if (!first) {
+                out += delimiter;
+            }
+            first = false;
+            out += transform(element);
+        }
+        return out;
+    }
 } // namespace aria::util
 
 #endif // ARIA_UTIL_HPP

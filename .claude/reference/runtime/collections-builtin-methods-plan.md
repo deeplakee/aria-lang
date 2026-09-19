@@ -155,7 +155,10 @@
 > "string, list or map")。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)——本批唯一非对齐面
 > 新代码。语义三拍板(2026-09-19):equals 键 === 值 ==(与表内键语义一致)、字面量重复键后键胜、kMaxMapEntries
 > 单立(条目对数 u16 上限,与 kMaxListElements 分名,注释各述「元素数/条目对数」)。forIn 解构目标随批 8(本批
-> forIn 循环变量拿整个 pair,验收口径收窄见 §4.3 表行)。
+> forIn 循环变量拿整个 pair,验收口径收窄见 §4.3 表行)。后继演进(同日,批 5 收官后):HashTable 槽位原语
+> next_occupied/entry_at 与回调式 for_each_occupied 正名化为嵌套 const_iterator(begin/end,与 Array 对称,失效
+> 语义同 std::unordered_map 惯例),util 增 join(range, delimiter, transform),两处 debug_repr/equals/trace/
+> ObjMapIterator 游标全部换装,三原语退役。
 
 ## 5. 参照
 

@@ -193,14 +193,13 @@ namespace {
     // 在 VM 模块表 modules 里按模块显示名(name_->view())查找模块对象;未命中返 nullptr。
     // 加载层测试经 interpret_from_path 跑完后,用此白盒检视被导入模块的 state / globals。
     ObjModule* find_module_by_name(aria::AriaHashTable& modules, const StringView name) {
-        ObjModule* found = nullptr;
-        modules.for_each_occupied([&](const Value& /*key*/, const Value& val) {
-            auto m = aria::Object::as<ObjModule>(val.as_obj());
+        for (const auto& entry: modules) {
+            auto m = aria::Object::as<ObjModule>(entry.value.as_obj());
             if (m->name() != nullptr && m->name()->view() == name) {
-                found = m;
+                return m;
             }
-        });
-        return found;
+        }
+        return nullptr;
     }
 
     // 造带目录的模块(name = 文件名 stem,dir = 模块文件所在目录)。调用方须先 guard 已创建

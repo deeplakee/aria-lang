@@ -28,7 +28,7 @@ namespace aria {
     };
 
     // 绑定 Value 的 aria 哈希表:继承 HashTable<Value,Value,ValueHash,ValueEq> 的
-    //        Swiss Table 实现与接口(set/find/erase/for_each_occupied/size...),加 trace(GC&)
+    //        Swiss Table 实现与接口(set/find/begin/end/size...),加 trace(GC&)
     //        (遍历占用槽 mark_value key+value)。
     //
     //        分层:src/memory/ 的 HashTable<K,V,Hash,Eq> 对 K/V 完全通用(不知 Value);本类
@@ -39,13 +39,13 @@ namespace aria {
     public:
         using HashTable<Value, Value, ValueHash, ValueEq>::HashTable; // 继承 explicit HashTable(GC*) ctor
 
-        // GC 标记:遍历占用槽 mark_value(key)+(value)。由 owner(ObjMap)在 collect 的 trace
-        // 阶段调用(「只看 ctrl、不加载非占用 Entry,垃圾槽安全」见 HashTable::for_each_occupied)。
+        // GC 标记:遍历占用槽 mark_value(key)+(value)。迭代器只看 ctrl、不加载非占用
+        // Entry,垃圾槽安全(HashTable::const_iterator 注释)。
         void trace(GC& gc) const noexcept {
-            this->for_each_occupied([&gc](const Value& key, const Value& value) {
+            for (const auto& [key, value]: *this) {
                 gc.mark_value(key);
                 gc.mark_value(value);
-            });
+            }
         }
     };
 

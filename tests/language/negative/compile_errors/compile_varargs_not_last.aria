@@ -1,0 +1,2 @@
+// 钉住：varargs（...rest）必须位于参数列表末位。
+fun f(...rest, b) { return rest; }

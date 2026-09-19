@@ -1,0 +1,54 @@
+// 钉住：def 类基础面——init 构造器、this 字段读写、实例方法、字段动态性。
+def Box {
+    init(v) {
+        this.v = v;
+    }
+    get() { return this.v; }
+    set(v) { this.v = v; }
+    add(other) { return this.v + other.get(); }
+}
+var b = Box(3);
+assert(b.get() == 3);
+b.set(5);
+assert(b.get() == 5);
+assert(b.v == 5);          // 字段直接读
+b.v = 7;                   // 字段直接写
+assert(b.get() == 7);
+assert(Box(3).add(Box(4)) == 7);
+
+// init 里多字段与相互引用
+def Point {
+    init(x, y) {
+        this.x = x;
+        this.y = y;
+        this.norm2 = x * x + y * y;
+    }
+}
+var p = Point(3, 4);
+assert(p.norm2 == 25);
+
+// 实例间字段独立（this 指向各自实例）
+var a1 = Box(1);
+var a2 = Box(2);
+a1.set(10);
+assert(a2.get() == 2);
+
+// 无 init 类：实例化为裸对象，字段可后补（实例字段动态）
+def Bare { }
+var bare = Bare();
+bare.tag = 42;
+assert(bare.tag == 42);
+
+// 实例方法内调用同实例另一方法（this.方法名）
+def Counter {
+    init() { this.n = 0; }
+    bump() { this.n += 1; return this; }
+    bump_twice() { this.bump(); return this.bump(); }
+    value() { return this.n; }
+}
+assert(Counter().bump_twice().value() == 2);
+
+// 类是值：赋值传递、type 名
+var klass_holder = Box;
+assert(type(klass_holder) == "Class");
+assert(type(Box(0)) == "Instance");

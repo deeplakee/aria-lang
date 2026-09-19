@@ -1,0 +1,45 @@
+// 钉住：迭代器一等值——xs.iter() 显式铸造、has_next/next 手动驱动、耗尽后 next 抛
+# IterationExhausted（可 catch，fail-fast 非 nil 哨兵）、迭代器值可传递。
+var xs = [10, 20];
+var it = xs.iter();
+assert(type(it) == "Iterator");
+assert(it.has_next());
+
+// 手动驱动两步
+assert(it.next() == 10);
+assert(it.has_next());
+assert(it.next() == 20);
+assert(!it.has_next());
+
+// 耗尽后 next 抛 IterationExhausted（可 catch；nil 哨兵被否决，列表可存真 nil）
+var caught = 0;
+try {
+    it.next();
+    assert(false);
+} catch (e) {
+    caught = 1;
+}
+assert(caught == 1);
+
+// 新铸造的迭代器完整重读源表（「迭代中变更容器」v1 不承诺，只钉新迭代器的确定性）
+var it2 = xs.iter();
+var sum = 0;
+while (it2.has_next()) { sum += it2.next(); }
+assert(sum == 30);
+
+// 迭代器经函数传递（一等值）
+fun drain(iter) {
+    var out = 0;
+    while (iter.has_next()) { out += iter.next(); }
+    return out;
+}
+assert(drain([1, 2, 3].iter()) == 6);
+
+// 两个独立迭代器交替消费同一表（游标互不串扰的显式形态）
+var ys = [1, 2];
+var ia = ys.iter();
+var ib = ys.iter();
+assert(ia.next() == 1);
+assert(ib.next() == 1);           // ib 不受 ia 推进影响
+assert(ia.next() == 2);
+assert(ib.next() == 2);

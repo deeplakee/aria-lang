@@ -1,0 +1,39 @@
+// 钉住：list 下标读写——整数键 0 起、STORE 覆写原槽、复合赋值（读-改-写单次求值左值）、
+# 嵌套下标链、越界/非整数键报错归负向层。
+var xs = [10, 20, 30];
+assert(xs[0] == 10);
+assert(xs[2] == 30);
+
+// 下标写
+xs[1] = 99;
+assert(xs[1] == 99);
+assert(xs == [10, 99, 30]);
+
+// 复合赋值：xs[i] += v（locator 单次求值、读改写一条链）
+var i = 0;
+xs[i] += 5;
+assert(xs[0] == 15);
+xs[2] *= 2;
+assert(xs[2] == 60);
+
+// 下标表达式带副作用时左值只求值一次（复合赋值不变式）
+var calls = 0;
+fun idx() { calls += 1; return 1; }
+xs[idx()] += 1;
+assert(calls == 1);
+assert(xs[1] == 100);
+
+// 嵌套下标链：矩阵式访问与写
+var grid = [[1, 2], [3, 4]];
+assert(grid[1][0] == 3);
+grid[0][1] = 20;
+assert(grid[0][1] == 20);
+grid[1][0] += 10;
+assert(grid == [[1, 20], [13, 4]]);
+
+// 下标读作调用 receiver / 迭代源
+var fns = [fun(x) { return x + 1; }];
+assert(fns[0](41) == 42);
+var total = 0;
+for (v in [1, 2]) { total += v; }
+assert(total == 3);

@@ -1,0 +1,44 @@
+// 钉住：for-in 遍历 list（协议降糖为 iter/has_next/next 方法调用），空表零轮；
+# 嵌套遍历同一 list 互不串扰（每源迭代器自持游标）；break 正常跳出。
+var total = 0;
+for (v in [1, 2, 3, 4]) { total += v; }
+assert(total == 10);
+
+// 空表：循环体零轮执行
+var rounds = 0;
+var empty = [];
+for (v in empty) { rounds += 1; }
+assert(rounds == 0);
+
+// 嵌套遍历同一 list：两迭代器游标独立（3 x 3 = 9 轮）
+var xs = [1, 2, 3];
+var pairs = 0;
+var diag = 0;
+for (a in xs) {
+    for (b in xs) {
+        pairs += 1;
+        if (a == b) { diag += 1; }
+    }
+}
+assert(pairs == 9);
+assert(diag == 3);
+
+// 循环变量遮蔽外层同名（per-iteration fresh 绑定）
+var v = 1000;
+for (v in [7, 8]) { assert(v == 7 || v == 8); }
+assert(v == 1000);
+
+// break 跳出 for-in（只断最内层）
+var seen = 0;
+for (a in [1, 2, 3]) {
+    if (a == 2) { break; }
+    seen += 1;
+}
+assert(seen == 1);
+
+// 遍历含 nil 元素的 list（迭代器不靠 nil 哨兵判尽，has_next 把关）
+var nils = 0;
+for (v in [nil, 1, nil]) {
+    if (v == nil) { nils += 1; }
+}
+assert(nils == 2);

@@ -1,0 +1,41 @@
+// 钉住：类静态成员——fun 前缀静态方法（无 this）、var 静态变量、类名限定访问、
+# 静态沿链读穿透写遮蔽、类体裸名不可见静态。
+def Widget {
+    var count = 0;                       // 静态变量
+    var label = 1;
+    fun make(n) { return Widget(n); }    // 静态方法：自引用写类名
+    init(n) { this.n = n; }
+    describe() { return this.n; }        // 实例方法对照（无 fun 前缀）
+}
+assert(Widget.count == 0);
+var w1 = Widget.make(1);
+var w2 = Widget(2);
+assert(Widget.count == 0);               // 实例化不动静态
+assert(w1.describe() == 1);
+assert(w2.describe() == 2);
+
+// 静态变量写：落接收类自身表
+Widget.count = 5;
+assert(Widget.count == 5);
+
+// 实例读回退静态（实例字段未命中沿类链找静态）；实例自身字段遮蔽同名静态
+assert(w1.count == 5);
+w1.count = 99;                           // 写实例字段（遮蔽）
+assert(w1.count == 99);
+assert(Widget.count == 5);               // 类静态不受实例写影响
+assert(w2.count == 5);
+
+// 静态沿链读穿透 / 写遮蔽
+def Sub : Widget { }
+assert(Sub.count == 5);                  // 读穿透命中父静态
+Sub.count = 7;                           // 写遮蔽：落 Sub 自身表
+assert(Sub.count == 7);
+assert(Widget.count == 5);               // 父表不动
+
+// 静态方法无 this：类名访问，也可经实例读（读穿透同一张表）
+assert(Widget.make(3).describe() == 3);
+assert(w1.make(4).describe() == 4);
+
+// 类体静态初始化 eager：类定义时求值（后定义的类引用先定义的类）
+def Dep { var from_widget = Widget; }
+assert(Dep.from_widget == Widget);

@@ -1,0 +1,50 @@
+// 钉住：rest 参数（...rest）把超出固定参数数的实参收集为 list，只保元数下界；
+# 无额外实参铸空表、每次调用新铸、可被闭包捕获、与默认参数按位共存。
+fun count_all(first, ...rest) {
+    var n = 1;
+    for (r in rest) { n += 1; }
+    return n;
+}
+assert(count_all(1) == 1);
+assert(count_all(1, 2, 3, 4) == 4);
+
+fun just_rest(...all) { return len(all); }
+assert(just_rest() == 0);
+assert(just_rest(9, 8, 7) == 3);
+
+// rest 是真 list：下标可读
+fun second(a, ...rest) { return rest[1]; }
+assert(second(0, 10, 20, 30) == 20);
+
+// 每次调用新铸：两次调用的 rest 互不影响（前次追加不泄漏到后次）
+fun accumulator(...xs) { return xs; }
+var first_call = accumulator(1, 2);
+var second_call = accumulator(3);
+first_call.push(99);
+assert(len(first_call) == 3);
+assert(len(second_call) == 1);
+
+// rest 可被闭包捕获（逃逸后仍存活）
+fun make_rest_collector(...seed) {
+    return fun() { return len(seed); };
+}
+var rc = make_rest_collector(1, 2, 3);
+assert(rc() == 3);
+
+// 默认参数与 varargs 混合：按位填充，未传走默认，剩余进 rest
+fun mixed(a, b = 2, ...c) { return a * 100 + b * 10 + len(c); }
+assert(mixed(1) == 120);
+assert(mixed(1, 5) == 150);
+assert(mixed(1, 5, 6, 7) == 152);
+
+// 方法帧同构适用（槽 0 = this 不参与收集）
+def Recorder {
+    init(tag) { this.tag = tag; }
+    tally(...nums) {
+        var total = this.tag;
+        for (v in nums) { total += v; }
+        return total;
+    }
+}
+assert(Recorder(100).tally() == 100);
+assert(Recorder(100).tally(1, 2, 3) == 106);

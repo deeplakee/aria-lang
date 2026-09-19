@@ -1,0 +1,47 @@
+// 钉住：继承（def Child : Parent）——init/super.init() 链、super.method() 调被遮蔽实现、
+# 方法与字段沿链解析、多级链。
+def Base {
+    init() { this.tag = 100; }
+    greet() { return 1; }
+    describe() { return 10; }
+}
+def Derived : Base {
+    init() {
+        super.init();
+        this.extra = 2;
+    }
+    greet() { return 10 + super.greet(); }   // super 调被遮蔽实现
+}
+var d = Derived();
+assert(d.tag == 100);        // super.init 写入的字段
+assert(d.extra == 2);
+assert(d.greet() == 11);     // 遮蔽 + super 组合
+assert(d.describe() == 10);  // 未遮蔽方法沿链命中父实现
+
+// 多级链：C -> B -> A，方法逐级 super 叠加
+def A2 {
+    init() { this.x = 5; }
+    hi() { return 1; }
+}
+def B2 : A2 {
+    hi() { return 2 + super.hi(); }
+}
+def C2 : B2 { }
+var c = C2();
+assert(c.x == 5);            // 继承的 init 可用
+assert(c.hi() == 3);         // C2 miss -> B2 命中 -> super 到 A2
+
+// 孙类继承中段类的 init
+def D2 : A2 { }
+assert(D2().x == 5);
+
+// super 读父静态槽亦原值直读（LOAD_SUPER_FIELD 统一路径）
+def E2 : Base {
+    probe() { return super.describe(); }
+}
+assert(E2().probe() == 10);
+
+// 继承不影响类身份判等（=== 按指针）
+assert(D2 !== A2);
+var same = d;
+assert(same === d);

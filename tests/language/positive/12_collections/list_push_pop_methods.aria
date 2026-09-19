@@ -1,0 +1,39 @@
+// 钉住：list 方法面（经 List bootstrap 类表分派）——push 追加返 nil、pop 移除返末元素、
+# 恒绑定经变量调用、方法与下标/迭代组合。
+var xs = [1, 2];
+assert(xs.push(3) == nil);        // push 返 nil
+assert(xs == [1, 2, 3]);
+assert(len(xs) == 3);
+
+assert(xs.pop() == 3);            // pop 返末元素
+assert(xs == [1, 2]);
+
+var empty = [];
+empty.push(9);                    // 空表 push 后可 pop
+assert(empty.pop() == 9);
+assert(len(empty) == 0);
+
+// push 多值顺序保持（作队列消费）
+var queue = [];
+queue.push(1);
+queue.push(2);
+queue.push(3);
+var drained = [];
+drained.push(queue[0]);
+drained.push(queue[1]);
+assert(drained == [1, 2]);
+
+// 恒绑定：方法经变量调用 receiver 不变（内置类表路径与用户类一致）
+var p = xs.push;
+p(10);
+assert(xs == [1, 2, 10]);
+var q = xs.pop;
+assert(q() == 10);
+
+// pop 只动末元素，前部原位
+var ys = [5, 6, 7];
+ys.pop();
+assert(ys[0] == 5 && ys[1] == 6);
+
+// 方法调用链在表达式位
+assert([1].push(2) == nil);

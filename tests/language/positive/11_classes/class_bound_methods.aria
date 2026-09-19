@@ -1,0 +1,44 @@
+// 钉住：bound method——obj.method 取值即绑定 receiver（恒绑定，经变量/传参调用不变）；
+# 方法值是一等值。
+def Greeter {
+    init(name) { this.name = name; }
+    code() { return this.name * 10; }
+}
+var g1 = Greeter(1);
+var g2 = Greeter(2);
+
+// 经变量调用：receiver 仍为 g1
+var m = g1.code;
+assert(m() == 10);
+assert(g2.code() == 20);
+assert(m() == 10);
+
+// 方法作实参传递（高阶消费）
+fun apply(fn) { return fn(); }
+assert(apply(g2.code) == 20);
+
+// 方法存进 list 后调用（穿过集合仍恒绑定）
+var fns = [g1.code, g2.code];
+assert(fns[0]() == 10);
+assert(fns[1]() == 20);
+
+// bound method 的 type；用户类实例取方法有 fields 缓存回填，再取恒同对象（M5 三铁则）
+assert(type(m) == "BoundMethod");
+assert(m === g1.code);
+
+// 返回 this 链式调用
+def Chain {
+    init() { this.acc = 0; }
+    add(v) { this.acc += v; return this; }
+    value() { return this.acc; }
+}
+assert(Chain().add(1).add(2).add(3).value() == 6);
+
+// 方法值捕获实例存活（实例经 bound 引用不被 GC 回收的语义面由 stress GC 保障）
+var leak;
+fun keep() {
+    var local = Greeter(42);
+    leak = local.code;
+}
+keep();
+assert(leak() == 420);

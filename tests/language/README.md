@@ -15,13 +15,15 @@ tests/language/
     01_lexical/              # 词法与字面量
     02_arith_compare/        # 算术/除模/比较/== ===/短路/一元/复合赋值
     03_vars_scope/           # var 多绑定/作用域/遮蔽/模块全局
-    04_control_flow/         # if/while/for/break/continue/match
-    05_functions/            # 声明/递归/一等值/lambda/if 表达式
+    04_control_flow/         # if/while/for/for-in/break/continue/match
+    05_functions/            # 声明/递归/一等值/lambda/if 表达式/默认参数/varargs
     06_closures/             # 捕获即引用各族
     07_exceptions/           # try/catch/throw 各族
     08_builtins/             # print 格式（配 .out）/type/len/str/assert
     09_modules/              # import 各族；每用例一个子目录（main.aria + lib/）
     10_integration/          # 多特性组合的综合小程序
+    11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
+    12_collections/          # list 字面量/下标/push/pop/迭代器协议
   negative/
     compile_errors/          # compile_*.aria -> 期待 CompileError
     runtime_errors/          # runtime_*.aria -> 期待 RuntimeError（可配 .err）
@@ -70,16 +72,16 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 ## 当前禁区（写新用例前必读）
 
-1. **for-in 一律禁止**（正向与负向都不写）：语法可解析但当前无可迭代值，执行会命中
-   未实装 opcode 走 `fatal_error` 直接杀死测试进程。
-2. **字符串没有 `+` 拼接、没有排序比较**（`+`/`>`/`<` 仅数值）：语料不要用字符串拼
+1. **字符串没有 `+` 拼接、没有排序比较**（`+`/`>`/`<` 仅数值）：语料不要用字符串拼
    消息；也不要把「字符串 + 报错」写成负向用例钉死（后续里程碑大概率补齐）。
-3. **不要钉临时未实装行为**：list/map 字面量、下标访问、字段访问（含 `H.x` 读模块
-   成员）、`def`/`this`/`super`、解构模式、默认参数/varargs、区间 `..`
-   均为编译期 NotImplemented，随里程碑逐个翻转——写「期待 CompileError」的负向用例
-   会在翻转日变红。这也是 09_modules 只能经模块体副作用（print / 异常）观察行为、
-   无法在 main 里读 `H.x` 的原因。
-4. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号。
+2. **不要钉临时未实装行为**：map 字面量、解构模式、区间 `..`、`H.x` 读模块成员
+   （模块全局未导出为模块成员）均为编译期/运行期未实装，随里程碑逐个翻转——写
+   「期待报错」的负向用例会在翻转日变红。这也是 09_modules 只能经模块体副作用
+   （print / 异常）观察行为、无法在 main 里读 `H.x` 的原因。
+3. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对
+   不可迭代值 for-in 目前报 `UndefinedProperty`（降糖为 `.iter` 方法调用 miss），
+   `NotIterable` 专用码已预留未接线，措辞会变——负向用例只断言 RuntimeError、
+   不配 `.err`。
 
 ## 如何新增用例
 

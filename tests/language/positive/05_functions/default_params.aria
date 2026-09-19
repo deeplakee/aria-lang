@@ -1,0 +1,41 @@
+// 钉住：默认参数按位从左到右补缺省（未传才求值默认值），默认值可引用前序参数；
+# 体局部 var 与默认参数求值路径共存不错位（值填槽不变式回归钉子）。
+fun add3(a, b = 2, c = 10) { return a + b + c; }
+assert(add3(1) == 13);
+assert(add3(1, 5) == 16);
+assert(add3(1, 5, 100) == 106);
+
+// 默认值引用前序参数（自然序作用域：轮到本槽时前序槽必已就位）
+fun rep(n, times = n) {
+    var out = 0;
+    var i = 0;
+    while (i < times) { out += n; i += 1; }
+    return out;
+}
+assert(rep(3) == 9);
+assert(rep(3, 2) == 6);
+
+// 默认值 + 体局部 var：求值路径栈平衡（曾因 STORE_LOCAL 残留错位，回归钉住）
+fun body_locals(n, m = n + 2) {
+    var a = 100;
+    var b = 7;
+    return a + b + n + m;
+}
+assert(body_locals(1) == 111);       // m 走默认 n + 2
+assert(body_locals(1, 2) == 110);    // m 实传
+
+// 默认值只在实际未传时求值（副作用计数）
+var eval_count = 0;
+fun bump() { eval_count += 1; return 0; }
+fun side(a, b = bump()) { return a + b; }
+assert(side(1) == 1);
+assert(eval_count == 1);
+assert(side(1, 5) == 6);
+assert(eval_count == 1);
+
+// 经变量调用（一等函数）缺省填充一致
+var f = add3;
+assert(f(1) == 13);
+
+// 多默认参数中间跳传不可（按位填充：后者也只能靠默认或全传满）
+assert(add3(1, 5) == 16);

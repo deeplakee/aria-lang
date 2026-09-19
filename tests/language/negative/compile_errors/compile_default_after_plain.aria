@@ -1,0 +1,2 @@
+// 钉住：默认参数之后不得再有无默认参数（文法定序 plain -> default -> varargs）。
+fun f(a = 1, b) { return a; }

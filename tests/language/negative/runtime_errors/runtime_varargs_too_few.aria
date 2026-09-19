@@ -1,0 +1,3 @@
+// 钉住：varargs 函数元数只保下界——固定参数不足仍报 WrongArity（区间文案）。
+fun f(a, b = 1, ...rest) { return a; }
+f();

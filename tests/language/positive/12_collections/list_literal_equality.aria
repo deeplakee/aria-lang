@@ -1,0 +1,42 @@
+// 钉住：list 字面量与值表示——空表/多元素/嵌套构造、== 内容递归相等 vs === 指针严格、
+# len 计元素数、type 名；print 渲染见同目录 .out。
+var empty = [];
+assert(len(empty) == 0);
+assert(type(empty) == "List");
+
+var xs = [1, 2, 3];
+assert(len(xs) == 3);
+assert(xs == [1, 2, 3]);            // == 值内容递归相等
+assert(xs === xs);                  // === 同一对象
+assert(!(xs === [1, 2, 3]));        // === 不同对象恒不等
+
+// 嵌套构造与递归相等
+var nested = [1, [2, 3], [[4]]];
+assert(nested == [1, [2, 3], [[4]]]);
+assert(nested[1] == [2, 3]);
+assert(nested[2][0] == [4]);
+assert(nested[2][0][0] == 4);
+
+// 混合元素类型（nil/bool/string/数值/函数值同居一表）
+fun id(v) { return v; }
+var mixed = [nil, true, "s", 3, 3.5, id];
+assert(len(mixed) == 6);
+assert(mixed[0] == nil);
+assert(mixed[1]);
+assert(mixed[2] == "s");
+assert(mixed[5](9) == 9);           // 函数值出表即调
+
+// 元素含 nil 不截断（非 C 空终结语义）
+var with_nil = [nil, nil, 1];
+assert(len(with_nil) == 3);
+
+// 可变共享：别名指向同一表
+var alias = xs;
+alias.push(4);
+assert(len(xs) == 4);
+assert(alias === xs);
+
+// 字面量每次求值新铸（非常量折叠共享）
+fun fresh() { return [1, 2]; }
+fresh().push(3);
+assert(fresh() == [1, 2]);

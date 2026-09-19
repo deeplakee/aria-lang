@@ -20,14 +20,17 @@
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjList.hpp"
+#include "object/ObjMap.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
+#include "object/iterator/ObjMapIterator.hpp"
 #include "runtime/Builtins.hpp"
 #include "runtime/IteratorMethods.hpp"
 #include "runtime/ListMethods.hpp"
+#include "runtime/MapMethods.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -263,6 +266,7 @@ namespace aria {
         bootstrap_object_class();
         bootstrap_list_class();
         bootstrap_iterator_class();
+        bootstrap_map_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
     }
@@ -313,6 +317,8 @@ namespace aria {
         return Object::as<ObjClass>(registers_[kIteratorClassOffset].as_obj());
     }
 
+    ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset].as_obj()); }
+
     void AriaVM::bootstrap_object_class() {
         // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
         // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
@@ -343,6 +349,16 @@ namespace aria {
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_methods(gc_, klass);
         registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_map_class() {
+        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定
+        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
+        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
+        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        const auto klass = new_class(gc_, "Map", object_class());
+        register_map_methods(gc_, klass);
+        registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {
@@ -1325,8 +1341,22 @@ namespace aria {
                     current_->push(Value::from_obj(list));
                     break;
                 }
-                case OpCode::MAKE_MAP:
-                    not_implemented("MAKE_MAP");
+                case OpCode::MAKE_MAP: {
+                    // n:u16;[k1,v1..kn,vn] -> [map]:键值 peek 在栈跨 new_map 顶部
+                    // maybe_collect(「栈即根」);逐对 set 走 GC 分配器不触 GC(rehash 同,
+                    // HashTable 注释),拷完 drop 2n 再 push(窗口内无 GC 点)。重复键天然
+                    // 后键胜(set 命中原槽覆写,Python dict 同款);n 已由编译器上限检查,
+                    // 字节码良构。
+                    const u16  count = read_u16(frame);
+                    const auto map   = new_map(gc_);
+                    const auto base  = current_->stack_top() - count * 2;
+                    for (usize i = 0; i < count; ++i) {
+                        map->table().set(base[i * 2], base[i * 2 + 1]);
+                    }
+                    current_->drop(count * 2);
+                    current_->push(Value::from_obj(map));
+                    break;
+                }
                 case OpCode::MAKE_RANGE:
                     not_implemented("MAKE_RANGE");
 

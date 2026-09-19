@@ -1,2 +1,2 @@
-Runtime: TypeMismatch len requires a string or list, got Int
+Runtime: TypeMismatch len requires a string, list or map, got Int
 at <main> (

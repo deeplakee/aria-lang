@@ -1,0 +1,28 @@
+// 钉住：map 迭代——for (pair in m) 产出 [k, v] 二元 list，产出顺序 unspecified，
+# 不依赖具体序（计数 + 键归属 + 值求和校验）；迭代器直取游标独立。
+var m = {"a": 1, "b": 2, "c": 3};
+var sum = 0;
+var hits = 0;
+for (pair in m) {
+    assert(len(pair) == 2);
+    sum = sum + pair[1];
+    if (pair[0] == "a" && pair[1] == 1) { hits = hits + 1; }
+    if (pair[0] == "b" && pair[1] == 2) { hits = hits + 1; }
+    if (pair[0] == "c" && pair[1] == 3) { hits = hits + 1; }
+}
+assert(sum == 6);
+assert(hits == 3);
+
+var empty = {};
+var rounds = 0;
+for (pair in empty) { rounds = rounds + 1; }
+assert(rounds == 0);
+
+// 迭代器对象直取：双迭代器互不串扰（槽位游标独立）
+var it1 = m.iter();
+var it2 = m.iter();
+it1.next();
+it1.next();
+it1.next();
+assert(it1.has_next() == false);
+assert(it2.has_next() == true);

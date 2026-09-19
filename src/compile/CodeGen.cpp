@@ -20,13 +20,15 @@ namespace aria {
     namespace {
         // 容量上限(值即操作数/索引位宽上限,事实源见 CodeUnit.hpp 的 kU8/kU16OperandMax;
         // 越界统一用 > 比较):kMaxArity 形参(u8)、kMaxArguments 实参(CALL 操作数 u8)、
-        // kMaxConstants 常量池(u16 索引)、kMaxListElements 列表字面量元素数(MAKE_LIST
-        // 操作数 u16)、kMaxLocals 局部槽(u16,含 slot 0 哑元)。语义名集中定义使检查点与
-        // 报错文案同源;kMaxUpvalues 同纪律,因登记侧共用而定义于 FunctionCtx.hpp。
+        // kMaxConstants 常量池(u16 索引)、kMaxListElements 列表字面量元素数与 kMaxMapEntries
+        // map 字面量条目对数(MAKE_LIST/MAKE_MAP 操作数 u16)、kMaxLocals 局部槽(u16,含
+        // slot 0 哑元)。语义名集中定义使检查点与报错文案同源;kMaxUpvalues 同纪律,因登记侧
+        // 共用而定义于 FunctionCtx.hpp。
         constexpr u32 kMaxArity        = kU8OperandMax;
         constexpr u32 kMaxArguments    = kU8OperandMax;
         constexpr u32 kMaxConstants    = kU16OperandMax;
         constexpr u32 kMaxListElements = kU16OperandMax;
+        constexpr u32 kMaxMapEntries   = kU16OperandMax;
         constexpr u32 kMaxLocals       = kU16OperandMax;
 
         // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
@@ -1219,7 +1221,20 @@ namespace aria {
         cur_cu()->emit_word(node.elements.size(), line); // [v1..vn] -> [list]
     }
 
-    void CodeGen::visitMapExprNode(MapExprNode& node) { not_impl(node, "map 字面量"); }
+    void CodeGen::visitMapExprNode(MapExprNode& node) {
+        const u32 line = node.line();
+        // 条目数上限 kMaxMapEntries(MAKE_MAP 操作数 u16,条目对数):先检后发,避免 emit
+        // 完数万个键值表达式才报错(visitListExprNode 同款)。
+        if (node.entries.size() > kMaxMapEntries) {
+            fail(ErrorCode::TooManyElements, node.loc(), "map 条目数超过 {}", kMaxMapEntries);
+        }
+        for (const auto& [key, value]: node.entries) {
+            emit_expr(*key);
+            emit_expr(*value); // 键值交替下栈,成 MAKE_MAP 的 [k1,v1..kn,vn] 栈形
+        }
+        cur_cu()->emit_op(OpCode::MAKE_MAP, line);
+        cur_cu()->emit_word(node.entries.size(), line); // [k1,v1..kn,vn] -> [map]
+    }
 
     void CodeGen::visitRangeExprNode(RangeExprNode& node) { not_impl(node, "区间表达式"); }
 

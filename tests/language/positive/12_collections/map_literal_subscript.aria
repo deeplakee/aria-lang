@@ -1,0 +1,28 @@
+// 钉住：map 字面量与下标——任意键构造、值为任意表达式、下标写 upsert、重复键后键胜、
+# len、== 按内容（插入序无关）、=== 恒指针。
+var m = {"a": 1, "b": 2};
+assert(m["a"] == 1 && m["b"] == 2);
+
+var k = "b";
+assert(m[k] == 2);                    // 键为任意表达式（运行时求值）
+
+var nested = {1: [10, 20], "inner": {2: 3}};
+assert(nested[1][0] == 10);
+assert(nested["inner"][2] == 3);
+
+m["c"] = 3;                           // 未命中新增
+m["a"] = 9;                           // 已命中覆写
+assert(m["a"] == 9 && m["c"] == 3 && len(m) == 3);
+
+var dup = {"x": 1, "x": 2};           // 重复键后键胜（set 命中原槽覆写）
+assert(dup["x"] == 2 && len(dup) == 1);
+
+var a = {1: 10, 2: 20};
+var b = {2: 20, 1: 10};
+assert(a == b);                       // == 按内容，插入序无关
+assert(a != {1: 11, 2: 20});
+assert(a === a);                      // === 恒指针
+assert(!(a === b));
+
+assert(len({}) == 0);
+assert(len({1: 10, 2: 20, 3: 30}) == 3);

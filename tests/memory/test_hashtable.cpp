@@ -207,3 +207,39 @@ TEST(HashTable, DtorReleasesMemory) {
     } // dtor 释放
     EXPECT_EQ(gc.bytes_allocated(), before); // 全部归还
 }
+
+// ---- 槽位扫描原语(next_occupied/entry_at,map 迭代器与 ObjMap::equals 的游标缝) ----
+
+TEST(HashTable, NextOccupiedScansForward) {
+    GC       gc;
+    IntTable ht{&gc};
+    EXPECT_EQ(ht.next_occupied(0), IntTable::kNpos); // 空表:无占用槽
+
+    ht.set(1, 10); // 单元素:全程恰一个占用槽,任意 from 命中或 kNpos
+    const auto only = ht.next_occupied(0);
+    ASSERT_NE(only, IntTable::kNpos);
+    EXPECT_EQ(ht.next_occupied(only + 1), IntTable::kNpos);
+    EXPECT_EQ(ht.next_occupied(only), only);                     // from 含自身
+    EXPECT_EQ(ht.next_occupied(ht.capacity()), IntTable::kNpos); // from 到界即耗尽
+
+    // 多元素:槽位扫描逐个命中,槽序访问键值;erase 的槽被跳过(墓碑非占用)。
+    ht.set(2, 20);
+    ht.set(3, 30);
+    ht.erase(2);
+    int visited = 0;
+    for (usize slot = ht.next_occupied(0); slot != IntTable::kNpos; slot = ht.next_occupied(slot + 1)) {
+        ++visited;
+        EXPECT_EQ(ht.entry_at(slot).key * 10, ht.entry_at(slot).value);
+    }
+    EXPECT_EQ(visited, 2); // 3 - 1 删除
+}
+
+TEST(HashTable, EntryAtReadsKeyAndValue) {
+    GC       gc;
+    IntTable ht{&gc};
+    ht.set(7, 70);
+    const auto slot = ht.next_occupied(0);
+    ASSERT_NE(slot, IntTable::kNpos);
+    EXPECT_EQ(ht.entry_at(slot).key, 7);
+    EXPECT_EQ(ht.entry_at(slot).value, 70);
+}

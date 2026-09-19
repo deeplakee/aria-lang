@@ -81,7 +81,6 @@ namespace aria {
         usize  tombstones_; // 墓碑数
 
         static constexpr usize kInitialCap = 8;
-        static constexpr usize kNpos       = static_cast<usize>(-1);
 
     public:
         explicit HashTable(Alloc* alloc) noexcept :
@@ -217,6 +216,28 @@ namespace aria {
                     fn(entries_[i].key, entries_[i].value);
                 }
             }
+        }
+
+        static constexpr usize kNpos = static_cast<usize>(-1);
+
+        // 从 from 起(含)找下一占用槽的槽位索引,无则 kNpos(map 槽位扫描迭代器的游标
+        // 原语,ObjMap::equals 同用)。只看 ctrl 不加载非占用 Entry,空/墓碑槽里是垃圾
+        // 也安全(同 for_each_occupied)。
+        [[nodiscard]]
+        usize next_occupied(const usize from) const noexcept {
+            for (usize i = from; i < cap_; ++i) {
+                if (ctrl_is_occupied(ctrl_[i])) {
+                    return i;
+                }
+            }
+            return kNpos;
+        }
+
+        // 占用槽条目访问(slot 须为 next_occupied 的返回值;两原语成对消费,索引恒新鲜)。
+        [[nodiscard]]
+        const Entry& entry_at(const usize slot) const noexcept {
+            ASSERT(ctrl_is_occupied(ctrl_[slot]), "HashTable::entry_at: slot is not occupied");
+            return entries_[slot];
         }
 
     private:

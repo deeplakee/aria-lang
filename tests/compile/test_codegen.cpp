@@ -1182,7 +1182,7 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string or list, got Nil");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string, list or map, got Nil");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {

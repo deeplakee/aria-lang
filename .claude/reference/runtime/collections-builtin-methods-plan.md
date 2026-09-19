@@ -88,7 +88,7 @@
 | 2 | match 语句 / 表达式(§4.2) | §4.2 |
 | 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + len/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
 | 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体,call_closure 打包段)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
-| 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 解构 `[k,v]` |
+| 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 循环变量拿到整个 `[k,v]` pair(解构目标随批 8,2026-09-19 拍板) |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
 | 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 |
@@ -143,6 +143,19 @@
 > 拆编排形(对标旧版 aria vm.cpp call_function 的 pack_varargs/create_call_frame 分层)——元数检查收 check_arity、
 > 缺省垫充+varargs 打包+槽深推导收 prepare_call_args(返回帧参数槽深),call_closure 只剩四行编排。批 4 至此收官
 >(本子批工作区待 review,双配置 879/879 绿);CLAUDE.md/README 进度行已同步(批 1-4 落地,待批 5+)。
+
+> **落地状态(2026-09-19,批 5)**:批 5 已全部落地(工作区待 review,双配置 935/935 绿)。`ObjMap`(AriaHashTable 成员,
+> Phase 3 备置的缝兑现:trace 委托 ht.trace、键判等表内 ===)+ `MAKE_MAP`(执行体对齐 MAKE_LIST:键值 peek 在栈跨
+> new_map 顶部 maybe_collect,逐对 set 走 GC 分配器不触 GC,窗口内无 GC 点;重复键天然后键胜,set 命中原槽覆写,
+> Python dict 同款,零特判)+ map 下标 override(读任意键、miss KeyError 键 debug 形入文案;写恒成功 upsert,vm 参数
+> 未消费系协议缝签名钉死)+ equals(键 === 表内 find 语义、值 == 递归,EqualGuard 防环;槽位扫描支持首 miss 早退)+
+> debug_repr `{"k": v}` 式(键值 debug 形,PrintGuard 防环;多键渲染序随槽位)+ `ObjMapIterator`(槽位扫描游标,
+> next 产出 [k,v] 二元 list,每步一小分配 D4 接受;耗尽 IterationExhausted fail-fast)+ bootstrap MapClass(寄存器格
+> MapClass + `register_map_methods` 单 iter 方法,has_next/next 住 Iterator 类表零改)+ len 增 Map 分支(文案改
+> "string, list or map")。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)——本批唯一非对齐面
+> 新代码。语义三拍板(2026-09-19):equals 键 === 值 ==(与表内键语义一致)、字面量重复键后键胜、kMaxMapEntries
+> 单立(条目对数 u16 上限,与 kMaxListElements 分名,注释各述「元素数/条目对数」)。forIn 解构目标随批 8(本批
+> forIn 循环变量拿整个 pair,验收口径收窄见 §4.3 表行)。
 
 ## 5. 参照
 

@@ -276,6 +276,79 @@ TEST(Compiler, ForInUnderStressGc) {
               120);
 }
 
+// ---- map 字面量与下标（MAKE_MAP / ObjMap 协议 / KeyError / 迭代产出 [k,v] pair） ----
+
+// 字面量构造与任意键下标读;值为任意表达式(运行时求值)。
+TEST(Compiler, MapLiteralAndSubscriptRead) {
+    EXPECT_EQ(run_int("var m = {\"a\": 1, \"b\": 2}; return m[\"a\"] * 10 + m[\"b\"];"), 12);
+    EXPECT_EQ(run_int("var k = \"b\"; var m = {k: 5}; return m[k];"), 5); // 键为任意表达式
+    EXPECT_EQ(run_int("var m = {1: [10, 20]}; return m[1][1];"), 20);     // 嵌套容器值
+}
+
+// 下标写:未命中新增键、已命中覆写,均恒成功。
+TEST(Compiler, MapSubscriptWriteUpserts) {
+    EXPECT_EQ(run_int("var m = {}; m[\"a\"] = 1; m[\"a\"] = 2; m[\"b\"] = 3; return len(m) * 10 + m[\"a\"];"), 22);
+}
+
+// miss 读:KeyError(运行期,键入文案)。
+TEST(Compiler, MapReadMissFailsKeyError) {
+    auto out = run_source("var m = {\"a\": 1}; return m[\"nope\"];");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::KeyError);
+    EXPECT_NE(out.error().message().find("map key not found"), std::string::npos);
+}
+
+// 字面量重复键:后键胜(set 命中原槽覆写,Python dict 同款,零特判)。
+TEST(Compiler, MapLiteralDuplicateKeyLastWins) {
+    EXPECT_EQ(run_int("var m = {\"a\": 1, \"a\": 2}; return m[\"a\"];"), 2);
+    EXPECT_EQ(run_int("return len({\"a\": 1, \"a\": 2});"), 1);
+}
+
+// len:Map 返键值对数(与 string/list 并列)。
+TEST(Compiler, MapLenReturnsEntryCount) {
+    EXPECT_EQ(run_int("return len({});"), 0);
+    EXPECT_EQ(run_int("return len({1: 10, 2: 20, 3: 30});"), 3);
+}
+
+// 相等 ==:按内容(插入序无关),!= 取反;=== 恒指针。
+TEST(Compiler, MapEqualityIsContent) {
+    EXPECT_EQ(run_int("var a = {1: 10, 2: 20}; var b = {2: 20, 1: 10}; if (a == b) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var a = {1: 10}; var b = {1: 11}; if (a != b) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var a = {1: 10}; if (a === a) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var a = {1: 10}; var b = {1: 10}; if (a === b) { return 0; } return 1;"), 1);
+}
+
+// forIn 遍历 map:循环变量拿到 [k, v] 二元 list(产出顺序 unspecified,不依赖)。
+// 解构目标 for ([k, v] in ...) 随批 8。
+TEST(Compiler, ForInMapYieldsKeyValuePairs) {
+    EXPECT_EQ(run_int("var m = {\"a\": 1, \"b\": 2}; var sum = 0; for (pair in m) { sum = sum + pair[1]; } "
+                      "return sum;"),
+              3);
+    EXPECT_EQ(run_int("var m = {\"x\": 10}; var n = 0; for (pair in m) { if (len(pair) == 2 && pair[0] == \"x\" && "
+                      "pair[1] == 10) { n = 1; } } return n;"),
+              1);
+}
+
+// map 成员 miss:类措辞随协议传播(与 list 同文案形);成员写不受支持。
+TEST(Compiler, MapMemberMissAndStoreNotSupported) {
+    auto miss = run_source("var m = {}; return m.foo;");
+    ASSERT_FALSE(miss.has_value());
+    EXPECT_EQ(miss.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(miss.error().message().find("<class Map> has no member 'foo'"), std::string::npos);
+
+    auto store = run_source("var m = {}; m.foo = 2; return 1;");
+    ASSERT_FALSE(store.has_value());
+    EXPECT_EQ(store.error().code(), ErrorCode::UndefinedProperty);
+    EXPECT_NE(store.error().message().find("type Map does not support field access"), std::string::npos);
+}
+
+// stress GC 下 map 字面量反复构造 + forIn:键值 peek 在栈跨 new_map、pair 铸造的根化路径。
+TEST(Compiler, MapLiteralAndForInUnderStressGc) {
+    EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { for (pair in {\"a\": 1, \"b\": 2}) { s = s + "
+                      "pair[1]; } i = i + 1; } return s;"),
+              60);
+}
+
 // ---- varargs(...rest:list 载体,call_closure 打包多余实参) ----
 
 // 多余实参按序收集进 rest(list;下标可断言)。

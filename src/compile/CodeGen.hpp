@@ -291,6 +291,28 @@ namespace aria {
         // --upvalue 索引非本帧局部槽）。
         void emit_store_var(const ResolvedVar& var, u32 line) const;
 
+        // --- 数值字面量发射 ---
+        // 整数字面量值域：越 i48 范围 -> fail NumberOutOfRange。发射路径唯一闸门--判的是字面量
+        // 自身的值（负字面量折叠按取负后的值判，见 try_emit_negated_literal）。
+        void validate_int_literal(i64 value, SourceLoc loc) const;
+
+        // 立即数形态命中：value 落在 LOAD_IMM 的 i8 域内 -> 发一条带符号立即数加载并返回 true；
+        // 域外不发射、返回 false（交调用方走常量池 LOAD_CONST）。
+        [[nodiscard]]
+        bool try_emit_load_imm(i64 value, u32 line) const;
+
+        // 整数字面量编成一条加载指令：立即数形态（try_emit_load_imm）不命中则入池 LOAD_CONST。
+        // 一元负号折叠经此发射负值。
+        void emit_int_literal(i64 value, u32 line, SourceLoc loc) const;
+
+        // 浮点字面量编成一条加载指令：恒入池 LOAD_CONST f64。取负由调用方并进值。
+        void emit_float_literal(f64 value, u32 line, SourceLoc loc) const;
+
+        // 负字面量形态命中（一元 - 的 Minus 臂专用）：操作数是数值字面量 -> 取负并进常量、发一条
+        // 加载指令并返回 true；否则不发射、返回 false（交调用方走 emit_expr + NEGATE）。
+        [[nodiscard]]
+        bool try_emit_negated_literal(ExprNode& operand) const;
+
         // --- 模式绑定（forIn 用）---
         // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
         // 值填槽模型：声明时值已在栈顶，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。

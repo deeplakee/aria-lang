@@ -203,12 +203,93 @@ TEST(CodeGen, Literals) {
 TEST(CodeGen, UnaryMinusAndNot) {
     EXPECT_EQ(run_int("return -5;"), -5);
     EXPECT_EQ(run_int("return -(-3);"), 3);
+    // 负字面量折叠不改变取值：i8 立即数边界两侧与 i48 下界两侧逐一核对。
+    EXPECT_EQ(run_int("return -128;"), -128);
+    EXPECT_EQ(run_int("return -129;"), -129);
+    EXPECT_EQ(run_int("return -140737488355328;"), -140737488355328); // i48 下界 -2^47 可写
+    EXPECT_EQ(run_int("return -140737488355327;"), -140737488355327);
+    EXPECT_EQ(run_int("return -(1 + 2);"), -3); // 非字面量操作数不走折叠
     auto nt = run_source("return !false;");
     ASSERT_TRUE(nt.has_value());
     ASSERT_TRUE(nt->is_bool());
     EXPECT_TRUE(nt->as_bool());
     // Lua 真值：!nil -> true
     EXPECT_TRUE((*run_source("return !nil;")).as_bool());
+}
+
+// 负字面量折叠：-<数值字面量> 的取负并进常量，只发一条加载指令（LOAD_IMM 立即数按 i8 有符号
+// 解释，池内常量亦可为负），不再发运行期 NEGATE。只折直接操作数这一层。
+TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
+    // i8 内：单条 LOAD_IMM 负立即数（0xFF 位型 i8 = -1）
+    {
+        const auto compiled = compile_only("return -1;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("LOAD_IMM          FF  ; -1"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    // i8 边界：-128 仍走立即数（0x80 位型 i8 = -128），-129 越出有符号域落常量池负面值
+    {
+        const auto compiled = compile_only("return -128;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("LOAD_IMM          80  ; -128"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    {
+        const auto compiled = compile_only("return -129;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("LOAD_CONST        0000  ; -129"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    // i48 下界：值域按字面量自身的值判，-2^47 是域内合法值，仍是单条池内负面值加载
+    {
+        const auto compiled = compile_only("return -140737488355328;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("; -140737488355328"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    // 浮点同折；-0.0 的负零位型随常量保留
+    {
+        const auto compiled = compile_only("return -1.5;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("; -1.5"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    {
+        const auto compiled = compile_only("return -0.0;");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("; -0.0"), aria::String::npos);
+        EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
+    }
+    // 只折一层：内层折成 -5，外层操作数是 UnaryExpr，仍发一条 NEGATE
+    {
+        const auto compiled = compile_only("return -(-5);");
+        ASSERT_TRUE(compiled.has_value());
+        const auto text = compiled->unit().disassemble("<test>");
+        EXPECT_NE(text.find("LOAD_IMM          FB  ; -5"), aria::String::npos);
+        EXPECT_NE(text.find("NEGATE"), aria::String::npos);
+    }
+    // 非字面量操作数不折：复合表达式/变量/字符串照旧走 NEGATE（运行期取负与报错语义不变）
+    {
+        const auto compiled = compile_only("return -(1 + 2);");
+        ASSERT_TRUE(compiled.has_value());
+        EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
+    }
+    {
+        const auto compiled = compile_only("var x = 1; return -x;");
+        ASSERT_TRUE(compiled.has_value());
+        EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
+    }
+    {
+        const auto compiled = compile_only("return -\"abc\";");
+        ASSERT_TRUE(compiled.has_value());
+        EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
+    }
 }
 
 // ============================================================
@@ -713,6 +794,12 @@ TEST(CodeGen, ErrNumberOutOfRange) {
     auto c = compile_only("return 999999999999999;");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::NumberOutOfRange);
+
+    // 负字面量按取负后的值判值域：越下界报错，且报文数值带源码写出的符号。
+    auto neg = compile_only("return -999999999999999;");
+    ASSERT_FALSE(neg.has_value());
+    EXPECT_EQ(neg.error().code(), ErrorCode::NumberOutOfRange);
+    EXPECT_NE(neg.error().message().find("-999999999999999"), aria::String::npos) << "报文应报字面量自身的值（带符号）";
 }
 
 // ============================================================

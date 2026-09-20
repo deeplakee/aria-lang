@@ -936,33 +936,69 @@ namespace aria {
     }
 
     // ============================================================
-    // 表达式节点
+    // 数值字面量发射（字面量节点与一元负号折叠共用）
     // ============================================================
 
-    void CodeGen::visitIntegerLiteralNode(IntegerLiteralNode& node) {
-        const u32 line  = node.line();
-        const i64 value = node.value;
-        if (value >= std::numeric_limits<i8>::min() && value <= std::numeric_limits<i8>::max()) {
-            // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经
-            // i8 保证符号语义、再转 u8 写字节（免窄化告警）。范围外的整数走常量池 LOAD_CONST。
-            cur_cu()->emit_op(OpCode::LOAD_IMM, line);
-            cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(value)), line);
-            return;
-        }
+    void CodeGen::validate_int_literal(const i64 value, const SourceLoc loc) const {
         if (value < kIntMin || value > kIntMax) {
-            fail(ErrorCode::NumberOutOfRange, node.loc(), "整数字面量超出 i48 范围: {}", value);
+            fail(ErrorCode::NumberOutOfRange, loc, "整数字面量超出 i48 范围: {}", value);
+        }
+    }
+
+    bool CodeGen::try_emit_load_imm(const i64 value, const u32 line) const {
+        if (value < std::numeric_limits<i8>::min() || value > std::numeric_limits<i8>::max()) {
+            return false;
+        }
+        // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经 i8
+        // 保证符号语义、再转 u8 写字节（免窄化告警）。
+        cur_cu()->emit_op(OpCode::LOAD_IMM, line);
+        cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(value)), line);
+        return true;
+    }
+
+    void CodeGen::emit_int_literal(const i64 value, const u32 line, const SourceLoc loc) const {
+        if (try_emit_load_imm(value, line)) {
             return;
         }
-        const auto idx = add_constant_or_fail(Value::from_int(value), node.loc());
+        validate_int_literal(value, loc);
+        const auto idx = add_constant_or_fail(Value::from_int(value), loc);
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
     }
 
-    void CodeGen::visitFloatLiteralNode(FloatLiteralNode& node) {
-        const u32  line = node.line();
-        const auto idx  = add_constant_or_fail(Value::from_f64(node.value), node.loc());
+    void CodeGen::emit_float_literal(const f64 value, const u32 line, const SourceLoc loc) const {
+        const auto idx = add_constant_or_fail(Value::from_f64(value), loc);
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
+    }
+
+    bool CodeGen::try_emit_negated_literal(ExprNode& operand) const {
+        // -<数值字面量>：负常量本身就是一条加载指令（LOAD_IMM 立即数按 i8 有符号解释，池内常量亦
+        // 能取负），取负并进常量即可，不再发一条运行期 NEGATE。只认直接操作数这一层字面量：-(-5)
+        // 的外层操作数是 UnaryExpr，不命中。
+        // 值域按字面量自身的值判（emit_int_literal 那一道闸）：i48 域内的负字面量一律可写，-2^47
+        // 下界亦然；越界报文的数值带源码写出的符号。
+        if (const auto i_node = dynamic_cast<IntegerLiteralNode*>(&operand)) {
+            emit_int_literal(-i_node->value, i_node->line(), i_node->loc());
+            return true;
+        }
+        if (const auto f_node = dynamic_cast<FloatLiteralNode*>(&operand)) {
+            emit_float_literal(-f_node->value, f_node->line(), f_node->loc());
+            return true;
+        }
+        return false;
+    }
+
+    // ============================================================
+    // 表达式节点
+    // ============================================================
+
+    void CodeGen::visitIntegerLiteralNode(IntegerLiteralNode& node) {
+        emit_int_literal(node.value, node.line(), node.loc());
+    }
+
+    void CodeGen::visitFloatLiteralNode(FloatLiteralNode& node) {
+        emit_float_literal(node.value, node.line(), node.loc());
     }
 
     void CodeGen::visitStringLiteralNode(StringLiteralNode& node) {
@@ -1045,13 +1081,17 @@ namespace aria {
 
     void CodeGen::visitUnaryExprNode(UnaryExprNode& node) {
         const u32 line = node.line();
-        switch (node.op) {
+        switch (auto& operand = *node.operand; node.op) {
             case Op::Unary::Minus:
-                emit_expr(*node.operand);
+                // 负字面量形态（详见 try_emit_negated_literal）：命中即一条负常量加载，否则一般路径。
+                if (try_emit_negated_literal(operand)) {
+                    return;
+                }
+                emit_expr(operand);
                 cur_cu()->emit_op(OpCode::NEGATE, line);
                 return;
             case Op::Unary::Not:
-                emit_expr(*node.operand);
+                emit_expr(operand);
                 cur_cu()->emit_op(OpCode::NOT, line);
                 return;
             case Op::Unary::PreInc:
@@ -1059,11 +1099,11 @@ namespace aria {
                 // E += 1 / E -= 1，复合赋值同族：定位腿走 Locate（运行时 locator 得 <obj> DUP
                 // LOAD_FIELD 副本；编译期常量 locator 在目标节点内折叠为 Load 同形）。统一压 +1，
                 // 由 ADD/SUBTRACT 决定方向--若 PreDec 压 -1 再 SUBTRACT 会算成 E - (-1) = E + 1，方向反。
-                emit_lvalue(*node.operand, LvalueMode::Locate);
+                emit_lvalue(operand, LvalueMode::Locate);
                 cur_cu()->emit_op(OpCode::LOAD_IMM, line);
                 cur_cu()->emit_byte(1, line);
                 cur_cu()->emit_op(node.op == Op::Unary::PreInc ? OpCode::ADD : OpCode::SUBTRACT, line);
-                emit_lvalue(*node.operand, LvalueMode::Store); // peek-store 留新值
+                emit_lvalue(operand, LvalueMode::Store); // peek-store 留新值
                 return;
             }
             default:

@@ -377,10 +377,6 @@ namespace aria {
         [[noreturn]]
         // throw AriaCompileException(NotImplemented, loc, ...)
         void not_impl(const ASTNode& node, StringView feature) const;
-
-        // 同上，loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。
-        [[noreturn]]
-        void not_impl(SourceLoc loc, StringView feature) const;
     };
 
 } // namespace aria

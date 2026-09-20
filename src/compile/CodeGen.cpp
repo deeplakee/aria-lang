@@ -570,11 +570,6 @@ namespace aria {
         fail(ErrorCode::NotImplemented, node.loc(), "{} 尚未支持", feature);
     }
 
-    void CodeGen::not_impl(const SourceLoc loc, const StringView feature) const {
-        // loc 直接传入（调用方仅有 SourceLoc 而无节点时用，如 validate_params）。与 ASTNode& 重载同一消息格式。
-        fail(ErrorCode::NotImplemented, loc, "{} 尚未支持", feature);
-    }
-
     // ============================================================
     // 根节点
     // ============================================================

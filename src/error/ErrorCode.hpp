@@ -51,7 +51,6 @@ namespace aria {
     X(InvalidNumber, Syntax)      /* 数字字面量非法（前缀 / 下划线位置 / 空 mantissa 等） */                     \
     X(InvalidCharacter, Syntax)   /* 无法归入任何 token 的字符 */                                                \
     /* --- 语法 --- */                                                                                           \
-    X(UnexpectedToken, Syntax)    /* 非预期的 token */                                                           \
     X(UnexpectedEof, Syntax)      /* 源码提前结束 */                                                             \
     X(ExpectedExpression, Syntax) /* 期待表达式却遇到他物 */                                                     \
     X(ExpectedIdentifier, Syntax) /* 期待标识符 */                                                               \
@@ -65,7 +64,6 @@ namespace aria {
     X(ThisOutsideClass, Semantic)        /* this 出现在类外 */                                                   \
     X(BreakOutsideLoop, Semantic)        /* break 须在循环内 */                                                  \
     X(ContinueOutsideLoop, Semantic)     /* continue 须在循环内 */                                               \
-    X(ReturnOutsideFunction, Semantic)   /* return 须在函数内 */                                                 \
     X(TryWithoutHandler, Semantic)       /* try 须有 catch */                                                    \
     X(UnreachableArm, Semantic)          /* match 通配臂后仍有臂（死臂；_ 恒末臂、至多一条） */                  \
     X(DuplicateParam, Semantic)          /* 同函数形参重名 */                                                    \

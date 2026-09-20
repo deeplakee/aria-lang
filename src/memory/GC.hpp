@@ -134,6 +134,14 @@ namespace aria {
             return bytes_allocated_;
         }
 
+        // 累计对象分配次数(new_object 调用数,单调不减)。bytes_allocated() 是**存活**字节、随回收
+        // 回落,看不出分配 churn;本计数器给确定性(零抖动)的分配读数,供性能基准对照「少分配」类
+        // 改动(如融合派发消灭临时对象),见 bench/vm_bench.cpp。
+        [[nodiscard]]
+        usize allocation_count() const noexcept {
+            return allocation_count_;
+        }
+
         // 运行期压力开关(测试用):开启后每次 new_object 强制 collect。
         void set_stress(const bool enabled) noexcept { is_stress_ = enabled; }
 
@@ -195,6 +203,7 @@ namespace aria {
 
         Object*        objects_head_;
         usize          bytes_allocated_;
+        usize          allocation_count_; // 累计分配次数(单调),基准用确定性读数
         usize          next_gc_;
         bool           is_stress_;
         u32            lock_count_; // GC 禁用计数(>0 禁用,支持嵌套 disable/enable)
@@ -251,6 +260,7 @@ namespace aria {
         T* obj        = new (allocate<u8>(sizeof(T))) T{std::forward<Args>(args)...};
         obj->next_    = objects_head_;
         objects_head_ = obj;
+        ++allocation_count_;
 #ifdef DEBUG_LOG_GC
         log_obj_alloc(obj);
 #endif

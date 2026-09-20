@@ -3,8 +3,8 @@
 namespace aria {
 
     GC::GC() noexcept :
-        objects_head_{nullptr}, bytes_allocated_{0}, next_gc_{kInitialGcThreshold}, is_stress_{false}, lock_count_{0},
-        gray_stack_{}, temp_roots_{}, intern_{this}, vm_roots_tracer_{} {}
+        objects_head_{nullptr}, bytes_allocated_{0}, allocation_count_{0}, next_gc_{kInitialGcThreshold},
+        is_stress_{false}, lock_count_{0}, gray_stack_{}, temp_roots_{}, intern_{this}, vm_roots_tracer_{} {}
 
     GC::~GC() { free_all_(); }
 

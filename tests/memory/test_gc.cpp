@@ -41,6 +41,23 @@ TEST(GcAlloc, BytesCounted) {
     EXPECT_EQ(gc.bytes_allocated(), before);
 }
 
+// allocation_count 是累计分配次数(单调不减,不随回收回落):它是性能基准对照「少分配」类改动的
+// 确定性读数(bytes_allocated 是存活字节,看不出 churn)。
+TEST(GcAlloc, AllocationCountMonotonic) {
+    GC gc;
+    EXPECT_EQ(gc.allocation_count(), 0u); // 空 GC 起步
+
+    auto* rooted = gc.new_object<ObjDummy>();
+    EXPECT_EQ(gc.allocation_count(), 1u);
+    gc.mark_object(rooted); // 标根后再回收:对象存活,计数只增不减
+    gc.collect();
+    EXPECT_EQ(gc.allocation_count(), 1u);
+
+    gc.new_object<ObjDummy>(); // 与上者一起在下次 collect 被扫(此后均不再解引用)
+    gc.collect();
+    EXPECT_EQ(gc.allocation_count(), 2u);
+}
+
 TEST(GcAlloc, FreeNullIsNoop) {
     GC          gc;
     const usize before = gc.bytes_allocated();

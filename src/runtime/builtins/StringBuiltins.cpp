@@ -173,8 +173,8 @@ namespace aria {
             return true;
         }
 
-        // substring(start[, end]) -> 新串:字节区间 [start, end);end 省略到尾;越界(含
-        // 负数)报 IndexOutOfBounds(与 list 下标同口径,不静默钳制)。
+        // substring(start[, end]) -> 新串:字节区间 [start, end);end 省略到尾;越界/负数/
+        // end<begin 报 IndexOutOfBounds,不静默钳制、无负下标归一(与 list 下标不同口径)。
         bool substring_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {

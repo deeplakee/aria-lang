@@ -17,7 +17,7 @@ namespace aria {
     //
     // 本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局
     // 自由函数表**(本文件,LOAD_GLOBAL 回退触达);**XXXBuiltins = XXX 类型的内建方法面**
-    //(List/Map/Iterator/String,恒经 bootstrap 类表分派、恒绑定 receiver)。前缀有无即
+    //(List/Map/Iterator/String/Range,恒经 bootstrap 类表分派、恒绑定 receiver)。前缀有无即
     // 两类机制的区分。
     namespace builtins {
 

@@ -8,11 +8,11 @@
 
 namespace aria {
 
-    // 绑定 Value 的 aria 数组:继承 Array<Value> 的存储与接口(push/[]/span/size...),
+    // 绑定 Value 的 aria 数组:继承 Array<Value> 的存储与接口(push/[]/data/begin/end/size...),
     //        加 trace(GC&)(遍历元素 mark_value)。
     //
     //        分层:src/memory/ 的 Array<T> 对 T 完全通用(不知 Value 为何物);本类绑成 Value
-    //        并补 GC trace,Phase 3 的 ObjList 持其作成员、trace 委托 arr.trace(gc)。
+    //        并补 GC trace,ObjList 持其作成员、trace 委托 arr.trace(gc)。
     //        继承而非组合:直接复用全部公开接口;基类 dtor 非虚但本子类不作多态基,故安全。
     //        不可拷贝/不可移动(继承自 Array)。
     class AriaArray : public Array<Value> {

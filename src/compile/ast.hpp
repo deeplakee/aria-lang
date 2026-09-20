@@ -79,7 +79,7 @@ namespace aria {
     //     声明即「可出现在 program/block 顶层的语句」，故 FunDeclNode/DefDeclNode/
     //     VarDeclNode 亦为 StmtNode 的派生。ProgramNode 与 BlockNode 持 List<UPtr<StmtNode>>。
     //   - ExprNode：表达式基类。
-    //   - PatternNode：解构模式基类（var 声明的 varTarget 与解构赋值右侧候选）。
+    //   - PatternNode：解构模式基类（var 声明的 varTarget、for-in 目标与解构赋值左侧目标）。
     //
     // 三者仅作分类标记、无额外数据，继承 ASTNode 的构造函数。
     //
@@ -881,7 +881,8 @@ namespace aria {
     // 解构模式节点（PatternNode）
     // =========================================================================
     //
-    // 对应文法 pattern 产生式。仅出现在 var 声明的 varTarget 与解构赋值（"=" 右侧候选）。
+    // 对应文法 pattern 产生式。出现在 var 声明的 varTarget、for-in 目标与解构赋值
+    // （"=" 左侧目标）。
     //   - listPattern 映射为下标访问（位置 i 绑 list[i]），多余忽略、不足越界报错。
     //   - rest 仅 listPattern 支持（"..." 前缀，收集剩余为新 list）。
 

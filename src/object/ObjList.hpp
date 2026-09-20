@@ -59,8 +59,8 @@ namespace aria {
         bool equals(const Object* other) const noexcept override;
 
         // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range 产
-        // 出倒序段、只读;见 slice);整数键,越界/负数 IndexOutOfBounds、非整数键
-        // TypeMismatch(越界值就地拼进文案);查读无分配。
+        // 出倒序段、只读;见 slice,切片路径有分配);整数键:负数从尾计数、归一化后越界
+        // IndexOutOfBounds、非整数键 TypeMismatch(越界值就地拼进文案);整数键查读无分配。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 

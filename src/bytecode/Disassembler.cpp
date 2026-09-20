@@ -110,7 +110,8 @@ namespace aria {
         return join_line(op_name, std::format("{:04X}", read_u16()));
     }
 
-    // MAKE_RANGE 的 flags:u8 为预留操作数(发射侧 not_impl),位编码未定;渲染原始值供对照 code.hpp。
+    // MAKE_RANGE 的 flags:u8 位义见 code.hpp kRangeFlagInclusive/Exclusive/Unbounded;渲染
+    // 原始值 + 解码名供对照。
     String Disassembler::make_range(const StringView op_name) {
         if (is_truncated(1)) {
             return join_line(op_name, truncated());

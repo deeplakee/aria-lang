@@ -15,7 +15,7 @@ namespace aria {
     template<typename T, usize Capacity>
     class FrameStack {
         static_assert(Capacity > 0, "FrameStack capacity must be > 0");
-        static_assert(std::is_trivial_v<T>, "FrameStack capacity must be trivial");
+        static_assert(std::is_trivial_v<T>, "FrameStack T must be trivial");
         static_assert(std::is_trivially_copyable_v<T>, "FrameStack T must be trivially copyable");
         static_assert(std::is_trivially_destructible_v<T>, "FrameStack T must be trivially destructible");
 

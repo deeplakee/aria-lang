@@ -32,7 +32,7 @@ namespace aria {
     //        (遍历占用槽 mark_value key+value)。
     //
     //        分层:src/memory/ 的 HashTable<K,V,Hash,Eq> 对 K/V 完全通用(不知 Value);本类
-    //        绑成 Value 并补 GC trace,Phase 3 的 ObjMap 持其作成员、trace 委托 ht.trace(gc)。
+    //        绑成 Value 并补 GC trace,ObjMap 持其作成员、trace 委托 ht.trace(gc)。
     //        继承而非组合:直接复用底层全部公开接口;基类 dtor 非虚但本子类不作多态基,故安全。
     //        不可拷贝/不可移动(继承自 HashTable)。
     class AriaHashTable : public HashTable<Value, Value, ValueHash, ValueEq> {

@@ -16,7 +16,7 @@ namespace aria {
         ImmI8,      // 1 字节有符号立即数, hex + 十进制注释
         JumpFwd,    // 2 字节前向偏移(ip+=off), 渲染 -> target; 条件跳转恒前向(if/while/短路), 见 instruction-set §2.3
         JumpBack,   // 2 字节后向偏移(ip-=off), 渲染 <- target; 后向恒无条件(while/for/for-in 回边)
-        RangeFlags, // 1 字节预留 flags, 渲染 flags=0xNN
+        RangeFlags, // 1 字节 flags(MAKE_RANGE,位义见 kRangeFlag*), 渲染 flags=0xNN
         RegU8,      // 1 字节值寄存器索引, 附寄存器可读名注释(注册表 value_register.hpp)
         Import,     // 2 字节 path 常量索引 + path 注释
         Invoke,     // 2 字节 name 索引 + 1 字节 argc

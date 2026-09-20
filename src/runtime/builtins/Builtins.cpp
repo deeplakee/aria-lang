@@ -62,7 +62,8 @@ namespace aria::builtins {
             return true;
         }
 
-        // assert(x[, msg]) -> nil:x 真值则成功返 nil;否则抛 AssertionFailed(带 msg 或默认消息)。
+        // assert(x[, msg]) -> nil:x 真值则成功返 nil;否则抛 AssertionFailed(msg 为 string
+        // 时用之,非 string 静默忽略落默认消息)。
         bool assert_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {

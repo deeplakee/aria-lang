@@ -181,8 +181,8 @@ namespace aria {
             if (pos_ > 0 && previous().is(TokenType::Semicolon)) {
                 return;
             }
-            // 同步点集合须与 statement() 的分派集保持一致：statement 认哪些语句起首关键字，
-            // 这里就恢复到哪些（漏一个即少一个恢复点）。
+            // 同步点集合 = declaration() 的分派集（statement 分派集再加 Fun/Def/Var 三个
+            // 声明起首关键字）：漏一个即少一个恢复点。
             switch (peek().type()) {
                 case TokenType::Fun:
                 case TokenType::Def:

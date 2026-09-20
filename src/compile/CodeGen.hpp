@@ -6,8 +6,8 @@
 //   CodeUnit），把 ProgramNode 编译为模块入口 ObjFunction（arity 0）。
 //
 //   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。43 个
-//     visitXxxNode 全部 override；依赖未落地 VM 里程碑的特性（list/map/index/match 等）
-//     占位 not_impl（编译期 NotImplemented Error），随 VM 推进逐个翻为真实发射。
+//     visitXxxNode 全部 override；仅解构族（DestructureAssignment/ListPattern）占位
+//     not_impl（编译期 NotImplemented Error），随后续批翻为真实发射。
 //   - 状态分离：每函数状态收口 FunctionCtx、每模块状态（含当前函数游标 current_fn_ctx_）
 //     收口 ModuleCtx，形成「模块 > 函数 > 作用域」三层；「当前 CodeUnit」不单独存，由
 //     cur_cu() = &cur_fn_ctx()->fn_->unit() 派生随游标切换。所有权：CodeGen 持

@@ -81,9 +81,9 @@ namespace aria {
             return sizeof(ObjString);
         }
 
-        // 下标读取:整数键(字节域,D5),产出单字节 1-char string;非整数 TypeMismatch、
-        // 越界/负数 IndexOutOfBounds;多字节序列中间字节取该字节自身(字节契约的自然
-        // 结果)。查读含一次 new_string(intern)分配:receiver 经调用方值栈为根。
+        // 下标读取:整数键(字节域,D5),产出单字节 1-char string;负数从尾计数、归一化后
+        // 越界 IndexOutOfBounds、非整数 TypeMismatch;多字节序列中间字节取该字节自身(字节
+        // 契约的自然结果)。查读含一次 new_string(intern)分配:receiver 经调用方值栈为根。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 

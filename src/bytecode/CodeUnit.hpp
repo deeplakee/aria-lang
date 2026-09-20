@@ -71,7 +71,7 @@ namespace aria {
         void emit_word(u16 word, u32 line); // 小端: 低字节先
         void emit_op(OpCode op, u32 line);
 
-        // 分块 emit POP_N(每块<=255);chunk==1 时降级为 POP(1B,免操作数)。偏移基准 = 读 u16 操作数后的 ip。
+        // 分块 emit POP_N(每块<=255);chunk==1 时降级为 POP(1B,免操作数)。
         void emit_pop_n(u32 count, u32 line);
         // 发 op + 占位 u16,返回占位偏移 src_off(供 patch_jump 回填)。无越界。
         u32 emit_jump(OpCode op, u32 line);

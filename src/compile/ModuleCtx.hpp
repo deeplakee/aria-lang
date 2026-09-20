@@ -67,7 +67,8 @@ namespace aria {
         // 当前是否在模块顶层作用域（变量定义应作为模块全局而非局部）：当前函数为入口
         // （current_fn_ctx_->enclosing_ == nullptr）且处于第 0 层作用域（scope_depth_ == 0）。
         // 收口 CodeGen 中 `cur_fn_ctx()->enclosing_ == nullptr && cur_fn_ctx()->scope_depth_ == 0`
-        // 判定，供 visitVarDeclNode / compile_function 复用。定义于 .cpp（需 FunctionCtx 完整类型）。
+        // 判定，bind_stack_value（var/fun/def/import 声明绑定共用口）直接消费。定义于 .cpp
+        // （需 FunctionCtx 完整类型）。
         [[nodiscard]]
         bool is_global_scope() const noexcept;
 

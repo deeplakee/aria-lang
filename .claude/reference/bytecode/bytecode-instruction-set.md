@@ -51,7 +51,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 ### 2.2 操作数位宽（建议）
 
-下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽 `u8`/`u16` -> `U8`/`U16`；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import`/`Invoke` 为反汇编渲染层面的细分（无操作数 / 预留 flags / 寄存器索引附可读名注释 / path 注释 / name+argc 复合）。
+下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽 `u8`/`u16` -> `U8`/`U16`；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import`/`Invoke` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释 / name+argc 复合）。
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
@@ -553,7 +553,7 @@ L_end:
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
-文法 `range -> term (".."|"...") term`，AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[from, to] -> [range]` / 无上界 `[from] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`/`kRangeFlagUnbounded`：0x00 含上界、0x01 不含、0x02 无上界（`from..` 与 `from...` 同义，含否位不编）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），迭代方向由端点推断（from>to 倒序，`10..1` 产出 10→1、`10...1` 产出 10→2），空区间只剩 from==to 且不含上界。步长等扩展留内建或后续指令。
+文法 `range -> term ( (".."|"...") term? )?`（无上界开区间 `term?` 为空），AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[from, to] -> [range]` / 无上界 `[from] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`/`kRangeFlagUnbounded`：0x00 含上界、0x01 不含、0x02 无上界（`from..` 与 `from...` 同义，含否位不编）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），迭代方向由端点推断（from>to 倒序，`10..1` 产出 10→1、`10...1` 产出 10→2），空区间只剩 from==to 且不含上界。步长等扩展留内建或后续指令。
 
 ### 6.4 内建函数与 rest 切片
 

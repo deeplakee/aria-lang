@@ -244,8 +244,7 @@ namespace aria {
 
         // 值寄存器组 bootstrap 编排(ctor 一次调用):逐格初始化全部 VM 单例对象。须在 ctor
         // 构造临界区(GC 挂起)内调用,创建免守卫;各单例的创建与入格收口在 bootstrap_<单例>
-        // 系列函数,本函数只管编排;新单例随其批次在此加一行(印章随批 1、MatchNoArm 随批 2、
-        // 各类 class 随批 4+)。
+        // 系列函数,本函数只管编排;新单例在此加一行编排。
         void bootstrap_registers();
 
         // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
@@ -257,7 +256,7 @@ namespace aria {
         void bootstrap_iterator_class();
 
         // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
-        // (register_list_builtins),发布进寄存器 ListClass 格。其余内置类随各自批次出生。
+        // (register_list_builtins),发布进寄存器 ListClass 格。
         void bootstrap_list_class();
 
         // Map bootstrap 类:建 ObjClass("Map", super=Object 根)并注册方法面

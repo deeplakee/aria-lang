@@ -77,7 +77,7 @@ namespace aria {
     /* ========== RUNTIME ERROR（运行时阶段）========== */                                                       \
     X(TypeMismatch, Runtime)       /* 运算/操作的类型不符（如 number + 非数） */                                 \
     X(InvalidOperand, Runtime)     /* 一元操作数非法（如对非数取负） */                                          \
-    X(IndexOutOfBounds, Runtime)   /* list 下标越界（含解构元素不足） */                                         \
+    X(IndexOutOfBounds, Runtime)   /* 下标/切片/区间越界（list/string 下标、切片、substring、空表 pop 等） */    \
     X(DivisionByZero, Runtime)     /* 除零 */                                                                    \
     X(ModuloByZero, Runtime)       /* 模零 */                                                                    \
     X(KeyError, Runtime)           /* map 键不存在 */                                                            \

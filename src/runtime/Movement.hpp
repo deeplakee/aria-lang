@@ -39,7 +39,7 @@ namespace aria {
     //     时沿 current_ -> previous_ 链逐上下文直标(M6 协程期再升级 ObjMovement : Object)。
     class Movement {
     public:
-        static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,8KB);不足时 2x 增长
+        static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
 
         explicit Movement(GC* gc) noexcept :

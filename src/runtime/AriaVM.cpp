@@ -196,9 +196,7 @@ namespace aria {
         // 不可恢复,属解释器实现不完整(Internal)。
         [[noreturn]]
         void not_implemented(const StringView op_name) {
-            fatal_error(ErrorCode::OpcodeNotImplemented,
-                        "opcode '{}' not implemented yet (out of current scope: fields/index/classes come later)",
-                        op_name);
+            fatal_error(ErrorCode::OpcodeNotImplemented, "opcode '{}' not implemented yet", op_name);
         }
 
         // 执行跟踪:每条指令执行**前**打印字节码/栈/帧/模块信息(stderr,调试用,详尽优先于简洁;
@@ -1393,7 +1391,7 @@ namespace aria {
                 }
                 case OpCode::MAKE_RANGE: {
                     // flags:u8。有界 [from, to] -> [range]:两端点 peek 在栈跨 new_range 顶部
-                    // maybe_collect(「栈即根」,均小整数非对象);铸完 drop 2 再 push(窗口内
+                    // maybe_collect(「栈即根」,端点为标量整数非对象);铸完 drop 2 再 push(窗口内
                     // 无 GC 点)。无上界 [from] -> [range]:单值 peek/drop,unbounded 位分流。
                     // flags 位义见 code.hpp kRangeFlagExclusive/kRangeFlagUnbounded。
                     const u8 flags = read_u8(frame);

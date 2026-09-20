@@ -167,7 +167,7 @@ namespace aria {
         }
 
         //////////////////////////
-        // 成员/下标访问协议(LOAD/STORE_FIELD 族与未来 LOAD/STORE_INDEX 的分派点)
+        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点)
         //
         // VM 不按子类型 switch 分型 --内建类型与用户类的成员语义在各自 override 一次收口,
         // 新增承载类型零 VM 改动。错误通道对齐 native fn 契约:签名收 AriaVM& 单一句柄,
@@ -193,12 +193,13 @@ namespace aria {
         [[nodiscard]]
         virtual bool store_field(AriaVM& vm, ObjString* name, Value value);
 
-        // 读取下标成员(LOAD_INDEX 接线留容器里程碑):**备置 API,暂无 override 与调用方**。
-        // 基类默认报 TypeMismatch "type X does not support subscript access"。
+        // 读取下标成员(LOAD_INDEX 统一入口):基类默认报 TypeMismatch "type X does not
+        // support subscript access";override 见 ObjList/ObjMap/ObjString。
         [[nodiscard]]
         virtual Opt<Value> load_index(AriaVM& vm, Value key);
 
-        // 写入下标成员(STORE_INDEX 接线留容器里程碑):契约同 store_field,备置 API。
+        // 写入下标成员(STORE_INDEX 统一入口):契约同 store_field;override 见
+        // ObjList/ObjMap/ObjString,其余类型落基类默认报错。
         [[nodiscard]]
         virtual bool store_index(AriaVM& vm, Value key, Value value);
 
@@ -232,7 +233,7 @@ namespace aria {
         virtual Opt<Value> op_negate(AriaVM& vm) const;
 
         //////////////////////////
-        // 可调用协议(CALL 的对象侧分派点,备置 API)
+        // 可调用协议(CALL 的对象侧分派点)
         //
         // call_value 的 switch 对已实装可调用类型精确分派,其余落本协议基类默认(fail
         // CallNonCallable);新可调用类型 override 即接入。**签名与 ObjNativeFn 契约同构**:

@@ -22,9 +22,10 @@ var fns = [g1.code, g2.code];
 assert(fns[0]() == 10);
 assert(fns[1]() == 20);
 
-// bound method 的 type；用户类实例取方法有 fields 缓存回填，再取恒同对象（M5 三铁则）
+// bound method 的 type；方法值读取每次现场绑定（无缓存）：=== 按身份为假，== 按内容为真
 assert(type(m) == "BoundMethod");
-assert(m === g1.code);
+assert(m !== g1.code);       // 身份不同：两次读取是两个对象
+assert(m == g1.code);        // 内容相等：同实现 + 同接收者（Python bound method 同款）
 
 // 返回 this 链式调用
 def Chain {

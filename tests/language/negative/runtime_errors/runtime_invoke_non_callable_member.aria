@@ -1,0 +1,4 @@
+// 钉住：字段里存非可调用值时 obj.f() 报 CallNonCallable（融合派发与两步形态同文案）。
+def Holder { init() { this.f = 42; } }
+var h = Holder();
+h.f();

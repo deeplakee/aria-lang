@@ -16,12 +16,14 @@ namespace aria {
     //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变,恒非空
     //     (构造期 ASSERT)。
     //   - fields_:实例字段表(`init` 内 `this.x = ...` 落此,无字段预声明、动态)。键 intern
-    //     ObjString*,值 Value。**bound-method 缓存同居此表**(与真字段同表同 keyspace,
-    //     fields 命中优先即真字段遮蔽同名方法与缓存项,三铁则见 M5 计划 §2.4)。惰性分配。
-    //     **私有不对外暴露**:成员读写一律走 load_field/store_field 协议,外部无整表访问器。
+    //     ObjString*,值 Value。**纯字段** -- 早期版本的 bound-method 缓存已取消(2026-09-20 反转
+    //     M5 决策 4):缓存让「类/父类上改写方法」对既有实例陈旧、且与新建实例不一致(取决于该
+    //     实例历史),monkey patch 半可用且难解释。现读路径每次访问现场绑定(方法值是一等值,必须
+    //     是个对象),调用路径经 `resolve_invoke` 走不绑定形态(零分配 + 每次按当前类链解析)。
+    //     惰性分配。**私有不对外暴露**:成员读写一律走 load_field/store_field 协议,无整表访问器。
     //
-    //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(缓存的
-    //   bound-method 经值级联标);to_string = `<Foo instance>`。
+    //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(字段里存的
+    //   可调用值经值级联标);to_string = `<Foo instance>`。
     class ObjInstance final : public Object {
     public:
         explicit ObjInstance(GC& gc, ObjClass* klass);
@@ -38,18 +40,24 @@ namespace aria {
             return class_;
         }
 
-        // 命名成员读取协议 override:fields 命中优先(真字段遮蔽方法与缓存项)-> **委托类协议**
-        // ObjClass::load_field 沿链读穿透(miss 的类措辞 fail 随协议传播)。命中可调用值现场
-        // 绑 this 并回填 fields 缓存(快照语义),非可调用静态值直读不缓存;分配点 GC 安全
-        // 与回填细节见 .cpp。
+        // 命名成员读取协议 override(方法值**读取**路径):fields 命中优先(真字段遮蔽类链同名
+        // 成员)-> **委托类协议** ObjClass::load_field 沿链读穿透(miss 的类措辞 fail 随协议
+        // 传播)。命中方法戳闭包即现场绑 this(每次访问一个新 bound,不缓存),其余原值直读;
+        // 分配点 GC 安全见 .cpp。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 方法调用解析协议 override:与内置类型同一条规则 -- 不绑定,返回字段/类链里的原值,交 VM
+        // 以 receiver 占调用区槽 0 直调(方法体从槽 0 读 this;原生以槽 0 为 this 兼返回槽)。
+        // 零分配,且每次按当前类链解析(与读路径同一份可见性:改类/父类方法立即生效)。
+        [[nodiscard]]
+        Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name) override;
 
         // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,
         // 永不失败(恒 true;false ⟺ 已 fail)。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
-        // 标 class_ + fields_(key+value;缓存 bound/method 闭包经值级联)。
+        // 标 class_ + fields_(key+value;字段里存的可调用值经值级联)。
         void trace(GC& gc) const noexcept override;
 
         // 壳定长(fields_ 的 ctrl/entries 两块由 ~HashTable 自释放,不计入壳)。

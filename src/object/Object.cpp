@@ -30,6 +30,13 @@ namespace aria {
         return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
+    Opt<Value> Object::resolve_invoke(AriaVM& vm, ObjString* name) {
+        // 基类默认 = load_field:未 override 的类型(类/模块等)照读路径取值,miss 文案随宿主就地
+        // 烘焙。实例与内置容器/迭代器各自 override(调用路径不铸 ObjBoundMethod)。调用区槽 0 由
+        // 指令保持为接收者,VM 不再干预(契约与理由见 Object.hpp)。
+        return load_field(vm, name);
+    }
+
     bool Object::store_field(AriaVM& vm, ObjString* name, const Value value) {
         return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name());
     }

@@ -78,6 +78,21 @@ namespace {
         const Error&                error() const noexcept { return result.error(); }
     };
 
+    // 取入口函数常量池里名为 name 的嵌套 ObjFunction（方法与 lambda 体各占一个 CodeUnit）：
+    // 方法体内的发射断言要看它们的 unit，入口 unit 只有 CLOSURE/调用序列。
+    ObjFunction* find_nested_function(Compiled& compiled, const std::string_view name) {
+        for (const auto& constant: compiled->unit().constants) {
+            if (!constant.is_obj() || !aria::Object::is<ObjFunction>(constant.as_obj())) {
+                continue;
+            }
+            auto* fn = aria::Object::as<ObjFunction>(constant.as_obj());
+            if (fn->name()->view() == name) {
+                return fn;
+            }
+        }
+        return nullptr;
+    }
+
     // 端到端：源码 -> 编译 -> VM 运行。返回 RunResult（持 vm 活到调用方检视完返回值）。
     // stress GC：每次 new_object / 循环回边都 collect，主动锻炼 compile+run 的 GC 根接线，
     // 暴露缺失根（裸指针跨分配）的 bug。module 经 compile() 的 guard 根化、值栈/帧经
@@ -554,13 +569,84 @@ TEST(CodeGen, ForInDisassembly) {
     auto compiled = compile_only("for (x in iter) { print x; }");
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
-    // 迭代协议：LOAD_FIELD "iter" / "has_next" / "next" + CALL
-    EXPECT_NE(text.find("LOAD_FIELD"), aria::String::npos);
+    // 迭代协议：INVOKE_METHOD "iter" / "has_next" / "next"（融合派发，不再经 LOAD_FIELD + CALL）
+    EXPECT_NE(text.find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_EQ(text.find("LOAD_FIELD"), aria::String::npos);
     EXPECT_NE(text.find("iter"), aria::String::npos);
     EXPECT_NE(text.find("has_next"), aria::String::npos);
     EXPECT_NE(text.find("next"), aria::String::npos);
     EXPECT_NE(text.find("JUMP_BACK"), aria::String::npos);
     EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
+}
+
+// 方法调用融合发射：recv.name(args) 发 INVOKE_METHOD（接收者先在槽 0）；方法值"读取"仍走
+// LOAD_FIELD（读路径现场绑定，无缓存：=== 身份逐次不同、== 内容相等）。
+TEST(CodeGen, MethodCallEmitsInvoke) {
+    auto call = compile_only(R"(
+def C { m(v) { return v; } }
+var c = C();
+return c.m(1);
+)");
+    ASSERT_TRUE(call.has_value());
+    const auto call_text = call->unit().disassemble("<test>");
+    EXPECT_NE(call_text.find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_EQ(call_text.find("LOAD_FIELD"), aria::String::npos); // 调用不落两步形态
+
+    auto read = compile_only(R"(
+def C { m(v) { return v; } }
+var c = C();
+return c.m;
+)");
+    ASSERT_TRUE(read.has_value());
+    const auto read_text = read->unit().disassemble("<test>");
+    EXPECT_NE(read_text.find("LOAD_FIELD"), aria::String::npos);
+    EXPECT_EQ(read_text.find("INVOKE_METHOD"), aria::String::npos);
+}
+
+// 融合发射的边界：super.m(args) 走 LOAD_SUPER_FIELD + CALL（父类起始的解析不进融合）；
+// 下标结果的调用 arr[i](args) 是普通 CALL（接收者不是成员宿主）。
+TEST(CodeGen, InvokeEmissionBoundaries) {
+    auto super_call = compile_only(R"(
+def A { m() { return 1; } }
+def B : A { n() { return super.m(); } }
+return B().n();
+)");
+    ASSERT_TRUE(super_call.has_value());
+    EXPECT_NE(super_call->unit().disassemble("<test>").find("INVOKE_METHOD"),
+              aria::String::npos); // B().n() 本身融合
+    const auto* super_body = find_nested_function(super_call, "n");
+    ASSERT_NE(super_body, nullptr);
+    const auto super_text = super_body->unit().disassemble("n");
+    EXPECT_NE(super_text.find("LOAD_SUPER_FIELD"), aria::String::npos);
+    EXPECT_EQ(super_text.find("INVOKE_METHOD"), aria::String::npos); // super.m() 仍走两步形态
+
+    auto index_call = compile_only(R"(
+fun f() { return 1; }
+var xs = [f];
+return xs[0]();
+)");
+    ASSERT_TRUE(index_call.has_value());
+    const auto index_text = index_call->unit().disassemble("<test>");
+    EXPECT_NE(index_text.find("LOAD_INDEX"), aria::String::npos);
+    EXPECT_EQ(index_text.find("INVOKE_METHOD"), aria::String::npos); // 下标调用不融合
+}
+
+// this.name(args) 同样融合：接收者经通用路径压在槽 0（指令数与 THIS_FIELD 折叠形态相同）。
+TEST(CodeGen, ThisMethodCallEmitsInvoke) {
+    auto compiled = compile_only(R"(
+def C {
+    m() { return 1; }
+    n() { return this.m(); }
+}
+return C().n();
+)");
+    ASSERT_TRUE(compiled.has_value());
+    EXPECT_NE(compiled->unit().disassemble("<test>").find("INVOKE_METHOD"), aria::String::npos);
+    const auto* body = find_nested_function(compiled, "n");
+    ASSERT_NE(body, nullptr);
+    const auto text = body->unit().disassemble("n");
+    EXPECT_NE(text.find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_NE(text.find("LOAD_LOCAL"), aria::String::npos); // [this] 经通用路径压栈
 }
 
 // 顶层 import：IMPORT path 压模块值 + DEF_GLOBAL alias 绑全局。
@@ -909,12 +995,7 @@ TEST(CodeGen, DefaultParamPrologueDisassembly) {
     ASSERT_TRUE(c.has_value()) << c.error().message();
     // 序言发射在子函数 f 的 unit 内(入口 unit 只有 CLOSURE/调用序列):经入口常量池取 f 的
     // ObjFunction 再反汇编其 unit。
-    const ObjFunction* f = nullptr;
-    for (const auto& v: c->unit().constants) {
-        if (v.is_obj() && aria::Object::is<ObjFunction>(v.as_obj())) {
-            f = aria::Object::as<ObjFunction>(v.as_obj());
-        }
-    }
+    const ObjFunction* f = find_nested_function(c, "f");
     ASSERT_NE(f, nullptr);
     EXPECT_EQ(f->arity(), 2);
     EXPECT_EQ(f->min_arity(), 1); // 必传 a,缺省 b
@@ -1584,7 +1665,7 @@ return delayed();
               42);
 }
 
-// super 不污染动态派发（bound 缓存铁则 2）：super.m 绑父实现后，s.m 仍派发子类覆写。
+// super 不污染动态派发：super.m 绑父实现后，s.m 仍派发子类覆写（super 站点解析结果不驻留成实例成员）。
 TEST(CodeGen, SuperDoesNotPolluteDynamicDispatch) {
     EXPECT_EQ(run_int(R"(
 def Base { m() { return 1; } }

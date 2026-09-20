@@ -311,6 +311,12 @@ namespace aria {
         // Object::store_field 协议。
         bool run_store_field(ObjString* name);
 
+        // INVOKE_METHOD 执行体(name/argc 已读出):[recv, a1..aN] -> [r]。经 Object::resolve_invoke
+        // 协议取被调值(miss 文案由 override 烘焙,非对象守卫文案留执行体,同 run_load_field)后交
+        // call_value 统一分发,**调用区不进**(槽 0 保持 receiver 原样,理由见 Object.hpp)。栈形与
+        // 两步形态「LOAD_FIELD + CALL」等价,故进帧整形(缺省垫充/varargs 打包)与 unwind 均不受影响。
+        bool run_invoke_method(ObjString* name, u8 argc);
+
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(方法闭包恒有戳,编译器
         // 不变式 ASSERT 钉),从其父类起走 ObjClass::load_field 沿链读穿透(不含 defining 自身,
         // 类协议不绑定不缓存)。命中方法闭包 -> 绑 this=帧槽 0 压栈供 CALL;其余(静态方法/函数值

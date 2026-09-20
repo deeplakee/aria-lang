@@ -94,6 +94,13 @@ namespace {
         cu.emit_word(name_idx, line);
     }
 
+    // INVOKE_METHOD name:u16 argc:u8(融合派发:[recv, a1..aN] -> [r],recv 先入栈)。
+    void emit_invoke(CodeUnit& cu, const u16 name_idx, const u8 argc, const u32 line = 1) {
+        cu.emit_op(OpCode::INVOKE_METHOD, line);
+        cu.emit_word(name_idx, line);
+        cu.emit_byte(argc, line);
+    }
+
     // LOAD_CONST idx:u16(压常量池 idx 处的值)。
     void emit_const(CodeUnit& cu, const u16 idx, const u32 line = 1) {
         cu.emit_op(OpCode::LOAD_CONST, line);
@@ -1627,7 +1634,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 // ============================================================
 // M5 类机制(阶段 2:VM 机制,手写 emit;编译器发射阶段 3 翻转)。全部跑在
 // AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼 bootstrap 根 /
-// 实例化快慢路径 / LOAD_FIELD 绑定 + 缓存回填 / 超类链的分配安全。
+// 实例化快慢路径 / LOAD_FIELD 现场绑定 / 超类链的分配安全。
 // ============================================================
 
 // 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
@@ -1732,8 +1739,8 @@ TEST_F(AriaVMStress, InstantiateInitSetsThisField) {
     EXPECT_EQ(out->as_int(), 7);
 }
 
-// 方法调用两步走:LOAD_FIELD 命中类表方法 -> 绑定 ObjBoundMethod(this=obj)并回填
-// fields 缓存 -> CALL 走 BOUND_METHOD 分支进方法帧([closure, this])。方法内
+// 方法调用两步走(手写字节码,保留为两步形态的白盒钉):LOAD_FIELD 命中类表方法 ->
+// 现场绑定 ObjBoundMethod(this=obj,不回填 fields) -> CALL 走 BOUND_METHOD 分支进方法帧([closure, this])。方法内
 // LOAD/STORE_THIS_FIELD 读写 this 字段;调用点用 DUP 保住实例副本跨 CALL,
 // 验证 this 突变对外可见。
 TEST_F(AriaVMStress, MethodCallMutatesThisField) {
@@ -2006,7 +2013,7 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
         emit_closure(cu, cu.add_constant(Value::from_obj(old_m)));
         emit_named(cu, OpCode::MAKE_METHOD, m_name);
         emit_global(cu, OpCode::DEF_GLOBAL, foo);
-        // i1 = Foo();b1 = i1.m(首解析:绑 old 闭包 + 回填 fields 缓存)
+        // i1 = Foo();b1 = i1.m(现场绑定 old 闭包)
         emit_global(cu, OpCode::LOAD_GLOBAL, foo);
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(0, 1);         // [i1]
@@ -2460,7 +2467,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     gc.collect(); // 类值经 guard -> module -> globals -> 类表 -> init 闭包全链标根
     EXPECT_EQ(gc.bytes_allocated(), before);
 
-    // collect 后对象图仍完好:绑定经 fields 缓存/表可达,字段值经协议读回一致
+    // collect 后对象图仍完好:方法闭包经类表可达,字段值经协议读回一致
     //(命中路径纯查询无分配,读安全)。
     auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
     ASSERT_NE(inst, nullptr);
@@ -2620,8 +2627,8 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
 }
 
 // super 读静态成员(LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看 defining class 戳):
-// Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈(不绑定、不写
-// fields 缓存,铁则 2);返回值即父类静态,验证父链真被读到。
+// Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈(不绑定;super 站点
+// 解析结果不驻留成实例成员);返回值即父类静态,验证父链真被读到。
 TEST_F(AriaVMStress, SuperReadsStaticMember) {
 
     auto& gc    = vm.gc();
@@ -2705,4 +2712,171 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 1); // 原生 init 的返回值即实例化结果
+}
+
+// INVOKE_METHOD 绑定路径:接收者在调用区底(peek(argc)),指令把槽 0 写成 receiver 后交
+// call_bound_method 进方法帧 -- 与两步形态「LOAD_FIELD 返 bound + CALL」等价。带实参形态
+// 一并钉住 argc 就位(实参槽 1..argc 不动)。
+TEST_F(AriaVMStress, InvokeMethodBindsInstanceReceiver) {
+
+    auto& gc    = vm.gc();
+    auto  init  = new_function(gc, "init", 0);
+    auto  guard = gc.make_guard(init);
+    {
+        auto&     icu    = init->unit();
+        const u16 x_name = icu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_imm(icu, 10);
+        emit_named(icu, OpCode::STORE_THIS_FIELD, x_name); // this.x = 10([v] -> [v])
+        icu.emit_op(OpCode::POP, 1);
+        emit_local(icu, OpCode::LOAD_LOCAL, 0);
+        icu.emit_op(OpCode::RETURN, 1); // 返回 this
+    }
+    auto m = new_function(gc, "m", 1);
+    guard.push(m);
+    {
+        auto&     mcu    = m->unit();
+        const u16 x_name = mcu.add_constant(Value::from_obj(new_string(gc, "x")));
+        emit_named(mcu, OpCode::LOAD_THIS_FIELD, x_name); // [x]
+        emit_local(mcu, OpCode::LOAD_LOCAL, 1);           // [x, v]
+        mcu.emit_op(OpCode::ADD, 1);                      // [x + v]
+        mcu.emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = new_function(gc, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 m_name    = cu.add_constant(Value::from_obj(new_string(gc, "m")));
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name);
+        emit_closure(cu, cu.add_constant(Value::from_obj(m)));
+        emit_named(cu, OpCode::MAKE_METHOD, m_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // [instance]
+        emit_imm(cu, 5);    // [instance, 5]
+        emit_invoke(cu, m_name, 1);
+        cu.emit_op(OpCode::RETURN, 1); // [15]
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out->as_int(), 15);
+}
+
+// INVOKE_METHOD 的存在理由:内置类型无 fields 缓存,两步形态每次取方法铸一个 ObjBoundMethod;
+// 融合派发经 Object::resolve_invoke 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
+// GC 的确定性读数(不随计时抖动),故本测试直接钉「同一趟 list.push + 取回元素」两侧的分配差 = 1。
+TEST_F(AriaVMStress, InvokeMethodOnBuiltinSkipsBoundMaterialization) {
+
+    auto&      gc       = vm.gc();
+    const auto run_case = [&](const bool two_step) {
+        auto      fn        = new_function(gc, "<main>", 0);
+        auto      guard     = gc.make_guard(fn);
+        auto&     cu        = fn->unit();
+        const u16 push_name = cu.add_constant(Value::from_obj(new_string(gc, "push")));
+        cu.emit_op(OpCode::MAKE_LIST, 1);
+        cu.emit_word(0, 1);         // []
+        cu.emit_op(OpCode::DUP, 1); // [list, list]
+        if (two_step) {
+            emit_named(cu, OpCode::LOAD_FIELD, push_name); // [list, bound]
+            emit_imm(cu, 1);                               // [list, bound, 1]
+            cu.emit_op(OpCode::CALL, 1);
+            cu.emit_byte(1, 1); // [list, nil]
+        } else {
+            emit_imm(cu, 1);               // [list, list, 1]
+            emit_invoke(cu, push_name, 1); // [list, nil]
+        }
+        cu.emit_op(OpCode::POP, 1);        // [list]
+        emit_imm(cu, 0);                   // [list, 0]
+        cu.emit_op(OpCode::LOAD_INDEX, 1); // [1]
+        cu.emit_op(OpCode::RETURN, 1);
+
+        const auto before = gc.allocation_count();
+        const auto out    = vm.run(fn);
+        const auto after  = gc.allocation_count();
+        EXPECT_TRUE(out.has_value()) << out.error().message();
+        EXPECT_EQ(out->as_int(), 1); // 两形态都真的 push 进去了
+        return after - before;
+    };
+
+    const auto two_step_allocs = run_case(true);
+    const auto invoke_allocs   = run_case(false);
+    EXPECT_EQ(two_step_allocs - invoke_allocs, 1u); // 少掉的正是那个 ObjBoundMethod（内置侧无缓存）
+}
+
+// INVOKE_METHOD 的原值直调:命中实例字段里的可调用值时槽 0 填该值本身(不绑 this,与两步形态
+// 留下的栈形一致 -- 字段值不是方法戳闭包,load_field 本就直读)。两形态对照:两侧都不铸
+// ObjBoundMethod,分配差为 0 -- 融合派发不得在此凭空多一次分配。
+TEST_F(AriaVMStress, InvokeMethodOnFieldHoldingCallable) {
+
+    auto&      gc       = vm.gc();
+    const auto run_case = [&](const bool two_step) {
+        auto init  = new_function(gc, "init", 1);
+        auto guard = gc.make_guard(init);
+        {
+            auto&     icu  = init->unit();
+            const u16 f_nm = icu.add_constant(Value::from_obj(new_string(gc, "f")));
+            emit_local(icu, OpCode::LOAD_LOCAL, 1); // [f]
+            emit_named(icu, OpCode::STORE_THIS_FIELD, f_nm);
+            icu.emit_op(OpCode::POP, 1);
+            emit_local(icu, OpCode::LOAD_LOCAL, 0);
+            icu.emit_op(OpCode::RETURN, 1); // 返回 this
+        }
+        auto g = new_function(gc, "g", 1);
+        guard.push(g);
+        {
+            auto& gcu = g->unit();
+            emit_local(gcu, OpCode::LOAD_LOCAL, 1); // [v]
+            emit_imm(gcu, 2);
+            gcu.emit_op(OpCode::MULTIPLY, 1); // [v * 2]
+            gcu.emit_op(OpCode::RETURN, 1);
+        }
+
+        auto fn = new_function(gc, "<main>", 0);
+        guard.push(fn);
+        auto&     cu        = fn->unit();
+        const u16 foo       = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 init_name = cu.add_constant(Value::from_obj(new_string(gc, "init")));
+        const u16 f_nm      = cu.add_constant(Value::from_obj(new_string(gc, "f")));
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(init)));
+        emit_named(cu, OpCode::MAKE_METHOD, init_name);
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
+        emit_closure(cu, cu.add_constant(Value::from_obj(g)));
+        // [Foo, closure]
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(1, 1); // [instance](init 把闭包存进 this.f)
+        if (two_step) {
+            // 两步形态的发射序同编译器改动前：<recv> LOAD_FIELD m <args> CALL。
+            emit_named(cu, OpCode::LOAD_FIELD, f_nm); // [closure]
+            emit_imm(cu, 3);                          // [closure, 3]
+            cu.emit_op(OpCode::CALL, 1);
+            cu.emit_byte(1, 1); // [6]
+        } else {
+            emit_imm(cu, 3); // [inst, 3]
+            emit_invoke(cu, f_nm, 1);
+        }
+        cu.emit_op(OpCode::RETURN, 1); // [6]
+
+        const auto before = gc.allocation_count();
+        const auto out    = vm.run(fn);
+        const auto after  = gc.allocation_count();
+        EXPECT_TRUE(out.has_value()) << out.error().message();
+        EXPECT_EQ(out->as_int(), 6); // 两形态都真的调到了字段里的闭包
+        return after - before;
+    };
+
+    const auto two_step_allocs = run_case(true);
+    const auto invoke_allocs   = run_case(false);
+    EXPECT_EQ(two_step_allocs, invoke_allocs); // 字段直读两侧都不物化
 }

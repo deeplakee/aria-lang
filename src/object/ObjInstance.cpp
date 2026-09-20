@@ -17,8 +17,7 @@ namespace aria {
     }
 
     Opt<Value> ObjInstance::load_field(AriaVM& vm, ObjString* name) {
-        // 1) fields 命中:真字段与 bound-method 缓存同居同 keyspace(M5 决策 4),命中优先
-        //    即真字段遮蔽同名方法与缓存项(铁则 3),无需区分直用。
+        // 1) fields 命中:真字段(含用户存进字段的可调用值)优先,遮蔽类链同名成员。
         if (const auto entry = fields_.find(Value::from_obj(name))) {
             return entry->value;
         }
@@ -33,20 +32,29 @@ namespace aria {
             return std::nullopt; // 已 fail(契约透传)
         }
         // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,经
-        //    is_method(Value) 一步判)现场绑定(this=本实例)并回填 fields 缓存(铁则 1:
-        //    只缓存绑定 --需要分配的--方法;快照语义,类上改写后新解析见新值);
-        //    其余(静态方法 fun/lambda/原生/静态值)原值直读不缓存。
+        //    is_method(Value) 一步判)现场绑定(this=本实例);其余(静态方法 fun/lambda/原生/静态值)
+        //    原值直读。**不写回 fields**(bound 缓存已取消,契约与理由见 ObjInstance.hpp):
+        //    读路径每次访问产出一个新 bound -- 方法值是一等值,这一步省不掉;换来的是类/父类
+        //    方法改写对既有实例立即生效(monkey patch 完整),以及 fields_ 回归纯字段。
         //
-        //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化,方法对象本体经本
-        //    实例->class_ 链类表可达(本地 member 仅是值拷贝),name 经调用方(常量池/测试守卫)可达;
-        //    绑定建成后回填 set 走 trivial 分配不触 GC(核心不变式),无守卫必要。
+        //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化(VM:LOAD_FIELD peek
+        //    在栈 / LOAD_THIS_FIELD 帧槽 0 在栈),方法对象本体经本实例->class_ 链类表可达(本地
+        //    member 仅是值拷贝),name 经调用方(常量池/测试守卫)可达;建成即经返回值写回原槽根化。
         const auto member = *hit;
         if (!is_method(member)) {
-            return member; // 非方法槽值:直读不缓存(铁则 1 --静态槽可变,值缓存进实例会读陈旧)
+            return member;
         }
-        const auto bound = new_bound_method(vm.gc(), member, Value::from_obj(this));
-        fields_.set(Value::from_obj(name), Value::from_obj(bound));
-        return Value::from_obj(bound);
+        return Value::from_obj(new_bound_method(vm.gc(), member, Value::from_obj(this)));
+    }
+
+    Opt<Value> ObjInstance::resolve_invoke(AriaVM& vm, ObjString* name) {
+        // 调用路径的成员解析:与内置类型同一条规则 -- **不绑定**,返回字段/类链里的原值,调用区
+        // 槽 0 由指令保持 receiver(方法戳闭包的方法体从槽 0 读 this,原生以槽 0 为 this 兼返回槽)。
+        // 故每次调用零分配,且每次按当前类链解析(与读路径同一份可见性:改类/父类方法立即生效)。
+        if (const auto entry = fields_.find(Value::from_obj(name))) {
+            return entry->value; // 真字段优先(字段里存的可调用值原值直调)
+        }
+        return class_->load_field(vm, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
     }
 
     bool ObjInstance::store_field(AriaVM& vm, ObjString* name, const Value value) {

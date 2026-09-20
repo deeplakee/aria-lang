@@ -50,6 +50,16 @@ namespace aria {
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }
 
+    Opt<Value> ObjRange::resolve_invoke(AriaVM& vm, ObjString* name) {
+        // 方法调用解析(INVOKE_METHOD):与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
+        // -- **不铸 ObjBoundMethod** 正是本 override 存在的理由(load_field 那条读路径要绑定;内置侧
+        // 无 fields 缓存可回填,两步形态每取一次方法白铸一个,迭代协议每迭代两次,见集合计划 §4.4);
+        // 调用区槽 0 保持 receiver 原样,正是原生要的 this。查找纯查询无分配,故本体是 load_field
+        // 结果的纯透传(miss 的 fail 装箱在 ObjClass::load_field 内就地完成,receiver 与 name 由调用
+        // 方根化:VM 侧 receiver peek 在栈、name 经常量池)。
+        return vm.range_class()->load_field(vm, name);
+    }
+
     String ObjRange::debug_repr() const {
         // 与源码拼写一致:.. 含上界、... 不含(空区间原样渲染两端点);无上界渲染 from..。
         if (!to_) {

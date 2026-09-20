@@ -32,7 +32,7 @@ namespace aria {
     //
     // 表内不放说明性注释, 语义细节统一见 bytecode-instruction-set.md §4。易踩点速览:
     //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
-    //   - INVOKE_METHOD: 预留指令(编译器不发射, VM 命中 not_implemented)
+    //   - INVOKE_METHOD: u16 名字 + u8 argc, 接收者在调用区底([recv, a1..aN] -> [r])
     // 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
 #define ARIA_OPCODE_LIST(X)                \
     X(HALT, Simple)                        \

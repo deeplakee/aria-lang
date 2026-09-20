@@ -14,7 +14,7 @@
 
 **决策 D1(2026-09-16 拍板):内置类 super 挂 Object 根**。uniform OOP 提前半步;接受 `s.init` 经链解析到 Object 根类的 no-op init(原生不动槽 0,调用返回 receiver 自身)——已知的小语义毛边,uniform OOP 落地时随 Object 方法面一并审视。
 
-**bound 缓存缺口(v1 接受)**:实例路径的 bound 缓存靠写回 fields 表(三铁则),内置类型无 fields 表可写,每次取方法现场物化 ObjBoundMethod。forIn 循环体每迭代 2 次小分配,v1 接受;预留的 `INVOKE_METHOD`(Invoke 操作数 = 名 + argc)为后续融合派发性能批——`recv.name(args)` 不物化 bound 对象直调,bench 驱动再做。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
+**bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 融合派发收口:内置侧改走 `Object::resolve_invoke` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `resolve_invoke` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
 
 **无方法性戳、`ObjClass` 表零改动**:内置类 v1 无静态、类名不作值暴露,表内条目恒绑定(绑定发生在类型自身的 override 里,不在表项上);`String.fromCharCode` 式静态需求出现时再泛化表项判别。
 
@@ -92,7 +92,7 @@
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
 | 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 |
-| 9(性能) | `INVOKE_METHOD` 融合派发(bench 驱动,消灭热路径 ObjBoundMethod 物化) | bench 前后对照 |
+| 9(性能) | `INVOKE_METHOD` 融合派发(bench 驱动,消灭热路径 ObjBoundMethod 物化) | bench 前后对照(基线见 §4.4,结果见 §4.5)**[已落地]** |
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
 
@@ -253,6 +253,98 @@
 > 倒序、负端点倒序、归一化后倒序、空切片);编译级 `ListSliceFails` 的两条倒序断言迁入 `ListSliceReads`(for
 > 迭代倒序段序位 + 端点取值 + 长度);`Array::copy_reversed_from` 4 例(反转序/append/跨扩容/空 src);语料两个
 > 倒序负例对删除、断言并入 `list_slice.aria` 正向段(语料用例数 1021 → 1019)。
+
+### 4.4 批 9 基线:方法派发成本实测(2026-09-20)
+
+批 9 的门禁是「bench 驱动」,基准入口 `bench/vm_bench.cpp`(目标 `vm_bench`,非 gtest)。**每次循环体的计数统一 204,800 次**,best-of-15 取最小(同 lexer_bench 纪律;跨构建抖动 ±5-10% 不入结论,见 lexer-notes §1)。
+
+**手法:同一二进制内两形态对照**。每对场景是同一份工作写成两种源形态:
+
+- **协议形态**:源码写 `recv.name(args)`,现编译为 `LOAD_FIELD` + `CALL`(每次调用物化一个 ObjBoundMethod);
+- **预绑定形态**:先把方法值读到局部(`var nx = it.next`)再调 `nx()`--循环体内零 `LOAD_FIELD`、零 ObjBoundMethod,即融合派发能达到的**下界**。预绑定不是正常写法,只作对照。
+
+两形态算同一个结果(`BENCH_CHECK` 断言相等),**差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次 dispatch 上的成本,即 `INVOKE_METHOD` 可回收的上界**。反汇编逐指令核对过两侧的循环体:协议形态 12 条/迭代(含 2 条 `LOAD_FIELD`)、预绑定形态 9 条/迭代(零 `LOAD_FIELD`),结构无其他差异。
+
+| 场景 | 协议形态 ns/次 | 预绑定 ns/次 | 差值 ns/次 | 差值占比 |
+| :--- | ---: | ---: | ---: | ---: |
+| `forin_list`(list 迭代协议) | 81.0 | 22.4 | 58.6 | 72.4% |
+| `forin_range`(range 迭代协议) | 78.3 | 21.1 | 57.2 | 73.0% |
+| `starts_with`(单方法调用) | 71.7 | 41.3 | 30.4 | 42.5% |
+| `instance_method`(用户类实例方法,无对照) | 54.7 | - | - | - |
+| `plain_call`(普通函数调用,无对照) | 42.8 | - | - | - |
+| `forin_string`(逐码点产出 1-char string,无对照) | 86.8 | - | - | - |
+| `forin_map`(逐 pair 产出 `[k, v]` list,无对照) | 145.1 | - | - | - |
+
+上表为一次完整运行(Release / `-O2 -DNDEBUG` / 无 LTO)。重复运行的抖动:协议/预绑定三对与 `forin_string`/`forin_map` 在 ±1% 内,`instance_method`/`plain_call` 在 ±5% 内(基线行偶有单次偏离;行值即 best-of-15 最小,同二进制内可比)。
+
+**读数**:
+
+- 一次「读方法值」实测约 **30 ns**:`starts_with` 每迭代 1 次读取得 30.4 ns,list/range 迭代协议每迭代 2 次读取得 57-59 ns,两条独立场景互相印证。差值含分配本身与它触发的 GC,不止一次类表查表。
+- 内置类型无 fields 缓存,故 for-in 每迭代把**七成时间**花在这条路径上;`INVOKE_METHOD` 去掉的是分配与一次 dispatch(类表查表仍在),落地后应落在「预绑定」与「协议」之间--重跑本基准的 `forin_list`/`forin_range` 两行即批 9 的验收读数。
+- 实例方法行 54.7 ns/次 vs 普通调用 42.8 ns/次:fields 缓存命中路径只比裸调用贵约 12 ns,印证**实例路径本就已摊薄**(一个实例一个方法名一生只物化一次),批 9 不必改实例路径。
+
+复现:
+
+```sh
+cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
+cmake --build build/rel --target vm_bench -j
+./build/rel/bench/vm_bench
+```
+
+### 4.5 批 9 落地状态(2026-09-20)
+
+**已落地**。三处改动:
+
+- **编译侧**:`visitCallNode` 对 `recv.name(args)`(含 `this.name(args)`)发 `INVOKE_METHOD name argc`,接收者先压调用区槽 0;for-in 三站点(`iter`/`has_next`/`next`)经 `emit_method_call0` 同改。`super.m(args)`(`SuperExprNode`)与下标调用 `arr[i](args)` 不融合,保持原两步/普通 `CALL`。方法值的**读取**(`obj.m`)仍走 `LOAD_FIELD`(每次访问现场绑定;其后的缓存取消与身份语义变化见 §4.6)。
+- **VM**:`run_invoke_method`(替换原 `not_implemented` case):非对象接收者守卫文案同 `run_load_field`;经协议解析出被调值后交 `call_value` 统一分发,**调用区不进**(栈形只剩 `[recv, a1..aN]` 一种)。故 `prepare_call_args`(缺省垫充/varargs 打包)、`TryRecord.stack_depth` 回退、`unwind` 全不受影响。
+- **对象侧协议缝**:`Object::resolve_invoke(vm, name) -> Opt<Value>` -- 只回答「该被调的值」,调用区槽 0 由指令保持 receiver 原样(方法经 `call_bound_method` 自覆写、内置原生正需要槽 0 = receiver、闭包不读槽 0,三者皆无需指令干预)。基类默认体 = `load_field`(类/模块等未 override 者);**实例与 List/Map/String/Range/Iterator 各自 override** 成不绑定形态(前者 fields 命中优先 + 类链取原值,后者查自身 bootstrap 类表),零 `ObjBoundMethod` 物化。协议缝形态与 `load_field/store_field` 同族(错误自 fail、`nullopt ⟺ 已 fail`、文案随宿主就地烘焙),未 override 的类型自动落到默认体。
+
+顺带清理:`not_implemented`(运行期「opcode 未实现」fatal 助手)与其独占错误码 `OpcodeNotImplemented` 随唯一消费者消失而删除--指令的 VM case 与 `code.hpp` 表行同批落地,不存在「表里有、VM 没实现」的持久态,兜底由 `dispatch_loop` 的 `UNREACHABLE` 承担。
+
+**前后对照**(`bench/vm_bench.cpp`,Release/`-O2`/无 LTO,每行 1,638,400 次循环体,改动前后各 3 次运行,构建内抖动 ±1%):
+
+| 场景 | 改前 ns/次 | 改后 ns/次 | 分配/次 改前 -> 改后 |
+| :--- | ---: | ---: | ---: |
+| `forin_list` 协议 | 84.1-84.3 | 31.2-31.3 | 2.009 -> 0.000 |
+| `forin_list` 预绑定(控制组) | 21.4-22.4 | 19.6-19.7 | 0.009 -> 0.001 |
+| `forin_range` 协议 | 79.8-80.2 | 31.9-32.2 | 2.001 -> 0.000 |
+| `starts_with` 协议(单方法调用) | 71.4-71.6 | 45.4-45.7 | 1.000 -> 0.000 |
+| `starts_with` 预绑定 | 41.8-42.2 | 39.7-40.1 | 0.000 -> 0.000 |
+| `forin_string` | 86.3-87.3 | 38.4-38.7 | 2.006 -> 0.000 |
+| `forin_map` | 146.6-147.0 | 92.1-92.7 | 3.006 -> 1.000(只剩每迭代的 `[k,v]` pair) |
+| `instance_method`(基线) | 53.7-54.0 | 53.6-54.5 | 0.000 -> 0.000 |
+| `plain_call`(基线) | 42.0-42.2 | 41.6-42.0 | 0.000 -> 0.000 |
+| 噪声地板(同程序两测) | ±0.1 ns/次 | ±0.2 ns/次 | -- |
+
+读数口径(两条,互补):
+
+- **确定性分配列**是最硬的证据:三次运行同值,不受计时抖动影响。内置侧每迭代 2 次取方法从各铸一个 ObjBoundMethod 变为零分配;`forin_map` 残留的 1.000 是迭代协议设计使然(每迭代产出一个 `[k,v]` 二元 list),不是派发成本。
+- **同二进制内「协议 - 预绑定」差值**(每次取方法的开销,免疫跨构建代码布局抖动):list 62.7 -> 11.6 ns/次(每次调用约 31 -> 5.8 ns)、range 58.3 -> 11.8、单方法调用 29.7 -> 5.6--残留的约 6 ns/次 即类表查表 + 一次 dispatch 的净成本,正是融合派发**不能**消掉的部分。
+- **跨构建绝对值有 ~10% 抖动**:三条基线行(代码路径未改)在两次对照间摆动 ~10%(`plain_call` 42.1 -> 41.8、`instance_method` 53.8 -> 54.0、`forin_list` 预绑定 21.4-22.4 -> 19.6-19.7),故跨构建只报量级(协议行 2.5-2.7x 提速),判定以分配列与同二进制差值为准。
+
+**语义等价性**:`INVOKE_METHOD` 是 `LOAD_FIELD` + `CALL` 的融合而非「只在类表查方法」--字段优先遮蔽方法、字段里的可调用值原值直调、非可调用成员照旧 `CallNonCallable`、成员 miss 文案随宿主,全部靠复用同一条成员解析路径保证。已知偏差一处:两步形态在求实参前取好方法值,融合派发把解析推到执行期(晚于实参求值),仅当实参表达式反过来改写该接收者/类的同名成员时可观察(病态写法),以「成员解析在调用点发生」为准(见 `bytecode-instruction-set.md` §5.6)。
+
+**测试**:`test_codegen` for-in 反汇编断言翻转为 `INVOKE_METHOD` + 新增融合发射/边界三例(`MethodCallEmitsInvoke`/`InvokeEmissionBoundaries`/`ThisMethodCallEmitsInvoke`);`test_ariavm` 新增三条白盒(实例绑定路径、内置侧两侧分配差 = 1、字段持可调用值时两侧分配差 = 0);`test_gc` 新增 `AllocationCountMonotonic`;语料新增一正(六种宿主调用形态)两负(字段非可调用 `CallNonCallable`、成员 miss `UndefinedProperty`,各配 `.err`)。主构建 ctest 1053/1053 绿。
+
+### 4.6 bound 缓存取消(2026-09-20,反转 M5 决策 4)
+
+**决定**:实例的 bound-method 缓存整体删除;实例 `resolve_invoke` 改成与内置类型同一条不绑定规则。
+
+**动机**:缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜 -- 同一条 `X.who()` 的结果取决于该实例此前有没有取过 `who`。实测(`C.who = f` 后)老实例返旧值、新实例返新值,属最难解释的一类语义,monkey patch 只能算半可用。取消后成员解析每次按当前类链进行,读与调用同一份可见性。
+
+**形态**:`ObjInstance::load_field`(读路径)保留现场绑定但**不写回 fields**;`ObjInstance::resolve_invoke`(调用路径)新增 override -- fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定),交 VM 以 receiver 占槽 0 直调(方法体从槽 0 读 `this`)。由此全部接收者(实例 + 5 个内置类型)共用同一调用规则,**绑定只活在读路径**。`ObjBoundMethod` 因此补 `equals`(receiver 同一 && method 同一):`obj.m == obj.m` 为真、`obj.m === obj.m` 为假(与语言既有的 `==`/`===` 二分、以及 Python bound method 的 `==`/`is` 分工一致)。
+
+**实测**(`bench/vm_bench.cpp`,同前口径,改前=缓存 + 基类默认体 / 改后=本决定,各 3 次):
+
+| 场景 | 改前 ns/次 | 改后 ns/次 | 分配/次 改前 -> 改后 |
+| :--- | ---: | ---: | ---: |
+| `instance_call`(实例方法调用) | 53.2-53.9 | 55.6-55.8 | 0.000 -> 0.000 |
+| `instance_read`(实例方法值读取 `f = obj.m`) | 41.8-42.0 | 69.9-71.0 | 0.000 -> **1.000** |
+| `forin_list`/`starts_with`/`plain_call` 等 | -- | 不变(±1%) | -- |
+
+读数:调用路径(绝对主路径)零分配不变、耗时 +2 ns 量级(约 +4%,fields_ 未命中 + 一次类链查表取代了「缓存命中 + bound 间接」);读路径是这次的真代价 -- 每次访问铸一个 bound、+28 ns,与 JS/Python 同款(方法值是一等值,这一步省不掉)。换取的是语义一致 + 机制减法:fields_ 回归纯字段,「三铁则」随之取消(见 `class-implementation-pitfalls.md` 坑 #1 的反转记录)。
+
+**波及面**:`ObjInstance` 契约注释、`ObjBoundMethod`(equals)、`class-implementation-pitfalls.md`、`m5-class-implementation-plan.md`/`vm-design.md` 的决策索引、语料(`class_bound_methods`/`invoke_method_forms` 的 `===` 翻成 `!==` + `==`,新增 `class_method_patch.aria` 钉 monkey patch)。
 
 ## 5. 参照
 

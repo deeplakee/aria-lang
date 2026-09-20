@@ -75,6 +75,12 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
+        // 方法调用解析协议 override:与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
+        // -- 恒绑定但不铸 ObjBoundMethod(内置侧 bound 无缓存可回填,每取一次白铸一个;forIn 每迭代
+        // 两个,见集合计划 §4.4 基线)。调用区槽 0 保持 receiver 原样,正是原生要的 this。
+        [[nodiscard]]
+        Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name) override;
+
         // 调试渲染:0..10 / 0...10 / 0..(无上界)式。
         [[nodiscard]]
         String debug_repr() const override;

@@ -7,7 +7,7 @@
 > 1. `ObjClass` **不设 meta 元类指针**（grammar「meta（元类，未来）」裁撤，YAGNI；将来要再加不动 `ObjType`）。
 > 2. **静态变量与静态/实例方法同存一张哈希表**（`AriaHashTable<Value,Value>`，键 intern `ObjString`）；静态值/方法的区分在值类型本身（是否 `ObjClosure`），表内无 tag。
 > 3. **Object 根类由 VM 构造期 bootstrap，VM 成员单独持有**（不进 `builtins_`/任何模块 globals -- 裸名解析（局部 -> upvalue -> 模块全局 -> builtins 回退）全部够不到，正常代码访问不到；`LOAD_OBJECT` 直推 VM 成员）。
-> 4. **方法查找后的 bound-method 缓存写进实例的 fields 哈希表**（与真字段同表同 keyspace），三条铁则见 §2.4。
+> 4. **方法查找后的 bound-method 缓存写进实例的 fields 哈希表**（与真字段同表同 keyspace），三条铁则见 §2.4。**（2026-09-20 反转：缓存整体取消，改由调用路径不绑定 + 读路径每次现场绑定，理由与实测见 `collections-builtin-methods-plan.md` §4.6）**
 > 5. **`STORE_FIELD` peek-store 与「MAKE_CLASS 后 class 始终留栈」的衔接取镜像双指令**：`STORE_FIELD [obj,v] -> [v]`（弹 obj 留 v，服务体外赋值）与 `MAKE_STATIC [class,value] -> [class]`（弹 value 留 class，服务体内创建）互为镜像、各自零冗余；DUP/POP 凑法弃（详见 §2.5）。
 > 6. **defining class 挂 `ObjClosure` 而非 `ObjFunction`**（grammar 原文「ObjFn 持 defining class」随落地改写，理由见 §2.6）。
 >
@@ -75,6 +75,8 @@ def 类 = **类级一张静态表 + 每实例一张字段表 + superclass 单链
 与指令集 §4.15 `LOAD_OBJECT`「VM 内部指针，不经名字查，避免 shadow Object 名破坏隐式继承」的现行定义一致。bootstrap 内容：`ObjClass("Object", super=nullptr)` + **合成 no-op init 闭包**（`ObjFunction` arity 0、module nullptr、字节码手发 `LOAD_NIL; RETURN` -- 体内无名字解析故帧 module 空指针无害，tracer/mark 容 nullptr）+ 静态表 set("init", closure) + `init_` 指向它。VM 成员 `object_class_` 持有、vm_roots tracer 增标（§3 阶段 2）。
 
 ### 2.4 bound-method 缓存三铁则（写实例 fields 表）
+
+> **已废止（2026-09-20）**：本节整体反转 -- 缓存删除，三铁则随之作废（fields_ 回归纯字段）。反转理由与实测见 `collections-builtin-methods-plan.md` §4.6，反转记录见 `class-implementation-pitfalls.md` 坑 #1。下文保留为历史决策原文。
 
 绑定按实例（this=obj）==> 每实例缓存一份。方法集在 def 期一次性建立；类上赋值可改写方法槽（决策补记）但**已绑定实例不失效**--缓存取**首解析快照**语义（新解析见新闭包、旧实例沿用旧绑定），仍**免失效机制**。但必须钉死三条，否则是隐性 bug：
 

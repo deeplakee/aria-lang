@@ -20,8 +20,10 @@ namespace aria {
     //     list.m;当前只产 ObjInstance 接收者)。闭包方法解包时作为实例方法帧槽 0 的
     //     this(方法帧 [this, a1..aN]);原生方法调用时覆写调用区槽 0(与返回槽同位)。
     //
-    //   地址哈希型可变对象(走 Object{ObjType::BOUND_METHOD} ctor);equals 保持默认地址相等--
-    //     绑定按身份判等(同一方法绑不同实例是不同对象)。final。
+    //   地址哈希型可变对象(走 Object{ObjType::BOUND_METHOD} ctor);equals 按**内容相等**:
+    //     receiver 同一 && method 同一(Python bound method 的 `__eq__` 同款)。bound 缓存取消后
+    //     读路径每次访问都是新对象,`obj.m == obj.m` 靠本判等为真,而 `===`(身份)为假 -- 恰与
+    //     语言既有的 `==`(value_equal)/`===`(identity) 二分一致。final。
     //   trace():mark_value(method_) + mark_value(receiver_)。
     //   debug_repr():`<bound method m>`(m 经非虚 name() 取名);基类 to_string 默认
     //     委托之,显示同文案。
@@ -52,6 +54,10 @@ namespace aria {
         // ObjNativeFn 完整类型),与 debug_repr 渲染同源。
         [[nodiscard]]
         ObjString* name() const noexcept;
+
+        // 内容相等(==):receiver 同一 && method 同一;`===` 仍按身份(每次访问的 bound 是新对象)。
+        [[nodiscard]]
+        bool equals(const Object* other) const noexcept override;
 
         void trace(GC& gc) const noexcept override;
 

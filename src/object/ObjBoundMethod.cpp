@@ -17,6 +17,19 @@ namespace aria {
         ASSERT(is_callable_value(method), "ObjBoundMethod: method must be a callable (closure or native fn)");
     }
 
+    bool ObjBoundMethod::equals(const Object* other) const noexcept {
+        // 先比指针(同一对象恒等),再比「绑的是同一个方法值、且 receiver 同一」--绑定语义就是
+        // 「同一实现 + 同一接收者」。method_ 为闭包/原生对象、receiver_ 为任意 Value,皆按身份
+        // (value_identical)比较(无 GC 分配,GC-pure 契约保持)。
+        if (this == other) {
+            return true;
+        }
+        if (const auto rhs = try_as<ObjBoundMethod>(other)) {
+            return value_identical(method_, rhs->method_) && value_identical(receiver_, rhs->receiver_);
+        }
+        return false;
+    }
+
     void ObjBoundMethod::trace(GC& gc) const noexcept {
         gc.mark_value(method_);   // 方法值装箱任意对象(闭包/原生),mark_value 分派
         gc.mark_value(receiver_); // receiver 装箱任意值,mark_value 分派

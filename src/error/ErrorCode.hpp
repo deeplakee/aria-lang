@@ -93,12 +93,11 @@ namespace aria {
     X(StackOverflow, Runtime)      /* 递归过深 */                                                                \
     X(CircularImport, Runtime)     /* import 形成循环 */                                                         \
     /* ========== INTERNAL ERROR（解释器不变式）========== */                                                    \
-    X(Unreachable, Internal)          /* 逻辑上不可达的代码被执行 */                                             \
-    X(AssertionFailed, Internal)      /* 内部断言失败 */                                                         \
-    X(InvalidBytecode, Internal)      /* codeunit 损坏 / 非法操作码 */                                           \
-    X(OpcodeNotImplemented, Internal) /* 合法 opcode 但运行期执行语义未实现 */                                   \
-    X(StackUnderflow, Internal)       /* VM 栈失衡（弹出超过已压入） */                                          \
-    X(InvalidState, Internal)         /* VM 处于非法内部状态 */                                                  \
+    X(Unreachable, Internal)     /* 逻辑上不可达的代码被执行 */                                                  \
+    X(AssertionFailed, Internal) /* 内部断言失败 */                                                              \
+    X(InvalidBytecode, Internal) /* codeunit 损坏 / 非法操作码 */                                                \
+    X(StackUnderflow, Internal)  /* VM 栈失衡（弹出超过已压入） */                                               \
+    X(InvalidState, Internal)    /* VM 处于非法内部状态 */                                                       \
     /* ========== RESOURCE ERROR（资源 / 环境）========== */                                                     \
     X(OutOfMemory, Resource)       /* GC 分配失败 */                                                             \
     X(FileReadFailed, Resource)    /* 源码/模块文件读取失败（映射自 fs::FsErrCode） */                           \

@@ -5,7 +5,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 ## 当前进度
 
 - **已落地**：util / value / error / compile / bytecode 层、GC、Object 子类型（string / function / native / module / exception / closure / upvalue / class / instance / bound-method）、AriaVM M1 主循环、M2 模块表与 IMPORT、M3 异常 try/catch/throw、M4 闭包（捕获即引用）、M5 类（阶段 1-3：对象层 + VM 机制 + 编译翻转）。
-- **待落地**：P0 语言面补齐（批 1-7 已落地：值寄存器组底座 + 默认参数、match 降糖、list 值表示与下标、方法机制与迭代协议（bootstrap 类 + 每源迭代器子类）+ varargs、map 字面量/下标与迭代产出 `[k, v]`、string 方法面（字节下标/码点迭代/11 方法）+ list join、range 区间（`..` 含/`...` 不含上界、端点推断倒序、无上界开区间、无源对象迭代器）、下标负数从尾计数（list/string）、list 切片（range 作下标键，端点从尾计数，倒序 range 产出倒序段）；待批 8+：解构、INVOKE_METHOD 性能批；计划见 `.claude/reference/runtime/collections-builtin-methods-plan.md`），其后 M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
+- **待落地**：P0 语言面补齐（批 1-7 已落地：值寄存器组底座 + 默认参数、match 降糖、list 值表示与下标、方法机制与迭代协议（bootstrap 类 + 每源迭代器子类）+ varargs、map 字面量/下标与迭代产出 `[k, v]`、string 方法面（字节下标/码点迭代/11 方法）+ list join、range 区间（`..` 含/`...` 不含上界、端点推断倒序、无上界开区间、无源对象迭代器）、下标负数从尾计数（list/string）、list 切片（range 作下标键，端点从尾计数，倒序 range 产出倒序段）；批 9 性能批（INVOKE_METHOD 融合派发）已落地：`recv.name(args)` 融合发射、解析经 `Object::resolve_invoke`、内置容器/迭代器零 `ObjBoundMethod` 物化（基线/前后数字见 `.claude/reference/runtime/collections-builtin-methods-plan.md` §4.4，基准入口 `bench/vm_bench.cpp`）；待批 8：解构；计划见 `.claude/reference/runtime/collections-builtin-methods-plan.md`），其后 M6 协程；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
 - 里程碑级细节见 `README.md` 与 `.claude/reference/runtime/vm-design.md` §6 路线表。
 
 ## 文档与参考（按需加载）
@@ -34,7 +34,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（已全部落地，存档；含语义模型与六项设计决策）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
-- `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存三铁则、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
+- `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存三铁则**已于 2026-09-20 反转：缓存取消**、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
 - `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划（批 1-2 编译器前置批：默认参数 / match 降糖；批 3-9：方法机制两层分派、迭代协议、下标语义与集合/内置方法各批）。
 - `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。

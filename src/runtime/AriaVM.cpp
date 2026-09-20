@@ -190,15 +190,6 @@ namespace aria {
         // (unwind 返 somed Error)的统一收口,只剩 std::unexpected 样板。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 范围外 opcode 的统一处理:命中即打印提示后经 fatal_error 终止进程。用
-        // OpcodeNotImplemented(Internal 类)而非 NotImplemented(Semantic 类):后者经 Error 通道
-        // 服务编译期 CodeGen not_impl(可恢复 CompileError);此处是运行期执行到未实现 opcode,
-        // 不可恢复,属解释器实现不完整(Internal)。
-        [[noreturn]]
-        void not_implemented(const StringView op_name) {
-            fatal_error(ErrorCode::OpcodeNotImplemented, "opcode '{}' not implemented yet", op_name);
-        }
-
         // 执行跟踪:每条指令执行**前**打印字节码/栈/帧/模块信息(stderr,调试用,详尽优先于简洁;
         // 与 GC 调试日志 / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 分流)。常态
         // 编译(与 DEBUG_PRINT_COMPILED_CODE 同形,宏只守 dispatch_loop 内调用点),关闭时无调用点,
@@ -792,6 +783,22 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_invoke_method(ObjString* name, const u8 argc) {
+        // 契约见 AriaVM.hpp。接收者在调用区底(peek(argc)):协议解析期间它须在栈(「栈即根」)--
+        // 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是分配点。
+        const Value recv = current_->peek(argc);
+        if (!recv.is_obj()) {
+            return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
+        }
+        if (const auto target = recv.as_obj()->resolve_invoke(*this, name)) {
+            // 调用区**原样不动**:槽 0 已是 receiver -- 方法命中时 call_bound_method 自会用 bound 的
+            // receiver 覆写它(同一对象),内置原生正需要槽 0 = receiver(其 this 兼返回槽),闭包/其余
+            // 分支不读槽 0。故本指令不进调用区,栈形只剩 [recv, a1..aN] 一种。
+            return call_value(*target, argc);
+        }
+        return false;
+    }
+
     bool AriaVM::run_load_index() {
         // 契约见 AriaVM.hpp;非对象守卫同 run_load_field(文案与协议基类默认同串)。
         const Value idx = current_->peek(0);
@@ -1361,7 +1368,14 @@ namespace aria {
                     }
                     break;
                 case OpCode::INVOKE_METHOD:
-                    not_implemented("INVOKE_METHOD");
+                    // name:u16 argc:u8;[recv, a1..aN] -> [r]。执行体收口于 run_invoke_method。
+                    if (!run_invoke_method(read_name(frame), read_u8(frame))) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
+                    }
+                    break;
                 case OpCode::MAKE_LIST: {
                     // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect
                     // (「栈即根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内

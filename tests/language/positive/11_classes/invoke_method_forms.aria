@@ -1,0 +1,62 @@
+// 钉住：方法调用的各发射形态（融合派发 INVOKE_METHOD）——实例方法/this 递归/super 实现/
+// 类静态方法/字段里的可调用值/内置类型方法面，六种宿主的调用结果一致可用；方法值"读取"
+// 仍走 LOAD_FIELD（现场绑定、无缓存：=== 按身份、== 按同实现+同接收者）。
+def Base {
+    init(n) { this.n = n; }
+    label() { return 10; }
+}
+def Derived : Base {
+    init(n) { super.init(n); }
+    label() { return super.label() + 1; }   // super.m() 调用形态
+    bump(v) { this.n = this.n + v; return this.recurse(2); }
+    recurse(k) { if (k == 0) { return this.n; } return this.recurse(k - 1); }  // this.m() 递归
+    fun tag() { return 99; }                // 静态方法：无 this
+}
+
+var d = Derived(1);
+assert(d.label() == 11);                    // 实例方法（父实现经 super 组合）
+assert(d.bump(4) == 5);                     // 带实参 + this.m() 递归
+
+// 字段里存可调用值：obj.f(args) 原值直调（不绑 this）
+def Holder { init(f) { this.f = f; } }
+fun twice(v) { return v * 2; }
+var h = Holder(twice);
+assert(h.f(21) == 42);
+
+// 类静态方法：C.m(args) 走同一条融合派发（接收者是类，原值直调）
+assert(Derived.tag() == 99);
+assert(Derived(7).n == 7);                  // 类调用构造器不经融合（CALL）
+
+// 内置类型方法面
+var xs = [3, 1];
+xs.push(2);
+assert(xs.pop() == 2);
+assert("AB".lower() == "ab");
+var sum = 0;
+for (x in [1, 2, 3]) { sum = sum + x; }     // 迭代协议：iter/has_next/next 全经融合派发
+assert(sum == 6);
+for (i in 0...3) { sum = sum + 1; }
+assert(sum == 9);
+
+// 方法值读取路径：每次访问现场绑定（无缓存），身份各异而内容相等
+var bound = d.label;
+assert(bound() == 11);
+assert(bound !== d.label);   // 身份不同（每次访问一个新 bound）
+assert(bound == d.label);    // 内容相等
+
+// 成员解析发生在调用点（实参求值之后）：实参改写接收者成员后，解析取改写后的值。
+// 注：两步形态「LOAD_FIELD + CALL」在求实参前就取好方法值（Python/JS 同款），融合派发刻意
+// 以「解析在调用点发生」为准；此处即该决策的钉子（见 bytecode-instruction-set.md §5.6）。
+def Slot { init(f) { this.f = f; } }
+fun first(v) { return 1; }
+fun second(v) { return 2; }
+var slot = Slot(first);
+fun rewrite() { slot.f = second; return 0; }
+assert(slot.f(rewrite()) == 2);   // 实参先跑 -> 解析命中改写后的 second
+assert(slot.f(0) == 2);
+
+// INVOKE_METHOD 不进调用区：槽 0 保持接收者。故实例上调用经类链解析到的**原生** no-op init
+// （Object 根，不被绑定）返回实例本身（计划 D1「调用返回 receiver 自身」）。
+def Bare { }
+var bare = Bare();
+assert(type(bare.init()) == "Instance");

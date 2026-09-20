@@ -1,0 +1,34 @@
+// 钉住：类/父类上改写方法对**既有实例**立即生效——读与调用同一份可见性（bound 缓存已取消，
+// 成员解析每次按当前类链进行）。对照物：缓存时代同一表达式会因「该实例此前有没有取过该方法」
+// 给出不同结果（老实例陈旧、新实例新鲜），属最难解释的一类语义。
+def Base { init() { this.n = 0; } who() { return 1; } }
+def D : Base { }                  // 不覆写，沿链解析到 Base.who
+fun two() { return 2; }
+fun three() { return 3; }
+
+var old = D();
+assert(old.who() == 1);
+
+Base.who = two;                   // 改**父类**方法
+assert(old.who() == 2);           // 既有实例立即见新值（缓存时代为 1）
+assert(D().who() == 2);           // 新建实例一致：不再出现「新旧不一致」
+
+def E : Base { who() { return 10; } }
+var e = E();
+assert(e.who() == 10);
+E.who = three;                    // 改子类自身表（此前遮蔽父类）
+assert(e.who() == 3);             // 既有实例立即见新值
+assert(E().who() == 3);
+
+// 实例字段优先遮蔽类链同名成员（与解析路径无关，字段永远先查）
+old.who = three;
+assert(old.who() == 3);
+assert(D().who() == 2);           // 别的实例不受影响
+
+// 方法值读取（未被字段遮蔽的名字）：每次访问现场绑定（无缓存）——身份各异、内容相等。
+// 注：字段读取（上面 old.who）返回的是字段里那同一个对象，身份恒定，不适用本断言。
+def F { m() { return 1; } }
+var f = F();
+assert(f.m !== f.m);
+assert(f.m == f.m);
+assert(f.m() == 1);

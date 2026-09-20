@@ -1,0 +1,2 @@
+// 钉住：substring 无负下标归一，越界区间报 IndexOutOfBounds（区间两值就地拼进文案）。
+var s = "hello".substring(3, 9);

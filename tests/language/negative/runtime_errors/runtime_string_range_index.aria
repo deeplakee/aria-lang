@@ -1,0 +1,2 @@
+// 钉住：string 不支持 range 键切片（字节域单键产出，range 切片为 list 专属）。
+var s = "abc"[0..1];

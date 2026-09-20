@@ -1,0 +1,18 @@
+// 钉住：range 值可作 map 键——内容哈希入表，键判等与其它对象键同约定（=== 按对象
+# 身份）：同一 range 对象（同变量）命中；含否上界/倒序/无上界各形态互为独立键。
+var r = 0..2;
+var m = {};
+m[r] = "a";
+assert(m[r] == "a");
+assert(len(m) == 1);
+
+var rev = 3..1;
+m[rev] = "rev";
+assert(m[rev] == "rev");
+
+var open = 5..;
+m[open] = "open";
+assert(m[open] == "open");
+
+assert(len(m) == 3);
+assert(m[r] == "a" && m[rev] == "rev" && m[open] == "open");

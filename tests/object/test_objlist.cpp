@@ -473,6 +473,22 @@ TEST(ObjList, SliceOutOfBoundsFails) {
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
+TEST(ObjList, SliceOnEmptyListFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_list(gc, guard);
+    // 空容器无端点可取:任一形态(含无上界与空 range)均为越界失败。
+    auto r1 = new_range(gc, 0);
+    guard.push(r1);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    auto r2 = new_range(gc, 2, 2, true);
+    guard.push(r2);
+    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+}
+
 TEST(ObjList, StoreSliceFails) {
     AriaVM vm;
     auto&  gc    = vm.gc();

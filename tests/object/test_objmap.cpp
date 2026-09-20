@@ -13,6 +13,7 @@
 #include "object/ObjList.hpp"
 #include "object/ObjMap.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
@@ -25,6 +26,7 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::new_map;
 using aria::new_map_iterator;
+using aria::new_range;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
@@ -32,6 +34,7 @@ using aria::ObjList;
 using aria::ObjMap;
 using aria::ObjMapIterator;
 using aria::ObjNativeFn;
+using aria::ObjRange;
 using aria::ObjString;
 using aria::Pair;
 using aria::String;
@@ -135,6 +138,28 @@ TEST(ObjMap, LoadIndexArbitraryKeys) {
     auto as_f64 = map->load_index(vm, Value::from_f64(1.0));
     EXPECT_FALSE(as_f64.has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::KeyError);
+}
+
+TEST(ObjMap, RangeKeyHitsByIdentity) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   map   = make_map(gc, guard);
+    auto   r     = new_range(gc, 0, 2, false);
+    guard.push(r);
+    // range 值是合法 map 键(内容哈希入表);=== 按对象身份判等,同一对象命中。
+    map->table().set(Value::from_obj(r), Value::from_int(10));
+    auto hit = map->load_index(vm, Value::from_obj(r));
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->as_int(), 10);
+    // 不同内容的 range 是不同对象,互为独立键。
+    auto other = new_range(gc, 0, 2, true);
+    guard.push(other);
+    map->table().set(Value::from_obj(other), Value::from_int(20));
+    EXPECT_EQ(map->table().size(), 2);
+    auto miss = map->load_index(vm, Value::from_obj(other));
+    ASSERT_TRUE(miss.has_value());
+    EXPECT_EQ(miss->as_int(), 20);
 }
 
 // miss:KeyError,键走 debug 形入文案(int 裸数字、字符串带引号)。

@@ -1,9 +1,15 @@
-// 钉住：string 的下标与迭代——s[i] 字节域产出单字节 1-char string、多字节中间字节
-# 取该字节自身（对象级另有字节值钉子）；forIn 逐码点产出 1-char string、双字节整步
-# 跨过；string 不可变（写恒报错，负向语料另配）。
+// 钉住：string 的下标与迭代——s[i] 字节域产出单字节 1-char string、负下标从尾计数、
+# 多字节中间字节取该字节自身（对象级另有字节值钉子）；forIn 逐码点产出 1-char string、
+# 双字节整步跨过；string 不可变（写恒报错，负向语料另配）。
 assert("hello"[1] == "e");
 assert(len("héllo") == 6);          // 字节域（len 与 s[i] 同域，D5）
 assert(len("héllo"[1]) == 1);       // 单字节产出
+
+// 负下标从尾计数（字节域，与 list 同约定）：-1 = 末字节、-len = 首字节
+assert("hello"[-1] == "o");
+assert("hello"[-5] == "h");
+assert("héllo"[-6] == "h");         // -len = 首字节（总长 6 字节）
+assert(len("héllo"[-5]) == 1);      // 多字节序列中间字节取该字节自身
 
 var n = 0;
 var first = "";

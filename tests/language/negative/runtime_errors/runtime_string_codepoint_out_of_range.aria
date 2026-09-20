@@ -1,0 +1,2 @@
+// 钉住：codepoint_at 码点域越界报 IndexOutOfBounds（负数与越过末码点同路）。
+var c = "héllo".codepoint_at(99);

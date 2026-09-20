@@ -700,6 +700,14 @@ TEST(ParserError, ExpectedExpression) {
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedExpression);
 }
 
+TEST(ParserError, LowerUnboundedRangeRejected) {
+    // range 只可省上界（term ( (".."|"...") term? )?）：无下界形态在表达式起点即拒。
+    auto p = parse_src("var xs = [1, 2, 3];\nvar s = xs[..2];");
+    ASSERT_FALSE(p->result.has_value());
+    ASSERT_FALSE(p->result.error().empty());
+    EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedExpression);
+}
+
 TEST(ParserError, UnexpectedEof) {
     // fun foo() { 未闭合
     auto p = parse_src("fun foo() {");

@@ -23,7 +23,7 @@ tests/language/
     09_modules/              # import 各族；每用例一个子目录（main.aria + lib/）
     10_integration/          # 多特性组合的综合小程序
     11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
-    12_collections/          # list 字面量/下标/push/pop/迭代器协议
+    12_collections/          # list/map/range 字面量、下标与切片、方法面、迭代协议
     13_strings/              # string 方法面/字节下标/码点迭代
   negative/
     compile_errors/          # compile_*.aria -> 期待 CompileError
@@ -75,7 +75,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 1. **字符串没有 `+` 拼接、没有排序比较**（`+`/`>`/`<` 仅数值）：语料不要用字符串拼
    消息；也不要把「字符串 + 报错」写成负向用例钉死（后续里程碑大概率补齐）。
-2. **不要钉临时未实装行为**：map 字面量、解构模式、区间 `..`、`H.x` 读模块成员
+2. **不要钉临时未实装行为**：解构模式（var/for-in pattern 与解构赋值）、`H.x` 读模块成员
    （模块全局未导出为模块成员）均为编译期/运行期未实装，随里程碑逐个翻转——写
    「期待报错」的负向用例会在翻转日变红。这也是 09_modules 只能经模块体副作用
    （print / 异常）观察行为、无法在 main 里读 `H.x` 的原因。

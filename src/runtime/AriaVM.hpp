@@ -341,6 +341,13 @@ namespace aria {
         // 两格留 v([obj, idx, v] -> [v],peek-store -- 赋值表达式约定)。
         bool run_store_index();
 
+        // ---- range 构造指令执行体(MAKE_RANGE):契约同 field 族 ----
+
+        // MAKE_RANGE 执行体(flags 已读出,位义见 code.hpp kRangeFlag*):有界 [from, to] -> [range]、
+        // 无上界 [from] -> [range]。端点须为整数,非整数 fail TypeMismatch(静态文案不插端点值);
+        // 端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」),铸完 drop 再 push。
+        bool run_make_range(u8 flags);
+
         // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
         // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
         // 回退到命中帧并转入 catch handler(弃内层帧、帧内截到 catch 参数槽、ip 跳、载荷落槽,

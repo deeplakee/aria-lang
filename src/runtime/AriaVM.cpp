@@ -841,6 +841,33 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_make_range(const u8 flags) {
+        // 契约见 AriaVM.hpp。有界两端点、无上界单端点均 peek 在栈跨 new_range 顶部
+        // maybe_collect(「栈即根」,端点为标量整数非对象);铸完 drop 再 push(窗口内无 GC 点)。
+        if ((flags & kRangeFlagUnbounded) != 0) {
+            const Value from = current_->peek(0);
+            if (!from.is_int()) {
+                // 非整数端点 TypeMismatch,静态文案不插端点值。
+                return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
+            }
+            const auto range = new_range(gc_, from.as_int());
+            current_->drop(1);
+            current_->push(Value::from_obj(range));
+            return true;
+        }
+        const bool  exclusive = (flags & kRangeFlagExclusive) != 0;
+        const Value to        = current_->peek(0);
+        const Value from      = current_->peek(1);
+        if (!from.is_int() || !to.is_int()) {
+            // 非整数端点 TypeMismatch,静态文案不插端点值。
+            return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
+        }
+        const auto range = new_range(gc_, from.as_int(), to.as_int(), exclusive);
+        current_->drop(2);
+        current_->push(Value::from_obj(range));
+        return true;
+    }
+
     bool AriaVM::run_load_super_field(ObjString* name) {
         // 契约见 AriaVM.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
         const auto& frame    = current_->frames().top();
@@ -1423,43 +1450,16 @@ namespace aria {
                     current_->push(Value::from_obj(map));
                     break;
                 }
-                case OpCode::MAKE_RANGE: {
-                    // flags:u8。有界 [from, to] -> [range]:两端点 peek 在栈跨 new_range 顶部
-                    // maybe_collect(「栈即根」,端点为标量整数非对象);铸完 drop 2 再 push(窗口内
-                    // 无 GC 点)。无上界 [from] -> [range]:单值 peek/drop,unbounded 位分流。
-                    // flags 位义见 code.hpp kRangeFlagExclusive/kRangeFlagUnbounded。
-                    const u8 flags = read_u8(frame);
-                    if ((flags & kRangeFlagUnbounded) != 0) {
-                        const Value from = current_->peek(0);
-                        if (!from.is_int()) {
-                            // 非整数端点 TypeMismatch,静态文案不插端点值。
-                            raise(ErrorCode::TypeMismatch, "range bounds must be integers");
-                            if (auto u = unwind()) {
-                                return runtime_err(std::move(*u));
-                            }
-                            break;
-                        }
-                        const auto range = new_range(gc_, from.as_int());
-                        current_->drop(1);
-                        current_->push(Value::from_obj(range));
-                        break;
-                    }
-                    const bool  exclusive = (flags & kRangeFlagExclusive) != 0;
-                    const Value to        = current_->peek(0);
-                    const Value from      = current_->peek(1);
-                    if (!from.is_int() || !to.is_int()) {
-                        // 非整数端点 TypeMismatch,静态文案不插端点值。
-                        raise(ErrorCode::TypeMismatch, "range bounds must be integers");
+                case OpCode::MAKE_RANGE:
+                    // flags:u8;[from, to] -> [range](无上界 [from] -> [range])。执行体收口于
+                    // run_make_range。
+                    if (!run_make_range(read_u8(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
                     }
-                    const auto range = new_range(gc_, from.as_int(), to.as_int(), exclusive);
-                    current_->drop(2);
-                    current_->push(Value::from_obj(range));
                     break;
-                }
 
                 // ---- 模块导入 ----
                 case OpCode::IMPORT:

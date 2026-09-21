@@ -224,11 +224,13 @@ namespace aria {
         // 可重载运算符协议(算术虚函数族)
         //
         // lhs = this、rhs = 任意 Value,const 纯计算;错误通道契约同成员协议。**接线现状:
-        // op_add 已接(ADD 指令经 AriaVM::run_binary_add 在对象左值上派发,ObjString override
-        // 做拼接),其余五个仍备置**(接线留容器里程碑/用户类运算符重载;无消费者不加放宽线,
-        // 其余算术/比较指令仍数值专用)。接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)跨
-        // miss fail 与结果分配的 GC 点。基类默认体在 Object.cpp,报 TypeMismatch "operator '...'
-        // requires numbers, got X and Y"(与 VM 原语路径文案一致)。
+        // op_add 与四个比较算子已接**(ADD 经 AriaVM::run_binary_add、四个比较指令经
+        // run_binary_compare:均先做「左值是否对象」tag 判定,是对象即派发到此;ObjString 的
+        // override 分别做拼接与字节序比较),**其余五个(op_sub/op_mul/op_div/op_mod/
+        // op_negate)仍备置**(接线留容器里程碑/用户类运算符重载;无消费者不加放宽线)。
+        // 接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)跨 miss fail 与结果分配的 GC 点。
+        // 基类默认体在 Object.cpp,报 TypeMismatch "operator '...' requires numbers, got X and
+        // Y"(与 VM 原语路径文案一致;比较算子同文案,由 op_symbol 逐算子给符号)。
         //////////////////////////
 
         [[nodiscard]]
@@ -245,6 +247,21 @@ namespace aria {
 
         [[nodiscard]]
         virtual Opt<Value> op_mod(AriaVM& vm, Value rhs) const;
+
+        // 比较算子四件(命名对齐 OpCode 的 GREATER/GREATER_EQUAL/LESS/LESS_EQUAL):返回装箱
+        // 的 Bool 值(与算术族同形 -- 结果为 Value,失败经 vm.fail 走信号)。ObjString 按字节序
+        // (unsigned/memcmp 语义)实现;其余类型落基类默认报 TypeMismatch。
+        [[nodiscard]]
+        virtual Opt<Value> op_less(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_less_equal(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_greater(AriaVM& vm, Value rhs) const;
+
+        [[nodiscard]]
+        virtual Opt<Value> op_greater_equal(AriaVM& vm, Value rhs) const;
 
         // 一元取负(-x):无 rhs。基类默认报 InvalidOperand "negate requires a number"。
         [[nodiscard]]

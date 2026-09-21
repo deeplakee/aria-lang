@@ -704,6 +704,37 @@ namespace aria {
     }
 
     template<OpCode Op>
+    bool AriaVM::run_binary_compare() {
+        // 对象左值:按 Op 派发对应比较算子(ObjString override 做字节序比较,其余类型落基类默认
+        // 报 TypeMismatch,文案与数值原语路径逐字一致)。左值(peek 1)与 rhs(peek 0)保持「栈即
+        // 根」--协议内 fail 与将来用户类 override 的分配都不许先弹栈。非对象左值(数值/nil/bool
+        // 等)照旧落 run_binary_numeric:数值比较热路径只此一次 tag 判定,不进虚分派。
+        if (const Value lhs = current_->peek(1); lhs.is_obj()) {
+            const auto obj = lhs.as_obj();
+            const auto rhs = current_->peek(0);
+            Opt<Value> result;
+            if constexpr (Op == OpCode::LESS) {
+                result = obj->op_less(*this, rhs);
+            } else if constexpr (Op == OpCode::LESS_EQUAL) {
+                result = obj->op_less_equal(*this, rhs);
+            } else if constexpr (Op == OpCode::GREATER) {
+                result = obj->op_greater(*this, rhs);
+            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+                result = obj->op_greater_equal(*this, rhs);
+            } else {
+                UNREACHABLE(); // Op 恒为四个比较指令之一(调用点穷举)
+            }
+            if (!result) {
+                return false; // 载荷已在挂起错误寄存器
+            }
+            current_->drop(2);
+            current_->push(*result);
+            return true;
+        }
+        return run_binary_numeric<Op>();
+    }
+
+    template<OpCode Op>
     bool AriaVM::run_binary_numeric() {
         // 双 Int 走整数路径,任一 F64 升浮点(int 除/模零报错,% 为 C++ 语义,f64 按 IEEE)。
         const Value b = current_->pop();
@@ -1166,9 +1197,9 @@ namespace aria {
                     current_->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
-                // 比较(执行体 run_binary_numeric,下同)
+                // 比较(执行体 run_binary_compare:对象左值派发协议,其余落 run_binary_numeric)
                 case OpCode::GREATER:
-                    if (!run_binary_numeric<OpCode::GREATER>()) {
+                    if (!run_binary_compare<OpCode::GREATER>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1176,7 +1207,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
-                    if (!run_binary_numeric<OpCode::GREATER_EQUAL>()) {
+                    if (!run_binary_compare<OpCode::GREATER_EQUAL>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1184,7 +1215,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::LESS:
-                    if (!run_binary_numeric<OpCode::LESS>()) {
+                    if (!run_binary_compare<OpCode::LESS>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1192,7 +1223,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::LESS_EQUAL:
-                    if (!run_binary_numeric<OpCode::LESS_EQUAL>()) {
+                    if (!run_binary_compare<OpCode::LESS_EQUAL>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }

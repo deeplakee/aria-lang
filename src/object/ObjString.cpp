@@ -88,6 +88,46 @@ namespace aria {
         return Value::from_obj(new_string(vm.gc(), buffer));
     }
 
+    // 四个比较算子的共用实现形态:两侧须皆 String,按**无符号字节序**比较,rhs 非 String 就地
+    // 烘焙定向文案(各算子报自己的符号)。必须走 string_view::compare(char_traits 的 memcmp 语义)
+    // --char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到 ASCII 之前("é" < "z" 会
+    // 反过来)。纯读零分配(GC-pure),无 GC 点。
+    Opt<Value> ObjString::op_less(AriaVM& vm, const Value rhs) const {
+        const auto other = try_obj<ObjString>(rhs);
+        if (other == nullptr) {
+            return vm.fail(ErrorCode::TypeMismatch, "operator '<' requires two strings, got {} and {}", type_name(),
+                           aria::type_name(rhs));
+        }
+        return Value::from_bool(view().compare(other->view()) < 0);
+    }
+
+    Opt<Value> ObjString::op_less_equal(AriaVM& vm, const Value rhs) const {
+        const auto other = try_obj<ObjString>(rhs);
+        if (other == nullptr) {
+            return vm.fail(ErrorCode::TypeMismatch, "operator '<=' requires two strings, got {} and {}", type_name(),
+                           aria::type_name(rhs));
+        }
+        return Value::from_bool(view().compare(other->view()) <= 0);
+    }
+
+    Opt<Value> ObjString::op_greater(AriaVM& vm, const Value rhs) const {
+        const auto other = try_obj<ObjString>(rhs);
+        if (other == nullptr) {
+            return vm.fail(ErrorCode::TypeMismatch, "operator '>' requires two strings, got {} and {}", type_name(),
+                           aria::type_name(rhs));
+        }
+        return Value::from_bool(view().compare(other->view()) > 0);
+    }
+
+    Opt<Value> ObjString::op_greater_equal(AriaVM& vm, const Value rhs) const {
+        const auto other = try_obj<ObjString>(rhs);
+        if (other == nullptr) {
+            return vm.fail(ErrorCode::TypeMismatch, "operator '>=' requires two strings, got {} and {}", type_name(),
+                           aria::type_name(rhs));
+        }
+        return Value::from_bool(view().compare(other->view()) >= 0);
+    }
+
     Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) {
         // 内置侧两步,与实例路径同构(先委托类协议查表、后自己绑定,同 ObjInstance::load_field
         // 形):VM 的 String bootstrap 类经 ObjClass::load_field 沿链读穿透,miss 类措辞 fail 随

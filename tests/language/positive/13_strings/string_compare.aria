@@ -1,0 +1,48 @@
+// 钉住：字符串四个比较算子按字节序（unsigned/memcmp 语义，与 len/s[i] 同字节域）比较；
+# 空前缀最小、真前缀更小、相等时 <= 与 >= 为真而 < 与 > 为假；大小写敏感（无 collation）；
+# 多字节与 s[i] 切出的孤立 continuation 字节串均按字节值比；含 String 的混合组合报错（负向另配）。
+assert("a" < "b");
+assert(!("b" < "a"));
+assert("b" > "a");
+assert(!("a" > "b"));
+assert("a" <= "a");          // 相等：<= 真
+assert("a" >= "a");          // 相等：>= 真
+assert(!("a" < "a"));        // 相等：< 假
+assert(!("a" > "a"));        // 相等：> 假
+
+// 空前缀最小、真前缀更小
+assert("" < "a");
+assert(!("" < ""));
+assert("" <= "");
+assert("app" < "apple");
+assert("apple" <= "apple");
+
+// 大小写敏感：大写字母字节更小（字节序无 locale/collation 概念）
+assert("Zebra" < "apple");
+assert("apple" < "banana");
+
+// 字节域：多字节字符与孤立 continuation 字节都按字节值比（0xC3 > 0x7A > 0x7E）
+assert("é" > "z");
+assert("héllo"[1] > "~");
+assert("é" > "héllo"[1]);    // 前缀更小
+
+// 与 == 一致：字节序判定相等当且仅当 == 成立
+assert(("a" + "b") <= "ab");
+assert(("a" + "b") >= "ab");
+assert(("a" + "b") == "ab");
+assert(!("a" + "b" < "ab"));
+
+// 实际用法：循环里取字典序最大者
+var words = ["pear", "apple", "fig"];
+var max = words[0];
+var n = 0;
+for (w in words) {
+    if (w > max) { max = w; }
+    n = n + 1;
+}
+assert(max == "pear");
+assert(n == 3);
+
+// 比较结果可再参与逻辑运算（真值即 Bool）
+assert(("a" < "b") && !("b" < "a"));
+assert(("z" < "a") || ("a" < "z"));

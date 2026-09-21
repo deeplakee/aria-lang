@@ -1,5 +1,6 @@
-// ObjString 协议面(下标字节语义/不可变写/load_field 绑定)的对象层测试;错误白盒取件与
-// GC 守卫形态同 test_objlist/test_objmap。迭代器(ObjStringIterator)在 test_objiterator.cpp。
+// ObjString 协议面(下标字节语义/不可变写/load_field 绑定/算术与比较算子)的对象层测试;
+// 错误白盒取件与 GC 守卫形态同 test_objlist/test_objmap。迭代器(ObjStringIterator)在
+// test_objiterator.cpp。
 #include <gtest/gtest.h>
 
 #include "error/ErrorCode.hpp"
@@ -17,16 +18,20 @@
 using aria::AriaVM;
 using aria::ErrorCode;
 using aria::GC;
+using aria::i32;
 using aria::i64;
+using aria::is_truthy;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
 using aria::ObjNativeFn;
 using aria::ObjString;
+using aria::Opt;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
 using aria::try_obj;
+using aria::usize;
 using aria::Value;
 using aria::value_identical;
 
@@ -47,6 +52,12 @@ namespace {
         const auto ex = try_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
+    }
+
+    // 比较算子返回装箱 Bool:取「是否为真」(结果恒 Bool,故 is_truthy 即其值)。
+    bool compared_true(const Opt<Value>& result) {
+        EXPECT_TRUE(result.has_value());
+        return result.has_value() && is_truthy(*result);
     }
 
 } // namespace
@@ -292,4 +303,83 @@ TEST(ObjString, OpAddSurvivesStressCollect) {
     ctx->drop(2);
     ctx->push(*sum);
     EXPECT_EQ(ctx->peek(0).as_obj()->debug_repr(), "\"stresscollect\"");
+}
+
+// ---- 比较算子(op_less/op_less_equal/op_greater/op_greater_equal = 字节序) ----
+
+// 四算子的真值表(含空串、真前缀、相等四态)。
+TEST(ObjString, OpCompareByteOrderTruthTable) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   a     = make_string(gc, guard, "apple");
+    auto   b     = make_string(gc, guard, "banana");
+    auto   same  = make_string(gc, guard, "apple");
+    auto   empty = make_string(gc, guard, "");
+    auto   pre   = make_string(gc, guard, "app"); // a 的真前缀
+
+    EXPECT_TRUE(compared_true(a->op_less(vm, Value::from_obj(b))));
+    EXPECT_FALSE(compared_true(b->op_less(vm, Value::from_obj(a))));
+    EXPECT_TRUE(compared_true(b->op_greater(vm, Value::from_obj(a))));
+    EXPECT_FALSE(compared_true(a->op_greater(vm, Value::from_obj(b))));
+
+    EXPECT_TRUE(compared_true(same->op_less_equal(vm, Value::from_obj(a))));    // 相等:<= 真
+    EXPECT_TRUE(compared_true(same->op_greater_equal(vm, Value::from_obj(a)))); // 相等:>= 真
+    EXPECT_FALSE(compared_true(same->op_less(vm, Value::from_obj(a))));         // 相等:< 假
+    EXPECT_FALSE(compared_true(same->op_greater(vm, Value::from_obj(a))));
+
+    EXPECT_TRUE(compared_true(empty->op_less(vm, Value::from_obj(a)))); // 空串最小
+    EXPECT_FALSE(compared_true(empty->op_less(vm, Value::from_obj(empty))));
+    EXPECT_TRUE(compared_true(empty->op_less_equal(vm, Value::from_obj(empty))));
+    EXPECT_TRUE(compared_true(pre->op_less(vm, Value::from_obj(a)))); // 真前缀更小
+}
+
+// 无符号字节序钉子:多字节 UTF-8 与孤立 continuation 字节串都按字节值比。
+// 这两条同时是「不能手写逐 char 比较」的反证--有符号 char 下 0xC3 变负,两条都会翻转。
+TEST(ObjString, OpCompareIsUnsignedBytewise) {
+    AriaVM vm;
+    auto&  gc     = vm.gc();
+    auto   guard  = gc.make_guard();
+    auto   accent = make_string(gc, guard, "é"); // 0xC3 0xA9
+    auto   z      = make_string(gc, guard, "z"); // 0x7A
+    // s[i] 可切出孤立 continuation 字节(字节域下标的既有结果,非法 UTF-8 串是一等值)。
+    auto lone  = make_string(gc, guard, "\xC3");
+    auto tilde = make_string(gc, guard, "~"); // 0x7E
+
+    EXPECT_TRUE(compared_true(accent->op_greater(vm, Value::from_obj(z))));    // 0xC3 > 0x7A
+    EXPECT_TRUE(compared_true(lone->op_greater(vm, Value::from_obj(tilde))));  // 0xC3 > 0x7E
+    EXPECT_TRUE(compared_true(accent->op_greater(vm, Value::from_obj(lone)))); // 0xC3 0xA9 > 0xC3(前缀)
+    EXPECT_FALSE(compared_true(accent->op_less(vm, Value::from_obj(accent)))); // 自反不成立
+}
+
+// rhs 非 String:TypeMismatch 定向文案,四个算子各自带符号(与算术族「override 自带符号」契约同形)。
+TEST(ObjString, OpCompareNonStringRhsFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "a");
+
+    EXPECT_FALSE(s->op_less(vm, Value::from_int(1)).has_value());
+    auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch operator '<' requires two strings, got String and Int");
+
+    EXPECT_FALSE(s->op_greater_equal(vm, Value::nil_val()).has_value());
+    std::tie(code, message) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch operator '>=' requires two strings, got String and Nil");
+}
+
+// 比较是 GC-pure:不分配、不触发回收(bytes_allocated 前后不变),故协议侧无 GC 点。
+TEST(ObjString, OpCompareAllocatesNothing) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   a     = make_string(gc, guard, "aaa");
+    auto   b     = make_string(gc, guard, "bbb");
+
+    const usize before = gc.bytes_allocated();
+    EXPECT_TRUE(compared_true(a->op_less(vm, Value::from_obj(b))));
+    EXPECT_TRUE(compared_true(b->op_greater(vm, Value::from_obj(a))));
+    EXPECT_EQ(gc.bytes_allocated(), before);
 }

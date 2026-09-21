@@ -62,6 +62,27 @@ TEST(Interpret, StringPlusNonStringIsRuntimeError) {
     EXPECT_EQ(vm.interpret_from_src("return \"a\" + 1;"), InterpretResult::RuntimeError);
 }
 
+// 字符串源：四个比较算子按字节序可用（含空串、前缀、多字节）-> Ok。
+TEST(Interpret, StringComparisonOk) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    EXPECT_EQ(vm.interpret_from_src("assert(\"a\" < \"b\"); assert(\"b\" >= \"b\");"
+                                    "assert(\"\" < \"a\"); assert(\"é\" > \"z\"); return nil;"),
+              InterpretResult::Ok);
+}
+
+// 字符串源：String < 非 String -> 运行期 TypeMismatch（定向文案）-> RuntimeError。
+TEST(Interpret, StringCompareNonStringIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("return \"a\" < 1;"), InterpretResult::RuntimeError);
+}
+
+// 字符串源：非 String < String 同样类型错（左值非对象，仍走数值路径）-> RuntimeError。
+TEST(Interpret, NonStringCompareStringIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("return 1 < \"a\";"), InterpretResult::RuntimeError);
+}
+
 // 字符串源：非 String + String 同样类型错（左值非对象，仍走数值路径）-> RuntimeError。
 TEST(Interpret, NonStringPlusStringIsRuntimeError) {
     AriaVM vm;

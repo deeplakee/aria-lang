@@ -301,6 +301,13 @@ namespace aria {
         // -- 协议内可能分配(拼接结果)与 fail,左值与 rhs 须经值栈为根(见 Object.hpp 接线纪律)。
         bool run_binary_add();
 
+        // 四个比较指令(GREATER/GREATER_EQUAL/LESS/LESS_EQUAL)的执行体:非对象左值委托
+        // run_binary_numeric(数值快路径与失败文案不变),对象左值按 Op 派发对应比较算子重载
+        // (op_less/op_less_equal/op_greater/op_greater_equal)。peek 不弹 -- 协议内 fail 与将来
+        // 用户类 override 的分配都须两侧在栈。
+        template<OpCode Op>
+        bool run_binary_compare();
+
         // ---- 类与对象(M5):field 族指令执行体 ----
         //
         // bool 契约同 call_value:失败载荷已在寄存器(对象协议失败由 override 内 vm.fail 就地

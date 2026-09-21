@@ -100,6 +100,19 @@
 
 > **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`resolve_invoke` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
 
+> **计划表外补缺 · 字符串比较排序(2026-09-21)**:批 1-9 收官后补的第三处表外缺口。语义:四个比较算子
+> (`<`/`<=`/`>`/`>=`)的域扩到字符串 -- 两侧皆 `String` 时按**无符号字节序**比(`string_view::compare`,
+> memcmp 语义),结果 Bool;含 String 的混合组合报 TypeMismatch 定向文案;其余类型(含 list/map)仍仅数值。
+> **域选择依据**:与 `len`/`s[i]` 的字节域同域,且 `s[i]` 能切出非法单字节串(`"héllo"[1]` = 孤立
+> continuation 字节,实测一等值)故必须对任意字节串全序;UTF-8 保序,故合法文本上结果与按码点比较一致。
+> 接线形态:比较四件入算术族的虚函数族(`op_less`/`op_less_equal`/`op_greater`/`op_greater_equal`,命名
+> 对齐 OpCode 的 LESS/LESS_EQUAL/GREATER/GREATER_EQUAL),四个比较指令经新执行体
+> `run_binary_compare<Op>` -- 与 `run_binary_add` 同形:非对象左值委托 `run_binary_numeric`(数值热路径
+> 只多一次 `is_obj()` tag 判定),对象左值派发协议(`ObjString` override 字节序比较,GC-pure)。实现坑:
+> 必须走 `string_view::compare`,`char` 在多数平台有符号,手写逐 char 比较会把 0x80 以上字节排到 ASCII
+> 之前(`"é" < "z"` 会反过来)。**至此计划表外三处缺口全部补齐**(字符串拼接、模块成员访问、字符串比较);
+> 剩余未做:容器方法面(sort/reverse 等)、用户类运算符重载(其余五个算子仍备置)。
+
 > **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
 > `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发

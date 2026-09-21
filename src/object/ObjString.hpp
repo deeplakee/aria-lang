@@ -97,6 +97,22 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> op_add(AriaVM& vm, Value rhs) const override;
 
+        // 比较算子 override(四个比较指令经 AriaVM::run_binary_compare 在对象左值上派发):
+        // 两侧均为 String 即按**字节序**(unsigned/memcmp 语义,string_view::compare)比较,返回
+        // 装箱 Bool;否则 TypeMismatch 定向文案。字节序与 len/s[i] 的字节域同域,且对 s[i] 切出的
+        // 非法单字节串仍全序;UTF-8 保序,故合法文本上结果与按码点比较一致(无 locale/collation)。
+        [[nodiscard]]
+        Opt<Value> op_less(AriaVM& vm, Value rhs) const override;
+
+        [[nodiscard]]
+        Opt<Value> op_less_equal(AriaVM& vm, Value rhs) const override;
+
+        [[nodiscard]]
+        Opt<Value> op_greater(AriaVM& vm, Value rhs) const override;
+
+        [[nodiscard]]
+        Opt<Value> op_greater_equal(AriaVM& vm, Value rhs) const override;
+
         // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjList::load_field
         // 形)--先委托 VM 的 String bootstrap 类协议(ObjClass::load_field 沿链查表,miss
         // 类措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不

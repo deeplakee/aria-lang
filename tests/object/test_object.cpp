@@ -66,12 +66,12 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
 }
 
-// 成员/下标访问/算术/可调用协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入
-// 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
-// 防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员 override,
-// Module 自模块成员访问起 override load_field/store_field、自字符串 `+` 起 string override
-// op_add,故各分组挑当下仍未 override 的类型探默认(string 探 store_field、Module 探下标注
-// 解与算术)。
+// 成员/下标访问/算术/比较/可调用协议的**基类默认**:未 override 的子类型对协议操作一律
+// vm.fail 入寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 +
+// 文案子串)防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员
+// override,Module 自模块成员访问起 override load_field/store_field,string 又自字符串 `+`
+// 与字符串比较起 override op_add 与四个比较算子,故各分组挑当下仍未 override 的类型探默认
+//(string 探 store_field、Module 探下标注解与算术/比较)。
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器
@@ -128,6 +128,25 @@ TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::InvalidOperand);
     EXPECT_TRUE(msg.contains("negate requires a number, got String"));
+
+    // 比较算子默认体:同样"requires numbers, got X and Y",四算子各带自己的符号
+    // (ObjString 已 override 成字节序比较,故用 Module 探默认体)。
+    EXPECT_FALSE(m->op_less(vm, Value::from_int(1)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_TRUE(msg.contains("operator '<' requires numbers, got Module and Int"));
+
+    EXPECT_FALSE(m->op_less_equal(vm, Value::from_int(1)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_TRUE(msg.contains("operator '<=' requires numbers"));
+
+    EXPECT_FALSE(m->op_greater(vm, Value::from_int(1)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_TRUE(msg.contains("operator '>' requires numbers"));
+
+    EXPECT_FALSE(m->op_greater_equal(vm, Value::from_int(1)).has_value());
+    std::tie(code, msg) = take_pending_error(vm);
+    EXPECT_TRUE(msg.contains("operator '>=' requires numbers"));
 
     // 可调用协议默认(备置):本类型不可调用,CallNonCallable(文案与 call_value 原默认一致;
     // slots 契约同 NativeFn,调用区 Span 经 Span<Value>{&peek(argc), argc+1} 构造)。

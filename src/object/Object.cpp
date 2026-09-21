@@ -59,6 +59,22 @@ namespace aria {
 
     Opt<Value> Object::op_mod(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "%", this, rhs); }
 
+    // 比较算子默认体:与数值原语路径同文案(比较指令的对象左值在此报,未 override 的类型一律
+    // 「requires numbers」--String 已 override 成字节序比较,其余类型照此)。
+    Opt<Value> Object::op_less(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "<", this, rhs); }
+
+    Opt<Value> Object::op_less_equal(AriaVM& vm, const Value rhs) const {
+        return op_binary_unsupported(vm, "<=", this, rhs);
+    }
+
+    Opt<Value> Object::op_greater(AriaVM& vm, const Value rhs) const {
+        return op_binary_unsupported(vm, ">", this, rhs);
+    }
+
+    Opt<Value> Object::op_greater_equal(AriaVM& vm, const Value rhs) const {
+        return op_binary_unsupported(vm, ">=", this, rhs);
+    }
+
     Opt<Value> Object::op_negate(AriaVM& vm) const {
         // 文案与 VM 的 NEGATE 指令报错一致(InvalidOperand)。
         return vm.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name());

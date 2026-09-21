@@ -159,17 +159,6 @@ namespace aria {
         return join_line(op_name, std::format("{:04X}  ; {}", path_idx, path));
     }
 
-    // INVOKE_METHOD:u16 name + u8 argc,name+argc hex 操作数 + `name argc=N` 注释。
-    String Disassembler::invoke_instruction(const StringView op_name) {
-        if (is_truncated(3)) {
-            return join_line(op_name, truncated());
-        }
-        const u16    name_idx = read_u16();
-        const String name     = format_constant(name_idx);
-        const auto   argc     = static_cast<u32>(read_u8());
-        return join_line(op_name, std::format("{:04X} {:02X}  ; {} argc={}", name_idx, argc, name, argc));
-    }
-
     // 反汇编单条指令,返回指令文本(不含偏移前缀/换行),推进 offset_ 越过该指令。
     // 表驱动按格式分发(见 Disassembler.hpp 文档);新增 opcode 本函数零改动。
     String Disassembler::dis_instruction() {
@@ -202,8 +191,6 @@ namespace aria {
                 return register_instruction(op_name);
             case OpFormat::Import:
                 return import_instruction(op_name);
-            case OpFormat::Invoke:
-                return invoke_instruction(op_name);
         }
         UNREACHABLE();
     }

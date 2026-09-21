@@ -14,7 +14,7 @@
 
 **决策 D1(2026-09-16 拍板):内置类 super 挂 Object 根**。uniform OOP 提前半步;接受 `s.init` 经链解析到 Object 根类的 no-op init(原生不动槽 0,调用返回 receiver 自身)——已知的小语义毛边,uniform OOP 落地时随 Object 方法面一并审视。
 
-**bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 融合派发收口:内置侧改走 `Object::resolve_invoke` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `resolve_invoke` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
+**bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 收口:内置侧改走 `Object::resolve_invoke` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `resolve_invoke` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
 
 **无方法性戳、`ObjClass` 表零改动**:内置类 v1 无静态、类名不作值暴露,表内条目恒绑定(绑定发生在类型自身的 override 里,不在表项上);`String.fromCharCode` 式静态需求出现时再泛化表项判别。
 
@@ -92,7 +92,7 @@
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
 | 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 |
-| 9(性能) | `INVOKE_METHOD` 融合派发(bench 驱动,消灭热路径 ObjBoundMethod 物化) | bench 前后对照(基线见 §4.4,结果见 §4.5)**[已落地]** |
+| 9(性能) | 不绑定方法派发(bench 驱动,消灭热路径 ObjBoundMethod 物化):先单条融合,后两段化 | bench 前后对照(基线见 §4.4,结果见 §4.5/§4.7)**[已落地]** |
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
 
@@ -261,9 +261,9 @@
 **手法:同一二进制内两形态对照**。每对场景是同一份工作写成两种源形态:
 
 - **协议形态**:源码写 `recv.name(args)`,现编译为 `LOAD_FIELD` + `CALL`(每次调用物化一个 ObjBoundMethod);
-- **预绑定形态**:先把方法值读到局部(`var nx = it.next`)再调 `nx()`--循环体内零 `LOAD_FIELD`、零 ObjBoundMethod,即融合派发能达到的**下界**。预绑定不是正常写法,只作对照。
+- **预绑定形态**:先把方法值读到局部(`var nx = it.next`)再调 `nx()`--循环体内零 `LOAD_FIELD`、零 ObjBoundMethod,即不绑定派发能达到的**下界**。预绑定不是正常写法,只作对照。
 
-两形态算同一个结果(`BENCH_CHECK` 断言相等),**差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次 dispatch 上的成本,即 `INVOKE_METHOD` 可回收的上界**。反汇编逐指令核对过两侧的循环体:协议形态 12 条/迭代(含 2 条 `LOAD_FIELD`)、预绑定形态 9 条/迭代(零 `LOAD_FIELD`),结构无其他差异。
+两形态算同一个结果(`BENCH_CHECK` 断言相等),**差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次 dispatch 上的成本,即不绑定派发可回收的上界**。反汇编逐指令核对过两侧的循环体:协议形态 12 条/迭代(含 2 条 `LOAD_FIELD`)、预绑定形态 9 条/迭代(零 `LOAD_FIELD`),结构无其他差异。
 
 | 场景 | 协议形态 ns/次 | 预绑定 ns/次 | 差值 ns/次 | 差值占比 |
 | :--- | ---: | ---: | ---: | ---: |
@@ -280,7 +280,7 @@
 **读数**:
 
 - 一次「读方法值」实测约 **30 ns**:`starts_with` 每迭代 1 次读取得 30.4 ns,list/range 迭代协议每迭代 2 次读取得 57-59 ns,两条独立场景互相印证。差值含分配本身与它触发的 GC,不止一次类表查表。
-- 内置类型无 fields 缓存,故 for-in 每迭代把**七成时间**花在这条路径上;`INVOKE_METHOD` 去掉的是分配与一次 dispatch(类表查表仍在),落地后应落在「预绑定」与「协议」之间--重跑本基准的 `forin_list`/`forin_range` 两行即批 9 的验收读数。
+- 内置类型无 fields 缓存,故 for-in 每迭代把**七成时间**花在这条路径上;不绑定派发去掉的是分配与一次 dispatch(类表查表仍在),落地后应落在「预绑定」与「协议」之间--重跑本基准的 `forin_list`/`forin_range` 两行即批 9 的验收读数。
 - 实例方法行 54.7 ns/次 vs 普通调用 42.8 ns/次:fields 缓存命中路径只比裸调用贵约 12 ns,印证**实例路径本就已摊薄**(一个实例一个方法名一生只物化一次),批 9 不必改实例路径。
 
 复现:
@@ -292,6 +292,8 @@ cmake --build build/rel --target vm_bench -j
 ```
 
 ### 4.5 批 9 落地状态(2026-09-20)
+
+> 本节记录当时的落地形态(单条 `INVOKE_METHOD` 融合派发)。其中「一条指令」这一点已由 §4.7 两段化取代(不绑定解析、零物化不变);本节其余内容(协议缝、清理、测试)仍然有效。
 
 **已落地**。三处改动:
 
@@ -345,6 +347,33 @@ cmake --build build/rel --target vm_bench -j
 读数:调用路径(绝对主路径)零分配不变、耗时 +2 ns 量级(约 +4%,fields_ 未命中 + 一次类链查表取代了「缓存命中 + bound 间接」);读路径是这次的真代价 -- 每次访问铸一个 bound、+28 ns,与 JS/Python 同款(方法值是一等值,这一步省不掉)。换取的是语义一致 + 机制减法:fields_ 回归纯字段,「三铁则」随之取消(见 `class-implementation-pitfalls.md` 坑 #1 的反转记录)。
 
 **波及面**:`ObjInstance` 契约注释、`ObjBoundMethod`(equals)、`class-implementation-pitfalls.md`、`m5-class-implementation-plan.md`/`vm-design.md` 的决策索引、语料(`class_bound_methods`/`invoke_method_forms` 的 `===` 翻成 `!==` + `==`,新增 `class_method_patch.aria` 钉 monkey patch)。
+
+### 4.7 两段式派发(2026-09-21,取代 §4.5 的单条融合)
+
+**决定**:`recv.name(args)` 从单条 `INVOKE_METHOD name argc` 改成两段 `PREPARE_METHOD name` + `CALL_METHOD argc`——解析放回**实参求值之前**。`INVOKE_METHOD` 与其独占的 `OpFormat::Invoke` 一并删除(指令表净 +1 条:`PREPARE_METHOD`/`CALL_METHOD` 两条换 `INVOKE_METHOD` 一条)。
+
+**动机(语义)**:`obj.foo` 是接收者求值后紧接着的一步,应当先于实参求值完成,Python/Lua/JS 皆如此(它们的成员解析可能跑用户代码——描述符/getter/`__index` 元方法,故规范把「取」定死在实参之前)。单条融合把解析推到执行期,可观察两处:① 实参反过来改写接收者同名成员时,本次调用用的是**改写后**的值;② 解析失败时实参**已经跑过**(副作用已发生)。§4.6 收尾记的「已知偏差一处」即 ①。两处虽属病态/边角写法,但次序语义是语言面的确定性,不宜留特例——尤其它同时是「解析可跑用户代码」这一未来特性的**前提**(届时解析要在 `PREPARE_METHOD` 内跑,还需另做同步嵌套调用机制;该边界已写进指令集 §5.6)。
+
+**形态**:`<recv>` + `PREPARE_METHOD name`(解析、结果压栈:[recv] -> [recv, target])+ `<args>` + `CALL_METHOD argc`(纯调用:实参整体下移一格补掉 target 占的那格得 [recv, a1..aN],槽 0 = receiver = this,交 `call_value` 分发)。接收者先于实参求值不变;调用区与两步形态逐位一致,故进帧整形(缺省垫充/varargs 打包)与 unwind 零改动;不绑定解析与零物化照旧。名字索引沿用 `ConstU16`(与 `LOAD_FIELD` 等常量索引同宽)——短形 u8 + 长变体曾被引入,但那只为让两段式与融合编码**逐字节等长**(便于同二进制字节改写对照),不是设计需要,已去。
+
+**实测**:
+
+| 口径 | 数字 |
+| :--- | :--- |
+| 同二进制字节改写对照(两段式 <-> 融合,同一份字节码) | `forin_list` +1.8~2.5、`forin_range` +1.8~2.1、`starts_with` +0.3~1.4、`instance_call` +1.5~1.8 ns/次迭代;即**每次调用约 1 ns**(argc = 0 时下移为空转) |
+| 保留的批 9 收益 | `forin_list` 84.1 -> 33.5~33.7(融合那代 31.1~31.6),即保留 ~96%,分配列不变(0.000/次) |
+| 端到端(Release 解释器,四个真实负载,随机序 best-of-12,两轮) | 集合/迭代密集型 +5.8~5.9%、字符串+map 型 +4.9~5.0%、类方法密集型 +0~3%、零派发对照 +0~0.7% |
+
+**备选形态(均已实现并实测,都不如现状)**:
+
+| 形态 | 做法 | 实测 |
+| :--- | :--- | :--- |
+| target 放调用区**之下**(`[target, recv, a1..aN]`) | 调用侧零搬移;收尾由帧位承担——`CallFrame` 加一位「下方有 target 槽」,`RETURN` 把返回值写进那格并让栈顶落到帧基址;原生调用在 `CALL_METHOD` 里当场收尾 | 比现状慢 0.8~2 ns/次迭代;且改动落在 `RETURN` 上(纯函数调用也走那条路),端到端零派发对照行 +2.7~4.5% |
+| 上者 + 调用点补一条 `POP_UNDER` | 去掉帧位,收尾改由调用点后随的栈原语统一做(VM 零新状态) | 比现状慢 1.1~1.6 ns/次迭代——每次调用多一整条指令的 dispatch,是三者里最贵的 |
+
+**测量纪律(这轮踩到的)**:跨构建比较被「代码布局手气」污染到 ±2~4%(同一份字节码在两个构建里可差 1.4~2.1 ns/次迭代;对照组 `plain_call` 自身在 37.9~43.9 间摆动),故**变体之间**的比较只用同二进制字节改写对照,跨构建只用于确认量级与「无意外回归」;端到端计时按每轮随机序 + 零派发对照负载扣除构建级偏移。
+
+**测试**:`test_codegen` 四条发射形态断言改判两段式(`MethodCallEmitsPrepareCall`/`PrepareCallEmissionBoundaries`/`ThisMethodCallEmitsPrepareCall` + for-in 反汇编);`test_ariavm` 三条白盒改按编译器的发射序手写字节码(接收者 -> 解析 -> 实参 -> 调用),分配差断言不变;`test_disassembler` opcode 计数钉 63 -> 64;语料 `invoke_method_forms.aria` 的次序钉子由「解析在调用点」翻转为「解析先于实参」,并补一条「解析失败时实参不跑」的钉子(`side` 计数)。
 
 ## 5. 参照
 

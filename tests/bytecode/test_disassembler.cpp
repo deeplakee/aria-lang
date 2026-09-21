@@ -27,7 +27,7 @@ using aria::Value;
 
 TEST(Disassembler, OpCodeTablesConsistentWithList) {
     // 名字/格式表与 X 表同源生成:数组以 kOpCodeCount 显式定界,行数不符即编译错;此处锁布局哨兵。
-    EXPECT_EQ(kOpCodeCount, 63u);
+    EXPECT_EQ(kOpCodeCount, 64u); // 删 INVOKE_METHOD、增 PREPARE_METHOD + CALL_METHOD 后的净增 1
     EXPECT_EQ(kOpCodeNames[0], "HALT");
     EXPECT_EQ(kOpCodeNames[kOpCodeCount - 1], "RETURN");
     EXPECT_EQ(kOpCodeFormats[0], OpFormat::Simple);
@@ -108,14 +108,21 @@ TEST(Disassembler, ImportFormat) {
     EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "IMPORT            0000  ; 42");
 }
 
-TEST(Disassembler, InvokeFormat) {
+TEST(Disassembler, PrepareMethodFormat) {
     GC        gc;
     CodeUnit  cu{&gc};
     const u16 idx = cu.add_constant(Value::from_i32(42));
-    cu.emit_op(OpCode::INVOKE_METHOD, 1);
+    cu.emit_op(OpCode::PREPARE_METHOD, 1);
     cu.emit_word(idx, 1);
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "PREPARE_METHOD    0000  ; 42");
+}
+
+TEST(Disassembler, CallMethodFormat) {
+    GC       gc;
+    CodeUnit cu{&gc};
+    cu.emit_op(OpCode::CALL_METHOD, 1);
     cu.emit_byte(0x02, 1);
-    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "INVOKE_METHOD     0000 02  ; 42 argc=2");
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "CALL_METHOD       02");
 }
 
 TEST(Disassembler, BadOpcodeOutOfRange) {

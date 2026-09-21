@@ -32,8 +32,8 @@ namespace aria {
 
     Opt<Value> Object::resolve_invoke(AriaVM& vm, ObjString* name) {
         // 基类默认 = load_field:未 override 的类型(类/模块等)照读路径取值,miss 文案随宿主就地
-        // 烘焙。实例与内置容器/迭代器各自 override(调用路径不铸 ObjBoundMethod)。调用区槽 0 由
-        // 指令保持为接收者,VM 不再干预(契约与理由见 Object.hpp)。
+        // 烘焙。实例与内置容器/迭代器各自 override(调用路径不铸 ObjBoundMethod)。解析时机(实参
+        // 求值之前)与调用区槽 0 由 VM 侧 PREPARE_METHOD / CALL_METHOD 保持(契约与理由见 Object.hpp)。
         return load_field(vm, name);
     }
 

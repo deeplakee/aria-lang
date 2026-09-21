@@ -1,4 +1,4 @@
-// 钉住：调用不存在的成员报 UndefinedProperty，文案由宿主类就地烘焙（融合派发与两步形态同）。
+// 钉住：调用不存在的成员报 UndefinedProperty，文案由宿主类就地烘焙（解析先于实参求值）。
 def Holder { init() { this.n = 1; } }
 var h = Holder();
 h.nope();

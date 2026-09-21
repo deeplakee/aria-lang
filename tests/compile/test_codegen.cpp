@@ -569,8 +569,9 @@ TEST(CodeGen, ForInDisassembly) {
     auto compiled = compile_only("for (x in iter) { print x; }");
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
-    // 迭代协议：INVOKE_METHOD "iter" / "has_next" / "next"（融合派发，不再经 LOAD_FIELD + CALL）
-    EXPECT_NE(text.find("INVOKE_METHOD"), aria::String::npos);
+    // 迭代协议：PREPARE_METHOD + CALL_METHOD "iter" / "has_next" / "next"（两段式，不经 LOAD_FIELD + CALL）
+    EXPECT_NE(text.find("PREPARE_METHOD"), aria::String::npos);
+    EXPECT_NE(text.find("CALL_METHOD"), aria::String::npos);
     EXPECT_EQ(text.find("LOAD_FIELD"), aria::String::npos);
     EXPECT_NE(text.find("iter"), aria::String::npos);
     EXPECT_NE(text.find("has_next"), aria::String::npos);
@@ -579,17 +580,20 @@ TEST(CodeGen, ForInDisassembly) {
     EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
 }
 
-// 方法调用融合发射：recv.name(args) 发 INVOKE_METHOD（接收者先在槽 0）；方法值"读取"仍走
-// LOAD_FIELD（读路径现场绑定，无缓存：=== 身份逐次不同、== 内容相等）。
-TEST(CodeGen, MethodCallEmitsInvoke) {
+// 方法调用两段式发射：recv.name(args) 发 <recv> + PREPARE_METHOD + <args> + CALL_METHOD（解析先于
+// 实参求值，接收者在调用区槽 0）；方法值"读取"仍走 LOAD_FIELD（读路径现场绑定，无缓存：=== 身份
+// 逐次不同、== 内容相等）。
+TEST(CodeGen, MethodCallEmitsPrepareCall) {
     auto call = compile_only(R"(
 def C { m(v) { return v; } }
 var c = C();
 return c.m(1);
 )");
     ASSERT_TRUE(call.has_value());
-    const auto call_text = call->unit().disassemble("<test>");
-    EXPECT_NE(call_text.find("INVOKE_METHOD"), aria::String::npos);
+    const auto call_text  = call->unit().disassemble("<test>");
+    const auto prepare_at = call_text.find("PREPARE_METHOD");
+    EXPECT_NE(prepare_at, aria::String::npos);
+    EXPECT_NE(call_text.find("CALL_METHOD"), aria::String::npos);
     EXPECT_EQ(call_text.find("LOAD_FIELD"), aria::String::npos); // 调用不落两步形态
 
     auto read = compile_only(R"(
@@ -600,25 +604,27 @@ return c.m;
     ASSERT_TRUE(read.has_value());
     const auto read_text = read->unit().disassemble("<test>");
     EXPECT_NE(read_text.find("LOAD_FIELD"), aria::String::npos);
-    EXPECT_EQ(read_text.find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_EQ(read_text.find("PREPARE_METHOD"), aria::String::npos);
+    EXPECT_EQ(read_text.find("CALL_METHOD"), aria::String::npos);
 }
 
-// 融合发射的边界：super.m(args) 走 LOAD_SUPER_FIELD + CALL（父类起始的解析不进融合）；
+// 两段式发射的边界：super.m(args) 走 LOAD_SUPER_FIELD + CALL（父类起始的解析不进两段式）；
 // 下标结果的调用 arr[i](args) 是普通 CALL（接收者不是成员宿主）。
-TEST(CodeGen, InvokeEmissionBoundaries) {
+TEST(CodeGen, PrepareCallEmissionBoundaries) {
     auto super_call = compile_only(R"(
 def A { m() { return 1; } }
 def B : A { n() { return super.m(); } }
 return B().n();
 )");
     ASSERT_TRUE(super_call.has_value());
-    EXPECT_NE(super_call->unit().disassemble("<test>").find("INVOKE_METHOD"),
-              aria::String::npos); // B().n() 本身融合
+    EXPECT_NE(super_call->unit().disassemble("<test>").find("PREPARE_METHOD"),
+              aria::String::npos); // B().n() 本身走两段式
     const auto* super_body = find_nested_function(super_call, "n");
     ASSERT_NE(super_body, nullptr);
     const auto super_text = super_body->unit().disassemble("n");
     EXPECT_NE(super_text.find("LOAD_SUPER_FIELD"), aria::String::npos);
-    EXPECT_EQ(super_text.find("INVOKE_METHOD"), aria::String::npos); // super.m() 仍走两步形态
+    EXPECT_EQ(super_text.find("PREPARE_METHOD"), aria::String::npos); // super.m() 仍走两步形态
+    EXPECT_NE(super_text.find("CALL"), aria::String::npos);           // 是普通 CALL 收尾
 
     auto index_call = compile_only(R"(
 fun f() { return 1; }
@@ -628,11 +634,11 @@ return xs[0]();
     ASSERT_TRUE(index_call.has_value());
     const auto index_text = index_call->unit().disassemble("<test>");
     EXPECT_NE(index_text.find("LOAD_INDEX"), aria::String::npos);
-    EXPECT_EQ(index_text.find("INVOKE_METHOD"), aria::String::npos); // 下标调用不融合
+    EXPECT_EQ(index_text.find("PREPARE_METHOD"), aria::String::npos); // 下标调用不进两段式
 }
 
-// this.name(args) 同样融合：接收者经通用路径压在槽 0（指令数与 THIS_FIELD 折叠形态相同）。
-TEST(CodeGen, ThisMethodCallEmitsInvoke) {
+// this.name(args) 同样走两段式：接收者经通用路径压在调用区槽 0（指令数与 THIS_FIELD 折叠形态相同）。
+TEST(CodeGen, ThisMethodCallEmitsPrepareCall) {
     auto compiled = compile_only(R"(
 def C {
     m() { return 1; }
@@ -641,11 +647,11 @@ def C {
 return C().n();
 )");
     ASSERT_TRUE(compiled.has_value());
-    EXPECT_NE(compiled->unit().disassemble("<test>").find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_NE(compiled->unit().disassemble("<test>").find("PREPARE_METHOD"), aria::String::npos);
     const auto* body = find_nested_function(compiled, "n");
     ASSERT_NE(body, nullptr);
     const auto text = body->unit().disassemble("n");
-    EXPECT_NE(text.find("INVOKE_METHOD"), aria::String::npos);
+    EXPECT_NE(text.find("PREPARE_METHOD"), aria::String::npos);
     EXPECT_NE(text.find("LOAD_LOCAL"), aria::String::npos); // [this] 经通用路径压栈
 }
 

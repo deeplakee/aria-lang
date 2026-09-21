@@ -94,10 +94,16 @@ namespace {
         cu.emit_word(name_idx, line);
     }
 
-    // INVOKE_METHOD name:u16 argc:u8(融合派发:[recv, a1..aN] -> [r],recv 先入栈)。
-    void emit_invoke(CodeUnit& cu, const u16 name_idx, const u8 argc, const u32 line = 1) {
-        cu.emit_op(OpCode::INVOKE_METHOD, line);
+    // PREPARE_METHOD name:u16（两段式第一段：[recv] -> [recv, target]）。手写字节码须按编译器
+    // 的发射序 接收者 -> 解析 -> 实参 -> 调用；解析在实参求值之前，故它紧跟接收者之后。
+    void emit_prepare(CodeUnit& cu, const u16 name_idx, const u32 line = 1) {
+        cu.emit_op(OpCode::PREPARE_METHOD, line);
         cu.emit_word(name_idx, line);
+    }
+
+    // CALL_METHOD argc:u8（两段式第二段：[recv, target, a1..aN] -> [r]）。
+    void emit_call_method(CodeUnit& cu, const u8 argc, const u32 line = 1) {
+        cu.emit_op(OpCode::CALL_METHOD, line);
         cu.emit_byte(argc, line);
     }
 
@@ -2714,10 +2720,10 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     EXPECT_EQ(out->as_int(), 1); // 原生 init 的返回值即实例化结果
 }
 
-// INVOKE_METHOD 绑定路径:接收者在调用区底(peek(argc)),指令把槽 0 写成 receiver 后交
+// 两段式绑定路径:解析把类链里的方法闭包压栈,调用时接收者占调用区槽 0(peek(argc))后交
 // call_bound_method 进方法帧 -- 与两步形态「LOAD_FIELD 返 bound + CALL」等价。带实参形态
 // 一并钉住 argc 就位(实参槽 1..argc 不动)。
-TEST_F(AriaVMStress, InvokeMethodBindsInstanceReceiver) {
+TEST_F(AriaVMStress, MethodCallBindsInstanceReceiver) {
 
     auto& gc    = vm.gc();
     auto  init  = new_function(gc, "init", 0);
@@ -2759,9 +2765,10 @@ TEST_F(AriaVMStress, InvokeMethodBindsInstanceReceiver) {
         emit_global(cu, OpCode::DEF_GLOBAL, foo);
         emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1); // [instance]
-        emit_imm(cu, 5);    // [instance, 5]
-        emit_invoke(cu, m_name, 1);
+        cu.emit_byte(0, 1);       // [instance]
+        emit_prepare(cu, m_name); // [instance, target]（解析先于实参）
+        emit_imm(cu, 5);          // [instance, target, 5]
+        emit_call_method(cu, 1);
         cu.emit_op(OpCode::RETURN, 1); // [15]
     }
 
@@ -2770,10 +2777,10 @@ TEST_F(AriaVMStress, InvokeMethodBindsInstanceReceiver) {
     EXPECT_EQ(out->as_int(), 15);
 }
 
-// INVOKE_METHOD 的存在理由:内置类型无 fields 缓存,两步形态每次取方法铸一个 ObjBoundMethod;
-// 融合派发经 Object::resolve_invoke 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
+// 两段式的存在理由:内置类型无 fields 缓存,两步形态每次取方法铸一个 ObjBoundMethod;
+// 两段式经 Object::resolve_invoke 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
 // GC 的确定性读数(不随计时抖动),故本测试直接钉「同一趟 list.push + 取回元素」两侧的分配差 = 1。
-TEST_F(AriaVMStress, InvokeMethodOnBuiltinSkipsBoundMaterialization) {
+TEST_F(AriaVMStress, MethodCallOnBuiltinSkipsBoundMaterialization) {
 
     auto&      gc       = vm.gc();
     const auto run_case = [&](const bool two_step) {
@@ -2790,8 +2797,9 @@ TEST_F(AriaVMStress, InvokeMethodOnBuiltinSkipsBoundMaterialization) {
             cu.emit_op(OpCode::CALL, 1);
             cu.emit_byte(1, 1); // [list, nil]
         } else {
-            emit_imm(cu, 1);               // [list, list, 1]
-            emit_invoke(cu, push_name, 1); // [list, nil]
+            emit_prepare(cu, push_name); // [list, list, target]
+            emit_imm(cu, 1);             // [list, list, target, 1]
+            emit_call_method(cu, 1);     // [list, nil]
         }
         cu.emit_op(OpCode::POP, 1);        // [list]
         emit_imm(cu, 0);                   // [list, 0]
@@ -2811,10 +2819,10 @@ TEST_F(AriaVMStress, InvokeMethodOnBuiltinSkipsBoundMaterialization) {
     EXPECT_EQ(two_step_allocs - invoke_allocs, 1u); // 少掉的正是那个 ObjBoundMethod（内置侧无缓存）
 }
 
-// INVOKE_METHOD 的原值直调:命中实例字段里的可调用值时槽 0 填该值本身(不绑 this,与两步形态
+// 两段式的原值直调:命中实例字段里的可调用值时槽 0 填该值本身(不绑 this,与两步形态
 // 留下的栈形一致 -- 字段值不是方法戳闭包,load_field 本就直读)。两形态对照:两侧都不铸
-// ObjBoundMethod,分配差为 0 -- 融合派发不得在此凭空多一次分配。
-TEST_F(AriaVMStress, InvokeMethodOnFieldHoldingCallable) {
+// ObjBoundMethod,分配差为 0 -- 两段式不得在此凭空多一次分配。
+TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
 
     auto&      gc       = vm.gc();
     const auto run_case = [&](const bool two_step) {
@@ -2863,8 +2871,9 @@ TEST_F(AriaVMStress, InvokeMethodOnFieldHoldingCallable) {
             cu.emit_op(OpCode::CALL, 1);
             cu.emit_byte(1, 1); // [6]
         } else {
-            emit_imm(cu, 3); // [inst, 3]
-            emit_invoke(cu, f_nm, 1);
+            emit_prepare(cu, f_nm); // [inst, target]
+            emit_imm(cu, 3);        // [inst, target, 3]
+            emit_call_method(cu, 1);
         }
         cu.emit_op(OpCode::RETURN, 1); // [6]
 

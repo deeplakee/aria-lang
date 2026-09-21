@@ -136,7 +136,7 @@ namespace aria {
 
         // 累计对象分配次数(new_object 调用数,单调不减)。bytes_allocated() 是**存活**字节、随回收
         // 回落,看不出分配 churn;本计数器给确定性(零抖动)的分配读数,供性能基准对照「少分配」类
-        // 改动(如融合派发消灭临时对象),见 bench/vm_bench.cpp。
+        // 改动(如不绑定派发消灭临时对象),见 bench/vm_bench.cpp。
         [[nodiscard]]
         usize allocation_count() const noexcept {
             return allocation_count_;

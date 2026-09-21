@@ -1,6 +1,6 @@
 // bench/vm_bench.cpp
 //
-// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「是否值得做 `INVOKE_METHOD` 融合
+// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「是否值得做不绑定派发
 // 派发」这一性能批的依据（见 .claude/reference/runtime/collections-builtin-methods-plan.md §批 9），
 // 本程序是它们的可复现入口--改 CodeGen 发射或 VM 派发路径前后各跑一次对照，把新数字回写文档。
 //
@@ -13,11 +13,12 @@
 //   forin_string / forin_map  string 逐码点、map 逐 pair 迭代（每次迭代另有对象分配，非纯派发成本）
 //
 // 前三行是「同一程序两形态」的**同二进制内对照**，本基准的核心手法：
-//   - 协议形态：源码写 `recv.name(args)`（现编译为 `LOAD_FIELD` + `CALL`，每次调用物化一个 ObjBoundMethod）
+//   - 协议形态：源码写 `recv.name(args)`（现编译为 `PREPARE_METHOD` + `CALL_METHOD` 两段，零 bound 物化）
 //   - 预绑定形态：先把方法值读到局部（`var nx = it.next`）再调 `nx()`--循环体内零 `LOAD_FIELD`、
-//     零 ObjBoundMethod，即「融合派发能达到的下界」。预绑定不是正常写法，只作对照。
+//     零 ObjBoundMethod，即「不绑定派发能达到的下界」。预绑定不是正常写法，只作对照。
 //   两形态算同一个结果（BENCH_CHECK 断言相等），差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次
-//   dispatch 上的成本，也就是 `INVOKE_METHOD` 可回收的**上界**。两侧同处一个二进制，跨构建抖动
+//   dispatch 上的成本，也就是不绑定派发可回收的**上界**（两段式 PREPARE_METHOD + CALL_METHOD 相对两步
+//   形态节省的量;两段式自身的开销见 collections-builtin-methods-plan.md §4.7）。两侧同处一个二进制，跨构建抖动
 //   （±5-10%，见 lexer-notes §1）不进入差值结论。
 //
 // 计时纪律（同 lexer_bench）：进程内 best-of-N 取最小，不单发进程计时（同一二进制重复运行的抖动在
@@ -173,7 +174,7 @@ namespace {
     }
 
     // 双形态对照：协议形态 `recv.name(args)` vs 预绑定形态（方法值读到局部再调）。两者算同一结果，
-    // 断言相等即证明两形态压的是同一份工作；差值行即融合派发的可回收上界，返回给 main 作摘要。
+    // 断言相等即证明两形态压的是同一份工作；差值行即不绑定派发的可回收上界，返回给 main 作摘要。
     [[nodiscard]] Pair<Sample, Sample> bench_pair(const StringView protocol_label, String protocol_src,
                                                   const StringView prebound_label, String prebound_src,
                                                   const i64 expected) {
@@ -185,7 +186,7 @@ namespace {
         BENCH_CHECK(protocol.value == prebound.value, "两形态结果不一致");
         print_row(protocol_label, protocol, "协议形态");
         print_row(prebound_label, prebound, "预绑定形态（下界）");
-        print_delta_row("^ 协议 - 预绑定", protocol, prebound, "差值 = 融合派发可回收上界");
+        print_delta_row("^ 协议 - 预绑定", protocol, prebound, "差值 = 不绑定派发可回收上界");
         return {protocol, prebound};
     }
 

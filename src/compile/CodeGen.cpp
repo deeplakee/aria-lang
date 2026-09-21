@@ -340,11 +340,17 @@ namespace aria {
 
     CodeGen::LvalueMode CodeGen::take_lvalue_mode() { return std::exchange(lvalue_mode_, LvalueMode::Load); }
 
-    void CodeGen::emit_method_call0(const StringView name, const u32 line, const SourceLoc loc) const {
-        // 迭代协议三站点（iter/has_next/next）零实参方法调用：融合发一条 INVOKE_METHOD（迭代器在槽 0）。
-        const auto name_idx = add_name_or_fail(name, loc);
-        cur_cu()->emit_op(OpCode::INVOKE_METHOD, line);
+    void CodeGen::emit_prepare_method(const u16 name_idx, const u32 line) const {
+        cur_cu()->emit_op(OpCode::PREPARE_METHOD, line);
         cur_cu()->emit_word(name_idx, line);
+    }
+
+    void CodeGen::emit_method_call0(const StringView name, const u32 line, const SourceLoc loc) const {
+        // 迭代协议三站点（iter/has_next/next）零实参方法调用：两段式发 PREPARE_METHOD + CALL_METHOD 0
+        // （迭代器在调用区槽 0）。
+        const auto name_idx = add_name_or_fail(name, loc);
+        emit_prepare_method(name_idx, line);
+        cur_cu()->emit_op(OpCode::CALL_METHOD, line);
         cur_cu()->emit_byte(0, line);
     }
 
@@ -1133,7 +1139,7 @@ namespace aria {
 
     void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode& node) { not_impl(node, "解构赋值"); }
 
-    bool CodeGen::try_emit_invoke_method(const CallNode& node) {
+    bool CodeGen::try_emit_method_call(const CallNode& node) {
         // 契约见 CodeGen.hpp；未命中（callee 非成员访问）不发射任何字节。
         const auto member = dynamic_cast<FieldAccessNode*>(node.callee.get());
         if (member == nullptr) {
@@ -1141,12 +1147,12 @@ namespace aria {
         }
         const u32  line     = node.line();
         const auto name_idx = add_name_or_fail(member->name, member->loc());
-        emit_expr(*member->object); // [recv]（先于实参求值，与两步形态的顺序一致）
+        emit_expr(*member->object);          // [recv]
+        emit_prepare_method(name_idx, line); // 解析此刻完成（实参求值之前）
         for (const auto& arg: node.args) {
             emit_expr(*arg);
         }
-        cur_cu()->emit_op(OpCode::INVOKE_METHOD, line);
-        cur_cu()->emit_word(name_idx, line);
+        cur_cu()->emit_op(OpCode::CALL_METHOD, line); // 纯调用：[recv, target, a1..aN] -> [r]
         cur_cu()->emit_byte(node.args.size(), line);
         return true;
     }
@@ -1157,8 +1163,8 @@ namespace aria {
         if (node.args.size() > kMaxArguments) {
             fail(ErrorCode::TooManyArguments, node.loc(), "实参数超过 {}", kMaxArguments);
         }
-        // recv.name(args) 融合发射（见 try_emit_invoke_method）；未命中交下方一般路径。
-        if (try_emit_invoke_method(node)) {
+        // recv.name(args) 两段式发射（见 try_emit_method_call）；未命中交下方一般路径。
+        if (try_emit_method_call(node)) {
             return;
         }
         emit_expr(*node.callee);

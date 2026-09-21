@@ -783,20 +783,31 @@ namespace aria {
         return true;
     }
 
-    bool AriaVM::run_invoke_method(ObjString* name, const u8 argc) {
-        // 契约见 AriaVM.hpp。接收者在调用区底(peek(argc)):协议解析期间它须在栈(「栈即根」)--
-        // 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是分配点。
-        const Value recv = current_->peek(argc);
+    bool AriaVM::run_prepare_method(ObjString* name) {
+        // 契约见 AriaVM.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
+        // (「栈即根」)-- 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是
+        // 分配点;解析先于实参求值亦是主流求值次序(指令集 §5.6)。
+        const Value recv = current_->peek(0);
         if (!recv.is_obj()) {
             return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
         }
         if (const auto target = recv.as_obj()->resolve_invoke(*this, name)) {
-            // 调用区**原样不动**:槽 0 已是 receiver -- 方法命中时 call_bound_method 自会用 bound 的
-            // receiver 覆写它(同一对象),内置原生正需要槽 0 = receiver(其 this 兼返回槽),闭包/其余
-            // 分支不读槽 0。故本指令不进调用区,栈形只剩 [recv, a1..aN] 一种。
-            return call_value(*target, argc);
+            current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
+            return true;
         }
         return false;
+    }
+
+    bool AriaVM::run_call_method(const u8 argc) {
+        // 契约见 AriaVM.hpp。纯调用,不再解析:[recv, target, a1..aN] 里实参整体下移一格补掉待调值
+        // 占的那格 -> [recv, a1..aN](与两步形态的调用区同形,槽 0 = receiver = this);待调值经寄存器
+        // 交 call_value 统一分发(argc == 0 时下移为空转,零搬移)。
+        const Value target = current_->peek(argc);
+        for (u8 i = argc; i >= 1; --i) {
+            current_->peek(i) = current_->peek(i - 1);
+        }
+        current_->drop(1);
+        return call_value(target, argc);
     }
 
     bool AriaVM::run_load_index() {
@@ -1367,9 +1378,18 @@ namespace aria {
                         break;
                     }
                     break;
-                case OpCode::INVOKE_METHOD:
-                    // name:u16 argc:u8;[recv, a1..aN] -> [r]。执行体收口于 run_invoke_method。
-                    if (!run_invoke_method(read_name(frame), read_u8(frame))) {
+                case OpCode::PREPARE_METHOD:
+                    // name:u16;[recv] -> [recv, target]。执行体收口于 run_prepare_method。
+                    if (!run_prepare_method(read_name(frame))) {
+                        if (auto u = unwind()) {
+                            return runtime_err(std::move(*u));
+                        }
+                        break;
+                    }
+                    break;
+                case OpCode::CALL_METHOD:
+                    // argc:u8;[recv, target, a1..aN] -> [r]。执行体收口于 run_call_method。
+                    if (!run_call_method(read_u8(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }

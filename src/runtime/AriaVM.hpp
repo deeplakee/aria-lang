@@ -311,11 +311,17 @@ namespace aria {
         // Object::store_field 协议。
         bool run_store_field(ObjString* name);
 
-        // INVOKE_METHOD 执行体(name/argc 已读出):[recv, a1..aN] -> [r]。经 Object::resolve_invoke
-        // 协议取被调值(miss 文案由 override 烘焙,非对象守卫文案留执行体,同 run_load_field)后交
-        // call_value 统一分发,**调用区不进**(槽 0 保持 receiver 原样,理由见 Object.hpp)。栈形与
-        // 两步形态「LOAD_FIELD + CALL」等价,故进帧整形(缺省垫充/varargs 打包)与 unwind 均不受影响。
-        bool run_invoke_method(ObjString* name, u8 argc);
+        // PREPARE_METHOD 执行体(两段式第一段,name 已读出):[recv] -> [recv, target]。接收者在栈顶
+        // (实参尚未求值),经 Object::resolve_invoke 协议解析此刻完成(miss 文案由 override 烘焙,
+        // 非对象守卫文案留执行体,同 run_load_field);待调值压栈跨指令存活(栈即根),实参随后压在
+        // 其上,由 CALL_METHOD 收口。解析先于实参求值,与两步形态「LOAD_FIELD + CALL」的时序一致。
+        bool run_prepare_method(ObjString* name);
+
+        // CALL_METHOD 执行体(两段式第二段,argc 已读出):[recv, target, a1..aN] -> [r]。待调值在
+        // peek(argc)、接收者在 peek(argc + 1);实参整体下移一格补掉待调值占的那格,得调用区
+        // [recv, a1..aN](槽 0 = receiver = this),再交 call_value 统一分发。纯调用,不再解析,调用区
+        // 与两步形态留下的栈形逐位一致,故进帧整形(缺省垫充/varargs 打包)与 unwind 均不受影响。
+        bool run_call_method(u8 argc);
 
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(方法闭包恒有戳,编译器
         // 不变式 ASSERT 钉),从其父类起走 ObjClass::load_field 沿链读穿透(不含 defining 自身,

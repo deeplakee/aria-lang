@@ -49,7 +49,7 @@
 > ② **fun 静态方法改经 MAKE_STATIC 注册**（不戳 defining class；fun 体内 super 本就编译期禁，defining class 对它无用）；MAKE_METHOD 收紧为**仅收闭包**（普通方法 = 戳定闭包；原生落表走 MAKE_STATIC/类上赋值，读恒原值；原生方法绑定随 ① 退役 --内建类型方法留 uniform OOP 在对象协议内实现、不走 ObjClass 表；MAKE_METHOD("init") 配原生的注册形态随之退役，原生 init 经类上赋值路径同步 init_）。
 > ③ **`LOAD_SUPER_METHOD` 更名 `LOAD_SUPER_FIELD`**（super 静态访问放开后语义 = 沿父链读成员：方法闭包绑 this、静态槽原值直读，与 LOAD_FIELD 实例路径同构的「super 链读」家族；opcode 数值不变，Disassembler 零改动）。原「static members are not accessible via super」站点文案与补记四「super 命中静态值」raise 列举随本条退役（存档留痕）；阶段 3 随动：`visitSuperExprNode` 单点承载，Load 模式发射同指令（指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 已拍板编译期禁于嵌套函数（2026-09-14，见阶段 3 首条拍板））。（查找+绑定留在 VM 执行体站点 --2026-09-11 二次复盘定形：load_super_field 式对象层封装收 (vm, name, receiver) 三参、泄漏帧语境，不取。）
 >
-> **范围裁定**：嵌套类**不在本里程碑**（Parser def 体成员分派只收 var/fun/裸标识符，「def 体内只允许 var/fun/方法」，Parser.cpp:308-322；grammar member 列表同 -- 嵌套类 bullet 的语义描述留档为后继方向）。容器三件套（`MAKE_LIST/MAP/RANGE`）、`LOAD/STORE_INDEX`、`INVOKE_METHOD`（维持预留不发射）、match、默认参数/varargs 均不在 M5。
+> **范围裁定**：嵌套类**不在本里程碑**（Parser def 体成员分派只收 var/fun/裸标识符，「def 体内只允许 var/fun/方法」，Parser.cpp:308-322；grammar member 列表同 -- 嵌套类 bullet 的语义描述留档为后继方向）。容器三件套（`MAKE_LIST/MAP/RANGE`）、`LOAD/STORE_INDEX`、`INVOKE_METHOD`（M5 期维持预留不发射；批 9 已启用，其后两段化为 `PREPARE_METHOD`+`CALL_METHOD`）、match、默认参数/varargs 均不在 M5。
 
 ## 1. 语义模型（定调）
 

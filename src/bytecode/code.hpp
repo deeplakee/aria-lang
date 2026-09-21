@@ -19,7 +19,6 @@ namespace aria {
         RangeFlags, // 1 字节 flags(MAKE_RANGE,位义见 kRangeFlag*), 渲染 flags=0xNN
         RegU8,      // 1 字节值寄存器索引, 附寄存器可读名注释(注册表 value_register.hpp)
         Import,     // 2 字节 path 常量索引 + path 注释
-        Invoke,     // 2 字节 name 索引 + 1 字节 argc
     };
 
     // 指令集单一事实源: 每行 X(枚举名, 操作数格式), 枚举顺序即 opcode 数值(首条 HALT 隐式为 0,
@@ -32,7 +31,8 @@ namespace aria {
     //
     // 表内不放说明性注释, 语义细节统一见 bytecode-instruction-set.md §4。易踩点速览:
     //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
-    //   - INVOKE_METHOD: u16 名字 + u8 argc, 接收者在调用区底([recv, a1..aN] -> [r])
+    //   - PREPARE_METHOD/CALL_METHOD: 两段式方法调用(解析先于实参求值, 见 §5.6); 待调值槽由
+    //     实参整体下移一格补掉, 调用区恒为 [recv, a1..aN]
     // 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
 #define ARIA_OPCODE_LIST(X)                \
     X(HALT, Simple)                        \
@@ -98,7 +98,8 @@ namespace aria {
     X(MAKE_METHOD, ConstU16)               \
     X(MAKE_STATIC, ConstU16)               \
     X(LOAD_SUPER_FIELD, ConstU16)          \
-    X(INVOKE_METHOD, Invoke)               \
+    X(PREPARE_METHOD, ConstU16)            \
+    X(CALL_METHOD, U8)                     \
     X(MAKE_LIST, U16)                      \
     X(MAKE_MAP, U16)                       \
     X(MAKE_RANGE, RangeFlags)              \

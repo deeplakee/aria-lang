@@ -270,19 +270,23 @@ namespace aria {
         [[nodiscard]]
         bool try_emit_this_field(const FieldAccessNode& node, LvalueMode mode, u32 line) const;
 
-        // 在栈顶 receiver 上调用 0 参方法 name：INVOKE_METHOD name 0（[receiver] -> [retval]）。
-        // 封装 for-in 的 iter()/has_next()/next() 三处同型模式（迭代器无 fields 缓存，融合派发
-        // 免去每迭代两次 bound 物化）。
+        // 两段式第一段：PREPARE_METHOD name（名字索引 u16，与 LOAD_FIELD 等常量索引同宽）。
+        // 解析在实参求值之前完成，待调值压在接收者之上（[recv] -> [recv, target]）。
+        void emit_prepare_method(u16 name_idx, u32 line) const;
+
+        // 在栈顶 receiver 上调用 0 参方法 name：PREPARE_METHOD name + CALL_METHOD 0（[receiver]
+        // -> [retval]）。封装 for-in 的 iter()/has_next()/next() 三处同型模式（迭代器无 fields
+        // 缓存，不绑定派发免去每迭代两次 bound 物化）。
         void emit_method_call0(StringView name, u32 line, SourceLoc loc) const;
 
-        // recv.name(args) 融合发射（visitCallNode 专用，与 emit_method_call0 同为 INVOKE_METHOD
-        // 发射口，此口带实参）：命中「成员访问作 callee」形态则发 <recv> + <args> +
-        // INVOKE_METHOD name argc 并返回 true；其余 callee 形态（super 成员 SuperExprNode / 下标 /
-        // 调用结果等）不发射、返回 false，交调用方走 <callee> + args + CALL 一般路径。含
-        // this.name(args)：接收者按通用路径压在调用区槽 0（与 THIS_FIELD 折叠相比指令数相同而省
-        // 一次方法物化）。接收者先于实参求值；成员解析在执行期完成（语义见指令集 §5.6）。
+        // recv.name(args) 两段式发射（visitCallNode 专用，与 emit_method_call0 同为
+        // PREPARE_METHOD/CALL_METHOD 发射口，此口带实参）：命中「成员访问作 callee」形态则发
+        // <recv> + PREPARE_METHOD name + <args> + CALL_METHOD argc 并返回 true；其余 callee 形态
+        // （super 成员 SuperExprNode / 下标 / 调用结果等）不发射、返回 false，交调用方走
+        // <callee> + args + CALL 一般路径。含 this.name(args)：接收者按通用路径压在调用区槽 0（与
+        // THIS_FIELD 折叠相比指令数相同而省一次方法物化）。解析先于实参求值（语义见指令集 §5.6）。
         [[nodiscard]]
-        bool try_emit_invoke_method(const CallNode& node);
+        bool try_emit_method_call(const CallNode& node);
 
         // 当前帧是否为直接方法帧（is_method(kind_)，槽 0 即具名局部 this）。visitSuperExprNode
         // （super.成员 语境检查）与 FieldAccess 的 THIS_FIELD 系分岔共用判据；「沿链找最近实例

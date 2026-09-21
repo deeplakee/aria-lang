@@ -188,13 +188,14 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaVM& vm, ObjString* name);
 
-        // 命名成员的方法调用解析(INVOKE_METHOD 统一入口):只回答**该被调的值**,错误契约同
-        // load_field(nullopt ⟺ 已 fail,文案随宿主 override 就地烘焙)。调用区的槽 0 由指令保持为
-        // **接收者原样不动** -- 这是融合省掉 bound 物化的关键:方法命中时 call_bound_method 自会用
-        // bound 的 receiver 覆写槽 0;内置类表的原生函数恰好**正需要**槽 0 = receiver(其 this 兼
-        // 返回槽,call_native 从不碰槽 0);字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
-        // 三者皆无需指令干预,故本缝不涉槽位约定(「非方法成员被调用时槽 0 为接收者而非成员值」
-        // 这一形态差异见 bytecode-instruction-set.md §5.6)。
+        // 命名成员的方法调用解析(PREPARE_METHOD 统一入口):只回答**该被调的值**,错误契约同
+        // load_field(nullopt ⟺ 已 fail,文案随宿主 override 就地烘焙)。调用方(VM 的
+        // run_prepare_method)在实参求值**之前**调用本缝,把返回值压在接收者之上;CALL_METHOD
+        // 再把实参整体下移一格补掉它,调用区回到 [recv, a1..aN],槽 0 保持接收者原样不动 -- 这是不
+        // 铸 bound 的关键:方法命中时 call_bound_method 自会用 bound 的 receiver 覆写槽 0;内置类表
+        // 的原生函数恰好**正需要**槽 0 = receiver(其 this 兼返回槽,call_native 从不碰槽 0);字段里
+        // 的可调用值/静态槽值走闭包或原生调用、不读槽 0。故本缝不涉槽位约定(「非方法成员被调用时
+        // 槽 0 为接收者而非成员值」这一形态差异见 bytecode-instruction-set.md §5.6)。
         // **基类默认 = load_field**(类/模块等未 override 者);命中即该值本身,miss 文案随宿主烘焙。
         // **实例与内置容器/迭代器各自 override**(同一个理由:调用路径不该铸 ObjBoundMethod)--
         //   实例:fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定,方法体从槽 0 读 this),

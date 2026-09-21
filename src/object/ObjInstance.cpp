@@ -49,7 +49,8 @@ namespace aria {
 
     Opt<Value> ObjInstance::resolve_invoke(AriaVM& vm, ObjString* name) {
         // 调用路径的成员解析:与内置类型同一条规则 -- **不绑定**,返回字段/类链里的原值,调用区
-        // 槽 0 由指令保持 receiver(方法戳闭包的方法体从槽 0 读 this,原生以槽 0 为 this 兼返回槽)。
+        // 槽 0 由 CALL_METHOD 保持 receiver(方法戳闭包的方法体从槽 0 读 this,原生以槽 0 为 this
+        // 兼返回槽)。
         // 故每次调用零分配,且每次按当前类链解析(与读路径同一份可见性:改类/父类方法立即生效)。
         if (const auto entry = fields_.find(Value::from_obj(name))) {
             return entry->value; // 真字段优先(字段里存的可调用值原值直调)

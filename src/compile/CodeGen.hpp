@@ -276,8 +276,8 @@ namespace aria {
 
         // 在栈顶 receiver 上调用 0 参方法 name：PREPARE_METHOD name + CALL_METHOD 0（[receiver]
         // -> [retval]）。封装 for-in 的 iter()/has_next()/next() 三处同型模式（迭代器无 fields
-        // 缓存，不绑定派发免去每迭代两次 bound 物化）。
-        void emit_method_call0(StringView name, u32 line, SourceLoc loc) const;
+        // 缓存，不绑定派发免去每迭代两次 bound 物化）。行号与 loc 同源，现场取（不双传）。
+        void emit_method_call0(StringView name, SourceLoc loc) const;
 
         // recv.name(args) 两段式发射（visitCallNode 专用，与 emit_method_call0 同为
         // PREPARE_METHOD/CALL_METHOD 发射口，此口带实参）：命中「成员访问作 callee」形态则发

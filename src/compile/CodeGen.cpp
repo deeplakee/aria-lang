@@ -345,9 +345,10 @@ namespace aria {
         cur_cu()->emit_word(name_idx, line);
     }
 
-    void CodeGen::emit_method_call0(const StringView name, const u32 line, const SourceLoc loc) const {
+    void CodeGen::emit_method_call0(const StringView name, const SourceLoc loc) const {
         // 迭代协议三站点（iter/has_next/next）零实参方法调用：两段式发 PREPARE_METHOD + CALL_METHOD 0
-        // （迭代器在调用区槽 0）。
+        // （迭代器在调用区槽 0）。行号从 loc 现场求值（同源不双传）。
+        const u32  line     = loc.line();
         const auto name_idx = add_name_or_fail(name, loc);
         emit_prepare_method(name_idx, line);
         cur_cu()->emit_op(OpCode::CALL_METHOD, line);
@@ -701,7 +702,7 @@ namespace aria {
         // STORE_LOCAL/POP）。
         // [iterable]（receiver）
         emit_expr(*node.iterable);
-        emit_method_call0("iter", line, node.loc());                          // [iter_obj] 恰在 slot 位置
+        emit_method_call0("iter", node.loc());                                // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = define_local_or_fail("<iter>", node.loc()); // 值已在槽位，登记即初始化
 
         // 循环头 = has_next 判断处
@@ -709,7 +710,7 @@ namespace aria {
         // [iter]（receiver）
         cur_cu()->emit_load_local(iter_var_slot, line);
         // [bool]
-        emit_method_call0("has_next", line, node.loc());
+        emit_method_call0("has_next", node.loc());
         const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
@@ -718,7 +719,7 @@ namespace aria {
         // 若为 block 则自带更深层 scope；break/continue 跳出时由 emit_pop_locals_to(loop_scope) 代弹。
         begin_scope();
         cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
-        emit_method_call0("next", line, node.loc());    // [value] 恰在 slot 位置
+        emit_method_call0("next", node.loc());          // [value] 恰在 slot 位置
         // id: declare 值填槽（不发指令）/ _: POP 丢弃
         bind_pattern(*node.pattern);
         emit_stmt(*node.body);

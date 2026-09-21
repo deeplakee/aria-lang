@@ -75,19 +75,37 @@ namespace aria {
 
     ObjRange* new_range(GC& gc, const i64 from) { return gc.new_object<ObjRange>(from); }
 
-    Opt<Pair<usize, usize>> resolve_slice_bounds(const ObjRange* range, const usize size) noexcept {
-        // 两端点各自归一化(从尾计数 + 越界判定);无上界经 Opt 重载取末元素。空容器任何端点
-        // 都解析不出(与单下标空表行为一致),故空表切片自然落 nullopt。方向不进返回值 --
-        // 归一化端点的大小关系即方向(原始端点可因从尾计数翻转,故不按原始值判)。
-        const auto from = util::resolve_index(range->from(), size);
+    Opt<SliceSegment> resolve_slice_bounds(const ObjRange* range, const usize size) noexcept {
+        const i64  raw_from     = range->from();
+        const bool is_unbounded = !range->has_upper();
+
+        // 起点归一化(从尾计数 + 越界判定)两形态共用;无上界形态另放行「末尾之后一位」= 空段
+        // (「从末尾之后取剩余」即空,解构 rest 的空尾据此成立;负值经归一化只落 [0, size-1],
+        // 故该格就是裸值 == size 这一种),先短路它。
+        if (is_unbounded && raw_from == static_cast<i64>(size)) {
+            return SliceSegment{.start = size, .count = 0, .is_reversed = false};
+        }
+        const auto from = util::resolve_index(raw_from, size);
         if (!from) {
             return std::nullopt;
         }
-        const auto to = util::resolve_index(range->to(), size);
+        // 无上界形态(后缀语义):自起点取到末尾。
+        if (is_unbounded) {
+            return SliceSegment{.start = *from, .count = size - *from, .is_reversed = false};
+        }
+        // 有上界形态:上界同须落在实元素位置(空容器任何端点都解析不出,与单下标空表行为一致,
+        // 故空表切片自然落 nullopt)。方向由归一化端点的大小关系定(原始端点可因从尾计数翻转,
+        // 故不按原始值判);不含上界少走迭代序末元素,两端相等即空段;倒序的升序源段自低端的 to
+        // 起(被跳过的 to 在低端,须让开一位)。
+        const auto to = util::resolve_index(*range->to(), size);
         if (!to) {
             return std::nullopt;
         }
-        return Pair{*from, *to};
+        const bool  is_exclusive = range->is_exclusive();
+        const bool  is_reversed  = *from > *to;
+        const usize start        = is_reversed ? *to + is_exclusive : *from;
+        const usize count        = util::abs_diff(*from, *to) + (is_exclusive ? 0 : 1);
+        return SliceSegment{.start = start, .count = count, .is_reversed = is_reversed};
     }
 
 } // namespace aria

@@ -238,9 +238,10 @@ namespace aria {
         [[nodiscard]]
         UPtr<ListPatternNode> list_pattern();
 
-        // rest 模式："..." identifier，返回绑名（拒绝 ..._）。
+        // rest 模式："..." identifier，返回绑名模式节点（拒绝 ..._；与位置位同为模式节点，故绑定
+        // 走同一 accept 路径）。
         [[nodiscard]]
-        String rest_pattern();
+        UPtr<IdentifierPatternNode> rest_pattern();
 
         // --- for / for-in 消歧与收尾 ---
         // pos_ 位于 '(' 后首个 token；判定是否为 <pattern> "in"（identifier/"_" 紧跟 in，

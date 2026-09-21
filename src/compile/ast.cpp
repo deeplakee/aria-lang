@@ -296,7 +296,7 @@ namespace aria {
     String ListPatternNode::dump(const usize indent) const {
         String header = std::format("ListPattern elements={}", elements.size());
         if (rest) {
-            header += std::format(" rest={}", *rest);
+            header += std::format(" rest={}", rest->name);
         }
         return dump_node(indent, header, elements);
     }

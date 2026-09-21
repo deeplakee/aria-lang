@@ -6,9 +6,7 @@
 //   CodeUnit），把 ProgramNode 编译为模块入口 ObjFunction（arity 0）。
 //
 //   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。43 个
-//     visitXxxNode 全部 override；解构族（DestructureAssignment/ListPattern）已翻为真实
-//     发射，仅 rest 位置（...rest）仍占位 not_impl（编译期 NotImplemented Error），随后续
-//     批翻为真实发射。
+//     visitXxxNode 全部 override，全为真实发射（无占位）。
 //   - 状态分离：每函数状态收口 FunctionCtx、每模块状态（含当前函数游标 current_fn_ctx_）
 //     收口 ModuleCtx，形成「模块 > 函数 > 作用域」三层；「当前 CodeUnit」不单独存，由
 //     cur_cu() = &cur_fn_ctx()->fn_->unit() 派生随游标切换。所有权：CodeGen 持
@@ -344,16 +342,17 @@ namespace aria {
         // 置模式后交节点自身 visit 发射（发射形态与栈纪律见 .cpp visitListPatternNode 注）。
         // 模式对整个模式子树恒定（递归经 accept，无 take/清空）。Fill 模式把源值填成新局部（或
         // 顶层全局 DEF_GLOBAL 弹值），Store 模式净消耗栈顶一值（故解构赋值的调用点先 DUP 一份留
-        // 作表达式的值）。行号与报错位置取各节点自身 loc。rest 位置（...rest）尚未落地。
+        // 作表达式的值）。行号与报错位置取各节点自身 loc。
         void bind_pattern(PatternNode& node, PatternBindMode mode);
 
-        // listPattern 逐位置发射「备源值 -> 压下标 -> LOAD_INDEX -> 递归绑定」（`_` 位置跳过——文法
-        // `_` 占位不访问该位置）。备源值方式随模式与访问数不同：Fill 单次访问 = 源值已在栈顶、本身
-        // 即消耗品（零指令）；Fill 多次访问 = LOAD_LOCAL 复取隐藏局部；Store = DUP 留栈副本。该差异
-        // 由 push_source 给出，故循环体（含 `_` 跳过与递归绑定）三处调用点共用、只写一次。定义在
-        // .cpp（仅 CodeGen.cpp 实例化）。
+        // listPattern 逐位置发射「备源值 -> 压下标 -> LOAD_INDEX -> 绑定」（`_` 位置跳过——文法
+        // `_` 占位不访问该位置）：元素位与 rest 位皆交自身 visit 递归绑定（rest 位按下标键
+        // [元素数..] 取后缀，空尾得空 list）。备源值方式随模式与访问数不同：Fill 单次访问 = 源值已
+        // 在栈顶、本身即消耗品（零指令）；Fill 多次访问 = LOAD_LOCAL 复取隐藏局部；Store = DUP 留
+        // 栈副本。该差异由 push_source 给出，故循环体（含 `_` 跳过、递归绑定与 rest 后缀）三处调用
+        // 点共用、只写一次。定义在 .cpp（仅 CodeGen.cpp 实例化）。
         template<typename PushSource>
-        void emit_list_pattern_elements(ListPatternNode& node, u32 line, PushSource&& push_source);
+        void emit_list_pattern_accesses(ListPatternNode& node, u32 line, PushSource&& push_source);
 
         // --- 遍历入口（薄包装：accept 双分派）---
         void emit_expr(ExprNode& node); // ASSERT lvalue_mode_ == Load 后 n.accept(*this)，留一值
@@ -430,10 +429,6 @@ namespace aria {
         void fail(const ErrorCode code, const SourceLoc loc, std::format_string<Args...> fmt, Args&&... args) const {
             throw AriaCompileException{Error::from_detail(code, loc, std::format(fmt, std::forward<Args>(args)...))};
         }
-
-        [[noreturn]]
-        // throw AriaCompileException(NotImplemented, loc, ...)
-        void not_impl(const ASTNode& node, StringView feature) const;
     };
 
 } // namespace aria

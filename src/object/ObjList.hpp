@@ -89,8 +89,9 @@ namespace aria {
     private:
         AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
 
-        // 切片(Range 键):端点对解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、含否
-        // 与方向的折算在消费端),本函数只管按方向铸新 list 段拷。
+        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
+        // 皆在内;从尾计数,无上界给后缀、空后缀以两端相等+不含上界表示),本函数只管按方向折算
+        // count 与铸新 list 段拷。
         [[nodiscard]]
         Opt<Value> slice(AriaVM& vm, const ObjRange* range);
     };

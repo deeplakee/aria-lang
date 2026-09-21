@@ -73,26 +73,22 @@ namespace aria {
     }
 
     Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
-        // 端点解析收口 resolve_slice_bounds(纯换算):nullopt = 无法形成合法区间(端点越界或
-        // 空容器),唯一失败报错就地烘焙(静态文案不插端点值)。
-        const auto bounds = resolve_slice_bounds(range, elements_.size());
-        if (!bounds) {
+        // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
+        // 区间,唯一失败报错就地烘焙(静态文案不插端点值)。长度与方向的折算全在解析口。
+        const auto segment = resolve_slice_bounds(range, elements_.size());
+        if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
         }
-        // 源段 = 自 from 走 to(方向与 range 迭代同一判据);不含上界少走迭代序末元素,两端相
-        // 等即空切片 -- 空段拷零操作,故无须先行判空。
-        const auto [from, to] = *bounds;
-        const bool  exclusive = range->is_exclusive();
-        const usize count     = util::abs_diff(from, to) + (exclusive ? 0 : 1);
+        // 指针用 data() + 起点:空段(含无上界空后缀)起点落在末元素之后,operator[] 的越界断言
+        // 不容它(段空不 deref,copy_* 对空 src 直接早返回)。
         // GC 走查:receiver 与 range 经调用方值栈为根,new_list 顶部 maybe_collect 安全;段拷
         // trivial 不触 GC;新 list 白色由 run_load_index 写回原槽根化。
-        const auto list  = new_list(vm.gc());
-        auto&      array = list->elements();
-        if (from <= to) {
-            array.copy_from({&elements_[from], count}); // 正序:升序源段自 from 起(被跳过的 to 在高端)
+        const auto list   = new_list(vm.gc());
+        const auto source = Span<const Value>{elements_.data() + segment->start, segment->count};
+        if (segment->is_reversed) {
+            list->elements().copy_reversed_from(source); // 升序源段,由 Array 反转追加
         } else {
-            // 倒序:升序源段自低端的 to 起(被跳过的 to 在低端,须让开一位),由 Array 反转追加
-            array.copy_reversed_from({&elements_[to + exclusive], count});
+            list->elements().copy_from(source);
         }
         return Value::from_obj(list);
     }

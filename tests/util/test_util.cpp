@@ -28,19 +28,6 @@ TEST(ResolveIndex, OutOfRangeIsNullopt) {
     EXPECT_EQ(resolve_index(-1, 0), std::nullopt);
 }
 
-TEST(ResolveIndex, OptionalEndpointUnboundedTakesLast) {
-    // range 终点语义：nullopt = 无上界 -> 末元素；空容器无末元素同为 nullopt。
-    EXPECT_EQ(resolve_index(Opt<i64>{}, 5), 4u);
-    EXPECT_EQ(resolve_index(Opt<i64>{}, 1), 0u);
-    EXPECT_EQ(resolve_index(Opt<i64>{}, 0), std::nullopt);
-}
-
-TEST(ResolveIndex, OptionalEndpointWithValueDelegates) {
-    EXPECT_EQ(resolve_index(std::optional<i64>{-1}, 4), 3u);
-    EXPECT_EQ(resolve_index(std::optional<i64>{-5}, 4), std::nullopt);
-    EXPECT_EQ(resolve_index(std::optional<i64>{2}, 4), 2u);
-}
-
 // ---------------------------------------------------------------------------
 // abs_diff：两下标距离（取大减小，无符号域不下溢）
 // ---------------------------------------------------------------------------

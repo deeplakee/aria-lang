@@ -769,9 +769,26 @@ TEST(Compiler, DestructureFailureFaces) {
     EXPECT_EQ(duplicate_name.error().code(), ErrorCode::RedefinedVariable);
 }
 
-// rest 位置（...rest）尚未落地：编译期 NotImplemented（随后续批翻为真实发射）。
-TEST(Compiler, DestructureRestNotImplementedYet) {
-    auto out = run_source("var [a, ...r] = [1, 2]; return 0;");
+// rest 位（...rest）：收集位置数之后的剩余为新 list；空尾给空 list（源恰比前缀多零个元素、
+// 源为空皆然），故 head/tail 惯用法成立；嵌套与解构赋值同支持。
+TEST(Compiler, DestructureRestCollectsSuffix) {
+    EXPECT_EQ(run_int("var [h, ...t] = [1, 2, 3]; return h * 100 + len(t) * 10 + t[0];"), 122);
+    EXPECT_EQ(run_int("var [h, ...t] = [1]; return h * 10 + len(t);"), 10); // 空尾
+    EXPECT_EQ(run_int("var [...t] = []; return len(t);"), 0);               // 空源仅 rest
+    EXPECT_EQ(run_int("var [...t] = [1, 2]; return len(t);"), 2);           // rest 覆盖全表
+    // 前缀为 `_` 位时该位置不访问，但 rest 起点仍按位置数算（t 自位置 1 起）。
+    EXPECT_EQ(run_int("var [_, ...t] = [1, 2, 3]; return len(t) * 10 + t[0];"), 22);
+    // 嵌套 listPattern 里的 rest。
+    EXPECT_EQ(run_int("var [[h, ...t], b] = [[1, 2, 3], 4]; return h * 100 + len(t) * 10 + b;"), 124);
+    // 解构赋值里的 rest（右值先整体求值，rest 也是新 list）。
+    EXPECT_EQ(run_int("var h = 0; var t = []; [h, ...t] = [7, 8, 9]; return h * 100 + len(t) * 10 + t[0];"), 728);
+    // for-in 目标里的 rest：map 迭代产出 [k, v] 对，rest 收剩余位置。
+    EXPECT_EQ(run_int("var m = {\"a\": 1}; var n = 0; for ([k, ...rest] in m) { n = len(rest); } return n;"), 1);
+}
+
+// rest 落在非 list 源上按下标语义报错（string 无 Range 下标；slice 只对 list 成立）。
+TEST(Compiler, DestructureRestOnStringFails) {
+    auto out = run_source("var [c, ...r] = \"abc\"; return 0;");
     ASSERT_FALSE(out.has_value());
-    EXPECT_EQ(out.error().code(), ErrorCode::NotImplemented);
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }

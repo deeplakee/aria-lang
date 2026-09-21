@@ -91,7 +91,7 @@
 | 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 循环变量拿到整个 `[k,v]` pair(解构目标随批 8,2026-09-19 拍板) |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
-| 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 |
+| 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 **[已落地]** |
 | 9(性能) | 不绑定方法派发(bench 驱动,消灭热路径 ObjBoundMethod 物化):先单条融合,后两段化 | bench 前后对照(基线见 §4.4,结果见 §4.5/§4.7)**[已落地]** |
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
@@ -253,6 +253,31 @@
 > 倒序、负端点倒序、归一化后倒序、空切片);编译级 `ListSliceFails` 的两条倒序断言迁入 `ListSliceReads`(for
 > 迭代倒序段序位 + 端点取值 + 长度);`Array::copy_reversed_from` 4 例(反转序/append/跨扩容/空 src);语料两个
 > 倒序负例对删除、断言并入 `list_slice.aria` 正向段(语料用例数 1021 → 1019)。
+
+> **批 8(解构)已落地**:Parser/AST/Visitor 早已就位,本批把 CodeGen 的四处占位翻为真实发射,
+> 零新指令、零新错误码。① 组织:P6 定稿——`bind_pattern(node, mode)` 只置模式后 `node.accept`,
+> 发射住三个 `visit*PatternNode`(旧 `bind_pattern` 的 dyn_cast 链删除);新增
+> `PatternBindMode{Fill,Store}` 成员(对标 `lvalue_mode_`;模式对整个模式子树恒定,递归经 accept
+> 无参可传)。② Fill(var 声明 / for-in 目标)走值填槽:identifier 收 `bind_stack_value`(局部登记
+> 即初始化、顶层全局 `DEF_GLOBAL` 弹值),listPattern 按**访问数**(非 `_` 元素位 + rest 位)三分
+> ——0 次直弹源值、1 次源值即消耗品(取出元素恰落下一局部槽位)、>=2 次先把源值填成隐藏局部再逐
+> 位置复取;隐藏局部名 `<destructure_N>` 带槽号(N 为登记时 `locals_.size()`),因同作用域不许重名
+> (`is_defined_in_scope`)而同作用域两条解构语句必占不同槽。③ Store(解构赋值)源值恒驻栈顶作临时
+> 值,每次访问前 `DUP`、identifier 目标 resolve 后 `STORE_*` 再 `POP`(peek-store),收尾弹本层
+> 源值——净消耗栈顶一值,故调用点先 `DUP` 一份右值作表达式的值(**解构赋值求值 = 右值**)。④ `_`
+> 位置经 `is_wildcard_pattern` 过滤,**不产生下标访问**(故该位置越界/缺键都不报;反方案「取值后
+> 丢弃」对 map 源会误报缺键被否)。⑤ rest:压「元素数」下标 + `MAKE_RANGE`(无上界位)作键取后缀,
+> 绑名走 rest 节点自身 visit(AST 里 rest 位是与位置位同为 `IdentifierPatternNode` 的模式节点,非字符串);**空尾语义**——
+> 无上界形态并入 `resolve_slice_bounds`(此前不做是因无消费者;解构 rest 即消费者):该函数返
+> `Opt<SliceSegment>`(升序源段起点 + 元素数 + 是否反向写入;长度与方向的折算全进解析口),
+> 有上界支照旧(两端点各从尾计数、须落在实元素位置),无上界支给后缀——起点从尾计数后**允许 == size**
+> 得空段(`[][0..]`、`[7][1..]` 皆空 list),越过长度仍越界;`ObjList::slice` 退化为「解析 -> 段拷」
+> 单流,util 侧 resolve_index 与其钉子零改动,翻转对象级 `SliceOnEmptyListFails`
+> 的无上界例与语料负例 `runtime_list_slice_empty`(改钉有上界形态)。⑥ 逐位置发射(含 `_` 跳过、递归绑定与 rest 后缀)
+> 三处同构,收成成员模板 `emit_list_pattern_accesses`,备源值方式作参数。⑦ 收口:`not_impl` 助手与
+> `NotImplemented` 码随唯一消费者(rest 占位)消失而删,43 个 visit 全为真实发射;`Interpret.
+> StringNotImplementedIsCompileError` 随之退役(该测试此前已被批 7 换过一次样本,机制消失故整条删)。
+> 测试:发射形态 1 条 + 端到端 2 条(原 rest 占位钉子翻为行为测试)+ 对象级 1 条(切片后缀允许空段,`SliceOnEmptyListFails` 的无上界例翻入它)+ 新语料 1 正 1 负(`destructure_rest.aria` / `runtime_destructure_rest_on_string`),`list_slice.aria` 与 `runtime_list_slice_empty.aria` 各一处既有点翻转扩展;删 `Interpret.StringNotImplementedIsCompileError`(机制消失)。双配置 1080/1080 绿。
 
 ### 4.4 批 9 基线:方法派发成本实测(2026-09-20)
 

@@ -1,0 +1,51 @@
+// 钉住：rest 位（...rest）收集位置数之后的剩余为新 list（起点 = 前缀位置数，`_` 位也占位置），
+// 空尾与空源都给空 list，故 head/tail 惯用法成立；三种上下文（var 声明 / for-in 目标 /
+// 解构赋值）与嵌套 listPattern 同支持。
+var [h, ...t] = [1, 2, 3];
+assert(h == 1 && len(t) == 2 && t[0] == 2 && t[1] == 3);
+
+// 空尾（源恰比前缀多零个元素）与空源（仅 rest）
+var [h1, ...t1] = [9];
+assert(h1 == 9 && len(t1) == 0);
+var [...all] = [];
+assert(len(all) == 0);
+var [...all2] = [4, 5];
+assert(len(all2) == 2 && all2[1] == 5);
+
+// rest 覆盖全表时是新 list（与源不同一）
+var src = [1, 2];
+var [...copy] = src;
+assert(copy == src && copy !== src);
+
+// 前缀 `_` 位不访问该位置，但 rest 起点仍按位置数算
+var [_, ...rest] = [1, 2, 3];
+assert(len(rest) == 2 && rest[0] == 2);
+
+// 多余位置忽略与 rest 共存（rest 取到的仍是「前缀之后」的剩余）
+var [a, b, ...tail] = [1, 2, 3, 4];
+assert(a == 1 && b == 2 && len(tail) == 2 && tail[0] == 3);
+
+// 嵌套 listPattern 里的 rest
+var [[p, ...inner], q] = [[1, 2, 3], 4];
+assert(p == 1 && len(inner) == 2 && inner[1] == 3 && q == 4);
+
+// for-in 目标解构带 rest：map 迭代产出 [k, v] 对
+var m = {"key": 7};
+var keys = 0;
+for ([k, ...v] in m) {
+    if (k == "key") { keys += 1; }
+    assert(len(v) == 1 && v[0] == 7);
+}
+assert(keys == 1);
+
+// 解构赋值带 rest（目标必须是已存在的名字）
+var head = 0;
+var tail2 = [];
+[head, ...tail2] = [10, 20, 30];
+assert(head == 10 && len(tail2) == 2 && tail2[0] == 20);
+
+// 空尾在解构赋值里同样成立
+var only = 0;
+var none = [1];
+[only, ...none] = [5];
+assert(only == 5 && len(none) == 0);

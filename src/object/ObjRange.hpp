@@ -50,6 +50,13 @@ namespace aria {
             return to_;
         }
 
+        // 有上界(= 非无上界开区间 from..)。取上界值前先问它:无上界形态没有可取的端点值,
+        // nullopt 只是 to_ 的空态、不是端点语义。
+        [[nodiscard]]
+        bool has_upper() const noexcept {
+            return to_.has_value();
+        }
+
         [[nodiscard]]
         bool is_exclusive() const noexcept {
             return is_exclusive_;
@@ -100,14 +107,22 @@ namespace aria {
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from);
 
-    // 切片端点解析:range + 容器 size -> 归一化端点对 (from, to)(均为合法元素下标;无上界取
-    // 末元素)。两端点都是实元素位置、含否不折算进返回值,故方向由二者大小关系自带(正序
-    // from <= to 产出正序段、倒序 from > to 产出倒序段,与 range 迭代同一判据),不含上界只在
-    // 消费端折算 count 时去掉终点那一个元素(两端相等即空切片)。端点从尾计数(resolve_index);
-    // 端点越界与空容器为 nullopt --「无法形成合法区间」是唯一失败,报错由调用方就地烘焙。
+    // 切片段解析结果:消费端要的三件 -- 升序源段起点 + 元素数 + 是否反向写入。长度与方向的折算
+    // (含否上界少走迭代序末元素、两端相等即空段、倒序段自低端起)全在解析口完成,消费端只按此段拷。
+    struct SliceSegment {
+        usize start;
+        usize count;
+        bool  is_reversed;
+    };
+
+    // 切片段解析(range + 容器 size -> SliceSegment)。两形态统一在此:
+    //   - 有上界:两端点各经 resolve_index 从尾计数,均须落在实元素位置,方向由归一化端点大小关系
+    //     自带(正序 from <= to,与 range 迭代同一判据);端点越界与空容器为 nullopt。
+    //   - 无上界(i..)= 后缀语义:起点从尾计数后允许 == size -- 「末尾之后取剩余」得空段(元素数 0,
+    //     解构 rest 的空尾据此成立);越过长度仍为 nullopt。
     // 纯换算无分配无 fail。
     [[nodiscard]]
-    Opt<Pair<usize, usize>> resolve_slice_bounds(const ObjRange* range, usize size) noexcept;
+    Opt<SliceSegment> resolve_slice_bounds(const ObjRange* range, usize size) noexcept;
 
 } // namespace aria
 

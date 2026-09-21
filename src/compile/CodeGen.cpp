@@ -113,13 +113,20 @@ namespace aria {
             return dynamic_cast<const WildcardPatternNode*>(&pattern) != nullptr;
         }
 
-        // 解构访问数 = listPattern 里非 `_` 的位置数(`_` 位置不取元素,见上)。即该模式对源值
-        // 发出的下标访问次数,决定 Fill 绑定是否需要隐藏局部复取源值(0 访问直弹、1 访问源值即
-        // 消耗品、>=2 访问须复取)。
+        // 解构访问数 = listPattern 会发出下标访问的位置数(非 `_` 元素位 + rest 位;`_` 位置不取元素,
+        // 见上)。即该模式对源值发出的访问次数,决定 Fill 绑定是否需要隐藏局部复取源值(0 访问直弹、
+        // 1 访问源值即消耗品、>=2 访问须复取)。
         [[nodiscard]] usize pattern_access_count(const ListPatternNode& pattern) noexcept {
-            // count_if 返算法差值类型(ptrdiff_t),按容器计数的值域窄化到 usize。
-            return static_cast<usize>(std::ranges::count_if(
-                    pattern.elements, [](const UPtr<PatternNode>& element) { return !is_wildcard_pattern(*element); }));
+            usize count = 0;
+            for (const auto& element: pattern.elements) {
+                if (!is_wildcard_pattern(*element)) {
+                    ++count;
+                }
+            }
+            if (pattern.rest) {
+                count += 1;
+            }
+            return count;
         }
     } // namespace
 
@@ -422,7 +429,7 @@ namespace aria {
     }
 
     template<typename PushSource>
-    void CodeGen::emit_list_pattern_elements(ListPatternNode& node, const u32 line, PushSource&& push_source) {
+    void CodeGen::emit_list_pattern_accesses(ListPatternNode& node, const u32 line, PushSource&& push_source) {
         // 契约见 CodeGen.hpp 注：循环体只写一次，调用点只给「本次访问的源值怎么来」。
         for (usize index = 0; index < node.elements.size(); ++index) {
             if (is_wildcard_pattern(*node.elements[index])) {
@@ -432,6 +439,17 @@ namespace aria {
             emit_int_literal(static_cast<i64>(index), line, node.loc());
             cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [src, idx] -> [element]
             node.elements[index]->accept(*this);         // 递归绑定（模式不变）
+        }
+        if (node.rest) {
+            // rest 位 = 后缀 [元素数..]：无上界 range 作下标键（走切片，空尾得空 list，见
+            // ObjList::slice）；非 list 源按下标语义报错（string 无 Range 下标、map 按键查表）。
+            // 绑名经 rest 节点自身 visit（与位置位同一路径）。
+            push_source();
+            emit_int_literal(static_cast<i64>(node.elements.size()), line, node.loc());
+            cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
+            cur_cu()->emit_byte(kRangeFlagUnbounded, line); // [src, range]
+            cur_cu()->emit_op(OpCode::LOAD_INDEX, line);    // [suffix]
+            node.rest->accept(*this);
         }
     }
 
@@ -587,14 +605,6 @@ namespace aria {
         // 成功:还原父游标(cu 自动回父 unit)并 delete 子上下文。
         mod_ctx_->current_fn_ctx_ = child->enclosing_;
         delete child;
-    }
-
-    // ============================================================
-    // not_impl
-    // ============================================================
-
-    void CodeGen::not_impl(const ASTNode& node, const StringView feature) const {
-        fail(ErrorCode::NotImplemented, node.loc(), "{} 尚未支持", feature);
     }
 
     // ============================================================
@@ -1365,9 +1375,10 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode& node) {
-        // 栈顶值即待绑值。Fill：按名绑为当前作用域的新变量（收 bind_stack_value——局部值填槽
-        // 零指令、顶层全局 DEF_GLOBAL 弹值）。Store：写既有名（resolve 零指令 + STORE_*），
-        // STORE_* 是 peek-store（值留栈），故补 POP 使本模式净消耗栈顶一值。
+        // 栈顶值即待绑值；identifier 位置与 listPattern 的 rest 位（同为 IdentifierPatternNode）
+        // 都经此。Fill：按名绑为当前作用域的新变量（收 bind_stack_value——局部值填槽零指令、顶层
+        // 全局 DEF_GLOBAL 弹值）。Store：写既有名（resolve 零指令 + STORE_*），STORE_* 是
+        // peek-store（值留栈），故补 POP 使本模式净消耗栈顶一值。
         switch (pattern_mode_) {
             case PatternBindMode::Fill:
                 bind_stack_value(node.name, node.loc());
@@ -1390,12 +1401,9 @@ namespace aria {
     }
 
     void CodeGen::visitListPatternNode(ListPatternNode& node) {
-        // 位置绑定 = 逐元素下标访问（文法：listPattern 映射为下标访问，位置 i 取 [i]，多余忽略、
-        // 不足由下标越界报错）。rest 位置（...rest）尚未落地。
+        // 位置绑定 = 逐位置下标访问（文法：listPattern 映射为下标访问，位置 i 取 [i]，多余忽略、
+        // 不足由下标越界报错；rest 位取后缀 [元素数..]）。
         const u32 line = node.line();
-        if (node.rest) {
-            not_impl(node, "rest 模式解构");
-        }
 
         switch (pattern_mode_) {
             case PatternBindMode::Fill: {
@@ -1403,14 +1411,14 @@ namespace aria {
                 // 局部数」填槽不变式——元素值经递归绑定就地成局部。
                 //   0 次访问：源值即废，弹出（初始化器/next() 的副作用照跑，不取值）。
                 //   1 次访问：源值本身即消耗品，无须隐藏局部——取出的元素恰落在源值那个槽位。
-                //   >=2 次：源值先填成隐藏局部（值填槽：源值即该局部），逐元素经它复取。
+                //   >=2 次：源值先填成隐藏局部（值填槽：源值即该局部），逐位置经它复取。
                 const usize access_count = pattern_access_count(node);
                 if (access_count == 0) {
                     cur_cu()->emit_op(OpCode::POP, line);
                     return;
                 }
                 if (access_count == 1) {
-                    emit_list_pattern_elements(node, line, [] {});
+                    emit_list_pattern_accesses(node, line, [] {});
                     return;
                 }
                 // 隐藏局部名带槽号：同作用域不许重名（define_local_or_fail 查 is_defined_in_scope），
@@ -1418,7 +1426,7 @@ namespace aria {
                 const auto source_name = std::format("<destructure_{}>", cur_fn_ctx()->locals_.size());
                 const u16  source_slot = define_local_or_fail(source_name, node.loc());
                 const auto push_source = [this, source_slot, line] { cur_cu()->emit_load_local(source_slot, line); };
-                emit_list_pattern_elements(node, line, push_source);
+                emit_list_pattern_accesses(node, line, push_source);
                 return;
             }
             case PatternBindMode::Store: {
@@ -1426,7 +1434,7 @@ namespace aria {
                 // 会吃掉源与下标两个），源值本身留栈。取出元素后交子节点写目标——identifier 子节点自行
                 // POP 掉取出的值，嵌套 listPattern 子节点（自己一层）同样收尾弹掉它那层的源值，即本次
                 // 取出的元素值。故本层只需收尾弹掉自己的源值（净消耗栈顶一值；右值的副本由调用点持有）。
-                emit_list_pattern_elements(node, line, [this, line] { cur_cu()->emit_op(OpCode::DUP, line); });
+                emit_list_pattern_accesses(node, line, [this, line] { cur_cu()->emit_op(OpCode::DUP, line); });
                 cur_cu()->emit_op(OpCode::POP, line); // 弹本层源值
                 return;
             }

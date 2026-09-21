@@ -473,17 +473,37 @@ TEST(ObjList, SliceOutOfBoundsFails) {
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
+// 无上界形态 = 后缀语义:起点允许 == 长度(得空段),故空容器、起点恰在末元素之后都给空 list;
+// 越过长度仍越界。
+TEST(ObjList, SliceUnboundedYieldsSuffixAllowingEmpty) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   list  = make_five(gc, guard);
+    auto   r1    = new_range(gc, 5); // xs[5..] 长度 5:起点在末元素之后 -> 空段
+    guard.push(r1);
+    expect_slice(vm, list, r1, {});
+    auto r2 = new_range(gc, -5); // xs[-5..] 首元素起到末尾:全表
+    guard.push(r2);
+    expect_slice(vm, list, r2, {10, 20, 30, 40, 50});
+
+    auto empty = make_list(gc, guard);
+    auto r3    = new_range(gc, 0); // [][0..] 空容器 -> 空段
+    guard.push(r3);
+    expect_slice(vm, empty, r3, {});
+}
+
 TEST(ObjList, SliceOnEmptyListFails) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    // 空容器无端点可取:任一形态(含无上界与空 range)均为越界失败。
-    auto r1 = new_range(gc, 0);
+    // 有上界形态无端点可取(空容器无实元素位置):越界失败;无上界形态走后缀语义给空段(见上一例)。
+    auto r1 = new_range(gc, 2, 2, true);
     guard.push(r1);
     EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
-    auto r2 = new_range(gc, 2, 2, true);
+    auto r2 = new_range(gc, 1, 0, false);
     guard.push(r2);
     EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);

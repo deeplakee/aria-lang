@@ -949,12 +949,12 @@ namespace aria {
     UPtr<ListPatternNode> Parser::list_pattern() {
         const SourceLoc loc = peek().loc();
         expect(TokenType::LeftBracket, "'['");
-        List<UPtr<PatternNode>> elements;
-        Opt<String>             rest = std::nullopt;
+        List<UPtr<PatternNode>>     elements;
+        UPtr<IdentifierPatternNode> rest;
         if (!check(TokenType::RightBracket) && !is_at_end()) {
             do {
                 if (check(TokenType::DotDotDot)) {
-                    rest = Opt<String>{rest_pattern()};
+                    rest = rest_pattern();
                     break; // rest 必为末尾
                 }
                 elements.push_back(pattern());
@@ -968,13 +968,15 @@ namespace aria {
         return std::make_unique<ListPatternNode>(loc, std::move(elements), std::move(rest));
     }
 
-    String Parser::rest_pattern() {
+    UPtr<IdentifierPatternNode> Parser::rest_pattern() {
         expect(TokenType::DotDotDot, "'...'");
         if (check(TokenType::Underscore)) {
             // ..._ 与不写 rest 等价，冗余非法。
             error(ErrorCode::InvalidPattern, "rest 模式不接受 '_'（..._ 等价于不写 rest）");
         }
-        return expect_identifier();
+        // 绑名即 pattern 位（Position i 之后的剩余绑到该名），故按 IdentifierPatternNode 出生。
+        const SourceLoc loc = peek().loc();
+        return std::make_unique<IdentifierPatternNode>(loc, expect_identifier());
     }
 
 } // namespace aria

@@ -43,12 +43,6 @@ TEST(Interpret, StringRuntimeError) {
     EXPECT_EQ(vm.interpret_from_src("return 1 / 0;"), InterpretResult::RuntimeError);
 }
 
-// 字符串源：未实现特性（rest 位置解构，随落地翻转）-> 编译期 NotImplemented -> CompileError。
-TEST(Interpret, StringNotImplementedIsCompileError) {
-    AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("var [a, ...b] = [1, 2];"), InterpretResult::CompileError);
-}
-
 // 字符串源：解构赋值目标未声明 -> 运行期 STORE_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
 TEST(Interpret, StringDestructureAssignmentToUndeclaredNameIsRuntimeError) {
     AriaVM vm;

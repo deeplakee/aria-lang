@@ -2099,3 +2099,20 @@ TEST(CodeGen, DestructureAssignDupsSourcePerAccess) {
     EXPECT_TRUE(lines_adjacent(text, "DUP", "LOAD_IMM")); // 每次访问前复制源值
     EXPECT_EQ(text.find("LOAD_LOCAL"), aria::String::npos);
 }
+
+// rest 位：压「元素数」下标后 MAKE_RANGE(unbounded) 作键取后缀（一个位置一条 LOAD_INDEX）；
+// 仅 rest 一位时访问数为 1，源值即消耗品故不建隐藏局部。
+TEST(CodeGen, DestructureRestTakesSuffixViaUnboundedRange) {
+    auto compiled = compile_only("var a = 0; var [h, ...t] = [1, 2, 3];");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 2); // 元素位 + rest 位
+    EXPECT_TRUE(lines_adjacent(text, "MAKE_RANGE", "LOAD_INDEX"));
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL", "LOAD_IMM")); // 两处访问均复取隐藏局部
+
+    auto only_rest = compile_only("var [...t] = [1, 2];");
+    ASSERT_TRUE(only_rest.has_value());
+    const auto only_text = only_rest->unit().disassemble("<test>");
+    EXPECT_TRUE(lines_adjacent(only_text, "MAKE_RANGE", "LOAD_INDEX"));
+    EXPECT_EQ(only_text.find("LOAD_LOCAL"), aria::String::npos); // 单次访问不建隐藏局部
+}

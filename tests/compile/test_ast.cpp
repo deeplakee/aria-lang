@@ -176,7 +176,7 @@ TEST(AstDisplay, DestructureAssignment) {
     List<UPtr<PatternNode>> elems;
     elems.push_back(id_pat("a"));
     elems.push_back(id_pat("b"));
-    auto                      target = std::make_unique<ListPatternNode>(kLoc, std::move(elems), Opt<String>{});
+    auto                      target = std::make_unique<ListPatternNode>(kLoc, std::move(elems), nullptr);
     DestructureAssignmentNode node{kLoc, std::move(target), ident("lst")};
     const String              out = dump_str(node);
     expect_has(out, "DestructureAssignment");
@@ -325,7 +325,7 @@ TEST(AstDisplay, ForInStmt) {
     List<UPtr<PatternNode>> elems;
     elems.push_back(id_pat("k"));
     elems.push_back(id_pat("v"));
-    ForInStmtNode node{kLoc, std::make_unique<ListPatternNode>(kLoc, std::move(elems), Opt<String>{}), ident("m"),
+    ForInStmtNode node{kLoc, std::make_unique<ListPatternNode>(kLoc, std::move(elems), nullptr), ident("m"),
                        std::make_unique<BreakStmtNode>(kLoc)};
     const String  out = dump_str(node);
     expect_has(out, "ForInStmt");
@@ -418,7 +418,7 @@ TEST(AstDisplay, Patterns) {
     List<UPtr<PatternNode>> elems;
     elems.push_back(id_pat("a"));
     elems.push_back(std::make_unique<WildcardPatternNode>(kLoc));
-    ListPatternNode lp{kLoc, std::move(elems), Opt<String>{String{"rest"}}};
+    ListPatternNode lp{kLoc, std::move(elems), id_pat("rest")};
     const String    lp_out = dump_str(lp);
     expect_has(lp_out, "ListPattern elements=2 rest=rest");
     expect_has(lp_out, "IdentifierPattern name=a");

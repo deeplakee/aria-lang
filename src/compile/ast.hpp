@@ -910,9 +910,11 @@ namespace aria {
 
     // 列表模式：[p, p, ..., ...rest?]。
     //   - elements：位置模式列表（可含 WildcardPatternNode 占位）。
-    //   - rest：收集剩余 list[i..] 为新 list 的名字；nullopt 表无 rest（忽略剩余）。
+    //   - rest：rest 位（...rest）收集剩余 list[i..] 为新 list 的绑名目标；nullptr 表无 rest
+    //     （忽略剩余）。与位置位同为模式节点（IdentifierPatternNode），故绑定走同一 accept 路径；
+    //     rest 只接受绑名（文法禁 "..._"，Parser 已拒）。
     struct ListPatternNode : PatternNode {
-        ListPatternNode(const SourceLoc loc, List<UPtr<PatternNode>> elements, Opt<String> rest) :
+        ListPatternNode(const SourceLoc loc, List<UPtr<PatternNode>> elements, UPtr<IdentifierPatternNode> rest) :
             PatternNode{loc}, elements{std::move(elements)}, rest{std::move(rest)} {}
 
         [[nodiscard]]
@@ -920,8 +922,8 @@ namespace aria {
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<PatternNode>> elements;
-        Opt<String>             rest;
+        List<UPtr<PatternNode>>     elements;
+        UPtr<IdentifierPatternNode> rest;
     };
 
 } // namespace aria

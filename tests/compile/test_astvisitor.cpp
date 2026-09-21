@@ -230,5 +230,5 @@ TEST(AstVisitorDispatch, Expressions) {
 TEST(AstVisitorDispatch, Patterns) {
     expect_visit(id_pat("x"), "IdentifierPatternNode");
     expect_visit(std::make_unique<WildcardPatternNode>(kLoc), "WildcardPatternNode");
-    expect_visit(std::make_unique<ListPatternNode>(kLoc, List<UPtr<PatternNode>>{}, Opt<String>{}), "ListPatternNode");
+    expect_visit(std::make_unique<ListPatternNode>(kLoc, List<UPtr<PatternNode>>{}, nullptr), "ListPatternNode");
 }

@@ -49,6 +49,25 @@ TEST(Interpret, StringDestructureAssignmentToUndeclaredNameIsRuntimeError) {
     EXPECT_EQ(vm.interpret_from_src("[a, b] = [1, 2];"), InterpretResult::RuntimeError);
 }
 
+// 字符串源：两侧 String 的 + 拼接（含复合赋值 += 与 str() 显式转换）-> Ok。
+TEST(Interpret, StringConcatOk) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    EXPECT_EQ(vm.interpret_from_src("var s = \"a\" + \"b\"; s += \"c\"; return s + str(1);"), InterpretResult::Ok);
+}
+
+// 字符串源：String + 非 String -> 运行期 TypeMismatch（无隐式转字符串）-> RuntimeError。
+TEST(Interpret, StringPlusNonStringIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("return \"a\" + 1;"), InterpretResult::RuntimeError);
+}
+
+// 字符串源：非 String + String 同样类型错（左值非对象，仍走数值路径）-> RuntimeError。
+TEST(Interpret, NonStringPlusStringIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("return 1 + \"a\";"), InterpretResult::RuntimeError);
+}
+
 // 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
 TEST(Interpret, StringRuntimeUndefinedVariableIsRuntimeError) {
     AriaVM vm;

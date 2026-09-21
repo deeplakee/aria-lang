@@ -221,13 +221,14 @@ namespace aria {
         virtual bool store_index(AriaVM& vm, Value key, Value value);
 
         //////////////////////////
-        // 可重载运算符协议(算术虚函数族,备置 API)
+        // 可重载运算符协议(算术虚函数族)
         //
-        // lhs = this、rhs = 任意 Value,const 纯计算;错误通道契约同成员协议。**备置 API:
-        // 暂无 override 与调用方**,接线留容器里程碑/用户类运算符重载(先备接口,免得 VM 长
-        // 出一组分型辅助)。接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)跨 miss fail 与
-        // 结果分配的 GC 点。基类默认体在 Object.cpp,报 TypeMismatch "operator '...' requires
-        // numbers, got X and Y"(与 VM 原语路径文案一致)。
+        // lhs = this、rhs = 任意 Value,const 纯计算;错误通道契约同成员协议。**接线现状:
+        // op_add 已接(ADD 指令经 AriaVM::run_binary_add 在对象左值上派发,ObjString override
+        // 做拼接),其余五个仍备置**(接线留容器里程碑/用户类运算符重载;无消费者不加放宽线,
+        // 其余算术/比较指令仍数值专用)。接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)跨
+        // miss fail 与结果分配的 GC 点。基类默认体在 Object.cpp,报 TypeMismatch "operator '...'
+        // requires numbers, got X and Y"(与 VM 原语路径文案一致)。
         //////////////////////////
 
         [[nodiscard]]

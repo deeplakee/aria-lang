@@ -8,6 +8,7 @@
 #include "object/ObjClass.hpp"
 #include "runtime/AriaVM.hpp"
 #include "util/util.hpp"
+#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -67,6 +68,24 @@ namespace aria {
         // string 不可变:下标写恒报错(定向文案)。key/value 未消费:先拒操作本身,键值
         // 检查无意义;签名由协议缝钉死(与 list/map 分支同形)。
         return vm.fail(ErrorCode::TypeMismatch, "string does not support subscript assignment");
+    }
+
+    Opt<Value> ObjString::op_add(AriaVM& vm, const Value rhs) const {
+        // 拼接:两侧均为 String 才成立(无隐式转换,显式转换走内置 str())。GC 走查:分配点
+        // 在 intern 未命中时(gc.new_object 顶部 maybe_collect),此刻 this 与 rhs 经调用方 peek
+        // 在值栈(「栈即根」,见 Object.hpp 协议接线纪律);C++ 局部 buffer 非 GC 对象,不受
+        // collect 影响。结果经驻留池,故与同内容字面量同指针。
+        const auto other = try_obj<ObjString>(rhs);
+        if (other == nullptr) {
+            return vm.fail(ErrorCode::TypeMismatch, "operator '+' requires two strings, got {} and {}", type_name(),
+                           aria::type_name(rhs));
+        }
+        const StringView lhs_view = view();
+        const StringView rhs_view = other->view();
+        String           buffer;
+        buffer.reserve(lhs_view.size() + rhs_view.size());
+        buffer.append(lhs_view).append(rhs_view);
+        return Value::from_obj(new_string(vm.gc(), buffer));
     }
 
     Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) {

@@ -66,10 +66,11 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
 }
 
-// 成员/下标访问/算术/可调用协议的**基类默认**(备置 API):未 override 的子类型(ObjModule
-// 等)对协议操作一律 vm.fail 入寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试
-// 钉住默认形态(码 + 文案子串)防将来基类签名漂移(string 自批 6 起带下标/成员 override,
-// 钉子换仍无 override 的 Module;算术协议 string 仍走默认)。
+// 成员/下标访问/算术/可调用协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入
+// 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
+// 防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员 override,
+// 故成员读与下标注解用 Module 探;算术协议自字符串 `+` 起 string 已 override op_add,该组
+// 亦换 Module。
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器
@@ -104,12 +105,13 @@ TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_TRUE(msg.contains("type Module does not support subscript access"));
 
-    // 算术协议默认(备置):"operator '+' requires numbers, got X and Y"(与 VM 原语路径
+    // 算术协议默认体:"operator '+' requires numbers, got X and Y"(与 VM 原语路径
     // run_binary_numeric 的 TypeMismatch 文案一致)、一元 "negate requires a number, got X"。
-    EXPECT_FALSE(s->op_add(vm, Value::from_int(1)).has_value());
+    // op_add 已被 ObjString override(两侧 String 拼接,见 test_objstring),故默认体用 Module 探。
+    EXPECT_FALSE(m->op_add(vm, Value::from_int(1)).has_value());
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_TRUE(msg.contains("operator '+' requires numbers, got String and Int"));
+    EXPECT_TRUE(msg.contains("operator '+' requires numbers, got Module and Int"));
 
     EXPECT_FALSE(s->op_sub(vm, Value::from_int(1)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);

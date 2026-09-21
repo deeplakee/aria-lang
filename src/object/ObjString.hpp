@@ -91,6 +91,12 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
+        // 算术协议 override(算术族唯一接线者:ADD 指令经 AriaVM::run_binary_add 在对象左值
+        // 上派发到此):两侧均为 String 即拼接,结果经 new_string 驻留(同内容必同指针);
+        // 否则 TypeMismatch 定向文案。不做隐式转字符串,显式转换走内置 str()。
+        [[nodiscard]]
+        Opt<Value> op_add(AriaVM& vm, Value rhs) const override;
+
         // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjList::load_field
         // 形)--先委托 VM 的 String bootstrap 类协议(ObjClass::load_field 沿链查表,miss
         // 类措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不

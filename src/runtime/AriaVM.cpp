@@ -688,6 +688,21 @@ namespace aria {
         return call_closure(closure, 0);
     }
 
+    bool AriaVM::run_binary_add() {
+        // 对象左值:走 op_add 协议缝。左值(peek 1)与 rhs(peek 0)保持「栈即根」--协议内可能
+        // 分配(拼接结果经 new_string)与 fail,都不许先弹栈。非对象左值(数值/nil/bool 等)照旧
+        // 落 run_binary_numeric,失败文案与类型组合判定同源不变。
+        if (const Value lhs = current_->peek(1); lhs.is_obj()) {
+            if (const auto result = lhs.as_obj()->op_add(*this, current_->peek(0))) {
+                current_->drop(2);
+                current_->push(*result);
+                return true;
+            }
+            return false;
+        }
+        return run_binary_numeric<OpCode::ADD>();
+    }
+
     template<OpCode Op>
     bool AriaVM::run_binary_numeric() {
         // 双 Int 走整数路径,任一 F64 升浮点(int 除/模零报错,% 为 C++ 语义,f64 按 IEEE)。
@@ -1184,9 +1199,9 @@ namespace aria {
                         break;
                     }
                     break;
-                // 算术
+                // 算术(ADD 另接对象侧协议缝,执行体 run_binary_add;下同)
                 case OpCode::ADD:
-                    if (!run_binary_numeric<OpCode::ADD>()) {
+                    if (!run_binary_add()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }

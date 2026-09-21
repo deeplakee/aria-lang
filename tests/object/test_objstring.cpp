@@ -205,3 +205,91 @@ TEST(ObjString, BootstrapSurvivesStressCollect) {
     ASSERT_NE(method, nullptr);
     EXPECT_EQ(method->name()->view(), "upper"); // name() 经 bound 的原生取名,存活即链完好
 }
+
+// ---- 算术协议(op_add = 拼接;算术族当前唯一接线者) ----
+
+// 两侧皆 String 即拼接:内容为两串相接,结果为长串时行走 long_chars_ 路径。
+TEST(ObjString, OpAddConcatenates) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   lhs   = make_string(gc, guard, "0123456789abcdefghij"); // 20 字节:SSO 外
+    auto   rhs   = make_string(gc, guard, "KLM");
+    auto   sum   = lhs->op_add(vm, Value::from_obj(rhs));
+    ASSERT_TRUE(sum.has_value());
+    guard.push(sum->as_obj());
+    const auto sum_str = try_obj<ObjString>(*sum);
+    ASSERT_NE(sum_str, nullptr);
+    EXPECT_EQ(sum_str->debug_repr(), "\"0123456789abcdefghijKLM\"");
+    EXPECT_EQ(sum_str->length(), 23u);
+}
+
+// 结果为驻留串:与同内容字面量同指针(=== 与 == 同真)。拼接走 new_string 驻留是契约,
+// 故此处直接钉指针同一。
+TEST(ObjString, OpAddResultIsInterned) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   lhs   = make_string(gc, guard, "in");
+    auto   rhs   = make_string(gc, guard, "tern");
+    auto   sum   = lhs->op_add(vm, Value::from_obj(rhs));
+    ASSERT_TRUE(sum.has_value());
+    EXPECT_TRUE(value_identical(*sum, Value::from_obj(new_string(gc, "intern"))));
+}
+
+// 空串参与:两侧皆空得空串;一侧空得另一侧内容。
+TEST(ObjString, OpAddHandlesEmptyOperands) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   empty = make_string(gc, guard, "");
+    auto   text  = make_string(gc, guard, "x");
+    auto   both  = empty->op_add(vm, Value::from_obj(empty));
+    ASSERT_TRUE(both.has_value());
+    guard.push(both->as_obj());
+    const auto both_str = try_obj<ObjString>(*both);
+    ASSERT_NE(both_str, nullptr);
+    EXPECT_EQ(both_str->length(), 0u);
+    auto one = text->op_add(vm, Value::from_obj(empty));
+    ASSERT_TRUE(one.has_value());
+    guard.push(one->as_obj());
+    const auto one_str = try_obj<ObjString>(*one);
+    ASSERT_NE(one_str, nullptr);
+    EXPECT_EQ(one_str->debug_repr(), "\"x\"");
+}
+
+// rhs 非 String:TypeMismatch 定向文案(不做隐式转字符串,显式转换走内置 str())。
+TEST(ObjString, OpAddNonStringRhsFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "a");
+    EXPECT_FALSE(s->op_add(vm, Value::from_int(1)).has_value());
+    auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch operator '+' requires two strings, got String and Int");
+
+    EXPECT_FALSE(s->op_add(vm, Value::nil_val()).has_value());
+    std::tie(code, message) = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch operator '+' requires two strings, got String and Nil");
+}
+
+// stress collect 下的拼接:分配点(gc.new_object 顶部 maybe_collect)两侧经调用方值栈为根
+// --调用方 peek 不弹是接线纪律,此处按 VM 调用区形态把两侧入栈再调,复现真实根形态。
+TEST(ObjString, OpAddSurvivesStressCollect) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto& gc    = vm.gc();
+    auto  guard = gc.make_guard();
+    auto  lhs   = make_string(gc, guard, "stress");
+    auto  rhs   = make_string(gc, guard, "collect");
+    auto* ctx   = &vm.main_context();
+    ctx->push(Value::from_obj(lhs)); // 值栈即根:与 run_binary_add 的 peek 形态一致
+    ctx->push(Value::from_obj(rhs));
+    auto sum = ctx->peek(1).as_obj()->op_add(vm, ctx->peek(0));
+    ASSERT_TRUE(sum.has_value());
+    ctx->drop(2);
+    ctx->push(*sum);
+    EXPECT_EQ(ctx->peek(0).as_obj()->debug_repr(), "\"stresscollect\"");
+}

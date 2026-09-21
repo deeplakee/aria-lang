@@ -1,0 +1,51 @@
+// 钉住：字符串 + 拼接——两侧均为 String 才成立（无隐式转字符串，显式转换走内置 str()）；
+# 复合赋值 += 同语义；结果为新串（原串不变）、经驻留池故内容相等成立；空串与长串（SSO 外）各钉。
+var a = "hello";
+var b = "world";
+assert(a + " " + b == "hello world");   // 链式：左结合
+assert(a == "hello");                   // 原串不变（拼接产新串）
+assert("" + "" == "");                  // 两侧空
+assert("" + "x" == "x");                // 一侧空
+assert("x" + "" == "x");
+assert(len("ab" + "cde") == 5);         // 结果可再消费（len）
+assert(("ab" + "cde")[2] == "c");       // 结果可再下标
+
+// 复合赋值 +=：a = a + rhs 的 lowering，左值只求值一次
+var s = "one";
+s += "-two";
+s += "-three";
+assert(s == "one-two-three");
+
+// 非 String 显式转换：str() 是唯一入口（隐式转换不存在，负向语料另配）
+assert("n=" + str(42) == "n=42");
+assert("f=" + str(1.5) == "f=1.5");
+assert("b=" + str(true) == "b=true");
+assert("nil=" + str(nil) == "nil=nil");
+
+// 长串（SSO 外）与跨长串拼接
+var long = "0123456789abcdefghij";      // 20 字节
+var tail = "KLMNOPQRSTUVWXYZ";
+var cat = long + tail;
+assert(len(cat) == 36);
+assert(cat[19] == "j");                  // 边界两侧各取一字节
+assert(cat[20] == "K");
+assert(cat == "0123456789abcdefghijKLMNOPQRSTUVWXYZ");
+
+// 拼接结果可作方法接收者/迭代源（对象值路径，非特例）
+assert(("ab" + "cd").upper() == "ABCD");
+assert(("ab" + "cd").substring(1, 3) == "bc");
+var count = 0;
+for (ch in "a" + "bc") {
+    count = count + 1;
+}
+assert(count == 3);
+
+// 循环内拼接（大量一次性中间串；GC 压力下结果仍正确）
+var acc = "";
+var i = 0;
+while (i < 50) {
+    acc = acc + "ab";
+    i = i + 1;
+}
+assert(len(acc) == 100);
+assert(acc[-1] == "b");

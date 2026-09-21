@@ -6,8 +6,9 @@
 //   CodeUnit），把 ProgramNode 编译为模块入口 ObjFunction（arity 0）。
 //
 //   - 单遍合一（clox 风格）：不另起 SemanticAnalyzer，resolve+check+emit 合一。43 个
-//     visitXxxNode 全部 override；仅解构族（DestructureAssignment/ListPattern）占位
-//     not_impl（编译期 NotImplemented Error），随后续批翻为真实发射。
+//     visitXxxNode 全部 override；解构族（DestructureAssignment/ListPattern）已翻为真实
+//     发射，仅 rest 位置（...rest）仍占位 not_impl（编译期 NotImplemented Error），随后续
+//     批翻为真实发射。
 //   - 状态分离：每函数状态收口 FunctionCtx、每模块状态（含当前函数游标 current_fn_ctx_）
 //     收口 ModuleCtx，形成「模块 > 函数 > 作用域」三层；「当前 CodeUnit」不单独存，由
 //     cur_cu() = &cur_fn_ctx()->fn_->unit() 派生随游标切换。所有权：CodeGen 持
@@ -54,6 +55,14 @@ namespace aria {
         // 经 DUP/DUP2 副本跨腿复用；编译期常量 locator（Identifier、帧内 this.x）无副本可留，
         // 定位腿与 Load 同形（目标节点 switch 内折叠）。
         enum class LvalueMode : u8 { Load, Prepare, Store, Locate };
+
+        // 解构绑定模式（发射形态见 .cpp visitListPatternNode 注）：Fill = 绑新名（var 声明 /
+        // for-in 目标）——值填槽，局部登记即初始化、顶层全局 DEF_GLOBAL 弹值；Store = 写既有名
+        // （解构赋值目标）——按名存（STORE_* 为 peek-store，补 POP 弹掉取出的元素值）。flag 由
+        // bind_pattern 设置、整个模式子树共用：递归经 accept 双分派无参可传，故与 lvalue_mode_
+        // 同为成员。两模式对栈顶源值（var 的初始化器 / for-in 的 next() 产物 / 解构赋值的右值）
+        // 的净效应见 bind_pattern 注。
+        enum class PatternBindMode : u8 { Fill, Store };
 
     public:
         // 静态服务入口：编译 module 的顶层 ProgramNode 为入口 ObjFunction（arity 0、名
@@ -124,12 +133,15 @@ namespace aria {
     private:
         // 一次性实例：仅静态入口 compile 构造（编译期分配的 ObjFunction / ObjString 归 gc，
         // 与后续 run() 同源）。
-        explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load} {}
+        explicit CodeGen(GC& gc) : gc_{gc}, lvalue_mode_{LvalueMode::Load}, pattern_mode_{PatternBindMode::Fill} {}
 
         GC& gc_;
 
         // 当前 lvalue 模式（语义与 take/set 纪律见类首 LvalueMode 注）。
         LvalueMode lvalue_mode_;
+
+        // 当前解构绑定模式（语义见类首 PatternBindMode 注；模式只经 bind_pattern 设置）。
+        PatternBindMode pattern_mode_;
 
         // 模块编译上下文（所有权与生命期见类首「状态分离」段与 compile/ModuleCtx.hpp）。
         UPtr<ModuleCtx> mod_ctx_;
@@ -327,12 +339,21 @@ namespace aria {
         [[nodiscard]]
         bool try_emit_negated_literal(ExprNode& operand) const;
 
-        // --- 模式绑定（forIn 用）---
-        // bind_pattern: 栈顶已有一值（for-in 的 next() 产物），按模式绑定为 per-iteration 局部。
-        // 值填槽模型：声明时值已在栈顶，slot = 当前栈高 = 值所在位置，值即该局部（无 STORE_LOCAL/POP）。
-        // IdentifierPattern -> define_local_or_fail 值填槽（不发指令）；WildcardPattern -> POP
-        // 丢弃； ListPattern -> not_impl。行号取自 pat.line()（仅 _/ListPattern 分支发射时用）。
-        void bind_pattern(PatternNode& node);
+        // --- 模式绑定（var 声明 / for-in 目标 / 解构赋值共用）---
+        // bind_pattern: 栈顶已有一值（var 的初始化器 / for-in 的 next() 产物 / 解构赋值的右值），
+        // 置模式后交节点自身 visit 发射（发射形态与栈纪律见 .cpp visitListPatternNode 注）。
+        // 模式对整个模式子树恒定（递归经 accept，无 take/清空）。Fill 模式把源值填成新局部（或
+        // 顶层全局 DEF_GLOBAL 弹值），Store 模式净消耗栈顶一值（故解构赋值的调用点先 DUP 一份留
+        // 作表达式的值）。行号与报错位置取各节点自身 loc。rest 位置（...rest）尚未落地。
+        void bind_pattern(PatternNode& node, PatternBindMode mode);
+
+        // listPattern 逐位置发射「备源值 -> 压下标 -> LOAD_INDEX -> 递归绑定」（`_` 位置跳过——文法
+        // `_` 占位不访问该位置）。备源值方式随模式与访问数不同：Fill 单次访问 = 源值已在栈顶、本身
+        // 即消耗品（零指令）；Fill 多次访问 = LOAD_LOCAL 复取隐藏局部；Store = DUP 留栈副本。该差异
+        // 由 push_source 给出，故循环体（含 `_` 跳过与递归绑定）三处调用点共用、只写一次。定义在
+        // .cpp（仅 CodeGen.cpp 实例化）。
+        template<typename PushSource>
+        void emit_list_pattern_elements(ListPatternNode& node, u32 line, PushSource&& push_source);
 
         // --- 遍历入口（薄包装：accept 双分派）---
         void emit_expr(ExprNode& node); // ASSERT lvalue_mode_ == Load 后 n.accept(*this)，留一值

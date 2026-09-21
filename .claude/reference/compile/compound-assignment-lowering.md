@@ -99,7 +99,7 @@ STORE_INDEX      ; [newval]              存回 obj[idx]=newval(复用 (obj,idx)
 字节码编译器(CodeGen)把 load/store 的发射收归到访问节点,经上下文 flag `LvalueMode{Load,Store,Locate}`(CodeGen 成员 `lvalue_mode_`,默认 `Load`)告诉目标节点当前作为 load 还是 store:
 
 - `emit_lvalue(node, mode)`:`validate_lvalue_target(node)` 后设置 `lvalue_mode_`、`node->accept(*this)` 分派(不在分派后恢复)。目标节点入口经 `take_lvalue_mode()` 一次性 take(取值并清空为 `Load`),故子节点经 `emit_expr` 时 flag 已清空、不泄漏。`emit_expr` 入口 `ASSERT(lvalue_mode_ == Load)` 开发期捕获漏 take 的 bug。
-- `validate_lvalue_target(target)`(dynamic_cast 守卫):Identifier/Field/Index 三种合法左值种类放行(未实现的由各自 visit 节点分派时 `not_impl`)、其余 -> `InvalidAssignmentTarget`;由 `emit_lvalue` 在分派前调用(两种赋值首腿——普通 = 的 `Prepare`/复合与前置自增自减的 `Locate`——均先于 rhs 抛错,字节码随 throw 丢弃)。
+- `validate_lvalue_target(target)`(dynamic_cast 守卫):Identifier/Field/Index 三种合法左值种类放行(三种均已落地;解构赋值等其余形态非左值目标,落 `InvalidAssignmentTarget`)、其余 -> `InvalidAssignmentTarget`;由 `emit_lvalue` 在分派前调用(两种赋值首腿——普通 = 的 `Prepare`/复合与前置自增自减的 `Locate`——均先于 rhs 抛错,字节码随 throw 丢弃)。
 - 两个 take 点(`visitIdentifierNode` / `visitFieldAccessNode`)按模式分派,全组合速查(其余节点经 `emit_expr` 时 flag 已清空为 `Load`)。记号:`resolve`/`name_idx`/init 登记均为编译期动作零指令;`<X>` = 发射子表达式 X(值压栈);peek-store = 读栈顶写回存储但不弹,值留栈作赋值表达式值;Prepare = 定位准备腿(只发接收者不读值,普通 = 首腿);「同形 Load」= 编译期常量 locator 的定位腿在节点 switch 内折叠为 Load 形(无运行时副本可留,见行内注):
 
 | 目标节点·形态 | 模式 | 发射的指令 | 栈变化 |

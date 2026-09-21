@@ -162,9 +162,15 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 解构：pattern 出现在 var 声明的 varTarget 与 forIn 的目标；解构赋值以 listPattern
 # 为左侧目标（assignment 的第二分支）。listPattern 与 listExpr 均以 "[" 起头。
 #   - listPattern 映射为下标访问：位置 i 绑 list[i]。多余忽略、不足按越界报错
-#     （复用下标越界检查，无需专门长度校验）。"_" 占位忽略该位置（如 [a, _, c]）。
-#   - rest 可选：...rest 收集 list[i..] 为新 list；不写则默认忽略剩余。rest 必须绑名
-#     （identifier），不接受 "_"--因 "..._" 与"不写 rest"等价，冗余非法。rest 须在末尾。
+#     （复用下标越界检查，无需专门长度校验）。"_" 占位忽略该位置（如 [a, _, c]）：
+#     该位置不产生下标访问（故其越界/缺键都不报错）。
+#   - 绑定目标三种出现位置的写语义：var 声明与 forIn 目标绑新名（forIn 每轮 fresh 作用域）；
+#     解构赋值写已存在的名（局部/upvalue/全局），未声明名按赋值不隐式创建报错。三种位置
+#     都只求值一次右侧（解构赋值整体先求值，故 [a, b] = [b, a] 交换成立）。
+#   - 解构赋值是表达式，其值为右侧值本身（与 x = v 求值为 v 同款）。
+#   - rest 可选：...rest 收集 list[i..] 为新 list（空尾给空 list）；不写则默认忽略剩余。
+#     rest 必须绑名（identifier），不接受 "_"--因 "..._" 与"不写 rest"等价，冗余非法；
+#     rest 须在末尾。**尚未落地**（编译器编译期报未实现）。
 #
 # 默认参数：paramsBody 顺序固定 plainParams -> defaultParams -> varargs，文法强制默认
 # 参数后不得有无默认参数。默认值在调用且该参数未传时求值，可与 varargs 共存（按位置

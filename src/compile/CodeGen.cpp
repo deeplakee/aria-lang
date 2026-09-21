@@ -1,5 +1,6 @@
 #include "compile/CodeGen.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <ranges>
@@ -103,6 +104,22 @@ namespace aria {
                 ++count;
             }
             return count;
+        }
+
+        // 位置形态 `_`（文法:pattern -> "_" 占位,匹配/忽略该位置不绑定）。解构里 `_` 所在位置
+        // 不产生下标访问:访问有失败面(map 源缺键报 KeyError),而 `_` 的语义是不关心该位置。谓词
+        // 供父层跳过该位置的取元素与递归,故 visitWildcardPatternNode 只在根位到达。
+        [[nodiscard]] bool is_wildcard_pattern(const PatternNode& pattern) noexcept {
+            return dynamic_cast<const WildcardPatternNode*>(&pattern) != nullptr;
+        }
+
+        // 解构访问数 = listPattern 里非 `_` 的位置数(`_` 位置不取元素,见上)。即该模式对源值
+        // 发出的下标访问次数,决定 Fill 绑定是否需要隐藏局部复取源值(0 访问直弹、1 访问源值即
+        // 消耗品、>=2 访问须复取)。
+        [[nodiscard]] usize pattern_access_count(const ListPatternNode& pattern) noexcept {
+            // count_if 返算法差值类型(ptrdiff_t),按容器计数的值域窄化到 usize。
+            return static_cast<usize>(std::ranges::count_if(
+                    pattern.elements, [](const UPtr<PatternNode>& element) { return !is_wildcard_pattern(*element); }));
         }
     } // namespace
 
@@ -397,22 +414,25 @@ namespace aria {
     // 模式绑定
     // ============================================================
 
-    void CodeGen::bind_pattern(PatternNode& node) {
-        // 契约与值填槽模型见 CodeGen.hpp bind_pattern 注。
-        if (const auto id = dynamic_cast<IdentifierPatternNode*>(&node)) {
-            // 值填槽：declare 登记的 slot 即值位置，不发指令
-            (void) define_local_or_fail(id->name, node.loc());
-            return;
+    void CodeGen::bind_pattern(PatternNode& node, const PatternBindMode mode) {
+        // 契约见 CodeGen.hpp bind_pattern 注：置模式后交节点自身 visit 发射。模式对整个子树恒定
+        // （递归经 accept 双分派），故不 take、不还原——模式的设置点只有本函数。
+        pattern_mode_ = mode;
+        node.accept(*this);
+    }
+
+    template<typename PushSource>
+    void CodeGen::emit_list_pattern_elements(ListPatternNode& node, const u32 line, PushSource&& push_source) {
+        // 契约见 CodeGen.hpp 注：循环体只写一次，调用点只给「本次访问的源值怎么来」。
+        for (usize index = 0; index < node.elements.size(); ++index) {
+            if (is_wildcard_pattern(*node.elements[index])) {
+                continue; // `_` 不访问该位置
+            }
+            push_source();
+            emit_int_literal(static_cast<i64>(index), line, node.loc());
+            cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [src, idx] -> [element]
+            node.elements[index]->accept(*this);         // 递归绑定（模式不变）
         }
-        const u32 line = node.line();
-        if (dynamic_cast<WildcardPatternNode*>(&node) != nullptr) {
-            cur_cu()->emit_op(OpCode::POP, line);
-            return;
-        }
-        if (dynamic_cast<ListPatternNode*>(&node) != nullptr) {
-            not_impl(node, "列表模式解构");
-        }
-        not_impl(node, "未知模式");
     }
 
     // ============================================================
@@ -720,8 +740,8 @@ namespace aria {
         begin_scope();
         cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
         emit_method_call0("next", node.loc());          // [value] 恰在 slot 位置
-        // id: declare 值填槽（不发指令）/ _: POP 丢弃
-        bind_pattern(*node.pattern);
+        // Fill 绑定：identifier 值填槽（不发指令）/ 解构逐位置填槽 / _ 弹掉该值
+        bind_pattern(*node.pattern, PatternBindMode::Fill);
         emit_stmt(*node.body);
         end_scope(line); // per-iter：POP_N 弹 pattern（id）；_ 无局部 -> emit_pop_n(0) 无指令
 
@@ -918,16 +938,12 @@ namespace aria {
 
     void CodeGen::visitVarDeclNode(VarDeclNode& node) {
         for (const auto& [target, initializer]: node.bindings) {
-            // 仅 IdentifierPattern 可跑；ListPattern -> not_impl。
-            const auto id = dynamic_cast<IdentifierPatternNode*>(target.get());
-            if (id == nullptr) {
-                not_impl(*target, "列表模式解构 var 声明");
-            }
-            // 初始化器先于声明名求值，绑定与 fun/def/import 同收 bind_stack_value：init 不登记
-            // 当前帧局部，求值后栈高 == locals_.size()，值恰在 declare 槽位（值填槽）；init 里的
-            // 同名引用沿 resolve 链落外层（遮蔽场合捕获外层、落全局则运行期 UndefinedVariable）。
-            emit_expr_or_nil(initializer.get(), id->line());
-            bind_stack_value(id->name, id->loc());
+            // 初始化器先于声明名求值：init 不登记当前帧局部，求值后栈高 == locals_.size()，值恰在
+            // 待声明槽位（值填槽）；init 里的同名引用沿 resolve 链落外层（遮蔽场合捕获外层、落全局
+            // 则运行期 UndefinedVariable）。目标为 identifier 或解构 pattern，两形态同经 bind_pattern
+            // （Fill：新名绑定，与 fun/def/import 同收 bind_stack_value / 解构逐位置填槽）。
+            emit_expr_or_nil(initializer.get(), target->line());
+            bind_pattern(*target, PatternBindMode::Fill);
         }
     }
 
@@ -1138,7 +1154,15 @@ namespace aria {
         emit_lvalue(*node.target, LvalueMode::Store);
     }
 
-    void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode& node) { not_impl(node, "解构赋值"); }
+    void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode& node) {
+        // 目标恒为 listPattern（Parser 只在此形态建本节点）。右值求值一次后 DUP 一份留作本表达式
+        // 的值（= 右值，与 x = v 求值为 v 同款；Store 模式的 bind_pattern 净消耗栈顶一值，消费的
+        // 是副本）。表达式位与语句位同形，语句位由 exprStmt 收尾弹值。
+        const u32 line = node.line();
+        emit_expr(*node.value);
+        cur_cu()->emit_op(OpCode::DUP, line);
+        bind_pattern(*node.target, PatternBindMode::Store);
+    }
 
     bool CodeGen::try_emit_method_call(const CallNode& node) {
         // 契约见 CodeGen.hpp；未命中（callee 非成员访问）不发射任何字节。
@@ -1341,12 +1365,73 @@ namespace aria {
     // ============================================================
 
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode& node) {
-        // 独立出现（非经 bind_pattern 调用）：无独立语义，不发射。
-        (void) node;
+        // 栈顶值即待绑值。Fill：按名绑为当前作用域的新变量（收 bind_stack_value——局部值填槽
+        // 零指令、顶层全局 DEF_GLOBAL 弹值）。Store：写既有名（resolve 零指令 + STORE_*），
+        // STORE_* 是 peek-store（值留栈），故补 POP 使本模式净消耗栈顶一值。
+        switch (pattern_mode_) {
+            case PatternBindMode::Fill:
+                bind_stack_value(node.name, node.loc());
+                return;
+            case PatternBindMode::Store: {
+                const u32  line     = node.line();
+                const auto resolved = resolve_name_or_fail(node.name, node.loc());
+                emit_store_var(resolved, line);
+                cur_cu()->emit_op(OpCode::POP, line);
+                return;
+            }
+        }
+        UNREACHABLE();
     }
 
-    void CodeGen::visitWildcardPatternNode(WildcardPatternNode& node) { (void) node; }
+    void CodeGen::visitWildcardPatternNode(WildcardPatternNode& node) {
+        // `_` 忽略该值：弹掉栈顶（Fill 的到达形态只有根位——for-in 目标 `var`/`for (_ in xs)`；
+        // 列表位置位由父层按 is_wildcard_pattern 跳过，不取元素故不达此处）。
+        cur_cu()->emit_op(OpCode::POP, node.line());
+    }
 
-    void CodeGen::visitListPatternNode(ListPatternNode& node) { not_impl(node, "列表模式解构"); }
+    void CodeGen::visitListPatternNode(ListPatternNode& node) {
+        // 位置绑定 = 逐元素下标访问（文法：listPattern 映射为下标访问，位置 i 取 [i]，多余忽略、
+        // 不足由下标越界报错）。rest 位置（...rest）尚未落地。
+        const u32 line = node.line();
+        if (node.rest) {
+            not_impl(node, "rest 模式解构");
+        }
+
+        switch (pattern_mode_) {
+            case PatternBindMode::Fill: {
+                // 新名值填槽：源值随访问数三分（见 pattern_access_count 注），三者都不偏离「栈高 ==
+                // 局部数」填槽不变式——元素值经递归绑定就地成局部。
+                //   0 次访问：源值即废，弹出（初始化器/next() 的副作用照跑，不取值）。
+                //   1 次访问：源值本身即消耗品，无须隐藏局部——取出的元素恰落在源值那个槽位。
+                //   >=2 次：源值先填成隐藏局部（值填槽：源值即该局部），逐元素经它复取。
+                const usize access_count = pattern_access_count(node);
+                if (access_count == 0) {
+                    cur_cu()->emit_op(OpCode::POP, line);
+                    return;
+                }
+                if (access_count == 1) {
+                    emit_list_pattern_elements(node, line, [] {});
+                    return;
+                }
+                // 隐藏局部名带槽号：同作用域不许重名（define_local_or_fail 查 is_defined_in_scope），
+                // 而同一作用域里两条解构语句必占不同槽（作用域内局部只增不减），故带槽号天然唯一。
+                const auto source_name = std::format("<destructure_{}>", cur_fn_ctx()->locals_.size());
+                const u16  source_slot = define_local_or_fail(source_name, node.loc());
+                const auto push_source = [this, source_slot, line] { cur_cu()->emit_load_local(source_slot, line); };
+                emit_list_pattern_elements(node, line, push_source);
+                return;
+            }
+            case PatternBindMode::Store: {
+                // 既有名按名写，源值恒驻栈顶作临时值：每次访问前 DUP 复制一份供本次取元素（LOAD_INDEX
+                // 会吃掉源与下标两个），源值本身留栈。取出元素后交子节点写目标——identifier 子节点自行
+                // POP 掉取出的值，嵌套 listPattern 子节点（自己一层）同样收尾弹掉它那层的源值，即本次
+                // 取出的元素值。故本层只需收尾弹掉自己的源值（净消耗栈顶一值；右值的副本由调用点持有）。
+                emit_list_pattern_elements(node, line, [this, line] { cur_cu()->emit_op(OpCode::DUP, line); });
+                cur_cu()->emit_op(OpCode::POP, line); // 弹本层源值
+                return;
+            }
+        }
+        UNREACHABLE();
+    }
 
 } // namespace aria

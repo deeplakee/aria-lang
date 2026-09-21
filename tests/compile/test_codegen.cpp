@@ -146,6 +146,15 @@ namespace {
         return false;
     }
 
+    // 统计子串出现次数（发射形态断言用：如「每个位置一条 LOAD_INDEX」）。
+    aria::usize count_occurrences(const aria::String& text, const std::string_view needle) {
+        aria::usize count = 0;
+        for (aria::usize pos = text.find(needle); pos != aria::String::npos; pos = text.find(needle, pos + 1)) {
+            ++count;
+        }
+        return count;
+    }
+
 } // namespace
 
 // ============================================================
@@ -2041,4 +2050,52 @@ xs[0] = ["aa", xs[1]];
 return xs;
 )")),
               "[[\"aa\", [2]], [2]]");
+}
+
+// ============================================================
+// 解构：发射形态
+// ============================================================
+
+// Fill（var 声明 / for-in 目标）：访问数 >= 2 时先建隐藏局部存源值（值填槽零指令），逐位置
+// LOAD_LOCAL 复取源值 + 压下标 + LOAD_INDEX（源值只求值一次）。
+TEST(CodeGen, DestructureFillReusesSourceSlot) {
+    auto compiled = compile_only("var [a, b] = [1, 2];");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 2);
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL", "LOAD_IMM")); // 每个位置一条「复取源值」
+}
+
+// Fill 访问数 1：不建隐藏局部——源值即消耗品，取出的元素恰落在下一局部槽位。
+TEST(CodeGen, DestructureFillSingleAccessHasNoSourceSlot) {
+    auto compiled = compile_only("var [a] = [7];");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 1);
+    EXPECT_EQ(text.find("LOAD_LOCAL"), aria::String::npos);
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_IMM", "LOAD_INDEX"));
+}
+
+// Fill 零访问（空模式 / 全 `_`）：源值照求值后弹掉，不产生任何下标访问。
+TEST(CodeGen, DestructureFillZeroAccessPopsSource) {
+    auto empty = compile_only("var [] = [1];");
+    ASSERT_TRUE(empty.has_value());
+    const auto empty_text = empty->unit().disassemble("<test>");
+    EXPECT_NE(empty_text.find("POP"), aria::String::npos);
+    EXPECT_EQ(empty_text.find("LOAD_INDEX"), aria::String::npos);
+
+    auto wild = compile_only("var [_, _] = [1];");
+    ASSERT_TRUE(wild.has_value());
+    EXPECT_EQ(wild->unit().disassemble("<test>").find("LOAD_INDEX"), aria::String::npos);
+}
+
+// Store（解构赋值）：源值恒驻栈顶，每次访问前 DUP 一份（LOAD_INDEX 会吃掉源与下标两值）；
+// 全程不建隐藏局部（右值的副本由调用点持有作表达式的值）。
+TEST(CodeGen, DestructureAssignDupsSourcePerAccess) {
+    auto compiled = compile_only("var a = 0; var b = 0; [a, b] = [1, 2];");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 2);
+    EXPECT_TRUE(lines_adjacent(text, "DUP", "LOAD_IMM")); // 每次访问前复制源值
+    EXPECT_EQ(text.find("LOAD_LOCAL"), aria::String::npos);
 }

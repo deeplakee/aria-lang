@@ -1,0 +1,2 @@
+Runtime: TypeMismatch type Int does not support subscript access
+at <main> (

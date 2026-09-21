@@ -1,0 +1,2 @@
+// 钉住：解构源必须可下标取——非 list/string 源（整数）取下标报 TypeMismatch。
+var [a] = 5;

@@ -1,0 +1,3 @@
+// 钉住：解构赋值目标必须是已存在的名字——未声明名走 STORE_GLOBAL miss 报 UndefinedVariable
+// （赋值不隐式创建，与普通赋值同款）。
+[undeclared] = [1];

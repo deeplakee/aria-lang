@@ -1,0 +1,61 @@
+// 钉住：解构赋值 [pattern] = expr —— 目标为已存在的名字（局部/upvalue/全局），写走按名存
+// （未声明目标报 UndefinedVariable，赋值不隐式创建）；右值整体先求值一次，故换名交换成立；
+// 表达式求值为右值本身。
+var a = 1;
+var b = 2;
+[a, b] = [b, a];
+assert(a == 2 && b == 1);
+
+// 右值整体先求值：三位轮换
+var x = 1;
+var y = 2;
+var z = 3;
+[x, y, z] = [z, x, y];
+assert(x == 3 && y == 1 && z == 2);
+
+// `_` 位置既不取值也不写
+var only = 5;
+[_, only] = [9, 4];
+assert(only == 4);
+
+// 嵌套目标
+var p = 0;
+var q = 0;
+[[p], q] = [[6], 7];
+assert(p == 6 && q == 7);
+
+// 表达式的值 = 右值（源值留栈），可作表达式参与运算
+var c = 0;
+var xs = [8];
+var y2 = ([c] = xs);
+assert(y2[0] == 8 && c == 8);
+
+// 局部目标
+fun local_target() {
+    var u = 0;
+    var v = 0;
+    var src = [1, 2];
+    [u, v] = src;
+    return u * 10 + v;
+}
+assert(local_target() == 12);
+
+// upvalue 目标
+var outer = 0;
+fun write_upvalue() {
+    var inner = [11];
+    [outer] = inner;
+}
+write_upvalue();
+assert(outer == 11);
+
+// 语句位解构赋值不改变后续局部登记（值栈净平衡）
+var n1 = 0;
+var n2 = 0;
+var i = 0;
+while (i < 5) {
+    [n1, n2] = [i, i + 1];
+    i += 1;
+}
+var after = 100;
+assert(n1 == 4 && n2 == 5 && after == 100);

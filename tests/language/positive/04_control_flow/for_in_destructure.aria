@@ -1,0 +1,41 @@
+// 钉住：for-in 目标解构 —— map 迭代产出 [k, v] 二元 list，目标 listPattern 逐位置绑循环变量；
+// list 迭代产出元素本身，元素为 list 时按位置解构；`_` 位置不访问；根位 `_` 丢弃每轮值。
+var m = {"a": 1, "b": 2, "c": 3};
+var sum = 0;
+var keys = 0;
+for ([k, v] in m) {
+    sum += v;
+    keys += 1;
+}
+assert(sum == 6 && keys == 3);
+
+// `_` 位置不访问：map 里没有 0 号键，取 v 只在 1 号位置
+var only = {"a": 7};
+var got = 0;
+for ([_, v] in only) { got = v; }
+assert(got == 7);
+
+// 元素为 list 时嵌套解构
+var rows = [[1, 2], [3, 4]];
+var total = 0;
+for ([a, b] in rows) { total += a * b; }
+assert(total == 14);
+
+// 根位 `_`：丢弃每轮值，循环体照跑
+var rounds = 0;
+for (_ in [1, 2, 3]) { rounds += 1; }
+assert(rounds == 3);
+
+// 解构出来的循环变量是 per-iteration fresh 绑定，可被循环体赋值
+var assigned = 0;
+for ([a, b] in rows) { a = a + b; assigned += a; }
+assert(assigned == 10); // 1+2 与 3+4（map 序 unspecified，故只取与顺序无关的量）
+
+// 嵌套遍历：外层解构与内层解构互不串扰
+var pairs = 0;
+for ([a, b] in rows) {
+    for ([c, d] in rows) {
+        if (a == c && b == d) { pairs += 1; }
+    }
+}
+assert(pairs == 2);

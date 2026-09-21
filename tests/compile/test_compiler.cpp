@@ -691,3 +691,87 @@ TEST(Compiler, StringBuiltinsUnderStressGc) {
                       "return s;"),
               40);
 }
+
+// ============================================================
+// 解构（var 声明 / for-in 目标 / 解构赋值）
+// ============================================================
+
+// var 解构：按位置绑名（复用下标语义）；单元素形态；初始化器只求值一次（副作用单测）。
+TEST(Compiler, VarDestructureBindsByPosition) {
+    EXPECT_EQ(run_int("var [a, b] = [1, 2]; return a * 10 + b;"), 12);
+    EXPECT_EQ(run_int("var [a] = [7]; return a;"), 7);
+    EXPECT_EQ(run_int("var n = 0; fun f() { n = n + 1; return [1, 2]; } var [a, b] = f(); return n * 10 + a + b;"), 13);
+    // 同一条 var 的多绑定与解构共存。
+    EXPECT_EQ(run_int("var [a, b] = [1, 2], c = 3; return a * 100 + b * 10 + c;"), 123);
+}
+
+// var 解构：空模式与全 `_` 模式照旧求值初始化器（副作用照跑）但不取值——零访问故无越界可报。
+TEST(Compiler, VarDestructureZeroAccessEvaluatesInitializer) {
+    EXPECT_EQ(run_int("var n = 0; fun f() { n = n + 1; return [1]; } var [] = f(); return n;"), 1);
+    EXPECT_EQ(run_int("var [_, _] = [1]; return 9;"), 9);
+}
+
+// 解构可嵌套：内层 listPattern 逐层递归绑定。
+TEST(Compiler, DestructureNestsRecursively) {
+    EXPECT_EQ(run_int("var [[a, b], c] = [[1, 2], 3]; return a * 100 + b * 10 + c;"), 123);
+    EXPECT_EQ(run_int("var [p, [q, r]] = [1, [2, 3]]; return p * 100 + q * 10 + r;"), 123);
+}
+
+// `_` 占位：该位置不产生下标访问（故越界、缺键都不报），其余位置照常绑。
+TEST(Compiler, WildcardSkipsAccess) {
+    EXPECT_EQ(run_int("var [a, _, c] = [1, 2, 3]; return a * 10 + c;"), 13);
+    EXPECT_EQ(run_int("var [a, _] = [5]; return a;"), 5);                        // `_` 位越界不访问
+    EXPECT_EQ(run_int("var m = {1: \"x\"}; var [_, c] = m; return len(c);"), 1); // `_` 位缺键不报（c 取 m[1]）
+}
+
+// for-in 目标解构：map 迭代产出 [k, v] 对，逐位置绑循环变量（每轮 fresh 作用域）。
+TEST(Compiler, ForInDestructuresPair) {
+    EXPECT_EQ(run_int("var m = {\"a\": 1, \"b\": 2}; var s = 0; for ([k, v] in m) { s = s + v; } return s;"), 3);
+    EXPECT_EQ(run_int("var m = {\"a\": 7}; var n = 0; for ([_, v] in m) { n = v; } return n;"), 7);
+    EXPECT_EQ(run_int("var xs = [[1, 2], [3, 4]]; var s = 0; for ([a, b] in xs) { s = s + a * b; } return s;"), 14);
+}
+
+// for-in 根位 `_`：丢弃每轮值（不绑名），循环体照跑。
+TEST(Compiler, ForInWildcardTargetDiscardsValue) {
+    EXPECT_EQ(run_int("var n = 0; for (_ in [1, 2, 3]) { n = n + 1; } return n;"), 3);
+}
+
+// 解构赋值：写既有名（局部 / upvalue / 全局）；右值先整体求值，换名交换是自然结果。
+TEST(Compiler, DestructureAssignmentWritesExistingNames) {
+    EXPECT_EQ(run_int("var a = 1; var b = 2; [a, b] = [b, a]; return a * 10 + b;"), 21);
+    EXPECT_EQ(run_int("fun g() { var a = 0; var b = 0; [[a], b] = [[1], 2]; return a * 10 + b; } return g();"), 12);
+    EXPECT_EQ(run_int("var a = 0; fun f() { var xs = [5]; [a] = xs; } f(); return a;"), 5);
+    EXPECT_EQ(run_int("var a = 0; var xs = [3]; [_, a] = [0, xs[0]]; return a;"), 3);
+}
+
+// 解构赋值表达式的值 = 右值（源值留栈，与 x = v 求值为 v 同款），可作表达式参与运算。
+TEST(Compiler, DestructureAssignmentValueIsRhs) {
+    EXPECT_EQ(run_int("var a = 0; var xs = [7]; var y = ([a] = xs); return y[0] * 10 + a;"), 77);
+}
+
+// 解构的失败面：位置不足复用下标越界；源不可下标取按类型错；解构赋值目标未声明按赋值不隐式创建；
+// 新名同作用域重名按声明判重。
+TEST(Compiler, DestructureFailureFaces) {
+    auto short_source = run_source("var [a, b] = [1]; return 0;");
+    ASSERT_FALSE(short_source.has_value());
+    EXPECT_EQ(short_source.error().code(), ErrorCode::IndexOutOfBounds);
+
+    auto unsubscriptable = run_source("var [a] = 5; return 0;");
+    ASSERT_FALSE(unsubscriptable.has_value());
+    EXPECT_EQ(unsubscriptable.error().code(), ErrorCode::TypeMismatch);
+
+    auto undeclared_target = run_source("[zz] = [1]; return 0;");
+    ASSERT_FALSE(undeclared_target.has_value());
+    EXPECT_EQ(undeclared_target.error().code(), ErrorCode::UndefinedVariable);
+
+    auto duplicate_name = run_source("var [a, a] = [1, 2]; return 0;");
+    ASSERT_FALSE(duplicate_name.has_value());
+    EXPECT_EQ(duplicate_name.error().code(), ErrorCode::RedefinedVariable);
+}
+
+// rest 位置（...rest）尚未落地：编译期 NotImplemented（随后续批翻为真实发射）。
+TEST(Compiler, DestructureRestNotImplementedYet) {
+    auto out = run_source("var [a, ...r] = [1, 2]; return 0;");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::NotImplemented);
+}

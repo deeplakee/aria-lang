@@ -1,0 +1,45 @@
+// 钉住：var 声明解构 listPattern —— 位置 i 绑 list[i]（复用下标语义），多余忽略；
+// `_` 占位不访问该位置；嵌套 listPattern 逐层递归；初始化器只求值一次。
+var [a, b] = [1, 2];
+assert(a == 1 && b == 2);
+
+// 多余元素忽略
+var [c, d] = [3, 4, 5];
+assert(c == 3 && d == 4);
+
+// 单元素与空模式（空模式照跑初始化器）
+var [e] = [7];
+assert(e == 7);
+var [] = [9];
+
+// `_` 占位：跳过该位置不绑定
+var [f, _, h] = [10, 11, 12];
+assert(f == 10 && h == 12);
+
+// 嵌套解构
+var [[i, j], k] = [[13, 14], 15];
+assert(i == 13 && j == 14 && k == 15);
+var [m, [n, o]] = [16, [17, 18]];
+assert(m == 16 && n == 17 && o == 18);
+
+// 初始化器只求值一次（带副作用的表达式）
+var calls = 0;
+fun source() {
+    calls += 1;
+    return [19, 20];
+}
+var [p, q] = source();
+assert(calls == 1 && p == 19 && q == 20);
+
+// 同一条 var 的多绑定与解构共存；解构后的名字按普通局部使用
+var [r, s] = [21, 22], t = 23;
+assert(r + s + t == 66);
+
+// 函数体内解构（值填槽后后续局部照常登记）
+fun use_in_function() {
+    var [u, v] = [1, 2];
+    var w = u + v;
+    var [x] = [10];
+    return w + x;
+}
+assert(use_in_function() == 13);

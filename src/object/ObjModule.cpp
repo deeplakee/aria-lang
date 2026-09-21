@@ -3,9 +3,11 @@
 #include <format>
 
 #include "aria.hpp"
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/AriaVM.hpp"
 #include "util/fs.hpp"
 
 namespace aria {
@@ -29,6 +31,24 @@ namespace aria {
     String ObjModule::debug_repr() const {
         // name_ 恒非空(ctor ASSERT),内容可空(合成顶层)但指针非空。
         return std::format("<module {}>", name_->view());
+    }
+
+    Opt<Value> ObjModule::load_field(AriaVM& vm, ObjString* name) {
+        // 模块成员 = 模块全局绑定(顶层 var/fun/def 的目标):键与 DEF/LOAD_GLOBAL 同源(intern
+        // 同指针),查表即命中判定,纯查询无分配、无 GC 点。命中值原样直读 -- 顶层函数值为闭包
+        // 且恒非方法(MAKE_METHOD 才戳 defining class),故不绑定 this;调用经 CALL_METHOD 时槽 0
+        // 留模块值,闭包不读槽 0(方法才把槽 0 当 this)。nil 值绑定与「无此成员」由 find 的
+        // nullptr 空态区分(绑定 nil 亦为命中)。miss 文案与基类默认同形(模块描述走 debug_repr)。
+        if (const auto entry = globals_.find(Value::from_obj(name))) {
+            return entry->value;
+        }
+        return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+    }
+
+    bool ObjModule::store_field(AriaVM& vm, ObjString* name, const Value value) {
+        // 模块成员只读:越模块写即隐式创建/改写他人未声明全局,违「赋值不隐式创建」;暴露
+        // 可变状态走模块自己的函数。name/value 未消费:先拒操作本身(签名由协议缝钉死)。
+        return vm.fail(ErrorCode::TypeMismatch, "module members are read-only");
     }
 
     String ObjModule::abs_path() const {

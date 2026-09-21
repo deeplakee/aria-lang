@@ -1,4 +1,7 @@
-// 循环导入 A：体先打印，再导入 B（B 反向导入 A 时 A 尚未跑完 = 半初始化，不报错）。
+// 循环导入 A：体先绑定 tag，再导入 B（B 反向导入 A 时 A 尚未跑完 = 半初始化，不报错；
+# b 体读 A.tag 验证已绑定成员可见，later 尚未声明故读不到）。
 print("A:start");
+var tag = "a";
 import "./b" as B;
+var later = "late";
 print("A:end");

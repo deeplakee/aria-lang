@@ -69,8 +69,9 @@ TEST(ObjectTryAs, ConstOverload) {
 // 成员/下标访问/算术/可调用协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入
 // 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
 // 防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员 override,
-// 故成员读与下标注解用 Module 探;算术协议自字符串 `+` 起 string 已 override op_add,该组
-// 亦换 Module。
+// Module 自模块成员访问起 override load_field/store_field、自字符串 `+` 起 string override
+// op_add,故各分组挑当下仍未 override 的类型探默认(string 探 store_field、Module 探下标注
+// 解与算术)。
 
 TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器
@@ -83,16 +84,17 @@ TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     guard.push(k);
 
     // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
-    // store = "type X does not support field access"。
+    // store = "type X does not support field access"。Module 已 override 两协议(load = 成员查
+    // globals_、store = 只读拒),故写默认体用 string 探(ObjString 不 override store_field)。
     EXPECT_FALSE(m->load_field(vm, k).has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("has no member 'len'"));
 
-    EXPECT_FALSE(m->store_field(vm, k, Value::from_int(1)));
+    EXPECT_FALSE(s->store_field(vm, k, Value::from_int(1)));
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
-    EXPECT_TRUE(msg.contains("type Module does not support field access"));
+    EXPECT_TRUE(msg.contains("type String does not support field access"));
 
     // 下标协议默认(备置):"type X does not support subscript access"。
     EXPECT_FALSE(m->load_index(vm, Value::from_int(0)).has_value());

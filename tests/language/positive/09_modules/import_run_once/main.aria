@@ -1,6 +1,11 @@
 // 钉住：模块体 run-once——同一文件的三种 specifier 写法（相对无后缀 / 相对带 .aria /
-# 裸名，入口根解析）经绝对规范路径归一为同一模块表键，模块体只执行一次；配 .out golden。
+# 裸名，入口根解析）经绝对规范路径归一为同一模块表键，模块体只执行一次；
+# 三次导入拿到的是同一模块对象（=== 同指针）与同一份成员；配 .out golden。
 import "./lib/once" as A;
 import "./lib/once.aria" as B;
 import "lib/once" as C;
+assert(A === B);
+assert(B === C);
+assert(A.token == "once");
+assert(C.token == "once");
 print("done");

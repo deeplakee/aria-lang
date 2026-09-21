@@ -98,6 +98,8 @@
 
 > **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态:`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)——`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`(数值快路径与失败文案不变);算术族其余五个(op_sub/mul/div/mod/negate)仍备置,无消费者不加放宽线。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
 
+> **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`resolve_invoke` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
+
 > **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
 > `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发

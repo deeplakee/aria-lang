@@ -80,6 +80,18 @@ namespace aria {
 
         void set_entry(ObjFunction* entry) noexcept { entry_ = entry; }
 
+        // 命名成员读取协议 override:模块成员 = 模块全局绑定(顶层 var/fun/def 的目标),
+        // 查 globals_ 直读原值(纯查询,GC-pure)。函数值为闭包、恒非方法,故不绑定 this
+        // (调用经 CALL_METHOD 时槽 0 留模块值,闭包不读之);nil 值绑定与「无此成员」由
+        // find 的空态区分。miss 文案同基类默认形(模块描述经 debug_repr,本类就地烘焙)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 命名成员写入:模块成员只读(定向文案)。越模块写会隐式创建未声明全局,违「赋值
+        // 不隐式创建」;暴露可变状态走模块自己的函数。签名由协议缝钉死。
+        [[nodiscard]]
+        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+
         // 标 name_ + dir_ + entry_ + globals_(key+value)。
         void trace(GC& gc) const noexcept override;
 

@@ -1,0 +1,2 @@
+// 辅助模块：被 runtime_module_member_* 负向用例导入，提供成员面。
+var present = 1;

@@ -1,0 +1,2 @@
+// 辅助模块：被 holder 导入，作为 holder 的成员被传递访问（H.Inner.tag）。
+var tag = "inner";

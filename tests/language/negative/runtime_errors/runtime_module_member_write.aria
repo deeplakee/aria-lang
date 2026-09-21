@@ -1,0 +1,4 @@
+// 钉住：模块成员只读——越模块写为运行期错误 TypeMismatch（连已声明成员也拒，防隐式创建
+// 未声明全局）。
+import "./lib/members" as M;
+M.present = 2;

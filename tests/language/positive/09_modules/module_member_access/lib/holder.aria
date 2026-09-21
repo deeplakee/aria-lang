@@ -1,0 +1,21 @@
+// 辅助模块：模块成员访问的被访面——顶层 var / fun（含默认参数）/ class / nil 值绑定 /
+// 模块级可变状态；并导入内层模块（导入的模块自身也是本模块的成员，供传递访问 H.Inner.tag）。
+var version = "1.2.3";
+var limit = 10;
+var unset;                     // nil 值绑定：命中但值为 nil（与「无此成员」不同）
+var items = [1, 2, 3];
+fun greet(who) {
+    return "hi " + who;
+}
+fun add(a, b = 1) {
+    return a + b;
+}
+def Box {
+    var size = 0;
+}
+var hits = 0;
+fun hit() {
+    hits += 1;
+    return hits;
+}
+import "./inner" as Inner;

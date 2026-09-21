@@ -1,13 +1,19 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/AriaVM.hpp"
 #include "value/AriaHashTable.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
+using aria::AriaVM;
+using aria::ErrorCode;
 using aria::GC;
 using aria::new_function;
 using aria::new_module;
@@ -15,7 +21,10 @@ using aria::new_string;
 using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
+using aria::Pair;
+using aria::String;
 using aria::StringView;
+using aria::try_obj;
 using aria::u8;
 using aria::usize;
 using aria::Value;
@@ -38,6 +47,16 @@ namespace {
     ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
         return new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
+    }
+
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    // (协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
+    Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
+        auto payload = vm.main_context().take_error();
+        EXPECT_TRUE(payload.has_value());
+        const auto ex = try_obj<aria::ObjException>(*payload);
+        EXPECT_NE(ex, nullptr);
+        return {ex->code(), String{ex->message()->view()}};
     }
 
 } // namespace
@@ -143,4 +162,76 @@ TEST(ObjModule, ExplicitDirRespected) {
     auto m   = make_module(gc, "math", dir);
     EXPECT_EQ(m->dir(), dir);
     EXPECT_EQ(m->abs_path(), "/stdlib/math.aria");
+}
+
+// ---- 命名成员协议(load_field/store_field = 模块全局绑定,只读) ----
+
+// 命中:模块成员 = 模块全局绑定原值直读(不绑定 this、不铸包装物,返回值为原对象同指针)。
+TEST(ObjModule, LoadFieldReadsGlobalBinding) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   m     = make_module(gc, "helper");
+    guard.push(m);
+    auto key = new_string(gc, "greet");
+    guard.push(key);
+    auto fn = make_function(gc, m, "greet", 1);
+    guard.push(fn);
+    m->globals().set(Value::from_obj(key), Value::from_obj(fn));
+
+    const auto hit = m->load_field(vm, key);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->as_obj(), fn); // 原值直读:同指针,无 bound/包裹
+    EXPECT_FALSE(vm.main_context().has_error());
+}
+
+// 绑定 nil 与「无此成员」的区分:键在表内、值为 nil 仍是命中(somed nil);仅 miss 才 fail。
+// 这条是 find 空态(而非值判空)作命中判据的契约钉子。
+TEST(ObjModule, LoadFieldNilBindingIsHit) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   m     = make_module(gc, "helper");
+    guard.push(m);
+    auto key = new_string(gc, "unset");
+    guard.push(key);
+    m->globals().set(Value::from_obj(key), Value::nil_val());
+
+    const auto hit = m->load_field(vm, key);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_TRUE(hit->is_nil());
+    EXPECT_FALSE(vm.main_context().has_error());
+}
+
+// miss:UndefinedProperty,文案与基类默认同形(模块描述经 debug_repr)。
+TEST(ObjModule, LoadFieldMissFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   m     = make_module(gc, "helper");
+    guard.push(m);
+    auto key = new_string(gc, "nope");
+    guard.push(key);
+
+    EXPECT_FALSE(m->load_field(vm, key).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <module helper> has no member 'nope'");
+}
+
+// 写入:模块成员只读(定向文案)。越模块写会隐式创建未声明全局,违「赋值不隐式创建」。
+TEST(ObjModule, StoreFieldRejectedAsReadOnly) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   m     = make_module(gc, "helper");
+    guard.push(m);
+    auto key = new_string(gc, "count");
+    guard.push(key);
+
+    EXPECT_FALSE(m->store_field(vm, key, Value::from_int(1)));
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch module members are read-only");
+    EXPECT_EQ(m->globals().find(Value::from_obj(key)), nullptr); // 拒绝不留痕
 }

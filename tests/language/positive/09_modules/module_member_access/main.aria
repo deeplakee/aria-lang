@@ -1,0 +1,24 @@
+// 钉住：模块成员访问——模块的顶层绑定即模块成员，H.x 读原值、H.f(args) 直调；
+# nil 值绑定与「无此成员」不同（命中值 nil）、class 成员可实例化、模块级可变状态经其
+# 函数自增而外部只读、导入的模块自身也是成员（传递访问 H.Inner.tag）；配 .out golden。
+import "./lib/holder" as H;
+
+assert(H.version == "1.2.3");
+assert(H.limit == 10);
+assert(H.unset == nil);              // 绑定 nil：命中，值为 nil
+assert(H.items == [1, 2, 3]);        // 容器值原样直读（同一对象，无拷贝）
+assert(H.items[1] == 2);
+
+assert(H.greet("bob") == "hi bob");  // 成员函数直调
+assert(H.add(1) == 2);               // 默认参数跨模块调用照常生效
+assert(H.add(1, 5) == 6);
+
+var box = H.Box();
+assert(type(box) == "Instance");     // class 成员可实例化
+
+assert(H.hit() == 1);                // 模块级可变状态经其自己的函数自增（hits += 1）
+assert(H.hit() == 2);
+assert(H.hits == 2);                 // 外部只读该状态
+
+assert(H.Inner.tag == "inner");      // 嵌套：holder 导入的模块也是它的成员
+print("module member ok");

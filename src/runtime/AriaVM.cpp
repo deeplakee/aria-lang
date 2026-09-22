@@ -896,7 +896,7 @@ namespace aria {
         if (!recv.is_obj()) {
             return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
         }
-        if (const auto target = recv.as_obj()->resolve_invoke(*this, name)) {
+        if (const auto target = recv.as_obj()->load_field_unbound(*this, name)) {
             current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
             return true;
         }

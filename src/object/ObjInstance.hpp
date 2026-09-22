@@ -19,7 +19,7 @@ namespace aria {
     //     ObjString*,值 Value。**纯字段** -- 早期版本的 bound-method 缓存已取消(2026-09-20 反转
     //     M5 决策 4):缓存让「类/父类上改写方法」对既有实例陈旧、且与新建实例不一致(取决于该
     //     实例历史),monkey patch 半可用且难解释。现读路径每次访问现场绑定(方法值是一等值,必须
-    //     是个对象),调用路径经 `resolve_invoke` 走不绑定形态(零分配 + 每次按当前类链解析)。
+    //     是个对象),调用路径经 `load_field_unbound` 走不绑定形态(零分配 + 每次按当前类链解析)。
     //     惰性分配。**私有不对外暴露**:成员读写一律走 load_field/store_field 协议,无整表访问器。
     //
     //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(字段里存的
@@ -47,14 +47,15 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:与内置类型同一条规则 -- 不绑定,返回字段/类链里的原值,交 VM
-        // 以 receiver 占调用区槽 0 直调(方法体从槽 0 读 this;原生以槽 0 为 this 兼返回槽)。
-        // 零分配,且每次按当前类链解析(与读路径同一份可见性:改类/父类方法立即生效)。
+        // 命名成员读取的不绑定形态 override(PREPARE_METHOD 与算子钩子取实现共用):与内置类型
+        // 同一条规则 -- 不绑定,返回字段/类链里的原值,交 VM 以 receiver 占调用区槽 0 直调(方法体
+        // 从槽 0 读 this;原生以槽 0 为 this 兼返回槽)。零分配,且每次按当前类链解析(与读路径
+        // 同一份可见性:改类/父类方法立即生效)。
         [[nodiscard]]
-        Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
         // 算子与调用协议的 11 个实现(基类默认直接 fail,故参与该协议须显式实现):各自按名(aria.hpp 的
-        // kOp*Name,new_string 取 intern 串)经 resolve_invoke 到实例 fields(字段可遮蔽类链钩子)再类链取。
+        // kOp*Name,new_string 取 intern 串)经 load_field_unbound 到实例 fields(字段可遮蔽类链钩子)再类链取。
         // 即「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;

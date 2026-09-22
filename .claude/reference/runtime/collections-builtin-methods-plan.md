@@ -6,7 +6,7 @@
 
 架构缝已由 M5 备置,本里程碑补生产侧:
 
-- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index`（**2026-09-22 今注:`op_*` 运算符族已整族删除、`op_call` 已改为同款的 `op_call_impl`（取 `__call__` 实现）**——算子改为「对象上的命名方法 + 经 `resolve_invoke` 取实现」，见本文件末「算子重载」节与 `src/aria.hpp` 的 `kOp*Name`）。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
+- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index`（**2026-09-22 今注:`op_*` 运算符族已整族删除、`op_call` 已改为同款的 `op_call_impl`（取 `__call__` 实现）**——算子改为「对象上的命名方法 + 经 `load_field_unbound` 取实现」，见本文件末「算子重载」节与 `src/aria.hpp` 的 `kOp*Name`）。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
 - **语言方法面(类表)**:语言可见方法(`s.upper`、`it.next`、`xs.iter`)一律住 `ObjClass` 表。内置类型由 VM 构造期 bootstrap 类承载(`string_class_`/`list_class_`/`map_class_`/`range_class_`/`iterator_class_`,对标既有 `object_class_`;GC 经 vm_roots tracer 标根,先例同)。
 - **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包——形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 override 自持 `new_bound_method(命中值, receiver)`」,查表即直调类协议(2026-09-18 review 改定:曾收口的内置侧专用 helper `load_builtin_member` 经两轮收窄后整体删除,各类型 override 直调 `ObjClass::load_field`,与实例路径「先委托类协议、后自己绑定」完全同形)。
 - **与实例路径不同构,不硬合**:实例路径的绑定判别是闭包戳(`is_method`)+ fields 缓存回填(M5 语义);内置类表全是原生函数,`is_method` 恒 false,戳判别不可复用。两路共享的只有 `ObjClass::load_field` 这层(本来就是共享);实例路径保持现状不动,内置侧另立 helper——「共享绑定 helper 自 ObjInstance 提炼」的早期设想作废。
@@ -14,7 +14,7 @@
 
 **决策 D1(2026-09-16 拍板):内置类 super 挂 Object 根**。uniform OOP 提前半步;接受 `s.init` 经链解析到 Object 根类的 no-op init(原生不动槽 0,调用返回 receiver 自身)——已知的小语义毛边,uniform OOP 落地时随 Object 方法面一并审视。
 
-**bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 收口:内置侧改走 `Object::resolve_invoke` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `resolve_invoke` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
+**bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 收口:内置侧改走 `Object::load_field_unbound` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `load_field_unbound` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
 
 **无方法性戳、`ObjClass` 表零改动**:内置类 v1 无静态、类名不作值暴露,表内条目恒绑定(绑定发生在类型自身的 override 里,不在表项上);`String.fromCharCode` 式静态需求出现时再泛化表项判别。
 
@@ -98,7 +98,7 @@
 
 > **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态(当时):`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)——`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`。**2026-09-22 今注:该形态已废弃**——执行体合并为 `run_binary_operator<Op>` 后,算子实现整体改为「对象上的命名方法」(`String` 的 `__add__` 是 StringBuiltins 里的原生),详见文件末「算子重载」节。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
 
-> **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`resolve_invoke` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
+> **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`load_field_unbound` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
 
 > **计划表外补缺 · 字符串比较排序(2026-09-21)**:批 1-9 收官后补的第三处表外缺口。语义:四个比较算子
 > (`<`/`<=`/`>`/`>=`)的域扩到字符串 -- 两侧皆 `String` 时按**无符号字节序**比(`string_view::compare`,
@@ -404,7 +404,7 @@ cmake --build build/rel --target vm_bench -j
 
 - **编译侧**:`visitCallNode` 对 `recv.name(args)`(含 `this.name(args)`)发 `INVOKE_METHOD name argc`,接收者先压调用区槽 0;for-in 三站点(`iter`/`has_next`/`next`)经 `emit_method_call0` 同改。`super.m(args)`(`SuperExprNode`)与下标调用 `arr[i](args)` 不融合,保持原两步/普通 `CALL`。方法值的**读取**(`obj.m`)仍走 `LOAD_FIELD`(每次访问现场绑定;其后的缓存取消与身份语义变化见 §4.6)。
 - **VM**:`run_invoke_method`(替换原 `not_implemented` case):非对象接收者守卫文案同 `run_load_field`;经协议解析出被调值后交 `call_value` 统一分发,**调用区不进**(栈形只剩 `[recv, a1..aN]` 一种)。故 `prepare_call_args`(缺省垫充/varargs 打包)、`TryRecord.stack_depth` 回退、`unwind` 全不受影响。
-- **对象侧协议缝**:`Object::resolve_invoke(vm, name) -> Opt<Value>` -- 只回答「该被调的值」,调用区槽 0 由指令保持 receiver 原样(方法经 `call_bound_method` 自覆写、内置原生正需要槽 0 = receiver、闭包不读槽 0,三者皆无需指令干预)。基类默认体 = `load_field`(类/模块等未 override 者);**实例与 List/Map/String/Range/Iterator 各自 override** 成不绑定形态(前者 fields 命中优先 + 类链取原值,后者查自身 bootstrap 类表),零 `ObjBoundMethod` 物化。协议缝形态与 `load_field/store_field` 同族(错误自 fail、`nullopt ⟺ 已 fail`、文案随宿主就地烘焙),未 override 的类型自动落到默认体。
+- **对象侧协议缝**:`Object::load_field_unbound(vm, name) -> Opt<Value>` -- 只回答「该被调的值」,调用区槽 0 由指令保持 receiver 原样(方法经 `call_bound_method` 自覆写、内置原生正需要槽 0 = receiver、闭包不读槽 0,三者皆无需指令干预)。基类默认体 = `load_field`(类/模块等未 override 者);**实例与 List/Map/String/Range/Iterator 各自 override** 成不绑定形态(前者 fields 命中优先 + 类链取原值,后者查自身 bootstrap 类表),零 `ObjBoundMethod` 物化。协议缝形态与 `load_field/store_field` 同族(错误自 fail、`nullopt ⟺ 已 fail`、文案随宿主就地烘焙),未 override 的类型自动落到默认体。
 
 顺带清理:`not_implemented`(运行期「opcode 未实现」fatal 助手)与其独占错误码 `OpcodeNotImplemented` 随唯一消费者消失而删除--指令的 VM case 与 `code.hpp` 表行同批落地,不存在「表里有、VM 没实现」的持久态,兜底由 `dispatch_loop` 的 `UNREACHABLE` 承担。
 
@@ -435,11 +435,11 @@ cmake --build build/rel --target vm_bench -j
 
 ### 4.6 bound 缓存取消(2026-09-20,反转 M5 决策 4)
 
-**决定**:实例的 bound-method 缓存整体删除;实例 `resolve_invoke` 改成与内置类型同一条不绑定规则。
+**决定**:实例的 bound-method 缓存整体删除;实例 `load_field_unbound` 改成与内置类型同一条不绑定规则。
 
 **动机**:缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜 -- 同一条 `X.who()` 的结果取决于该实例此前有没有取过 `who`。实测(`C.who = f` 后)老实例返旧值、新实例返新值,属最难解释的一类语义,monkey patch 只能算半可用。取消后成员解析每次按当前类链进行,读与调用同一份可见性。
 
-**形态**:`ObjInstance::load_field`(读路径)保留现场绑定但**不写回 fields**;`ObjInstance::resolve_invoke`(调用路径)新增 override -- fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定),交 VM 以 receiver 占槽 0 直调(方法体从槽 0 读 `this`)。由此全部接收者(实例 + 5 个内置类型)共用同一调用规则,**绑定只活在读路径**。`ObjBoundMethod` 因此补 `equals`(receiver 同一 && method 同一):`obj.m == obj.m` 为真、`obj.m === obj.m` 为假(与语言既有的 `==`/`===` 二分、以及 Python bound method 的 `==`/`is` 分工一致)。
+**形态**:`ObjInstance::load_field`(读路径)保留现场绑定但**不写回 fields**;`ObjInstance::load_field_unbound`(调用路径)新增 override -- fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定),交 VM 以 receiver 占槽 0 直调(方法体从槽 0 读 `this`)。由此全部接收者(实例 + 5 个内置类型)共用同一调用规则,**绑定只活在读路径**。`ObjBoundMethod` 因此补 `equals`(receiver 同一 && method 同一):`obj.m == obj.m` 为真、`obj.m === obj.m` 为假(与语言既有的 `==`/`===` 二分、以及 Python bound method 的 `==`/`is` 分工一致)。
 
 **实测**(`bench/vm_bench.cpp`,同前口径,改前=缓存 + 基类默认体 / 改后=本决定,各 3 次):
 
@@ -525,7 +525,7 @@ cmake --build build/rel --target vm_bench -j
 **`Object::op_*_impl(AriaVM&) -> Opt<Value>`**(协议语义 = 取该算子的**实现**,不是算结果)拿到可调用值后 `call_value(target, argc)`
 (二元 1、一元 0)。调用区栈形天然就位:`[lhs, rhs]` 即方法帧 `[this, arg1]`,槽 0 保持 receiver。取实现的实现分两路:
 **基类默认直接 fail**(`type X does not support '<钩子名>'`);**实例** 11 个 override 各按名(aria.hpp 的 `kOp*Name`)
-走 `resolve_invoke`(fields 优先再类链);**内置 string** 5 个 override 直给实现格 `String*Fn`(bootstrap 期从类表拷入)。
+走 `load_field_unbound`(fields 优先再类链);**内置 string** 5 个 override 直给实现格 `String*Fn`(bootstrap 期从类表拷入)。
 
 **查找序**:实例 `fields_` 优先(实例上一个叫 `__add__` 的字段遮蔽类链钩子)再沿类链;内置类型取自身 bootstrap 类表里的原生
 (由用户拍板:查找从实例 fields 起)。取不到即报错,**措辞随宿主**:实例落成员缺席(`<class Box> has no member '__add__'`,
@@ -541,7 +541,7 @@ Int`、`__lt__ expects 1 argument, got 2`):每个钩子的方法名与文案都�
 包 struct 包装类型属过度设计,故名字就地写。四个比较钩子**各自内联完整校验**(元数 + 两侧皆 String + 按无符号字节序比较,
 失败就地 fail;无共用前段)。
 **调用协议同款**:对象被调用时按 `__call__`(`kOpCallName`)取实现后递归分发,未实现即 fail(`type X does not support '__call__'`,
-码 CallNonCallable);类本身仍走实例化。`Object::resolve_invoke` 的基类默认保持隐式委托 load_field
+码 CallNonCallable);类本身仍走实例化。`Object::load_field_unbound` 的基类默认保持隐式委托 load_field
 (未 override 的类型照读路径取值,不设「显式参与」反转)。
 **边界(2026-09-22 拍板,不兜底)**:钩子自指或成环(`d.__call__ = d`、`a.__call__=b;b.__call__=a`)会无穷重入 `call_value` 直到 C++ 栈溢出(SIGSEGV,无错误消息)——按「手写死循环同类」处理,后果由使用者承担:**不加自指检测、不加重入深度上限、不改查找路径**(呈报过的两条修法均否)。
 钩子元数由调用侧钉死(二元恒传 1 个实参、`__neg__` 零个):用户方法钩子经 `call_closure` 的 `check_arity` 检查,内建 string 钩子
@@ -553,4 +553,4 @@ TypeMismatch,无 reflected 形态)。数值侧同批拆过:`run_binary_numeric` 
 **坑**:①`FailSignal` 只在「不可由 bool 构造」的 `Opt<T>` 上转 nullopt——`return vm.fail(...)` 落到 `Opt<i32>`/`Opt<bool>`
 会构出「已初始化的 0/false」把 fail 吞成成功(协议族的 `Opt<Value>` 安全;标量返回型的站点改用 bool + 出参 -- StringBuiltins
 的算子钩子即按 native 契约返 bool、结果写 slots[0])。②Debug 构建下按名查找链未内联,单次算子
-成本被放大数倍,性能判断必须用 Release。③5M 轮字符串算子对照(20M 次操作,Release,best-of-N):改前基线 0.60s、「VM 直接 resolve_invoke」版 0.82s、**现形态(op_*_impl + 实现格直读)0.68s** —— 取实现分两路正是为省掉内建类型的类表查找(约 −7ns/次);余下 +4ns/次是「算子即方法调用」本身的代价。
+成本被放大数倍,性能判断必须用 Release。③5M 轮字符串算子对照(20M 次操作,Release,best-of-N):改前基线 0.60s、「VM 直接 load_field_unbound」版 0.82s、**现形态(op_*_impl + 实现格直读)0.68s** —— 取实现分两路正是为省掉内建类型的类表查找(约 −7ns/次);余下 +4ns/次是「算子即方法调用」本身的代价。

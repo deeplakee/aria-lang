@@ -359,7 +359,7 @@ namespace aria {
         bool run_store_field(ObjString* name);
 
         // PREPARE_METHOD 执行体(两段式第一段,name 已读出):[recv] -> [recv, target]。接收者在栈顶
-        // (实参尚未求值),经 Object::resolve_invoke 协议解析此刻完成(miss 文案由 override 烘焙,
+        // (实参尚未求值),经 Object::load_field_unbound 协议解析此刻完成(miss 文案由 override 烘焙,
         // 非对象守卫文案留执行体,同 run_load_field);待调值压栈跨指令存活(栈即根),实参随后压在
         // 其上,由 CALL_METHOD 收口。解析先于实参求值,与两步形态「LOAD_FIELD + CALL」的时序一致。
         bool run_prepare_method(ObjString* name);

@@ -37,7 +37,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
 - **跳转 `u16` 方向拆分 + 局部槽 `_L`**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)。见 §2.3/§4.12。
-- **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::resolve_invoke` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
+- **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::load_field_unbound` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
 
 ## 2. 操作数编码约定（建议）
 
@@ -273,7 +273,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
 | `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈；不写 fields 缓存 |
-| `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::resolve_invoke` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `resolve_invoke` override 就地烘焙 |
+| `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::load_field_unbound` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `load_field_unbound` override 就地烘焙 |
 | `CALL_METHOD` | `argc:u8` | `[recv, target, a1..aN] -> [r]` | 方法调用的**第二段**：待调值在 `peek(argc)`、接收者在 `peek(argc + 1)`；实参整体下移一格补掉待调值占的那格得调用区 `[recv, a1..aN]`（槽 0 = receiver = this），交 `call_value` 统一分发（执行体 `run_call_method`）。**纯调用**，不再解析；**不物化 ObjBoundMethod**（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
@@ -476,11 +476,11 @@ PREPARE_METHOD "m"      ; [recv, target]       解析此刻完成（实参尚未
 CALL_METHOD argc        ; [r]                  实参整体下移一格补掉 target 占的那格
 ```
 
-执行期：`PREPARE_METHOD` 经 `Object::resolve_invoke` 协议取被调值压栈（跨指令存活靠值栈根化）；`CALL_METHOD` 把实参整体下移一格、得调用区 `[recv, a1..aN]`（槽 0 = receiver = this）后交 `call_value` 分发，方法命中时 `call_bound_method` 用 bound 的 receiver 覆写槽 0（同一对象）、字段里的可调用值/类静态槽值原值占槽 0（不绑）。调用区与两步形态留下的栈形**逐位一致**，故进帧整形（缺省参数垫充/varargs 打包）与异常 unwind 全不受影响。**等价性口径**：两段式是 `LOAD_FIELD` + `CALL` 的等价改造，不是「只在类表里查方法」--字段优先遮蔽方法、非可调用成员照旧报 `CallNonCallable`，都靠复用同一条成员解析路径保证。
+执行期：`PREPARE_METHOD` 经 `Object::load_field_unbound` 协议取被调值压栈（跨指令存活靠值栈根化）；`CALL_METHOD` 把实参整体下移一格、得调用区 `[recv, a1..aN]`（槽 0 = receiver = this）后交 `call_value` 分发，方法命中时 `call_bound_method` 用 bound 的 receiver 覆写槽 0（同一对象）、字段里的可调用值/类静态槽值原值占槽 0（不绑）。调用区与两步形态留下的栈形**逐位一致**，故进帧整形（缺省参数垫充/varargs 打包）与异常 unwind 全不受影响。**等价性口径**：两段式是 `LOAD_FIELD` + `CALL` 的等价改造，不是「只在类表里查方法」--字段优先遮蔽方法、非可调用成员照旧报 `CallNonCallable`，都靠复用同一条成员解析路径保证。
 
 **次序语义（与两步形态、与主流一致）**：解析先于实参求值，Python/Lua/JS 同款。可观察两处：① 实参表达式反过来改写接收者同名成员时，本次调用用的是**改写前**取好的那个值；② 解析失败（成员缺失/非对象）时实参**根本不跑**。两处都由语料钉住（`tests/language/positive/11_classes/invoke_method_forms.aria`）。
 
-> 设计边界：本缝要求解析是**纯查询**（当前实现满足：字段命中 / 类链走表，无用户代码）。若将来引入「解析可跑用户代码」的成员面（getter/property/`__getattr__`），解析位置已经正确（`PREPARE_METHOD` 内），但还需另做「同步跑到该帧返回再取值」的嵌套调用机制，不得把用户代码塞进 `resolve_invoke` override 的返回值语义里。
+> 设计边界：本缝要求解析是**纯查询**（当前实现满足：字段命中 / 类链走表，无用户代码）。若将来引入「解析可跑用户代码」的成员面（getter/property/`__getattr__`），解析位置已经正确（`PREPARE_METHOD` 内），但还需另做「同步跑到该帧返回再取值」的嵌套调用机制，不得把用户代码塞进 `load_field_unbound` override 的返回值语义里。
 
 一处**形态差异**：非方法成员被调用时，调用区槽 0 是**接收者**而非那个成员值本身（两步形态下 `LOAD_FIELD` 会把接收者顶替成成员值）。可观察的有两处：① `x.init()`（实例上经类链解析到 Object 根的**原生** no-op init，不被绑定）返回**实例本身**，而非那个原生函数对象——与集合计划决策 D1「调用返回 receiver 自身」一致；② `C.m(args)`（经类调实例方法：方法戳闭包被当值调、不被绑定）时方法体里的 `this` 是**类对象**（两步形态下是那个闭包自身）。① 由语料钉住，② 为同一条规则的派生形态、不作承诺。
 
@@ -562,7 +562,7 @@ L_end:
 
 **现状**：`obj.m(args)` 发 `PREPARE_METHOD name` + `CALL_METHOD argc` 两段（见 §5.6）。历史两阶段：① 最初是 `LOAD_FIELD`(返回绑定方法) + `CALL` 两步，每次调用铸一个 `ObjBoundMethod`；② 单条 `INVOKE_METHOD` 融合掉这次物化并把解析推到执行期（晚于实参求值）；③ 现改回两段，把解析放回实参求值**之前**（次序语义），同时保留 ② 的零物化。
 
-**解析协议**（`Object::resolve_invoke`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口——槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认体即 `load_field`；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
+**解析协议**（`Object::load_field_unbound`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口——槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认体即 `load_field`；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
 
 **实测**（`bench/vm_bench.cpp`，Release/-O2/无 LTO，每行 1,638,400 次循环体）：
 
@@ -642,7 +642,7 @@ code:
 | 2 | 常量索引位宽 | `u16` 统一（暂不变；真超 65535 再加 `LOAD_CONST_L`） | `u8` + 长变体 |
 | 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
 | 4 | `ADD` 重载 | 承载数值加 + 字符串/list 拼接 | 仅数值，拼接走内建 |
-| 5 | 方法调用派发 | 已落地并**两段化**：`PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，解析经 `Object::resolve_invoke`，内置侧零 bound 物化）；曾以单条 `INVOKE_METHOD` 融合实现，因次序语义改判（见 §6.2） | 目标槽放调用区之下（需帧位/收尾指令，实测更慢）；`LOAD_FIELD` + `CALL` 两步（每次调用物化 bound） |
+| 5 | 方法调用派发 | 已落地并**两段化**：`PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，解析经 `Object::load_field_unbound`，内置侧零 bound 物化）；曾以单条 `INVOKE_METHOD` 融合实现，因次序语义改判（见 §6.2） | 目标槽放调用区之下（需帧位/收尾指令，实测更慢）；`LOAD_FIELD` + `CALL` 两步（每次调用物化 bound） |
 | 6 | 异常机制 | CodeUnit 内记录表（已落地; `finally` 不做、后继 defer 为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |
 | 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |

@@ -35,7 +35,7 @@ namespace aria {
         // -- 恒绑定但不铸 ObjBoundMethod(内置侧 bound 无缓存可回填,每取一次白铸一个;forIn 每迭代
         // 两个,见集合计划 §4.4 基线)。调用区槽 0 保持 receiver 原样,正是原生要的 this。
         [[nodiscard]]
-        Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
         // 引擎缝:是否还有下一个元素。纯查询 --无分配、无 fail,故不收 vm。
         [[nodiscard]]

@@ -47,7 +47,7 @@ namespace aria {
         return Value::from_obj(new_bound_method(vm.gc(), member, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjInstance::resolve_invoke(AriaVM& vm, ObjString* name) {
+    Opt<Value> ObjInstance::load_field_unbound(AriaVM& vm, ObjString* name) {
         // 调用路径的成员解析:与内置类型同一条规则 -- **不绑定**,返回字段/类链里的原值,调用区
         // 槽 0 由 CALL_METHOD 保持 receiver(方法戳闭包的方法体从槽 0 读 this,原生以槽 0 为 this
         // 兼返回槽)。
@@ -68,35 +68,39 @@ namespace aria {
     // 算子/调用协议实现:按名到本实例(实例 fields 优先,可遮蔽类链钩子)再类链取实现 --
     // 「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。名字经 new_string 取 intern 串(已驻留,
     // 命中不分配)。
-    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpAddName)); }
+    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpAddName)); }
 
-    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpSubName)); }
+    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpSubName)); }
 
-    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpMulName)); }
+    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpMulName)); }
 
-    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpDivName)); }
+    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpDivName)); }
 
-    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpModName)); }
+    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpModName)); }
 
-    Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpLessName)); }
+    Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) {
+        return load_field_unbound(vm, new_string(vm.gc(), kOpLessName));
+    }
 
     Opt<Value> ObjInstance::op_less_equal_impl(AriaVM& vm) {
-        return resolve_invoke(vm, new_string(vm.gc(), kOpLessEqualName));
+        return load_field_unbound(vm, new_string(vm.gc(), kOpLessEqualName));
     }
 
     Opt<Value> ObjInstance::op_greater_impl(AriaVM& vm) {
-        return resolve_invoke(vm, new_string(vm.gc(), kOpGreaterName));
+        return load_field_unbound(vm, new_string(vm.gc(), kOpGreaterName));
     }
 
     Opt<Value> ObjInstance::op_greater_equal_impl(AriaVM& vm) {
-        return resolve_invoke(vm, new_string(vm.gc(), kOpGreaterEqualName));
+        return load_field_unbound(vm, new_string(vm.gc(), kOpGreaterEqualName));
     }
 
     Opt<Value> ObjInstance::op_negate_impl(AriaVM& vm) {
-        return resolve_invoke(vm, new_string(vm.gc(), kOpNegateName));
+        return load_field_unbound(vm, new_string(vm.gc(), kOpNegateName));
     }
 
-    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpCallName)); }
+    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) {
+        return load_field_unbound(vm, new_string(vm.gc(), kOpCallName));
+    }
 
     void ObjInstance::trace(GC& gc) const noexcept {
         gc.mark_object(class_);

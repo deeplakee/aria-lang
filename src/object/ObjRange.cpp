@@ -50,7 +50,7 @@ namespace aria {
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjRange::resolve_invoke(AriaVM& vm, ObjString* name) {
+    Opt<Value> ObjRange::load_field_unbound(AriaVM& vm, ObjString* name) {
         // 方法调用解析(PREPARE_METHOD):与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
         // -- **不铸 ObjBoundMethod** 正是本 override 存在的理由(load_field 那条读路径要绑定;内置侧
         // 无 fields 缓存可回填,两步形态每取一次方法白铸一个,迭代协议每迭代两次,见集合计划 §4.4);

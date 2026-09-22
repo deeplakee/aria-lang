@@ -190,7 +190,7 @@ TEST(ObjInstance, UnrootedInstanceSwept) {
 // load_field 分流:fields 命中优先 → 委托类协议(ObjClass::load_field 沿链读穿透直读,类协议
 // 不绑定不缓存):方法闭包(看 defining class 戳不看值类型)现场绑 this(**每次访问一个新 bound,
 // 不写回 fields**)、其余直读、全链 miss 随类措辞 fail(本 override 只透传)。类/父类改写后实例
-// 立即见新值(读与调用同一份可见性)。resolve_invoke(调用路径)与内置同规则:不绑定,给原值。
+// 立即见新值(读与调用同一份可见性)。load_field_unbound(调用路径)与内置同规则:不绑定,给原值。
 TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -242,13 +242,13 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     EXPECT_FALSE(value_identical(*first_read, *second_read));
     EXPECT_TRUE(aria::value_equal(*first_read, *second_read));
 
-    // 调用路径解析(resolve_invoke)不绑定:直接给类表里的方法闭包原值(槽 0 由 VM 交 receiver)。
-    auto invoke_target = inst->resolve_invoke(vm, mkey);
+    // 调用路径解析(load_field_unbound)不绑定:直接给类表里的方法闭包原值(槽 0 由 VM 交 receiver)。
+    auto invoke_target = inst->load_field_unbound(vm, mkey);
     ASSERT_TRUE(invoke_target.has_value());
     EXPECT_TRUE(value_identical(*invoke_target, Value::from_obj(method)));
     // 真字段优先:字段里存的任意值原值直调(可调用与否由 VM 侧判定)。
     EXPECT_TRUE(inst->store_field(vm, mkey, Value::from_obj(sv2)));
-    auto field_target = inst->resolve_invoke(vm, mkey);
+    auto field_target = inst->load_field_unbound(vm, mkey);
     ASSERT_TRUE(field_target.has_value());
     EXPECT_TRUE(value_identical(*field_target, Value::from_obj(sv2)));
 

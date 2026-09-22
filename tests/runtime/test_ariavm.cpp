@@ -2778,7 +2778,7 @@ TEST_F(AriaVMStress, MethodCallBindsInstanceReceiver) {
 }
 
 // 两段式的存在理由:内置类型无 fields 缓存,两步形态每次取方法铸一个 ObjBoundMethod;
-// 两段式经 Object::resolve_invoke 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
+// 两段式经 Object::load_field_unbound 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
 // GC 的确定性读数(不随计时抖动),故本测试直接钉「同一趟 list.push + 取回元素」两侧的分配差 = 1。
 TEST_F(AriaVMStress, MethodCallOnBuiltinSkipsBoundMaterialization) {
 

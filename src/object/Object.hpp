@@ -188,22 +188,27 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaVM& vm, ObjString* name);
 
-        // 命名成员的方法调用解析(PREPARE_METHOD 统一入口):只回答**该被调的值**,错误契约同
-        // load_field(nullopt ⟺ 已 fail,文案随宿主 override 就地烘焙)。调用方(VM 的
-        // run_prepare_method)在实参求值**之前**调用本缝,把返回值压在接收者之上;CALL_METHOD
-        // 再把实参整体下移一格补掉它,调用区回到 [recv, a1..aN],槽 0 保持接收者原样不动 -- 这是不
-        // 铸 bound 的关键:方法命中时 call_bound_method 自会用 bound 的 receiver 覆写槽 0;内置类表
-        // 的原生函数恰好**正需要**槽 0 = receiver(其 this 兼返回槽,call_native 从不碰槽 0);字段里
-        // 的可调用值/静态槽值走闭包或原生调用、不读槽 0。故本缝不涉槽位约定(「非方法成员被调用时
-        // 槽 0 为接收者而非成员值」这一形态差异见 bytecode-instruction-set.md §5.6)。
-        // **基类默认 = load_field**(类/模块等未 override 者);命中即该值本身,miss 文案随宿主烘焙。
-        // **实例与内置容器/迭代器各自 override**(同一个理由:调用路径不该铸 ObjBoundMethod)--
+        // 命名成员读取的不绑定形态(PREPARE_METHOD 统一入口):与 load_field 同一趟查找,但
+        // **永不铸 ObjBoundMethod**、命中即原值直出;错误契约同 load_field(nullopt ⟺ 已
+        // fail,文案随宿主 override 就地烘焙)。消费方两类:①VM 的 run_prepare_method -- 实参
+        // 求值**之前**调本缝取被调值;②实例 11 个 op_*_impl -- 按算子/调用钩子名取 `__add__`/
+        // `__call__` 等实现。
+        // 调用时序与槽位:run_prepare_method 把返回值压在接收者之上,CALL_METHOD 再把实参整体
+        // 下移一格补掉它,调用区回到 [recv, a1..aN],槽 0 保持接收者原样不动 -- 这是不铸 bound
+        // 的关键:方法命中时 call_bound_method 自会用 bound 的 receiver 覆写槽 0;内置类表的
+        // 原生函数恰好**正需要**槽 0 = receiver(其 this 兼返回槽,call_native 从不碰槽 0);
+        // 字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。故本缝不涉槽位约定(「非方法成员
+        // 被调用时槽 0 为接收者而非成员值」这一形态差异见 bytecode-instruction-set.md §5.6)。
+        // **基类默认 = load_field**(类/模块等未 override 者:其读取本就不绑定,照读路径取值),
+        // 命中即该值本身,miss 文案随宿主烘焙。
+        // **实例与内置容器/迭代器各自 override**(同一个理由:读取路径要绑定,本缝永不铸
+        // ObjBoundMethod)--
         //   实例:fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定,方法体从槽 0 读 this),
         //         零分配且每次按当前类链解析(改类/父类方法立即生效,见 ObjInstance.hpp);
         //   内置容器/迭代器:查自身 bootstrap 类表取原生值(条目恒为原生、恒绑定),miss 的类措辞
         //          fail 随 ObjClass::load_field 透传。
         [[nodiscard]]
-        virtual Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name);
+        virtual Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name);
 
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):基类默认报 "type X does
         // not support field access";ObjClass 落本类自身表恒成功;ObjInstance 动态字段永不失败。
@@ -229,9 +234,9 @@ namespace aria {
         // `__call__`)。
         // **基类默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与
         // load_field/store_field 等基类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 --
-        // 11 个 override 各按名 resolve_invoke(实例 fields 可遮蔽,再类链);②内置 string -- 5 个算子
+        // 11 个 override 各按名 load_field_unbound(实例 fields 可遮蔽,再类链);②内置 string -- 5 个算子
         // 直给实现格 String*Fn(免查找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")`
-        // 读路径不变)。非 const(取实现可能物化绑定,与 load_field/resolve_invoke 同族)。
+        // 读路径不变)。非 const(取实现可能物化绑定,与 load_field/load_field_unbound 同族)。
         //////////////////////////
 
         [[nodiscard]]

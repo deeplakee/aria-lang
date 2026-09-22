@@ -6,11 +6,11 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjList.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjListIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/builtins/Builtins.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
@@ -236,11 +236,6 @@ namespace aria {
             return true;
         }
 
-        struct ListBuiltinEntry {
-            StringView name;
-            NativeFn   fn;
-        };
-
         // join(sep) -> string:元素经 format_value(显示形,嵌套字符串不带引号)转字符串后
         // 以 sep 连接(JS 式宽松,任意元素;空 list 返空串;sep 可为空串 --"ab" 式粘合)。
         // 底座 util::join(HashTable 迭代器批铺的缝在此兑现)。GC 走查:util::join 遍历
@@ -274,9 +269,8 @@ namespace aria {
             return true;
         }
 
-        // list 方法表:注册进 List bootstrap 类(kBuiltins 同款循环)。注册名经 new_native_fn
-        // 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同指针,查表按指针命中。
-        constexpr ListBuiltinEntry kListBuiltins[] = {
+        // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        constexpr builtins::BuiltinEntry kListBuiltins[] = {
                 {"push", push_fn},           {"pop", pop_fn},
                 {"insert", insert_fn},       {"remove", remove_fn},
                 {"remove_at", remove_at_fn}, {"clear", clear_fn},
@@ -288,11 +282,6 @@ namespace aria {
 
     } // namespace
 
-    void register_list_builtins(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kListBuiltins) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
-        }
-    }
+    void register_list_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kListBuiltins); }
 
 } // namespace aria

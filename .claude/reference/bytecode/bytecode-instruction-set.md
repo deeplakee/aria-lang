@@ -584,7 +584,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `register_builtins` 一次性填充 type/len/str/assert）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `register_builtin_functions` 一次性填充 type/len/str/assert）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 需切片能力，可由内建 `slice` 或 `MAKE_RANGE`+下标协议承载。
 
 ### 6.5 迭代器

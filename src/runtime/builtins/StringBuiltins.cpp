@@ -4,11 +4,11 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjList.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjStringIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/builtins/Builtins.hpp"
 #include "util/utf8.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -272,15 +272,8 @@ namespace aria {
             return true;
         }
 
-        struct StringBuiltinEntry {
-            StringView name;
-            NativeFn   fn;
-        };
-
-        // string 方法表:注册进 String bootstrap 类(kListBuiltins 同款循环)。注册名经
-        // new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同
-        // 指针,查表按指针命中。
-        constexpr StringBuiltinEntry kStringBuiltins[] = {
+        // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        constexpr builtins::BuiltinEntry kStringBuiltins[] = {
                 {"upper", upper_fn},         {"lower", lower_fn},
                 {"trim", trim_fn},           {"split", split_fn},
                 {"find", find_fn},           {"replace", replace_fn},
@@ -291,11 +284,6 @@ namespace aria {
 
     } // namespace
 
-    void register_string_builtins(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kStringBuiltins) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
-        }
-    }
+    void register_string_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kStringBuiltins); }
 
 } // namespace aria

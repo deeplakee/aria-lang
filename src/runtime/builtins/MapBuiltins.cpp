@@ -4,20 +4,15 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjMap.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/builtins/Builtins.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
 
     namespace {
-
-        struct MapBuiltinEntry {
-            StringView name;
-            NativeFn   fn;
-        };
 
         // iter() -> 迭代器:铸造 ObjMapIterator(map 与其迭代器成对,铸造口按类型解开
         // receiver)。GC 时序同 ListBuiltins::iter_fn:map 在 slots[0] 于栈根,迭代器白色
@@ -32,19 +27,15 @@ namespace aria {
             return true;
         }
 
-        // map 方法表:注册进 Map bootstrap 类(kListBuiltins 同款循环)。has_next/next 不在
-        // 此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只加迭代器子类)。
-        constexpr MapBuiltinEntry kMapBuiltins[] = {
+        // map 方法表:注册进 Map bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只
+        // 加迭代器子类)。
+        constexpr builtins::BuiltinEntry kMapBuiltins[] = {
                 {"iter", iter_fn},
         };
 
     } // namespace
 
-    void register_map_builtins(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kMapBuiltins) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
-        }
-    }
+    void register_map_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kMapBuiltins); }
 
 } // namespace aria

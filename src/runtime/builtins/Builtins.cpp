@@ -2,6 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjMap.hpp"
 #include "object/ObjNativeFn.hpp"
@@ -82,11 +83,6 @@ namespace aria::builtins {
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
-        struct BuiltinEntry {
-            StringView name;
-            NativeFn   fn;
-        };
-
         // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表。
         constexpr BuiltinEntry kBuiltins[] = {
                 {"type", type_fn},
@@ -101,10 +97,17 @@ namespace aria::builtins {
     // (GC 挂起)内**调用一次:new_native_fn 的白色对象免逐个守卫(窗口内回收不可达),建成即
     // 入表、入表条目经 vm_roots tracer 的 builtins_.trace 标根;StringView 重载经 intern 池
     // 建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
-    void register_builtins(GC& gc, AriaHashTable& builtins) {
+    void register_builtin_functions(GC& gc, AriaHashTable& builtins) {
         for (const auto& [name, fn]: kBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             builtins.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
+        }
+    }
+
+    void register_builtin_methods(GC& gc, ObjClass* klass, const Span<const BuiltinEntry> methods) {
+        for (const auto& [name, fn]: methods) {
+            const auto fn_obj = new_native_fn(gc, name, fn);
+            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
     }
 

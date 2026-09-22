@@ -2,10 +2,12 @@
 #define ARIA_BUILTINS_HPP
 
 #include "common.hpp"
+#include "object/ObjNativeFn.hpp" // NativeFn
 
 namespace aria {
 
     class GC;
+    class ObjClass;
     class AriaHashTable;
 
     // 内置函数注册机制:把 type/len/str/assert 等内建原生函数按名注册进 **VM 级只读
@@ -18,12 +20,26 @@ namespace aria {
     // 本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局
     // 自由函数表**(本文件,LOAD_GLOBAL 回退触达);**XXXBuiltins = XXX 类型的内建方法面**
     //(List/Map/Iterator/String/Range,恒经 bootstrap 类表分派、恒绑定 receiver)。前缀有无即
-    // 两类机制的区分。
+    // 两类机制的区分;两者共用的底座(条目形态 BuiltinEntry、类型方法面装载
+    // register_builtin_methods)亦住本文件 --本文件即目录伞文件,先述底座再述全局表。
     namespace builtins {
+
+        // 内建表条目:名 + 原生函数指针。全局自由函数表(kBuiltins)与各类型方法表
+        // (kListBuiltins / kStringBuiltins / kMapBuiltins / kRangeBuiltins / kIteratorBuiltins)
+        // 同此一形态。
+        struct BuiltinEntry {
+            StringView name;
+            NativeFn   fn;
+        };
+
+        // 按名把内建方法表逐条注册进**类字段表**,成为该类实例的内建方法面(receiver 恒绑定):
+        // name 作字段键,经 new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射
+        // 的同名常量同指针,查表按指针命中。全局表不经此(只此一处填,循环就地写在定义里)。
+        void register_builtin_methods(GC& gc, ObjClass* klass, Span<const BuiltinEntry> methods);
 
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次(在建对象经 make_guard
         // 双守卫,见定义)。
-        void register_builtins(GC& gc, AriaHashTable& builtins);
+        void register_builtin_functions(GC& gc, AriaHashTable& builtins);
 
     } // namespace builtins
 

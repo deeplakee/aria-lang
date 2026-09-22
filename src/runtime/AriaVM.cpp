@@ -248,7 +248,7 @@ namespace aria {
             // builtins_,tracer 已挂接)。
             const auto lock = gc_.make_lock();
             bootstrap_registers();
-            builtins::register_builtins(gc_, builtins_);
+            builtins::register_builtin_functions(gc_, builtins_);
         }
     }
 

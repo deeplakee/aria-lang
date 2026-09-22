@@ -3,21 +3,16 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjRange.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/builtins/Builtins.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
 
     namespace {
-
-        struct RangeBuiltinEntry {
-            StringView name;
-            NativeFn   fn;
-        };
 
         // iter() -> 迭代器:铸造 ObjRangeIterator(range 与其迭代器成对,铸造口按类型解开
         // receiver)。GC 时序同 MapBuiltins::iter_fn:range 在 slots[0] 于栈根,迭代器白色
@@ -33,19 +28,15 @@ namespace aria {
             return true;
         }
 
-        // range 方法表:注册进 Range bootstrap 类(kMapBuiltins 同款循环)。has_next/next 不在
-        // 此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只加迭代器子类)。
-        constexpr RangeBuiltinEntry kRangeBuiltins[] = {
+        // range 方法表:注册进 Range bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只
+        // 加迭代器子类)。
+        constexpr builtins::BuiltinEntry kRangeBuiltins[] = {
                 {"iter", iter_fn},
         };
 
     } // namespace
 
-    void register_range_builtins(GC& gc, ObjClass* klass) {
-        for (const auto& [name, fn]: kRangeBuiltins) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
-        }
-    }
+    void register_range_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kRangeBuiltins); }
 
 } // namespace aria

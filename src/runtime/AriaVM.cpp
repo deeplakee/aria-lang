@@ -734,9 +734,23 @@ namespace aria {
         return run_binary_numeric<Op>();
     }
 
+    bool AriaVM::run_negate() {
+        // [v] -> [r]:整数/浮点就地取负(数值快路径不变);其余类型报 InvalidOperand,文案逐字不变。
+        const Value operand = current_->peek(0);
+        if (operand.is_int()) {
+            current_->peek(0) = Value::from_int(-operand.as_int());
+            return true;
+        }
+        if (operand.is_f64()) {
+            current_->peek(0) = Value::from_f64(-operand.as_f64());
+            return true;
+        }
+        return fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
+    }
+
     template<OpCode Op>
     bool AriaVM::run_binary_numeric() {
-        // 双 Int 走整数路径,任一 F64 升浮点(int 除/模零报错,% 为 C++ 语义,f64 按 IEEE)。
+        // 数值二元的入口:弹 2、类型守卫、按域分流(两个域语义不同,实现各住自己的辅助方法)。
         const Value b = current_->pop();
         const Value a = current_->pop();
         if (!(is_num(a) && is_num(b))) {
@@ -744,59 +758,69 @@ namespace aria {
                         type_name(a), type_name(b));
         }
         if (a.is_int() && b.is_int()) {
-            const auto x = a.as_int();
-            const auto y = b.as_int();
-            if constexpr (Op == OpCode::ADD) {
-                current_->push(Value::from_int(x + y));
-            } else if constexpr (Op == OpCode::SUBTRACT) {
-                current_->push(Value::from_int(x - y));
-            } else if constexpr (Op == OpCode::MULTIPLY) {
-                current_->push(Value::from_int(x * y));
-            } else if constexpr (Op == OpCode::DIVIDE) {
-                if (y == 0) {
-                    return fail(ErrorCode::DivisionByZero, "integer division by zero");
-                }
-                current_->push(Value::from_int(x / y));
-            } else if constexpr (Op == OpCode::MOD) {
-                if (y == 0) {
-                    return fail(ErrorCode::ModuloByZero, "integer modulo by zero");
-                }
-                current_->push(Value::from_int(x % y));
-            } else if constexpr (Op == OpCode::GREATER) {
-                current_->push(Value::from_bool(x > y));
-            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-                current_->push(Value::from_bool(x >= y));
-            } else if constexpr (Op == OpCode::LESS) {
-                current_->push(Value::from_bool(x < y));
-            } else if constexpr (Op == OpCode::LESS_EQUAL) {
-                current_->push(Value::from_bool(x <= y));
-            } else {
-                UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
-            }
-            return true;
+            return run_binary_int<Op>(a.as_int(), b.as_int());
         }
-        const auto x = a.is_f64() ? a.as_f64() : static_cast<f64>(a.as_int());
-        const auto y = b.is_f64() ? b.as_f64() : static_cast<f64>(b.as_int());
+        // 任一 F64 升浮点:另一侧按字面值升。
+        return run_binary_f64<Op>(a.is_f64() ? a.as_f64() : static_cast<f64>(a.as_int()),
+                                  b.is_f64() ? b.as_f64() : static_cast<f64>(b.as_int()));
+    }
+
+    template<OpCode Op>
+    bool AriaVM::run_binary_int(const i64 lhs, const i64 rhs) {
+        // 整数域九算子:结果压栈。除/模零是域特有失败(整数无 inf/nan),就地 fail;% 为 C++ 语义。
         if constexpr (Op == OpCode::ADD) {
-            current_->push(Value::from_f64(x + y));
+            current_->push(Value::from_int(lhs + rhs));
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            current_->push(Value::from_f64(x - y));
+            current_->push(Value::from_int(lhs - rhs));
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            current_->push(Value::from_f64(x * y));
+            current_->push(Value::from_int(lhs * rhs));
         } else if constexpr (Op == OpCode::DIVIDE) {
-            current_->push(Value::from_f64(x / y)); // IEEE: 除零得 inf/nan
+            if (rhs == 0) {
+                return fail(ErrorCode::DivisionByZero, "integer division by zero");
+            }
+            current_->push(Value::from_int(lhs / rhs));
         } else if constexpr (Op == OpCode::MOD) {
-            current_->push(Value::from_f64(std::fmod(x, y)));
+            if (rhs == 0) {
+                return fail(ErrorCode::ModuloByZero, "integer modulo by zero");
+            }
+            current_->push(Value::from_int(lhs % rhs));
         } else if constexpr (Op == OpCode::GREATER) {
-            current_->push(Value::from_bool(x > y));
+            current_->push(Value::from_bool(lhs > rhs));
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            current_->push(Value::from_bool(x >= y));
+            current_->push(Value::from_bool(lhs >= rhs));
         } else if constexpr (Op == OpCode::LESS) {
-            current_->push(Value::from_bool(x < y));
+            current_->push(Value::from_bool(lhs < rhs));
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            current_->push(Value::from_bool(x <= y));
+            current_->push(Value::from_bool(lhs <= rhs));
         } else {
-            UNREACHABLE();
+            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+        }
+        return true;
+    }
+
+    template<OpCode Op>
+    bool AriaVM::run_binary_f64(const f64 lhs, const f64 rhs) const {
+        // 浮点域九算子:结果压栈。按 IEEE(除零得 inf/nan、% 走 fmod,无失败路径),故无 fail 分支。
+        if constexpr (Op == OpCode::ADD) {
+            current_->push(Value::from_f64(lhs + rhs));
+        } else if constexpr (Op == OpCode::SUBTRACT) {
+            current_->push(Value::from_f64(lhs - rhs));
+        } else if constexpr (Op == OpCode::MULTIPLY) {
+            current_->push(Value::from_f64(lhs * rhs));
+        } else if constexpr (Op == OpCode::DIVIDE) {
+            current_->push(Value::from_f64(lhs / rhs));
+        } else if constexpr (Op == OpCode::MOD) {
+            current_->push(Value::from_f64(std::fmod(lhs, rhs)));
+        } else if constexpr (Op == OpCode::GREATER) {
+            current_->push(Value::from_bool(lhs > rhs));
+        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+            current_->push(Value::from_bool(lhs >= rhs));
+        } else if constexpr (Op == OpCode::LESS) {
+            current_->push(Value::from_bool(lhs < rhs));
+        } else if constexpr (Op == OpCode::LESS_EQUAL) {
+            current_->push(Value::from_bool(lhs <= rhs));
+        } else {
+            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }
         return true;
     }
@@ -1275,20 +1299,15 @@ namespace aria {
                 case OpCode::NOT:
                     current_->push(Value::from_bool(!is_truthy(current_->pop())));
                     break;
-                case OpCode::NEGATE: {
-                    if (const Value v = current_->pop(); v.is_int()) {
-                        current_->push(Value::from_int(-v.as_int()));
-                    } else if (v.is_f64()) {
-                        current_->push(Value::from_f64(-v.as_f64()));
-                    } else {
-                        raise(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(v));
+                // 一元(执行体 run_negate:数值就地取负)
+                case OpCode::NEGATE:
+                    if (!run_negate()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
                     }
                     break;
-                }
 
                 // ---- 栈操作 ----
                 case OpCode::POP:

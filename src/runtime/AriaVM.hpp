@@ -291,10 +291,22 @@ namespace aria {
 
         // ---- 异常 unwind(M3,dispatch_loop 驱动期专用)----
 
-        // 弹 2 算 1:栈顶两值的二元数值运算(9 个算术/比较指令共用,Op 由调用点穷举实例化)。
-        // bool 契约同 call_value;模板成员定义在 .cpp(实例化点全在本 TU)。
+        // 弹 2 算 1:栈顶两值的二元数值运算入口(9 个算术/比较指令共用,Op 由调用点穷举实例化)--
+        // 类型守卫后按**域**分流:双 Int 走 run_binary_int、任一 F64 升浮点走 run_binary_f64(两域
+        // 失败语义不同,实现各住自己的辅助方法)。bool 契约同 call_value;模板成员定义在 .cpp
+        //(实例化点全在本 TU)。
         template<OpCode Op>
         bool run_binary_numeric();
+
+        // 整数域九算子(结果压栈):除/模零是域特有失败,就地 fail;% 为 C++ 语义。
+        template<OpCode Op>
+        [[nodiscard]]
+        bool run_binary_int(i64 lhs, i64 rhs);
+
+        // 浮点域九算子(结果压栈):按 IEEE,除零得 inf/nan、% 走 fmod,无失败路径。
+        template<OpCode Op>
+        [[nodiscard]]
+        bool run_binary_f64(f64 lhs, f64 rhs) const;
 
         // ADD 执行体:数值左值委托 run_binary_numeric(快路径不变),对象左值走 op_add 协议缝
         // (算术族唯一接线的对象侧;其余算术/比较指令仍数值专用,无消费者不加放宽线)。peek 不弹
@@ -307,6 +319,10 @@ namespace aria {
         // 用户类 override 的分配都须两侧在栈。
         template<OpCode Op>
         bool run_binary_compare();
+
+        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负(数值快路径不变),其余类型报 InvalidOperand。
+        // bool 契约同 call_value。
+        bool run_negate();
 
         // ---- 类与对象(M5):field 族指令执行体 ----
         //

@@ -64,7 +64,7 @@ namespace {
     }
 
     // ---- 正确性校验(非计时)----
-    // 完整跑一遍 insert / for_each / find / erase,核验键和、值和、计数与删除后状态。
+    // 完整跑一遍 insert / 遍历 / find / erase,核验键和、值和、计数与删除后状态。
     template<class Hash>
     void verify_correctness(usize n) {
         GC             gc;
@@ -75,13 +75,13 @@ namespace {
         BENCH_CHECK(ht.size() == n, "size after insert");
 
         long sum_k = 0, sum_v = 0, cnt = 0;
-        ht.for_each_occupied([&](const int& k, const int& v) {
-            sum_k += k;
-            sum_v += v;
+        for (const auto& entry: ht) {
+            sum_k += entry.key;
+            sum_v += entry.value;
             ++cnt;
-        });
+        }
         const long expected = static_cast<long>(n) * (static_cast<long>(n) - 1) / 2;
-        BENCH_CHECK(cnt == static_cast<long>(n), "for_each count");
+        BENCH_CHECK(cnt == static_cast<long>(n), "iteration count");
         BENCH_CHECK(sum_k == expected, "sum of keys");
         BENCH_CHECK(sum_v == expected * 7, "sum of values");
 

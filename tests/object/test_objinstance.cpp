@@ -179,7 +179,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
 TEST(ObjInstance, UnrootedInstanceSwept) {
     GC   gc;
     auto klass = make_class(gc, "orphan");
-    (void) make_instance(gc, klass); // 双双无根
+    make_instance(gc, klass); // 双双无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

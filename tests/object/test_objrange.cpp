@@ -311,9 +311,9 @@ TEST(ObjRangeIterator, NextPastEndFailsFast) {
     auto   guard = gc.make_guard();
     auto   range = make_range(gc, guard, 0, 2, false);
     auto   iter  = make_range_iterator(gc, guard, range);
-    (void) take_next(vm, iter);
-    (void) take_next(vm, iter);
-    (void) take_next(vm, iter);
+    take_next(vm, iter);
+    take_next(vm, iter);
+    take_next(vm, iter);
     const auto value = iter->next(vm);
     EXPECT_FALSE(value.has_value());
     const auto [code, message] = take_pending_error(vm);

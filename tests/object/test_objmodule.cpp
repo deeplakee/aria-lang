@@ -125,7 +125,7 @@ TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
 // 未根模块被 sweep 回收。
 TEST(ObjModule, UnrootedModuleSwept) {
     GC gc;
-    (void) make_module(gc, "orphan");
+    make_module(gc, "orphan");
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

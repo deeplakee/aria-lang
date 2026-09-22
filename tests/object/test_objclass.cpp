@@ -285,7 +285,7 @@ TEST(ObjClass, DefiningClassSurvivesViaClosureTrace) {
 // 未根类被 sweep。
 TEST(ObjClass, UnrootedClassSwept) {
     GC gc;
-    (void) make_class(gc, "orphan");
+    make_class(gc, "orphan");
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

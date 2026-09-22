@@ -330,8 +330,8 @@ TEST(ObjMap, UnrootedMapSwept) {
     GC gc;
     {
         auto guard = gc.make_guard();
-        (void) make_string(gc, guard, "orphan");
-        (void) make_map(gc, guard); // 守卫退出后双双失根
+        make_string(gc, guard, "orphan");
+        make_map(gc, guard); // 守卫退出后双双失根
     }
     const usize before = gc.bytes_allocated();
     gc.collect();

@@ -836,6 +836,36 @@ TEST(Compiler, StringBuiltinsUnderStressGc) {
               40);
 }
 
+// size/is_empty:字节域(len 的方法形态);码点数走 len(chars())。
+TEST(Compiler, StringSizeIsEmpty) {
+    EXPECT_EQ(run_int(R"(return "héllo".size();)"), 6); // 字节域:6 字节、5 码点
+    EXPECT_EQ(run_int(R"(return "".size();)"), 0);
+    EXPECT_EQ(run_int(R"(if ("".is_empty() && !"a".is_empty()) { return 1; } return 0;)"), 1);
+}
+
+// contains:按字节子串判定,未命中 false 不报错;空串参数恒真;非 string 参数 TypeMismatch。
+TEST(Compiler, StringContainsSubstring) {
+    EXPECT_EQ(run_int(R"(if ("hello".contains("ell") && !"hello".contains("xyz")) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello".contains("") && "".contains("")) { return 1; } return 0;)"), 1);
+
+    auto bad = run_source(R"(return "hello".contains(1);)");
+    ASSERT_FALSE(bad.has_value());
+    EXPECT_EQ(bad.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(bad.error().message().find("contains argument must be a string, got Int"), std::string::npos);
+}
+
+// chars:逐码点切 1-char string(与迭代同单位);len(chars()) 即码点数;join 回原文;非法字节序列
+// 产出替换码点串(同迭代口径)。循环调用 + stress GC 锻炼 list 与逐串铸造的根化路径(guard 承重)。
+TEST(Compiler, StringCharsSplitsCodepoints) {
+    EXPECT_EQ(run_int(R"(return len("héllo".chars());)"), 5); // 字节 6、码点 5
+    EXPECT_EQ(run_int(R"(if ("héllo".chars()[1] == "é") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("héllo".chars().join("") == "héllo") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(return len("".chars());)"), 0);
+    EXPECT_EQ(run_int(R"(if ("héllo"[1].chars()[0] == "\u{FFFD}") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int("var n = 0; var i = 0; while (i < 20) { n = n + len(\"héllo\".chars()); i = i + 1; } return n;"),
+              100);
+}
+
 // ============================================================
 // 解构（var 声明 / for-in 目标 / 解构赋值）
 // ============================================================

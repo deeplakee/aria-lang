@@ -37,7 +37,7 @@
 - **D3(2026-09-16):`next()` 越界抛 `IterationExhausted`(新码,fail-fast)**。nil 哨兵否决理由:aria list 可合法存 nil,哨兵与真实 nil 元素不可区分(Lua 的 nil 哨兵依赖「表不能存 nil」前提,aria 无此前提);forIn 靠 has_next 把关,越界仅手写滥用时发生,静默吞 bug 劣于报错。
 - **D4(2026-09-16):map 迭代序 unspecified**,产出 `[k, v]` 二元 list(文法「元组」,无 tuple 类型,list 承载,每步一次小分配)。理由(拍板):非定序哈希表是性能上的正确选择,用户不应依赖这一边缘暧昧、各语言/实现标准不一的特性。插序将来另批(需额外内存)。
 - **迭代中变更容器:v1 不承诺**(rehash 作废游标),文档明示,不做版本守卫(YAGNI)。
-- **D5(2026-09-16):string 迭代单位 = 码点**(文法「string->字符」;Go 式分工);**len/s[i] = 字节**(拍板);cp 级访问方法(codepoint_at/chars 等命名届时定)后继行提供。`s[i]` 越界 IndexOutOfBounds、非整数键 TypeMismatch;多字节序列中间字节取到的是该字节自身(字节语义契约的自然结果,非完整字符)。
+- **D5(2026-09-16):string 迭代单位 = 码点**(文法「string->字符」;Go 式分工);**len/s[i]/size = 字节**(拍板);cp 级访问方法已提供 `codepoint_at(i)`(码点值)与 `chars()`(逐码点切分,码点数 = `len(chars())`)。`s[i]` 越界 IndexOutOfBounds、非整数键 TypeMismatch;多字节序列中间字节取到的是该字节自身(字节语义契约的自然结果,非完整字符)。
 - 不可迭代值 forIn:`iter` miss 走 `UndefinedProperty` 基类默认,v1 接受;`NotIterable`/`IteratorProtocol` 两码预留,接线时机 = 后续协议强校验需求出现时。
 
 ## 3. 下标语义(LOAD_INDEX/STORE_INDEX,栈形见指令集 §4.14)
@@ -249,8 +249,9 @@
 > 落地面:ObjString 三 override(下标读整数键字节域产出单字节 1-char 串/写恒 TypeMismatch "string does not
 > support subscript assignment"/load_field 两步委托 String 类)+ ObjStringIterator{str, 字节偏移}(decode_one
 > 码点步进,utf8::encode 铸 1-char 串;src/object/iterator/ 第四对)+ String bootstrap(寄存器 StringClass 格 +
-> bootstrap_string_class + StringBuiltins 11 方法表)+ ListBuiltins 增 join_fn。GC 模式:单输出方法 receiver 在
-> slots[0] 覆写前经栈根;split 先拷内容进 C++ String(非 GC 内存)再 list 先发布后逐段铸造段串。测试 33 新
+> bootstrap_string_class + StringBuiltins 方法表)+ ListBuiltins 增 join_fn。GC 模式:单输出方法 receiver 在
+> slots[0] 覆写前经栈根;split 读 receiver 全程靠槽 0 栈根(receiver 不被覆写),新 list 挂 make_guard 跨段串
+> 铸造的 GC 点保命,循环结束才写回槽 0 发布。测试 33 新
 >(test_objstring 8 + ObjStringIterator 5 + Compiler.String* 14 + 语料 5:string_methods/string_subscript_iter/
 > string_print_format golden/runtime_string_split_empty/runtime_string_subscript_assign 负 .err);存量翻转一
 >(ObjectProtocolDefaults 基类默认钉子 string 换 Module)。string 的 + 拼接(op_add)不在批 6,仍基类默认报错。
@@ -478,6 +479,16 @@ cmake --build build/rel --target vm_bench -j
 **测量纪律(这轮踩到的)**:跨构建比较被「代码布局手气」污染到 ±2~4%(同一份字节码在两个构建里可差 1.4~2.1 ns/次迭代;对照组 `plain_call` 自身在 37.9~43.9 间摆动),故**变体之间**的比较只用同二进制字节改写对照,跨构建只用于确认量级与「无意外回归」;端到端计时按每轮随机序 + 零派发对照负载扣除构建级偏移。
 
 **测试**:`test_codegen` 四条发射形态断言改判两段式(`MethodCallEmitsPrepareCall`/`PrepareCallEmissionBoundaries`/`ThisMethodCallEmitsPrepareCall` + for-in 反汇编);`test_ariavm` 三条白盒改按编译器的发射序手写字节码(接收者 -> 解析 -> 实参 -> 调用),分配差断言不变;`test_disassembler` opcode 计数钉 63 -> 64;语料 `invoke_method_forms.aria` 的次序钉子由「解析在调用点」翻转为「解析先于实参」,并补一条「解析失败时实参不跑」的钉子(`side` 计数)。
+
+### 4.8 string 方法面补齐(2026-09-22)
+
+**决定**:补 `chars()`、`size()`、`is_empty()`、`contains(sub)` 四方法,string 方法面 11 -> 15。`chars()` 是 D5 欠账的兑现 -- 码点域此前只有 `codepoint_at(i)`(给码点值),没有「第 i 个字符」与「码点总数」的口子(数码点得手写 `for` 计数),`chars()` 一次补齐:与迭代同为逐码点切分、产出 1-char string,故 `len(chars())` 即码点数、`chars().join("")` 回原文。`size()`/`is_empty()`/`contains(sub)` 纯为与 list/map 方法面对齐(`len(s)`/`len(s)==0`/`find(sub)!=nil` 已可替代);`size()` **是字节域**(与 `len`/`s[i]` 同域),码点数须走 `len(chars())`。`contains` 按字节子串判(非字符集合)、空串参数恒真、非 string 参数 TypeMismatch,与 `find` 同域。
+
+**口径边界**:负数索引与 range 只属下标访问(`s[i]`、list 切片),内建方法一律不收负值/区间 -- 故 `substring`/`find`/`codepoint_at` 的现有口径不变(不加负端点、不加 `from` 起参、`codepoint_at` 仍拒负数)。
+
+**GC 时序**:`chars()` 是「单输出新容器 + 逐个铸造元素」方法(receiver 留 `slots[0]` 由栈标根、新 list 挂 `make_guard` 跨逐串铸造的 GC 点、循环结束才发布),与 `pairs_fn`/`split` 同形。非法字节序列产出替换码点串(U+FFFD,只吞一个坏字节),口径与 `ObjStringIterator::next` 一致。
+
+**测试**:`Compiler.StringSizeIsEmpty`/`StringContainsSubstring`/`StringCharsSplitsCodepoints` 三条(含 `chars()` 循环调用 + stress GC 的 guard 承重用例、非法字节 -> 替换码点钉子)+ 语料 `13_strings/string_methods.aria` 补六条断言。
 
 ## 5. 参照
 

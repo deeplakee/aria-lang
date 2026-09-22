@@ -137,6 +137,23 @@ namespace aria {
             return true;
         }
 
+        // contains(sub) -> Bool:子串包含判定(与 find 同域:按字节子串判,非字符集合);未命中
+        // 返 false 不报错,与 find 未命中返 nil 同族。空串参数恒真(空串在任何位置都算包含)。
+        bool contains_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
+            }
+            const auto sub = try_obj<ObjString>(slots[1]);
+            if (sub == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "contains argument must be a string, got {}",
+                               type_name(slots[1]));
+            }
+            const auto str = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(str->view().contains(sub->view()));
+            return true;
+        }
+
         // replace(old, new) -> 新串:全部替换(Python/JS replaceAll 同款);匹配串为空报
         // EmptyPattern。拼接在 C++ String(非 GC 内存),末尾一次铸造。
         bool replace_fn(AriaVM& vm, Span<Value> slots) {
@@ -232,6 +249,51 @@ namespace aria {
             return true;
         }
 
+        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域,计划 D5)。码点数不是本
+        // 方法 --那是 len(chars())。
+        bool size_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
+            }
+            const auto str = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_int(static_cast<i64>(str->length()));
+            return true;
+        }
+
+        // is_empty() -> Bool:空串判定(size() == 0 的谓词形;与 list/map 同名)。
+        bool is_empty_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
+            }
+            const auto str = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(str->length() == 0);
+            return true;
+        }
+
+        // chars() -> list<string>:逐码点切出的 1-char string 快照 -- 码点域访问口,产出形态与
+        // 迭代、s[i] 同族;码点数即 len(chars()),与字节域的 len(s)/size() 相对。非法字节序列产出
+        // 替换码点串,口径同 ObjStringIterator::next(只吞一个坏字节)。GC 时序:receiver 留在
+        // slots[0] 由栈标根,新 list 白色须跨逐字符铸造的 GC 点,故挂临时根保命,循环结束才发布。
+        bool chars_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "chars expects no arguments, got {}", argc);
+            }
+            const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto list  = new_list(vm.gc());
+            const auto guard = vm.gc().make_guard(list);
+            for (usize offset = 0; offset < src.size();) {
+                const auto [cp, width] = utf8::decode_one(src, offset);
+                offset += width;
+                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。
+                list->elements().push(Value::from_obj(new_string(vm.gc(), utf8::encode(cp))));
+            }
+            slots[0] = Value::from_obj(list);
+            return true;
+        }
+
         // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号索引,区别于字节域 s[i]);
         // 越界 IndexOutOfBounds--负数与越过末码点同走循环走空后的同一处报错(负数不早退,多扫
         // 一遍串换单出口)。逐码点扫描定位(O(i),无偏移索引表,v1 接受)。
@@ -273,11 +335,20 @@ namespace aria {
 
         // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kStringBuiltins[] = {
-                {"upper", upper_fn},         {"lower", lower_fn},
-                {"trim", trim_fn},           {"split", split_fn},
-                {"find", find_fn},           {"replace", replace_fn},
-                {"substring", substring_fn}, {"starts_with", starts_with_fn},
-                {"ends_with", ends_with_fn}, {"codepoint_at", codepoint_at_fn},
+                {"upper", upper_fn},
+                {"lower", lower_fn},
+                {"trim", trim_fn},
+                {"split", split_fn},
+                {"find", find_fn},
+                {"contains", contains_fn},
+                {"replace", replace_fn},
+                {"substring", substring_fn},
+                {"starts_with", starts_with_fn},
+                {"ends_with", ends_with_fn},
+                {"size", size_fn},
+                {"is_empty", is_empty_fn},
+                {"chars", chars_fn},
+                {"codepoint_at", codepoint_at_fn},
                 {"iter", iter_fn},
         };
 

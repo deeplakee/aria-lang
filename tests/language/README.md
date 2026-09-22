@@ -73,7 +73,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 ## 当前禁区（写新用例前必读）
 
-1. **不要钉临时未实装行为**：容器方法面（`map`/`range` 仅 iter；`list` 已补全，见 3）、
+1. **不要钉临时未实装行为**：容器方法面（`range` 仅 iter；`list`/`map` 已补全，见 3）、
    用户类运算符重载、`NotIterable`/`IteratorProtocol` 专用码接线、defer 与协程均未落地——写
    「期待报错」的负向用例会在翻转日变红。
 2. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对
@@ -90,7 +90,16 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
    remove_at(i) 按位置移除返元素、负数从尾计数；sort 就地升序，域为全数值或全字符串（与比较
    算子同源），NaN 排最前；find 未命中 nil（aria 有负下标故 -1 是合法下标，miss 即取末元素
    的 Python 式坑，Ruby 返 nil 同款；string find 同）、find/contains/remove 走 `==` 内容判定；size/
-   is_empty 为元素数与空表谓词（全局 len 的方法形态）。
+   is_empty 为元素数与空表谓词（全局 len 的方法形态）。map 方法面 -- size/is_empty/has/get/keys/
+   values/pairs/remove/clear/iter（iter 批 5 已有）：**键判定一律走表内判等 `===`、与下标读同域**（int 1
+   与 f64 1.0 是不同键、可变对象作键按身份；判键方法不做 `==` 内容相等，那是 list 的域）；`has(key)`
+   返 Bool（方法名取 has 不取 contains -- map 上 contains 有「判键还是判值」二义）；`get(key)` 单参、
+   未命中返 nil 不报错（下标读 `m[k]` 未命中仍报 KeyError；map 可合法存 nil，故 get 的 nil 与「键存在
+   而值为 nil」不可分，分清用 has）；`remove(key)` 命中 true 未命中 false（与 list remove 同口径，不做
+   Python pop 式返被删值）；`clear()` 原地清空；`keys()`/`values()`/`pairs()` 各铸新 list 快照（与源 map
+   解耦，序 unspecified、与 for-in 同，用例不得依赖具体序；三者同槽位序，故同一次快照内 `keys()[i]`、
+   `values()[i]` 与 `pairs()[i]` 三元对齐）；`pairs()` 每元素是 `[k, v]` 二元 list（与 for-in 每轮产出、
+   `iter().next()` 同一形状）。
 
 ## 如何新增用例
 

@@ -1,0 +1,43 @@
+// 钉住：map 快照方法面——keys()/values() 产出新 list（与源 map 解耦，此后改 map 不动
+# 已产出的表）；两方法同槽位序推进，故同一次快照的 keys()[i] 与 values()[i] 同源同对
+#（序本身 unspecified，计划 D4，用例不依赖具体序：计数 + 求和 + 逐下标配对校验）。
+var m = {"a": 1, "b": 2, "c": 3};
+var ks = m.keys();
+var vs = m.values();
+assert(ks.size() == 3 && vs.size() == 3);
+assert(ks.size() == m.size());
+
+// 逐下标配对：ks[i] 作键读回的值即 vs[i]；顺带计数与求和校验内容完整
+var sum = 0;
+var hits = 0;
+var i = 0;
+while (i < ks.size()) {
+    assert(m.get(ks[i]) == vs[i]);
+    sum = sum + vs[i];
+    if (m.has(ks[i])) { hits = hits + 1; }
+    i = i + 1;
+}
+assert(sum == 6);
+assert(hits == 3);
+
+// 快照与源解耦：改源后已产出的表不变
+var snap_k = m.keys();
+var snap_v = m.values();
+m["d"] = 4;
+assert(snap_k.size() == 3 && snap_v.size() == 3);
+assert(!snap_k.contains("d"));
+assert(m.keys().size() == 4);
+
+// remove/clear 同样不动已产出的快照
+m.remove("a");
+assert(snap_k.contains("a"));
+assert(m.keys().size() == 3);
+m.clear();
+assert(snap_k.size() == 3 && snap_v.size() == 3);
+assert(m.keys().size() == 0);
+
+// 空 map 的键值表
+var empty = {};
+assert(empty.keys().size() == 0);
+assert(empty.values().size() == 0);
+assert(empty.keys().is_empty());

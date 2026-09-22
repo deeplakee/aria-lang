@@ -46,7 +46,7 @@ src/
   bytecode/  code.hpp（OpCode）/ CodeUnit / Disassembler
   object/    Object / ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException
   memory/    Buffer / Array / Allocator / HashTable / InternPool / GC
-  runtime/   FrameStack / Movement / AriaVM / value_register；builtins/ 内建面（Builtins 自由函数表 + List/Map/Iterator/StringBuiltins 内建方法面）
+  runtime/   FrameStack / Movement / AriaVM / value_register；builtins/ 内建面（Builtins 自由函数表 + List/Map/Iterator/String/RangeBuiltins 内建方法面）
 tests/      Google Test 单测（按 tests/<module>/ 分目录）
 bench/      性能基准（独立可执行）
 external/   isocline（REPL）

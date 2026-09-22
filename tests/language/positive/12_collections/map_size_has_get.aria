@@ -1,0 +1,42 @@
+// 钉住：map 查询方法面——size/is_empty 为对数与空表谓词（全局 len 的方法形态）；
+# has(key)/get(key) 的键判定与下标读**同域**：表内判等 ===，int 1 与 f64 1.0 是不同
+# 键、可变对象作键按身份（同拼写的新对象不命中）；get 未命中返 nil 不报错（下标读 m[k]
+# 未命中仍报 KeyError），故 get 的 nil 与「键存在而值为 nil」不可分——分清用 has。
+var m = {"a": 1, "b": 2};
+assert(m.size() == 2);
+assert(m.size() == len(m));
+assert(!m.is_empty());
+
+var empty = {};
+assert(empty.size() == 0);
+assert(empty.is_empty());
+
+// has/get：命中与未命中
+assert(m.has("a"));
+assert(!m.has("zz"));
+assert(m.get("a") == 1);
+assert(m.get("zz") == nil);         // 未命中返 nil，不报错
+
+// 键域 ===：int 1 与 f64 1.0 是不同键
+var num = {};
+num[1] = "int";
+num[1.0] = "float";
+assert(num.size() == 2);
+assert(num.has(1) && num.has(1.0));
+assert(num.get(1) == "int");
+assert(num.get(1.0) == "float");
+
+// 键域 ===：可变对象按身份，同内容的新对象不命中
+var key = [1, 2];
+var by_obj = {};
+by_obj[key] = "v";
+assert(by_obj.has(key));
+assert(by_obj.get(key) == "v");
+assert(!by_obj.has([1, 2]));
+
+// 值为 nil 与未命中在 get 上同形，has 分清
+var nils = {"a": nil};
+assert(nils.has("a"));
+assert(nils.get("a") == nil);
+assert(!nils.has("zz"));
+assert(nils.get("zz") == nil);

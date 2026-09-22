@@ -1,0 +1,37 @@
+// 钉住：map 变更方法面——remove(key) 移除命中键，命中 true 未命中 false（miss 走返回
+# 值，与 list remove / get 同族，不占错误通道）；移除后该键经下标读即 KeyError（走错误
+# 通道）。clear() 原地清空（对数归零、别名同见），区别于重绑 m = {} 换新表。
+var m = {"a": 1, "b": 2, "c": 3};
+assert(m.remove("a"));              // 命中返 true
+assert(!m.has("a"));
+assert(m.size() == 2);
+assert(!m.remove("a"));             // 已移除，再移未命中返 false，不报错
+assert(!m.remove("zz"));
+assert(m.size() == 2);
+
+// 移除后下标读取该键报 KeyError（get/has 是免报错的口）
+var caught = false;
+try { m["a"]; } catch (e) { caught = true; }
+assert(caught);
+assert(m.get("a") == nil);          // 免报错读法照旧
+
+// 键域 ===：移除按身份，内容相同的新对象不移除本键
+var key = [1];
+var by_obj = {};
+by_obj[key] = "v";
+assert(by_obj.remove(key));
+assert(by_obj.is_empty());
+
+// clear：原地清空，别名同见；容量保留不可观测，只钉状态
+var shared = {"x": 1, "y": 2};
+var alias = shared;
+shared.clear();
+assert(shared.is_empty());
+assert(shared.size() == 0);
+assert(alias.size() == 0);          // 别名同见——是同一张表被清空
+assert(alias.get("x") == nil);
+
+// 空表上 clear 无害
+var empty = {};
+empty.clear();
+assert(empty.is_empty());

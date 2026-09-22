@@ -1,0 +1,52 @@
+// 钉住：map 的 pairs() 快照——新 list（与源 map 解耦），每元素是 [k, v] 二元 list（与
+# for-in 每轮产出、iter().next() 同一形状）；与 keys()/values() 同槽位序，故
+# pairs()[i] == [keys()[i], values()[i]]；序 unspecified（计划 D4），用例只做形状/配对/
+# 计数/求和校验，不依赖具体序。
+var m = {"a": 1, "b": 2, "c": 3};
+var ps = m.pairs();
+assert(ps.size() == 3);
+assert(ps.size() == m.size());
+
+// 形状与配对：每元素是二元 list，键读回的值即该对的第二元
+var sum = 0;
+var hits = 0;
+var i = 0;
+while (i < ps.size()) {
+    assert(len(ps[i]) == 2);
+    assert(m.get(ps[i][0]) == ps[i][1]);
+    sum = sum + ps[i][1];
+    if (ps[i][0] == "a" && ps[i][1] == 1) { hits = hits + 1; }
+    if (ps[i][0] == "b" && ps[i][1] == 2) { hits = hits + 1; }
+    if (ps[i][0] == "c" && ps[i][1] == 3) { hits = hits + 1; }
+    i = i + 1;
+}
+assert(sum == 6);
+assert(hits == 3);
+
+// 与 keys()/values() 同序：逐下标三元对齐
+var ks = m.keys();
+var vs = m.values();
+var j = 0;
+while (j < ps.size()) {
+    assert(ps[j][0] == ks[j]);
+    assert(ps[j][1] == vs[j]);
+    j = j + 1;
+}
+
+// 每元素是各自新铸的 list（不是同一对象）
+assert(len(ps) > 1);
+assert(!(ps[0] === ps[1]));
+
+// 快照与源解耦：改源不动已产出的表
+m["d"] = 4;
+assert(ps.size() == 3);
+m.remove("a");
+assert(ps.size() == 3);
+m.clear();
+assert(ps.size() == 3);
+assert(m.pairs().size() == 0);
+
+// 空 map
+var empty = {};
+assert(empty.pairs().size() == 0);
+assert(empty.pairs().is_empty());

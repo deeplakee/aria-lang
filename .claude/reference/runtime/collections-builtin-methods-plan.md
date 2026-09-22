@@ -147,6 +147,34 @@
 > 排序比较器收口 value_less(value 层自然序,与 value_equal/value_identical 同族自由函数),
 > 方法体只余域检查与调用。
 
+> **计划内补缺 · map 方法面(2026-09-22 落地)**:上承上文「map/range 方法面按需另批」的 map
+> 部分,是 list 方法面的同族收尾。方法面 = size/is_empty/has/get/keys/values/remove/clear/iter
+> 九件(iter 批 5 已有,本批补前八件),review 后再补 **pairs**(返 list、每元素是 [k, v] 二元
+> list,与 for-in 每轮产出和 iter().next() 同一形状;与 keys/values 同槽位序,故同一次快照内
+> `keys()[i]`/`values()[i]`/`pairs()[i]` 三元对齐)成第十件。语义四拍板:①键判定方法名 **has** 不取 contains
+> (map 上 contains 有「判键还是判值」二义,JS Map 同款);②`get(key)` **单参**、未命中返 nil
+> --免报错读法与 list find 未命中返 nil 同族,不设默认值参数(map 可合法存 nil,故 get 的 nil
+> 与「键存在而值为 nil」不可分,要分清用 has;下标读 m[k] 未命中仍报 KeyError,兜底不靠本方法);
+> ③`remove(key)` 返**命中 Bool**、miss 不报错(与 list remove 同口径:miss 走返回值,错误通道
+> 留给无信号通道的结构性失败,故不做 Python dict.pop 式返被删值);④增 `keys()`/`values()`
+> 两快照方法。**键域 = 表内判等 ===**(find 即 value_identical 匹配),与下标读同域:判键方法
+> 一律不做 value_equal 内容相等(int 1 与 f64 1.0 是不同键、可变对象作键按身份),那是 list 的
+> 域。`keys()`/`values()` 各铸新 list(与源 map 解耦,此后改源不动已产出的表),序随占用槽、
+> unspecified(计划 D4,与 for-in 同);两方法同槽位序推进,故同一次快照内 `keys()[i]` 与
+> `values()[i]` 同源同对(序本身不可跨调用依赖)。变更方法一律就地改:`clear` 对数归零、容量
+> 保留(重绑 `m = {}` 换新表,别名仍见旧内容),`remove` 置墓碑。GC 走查:查询/变更方法全
+> trivial、零 GC 分配;keys/values 的时序同 `ObjMapIterator::next` --map 在 slots[0] 于栈根,
+> `new_list` 顶部 maybe_collect 时新 list 未诞生,逐元素 push 走 trivial 分配不触 GC,建成随
+> 返回值写回槽发布,窗口内无 GC 点。**pairs 是本表唯一「元素本身也是新对象」的方法**,时序
+> 与 keys/values 不同:循环里每铸一个内层 `[k, v]` 都过 `new_list` 顶 maybe_collect,而 receiver
+> 之外无根的是外层与已铸内层,故**外层须挂 `make_guard`**(内层铸后仅 push 即入外层、push 走
+> trivial 分配不触 GC,窗口内无 GC 点,无需各自挂;守卫存活至函数末,slots[0] 写回时让位的 map
+> 已不再需要)。该守卫经对照实验确认承重:临时去掉守卫后,stress GC 语料 `map_pairs` 立即变红,
+> 还原即绿。实现形态:receiver 解开后直取 `table()` 绑为 table(仅 iter
+> 需要 `ObjMap*` 本体),方法体只余 arity 检查与对 `AriaHashTable` 既有原语的调用
+> (find/erase/clear/size/empty/begin 全为现成面),零新增底座 -- 与 list 那批「段搬移下沉 Array
+> 原语」不同,本批无需下沉。
+
 > **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
 > `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发

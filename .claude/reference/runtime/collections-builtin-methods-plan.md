@@ -46,7 +46,7 @@
 | :--- | :--- | :--- |
 | list | 整数键,越界/负数 IndexOutOfBounds,非整数键 TypeMismatch | 同读;不自动增长(append 走批 4 方法) |
 | map | 任意键,miss KeyError | 恒成功(新增键) |
-| string | 字节键 → 单字节 1-char 串 | 不可变,报错(string override 定向文案) |
+| string | 整数键 → 单字节 1-char 串；Range 键 → 字节切片（端点从尾计数、无上界后缀、倒序段字节倒排） | 不可变,报错(string override 定向文案) |
 
 下标是引擎原语不进方法表:有专门 opcode,复合赋值 lowering 依赖 `[obj, idx, v]` 栈形,方法化反而绕。lowering 按 `compound-assignment-lowering.md` §4.3 矩阵:Prepare 只发 `<obj> <idx>`、Load 发 `LOAD_INDEX`、Store 只发 `STORE_INDEX`、Locate 发 `DUP2 + LOAD_INDEX` 留副本对。
 
@@ -357,7 +357,7 @@
 > 三处同构,收成成员模板 `emit_list_pattern_accesses`,备源值方式作参数。⑦ 收口:`not_impl` 助手与
 > `NotImplemented` 码随唯一消费者(rest 占位)消失而删,43 个 visit 全为真实发射;`Interpret.
 > StringNotImplementedIsCompileError` 随之退役(该测试此前已被批 7 换过一次样本,机制消失故整条删)。
-> 测试:发射形态 1 条 + 端到端 2 条(原 rest 占位钉子翻为行为测试)+ 对象级 1 条(切片后缀允许空段,`SliceOnEmptyListFails` 的无上界例翻入它)+ 新语料 1 正 1 负(`destructure_rest.aria` / `runtime_destructure_rest_on_string`),`list_slice.aria` 与 `runtime_list_slice_empty.aria` 各一处既有点翻转扩展;删 `Interpret.StringNotImplementedIsCompileError`(机制消失)。双配置 1080/1080 绿。
+> 测试:发射形态 1 条 + 端到端 2 条(原 rest 占位钉子翻为行为测试)+ 对象级 1 条(切片后缀允许空段,`SliceOnEmptyListFails` 的无上界例翻入它)+ 新语料 1 正 1 负(`destructure_rest.aria` / `runtime_destructure_rest_on_string`,后者已随 §4.9 的 string 切片落地删除),`list_slice.aria` 与 `runtime_list_slice_empty.aria` 各一处既有点翻转扩展;删 `Interpret.StringNotImplementedIsCompileError`(机制消失)。双配置 1080/1080 绿。
 
 ### 4.4 批 9 基线:方法派发成本实测(2026-09-20)
 
@@ -489,6 +489,16 @@ cmake --build build/rel --target vm_bench -j
 **GC 时序**:`chars()` 是「单输出新容器 + 逐个铸造元素」方法(receiver 留 `slots[0]` 由栈标根、新 list 挂 `make_guard` 跨逐串铸造的 GC 点、循环结束才发布),与 `pairs_fn`/`split` 同形。非法字节序列产出替换码点串(U+FFFD,只吞一个坏字节),口径与 `ObjStringIterator::next` 一致。
 
 **测试**:`Compiler.StringSizeIsEmpty`/`StringContainsSubstring`/`StringCharsSplitsCodepoints` 三条(含 `chars()` 循环调用 + stress GC 的 guard 承重用例、非法字节 -> 替换码点钉子)+ 语料 `13_strings/string_methods.aria` 补六条断言。
+
+### 4.9 string 切片与空白切分(2026-09-22)
+
+**决定**:①`ObjString::load_index` 收 Range 键走切片,段解析直接复用 `ObjRange.cpp` 的 `resolve_slice_bounds`(本就 size 泛化),故与 list 切片逐格同口径:含/不含上界、端点从尾计数、无上界 `i..` 取到末尾(`size..` 得空段)、越界与空串 `nullopt` -> `IndexOutOfBounds` 且文案与 list 同串(`slice index out of range`)。**域是字节**(与 `s[i]`/`len`/`size` 同域),故倒序段是字节倒排:多字节输入下产出非合法 UTF-8,与 `s[i]` 能取到续接字节同属字节域契约(按码点反转不在切片口径内)。②`split` 增 0 参形态:按 ASCII 空白**连续段**切开并丢空段(Python `str.split` 同款),全空白与空串返 `[]`;空白集与 `trim` 同源(`is_ascii_space`),故只在 ASCII 域判定。1 参形态语义不变(保留空段)。两形态各由一个匿名命名空间自由函数承载(`split_by_sep`/`split_on_space`),各自建并返回新 list(白色对象跨逐段铸造的 GC 点,由函数内守卫保命),`split_fn` 只余 arity/类型检查与「helper 返回 -> 写回槽 0」两句(其间无 GC 点)。
+
+**连带翻转**:string 的 rest 解构(`var [c, ...r] = "abc"`)此前按「string 无 Range 下标」钉成 TypeMismatch,现经 `MAKE_RANGE i.. + LOAD_INDEX` 同一机制走后缀切片成立;两个负向语料(`runtime_string_range_index`、`runtime_destructure_rest_on_string`)删除,新增正向语料 `13_strings/string_slice.aria`,`Compiler.DestructureRestOnStringFails` 翻为 `DestructureRestOnStringSlicesSuffix`。
+
+**口径边界**(承 §4.8):负数索引与 range 只属下标访问,故本批只动 `load_index`;方法面不收负值/区间,`substring`/`find`/`codepoint_at` 口径照旧。
+
+**测试**:`ObjString.Slice*` 四条(含/不含上界、无上界与空段、负端点、倒序字节倒排含多字节例、越界与空串失败)+ `Compiler.StringRangeSlice`/`StringSplitOnWhitespace` 两条端到端 + 语料 `string_slice.aria`(13 条断言)。
 
 ## 5. 参照
 

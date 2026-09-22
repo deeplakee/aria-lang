@@ -1,3 +1,0 @@
-// 钉住：rest 位落在 string 源上按下标语义报错——string 下标只收整数键（切片只对 list 成立），
-// 故 [c, ...r] = "abc" 的前缀位可绑、rest 位报 TypeMismatch。
-var [c, ...r] = "abc";

@@ -7,6 +7,7 @@
 namespace aria {
 
     class GC;
+    class ObjRange;
 
     // 字符串对象:SSO(短串内联 / 长串独立 buffer)。
     //
@@ -83,9 +84,18 @@ namespace aria {
 
         // 下标读取:整数键(字节域,D5),产出单字节 1-char string;负数从尾计数、归一化后
         // 越界 IndexOutOfBounds、非整数 TypeMismatch;多字节序列中间字节取该字节自身(字节
-        // 契约的自然结果)。查读含一次 new_string(intern)分配:receiver 经调用方值栈为根。
+        // 契约的自然结果)。Range 键走切片(见 slice)。查读含一次 new_string(intern)分配:
+        // receiver 经调用方值栈为根。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
+
+        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
+        // 统一),与 list 切片同口径 -- 端点从尾计数、无上界 i.. 允许空段、越界/空串 nullopt(报
+        // IndexOutOfBounds "slice index out of range",与 list 同串)。域仍是字节(与 s[i]/len
+        // 同域):倒序段产出**字节逆序**串,多字节输入下不是合法 UTF-8 -- 与 s[i] 能取到续接字节
+        // 同属字节域契约(按码点反转需另立码点域口径,不在切片内)。
+        [[nodiscard]]
+        Opt<Value> slice(AriaVM& vm, const ObjRange* range) const;
 
         // 下标写入:string 不可变,恒 TypeMismatch 定向文案。
         [[nodiscard]]

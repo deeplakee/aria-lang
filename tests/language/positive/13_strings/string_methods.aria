@@ -1,7 +1,7 @@
-// 钉住：string 方法面——upper/lower/trim（ASCII 口径）、split（空段保留）、
+// 钉住：string 方法面——upper/lower/trim（ASCII 口径）、split（1 参保留空段、0 参按空白切）、
 # find（未命中 nil）、contains（子串判定）、replace（全替换）、substring（区间）、
 # starts_with/ends_with、size/is_empty（字节域）、chars（逐码点切分）、
-# codepoint_at（码点序号索引）、join（list 方法，宽松元素）。
+# codepoint_at（码点序号索引）、join（list 方法，宽松元素）。切片见 string_slice.aria。
 assert("abc".upper() == "ABC");
 assert("aBc1".upper() == "ABC1");
 assert("XYZ".lower() == "xyz");
@@ -12,6 +12,12 @@ assert("   ".trim() == "");
 var parts = "a,,b".split(",");
 assert(len(parts) == 3 && parts[0] == "a" && parts[1] == "" && parts[2] == "b");
 assert("".split(",")[0] == "");
+
+// split() 无参：按 ASCII 空白连续段切、丢空段（Python str.split 同款；全空白/空串返 []）。
+var words = "  a  b\tc ".split();
+assert(len(words) == 3 && words[0] == "a" && words[1] == "b" && words[2] == "c");
+assert(len("   ".split()) == 0);
+assert(len("".split()) == 0);
 
 assert("hello".find("llo") == 2);
 assert("hello".find("x") == nil);

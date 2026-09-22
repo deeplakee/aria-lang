@@ -9,6 +9,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
@@ -21,6 +22,7 @@ using aria::GC;
 using aria::i32;
 using aria::i64;
 using aria::is_truthy;
+using aria::new_range;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
@@ -58,6 +60,15 @@ namespace {
     bool compared_true(const Opt<Value>& result) {
         EXPECT_TRUE(result.has_value());
         return result.has_value() && is_truthy(*result);
+    }
+
+    // 取切片结果并逐字符比对(切片恒产出 string;比较就在本函数内完成,结果串不需要额外根)。
+    void expect_slice(AriaVM& vm, ObjString* s, aria::ObjRange* range, const StringView expected) {
+        const auto result = s->load_index(vm, Value::from_obj(range));
+        ASSERT_TRUE(result.has_value());
+        const auto out = aria::Object::try_as<ObjString>(result->as_obj());
+        ASSERT_NE(out, nullptr);
+        EXPECT_EQ(out->view(), expected);
     }
 
 } // namespace
@@ -146,6 +157,96 @@ TEST(ObjString, LoadIndexNegativeReadsFromTail) {
     EXPECT_EQ(head->view(), "h");
     EXPECT_FALSE(s->load_index(vm, Value::from_int(-6)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+}
+
+// ---- 切片协议(Range 键,字节域) ----
+
+// 切片与 list 同口径(段解析共用 resolve_slice_bounds):含/不含上界、无上界后缀、末尾之后的空段。
+TEST(ObjString, SliceYieldsNewString) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "hello");
+    auto   r1    = new_range(gc, 1, 3, false);
+    guard.push(r1);
+    expect_slice(vm, s, r1, "ell"); // s[1..3] 闭区间
+    auto r2 = new_range(gc, 1, 3, true);
+    guard.push(r2);
+    expect_slice(vm, s, r2, "el"); // s[1...3] 半开
+    auto r3 = new_range(gc, 3);
+    guard.push(r3);
+    expect_slice(vm, s, r3, "lo"); // s[3..] 无上界后缀
+    auto r4 = new_range(gc, 0);
+    guard.push(r4);
+    expect_slice(vm, s, r4, "hello"); // s[0..] 全串
+    auto r5 = new_range(gc, 5);
+    guard.push(r5);
+    expect_slice(vm, s, r5, ""); // s[size..] 末尾之后取剩余 = 空段(解构 rest 空尾)
+}
+
+// 端点负数从尾计数(与 list 切片同口径;负值只在下标位置出现,方法面不收)。
+TEST(ObjString, SliceNegativeEndpoints) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "hello");
+    auto   r1    = new_range(gc, -3);
+    guard.push(r1);
+    expect_slice(vm, s, r1, "llo"); // s[-3..] 尾三
+    auto r2 = new_range(gc, 1, -1, false);
+    guard.push(r2);
+    expect_slice(vm, s, r2, "ello"); // s[1..-1] 第二个到最后一个(正起点配负终点不倒序)
+    auto r3 = new_range(gc, 0, -1, true);
+    guard.push(r3);
+    expect_slice(vm, s, r3, "hell"); // s[0...-1] 末字节不含
+}
+
+// 倒序段在字节域反转:多字节串被按字节倒排,产出不是合法 UTF-8(同 s[i] 能取到续接字节的
+// 字节域契约;按码点反转不在切片口径内)。
+TEST(ObjString, SliceReversedRangeYieldsByteReversed) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "hello");
+    auto   r1    = new_range(gc, 3, 1, false);
+    guard.push(r1);
+    expect_slice(vm, s, r1, "lle"); // s[3..1] 倒序闭区间
+    auto r2 = new_range(gc, 4, 0, false);
+    guard.push(r2);
+    expect_slice(vm, s, r2, "olleh");                 // 全串倒序
+    auto mb = make_string(gc, guard, "h\xC3\xA9llo"); // 字节 1/2 是 é(0xC3 0xA9)
+    auto r3 = new_range(gc, 2, 0, false);
+    guard.push(r3);
+    const StringView byte_reversed{"\xA9\xC3h", 3}; // 字节倒排:0xA9 0xC3 'h'
+    expect_slice(vm, mb, r3, byte_reversed);
+}
+
+// 越界/空串:nullopt + IndexOutOfBounds,文案与 list 切片同串(list 的失败形态见 test_objlist)。
+TEST(ObjString, SliceOutOfBoundsFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "hi"); // 长度 2
+    auto   r1    = new_range(gc, 0, 9, false);
+    guard.push(r1);
+    EXPECT_FALSE(s->load_index(vm, Value::from_obj(r1)).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
+    EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice index out of range");
+    auto r2 = new_range(gc, -3);
+    guard.push(r2);
+    EXPECT_FALSE(s->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+
+    // 空串:有上界形态任何端点都解析不出;无上界 0.. 得空段(空容器单下标同样报错,口径一致)。
+    auto empty = make_string(gc, guard, "");
+    auto r3    = new_range(gc, 0, 1, false);
+    guard.push(r3);
+    EXPECT_FALSE(empty->load_index(vm, Value::from_obj(r3)).has_value());
+    EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
+    auto r4 = new_range(gc, 0);
+    guard.push(r4);
+    expect_slice(vm, empty, r4, "");
 }
 
 // string 不可变:下标写恒报错(定向文案,键值不检查)。

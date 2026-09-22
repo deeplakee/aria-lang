@@ -1,11 +1,13 @@
 #include "object/ObjString.hpp"
 
+#include <algorithm>
 #include <format>
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
+#include "object/ObjRange.hpp"
 #include "runtime/AriaVM.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -51,6 +53,10 @@ namespace aria {
     }
 
     Opt<Value> ObjString::load_index(AriaVM& vm, const Value key) {
+        // Range 键 = 切片(流程见 slice,与 list 同口径)。
+        if (const auto range = try_obj<ObjRange>(key)) {
+            return slice(vm, range);
+        }
         // 整数键 = 字节域(计划 D5,与 len 同域):产出单字节 1-char string;多字节序列
         // 中间字节取该字节自身(字节契约的自然结果,非完整字符)。非整数 TypeMismatch;
         // 负下标从尾计数、归一化后越界 IndexOutOfBounds(文案报原始键值,同 list)。
@@ -62,6 +68,22 @@ namespace aria {
             return Value::from_obj(new_string(vm.gc(), view()[*slot]));
         }
         return vm.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", raw);
+    }
+
+    Opt<Value> ObjString::slice(AriaVM& vm, const ObjRange* range) const {
+        // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
+        // 区间,唯一失败报错就地烘焙(文案与 list 切片同串)。段内容先拷进 C++ String(非 GC 内存)
+        // 再铸串:receiver 与 range 皆经调用方值栈为根,new_string 顶部 maybe_collect 时安全;
+        // 倒序段在拷贝上按字节反转(字节域,多字节输入下产出非法 UTF-8,见头注释)。
+        const auto segment = resolve_slice_bounds(range, length_);
+        if (!segment) {
+            return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
+        }
+        String buffer{view().substr(segment->start, segment->count)};
+        if (segment->is_reversed) {
+            std::ranges::reverse(buffer);
+        }
+        return Value::from_obj(new_string(vm.gc(), buffer));
     }
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {

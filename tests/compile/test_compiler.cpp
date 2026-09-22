@@ -866,6 +866,34 @@ TEST(Compiler, StringCharsSplitsCodepoints) {
               100);
 }
 
+// 切片:Range 键走字节域切片,与 list 同口径(含/不含上界、负端点从尾计数、无上界后缀、倒序段),
+// 越界报 IndexOutOfBounds(与 list 同串)。rest 解构在 string 上经「MAKE_RANGE i.. + LOAD_INDEX」
+// 同一机制成立,故一并钉住。
+TEST(Compiler, StringRangeSlice) {
+    EXPECT_EQ(run_int(R"(if ("hello"[1..3] == "ell" && "hello"[1...3] == "el") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello"[-3..] == "llo" && "hello"[1..-1] == "ello") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("hello"[3..1] == "lle" && "hello"[0..] == "hello") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if (len("hello"[5..]) == 0) { return 1; } return 0;)"), 1); // 末尾之后取剩余 = 空段
+    // 倒序是字节域反转:s[i] 取出的单字节串可拼出同一结果(多字节串按字节倒排,非合法 UTF-8)。
+    EXPECT_EQ(run_int(R"(if ("héllo"[2..0] == "héllo"[2] + "héllo"[1] + "héllo"[0]) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(var [c, ...r] = "abc"; if (c == "a" && r == "bc") { return 1; } return 0;)"), 1);
+
+    auto out = run_source(R"(return "hello"[1..9];)");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out.error().message().find("slice index out of range"), std::string::npos);
+}
+
+// split():0 参按 ASCII 空白连续段切并丢空段(全空白/空串返 [];不做 Unicode 空白,与 trim 同
+// 空白集);1 参形态保留空段不变。
+TEST(Compiler, StringSplitOnWhitespace) {
+    EXPECT_EQ(run_int(R"(var xs = "  a  b\tc ".split(); )"
+                      R"(if (len(xs) == 3 && xs[0] == "a" && xs[1] == "b" && xs[2] == "c") { return 1; } return 0;)"),
+              1);
+    EXPECT_EQ(run_int(R"(if (len("   ".split()) == 0 && len("".split()) == 0) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if (len("a,,b".split(",")) == 3) { return 1; } return 0;)"), 1); // 1 参保留空段
+}
+
 // ============================================================
 // 解构（var 声明 / for-in 目标 / 解构赋值）
 // ============================================================
@@ -960,9 +988,9 @@ TEST(Compiler, DestructureRestCollectsSuffix) {
     EXPECT_EQ(run_int("var m = {\"a\": 1}; var n = 0; for ([k, ...rest] in m) { n = len(rest); } return n;"), 1);
 }
 
-// rest 落在非 list 源上按下标语义报错（string 无 Range 下标；slice 只对 list 成立）。
-TEST(Compiler, DestructureRestOnStringFails) {
-    auto out = run_source("var [c, ...r] = \"abc\"; return 0;");
-    ASSERT_FALSE(out.has_value());
-    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+// rest 落在 string 源上走切片语义（Range 下标已支持）：前缀位绑单字节串、rest 位绑字节后缀。
+TEST(Compiler, DestructureRestOnStringSlicesSuffix) {
+    EXPECT_EQ(run_int(R"(var [c, ...r] = "abc"; if (c == "a" && r == "bc") { return 1; } return 0;)"), 1);
+    // 字节域：héllo 的 rest 位是余下 5 字节，不是「剩余字符」。
+    EXPECT_EQ(run_int(R"(var [h, ...rest] = "héllo"; if (h == "h" && len(rest) == 5) { return 1; } return 0;)"), 1);
 }

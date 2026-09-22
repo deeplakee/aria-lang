@@ -83,40 +83,73 @@ namespace aria {
             return true;
         }
 
-        // split(sep) -> list<string>:按分隔符切开,保留空段("a,,b" -> ["a","","b"]);
-        // 空串输入切出 [""]。分隔符须非空 string(EmptyPattern)。
-        bool split_fn(AriaVM& vm, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "split expects 1 argument, got {}", argc);
-            }
-            const auto sep = try_obj<ObjString>(slots[1]);
-            if (sep == nullptr) {
-                return vm.fail(ErrorCode::TypeMismatch, "split separator must be a string, got {}",
-                               type_name(slots[1]));
-            }
-            const auto sep_view = sep->view();
-            if (sep_view.empty()) {
-                return vm.fail(ErrorCode::EmptyPattern, "split separator must not be empty");
-            }
-            // receiver 留在 slots[0] 由栈标根到切割结束(槽 0 是它唯一的栈根,临时 receiver 只有
-            // intern 弱根,覆写即悬垂),故新 list 挂临时根跨段串铸造的 GC 点保命,循环结束才写回
-            // 槽 0 发布。sep 经 slots[1] 恒为根,视图可留。
-            const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
+        // 单参形态:按 sep 逐段切开,保留空段("a,,b" -> ["a","","b"]);空串输入切出 [""]。建并返回
+        // 新 list -- 白色对象跨逐段铸造的 GC 点,由本函数内的守卫保命;src 是 receiver 的视图,
+        // receiver 由调用方全程留在槽 0 为根。
+        ObjList* split_by_sep(AriaVM& vm, const StringView src, const StringView sep) {
             const auto list  = new_list(vm.gc());
             const auto guard = vm.gc().make_guard(list);
             usize      begin = 0;
             while (true) {
-                const usize hit = src.find(sep_view, begin);
+                const usize hit = src.find(sep, begin);
                 if (hit == StringView::npos) {
                     break;
                 }
                 // 段串铸后立即 push(中间无 GC 点);段串白色期间经 list 可达。
                 list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(begin, hit - begin))));
-                begin = hit + sep_view.size();
+                begin = hit + sep.size();
             }
             list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(begin))));
-            slots[0] = Value::from_obj(list);
+            return list;
+        }
+
+        // 无参形态:按 ASCII 空白**连续段**切开并丢弃空段(Python str.split 同款);全空白与空串
+        // 返 []。空白集与 trim 同源(is_ascii_space),故只在 ASCII 域判定 -- 0x80 以上的字节一律
+        // 非空白,多字节字符不会被劈开。建并返回新 list(守卫与 GC 时序同 split_by_sep)。
+        ObjList* split_on_space(AriaVM& vm, const StringView src) {
+            const auto list  = new_list(vm.gc());
+            const auto guard = vm.gc().make_guard(list);
+            usize      begin = 0;
+            while (begin < src.size()) {
+                while (begin < src.size() && is_ascii_space(src[begin])) {
+                    ++begin;
+                }
+                usize end = begin;
+                while (end < src.size() && !is_ascii_space(src[end])) {
+                    ++end;
+                }
+                if (end > begin) {
+                    list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(begin, end - begin))));
+                }
+                begin = end;
+            }
+            return list;
+        }
+
+        // split([sep]) -> list<string>:1 参按分隔符切(保留空段,空串输入切出 [""],分隔符须非空
+        // string = EmptyPattern);0 参按 ASCII 空白连续段切、丢空段(见 split_on_space)。
+        bool split_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0 && argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "split expects 0 or 1 arguments, got {}", argc);
+            }
+            ObjString* sep = nullptr;
+            if (argc == 1) {
+                sep = try_obj<ObjString>(slots[1]);
+                if (sep == nullptr) {
+                    return vm.fail(ErrorCode::TypeMismatch, "split separator must be a string, got {}",
+                                   type_name(slots[1]));
+                }
+                if (sep->view().empty()) {
+                    return vm.fail(ErrorCode::EmptyPattern, "split separator must not be empty");
+                }
+            }
+            // receiver 全程留在 slots[0] 由栈标根(槽 0 是它唯一的栈根,临时 receiver 只有 intern
+            // 弱根,覆写即悬垂),切割流程读的 src 即其视图。产出的 list 白色,在下一句写回槽 0
+            // 发布 -- 两句之间无 GC 点,故无须在此再挂守卫。sep 经 slots[1] 恒为根,视图可留。
+            const auto src  = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto list = sep == nullptr ? split_on_space(vm, src) : split_by_sep(vm, src, sep->view());
+            slots[0]        = Value::from_obj(list);
             return true;
         }
 

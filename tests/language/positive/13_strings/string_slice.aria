@@ -1,0 +1,29 @@
+// 钉住：string 切片（Range 键）——与 list 同口径（段解析共用 resolve_slice_bounds）：
+# 含上界 `..` / 不含 `...`、端点负数从尾计数、无上界 `i..` 取到末尾（末尾之后即空段）、
+# 倒序 range 产出倒序段。域是**字节**（与 s[i]/len 同域），故倒序段是字节倒排：
+# 多字节串按字节倒排后不是合法 UTF-8（与 s[i] 能取到续接字节同属字节域契约）。
+# 解构 rest 在 string 上经「MAKE_RANGE i.. + LOAD_INDEX」同一机制成立，末段一并钉住。
+assert("hello"[1..3] == "ell");          // 闭区间
+assert("hello"[1...3] == "el");          // 半开
+assert("hello"[0..] == "hello");         // 无上界取到末尾
+assert("hello"[5..] == "");              // 末尾之后取剩余 = 空段
+assert(len("hello"[3..]) == 2);
+
+assert("hello"[-3..] == "llo");          // 负起点从尾计数
+assert("hello"[1..-1] == "ello");        // 正起点配负终点：归一化后仍正序
+assert("hello"[0...-1] == "hell");       // 末字节不含
+
+assert("hello"[3..1] == "lle");          // 倒序闭区间
+assert("hello"[4..0] == "olleh");        // 全串倒序
+
+// 倒序是字节倒排：héllo 的 é 是 0xC3 0xA9，s[2..0] = 0xA9 0xC3 'h'，与 s[i] 逐字节拼出同串。
+assert("héllo"[2..0] == "héllo"[2] + "héllo"[1] + "héllo"[0]);
+assert(len("héllo"[1..2]) == 2);         // 字节域：é 的两字节可整段切出
+
+var [head, ...tail] = "abc";             // rest 位落到 string 源上按切片语义取后缀
+assert(head == "a");
+assert(tail == "bc");
+
+var [first_byte, ...rest_bytes] = "héllo";
+assert(first_byte == "h");
+assert(len(rest_bytes) == 5);            // 字节域：余 5 字节

@@ -71,16 +71,15 @@ namespace aria {
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "trim expects no arguments, got {}", argc);
             }
-            const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
-            usize      begin = 0;
-            usize      end   = src.size();
-            while (begin < end && is_ascii_space(src[begin])) {
-                ++begin;
+            // 视图自身收缩(remove_prefix/remove_suffix):两轮空判即首尾边界,无须下标账。
+            auto trimmed = Object::as<ObjString>(slots[0].as_obj())->view();
+            while (!trimmed.empty() && is_ascii_space(trimmed.front())) {
+                trimmed.remove_prefix(1);
             }
-            while (end > begin && is_ascii_space(src[end - 1])) {
-                --end;
+            while (!trimmed.empty() && is_ascii_space(trimmed.back())) {
+                trimmed.remove_suffix(1);
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), src.substr(begin, end - begin)));
+            slots[0] = Value::from_obj(new_string(vm.gc(), trimmed));
             return true;
         }
 
@@ -96,17 +95,17 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "split separator must be a string, got {}",
                                type_name(slots[1]));
             }
-            if (sep->length() == 0) {
+            const auto sep_view = sep->view();
+            if (sep_view.empty()) {
                 return vm.fail(ErrorCode::EmptyPattern, "split separator must not be empty");
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            // 内容拷进 C++ String(非 GC 内存):list 建成即覆写 slots[0],receiver 此后不再
-            // 经栈存活,切割全程只依赖拷贝与栈上 list。
-            const StringView src      = str->view();
-            const StringView sep_view = sep->view();
-            const auto       list     = new_list(vm.gc());
-            slots[0]                  = Value::from_obj(list); // 先发布:list 白色建成即入栈根,段串铸造期间保命
-            usize begin               = 0;
+            // receiver 留在 slots[0] 由栈标根到切割结束(槽 0 是它唯一的栈根,临时 receiver 只有
+            // intern 弱根,覆写即悬垂),故新 list 挂临时根跨段串铸造的 GC 点保命,循环结束才写回
+            // 槽 0 发布。sep 经 slots[1] 恒为根,视图可留。
+            const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto list  = new_list(vm.gc());
+            const auto guard = vm.gc().make_guard(list);
+            usize      begin = 0;
             while (true) {
                 const usize hit = src.find(sep_view, begin);
                 if (hit == StringView::npos) {
@@ -117,6 +116,7 @@ namespace aria {
                 begin = hit + sep_view.size();
             }
             list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(begin))));
+            slots[0] = Value::from_obj(list);
             return true;
         }
 
@@ -180,14 +180,20 @@ namespace aria {
             if (argc != 1 && argc != 2) {
                 return vm.fail(ErrorCode::WrongArity, "substring expects 1 or 2 arguments, got {}", argc);
             }
-            if (!slots[1].is_int() || (argc == 2 && !slots[2].is_int())) {
+            if (!slots[1].is_int()) {
                 return vm.fail(ErrorCode::TypeMismatch, "substring index must be an integer, got {}",
-                               type_name(argc == 2 ? slots[2] : slots[1]));
+                               type_name(slots[1]));
             }
-            const auto str   = Object::as<ObjString>(slots[0].as_obj());
-            const i64  begin = slots[1].as_int();
-            const i64  end   = argc == 2 ? slots[2].as_int() : static_cast<i64>(str->length());
-            if (begin < 0 || end < begin || static_cast<u64>(end) > str->length()) {
+            if (argc == 2 && !slots[2].is_int()) {
+                return vm.fail(ErrorCode::TypeMismatch, "substring index must be an integer, got {}",
+                               type_name(slots[2]));
+            }
+            const auto str    = Object::as<ObjString>(slots[0].as_obj());
+            const i64  begin  = slots[1].as_int();
+            const auto length = static_cast<i64>(str->length());
+            const i64  end    = argc == 2 ? slots[2].as_int() : length;
+            // 前两个析取短路后 end >= begin >= 0 已成立,上界比较按 i64 即可(不借 u64 窄化)。
+            if (begin < 0 || end < begin || end > length) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "substring range {}..{} out of range", begin, end);
             }
             slots[0] = Value::from_obj(new_string(
@@ -227,7 +233,8 @@ namespace aria {
         }
 
         // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号索引,区别于字节域 s[i]);
-        // 越界(含负数)IndexOutOfBounds。逐码点扫描定位(O(i),无偏移索引表,v1 接受)。
+        // 越界 IndexOutOfBounds--负数与越过末码点同走循环走空后的同一处报错(负数不早退,多扫
+        // 一遍串换单出口)。逐码点扫描定位(O(i),无偏移索引表,v1 接受)。
         bool codepoint_at_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -237,26 +244,18 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "codepoint index must be an integer, got {}",
                                type_name(slots[1]));
             }
-            const i64 index = slots[1].as_int();
-            if (index < 0) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
-            }
-            const auto str    = Object::as<ObjString>(slots[0].as_obj());
-            const auto src    = str->view();
-            i64        seen   = 0;
+            const i64  index  = slots[1].as_int();
+            const auto src    = Object::as<ObjString>(slots[0].as_obj())->view();
             usize      offset = 0;
-            while (true) {
-                if (offset >= src.size()) {
-                    return vm.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
-                }
+            for (i64 seen = 0; offset < src.size(); ++seen) {
                 const auto [cp, width] = utf8::decode_one(src, offset);
                 if (seen == index) {
                     slots[0] = Value::from_int(cp); // u32 码点(<= 0x10FFFF)加宽,值域安全
                     return true;
                 }
                 offset += width;
-                ++seen;
             }
+            return vm.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
         }
 
         // iter() -> 迭代器:铸造 ObjStringIterator(string 与其迭代器成对,铸造口按类型解开

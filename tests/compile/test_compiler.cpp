@@ -688,6 +688,17 @@ TEST(Compiler, StringSplitKeepsEmptySegments) {
     EXPECT_NE(empty.error().message().find("split separator must not be empty"), std::string::npos);
 }
 
+// split 的 receiver 若为临时值(不进常量池,仅 intern 弱根),切割循环里的分配会回收它--
+// 内容须在覆写 slots[0] 前拷离 GC 堆。字面量 receiver 经常量池强根,故既有用例不覆盖此形态。
+TEST(Compiler, StringSplitTemporaryReceiverSurvivesStressGc) {
+    EXPECT_EQ(run_int(R"(var xs = ("aaaa," + "bbbbbbbbbbbbbbbb").split(","); )"
+                      R"(if (len(xs) == 2 && xs[0] == "aaaa") { return 1; } return 0;)"),
+              1);
+    EXPECT_EQ(run_int(R"(var xs = ("aaaa," + "bbbbbbbbbbbbbbbb").split(","); )"
+                      R"(if (xs[1] == "bbbbbbbbbbbbbbbb") { return 1; } return 0;)"),
+              1);
+}
+
 // find:首现字节下标,未命中 nil。
 TEST(Compiler, StringFindReturnsByteIndexOrNil) {
     EXPECT_EQ(run_int(R"(return "hello".find("llo");)"), 2);
@@ -719,6 +730,20 @@ TEST(Compiler, StringSubstringRangeChecked) {
     auto negative = run_source(R"(return "hello".substring(-1);)");
     ASSERT_FALSE(negative.has_value());
     EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
+}
+
+// substring 非整数参数:报错须报**违规的那个**参数(两参形态下首个参数违规时报的是它,不是
+// 合法的第二个)。
+TEST(Compiler, StringSubstringReportsOffendingArgument) {
+    auto first_bad = run_source(R"(return "hello".substring("x", 1);)");
+    ASSERT_FALSE(first_bad.has_value());
+    EXPECT_EQ(first_bad.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(first_bad.error().message().find("got String"), std::string::npos);
+
+    auto second_bad = run_source(R"(return "hello".substring(1, "x");)");
+    ASSERT_FALSE(second_bad.has_value());
+    EXPECT_EQ(second_bad.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(second_bad.error().message().find("got String"), std::string::npos);
 }
 
 // starts_with/ends_with:字节前后缀,空串前缀恒真。

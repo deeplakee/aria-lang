@@ -6,7 +6,7 @@
 
 架构缝已由 M5 备置,本里程碑补生产侧:
 
-- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index` + `op_*` 运算符族 + `op_call`。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
+- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index`（**2026-09-22 今注:`op_*` 运算符族已整族删除、`op_call` 已改为同款的 `op_call_impl`（取 `__call__` 实现）**——算子改为「对象上的命名方法 + 经 `resolve_invoke` 取实现」，见本文件末「算子重载」节与 `src/aria.hpp` 的 `kOp*Name`）。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
 - **语言方法面(类表)**:语言可见方法(`s.upper`、`it.next`、`xs.iter`)一律住 `ObjClass` 表。内置类型由 VM 构造期 bootstrap 类承载(`string_class_`/`list_class_`/`map_class_`/`range_class_`/`iterator_class_`,对标既有 `object_class_`;GC 经 vm_roots tracer 标根,先例同)。
 - **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包——形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 override 自持 `new_bound_method(命中值, receiver)`」,查表即直调类协议(2026-09-18 review 改定:曾收口的内置侧专用 helper `load_builtin_member` 经两轮收窄后整体删除,各类型 override 直调 `ObjClass::load_field`,与实例路径「先委托类协议、后自己绑定」完全同形)。
 - **与实例路径不同构,不硬合**:实例路径的绑定判别是闭包戳(`is_method`)+ fields 缓存回填(M5 语义);内置类表全是原生函数,`is_method` 恒 false,戳判别不可复用。两路共享的只有 `ObjClass::load_field` 这层(本来就是共享);实例路径保持现状不动,内置侧另立 helper——「共享绑定 helper 自 ObjInstance 提炼」的早期设想作废。
@@ -96,7 +96,7 @@
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
 
-> **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态:`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)——`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`(数值快路径与失败文案不变);算术族其余五个(op_sub/mul/div/mod/negate)仍备置,无消费者不加放宽线。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
+> **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态(当时):`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)——`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`。**2026-09-22 今注:该形态已废弃**——执行体合并为 `run_binary_operator<Op>` 后,算子实现整体改为「对象上的命名方法」(`String` 的 `__add__` 是 StringBuiltins 里的原生),详见文件末「算子重载」节。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
 
 > **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`resolve_invoke` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
 
@@ -107,7 +107,7 @@
 > continuation 字节,实测一等值)故必须对任意字节串全序;UTF-8 保序,故合法文本上结果与按码点比较一致。
 > 接线形态:比较四件入算术族的虚函数族(`op_less`/`op_less_equal`/`op_greater`/`op_greater_equal`,命名
 > 对齐 OpCode 的 LESS/LESS_EQUAL/GREATER/GREATER_EQUAL),四个比较指令经新执行体
-> `run_binary_compare<Op>` -- 与 `run_binary_add` 同形:非对象左值委托 `run_binary_numeric`(数值热路径
+> `run_binary_compare<Op>`(今与算术五算子合并为 `run_binary_operator<Op>`) -- 与 `run_binary_add` 同形:非对象左值委托 `run_binary_numeric`(数值热路径
 > 只多一次 `is_obj()` tag 判定),对象左值派发协议(`ObjString` override 字节序比较,GC-pure)。实现坑:
 > 必须走 `string_view::compare`,`char` 在多数平台有符号,手写逐 char 比较会把 0x80 以上字节排到 ASCII
 > 之前(`"é" < "z"` 会反过来)。**至此计划表外三处缺口全部补齐**(字符串拼接、模块成员访问、字符串比较);
@@ -512,8 +512,45 @@ cmake --build build/rel --target vm_bench -j
 
 ## 5. 参照
 
-- `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。
+- `Object.hpp` 协议缝注释(成员/下标/可调用三组;原运算符组已随算子重载落地删除)——本计划的架构基准。
 - `ObjInstance::load_field`(绑定路径)与 `ObjClass::load_field`(链读穿透、类侧不绑定)——共享绑定 helper 的两处消费点。
 - `ObjBoundMethod`(method_/receiver_ 均 Value 泛化,原生方法调用约定「slots[0] = receiver」)——运行时侧已就绪,本计划只补生产侧。
 - `bytecode-instruction-set.md` §4.14/§6.4(五条预置指令的栈形与操作数)、`compound-assignment-lowering.md` §4.3(下标四模式)。
 - Wren 0.4(本地 `/Users/icelake/src/wren`):每值一类 + 类表方法派发(`wren_value.c` value 为 class 成员)、迭代即方法(Wren 无内建迭代器对象,list 迭代走下标,aria 取「协议方法 + 迭代器对象」路,与 Python/JS 同形)。
+
+## 6. 算子重载(2026-09-22 落地,工作区待 review)
+
+**形态**:可重载算子的实现是**对象上的命名方法**,名字 = `src/aria.hpp` 的 `kOp*Name`(十个:算术五件 + 比较四件 + 一元取负
+`__neg__`;判等/下标/调用不做)。运行期:`AriaVM::run_binary_operator<Op>` / `run_negate` 经 `obj_binary_op_impl<Op>` 调
+**`Object::op_*_impl(AriaVM&) -> Opt<Value>`**(协议语义 = 取该算子的**实现**,不是算结果)拿到可调用值后 `call_value(target, argc)`
+(二元 1、一元 0)。调用区栈形天然就位:`[lhs, rhs]` 即方法帧 `[this, arg1]`,槽 0 保持 receiver。取实现的实现分两路:
+**基类默认直接 fail**(`type X does not support '<钩子名>'`);**实例** 11 个 override 各按名(aria.hpp 的 `kOp*Name`)
+走 `resolve_invoke`(fields 优先再类链);**内置 string** 5 个 override 直给实现格 `String*Fn`(bootstrap 期从类表拷入)。
+
+**查找序**:实例 `fields_` 优先(实例上一个叫 `__add__` 的字段遮蔽类链钩子)再沿类链;内置类型取自身 bootstrap 类表里的原生
+(由用户拍板:查找从实例 fields 起)。取不到即报错,**措辞随宿主**:实例落成员缺席(`<class Box> has no member '__add__'`,
+码 UndefinedProperty),其余类型落基类默认的 `type X does not support '<钩子名>'`(`[1] + [2]` 即 `type List does not
+support '__add__'`,码 TypeMismatch)——不再有
+「operator '...' requires numbers」那条针对对象左值的旧文案(数值左值仍走 `run_binary_numeric`,文案不变)。
+
+**内置侧**:string 的 `__add__`(拼接,经驻留池)与 `__lt__`/`__le__`/`__gt__`/`__ge__`(无符号字节序,GC-pure)是 StringBuiltins
+里的原生方法(`ObjString::op_*_impl` 直读实现格,见上)。**失败文案打方法名**(`__lt__ requires two strings, got String and
+Int`、`__lt__ expects 1 argument, got 2`):每个钩子的方法名与文案都写**就地字面量**(函数名 `__lt___fn`、文案首词 `__lt__`、
+类表注册键 `"__lt__"` 三处同形,漏改其一时 `cache_string_operator_fns` 按名查不到、bootstrap 断言即报)。曾议把名字作模板
+实参传入,实测不可行: StringView 非 structural type 当不了 NTTP、`const char*` 在 C++23 收不了字面量 -- clang 三种写法全拒,
+包 struct 包装类型属过度设计,故名字就地写。四个比较钩子**各自内联完整校验**(元数 + 两侧皆 String + 按无符号字节序比较,
+失败就地 fail;无共用前段)。
+**调用协议同款**:对象被调用时按 `__call__`(`kOpCallName`)取实现后递归分发,未实现即 fail(`type X does not support '__call__'`,
+码 CallNonCallable);类本身仍走实例化。`Object::resolve_invoke` 的基类默认保持隐式委托 load_field
+(未 override 的类型照读路径取值,不设「显式参与」反转)。
+**边界(2026-09-22 拍板,不兜底)**:钩子自指或成环(`d.__call__ = d`、`a.__call__=b;b.__call__=a`)会无穷重入 `call_value` 直到 C++ 栈溢出(SIGSEGV,无错误消息)——按「手写死循环同类」处理,后果由使用者承担:**不加自指检测、不加重入深度上限、不改查找路径**(呈报过的两条修法均否)。
+钩子元数由调用侧钉死(二元恒传 1 个实参、`__neg__` 零个):用户方法钩子经 `call_closure` 的 `check_arity` 检查,内建 string 钩子
+各自校验 `slots.size()` 报 `__lt__ expects 1 argument, got N`;左值非对象时**不走钩子**(`1 + box` 仍报数值路径的
+TypeMismatch,无 reflected 形态)。数值侧同批拆过:`run_binary_numeric` 只剩入口(弹 2 + 守卫 + 按域分流),双 Int 与
+任一 F64 升浮点各住 `run_binary_int<Op>` / `run_binary_f64<Op>`(前者除/模零就地 fail,后者 IEEE 无失败路径);
+实测数值热路径无成本(Release 15M 次数值算子:拆前 0.20s / 拆后 0.20s)。
+
+**坑**:①`FailSignal` 只在「不可由 bool 构造」的 `Opt<T>` 上转 nullopt——`return vm.fail(...)` 落到 `Opt<i32>`/`Opt<bool>`
+会构出「已初始化的 0/false」把 fail 吞成成功(协议族的 `Opt<Value>` 安全;标量返回型的站点改用 bool + 出参 -- StringBuiltins
+的算子钩子即按 native 契约返 bool、结果写 slots[0])。②Debug 构建下按名查找链未内联,单次算子
+成本被放大数倍,性能判断必须用 Release。③5M 轮字符串算子对照(20M 次操作,Release,best-of-N):改前基线 0.60s、「VM 直接 resolve_invoke」版 0.82s、**现形态(op_*_impl + 实现格直读)0.68s** —— 取实现分两路正是为省掉内建类型的类表查找(约 −7ns/次);余下 +4ns/次是「算子即方法调用」本身的代价。

@@ -252,6 +252,42 @@ return std::unexpected(std::move(compiled).error());
 
 ------
 
+# Nodiscard 与结果丢弃
+
+> **`[[nodiscard]]` 说的是「这个返回值必须被处置」：要值就接住，不要值就写 `std::ignore = f(...)`。**
+> 被调函数没标 `[[nodiscard]]` 时，调用语句前不留 `(void)`--那里没有需要压制的诊断，转换是纯装饰。
+
+| 语境 | 规则 | 例 |
+| --- | --- | --- |
+| 丢弃 `[[nodiscard]]` 函数的返回值 | `std::ignore = f(...)` | `std::ignore = define_local_or_fail(name, loc);` |
+| 丢弃未标 `[[nodiscard]]` 函数的返回值 | 裸调用，不加任何转换 | `make_class(gc, "orphan");` |
+| 压制未用**参数** | 照常带类型带参数名，签名不做任何压缩 | `void op_add(AriaVM& vm, Value lhs, Value rhs)`，`rhs` 未用也照写 |
+| 压制未用**变量** | `(void) x;` | `(void) cp;`（结构化绑定里只用一半时） |
+
+细则：
+
+- `(void) f(...)` 是 C 遗留写法，且同一个 `(void)` 语法在别处承担压制未用参数/变量的职责，两种语义同形不可区分；`std::ignore` 是标准库的显式丢弃设施，不产生转换。
+- `std::ignore` 定义在 `<tuple>`：使用的 TU 显式 `#include <tuple>`，不靠其它头传递引入。
+- `std::ignore =` 只写在有属性约束处。给未标 `[[nodiscard]]` 的调用补 `std::ignore =`，与给它补 `(void)` 同样是噪音，两者都删。
+- 裸丢弃 `[[nodiscard]]` 返回值（不写任何转换）编译器会报 `-Wunused-result`（clang 默认开启、无需 `-Wall`；gcc 侧挂在 `-Wall` 下），故清扫既有站点时以「全量重建 + grep warning」为准，只 grep `(void)` 会漏。
+- `AriaVM::fail` 的惯用出口是 `return vm.fail(...)`（`FailSignal` 按调用点返回类型转 false/nullptr/nullopt）；确需不返回地调用时同样写 `std::ignore = vm.fail(...)`。
+
+```cpp
+// 不取
+(void) define_local_or_fail(name, loc);    // nodiscard 返值被 (void) 压制
+(void) make_class(gc, "orphan");           // 该函数未标 nodiscard，(void) 空转
+gc.new_object<ObjDummy>();                 // 裸丢弃 nodiscard 返值，仅编译器警告可查
+void op_add(AriaVM& vm, Value lhs, Value); // 省略参数名压制未用参数
+
+// 取
+std::ignore = define_local_or_fail(name, loc);
+make_class(gc, "orphan");
+std::ignore = gc.new_object<ObjDummy>();
+void op_add(AriaVM& vm, Value lhs, Value rhs);
+```
+
+------
+
 # Naming Priorities
 
 当规则冲突时：

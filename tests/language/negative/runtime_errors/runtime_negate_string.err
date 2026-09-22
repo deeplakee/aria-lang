@@ -1,2 +1,2 @@
-Runtime: InvalidOperand negate requires a number, got String
+Runtime: TypeMismatch type String does not support '__neg__'
 at <main> (

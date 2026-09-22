@@ -92,63 +92,15 @@ namespace aria {
         return vm.fail(ErrorCode::TypeMismatch, "string does not support subscript assignment");
     }
 
-    Opt<Value> ObjString::op_add(AriaVM& vm, const Value rhs) const {
-        // 拼接:两侧均为 String 才成立(无隐式转换,显式转换走内置 str())。GC 走查:分配点
-        // 在 intern 未命中时(gc.new_object 顶部 maybe_collect),此刻 this 与 rhs 经调用方 peek
-        // 在值栈(「栈即根」,见 Object.hpp 协议接线纪律);C++ 局部 buffer 非 GC 对象,不受
-        // collect 影响。结果经驻留池,故与同内容字面量同指针。
-        const auto other = try_obj<ObjString>(rhs);
-        if (other == nullptr) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '+' requires two strings, got {} and {}", type_name(),
-                           aria::type_name(rhs));
-        }
-        const StringView lhs_view = view();
-        const StringView rhs_view = other->view();
-        String           buffer;
-        buffer.reserve(lhs_view.size() + rhs_view.size());
-        buffer.append(lhs_view).append(rhs_view);
-        return Value::from_obj(new_string(vm.gc(), buffer));
-    }
+    Opt<Value> ObjString::op_add_impl(AriaVM& vm) { return vm.register_value(kStringAddFnOffset); }
 
-    // 四个比较算子的共用实现形态:两侧须皆 String,按**无符号字节序**比较,rhs 非 String 就地
-    // 烘焙定向文案(各算子报自己的符号)。必须走 string_view::compare(char_traits 的 memcmp 语义)
-    // --char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到 ASCII 之前("é" < "z" 会
-    // 反过来)。纯读零分配(GC-pure),无 GC 点。
-    Opt<Value> ObjString::op_less(AriaVM& vm, const Value rhs) const {
-        const auto other = try_obj<ObjString>(rhs);
-        if (other == nullptr) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '<' requires two strings, got {} and {}", type_name(),
-                           aria::type_name(rhs));
-        }
-        return Value::from_bool(view().compare(other->view()) < 0);
-    }
+    Opt<Value> ObjString::op_less_impl(AriaVM& vm) { return vm.register_value(kStringLtFnOffset); }
 
-    Opt<Value> ObjString::op_less_equal(AriaVM& vm, const Value rhs) const {
-        const auto other = try_obj<ObjString>(rhs);
-        if (other == nullptr) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '<=' requires two strings, got {} and {}", type_name(),
-                           aria::type_name(rhs));
-        }
-        return Value::from_bool(view().compare(other->view()) <= 0);
-    }
+    Opt<Value> ObjString::op_less_equal_impl(AriaVM& vm) { return vm.register_value(kStringLeFnOffset); }
 
-    Opt<Value> ObjString::op_greater(AriaVM& vm, const Value rhs) const {
-        const auto other = try_obj<ObjString>(rhs);
-        if (other == nullptr) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '>' requires two strings, got {} and {}", type_name(),
-                           aria::type_name(rhs));
-        }
-        return Value::from_bool(view().compare(other->view()) > 0);
-    }
+    Opt<Value> ObjString::op_greater_impl(AriaVM& vm) { return vm.register_value(kStringGtFnOffset); }
 
-    Opt<Value> ObjString::op_greater_equal(AriaVM& vm, const Value rhs) const {
-        const auto other = try_obj<ObjString>(rhs);
-        if (other == nullptr) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '>=' requires two strings, got {} and {}", type_name(),
-                           aria::type_name(rhs));
-        }
-        return Value::from_bool(view().compare(other->view()) >= 0);
-    }
+    Opt<Value> ObjString::op_greater_equal_impl(AriaVM& vm) { return vm.register_value(kStringGeFnOffset); }
 
     Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) {
         // 内置侧两步,与实例路径同构(先委托类协议查表、后自己绑定,同 ObjInstance::load_field

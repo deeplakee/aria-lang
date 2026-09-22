@@ -1,2 +1,2 @@
-Runtime: TypeMismatch operator '<' requires two strings, got String and Int
+Runtime: TypeMismatch __lt__ requires two strings, got String and Int
 at <main> (

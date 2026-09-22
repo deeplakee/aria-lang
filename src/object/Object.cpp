@@ -5,20 +5,7 @@
 
 namespace aria {
 
-    namespace {
-
-        // op_* 族基类默认的共用 fail 体(二元):文案与 VM 原语路径 run_binary_numeric 的
-        // TypeMismatch 报错逐字一致(对象在左、协议不支持的类型组合从此处报,两路同串)。
-        // 返回 FailSignal 哨兵,各 op_* 默认体 `return op_binary_unsupported(...)` 一行出口
-        //(转换为其 Opt<Value> 的 nullopt)。
-        FailSignal op_binary_unsupported(AriaVM& vm, const StringView symbol, const Object* lhs, const Value rhs) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", symbol,
-                           lhs->type_name(), type_name(rhs));
-        }
-
-    } // namespace
-
-    // 成员/下标访问协议与算术协议的基类默认体:定义移出头外 -- 默认体经 AriaVM::fail 模板
+    // 成员/下标访问协议的基类默认体:定义移出头外 -- 默认体经 AriaVM::fail 模板
     // 报错,而 AriaVM.hpp 经 ObjException.hpp 依赖 Object.hpp、两头互不 include(环),虚函数
     // 默认实现只能落 .cpp。默认语义一律「本类型不支持」:vm.fail 就地烘焙文案入挂起错误寄存器,
     // 失败出口经 FailSignal 哨兵一行返回(契约见 Object.hpp 协议注释:load 族 nullopt ⟺ 已
@@ -49,41 +36,51 @@ namespace aria {
         return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 
-    Opt<Value> Object::op_add(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "+", this, rhs); }
-
-    Opt<Value> Object::op_sub(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "-", this, rhs); }
-
-    Opt<Value> Object::op_mul(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "*", this, rhs); }
-
-    Opt<Value> Object::op_div(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "/", this, rhs); }
-
-    Opt<Value> Object::op_mod(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "%", this, rhs); }
-
-    // 比较算子默认体:与数值原语路径同文案(比较指令的对象左值在此报,未 override 的类型一律
-    // 「requires numbers」--String 已 override 成字节序比较,其余类型照此)。
-    Opt<Value> Object::op_less(AriaVM& vm, const Value rhs) const { return op_binary_unsupported(vm, "<", this, rhs); }
-
-    Opt<Value> Object::op_less_equal(AriaVM& vm, const Value rhs) const {
-        return op_binary_unsupported(vm, "<=", this, rhs);
+    // 算子/调用协议的基类默认:本类型未实现该协议,直接 fail(同 store_field 等基类默认形态;报文
+    // 打钩子名,指向要写的方法)。实现者见 Object.hpp 协议注释。
+    Opt<Value> Object::op_add_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__add__'", type_name());
     }
 
-    Opt<Value> Object::op_greater(AriaVM& vm, const Value rhs) const {
-        return op_binary_unsupported(vm, ">", this, rhs);
+    Opt<Value> Object::op_sub_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__sub__'", type_name());
     }
 
-    Opt<Value> Object::op_greater_equal(AriaVM& vm, const Value rhs) const {
-        return op_binary_unsupported(vm, ">=", this, rhs);
+    Opt<Value> Object::op_mul_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mul__'", type_name());
     }
 
-    Opt<Value> Object::op_negate(AriaVM& vm) const {
-        // 文案与 VM 的 NEGATE 指令报错一致(InvalidOperand)。
-        return vm.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name());
+    Opt<Value> Object::op_div_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__div__'", type_name());
+    }
+
+    Opt<Value> Object::op_mod_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mod__'", type_name());
+    }
+
+    Opt<Value> Object::op_less_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__lt__'", type_name());
+    }
+
+    Opt<Value> Object::op_less_equal_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__le__'", type_name());
+    }
+
+    Opt<Value> Object::op_greater_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__gt__'", type_name());
+    }
+
+    Opt<Value> Object::op_greater_equal_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__ge__'", type_name());
+    }
+
+    Opt<Value> Object::op_negate_impl(AriaVM& vm) {
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__neg__'", type_name());
     }
 
     Opt<Value> Object::op_call_impl(AriaVM& vm) {
-        // 基类默认:本类型未实现调用协议,直接 fail(同 store_field 等基类默认形态;报文打钩子名,
-        // 指向要写的方法)。
         return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name());
     }
+
 
 } // namespace aria

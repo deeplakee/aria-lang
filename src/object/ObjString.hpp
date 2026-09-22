@@ -101,27 +101,26 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 算术协议 override(算术族唯一接线者:ADD 指令经 AriaVM::run_binary_add 在对象左值
-        // 上派发到此):两侧均为 String 即拼接,结果经 new_string 驻留(同内容必同指针);
-        // 否则 TypeMismatch 定向文案。不做隐式转字符串,显式转换走内置 str()。
+        // 算子协议 override(内建实现直给,**不经成员查找**):返回 String 类表里对应钩子的
+        // 原生函数值 -- 五个算子钩子(`__add__` 拼接、`__lt__`/`__le__`/`__gt__`/`__ge__` 无符号
+        // 字节序比较)在 bootstrap 期注册进 String 类表并同时拷进实现格(kString*Fn),这里读格即得
+        // (类表仍是规范家,`"a".__add__("b")` 读路径照旧查它)。string 只实现 `+` 与四个比较,其余
+        // 算子不 override -> 基类默认报「本类型不支持该算子」(`type String does not support '__sub__'`;
+        // 显式按名调用才落成员 miss 的 `<class String> has no member '__sub__'`)。
         [[nodiscard]]
-        Opt<Value> op_add(AriaVM& vm, Value rhs) const override;
-
-        // 比较算子 override(四个比较指令经 AriaVM::run_binary_compare 在对象左值上派发):
-        // 两侧均为 String 即按**字节序**(unsigned/memcmp 语义,string_view::compare)比较,返回
-        // 装箱 Bool;否则 TypeMismatch 定向文案。字节序与 len/s[i] 的字节域同域,且对 s[i] 切出的
-        // 非法单字节串仍全序;UTF-8 保序,故合法文本上结果与按码点比较一致(无 locale/collation)。
-        [[nodiscard]]
-        Opt<Value> op_less(AriaVM& vm, Value rhs) const override;
+        Opt<Value> op_add_impl(AriaVM& vm) override;
 
         [[nodiscard]]
-        Opt<Value> op_less_equal(AriaVM& vm, Value rhs) const override;
+        Opt<Value> op_less_impl(AriaVM& vm) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater(AriaVM& vm, Value rhs) const override;
+        Opt<Value> op_less_equal_impl(AriaVM& vm) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater_equal(AriaVM& vm, Value rhs) const override;
+        Opt<Value> op_greater_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
 
         // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjList::load_field
         // 形)--先委托 VM 的 String bootstrap 类协议(ObjClass::load_field 沿链查表,miss

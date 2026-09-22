@@ -1,0 +1,3 @@
+// 钉住：算子实现是对象上的命名方法（名字见 src/aria.hpp 的 kOp*Name）——list 未实现 __add__，
+// `+` 报「type List does not support '__add__'」；其余算子同此。
+var x = [1] + [2];

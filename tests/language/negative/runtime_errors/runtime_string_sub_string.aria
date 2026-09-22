@@ -1,0 +1,3 @@
+// 钉住：string 只实现 `+` 与四个比较（__add__/__lt__/__le__/__gt__/__ge__），其余算子报
+// 「type String does not support '__sub__'」。
+var x = "a" - "b";

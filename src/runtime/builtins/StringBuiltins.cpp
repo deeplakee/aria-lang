@@ -390,6 +390,95 @@ namespace aria {
             return true;
         }
 
+        // ---- 运算符重载方法(函数名与 aria.hpp 的 kOp*Name 一一对应,经 AriaVM::run_binary_operator
+        // 取用;也是"算子 = 方法"的唯一实现处) ----
+        //
+        // 名字与失败文案都是**就地字面量**(与方法名同形,故不做模板参数也不逐调用点传):文案打方法名
+        // (`__lt__ requires two strings, got String and Int`),与注册键同处一文件、golden 亦钉住拼写。
+        // 两侧均为 String 才成立(无隐式转换,显式转换走内置 str());元数不符报 WrongArity(调用侧恒传
+        // 1 实参,故只在显式按名调用时触发)。string 只有 `+` 与四个比较:其余五个算子在 String 类表里
+        // 没有条目,故显式按名调用报成员缺席(`"a".__sub__("b")` -> `<class String> has no member
+        // '__sub__'`);算子路径 `"a" - "b"` 不经查找,落基类默认的 `type String does not support '__sub__'`。
+
+        // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
+        // 未命中时(gc.new_object 顶部 maybe_collect),此刻两侧经调用区槽在栈(receiver 占 slots[0],
+        // 「栈即根」);C++ 局部 buffer 非 GC 对象,不受 collect 影响。
+        bool __add___fn(AriaVM& vm, Span<Value> slots) {
+            if (slots.size() != 2) {
+                return vm.fail(ErrorCode::WrongArity, "__add__ expects 1 argument, got {}", slots.size() - 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
+                               type_name(slots[0]), aria::type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            String     buffer;
+            buffer.reserve(lhs->length() + rhs->length());
+            buffer.append(lhs->view()).append(rhs->view());
+            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
+            return true;
+        }
+
+        // 四个比较钩子 -> Bool:两侧须皆 String,按**无符号字节序**比较。必须走 string_view::compare
+        //(char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
+        // ASCII 之前(`"é" < "z"` 会反过来)。纯读零分配(GC-pure),无 GC 点。四处校验同形、谓词各异。
+        bool __lt___fn(AriaVM& vm, Span<Value> slots) {
+            if (slots.size() != 2) {
+                return vm.fail(ErrorCode::WrongArity, "__lt__ expects 1 argument, got {}", slots.size() - 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__lt__ requires two strings, got {} and {}",
+                               type_name(slots[0]), aria::type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) < 0);
+            return true;
+        }
+
+        bool __le___fn(AriaVM& vm, Span<Value> slots) {
+            if (slots.size() != 2) {
+                return vm.fail(ErrorCode::WrongArity, "__le__ expects 1 argument, got {}", slots.size() - 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__le__ requires two strings, got {} and {}",
+                               type_name(slots[0]), aria::type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) <= 0);
+            return true;
+        }
+
+        bool __gt___fn(AriaVM& vm, Span<Value> slots) {
+            if (slots.size() != 2) {
+                return vm.fail(ErrorCode::WrongArity, "__gt__ expects 1 argument, got {}", slots.size() - 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__gt__ requires two strings, got {} and {}",
+                               type_name(slots[0]), aria::type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) > 0);
+            return true;
+        }
+
+        bool __ge___fn(AriaVM& vm, Span<Value> slots) {
+            if (slots.size() != 2) {
+                return vm.fail(ErrorCode::WrongArity, "__ge__ expects 1 argument, got {}", slots.size() - 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__ge__ requires two strings, got {} and {}",
+                               type_name(slots[0]), aria::type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) >= 0);
+            return true;
+        }
+
         // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kStringBuiltins[] = {
                 {"upper", upper_fn},
@@ -409,6 +498,13 @@ namespace aria {
                 {"to_int", to_int_fn},
                 {"to_float", to_float_fn},
                 {"iter", iter_fn},
+                // 运算符重载方法(String 只有 `+` 与四个比较;键与函数名对应的钩子名同形,漏改其一时
+                // cache_string_operator_fns 按名查不到、bootstrap 断言即报)
+                {"__add__", __add___fn},
+                {"__lt__", __lt___fn},
+                {"__le__", __le___fn},
+                {"__gt__", __gt___fn},
+                {"__ge__", __ge___fn},
         };
 
     } // namespace

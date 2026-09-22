@@ -58,14 +58,45 @@ namespace aria {
         return class_->load_field(vm, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
     }
 
-    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpCallName)); }
-
     bool ObjInstance::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 实例字段动态(无预声明):set 即创建/更新,永不失败(恒 true;false ⟺ 已 fail)。
         // set 走 trivial 分配不触 GC(GC 核心不变式)。
         fields_.set(Value::from_obj(name), value);
         return true;
     }
+
+    // 算子/调用协议实现:按名到本实例(实例 fields 优先,可遮蔽类链钩子)再类链取实现 --
+    // 「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。名字经 new_string 取 intern 串(已驻留,
+    // 命中不分配)。
+    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpAddName)); }
+
+    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpSubName)); }
+
+    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpMulName)); }
+
+    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpDivName)); }
+
+    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpModName)); }
+
+    Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpLessName)); }
+
+    Opt<Value> ObjInstance::op_less_equal_impl(AriaVM& vm) {
+        return resolve_invoke(vm, new_string(vm.gc(), kOpLessEqualName));
+    }
+
+    Opt<Value> ObjInstance::op_greater_impl(AriaVM& vm) {
+        return resolve_invoke(vm, new_string(vm.gc(), kOpGreaterName));
+    }
+
+    Opt<Value> ObjInstance::op_greater_equal_impl(AriaVM& vm) {
+        return resolve_invoke(vm, new_string(vm.gc(), kOpGreaterEqualName));
+    }
+
+    Opt<Value> ObjInstance::op_negate_impl(AriaVM& vm) {
+        return resolve_invoke(vm, new_string(vm.gc(), kOpNegateName));
+    }
+
+    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpCallName)); }
 
     void ObjInstance::trace(GC& gc) const noexcept {
         gc.mark_object(class_);

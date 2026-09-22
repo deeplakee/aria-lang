@@ -62,6 +62,26 @@ namespace {
         return result.has_value() && is_truthy(*result);
     }
 
+    // 算子的实现是 String 类表里的原生方法(名字见 aria.hpp 的 kOp*Name):取槽内裸原生值
+    // (不绑定;与 VM 侧 op_*_impl 读的实现格是同一批值,bootstrap 期拷入并断言一致)按原生契约调用 --slots[0] = receiver
+    // 兼 返回槽、slots[1] = rhs。返回结果 Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责 让两侧存活(receiver 与
+    // rhs 由 make_string 入根)。端到端路径(算子指令 -> 取钩子 -> 调用) 由语料覆盖(13_strings 的拼接/比较各例,语料开
+    // stress GC)。
+    Opt<Value> invoke_string_hook(AriaVM& vm, const StringView hook_name, const Value lhs, const Value rhs) {
+        auto       guard = vm.gc().make_guard();
+        const auto name  = make_string(vm.gc(), guard, hook_name);
+        const auto hook  = vm.string_class()->load_field(vm, name);
+        if (!hook) {
+            return std::nullopt;
+        }
+        Value      slots[]{lhs, rhs};
+        const auto fn = aria::Object::as<ObjNativeFn>(hook->as_obj());
+        if (!fn->fn()(vm, aria::Span<Value>{slots, 2})) {
+            return std::nullopt;
+        }
+        return slots[0];
+    }
+
     // 取切片结果并逐字符比对(切片恒产出 string;比较就在本函数内完成,结果串不需要额外根)。
     void expect_slice(AriaVM& vm, ObjString* s, aria::ObjRange* range, const StringView expected) {
         const auto result = s->load_index(vm, Value::from_obj(range));
@@ -318,7 +338,7 @@ TEST(ObjString, BootstrapSurvivesStressCollect) {
     EXPECT_EQ(method->name()->view(), "upper"); // name() 经 bound 的原生取名,存活即链完好
 }
 
-// ---- 算术协议(op_add = 拼接;算术族当前唯一接线者) ----
+// ---- 拼接钩子(String 类表里的 __add__ 原生;算子实现即方法) ----
 
 // 两侧皆 String 即拼接:内容为两串相接,结果为长串时行走 long_chars_ 路径。
 TEST(ObjString, OpAddConcatenates) {
@@ -327,7 +347,7 @@ TEST(ObjString, OpAddConcatenates) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_string(gc, guard, "0123456789abcdefghij"); // 20 字节:SSO 外
     auto   rhs   = make_string(gc, guard, "KLM");
-    auto   sum   = lhs->op_add(vm, Value::from_obj(rhs));
+    auto   sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     guard.push(sum->as_obj());
     const auto sum_str = try_obj<ObjString>(*sum);
@@ -344,7 +364,7 @@ TEST(ObjString, OpAddResultIsInterned) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_string(gc, guard, "in");
     auto   rhs   = make_string(gc, guard, "tern");
-    auto   sum   = lhs->op_add(vm, Value::from_obj(rhs));
+    auto   sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     EXPECT_TRUE(value_identical(*sum, Value::from_obj(new_string(gc, "intern"))));
 }
@@ -356,13 +376,13 @@ TEST(ObjString, OpAddHandlesEmptyOperands) {
     auto   guard = gc.make_guard();
     auto   empty = make_string(gc, guard, "");
     auto   text  = make_string(gc, guard, "x");
-    auto   both  = empty->op_add(vm, Value::from_obj(empty));
+    auto   both  = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(empty), Value::from_obj(empty));
     ASSERT_TRUE(both.has_value());
     guard.push(both->as_obj());
     const auto both_str = try_obj<ObjString>(*both);
     ASSERT_NE(both_str, nullptr);
     EXPECT_EQ(both_str->length(), 0u);
-    auto one = text->op_add(vm, Value::from_obj(empty));
+    auto one = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(text), Value::from_obj(empty));
     ASSERT_TRUE(one.has_value());
     guard.push(one->as_obj());
     const auto one_str = try_obj<ObjString>(*one);
@@ -376,19 +396,20 @@ TEST(ObjString, OpAddNonStringRhsFails) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "a");
-    EXPECT_FALSE(s->op_add(vm, Value::from_int(1)).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(s), Value::from_int(1)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch operator '+' requires two strings, got String and Int");
+    EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two strings, got String and Int");
 
-    EXPECT_FALSE(s->op_add(vm, Value::nil_val()).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(s), Value::nil_val()).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch operator '+' requires two strings, got String and Nil");
+    EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two strings, got String and Nil");
 }
 
-// stress collect 下的拼接:分配点(gc.new_object 顶部 maybe_collect)两侧经调用方值栈为根
-// --调用方 peek 不弹是接线纪律,此处按 VM 调用区形态把两侧入栈再调,复现真实根形态。
+// stress collect 下的拼接:分配点(gc.new_object 顶部 maybe_collect)两侧须为根 --运行期由算子
+// 调用区槽 0/1 承担(receiver 与 rhs),此处两侧经 make_string 入根、结果取回后入根,复现同款根
+// 形态;拼接结果经驻留池,故与同内容串同指针。
 TEST(ObjString, OpAddSurvivesStressCollect) {
     AriaVM vm;
     vm.gc().set_stress(true);
@@ -396,17 +417,13 @@ TEST(ObjString, OpAddSurvivesStressCollect) {
     auto  guard = gc.make_guard();
     auto  lhs   = make_string(gc, guard, "stress");
     auto  rhs   = make_string(gc, guard, "collect");
-    auto* ctx   = &vm.main_context();
-    ctx->push(Value::from_obj(lhs)); // 值栈即根:与 run_binary_add 的 peek 形态一致
-    ctx->push(Value::from_obj(rhs));
-    auto sum = ctx->peek(1).as_obj()->op_add(vm, ctx->peek(0));
+    auto  sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
-    ctx->drop(2);
-    ctx->push(*sum);
-    EXPECT_EQ(ctx->peek(0).as_obj()->debug_repr(), "\"stresscollect\"");
+    guard.push(sum->as_obj());
+    EXPECT_EQ(sum->as_obj()->debug_repr(), "\"stresscollect\"");
 }
 
-// ---- 比较算子(op_less/op_less_equal/op_greater/op_greater_equal = 字节序) ----
+// ---- 比较钩子(__lt__/__le__/__gt__/__ge__ = 字节序) ----
 
 // 四算子的真值表(含空串、真前缀、相等四态)。
 TEST(ObjString, OpCompareByteOrderTruthTable) {
@@ -419,20 +436,28 @@ TEST(ObjString, OpCompareByteOrderTruthTable) {
     auto   empty = make_string(gc, guard, "");
     auto   pre   = make_string(gc, guard, "app"); // a 的真前缀
 
-    EXPECT_TRUE(compared_true(a->op_less(vm, Value::from_obj(b))));
-    EXPECT_FALSE(compared_true(b->op_less(vm, Value::from_obj(a))));
-    EXPECT_TRUE(compared_true(b->op_greater(vm, Value::from_obj(a))));
-    EXPECT_FALSE(compared_true(a->op_greater(vm, Value::from_obj(b))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(a), Value::from_obj(b))));
+    EXPECT_FALSE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(b), Value::from_obj(a))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(b), Value::from_obj(a))));
+    EXPECT_FALSE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(a), Value::from_obj(b))));
 
-    EXPECT_TRUE(compared_true(same->op_less_equal(vm, Value::from_obj(a))));    // 相等:<= 真
-    EXPECT_TRUE(compared_true(same->op_greater_equal(vm, Value::from_obj(a)))); // 相等:>= 真
-    EXPECT_FALSE(compared_true(same->op_less(vm, Value::from_obj(a))));         // 相等:< 假
-    EXPECT_FALSE(compared_true(same->op_greater(vm, Value::from_obj(a))));
+    EXPECT_TRUE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessEqualName, Value::from_obj(same), Value::from_obj(a)))); // 相等:<= 真
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterEqualName, Value::from_obj(same),
+                                                 Value::from_obj(a)))); // 相等:>= 真
+    EXPECT_FALSE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(same), Value::from_obj(a)))); // 相等:< 假
+    EXPECT_FALSE(
+            compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(same), Value::from_obj(a))));
 
-    EXPECT_TRUE(compared_true(empty->op_less(vm, Value::from_obj(a)))); // 空串最小
-    EXPECT_FALSE(compared_true(empty->op_less(vm, Value::from_obj(empty))));
-    EXPECT_TRUE(compared_true(empty->op_less_equal(vm, Value::from_obj(empty))));
-    EXPECT_TRUE(compared_true(pre->op_less(vm, Value::from_obj(a)))); // 真前缀更小
+    EXPECT_TRUE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(empty), Value::from_obj(a)))); // 空串最小
+    EXPECT_FALSE(
+            compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(empty), Value::from_obj(empty))));
+    EXPECT_TRUE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessEqualName, Value::from_obj(empty), Value::from_obj(empty))));
+    EXPECT_TRUE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(pre), Value::from_obj(a)))); // 真前缀更小
 }
 
 // 无符号字节序钉子:多字节 UTF-8 与孤立 continuation 字节串都按字节值比。
@@ -447,10 +472,14 @@ TEST(ObjString, OpCompareIsUnsignedBytewise) {
     auto lone  = make_string(gc, guard, "\xC3");
     auto tilde = make_string(gc, guard, "~"); // 0x7E
 
-    EXPECT_TRUE(compared_true(accent->op_greater(vm, Value::from_obj(z))));    // 0xC3 > 0x7A
-    EXPECT_TRUE(compared_true(lone->op_greater(vm, Value::from_obj(tilde))));  // 0xC3 > 0x7E
-    EXPECT_TRUE(compared_true(accent->op_greater(vm, Value::from_obj(lone)))); // 0xC3 0xA9 > 0xC3(前缀)
-    EXPECT_FALSE(compared_true(accent->op_less(vm, Value::from_obj(accent)))); // 自反不成立
+    EXPECT_TRUE(compared_true(
+            invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(accent), Value::from_obj(z)))); // 0xC3 > 0x7A
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(lone),
+                                                 Value::from_obj(tilde)))); // 0xC3 > 0x7E
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(accent),
+                                                 Value::from_obj(lone)))); // 0xC3 0xA9 > 0xC3(前缀)
+    EXPECT_FALSE(compared_true(
+            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(accent), Value::from_obj(accent)))); // 自反不成立
 }
 
 // rhs 非 String:TypeMismatch 定向文案,四个算子各自带符号(与算术族「override 自带符号」契约同形)。
@@ -460,15 +489,15 @@ TEST(ObjString, OpCompareNonStringRhsFails) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "a");
 
-    EXPECT_FALSE(s->op_less(vm, Value::from_int(1)).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(s), Value::from_int(1)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch operator '<' requires two strings, got String and Int");
+    EXPECT_EQ(message, "Runtime: TypeMismatch __lt__ requires two strings, got String and Int");
 
-    EXPECT_FALSE(s->op_greater_equal(vm, Value::nil_val()).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpGreaterEqualName, Value::from_obj(s), Value::nil_val()).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch operator '>=' requires two strings, got String and Nil");
+    EXPECT_EQ(message, "Runtime: TypeMismatch __ge__ requires two strings, got String and Nil");
 }
 
 // 比较是 GC-pure:不分配、不触发回收(bytes_allocated 前后不变),故协议侧无 GC 点。
@@ -480,7 +509,7 @@ TEST(ObjString, OpCompareAllocatesNothing) {
     auto   b     = make_string(gc, guard, "bbb");
 
     const usize before = gc.bytes_allocated();
-    EXPECT_TRUE(compared_true(a->op_less(vm, Value::from_obj(b))));
-    EXPECT_TRUE(compared_true(b->op_greater(vm, Value::from_obj(a))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(a), Value::from_obj(b))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(b), Value::from_obj(a))));
     EXPECT_EQ(gc.bytes_allocated(), before);
 }

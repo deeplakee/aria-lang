@@ -21,6 +21,11 @@ namespace aria {
     // 偏移常量 k<名字>Offset(如 kObjectClassOffset,值 = 枚举值,即寄存器组内格位):scoped
     // enum 不隐式转整型,C++ 侧数组下标与 LOAD_REG 操作数发射统一走常量,免逐点
     // std::to_underlying。
+    //
+    // 末组 = 内置类型的算子实现缓存五格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生
+    // 函数值):内置类型取实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。实现格的
+    // 规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。
+    // (实例侧的按名取实现不走寄存器:ObjInstance 的 override 各自 new_string 取 intern 串)。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                    \
     X(ObjectClass)   /* Object 根类(def 无 super 父类;VM bootstrap 填充,原 LOAD_OBJECT 收编) */                        \
     X(DefaultMark)   /* 缺参印章(私有 no-op native,call_closure 垫充未传槽;不注册 builtins 用户不可达) */              \
@@ -29,7 +34,12 @@ namespace aria {
     X(ListClass)     /* List bootstrap 类(内置 list 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */     \
     X(MapClass)      /* Map bootstrap 类(内置 map 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */       \
     X(StringClass)   /* String bootstrap 类(内置 string 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */ \
-    X(RangeClass)    /* Range bootstrap 类(内置 range 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */
+    X(RangeClass)    /* Range bootstrap 类(内置 range 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */   \
+    X(StringAddFn)   /* __add__ 原生,从 String 类表拷入;op_add_impl 直读本格          */                               \
+    X(StringLtFn)    /* __lt__ 原生,从 String 类表拷入;op_less_impl 直读本格          */                               \
+    X(StringLeFn)    /* __le__ 原生,从 String 类表拷入;op_less_equal_impl 直读本格    */                               \
+    X(StringGtFn)    /* __gt__ 原生,从 String 类表拷入;op_greater_impl 直读本格       */                               \
+    X(StringGeFn)    /* __ge__ 原生,从 String 类表拷入;op_greater_equal_impl 直读本格 */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

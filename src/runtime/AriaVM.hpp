@@ -27,6 +27,10 @@ namespace aria {
 
     // fail 的返回哨兵:按调用点返回类型转失败拼写(bool -> false、指针 -> nullptr、
     // Opt<T> -> nullopt),失败出口惯用法一行 `return vm.fail(...);`。
+    // **Opt<T> 转换只对「不可由 bool 构造」的 T 成立**(Value/指针/类类型,如协议族的 Opt<Value>);
+    // T 为标量时 optional<T> 会经 operator bool() 构造出**已初始化的 0/false**,把 fail 吞成成功
+    // --标量返回型的站点改用 bool + 出参(先例:StringBuiltins 的算子钩子按 native 契约返 bool、
+    // 结果写 slots[0])。
     struct FailSignal {
         operator bool() const noexcept { return false; }
         template<typename T>
@@ -159,6 +163,14 @@ namespace aria {
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
 
+        // 值寄存器组按格位直读(与 LOAD_REG 同源同一组格,格位常量 k<名字>Offset 见
+        // runtime/value_register.hpp)。内置类型的算子实现格(String*Fn)经它取用:ObjString 的 5 个
+        // op_*_impl override 直读实现格交算子派发,免每次过类表查找。
+        [[nodiscard]]
+        Value register_value(const u8 offset) const noexcept {
+            return registers_[offset];
+        }
+
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
         // 命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。
@@ -206,10 +218,9 @@ namespace aria {
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN]。按 callee 的对象类型分派到对应 call_* 子例程,
-        // 其余对象类型按调用钩子 `__call__` 取实现(Object::op_call_impl)后递归分发;取不到的措辞
-        // 随宿主(实例无该成员 = `<class X> has no member '__call__'`,其余类型 =
-        // `type X does not support '__call__'`);非对象 callee 直接报 CallNonCallable(可调用集 =
-        // 上列四类 + 带 `__call__` 的对象)。
+        // 其余对象类型按调用钩子 `__call__` 取实现(Object::op_call_impl)后递归分发;取不到的措辞随宿主
+        //(实例无该成员 = `<class X> has no member '__call__'`,其余类型 = `type X does not support '__call__'`);
+        // 非对象 callee 直接报 CallNonCallable(可调用集 = 上列四类 + 带 `__call__` 的对象)。
         // **本文件 call_* 族的统一契约:return false/nullptr ⟺ 错误载荷已 raise 进 *current_
         // 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
@@ -274,6 +285,12 @@ namespace aria {
         //(register_range_builtins),发布进寄存器 RangeClass 格。
         void bootstrap_range_class();
 
+        // String 的算子实现缓存(String 类 bootstrap 末段调用):把已注册进 String 类表的五个算子
+        // 钩子(`__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生)按名取回,存入实现格
+        // StringAddFn..StringGeFn -- 算子派发热路径直读,免每次过类表查找。类表仍是规范家(方法读
+        // 路径查它),两份恒一致(类表 bootstrap 后无写点,DEBUG 缺格即断言)。
+        void cache_string_operator_fns(ObjClass& klass);
+
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。
         void bootstrap_default_mark();
@@ -292,7 +309,10 @@ namespace aria {
         // stdlib 源根。
         void init_source_roots();
 
-        // ---- 异常 unwind(M3,dispatch_loop 驱动期专用)----
+        // 按 Op 取本对象的算子实现(编译期分发到 Object::op_*_impl,Op 由调用点穷举);nullopt ⟺
+        // 已 fail(措辞随宿主)。模板成员定义在 .cpp(实例化点全在本 TU)。
+        template<OpCode Op>
+        Opt<Value> get_obj_binary_op_impl(Object& obj);
 
         // 弹 2 算 1:栈顶两值的二元数值运算入口(9 个算术/比较指令共用,Op 由调用点穷举实例化)--
         // 类型守卫后按**域**分流:双 Int 走 run_binary_int、任一 F64 升浮点走 run_binary_f64(两域
@@ -311,20 +331,16 @@ namespace aria {
         [[nodiscard]]
         bool run_binary_f64(f64 lhs, f64 rhs) const;
 
-        // ADD 执行体:数值左值委托 run_binary_numeric(快路径不变),对象左值走 op_add 协议缝
-        // (算术族唯一接线的对象侧;其余算术/比较指令仍数值专用,无消费者不加放宽线)。peek 不弹
-        // -- 协议内可能分配(拼接结果)与 fail,左值与 rhs 须经值栈为根(见 Object.hpp 接线纪律)。
-        bool run_binary_add();
-
-        // 四个比较指令(GREATER/GREATER_EQUAL/LESS/LESS_EQUAL)的执行体:非对象左值委托
-        // run_binary_numeric(数值快路径与失败文案不变),对象左值按 Op 派发对应比较算子重载
-        // (op_less/op_less_equal/op_greater/op_greater_equal)。peek 不弹 -- 协议内 fail 与将来
-        // 用户类 override 的分配都须两侧在栈。
+        // 九个二元算子(ADD/SUBTRACT/MULTIPLY/DIVIDE/MOD 与四个比较指令)的执行体,也是算术/比较
+        // 两个 block 各自的唯一入口:非对象左值委托 run_binary_numeric(数值快路径与失败文案不变,
+        // 只多一次 is_obj() tag 判定),对象左值先经 get_obj_binary_op_impl<Op> 取本对象的算子实现
+        // (可调用值),再交 call_value 调(调用区 [lhs, rhs] 即 [this, arg1],槽 0 保持 receiver)。
+        // peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配与 miss fail。
         template<OpCode Op>
-        bool run_binary_compare();
+        bool run_binary_operator();
 
-        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负(数值快路径不变),其余类型报 InvalidOperand。
-        // bool 契约同 call_value。
+        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负(数值快路径不变),对象左值取 __neg__ 实现后
+        // 调用(一元恒零实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
         bool run_negate();
 
         // ---- 类与对象(M5):field 族指令执行体 ----

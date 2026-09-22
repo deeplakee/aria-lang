@@ -1,0 +1,28 @@
+// 钉住：运算符重载钩子的十个方法名（见 src/aria.hpp 的 kOp*Name，前后双下划线形）都是可用的
+// 普通 aria 标识符——能在 def 体内定义、能按名从实例上取到并调用。本用例只钉名字面（词法 +
+// 成员查找），算子派发（按名取实现并调用）见 class_operator_hooks.aria。
+def Box {
+  init(v) { this.v = v; }
+  __add__(other) { return this.v + other.v; }
+  __sub__(other) { return this.v - other.v; }
+  __mul__(other) { return this.v * other.v; }
+  __div__(other) { return this.v / other.v; }
+  __mod__(other) { return this.v % other.v; }
+  __lt__(other) { return this.v < other.v; }
+  __le__(other) { return this.v <= other.v; }
+  __gt__(other) { return this.v > other.v; }
+  __ge__(other) { return this.v >= other.v; }
+  __neg__() { return 0 - this.v; }
+}
+var a = Box(6);
+var b = Box(4);
+assert(a.__add__(b) == 10);
+assert(a.__sub__(b) == 2);
+assert(a.__mul__(b) == 24);
+assert(a.__div__(b) == 1);
+assert(a.__mod__(b) == 2);
+assert(a.__lt__(b) == false);
+assert(a.__le__(b) == false);
+assert(a.__gt__(b));
+assert(a.__ge__(b));
+assert(a.__neg__() == -6);

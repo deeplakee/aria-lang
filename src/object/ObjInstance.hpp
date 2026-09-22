@@ -53,9 +53,39 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> resolve_invoke(AriaVM& vm, ObjString* name) override;
 
-        // 调用协议实现(基类默认直接 fail,故参与该协议须显式实现):按名(aria.hpp 的 kOpCallName,
-        // new_string 取 intern 串)经 resolve_invoke 到实例 fields(字段可遮蔽类链钩子)再类链取。
-        // 即「实例上一个叫 `__call__` 的字段/方法就是它被调用时的目标」。
+        // 算子与调用协议的 11 个实现(基类默认直接 fail,故参与该协议须显式实现):各自按名(aria.hpp 的
+        // kOp*Name,new_string 取 intern 串)经 resolve_invoke 到实例 fields(字段可遮蔽类链钩子)再类链取。
+        // 即「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
+        [[nodiscard]]
+        Opt<Value> op_add_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_sub_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_mul_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_div_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_mod_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_less_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_less_equal_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_greater_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_negate_impl(AriaVM& vm) override;
+
         [[nodiscard]]
         Opt<Value> op_call_impl(AriaVM& vm) override;
 

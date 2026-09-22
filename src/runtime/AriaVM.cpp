@@ -255,7 +255,8 @@ namespace aria {
     void AriaVM::bootstrap_registers() {
         // 值寄存器组 bootstrap 编排:逐格初始化全部 VM 单例对象。须在 ctor 构造临界区(GC
         // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
-        // 新单例随其批次在此加一行。
+        // 新单例随其批次在此加一行。算子方法名先落格:String 类 bootstrap 末段要按名取自身算子
+        // 钩子缓存进实现格。
         bootstrap_object_class();
         bootstrap_iterator_class();
         bootstrap_list_class();
@@ -372,6 +373,25 @@ namespace aria {
         const auto klass = new_class(gc_, "String", object_class());
         register_string_builtins(gc_, klass);
         registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        cache_string_operator_fns(*klass);
+    }
+
+    void AriaVM::cache_string_operator_fns(ObjClass& klass) {
+        // 算子实现缓存:类表是规范家(`"a".__add__` 的方法读路径查它),这里把**同一批**原生函数值
+        // 按名取回存进实现格 -- 算子派发热路径直读实现格,免每次过类表查找。类表 bootstrap 后无写
+        // 点(string 类对象语言不可达、bootstrap 表也不在 globals),故两份恒一致;DEBUG 下缺格即断言。
+        // 须在 ctor 构造临界区内调用(GC 挂起,入格免守卫;load_field 命中是纯读无分配)。
+        constexpr Pair<StringView, u8> kStringOperatorFns[] = {
+                {kOpAddName, kStringAddFnOffset},         {kOpLessName, kStringLtFnOffset},
+                {kOpLessEqualName, kStringLeFnOffset},    {kOpGreaterName, kStringGtFnOffset},
+                {kOpGreaterEqualName, kStringGeFnOffset},
+        };
+        for (const auto& [hook_name, fn_offset]: kStringOperatorFns) {
+            const auto name = new_string(gc_, hook_name); // 名字取自 aria.hpp 常量,首次即驻留
+            const auto hit  = klass.load_field(*this, name);
+            ASSERT(hit.has_value(), "String 类表缺算子钩子:类表与实现格两份已漂移");
+            registers_[fn_offset] = *hit;
+        }
     }
 
     void AriaVM::bootstrap_range_class() {
@@ -523,10 +543,10 @@ namespace aria {
             case ObjType::BOUND_METHOD:
                 return call_bound_method(Object::as<ObjBoundMethod>(obj), argc);
             default: {
-                // 其余对象类型:按调用钩子 `__call__` 取本对象的实现后调(非对象 callee 由上面
-                // 已拒)。调用区就地复用:[callee, a1..aN] 恰是 [this, args],槽 0 兼返回槽,故直接
-                // 交 call_value 递归分发。取不到即报错(措辞随宿主:实例落成员缺席、其余类型落
-                // 「本类型不支持」)。
+                // 其余对象类型:按调用钩子 `__call__` 取本对象的实现后调(与算子族同款「取实现」协议;
+                // 非对象 callee 由上面已拒)。调用区就地复用:[callee, a1..aN] 恰是 [this, args],槽 0 兼
+                // 返回槽,故直接交 call_value 递归分发。取不到即报错(措辞随宿主:实例落成员缺席、
+                // 其余类型落「本类型不支持」)。
                 const auto target = obj->op_call_impl(*this);
                 if (!target) {
                     return false; // 载荷已在挂起错误寄存器
@@ -697,54 +717,27 @@ namespace aria {
         return call_closure(closure, 0);
     }
 
-    bool AriaVM::run_binary_add() {
-        // 对象左值:走 op_add 协议缝。左值(peek 1)与 rhs(peek 0)保持「栈即根」--协议内可能
-        // 分配(拼接结果经 new_string)与 fail,都不许先弹栈。非对象左值(数值/nil/bool 等)照旧
-        // 落 run_binary_numeric,失败文案与类型组合判定同源不变。
-        if (const Value lhs = current_->peek(1); lhs.is_obj()) {
-            if (const auto result = lhs.as_obj()->op_add(*this, current_->peek(0))) {
-                current_->drop(2);
-                current_->push(*result);
-                return true;
+    template<OpCode Op>
+    bool AriaVM::run_binary_operator() {
+        // 对象左值:先取本对象的算子实现(内建类型直给自身原生,其余经成员协议按语言级方法名取),
+        // 取到即调 -- 调用区 [lhs, rhs] 恰好是 [this, arg1](槽 0 保持 receiver 原样)。取不到即报错
+        //(载荷已在寄存器,措辞随宿主)。非对象左值(数值/nil/bool 等)照旧落
+        // run_binary_numeric:数值热路径只此一次 tag 判定,不进实现查找。
+        // GC 走查:receiver 占调用区槽 0(栈即根);取到的实现必可达(类表值经类 -> 寄存器组 /
+        // 实例字段值经槽 0 的实例 / 内建实现格经寄存器组),故无白色在途窗口、不挂守卫。
+        if (const auto lhs = current_->peek(1); lhs.is_obj()) {
+            if (const auto target = get_obj_binary_op_impl<Op>(*lhs.as_obj())) {
+                return call_value(*target, 1);
             }
             return false;
-        }
-        return run_binary_numeric<OpCode::ADD>();
-    }
-
-    template<OpCode Op>
-    bool AriaVM::run_binary_compare() {
-        // 对象左值:按 Op 派发对应比较算子(ObjString override 做字节序比较,其余类型落基类默认
-        // 报 TypeMismatch,文案与数值原语路径逐字一致)。左值(peek 1)与 rhs(peek 0)保持「栈即
-        // 根」--协议内 fail 与将来用户类 override 的分配都不许先弹栈。非对象左值(数值/nil/bool
-        // 等)照旧落 run_binary_numeric:数值比较热路径只此一次 tag 判定,不进虚分派。
-        if (const Value lhs = current_->peek(1); lhs.is_obj()) {
-            const auto obj = lhs.as_obj();
-            const auto rhs = current_->peek(0);
-            Opt<Value> result;
-            if constexpr (Op == OpCode::LESS) {
-                result = obj->op_less(*this, rhs);
-            } else if constexpr (Op == OpCode::LESS_EQUAL) {
-                result = obj->op_less_equal(*this, rhs);
-            } else if constexpr (Op == OpCode::GREATER) {
-                result = obj->op_greater(*this, rhs);
-            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-                result = obj->op_greater_equal(*this, rhs);
-            } else {
-                UNREACHABLE(); // Op 恒为四个比较指令之一(调用点穷举)
-            }
-            if (!result) {
-                return false; // 载荷已在挂起错误寄存器
-            }
-            current_->drop(2);
-            current_->push(*result);
-            return true;
         }
         return run_binary_numeric<Op>();
     }
 
     bool AriaVM::run_negate() {
-        // [v] -> [r]:整数/浮点就地取负(数值快路径不变);其余类型报 InvalidOperand,文案逐字不变。
+        // [v] -> [r]:整数/浮点就地取负(数值快路径不变);对象左值取 __neg__ 实现后调用(一元恒零
+        // 实参:调用区 [v] 即 [this]);其余类型照原内联路径报 InvalidOperand,文案逐字不变。
+        // GC 走查同 run_binary_operator。
         const Value operand = current_->peek(0);
         if (operand.is_int()) {
             current_->peek(0) = Value::from_int(-operand.as_int());
@@ -754,7 +747,40 @@ namespace aria {
             current_->peek(0) = Value::from_f64(-operand.as_f64());
             return true;
         }
+        if (operand.is_obj()) {
+            if (const auto target = operand.as_obj()->op_negate_impl(*this)) {
+                return call_value(*target, 0);
+            }
+            return false;
+        }
         return fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
+    }
+
+    template<OpCode Op>
+    Opt<Value> AriaVM::get_obj_binary_op_impl(Object& obj) {
+        // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举):二元九个,槽语义见 Object.hpp 的算子
+        // 协议(返回「该算子的实现」= 可从调用区 [recv, args] 直接调的值)。
+        if constexpr (Op == OpCode::ADD) {
+            return obj.op_add_impl(*this);
+        } else if constexpr (Op == OpCode::SUBTRACT) {
+            return obj.op_sub_impl(*this);
+        } else if constexpr (Op == OpCode::MULTIPLY) {
+            return obj.op_mul_impl(*this);
+        } else if constexpr (Op == OpCode::DIVIDE) {
+            return obj.op_div_impl(*this);
+        } else if constexpr (Op == OpCode::MOD) {
+            return obj.op_mod_impl(*this);
+        } else if constexpr (Op == OpCode::GREATER) {
+            return obj.op_greater_impl(*this);
+        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+            return obj.op_greater_equal_impl(*this);
+        } else if constexpr (Op == OpCode::LESS) {
+            return obj.op_less_impl(*this);
+        } else if constexpr (Op == OpCode::LESS_EQUAL) {
+            return obj.op_less_equal_impl(*this);
+        } else {
+            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+        }
     }
 
     template<OpCode Op>
@@ -1230,9 +1256,9 @@ namespace aria {
                     current_->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
-                // 比较(执行体 run_binary_compare:对象左值派发协议,其余落 run_binary_numeric)
+                // 比较(执行体 run_binary_operator:对象左值按名取重载实现,其余落 run_binary_numeric)
                 case OpCode::GREATER:
-                    if (!run_binary_compare<OpCode::GREATER>()) {
+                    if (!run_binary_operator<OpCode::GREATER>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1240,7 +1266,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
-                    if (!run_binary_compare<OpCode::GREATER_EQUAL>()) {
+                    if (!run_binary_operator<OpCode::GREATER_EQUAL>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1248,7 +1274,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::LESS:
-                    if (!run_binary_compare<OpCode::LESS>()) {
+                    if (!run_binary_operator<OpCode::LESS>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1256,16 +1282,17 @@ namespace aria {
                     }
                     break;
                 case OpCode::LESS_EQUAL:
-                    if (!run_binary_compare<OpCode::LESS_EQUAL>()) {
+                    if (!run_binary_operator<OpCode::LESS_EQUAL>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
                         break;
                     }
                     break;
-                // 算术(ADD 另接对象侧协议缝,执行体 run_binary_add;下同)
+                // 算术(五算子共用同一执行体 run_binary_operator:对象左值按名取重载实现,其余落
+                // run_binary_numeric)
                 case OpCode::ADD:
-                    if (!run_binary_add()) {
+                    if (!run_binary_operator<OpCode::ADD>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1273,7 +1300,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::SUBTRACT:
-                    if (!run_binary_numeric<OpCode::SUBTRACT>()) {
+                    if (!run_binary_operator<OpCode::SUBTRACT>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1281,7 +1308,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::MULTIPLY:
-                    if (!run_binary_numeric<OpCode::MULTIPLY>()) {
+                    if (!run_binary_operator<OpCode::MULTIPLY>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1289,7 +1316,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::DIVIDE:
-                    if (!run_binary_numeric<OpCode::DIVIDE>()) {
+                    if (!run_binary_operator<OpCode::DIVIDE>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1297,7 +1324,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::MOD:
-                    if (!run_binary_numeric<OpCode::MOD>()) {
+                    if (!run_binary_operator<OpCode::MOD>()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
                         }
@@ -1308,7 +1335,7 @@ namespace aria {
                 case OpCode::NOT:
                     current_->push(Value::from_bool(!is_truthy(current_->pop())));
                     break;
-                // 一元(执行体 run_negate:数值就地取负)
+                // 一元(执行体 run_negate:数值就地取负,对象左值派发 __neg__ 重载)
                 case OpCode::NEGATE:
                     if (!run_negate()) {
                         if (auto u = unwind()) {

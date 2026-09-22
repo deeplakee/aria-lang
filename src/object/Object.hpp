@@ -221,67 +221,53 @@ namespace aria {
         virtual bool store_index(AriaVM& vm, Value key, Value value);
 
         //////////////////////////
-        // 可重载运算符协议(算术虚函数族)
+        // 可重载算子协议与调用协议(取实现,不执行)
         //
-        // lhs = this、rhs = 任意 Value,const 纯计算;错误通道契约同成员协议。**接线现状:
-        // op_add 与四个比较算子已接**(ADD 经 AriaVM::run_binary_add、四个比较指令经
-        // run_binary_compare:均先做「左值是否对象」tag 判定,是对象即派发到此;ObjString 的
-        // override 分别做拼接与字节序比较),**其余五个(op_sub/op_mul/op_div/op_mod/
-        // op_negate)仍备置**(接线留容器里程碑/用户类运算符重载;无消费者不加放宽线)。
-        // 接线纪律:接收者与 rhs 须「栈即根」(peek 不弹)跨 miss fail 与结果分配的 GC 点。
-        // 基类默认体在 Object.cpp,报 TypeMismatch "operator '...' requires numbers, got X and
-        // Y"(与 VM 原语路径文案一致;比较算子同文案,由 op_symbol 逐算子给符号)。
+        // 每个算子/调用一个虚函数,回答「**本对象上该算子对应的可调用值**」-- 不是算好的结果:调用方
+        // (VM 的 run_binary_operator/run_negate/call_value)拿到后按调用形态调它(调用区槽 0 保持
+        // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(kOp*Name;调用钩子
+        // `__call__`)。
+        // **基类默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与
+        // load_field/store_field 等基类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 --
+        // 11 个 override 各按名 resolve_invoke(实例 fields 可遮蔽,再类链);②内置 string -- 5 个算子
+        // 直给实现格 String*Fn(免查找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")`
+        // 读路径不变)。非 const(取实现可能物化绑定,与 load_field/resolve_invoke 同族)。
         //////////////////////////
 
         [[nodiscard]]
-        virtual Opt<Value> op_add(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_add_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_sub(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_sub_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_mul(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_mul_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_div(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_div_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_mod(AriaVM& vm, Value rhs) const;
-
-        // 比较算子四件(命名对齐 OpCode 的 GREATER/GREATER_EQUAL/LESS/LESS_EQUAL):返回装箱
-        // 的 Bool 值(与算术族同形 -- 结果为 Value,失败经 vm.fail 走信号)。ObjString 按字节序
-        // (unsigned/memcmp 语义)实现;其余类型落基类默认报 TypeMismatch。
-        [[nodiscard]]
-        virtual Opt<Value> op_less(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_mod_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_less_equal(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_less_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_greater(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_less_equal_impl(AriaVM& vm);
 
         [[nodiscard]]
-        virtual Opt<Value> op_greater_equal(AriaVM& vm, Value rhs) const;
+        virtual Opt<Value> op_greater_impl(AriaVM& vm);
 
-        // 一元取负(-x):无 rhs。基类默认报 InvalidOperand "negate requires a number"。
         [[nodiscard]]
-        virtual Opt<Value> op_negate(AriaVM& vm) const;
+        virtual Opt<Value> op_greater_equal_impl(AriaVM& vm);
 
-        //////////////////////////
-        // 可调用协议(CALL 的对象侧分派点:取实现,不执行)
-        //
-        // call_value 的 switch 对已实装可调用类型精确分派,其余对象类型按调用钩子 `__call__` 取
-        // 实现后递归分发:本虚函数回答「本对象上作为调用目标的可调用值」-- 不是执行结果,调用方
-        // 拿到后按调用形态调它(调用区槽 0 保持 receiver),实现既可是内建原生、也可是用户方法/闭包。
-        // 钩子名是语言级事实(aria.hpp 的 kOpCallName)。**基类默认直接 fail**(CallNonCallable
-        // "type X does not support '__call__'"),与 load_field/store_field 等基类默认同款「默认
-        // 不支持,子类型实现才不 fail」。非 const(取实现可能物化绑定,与 load_field/resolve_invoke
-        // 同族)。
-        //////////////////////////
+        // 一元取负(-x)。
+        [[nodiscard]]
+        virtual Opt<Value> op_negate_impl(AriaVM& vm);
 
+        // 函数调用
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
-
 
         ////////////////////////////
 

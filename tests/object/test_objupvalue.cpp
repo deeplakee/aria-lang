@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
@@ -84,10 +86,10 @@ TEST(ObjUpvalue, TraceMarksSlotValueWhileOpen) {
     Value v  = Value::nil_val();
     auto  uv = new_upvalue(gc, &v);
     // upvalue 入临时根(跨后续任何分配)
-    auto guard = gc.make_guard(uv);
-    auto s     = new_string(gc, "captured long string beyond sso padding"); // 建时 collect:uv 已根
-    v          = Value::from_obj(s);
-    (void) new_string(gc, "trigger"); // stress collect:串经 uv->trace 存活
+    auto guard  = gc.make_guard(uv);
+    auto s      = new_string(gc, "captured long string beyond sso padding"); // 建时 collect:uv 已根
+    v           = Value::from_obj(s);
+    std::ignore = new_string(gc, "trigger"); // stress collect:串经 uv->trace 存活
     EXPECT_EQ(s->view(), "captured long string beyond sso padding");
     EXPECT_TRUE(value_identical(*uv->value_slot(), Value::from_obj(s)));
 }
@@ -105,8 +107,8 @@ TEST(ObjUpvalue, TraceMarksClosedValue) {
         // 值迁入 closed_
         uv->close();
     } // guard 释放:s 此后仅经 uv.closed_ 可达
-    auto guard = gc.make_guard(uv);
-    (void) new_string(gc, "trigger"); // stress collect:closed 值经 uv->trace 存活
+    auto guard  = gc.make_guard(uv);
+    std::ignore = new_string(gc, "trigger"); // stress collect:closed 值经 uv->trace 存活
     EXPECT_FALSE(uv->is_open());
     EXPECT_NE(uv->value_slot(), nullptr);
     EXPECT_EQ(aria::Object::as<ObjString>(uv->value_slot()->as_obj())->view(),
@@ -116,8 +118,8 @@ TEST(ObjUpvalue, TraceMarksClosedValue) {
 // 无根 upvalue 被 sweep(壳回收)。
 TEST(ObjUpvalue, UnrootedUpvalueSwept) {
     GC    gc;
-    Value v = Value::from_i32(1);
-    (void) new_upvalue(gc, &v); // 无根
+    Value v            = Value::from_i32(1);
+    std::ignore        = new_upvalue(gc, &v); // 无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

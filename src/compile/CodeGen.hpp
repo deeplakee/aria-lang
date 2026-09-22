@@ -176,7 +176,7 @@ namespace aria {
         // --- 局部管理（登记经 FunctionCtx，发射经 cur_cu()）---
         // 局部登记：检测重定义/溢出 -> fail（持 loc）；成功 add_local 仅登记（不发指令），返回
         // 登记槽位（= 值所在位置）。值填槽时序契约：调用方保证值已压栈，登记即初始化，无独立
-        // init 状态。不标 [[nodiscard]]：值填槽调用方多数无需槽位（值已在槽），丢弃合法。
+        // init 状态。值填槽调用方多数无需槽位（值已在槽），不要槽位处以 std::ignore 显式丢弃。
         [[nodiscard]]
         u16 define_local_or_fail(StringView name, SourceLoc loc) const;
 

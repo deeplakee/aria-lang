@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <ranges>
+#include <tuple>
 
 #include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
@@ -334,7 +335,7 @@ namespace aria {
             cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
             cur_cu()->emit_word(name_idx, line); // 弹值定义全局
         } else {
-            (void) define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
+            std::ignore = define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
         }
     }
 
@@ -834,7 +835,8 @@ namespace aria {
         // L_catch
         const u32 handle = cur_cu()->size();
         begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
-        (void) define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
+        std::ignore =
+                define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end

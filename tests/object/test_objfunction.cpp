@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
@@ -101,14 +103,14 @@ TEST(ObjFunction, TraceMarksNameAndConstants) {
     // 长串常量(独立 buffer,被回收则内容不可访问)
     auto constant = new_string(gc, "a long constant string beyond sso");
     fn->unit().add_constant(Value::from_obj(constant));
-    (void) new_string(gc, "trigger"); // stress 触发 collect:name/常量须经 fn 的 trace 存活
+    std::ignore = new_string(gc, "trigger"); // stress 触发 collect:name/常量须经 fn 的 trace 存活
     EXPECT_EQ(fn->name()->view(), "add");
     EXPECT_EQ(constant->view(), "a long constant string beyond sso");
 }
 
 TEST(ObjFunction, UnrootedFunctionSwept) {
     GC gc;
-    (void) new_function(gc, "f", 0); // 无根
+    std::ignore        = new_function(gc, "f", 0); // 无根
     const usize before = gc.bytes_allocated();
     gc.collect(); // 壳 + CodeUnit 内部 Array(此处未 emit,容量 0)回收
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -119,12 +121,12 @@ TEST(ObjFunction, SweptAfterGuardReleased) {
     gc.set_stress(true);
     auto fn = new_function(gc, "add", 0);
     {
-        auto guard = gc.make_guard(fn);
-        (void) new_string(gc, "trigger"); // GC:fn 存活
+        auto guard  = gc.make_guard(fn);
+        std::ignore = new_string(gc, "trigger"); // GC:fn 存活
         EXPECT_EQ(fn->to_string(), "<fn add>");
     } // guard 析构 pop 临时根 -> fn 不再受保护
     const usize before = gc.bytes_allocated();
-    (void) new_string(gc, "trigger2"); // GC:fn 与其 name 串(无引用)回收
+    std::ignore        = new_string(gc, "trigger2"); // GC:fn 与其 name 串(无引用)回收
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 

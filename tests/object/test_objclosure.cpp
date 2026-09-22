@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 #include "memory/GC.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
@@ -115,8 +117,8 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
     auto uv = new_upvalue(gc, &v);
     c->add_upvalue(uv); // 先入 c(根可达)再跨 GC
     // 建时 collect:uv 经 c 存活
-    v = Value::from_obj(new_string(gc, "captured long string beyond sso padding"));
-    (void) new_string(gc, "trigger"); // stress collect:全链经 c.trace 存活
+    v           = Value::from_obj(new_string(gc, "captured long string beyond sso padding"));
+    std::ignore = new_string(gc, "trigger"); // stress collect:全链经 c.trace 存活
     EXPECT_EQ(c->function(), fn);
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
     ASSERT_EQ(c->upvalue_count(), usize{1});
@@ -127,8 +129,8 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
 // 无根闭包被 sweep(闭包壳 + fn 壳 + CodeUnit 内部 Array)。
 TEST(ObjClosure, UnrootedClosureSwept) {
     GC   gc;
-    auto fn = new_function(gc, "f", 0);
-    (void) new_closure(gc, fn); // 两者皆无根
+    auto fn            = new_function(gc, "f", 0);
+    std::ignore        = new_closure(gc, fn); // 两者皆无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

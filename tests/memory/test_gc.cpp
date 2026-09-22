@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <string_view>
+#include <tuple>
 
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
@@ -53,7 +54,7 @@ TEST(GcAlloc, AllocationCountMonotonic) {
     gc.collect();
     EXPECT_EQ(gc.allocation_count(), 1u);
 
-    gc.new_object<ObjDummy>(); // 与上者一起在下次 collect 被扫(此后均不再解引用)
+    std::ignore = gc.new_object<ObjDummy>(); // 与上者一起在下次 collect 被扫(此后均不再解引用)
     gc.collect();
     EXPECT_EQ(gc.allocation_count(), 2u);
 }
@@ -116,7 +117,7 @@ TEST(GcCollect, EmptyCollectIsNoop) {
 
 TEST(GcCollect, UnrootedShortSwept) {
     GC gc;
-    (void) new_string(gc, kShort); // 无根
+    std::ignore        = new_string(gc, kShort); // 无根
     const usize before = gc.bytes_allocated();
     gc.collect(); // 显式触发:kShort 被回收(无新分配,字节数严格下降)
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -124,7 +125,7 @@ TEST(GcCollect, UnrootedShortSwept) {
 
 TEST(GcCollect, UnrootedLongSwept) {
     GC gc;
-    (void) new_string(gc, kLong); // 无根(壳 + long_chars_)
+    std::ignore        = new_string(gc, kLong); // 无根(壳 + long_chars_)
     const usize before = gc.bytes_allocated();
     gc.collect(); // 显式触发:kLong 壳与 buffer 均回收
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -133,18 +134,18 @@ TEST(GcCollect, UnrootedLongSwept) {
 TEST(GcCollect, TempRootSurvives) {
     GC gc;
     gc.set_stress(true);
-    auto s     = new_string(gc, kLong);
-    auto guard = gc.make_guard(s);    // 保护
-    (void) new_string(gc, "trigger"); // 触发 GC:s 被标根 -> 存活
-    EXPECT_EQ(s->view(), kLong);      // 未被释放,访问安全
+    auto s      = new_string(gc, kLong);
+    auto guard  = gc.make_guard(s);          // 保护
+    std::ignore = new_string(gc, "trigger"); // 触发 GC:s 被标根 -> 存活
+    EXPECT_EQ(s->view(), kLong);             // 未被释放,访问安全
 }
 
 TEST(GcCollect, SweepResetsMarks) {
     GC gc;
     gc.set_stress(true);
-    auto s     = new_string(gc, kLong);
-    auto guard = gc.make_guard(s);
-    (void) new_string(gc, "trigger"); // GC:s 存活,is_marked 复位
+    auto s      = new_string(gc, kLong);
+    auto guard  = gc.make_guard(s);
+    std::ignore = new_string(gc, "trigger"); // GC:s 存活,is_marked 复位
     EXPECT_FALSE(s->is_marked());
 }
 
@@ -153,12 +154,12 @@ TEST(GcCollect, GuardBalancesTempRoots) {
     gc.set_stress(true);
     auto s = new_string(gc, kLong);
     {
-        auto guard = gc.make_guard(s);
-        (void) new_string(gc, "trigger"); // GC:s 存活
+        auto guard  = gc.make_guard(s);
+        std::ignore = new_string(gc, "trigger"); // GC:s 存活
         EXPECT_EQ(s->view(), kLong);
     } // guard 析构 pop 临时根 -> s 不再受保护
     const usize before = gc.bytes_allocated();
-    (void) new_string(gc, "trigger2"); // GC:s 被回收
+    std::ignore        = new_string(gc, "trigger2"); // GC:s 被回收
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
@@ -174,18 +175,18 @@ TEST(GcLock, DisablePreventsCollect) {
     GC gc;
     gc.set_stress(true);
     gc.disable_gc();
-    (void) new_string(gc, kLong); // 无根;stress 本应回收,但 GC 禁用 -> 保留
+    std::ignore        = new_string(gc, kLong); // 无根;stress 本应回收,但 GC 禁用 -> 保留
     const usize before = gc.bytes_allocated();
-    (void) new_string(gc, "trigger");        // stress 触发 collect,但锁住 -> 不回收
-    EXPECT_GE(gc.bytes_allocated(), before); // 未回收
+    std::ignore        = new_string(gc, "trigger"); // stress 触发 collect,但锁住 -> 不回收
+    EXPECT_GE(gc.bytes_allocated(), before);        // 未回收
     gc.enable_gc();
-    (void) new_string(gc, "trigger2"); // 恢复 GC,stress 触发 -> kLong/trigger 回收
+    std::ignore = new_string(gc, "trigger2"); // 恢复 GC,stress 触发 -> kLong/trigger 回收
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
 TEST(GcLock, ExplicitCollectRespectsLock) {
     GC gc;
-    (void) new_string(gc, kLong); // 无根
+    std::ignore = new_string(gc, kLong); // 无根
     gc.disable_gc();
     const usize before = gc.bytes_allocated();
     // 显式,但锁住 -> no-op

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
@@ -187,10 +189,10 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
 // 未根绑定方法被 sweep。
 TEST(ObjBoundMethod, UnrootedBoundMethodSwept) {
     GC   gc;
-    auto method = make_closure(gc, "m", 1);
-    auto klass  = make_class(gc, "orphan");
-    auto inst   = make_instance(gc, klass);
-    (void) new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 全链无根
+    auto method        = make_closure(gc, "m", 1);
+    auto klass         = make_class(gc, "orphan");
+    auto inst          = make_instance(gc, klass);
+    std::ignore        = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 全链无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

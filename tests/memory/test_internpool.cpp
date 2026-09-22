@@ -2,6 +2,7 @@
 
 #include <format>
 #include <string_view>
+#include <tuple>
 
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
@@ -57,9 +58,9 @@ TEST(InternPool, ManyStringsRehash) {
 TEST(InternPool, RootedStaysInternedAcrossGc) {
     GC gc;
     gc.set_stress(true);
-    auto s1    = new_string(gc, "rooted content here!");
-    auto guard = gc.make_guard(s1);
-    (void) new_string(gc, "trigger"); // GC:s1 标记存活
+    auto s1     = new_string(gc, "rooted content here!");
+    auto guard  = gc.make_guard(s1);
+    std::ignore = new_string(gc, "trigger"); // GC:s1 标记存活
     // find 命中存活表项
     auto s2 = new_string(gc, "rooted content here!");
     EXPECT_EQ(s1, s2); // 同指针(驻留 + 存活)
@@ -67,7 +68,7 @@ TEST(InternPool, RootedStaysInternedAcrossGc) {
 
 TEST(InternPool, UnrootedInternedCollected) {
     GC gc;
-    (void) new_string(gc, "long unrooted string here!!"); // 无根,intern 后未引用
+    std::ignore        = new_string(gc, "long unrooted string here!!"); // 无根,intern 后未引用
     const usize before = gc.bytes_allocated();
     gc.collect(); // 白色 -> remove_white 摘表项 -> sweep 释放
     EXPECT_LT(gc.bytes_allocated(), before);
@@ -79,7 +80,7 @@ TEST(InternPool, UnrootedInternedCollected) {
 TEST(InternPool, RemoveWhiteClearsEntry) {
     GC                   gc;
     constexpr StringView content = "long string to intern then collect";
-    (void) new_string(gc, content); // 无根
+    std::ignore                  = new_string(gc, content); // 无根
     // 释放 + remove_white 摘除表项
     gc.collect();
     const usize before = gc.bytes_allocated();
@@ -91,16 +92,16 @@ TEST(InternPool, RemoveWhiteClearsEntry) {
 TEST(InternPool, MixedRootingSelectiveSurvival) {
     GC gc;
     gc.set_stress(true);
-    auto kept  = new_string(gc, "kept-string-content-here");
-    auto guard = gc.make_guard(kept);
-    (void) new_string(gc, "dropped-string-content"); // 无根
+    auto kept   = new_string(gc, "kept-string-content-here");
+    auto guard  = gc.make_guard(kept);
+    std::ignore = new_string(gc, "dropped-string-content"); // 无根
     // GC:kept 存活,dropped 回收
-    (void) new_string(gc, "trigger");
+    std::ignore = new_string(gc, "trigger");
     EXPECT_EQ(kept->view(), "kept-string-content-here"); // kept 存活
     // kept 仍驻留:再 make 同内容返回同指针
     EXPECT_EQ(kept, new_string(gc, "kept-string-content-here"));
     // dropped 已回收:再 make 同内容是新分配(find miss)
     const usize before_drop = gc.bytes_allocated();
-    (void) new_string(gc, "dropped-string-content");
+    std::ignore             = new_string(gc, "dropped-string-content");
     EXPECT_GT(gc.bytes_allocated(), before_drop);
 }

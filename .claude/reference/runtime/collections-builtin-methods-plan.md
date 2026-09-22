@@ -500,6 +500,16 @@ cmake --build build/rel --target vm_bench -j
 
 **测试**:`ObjString.Slice*` 四条(含/不含上界、无上界与空段、负端点、倒序字节倒排含多字节例、越界与空串失败)+ `Compiler.StringRangeSlice`/`StringSplitOnWhitespace` 两条端到端 + 语料 `string_slice.aria`(13 条断言)。
 
+### 4.10 string 的 to_int/to_float(2026-09-22)
+
+**决定**:补 `to_int()`/`to_float()`,string 方法面 15 -> 17。两者都是**整串十进制解析**:可选前导 `+`/`-`(`from_chars` 只认 `-`,`+` 由实现先行剥掉)、整串须被消费完;不跳空白(要修先 `trim()`)、不收下划线分隔与进制前缀(`0x`/`0o`/`0b` 是源码字面量语法,不是数据语法)。解析失败一律返 **nil** --与 `find` 未命中、map `get` 未命中的 miss-返-nil 同族,nil 永不与合法数值二义;不报错、也不静默取 0 或截断。
+
+**值域**:`to_int()` 只收整数形(`"3.7"` 返 nil,小数形归 `to_float`,转换不替调用方截断),值须落语言 int 的 i48 域内,越域(如 `2^47`)与解析失败同路返 nil;`to_float()` 收整数形/小数形/指数形,并收 `inf`/`nan`(与 `str(f64)` 的输出往返一致),越 f64 域(如 `1e400`)返 nil 而不饱和成 `inf`。域常量 `kIntMin`/`kIntMax` 收进 `aria.hpp`(语言值域单一事实源),字面量闸门 `CodeGen::validate_int_literal` 一并改读之。
+
+**落点**:解析口下沉到 `util/util.hpp` 的 `util::parse_int_text(StringView) -> Opt<i64>` / `util::parse_float_text(StringView) -> Opt<f64>`(整串消费与 i48/f64 域判定都在解析口,失败 `nullopt`),StringBuiltins 只留 arity 检查与「`nullopt` 兜 nil」一句。与 Lexer 的字面量解析**刻意不共享**:两边文法与失败通道反向(源码侧收 `_`/进制前缀、永远看不到符号、报带位置的编译期错;数据侧收 `[+-]`、不收 `_`/前缀、返 `nullopt`),且 lexer-notes.md 已实测该热路径上抽 helper 掉 9%(`finish_number` 一例)。
+
+**测试**:`util::parse_int_text`/`parse_float_text` 各三条直接单测(`tests/util/test_util.cpp`;含符号、整串消费、i48 上下界与越界、`inf`/`nan`、`1e400` 不饱和)+ `Compiler.StringToIntAndToFloat` 一条端到端(含元数文案)+ 语料 `13_strings/string_methods.aria` 补 20 条断言。
+
 ## 5. 参照
 
 - `Object.hpp` 备置协议缝注释(成员/下标/运算符/可调用四组)——本计划的架构基准。

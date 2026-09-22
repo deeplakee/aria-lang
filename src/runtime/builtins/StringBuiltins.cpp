@@ -353,6 +353,30 @@ namespace aria {
             return vm.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
         }
 
+        // to_int() -> 整数或 nil:整串十进制解析(util::parse_int_text,语法与域见其注);空串/杂字/
+        // 越 i48 域一律返 nil -- miss 返 nil 与 find/get 同族,nil 永不与合法整数二义。
+        bool to_int_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "to_int expects no arguments, got {}", argc);
+            }
+            const auto parsed = util::parse_int_text(Object::as<ObjString>(slots[0].as_obj())->view());
+            slots[0]          = parsed ? Value::from_int(*parsed) : Value::nil_val();
+            return true;
+        }
+
+        // to_float() -> 浮点或 nil:整串十进制解析(util::parse_float_text),失败同 to_int 返 nil;
+        // 整数形串给浮点值("3" -> 3.0),小数形不接受 to_int 而只在此。
+        bool to_float_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "to_float expects no arguments, got {}", argc);
+            }
+            const auto parsed = util::parse_float_text(Object::as<ObjString>(slots[0].as_obj())->view());
+            slots[0]          = parsed ? Value::from_f64(*parsed) : Value::nil_val();
+            return true;
+        }
+
         // iter() -> 迭代器:铸造 ObjStringIterator(string 与其迭代器成对,铸造口按类型解开
         // receiver)。GC 时序同 ListBuiltins::iter_fn:str 在 slots[0] 于栈根,迭代器白色建成
         // 先写回槽发布再返回,中间无 GC 点;此后 str 经迭代器 trace 可达。
@@ -382,6 +406,8 @@ namespace aria {
                 {"is_empty", is_empty_fn},
                 {"chars", chars_fn},
                 {"codepoint_at", codepoint_at_fn},
+                {"to_int", to_int_fn},
+                {"to_float", to_float_fn},
                 {"iter", iter_fn},
         };
 

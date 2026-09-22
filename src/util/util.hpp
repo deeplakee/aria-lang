@@ -1,8 +1,11 @@
 #ifndef ARIA_UTIL_HPP
 #define ARIA_UTIL_HPP
 
+#include <charconv>
 #include <format>
+#include <system_error>
 #include <type_traits>
+#include "aria.hpp"
 #include "common.hpp"
 #include "io.hpp"
 
@@ -219,6 +222,39 @@ namespace aria::util {
             return std::nullopt;
         }
         return position;
+    }
+
+    // 整串十进制整数文本解析(数据文本,不是源码字面量语法):收前导 [+-](from_chars 只认 '-',
+    // 故 '+' 先行剥掉)与 [0-9]+,整串消费且落语言 int(i48)域内才为 somed。不跳空白(要修先
+    // trim)、不收下划线与进制前缀--那是源码字面量语法(Lexer 的 parse_int 一族),不是数据语法。
+    // 域闸设在此而非调用方:越域值经 Value::from_int 会被静默截尾,是调用方不该有忘掉机会的坑。
+    // 纯解析无分配无 fail,报错/兜底文案由调用方就地决定(内建方法处兜 nil)。
+    [[nodiscard]]
+    inline Opt<i64> parse_int_text(const StringView text) {
+        const auto body  = text.starts_with('+') ? text.substr(1) : text;
+        const auto first = body.data();
+        const auto last  = body.data() + body.size();
+        i64        value = 0;
+        if (const auto [end, ec] = std::from_chars(first, last, value, 10);
+            ec != std::errc{} || end != last || value < kIntMin || value > kIntMax) {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    // 整串十进制浮点文本解析:收整数形/小数形/指数形,亦收 inf/nan(与 str(f64) 的输出往返一致);
+    // 整串消费且落 f64 值域内才为 somed--越域(如 1e400)与解析失败同路返 nullopt,不饱和成 inf。
+    // 同 parse_int_text:无空白跳过、无下划线、无进制前缀,兜底交调用方。
+    [[nodiscard]]
+    inline Opt<f64> parse_float_text(const StringView text) {
+        const auto body  = text.starts_with('+') ? text.substr(1) : text;
+        const auto first = body.data();
+        const auto last  = body.data() + body.size();
+        f64        value = 0.0;
+        if (const auto [end, ec] = std::from_chars(first, last, value); ec != std::errc{} || end != last) {
+            return std::nullopt;
+        }
+        return value;
     }
 
     // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面

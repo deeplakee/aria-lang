@@ -1,7 +1,8 @@
 // 钉住：string 方法面——upper/lower/trim（ASCII 口径）、split（1 参保留空段、0 参按空白切）、
 # find（未命中 nil）、contains（子串判定）、replace（全替换）、substring（区间）、
 # starts_with/ends_with、size/is_empty（字节域）、chars（逐码点切分）、
-# codepoint_at（码点序号索引）、join（list 方法，宽松元素）。切片见 string_slice.aria。
+# codepoint_at（码点序号索引）、to_int/to_float（整串十进制解析，失败返 nil）、
+# join（list 方法，宽松元素）。切片见 string_slice.aria。
 assert("abc".upper() == "ABC");
 assert("aBc1".upper() == "ABC1");
 assert("XYZ".lower() == "xyz");
@@ -51,6 +52,29 @@ assert("héllo"[1].chars()[0] == "\u{FFFD}"); // 多字节中间字节：非法�
 
 assert("héllo".codepoint_at(1) == 233);   // é 的码点值（码点序号索引）
 assert("abc".codepoint_at(2) == 99);
+
+// to_int/to_float：整串十进制解析，失败（空串/杂字/空白/下划线/进制前缀/越值域）返 nil。
+assert("42".to_int() == 42);
+assert("-7".to_int() == -7);
+assert("+7".to_int() == 7);
+assert("007".to_int() == 7);
+assert(str("42".to_int()) == "42");             // 与 str 往返
+assert("3.7".to_int() == nil);                  // 小数形只属 to_float
+assert(" 42".to_int() == nil);                  // 不跳空白（先 trim）
+assert("".to_int() == nil);
+assert("1_000".to_int() == nil);                // 下划线/进制前缀是源码字面量语法
+assert("0x10".to_int() == nil);
+assert("140737488355327".to_int() == 140737488355327);   // i48 上界
+assert("140737488355328".to_int() == nil);               // 越 i48 域同失败返 nil
+
+assert("3.5".to_float() == 3.5);
+assert("3".to_float() == 3 && str("3".to_float()) == "3.0");   // 整数形给浮点值
+assert("1e3".to_float() == 1000);
+assert(".5".to_float() == 0.5);
+assert("".to_float() == nil);
+assert("abc".to_float() == nil);
+assert("3 ".to_float() == nil);
+assert("1e400".to_float() == nil);              // 越 f64 域不饱和成 inf
 
 assert(["a", "b", "c"].join("-") == "a-b-c");
 assert([].join(",") == "");

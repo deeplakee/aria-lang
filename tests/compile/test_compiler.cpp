@@ -866,6 +866,44 @@ TEST(Compiler, StringCharsSplitsCodepoints) {
               100);
 }
 
+// to_int/to_float:整串十进制解析,失败(空串/杂字/空白/下划线/进制前缀/越值域)返 nil -- miss 返
+// nil 与 find/get 同族;to_float 另收小数形/指数形与 inf/nan(与 str(f64) 的输出往返一致)。
+TEST(Compiler, StringToIntAndToFloat) {
+    EXPECT_EQ(
+            run_int(R"(if ("42".to_int() == 42 && "-7".to_int() == -7 && "+7".to_int() == 7) { return 1; } return 0;)"),
+            1);
+    EXPECT_EQ(run_int(R"(if ("007".to_int() == 7 && str("42".to_int()) == "42") { return 1; } return 0;)"), 1);
+    // 失败一律 nil;小数形只属 to_float,to_int 不收。
+    EXPECT_EQ(
+            run_int(R"(if ("".to_int() == nil && "abc".to_int() == nil && " 42".to_int() == nil) { return 1; } return 0;)"),
+            1);
+    EXPECT_EQ(
+            run_int(R"(if ("1_000".to_int() == nil && "0x10".to_int() == nil && "3.7".to_int() == nil) { return 1; } return 0;)"),
+            1);
+    // i48 域:上界内可解析,越界与解析失败同路返 nil(不截断)。
+    EXPECT_EQ(run_int(R"(return "140737488355327".to_int();)"), 140737488355327);
+    EXPECT_EQ(
+            run_int(R"(if ("140737488355328".to_int() == nil && "-140737488355329".to_int() == nil) { return 1; } return 0;)"),
+            1);
+
+    EXPECT_EQ(
+            run_int(R"(if ("3.5".to_float() == 3.5 && "1e3".to_float() == 1000 && ".5".to_float() == 0.5) { return 1; } return 0;)"),
+            1);
+    EXPECT_EQ(run_int(R"(if (str("3".to_float()) == "3.0" && str("3.5".to_float()) == "3.5") { return 1; } return 0;)"),
+              1);
+    EXPECT_EQ(
+            run_int(R"(if (str("inf".to_float()) == "inf" && str("nan".to_float()) == "nan") { return 1; } return 0;)"),
+            1);
+    EXPECT_EQ(
+            run_int(R"(if ("".to_float() == nil && "3 ".to_float() == nil && "1e400".to_float() == nil) { return 1; } return 0;)"),
+            1);
+
+    auto arity = run_source(R"(return "1".to_int(9);)");
+    ASSERT_FALSE(arity.has_value());
+    EXPECT_EQ(arity.error().code(), ErrorCode::WrongArity);
+    EXPECT_NE(arity.error().message().find("to_int expects no arguments, got 1"), std::string::npos);
+}
+
 // 切片:Range 键走字节域切片,与 list 同口径(含/不含上界、负端点从尾计数、无上界后缀、倒序段),
 // 越界报 IndexOutOfBounds(与 list 同串)。rest 解构在 string 上经「MAKE_RANGE i.. + LOAD_INDEX」
 // 同一机制成立,故一并钉住。

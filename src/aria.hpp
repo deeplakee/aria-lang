@@ -10,6 +10,13 @@ namespace aria {
     // 领域对象模型归各模块头(如 object/ObjModule.hpp);跨层共享的项目级命名落本头。
     // 仅依赖 common.hpp,任何层(含 util)均可无分层顾虑引用。
 
+    // ---- 语言值域 ----
+
+    // 整数(i48)值域:NaN-boxing 的 48 位尾部即语言 int 域,故字面量闸门(CodeGen::validate_int_literal)
+    // 与运行期文本解析(util::parse_int_text)同界;越域一律判「给不出这个值」,不静默截断。
+    constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
+    constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
+
     // 模块源文件扩展名:「一个源文件 = 一个模块」(见 ObjModule)。
     // AriaVM resolve_module 剥 import spec 末段可选后缀、查找时统一补回;
     // ObjModule::abs_path 以之合成模块表键(dir_ + "/" + name_ + 本后缀)。

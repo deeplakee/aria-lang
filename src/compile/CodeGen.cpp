@@ -33,10 +33,8 @@ namespace aria {
         constexpr u32 kMaxMapEntries   = kU16OperandMax;
         constexpr u32 kMaxLocals       = kU16OperandMax;
 
-        // 整数字面量 i48 范围(Value::from_int 的 i48 尾部,与 NanBoxing.hpp 的 ASSERT 同源;
-        // 超出 -> NumberOutOfRange)。
-        constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
-        constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
+        // 整数字面量 i48 值域:常量事实源在 aria.hpp(Value::from_int 的 48 位尾部);超出 ->
+        // NumberOutOfRange。
 
         // 二元 op -> 发射 OpCode（visitBinaryExprNode 与复合赋值共用单源）。域为 13 个值产
         // op；Or/And 走短路分支（emit_jump + JUMP_*_OR_POP 留值跳转）不经此，OpCode 亦无

@@ -89,6 +89,18 @@ namespace aria {
             }
         }
 
+        // 位置插入:在 index 之前插入 value(合法域 [0, size()],== size() 即追加,同 push 语义)。
+        // 撑长一格后自尾段右移腾位:一次扩容(可能) + 至多 size()-index 次平凡拷贝。
+        void insert(const usize index, const T& value) {
+            ASSERT(index <= len_, "Array::insert: index out of range");
+            ensure_capacity(len_ + 1);
+            ++len_;
+            for (usize i = len_ - 1; i > index; --i) {
+                buf_.data()[i] = buf_.data()[i - 1];
+            }
+            buf_.data()[index] = value;
+        }
+
         // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);已分配指针可能
         // 改变(Buffer::reserve 内部 reallocate)。薄封装内部 ensure_capacity。
         void reserve(const usize capacity) { ensure_capacity(capacity); }
@@ -113,6 +125,16 @@ namespace aria {
 
         void pop() noexcept {
             ASSERT(len_ > 0, "Array::pop on empty");
+            --len_;
+        }
+
+        // 位置移除:移除 index 处元素(合法域 [0, size())),自 index+1 起段左移补位、长度减一;
+        // 至多 size()-index-1 次平凡拷贝,容量不变。
+        void remove_at(const usize index) noexcept {
+            ASSERT(index < len_, "Array::remove_at: index out of range");
+            for (usize i = index + 1; i < len_; ++i) {
+                buf_.data()[i - 1] = buf_.data()[i];
+            }
             --len_;
         }
 

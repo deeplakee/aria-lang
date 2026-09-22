@@ -63,6 +63,45 @@ TEST(AriaArray, UntracedElementsCollected) {
     EXPECT_TRUE(arr.empty());
 }
 
+// ---- 值相等原语(== 语义收口 value_equal;语言面 list 的 find/contains/remove 即其薄壳) ----
+
+TEST(AriaArray, FindReturnsFirstHitIndex) {
+    GC        gc;
+    AriaArray arr{&gc};
+    arr.push(Value::from_i32(1));
+    arr.push(Value::nil_val());
+    arr.push(Value::from_i32(1));
+    EXPECT_EQ(arr.find(Value::from_i32(1)), 0u); // 首个命中
+    EXPECT_EQ(arr.find(Value::nil_val()), 1u);   // nil 是合法元素
+    EXPECT_EQ(arr.find(Value::from_i32(9)), std::nullopt);
+    EXPECT_TRUE(arr.contains(Value::from_i32(1)));
+    EXPECT_FALSE(arr.contains(Value::from_i32(9)));
+}
+
+TEST(AriaArray, FindNumericCrossTypeEqual) {
+    // == 语义数值跨型相等(Python 同款:int 1 == f64 1.0;哈希键的 === / value_identical 才按类型严格)
+    GC        gc;
+    AriaArray arr{&gc};
+    arr.push(Value::from_i32(1));
+    EXPECT_EQ(arr.find(Value::from_f64(1.0)), 0u);
+}
+
+TEST(AriaArray, RemoveAllHitsCompactsInOrder) {
+    GC        gc;
+    AriaArray arr{&gc};
+    arr.push(Value::from_i32(1));
+    arr.push(Value::from_i32(2));
+    arr.push(Value::from_i32(1));
+    arr.push(Value::from_i32(1));
+    arr.push(Value::from_i32(3));
+    EXPECT_TRUE(arr.remove(Value::from_i32(1))); // 移全命中,未命中元素保序前移
+    ASSERT_EQ(arr.size(), 2u);
+    EXPECT_EQ(arr[0].as_int(), 2);
+    EXPECT_EQ(arr[1].as_int(), 3);
+    EXPECT_FALSE(arr.remove(Value::from_i32(9))); // 未命中零操作
+    EXPECT_EQ(arr.size(), 2u);
+}
+
 TEST(AriaHashTable, SetFindErase) {
     GC            gc;
     AriaHashTable ht{&gc};

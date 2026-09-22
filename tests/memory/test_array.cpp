@@ -249,3 +249,69 @@ TEST(Array, CopyReversedFromEmptyNoOp) {
     EXPECT_EQ(buf[0], 7);
     EXPECT_EQ(buf.capacity(), cap_before);
 }
+
+TEST(Array, InsertBeforePosition) {
+    GC         gc;
+    Array<int> buf{&gc};
+    buf.push(1);
+    buf.push(3);
+    buf.insert(1, 2); // 中位:1 与 3 之间
+    buf.insert(0, 0); // 头位
+    buf.insert(4, 4); // == size() 即追加
+    ASSERT_EQ(buf.size(), 5u);
+    for (usize i = 0; i < 5; ++i) {
+        EXPECT_EQ(buf[i], static_cast<int>(i));
+    }
+}
+
+TEST(Array, InsertOnEmpty) {
+    GC         gc;
+    Array<int> buf{&gc};
+    buf.insert(0, 7); // 空表唯一合法位
+    ASSERT_EQ(buf.size(), 1u);
+    EXPECT_EQ(buf[0], 7);
+}
+
+TEST(Array, InsertTriggersGrowth) {
+    GC         gc;
+    Array<int> buf{&gc};
+    buf.push(-1);
+    while (buf.size() < buf.capacity()) { // 填满至当前容量
+        buf.push(0);
+    }
+    const usize size_before = buf.size();
+    buf.insert(1, 99); // 满容量中位插入 -> 扩容搬迁后尾段须完好
+    ASSERT_EQ(buf.size(), size_before + 1);
+    EXPECT_EQ(buf[0], -1);
+    EXPECT_EQ(buf[1], 99);
+    for (usize i = 2; i < buf.size(); ++i) {
+        EXPECT_EQ(buf[i], 0);
+    }
+}
+
+TEST(Array, RemoveAtShiftsLeft) {
+    GC         gc;
+    Array<int> buf{&gc};
+    for (int i = 0; i < 5; ++i) {
+        buf.push(i);
+    }
+    buf.remove_at(0); // 头:整体左移
+    ASSERT_EQ(buf.size(), 4u);
+    EXPECT_EQ(buf[0], 1);
+    buf.remove_at(1); // 中:1 与 3 之间的 2
+    ASSERT_EQ(buf.size(), 3u);
+    EXPECT_EQ(buf[0], 1);
+    EXPECT_EQ(buf[1], 3);
+    EXPECT_EQ(buf[2], 4);
+    buf.remove_at(2); // 尾:无搬移
+    ASSERT_EQ(buf.size(), 2u);
+    EXPECT_EQ(buf[1], 3);
+}
+
+TEST(Array, RemoveAtSingleElement) {
+    GC         gc;
+    Array<int> buf{&gc};
+    buf.push(7);
+    buf.remove_at(0);
+    EXPECT_TRUE(buf.empty());
+}

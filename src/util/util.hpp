@@ -207,6 +207,20 @@ namespace aria::util {
         return index;
     }
 
+    // 位置解析(插入位语义,resolve_index 的姊妹函数:list.insert 消费):-1 = 末元素之前、
+    // -size = 首元素之前,负数与下标同式从尾计数归一(负支加法不下溢同上),唯上界放宽到
+    // == size --追加位,恰是下标域 [-(size), size) 外多出的一个合法值(负数归一后至多
+    // size-1,追加位只有正拼写)。纯换算无分配无 fail,报错文案由调用方就地烘焙(报原始键值)。
+    [[nodiscard]]
+    inline Opt<usize> resolve_position(const i64 raw, const usize size) noexcept {
+        const auto signed_size = static_cast<i64>(size);
+        const i64  position    = raw < 0 ? raw + signed_size : raw;
+        if (position < 0 || position > signed_size) {
+            return std::nullopt;
+        }
+        return position;
+    }
+
     // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面
     // 集合方法的共用底座;元素序 = range 迭代序)。transform 接收元素、返回可拼进 String
     // 的值(通常 String)。

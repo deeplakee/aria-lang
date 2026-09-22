@@ -10,7 +10,7 @@
 
 namespace aria {
 
-    // 将 source_file 相关类型引入 aria 命名空间（见 CLAUDE.md：这些类型位于
+    // 将 source_file 相关类型引入 aria 命名空间（见 AGENTS.md：这些类型位于
     // aria::src 下，引用需分别 using）。
     using src::SourceFile;
     using src::SourceLoc;
@@ -33,7 +33,7 @@ namespace aria {
     // 存活）的约束，Error 不再有此类约束。
     //
     // 注意：本类只承载「解释器报告的错误」。aria 语言自身的 throw/catch 抛的是 Value，
-    // 由 VM 用 THROW 操作码 + CodeUnit 内异常记录表实现（见 CLAUDE.md「错误处理」），
+    // 由 VM 用 THROW 操作码 + CodeUnit 内异常记录表实现（见 AGENTS.md「错误处理」），
     // 与 C++ 异常无关，不经过本类。
     class Error {
     public:

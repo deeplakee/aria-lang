@@ -55,7 +55,8 @@ docs/       grammar.txt（语言文法规范）
 
 ## 进一步阅读
 
-- `CLAUDE.md`（根目录 `AGENTS.md` 为其软链，ZCode 指令入口同源）-- 项目规则、进度、构建 / 命名 / 类型 / 错误处理等通用约定（常驻上下文）。
+- `AGENTS.md` -- 项目规则、进度、构建 / 命名 / 类型 / 错误处理等通用约定（常驻上下文）。
+- `.zcode/skills/aria-commit/SKILL.md` -- commit 说明规范与落笔流程（提交前必读）。
 - `CPP_Naming_Convention.md` -- C++ 命名规范。
 - `.claude/rules/` -- 按源码目录拆分的模块参考（带 `paths:` frontmatter，读对应源码时自动加载）。
 - `.claude/reference/` -- 深度设计文档（GC 计划、VM 设计、指令集、import 处理、lowering 等，按需阅读）。

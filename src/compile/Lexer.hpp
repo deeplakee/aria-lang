@@ -9,7 +9,7 @@
 
 namespace aria {
 
-    // 将 SourceLoc 引入 aria 命名空间（见 CLAUDE.md：source_file 相关
+    // 将 SourceLoc 引入 aria 命名空间（见 AGENTS.md：source_file 相关
     // 类型位于 aria::src 下，引用需分别 using）。
     using src::SourceLoc;
 

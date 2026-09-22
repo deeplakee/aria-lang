@@ -3,7 +3,7 @@
 > 状态：**已按计划落地**（四阶段 2026-09 逐段完成，每段独立绿提交；验收 = 默认与 `build/tagvalue` 双配置 ctest 全绿 + `--eval` 冒烟）。机制终态见 `.claude/rules/runtime.md` / `rules/compile.md` 与指令集 §4.4/§4.13；实施中的语义定夺变更已随文内注记（CLOSE_UPVALUE 翻为 Lua OP_CLOSE 式批量关闭、`emit_pop_locals_to` 终态定名、`add_upvalue_or_fail` 入 `_or_fail` 家族、开链方法收敛单点 `capture_upvalue` 等），实施期发现的 unwind-close 交互坑点补录于 `exception-implementation-pitfalls.md`（M4 补录节）。本文件转为落地记录存档。
 > 行号锚点基于定稿时 HEAD（commit `0c17468`），后续基建改动会使行号漂移，定位以符号/描述为准。
 >
-> **决策记录（2026-09-07）**：defer 善后机制**移出 M4**，降级为「其他功能完成后的可选项」（优先级最低），不再绑定任何里程碑。M4 只做闭包本体。全部「defer 随 M4」表述已随本计划定稿同步（grammar.txt 裁撤记录段 / vm-design §6 / bytecode-instruction-set.md / exception-implementation-pitfalls.md / rules·compile+runtime / CLAUDE.md·README / 源码与测试注释）。
+> **决策记录（2026-09-07）**：defer 善后机制**移出 M4**，降级为「其他功能完成后的可选项」（优先级最低），不再绑定任何里程碑。M4 只做闭包本体。全部「defer 随 M4」表述已随本计划定稿同步（grammar.txt 裁撤记录段 / vm-design §6 / bytecode-instruction-set.md / exception-implementation-pitfalls.md / rules·compile+runtime / AGENTS.md·README / 源码与测试注释）。
 
 ## 1. 语义模型（定调）
 
@@ -64,7 +64,7 @@
 
 - vm-design §6 M4 行更新落地状态；§3 草图 CallFrame 注释、§4.1 重绑说明同步。
 - gc-implementation-plan Phase 3 行记 ObjClosure/ObjUpvalue 落地。
-- CLAUDE.md / README 进度行：M4 闭包已落地，待续 M5 类 / M6 协程（defer 为可选后续）。
+- AGENTS.md / README 进度行：M4 闭包已落地，待续 M5 类 / M6 协程（defer 为可选后续）。
 - 坑点文档：实施中发现的 unwind-close 坑点补录（M4 的 RETURN/unwind 关闭挂点与 M3 的截栈/弹帧交互是坑点高发区）。
 - 全量验证：默认 NaN-boxing 与 `build/tagvalue` 双配置 ctest 全绿；`--eval` 冒烟计数器/共享状态/块捕获/递归嵌套 fun/异常跨帧样例。
 

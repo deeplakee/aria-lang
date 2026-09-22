@@ -13,7 +13,7 @@ namespace aria {
     // 消费方经 error() 取用，不挂 std::exception 协议面。
     //
     // 注意：仅用于「解释器 C++ 实现内部」的错误传播，与 aria 语言自身的 throw/catch
-    // （抛 Value，走 VM 异常通道）无关。四通道总览见 CLAUDE.md「错误处理」。
+    // （抛 Value，走 VM 异常通道）无关。四通道总览见 AGENTS.md「错误处理」。
     class AriaException {
     public:
         // 从 Error 值对象构造（唯一公开构造面：只收成品 Error；组件构造由 Error 静态工厂收口，

@@ -8,7 +8,7 @@
 namespace aria {
 
     // 将 SourceLoc 引入 aria 命名空间（source_file 相关类型位于 aria::src 下，
-    // 引用需分别 using，见 CLAUDE.md）。
+    // 引用需分别 using，见 AGENTS.md）。
     using src::SourceLoc;
 
     // 前置声明 AstVisitor：AST 节点经 accept(AstVisitor&) 参与访问者模式（双分派）。

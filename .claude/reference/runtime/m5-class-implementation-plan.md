@@ -157,7 +157,7 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 - 指令集：字段组/类组九指令标落地；§5.5 精化写回（defining_class 挂闭包 -- 原文「ObjFn.defining_class」措辞同步；init_ 的 **MAKE_CLASS seed + MAKE_METHOD("init") 覆盖**两时点 + 类上 init 赋值同步；STORE-on-class 写遮蔽落接收类自身/拒绝新增；bound 缓存三铁则 + 首解析快照语义）；§3.1 peek-store 表补 MAKE_STATIC 镜像形态注记。
 - grammar.txt def 节：「ObjFn 持 defining class」改写为闭包持（措辞级）；嵌套类 bullet 加 parser 现状注（member 分派无 defDecl，语义描述为后继方向）。
 - vm-design §6 M5 行标已落地；§4 相应小节（callable 清单加 CLASS/BOUND_METHOD、this 槽 0、Movement tracer 第 4 根）；gc-implementation-plan 对应行。
-- rules/object/compile/runtime/memory 落地状态复核；CLAUDE.md/README 进度行（已落地补 M5，待续收敛 M6 协程）；文档索引本计划条目改「定稿并已落地」。
+- rules/object/compile/runtime/memory 落地状态复核；AGENTS.md/README 进度行（已落地补 M5，待续收敛 M6 协程）；文档索引本计划条目改「定稿并已落地」。
 - 坑点文档补录（预期高发区：bound 缓存与遮蔽交互、MAKE_CLASS/MAKE_METHOD peek-不弹栈纪律、init seed 时序、Locate 模式与既有复合赋值机制的合流）-- 已补录至 `class-implementation-pitfalls.md`。
 - 全量验证：默认与 `build/tagvalue` 双配置 ctest 全绿；`--eval` 冒烟：类定义+实例化、继承+super、静态共享槽、this 嵌套捕获、（顺带）**用户类可迭代 for-in**（iter/has_next/next 经 LOAD_FIELD 返绑定方法 + CALL -- M5 落地后用户定义类即可迭代，内建 list/map/string 迭代仍待容器里程碑）。
 

@@ -14,7 +14,7 @@ namespace aria {
     // 文法来源：docs/grammar.txt。各解析函数与非终结符一一对应，命名一致
     // （program/declaration/statement/expression/assignment/logic_or/.../primary/pattern 等）。
     //
-    // 错误处理（与 Lexer 风格一致，见 CLAUDE.md「四条错误通道」之 1 与 3）：
+    // 错误处理（与 Lexer 风格一致，见 AGENTS.md「四条错误通道」之 1 与 3）：
     //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--
     //     error()/expect() 抛出，沿 C++ 调用栈上抛。
     //   - 在 declaration() 层捕获：记入 errors_、做 panic-mode 同步（synchronize）

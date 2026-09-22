@@ -90,7 +90,7 @@ struct ExecOutcome {
 
 `FrameStack` 永不扩容 => `CallFrame&` 引用整轮循环稳定,可像 clox 一样把 `frame`/`slots` 缓存进局部,CALL/RETURN 时刷新。
 
-### 4.5 异常衔接(与 CLAUDE.md「错误处理」第 2 条一致)
+### 4.5 异常衔接(与 AGENTS.md「错误处理」第 2 条一致)
 
 - **内部传播统一走寄存器 + unwind**：op 处理局部失败不再直接 `return runtime_err(...)` 短路出 dispatch_loop,而是就地 `raise`(一步烘消息装成 ObjException,不含位置前缀 -- 位置归未捕获跟踪行,见 §4.8)-> 存当前上下文挂起寄存器后调 `unwind` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点就地两步、与 CALL 失败善后同形;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。
 - `unwind()` 自最内帧向外遍历帧链(**只查当前上下文的帧链**,协程异常不跨协程传播),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;命中 -> `frames_.truncate` 到该帧 + 值栈截断到 `slots + stack_depth` + `push(异常值)`(恰落 catch 参数槽,见坑点文档 #10)+ `ip = handle` + 清寄存器;未命中 -> `exit_frame` 弹帧继续向外。
@@ -131,7 +131,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 - `return false` 却没调 `raise`(声明失败无载荷):`ok=false ∧ has_error=false` -- release 下 `take_error()` 取空、`*` 解引用空 Opt 属 UB;debug 断言先暴露。
 **契约:`return false` ⟺ 已调 `vm.fail`/`vm.raise`;用 `return vm.fail(...)` 即自动满足。**
 
-**与 raise(§4.5)的关系** -- 本寄存器是 CLAUDE.md「错误处理」第 2 条 `raise` 的载体:原生函数的 `vm.fail` 与 op 处理器的 `raise` 共用同一寄存器,`unwind` 查表派发逻辑见 §4.5。
+**与 raise(§4.5)的关系** -- 本寄存器是 AGENTS.md「错误处理」第 2 条 `raise` 的载体:原生函数的 `vm.fail` 与 op 处理器的 `raise` 共用同一寄存器,`unwind` 查表派发逻辑见 §4.5。
 
 **错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 print(e) 不显示位置(同 Python str(e))。
 
@@ -258,6 +258,6 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - `.claude/reference/memory/gc-implementation-plan.md` §5 Phase 4:Movement + VM 根 + safe point(本文 §4.6 的细化来源)。
 - `src/runtime/FrameStack.hpp`:帧栈模板 + `truncate`(unwind 用)。
 - `src/bytecode/CodeUnit.hpp`:`TryRecord`/`find_try_handler`(异常查表已就绪)。
-- CLAUDE.md「错误处理」第 2 条:VM 自管异常的设计目标。
+- AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。
 - `.claude/reference/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
 - **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现;本地副本 `/Users/icelake/src/wren`,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。

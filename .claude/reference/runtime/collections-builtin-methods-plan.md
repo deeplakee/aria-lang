@@ -221,7 +221,7 @@
 > 测试 11 增(Compiler.Varargs* 9 端到端 + CodeGen.VarargsCompiles + ObjFunction.VarargsFlag)。Review 改定(2026-09-19):call_closure
 > 拆编排形(对标旧版 aria vm.cpp call_function 的 pack_varargs/create_call_frame 分层)——元数检查收 check_arity、
 > 缺省垫充+varargs 打包+槽深推导收 prepare_call_args(返回帧参数槽深),call_closure 只剩四行编排。批 4 至此收官
->(本子批工作区待 review,双配置 879/879 绿);CLAUDE.md/README 进度行已同步(批 1-4 落地,待批 5+)。
+>(本子批工作区待 review,双配置 879/879 绿);AGENTS.md/README 进度行已同步(批 1-4 落地,待批 5+)。
 
 > **落地状态(2026-09-19,批 5)**:批 5 已全部落地(工作区待 review,双配置 935/935 绿)。`ObjMap`(AriaHashTable 成员,
 > Phase 3 备置的缝兑现:trace 委托 ht.trace、键判等表内 ===)+ `MAKE_MAP`(执行体对齐 MAKE_LIST:键值 peek 在栈跨

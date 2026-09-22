@@ -548,7 +548,7 @@ L_end:
 
 `raise` 流程（`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目 -> 未命中的帧 `exit_frame` 逐个弹出（顺路收集未捕获跟踪三元组）-> 命中帧处值栈 `truncate_stack(slots + stack_depth)` -> 压异常值（落 catch 参数槽）-> `ip = handle`；全帧未命中物化 `Error`（反提寄存器载荷）并烘焙外->内逐帧 `at` 堆栈跟踪。`finally` 不支持（善后后继 defer 为可选后续），unwind 流程无 finally 汇合点。
 
-## 6. 缺口分析（相对文法与 CLAUDE.md）
+## 6. 缺口分析（相对文法与 AGENTS.md）
 
 ### 6.1 异常记录表（已采纳方案，已落地）
 
@@ -556,7 +556,7 @@ L_end:
 
 - `finally` -- 不做（已从文法移除，无占位）；善后后继 defer 为可选后续，defer 的 unwind 途中执行语义届时细化。
 
-详见 CLAUDE.md「错误处理」第 2 条。
+详见 AGENTS.md「错误处理」第 2 条。
 
 ### 6.2 方法调用派发（两段式，已落地）
 
@@ -657,4 +657,4 @@ code:
 - `.claude/reference/memory/gc-implementation-plan.md` §5 Phase 3：CodeUnit / ObjFunction / ObjList / ObjMap 等子类型路线。
 - `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
 - `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
-- CLAUDE.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。
+- AGENTS.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。

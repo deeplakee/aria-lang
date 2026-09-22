@@ -1,0 +1,2 @@
+Runtime: TypeMismatch sort requires all numbers or all strings, got Nil
+at <main> (

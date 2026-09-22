@@ -117,14 +117,16 @@
 > **计划内补缺 · list 方法面补全(2026-09-21 落地,其后 review 间三度改定)**:上承上文
 > 「剩余未做:容器方法面」的 list 部分,也是字符串字节序比较(0e08c75)的直接消费者。
 > 新增十方法 `insert`/`remove`/`remove_at`/`clear`/`sort`/`reverse`/`find`/`contains`/
-> `size`/`is_empty`(**sort 域检形态 review 中未随本批判落库,方法/测试/文案随后批**;
-> 其余九方法已落地);**pop 契约不动**(恰 0 参 --按位置移除另立 remove_at,不给既有方法
+> `size`/`is_empty`;**pop 契约不动**(恰 0 参 --按位置移除另立 remove_at,不给既有方法
 > 加参数)。方法面终态 = push/pop/insert/remove/remove_at/clear/sort/reverse/find/
 > contains/size/is_empty/join/iter。语义钉子:①变更方法一律就地改、返 nil(push 先例,
 > 变更不鼓励链式);remove 例外:返命中 Bool(miss 走返回值,与 find 返 nil/contains 返
 > false 同族 --有信号通道不占错误通道,错误通道留给无通道的结构性失败如空表 pop);
-> ②`sort` 随后批(语义钉子已定:就地升序,域 = 全数值或全字符串先整体域检,NaN 最小,
-> 稳定序;域检实现形态 review 中);③`insert` 位置语义 = Python insert(`i` 之前插入、`i == size`
+> ②`sort` 就地升序,域 = 比较算子的可比较域(全数值或全字符串:双 Int 整数路径/混合升
+> f64/字符串无符号字节序,皆与 `run_binary_*` 同源),**先整体域检再排序**(首元素定类、
+> 首个破类元素即报 TypeMismatch「got A and B」,首元素自身不在域内只报单类型),NaN 排
+> 在一切数值之前(ES2019 sortCompare 同款)保严格弱序,stable_sort 等值元素(int 1 与
+> f64 1.0)保输入相对序;③`insert` 位置语义 = Python insert(`i` 之前插入、`i == size`
 > 即追加、负数指「该下标元素之前」),越界 fail-fast 静态文案
 > (insert index out of range,与切片同款不带键值;Python 钳制,aria 越界即报);④`remove_at(i)`
 > 按位置移除并返回该元素(pop 的任意位置形,负数从尾计数、越界静态文案同款);⑤`remove(x)` 移除**全部** `value_equal` 命中

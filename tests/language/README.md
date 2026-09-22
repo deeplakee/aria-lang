@@ -87,7 +87,8 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
    直接经 `H.x` 观察辅助模块（旧的「模块全局未导出」注记失效）。list 方法面——push/pop/insert/
    remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/join/iter：变更方法一律
    就地改、返 nil（remove 例外：移除**全部** == 命中元素、返命中布尔，miss 走返回值不报错）；
-   remove_at(i) 按位置移除返元素、负数从尾计数；find 未命中 nil（aria 有负下标故 -1 是合法下标，miss 即取末元素
+   remove_at(i) 按位置移除返元素、负数从尾计数；sort 就地升序，域为全数值或全字符串（与比较
+   算子同源），NaN 排最前；find 未命中 nil（aria 有负下标故 -1 是合法下标，miss 即取末元素
    的 Python 式坑，Ruby 返 nil 同款；string find 同）、find/contains/remove 走 `==` 内容判定；size/
    is_empty 为元素数与空表谓词（全局 len 的方法形态）。
 

@@ -189,7 +189,7 @@ TEST(Compiler, ListMethodLoopUnderStressGc) {
     EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
 }
 
-// ---- list 方法面补全（insert/remove/remove_at/clear/reverse/find/contains/size/is_empty） ----
+// ---- list 方法面补全（insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty） ----
 
 // remove_at(i)：按位置移除并返回；负数从尾计数（与下标读写同语义）。
 TEST(Compiler, ListRemoveAt) {
@@ -255,6 +255,38 @@ TEST(Compiler, ListClear) {
     EXPECT_EQ(run_int(R"(var xs = [1, 2]; var alias = xs; var r = xs.clear();
         if (r == nil && len(xs) == 0 && alias == []) { return 1; } return 0;)"),
               1);
+}
+
+// sort 数值域：就地升序返 nil；int/f64 混合同域（升 f64 比较）；空表 no-op。
+TEST(Compiler, ListSortNumbers) {
+    EXPECT_EQ(run_int("var xs = [3, 1, 2]; var r = xs.sort(); if (r == nil) { return xs[0] * 100 + xs[1] * 10 + xs[2]; "
+                      "} return -1;"),
+              123);
+    EXPECT_EQ(run_int("var xs = [3, 1.5, 2]; xs.sort(); if (xs[0] == 1.5) { return xs[1] * 10 + xs[2]; } return -1;"),
+              23);
+    EXPECT_EQ(run_int("var xs = []; if (xs.sort() == nil) { return len(xs); } return -1;"), 0);
+}
+
+// sort 字符串域：无符号字节序（与比较算子同源，大写 < 小写）；别名可见就地变更。
+TEST(Compiler, ListSortStrings) {
+    EXPECT_EQ(run_int(R"(var ws = ["pear", "apple", "Banana"]; var alias = ws; ws.sort();
+        if (alias === ws && ws[0] == "Banana" && ws[1] == "apple" && ws[2] == "pear") { return 1; } return 0;)"),
+              1);
+}
+
+// sort 域外：数值与字符串混居 / 不可比元素（nil），TypeMismatch 报两类类型。
+TEST(Compiler, ListSortMixedFails) {
+    auto mixed = run_source("var xs = [1, \"a\"]; xs.sort(); return 1;");
+    ASSERT_FALSE(mixed.has_value());
+    EXPECT_EQ(mixed.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(mixed.error().message().find("sort requires all numbers or all strings, got Int and String"),
+              std::string::npos);
+
+    auto incomparable = run_source("var xs = [nil]; xs.sort(); return 1;");
+    ASSERT_FALSE(incomparable.has_value());
+    EXPECT_EQ(incomparable.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(incomparable.error().message().find("sort requires all numbers or all strings, got Nil"),
+              std::string::npos);
 }
 
 // reverse：就地整段反转返 nil。

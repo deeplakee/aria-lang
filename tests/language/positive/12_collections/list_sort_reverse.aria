@@ -1,0 +1,43 @@
+// 钉住：sort/reverse——就地变更返 nil（push 同款，变更方法不鼓励链式）、数值域升序
+# （int/f64 混合同域，升 f64 比较、与 < 算子同源）、字符串按无符号字节序（'B' < 'a'，
+# 与字符串比较算子同源）、空表 no-op、别名可见；域外（混居/不可比元素）见
+# negative/runtime_errors/runtime_list_sort_*。
+var xs = [3, 1, 2];
+assert(xs.sort() == nil);
+assert(xs == [1, 2, 3]);
+
+// int 与 f64 混同居同一数值域
+var mixed = [3, 1.5, 2];
+mixed.sort();
+assert(mixed[0] == 1.5);
+assert(mixed[1] == 2 && mixed[2] == 3);
+
+// 就地变更：经别名可见（非换新表）
+var shared = [3, 1, 2];
+var alias = shared;
+alias.sort();
+assert(shared == [1, 2, 3]);
+
+// 字符串域：无符号字节序，大写排在小写前
+var ws = ["pear", "apple", "Banana"];
+ws.sort();
+assert(ws[0] == "Banana");
+assert(ws[1] == "apple" && ws[2] == "pear");
+
+// 空表 no-op
+var empty = [];
+empty.sort();
+assert(len(empty) == 0);
+
+// reverse：就地整段反转返 nil
+var ys = [1, 2, 3];
+assert(ys.reverse() == nil);
+assert(ys == [3, 2, 1]);
+ys.reverse();
+assert(ys == [1, 2, 3]);
+
+// sort + reverse = 降序
+var zs = [2, 3, 1];
+zs.sort();
+zs.reverse();
+assert(zs == [3, 2, 1]);

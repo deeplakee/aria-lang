@@ -125,6 +125,56 @@ namespace aria {
             return true;
         }
 
+        // 排序域:比较算子的可比较域两支(数值 / 字符串)加域外单列(NotComparable 覆盖 nil/
+        // bool/容器等)。sort 域检的判定底座:域外元素在排序前即拒绝。
+        enum class SortDomain : u8 {
+            Number,
+            String,
+            NotComparable,
+        };
+
+        SortDomain sort_domain(const Value value) noexcept {
+            if (is_num(value)) {
+                return SortDomain::Number;
+            }
+            if (try_obj<ObjString>(value) != nullptr) {
+                return SortDomain::String;
+            }
+            return SortDomain::NotComparable;
+        }
+
+        // sort() -> nil:就地升序(Python list.sort 同款,变更方法返 nil)。域 = 比较算子的可比较
+        // 域(全数值或全字符串),先整体域检再排序 --比较器免「不可比」分支,排序中途无失败路径;
+        // 升序判定收口 value_less(value 层自然序,域外未定义的契约由域检保证)。GC 走查:域检与
+        // 比较均无 GC 分配;stable_sort 的临时缓冲走 std 内存(非 GC 堆),receiver 在 slots[0] 未
+        // 覆写。稳定序:等值元素(如 int 1 与 f64 1.0)保输入相对序。
+        bool sort_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "sort expects no arguments, got {}", argc);
+            }
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            if (!list.empty()) {
+                // 首元素定域,两类皆非即报(只含其类型);其余元素逐个须同域,破域(含两类皆非)
+                // 报首元素与破类元素两类类型。
+                const auto domain = sort_domain(list[0]);
+                if (domain == SortDomain::NotComparable) {
+                    return vm.fail(ErrorCode::TypeMismatch, "sort requires all numbers or all strings, got {}",
+                                   type_name(list[0]));
+                }
+                for (usize index = 1; index < list.size(); ++index) {
+                    if (sort_domain(list[index]) != domain) {
+                        return vm.fail(ErrorCode::TypeMismatch,
+                                       "sort requires all numbers or all strings, got {} and {}", type_name(list[0]),
+                                       type_name(list[index]));
+                    }
+                }
+            }
+            std::ranges::stable_sort(list, value_less);
+            slots[0] = Value::nil_val();
+            return true;
+        }
+
         // reverse() -> nil:就地整段反转。
         bool reverse_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -227,10 +277,13 @@ namespace aria {
         // list 方法表:注册进 List bootstrap 类(kBuiltins 同款循环)。注册名经 new_native_fn
         // 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同指针,查表按指针命中。
         constexpr ListBuiltinEntry kListBuiltins[] = {
-                {"push", push_fn},           {"pop", pop_fn},     {"insert", insert_fn},     {"remove", remove_fn},
-                {"remove_at", remove_at_fn}, {"clear", clear_fn}, {"reverse", reverse_fn},   {"find", find_fn},
-                {"contains", contains_fn},   {"size", size_fn},   {"is_empty", is_empty_fn}, {"join", join_fn},
-                {"iter", iter_fn},
+                {"push", push_fn},           {"pop", pop_fn},
+                {"insert", insert_fn},       {"remove", remove_fn},
+                {"remove_at", remove_at_fn}, {"clear", clear_fn},
+                {"sort", sort_fn},           {"reverse", reverse_fn},
+                {"find", find_fn},           {"contains", contains_fn},
+                {"size", size_fn},           {"is_empty", is_empty_fn},
+                {"join", join_fn},           {"iter", iter_fn},
         };
 
     } // namespace

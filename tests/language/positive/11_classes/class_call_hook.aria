@@ -1,0 +1,28 @@
+// 钉住：对象被调用时按 `__call__` 取实现（名字见 src/aria.hpp 的 kOpCallName）——类链继承、
+// 实例字段遮蔽、零参钩子三条一起钉；类本身仍走实例化（CLASS 臂不在此路径）。
+def Adder {
+  init(base) { this.base = base; }
+  __call__(a, b) { return this.base + a + b; }
+}
+var add = Adder(10);
+assert(add(1, 2) == 13);          // 方法钩子：调用区就地 [recv, args]
+assert(add(0, 0) == 10);
+
+def Zero {
+  init() {}
+  __call__() { return 7; }
+}
+assert(Zero()() == 7);            // 零参钩子
+
+def Sub : Adder {
+  init(base) { super.init(base); }
+}
+assert(Sub(100)(1, 1) == 102);    // 类链继承
+
+var shadow = Adder(0);
+shadow.__call__ = fun(x) { return x * 2; };
+assert(shadow(21) == 42);         // 实例字段遮蔽：字段里的函数值原值直调（收实参不收 this）
+
+// 钩子就是普通方法：能读、能显式按名调用
+assert(add.__call__(1, 2) == 13);
+assert(type(add.__call__) == "BoundMethod");

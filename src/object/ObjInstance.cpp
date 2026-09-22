@@ -58,6 +58,8 @@ namespace aria {
         return class_->load_field(vm, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
     }
 
+    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return resolve_invoke(vm, new_string(vm.gc(), kOpCallName)); }
+
     bool ObjInstance::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 实例字段动态(无预声明):set 即创建/更新,永不失败(恒 true;false ⟺ 已 fail)。
         // set 走 trivial 分配不触 GC(GC 核心不变式)。

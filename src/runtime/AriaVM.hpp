@@ -206,7 +206,10 @@ namespace aria {
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 
         // CALL 分发:栈顶形如 [callee, a1..aN]。按 callee 的对象类型分派到对应 call_* 子例程,
-        // 其余经 Object::op_call 基类默认报 CallNonCallable(未来可调用新类型 override 即接入)。
+        // 其余对象类型按调用钩子 `__call__` 取实现(Object::op_call_impl)后递归分发;取不到的措辞
+        // 随宿主(实例无该成员 = `<class X> has no member '__call__'`,其余类型 =
+        // `type X does not support '__call__'`);非对象 callee 直接报 CallNonCallable(可调用集 =
+        // 上列四类 + 带 `__call__` 的对象)。
         // **本文件 call_* 族的统一契约:return false/nullptr ⟺ 错误载荷已 raise 进 *current_
         // 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);

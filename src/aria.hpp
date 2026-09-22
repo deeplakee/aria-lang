@@ -51,6 +51,14 @@ namespace aria {
     // 由出现位置(def 体裸方法位)与名字共同判定。
     constexpr StringView kInitName = "init";
 
+    // ---- 调用重载方法名 ----
+
+    // 调用钩子名:对象被调用(obj(args))时以该名沿成员查找路径取出可调用实现(实例 fields 优先、
+    // 可遮蔽,再沿类链;与普通方法同一条路径)。名字是语言级事实(用户代码里可见可写),故落本头
+    // 作单一事实源。取前后双下划线形:普通 aria 标识符不会这么命名,故与用户自己的方法名不撞、
+    // 一眼可辨是协议名。运行期消费点 = call_value 的对象侧 default 臂(Object::op_call_impl)。
+    constexpr StringView kOpCallName = "__call__"; // 函数调用
+
     // ---- 产品标识与部署约定 ----
 
     // 产品名:CLI 程序名(util::Cli)与 REPL 提示符句柄(isocline)共用。

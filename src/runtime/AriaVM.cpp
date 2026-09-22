@@ -522,8 +522,17 @@ namespace aria {
                 return call_class(Object::as<ObjClass>(obj), argc);
             case ObjType::BOUND_METHOD:
                 return call_bound_method(Object::as<ObjBoundMethod>(obj), argc);
-            default:
-                return obj->op_call(*this, Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)});
+            default: {
+                // 其余对象类型:按调用钩子 `__call__` 取本对象的实现后调(非对象 callee 由上面
+                // 已拒)。调用区就地复用:[callee, a1..aN] 恰是 [this, args],槽 0 兼返回槽,故直接
+                // 交 call_value 递归分发。取不到即报错(措辞随宿主:实例落成员缺席、其余类型落
+                // 「本类型不支持」)。
+                const auto target = obj->op_call_impl(*this);
+                if (!target) {
+                    return false; // 载荷已在挂起错误寄存器
+                }
+                return call_value(*target, argc);
+            }
         }
     }
 

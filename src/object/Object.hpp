@@ -268,17 +268,19 @@ namespace aria {
         virtual Opt<Value> op_negate(AriaVM& vm) const;
 
         //////////////////////////
-        // 可调用协议(CALL 的对象侧分派点)
+        // 可调用协议(CALL 的对象侧分派点:取实现,不执行)
         //
-        // call_value 的 switch 对已实装可调用类型精确分派,其余落本协议基类默认(fail
-        // CallNonCallable);新可调用类型 override 即接入。**签名与 ObjNativeFn 契约同构**:
-        // slots 为调用区 [callee, a1..aN] 的可写视图 --slots[0] = callee 双职返回槽(写
-        // 返回值即覆写)、slots[1..] = 实参。返回 bool:true = 成功(返回值已写 slots[0]),
-        // false = 已 fail;覆写槽 0 的特殊语义(如实例化原位换实例作 this)由 override 自定。
+        // call_value 的 switch 对已实装可调用类型精确分派,其余对象类型按调用钩子 `__call__` 取
+        // 实现后递归分发:本虚函数回答「本对象上作为调用目标的可调用值」-- 不是执行结果,调用方
+        // 拿到后按调用形态调它(调用区槽 0 保持 receiver),实现既可是内建原生、也可是用户方法/闭包。
+        // 钩子名是语言级事实(aria.hpp 的 kOpCallName)。**基类默认直接 fail**(CallNonCallable
+        // "type X does not support '__call__'"),与 load_field/store_field 等基类默认同款「默认
+        // 不支持,子类型实现才不 fail」。非 const(取实现可能物化绑定,与 load_field/resolve_invoke
+        // 同族)。
         //////////////////////////
 
         [[nodiscard]]
-        virtual bool op_call(AriaVM& vm, Span<Value> slots);
+        virtual Opt<Value> op_call_impl(AriaVM& vm);
 
 
         ////////////////////////////

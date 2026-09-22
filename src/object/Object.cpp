@@ -80,12 +80,10 @@ namespace aria {
         return vm.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name());
     }
 
-    bool Object::op_call(AriaVM& vm, Span<Value> slots) {
-        // 基类默认:本类型不可调用(消费方 = call_value 的 switch default);slots 本默认不读。
-        return vm.fail(ErrorCode::CallNonCallable,
-                       "call non-callable {} (supports closures / native functions / classes / bound "
-                       "methods only)",
-                       type_name());
+    Opt<Value> Object::op_call_impl(AriaVM& vm) {
+        // 基类默认:本类型未实现调用协议,直接 fail(同 store_field 等基类默认形态;报文打钩子名,
+        // 指向要写的方法)。
+        return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name());
     }
 
 } // namespace aria

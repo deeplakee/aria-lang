@@ -66,7 +66,7 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
 }
 
-// 成员/下标访问/算术/比较/可调用协议的**基类默认**:未 override 的子类型对协议操作一律
+// 成员/下标访问/算术/比较协议的**基类默认**:未 override 的子类型对协议操作一律
 // vm.fail 入寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 +
 // 文案子串)防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员
 // override,Module 自模块成员访问起 override load_field/store_field,string 又自字符串 `+`
@@ -147,12 +147,4 @@ TEST(ObjectProtocolDefaults, MemberIndexAndOperatorDefaults) {
     EXPECT_FALSE(m->op_greater_equal(vm, Value::from_int(1)).has_value());
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_TRUE(msg.contains("operator '>=' requires numbers"));
-
-    // 可调用协议默认(备置):本类型不可调用,CallNonCallable(文案与 call_value 原默认一致;
-    // slots 契约同 NativeFn,调用区 Span 经 Span<Value>{&peek(argc), argc+1} 构造)。
-    Value sv_box = Value::from_obj(s); // callee 占槽 0(与 VM 调用区同形)
-    EXPECT_FALSE(s->op_call(vm, Span<Value>{&sv_box, 1}));
-    std::tie(code, msg) = take_pending_error(vm);
-    EXPECT_EQ(code, ErrorCode::CallNonCallable);
-    EXPECT_TRUE(msg.contains("call non-callable String"));
 }

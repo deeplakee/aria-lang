@@ -21,7 +21,7 @@ namespace aria {
         // f64 1.0 是不同键),与下标读同域 -- 判键的方法不做 value_equal 内容相等,那是 list 的域。
 
         // size() -> 整数:键值对数(len(m) 的方法形态)。
-        bool size_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
@@ -32,7 +32,7 @@ namespace aria {
         }
 
         // is_empty() -> Bool:无键值对判定(与 list 同名的空表谓词)。
-        bool is_empty_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
@@ -44,7 +44,7 @@ namespace aria {
 
         // has(key) -> Bool:键存在判定(miss 返 false 不报错,与 get 同族)。方法名取 has 不取
         // contains --map 上 contains 有「判键还是判值」二义(JS Map 同款命名)。
-        bool has_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_has(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "has expects 1 argument, got {}", argc);
@@ -57,7 +57,7 @@ namespace aria {
         // get(key) -> 值或 nil:不带 KeyError 的读(miss 走返回值,与 list find 未命中返 nil
         // 同族;下标读 m[k] miss 仍报 KeyError,兜底不靠本方法)。map 可合法存 nil,故 miss 与
         // 「键存在而值为 nil」在返回值上不可分 -- 需要分清时用 has。
-        bool get_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_get(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "get expects 1 argument, got {}", argc);
@@ -70,7 +70,7 @@ namespace aria {
 
         // remove(key) -> Bool:移除命中键(置墓碑,无分配),命中 true、miss false 不报错 --与
         // list remove 同口径:miss 走返回值,错误通道留给无信号通道的结构性失败。
-        bool remove_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "remove expects 1 argument, got {}", argc);
@@ -82,7 +82,7 @@ namespace aria {
 
         // clear() -> nil:清空(对数归零,容量保留)。重绑 m = {} 换新表,别名仍见旧内容 --本
         // 方法供共享可变状态原地清空(与 list clear 同款)。
-        bool clear_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "clear expects no arguments, got {}", argc);
@@ -96,7 +96,7 @@ namespace aria {
         // unspecified(计划 D4,与 for-in 同)。GC 时序同 ObjMapIterator::next:map 在 slots[0] 于
         // 栈根,new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push 走 trivial 分配不触 GC,
         // 建成随返回值写回槽发布,窗口内无 GC 点。
-        bool keys_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_keys(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "keys expects no arguments, got {}", argc);
@@ -113,7 +113,7 @@ namespace aria {
         // values() -> list:全部值的快照(同 keys 的分配与 GC 时序)。与 keys 同槽位序推进,故
         // 两次调用产出的 keys()[i] 与 values()[i] 同源同对(序本身仍 unspecified,不可跨调用
         // 依赖)。
-        bool values_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_values(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "values expects no arguments, got {}", argc);
@@ -134,7 +134,7 @@ namespace aria {
         // maybe_collect,而 receiver 之外无根的是外层与已铸内层,故外层须挂守卫(内层铸后仅
         // push 即入外层,push 走 trivial 分配不触 GC、窗口内无 GC 点,无需各自挂)。守卫存活至
         // 函数末,slots[0] 写回时 receiver 让位的 map 也已不再需要。
-        bool pairs_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_pairs(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "pairs expects no arguments, got {}", argc);
@@ -153,9 +153,9 @@ namespace aria {
         }
 
         // iter() -> 迭代器:铸造 ObjMapIterator(map 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 ListBuiltins::iter_fn:map 在 slots[0] 于栈根,迭代器白色
+        // receiver)。GC 时序同 ListBuiltins::fn_iter:map 在 slots[0] 于栈根,迭代器白色
         // 建成**先写回槽发布再返回**,中间无 GC 点;此后 map 经迭代器 trace 可达。
-        bool iter_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
@@ -169,9 +169,9 @@ namespace aria {
         // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只
         // 加迭代器子类)。
         constexpr builtins::BuiltinEntry kMapBuiltins[] = {
-                {"size", size_fn},   {"is_empty", is_empty_fn}, {"has", has_fn},     {"get", get_fn},
-                {"keys", keys_fn},   {"values", values_fn},     {"pairs", pairs_fn}, {"remove", remove_fn},
-                {"clear", clear_fn}, {"iter", iter_fn},
+                {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},     {"get", fn_get},
+                {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs}, {"remove", fn_remove},
+                {"clear", fn_clear}, {"iter", fn_iter},
         };
 
     } // namespace

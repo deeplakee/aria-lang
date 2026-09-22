@@ -11,7 +11,7 @@
 namespace aria {
 
     ObjMapIterator::ObjMapIterator(ObjMap* map) : ObjIterator{}, map_{map}, cursor_{map->table().begin()} {
-        // map_ 恒非空:铸造点(iter_fn)解出的即对象,无空态语义。
+        // map_ 恒非空:铸造点(fn_iter)解出的即对象,无空态语义。
         ASSERT(map != nullptr, "ObjMapIterator map must not be null");
     }
 

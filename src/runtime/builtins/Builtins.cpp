@@ -19,7 +19,7 @@ namespace aria::builtins {
         // ---- 内置原生函数实现(NativeFn 契约:读 slots[1..]、写 slots[0]、失败 return vm.fail(...)) ----
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
-        bool type_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_type(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "type expects 1 argument, got {}", argc);
@@ -31,7 +31,7 @@ namespace aria::builtins {
 
         // len(x) -> 整数:String 返 UTF-8 字节数(ObjString::length()),List 返元素数,
         // Map 返键值对数。
-        bool len_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_len(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "len expects 1 argument, got {}", argc);
@@ -53,7 +53,7 @@ namespace aria::builtins {
         }
 
         // str(x) -> 字符串:值的可读渲染(复用 format_value,与 PRINT 一致)。
-        bool str_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_str(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "str expects 1 argument, got {}", argc);
@@ -65,7 +65,7 @@ namespace aria::builtins {
 
         // assert(x[, msg]) -> nil:x 真值则成功返 nil;否则抛 AssertionFailed(msg 为 string
         // 时用之,非 string 静默忽略落默认消息)。
-        bool assert_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_assert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
                 return vm.fail(ErrorCode::WrongArity, "assert expects 1 or 2 arguments, got {}", argc);
@@ -85,10 +85,10 @@ namespace aria::builtins {
 
         // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表。
         constexpr BuiltinEntry kBuiltins[] = {
-                {"type", type_fn},
-                {"len", len_fn},
-                {"str", str_fn},
-                {"assert", assert_fn},
+                {"type", fn_type},
+                {"len", fn_len},
+                {"str", fn_str},
+                {"assert", fn_assert},
         };
 
     } // namespace

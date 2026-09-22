@@ -26,7 +26,7 @@ namespace aria {
 
         // push(x) -> nil:追加 x 到末尾(任意 Value)。返回 nil(Python append 同款,变更方法
         // 不鼓励链式)。
-        bool push_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_push(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "push expects 1 argument, got {}", argc);
@@ -41,7 +41,7 @@ namespace aria {
 
         // pop() -> 末元素:移除并返回末元素(任意 Value);空表报 IndexOutOfBounds(fail-fast,
         // nil 哨兵不可行 --list 可合法存 nil)。任意位置移除走 remove_at。
-        bool pop_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_pop(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "pop expects no arguments, got {}", argc);
@@ -59,7 +59,7 @@ namespace aria {
         // i == 元素数即追加;负数从尾计数、指「该下标元素之前」(-1 即末元素之前),合法域
         // [-(size), size] 收口 util::resolve_position(resolve_index 的姊妹函数,上界放宽到
         // 追加位)。段右移腾位收口 Array::insert。
-        bool insert_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_insert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
                 return vm.fail(ErrorCode::WrongArity, "insert expects 2 arguments, got {}", argc);
@@ -81,7 +81,7 @@ namespace aria {
         // 用 find + remove_at 组合),命中 true、未命中 false 不报错 --miss 走返回值,与
         // find 返 -1 / contains 返 false 同族;错误通道留给无信号通道的结构性失败(如空表
         // pop)。收口 AriaArray::remove(一趟稳定压缩)。
-        bool remove_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "remove expects 1 argument, got {}", argc);
@@ -94,7 +94,7 @@ namespace aria {
         // remove_at(i) -> i 处元素:按位置移除并返回(pop 的任意位置形,负数从尾计数、与下标
         // 读写同语义,越界报原始键值)。段左移补位收口 Array::remove_at,trivial 搬移无 GC 点
         //(receiver 已离 slots[0])。
-        bool remove_at_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "remove_at expects 1 argument, got {}", argc);
@@ -114,7 +114,7 @@ namespace aria {
 
         // clear() -> nil:清空(长度归零,容量保留)。重绑 xs = [] 换新表,别名仍见旧内容 --本方法
         // 供共享可变状态原地清空。
-        bool clear_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "clear expects no arguments, got {}", argc);
@@ -148,7 +148,7 @@ namespace aria {
         // 升序判定收口 value_less(value 层自然序,域外未定义的契约由域检保证)。GC 走查:域检与
         // 比较均无 GC 分配;stable_sort 的临时缓冲走 std 内存(非 GC 堆),receiver 在 slots[0] 未
         // 覆写。稳定序:等值元素(如 int 1 与 f64 1.0)保输入相对序。
-        bool sort_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_sort(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "sort expects no arguments, got {}", argc);
@@ -176,7 +176,7 @@ namespace aria {
         }
 
         // reverse() -> nil:就地整段反转。
-        bool reverse_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_reverse(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "reverse expects no arguments, got {}", argc);
@@ -190,7 +190,7 @@ namespace aria {
         // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil(下标永不为 nil 故无歧义,
         // Ruby Array#index 同款 --aria 有负下标,-1 是合法下标,miss 时 xs[find(x)] 会静默
         // 取末元素)。判定收口 AriaArray::find,value_equal 无分配。
-        bool find_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "find expects 1 argument, got {}", argc);
@@ -203,7 +203,7 @@ namespace aria {
 
         // contains(x) -> Bool:成员判定收口 AriaArray::contains(list 无 in 表达式算子,
         // 本方法即成员测试口)。
-        bool contains_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
@@ -214,7 +214,7 @@ namespace aria {
         }
 
         // size() -> 整数:元素数(全局 len(xs) 的方法形态)。
-        bool size_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
@@ -226,7 +226,7 @@ namespace aria {
 
         // is_empty() -> Bool:空表判定(len == 0 的谓词形;has_next 式动词前缀,empty 动词义
         // 会与 clear 混淆)。
-        bool is_empty_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
@@ -241,7 +241,7 @@ namespace aria {
         // 底座 util::join(HashTable 迭代器批铺的缝在此兑现)。GC 走查:util::join 遍历
         // format_value 均无 GC 分配,唯一分配点 new_string 时 receiver 在 slots[0] 未覆写、
         // sep 在 slots[1] 经栈根。
-        bool join_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "join expects 1 argument, got {}", argc);
@@ -259,7 +259,7 @@ namespace aria {
         // iter() -> 迭代器:铸造 ObjListIterator(list 与其迭代器成对,铸造口按类型解开
         // receiver)。GC 时序:list 在 slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,
         // 中间无 GC 点;此后 list 经迭代器 trace 可达。
-        bool iter_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
@@ -271,13 +271,13 @@ namespace aria {
 
         // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kListBuiltins[] = {
-                {"push", push_fn},           {"pop", pop_fn},
-                {"insert", insert_fn},       {"remove", remove_fn},
-                {"remove_at", remove_at_fn}, {"clear", clear_fn},
-                {"sort", sort_fn},           {"reverse", reverse_fn},
-                {"find", find_fn},           {"contains", contains_fn},
-                {"size", size_fn},           {"is_empty", is_empty_fn},
-                {"join", join_fn},           {"iter", iter_fn},
+                {"push", fn_push},           {"pop", fn_pop},
+                {"insert", fn_insert},       {"remove", fn_remove},
+                {"remove_at", fn_remove_at}, {"clear", fn_clear},
+                {"sort", fn_sort},           {"reverse", fn_reverse},
+                {"find", fn_find},           {"contains", fn_contains},
+                {"size", fn_size},           {"is_empty", fn_is_empty},
+                {"join", fn_join},           {"iter", fn_iter},
         };
 
     } // namespace

@@ -18,7 +18,7 @@ namespace aria {
         // 本文件不认识任何具体源。
 
         // has_next() -> bool:是否还有下一个元素。
-        bool has_next_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_has_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "has_next expects no arguments, got {}", argc);
@@ -31,7 +31,7 @@ namespace aria {
 
         // next() -> 下一元素:取下一值并推进游标;越界抛 IterationExhausted(fail-fast,
         // 可 catch)。
-        bool next_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "next expects no arguments, got {}", argc);
@@ -48,8 +48,8 @@ namespace aria {
         // 迭代器方法表:注册进 Iterator bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp;
         // 注册名与 CodeGen forIn 降糖 emit_method_call0 发射的同名常量同指针,查表按指针命中)。
         constexpr builtins::BuiltinEntry kIteratorBuiltins[] = {
-                {"has_next", has_next_fn},
-                {"next", next_fn},
+                {"has_next", fn_has_next},
+                {"next", fn_next},
         };
 
     } // namespace

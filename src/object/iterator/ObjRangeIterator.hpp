@@ -46,7 +46,7 @@ namespace aria {
     };
 
     // 工厂:分配 ObjRangeIterator。只做一次 new_object、无内部新建;调用方须已根化源 range
-    //(iter_fn 路径 range 在 slots[0] 栈根),返回对象白色无根,建成即写回槽发布。不持源
+    //(fn_iter 路径 range 在 slots[0] 栈根),返回对象白色无根,建成即写回槽发布。不持源
     // 指针:分配点若 collect,range 仍由 slots[0] 保命;写回后 range 不可达、随时可回收,
     // 迭代器标量自足不受影响。
     [[nodiscard]]

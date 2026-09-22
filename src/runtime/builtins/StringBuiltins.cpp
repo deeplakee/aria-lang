@@ -26,7 +26,7 @@ namespace aria {
 
         // upper() -> 新串:ASCII 范围(A-Z/a-z)逐字节转大写,其余字节原样(v1 ASCII only,
         // Unicode casing 需 case 映射表,后续批按需)。
-        bool upper_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_upper(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "upper expects no arguments, got {}", argc);
@@ -43,7 +43,7 @@ namespace aria {
         }
 
         // lower() -> 新串:ASCII 逐字节转小写,同 upper 口径。
-        bool lower_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_lower(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "lower expects no arguments, got {}", argc);
@@ -66,7 +66,7 @@ namespace aria {
         }
 
         // trim() -> 新串:去首尾 ASCII 空白;全空白返空串。
-        bool trim_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_trim(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "trim expects no arguments, got {}", argc);
@@ -128,7 +128,7 @@ namespace aria {
 
         // split([sep]) -> list<string>:1 参按分隔符切(保留空段,空串输入切出 [""],分隔符须非空
         // string = EmptyPattern);0 参按 ASCII 空白连续段切、丢空段(见 split_on_space)。
-        bool split_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_split(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0 && argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "split expects 0 or 1 arguments, got {}", argc);
@@ -155,7 +155,7 @@ namespace aria {
 
         // find(sub) -> 整数或 nil:子串首现字节下标,未命中 nil(下标永不为 nil 故无歧义,
         // Ruby 同款 --aria 有负下标,-1 是合法下标,miss 时 s[s.find(x)] 会静默取末字符)。
-        bool find_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "find expects 1 argument, got {}", argc);
@@ -172,7 +172,7 @@ namespace aria {
 
         // contains(sub) -> Bool:子串包含判定(与 find 同域:按字节子串判,非字符集合);未命中
         // 返 false 不报错,与 find 未命中返 nil 同族。空串参数恒真(空串在任何位置都算包含)。
-        bool contains_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
@@ -189,7 +189,7 @@ namespace aria {
 
         // replace(old, new) -> 新串:全部替换(Python/JS replaceAll 同款);匹配串为空报
         // EmptyPattern。拼接在 C++ String(非 GC 内存),末尾一次铸造。
-        bool replace_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_replace(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
                 return vm.fail(ErrorCode::WrongArity, "replace expects 2 arguments, got {}", argc);
@@ -225,7 +225,7 @@ namespace aria {
 
         // substring(start[, end]) -> 新串:字节区间 [start, end);end 省略到尾;越界/负数/
         // end<begin 报 IndexOutOfBounds,不静默钳制、无负下标归一(与 list 下标不同口径)。
-        bool substring_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_substring(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
                 return vm.fail(ErrorCode::WrongArity, "substring expects 1 or 2 arguments, got {}", argc);
@@ -252,7 +252,7 @@ namespace aria {
         }
 
         // starts_with(prefix) -> bool:字节前缀判定;空串前缀恒真。ends_with 同款尾缀。
-        bool starts_with_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_starts_with(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "starts_with expects 1 argument, got {}", argc);
@@ -267,7 +267,7 @@ namespace aria {
             return true;
         }
 
-        bool ends_with_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_ends_with(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "ends_with expects 1 argument, got {}", argc);
@@ -284,7 +284,7 @@ namespace aria {
 
         // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域,计划 D5)。码点数不是本
         // 方法 --那是 len(chars())。
-        bool size_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
@@ -295,7 +295,7 @@ namespace aria {
         }
 
         // is_empty() -> Bool:空串判定(size() == 0 的谓词形;与 list/map 同名)。
-        bool is_empty_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
@@ -309,7 +309,7 @@ namespace aria {
         // 迭代、s[i] 同族;码点数即 len(chars()),与字节域的 len(s)/size() 相对。非法字节序列产出
         // 替换码点串,口径同 ObjStringIterator::next(只吞一个坏字节)。GC 时序:receiver 留在
         // slots[0] 由栈标根,新 list 白色须跨逐字符铸造的 GC 点,故挂临时根保命,循环结束才发布。
-        bool chars_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_chars(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "chars expects no arguments, got {}", argc);
@@ -330,7 +330,7 @@ namespace aria {
         // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号索引,区别于字节域 s[i]);
         // 越界 IndexOutOfBounds--负数与越过末码点同走循环走空后的同一处报错(负数不早退,多扫
         // 一遍串换单出口)。逐码点扫描定位(O(i),无偏移索引表,v1 接受)。
-        bool codepoint_at_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_codepoint_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.fail(ErrorCode::WrongArity, "codepoint_at expects 1 argument, got {}", argc);
@@ -355,7 +355,7 @@ namespace aria {
 
         // to_int() -> 整数或 nil:整串十进制解析(util::parse_int_text,语法与域见其注);空串/杂字/
         // 越 i48 域一律返 nil -- miss 返 nil 与 find/get 同族,nil 永不与合法整数二义。
-        bool to_int_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_to_int(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "to_int expects no arguments, got {}", argc);
@@ -367,7 +367,7 @@ namespace aria {
 
         // to_float() -> 浮点或 nil:整串十进制解析(util::parse_float_text),失败同 to_int 返 nil;
         // 整数形串给浮点值("3" -> 3.0),小数形不接受 to_int 而只在此。
-        bool to_float_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_to_float(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "to_float expects no arguments, got {}", argc);
@@ -378,9 +378,9 @@ namespace aria {
         }
 
         // iter() -> 迭代器:铸造 ObjStringIterator(string 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 ListBuiltins::iter_fn:str 在 slots[0] 于栈根,迭代器白色建成
+        // receiver)。GC 时序同 ListBuiltins::fn_iter:str 在 slots[0] 于栈根,迭代器白色建成
         // 先写回槽发布再返回,中间无 GC 点;此后 str 经迭代器 trace 可达。
-        bool iter_fn(AriaVM& vm, Span<Value> slots) {
+        bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
@@ -403,7 +403,7 @@ namespace aria {
         // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
         // 未命中时(gc.new_object 顶部 maybe_collect),此刻两侧经调用区槽在栈(receiver 占 slots[0],
         // 「栈即根」);C++ 局部 buffer 非 GC 对象,不受 collect 影响。
-        bool __add___fn(AriaVM& vm, Span<Value> slots) {
+        bool fn___add__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__add__ expects 1 argument, got {}", slots.size() - 1);
             }
@@ -423,7 +423,7 @@ namespace aria {
         // 四个比较钩子 -> Bool:两侧须皆 String,按**无符号字节序**比较。必须走 string_view::compare
         //(char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
         // ASCII 之前(`"é" < "z"` 会反过来)。纯读零分配(GC-pure),无 GC 点。四处校验同形、谓词各异。
-        bool __lt___fn(AriaVM& vm, Span<Value> slots) {
+        bool fn___lt__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__lt__ expects 1 argument, got {}", slots.size() - 1);
             }
@@ -437,7 +437,7 @@ namespace aria {
             return true;
         }
 
-        bool __le___fn(AriaVM& vm, Span<Value> slots) {
+        bool fn___le__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__le__ expects 1 argument, got {}", slots.size() - 1);
             }
@@ -451,7 +451,7 @@ namespace aria {
             return true;
         }
 
-        bool __gt___fn(AriaVM& vm, Span<Value> slots) {
+        bool fn___gt__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__gt__ expects 1 argument, got {}", slots.size() - 1);
             }
@@ -465,7 +465,7 @@ namespace aria {
             return true;
         }
 
-        bool __ge___fn(AriaVM& vm, Span<Value> slots) {
+        bool fn___ge__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__ge__ expects 1 argument, got {}", slots.size() - 1);
             }
@@ -481,30 +481,30 @@ namespace aria {
 
         // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kStringBuiltins[] = {
-                {"upper", upper_fn},
-                {"lower", lower_fn},
-                {"trim", trim_fn},
-                {"split", split_fn},
-                {"find", find_fn},
-                {"contains", contains_fn},
-                {"replace", replace_fn},
-                {"substring", substring_fn},
-                {"starts_with", starts_with_fn},
-                {"ends_with", ends_with_fn},
-                {"size", size_fn},
-                {"is_empty", is_empty_fn},
-                {"chars", chars_fn},
-                {"codepoint_at", codepoint_at_fn},
-                {"to_int", to_int_fn},
-                {"to_float", to_float_fn},
-                {"iter", iter_fn},
+                {"upper", fn_upper},
+                {"lower", fn_lower},
+                {"trim", fn_trim},
+                {"split", fn_split},
+                {"find", fn_find},
+                {"contains", fn_contains},
+                {"replace", fn_replace},
+                {"substring", fn_substring},
+                {"starts_with", fn_starts_with},
+                {"ends_with", fn_ends_with},
+                {"size", fn_size},
+                {"is_empty", fn_is_empty},
+                {"chars", fn_chars},
+                {"codepoint_at", fn_codepoint_at},
+                {"to_int", fn_to_int},
+                {"to_float", fn_to_float},
+                {"iter", fn_iter},
                 // 运算符重载方法(String 只有 `+` 与四个比较;键与函数名对应的钩子名同形,漏改其一时
                 // cache_string_operator_fns 按名查不到、bootstrap 断言即报)
-                {"__add__", __add___fn},
-                {"__lt__", __lt___fn},
-                {"__le__", __le___fn},
-                {"__gt__", __gt___fn},
-                {"__ge__", __ge___fn},
+                {"__add__", fn___add__},
+                {"__lt__", fn___lt__},
+                {"__le__", fn___le__},
+                {"__gt__", fn___gt__},
+                {"__ge__", fn___ge__},
         };
 
     } // namespace

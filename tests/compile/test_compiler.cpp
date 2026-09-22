@@ -189,6 +189,93 @@ TEST(Compiler, ListMethodLoopUnderStressGc) {
     EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
 }
 
+// ---- list 方法面补全（insert/remove/remove_at/clear/reverse/find/contains/size/is_empty） ----
+
+// remove_at(i)：按位置移除并返回；负数从尾计数（与下标读写同语义）。
+TEST(Compiler, ListRemoveAt) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(0) * 10 + len(xs);"), 12);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(-1) * 10 + len(xs);"), 32);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(1) * 10 + xs[0] + xs[1];"), 24);
+}
+
+// remove_at 越界/非整数：静态文案（与切片「slice index out of range」同款，不带键值）。
+TEST(Compiler, ListRemoveAtFails) {
+    auto out = run_source("var xs = [1]; return xs.remove_at(5);");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(out.error().message().find("remove_at index out of range"), std::string::npos);
+
+    auto bad = run_source("var xs = [1]; return xs.remove_at(\"a\");");
+    ASSERT_FALSE(bad.has_value());
+    EXPECT_EQ(bad.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(bad.error().message().find("remove_at index must be an integer"), std::string::npos);
+}
+
+// remove(x)：移除**全部** == 命中元素，命中 true / 未命中 false（不报错，miss 走返回值与 find/contains 同族）；
+// nil/嵌套容器按内容可移除；只要移一处用 find + remove_at 组合。
+TEST(Compiler, ListRemove) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; if (xs.remove(2) && len(xs) == 2) { return xs[0] + xs[1]; } return -1;"), 4);
+    EXPECT_EQ(run_int("var xs = [1, 2, 1, 1]; xs.remove(1); if (xs == [2]) { return 1; } return 0;"), 1); // 移全、保序
+    EXPECT_EQ(run_int("var xs = [1]; if (!xs.remove(9) && len(xs) == 1) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var xs = [1, nil, nil]; if (xs.remove(nil) && xs == [1]) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var xs = [[1], 2]; if (xs.remove([1]) && xs == [2]) { return 1; } return 0;"), 1);
+}
+
+// size/is_empty：元素数与空表谓词（全局 len 的方法形态）。
+TEST(Compiler, ListSizeAndIsEmpty) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.size();"), 3);
+    EXPECT_EQ(run_int("var xs = []; return xs.size();"), 0);
+    EXPECT_EQ(run_int("var xs = [1]; if (!xs.is_empty() && [].is_empty()) { return 1; } return 0;"), 1);
+}
+
+// insert：位置语义（i 之前插入），i == 元素数即追加；负数指「该下标元素之前」。
+TEST(Compiler, ListInsert) {
+    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(1, 2); return xs[0] * 100 + xs[1] * 10 + xs[2];"), 123);
+    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(0, 9); return xs[0];"), 9);
+    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(2, 9); return len(xs) * 10 + xs[2];"), 39);
+    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(-1, 9); return xs[1];"), 9);
+    EXPECT_EQ(run_int("var xs = []; xs.insert(0, 7); return xs[0];"), 7);
+}
+
+// insert 越界：合法域 [-(size), size]，静态文案（与切片同款，不带键值）。
+TEST(Compiler, ListInsertOutOfRangeFails) {
+    auto high = run_source("var xs = [1]; xs.insert(5, 0); return 1;");
+    ASSERT_FALSE(high.has_value());
+    EXPECT_EQ(high.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(high.error().message().find("insert index out of range"), std::string::npos);
+
+    auto low = run_source("var xs = [1]; xs.insert(-5, 0); return 1;");
+    ASSERT_FALSE(low.has_value());
+    EXPECT_EQ(low.error().code(), ErrorCode::IndexOutOfBounds);
+    EXPECT_NE(low.error().message().find("insert index out of range"), std::string::npos);
+}
+
+// clear：清空返 nil，长度归零；别名（共享可变状态）同见。
+TEST(Compiler, ListClear) {
+    EXPECT_EQ(run_int(R"(var xs = [1, 2]; var alias = xs; var r = xs.clear();
+        if (r == nil && len(xs) == 0 && alias == []) { return 1; } return 0;)"),
+              1);
+}
+
+// reverse：就地整段反转返 nil。
+TEST(Compiler, ListReverse) {
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var r = xs.reverse(); if (r == nil) { return xs[0] * 100 + xs[1] * 10 + "
+                      "xs[2]; } return -1;"),
+              321);
+    EXPECT_EQ(run_int("var xs = []; xs.reverse(); return len(xs);"), 0);
+}
+
+// find/contains：value_equal（== 内容递归）判定；find 未命中 nil（下标永不为 nil；
+// 有负下标故 -1 是合法下标，miss 时 xs[find(x)] 会静默取末元素——Python str.find 的坑，Ruby 返 nil 同款）。
+TEST(Compiler, ListFindAndContains) {
+    EXPECT_EQ(run_int("var xs = [1, nil, \"a\", [2]]; return xs.find(nil) * 1000 + xs.find(\"a\") * 100 + xs.find([2]) "
+                      "* 10;"),
+              1230); // 命中下标 1, 2, 3
+    EXPECT_EQ(run_int("var xs = [1, nil]; if (xs.contains(nil) && !xs.contains(2)) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var xs = [9]; if (xs.find(1) == nil) { return 1; } return 0;"), 1); // miss 返 nil
+    EXPECT_EQ(run_int("var xs = []; if (xs.find(1) == nil && !xs.contains(1)) { return 1; } return 0;"), 1);
+}
+
 // ---- 负下标（从尾计数：-1 末元素、-len 首元素；归一化后越界 fail-fast 报原始键值） ----
 
 // 读对称:xs[-1] = 末元素、xs[-len] = 首元素。
@@ -569,10 +656,10 @@ TEST(Compiler, StringSplitKeepsEmptySegments) {
     EXPECT_NE(empty.error().message().find("split separator must not be empty"), std::string::npos);
 }
 
-// find:首现字节下标,未命中 -1。
-TEST(Compiler, StringFindReturnsByteIndexOrMinusOne) {
+// find:首现字节下标,未命中 nil。
+TEST(Compiler, StringFindReturnsByteIndexOrNil) {
     EXPECT_EQ(run_int(R"(return "hello".find("llo");)"), 2);
-    EXPECT_EQ(run_int(R"(return "hello".find("x");)"), -1);
+    EXPECT_EQ(run_int(R"(if ("hello".find("x") == nil) { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(return "aaa".find("a");)"), 0);
 }
 

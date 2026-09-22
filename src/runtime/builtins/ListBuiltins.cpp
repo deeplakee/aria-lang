@@ -1,5 +1,7 @@
 #include "runtime/builtins/ListBuiltins.hpp"
 
+#include <algorithm>
+
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
@@ -18,6 +20,9 @@ namespace aria {
     namespace {
 
         // ---- list 方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽,读 slots[1..]) ----
+        // 惯例:receiver 解开后直取 elements() 绑为 list(单次使用也不内联;仅 iter 需要
+        // ObjList* 本体传给迭代器);段搬移类变更(insert/remove_at)收口 Array 原语,方法体
+        // 只余域检查与调用。
 
         // push(x) -> nil:追加 x 到末尾(任意 Value)。返回 nil(Python append 同款,变更方法
         // 不鼓励链式)。
@@ -28,25 +33,156 @@ namespace aria {
             }
             // 绑定路径契约:slots[0] 恒本 list(仅经 load_field 绑定触达),DEBUG 下 as 走
             // dynamic_cast 校验。
-            const auto list = Object::as<ObjList>(slots[0].as_obj());
-            list->elements().push(slots[1]); // trivial 分配不触 GC
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            list.push(slots[1]); // trivial 分配不触 GC
             slots[0] = Value::nil_val();
             return true;
         }
 
-        // pop() -> 末元素:移除并返回末元素(任意 Value);空表报 IndexOutOfBounds。
+        // pop() -> 末元素:移除并返回末元素(任意 Value);空表报 IndexOutOfBounds(fail-fast,
+        // nil 哨兵不可行 --list 可合法存 nil)。任意位置移除走 remove_at。
         bool pop_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
                 return vm.fail(ErrorCode::WrongArity, "pop expects no arguments, got {}", argc);
             }
-            const auto list     = Object::as<ObjList>(slots[0].as_obj());
-            auto&      elements = list->elements();
-            if (elements.empty()) {
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            if (list.empty()) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "pop from empty list");
             }
-            slots[0] = elements[elements.size() - 1];
-            elements.pop();
+            slots[0] = list[list.size() - 1];
+            list.pop(); // 搬移时 receiver 已离 slots[0],trivial 无 GC 点
+            return true;
+        }
+
+        // insert(i, x) -> nil:在位置 i 之前插入 x(任意 Value)。位置语义(Python insert 同款):
+        // i == 元素数即追加;负数从尾计数、指「该下标元素之前」(-1 即末元素之前),合法域
+        // [-(size), size] 收口 util::resolve_position(resolve_index 的姊妹函数,上界放宽到
+        // 追加位)。段右移腾位收口 Array::insert。
+        bool insert_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 2) {
+                return vm.fail(ErrorCode::WrongArity, "insert expects 2 arguments, got {}", argc);
+            }
+            if (!slots[1].is_int()) {
+                return vm.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(slots[1]));
+            }
+            auto&      list     = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto position = util::resolve_position(slots[1].as_int(), list.size());
+            if (!position) {
+                return vm.fail(ErrorCode::IndexOutOfBounds, "insert index out of range");
+            }
+            list.insert(*position, slots[2]);
+            slots[0] = Value::nil_val();
+            return true;
+        }
+
+        // remove(x) -> Bool:移除**全部** == 命中元素(Ruby Array#delete 同款移全;只要一处
+        // 用 find + remove_at 组合),命中 true、未命中 false 不报错 --miss 走返回值,与
+        // find 返 -1 / contains 返 false 同族;错误通道留给无信号通道的结构性失败(如空表
+        // pop)。收口 AriaArray::remove(一趟稳定压缩)。
+        bool remove_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "remove expects 1 argument, got {}", argc);
+            }
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            slots[0]   = Value::from_bool(list.remove(slots[1]));
+            return true;
+        }
+
+        // remove_at(i) -> i 处元素:按位置移除并返回(pop 的任意位置形,负数从尾计数、与下标
+        // 读写同语义,越界报原始键值)。段左移补位收口 Array::remove_at,trivial 搬移无 GC 点
+        //(receiver 已离 slots[0])。
+        bool remove_at_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "remove_at expects 1 argument, got {}", argc);
+            }
+            if (!slots[1].is_int()) {
+                return vm.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer");
+            }
+            auto&      list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto slot = util::resolve_index(slots[1].as_int(), list.size());
+            if (!slot) {
+                return vm.fail(ErrorCode::IndexOutOfBounds, "remove_at index out of range");
+            }
+            slots[0] = list[*slot];
+            list.remove_at(*slot);
+            return true;
+        }
+
+        // clear() -> nil:清空(长度归零,容量保留)。重绑 xs = [] 换新表,别名仍见旧内容 --本方法
+        // 供共享可变状态原地清空。
+        bool clear_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "clear expects no arguments, got {}", argc);
+            }
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            list.clear();
+            slots[0] = Value::nil_val();
+            return true;
+        }
+
+        // reverse() -> nil:就地整段反转。
+        bool reverse_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "reverse expects no arguments, got {}", argc);
+            }
+            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            std::ranges::reverse(list); // trivial 交换,无 GC 点
+            slots[0] = Value::nil_val();
+            return true;
+        }
+
+        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil(下标永不为 nil 故无歧义,
+        // Ruby Array#index 同款 --aria 有负下标,-1 是合法下标,miss 时 xs[find(x)] 会静默
+        // 取末元素)。判定收口 AriaArray::find,value_equal 无分配。
+        bool find_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "find expects 1 argument, got {}", argc);
+            }
+            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto  hit  = list.find(slots[1]);
+            slots[0]         = hit ? Value::from_int(static_cast<i64>(*hit)) : Value::nil_val();
+            return true;
+        }
+
+        // contains(x) -> Bool:成员判定收口 AriaArray::contains(list 无 in 表达式算子,
+        // 本方法即成员测试口)。
+        bool contains_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
+            }
+            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            slots[0]         = Value::from_bool(list.contains(slots[1]));
+            return true;
+        }
+
+        // size() -> 整数:元素数(全局 len(xs) 的方法形态)。
+        bool size_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
+            }
+            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            slots[0]         = Value::from_int(static_cast<i64>(list.size()));
+            return true;
+        }
+
+        // is_empty() -> Bool:空表判定(len == 0 的谓词形;has_next 式动词前缀,empty 动词义
+        // 会与 clear 混淆)。
+        bool is_empty_fn(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
+            }
+            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            slots[0]         = Value::from_bool(list.empty());
             return true;
         }
 
@@ -69,8 +205,9 @@ namespace aria {
             if (sep == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(slots[1]));
             }
-            const auto list = Object::as<ObjList>(slots[0].as_obj());
-            slots[0] = Value::from_obj(new_string(vm.gc(), util::join(list->elements(), sep->view(), format_value)));
+            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto  str  = util::join(list, sep->view(), format_value);
+            slots[0]         = Value::from_obj(new_string(vm.gc(), str));
             return true;
         }
 
@@ -90,9 +227,9 @@ namespace aria {
         // list 方法表:注册进 List bootstrap 类(kBuiltins 同款循环)。注册名经 new_native_fn
         // 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射的同名常量同指针,查表按指针命中。
         constexpr ListBuiltinEntry kListBuiltins[] = {
-                {"push", push_fn},
-                {"pop", pop_fn},
-                {"join", join_fn},
+                {"push", push_fn},           {"pop", pop_fn},     {"insert", insert_fn},     {"remove", remove_fn},
+                {"remove_at", remove_at_fn}, {"clear", clear_fn}, {"reverse", reverse_fn},   {"find", find_fn},
+                {"contains", contains_fn},   {"size", size_fn},   {"is_empty", is_empty_fn}, {"join", join_fn},
                 {"iter", iter_fn},
         };
 

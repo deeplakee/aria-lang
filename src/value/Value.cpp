@@ -1,8 +1,10 @@
 #include "value/Value.hpp"
 
 #include <bit>
+#include <cmath>
 #include <format>
 
+#include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "util/util.hpp"
 
@@ -121,6 +123,26 @@ namespace aria {
                 return lhs.as_obj() == rhs.as_obj(); // 指针相等(intern 后等价内容串同指针)
         }
         return false;
+    }
+
+    bool value_less(const Value lhs, const Value rhs) noexcept {
+        // 数值域:双 Int 整数路径,混合升 f64(与 value_equal 的跨型数值比较同源);
+        // NaN 排在一切数值之前、双 NaN 等价 --保严格弱序,否则排序形式上 UB。
+        if (lhs.is_int() && rhs.is_int()) {
+            return lhs.as_int() < rhs.as_int();
+        }
+        if (is_num(lhs) && is_num(rhs)) {
+            const auto x = lhs.is_int() ? static_cast<f64>(lhs.as_int()) : lhs.as_f64();
+            const auto y = rhs.is_int() ? static_cast<f64>(rhs.as_int()) : rhs.as_f64();
+            if (std::isnan(x) || std::isnan(y)) {
+                return std::isnan(x) && !std::isnan(y);
+            }
+            return x < y;
+        }
+        // 字符串域:无符号字节序,必须走 string_view::compare(char_traits 的 memcmp 语义;
+        // char 在多数平台有符号,手写逐 char 比较会把 0x80+ 字节排到 ASCII 之前)。
+        const auto lhs_str = Object::as<ObjString>(lhs.as_obj());
+        return lhs_str->view().compare(Object::as<ObjString>(rhs.as_obj())->view()) < 0;
     }
 
 } // namespace aria

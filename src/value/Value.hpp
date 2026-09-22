@@ -63,6 +63,14 @@ namespace aria {
     [[nodiscard]]
     bool value_identical(Value lhs, Value rhs) noexcept;
 
+    // 自然序小于(值的排序底座,比较算子的可比较域):双数值按数值序--双 Int 走整数
+    // 路径、混合升 f64,NaN 排在一切数值之前(保严格弱序,否则排序形式上 UB);双字符串
+    // 按无符号字节序(string_view::compare 的 memcmp 语义)。**域外组合(非数值/字符串、
+    // 或两者混居)未定义,调用方须先域检**(sort 的「先整体域检再排序」契约);无分配
+    // noexcept,可直接作排序比较器。
+    [[nodiscard]]
+    bool value_less(Value lhs, Value rhs) noexcept;
+
     // f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
     //   收口于 Value 层供多处复用(PRINT 渲染 / 反汇编常量池小节等),避免逻辑散落重复。
     [[nodiscard]]

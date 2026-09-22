@@ -73,7 +73,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 ## 当前禁区（写新用例前必读）
 
-1. **不要钉临时未实装行为**：容器方法面（`list` 仅 push/pop/join/iter，`map`/`range` 仅 iter）、
+1. **不要钉临时未实装行为**：容器方法面（`map`/`range` 仅 iter；`list` 已补全，见 3）、
    用户类运算符重载、`NotIterable`/`IteratorProtocol` 专用码接线、defer 与协程均未落地——写
    「期待报错」的负向用例会在翻转日变红。
 2. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对
@@ -84,7 +84,12 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
    ——两者都要求两侧皆 `String`、不做隐式转换（显式转换走 `str()`），比较按**无符号字节序**
    （与 `len`/`s[i]` 同字节域，大小写敏感、无 collation）；模块成员访问——模块的顶层绑定即
    成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报 `TypeMismatch`。09_modules 已改为
-   直接经 `H.x` 观察辅助模块（旧的「模块全局未导出」注记失效）。
+   直接经 `H.x` 观察辅助模块（旧的「模块全局未导出」注记失效）。list 方法面——push/pop/insert/
+   remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/join/iter：变更方法一律
+   就地改、返 nil（remove 例外：移除**全部** == 命中元素、返命中布尔，miss 走返回值不报错）；
+   remove_at(i) 按位置移除返元素、负数从尾计数；find 未命中 nil（aria 有负下标故 -1 是合法下标，miss 即取末元素
+   的 Python 式坑，Ruby 返 nil 同款；string find 同）、find/contains/remove 走 `==` 内容判定；size/
+   is_empty 为元素数与空表谓词（全局 len 的方法形态）。
 
 ## 如何新增用例
 

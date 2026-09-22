@@ -120,8 +120,8 @@ namespace aria {
             return true;
         }
 
-        // find(sub) -> 整数:子串首现字节下标,未命中 -1(Python find 同款;-1 非合法
-        // 下标,与命中值无歧义)。
+        // find(sub) -> 整数或 nil:子串首现字节下标,未命中 nil(下标永不为 nil 故无歧义,
+        // Ruby 同款 --aria 有负下标,-1 是合法下标,miss 时 s[s.find(x)] 会静默取末字符)。
         bool find_fn(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -133,7 +133,7 @@ namespace aria {
             }
             const auto  str = Object::as<ObjString>(slots[0].as_obj());
             const usize hit = str->view().find(sub->view());
-            slots[0]        = Value::from_int(hit == StringView::npos ? -1 : static_cast<i64>(hit));
+            slots[0]        = hit == StringView::npos ? Value::nil_val() : Value::from_int(static_cast<i64>(hit));
             return true;
         }
 

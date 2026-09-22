@@ -1,5 +1,5 @@
 // 钉住：string 方法面——upper/lower/trim（ASCII 口径）、split（空段保留）、
-# find（-1 哨兵）、replace（全替换）、substring（区间）、starts_with/ends_with、
+# find（未命中 nil）、replace（全替换）、substring（区间）、starts_with/ends_with、
 # codepoint_at（码点序号索引）、join（list 方法，宽松元素）。
 assert("abc".upper() == "ABC");
 assert("aBc1".upper() == "ABC1");
@@ -13,7 +13,7 @@ assert(len(parts) == 3 && parts[0] == "a" && parts[1] == "" && parts[2] == "b");
 assert("".split(",")[0] == "");
 
 assert("hello".find("llo") == 2);
-assert("hello".find("x") == -1);
+assert("hello".find("x") == nil);
 
 assert("aaa".replace("a", "bb") == "bbbbbb");
 assert("abc".replace("x", "y") == "abc");

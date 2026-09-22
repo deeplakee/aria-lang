@@ -1,0 +1,4 @@
+// 钉住：remove_at 越界——负数从尾计数、归一化后越界 fail-fast（静态文案，与切片
+// 同款不带键值）。
+var xs = [1];
+var a = xs.remove_at(5);

@@ -1,0 +1,36 @@
+// 钉住：insert/clear——insert 位置语义（i 之前插入、i == 元素数即追加、负数指「该下标
+# 元素之前」）、任意 Value 元素、返 nil；clear 原地清空（别名同见，区别于重绑 xs = []
+# 换新表）。insert 越界见 negative/runtime_errors/runtime_list_insert_out_of_range。
+var xs = [1, 3];
+assert(xs.insert(1, 2) == nil);     // 变更方法返 nil
+assert(xs == [1, 2, 3]);
+
+xs.insert(0, 0);                    // 头插
+assert(xs == [0, 1, 2, 3]);
+
+xs.insert(4, 4);                    // i == 元素数即追加（同 push 语义）
+assert(xs == [0, 1, 2, 3, 4]);
+
+var ys = [1, 3];
+ys.insert(-1, 2);                   // 负数：末元素之前
+assert(ys == [1, 2, 3]);
+ys.insert(-3, 0);                   // -len 即首元素之前
+assert(ys == [0, 1, 2, 3]);
+
+var empty = [];
+empty.insert(0, "s");               // 空表 insert 即建
+assert(empty == ["s"]);
+
+// 任意 Value 元素（nil/bool/嵌套容器）
+var zs = [];
+zs.insert(0, nil);
+zs.insert(1, [1]);
+assert(len(zs) == 2);
+assert(zs[0] == nil && zs[1] == [1]);
+
+// clear：原地清空，别名同见
+var shared = [1, 2, 3];
+var alias = shared;
+shared.clear();
+assert(len(shared) == 0);
+assert(alias == [] && alias === shared);

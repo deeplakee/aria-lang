@@ -20,6 +20,7 @@ using aria::try_obj;
 using aria::Value;
 using aria::value_equal;
 using aria::value_identical;
+using aria::value_less;
 
 // 双相等体系见 Value.hpp:value_equal(== 内容相等)/ value_identical(=== 严格相等);
 // 哈希表键用 ===(见末尾 HashTableKey*)。
@@ -112,6 +113,37 @@ TEST(ValueEqual, ObjStringContent) {
     EXPECT_FALSE(value_equal(Value::from_obj(a), Value::from_obj(e)));
     // 字符串不与数值互比
     EXPECT_FALSE(value_equal(Value::from_obj(a), Value::from_i32(1)));
+}
+
+// ===== 自然序小于（value_less：排序底座；域外未定义，由调用方域检保证）=====
+
+TEST(ValueLess, NumericOrderWithPromotion) {
+    EXPECT_TRUE(value_less(Value::from_i32(1), Value::from_i32(2)));
+    EXPECT_FALSE(value_less(Value::from_i32(2), Value::from_i32(1)));
+    EXPECT_FALSE(value_less(Value::from_i32(1), Value::from_i32(1)));
+    // 混合升 f64：跨型数值比较（与 value_equal 的跨型语义同源）
+    EXPECT_TRUE(value_less(Value::from_i32(1), Value::from_f64(1.5)));
+    EXPECT_FALSE(value_less(Value::from_f64(1.5), Value::from_i32(1)));
+}
+
+TEST(ValueLess, NaNOrdersBeforeAllNumbers) {
+    // NaN 排在一切数值之前、双 NaN 等价 --保严格弱序（排序形式上 UB 的防线）
+    const auto nan = Value::from_f64(std::numeric_limits<double>::quiet_NaN());
+    EXPECT_TRUE(value_less(nan, Value::from_i32(0)));
+    EXPECT_TRUE(value_less(nan, Value::from_f64(1e308)));
+    EXPECT_FALSE(value_less(Value::from_i32(0), nan));
+    EXPECT_FALSE(value_less(nan, nan));
+}
+
+TEST(ValueLess, StringBytewiseOrder) {
+    GC         gc;
+    auto       lock   = gc.make_lock();
+    const auto pear   = new_string(gc, "pear");
+    const auto banana = new_string(gc, "Banana");
+    // 无符号字节序：'B'(0x42) < 'p'(0x61)，大小写敏感
+    EXPECT_TRUE(value_less(Value::from_obj(banana), Value::from_obj(pear)));
+    EXPECT_FALSE(value_less(Value::from_obj(pear), Value::from_obj(banana)));
+    EXPECT_FALSE(value_less(Value::from_obj(pear), Value::from_obj(new_string(gc, "pear"))));
 }
 
 // ===== 哈希键语义(===)=====

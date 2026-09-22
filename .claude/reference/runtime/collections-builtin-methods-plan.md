@@ -111,7 +111,39 @@
 > 只多一次 `is_obj()` tag 判定),对象左值派发协议(`ObjString` override 字节序比较,GC-pure)。实现坑:
 > 必须走 `string_view::compare`,`char` 在多数平台有符号,手写逐 char 比较会把 0x80 以上字节排到 ASCII
 > 之前(`"é" < "z"` 会反过来)。**至此计划表外三处缺口全部补齐**(字符串拼接、模块成员访问、字符串比较);
-> 剩余未做:容器方法面(sort/reverse 等)、用户类运算符重载(其余五个算子仍备置)。
+> 剩余未做:用户类运算符重载(其余五个算子仍备置);容器方法面的 list 部分随后补齐(见下),
+> map/range 方法面按需另批。
+
+> **计划内补缺 · list 方法面补全(2026-09-21 落地,其后 review 间三度改定)**:上承上文
+> 「剩余未做:容器方法面」的 list 部分,也是字符串字节序比较(0e08c75)的直接消费者。
+> 新增十方法 `insert`/`remove`/`remove_at`/`clear`/`sort`/`reverse`/`find`/`contains`/
+> `size`/`is_empty`(**sort 域检形态 review 中未随本批判落库,方法/测试/文案随后批**;
+> 其余九方法已落地);**pop 契约不动**(恰 0 参 --按位置移除另立 remove_at,不给既有方法
+> 加参数)。方法面终态 = push/pop/insert/remove/remove_at/clear/sort/reverse/find/
+> contains/size/is_empty/join/iter。语义钉子:①变更方法一律就地改、返 nil(push 先例,
+> 变更不鼓励链式);remove 例外:返命中 Bool(miss 走返回值,与 find 返 nil/contains 返
+> false 同族 --有信号通道不占错误通道,错误通道留给无通道的结构性失败如空表 pop);
+> ②`sort` 随后批(语义钉子已定:就地升序,域 = 全数值或全字符串先整体域检,NaN 最小,
+> 稳定序;域检实现形态 review 中);③`insert` 位置语义 = Python insert(`i` 之前插入、`i == size`
+> 即追加、负数指「该下标元素之前」),越界 fail-fast 静态文案
+> (insert index out of range,与切片同款不带键值;Python 钳制,aria 越界即报);④`remove_at(i)`
+> 按位置移除并返回该元素(pop 的任意位置形,负数从尾计数、越界静态文案同款);⑤`remove(x)` 移除**全部** `value_equal` 命中
+> 元素(保序,Ruby Array#delete 同款移全;只要一处用 find + remove_at 组合);⑥`find`/
+> `contains` 走 `value_equal`(== 内容递归,嵌套容器按内容),find 未命中 **nil**(下标永不为
+> nil;aria 有负下标,-1 是合法下标,miss 时 xs[find(x)] 会静默取末元素 --Python str.find 的
+> 坑,Ruby Array#index 返 nil 同款;string 的 find 同批一并翻转,其原「-1 非合法下标」注释
+> 是负下标落地前的过时前提);⑦`size`/`is_empty` 为元素数与空表谓词(全局 len 的方法形态;方法名定 `size`
+> 不用 `len`,空表谓词 is_empty --empty 动词义与 clear 混淆);⑧`clear` 原地清空,区别于
+> 重绑 `xs = []` 换新表。回调型方法(map/filter/sort 自定义比较器)不做 --原生回调调
+> aria 闭包的 VM 重入是未来机制(run_closure 私有 + dispatch_loop 不可重入),无消费者
+> 不预留。GC 走查:各方法体变更全 trivial、无 GC 分配点,receiver 在 slots[0] 跨全程
+> (stable_sort 临时缓冲走 std 内存非 GC 堆)。实现形态(review 改定):receiver 解开后
+> 直取 elements() 绑为 list(仅 iter 需要 ObjList* 本体),段搬移 insert/remove_at 下沉为
+> Array 原语(位置插入/位置移除),insert 位置归一收口 util::resolve_position
+> (resolve_index 的姊妹函数,上界放宽到 == size 即追加位),值相等三件 find/contains/
+> remove 下沉为 AriaArray 原语(value_equal 在 value 层,Array<T> 保持不知 Value 为何物),
+> 排序比较器收口 value_less(value 层自然序,与 value_equal/value_identical 同族自由函数),
+> 方法体只余域检查与调用。
 
 > **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+

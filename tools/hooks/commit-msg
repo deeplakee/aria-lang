@@ -1,0 +1,19 @@
+#!/bin/sh
+# commit-msg 钩子:每次 git commit 自动用 tools/check_commit_msg.py 判说明,违规即拒提交。
+#
+# 一次性启用(仓库级本地配置,钩子本体入库):
+#     git config core.hooksPath tools/hooks
+# 绕过(确实需要时):git commit --no-verify
+#
+# 钩子只做机械检查(列宽 / 三段骨架 / type 枚举 / 禁写关键词);语义判断
+# 仍走 GIT_COMMIT_CONVENTION.md §3.1 第 ⑤ 步复读。
+set -e
+
+msg_file="$1"
+root="$(git rev-parse --show-toplevel)"
+
+if ! python3 "$root/tools/check_commit_msg.py" "$msg_file"; then
+    echo "commit 说明未过机械检查 -- 规范见 GIT_COMMIT_CONVENTION.md(技能 aria-commit)" >&2
+    echo "按上方提示逐条改;确认无误要绕过时用 git commit --no-verify" >&2
+    exit 1
+fi

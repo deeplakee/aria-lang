@@ -1,190 +1,115 @@
+---
+name: aria-commit
+description: aria 仓库 commit 说明规范：说明一律英文 ASCII，形状为 <type>(<scope>): <subject> + 可选散文正文（≤ 4 行，无标签无 bullet）+ 可选 `Tests:` 行。含 type 枚举、禁写内容清单（实现步骤/评审注记/被否方案推导/实测数字/文档指针/规划词汇）、落笔流程与机械检查。写 git commit message、--amend 改说明、判定提交粒度时使用；**每次 git commit 前必读**，配套 `tools/check_commit_msg.py`。
+---
+
 # Git Commit Convention
 
-> **标题答「为什么」，正文答「怎么改」，一行只说一个主题。**
->
-> message 的职责是补 diff 补不了的信息：动机、机制取舍、验证结果。
+> **Subject 说改了什么，正文说为什么。正文默认不写，说明一律英文。**
 
-本文件是仓库 commit 说明的成文规范，CLAUDE.md「Git 提交纪律」节为其摘要，细节以本文件为准。规则以通用惯例（Conventional Commits 1.0.0、50/72 规则、原子提交）为骨架，按本项目实际裁剪：单人开发 + AI 结对、里程碑（M1-M6）驱动、中文文档体系、改动逐批 review 后落库。**仓库既有提交不作为依据**（历史信息为未规范化产物，仅作反例参照）。
+本文件是仓库 commit 说明的规范，CLAUDE.md「Git 提交纪律」节为其摘要，细节以本文件为准。设计目标是**一眼读完**：多数提交只有一行标题，长内容归 `.claude/reference/` 文档（档案），commit 只当索引。说明用英文对齐主流规范（Conventional Commits 与 git 社区惯用的祈使句标题），也便于 `git log --oneline` 在任何终端与编码下稳定显示。本文件自身的中文叙述不受此限。本文件同时是 ZCode 技能 `aria-commit` 的本体（`.zcode/skills/aria-commit/SKILL.md` 软链到此），frontmatter 供技能注册、正文即规范。
 
-------
-
-## 1. 核心原则
-
-1. **一批一主题**：一个 commit 只承载一个逻辑改动（一个特性 / 一个修复 / 一次重构 / 一轮文档收口）。大改动按功能拆批，每批独立可编译、独立可 review、独立可回滚。
-2. **message 回答 diff 回答不了的问题**：改了什么看 diff 即可，说明写为什么改、为什么这么改。不写文件清单式流水账。
-3. **只写落地事实**：未实施的分析、评审过程、被否方案的完整推导不进 commit；确需存档的决策过程进 `.claude/reference/` 对应文档，说明里一句话 + 路径指路。
-4. **每个 commit 完整可验证**：落库时点全量 ctest 绿 + clang-format 幂等（触及值表示时另跑 TagValue 配置），结果写进说明。
-5. **面向未来读者**：读者是半年后 `git blame` / `git log` 考古的自己。标识符与术语原样引用，不依赖写 commit 时的对话上下文。
-
-------
-
-## 2. 消息结构
+## 1. 形状
 
 ```text
 <type>(<scope>): <subject>
 
-<body>
+<optional body: 1-3 sentences of prose>
 
-<footer>
+Tests: <optional single line>
 ```
 
-标题行必有；body 三段骨架（动机 / 改动 / 验证）基本必有；footer 仅少数场合。
-
-### 2.1 type（固定九类枚举）
-
-| type | 本项目定义 | 判定要点 |
+| 段 | 必写 | 约束 |
 | :--- | :--- | :--- |
-| `feat` | 新语言特性 / 新机制落地 | 行为从无到有：异常机制、闭包、新 opcode、新 builtin |
-| `fix` | 缺陷修复 | 行为从错到对；bug 现象与根因写进动机段 |
-| `refactor` | 不改行为的结构调整 | 收口 / 签名翻转 / API 面整理；判定基准是外部可观测行为不变 |
-| `perf` | 性能优化 | 行为不变且动机就是性能；有量化对比则写进 body |
-| `docs` | 只改文档与注释 | `.md` / grammar.txt / 纯注释；代码语义零变化 |
-| `test` | 只改测试基建 | 语料 / runner / 测试组织；伴随 feat/fix 的测试随本批 commit，不单拆 |
-| `build` | 构建系统与依赖 | CMake / third_party / 编译配置 |
-| `style` | 不改语义的格式化 | clang-format 全量、行尾归一 |
-| `chore` | 其余杂项 | `.gitignore`、脚本、agent 配置等 |
+| Subject | 是 | **祈使句**、动词原形开头（`add` 不取 `added`）、小写开头、无句号；软目标 ≤ 50 列，硬上限 72 列 |
+| Body | 否 | 只在「标题与 diff 说不清 why」时写；1~3 句**散文**，≤ 4 行；不分段标签、不列 bullet；72 列折行 |
+| `Tests:` 行 | 否 | 跑过测试/构建就带一行结果；纯文档与脚本类可省；须是说明末行 |
 
-判定顺序：先问「行为变了吗」（变：feat/fix；不变：其余），再问「改的是什么」。一个逻辑改动兼跨两类时按主导性质取 type，次要性质写进 body；体量够大、能独立回滚的部分（如配套文档收口）拆成独立 commit。
+语言纪律：说明**一律英文且 ASCII-only**--禁 CJK、全角标点、Unicode em-dash（破折号语义用 ASCII `--`）；标识符、模块名、指令名原样引用（`MAKE_METHOD`、`ObjString::load_index`），不翻译。
 
-### 2.2 scope（模块名，可省）
+## 2. type 与 scope
 
-取值即仓库模块名：`core`（顶层公共头 / 入口）/ `util` / `value` / `error` / `compile` / `bytecode` / `runtime` / `object` / `memory` / `tests` / `docs` / `build`。
+| type | 何时用 |
+| :--- | :--- |
+| `feat` | 行为从无到有（新特性 / 新机制 / 新 builtin） |
+| `fix` | 行为从错到对 |
+| `refactor` | 外部可观测行为不变的结构调整 |
+| `perf` | 行为不变，动机就是性能（量化对比归 reference 文档，不进说明） |
+| `docs` | 只改文档与注释 |
+| `test` | 只改测试与语料基建（伴随 feat/fix 的测试随本批，不单拆） |
+| `build` | 构建系统与依赖 |
+| `style` | 不改语义的格式化 |
+| `chore` | 其余杂项（`.gitignore`、脚本、agent 配置） |
 
-- 跨模块：主模块在前，逗号分隔，至多三个：`refactor(compile,runtime): ...`
-- 超过三个模块的全局性改动：省略 scope，subject 与 body 说明波及面
-- 纯文档：scope 取文档主题所属模块（`docs(runtime): ...`）；全库性文档收口可省 scope
+scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `bytecode` / `runtime` / `object` / `memory` / `tests` / `docs` / `build`）；跨模块逗号分隔、主模块在前、至多三个；全库性改动省略 scope。
 
-### 2.3 subject（中文短语）
+## 3. 正文写什么
 
-- 动词开头，不用完成体：「修复 X」不取「修复了 X」/「已修复」。常用动词：新增 / 落地 / 修复 / 翻转 / 收进 / 收敛 / 删除 / 更名 / 补
-- 软目标 ≤ 25 个汉字（50 半角列），含 `type(scope): ` 前缀整行硬上限 72 半角列（中文按 2 列宽计）
-- 不以句号收尾；类型 / 函数 / 指令名等标识符原样嵌入
-- 禁规划词汇：里程碑编号、阶段序号、批号、计划名与计划进展叙述不进 subject 与 body（反例见 §5.2），特性按自身语言域名称描述：`feat(runtime): 落地闭包（捕获即引用）`
-- 细节归 body，subject 只给「一眼可辨的一句话」
+正文只回答标题与 diff 答不出的两件事：**why**，以及**机制上不显然的那一点**（跨文件因果、被否方案的结论）。这两点都写不出来，就不要正文。
 
-### 2.4 body（动机 / 改动 / 取舍，72 列换行）
+禁写内容，判据一句话：**这段文字描述的是本次改动，还是得到本次改动的过程**--后者删掉，信息无损。
 
-段落以标签起头，长行在 72 半角列内折行（约 36 汉字）：
-
-```text
-动机: <为什么改，一到三句。直述理由本身，不写决策出处>
-改动: <关键机制，每点一行；多文件协同写清传播链>
-取舍: <可选。被否方案一行否决理由，仅当将来可能被重新提出时写>
-顺带: <可选。真实附带的独立小改动，一行；不得成为塞无关改动的口子>
-```
-
-- **动机必写**（`style` 纯格式化 commit 可省）
-- 改动段写**机制**不写**流程**：「init_ 写点收敛 ctor 派生 + set_field 同步」可以，「先改了 A.hpp 再改了 B.cpp」不行
-- body 与 diff 分工：diff 展示逐行变化，body 只提炼 diff 看不出来的设计意图与跨文件因果
-
-### 2.5 验证行
-
-body 末尾固定一段（必写，纯 docs 可省）：
-
-```text
-验证: ctest 747/747 全绿; clang-format 幂等
-```
-
-- 只写实际执行过的命令与结果；触及值表示时补 TagValue 配置结果；纯文档写 `验证: 纯文档改动` 或省略整段
-- 顺手修了测试、翻转了用例，写进 `改动:` 段而非验证行；验证行只报「跑什么、什么结果」
-
-### 2.6 直述纪律与禁区
-
-**无 AI 味**：说明是变更事实的记录，不带叙述者口吻。自查法--一句话删掉后信息无损，整句就不该在。
-
-- **禁决策/过程注记**：「(用户拍板)」「(用户定夺)」「经讨论」「评审改定」「存档留痕」一类标注零信息：谁决定的、怎么议出来的不是变更内容，动机直述理由本身即可（「指针/引用/按值混用无成文规则」就够了，不需要「(用户拍板)」）
-- **禁自我指涉旁白**：「本 commit」「此次变更」「这样做的目的是」--直接说内容
-- **禁无比较的评价词**：「更优雅」「合理化」「清晰化」--说机制变化，评价留给读者
-- 破坏性变更（指令集语义翻转 / 对外签名不兼容）：不引入 `BREAKING CHANGE` 仪式，在动机或改动段用「翻转 X」明说
-- 不写模板尾巴（`Co-Authored-By` / `Generated with ...` 等），除非明确要求
-- 标点用半角（`,:;()`），保留顿号「、」与引号「」；破折号语义用 ASCII `--`，禁 Unicode em-dash（U+2014，全仓库纪律）
-- 禁空泛动词作主体（「更新代码」「完善」「优化」无宾语）
-
-------
-
-## 3. 提交粒度与流程
-
-- 与 review 流程咬合（CLAUDE.md「Git 提交纪律」）：改动完成 → 验证全绿 → 报告并停手 → 用户逐批 review → 每批点头落一批 commit。**一次 commit = 一次 review 通过的批**
-- commit 说明在落库时点当场写，覆盖该批的动机 / 机制 / 验证，不沿用上一批的话术模板
-- main 直推，无 PR 仪式；避免 merge commit（用 fast-forward 或主线直接提交），历史保持线性
-
-------
-
-## 4. commit 说明与设计文档的分工
-
-- commit 说明：**索引**。定了什么 + 一句为什么 + 验证结果
-- `.claude/reference/` 文档：**档案**。完整推导、方案对比、多轮翻转的存档留痕
-- 触发文档收口的代码 commit，在 body 里留一行指针（「完整推导见 `.claude/reference/` 某文档」式），不搬运文档内容
-
-------
-
-## 5. 示例
-
-### 5.1 正例（取自本仓库真实改动，按本规范改写）
-
-```text
-feat(object): init 继承收进 ObjClass 构造函数
-
-动机: set_init 是单消费者公共可变器,写点散在工厂之外;
-seed 属对象自身状态初始化,归宿应是构造函数,「工厂须纯
-分配」的否决理由不涵盖 ctor。
-改动: ctor 初始化列表自 super 派生 init_(快照语义,出厂即
-继承父值,此后父类变更不传导);set_init 删除;MAKE_CLASS
-收敛为「验 super -> new_class -> 写回原槽」三步,原「两步
-间无 GC 点」的序列约束随构造原子化消失。
-顺带: 工厂 StringView 重载参数补 const。
-验证: ctest 747/747 全绿; clang-format 幂等
-```
-
-```text
-docs: LOAD_SUPER_FIELD 更名与方法性判别改定收口
-
-动机: 三项语义改定(方法性判别翻注册期戳/fun 静态改经
-MAKE_STATIC/LOAD_SUPER_METHOD 更名)需存档留痕。
-改动: instruction-set 三指令条重写并补 super 边界模型;
-grammar.txt 与 rules/{runtime,object,bytecode}.md 同步;
-vm-design §4.7 措辞对齐。
-验证: 纯文档改动
-```
-
-### 5.2 反例
-
-| 反例 | 错在哪 | 改法 |
+| 类别 | 反例 | 改法 |
 | :--- | :--- | :--- |
-| 千字单行长行式（历史风格）：`compile/runtime/object/value: 摘要 -- 动机:... -- 机制:... -- 验证:...` | 无 type 无法按性质过滤；单行在 git 工具里截断或淹没；动机 / 机制 / 验证一口气不分层 | 拆出 type 与 scope，正文进 body 分段折行 |
-| `动机(用户拍板):...`、`经评审决定采用 B` | 决策出处与过程注记零信息，叙述者口吻 | 直述理由：「seed 属对象自身状态初始化，归宿是构造函数」 |
-| `fix: 修复了 upvalue 的一个 bug` | 完成体；现象 / 根因 / 修法全无 | 动机段写现象与根因，改动段写机制 |
-| `chore: update files` | 流水账，why 为零，type 乱挂 | 说清动机；说清动机后往往发现它属于别的 type |
-| `feat(runtime): 闭包落地(新增 ObjClosure/ObjUpvalue、四指令、callable 收敛、文档同步、测试补齐)` | subject 塞满细节，超 72 列 | 细节进 body 要点行 |
-| `feat(compile): M5 阶段 3a 编译翻转 -- def/类声明面落地`、`docs: 定稿 P0 语言面补齐实施计划` | 里程碑编号/阶段序号/计划名是规划信息，进 commit 即把内部开发进程泄漏进提交历史 | 按特性语言域名称描述：`feat(compile): def 与类声明编译发射落地` |
-| 一个 commit 同时落地闭包 + 顺手改异常跟踪格式 | 两主题，review / 回滚 / 定位互相牵连 | 拆两批两 commit；「顺带:」仅限真正一行级附带 |
+| 实现步骤流水 | "first added a method to ObjString, then moved it into util" | 只写最终落点 |
+| 评审/决策过程 | "(user decision)"、"as discussed, we picked option B" | 直述理由本身 |
+| 被否方案推导 | "deliberately not shared with the Lexer parser (which accepts `_`)" | 一行结论或不写 |
+| 实测数据 | "extracting the helper measured 9% slower" | 删；数字属 reference 文档或 `perf` 提交 |
+| 文档指针 | "full rationale in collections-builtin-methods-plan.md" | 删；文档随批提交，`git show --stat` 即可见 |
+| 项目状态叙述 | "there was previously nowhere to put this" | 删；只写现在的行为与机制 |
+| 规划词汇 | "M5 phase 3"、"batch 9"、"finalize" | 按语言域名称描述改动 |
+| 空泛评价与完成体 | "improve"、"clean up"、"fixed X" | 说机制变化；动词用原形 |
 
-------
+## 4. 落笔（每次提交强制）
 
-## 6. 与通用规则的取舍
+1. `git add -u` 后 `git diff --cached --stat` 核范围，只含本批文件。
+2. 说明写进临时文件（如 `/tmp/commit_msg.txt`），不用 `-m` 随手一句。
+3. `python3 tools/check_commit_msg.py <file>` 必须返回 0；`commit-msg` 钩子（`git config core.hooksPath tools/hooks` 启用）会在落库时自动再跑一遍，违规拒提交。
+4. `git commit -F <file>`；未推送时改说明用 `git commit --amend -F <file>`。
+5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。
 
-| 通用规则 | 取舍 | 理由 |
-| :--- | :--- | :--- |
-| Conventional Commits `type(scope): desc` 骨架 | 采纳，type 固定九类 | 性质一眼可辨、`git log --grep` 可过滤；不需要自动 changelog，但检索价值仍在 |
-| subject ≤ 50 列、imperative mood | 采纳并中文化（动词开头、软目标 25 汉字 / 硬上限 72 列） | 中文无祈使态，取动词短语为对应物 |
-| body 72 列换行 | 采纳 | 终端与工具链默认宽度 |
-| body 答 why 不答 what | 采纳为动机段必写 | what 已由 diff 回答 |
-| 原子提交 | 采纳为「一批一主题」，与逐批 review 流程咬合 | -- |
-| `BREAKING CHANGE` footer | 裁掉 | 单人仓库无下游消费者，「翻转 X」写进动机即可 |
-| CHANGELOG 自动生成语义 | 裁掉 | 里程碑文档（vm-design §6 路线表）即 changelog |
-| commitlint / gitlint hook 强制 | 裁掉 | 单人项目，规范靠 review 把关，不值得引入工具链 |
-| DCO / Signed-off-by | 裁掉 | 无合规诉求 |
-| 模板尾巴（Co-Authored-By 等） | 禁 | 说明只承载改动事实 |
+## 5. 粒度与流程
 
-------
+一个 commit 一个主题（一个特性 / 一个修复 / 一次重构 / 一轮文档收口），每批独立可编译、可 review、可回滚。与 review 流程咬合：改动完成 → 验证全绿 → 报告并停手 → 用户逐批 review → 点头后落一批 commit，**一次 commit = 一次 review 通过的批**。main 直推，保持线性历史，避免 merge commit。说明在落库时点当场写，不套用上一批的话术。
 
-## 7. 落库前自检
+## 6. 例子
 
-- [ ] 一批一主题，type / scope 准确
-- [ ] subject 动词开头、无句号、整行 ≤ 72 半角列
-- [ ] 动机段回答为什么；改动段是机制不是流程流水账
-- [ ] 无过程注记与叙述者口吻（「(用户拍板)」「经讨论」「本 commit」），动机直述理由本身
-- [ ] subject 与 body 无规划词汇（里程碑编号 / 阶段序号 / 批号 / 计划名 / 「定稿」式进展叙述）
-- [ ] 只写落地事实；存档性推导已进 reference 文档并留指针
-- [ ] 验证行与实际执行的命令一致（`ctest N/N 全绿; clang-format 幂等`）
-- [ ] 未夹带无关文件；无模板尾巴；无 Unicode em-dash
+```text
+style(tests): drop decorative (void) casts
+```
+
+```text
+feat(runtime): add string to_int/to_float
+
+Strings could only be converted out, so reading numeric data meant
+hand-rolled parsing. Both methods parse the whole string in decimal via
+util::parse_int_text/parse_float_text and return nil on failure; to_int
+additionally gates the i48 domain.
+Tests: ctest 1158/1158 (default + TagValue); clang-format clean
+```
+
+```text
+fix(memory): iterate HashTable benchmark via const_iterator
+
+The benchmark still called for_each_occupied after the slot-scan
+primitive was retired, and that target is part of default ALL, so the
+default build failed to compile.
+```
+
+反例与改法：
+
+| 反例 | 错在哪 |
+| :--- | :--- |
+| 20 行 `动机:` / `改动:`（三条 bullet）/ `验证:` 三段骨架 | 标签与清单是模板声，改完只剩 2~4 行散文；读者要的是一眼读完 |
+| 正文写 "deliberately not shared with the Lexer parser" + "measured 9% slower" + "full rationale in <doc>" | 三段都是「得到本次改动的过程」，对「本批改了哪些代码」零信息 |
+| 正文夹 "there was previously nowhere to put this" / "first added a method, then moved it" | 叙述开发进程与实现步骤，读者要的是最终落点与理由 |
+| 说明用中文或全角标点 | 与主流规范不一致，且 `git log --oneline` 在窄终端/异编码下不稳 |
+
+## 7. 落笔前自检
+
+- [ ] 一批一主题，只含本批文件，type / scope 准确
+- [ ] Subject 是英文祈使句、动词原形、无句号、≤ 72 列
+- [ ] 正文 ≤ 4 行英文散文（无标签、无 bullet）；没有过程叙述、被否推导、实测数字、文档指针、规划词汇
+- [ ] 全文 ASCII-only（无 CJK、全角标点、em-dash）
+- [ ] 写了 `Tests:` 就确实跑过，且结果与说明一致
+- [ ] 已按 §4 五步走过（脚本返回 0），并复读一遍全文

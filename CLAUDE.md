@@ -46,7 +46,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ### 软链接现状（单一事实源）
 
-- 根目录 `AGENTS.md` **软链** → `CLAUDE.md`（同一内容，修改只改本文件）；`.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个相对软链，与规则文件同名，`core.md` 对应技能 `aria-core`）：ZCode 把同一份规则文件暴露为技能、按 frontmatter `description` 自动触发，`paths:` 字段仅 Claude Code 消费。两套 agent（Claude Code / ZCode）共享同一份本体，仓库内**无内容副本**。
+- 根目录 `AGENTS.md` **软链** → `CLAUDE.md`（同一内容，修改只改本文件）；`.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个模块相对软链，与规则文件同名，`core.md` 对应技能 `aria-core`）：ZCode 把同一份规则文件暴露为技能、按 frontmatter `description` 自动触发，`paths:` 字段仅 Claude Code 消费。两套 agent（Claude Code / ZCode）共享同一份本体，仓库内**无内容副本**。
+- 第 10 条技能 `aria-commit`：`.zcode/skills/aria-commit/SKILL.md` **软链** → `../../../GIT_COMMIT_CONVENTION.md`（非模块规则，故无 `paths:`；`name/description` frontmatter 供技能注册，正文即 commit 规范，**提交前必读**）。
 - 新增模块规则：建 `.claude/rules/<dir>.md`（frontmatter 带 name/description/paths），并补一条 `.zcode/skills/aria-<dir>/SKILL.md` 相对软链。
 
 > 同步义务：改模块代码时同步更新对应 `.claude/rules/<dir>.md`；改设计时同步 `.claude/reference/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
@@ -69,7 +70,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 ## Git 提交纪律（强制）
 
 - **改动完成不自行 commit**：代码/文档改完、验证全绿后即向用户报告并停手，改动留在工作区等 review；用户明确说提交（「commit」/「提交吧」等）后才执行 `git commit`。不抢先 `git add` 备提交。
-- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `GIT_COMMIT_CONVENTION.md` 成文：`<type>(<scope>): <subject>` 标题行（type 固定九类枚举，subject 中文动词短语 ≤ 72 列）+ body 三段骨架（`动机:` / `改动:` / `验证:`，取舍与顺带可选），验证行写实际执行的 ctest 结果与 clang-format 幂等；只写落地事实；动机直述理由，禁「(用户拍板)」式过程注记与模板尾巴，禁里程碑/阶段号/计划名等规划词汇。
+- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `GIT_COMMIT_CONVENTION.md` 成文，**一律英文 ASCII-only**（禁 CJK / 全角标点 / Unicode em-dash，破折号用 `--`）：标题行 `<type>(<scope>): <subject>`（type 固定九类枚举、祈使句动词原形、无句号、软目标 ≤ 50 列硬上限 72 列）+ **正文默认不写**（只在标题与 diff 说不清 why 时写 1~3 句散文、≤ 4 行，不分段标签、不列 bullet）+ 可选末行 `Tests: ...`（跑过测试就写实际结果）。只写本次改了什么：实现步骤流水、评审/决策注记、被否方案推导、实测数字、文档指针、规划词汇一律不进说明（各一条反例见规范 §3）。
+- **落笔前加载技能 `aria-commit`（= `GIT_COMMIT_CONVENTION.md` 本体）并走规范 §4 五步**，不凭记忆：① `git add -u` 后 `git diff --cached --stat` 核范围；② 说明写进临时文件（`/tmp/commit_msg.txt` 一类），不用 `-m` 随手一句；③ 跑 `python3 tools/check_commit_msg.py <file>`，必须返回 0；④ `git commit -F <file>`（改已有说明用 `git commit --amend -F <file>`，仅限未推送）；⑤ `git log -1 --format=%B` 复读，对规范 §7 自检清单逐条过（「正文是不是在讲过程」脚本判不出）。第 ③ 步另有 `commit-msg` 钩子（`tools/hooks/`，经 `git config core.hooksPath tools/hooks` 启用）在落库时自动兜底，违规直接拒提交。
 
 ## 输出与格式化（强制）
 
@@ -91,6 +93,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 ## 工具
 
 - **clang-format**（根目录 `.clang-format`，LLVM 风格 / 4 空格 / 120 列 / 命名空间全缩进）：`clang-format -i <file>` 原地格式化。编辑器保存时自动重排（如 `auto p`->`const auto p`）是项目风格，不要回退。
+- **tools/check_commit_msg.py**（python3，无依赖，不参与构建）：commit 说明机械检查，`python3 tools/check_commit_msg.py <message-file>` 判 ASCII-only、标题格式与列宽、正文长度与形态（散文而非段标签/bullet）、`Tests:` 行位置与规范 §3 禁写关键词，有违规返非零并打印改法；`tools/hooks/commit-msg` 是它的 git 钩子壳（`git config core.hooksPath tools/hooks` 启用后每次 commit 自动跑，违规拒提交）。按「Git 提交纪律」五步的第 ③ 步每次提交前手跑一遍。
 - **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--header-only 头文件**不被任何编译 TU（直接或传递）include** 时会因拿不到编译参数报类型未定义假错；已被传递 include 的头 clangd 能推断参数，自含头即可。疑似假错以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准；根治：尽早让某 .cpp include 一次（仅对确实不可达的头需要）。
 
 ## 命名（强制）

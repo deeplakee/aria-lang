@@ -373,8 +373,7 @@ namespace aria {
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(方法闭包恒有戳,编译器
         // 不变式 ASSERT 钉),从其父类起走 ObjClass::load_field 沿链读穿透(不含 defining 自身,
         // 类协议不绑定不缓存)。命中方法闭包 -> 绑 this=帧槽 0 压栈供 CALL;其余(静态方法/函数值
-        // 静态/原生/静态值)原值直读;均**不写 fields 缓存**(super 查到的是被覆写前的实现,写缓存
-        // 会被 fields 命中劫持后续 obj.m 动态派发)。全链 miss 为语言可达错误,经协议 fail。
+        // 静态/原生/静态值)原值直读。全链 miss 为语言可达错误,经协议 fail。
         bool run_load_super_field(ObjString* name);
 
         // ---- 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族 ----

@@ -57,20 +57,20 @@ namespace aria {
     // 路径取出重载方法(实例 fields 优先、可遮蔽,再沿类链;与普通方法同一条路径)。
     // 名字是语言级事实(用户代码里可见可写),故与 C++ 侧的内建实现约定一样落本头作单一事实源。
     // 取前后双下划线形:普通 aria 标识符不会这么命名,故与用户自己的方法名不撞、一眼可辨是协议名。
-    // 十个名字与 Object::op_*_impl 虚函数族一一对应(那一族回答「本对象上该算子对应的可调用值」,
-    // 内建类型直给自身实现):算术五件 + 比较四件(皆二元)+ 一元取负。`/` 是 aria 唯一的除法算子
-    // (无 // 形态),故取 __div__。
-    constexpr StringView kOpAddName          = "__add__"; // +
-    constexpr StringView kOpSubName          = "__sub__"; // -
-    constexpr StringView kOpMulName          = "__mul__"; // *
-    constexpr StringView kOpDivName          = "__div__"; // /
-    constexpr StringView kOpModName          = "__mod__"; // %
-    constexpr StringView kOpLessName         = "__lt__";  // <
-    constexpr StringView kOpLessEqualName    = "__le__";  // <=
-    constexpr StringView kOpGreaterName      = "__gt__";  // >
-    constexpr StringView kOpGreaterEqualName = "__ge__";  // >=
-    constexpr StringView kOpNegateName       = "__neg__"; // 一元 -
-    constexpr StringView kOpCallName         = "__call__";// 函数调用
+    // 十一个名字与 Object::op_*_impl 虚函数族一一对应(那一族回答「本对象上该算子/调用对应的
+    // 可调用值」,内建类型直给自身实现):算术五件 + 比较四件(皆二元)+ 一元取负 + 调用钩子。
+    // `/` 是 aria 唯一的除法算子(无 // 形态),故取 __div__。
+    constexpr StringView kOpAddName          = "__add__";  // +
+    constexpr StringView kOpSubName          = "__sub__";  // -
+    constexpr StringView kOpMulName          = "__mul__";  // *
+    constexpr StringView kOpDivName          = "__div__";  // /
+    constexpr StringView kOpModName          = "__mod__";  // %
+    constexpr StringView kOpLessName         = "__lt__";   // <
+    constexpr StringView kOpLessEqualName    = "__le__";   // <=
+    constexpr StringView kOpGreaterName      = "__gt__";   // >
+    constexpr StringView kOpGreaterEqualName = "__ge__";   // >=
+    constexpr StringView kOpNegateName       = "__neg__";  // 一元 -
+    constexpr StringView kOpCallName         = "__call__"; // 函数调用
 
     // ---- 产品标识与部署约定 ----
 

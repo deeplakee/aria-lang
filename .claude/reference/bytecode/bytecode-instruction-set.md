@@ -205,13 +205,13 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `GREATER_EQUAL` | `[a, b] -> [a>=b]` | |
 | `LESS` | `[a, b] -> [a<b]` | |
 | `LESS_EQUAL` | `[a, b] -> [a<=b]` | |
-| `ADD` | `[a, b] -> [a+b]` | 数值加；**建议**同时承载字符串拼接（`ObjString` + `ObjString`）与 list 拼接，与 `+` 重载语义一致（待决） |
+| `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子取实现再调（String 拼接即内建钩子、用户类可重载，仅左操作数触发），取不到报 TypeMismatch |
 | `SUBTRACT` | `[a, b] -> [a-b]` | 数值减 |
 | `MULTIPLY` | `[a, b] -> [a*b]` | |
 | `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE） |
 | `MOD` | `[a, b] -> [a%b]` | 取模 |
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
-| `NEGATE` | `[a] -> [-a]` | 数值取负 |
+| `NEGATE` | `[a] -> [-a]` | 数值取负；对象经 `__neg__` 钩子 |
 
 > 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（`flags` 位义见 `code.hpp` `kRangeFlagExclusive`，落地形态见 §6.3）。
 
@@ -253,7 +253,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNative`/绑定方法 -> 调原生/方法 |
+| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNative`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
 | `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFunction`，创建 `ObjClosure` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
@@ -272,7 +272,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass` |
 | `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈；不写 fields 缓存 |
+| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
 | `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::load_field_unbound` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `load_field_unbound` override 就地烘焙 |
 | `CALL_METHOD` | `argc:u8` | `[recv, target, a1..aN] -> [r]` | 方法调用的**第二段**：待调值在 `peek(argc)`、接收者在 `peek(argc + 1)`；实参整体下移一格补掉待调值占的那格得调用区 `[recv, a1..aN]`（槽 0 = receiver = this），交 `call_value` 统一分发（执行体 `run_call_method`）。**纯调用**，不再解析；**不物化 ObjBoundMethod**（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
@@ -486,7 +486,7 @@ CALL_METHOD argc        ; [r]                  实参整体下移一格补掉 ta
 
 **槽 0 保持接收者为什么可行**（三方各得其所）：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数恰好**正需要**槽 0 = receiver（其 `this` 兼返回槽，且 `call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
 
-`super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代器无 fields 缓存，是这条路径收益最大的地方，见 §6.2 与集合计划 §4.4-§4.7）。
+`super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代协议每迭代两次方法调用，是这条路径收益最大的地方，见 §6.2 与集合计划 §4.4-§4.7）。
 
 ### 5.7 match（糖 -> 逐臂比较链，已落地）
 
@@ -641,7 +641,7 @@ code:
 | 1 | `STORE_*` 留值 vs 弹值 | peek-store（留值） | pop-store + 旋转/临时槽 |
 | 2 | 常量索引位宽 | `u16` 统一（暂不变；真超 65535 再加 `LOAD_CONST_L`） | `u8` + 长变体 |
 | 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
-| 4 | `ADD` 重载 | 承载数值加 + 字符串/list 拼接 | 仅数值，拼接走内建 |
+| 4 | `ADD` 重载 | **已定并落地**：九个算子/比较指令统一经 `op_*_impl` 钩子族（左操作数为对象即取实现再调），数值左值走快路径；String 的 `+` 与四比较是内建钩子，用户类经 dunder 方法重载；list 拼接不做（`list + list` 报错） | -- |
 | 5 | 方法调用派发 | 已落地并**两段化**：`PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，解析经 `Object::load_field_unbound`，内置侧零 bound 物化）；曾以单条 `INVOKE_METHOD` 融合实现，因次序语义改判（见 §6.2） | 目标槽放调用区之下（需帧位/收尾指令，实测更慢）；`LOAD_FIELD` + `CALL` 两步（每次调用物化 bound） |
 | 6 | 异常机制 | CodeUnit 内记录表（已落地; `finally` 不做、后继 defer 为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
 | 7 | `MAKE_RANGE` | 已加入 | -- |

@@ -109,7 +109,7 @@ namespace aria {
 
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)
-        AriaHashTable fields_; // 实例字段表 + bound-method 缓存(惰性分配)
+        AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,bound 缓存已取消见类注释)
     };
 
     // 工厂:分配 ObjInstance(fields_ 空态)。shell 单次分配、无内部二级分配 ==> 工厂内无中间

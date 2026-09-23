@@ -106,7 +106,7 @@
 > **域选择依据**:与 `len`/`s[i]` 的字节域同域,且 `s[i]` 能切出非法单字节串(`"héllo"[1]` = 孤立
 > continuation 字节,实测一等值)故必须对任意字节串全序;UTF-8 保序,故合法文本上结果与按码点比较一致。
 > 接线形态:比较四件入算术族的虚函数族(`op_less`/`op_less_equal`/`op_greater`/`op_greater_equal`,命名
-> 对齐 OpCode 的 LESS/LESS_EQUAL/GREATER/GREATER_EQUAL),四个比较指令经新执行体
+> 对齐 OpCode 的 LESS/LESS_EQUAL/GREATER/GREATER_EQUAL;今已整族更名 `op_*_impl`、改为「取实现」形态),四个比较指令经新执行体
 > `run_binary_compare<Op>`(今与算术五算子合并为 `run_binary_operator<Op>`) -- 与 `run_binary_add` 同形:非对象左值委托 `run_binary_numeric`(数值热路径
 > 只多一次 `is_obj()` tag 判定),对象左值派发协议(`ObjString` override 字节序比较,GC-pure)。实现坑:
 > 必须走 `string_view::compare`,`char` 在多数平台有符号,手写逐 char 比较会把 0x80 以上字节排到 ASCII
@@ -518,10 +518,10 @@ cmake --build build/rel --target vm_bench -j
 - `bytecode-instruction-set.md` §4.14/§6.4(五条预置指令的栈形与操作数)、`compound-assignment-lowering.md` §4.3(下标四模式)。
 - Wren 0.4(本地 `/Users/icelake/src/wren`):每值一类 + 类表方法派发(`wren_value.c` value 为 class 成员)、迭代即方法(Wren 无内建迭代器对象,list 迭代走下标,aria 取「协议方法 + 迭代器对象」路,与 Python/JS 同形)。
 
-## 6. 算子重载(2026-09-22 落地,工作区待 review)
+## 6. 算子重载(已落地)
 
-**形态**:可重载算子的实现是**对象上的命名方法**,名字 = `src/aria.hpp` 的 `kOp*Name`(十个:算术五件 + 比较四件 + 一元取负
-`__neg__`;判等/下标/调用不做)。运行期:`AriaVM::run_binary_operator<Op>` / `run_negate` 经 `obj_binary_op_impl<Op>` 调
+**形态**:可重载算子的实现是**对象上的命名方法**,名字 = `src/aria.hpp` 的 `kOp*Name`(十一个:算术五件 + 比较四件 + 一元取负
+`__neg__` + 调用钩子 `__call__`;判等与下标不做)。运行期:`AriaVM::run_binary_operator<Op>` / `run_negate` 经 `get_obj_binary_op_impl<Op>` 调
 **`Object::op_*_impl(AriaVM&) -> Opt<Value>`**(协议语义 = 取该算子的**实现**,不是算结果)拿到可调用值后 `call_value(target, argc)`
 (二元 1、一元 0)。调用区栈形天然就位:`[lhs, rhs]` 即方法帧 `[this, arg1]`,槽 0 保持 receiver。取实现的实现分两路:
 **基类默认直接 fail**(`type X does not support '<钩子名>'`);**实例** 11 个 override 各按名(aria.hpp 的 `kOp*Name`)
@@ -535,7 +535,7 @@ support '__add__'`,码 TypeMismatch)——不再有
 
 **内置侧**:string 的 `__add__`(拼接,经驻留池)与 `__lt__`/`__le__`/`__gt__`/`__ge__`(无符号字节序,GC-pure)是 StringBuiltins
 里的原生方法(`ObjString::op_*_impl` 直读实现格,见上)。**失败文案打方法名**(`__lt__ requires two strings, got String and
-Int`、`__lt__ expects 1 argument, got 2`):每个钩子的方法名与文案都写**就地字面量**(函数名 `__lt___fn`、文案首词 `__lt__`、
+Int`、`__lt__ expects 1 argument, got 2`):每个钩子的方法名与文案都写**就地字面量**(函数名 `fn___lt__`、文案首词 `__lt__`、
 类表注册键 `"__lt__"` 三处同形,漏改其一时 `cache_string_operator_fns` 按名查不到、bootstrap 断言即报)。曾议把名字作模板
 实参传入,实测不可行: StringView 非 structural type 当不了 NTTP、`const char*` 在 C++23 收不了字面量 -- clang 三种写法全拒,
 包 struct 包装类型属过度设计,故名字就地写。四个比较钩子**各自内联完整校验**(元数 + 两侧皆 String + 按无符号字节序比较,

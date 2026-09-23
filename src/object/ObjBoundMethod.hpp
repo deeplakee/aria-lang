@@ -79,7 +79,7 @@ namespace aria {
     // 工厂:分配 ObjBoundMethod。工厂不替调用方守卫入参(「每方只守自己创建的」)--只做一次
     //     new_object、无内部新建对象,调用方须在调用前自行根化 method 与 receiver 中的对象
     //     (LOAD_FIELD 路径:instance 仍 peek 在栈根化,方法值在类表内可达)。返回对象白色无根,
-    //     须立即发布进根(LOAD_FIELD 先写回原槽根化再回填缓存)。
+    //     须立即发布进根(LOAD_FIELD 先写回原槽根化)。
     [[nodiscard]]
     ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver);
 

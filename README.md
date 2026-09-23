@@ -57,8 +57,10 @@ print("42".to_int() + 1);                                    # 43
 - **函数**：一等值、`fun(x) { ... }` lambda、默认参数、`...varargs`；闭包捕获即引用，同一变量
   的多个闭包共享同一份状态（`make_counter` 那个例子）。
 - **类**：`def` 定义，`init` 构造器，`super` 单继承（`def Foo : Bar`），成员分静态变量、静态方法、
-  实例方法三类；实例字段是动态的；根类 `Object` 收拢链式查找。内置的 list/map/string/range
-  也是类，方法调用走同一套 `recv.name(args)` 通路。
+  实例方法三类；实例字段是动态的；根类 `Object` 收拢链式查找。运算符与调用可重载：在类上定义
+  `__add__`、`__lt__` 等十个算子钩子或 `__call__`，实例出现在左操作数 / 被调用位置时按名取实现
+  （仅左侧触发，无反射形态）。内置的 list/map/string/range 也是类，方法调用走同一套
+  `recv.name(args)` 通路。
 - **控制流**：`if`/`else`、`while`、C 风格 `for`、`for (pattern in expr)`、`break`/`continue`、
   `match`；`if` 与 `match` 均有表达式形态。
 - **解构**：`var [a, b] = ...`、`[a, b] = [b, a]`、`for ([k, v] in ...)`，支持嵌套、`_` 占位与

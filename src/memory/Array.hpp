@@ -85,7 +85,7 @@ namespace aria {
         // 位置插入:在 index 之前插入 value(合法域 [0, size()],== size() 即追加,同 push 语义)。
         // 撑长一格后自尾段右移腾位:一次扩容(可能) + 至多 size()-index 次平凡拷贝。
         void insert(const usize index, const T& value) {
-            ASSERT(index <= len_, "Array::insert: index out of range");
+            ASSERT(index <= len_, "index out of range");
             ensure_capacity(len_ + 1);
             ++len_;
             for (usize i = len_ - 1; i > index; --i) {
@@ -110,21 +110,21 @@ namespace aria {
 
         // 截断到 new_len(new_len <= 当前长度);不释放容量。
         void truncate(const usize new_len) noexcept {
-            ASSERT(new_len <= len_, "Array::truncate: new_len exceeds current size");
+            ASSERT(new_len <= len_, "new_len exceeds current size");
             len_ = new_len;
         }
 
         void clear() noexcept { len_ = 0; }
 
         void pop() noexcept {
-            ASSERT(len_ > 0, "Array::pop on empty");
+            ASSERT(len_ > 0, "empty array");
             --len_;
         }
 
         // 位置移除:移除 index 处元素(合法域 [0, size())),自 index+1 起段左移补位、长度减一;
         // 至多 size()-index-1 次平凡拷贝,容量不变。
         void remove_at(const usize index) noexcept {
-            ASSERT(index < len_, "Array::remove_at: index out of range");
+            ASSERT(index < len_, "index out of range");
             for (usize i = index + 1; i < len_; ++i) {
                 buf_.data()[i - 1] = buf_.data()[i];
             }
@@ -133,25 +133,25 @@ namespace aria {
 
         [[nodiscard]]
         T& top() noexcept {
-            ASSERT(len_ > 0, "Array::top on empty");
+            ASSERT(len_ > 0, "empty array");
             return buf_.data()[len_ - 1];
         }
 
         [[nodiscard]]
         const T& top() const noexcept {
-            ASSERT(len_ > 0, "Array::top on empty");
+            ASSERT(len_ > 0, "empty array");
             return buf_.data()[len_ - 1];
         }
 
         [[nodiscard]]
         T& operator[](usize index) noexcept {
-            ASSERT(index < len_, "Array index out of range");
+            ASSERT(index < len_, "index out of range");
             return buf_.data()[index];
         }
 
         [[nodiscard]]
         const T& operator[](usize index) const noexcept {
-            ASSERT(index < len_, "Array index out of range");
+            ASSERT(index < len_, "index out of range");
             return buf_.data()[index];
         }
 

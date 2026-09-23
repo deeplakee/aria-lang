@@ -117,7 +117,7 @@ namespace aria {
                     tomb = pos; // 记首个墓碑,探到空槽时回退写入
                 }
             }
-            ASSERT(false, "InternPool::insert: probe exhausted (invariant violated)");
+            ASSERT(false, "probe exhausted (invariant violated)");
         }
 
         // weak root 清理:遍历 slots_,把指向白色(未标 is_marked)ObjString* 的占用槽置墓碑。

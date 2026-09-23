@@ -167,7 +167,7 @@ namespace aria {
                     tomb = pos; // 记首个墓碑,探到空槽时回退写入
                 }
             }
-            ASSERT(false, "HashTable::set: probe exhausted (invariant violated)");
+            ASSERT(false, "probe exhausted (invariant violated)");
         }
 
         // 擦除命中槽(置墓碑)。返回是否确实擦除。无需 nil-out entries_,trace 按 ctrl 跳过非占用槽。
@@ -216,7 +216,7 @@ namespace aria {
         class const_iterator {
         public:
             const Entry& operator*() const {
-                ASSERT(ht_->ctrl_is_occupied(ht_->ctrl_[slot_]), "HashTable::const_iterator: slot is not occupied");
+                ASSERT(ht_->ctrl_is_occupied(ht_->ctrl_[slot_]), "slot is not occupied");
                 return ht_->entries_[slot_];
             }
 

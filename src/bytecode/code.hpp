@@ -153,11 +153,10 @@ namespace aria {
         }
     }
 
-    // MAKE_RANGE flags 位义:0x00 含上界(..)、0x01 不含上界(...)、0x02 无上界(端点后省
-    // 上界表达式,from.. / from... 同义,含否位不编)。编译发射与 VM 解码同源。
-    inline constexpr u8 kRangeFlagInclusive = 0x00;
-    inline constexpr u8 kRangeFlagExclusive = 0x01;
-    inline constexpr u8 kRangeFlagUnbounded = 0x02;
+    // MAKE_RANGE flags 位义(编译发射与 VM 解码同源):
+    inline constexpr u8 kRangeFlagInclusive = 0x00; // 含上界(..)
+    inline constexpr u8 kRangeFlagExclusive = 0x01; // 不含上界(...)
+    inline constexpr u8 kRangeFlagUnbounded = 0x02; // 无上界(端点后省上界表达式, from.. / from... 同义, 含否位不编)
 
 } // namespace aria
 

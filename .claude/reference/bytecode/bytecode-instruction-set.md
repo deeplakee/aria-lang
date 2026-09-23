@@ -131,7 +131,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_NIL` | 无 | `[] -> [nil]` | 压入 nil |
 | `LOAD_TRUE` | 无 | `[] -> [true]` | 压入 true |
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
-| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（VM 单例值统一存放表 `AriaVM::registers_`，bootstrap 填充、tracer 逐格标根；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`，Object 根类即其中 ObjectClass 格） |
+| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（VM 单例对象统一存放表 `AriaVM::registers_`，bootstrap 填充、tracer 逐格标根；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`，Object 根类即其中 ObjectClass 格） |
 
 > 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.claude/rules/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
 

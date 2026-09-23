@@ -16,8 +16,9 @@ namespace aria {
     // 协议名;十一个名字与 Object::op_*_impl 虚函数族一一对应(那族回答「本对象上该算子/调用对应的可调用值」,
     // 内建类型直给自身实现)。`/` 是 aria 唯一的除法算子(无 // 形态),故取 __div__。
     // 形态同 ARIA_VALUE_REGISTER_LIST / ARIA_OPCODE_LIST:条目宏 define 顶格 + 容器单行内联 use + undef 紧随,
-    // 注册表用毕即 #undef(其后不再有内容)。逐条注释用块注释(行注释会吞续行符)。**不另生成可读名表**
-    //(kValueRegisterNames 那种是给反汇编打印 LOAD_REG 操作数用的):本表无字节码消费者,故无名表。
+    // 注册表用毕即 #undef(其后只剩派生常量)。逐条注释用块注释(行注释会吞续行符)。**不另生成可读名表**
+    //(kValueRegisterNames 那种是给反汇编打印 LOAD_REG 操作数用的):本表无字节码消费者,故无名表,只派生
+    // 表长 kStringConstantCount(与 kValueRegisterCount 同式),供 VM 预置 string_constants_ 格位。
 #define ARIA_STRING_CONSTANT_LIST(X)                            \
     X(OpAdd, "__add__")         /* 二元 + */                    \
     X(OpSub, "__sub__")         /* 二元 - */                    \
@@ -40,6 +41,9 @@ namespace aria {
 #undef ARIA_STRING_CONSTANT_SPELLING
 
 #undef ARIA_STRING_CONSTANT_LIST
+
+    // 表长(= X 表行数):常量串表条数,替代对枚举稠密的依赖(同 kValueRegisterCount)。
+    inline constexpr usize kStringConstantCount = std::size(kStringConstantSpellings);
 
 } // namespace aria
 

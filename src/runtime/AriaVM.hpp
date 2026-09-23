@@ -160,7 +160,7 @@ namespace aria {
         // 派发,免每次过类表查找。
         [[nodiscard]]
         Value register_value(const u8 offset) const noexcept {
-            return registers_[offset];
+            return Value::from_obj(registers_[offset]);
         }
 
         // 常量串表按枚举直读(下标契约与拼写见 runtime/string_constant.hpp):实例侧算子派发经它取钩子名,
@@ -409,14 +409,14 @@ namespace aria {
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_),[1..]=配置根(stdlib/-L/环境变量)。
         List<String> source_roots_;
 
-        // 值寄存器组:VM 单例值统一存放表(唯一存放处;注册表见 runtime/value_register.hpp)。
-        // 构造期经 make_nil_registers 全表灌 nil(Value{} 零填充非 nil);bootstrap 逐格覆写;
-        // tracer 一趟循环标根。
-        Vector<Value, kValueRegisterCount> registers_;
+        // 值寄存器组:VM 单例对象统一存放表(唯一存放处;注册表见 runtime/value_register.hpp)。
+        // 构造期预置表长格,bootstrap 按 k<名字>Offset 具名格位逐格填,填完经 assert_slots_filled
+        // 收口;tracer 一趟循环标根。格位恒持对象,故元素类型即消费者要的裸指针。
+        List<Object*> registers_;
 
         // 常量串表:VM 自己按名取用的字符串常量(唯一存放处;注册表见 runtime/string_constant.hpp)。
-        // bootstrap 一趟按表驻留填入,与枚举同序;tracer 一趟循环 mark_object 标根 -- 表在则串在
-        //(驻留池是 weak root,不标根则下轮 collect 即摘除)。List 空态起步,无 registers_ 那套灌 nil 仪式。
+        // 构造期预置表长格,bootstrap 按下标(枚举值)逐格驻留填,同样经 assert_slots_filled 收口;
+        // tracer 一趟循环 mark_object 标根 -- 表在则串在(驻留池是 weak root,不标根则下轮 collect 即摘除)。
         List<ObjString*> string_constants_;
     };
 

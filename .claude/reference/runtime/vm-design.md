@@ -48,13 +48,13 @@ struct CallFrame {
 
 // ---- 解释器级 ----
 class AriaVM {
-    GC               gc_;          // VM 拥有 GC 值成员(已定:每 VM 一个 GC)
-    AriaHashTable    modules_;     // 模块表(键=规范路径 ObjString*、值=ObjModule*,均装箱 Value)
-    AriaHashTable    builtins_;    // VM 级只读内建表(LOAD_GLOBAL 模块 globals 未命中回退查此,§7)
-    Vector<Value, kValueRegisterCount> registers_; // 值寄存器组(VM 单例值统一存放表;Object 根类在 ObjectClass 格,不进任何名字空间;GC tracer 逐格标根,§4.6)
-    Movement         main_ctx_;    // 主上下文(值栈 + 帧栈;M6 协程期升级 ObjMovement : Object)
-    Movement*        current_;     // 当前执行上下文(已落地:构造指 &main_ctx_;M6 单循环切换:resume/yield 原生函数在 CALL 善后点换指/回退,§4.9)
-    List<String>     source_roots_;// 源根列表([0]=入口根、[1..]=配置根)
+    GC            gc_;           // VM 拥有 GC 值成员(已定:每 VM 一个 GC)
+    AriaHashTable modules_;      // 模块表(键=规范路径 ObjString*、值=ObjModule*,均装箱 Value)
+    AriaHashTable builtins_;     // VM 级只读内建表(LOAD_GLOBAL 模块 globals 未命中回退查此,§7)
+    List<Object*> registers_;    // 值寄存器组(VM 单例对象统一存放表;Object 根类在 ObjectClass 格,不进任何名字空间;GC tracer 逐格标根,§4.6)
+    Movement      main_ctx_;     // 主上下文(值栈 + 帧栈;M6 协程期升级 ObjMovement : Object)
+    Movement*     current_;      // 当前执行上下文(已落地:构造指 &main_ctx_;M6 单循环切换:resume/yield 原生函数在 CALL 善后点换指/回退,§4.9)
+    List<String>  source_roots_; // 源根列表([0]=入口根、[1..]=配置根)
     // (M6 定稿:无需 contexts_ 调度列表 -- 协程即 Object,经用户持有的协程值 + current_ 单根可达,§4.9)
 
     ExecOutcome run();             // 驱动直到根上下文 返回/挂起(Yielded)/未捕获异常(§4.9)

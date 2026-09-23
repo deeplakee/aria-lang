@@ -46,15 +46,13 @@ namespace aria {
 
     namespace {
 
-        // 寄存器组初值:全表灌 nil。Value{} 零填充并非 nil(NaN-boxing 下是 f64 0.0,见
-        // NanBoxing.hpp 注),未填格须是合法 Value 才能被 tracer 与 dispatch 安全触碰;
-        // bootstrap 逐格覆写。
-        Vector<Value, kValueRegisterCount> make_nil_registers() noexcept {
-            Vector<Value, kValueRegisterCount> regs{};
-            for (auto& r: regs) {
-                r = Value::nil_val();
+        // 单例表收口:两张预置表长格的 VM 单例表(registers_ / string_constants_)填完后不许留空格。
+        // 未填格(nullptr)装箱后是非法值、按名取到空指针,存活到消费点只崩不报错,故在填点炸出。
+        template<typename T>
+        void assert_slots_filled(const List<T*>& slots, const char* what) noexcept {
+            for (const auto slot: slots) {
+                ASSERT(slot != nullptr, what);
             }
-            return regs;
         }
 
         // 读 1 字节操作数(假定字节码良构),推进 ip。
@@ -219,11 +217,11 @@ namespace aria {
 
     } // namespace
 
-    // 构造:registers_ 经 make_nil_registers 全表灌 nil -> 注册 VM 根 tracer -> bootstrap 常量串表 +
-    // 寄存器组 -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
+    // 构造:两张单例表(registers_ / string_constants_)各按注册表长度预置格位 -> 注册 VM 根 tracer ->
+    // bootstrap 常量串表 + 寄存器组 -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
         gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
-        registers_{make_nil_registers()}, string_constants_{} {
+        registers_{kValueRegisterCount}, string_constants_{kStringConstantCount} {
         hook_vm_roots();
         init_source_roots();
         {
@@ -237,12 +235,13 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_string_constants() {
-        // 按注册表逐条驻留填入:顺序即契约(string_constant 按枚举取下标,表尾拼写数组与枚举同源同序)。
+        // 按下标(即枚举值)逐格驻留填入:string_constant 按枚举取下标,故下标即格位,与拼写表同源同序。
         // 须在 ctor 构造临界区内调用(GC 挂起,创建免守卫);填入即经 string_constants_ 可达,故解锁前
         // 发布完毕。须先于 bootstrap_registers:String 类 bootstrap 的钩子缓存按名取串,读的就是本表。
-        for (const auto spelling: kStringConstantSpellings) {
-            string_constants_.push_back(new_string(gc_, spelling));
+        for (usize index = 0; index < kStringConstantCount; ++index) {
+            string_constants_[index] = new_string(gc_, kStringConstantSpellings[index]);
         }
+        assert_slots_filled(string_constants_, "string_constants_: unfilled slot after bootstrap");
     }
 
     void AriaVM::bootstrap_registers() {
@@ -257,6 +256,7 @@ namespace aria {
         bootstrap_range_class();
         bootstrap_default_mark();
         bootstrap_match_no_arm();
+        assert_slots_filled(registers_, "registers_: unfilled slot after bootstrap");
     }
 
     void AriaVM::hook_vm_roots() {
@@ -266,8 +266,8 @@ namespace aria {
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
-            for (const auto& reg: registers_) {
-                g.mark_value(reg);
+            for (const auto reg: registers_) {
+                g.mark_object(reg);
             }
             for (const auto str: string_constants_) {
                 g.mark_object(str);
@@ -294,27 +294,17 @@ namespace aria {
         });
     }
 
-    ObjClass* AriaVM::object_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kObjectClassOffset].as_obj());
-    }
+    ObjClass* AriaVM::object_class() const noexcept { return Object::as<ObjClass>(registers_[kObjectClassOffset]); }
 
-    ObjClass* AriaVM::iterator_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kIteratorClassOffset].as_obj());
-    }
+    ObjClass* AriaVM::iterator_class() const noexcept { return Object::as<ObjClass>(registers_[kIteratorClassOffset]); }
 
-    ObjClass* AriaVM::list_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kListClassOffset].as_obj());
-    }
+    ObjClass* AriaVM::list_class() const noexcept { return Object::as<ObjClass>(registers_[kListClassOffset]); }
 
-    ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset].as_obj()); }
+    ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset]); }
 
-    ObjClass* AriaVM::string_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kStringClassOffset].as_obj());
-    }
+    ObjClass* AriaVM::string_class() const noexcept { return Object::as<ObjClass>(registers_[kStringClassOffset]); }
 
-    ObjClass* AriaVM::range_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kRangeClassOffset].as_obj());
-    }
+    ObjClass* AriaVM::range_class() const noexcept { return Object::as<ObjClass>(registers_[kRangeClassOffset]); }
 
     void AriaVM::bootstrap_object_class() {
         // Object 根类:no-op init 收到 slots[0]=this 返回 true 不写槽,槽 0 原样即返回实例(不
@@ -323,7 +313,7 @@ namespace aria {
         const auto init_key    = new_string(gc_, "init");
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
         klass->set_field(init_key, Value::from_obj(init_native));
-        registers_[kObjectClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kObjectClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_iterator_class() {
@@ -332,7 +322,7 @@ namespace aria {
         // globals。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_builtins(gc_, klass);
-        registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kIteratorClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_list_class() {
@@ -340,7 +330,7 @@ namespace aria {
         // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "List", object_class());
         register_list_builtins(gc_, klass);
-        registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_map_class() {
@@ -348,7 +338,7 @@ namespace aria {
         // 不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Map", object_class());
         register_map_builtins(gc_, klass);
-        registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kMapClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_string_class() {
@@ -356,7 +346,7 @@ namespace aria {
         // 绑定触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "String", object_class());
         register_string_builtins(gc_, klass);
-        registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kStringClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
         cache_string_operator_fns(*klass);
     }
 
@@ -371,7 +361,7 @@ namespace aria {
         for (const auto& [hook, fn_offset]: kStringOperatorFns) {
             const auto hit = klass.load_field(*this, string_constant(hook));
             ASSERT(hit.has_value(), "String 类表缺算子钩子:类表与实现格两份已漂移");
-            registers_[fn_offset] = *hit;
+            registers_[fn_offset] = hit->as_obj();
         }
     }
 
@@ -380,14 +370,14 @@ namespace aria {
         // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Range", object_class());
         register_range_builtins(gc_, klass);
-        registers_[kRangeClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
+        registers_[kRangeClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {
         // 缺参印章:私有 no-op native(返回 true 不写返回槽;正常路径永不被调用)。实参显式传
         // 任意函数值其身份均异于印章,故不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
         const auto default_mark        = new_native_fn(gc_, "<default>", [](AriaVM&, Span<Value>) { return true; });
-        registers_[kDefaultMarkOffset] = Value::from_obj(default_mark);
+        registers_[kDefaultMarkOffset] = default_mark;
     }
 
     void AriaVM::bootstrap_match_no_arm() {
@@ -395,7 +385,7 @@ namespace aria {
         // 用户不可达)。消息按 raise 同源形态烘焙。须在 ctor 构造临界区内调用,创建免守卫。
         const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
         const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
-        registers_[kMatchNoArmOffset] = Value::from_obj(no_arm);
+        registers_[kMatchNoArmOffset] = no_arm;
     }
 
     void AriaVM::init_source_roots() {
@@ -575,7 +565,7 @@ namespace aria {
         // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
         const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
         for (u8 i = 0; i < missing; ++i) {
-            current_->push(registers_[kDefaultMarkOffset]);
+            current_->push(Value::from_obj(registers_[kDefaultMarkOffset]));
         }
 
         // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
@@ -1041,7 +1031,7 @@ namespace aria {
                 case OpCode::LOAD_REG: {
                     // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表枚举值,
                     // 编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
-                    current_->push(registers_[read_u8(frame)]);
+                    current_->push(Value::from_obj(registers_[read_u8(frame)]));
                     break;
                 }
                 case OpCode::LOAD_LOCAL: {

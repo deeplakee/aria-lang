@@ -7,13 +7,13 @@
 
 namespace aria {
 
-    // 值寄存器组:VM 持有的单例值统一存放表(AriaVM::registers_,bootstrap 填充、set_vm_roots 一趟循环标根),LOAD_REG n:u8
-    // 按索引把寄存器值压栈。寄存器只读(无 STORE_REG):编译代码不可写,写点全在 VM bootstrap。存储面:VM 单例出生即登记一
+    // 值寄存器组:VM 单例对象统一存放表(AriaVM::registers_,bootstrap 填充、set_vm_roots 一趟循环标根),LOAD_REG n:u8
+    // 按索引把格内对象压栈。寄存器只读(无 STORE_REG):编译代码不可写,写点全在 VM bootstrap。存储面:VM 单例出生即登记一
     // 格(本表加一行 + bootstrap 填充一行);发射面:LOAD_REG 按需发射,有字节码消费者的格才被编译侧引用,其余纯 C++ 存取。
     // 单一事实源(同 ARIA_ERROR_LIST / ARIA_OPCODE_LIST 风格):枚举声明、可读名表 kValueRegisterNames 与偏移常量 k<名字>
     // Offset 同源展开,新增寄存器加一行 X(名字) 即收口,名字串经 # 派生。表长 kValueRegisterCount = 名表长度,两表同源无
     // 不同步风险。逐值注释用块注释(行注释会吞续行符)。偏移常量 k<名字>Offset(如 kObjectClassOffset,值 = 枚举值,即寄存
-    // 器组内格位):scoped enum 不隐式转整型,C++ 侧数组下标与 LOAD_REG 操作数发射统一走常量,免逐点 std::to_underlying。
+    // 器组内格位):scoped enum 不隐式转整型,C++ 侧下标与 LOAD_REG 操作数发射统一走常量,免逐点 std::to_underlying。
     // 末组 = 内置类型的算子实现缓存五格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生函数值):内置类型取
     // 实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。实现格的规范家仍是类表(方法读路径 `"a".__add__`
     // 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的按名取实现不走寄存器:ObjInstance 的 override 经
@@ -47,7 +47,7 @@ namespace aria {
 
 #undef ARIA_VALUE_REGISTER_LIST
 
-    // 表长(= X 表行数):寄存器数组容量,替代对枚举稠密(上界 = 末条枚举值)的依赖。
+    // 表长(= X 表行数):值寄存器组格数,替代对枚举稠密(上界 = 末条枚举值)的依赖。
     inline constexpr usize kValueRegisterCount = std::size(kValueRegisterNames);
 
     // 寄存器可读名(如 "ObjectClass"),反汇编注释与调试用。

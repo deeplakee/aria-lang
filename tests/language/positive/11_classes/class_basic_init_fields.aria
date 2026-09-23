@@ -1,4 +1,4 @@
-// 钉住：def 类基础面——init 构造器、this 字段读写、实例方法、字段动态性。
+// 钉住：def 类基础面--init 构造器、this 字段读写、实例方法、字段动态性。
 def Box {
     init(v) {
         this.v = v;

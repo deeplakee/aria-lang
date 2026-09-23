@@ -1,4 +1,4 @@
-// 钉住：sort/reverse——就地变更返 nil（push 同款，变更方法不鼓励链式）、数值域升序
+// 钉住：sort/reverse--就地变更返 nil（push 同款，变更方法不鼓励链式）、数值域升序
 # （int/f64 混合同域，升 f64 比较、与 < 算子同源）、字符串按无符号字节序（'B' < 'a'，
 # 与字符串比较算子同源）、空表 no-op、别名可见；域外（混居/不可比元素）见
 # negative/runtime_errors/runtime_list_sort_*。

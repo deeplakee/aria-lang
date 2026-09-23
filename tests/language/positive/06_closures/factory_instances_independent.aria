@@ -1,4 +1,4 @@
-// 钉住：不同工厂调用产出独立实例——每次调用 make 产生新的局部环境与 upvalue。
+// 钉住：不同工厂调用产出独立实例--每次调用 make 产生新的局部环境与 upvalue。
 fun make_acc(start) {
     var total = start;
     return fun(delta) {

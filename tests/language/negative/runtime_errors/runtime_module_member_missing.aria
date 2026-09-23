@@ -1,4 +1,4 @@
-// 钉住：模块成员 miss 为运行期错误 UndefinedProperty（可 catch）——模块成员 = 顶层绑定，
+// 钉住：模块成员 miss 为运行期错误 UndefinedProperty（可 catch）--模块成员 = 顶层绑定，
 // 未声明名不是成员。
 import "./lib/members" as M;
 var x = M.absent;

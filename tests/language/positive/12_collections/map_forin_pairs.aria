@@ -1,4 +1,4 @@
-// 钉住：map 迭代——for (pair in m) 产出 [k, v] 二元 list，产出顺序 unspecified，
+// 钉住：map 迭代--for (pair in m) 产出 [k, v] 二元 list，产出顺序 unspecified，
 # 不依赖具体序（计数 + 键归属 + 值求和校验）；迭代器直取游标独立。
 var m = {"a": 1, "b": 2, "c": 3};
 var sum = 0;

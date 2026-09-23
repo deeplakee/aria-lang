@@ -1,4 +1,4 @@
-// 钉住：继承（def Child : Parent）——init/super.init() 链、super.method() 调被遮蔽实现、
+// 钉住：继承（def Child : Parent）--init/super.init() 链、super.method() 调被遮蔽实现、
 # 方法与字段沿链解析、多级链。
 def Base {
     init() { this.tag = 100; }

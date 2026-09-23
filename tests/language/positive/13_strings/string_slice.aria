@@ -1,4 +1,4 @@
-// 钉住：string 切片（Range 键）——与 list 同口径（段解析共用 resolve_slice_bounds）：
+// 钉住：string 切片（Range 键）--与 list 同口径（段解析共用 resolve_slice_bounds）：
 # 含上界 `..` / 不含 `...`、端点负数从尾计数、无上界 `i..` 取到末尾（末尾之后即空段）、
 # 倒序 range 产出倒序段。域是**字节**（与 s[i]/len 同域），故倒序段是字节倒排：
 # 多字节串按字节倒排后不是合法 UTF-8（与 s[i] 能取到续接字节同属字节域契约）。

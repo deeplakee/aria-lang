@@ -1,4 +1,4 @@
-// 钉住：迭代器一等值——xs.iter() 显式铸造、has_next/next 手动驱动、耗尽后 next 抛
+// 钉住：迭代器一等值--xs.iter() 显式铸造、has_next/next 手动驱动、耗尽后 next 抛
 # IterationExhausted（可 catch，fail-fast 非 nil 哨兵）、迭代器值可传递。
 var xs = [10, 20];
 var it = xs.iter();

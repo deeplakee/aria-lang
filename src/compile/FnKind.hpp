@@ -11,7 +11,7 @@ namespace aria {
     // kAnonymousName)/ 静态方法(def 体内 fun 成员,无 this 绑定)/ 实例方法(def 体内裸方法,
     // 帧槽 0 = this)/ init 方法(名为 kInitName 的裸方法,构造角色--返回尾返回 this,实例化
     // 不变式 Foo() 得实例)。AST 侧:parser 按出现位置(及成员名)烙进 FunDeclNode,lambda 经
-    // visitLambdaExprNode 直传;编译侧:随 FunctionCtx 挂 ctx 链——名字绑定(Function 绑全局/
+    // visitLambdaExprNode 直传;编译侧:随 FunctionCtx 挂 ctx 链--名字绑定(Function 绑全局/
     // 局部,其余留栈不绑定)、隐式返回尾(InitMethod 返 this,其余返 nil)、slot 0 形态与
     // this/super 判据(实例方法族,见 is_method)都消费 kind。
     enum class FnKind : u8 { Function, Lambda, StaticMethod, Method, InitMethod };

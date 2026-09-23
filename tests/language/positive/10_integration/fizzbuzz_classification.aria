@@ -1,4 +1,4 @@
-// 综合：for + if/else 链 + 模运算 + 计数——fizzbuzz 1..15 分类统计。
+// 综合：for + if/else 链 + 模运算 + 计数--fizzbuzz 1..15 分类统计。
 var fizz = 0;        # 仅 3 的倍数
 var buzz = 0;        # 仅 5 的倍数
 var fizzbuzz = 0;    # 15 的倍数

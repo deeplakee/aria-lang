@@ -1,4 +1,4 @@
-// 钉住：remove/remove_at——remove_at(i) 按位置移除并返回（负数从尾计数、与下标读写
+// 钉住：remove/remove_at--remove_at(i) 按位置移除并返回（负数从尾计数、与下标读写
 # 同语义）；remove(x) 移除**全部** == 命中元素（保序，只要一处用 find + remove_at 组合），
 # 命中 true 未命中 false（miss 走返回值，与 find 返 nil / contains 返 false 同族，不占
 # 错误通道）。remove_at 越界见 negative/runtime_errors/runtime_list_remove_at_out_of_range。

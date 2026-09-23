@@ -1,4 +1,4 @@
-// 钉住：sort 域外——不可比元素（nil/bool/容器）报 TypeMismatch；首元素即 nil 时其自身
+// 钉住：sort 域外--不可比元素（nil/bool/容器）报 TypeMismatch；首元素即 nil 时其自身
 // 不在可比较域，只报首元素类型。
 var xs = [nil, 1];
 xs.sort();

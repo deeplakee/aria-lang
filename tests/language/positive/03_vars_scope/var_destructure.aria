@@ -1,4 +1,4 @@
-// 钉住：var 声明解构 listPattern —— 位置 i 绑 list[i]（复用下标语义），多余忽略；
+// 钉住：var 声明解构 listPattern -- 位置 i 绑 list[i]（复用下标语义），多余忽略；
 // `_` 占位不访问该位置；嵌套 listPattern 逐层递归；初始化器只求值一次。
 var [a, b] = [1, 2];
 assert(a == 1 && b == 2);

@@ -1,4 +1,4 @@
-// 钉住：for-in 目标解构 —— map 迭代产出 [k, v] 二元 list，目标 listPattern 逐位置绑循环变量；
+// 钉住：for-in 目标解构 -- map 迭代产出 [k, v] 二元 list，目标 listPattern 逐位置绑循环变量；
 // list 迭代产出元素本身，元素为 list 时按位置解构；`_` 位置不访问；根位 `_` 丢弃每轮值。
 var m = {"a": 1, "b": 2, "c": 3};
 var sum = 0;

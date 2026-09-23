@@ -1,4 +1,4 @@
-// 钉住：insert/clear——insert 位置语义（i 之前插入、i == 元素数即追加、负数指「该下标
+// 钉住：insert/clear--insert 位置语义（i 之前插入、i == 元素数即追加、负数指「该下标
 # 元素之前」）、任意 Value 元素、返 nil；clear 原地清空（别名同见，区别于重绑 xs = []
 # 换新表）。insert 越界见 negative/runtime_errors/runtime_list_insert_out_of_range。
 var xs = [1, 3];

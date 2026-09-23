@@ -1,5 +1,5 @@
 // 循环导入 B：反向导入 A，模块表命中正在 run-once 的半初始化 A 对象，直接复用不报错；
-# 半初始化只影响「尚未执行到的绑定」——A.tag 已绑定可读，A.later 声明在 b 之后，读它
+# 半初始化只影响「尚未执行到的绑定」--A.tag 已绑定可读，A.later 声明在 b 之后，读它
 # 报 UndefinedProperty（可 catch，非崩溃）。
 print("B:start");
 import "./a" as A;

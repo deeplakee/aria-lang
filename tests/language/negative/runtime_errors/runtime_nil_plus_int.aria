@@ -1,2 +1,2 @@
-// 钉住：算术 + 仅数值——nil + 1 为运行期错误 TypeMismatch。
+// 钉住：算术 + 仅数值--nil + 1 为运行期错误 TypeMismatch。
 var x = nil + 1;

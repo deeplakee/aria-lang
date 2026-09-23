@@ -1,4 +1,4 @@
-// 综合：循环内 per-iteration try/catch——奇数累加、偶数经 throw 通道走补偿分支；
+// 综合：循环内 per-iteration try/catch--奇数累加、偶数经 throw 通道走补偿分支；
 # 验证每轮 catch 状态独立、循环不被异常中断。
 var total = 0;
 for (var i = 1; i <= 6; i += 1) {

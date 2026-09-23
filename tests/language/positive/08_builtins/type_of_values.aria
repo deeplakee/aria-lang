@@ -1,4 +1,4 @@
-// 钉住：type() 返回值类型名——Int/F64/String/Nil/Bool/Closure/Exception。
+// 钉住：type() 返回值类型名--Int/F64/String/Nil/Bool/Closure/Exception。
 assert(type(1) == "Int");
 assert(type(-1) == "Int");
 assert(type(1.0) == "F64");

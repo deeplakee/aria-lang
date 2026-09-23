@@ -1,4 +1,4 @@
-// 钉住：catch 内 re-throw——值原样传递（不包不吞），链式传播。
+// 钉住：catch 内 re-throw--值原样传递（不包不吞），链式传播。
 try {
     try {
         throw "original";

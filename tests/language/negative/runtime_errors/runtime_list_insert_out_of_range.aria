@@ -1,4 +1,4 @@
-// 钉住：insert 越界——合法域 [-(size), size]，归一化后越界 fail-fast（静态文案，
+// 钉住：insert 越界--合法域 [-(size), size]，归一化后越界 fail-fast（静态文案，
 // 与切片同款不带键值；Python clamp 钳制，aria 越界即报）。
 var xs = [1];
 xs.insert(5, 0);

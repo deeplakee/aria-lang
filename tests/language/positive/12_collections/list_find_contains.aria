@@ -1,5 +1,5 @@
-// 钉住：find/contains/size/is_empty——判定走 ==（value_equal 内容递归）、find 未命中
-# 返 nil（下标永不为 nil，Ruby Array#index 同款——aria 有负下标，-1 是合法下标，
+// 钉住：find/contains/size/is_empty--判定走 ==（value_equal 内容递归）、find 未命中
+# 返 nil（下标永不为 nil，Ruby Array#index 同款--aria 有负下标，-1 是合法下标，
 # miss 时 xs[find(x)] 会静默取末元素，Python str.find 的坑）、contains 即成员测试
 #（list 无 in 表达式算子）、size/is_empty 为全局 len 的方法形态。
 var xs = [1, nil, "a", [2]];

@@ -1,4 +1,4 @@
-// 钉住：map 的 print 渲染——键值均 debug 形（字符串带引号）、嵌套结构、空表；
+// 钉住：map 的 print 渲染--键值均 debug 形（字符串带引号）、嵌套结构、空表；
 # 配 .out golden（实测生成）。多键渲染序随槽位（unspecified），golden 只收单键形态。
 print({});
 print({"a": 1});

@@ -1,4 +1,4 @@
-// 钉住：bound method——obj.method 取值即绑定 receiver（恒绑定，经变量/传参调用不变）；
+// 钉住：bound method--obj.method 取值即绑定 receiver（恒绑定，经变量/传参调用不变）；
 # 方法值是一等值。
 def Greeter {
     init(name) { this.name = name; }

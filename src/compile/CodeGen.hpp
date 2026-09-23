@@ -55,8 +55,8 @@ namespace aria {
         enum class LvalueMode : u8 { Load, Prepare, Store, Locate };
 
         // 解构绑定模式（发射形态见 .cpp visitListPatternNode 注）：Fill = 绑新名（var 声明 /
-        // for-in 目标）——值填槽，局部登记即初始化、顶层全局 DEF_GLOBAL 弹值；Store = 写既有名
-        // （解构赋值目标）——按名存（STORE_* 为 peek-store，补 POP 弹掉取出的元素值）。flag 由
+        // for-in 目标）--值填槽，局部登记即初始化、顶层全局 DEF_GLOBAL 弹值；Store = 写既有名
+        // （解构赋值目标）--按名存（STORE_* 为 peek-store，补 POP 弹掉取出的元素值）。flag 由
         // bind_pattern 设置、整个模式子树共用：递归经 accept 双分派无参可传，故与 lvalue_mode_
         // 同为成员。两模式对栈顶源值（var 的初始化器 / for-in 的 next() 产物 / 解构赋值的右值）
         // 的净效应见 bind_pattern 注。
@@ -211,7 +211,7 @@ namespace aria {
         ResolvedVar resolve_name_or_fail(StringView name, SourceLoc loc);
 
         // this 专用解析（this 是关键字非标识符，永不落全局）：沿 fn ctx 链找名为 kThisName 的
-        // 局部（最近实例方法的帧槽 0，arrow 语义）——当前帧命中 -> Local；外层命中 -> 经
+        // 局部（最近实例方法的帧槽 0，arrow 语义）--当前帧命中 -> Local；外层命中 -> 经
         // resolve_upvalue 捕获（index=本函数 upvalue 索引，M4 机制零改动穿透）；链上无实例方法
         // -> fail ThisOutsideClass（静态方法/顶层/只嵌在普通函数里皆然）。
         [[nodiscard]]
@@ -252,7 +252,7 @@ namespace aria {
         void declare_global_or_fail(StringView name, SourceLoc loc) const;
 
         // 栈顶值绑定收口（var/fun/def/import 四处共用）：把栈顶的值按 name 绑为当前作用域的
-        // 变量——全局 -> declare 判重 + add_name 入池 + DEF_GLOBAL 弹值定义；局部 -> 值填槽
+        // 变量--全局 -> declare 判重 + add_name 入池 + DEF_GLOBAL 弹值定义；局部 -> 值填槽
         // declare（登记即初始化，值恰在槽位）。行号与判重/入池报错位置取 loc（声明行）现场求值。
         // 全局腿每次绑定各自入池（常量池不去重，与 resolve_name_or_fail 全局分支每次引用入池同
         // 常态）。var 的初始化器先于本调用求值（声明名在 init 求值后才登记，init 里的同名引用沿
@@ -345,7 +345,7 @@ namespace aria {
         // 作表达式的值）。行号与报错位置取各节点自身 loc。
         void bind_pattern(PatternNode& node, PatternBindMode mode);
 
-        // listPattern 逐位置发射「备源值 -> 压下标 -> LOAD_INDEX -> 绑定」（`_` 位置跳过——文法
+        // listPattern 逐位置发射「备源值 -> 压下标 -> LOAD_INDEX -> 绑定」（`_` 位置跳过--文法
         // `_` 占位不访问该位置）：元素位与 rest 位皆交自身 visit 递归绑定（rest 位按下标键
         // [元素数..] 取后缀，空尾得空 list）。备源值方式随模式与访问数不同：Fill 单次访问 = 源值已
         // 在栈顶、本身即消耗品（零指令）；Fill 多次访问 = LOAD_LOCAL 复取隐藏局部；Store = DUP 留
@@ -371,7 +371,7 @@ namespace aria {
         // 更贴近参数列表所在。
         void validate_params(const List<Param>& params, SourceLoc loc) const;
 
-        // match 语义检查（emit_match 开头调用）：通配臂后不得再有臂——死臂任何输入下不可达，
+        // match 语义检查（emit_match 开头调用）：通配臂后不得再有臂--死臂任何输入下不可达，
         // 静默截断会吞臂序 bug，故编译期拒绝（_ 恒末臂、至多一条）。只读 arms、不触碰编译器状态，
         // 首个死臂即 fail（loc 取其 body）。模板吃两种臂类型（MatchArm/MatchExprArm 的
         // pattern/body 同形），定义在 .cpp（仅 CodeGen.cpp 实例化）。
@@ -392,20 +392,20 @@ namespace aria {
 
         // CLOSURE 后函数值的绑定/注册分派（穷尽 switch,-Wswitch 提示漏项；行号与报错位置现场
         // 取 decl_loc）：具名 fun（Function）绑定到全局（顶层）或局部（嵌套,值填槽,经
-        // bind_stack_value）；Lambda 留栈作表达式值不绑定；方法三态留栈不绑定、就地注册——fun
+        // bind_stack_value）；Lambda 留栈作表达式值不绑定；方法三态留栈不绑定、就地注册--fun
         // 静态 MAKE_STATIC 不戳 defining class（静态槽读恒原值）,实例方法族 MAKE_METHOD 戳
         // （VM 侧方法性标记 + super 来源）。调用时序（CLOSURE 之后、子上下文建立之前）见
         // compile_function 注。
         void bind_function_value(FnKind kind, StringView name, SourceLoc loc) const;
 
-        // 形参登记 + 缺省序言（印章方案）：单循环按声明序交错——带默认值的参数先发印章判等
+        // 形参登记 + 缺省序言（印章方案）：单循环按声明序交错--带默认值的参数先发印章判等
         // 序言（未传槽判等命中才求值默认值 STORE_LOCAL 换入,语义见 cpp 注）、后 add_local 登记
         // 本参数名（slot 1..n,槽 0 = this/哑元）。交错时序保证缺省表达式可引用前序参数、自身/
         // 后序参数名字对解析结构性不可见。decl_loc 供序言行号与跳转回填报错（现场 .line() 求值）。
         // 须在子上下文就位后、体编译前调用。
         void compile_params(const List<Param>& params, SourceLoc loc);
 
-        // 函数体尾隐式返回：init 方法返回 this（实例化不变式 Foo() 得实例——call_class 槽 0 原位换
+        // 函数体尾隐式返回：init 方法返回 this（实例化不变式 Foo() 得实例--call_class 槽 0 原位换
         // 实例后以返回值为实例化结果，LOAD_LOCAL 0 即 this），其余返回 nil（显式 return 后为死
         // 代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标函数上下文就位后调用；行号由调用点定
         // （体尾取 body.line()，入口取 program.line()）。

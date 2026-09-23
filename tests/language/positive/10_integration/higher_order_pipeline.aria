@@ -1,4 +1,4 @@
-// 综合：一等函数 + 闭包 + 高阶组合——数值管道 map-double/add-one/reduce-sum 的
+// 综合：一等函数 + 闭包 + 高阶组合--数值管道 map-double/add-one/reduce-sum 的
 # 手写等价实现（无容器，用函数层层传递）。
 fun compose(f, g) {
     return fun(x) {

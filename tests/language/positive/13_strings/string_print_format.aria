@@ -1,4 +1,4 @@
-// 钉住：string 方法的 print 渲染——结果串显示形（无引号）、list 的 split 结果
+// 钉住：string 方法的 print 渲染--结果串显示形（无引号）、list 的 split 结果
 # 嵌套 debug 形（元素带引号）；配 .out golden（实测生成）。
 print("abc".upper());
 print("  hi ".trim());

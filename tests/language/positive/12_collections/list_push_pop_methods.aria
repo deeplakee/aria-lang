@@ -1,4 +1,4 @@
-// 钉住：list 方法面（经 List bootstrap 类表分派）——push 追加返 nil、pop 移除返末元素、
+// 钉住：list 方法面（经 List bootstrap 类表分派）--push 追加返 nil、pop 移除返末元素、
 # 恒绑定经变量调用、方法与下标/迭代组合。
 var xs = [1, 2];
 assert(xs.push(3) == nil);        // push 返 nil

@@ -1,4 +1,4 @@
-// 钉住：方法调用的各发射形态（两段式 PREPARE_METHOD + CALL_METHOD）——实例方法/this 递归/super
+// 钉住：方法调用的各发射形态（两段式 PREPARE_METHOD + CALL_METHOD）--实例方法/this 递归/super
 // 实现/类静态方法/字段里的可调用值/内置类型方法面，六种宿主的调用结果一致可用；方法值"读取"
 // 仍走 LOAD_FIELD（现场绑定、无缓存：=== 按身份、== 按同实现+同接收者）。
 def Base {

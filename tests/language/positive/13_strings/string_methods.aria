@@ -1,4 +1,4 @@
-// 钉住：string 方法面——upper/lower/trim（ASCII 口径）、split（1 参保留空段、0 参按空白切）、
+// 钉住：string 方法面--upper/lower/trim（ASCII 口径）、split（1 参保留空段、0 参按空白切）、
 # find（未命中 nil）、contains（子串判定）、replace（全替换）、substring（区间）、
 # starts_with/ends_with、size/is_empty（字节域）、chars（逐码点切分）、
 # codepoint_at（码点序号索引）、to_int/to_float（整串十进制解析，失败返 nil）、

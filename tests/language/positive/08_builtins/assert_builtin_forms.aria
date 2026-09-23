@@ -1,4 +1,4 @@
-// 钉住：assert 断言通过形态——单参与带自定义消息两用；失败抛异常可 catch。
+// 钉住：assert 断言通过形态--单参与带自定义消息两用；失败抛异常可 catch。
 assert(true);
 assert(1 == 1);
 assert(1 == 1.0);          # value_equal 跨类型

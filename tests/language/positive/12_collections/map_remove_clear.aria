@@ -1,4 +1,4 @@
-// 钉住：map 变更方法面——remove(key) 移除命中键，命中 true 未命中 false（miss 走返回
+// 钉住：map 变更方法面--remove(key) 移除命中键，命中 true 未命中 false（miss 走返回
 # 值，与 list remove / get 同族，不占错误通道）；移除后该键经下标读即 KeyError（走错误
 # 通道）。clear() 原地清空（对数归零、别名同见），区别于重绑 m = {} 换新表。
 var m = {"a": 1, "b": 2, "c": 3};
@@ -28,7 +28,7 @@ var alias = shared;
 shared.clear();
 assert(shared.is_empty());
 assert(shared.size() == 0);
-assert(alias.size() == 0);          // 别名同见——是同一张表被清空
+assert(alias.size() == 0);          // 别名同见--是同一张表被清空
 assert(alias.get("x") == nil);
 
 // 空表上 clear 无害

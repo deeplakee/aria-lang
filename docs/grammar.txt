@@ -155,9 +155,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 上界）；无上界区间迭代 has_next 恒真（无限序列，边界由消费方自理）、方向恒正序；
 # ... 兼作 rest/varargs 前缀，按位置消歧。
 #
-# 分号与空语句：除 varDecl/print/return/break/continue/throw/import 外，多数语句通过
-# exprStmt 要求结尾 ";"。forStmt 的 init 部分允许 ";" 表示空 init。单独 ";"（空语句）
-# 当前未列入 statement，如需支持再加 emptyStmt。
+# 分号与空语句：语句一律以 ";" 结尾，唯 block 以及以 block 为体的 if/while/for/match 例外
+# （其 ";" 由体内语句承担）。forStmt 的 init 部分允许单独 ";" 表示空 init。单独的 ";"（空语句）
+# 未列入 statement，如需支持再加 emptyStmt。
 #
 # 上下文消歧（parser 前瞻，文法层无冲突）：
 #   - for vs forIn：均以 "for" "(" 开头。"(" 后为 ";" -> forStmt 空 init；为 "var" ->
@@ -183,7 +183,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     解构赋值写已存在的名（局部/upvalue/全局），未声明名按赋值不隐式创建报错。三种位置
 #     都只求值一次右侧（解构赋值整体先求值，故 [a, b] = [b, a] 交换成立）。
 #   - 解构赋值是表达式，其值为右侧值本身（与 x = v 求值为 v 同款）。
-#   - rest 可选：...rest 收集 list[i..] 为新 list（i = 前缀位置数，"_" 位也占位置）——
+#   - rest 可选：...rest 收集 list[i..] 为新 list（i = 前缀位置数，"_" 位也占位置）--
 #     空尾与空源都给空 list，故 [h, ...t] 的 head/tail 用法成立；不写则默认忽略剩余。
 #     rest 必须绑名（identifier），不接受 "_"--因 "..._" 与"不写 rest"等价，冗余非法；
 #     rest 须在末尾。rest 走下标语义（后缀即无上界切片），故只对 list 成立。
@@ -223,15 +223,16 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     标识符，不支持语句级 varDecl 的多绑定与解构 pattern（成员模型是类对象上的具名槽，名字一等）。
 #   - funDecl（fun name() {...}，带 fun 关键字）-> 静态方法，无 this 绑定，经 ClassName.x 访问静态成员。
 #   - function（name() {...}，无 fun 关键字）-> 实例方法，有 this 绑定（原 class 体方法形式）。
-#   体内裸名解析顺序：局部变量 -> upvalue -> 模块全局（类静态不在裸名作用域，经 ClassName.x）。Foo(args) 实例化；实例方法经
+#   体内裸名解析顺序：局部变量 -> upvalue -> 模块全局（类静态不在裸名作用域，经 ClassName.x）。
+#   Foo(args) 实例化；实例方法经
 #   superclass（":" identifier）链继承，super.m(...) 仍可用。外部访问：Foo.x 取/设静态成员；
 #   foo.x 先查实例自身属性，未命中再回退静态成员（实例属性遮蔽同名静态成员）。静态/实例方法
 #   区分、访问顺序与遮蔽语义属编译期/VM 范畴，文法不编码（仅约束 member 的三种起首写法）。
 #   静态成员继承（编译期/VM 语义，文法不编码）：静态变量与静态方法经 superclass 链继承，
 #   取 Python/JS class attributes 式读穿透、写遮蔽（M5 决策补记 2026-09-09 改定）：子类未重声明时
 #   读沿链穿透命中父类项；类上赋值 Sub.x = v 落接收类自身表（继承名新建遮蔽键、本类已有原槽更新，
-#   父表不动）。类静态
-#   经 ClassName.x 限定访问（运行期走 super），不在裸名作用域（见下文作用域模型）；方法查找
+#   父表不动）。类静态经 ClassName.x 限定访问（运行期沿 super 链查），不在裸名作用域（见下文
+#   作用域模型）；方法查找
 #   沿类链查表、无缓存（recv.name(args) 走两段式派发，解析先于实参求值；读路径 obj.m 每次
 #   现场绑定）。
 #   Object 根类（编译期/VM 语义，文法不编码）：所有用户定义的类隐式继承自内置 Object 根类--
@@ -256,8 +257,11 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - 嵌套类（全路径）：class B 在 class A 内 -> B 是 A 的静态 A.B，经 A.B 全路径引用，无
 #     enclosing 链、无裸名。模块顶层类是模块全局，裸名可访；嵌套类须全路径。
 #     （parser 现状：member 分派无 defDecl，嵌套类暂不可解析，本条为后继方向。）
-#   - 方法闭包（ObjClosure）持 defining class：一职双任——super 来源（LOAD_SUPER_FIELD）+ 方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经 MAKE_STATIC 不戳）。无 enclosing 走链。
-#   - this（实例，小写）为捕获 upvalue（arrow-function 语义）：this 是实例方法槽 0（方法帧 [this, a1..aN]，2026-09-10 改定）；嵌套函数
+#   - 方法闭包（ObjClosure）持 defining class：一职双任--super 来源（LOAD_SUPER_FIELD）+
+#     方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经
+#     MAKE_STATIC 不戳）。无 enclosing 走链。
+#   - this（实例，小写）为捕获 upvalue（arrow-function 语义）：this 是实例方法槽 0（方法帧
+#     [this, a1..aN]，2026-09-10 改定）；嵌套函数
 #     引用 this 时，沿外围函数帧找最近的实例方法，捕获其槽 0 为 upvalue（this -> LOAD_UPVALUE，
 #     .x -> LOAD_FIELD）。链上无实例方法（静态方法 / 顶层 / 只嵌在静态方法里）则 this 不可用，
 #     编译期报错。静态方法本身无 this。
@@ -271,14 +275,15 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - 动态加静态：允许（2026-09-11 改定，原 monkey-patch 拒绝废止），Foo.newStatic=v（新名）落
 #     接收类自身表（实例字段动态，有意不对称）。
 #   - 静态方法无 this：自引用写类名（Foo.x）；实例方法用小写 this 关键字。
-#   - 模块导入：文件是模块（非类）。启动定源根列表（标准库 lib + 入口文件目录，环境变量留
-#     后续）；导入只用字符串路径，不支持裸名：import "lib/utils" as Utils（绝对，从源根搜）、import
-#     "./utils" as U（相对当前文件）、import "lib" as Lib（目录包）；强制 as alias--绑模块到当前作用域
-#     （模块顶层=模块全局、函数体/块内=局部，IMPORT 压模块值于栈顶，绑定经 DEF_GLOBAL（顶层）
-#     或值填槽（嵌套）按作用域走），不解析路径算模块名。相对导入不得越出
-#     当前文件所属源根（../ 爬到源根之上报错）。目录 = 包（路径结构，非嵌套类）。循环导入
-#     返回半初始化对象，裸名不自动导入。符号链接按规范路径判定、重叠源根按列表首次命中。
-#     标记文件作源根是未来 aria run 特性，暂不支持。
+#   - 模块导入：文件是模块（非类）。导入路径只写在字符串里（无裸标识符形态），分两类--从源根
+#     列表搜的非相对路径（import "lib/utils" as Utils；源根 = 入口文件目录 + 配置根）与相对
+#     当前文件的路径（import "./utils" as U）；强制 as alias，绑模块到当前作用域（模块顶层 =
+#     模块全局、函数体/块内 = 局部；IMPORT 压模块值于栈顶，绑定经 DEF_GLOBAL（顶层）或值填槽
+#     （嵌套）按作用域走），不解析路径算模块名。解析以命中文件的绝对规范路径为模块表键：符号
+#     链接归一（等价路径不双加载），相对导入的基恒为当前文件所在目录（故不逃逸到别的源根），
+#     非相对路径按源根列表顺序首个命中。循环导入返回半初始化对象，裸名不自动导入。
+#     未实现（留待加载层）：目录包（<base>/<spec>/index.aria）、相对导入越出源根的检测、
+#     -L 标志与环境变量等额外源根。
 #   - 模块成员：模块 = 命名空间，其**顶层绑定即模块成员**（不另设 export 声明），故 `H.x`
 #     读顶层 var/fun/class 的原值（绑 nil 亦是命中），`H.f(args)` 直调（顶层函数非方法，
 #     不隐式绑定 this）；嵌套导入的模块本身也是成员（`H.Inner.tag`）。成员**只读**：越模块

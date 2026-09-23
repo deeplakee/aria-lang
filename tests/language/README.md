@@ -1,4 +1,4 @@
-# tests/language —— aria 语言脚本级端到端语料
+# tests/language -- aria 语言脚本级端到端语料
 
 用 aria 语言本身写测试脚本（语料），端到端驱动解释器验证**语言行为**，作为 C++
 GTest 白盒测试（util / value / compile / bytecode / runtime / object / memory 七模块）
@@ -33,7 +33,7 @@ tests/language/
 runner 经 CMake 注入的 `ARIA_LANG_CORPUS_DIR` 递归发现全部 `.aria` 脚本，**跳过任何
 路径分量名为 `lib` 的目录**（辅助模块只经 import 驱动，不单独成用例），每脚本一个
 ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实例开 stress GC
-（`set_stress(true)`，与 test_interpret 同法）——语料兼当 GC 压力安全网。
+（`set_stress(true)`，与 test_interpret 同法）--语料兼当 GC 压力安全网。
 
 判定规则按相对路径：
 
@@ -56,7 +56,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   无效）；`print` 仅用于配 `.out` 的输出格式用例。
 - 头部一行中文注释说明本脚本钉住什么语义；脚本内注释用 `//` 或 `#`。
 - 负向用例只收**设计上永久如此**的错误（整除零、读未声明名、非法左值等）；
-  「临时未实装」的行为（见下节禁区）不写负向用例——翻转日会变红。
+  「临时未实装」的行为（见下节禁区）不写负向用例--翻转日会变红。
 - `.err` 子串只取错误消息稳定正文（如 `Runtime: DivisionByZero integer division by zero`、
   `at <main> (`），**禁止含绝对路径**与随内容漂移的行号；多写不稳定的子串 = 给未来埋雷。
 - `.out` golden 必须从**当前构建产物实测**生成（`./build/aria script.aria > script.out`），
@@ -73,41 +73,41 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 ## 当前禁区（写新用例前必读）
 
-1. **不要钉临时未实装行为**：容器方法面（`range` 仅 iter；`list`/`map` 已补全，见 3）、
-   **判等（`==`/`!=`）与下标的重载**（算子与调用的重载已落地，见 3）、
-   `NotIterable`/`IteratorProtocol` 专用码接线、defer 与协程均未落地——写
-   「期待报错」的负向用例会在翻转日变红。
-2. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对
-   不可迭代值 for-in 目前报 `UndefinedProperty`（降糖为 `.iter` 方法调用 miss），
-   `NotIterable` 专用码已预留未接线，措辞会变——负向用例只断言 RuntimeError、
-   不配 `.err`。
-3. **曾为禁区、现已落地（可正常写用例）**：用户类运算符重载——十个算子（`+ - * / %`、四个比较、一元 `-`）
-   按 dunder 方法名（`__add__` 一族，见 `src/aria.hpp` 的 `kOp*Name`）定义，实例参与运算时按名从实例 fields
-   （可遮蔽）与类链取实现；实例取不到钩子即成员缺席（`<class Box> has no member '__add__'`），内置类型没实现
-   的算子报「本类型不支持」（`type List does not support '__add__'`），两者都不是数值路径的旧文案。
-   **调用重载同款**：对象被调用（`obj(args)`）时按 `__call__` 取实现（与算子同一个「取实现再调用」协议：
-   实例 fields 优先再类链），实例取不到即成员缺席（`<class Box> has no member '__call__'`），其余类型报
-   `type List does not support '__call__'`；非对象值仍报 `call non-callable Int`；类本身仍走实例化。
-   字符串 `+` 拼接与四个比较算子（`<`/`<=`/`>`/`>=`）
-   ——两者都要求两侧皆 `String`、不做隐式转换（显式转换走 `str()`），比较按**无符号字节序**
-   （与 `len`/`s[i]` 同字节域，大小写敏感、无 collation）；模块成员访问——模块的顶层绑定即
-   成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报 `TypeMismatch`。09_modules 已改为
-   直接经 `H.x` 观察辅助模块（旧的「模块全局未导出」注记失效）。list 方法面——push/pop/insert/
-   remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/join/iter：变更方法一律
-   就地改、返 nil（remove 例外：移除**全部** == 命中元素、返命中布尔，miss 走返回值不报错）；
-   remove_at(i) 按位置移除返元素、负数从尾计数；sort 就地升序，域为全数值或全字符串（与比较
-   算子同源），NaN 排最前；find 未命中 nil（aria 有负下标故 -1 是合法下标，miss 即取末元素
-   的 Python 式坑，Ruby 返 nil 同款；string find 同）、find/contains/remove 走 `==` 内容判定；size/
-   is_empty 为元素数与空表谓词（全局 len 的方法形态）。map 方法面 -- size/is_empty/has/get/keys/
-   values/pairs/remove/clear/iter（iter 批 5 已有）：**键判定一律走表内判等 `===`、与下标读同域**（int 1
-   与 f64 1.0 是不同键、可变对象作键按身份；判键方法不做 `==` 内容相等，那是 list 的域）；`has(key)`
-   返 Bool（方法名取 has 不取 contains -- map 上 contains 有「判键还是判值」二义）；`get(key)` 单参、
-   未命中返 nil 不报错（下标读 `m[k]` 未命中仍报 KeyError；map 可合法存 nil，故 get 的 nil 与「键存在
-   而值为 nil」不可分，分清用 has）；`remove(key)` 命中 true 未命中 false（与 list remove 同口径，不做
-   Python pop 式返被删值）；`clear()` 原地清空；`keys()`/`values()`/`pairs()` 各铸新 list 快照（与源 map
-   解耦，序 unspecified、与 for-in 同，用例不得依赖具体序；三者同槽位序，故同一次快照内 `keys()[i]`、
-   `values()[i]` 与 `pairs()[i]` 三元对齐）；`pairs()` 每元素是 `[k, v]` 二元 list（与 for-in 每轮产出、
-   `iter().next()` 同一形状）。
+1. **不要钉临时未实装行为**：`range` 方法面（现仅 `iter`）、**判等（`==`/`!=`）与下标的重载**
+   （算子与调用的重载已落地，见下）、`NotIterable`/`IteratorProtocol` 专用码接线、defer 与协程
+   均未落地--写「期待报错」的负向用例会在翻转日变红。
+2. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对不可迭代值
+   for-in 目前报 `UndefinedProperty`（降糖为 `.iter` 方法调用 miss，非对象落原语统一文案
+   `type Int does not support field access`），`NotIterable` 专用码已预留未接线，措辞会变
+   --负向用例只断言 RuntimeError、不配 `.err`。
+
+### 可正常写用例的语言特性
+
+- **运算符重载**：用户类按 dunder 方法名定义（`+ - * / %`、四个比较、一元 `-`，见 `src/aria.hpp`
+  的 `kOp*Name`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
+  缺席（`<class Box> has no member '__add__'`），内置类型没实现该算子报「本类型不支持」
+  （`type List does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
+  `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值仍报
+  `call non-callable Int`，类本身仍走实例化。
+- **字符串 `+` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：都要求两侧皆 `String`、不做隐式转换
+  （显式转换走 `str()`），比较按**无符号字节序**（与 `len`/`s[i]` 同字节域，大小写敏感、无 collation）。
+- **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报
+  `TypeMismatch`；09_modules 直接经 `H.x` 观察辅助模块。
+- **list 方法面**（push/pop/insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/
+  join/iter）：变更方法一律就地改、返 nil；`remove` 例外（移除**全部** `==` 命中元素、返命中布尔，
+  miss 走返回值不报错）；`remove_at(i)` 按位置移除返元素、负数从尾计数；`sort` 就地升序，域为全数值
+  或全字符串（与比较算子同源），NaN 排最前；`find` 未命中返 nil（aria 有负下标，故「未命中返 -1」
+  是 Python 式坑）、`find`/`contains`/`remove` 走 `==` 内容判定；`size`/`is_empty` 为元素数与空表
+  谓词（全局 `len` 的方法形态）。
+- **map 方法面**（size/is_empty/has/get/keys/values/pairs/remove/clear/iter）：**键判定一律走表内
+  判等 `===`、与下标读同域**（int 1 与 f64 1.0 是不同键、可变对象作键按身份；判键方法不做 `==`
+  内容相等，那是 list 的域）；`has(key)` 取 `has` 不取 `contains`（后者在 map 上「判键还是判值」
+  二义）；`get(key)` 单参、未命中返 nil 不报错（下标读 `m[k]` 未命中仍报 KeyError；map 可合法存
+  nil，故 `get` 的 nil 与「键存在而值为 nil」不可分，分清用 `has`）；`remove(key)` 命中 true 未命中
+  false（与 list `remove` 同口径，不做 Python `pop` 式返被删值）；`clear()` 原地清空；
+  `keys()`/`values()`/`pairs()` 各铸新 list 快照（与源 map 解耦，序 unspecified、与 for-in 同，
+  用例不得依赖具体序；三者同槽位序，故同一次快照内 `keys()[i]`、`values()[i]` 与 `pairs()[i]`
+  三元对齐）；`pairs()` 每元素是 `[k, v]` 二元 list（与 for-in 每轮产出、`iter().next()` 同一形状）。
 
 ## 如何新增用例
 
@@ -124,7 +124,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - 发现：`ARIA_LANG_CORPUS_DIR`（CMake 注入，见 `tests/CMakeLists.txt`）为根递归收集
   `*.aria`，跳过 `lib` 目录分量，排序注册（用例集确定）。
 - `gtest_discover_tests(aria_tests DISCOVERY_MODE PRE_TEST)`：ctest 启动时枚举测试。
-  语料是文件驱动参数化，新增 `.aria` 不会触发重链接，构建期枚举会漏新脚本——
+  语料是文件驱动参数化，新增 `.aria` 不会触发重链接，构建期枚举会漏新脚本--
   切 PRE_TEST 后无需任何额外步骤。
 - 失败消息含脚本相对路径、期望类别与 golden/.err 差异摘要；`LanguageCorpusDiscovery.
   CorpusTreeIsHealthy` 钉住语料树非空、无违反命名约定的脚本、用例名不撞车。

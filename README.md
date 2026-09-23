@@ -51,7 +51,7 @@ print("42".to_int() + 1);                                    # 43
 
 ## 语言特性
 
-- **值与类型**：`nil` / `bool` / `int`（48 位，`i48`）/ `float`（`f64`）/ `string`（UTF-8）/
+- **值与类型**：`nil` / `bool` / `int`（48 位整数，值域 `[-2^47, 2^47)`）/ `float`（`f64`）/ `string`（UTF-8）/
   `list` / `map` / `range`，以及函数、闭包、类、实例、模块、迭代器等对象类型。
   相等分两级：`==` 内容相等（数值跨 `int`/`float` 成立），`===` 严格相等。
 - **函数**：一等值、`fun(x) { ... }` lambda、默认参数、`...varargs`；闭包捕获即引用，同一变量
@@ -118,7 +118,8 @@ ctest --test-dir build --output-on-failure
 兼作 GC 压力安全网），详见 `tests/language/README.md`。
 
 `bench/` 下有独立的性能基准（`lexer_bench` / `hashtable_bench` / `vm_bench`），数字只在优化构建下
-有意义。
+有意义：Release 默认开 LTO（`-DARIA_ENABLE_LTO=OFF` 可关），LTO 本身与 Debug/Release 之差都足以
+量级性地改变读数，跨构建对比前先固定这两项。
 
 值表示默认取 NaN-boxing；想验证等价的 TagValue 路径，另配一个构建目录：
 

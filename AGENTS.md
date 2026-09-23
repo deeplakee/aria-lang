@@ -4,9 +4,9 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile / bytecode 层、GC、Object 子类型（string / function / native / module / exception / closure / upvalue / class / instance / bound-method / list / map / range / 迭代器族）、AriaVM M1 主循环、M2 模块表与 IMPORT、M3 异常 try/catch/throw、M4 闭包（捕获即引用）、M5 类（阶段 1-3：对象层 + VM 机制 + 编译翻转）、P0 语言面补齐（批 1-9：值寄存器组、默认参数与 varargs、match 降糖、list/map/range 值表示与下标（负数从尾计数、range 键即切片）、方法机制与迭代协议（bootstrap 类 + 每源迭代器子类；`recv.name(args)` 走两段式 `PREPARE_METHOD` + `CALL_METHOD`，解析先于实参求值、经 `Object::load_field_unbound` 不绑定取被调值）、string 方法面 17 方法、list/map 方法面 14/10 方法、解构三类位置含 rest 后缀；语义决策与批次细节存档于 `.claude/reference/runtime/collections-builtin-methods-plan.md`）、计划表外三缺口（字符串 `+` 拼接与四个比较算子、模块成员访问（顶层绑定即成员、只读））、运算符重载（`__add__` 等 11 个 dunder 钩子 = 算术五 + 比较四 + 一元负 + `__call__` 调用钩子，经 `Object::op_*_impl` 族「取实现」接线，仅左操作数/被调用对象触发；String 的 `+` 与四比较即内建钩子形态）。
-- **待落地**：M6 协程（单循环切换模型见 vm-design.md §4.9）；range 方法面按需另批（现仅 iter）；defer 善后为可选后续，不绑定里程碑（try/finally 已裁撤的后继）。
-- 里程碑级细节见 `.claude/reference/runtime/vm-design.md` §6 路线表；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
+- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M5（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子）。
+- **待落地**：M6 协程（单循环切换模型见 `vm-design.md` §4.9）；range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
+- 里程碑级细节见 `.claude/reference/runtime/vm-design.md` §6 路线表，各特性语义决策见对应 `.claude/reference/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 
 ## 文档与参考（按需加载）
 
@@ -23,7 +23,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 | `src/compile/**` | `.claude/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
 | `src/bytecode/**` | `.claude/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
 | `src/runtime/**` | `.claude/rules/runtime.md` | FrameStack / Movement / AriaVM / Builtins（含异常通道落地状态） |
-| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjNativeFn / ObjModule / ObjException |
+| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjUpvalue / ObjClosure / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjNativeFn / ObjException / ObjModule / iterator 族 |
 | `src/memory/**` | `.claude/rules/memory.md` | Buffer / Array / Allocator / HashTable / InternPool / GC |
 
 ### 深度设计文档 `.claude/reference/`（不自动加载，需要时 Read）
@@ -34,9 +34,9 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（已全部落地，存档；含语义模型与六项设计决策）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
-- `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存三铁则**已于 2026-09-20 反转：缓存取消**、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
-- `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划（批 1-2 编译器前置批：默认参数 / match 降糖；批 3-9：方法机制两层分派、迭代协议、下标语义与集合/内置方法各批）。
-- `memory/gc-implementation-plan.md` -- GC 设计与 Phase 1/2 落地记录。
+- `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
+- `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划与落地记录（编译器前置批 + 方法机制与迭代协议、下标语义、各类型方法面、解构）。
+- `memory/gc-implementation-plan.md` -- GC 设计、分阶段路线与落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 
@@ -54,17 +54,9 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 构建
 
-- CMake ≥ 3.20，C++23。clang++ / clang-format / clangd 均已在 PATH 中，可直接调用。在 `build` 目录中进行构建。
-- 单文件语法检查必须带 `-I src`，否则 `common.hpp`/`type.hpp` 找不到：
-  ```sh
-  clang++ -std=c++23 -I src -fsyntax-only <file>
-  ```
-- 验证 TagValue 值表示（`common.hpp` 的 `USING_NANBOXING` 关闭路径）：独立 build 目录配 `-DARIA_USE_TAGVALUE=ON` 全量构建 + ctest：
-  ```sh
-  cmake -S . -B build/tagvalue -DARIA_USE_TAGVALUE=ON -DCMAKE_BUILD_TYPE=Debug
-  cmake --build build/tagvalue --target aria_tests -j
-  ctest --test-dir build/tagvalue --output-on-failure
-  ```
+- CMake ≥ 3.20，C++23。clang++ / clang-format / clangd 均已在 PATH 中，可直接调用。在 `build` 目录中进行构建（配置 / 构建 / 测试命令见 `README.md`「构建与运行」「测试与基准」）。
+- 单文件语法检查必须带 `-I src`，否则 `common.hpp`/`type.hpp` 找不到：`clang++ -std=c++23 -I src -fsyntax-only <file>`。
+- 验证 TagValue 值表示（`common.hpp` 的 `USING_NANBOXING` 关闭路径）：另配独立 build 目录并配 `-DARIA_USE_TAGVALUE=ON` 全量构建 + ctest（命令同 README，构建目录换 `build/tagvalue`）。
 - 依赖 `external/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
 
 ## Git 提交纪律（强制）
@@ -81,12 +73,12 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 错误处理（src/error/）
 
-原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.claude/rules/error.md`（读 `src/error/**` 时自动加载）。
+原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.claude/rules/error.md`，通道 2 的落地状态见 `.claude/rules/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
 
-- **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。运行期错误消息不含位置（位置由未捕获出口的堆栈跟踪行给出），故**运行期错误不就地构造 Error**，Error 仅在 `dispatch_loop()` 未捕获出口物化（见通道 2）。
-- **四条错误通道**（通道 2 落地状态见 `.claude/rules/runtime.md`「VM 异常通道」，设计见 vm-design.md §4.5-§4.8）：
-  1. **`Result<T, Error>` 返回**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错）。VM 侧 `run()` 的 `Result` 仅为未捕获出口的边界返回类型，不用于 dispatch_loop 内部逐站传播（在途错误走通道 2）。
-  2. **VM 自管异常状态（运行期主通道）**：aria 的 throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，不含位置前缀），装箱为 Value 存入当前执行上下文的挂起错误寄存器（`Movement::pending_error_`）。装箱入口 `AriaVM::raise(code, detail)`；原生函数与 `call_value` 族以 bool 为成败信号（惯用法 `return vm.fail(...)`，`FailSignal` 哨兵按调用点返回类型转 false/nullptr/nullopt）；用户 `throw` 经 `THROW` 原值入寄存器（catch 绑原值保类型）；装箱后一律直接 `unwind()`。`unwind()` 自最内帧向外按 `last_ip` 查 CodeUnit 异常记录表（`TryRecord`，无 `SETUP_EXCEPT` 指令、不依赖 C++ 异常）：命中截值栈跳 handler，全未命中才物化 `Error` 并烘焙外->内逐帧 `at` 堆栈跟踪。
+- **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
+- **四条错误通道**（设计见 vm-design.md §4.5-§4.8）：
+  1. **`Result<T, Error>` 返回**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错）。VM 侧 `run()` 的 `Result` 仅为未捕获出口的边界返回类型，dispatch_loop 内部不逐站传播。
+  2. **VM 自管异常状态（运行期主通道）**：throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，**不含位置**），装箱为 Value 存入当前执行上下文的挂起错误寄存器。故**运行期错误不就地构造 Error**：`Error` 仅在 `unwind()` 全未命中的出口物化，位置由该出口烘焙的逐帧 `at` 堆栈跟踪给出。
   3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。
 
@@ -110,13 +102,13 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 参数传递（指针 / 引用 / 按值的选择）同属强制，规则见根目录 `CPP_Naming_Convention.md`「Parameter Passing」节。要点：**所有权只经 `UPtr` 出现**；object 层 GC 对象类型（`Object`/`Obj*`）一律按指针；服务/宿主（`GC`/`AriaVM`/`SourceFile` 等借用期必非空）按引用；仅可空（`nullptr` 合法）、位置/槽位（`Value*`）、dyn_cast 查询族与容器分配器注入（`Alloc*`）用指针；AST 节点非空借用按引用（`visitXxxNode(XxxNode&)`）；小值类型（`Value`/标量/`SourceLoc`/`StringView`/`Span`）按值，`const` 写在定义处（不改参契约，纯声明不写）。
 
-变量与参数名的语义同属强制，规则见根目录 `CPP_Naming_Convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单——`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
+变量与参数名的语义同属强制，规则见根目录 `CPP_Naming_Convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单--`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`src`（源文件/源码文本，随 `SourceFile`）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
 
 返回值处置同属强制，规则见根目录 `CPP_Naming_Convention.md`「Nodiscard 与结果丢弃」节。要点：丢弃 `[[nodiscard]]` 返回值写 `std::ignore = f(...)`，不写 `(void) f(...)`（含 `AriaVM::fail`，其惯用出口仍是 `return vm.fail(...)`）；被调函数未标 `[[nodiscard]]` 时调用语句前不留 `(void)`，那是纯装饰、直接删；压制未用**变量**的 `(void) x;` 保留，压制未用**参数**一律不许（签名照常带类型带参数名）；用 `std::ignore` 的 TU 显式 `#include <tuple>`。
 
 ## 类型（src/type.hpp）
 
-**不要直接用 `std::string`/`int`/`size_t` 等**，用别名：`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`（= `std::expected`）/`Opt<T>`。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
+**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.claude/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
 
 ## 代码组织
 
@@ -127,7 +119,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 类初始化
 
-- **简单类**（纯数据聚合的小结构体，如 `src/source_file.hpp` 中的 `LineCol`）：字段少、无逻辑、初始化无依赖，用类内默认成员初始化即可，不必上构造函数。
+- **简单类**（纯数据聚合的小结构体，如 `src/util/source_file.hpp` 中的 `LineCol`）：字段少、无逻辑、初始化无依赖，用类内默认成员初始化即可，不必上构造函数。
 - **复杂类**（带逻辑或多步/有依赖的初始化，如 `Token`/`Lexer`/`SourceFile`/`GC`）：成员声明处**不写默认值**（或仅写无争议空态如 `= nullptr`/`= 0`），所有初始化统一收敛进构造函数（初始化列表 + 函数体），不要把初始化散落到各字段声明处。
 - 构造函数初始化列表统一用**大括号**写每个成员，形如 `FooClass : mem1{...}, mem2{...}, ... {}`（不用小括号 `mem1(...)`）。大括号即统一初始化语法，会禁止窄化转换，也与项目内其它初始化（如 `SourceFile` 构造）风格一致。
 
@@ -156,19 +148,11 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 测试
 
-用 Google Test，位于 `tests/`（按 `tests/<module>/` 分目录）。GTest 通过 `FetchContent_Declare`（CMakeLists.txt 末尾）下载，配置时联网拉取 `v1.14.0`。
+用 Google Test，位于 `tests/`（按 `tests/<module>/` 分目录）。GTest 通过 `FetchContent_Declare`（CMakeLists.txt 末尾）下载，配置时联网拉取 `v1.14.0`。配置 / 构建 / 运行命令见 `README.md`「测试与基准」。
 
 - 新增测试：在 `tests/<module>/` 加 `test_<module>.cpp`，并在 `tests/CMakeLists.txt` 的 `aria_tests` 源列表里登记。
 - 测试链接 `aria_core` + `gtest_main`，用 `gtest_discover_tests` 注册到 ctest。
-- 配置 + 构建 + 运行（构建目录用 `build/`，勿占用 IDE 的 `cmake-build-*`）：
-  ```sh
-  # Windows（clang，MinGW Makefiles 生成器）
-  cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
-  # Linux / macOS（默认生成器，clang++ 或 g++）
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-  cmake --build build --target aria_tests -j
-  ctest --test-dir build --output-on-failure
-  ```
 - 临时文件用 `testing::TempDir()`（gtest 提供）写入，测试结束自动清理。
+- `tests/language/` 另有 aria 自己写的脚本语料（正向 assert 收口、负向钉错误码，端到端驱动解释器，兼作 GC 压力网），跑法与约束见 `tests/language/README.md`；改语言面时它同样是验收面。
 
 `build/` 与 `cmake-build-*` 均已加入 `.gitignore`。

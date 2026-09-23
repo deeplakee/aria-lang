@@ -55,9 +55,9 @@ concept Sortable = true;
 ```cpp
 void process_file();
 
-int calculate_total_price();
+i32 calculate_total_price();
 
-std::string get_file_name();
+String get_file_name();
 ```
 
 ------
@@ -65,9 +65,9 @@ std::string get_file_name();
 ## Variables
 
 ```cpp
-int retry_count = 3;
+i32 retry_count = 3;
 
-std::string file_name;
+String file_name;
 
 auto current_time = std::chrono::steady_clock::now();
 ```
@@ -84,8 +84,8 @@ public:
     }
 
 private:
-    std::vector<char> data_;
-    size_t capacity_;
+    List<char> data_;
+    usize capacity_;
 };
 ```
 
@@ -94,11 +94,11 @@ private:
 ## Constants
 
 ```cpp
-constexpr int kMaxConnections = 128;
+constexpr i32 kMaxConnections = 128;
 
 constexpr std::chrono::seconds kDefaultTimeout{30};
 
-static constexpr double kPi = 3.141592653589793;
+static constexpr f64 kPi = 3.141592653589793;
 ```
 
 ------
@@ -200,6 +200,7 @@ void emit_expr(ExprNode& node);                                                 
 | `ch` | 单个字符 | 参数 |
 | `lhs`/`rhs` | 二元操作数 | 参数/局部 |
 | `loc` | 源位置（随 `SourceLoc` 类型短名） | `SourceLoc` 的参数/局部 |
+| `src` | 源文件 / 源码文本（通用短写，与 `source` 同指） | 随 `SourceFile` 的参数/局部/成员（`Lexer::tokenize(SourceFile& src)`、成员 `src_`；完整名 `source_` 与它并存时各表其物） |
 | `cp` | UTF-8 码点 | `codepoint` 的参数/局部（utf8 层、Lexer 扫描） |
 | `expr`/`stmt` | 表达式/语句 AST 节点 | AST 节点的参数/字段/局部 |
 | `ctx` | 执行上下文 | `FunctionCtx`/`ModuleCtx`/`AriaVM` 等上下文的参数/局部（类型名 `XxxCtx` 不在此列） |
@@ -356,13 +357,13 @@ buffer
 禁止：
 
 ```cpp
-const int MAX_SIZE = 1024;
+const i32 MAX_SIZE = 1024;
 ```
 
 改为：
 
 ```cpp
-constexpr int kMaxSize = 1024;
+constexpr i32 kMaxSize = 1024;
 ```
 
 ------

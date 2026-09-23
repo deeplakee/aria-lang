@@ -22,12 +22,12 @@ using aria::Value;
 
 // 手搓 CodeUnit(emit_op + 裸操作数)驱动反汇编,断言 disassembleInstruction 的单行指令文本
 // (与 disassemble() 每行的指令段一致:opcode 名左对齐 16 列 + 两空格 + 操作数段)。
-// 用意:OpFormat 的 10 个分发分支各覆盖至少一条指令,锁住表驱动解码的渲染回归 --
-// 新增 opcode 时若 X 表格式列填错,此处先红。
+// 用意:锁住表驱动解码的渲染回归 -- 新增 opcode 时若 X 表格式列填错,此处先红。
+// 覆盖 OpFormat 十个分发分支里的九个;RegU8(LOAD_REG)分支未在此单测覆盖。
 
 TEST(Disassembler, OpCodeTablesConsistentWithList) {
     // 名字/格式表与 X 表同源生成:数组以 kOpCodeCount 显式定界,行数不符即编译错;此处锁布局哨兵。
-    EXPECT_EQ(kOpCodeCount, 64u); // 删 INVOKE_METHOD、增 PREPARE_METHOD + CALL_METHOD 后的净增 1
+    EXPECT_EQ(kOpCodeCount, 64u); // X 表行数哨兵,改指令集须同步改此值
     EXPECT_EQ(kOpCodeNames[0], "HALT");
     EXPECT_EQ(kOpCodeNames[kOpCodeCount - 1], "RETURN");
     EXPECT_EQ(kOpCodeFormats[0], OpFormat::Simple);

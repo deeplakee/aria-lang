@@ -253,7 +253,6 @@ TEST(ObjRangeIterator, ExclusiveExcludesUpper) {
     EXPECT_FALSE(iter->has_next());
 }
 
-// 空区间零迭代:from>to(含上界)与 from==to(不含上界)首问即 false。
 // 空区间零迭代:仅 from==to 且不含上界(5...5)首问即 false。
 TEST(ObjRangeIterator, EmptyExclusiveZeroRounds) {
     AriaVM vm;

@@ -64,7 +64,7 @@ namespace {
 TEST(ObjModule, Basics) {
     GC   gc;
     auto name  = new_string(gc, "lib/utils");
-    auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto guard = gc.make_guard(name); // 工厂不守卫入参:name 裸持跨 new_module 的 new_string(cwd)
     auto m     = new_module(gc, name);
     EXPECT_TRUE(aria::Object::is<ObjModule>(m));
     EXPECT_EQ(m->type(), aria::ObjType::MODULE);
@@ -104,7 +104,7 @@ TEST(ObjModule, GlobalsSet) {
 TEST(ObjModule, TraceKeepsNameEntryAndGlobals) {
     GC   gc;
     auto name  = new_string(gc, "lib/utils");
-    auto guard = gc.make_guard(name); // 工厂不再守卫入参:name 裸持跨 new_module 的 new_string(cwd)
+    auto guard = gc.make_guard(name); // 工厂不守卫入参:name 裸持跨 new_module 的 new_string(cwd)
     auto m     = new_module(gc, name);
     guard.push(m); // 模块入临时根:collect -> mark_roots_ -> trace_gray_ -> m.trace
 

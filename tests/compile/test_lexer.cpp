@@ -66,7 +66,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
-    // 关键字 23 个（finally 已裁撤，现为普通 identifier）
+    // 关键字 23 个（finally 非关键字，按普通 identifier 处理）
     const String        src      = "fun def var if else while for in break continue return import as "
                                    "try catch throw print nil true false this super match";
     const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
@@ -95,7 +95,7 @@ TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
 }
 
 TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
-    // finally 回归普通 identifier
+    // finally 是普通 identifier
     const String        src      = "finally";
     const List<TokType> expected = {TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
@@ -222,7 +222,7 @@ TEST(LexerInteger, Decimal) {
 }
 
 TEST(LexerFloat, ScientificNotation) {
-    // 含 e/E 指数一律作 float（科学计数法），不再走 int
+    // 含 e/E 指数一律作 float（科学计数法），不作 int
     const auto  lexed  = lex_ok("1e2 1000e-1 0e-5 1e-1 1.5e2");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 6u);
@@ -332,7 +332,7 @@ TEST(LexerFloat, DotNotConsumedForField) {
 }
 
 TEST(LexerFloat, DigitDotNotConsumed) {
-    // 1.foo：. 后非数字，. 不再被贪心消费为 float 1.，而是留给 Dot token。
+    // 1.foo：. 后非数字，. 不被贪心消费为 float 1.，而是留给 Dot token。
     // 数字作 Int(1)，.foo 的字段访问语义由 parser 决定（lexer 只负责切词）。
     const auto  lexed  = lex_ok("1.foo");
     const auto& tokens = lexed->tokens;
@@ -345,7 +345,7 @@ TEST(LexerFloat, DigitDotNotConsumed) {
 }
 
 TEST(LexerFloat, IncompleteFormsRejected) {
-    // 禁止不完整浮点字面量：.5 / 5. 不再作为单个 float token。
+    // 禁止不完整浮点字面量：.5 / 5. 不作单个 float token。
     // .5 -> Dot + Int(5)；5. -> Int(5) + Dot（. 留给 Dot，由 parser 拒绝）。
     {
         const auto  lexed  = lex_ok(".5");

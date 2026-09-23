@@ -385,7 +385,7 @@ TEST(CliOverloads, ListOfString) {
 }
 
 TEST(CliOverloads, ConstParserParses) {
-    // parse 为 const：定义/结果分离后 const Cli 可直接解析（builder 不再被解析改写）
+    // parse 为 const：const Cli 可直接解析（builder 不被解析改写）
     auto builder = Cli{};
     builder.add_flag("verbose", "详细输出", 'v').add_positional("script", "脚本文件");
     const auto parser = builder; // 拷一份定型的定义
@@ -452,7 +452,7 @@ TEST(CliHelpText, OptionsSectionFlagsAndOptions) {
 }
 
 TEST(CliHelpText, LongFlagNameAligned) {
-    // 长名按 max_prefix+2 对齐：自身是最长前缀，描述跟 2 空格（不再贴紧 0 空格）
+    // 长名按 max_prefix+2 对齐：自身是最长前缀，描述跟 2 空格
     auto parser = Cli{};
     parser.add_flag("a-very-long-flag-name", "长名开关");
     const auto text = parser.help();

@@ -298,7 +298,7 @@ TEST(Compiler, ListReverse) {
 }
 
 // find/contains：value_equal（== 内容递归）判定；find 未命中 nil（下标永不为 nil；
-// 有负下标故 -1 是合法下标，miss 时 xs[find(x)] 会静默取末元素——Python str.find 的坑，Ruby 返 nil 同款）。
+// 有负下标故 -1 是合法下标，miss 时 xs[find(x)] 会静默取末元素--Python str.find 的坑，Ruby 返 nil 同款）。
 TEST(Compiler, ListFindAndContains) {
     EXPECT_EQ(run_int("var xs = [1, nil, \"a\", [2]]; return xs.find(nil) * 1000 + xs.find(\"a\") * 100 + xs.find([2]) "
                       "* 10;"),
@@ -492,7 +492,6 @@ TEST(Compiler, MapEqualityIsContent) {
 }
 
 // forIn 遍历 map:循环变量拿到 [k, v] 二元 list(产出顺序 unspecified,不依赖)。
-// 解构目标 for ([k, v] in ...) 随批 8。
 TEST(Compiler, ForInMapYieldsKeyValuePairs) {
     EXPECT_EQ(run_int("var m = {\"a\": 1, \"b\": 2}; var sum = 0; for (pair in m) { sum = sum + pair[1]; } "
                       "return sum;"),
@@ -796,8 +795,7 @@ TEST(Compiler, StringImmutableStoreFails) {
     EXPECT_NE(out.error().message().find("string does not support subscript assignment"), std::string::npos);
 }
 
-// forIn string:逐码点产出 1-char string(文法「string->字符」,D5)。产出验证用赋值 +
-// 比较(string 的 + 拼接运算符不在批 6 范围,仍是基类默认报错)。
+// forIn string:逐码点产出 1-char string(文法「string->字符」,D5)。产出验证用赋值 + 比较。
 TEST(Compiler, ForInStringYieldsCharStrings) {
     EXPECT_EQ(run_int(R"(var first = ""; var n = 0; for (ch in "abc") { if (n == 0) { first = ch; } n = n + 1; } )"
                       R"(if (first == "a" && n == 3) { return 1; } return 0;)"),
@@ -945,7 +943,7 @@ TEST(Compiler, VarDestructureBindsByPosition) {
     EXPECT_EQ(run_int("var [a, b] = [1, 2], c = 3; return a * 100 + b * 10 + c;"), 123);
 }
 
-// var 解构：空模式与全 `_` 模式照旧求值初始化器（副作用照跑）但不取值——零访问故无越界可报。
+// var 解构：空模式与全 `_` 模式照旧求值初始化器（副作用照跑）但不取值--零访问故无越界可报。
 TEST(Compiler, VarDestructureZeroAccessEvaluatesInitializer) {
     EXPECT_EQ(run_int("var n = 0; fun f() { n = n + 1; return [1]; } var [] = f(); return n;"), 1);
     EXPECT_EQ(run_int("var [_, _] = [1]; return 9;"), 9);

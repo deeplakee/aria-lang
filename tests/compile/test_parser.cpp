@@ -611,19 +611,19 @@ TEST(ParserStmt, TryCatch) {
     const String out = dump_ok("try { print 1; } catch (e) { print e; }");
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");
-    // 不再解析 finally 子句
+    // finally 非关键字:解析器不产生 finally 子句节点
     EXPECT_EQ(out.find("Finally"), String::npos);
 }
 
 TEST(ParserStmt, TryWithoutCatchParses) {
     const String out = dump_ok("try { print 1; }");
     expect_has(out, "TryStmt");
-    // parse 层允许无 catch（语义阶段才校验 TryWithoutHandler）
+    // parse 层允许无 catch（CodeGen 期才校验 TryWithoutHandler）
     EXPECT_EQ(out.find("Catch"), String::npos);
 }
 
 TEST(ParserStmt, FinallyIsPlainIdentifier) {
-    // finally 裁撤后回归普通标识符，可作变量名
+    // finally 是普通标识符，可作变量名
     const String out = dump_ok("var finally = 1; print finally;");
     expect_has(out, "VarDecl bindings=1");
 }
@@ -669,7 +669,7 @@ TEST(ParserError, DefBodyFunMustBeNamed) {
 
 TEST(ParserError, DefBodyVarMultiBindingRejected) {
     // memberVar 窄形态：var 后仅单标识符绑定；语句级 varDecl 的多绑定在成员位不收，
-    // member_var 就地报 ExpectedToken（解析期拒绝，非编译期 not_impl）。
+    // member_var 就地报 ExpectedToken（解析期即拒）。
     auto p = parse_src("def C { var a = 1, b = 2; }");
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
@@ -685,8 +685,7 @@ TEST(ParserError, DefBodyVarPatternRejected) {
 }
 
 TEST(ParserError, SuperRequiresDotMember) {
-    // superExpr 单形（super "." identifier）：裸 super 文法不收，解析期 ExpectedToken
-    // （原语义阶段 InvalidSuperUse 随节点收口退役）。
+    // superExpr 单形（super "." identifier）：裸 super 文法不收，解析期 ExpectedToken。
     auto p = parse_src("var x = super;");
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());

@@ -129,7 +129,7 @@ namespace {
     ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
     // 显式目录版:intern + 守卫 name,先守 dir 再 new_string(name),调 new_module(3-arg)。
-    // 工厂不再替调用方守卫入参(本文件收 ObjString* 入参的各 make_*/new_* 助手同理,下文不再
+    // 工厂不替调用方守卫入参(本文件收 ObjString* 入参的各 make_*/new_* 助手同理,下文不再
     // 赘述),返回的 m 未根,调用方跨 GC 点持有须自行再守卫。
     ObjModule* make_module(GC& gc, const StringView name, ObjString* dir) {
         auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
@@ -1113,7 +1113,7 @@ TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
     EXPECT_EQ(aria::Object::as<ObjModule>(b_a->value.as_obj()), a);
 }
 
-// 重复导入同一模块:第二次 IMPORT 命中 Loaded 模块(表查重复用),不再 run-once。检视 modules 中
+// 重复导入同一模块:第二次 IMPORT 命中 Loaded 模块(表查重复用),不重跑模块体。检视 modules 中
 // helper 仅一个、Loaded、globals.x==42。
 TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
 
@@ -1638,9 +1638,8 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 }
 
 // ============================================================
-// M5 类机制(阶段 2:VM 机制,手写 emit;编译器发射阶段 3 翻转)。全部跑在
-// AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼 bootstrap 根 /
-// 实例化快慢路径 / LOAD_FIELD 现场绑定 / 超类链的分配安全。
+// M5 类机制(手写 emit)。全部跑在 AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼
+// bootstrap 根 / 实例化快慢路径 / LOAD_FIELD 现场绑定 / 超类链的分配安全。
 // ============================================================
 
 // 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
@@ -1672,7 +1671,6 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     // seed = Object 的原生 no-op init(MAKE_CLASS 继承,Value 经 === 判同):
     EXPECT_TRUE(aria::value_identical(inst->klass()->init(), vm.object_class()->init()));
     // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
-    // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
     guard.push(inst);
     auto nope = new_string(gc, "nope");
     guard.push(nope);
@@ -1680,7 +1678,7 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 }
 
 // 值寄存器组:LOAD_REG ObjectClass 压 Object 根类(regs_[ObjectClass],bootstrap 填充;
-// 值经 === 判同),退役 LOAD_OBJECT 的直推路径由此承载。
+// 值经 === 判同)。
 TEST_F(AriaVMStress, LoadRegPushesObjectClass) {
     auto& gc    = vm.gc();
     auto  fn    = new_function(gc, "<main>", 0);
@@ -1979,10 +1977,10 @@ TEST_F(AriaVMStress, ClassWriteCreatesNewMember) {
     EXPECT_EQ(out->as_int(), 5);
 }
 
-// 方法经类上赋值改写(STORE_FIELD 类路径 = 静态写):旧解析沿用首解析绑定快照(bound);
-// 改写后新解析读回**原值**不绑定(赋值闭包无 defining class 戳 ⟹ 非方法槽,方法性看戳
-// 不看值类型),自由调用新值仍可执行。经类路径拷贝 MAKE_METHOD 出品的戳定闭包
-// (如 Foo.m = Base.m)保方法性,赋 lambda/裸函数降为静态。
+// 方法经类上赋值改写(STORE_FIELD 类路径 = 静态写):改写前已取出的 bound 值仍调旧闭包
+// (bound 自持 receiver + 闭包,不随类表更新);改写后重新读取该类字段得**原值**不绑定
+// (赋值闭包无 defining class 戳 ⟹ 非方法槽,方法性看戳不看值类型),自由调用新值仍可执行。
+// 经类路径拷贝 MAKE_METHOD 出品的戳定闭包(如 Foo.m = Base.m)保方法性,赋 lambda/裸函数降为静态。
 TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
 
     auto& gc    = vm.gc();
@@ -2056,7 +2054,7 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
     ASSERT_TRUE(out.has_value()) << out.error().message();
 
     auto fetch = [&](const char* n) { return m->globals().find(Value::from_obj(new_string(gc, n)))->value; };
-    EXPECT_EQ(fetch("r1").as_int(), 1); // 已解析实例沿用旧绑定(首解析快照)
+    EXPECT_EQ(fetch("r1").as_int(), 1); // 改写前取出的 bound 值固绑旧闭包
     const auto b2_v = fetch("b2");
     // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
     EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);
@@ -2065,9 +2063,9 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
     EXPECT_EQ(fetch("r2").as_int(), 2);
 }
 
-// super 不污染动态派发缓存(铁则 2):Sub.m 内 super.m() 取被覆写前的父实现、绑 this
-// 后 CALL -- 若 super 命中被写进实例 fields,第二次 i.m() 会被缓存劫持到 Base.m
-// (结果 1 而非 51)。两次调用均为 51 即未污染。
+// super 调用不写穿接收者:Sub.m 内 super.m() 从父类起读穿透取被覆写前的父实现、绑 this 调用；
+// 若该次解析把父实现落进实例(遮蔽自身 m),第二次 i.m() 会取到 Base.m(结果 1 而非 51)。
+// 两次调用均为 51 即 super 未污染接收者侧解析。
 TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
 
     auto& gc     = vm.gc();
@@ -2117,17 +2115,17 @@ TEST_F(AriaVMStress, SuperCallDoesNotPolluteCache) {
         cu.emit_op(OpCode::DUP, 1); // [i, i]
         emit_named(cu, OpCode::LOAD_FIELD, m_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1);         // [i, 51](第一次:super 命中,若被污染缓存则此调用已劫持)
+        cu.emit_byte(0, 1);         // [i, 51](第一次:走 Sub.m,其内 super 调父得 1 再加 50)
         cu.emit_op(OpCode::POP, 1); // [i]
         emit_named(cu, OpCode::LOAD_FIELD, m_name);
         cu.emit_op(OpCode::CALL, 1);
-        cu.emit_byte(0, 1); // [51](第二次:若缓存被污染成 Base.m 则得 1)
+        cu.emit_byte(0, 1); // [51](第二次:仍走 Sub.m,未被 super 解析污染成 Base.m)
         cu.emit_op(OpCode::RETURN, 1);
     }
 
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(out->as_int(), 51); // 两次均走 Sub.m(含 super 调父),缓存未被污染
+    EXPECT_EQ(out->as_int(), 51); // 两次均走 Sub.m(含 super 调父),接收者侧解析未被污染
 }
 
 // 深栈多临时值下的 STORE_FIELD 单槽下移:赋值两侧压多层临时值,若单槽下移
@@ -2258,7 +2256,7 @@ TEST_F(AriaVMStress, ThisFieldDeepStackInMethod) {
     EXPECT_EQ(out->as_int(), 136);
 }
 
-// 实例字段遮蔽同名静态成员(铁则 3:fields 命中优先):init 内 this.x=9 落 fields 表,
+// 实例字段遮蔽同名静态成员(fields 命中优先):init 内 this.x=9 落 fields 表,
 // 实例读 fields 命中得 9;类路径读静态表原槽仍得 1。
 TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
 
@@ -2865,7 +2863,7 @@ TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
         cu.emit_op(OpCode::CALL, 1);
         cu.emit_byte(1, 1); // [instance](init 把闭包存进 this.f)
         if (two_step) {
-            // 两步形态的发射序同编译器改动前：<recv> LOAD_FIELD m <args> CALL。
+            // 两步形态的发射序：<recv> LOAD_FIELD m <args> CALL。
             emit_named(cu, OpCode::LOAD_FIELD, f_nm); // [closure]
             emit_imm(cu, 3);                          // [closure, 3]
             cu.emit_op(OpCode::CALL, 1);

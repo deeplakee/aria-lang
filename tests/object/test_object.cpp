@@ -68,11 +68,10 @@ TEST(ObjectTryAs, ConstOverload) {
 
 // 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入
 // 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
-// 防将来基类签名漂移。探针类型随 override 落地而换:string 自批 6 起带下标/成员 override,
-// Module 自模块成员访问起 override load_field/store_field,故各分组挑当下仍未 override 的类型
-// 探默认(string 探 store_field、Module 探下标注解)。算子与可调用两侧已不在本协议族:两者各是一条
-// 独立的协议缝(算子实现是对象上的命名方法,见 aria.hpp kOp*Name;可调用侧是 Object::op_call_impl,
-// 由 call_value 的 switch default 臂消费),故各自的基类默认不在此钉。
+// 防将来基类签名漂移。探针取当下仍未 override 的类型:string 探 store_field(ObjString 无
+// store_field override)、Module 探下标(Module override 了 load/store_field)。算子与可调用
+// 两侧另属独立协议缝(算子实现是对象上的命名方法,见 aria.hpp kOp*Name;可调用侧是
+// Object::op_call_impl,由 call_value 的 switch default 臂消费),故各自的基类默认不在此钉。
 
 TEST(ObjectProtocolDefaults, MemberIndexDefaults) {
     AriaVM vm; // 报错经 vm.fail 入挂起寄存器

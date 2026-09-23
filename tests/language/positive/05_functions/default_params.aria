@@ -15,7 +15,7 @@ fun rep(n, times = n) {
 assert(rep(3) == 9);
 assert(rep(3, 2) == 6);
 
-// 默认值 + 体局部 var：求值路径栈平衡（曾因 STORE_LOCAL 残留错位，回归钉住）
+// 默认值 + 体局部 var：求值路径栈平衡（STORE_LOCAL 残留错位会令体 var 读到默认值残留）
 fun body_locals(n, m = n + 2) {
     var a = 100;
     var b = 7;

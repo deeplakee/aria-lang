@@ -571,7 +571,7 @@ TEST(CodeGen, UpvalueWriteThrough) {
 }
 
 // ============================================================
-// 反汇编核对（前向正确特性，VM 暂不能跑）
+// 反汇编核对（形状断言，不经 VM 运行）
 // ============================================================
 
 TEST(CodeGen, ForInDisassembly) {
@@ -749,7 +749,7 @@ TEST(CodeGen, ImportNestedInBlock) {
 }
 
 // var 自引用：声明名在初始化器求值后才登记，init 里的 x 沿 resolve 链落外层。函数内无外层
-// x -> 落全局，双 miss 抛运行期 UndefinedVariable（definite-assignment 已退役，编译期放行）。
+// x -> 落全局，双 miss 抛运行期 UndefinedVariable（编译期不做定值检查，直接放行）。
 TEST(CodeGen, VarSelfRefUndefinedGlobalAtRuntime) {
     auto out = run_source("fun f() { var x = x + 1; return x; } return f();");
     ASSERT_FALSE(out.has_value());
@@ -1047,7 +1047,7 @@ TEST(CodeGen, DefaultParamUnregisteredFallsToGlobal) {
 }
 
 TEST(CodeGen, VarargsCompiles) {
-    // varargs 已落地(list 载体):编译通过即可(行为面由 Compiler.Varargs* 端到端覆盖)。
+    // varargs(list 载体):编译通过即可(行为面由 Compiler.Varargs* 端到端覆盖)。
     auto c = compile_only("fun f(a, b = 2, ...rest) { return a; }");
     EXPECT_TRUE(c.has_value());
 }
@@ -1193,7 +1193,7 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 }
 
 // ============================================================
-// 内置函数（M2 收尾：type / len / str / assert）
+// 内置函数（type / len / str / assert）
 // ============================================================
 // 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
 // （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFunction*)，
@@ -1208,13 +1208,13 @@ TEST(CodeGen, BuiltinType) {
 }
 
 TEST(CodeGen, BuiltinLen) {
-    // len(s) -> 字符串长度（当前仅 String，List/Map 随 M5）。
+    // len(s) -> String 的 UTF-8 字节数（List/Map 各返元素数/键值对数，见各自用例）。
     EXPECT_EQ(run_int("return len(\"abc\");"), 3);
     EXPECT_EQ(run_int("return len(\"\");"), 0);
 }
 
 TEST(CodeGen, BuiltinLenNonString) {
-    // len 对非字符串报 TypeMismatch。
+    // len 对非 String/List/Map 报 TypeMismatch。
     auto out = run_source("return len(42);");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
@@ -1360,7 +1360,7 @@ TEST(CodeGen, RethrowPreservesCode) {
 }
 
 TEST(CodeGen, NativeFailCaughtByTry) {
-    // 原生报错（len 非 String）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
+    // 原生报错（len 收非 String/List/Map 值）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
     // 经 unwind 被捕获；str(e) 渲染完整消息（无位置前缀，位置只在未捕获跟踪行给出；
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
@@ -1454,7 +1454,7 @@ mid();
 }
 
 TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {
-    // finally 已裁撤：不再是关键字，回归普通标识符可绑定。
+    // finally 非关键字:按普通标识符可绑定。
     auto c = compile_only("var finally = 1; print finally;");
     ASSERT_TRUE(c.has_value()) << c.error().message();
 }
@@ -1489,7 +1489,7 @@ TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
 }
 
 // ============================================================
-// M5 类与对象（阶段 3 编译翻转）
+// M5 类与对象
 // ============================================================
 
 // 空类 + 隐式 Object 根继承：无成员无 init，实例化走 bootstrap 的原生 no-op init。
@@ -1540,7 +1540,7 @@ TEST(CodeGen, ErrThisOutsideClassInStaticMethod) {
     EXPECT_EQ(c.error().code(), ErrorCode::ThisOutsideClass);
 }
 
-// super 编译期禁于非直接方法帧（2026-09-14 拍板）：顶层 fun / 静态方法 / 实例方法内嵌套
+// super 编译期禁于非直接方法帧：顶层 fun / 静态方法 / 实例方法内嵌套
 // lambda / super.x 读取形态同判据（visitSuperExprNode 单点检查）。
 TEST(CodeGen, ErrSuperOutsideMethodInFunction) {
     auto c = compile_only("fun f() { return super.m(); }");
@@ -1694,7 +1694,7 @@ return s.callSuper() + s.m();
               12);
 }
 
-// 动态新增（2026-09-11 改定）：类上 / 实例上赋新名成员均落接收方自身表。
+// 动态新增：类上 / 实例上赋新名成员均落接收方自身表。
 TEST(CodeGen, DynamicMemberAdd) {
     EXPECT_EQ(run_int(R"(
 def F { }
@@ -1706,7 +1706,7 @@ return F.extra + f.field;
               13);
 }
 
-// 嵌套函数内 super 禁（2026-09-14 拍板）的等价写法：先取后用（super.m 取 bound method 值，
+// 嵌套函数内 super 禁的等价写法：先取后用（super.m 取 bound method 值，
 // 闭包内延迟调用）。
 TEST(CodeGen, SuperMethodTakeThenUse) {
     EXPECT_EQ(run_int(R"(
@@ -1736,8 +1736,8 @@ return K().m();
               3);
 }
 
-// M5 落地后用户定义类即可迭代：iter/has_next/next 经 LOAD_FIELD 返 bound method + CALL
-// （内建 list/map/string 迭代仍待容器里程碑）。
+// 用户定义类可迭代：iter/has_next/next 经 LOAD_FIELD 返 bound method + CALL
+// （与内建 list/map/string 迭代走同一降糖路径）。
 TEST(CodeGen, UserClassForIn) {
     EXPECT_EQ(run_int(R"(
 def Three {
@@ -1787,7 +1787,7 @@ return c2.bump();
               11);
 }
 
-// this 字段复合赋值作非末位实参：定位腿折叠 THIS_FIELD Load 形（无 DUP 副本滞留），栈形不偏移——
+// this 字段复合赋值作非末位实参：定位腿折叠 THIS_FIELD Load 形（无 DUP 副本滞留），栈形不偏移--
 // 副本滞留会把 callee 槽顶成 Int（CallNonCallable）或把前面实参顶错位。
 TEST(CodeGen, ThisFieldCompoundAsCallArg) {
     EXPECT_EQ(run_int(R"(
@@ -1825,7 +1825,7 @@ return calls * 1000 + holder.n;
               1105);
 }
 
-// 成员即表写入（RedefinedMember 退役）：重名后写遮蔽，类静态读回取后值。
+// 成员即表写入：重名后写遮蔽，类静态读回取后值。
 TEST(CodeGen, MemberDuplicateShadowsPrevious) {
     EXPECT_EQ(run_int(R"(
 def C { var v = 1; var v = 2; }
@@ -1898,7 +1898,7 @@ TEST(CodeGen, ListLen) {
     EXPECT_EQ(run_int("return len([[], [1]]);"), 2);
 }
 
-// len 类型面:非 string/list 报 TypeMismatch(运行期)。
+// len 类型面:非 String/List/Map 报 TypeMismatch(运行期)。
 TEST(CodeGen, ListLenTypeMismatch) {
     auto out = run_source("return len(1);");
     ASSERT_FALSE(out.has_value());
@@ -2066,7 +2066,7 @@ TEST(CodeGen, DestructureFillReusesSourceSlot) {
     EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL", "LOAD_IMM")); // 每个位置一条「复取源值」
 }
 
-// Fill 访问数 1：不建隐藏局部——源值即消耗品，取出的元素恰落在下一局部槽位。
+// Fill 访问数 1：不建隐藏局部--源值即消耗品，取出的元素恰落在下一局部槽位。
 TEST(CodeGen, DestructureFillSingleAccessHasNoSourceSlot) {
     auto compiled = compile_only("var [a] = [7];");
     ASSERT_TRUE(compiled.has_value());

@@ -104,9 +104,9 @@ TEST(ObjInstance, DebugRender) {
     EXPECT_EQ(aria::format_value_debug(Value::from_obj(obj)), "<Foo instance>"); // 调试渲染同文案
 }
 
-// stress GC:实例为唯一根,其类(经 class_)、字段长串、缓存 bound(经 fields 值级联,再经
-// bound.trace 级联其 method 闭包与 receiver 即本实例)全部存活。守卫全部作用域弹出,断言压在
-// trace 覆盖上(漏标即丢)。栽种走真实协议路径(字段经 store_field、缓存经 load_field 现场绑定)。
+// stress GC:实例为唯一根,其类(经 class_)、字段长串、方法闭包(经「obj -> class_ -> 类表」链)
+// 经 obj.trace 全链存活。守卫全部作用域弹出,断言压在 trace 覆盖上(漏标即丢)。栽种走真实协议
+// 路径(字段经 store_field、方法闭包经类表注册)。
 TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
     AriaVM vm;
     auto&  gc = vm.gc();
@@ -131,14 +131,14 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
         bkey = new_string(gc, "m");        // 建时 collect:在根者存活
         guard.push(bkey);
         klass->set_field(bkey, Value::from_obj(method)); // 注册方法(建表/rehash 非 GC 点)
-        auto bound_read = obj->load_field(vm, bkey);     // 现场绑定(读路径不缓存;stress 下
+        auto bound_read = obj->load_field(vm, bkey);     // 现场绑定(读路径每次物化新 bound;stress 下
         //   new_bound_method 分配时 obj/klass/method 皆在根,安全)
         ASSERT_TRUE(bound_read.has_value());
         {
             // 首个 bound 只活在 C++ 局部,stress 下每次分配即回收 -> 先临时根化再二读,
             // 否则二读可能复用同一地址,身份比较失真。
             auto bound_guard = gc.make_guard(bound_read->as_obj());
-            auto bound_again = obj->load_field(vm, bkey); // 二次读:新对象(无缓存),内容相等
+            auto bound_again = obj->load_field(vm, bkey); // 二次读:现场新绑对象,内容相等
             ASSERT_TRUE(bound_again.has_value());
             EXPECT_FALSE(value_identical(*bound_read, *bound_again));
             EXPECT_TRUE(aria::value_equal(*bound_read, *bound_again));
@@ -151,7 +151,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
         guard.push(fval);
         EXPECT_TRUE(obj->store_field(vm, fkey, Value::from_obj(fval))); // 真字段写入
         // 作用域退出:全部临时根弹出 -- klass/静态表(fval 之外的方法闭包)/fval 此后仅经
-        // obj.trace 可达(bound 本体不经缓存挂账,故此处读完即不再引用)
+        // obj.trace 可达(bound 本体是函数局部临时值,不入任何表)
     }
     auto       guard   = gc.make_guard(obj);        // 只根实例
     const auto trigger = new_string(gc, "trigger"); // stress collect:全链经 obj.trace 存活
@@ -165,7 +165,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
     auto ffound = obj->load_field(vm, fkey); // 真字段经 fields 存活
     ASSERT_TRUE(ffound.has_value());
     EXPECT_TRUE(value_identical(*ffound, Value::from_obj(fval)));
-    // 方法闭包经「obj -> class_ -> 类表」链存活(不经缓存的 bound):collect 后仍可现场重绑
+    // 方法闭包经「obj -> class_ -> 类表」链存活:collect 后仍可现场重绑
     EXPECT_EQ(method->name()->view(), "m");
     auto after_collect = obj->load_field(vm, bkey);
     ASSERT_TRUE(after_collect.has_value());
@@ -201,7 +201,7 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
 
-    // 类表静态值:直读、不缓存 --行为钉法:类上覆写后实例再读到新值(若被缓存则读陈旧)。
+    // 类表静态值直读 --行为钉法:类上覆写后实例再读到新值(读路径不落实例侧副本)。
     auto vkey = new_string(gc, "sv");
     guard.push(vkey);
     auto sv = new_string(gc, "a static value string!!!!!!!!!!");
@@ -212,13 +212,13 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     EXPECT_TRUE(value_identical(*static_read, Value::from_obj(sv)));
     auto sv2 = new_string(gc, "a static value string rewritten!!");
     guard.push(sv2);
-    klass->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新(不缓存 ⟹ 实例再读见新值)
+    klass->set_field(vkey, Value::from_obj(sv2)); // 类上原槽更新 ⟹ 实例再读见新值
     auto rewritten_read = inst->load_field(vm, vkey);
     ASSERT_TRUE(rewritten_read.has_value());
     EXPECT_TRUE(value_identical(*rewritten_read, Value::from_obj(sv2))); // 类上改写立即可见
 
     // 类表方法(闭包 + defining class 戳 = 方法性标记,对象层 MAKE_METHOD 注册等价形):
-    // 绑定 ObjBoundMethod(receiver=inst)并回填 fields 缓存。
+    // 绑定 ObjBoundMethod(receiver=inst)。
     auto mkey = new_string(gc, "m");
     guard.push(mkey);
     auto method = make_closure(gc, "m", 0);
@@ -232,8 +232,8 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst))); // this=本实例
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
 
-    // 二次读同键:现场重绑 -- 新对象(=== 假)但内容相等(== 真);确定性分配计数两读各 +1
-    // 正是「无缓存」的判据(若仍有缓存则第二次为 0)。
+    // 二次读同键:现场重绑 -- 新对象(=== 假)但内容相等(== 真);分配计数两读各 +1
+    // 即「每次访问物化新 bound」的判据。
     const auto allocs_before = gc.allocation_count();
     auto       first_read    = inst->load_field(vm, mkey);
     auto       second_read   = inst->load_field(vm, mkey);
@@ -262,14 +262,14 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     ASSERT_TRUE(lambda_read.has_value());
     EXPECT_TRUE(value_identical(*lambda_read, Value::from_obj(lam))); // === 原闭包,无 ObjBoundMethod 包装
 
-    // 真字段遮蔽同名方法与缓存项(铁则 3):this.m = 9 走 store_field 后读到字段值。
+    // 真字段遮蔽同名类表成员:this.m = 9 走 store_field 后读到字段值。
     EXPECT_TRUE(inst->store_field(vm, mkey, Value::from_int(9)));
     auto shadowed_read = inst->load_field(vm, mkey);
     ASSERT_TRUE(shadowed_read.has_value());
     EXPECT_EQ(shadowed_read->as_int(), 9);
 
     // 全链 miss:委托类协议,随类措辞 fail(UndefinedProperty,消息含宿主类 debug 渲染;
-    // 实例不再自持措辞 --成员表在类链上,文案随宿主)。
+    // 文案随宿主类,不在实例侧自持)。
     auto miss = new_string(gc, "missing");
     guard.push(miss);
     EXPECT_FALSE(inst->load_field(vm, miss).has_value());

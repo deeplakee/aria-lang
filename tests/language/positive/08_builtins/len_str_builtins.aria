@@ -1,4 +1,4 @@
-// 钉住：len（仅 String、UTF-8 字节数）与 str（任意值转 String）。
+// 钉住：len（接受 String/List/Map；String 返 UTF-8 字节数）与 str（任意值转 String）。
 assert(len("abc") == 3);
 assert(len("") == 0);
 assert(len("中文") == 6);

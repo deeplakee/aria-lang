@@ -374,7 +374,6 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
     EXPECT_EQ(list->elements()[0].as_int(), 9);
 }
 
-// 负下标写对称:xs[-1] = v 覆写末槽;越界不写不动长度。
 // ---- 切片(Range 键:含否上界/无上界/负端点/空切片/倒序产出/越界 fail-fast/只读) ----
 
 TEST(ObjList, SliceYieldsNewList) {
@@ -523,6 +522,7 @@ TEST(ObjList, StoreSliceFails) {
     EXPECT_EQ(message, "Runtime: TypeMismatch list index must be an integer, got Range");
 }
 
+// 负下标写对称:xs[-1] = v 覆写末槽;越界不写不动长度。
 TEST(ObjList, StoreIndexNegativeWritesFromTail) {
     AriaVM      vm;
     auto&       gc    = vm.gc();
@@ -585,7 +585,7 @@ TEST(ObjList, LoadFieldInitResolvesToObjectRoot) {
     EXPECT_EQ(native->name()->view(), "init");
 }
 
-// miss:类措辞 fail 随协议透传(基类默认拿 receiver debug_repr 当主语的旧文案不复存在)。
+// miss:类措辞 fail 随协议透传(主语为宿主类 debug_repr,非 receiver)。
 TEST(ObjList, LoadFieldMissFailsWithClassWording) {
     AriaVM vm;
     auto&  gc    = vm.gc();

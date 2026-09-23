@@ -77,11 +77,13 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
   2. **VM 自管异常状态（运行期主通道）**：throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，**不含位置**），装箱为 Value 存入当前执行上下文的挂起错误寄存器。故**运行期错误不就地构造 Error**：`Error` 仅在 `unwind()` 全未命中的出口物化，位置由该出口烘焙的逐帧 `at` 堆栈跟踪给出。
   3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。
+- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：消息壳 `Category: Code` 由枚举名经 `#` 派生（本地化要另加名表、破坏单一事实源），故 detail 也一律英文，禁 CJK 与全角标点；同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）。适用面含编译期报错、运行期报错、CLI help/usage、源码内 ASSERT 文案（注释与文档不受约束）；**ASSERT 文案不重复宏已打的文件/行/函数名**（不写 `Class::method: ` 前缀）。通则 8 条、句式家族表与断言规则见 `.claude/reference/error-message-style.md`，机械门禁 `tools/check_error_messages.py`。
 
 ## 工具
 
 - **clang-format**（根目录 `.clang-format`，LLVM 风格 / 4 空格 / 120 列 / 命名空间全缩进）：`clang-format -i <file>` 原地格式化。编辑器保存时自动重排（如 `auto p`->`const auto p`）是项目风格，不要回退。
 - **tools/check_commit_msg.py**（python3，无依赖，不参与构建）：commit 说明机械检查，`python3 tools/check_commit_msg.py <message-file>` 判 ASCII-only、标题格式与列宽、正文长度与形态（散文而非段标签/bullet）、`Tests:` 行位置与规范 §3 禁写关键词，有违规返非零并打印改法；`tools/hooks/commit-msg` 是它的 git 钩子壳（`git config core.hooksPath tools/hooks` 启用后每次 commit 自动跑，违规拒提交）。按「Git 提交纪律」五步的第 ③ 步每次提交前手跑一遍。
+- **tools/check_error_messages.py**（python3，无依赖，不参与构建）：报错文案机械检查，`python3 tools/check_error_messages.py` 扫 `src/**` 剥注释后的字符串字面量，判 ASCII-only（禁 CJK/全角）与报错入口的句尾标点/首字母大小写，有违规打印 file:line 与改法并非零返回；`tools/hooks/pre-commit` 是它的 git 钩子壳（与 `commit-msg` 同一次 `core.hooksPath` 启用）。语义判断（句式家族是否用对、措辞是否漂移）仍靠人读规范。
 - **clangd**：读 `compile_commands.json`（CMake `EXPORT_COMPILE_COMMANDS` 生成）。注意 `compile_commands.json` 只含 `.cpp`/`.c`--header-only 头文件**不被任何编译 TU（直接或传递）include** 时会因拿不到编译参数报类型未定义假错；已被传递 include 的头 clangd 能推断参数，自含头即可。疑似假错以 `clang++ -std=c++23 -I src -fsyntax-only` 实编译为准；根治：尽早让某 .cpp include 一次（仅对确实不可达的头需要）。
 
 ## 命名（强制）

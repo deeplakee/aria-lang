@@ -1,0 +1,18 @@
+#!/bin/sh
+# pre-commit 钩子:每次 git commit 自动用 tools/check_error_messages.py 判报错文案,违规即拒提交。
+#
+# 一次性启用(仓库级本地配置,钩子本体入库,与 commit-msg 共用 core.hooksPath):
+#     git config core.hooksPath tools/hooks
+# 绕过(确实需要时):git commit --no-verify
+#
+# 钩子只做机械检查(ASCII-only / 报错入口格式串的句尾标点与首字母);语义判断
+# (句式家族是否用对、措辞是否漂移)仍走 .claude/reference/error-message-style.md。
+set -e
+
+root="$(git rev-parse --show-toplevel)"
+
+if ! python3 "$root/tools/check_error_messages.py" "$root/src"; then
+    echo "报错文案未过机械检查 -- 规范见 .claude/reference/error-message-style.md" >&2
+    echo "按上方提示逐条改;确认无误要绕过时用 git commit --no-verify" >&2
+    exit 1
+fi

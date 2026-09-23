@@ -111,6 +111,7 @@ paths:
 - `ObjModule` 的绝对路径（= VM 模块表查重键）= `dir_ + "/" + name_ + ".aria"`，切分收口 `fs::module_name_and_dir`--`name_` = basename 去 `.aria` 后缀（stem）、`dir_` = dirname。
 - 即路径的 dirname/stem 切分，`name_` 恒为单段 stem，不支持「相对源根的多段路径」语义、不依赖源根概念；两指针**恒非空、内容可空**（合成顶层 `<script>` / REPL 等以非空 intern 串构造）。
 - `abs_path()` 即时合成：`dir_` 内容空 -> 返空串（无目录锚点）；`name_` 内容空 -> 仅返 `dir_`；否则拼接（供 IMPORT 相对导入取 dirname 作基）。
+- `format_location(line)` = 未捕获堆栈跟踪 at 行用的位置串（`"<loc>:<line>"`）：文件模块取 `abs_path()`；合成模块（`name_` 以 `<` 开头--`aria.hpp` 约定尖括号名标记 VM 合成实体，其 `abs_path()` 会拼出伪路径）与无目录锚点（`abs_path()` 空）退化为 `name_`。纯 `std::format` 拼接、不分配 GC 对象（`unwind` 物化路径依赖「无 GC 分配点」）。
 - **无加载状态字段**：加载事实源 = VM 模块表成员资格（未入表 = 未加载；入表 = 已编译待 run-once 或已跑完）。
 - 成员协议：顶层绑定即成员（`load_field` 查 `globals_` 直读，不另设 export 声明；顶层函数值恒非方法、不绑 this；nil 值绑定与 miss 由 find 空态区分）；`store_field` 恒拒（模块成员只读--越模块写会隐式创建他人未声明全局）。
 

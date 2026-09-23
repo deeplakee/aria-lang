@@ -125,6 +125,34 @@ namespace aria {
 
 #undef ARIA_OPCODE_LIST
 
+    // opcode -> 报错消息里的算子记号(ADD 为 "+" 等):只有二元算术/比较指令对应源码算子,其余取到即
+    // "?" -- 消费方(数值二元的类型守卫)只对本组指令取号,别的 opcode 落在 default 表编程错误,以可见
+    // 记号暴露而非静默空串。
+    constexpr StringView op_symbol(const OpCode op) noexcept {
+        switch (op) {
+            case OpCode::ADD:
+                return "+";
+            case OpCode::SUBTRACT:
+                return "-";
+            case OpCode::MULTIPLY:
+                return "*";
+            case OpCode::DIVIDE:
+                return "/";
+            case OpCode::MOD:
+                return "%";
+            case OpCode::GREATER:
+                return ">";
+            case OpCode::GREATER_EQUAL:
+                return ">=";
+            case OpCode::LESS:
+                return "<";
+            case OpCode::LESS_EQUAL:
+                return "<=";
+            default:
+                return "?";
+        }
+    }
+
     // MAKE_RANGE flags 位义:0x00 含上界(..)、0x01 不含上界(...)、0x02 无上界(端点后省
     // 上界表达式,from.. / from... 同义,含否位不编)。编译发射与 VM 解码同源。
     inline constexpr u8 kRangeFlagInclusive = 0x00;

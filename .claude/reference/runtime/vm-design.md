@@ -154,7 +154,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 ### 4.8 运行时位置标注与未捕获堆栈跟踪
 
-**行级粒度** -- 字节码只有 RLE 行号表(`CodeUnit::line_for_offset`,二分查行),无列号 -> 运行期位置上限为行(对标 Lua);列号须扩行号表,暂不做。消息形态:运行期为 `"Category: Name detail"`(**不含位置前缀**;编译期为 `path:line:col: Category: Name detail` -- 编译错误无堆栈,位置是唯一锚点故保留)。运行期位置仅出现在未捕获跟踪行,合成模块(名以 `<` 开头,如 `<script>`)无文件身份,`abs_path()` 会拼出伪路径,跟踪行位置串退化为 `"<模块名>:<line>"`。
+**行级粒度** -- 字节码只有 RLE 行号表(`CodeUnit::line_for_offset`,二分查行),无列号 -> 运行期位置上限为行(对标 Lua);列号须扩行号表,暂不做。消息形态:运行期为 `"Category: Name detail"`(**不含位置前缀**;编译期为 `path:line:col: Category: Name detail` -- 编译错误无堆栈,位置是唯一锚点故保留)。运行期位置仅出现在未捕获跟踪行,位置串由 `ObjModule::format_location(line)` 渲染(文件模块 = `abs_path():line`;合成模块(名以 `<` 开头,如 `<script>`)与无目录锚点无文件身份 -- `abs_path()` 会拼出伪路径 -- 退化为 `"<模块名>:<line>"`)。
 
 **位置由未捕获跟踪行统一给出** -- 三类报错站点(VM 检测错误如算术/LOAD_GLOBAL、`call_*` 失败的 WrongArity/StackOverflow/CallNonCallable、原生函数 `vm.fail`)的细节串皆无位置,装箱也不烘位置:消息 = `Error::make_message(code, detail)`(无位置版)。错误位置的取得依赖 unwind 帧遍历:未捕获时逐帧收集 `(function, module, last_ip)` 三元组,顶帧 = 故障帧、`call_*` 失败即 caller 帧(被调帧未进)、原生报错即 caller 帧(原生不进帧),其 `last_ip`(主循环取指前写)恰为故障指令/CALL 站点,无需 take 点补标、无双重标注。(码, 烘焙消息) 拼好跟踪后 `from_baked` 一次物化,同源同串。帧栈空(run 外直调)无位置。位置串是 C++ 侧 String 拼接,不添 GC 约束(`new_exception` 自守不变,坑点文档 #8)。
 

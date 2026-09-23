@@ -47,6 +47,13 @@ namespace aria {
         [[nodiscard]]
         String abs_path() const;
 
+        // 模块位置串 "<loc>:<line>"(未捕获堆栈跟踪的 at 行用):文件模块取 abs_path();合成模块
+        // (名以 '<' 开头 -- aria.hpp 约定尖括号名标记 VM 合成实体,其 abs_path 会拼出伪路径)与无
+        // 目录锚点(abs_path 空)退化为 name_。位置串规则单一事实源;纯 std::format 拼接,不分配
+        // GC 对象(调用点在 AriaVM::unwind 的物化路径,该处声明「无 GC 分配点」)。
+        [[nodiscard]]
+        String format_location(u32 line) const;
+
         // 模块级绑定表:顶层 var/fun/def 的目标,LOAD/STORE/DEF_GLOBAL 操作此表(键 intern)。
         [[nodiscard]]
         AriaHashTable& globals() noexcept {

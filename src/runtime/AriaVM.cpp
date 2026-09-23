@@ -127,42 +127,6 @@ namespace aria {
             return std::nullopt;
         }
 
-        // 数值二元运算的操作符记号(报错消息用)。
-        constexpr StringView op_symbol(const OpCode op) noexcept {
-            switch (op) {
-                case OpCode::ADD:
-                    return "+";
-                case OpCode::SUBTRACT:
-                    return "-";
-                case OpCode::MULTIPLY:
-                    return "*";
-                case OpCode::DIVIDE:
-                    return "/";
-                case OpCode::MOD:
-                    return "%";
-                case OpCode::GREATER:
-                    return ">";
-                case OpCode::GREATER_EQUAL:
-                    return ">=";
-                case OpCode::LESS:
-                    return "<";
-                case OpCode::LESS_EQUAL:
-                    return "<=";
-                default:
-                    return "?";
-            }
-        }
-
-        // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,abs_path 会
-        // 拼出伪路径)或 abs_path 为空退化为 "<name>"。未捕获堆栈跟踪的 at 行用;位置串规则单一
-        // 事实源(消息本身不烘位置前缀,见 AriaVM::raise)。
-        String module_loc(const ObjModule* module, const u32 line) {
-            if (const auto name = module->name()->view(); name.starts_with('<') || module->abs_path().empty()) {
-                return std::format("{}:{}", name, line);
-            }
-            return std::format("{}:{}", module->abs_path(), line);
-        }
-
         // 把寄存器取出的载荷拆为 (码, 完整烘焙消息) 两件:ObjException 直取自身码与 message_
         // (re-throw 保码,坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException。消费方:
         // unwind 未捕获出口与 run_closure 入口进帧失败,均经 Error::from_baked 一次物化(Error
@@ -954,7 +918,7 @@ namespace aria {
         // 交 reset 清场。
         struct TraceEntry {
             ObjFunction* fn;     // 帧函数(名字渲染)
-            ObjModule*   mod;    // 帧模块(位置串渲染,module_loc)
+            ObjModule*   mod;    // 帧模块(位置串渲染,ObjModule::format_location)
             u32          ip_off; // 行号经 fn->unit().line_for_offset 查
         };
 
@@ -981,7 +945,7 @@ namespace aria {
         current_->reset();
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
             const u32 line = fn->unit().line_for_offset(ip_off);
-            msg += std::format("\n  at {} ({})", fn->name()->view(), module_loc(mod, line));
+            msg += std::format("\n  at {} ({})", fn->name()->view(), mod->format_location(line));
         }
         return Error::from_baked(code, msg);
     }

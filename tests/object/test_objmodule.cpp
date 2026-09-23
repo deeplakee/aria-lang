@@ -164,6 +164,33 @@ TEST(ObjModule, ExplicitDirRespected) {
     EXPECT_EQ(m->abs_path(), "/stdlib/math.aria");
 }
 
+// ---- 位置串(未捕获堆栈跟踪 at 行):文件模块取 abs_path + 行号 ----
+
+// 文件模块:有目录锚点且非合成名,位置串 = abs_path:line。
+TEST(ObjModule, FormatLocationOfFileModuleIsAbsPath) {
+    GC   gc;
+    auto dir = new_string(gc, "/proj");
+    auto m   = make_module(gc, "lib/utils", dir);
+    EXPECT_EQ(m->format_location(12), "/proj/lib/utils.aria:12");
+}
+
+// 合成模块(名以 '<' 开头):abs_path 会拼出 dir_/<script>.aria 伪路径,位置串退化为模块名:line。
+TEST(ObjModule, FormatLocationOfSyntheticModuleIsName) {
+    GC   gc;
+    auto dir = new_string(gc, "/proj");
+    auto m   = make_module(gc, "<script>", dir);
+    EXPECT_EQ(m->format_location(3), "<script>:3");
+}
+
+// 无目录锚点(abs_path 空,如 cwd 不可用):即使非合成名亦退化为模块名:line。
+TEST(ObjModule, FormatLocationWithoutDirIsName) {
+    GC   gc;
+    auto dir = new_string(gc, "");
+    auto m   = make_module(gc, "lib/utils", dir);
+    EXPECT_TRUE(m->abs_path().empty());
+    EXPECT_EQ(m->format_location(7), "lib/utils:7");
+}
+
 // ---- 命名成员协议(load_field/store_field = 模块全局绑定,只读) ----
 
 // 命中:模块成员 = 模块全局绑定原值直读(不绑定 this、不铸包装物,返回值为原对象同指针)。

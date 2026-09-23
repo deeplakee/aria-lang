@@ -33,6 +33,15 @@ namespace aria {
         return std::format("{}/{}{}", dir, name_->view(), kAriaExtension);
     }
 
+    String ObjModule::format_location(const u32 line) const {
+        // 合成模块(名以 '<' 开头 -- aria.hpp 约定该前缀标记 VM 合成实体)的 abs_path 会拼出
+        // dir_/<script>.aria 这类伪路径;无目录锚点(abs_path 空)同样无文件身份。两者一并退化为名。
+        const auto name = name_->view();
+        const auto path = abs_path();
+        const auto base = (name.starts_with('<') || path.empty()) ? name : StringView{path};
+        return std::format("{}:{}", base, line);
+    }
+
     void ObjModule::trace(GC& gc) const noexcept {
         // entry_ 可为 nullptr(未编译/目录包占位),mark_object 容 nullptr。
         gc.mark_object(name_);

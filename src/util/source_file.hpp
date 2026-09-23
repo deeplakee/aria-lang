@@ -19,27 +19,15 @@ namespace aria::src {
         u32 col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
     };
 
-    // 源文件信息：保存文件名、路径与内容。
-    //
-    // 内容由 SourceFile 以 String 持有所有权，解析阶段可通过 name()/path()/content()
-    // 取得 StringView 直接引用，避免拷贝。为保证 StringView 有效，需满足：
-    //   1. 取出的 StringView 不得比所引用的 SourceFile 活得更久；
-    //   2. SourceFile 构造完成后不要修改其内容（本结构体不提供修改接口）；
-    //   3. 若将多个 SourceFile 存入容器（如 List）并已取出 StringView，
-    //      后续不要再向容器追加/删除导致重分配--重分配会移动内部 String，
-    //      对短串（SSO）而言会改变字符地址而使 StringView 悬空。
-    //
-    // 加载处理：
-    //   - 剥除前导 UTF-8 BOM（EF BB BF）；
-    //   - 行尾归一化为 LF（CRLF/CR -> LF），保证行列映射与 tokenize 一致；
-    //   - 校验内容为合法 UTF-8，非法则 from_path 返回 InvalidEncoding。
+    // 源文件信息：保存文件名、路径与内容。内容由 SourceFile 以 String 持有所有权，解析阶段可通过 name()/path()/content
+    // () 取得 StringView 直接引用，避免拷贝。取出的 StringView 不得比所引用的 SourceFile 活得更久；构造完成后不要修改
+    // 内容；若将多个 SourceFile 存入容器（如 List）并已取出 StringView，后续再向容器追加/删除致重分配会移动内部 String
+    // --短串（SSO）会改变字符地址而使 StringView 悬空。加载处理：剥除前导 UTF-8 BOM（EF BB BF）；行尾归一化为 LF（
+    // CRLF/CR -> LF）；校验内容为合法 UTF-8，非法则 from_path 返回 InvalidEncoding。
     class SourceFile {
     public:
         SourceFile() = default;
 
-        // name  : 仅文件名（不含目录），如 "main.aria"
-        // path  : 完整路径
-        // content: 已经过 BOM 剥除与 CRLF 归一化的内容
         SourceFile(String name, String path, String content) noexcept :
             name_{std::move(name)}, path_{std::move(path)}, content_{std::move(content)} {}
 
@@ -54,15 +42,14 @@ namespace aria::src {
         }
 
         // 文件内容。底层 String 以 '\0' 结尾，便于需要哨兵的扫描逻辑。
-        // 本类不做归一化：经 from_path 构造时内容已剥 BOM 并归一化 LF；直接三参构造时
-        // 内容为调用方所给原文（如 REPL 逐行源码），行列映射按原始字节计。
+        // 本类不做归一化：经 from_path 构造时已剥 BOM 并归一化 LF；直接三参构造时为调用方所给原文。
         [[nodiscard]]
         StringView content() const noexcept {
             return content_;
         }
 
-        // 行数。与 wc -l 在"内容以 LF 结尾"时一致；最后一行即便没有结尾 LF
-        // 也算一行；末尾的 LF 不产生额外的空行。空内容返回 0。
+        // 行数。与 wc -l 在"内容以 LF 结尾"时一致；最后一行即便没有结尾 LF 也算一行；
+        // 末尾的 LF 不产生额外的空行。空内容返回 0。
         [[nodiscard]]
         u32 line_count() const {
             ensure_line_starts();
@@ -86,9 +73,8 @@ namespace aria::src {
         }
 
         // 将字节偏移解析为 1-based 行号（行表二分 + 单条行缓存 LineCache；offset 超出范围时钳制到内容末尾）。
-        // offset == content.size()（EOF）返回 line_count() + 1，与 locate 的「EOF 落在下一行第 1 列」
-        // 约定一致（对齐编辑器光标停文件末尾，报 unexpected EOF 更准）。
-        // AST 遍历按源序逐节点求行号，缓存命中率极高，故这条热路径只需一次区间比较。
+        // offset == content.size()（EOF）返回 line_count() + 1（对齐 locate 的「EOF 落在下一行第 1 列」）。
+        // AST 遍历按源序逐节点求行号、缓存命中率极高，故这条热路径只需一次区间比较。
         [[nodiscard]]
         u32 line_at(const u32 offset) const {
             if (offset >= content_.size()) {
@@ -106,8 +92,7 @@ namespace aria::src {
         }
 
         // 将字节偏移解析为 1-based 的 (行, 列)。列按码点计数，对中文源码友好；offset 超出范围时钳制到内容末尾。
-        // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1），
-        // 对齐编辑器光标停在文件末尾的行为，便于报 unexpected EOF 时给出合理位置。
+        // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1）。
         // 列须数码点，故本方法是 O(行内码点数) 的冷路径（行号部分走 line_at 的缓存）--只应被错误渲染与测试调用。
         [[nodiscard]]
         LineCol locate(u32 offset) const {
@@ -144,19 +129,14 @@ namespace aria::src {
         String path_;
         String content_;
 
-        // 懒构建：line_starts_[i] 是第 i+1 行（0-based i）在 content_ 中的起始字节偏移。
-        // 语义遵循主流惯例：一个"行"要么以 LF 结尾，要么是到 EOF 的一段内容；
-        // 因此末尾的 LF 不产生额外的空行起点，空内容则行表为空。
-        //
-        //   "a\nb\n" -> [0, 2]   (2 行)
-        //   "a\nb"   -> [0, 2]   (2 行，末行未终止)
-        //   "a\n"    -> [0]      (1 行)
-        //   ""       -> []       (0 行)
+        // 懒构建：line_starts_[i] 是第 i+1 行在 content_ 中的起始字节偏移。语义遵循主流惯例：
+        // 一个"行"要么以 LF 结尾，要么是到 EOF 的一段内容（"a\nb" -> [0, 2]）；末尾的 LF 不产生
+        // 额外的空行起点（"a\n" -> [0]），空内容则行表为空（"" -> []）。
         mutable List<u32> line_starts_;
         mutable bool      is_line_starts_built_ = false;
 
         // line_at 的单条行缓存：最近一次解析出的行区间 [begin, end) 与该行行号；三字段皆 0 即「无缓存」。
-        // 内容构造后不变、编译单线程，故缓存无需失效（与 line_starts_ 懒构建同型）。
+        // 内容构造后不变、编译单线程，故缓存无需失效。
         struct LineCache {
             u32 begin = 0;
             u32 end   = 0;
@@ -223,20 +203,13 @@ namespace aria::src {
         }
     };
 
-    // 源码位置：源文件指针 + 字节偏移。行列是**派生量**（成本见下），位置状态只有偏移这一件事。
-    //
-    // 这样分层的原因（主流实现同形：Go 的 token.Position、V8 的 Token::Location、rustc 的 BytePos、
-    // clang 的 SourceLocation 都只存偏移）：扫描器热路径只推游标、不必在推进时维护任何计数，于是
-    // 回退/前瞻天然自由（位置就是个整数，存一份就能回），也不存在「某条推进路径漏记账」这类 bug 面。
-    // 行列的代价被挪到真正需要它们的消费点上：
-    //   - line()  -- 行表二分 + 单条行缓存，逐发射节点调用的热路径（CodeGen 每节点一次）；
-    //   - line_col() / to_string()  -- 列要在行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲染与测试调用；
-    //     不要在逐 token 循环里读列（那会把 O(n²) 放回来）。
-    //
-    // src 为非拥有指针，不得比所引用的 SourceFile 活得更久、地址不得变动--除 Token::lexeme_ 的同一约束外，
-    // 本类还要经 src 查 SourceFile 里的惰性行表与行缓存，故 SourceFile 须存活且可就地读。
-    // 非空不变式由显式构造函数的 ASSERT 保证。默认构造为空态（src=nullptr、offset=0），供 Token 默认
-    // 构造等容器占位--空态即「无位置」：line() 返 0、line_col() 返 {0,0}、to_string() 返空串。
+    // 源码位置：源文件指针 + 字节偏移。行列是**派生量**，位置状态只有偏移这一件事--扫描器热路径只推游标、不在推进时维
+    // 护计数，回退/前瞻天然自由，也无「某条推进路径漏记账」的 bug 面。行列代价挪到消费点：line() 走行表二分 + 单条行
+    // 缓存（逐节点调用的热路径）；line_col() / to_string() 列要在行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲
+    // 染与测试调用（不要在逐 token 循环里读列，那会把 O(n²) 放回来）。 src 为非拥有指针，不得比所引 SourceFile 活得更
+    // 久、地址不得变动--本类经 src 查 SourceFile 里的惰性行表与行缓存。非空不变式由显式构造的 ASSERT 保证。默认构造为
+    // 空态（src=nullptr、offset=0），供容器占位--空态即「无位置」：line() 返 0、line_col() 返 {0,0}、to_string() 返空
+    // 串。
     class SourceLoc {
     public:
         // 空态：src=nullptr。供容器占位（如 List<Token> 预留槽位）。

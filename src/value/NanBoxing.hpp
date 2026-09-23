@@ -11,33 +11,20 @@ namespace aria {
 
 namespace aria::nanboxing {
 
-    // NaN-boxed value for the aria interpreter (C++23).
-    //
-    // Every value fits in a single 64-bit IEEE-754 double. Real doubles are stored
-    // verbatim; all other types hide inside the unused bit patterns of a quiet NaN.
-    //
-    // IEEE-754 binary64 layout:
-    //   [sign:1][exponent:11][mantissa:52]
-    // A NaN has exponent == 0x7FF and a non-zero mantissa. We claim the subset of
-    // NaN space whose top two mantissa bits are set (the "box" pattern below); this
-    // dodges the hardware canonical quiet NaN (0x7ff8...), so arithmetic NaNs stay
-    // classified as f64 and never collide with a boxed value.
-    //
-    // Box layout (when the value is NOT a f64):
-    //   sign == 1  -> pointer, payload = low 48 bits (x86-64 / ARM64 user space)
-    //   sign == 0  -> tag in bits 48..49:
-    //                   1 = nil
-    //                   2 = bool   (truth value in bit 0)
-    //                   3 = int    (48-bit two's-complement payload in bits 0..47)
-    // Pointers claim the whole sign==1 half: a 48-bit pointer needs no tag slot,
-    // which leaves both tag slots free for Nil/Bool/Int.
+    // NaN-boxed value for the aria interpreter (C++23). Every value fits in one 64-bit IEEE-754 double. Real doubles
+    // are stored verbatim; all other types hide inside the unused bit patterns of a quiet NaN. We claim the NaN subset
+    // whose top two mantissa bits are set (kQNan), dodging the hardware canonical quiet NaN (0x7ff8...), so arithmetic
+    // NaNs stay classified as f64 and never collide with a boxed value. Box layout (when the value is NOT an f64):
+    // sign == 1 -> pointer, payload = low 48 bits (x86-64 / ARM64 user space) sign == 0 -> tag in bits 48..49: 1 = nil
+    // , 2 = bool (truth in bit 0), 3 = int (48-bit two's-complement in bits 0..47) Pointers claim the whole sign==1
+    // half: a 48-bit pointer needs no tag slot, leaving both tag slots free for Nil/Bool/Int.
     class Value {
         using Obj = Object*;
 
     public:
         enum class Type { Nil, Bool, F64, Int, Obj };
 
-        // --- bit-pattern constants -------------------------------------------
+        // bit-pattern constants
         static constexpr u64 kQNan    = 0x7ffc000000000000ull; // sign=0, exp=all-1, mant top 2 bits set
         static constexpr u64 kSign    = 0x8000000000000000ull; // sign=1, else=all-0
         static constexpr u64 kPayload = 0x0000ffffffffffffull; // low 48 bits all-1
@@ -50,7 +37,7 @@ namespace aria::nanboxing {
         static constexpr u64 kFalseBits = kQNan | kTagBool | 0u;
         static constexpr u64 kTrueBits  = kQNan | kTagBool | 1u;
 
-        // --- construction -----------------------------------------------------
+        // construction
         // 默认构造为 trivial（= default）：默认初始化 Value v; 时 bits_ 为不定值；
         // 值初始化 Value{} 零填充（0 即 f64 0.0，并非 nil）。需要 nil 请用 nil_val()。
         // 这样 Value 满足 is_trivial + is_standard_layout（POD），可 memcpy、可入 FrameStack。
@@ -106,7 +93,7 @@ namespace aria::nanboxing {
             return Value{kSign | kQNan | (bits & kPayload)};
         }
 
-        // --- type tests -------------------------------------------------------
+        // type tests
         [[nodiscard]]
         constexpr bool is_nil() const noexcept {
             return bits_ == kNilBits;
@@ -159,7 +146,7 @@ namespace aria::nanboxing {
             return type_name(type());
         }
 
-        // --- extraction (assert the matching type in debug builds) ------------
+        // extraction (assert the matching type in debug builds)
         [[nodiscard]]
         bool as_bool() const noexcept {
             ASSERT(is_bool(), "value is not Bool");

@@ -41,7 +41,6 @@ namespace aria {
             return line;
         }
 
-        // 无操作数指令(HALT / LOAD_NIL / LOAD_TRUE / ... / RETURN)。
         String simple_instruction(const StringView op_name) { return std::format("{}", op_name); }
 
     } // namespace
@@ -82,7 +81,6 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}  ; {}", to_u32(raw), to_i32(imm)));
     }
 
-    // 单字节 u8 操作数:{:02X}。
     String Disassembler::u8_instruction(const StringView op_name) {
         if (is_truncated(1)) {
             return join_line(op_name, truncated());
@@ -102,7 +100,6 @@ namespace aria {
         return join_line(op_name, std::format("{:02X}  ; {}", to_u32(raw), to_string(static_cast<ValueRegister>(raw))));
     }
 
-    // 双字节 u16 槽/计数:{:04X}。
     String Disassembler::u16_instruction(const StringView op_name) {
         if (is_truncated(2)) {
             return join_line(op_name, truncated());

@@ -10,7 +10,6 @@ namespace aria {
     // Value<->Object 耦合辅助的收口处:同时依赖 Value 与 Object 完整类型、必须头内定义
     // (模板)的辅助函数落此;非模板的重依赖辅助(type_name(Value)/value_equal/value_hash/
     // format_value 系列等)走「Value.hpp 声明 + Value.cpp 定义」,不进本头。
-    //
     //   独立成头:Object.hpp 依赖不进被编译层(常量池)广泛 include 的 Value.hpp(既有决策);
     //   本头的用户只在 runtime 层(builtin 守卫 / 异常载荷判定等),需要者显式 include。
 

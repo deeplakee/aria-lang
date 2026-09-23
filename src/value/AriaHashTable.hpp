@@ -8,8 +8,8 @@
 
 namespace aria {
 
-    // HashTable 模板参数用的仿函数:内联包装,转发到 value_hash/value_identical(定义在 Value.cpp)。
-    // 仅 AriaHashTable 使用,故定义在此。保留仿函数形式是因为 HashTable<K,V,Hash,Eq> 以可调用
+    // HashTable 模板参数用的仿函数:内联包装,转发到 value_hash/value_identical(定义在
+    // Value.cpp)。仅 AriaHashTable 使用,故定义在此;保留仿函数形式是因为 HashTable 以可调用
     // 类型作模板参数(Hash{}(key))。哈希键用 ===(见 ValueEq)。
     struct ValueHash {
         [[nodiscard]]
@@ -27,14 +27,10 @@ namespace aria {
         }
     };
 
-    // 绑定 Value 的 aria 哈希表:继承 HashTable<Value,Value,ValueHash,ValueEq> 的
-    //        Swiss Table 实现与接口(set/find/begin/end/size...),加 trace(GC&)
-    //        (遍历占用槽 mark_value key+value)。
-    //
-    //        分层:src/memory/ 的 HashTable<K,V,Hash,Eq> 对 K/V 完全通用(不知 Value);本类
-    //        绑成 Value 并补 GC trace,ObjMap 持其作成员、trace 委托 ht.trace(gc)。
-    //        继承而非组合:直接复用底层全部公开接口;基类 dtor 非虚但本子类不作多态基,故安全。
-    //        不可拷贝/不可移动(继承自 HashTable)。
+    // 绑定 Value 的 aria 哈希表:继承 HashTable<Value,Value,ValueHash,ValueEq> 的 Swiss Table
+    //        实现与接口(set/find/begin/end/size...),加 trace(GC&)(遍历占用槽 mark_value
+    //        key+value)。ObjMap 持其作成员、trace 委托 ht.trace(gc)。
+    //        继承而非组合:基类 dtor 非虚但本子类不作多态基,故安全。不可拷贝/不可移动。
     class AriaHashTable : public HashTable<Value, Value, ValueHash, ValueEq> {
     public:
         using HashTable<Value, Value, ValueHash, ValueEq>::HashTable; // 继承 explicit HashTable(GC*) ctor

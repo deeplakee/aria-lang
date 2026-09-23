@@ -10,7 +10,7 @@ namespace aria {
     // 领域对象模型归各模块头(如 object/ObjModule.hpp);跨层共享的项目级命名落本头。
     // 仅依赖 common.hpp,任何层(含 util)均可无分层顾虑引用。
 
-    // ---- 语言值域 ----
+    // 语言值域
 
     // 整数(i48)值域:NaN-boxing 的 48 位尾部即语言 int 域,故字面量闸门(CodeGen::validate_int_literal)
     // 与运行期文本解析(util::parse_int_text)同界;越域一律判「给不出这个值」,不静默截断。
@@ -51,7 +51,7 @@ namespace aria {
     // 由出现位置(def 体裸方法位)与名字共同判定。
     constexpr StringView kInitName = "init";
 
-    // ---- 运算符与调用重载方法名 ----
+    // 运算符与调用重载方法名
 
     // 重载方法名:aria 代码在这些名字下定义重载方法,运行期实例参与运算/被调用时以该名沿成员查找
     // 路径取出重载方法(实例 fields 优先、可遮蔽,再沿类链;与普通方法同一条路径)。
@@ -60,19 +60,19 @@ namespace aria {
     // 十一个名字与 Object::op_*_impl 虚函数族一一对应(那一族回答「本对象上该算子/调用对应的
     // 可调用值」,内建类型直给自身实现):算术五件 + 比较四件(皆二元)+ 一元取负 + 调用钩子。
     // `/` 是 aria 唯一的除法算子(无 // 形态),故取 __div__。
-    constexpr StringView kOpAddName          = "__add__";  // +
-    constexpr StringView kOpSubName          = "__sub__";  // -
-    constexpr StringView kOpMulName          = "__mul__";  // *
-    constexpr StringView kOpDivName          = "__div__";  // /
-    constexpr StringView kOpModName          = "__mod__";  // %
-    constexpr StringView kOpLessName         = "__lt__";   // <
-    constexpr StringView kOpLessEqualName    = "__le__";   // <=
-    constexpr StringView kOpGreaterName      = "__gt__";   // >
-    constexpr StringView kOpGreaterEqualName = "__ge__";   // >=
-    constexpr StringView kOpNegateName       = "__neg__";  // 一元 -
-    constexpr StringView kOpCallName         = "__call__"; // 函数调用
+    constexpr StringView kOpAddName          = "__add__";
+    constexpr StringView kOpSubName          = "__sub__";
+    constexpr StringView kOpMulName          = "__mul__";
+    constexpr StringView kOpDivName          = "__div__";
+    constexpr StringView kOpModName          = "__mod__";
+    constexpr StringView kOpLessName         = "__lt__";
+    constexpr StringView kOpLessEqualName    = "__le__";
+    constexpr StringView kOpGreaterName      = "__gt__";
+    constexpr StringView kOpGreaterEqualName = "__ge__";
+    constexpr StringView kOpNegateName       = "__neg__";
+    constexpr StringView kOpCallName         = "__call__";
 
-    // ---- 产品标识与部署约定 ----
+    // 产品标识与部署约定
 
     // 产品名:CLI 程序名(util::Cli)与 REPL 提示符句柄(isocline)共用。
     constexpr StringView kProductName = "aria";

@@ -23,21 +23,13 @@ namespace aria {
                 { fn(a, b) } noexcept -> std::same_as<bool>;
             };
 
-    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。
-    //
-    //   核心:每个槽 1 字节 ctrl 同时编码「占用槽的 7 位部分哈希(h2)」。探测时先比 h2,
-    //   不命中就跳过且**不加载 Entry(K+V)**,只在 h2 命中时才加载 Entry 比全键。
-    //   故绝大多数探针只读 1 字节、不碰 Entry,缓存友好。
-    //
-    //   - cap_ 为 2 的幂(或 0),槽索引 = h1(hash) & (cap_-1)。
-    //   - 三角探测:pos = (pos + (step++)) & mask;偏移序列 0,1,3,6,10,...
-    //   - 7/8 负载因子:count_+tombstones_+1 超 cap_*7/8 则扩容(×2);墓碑超 cap_/8 则原容 compact。
-    //     始终保留 >= 1/8 空槽 -> 探针必然在空槽终止。
-    //
-    //   两块独立分配(ctrl_ + entries_),rehash 时一起重分配、逐占用槽重算 hash 重插、
-    //   释放旧两块;rehash 走分配器 allocate/deallocate(GC 下**不触发 GC**)。
-    //   持 Alloc* alloc_,dtor 自释放。不可拷贝/不可移动(理由同 Buffer:浅 move 会 double-free)。
-    //   K/V 必须 trivially-copyable;分配器解耦见 Allocator.hpp(实例化点须令 GC 完整可见)。
+    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。每槽 1 字节 ctrl 同时编码「占用槽的 7 位部分哈希(h2)」:探测先比 h2
+    // ,不命中即跳过且**不加载 Entry(K+V)**,只在 h2 命中时才加载 Entry 比全键--绝大多数探针只读 1 字节。
+    //   - cap_ 为 2 的幂(或 0),槽索引 = h1(hash) & (cap_-1);三角探测偏移 0,1,3,6,10,...
+    //   - 7/8 负载因子:count_+tombstones_+1 超 cap_*7/8 则扩容(×2),墓碑超 cap_/8 则原容 compact;始终保留 >= 1/8 空槽 -
+    //     > 探针必然在空槽终止。两块独立分配(ctrl_ + entries_),rehash 时一起重分配、逐占用槽重算 hash 重插。持 Alloc*
+    //     alloc_,dtor 自释放。不可拷贝/不可移动(理由同 Buffer)。K/V 必须 trivially-copyable;分配器解耦见
+    //     Allocator.hpp(实例化点须令 GC 完整可见)。
     template<TriviallyCopyable K, TriviallyCopyable V, HashFunctor<K> Hash, EqFunctor<K> Eq,
              TrivialAllocator Alloc = GC>
     class HashTable {
@@ -50,13 +42,9 @@ namespace aria {
         };
 
     private:
-        // ctrl 字节编码:
-        //   0xFF        = 空槽(探针终止)
-        //   0xFE        = 墓碑(已删除)
-        //   0x00..0x7F  = 占用,低 7 位 = h2(部分哈希)
-        //
-        // 高位 1 = 特殊(空/墓碑),高位 0 = 占用。target = ctrl_from_hash(hash)(高位 0),
-        // 故 byte == target 只会命中占用槽,不会误中 kCtrlEmpty/kCtrlDeleted(它们高位 1)。
+        // ctrl 字节编码: 0xFF = 空槽(探针终止) 0xFE = 墓碑(已删除) 0x00..0x7F = 占用,低 7 位 = h2(部分哈希) 高位 1 =
+        // 特殊(空/墓碑),高位 0 = 占用。target = ctrl_from_hash(hash)(高位 0),故 byte == target 只会命中占用槽,不会误中
+        // kCtrlEmpty/kCtrlDeleted(它们高位 1)。
         static constexpr u8 kCtrlEmpty   = 0xFF;
         static constexpr u8 kCtrlDeleted = 0xFE;
 

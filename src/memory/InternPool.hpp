@@ -10,34 +10,12 @@
 
 namespace aria {
 
-    // 字符串驻留池(intern pool):字符串专用 set(键即串内容,值即 ObjString* 自身)。
-    //
-    //   用比通用 HashTable 更省的特化表示:裸 ObjString** slots_,8 字节/槽,无 ctrl、无 h2
-    //   (靠内容比较)。低位标签区分槽状态(对象指针经 ::operator new 是 max_align_t 对齐,
-    //   低 4 位全 0,0x1 空闲):
-    //     nullptr           = 空槽(探针终止)
-    //     (ObjString*)0x1   = 墓碑
-    //     真 ObjString*      = 占用
-    //
-    //   lookup:hash 串内容(FNV-1a,同 ObjString)-> 三角探测,占用槽比 view()==query,
-    //   空槽终止,墓碑跳过。insert:首个墓碑或空槽写入(复用墓碑);调用方先 find 查重。
-    //
-    //   **weak root**:不进 GC::mark_roots_(否则驻留串永生)。GC::collect 在 sweep 前调
-    //   remove_white() 摘除指向白色(未标 is_marked)ObjString* 的表项,避免 sweep 后悬垂。
-    //
-    //   slots_ 经 alloc_->allocate<ObjString*> 分配,在 rehash 或 ~InternPool 释放。InternPool
-    //   本身是 GC 的普通值成员(非 Object、不被 trace/sweep)。分配器解耦见 Allocator.hpp
-    //   (实例化点须令 GC 完整可见)。**元素类型固定 ObjString***:特化表示依赖其缓存哈希
-    //   (hash())、内容视图(view())与 weak root 清理用的 is_marked(),未参数化(YAGNI)。
-    //
-    //   **Alloc 约束的位置**:不放在模板头,而在 ctor 体内 static_assert。InternPool<GC> 是
-    //   GC 的**值成员**,在 GC 类体内实例化--此刻 GC 尚不完整,而模板头约束在 Allocator.hpp
-    //   上下文做名字查找(那里 GC 仅前向声明、看不到 allocate 成员),会判定不满足而报错;
-    //   ctor 体内随具现化检查(GC.cpp 构造 intern_ 时 GC 已完整),既保留概念强制又能作成员。
-    //
-    //   头循环同因:本头只前向声明 GC(供默认模板实参)、include ObjString.hpp(方法体调
-    //   view/hash/is_marked);调 allocate/deallocate 的成员在实例化点具现化,届时 Alloc 必已
-    //   完整(同 HashTable)。
+    // 字符串驻留池(intern pool):字符串专用 set(键即串内容,值即 ObjString* 自身)。特化表示:裸 ObjString** slots_(8B/槽
+    // ,无 ctrl/h2,靠内容比较),低位标签区分槽状态(指针经 ::operator new 对齐,低 4 位全 0):nullptr 空槽 / (ObjString*)
+    // 0x1 墓碑 / 真指针占用。**weak root**:不进 GC::mark_roots_(否则驻留串永生);GC::collect 在 sweep 前调 remove_white
+    // () 摘除指向白色(未标 is_marked)ObjString* 的表项,避免 sweep 后悬垂。 **Alloc 约束的位置**:不放在模板头,而在 ctor
+    // 体内 static_assert--InternPool<GC> 是 GC 的值成员, 类体内实例化时 GC 尚不完整,模板头约束会误判不满足;延到 ctor
+    // 具现化点检查即可。元素类型固定 ObjString*(依赖其 hash()/view()/is_marked(),YAGNI)。
     template<typename Alloc = GC>
     class InternPool {
         ObjString** slots_;

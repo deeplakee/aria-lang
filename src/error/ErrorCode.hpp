@@ -30,14 +30,9 @@ namespace aria {
         ErrorCategory cat;  // 所属大类
     };
 
-// 解释器内部统一错误码。分层按「错误在哪一阶段被发现」（对标 CPython 编译期/运行期二分、
-// Lua 状态码、crafting-interpreters）：
-//   - Syntax   ：词法/语法阶段，源码结构本身不合法（lexer/parser 可直接判定）。
-//   - Semantic ：结构合法但违反类型/作用域/形态规则（文法明确推迟到语义/字节码阶段的检查归此类）。
-//   - Runtime  ：执行期间才暴露的语义错误（类型不符、越界、键缺失等）。
-//   - Internal ：解释器自身不变式被破坏，属实现 bug（不可达、栈失衡、坏字节码）。
-//   - Resource ：资源/环境受限（内存、文件、模块、容量上限）。
-//
+// 解释器内部统一错误码。分层按「错误在哪一阶段被发现」：Syntax（词法/语法，结构本身不合法）、
+// Semantic（结构合法但违反类型/作用域/形态规则）、Runtime（执行期间才暴露的语义错误）、
+// Internal（解释器自身不变式被破坏，属实现 bug）、Resource（资源/环境受限）。
 // 错误码全量注册表（单一事实源，同 code.hpp 的 ARIA_OPCODE_LIST / TokenType.hpp 的
 // ARIA_TOKEN_LIST 风格）：枚举声明与信息表 kCodeTable 都由 ARIA_ERROR_LIST(X) 展开，
 // 新增错误码加一行 X(名字, 大类) 即收口，名字串经 # 派生，无第二处手写。隐式连续编号，
@@ -138,7 +133,6 @@ namespace aria {
         return kCodeTable[index].name;
     }
 
-    // 错误码所属大类。
     [[nodiscard]]
     constexpr ErrorCategory category_of(const ErrorCode code) noexcept {
         const auto index = std::to_underlying(code);

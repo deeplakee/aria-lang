@@ -9,12 +9,9 @@
 namespace aria {
 
     // 绑定 Value 的 aria 数组:继承 Array<Value> 的存储与接口(push/[]/data/begin/end/size...),
-    //        加 trace(GC&)(遍历元素 mark_value)与值相等原语 find/contains/remove。
-    //
-    //        分层:src/memory/ 的 Array<T> 对 T 完全通用(不知 Value 为何物);本类绑成 Value
-    //        并补 GC trace 与 == 语义判等(value_equal,嵌套容器按内容递归、数值跨型相等
-    //        --int 1 == f64 1.0),ObjList 持其作成员、trace 委托 arr.trace(gc)。语言面
-    //        list 的 find/contains/remove 方法体即这三件的薄壳。
+    //        加 trace(GC&)(遍历元素 mark_value)与值相等原语 find/contains/remove(value_equal,
+    //        嵌套容器按内容递归、数值跨型相等 int 1 == f64 1.0)。ObjList 持其作成员、trace 委托
+    //        arr.trace(gc);语言面 list 的 find/contains/remove 方法体即这三件的薄壳。
     //        继承而非组合:直接复用全部公开接口;基类 dtor 非虚但本子类不作多态基,故安全。
     //        不可拷贝/不可移动(继承自 Array)。
     class AriaArray : public Array<Value> {

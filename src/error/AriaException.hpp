@@ -6,14 +6,12 @@
 
 namespace aria {
 
-    // aria 解释器内部使用的 C++ 异常基类：与 Error 值对象 / Result<T, Error> 并存的另一条
-    // 错误通道，用于需跨深层调用栈向上传播、又不便层层 Result 的错误（如 parser 递归下降
-    // 深处发现错误时）；不可恢复错误走 fatal_error()，不走异常。
-    // 异常本身只持有一个 Error 对象（复用值类型，不重复表达码/位置/消息），
-    // 消费方经 error() 取用，不挂 std::exception 协议面。
-    //
-    // 注意：仅用于「解释器 C++ 实现内部」的错误传播，与 aria 语言自身的 throw/catch
-    // （抛 Value，走 VM 异常通道）无关。四通道总览见 AGENTS.md「错误处理」。
+    // aria 解释器内部使用的 C++ 异常基类:与 Result<T, Error> 并存的另一条错误通道,用于需跨
+    // 深层调用栈向上传播、又不便层层 Result 的错误(如 parser 递归下降深处发现错误时);
+    // 不可恢复错误走 fatal_error(),不走异常。
+    // 异常本身只持有一个 Error 对象,消费方经 error() 取用,不挂 std::exception 协议面。
+    // 注意:仅用于「解释器 C++ 实现内部」的错误传播,与 aria 语言自身的 throw/catch
+    // (抛 Value,走 VM 异常通道)无关。四通道总览见 AGENTS.md「错误处理」。
     class AriaException {
     public:
         // 从 Error 值对象构造（唯一公开构造面：只收成品 Error；组件构造由 Error 静态工厂收口，

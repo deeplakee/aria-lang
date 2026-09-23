@@ -30,9 +30,9 @@ namespace aria::util {
             io::print("\n");
         }
 
-        // splitmix64 mixing step(Vigna lowbias32 变体):64 位值雪崩成 32 位散列。
-        // 常数/移位(30/27/31)专为 32 位输出低偏置调优--高位差异充分传播到低 32 位,
-        // 利于 Swiss Table 取低 7 位作 h2。供数值/地址等 64 位标量哈希共用(见 hash_num/hash_addr)。
+        // splitmix64 mixing step(Vigna lowbias32 变体):64 位值雪崩成 32 位散列。常数/移位
+        // (30/27/31)专为 32 位输出低偏置调优--高位差异充分传播到低 32 位,利于 Swiss Table 取低 7 位作 h2。
+        // 供数值/地址等 64 位标量哈希共用。
         [[nodiscard]]
         inline u32 splitmix64_mix32(u64 value) noexcept {
             value ^= value >> 30;

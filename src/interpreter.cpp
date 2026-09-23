@@ -1,6 +1,5 @@
-// 解释器 CLI 入口分发实现：build_cli + run_repl/run_src/run_file/cli_dispatch。
-// 抽到 .cpp 以把 AriaVM / GC / ObjModule / SourceFile 等内部依赖收口在此，
-// interpreter.hpp 仅暴露 LineReader 与派发/执行入口的声明。
+// 解释器 CLI 入口分发实现。抽到 .cpp 以把 AriaVM / GC / ObjModule / SourceFile 等内部依赖
+// 收口在此，interpreter.hpp 仅暴露公共 API（LineReader + 派发/执行入口）的声明。
 
 #include "interpreter.hpp"
 
@@ -58,7 +57,6 @@ namespace aria {
             return vm.interpret_from_src(src) == InterpretResult::Ok ? 0 : 1;
         }
 
-        // 运行脚本文件。
         int run_file(const StringView path) {
             AriaVM vm;
             return vm.interpret_from_path(path) == InterpretResult::Ok ? 0 : 1;

@@ -11,10 +11,8 @@ namespace aria {
     class GC;
 
     // 操作数位宽上限(字节码编码格式事实源):u8 操作数最大 255、u16 操作数最大 65535。
-    // 发射侧(CodeGen 的 arity/实参/常量池索引/局部槽号检查)与本类编码侧(POP_N 分块/短槽号/
-    // 跳转偏移/池索引)共享,勿在别处重写字面量;各语义上限常量以之为源(见 CodeUnit.cpp/CodeGen.cpp)。
-    // 上限常量一律取上限位置形态:值 = 位宽上限(最大可编码操作数/索引),判定直接与上限比较,
-    // 不设「容量 = 上限 + 1」式常量。
+    // 发射侧(CodeGen)与本类编码侧共享,勿在别处重写字面量;各语义上限常量以之为源(见 CodeUnit.cpp)。
+    // 上限常量一律取上限位置形态:值即位宽上限,判定直接与上限比较,不设「容量 = 上限 + 1」式常量。
     constexpr u32 kU8OperandMax  = 0xFF;   // u8 操作数最大值
     constexpr u32 kU16OperandMax = 0xFFFF; // u16 操作数最大值(索引域可寻址 0..65535)
 
@@ -26,10 +24,8 @@ namespace aria {
     };
 
     // 异常记录表条目:一个 try 块的受保护区间 [begin, end)、catch handler 入口与 unwind 栈深。
-    //        begin/end/handle 均为 code 字节流中的 offset;stack_depth 为编译期 try 入口局部数快照
-    //        (相对 frame.slots,非全局栈基址),unwind 据此截断值栈,并把异常值 push 落到 catch 参数槽
-    //        (恒 == stack_depth,值填槽无 STORE_LOCAL)。
-    //        简单聚合(类内默认成员初始化, 同 LineEntry), trivially-copyable 满足 Array<T> 约束。
+    //        stack_depth 相对 frame.slots(非全局栈基址),unwind 据此截断值栈,并把异常值 push 落到
+    //        catch 参数槽(恒 == stack_depth,值填槽无 STORE_LOCAL)。trivially-copyable 满足 Array<T> 约束。
     struct TryRecord {
         u32 begin       = 0; // try 受保护区间起始 offset (含)
         u32 end         = 0; // try 受保护区间结束 offset (不含); [begin, end) 内的 ip 命中此记录
@@ -37,25 +33,18 @@ namespace aria {
         u32 stack_depth = 0; // try 入口局部数(编译期快照); unwind 截值栈至 frame.slots + 此值
     };
 
-    // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表 + 异常记录表。
-    //
-    //   四个 Array 字段(code/constants/lines/try_records)直接 public 裸露,VM/编译器/反汇编器
-    //   直接操作;只保留有"不可散落逻辑"的方法:emit_*(写字节同时按 RLE 记行号表)、跳转编码/
-    //   回填/分块 POP/槽位短长变体等编码收口、line_for_offset(RLE 二分查行)、trace(GC 委托入口,
-    //   ObjFunction::trace 调)。跳转回填越界(超 64KB)以 bool 返回交回调用方翻译为 Error --
-    //   本类不持有 Error 语义。
-    //
-    //   **行号模型**:emit 一律带 `line` 参数(无状态、无重载)-- 调用方(编译器)自己跟踪
-    //   当前行号,每次 emit 传入。RLE 去重收口在 record_line_ 内做。
-    //
-    //   注:本类**不是 Object**,是 `ObjFunction` 的值成员。四个 Array 持 GC* 自释放,
-    //   ~CodeUnit -> ~Array 级联释放(同 ObjString long_chars_)。非拷贝/非移动。
+    // 字节码容器:一个编译单元(函数/模块顶层)的字节流 + 常量池 + 行号表 + 异常记录表。四个 Array 字段(code/constants/
+    // lines/try_records)直接 public 裸露,VM/编译器/反汇编器直接操作; 只保留有"不可散落逻辑"的方法(emit_* 按 RLE 记行号
+    // 表、跳转编码/回填、分块 POP、槽位短长变体、 line_for_offset、trace、disassemble)。跳转回填越界(超 64KB)以 bool
+    // 返回交回调用方翻译为 Error -- 本类不持有 Error 语义。 **行号模型**:emit 一律带 `line` 参数(无状态、无重载),调用
+    // 方自己跟踪当前行号;RLE 去重收口在 record_line_ 内做。本类**不是 Object**,是 ObjFunction 的值成员(四个 Array 持
+    // GC* 自释放, ~CodeUnit -> ~Array 级联,同 ObjString long_chars_)。非拷贝/非移动。
     class CodeUnit {
     public:
         Array<u8>        code;        // 字节流: opcode + 内联操作数 (小端)
         AriaArray        constants;   // 常量池 (Array<Value> + trace)
         Array<LineEntry> lines;       // RLE 行段表 (offset -> line)
-        Array<TryRecord> try_records; // 异常记录表 (按 begin 单调; find_try_handler 二分查)
+        Array<TryRecord> try_records; // 异常记录表 (按 begin 非降序,允许相等; find_try_handler 二分查)
 
         explicit CodeUnit(GC* gc) noexcept;
 
@@ -66,7 +55,7 @@ namespace aria {
         CodeUnit(CodeUnit&&)                 = delete;
         CodeUnit& operator=(CodeUnit&&)      = delete;
 
-        // ---- emit (带 line; RLE 行号记录收口于此) ----
+        // emit (带 line; RLE 行号记录收口于此)
         void emit_byte(u8 byte, u32 line);
         void emit_word(u16 word, u32 line); // 小端: 低字节先
         void emit_op(OpCode op, u32 line);
@@ -91,27 +80,28 @@ namespace aria {
             return static_cast<u32>(code.size());
         }
 
-        // ---- 常量池 ----
+        // 常量池
         // 暂不去重(ObjString 经 intern 同指针)。索引 u16,超 65535 断言。
         u16 add_constant(Value value);
 
-        // ---- 行号查询 ----
-        // 查 `offset` 所属行号(RLE 二分:最大 entry.offset <= offset 的 line)。
-        // 空表或 offset 在首条之前返回 0(未知行)。
+        // 行号查询
+        // 查 `offset` 所属行号(RLE 二分:最大 entry.offset <= offset 的 line)。空表或 offset 在
+        // 首条之前返回 0(未知行)。
         [[nodiscard]]
         u32 line_for_offset(u32 offset) const noexcept;
 
-        // ---- 异常记录表 ----
+        // 异常记录表
         // 按 ip 查最近覆盖的 try 记录(嵌套取最内层), 返回指向命中记录的指针(unwind 读 handle 与
-        // stack_depth 两字段); 无覆盖返 nullopt。记录按 begin 单调; 二分 + 前溯, O(嵌套深度) 最坏。
+        // stack_depth 两字段); 无覆盖返 nullopt。记录按 begin 非降序(允许相等:内层 try 是外层体首条
+        // 语句时零发射间隔); 二分 + 前溯, O(嵌套深度) 最坏。
         [[nodiscard]]
         Opt<const TryRecord*> find_try_handler(u32 ip) const noexcept;
 
-        // ---- GC trace ----
+        // GC trace
         // 委托 constants.trace(gc)(code/lines/try_records 无 Value,不标)。由 ObjFunction::trace 调用。
         void trace(GC& gc) const noexcept { constants.trace(gc); }
 
-        // ---- 反汇编 ----
+        // 反汇编
         // 委托 Disassembler::disassembleCodeUnit(this, name) 输出整个 CodeUnit 的可读反汇编文本;
         // name 用作表头标识(函数名/模块名)。
         [[nodiscard]]

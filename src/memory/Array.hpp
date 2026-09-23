@@ -9,19 +9,12 @@
 
 namespace aria {
 
-    // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。
-    //        T 必须 trivially-copyable(Value / OpCode / u8 / i32 等 POD,契约见 Allocator.hpp)。
-    //        持 Buffer<T,Alloc> buf_(收口分配/重分配/释放)+ usize len_(逻辑长度,<= cap)。
-    //        不可拷贝/不可移动(继承自 Buffer,理由见 Buffer 注)。
-    //
-    //        扩容策略固定:初始 8、2 倍几何增长(见 ensure_capacity)。扩容走 memcpy 搬迁,
-    //        故不适合按内容重定位的容器(HashTable / InternPool rehash,见 Buffer 注)。
-    //        用途:**顺序**增长的可扩容数组(ObjList 元素 / CodeUnit 字节码与常量池)。
-    //
-    //        分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,
-    //        实例化点(调用方 TU)须令 GC 完整可见。
-    // T     元素类型(POD)
-    // Alloc Trivial 分配器(默认 GC)
+    // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。 T 必须 trivially-copyable(Value /
+    // OpCode / u8 / i32 等 POD,契约见 Allocator.hpp)。持 Buffer<T,Alloc> buf_(收口分配/重分配/释放)+ usize len_(逻辑长
+    // 度,<= cap)。不可拷贝/不可移动 (继承自 Buffer,理由见 Buffer 注)。扩容策略固定:初始 8、2 倍几何增长(见
+    // ensure_capacity); 走 memcpy 搬迁,故不适合按内容重定位的容器(HashTable / InternPool rehash,见 Buffer 注)。分配器
+    // 经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,实例化点 (调用方 TU)须令 GC 完整可见。 T 元素
+    // 类型(POD) Alloc Trivial 分配器(默认 GC)
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Array {
         static constexpr usize kInitialCapacity = 8; // 首次分配与几何增长起点

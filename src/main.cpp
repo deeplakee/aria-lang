@@ -1,6 +1,5 @@
-// aria 解释器入口：解析命令行参数 -> 派发到 --eval / <file> / 交互式 REPL。
-// 分发逻辑收敛在 interpreter.cpp 的 cli_dispatch（声明于 interpreter.hpp，供测试驱动），
-// 本文件仅负责 isocline 行读取器与 argc/argv 透传。退出码：0 成功，1 任何错误。
+// aria 解释器入口：分发逻辑收敛在 interpreter.cpp 的 cli_dispatch（声明于 interpreter.hpp，
+// 供测试驱动），本文件仅负责 isocline 行读取器与 argc/argv 透传。
 #include "interpreter.hpp"
 
 #include "aria.hpp"

@@ -119,7 +119,6 @@ namespace aria::utf8 {
     // 遇到非法字节时返回 {kReplacementChar, 1}（只吞掉一个坏字节，便于继续扫描）。
     // offset 超出范围（>= str.size()）时返回 {kReplacementChar, 0}，不进行任何读取；
     // 正常使用时调用方应保证 offset < str.size()，此时返回的字节数 >= 1。
-    //
     // ASCII 快路径就地内联，多字节交 detail::decode_multibyte（ARIA_NOINLINE）--源码主体是 ASCII，
     // 于是每个调用点只多出几条指令，而不必携带整套多字节解码代码。
     [[nodiscard]]

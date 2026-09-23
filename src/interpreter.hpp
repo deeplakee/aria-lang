@@ -1,10 +1,9 @@
 #ifndef ARIA_INTERPRETER_HPP
 #define ARIA_INTERPRETER_HPP
 
-// 解释器 CLI 入口分发：把命令行参数解析 -> --eval / <file> / REPL，main 仅转调本头。
-// 实现收敛在 interpreter.cpp，本头仅暴露公共 API（LineReader + 派发/执行入口），
-// 避免把 AriaVM / GC / ObjModule 等内部依赖泄漏给 main.cpp 与测试。
-//
+// 解释器 CLI 入口分发：命令行参数解析 -> --eval / <file> / REPL。实现收敛在 interpreter.cpp，
+// 本头仅暴露公共 API（LineReader + 派发/执行入口），避免把 AriaVM / GC / ObjModule 等内部
+// 依赖泄漏给 main.cpp 与测试。
 // 分发优先级：--help > --version > --eval > --repl > <file> > 默认 REPL（无参即进 REPL）。
 // 退出码：0 成功；1 任何错误（CLI 解析失败 / 编译错误 / 运行期错误 / 加载失败）。
 

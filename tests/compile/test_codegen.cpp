@@ -1215,8 +1215,8 @@ TEST(CodeGen, BuiltinStr) {
 }
 
 TEST(CodeGen, BuiltinPrintln) {
-    // println 是 print 语句的函数形态（print 是关键字，不能作值），输出渲染钉在语料
-    // 08_builtins/println_builtin（配 .out 逐字节比对），此处只钉可取值与身份。
+    // println 是内建函数，可作一等值传参；输出渲染钉在语料 08_builtins/println_builtin
+    // （配 .out 逐字节比对），此处只钉可取值与身份。
     EXPECT_EQ(aria::format_value((*run_source("return type(println);"))), "NativeFn");
 }
 

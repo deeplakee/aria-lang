@@ -172,10 +172,10 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()
   RETURN 按函数名 == `<module>` 判定模块体帧后压回模块对象,无递归 `dispatch_loop()`）。
 - **解析缓存**：IMPORT 重复执行同一 specifier 需避免重复 stat。计划加一层缓存，键
   `(当前模块绝对目录, specifier ObjString*)` -> 已解析绝对键 `ObjString*`，命中即跳过磁盘。
-  确切结构 / 存放位置待定（TODO）。
+  确切结构 / 存放位置留待实现时定。
 - **stdlib 路径**：`<exe_dir>/../share/aria/lib` 为约定初值，确切路径与平台分流待定。
 - **其余源根**：`-L` 标志、`ARIA_PATH` 环境变量等之后再加。
-- **源根越界**：相对导入越出源根的检测留待加载层（`weakly_canonical` 折叠 `..` 后由加载层
+- **源根越界**：相对导入越出源根的检测未实现，留待加载层（`weakly_canonical` 折叠 `..` 后由加载层
   据源根列表判定，本原语不限路径范围）。
 
 > 全景与各环节状态（词法 / 语法 / 编译器缺口 / 字节码 / VM / ObjModule / fs 原语 / 测试）

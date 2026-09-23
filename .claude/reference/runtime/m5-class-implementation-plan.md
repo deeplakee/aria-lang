@@ -6,7 +6,7 @@
 > **决策记录（2026-09-09，六项定夺）**：
 > 1. `ObjClass` **不设 meta 元类指针**（grammar「meta（元类，未来）」裁撤，YAGNI；将来要再加不动 `ObjType`）。
 > 2. **静态变量与静态/实例方法同存一张哈希表**（`AriaHashTable<Value,Value>`，键 intern `ObjString`）；静态值/方法的区分在值类型本身（是否 `ObjClosure`），表内无 tag。
-> 3. **Object 根类由 VM 构造期 bootstrap，VM 成员单独持有**（不进 `builtins_`/任何模块 globals -- 裸名解析（局部 -> upvalue -> 模块全局 -> builtins 回退）全部够不到，正常代码访问不到；`LOAD_OBJECT` 直推 VM 成员）。
+> 3. **Object 根类由 VM 构造期 bootstrap，VM 侧单独持有**（不进 `builtins_`/任何模块 globals -- 裸名解析（局部 -> upvalue -> 模块全局 -> builtins 回退）全部够不到，正常代码访问不到）。**（后续改定：`LOAD_OBJECT` 指令已随值寄存器组收编为 `LOAD_REG`，Object 根类现居 VM 值寄存器组 `registers_` 的 ObjectClass 格，见 `collections-builtin-methods-plan.md` §4.1）**
 > 4. **方法查找后的 bound-method 缓存写进实例的 fields 哈希表**（与真字段同表同 keyspace），三条铁则见 §2.4。**（2026-09-20 反转：缓存整体取消，改由调用路径不绑定 + 读路径每次现场绑定，理由与实测见 `collections-builtin-methods-plan.md` §4.6）**
 > 5. **`STORE_FIELD` peek-store 与「MAKE_CLASS 后 class 始终留栈」的衔接取镜像双指令**：`STORE_FIELD [obj,v] -> [v]`（弹 obj 留 v，服务体外赋值）与 `MAKE_STATIC [class,value] -> [class]`（弹 value 留 class，服务体内创建）互为镜像、各自零冗余；DUP/POP 凑法弃（详见 §2.5）。
 > 6. **defining class 挂 `ObjClosure` 而非 `ObjFunction`**（grammar 原文「ObjFn 持 defining class」随落地改写，理由见 §2.6）。
@@ -55,7 +55,7 @@
 
 def 类 = **类级一张静态表 + 每实例一张字段表 + superclass 单链**（grammar.txt def 节、指令集 §5.5 既定语义）：
 
-- **查找序**：`foo.x` 先查实例 fields 表，未命中沿 super 链查各类静态表（方法 -> 绑定方法并回填缓存；静态值 -> 直读**不缓存**）；`Foo.x` 沿链查类静态表。实例属性可遮蔽同名静态成员/方法（fields 命中优先）。类成员读写取 **Python/JS class attributes 语义（读穿透、写遮蔽，2026-09-09 改定，见决策补记）**：读沿链 fall-through；类上赋值 `Sub.x = v` 落**接收类自身**表--继承来的名字新建遮蔽键、本类已有则原槽更新，父表不动；沿链全 miss 的新名字拒（无 monkey-patch，静态必须 `var` 声明；**2026-09-11 改定废止**：新名亦落接收类自身表，动态新增允许）；方法槽亦允许改写（bound 缓存取首解析快照；"init" 赋值同步 `init_`）。
+- **查找序**：`foo.x` 先查实例 fields 表，未命中沿 super 链查各类静态表（方法 -> 绑 this 返绑定方法、**每次访问现场绑定**；静态值 -> 直读）；`Foo.x` 沿链查类静态表。实例属性可遮蔽同名静态成员/方法（fields 命中优先）。类成员读写取 **Python/JS class attributes 语义（读穿透、写遮蔽，2026-09-09 改定，见决策补记）**：读沿链 fall-through；类上赋值 `Sub.x = v` 落**接收类自身**表--继承来的名字新建遮蔽键、本类已有则原槽更新，父表不动；沿链全 miss 的新名字拒（无 monkey-patch，静态必须 `var` 声明；**2026-09-11 改定废止**：新名亦落接收类自身表，动态新增允许）；方法槽亦允许改写（改写后**新解析见新值**；"init" 赋值同步 `init_`）。
 - **this 是实例方法槽 0 的具名局部**（名 "this"，关键字不可能与用户标识符撞名；2026-09-10 阶段 2 review 改定：方法帧形 `[this, a1..aN]`，this 替代 callee 占槽 0 -- 对齐旧版 VM/clox 方法语义，见决策补记），嵌套函数引用 this 沿外围帧捕获其槽 0 为 upvalue -- M4 捕获机制**零改动复用**。
 - **实例字段动态**（`init` 内 `this.x = ...` 落 fields 表，无字段预声明）；**静态 eager**（类定义点求值，类名未绑定前体内裸名不可自引用）；**无 monkey-patch**（类上新名 `Foo.newStatic = v` 运行期报错，静态必须 var 声明；**2026-09-11 改定废止**：动态新增允许，新名落接收类自身表，见决策补记）。
 - Object 根类：唯一 super 为空者，链式查找统一终止于它；提供 no-op `init`（`super.init()` 无任何用户 init 时也可调用）。
@@ -64,7 +64,7 @@ def 类 = **类级一张静态表 + 每实例一张字段表 + superclass 单链
 
 ### 2.1 ObjClass 无 meta
 
-字段收敛为 `{ name_（intern 非空）, superclass_（唯 Object 为 nullptr）, field_（AriaHashTable，惰性；落地期由 statics_ 改名--表同时存静态成员与方法，单数 field_ 区分 ObjInstance.fields_）, init_（ObjClosure*） }`。元类是未来需求，现在预留只会多一个空指针与 trace 分支。
+字段收敛为 `{ name_（intern 非空）, superclass_（唯 Object 为 nullptr）, field_（AriaHashTable，惰性；落地期由 statics_ 改名--表同时存静态成员与方法，单数 field_ 区分 ObjInstance.fields_）, init_（Value，闭包/原生皆可，ctor 自 super 派生） }`。元类是未来需求，现在预留只会多一个空指针与 trace 分支。
 
 ### 2.2 静态 + 方法一张表
 
@@ -72,7 +72,7 @@ def 类 = **类级一张静态表 + 每实例一张字段表 + superclass 单链
 
 ### 2.3 Object 构造期 bootstrap、单独存储
 
-与指令集 §4.15 `LOAD_OBJECT`「VM 内部指针，不经名字查，避免 shadow Object 名破坏隐式继承」的现行定义一致。bootstrap 内容：`ObjClass("Object", super=nullptr)` + **合成 no-op init 闭包**（`ObjFunction` arity 0、module nullptr、字节码手发 `LOAD_NIL; RETURN` -- 体内无名字解析故帧 module 空指针无害，tracer/mark 容 nullptr）+ 静态表 set("init", closure) + `init_` 指向它。VM 成员 `object_class_` 持有、vm_roots tracer 增标（§3 阶段 2）。
+与指令集 §4.14 `LOAD_REG`（寄存器 `ObjectClass`）「VM 内部指针，不经名字查，避免 shadow Object 名破坏隐式继承」的现行定义一致。bootstrap 内容：`ObjClass("Object", super=nullptr)` + **原生 no-op init**（`return true` 不写槽，`slots[0]` 已是 this 即返回实例；无 ObjFunction/无 module，「ObjFunction module 恒非空」不变式得以保持）+ 静态表 set("init", 该原生) + `init_` 指向它。Object 根类入 VM 值寄存器组 ObjectClass 格、由 vm_roots tracer 逐格标根（§3 阶段 2；「ObjFunction 合成闭包」与「VM 成员 `object_class_`」两个中间形态已先后退役，见决策补记（三）① 与值寄存器组前拉）。
 
 ### 2.4 bound-method 缓存三铁则（写实例 fields 表）
 
@@ -98,7 +98,7 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 
 ### 阶段 1：object 层
 
-- **新增 `src/object/ObjClass.{hpp,cpp}`**（`final : Object`；`ObjType::CLASS` 枚举与 `to_string(ObjType)` case **均已预置，零改动**）：`name_`（intern 非空）/ `superclass_` / `field_`（惰性，落地期由 statics_ 改名）/ `init_`（ctor nullptr）；接口 `find_field(ObjString*) -> Value*` 沿链查（读穿透/存在性检查；落地期由 `(owner, 槽)` 对收缩--共享槽写改定写遮蔽后 owner 无人消费，见决策补记）、`upsert_field`（写遮蔽落接收类自身，与创建路径共用；2026-09-10 整改四：二者转私有，公开写入口 `set_field`，下同）、`init()/set_init`、`superclass()/name()`；trace 标 name + super + field(key+value) + init + 各成员闭包的 defining_class 级联；`to_string` = `<class Foo>`；工厂 `new_class(GC&, ObjString* name, ObjClass* super)`（入参调用方根化，同 `new_module` 3 参重载纪律）。
+- **新增 `src/object/ObjClass.{hpp,cpp}`**（`final : Object`；`ObjType::CLASS` 枚举与 `to_string(ObjType)` case **均已预置，零改动**）：`name_`（intern 非空）/ `superclass_` / `field_`（惰性，落地期由 statics_ 改名）/ `init_`（Value，ctor 自 super 派生）；接口 `find_field(ObjString*)` 沿链查（读穿透/存在性检查；落地期由 `(owner, 槽)` 对收缩--共享槽写改定写遮蔽后 owner 无人消费，见决策补记）、`upsert_field`（写遮蔽落接收类自身，与创建路径共用；2026-09-10 整改四：二者转私有，公开写入口 `set_field`，下同）、`init()/superclass()/name()`（`set_init` 公共可变器已随「init seed 收进构造函数」补记退役）；trace 标 name + super + field(key+value) + init + 各成员闭包的 defining_class 级联；`to_string` = `<class Foo>`；工厂 `new_class(GC&, ObjString* name, ObjClass* super)`（入参调用方根化，同 `new_module` 3 参重载纪律）。
 - **新增 `src/object/ObjInstance.{hpp,cpp}`**（`ObjType::INSTANCE` 已预置）：`class_` + `fields_`（惰性；bound-method 缓存同居此表）；trace 标 class + fields(key+value)；`to_string` = `<Foo instance>`；工厂 `new_instance(GC&, ObjClass*)`（shell 单次分配、fields 惰性 ==> 无内部二级分配，调用方建成即写栈、无中间 GC 点免守卫）。
 - **新增 `src/object/ObjBoundMethod.{hpp,cpp}`**（`ObjType::BOUND_METHOD` 已预置）：`method_`（`ObjClosure*`）+ `receiver_`（**Value** -- 为将来内建类型方法留泛化，非 ObjInstance* 专用）；trace 标 method + mark_value(receiver)；`to_string` = `<bound method m>`；equals 默认地址相等；工厂 `new_bound_method(GC&, ObjClosure*, Value)`。
 - **`ObjClosure` 增 `defining_class_`**（默认 nullptr）+ setter/getter；trace 补标（容 nullptr）。
@@ -125,7 +125,7 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
   - `LOAD_THIS_FIELD name`：this = `frame.slots[0]`（指令仅编译器于实例方法内发射；VM 断言 + fail 兜底）；查找同 LOAD_FIELD 实例路径（**含绑定 + 缓存回填**，与 `obj.m` 同走一个 helper），结果 push。
   - `STORE_THIS_FIELD name`：v = peek(0)；this 同上 `fields_.upsert`；值留栈（`[v] -> [v]`，this 不经栈）。
   - `LOAD_SUPER_FIELD name`：defining = `frame.closure->defining_class()`（nullptr -> fail InvalidState，编译期已挡仅兜底）；super = `defining->superclass()`（nullptr 即 Object 的方法内用 super -> `fail SuperNoBaseClass`）；沿 super 链 find（**从父类起、不含 defining 自身**，经 `ObjClass::load_field` 协议，miss 类措辞随协议）：命中**方法闭包（defining class 戳 --2026-09-11 改定方法性看戳不看值类型）** -> `new_bound_method(gc, method_value, frame.slots[0])`（this 在帧槽根化）-> push；命中其余（静态方法 fun/持函数值的静态变量/原生/静态值）-> 原值直读 push 不绑定不缓存（super 静态访问放开，原「super.x 静态不支持」fail 退役，见 super 静态访问补记）；未命中 -> fail UndefinedProperty。**不写 fields 缓存**（铁则 2）。
-- **消费点零改动**：trace_execution/Disassembler/kOpCodeCount=63 均不动。
+- **消费点零改动**：trace_execution/Disassembler/`kOpCodeCount` 均不动（M5 不新增指令）。
 - **测试**（tests/runtime/test_ariavm.cpp 手写 emit，辅助族扩 make_class/make_method）：类建立序列 -> 实例化快/慢路径、init 带参、方法调用改 this 字段、继承覆写 + super 调父实现、类上赋值写遮蔽（`Sub.x = v` 后 `Sub.x` 取新值、`Super.x` 不变；新名字经赋值新增被拒）、方法经类上赋值改写（新解析取新闭包、已解析实例沿用旧绑定--首解析快照）、init 赋值同步 `init_`（非闭包值拒）、bound 缓存同指针（两次 LOAD_FIELD 返回同一 `ObjBoundMethod*`）、super 不污染缓存（super.m 后 obj.m 仍派发子类实现）、STORE_FIELD 单槽下移正确性（深栈多临时值下赋值）、动态新增（原 monkey-patch 拒绝用例翻为新增成功，2026-09-11 改定）、NilDereference/UndefinedProperty/SuperNoBaseClass/TypeMismatch 报错、AriaVMStress 下实例/绑定/类/缓存项跨 GC 存活；既有 NotImplemented 用例若占这九指令改挂仍 fatal 的 `LOAD_INDEX`/`MAKE_LIST` 等。
 - `rules/runtime.md`（九指令/两 call 分支/方法帧槽 0 = this/bootstrap/tracer 第 4 根）、`rules/memory.md`（tracer 根清单）同步。
 
@@ -144,12 +144,12 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 - **`visitThisExprNode`（:895）-> 专用 `resolve_this_or_fail`**：沿 fn ctx 链找名为 "this" 的局部 -- 当前帧命中 -> `emit_load_var`（LOAD_LOCAL 0，this 占方法帧槽 0）；enclosing 命中 -> 经既有 `resolve_upvalue` 捕获（LOAD_UPVALUE，**M4 机制零改动复用**）；链上无 -> `fail ThisOutsideClass`（ErrorCode.hpp:55 预置）。**永不落全局**（this 是关键字非标识符，不复用 resolve_name_or_fail 的全局兜底）。
 - **`visitSuperExprNode`（:897）-> super.成员 文法单形（裸 super 解析期 ExpectedToken）**：语境检查（SuperOutsideMethod）+ `LOAD_SUPER_FIELD`（方法闭包绑 this、静态槽原值直读）；super.m(args) 调用经 visitCallNode 通用路径复用本 visit，无特判分支。
 - **`visitFieldAccessNode`（:1039）四模式**（take_lvalue_mode；帧内 this.x 形态封装 `try_emit_this_field`）：
-  - Prepare（普通 = 首腿，compound-assignment-lowering.md §6）：只发接收者不读值——一般对象/嵌套捕获 this 发 `<obj>`；帧内 this / Identifier no-op（locator 编译期常量，无接收者可备）。
+  - Prepare（普通 = 首腿，compound-assignment-lowering.md §6）：只发接收者不读值--一般对象/嵌套捕获 this 发 `<obj>`；帧内 this / Identifier no-op（locator 编译期常量，无接收者可备）。
   - Load：object 为 ThisExpr 且 this 解析为**当前帧局部** -> `LOAD_THIS_FIELD`（优化）；this 为 upvalue（嵌套函数）-> `LOAD_UPVALUE this + LOAD_FIELD`（退化 -- THIS_FIELD 系指令 this 取槽 0 只对直接方法体成立）；object 为 SuperExpr -> `LOAD_SUPER_FIELD`（2026-09-11 改定 `super.x` 静态读取放开：方法闭包（defining class 戳）绑 this、静态槽原值直读；指令读 frame.closure 的 defining class，仅直接方法帧可承载，嵌套函数内 super 已拍板编译期禁于嵌套函数（2026-09-14，见阶段 3 首条拍板））；一般 -> emit object + `LOAD_FIELD`。
   - Store：object 为 ThisExpr（局部）-> `STORE_THIS_FIELD`；其余同形退化 -> `STORE_FIELD`。
   - **Locate（启用 compound-assignment-lowering.md §4.2 预留方案）**：`obj.f op= e` -> `<obj> DUP LOAD_FIELD f <e> <op> STORE_FIELD f`（locator 单次求值，DUP 副本跨 load/store 复用）；`this.f op= e` -> `LOAD_THIS_FIELD ... STORE_THIS_FIELD`（定位腿折叠 THIS_FIELD Load 形 -- locator = 槽 0 编译期常量，重解析廉价，DUP 副本无人消费）；前置 `++/--` 同族走复合赋值既有机制。
 - **`visitCallNode`（:1025）**：callee 为 `FieldAccessNode(SuperExprNode, m)` -> 先判语境（当前帧 kind 非 InstanceMethod -> `SuperOutsideMethod`，ErrorCode.hpp:54 预置；原「沿链找最近 InstanceMethod」判据会误放行嵌套函数，2026-09-14 拍板收紧为直接方法帧，见阶段 3 首条拍板）-> `LOAD_SUPER_FIELD m` + args + `CALL`；其余 callee 走通用路径（FieldAccess(This,·) 经 visit 正常发射 LOAD_THIS_FIELD/退化，无需特判）。
-- **测试**（tests/compile/test_codegen.cpp 端到端 + 反汇编文本）：路线表验收四样例（类定义/实例化/继承/super）；静态共享槽与遮蔽、实例字段遮蔽静态、this 嵌套捕获（lambda 内 this.x 读写）、嵌套函数内 super 禁 + 先取后用等价样例（`var m = super.m;` 后闭包调用）、方法返回后经 this upvalue 延迟调用仍绑原实例、super 不污染动态派发、动态新增（原 monkey-patch 拒绝翻为新增成功，2026-09-11 改定）、RedefinedMember、ThisOutsideClass/SuperOutsideMethod/SuperFieldStoreInvalidTarget/SuperCompoundInvalidTarget 编译错、def 体内 throw 后类名未绑定、函数内 def（值填槽局部类）、反汇编断言（LOAD_OBJECT/MAKE_CLASS/MAKE_METHOD/MAKE_STATIC 出现、成员序正确、方法 CLOSURE+MAKE_METHOD 相邻、无 DEF_GLOBAL 混入方法发射）。
+- **测试**（tests/compile/test_codegen.cpp 端到端 + 反汇编文本）：路线表验收四样例（类定义/实例化/继承/super）；静态共享槽与遮蔽、实例字段遮蔽静态、this 嵌套捕获（lambda 内 this.x 读写）、嵌套函数内 super 禁 + 先取后用等价样例（`var m = super.m;` 后闭包调用）、方法返回后经 this upvalue 延迟调用仍绑原实例、super 不污染动态派发、动态新增（原 monkey-patch 拒绝翻为新增成功，2026-09-11 改定）、成员重名后写遮蔽（`MemberDuplicateShadowsPrevious`）、ThisOutsideClass/SuperOutsideMethod/SuperFieldStoreInvalidTarget/SuperCompoundInvalidTarget 编译错、def 体内 throw 后类名未绑定、函数内 def（值填槽局部类）、反汇编断言（LOAD_REG/MAKE_CLASS/MAKE_METHOD/MAKE_STATIC 出现、成员序正确、方法 CLOSURE+MAKE_METHOD 相邻、无 DEF_GLOBAL 混入方法发射）。
 - `rules/compile.md`（FnKind/this 解析/Locate 启用/defDecl lowering）同步；compound-assignment-lowering.md「Locate 当前不使用」翻已启用。
 
 ### 阶段 4：文档收尾 + 全量验证
@@ -165,5 +165,5 @@ GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace �
 
 - 路线表 M5 标准：类定义/实例化/继承/super 样例通过。
 - 双值表示配置 ctest 全绿（机制测试覆盖：实例化快/慢路径、方法调用与 this 字段、继承/super、共享槽、缓存三铁则、GC stress 存活）。
-- 零新增 opcode（九条早已预留，`kOpCodeCount=63` 不变），Disassembler 零改动。
+- 零新增 opcode（九条早已预留），Disassembler 零改动。
 - **错误码零新增**（SuperOutsideMethod/ThisOutsideClass/RedefinedVariable + NilDereference/UndefinedProperty/SuperNoBaseClass/TypeMismatch/InvalidState 均已预置于 ErrorCode.hpp）。

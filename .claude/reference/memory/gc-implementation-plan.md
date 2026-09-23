@@ -17,7 +17,7 @@ aria 解释器的 GC(内存分配 + mark-sweep 回收)设计与分阶段实现�
 | :--- | :--- | :--- |
 | **Phase 1** | `Array<T>` + GC(模板分配器 + mark-sweep + 临时根 + `new_object`)+ `ObjString`(SSO,**无驻留**)+ 测试 | 已落地 |
 | Phase 2 | `HashTable`(Swiss Table)+ intern 驻留池 + 值绑定容器(`AriaArray`/`AriaHashTable`) | 已落地 |
-| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn`/`ObjException` 已落地;`ObjClosure`/`ObjUpvalue` 已随 M4 闭包落地(2026-09,`ObjFunction` 的捕获描述表 `UpvalueDesc` 同批);`ObjClass`/`ObjInstance`/`ObjBoundMethod` 已随 M5 类落地(2026-09);`ObjList`/`ObjMap` 待容器里程碑 | 部分落地 |
+| Phase 3 | `CodeUnit` + `ObjFunction`/`ObjModule`/`ObjNativeFn`/`ObjException` 已落地;`ObjClosure`/`ObjUpvalue` 已随 M4 闭包落地(2026-09,`ObjFunction` 的捕获描述表 `UpvalueDesc` 同批);`ObjClass`/`ObjInstance`/`ObjBoundMethod` 已随 M5 类落地(2026-09);`ObjList`/`ObjMap` 已随集合批落地 | 已落地 |
 | Phase 4 | `Movement`(有栈协程,VM 持 `current_`)+ VM 根(`current_` 单根;协程经对象图可达,M6 定稿不设 `movements_` 并集,见 vm-design.md §4.9)+ safe point | 部分前拉:值栈/帧经 vm_roots tracer 标根 + `JUMP_BACK` safe point 已落地(开发期即开 GC);open upvalue 链亦已随 M4 落地并经 tracer 标根;`ObjMovement : Object` + 协程根收敛仍待 M6 |
 
 > intern 延后到 Phase 2:它依赖 HashTable,而 HashTable 是 Phase 1 之后的下一个产物(与 Array 平级、并列的通用容器,不依赖 Array)。Phase 1 不引入 `std::unordered_map` 占位代码,GC 核心(分配计数 / mark-sweep / 临时根 / ObjString 析构)已可独立测试。
@@ -218,7 +218,7 @@ ObjString* new_string(GC& gc, StringView src);    // = gc.new_object<ObjString>(
 
 ```
 collect():
-  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + builtins_ + object_class_(M5 第 4 根) + current_ 沿 previous_ 执行链各上下文值栈/帧/挂起错误寄存器)
+  mark_roots_()    // temp_roots_ + vm_roots_tracer_(modules_ + builtins_ + registers_(值寄存器组,Object 根类在其中) + current_ 沿 previous_ 执行链各上下文值栈/帧/挂起错误寄存器)
   trace_gray_()    // gray 栈弹一个 -> o->trace(*this) -> 子节点标灰入栈
   sweep_()         // 遍历 objects_head_:未标 -> 摘除 + delete_object();已标 -> unmark()
   next_gc_ = bytes_allocated_ * 2
@@ -242,9 +242,9 @@ auto guard = gc.make_guard(s);       // push s
 
 ### 3.6 测试
 
-`tests/test_array.cpp`(7 个):push/pop/index、几何扩容、reserve/resize、truncate/clear、move 语义、空 dtor、`Array<Value>`。
+`tests/memory/test_array.cpp`(7 个):push/pop/index、几何扩容、reserve/resize、truncate/clear、move 语义、空 dtor、`Array<Value>`。
 
-`tests/test_gc.cpp`(17 个):
+`tests/memory/test_gc.cpp`(17 个):
 - `GcAlloc`:BytesCounted / FreeNullIsNoop / ReallocCopiesAndAdjusts / ReallocToZeroFrees
 - `ObjString`:ShortIsInline / LongIsSeparate / HashStableForEqualContent
 - `GcCollect`:EmptyCollectIsNoop / UnrootedShortSwept / UnrootedLongSwept / TempRootSurvives / SweepResetsMarks / GuardBalancesTempRoots
@@ -461,7 +461,7 @@ class InternPool {
 | `src/value/Value.hpp` / `.cpp` | 值操作收口:`value_hash`/`value_equal` 自由函数(声明在 .hpp,定义在 .cpp;`<bit>`/`Object.hpp` 置于 .cpp) |
 | `src/memory/GC.{hpp,cpp}` | 加 `intern_` 成员 + `intern_find`/`intern_insert` + `collect` 调 `remove_white` |
 | `src/object/ObjString.{hpp,cpp}` | `new_string` 改驻留(find -> new_object + Guard + insert) |
-| `tests/test_hashtable.cpp` / `test_internpool.cpp` / `test_aria_containers.cpp` | 单测 |
+| `tests/memory/test_hashtable.cpp` / `test_internpool.cpp` / `test_value/test_aria_containers.cpp` | 单测 |
 
 ### Phase 3：CodeUnit + Object 子类型
 
@@ -474,7 +474,7 @@ class InternPool {
 
 ### Phase 4:Movement + VM 根
 
-> **已前拉部分(开发期即启用 GC)**:`modules_` + `builtins_` + `object_class_`(M5 tracer 第 4 根) + `current_` 沿 `previous_` 执行链各上下文的值栈 `[base, top)`/各活动帧 `closure`/`module`/挂起错误寄存器/open upvalue 开链(M4 起一并标)已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point(open upvalue 链已随 M4 落地于 Movement、经 vm_roots tracer 标根,不再待 M6)。
+> **已前拉部分(开发期即启用 GC)**:`modules_` + `builtins_` + `registers_`(值寄存器组,Object 根类在其中) + `current_` 沿 `previous_` 执行链各上下文的值栈 `[base, top)`/各活动帧 `closure`/`module`/挂起错误寄存器/open upvalue 开链(随 M4 一并标)已经 `AriaVM` 的 vm_roots tracer 在 `mark_roots_` 标根(Movement 仍是纯 C++ 类,以 tracer 直标代替升 Object);`run()`/`compile()` 不再持 `LockGuard`,`JUMP_BACK` + `new_object` 内已是 safe point;`compile()` 以 `make_guard(&module)` 根化建设中的 `ObjFunction`/常量池链,`CodeGen` 各 `new_string` name 串跨子编译均 `make_guard`。集成测试开 stress GC 主动锻炼。仍待 M6 的部分(下方)为:`ObjMovement : Object` 化、协程根收敛为 `current_` 单根(M6 定稿,不设 `movements_` 并集,见 vm-design.md §4.9)、`CALL`/协程切换 safe point(open upvalue 链已随 M4 落地于 Movement、经 vm_roots tracer 标根,不再待 M6)。
 
 - `Movement`(协程单元,作 Object 子类型):持 `Array<Value> value_stack_`、`FrameStack<CallFrame> frames_`、`ObjUpvalue* open_upvalues_`、`MovementState`。`trace()` 遍历值栈/帧/upvalue/`previous_`/挂起错误寄存器(对标 Wren `blackenFiber`)。
 - VM 持 `Movement* current_`(唯一 VM 级协程根)。`mark_roots_` 保留 `current_ -> previous_` 链遍历直标(main_ctx_ 不入堆、非对象,运行中协程的 `previous_` 指向它时对象图不可达,只能链遍历覆盖);挂起协程因 yield/完成解链(`previous_` 恒空)经用户持有的协程值走对象图(M6 定稿,取代早期「`movements_` 列表并集标根」方案,见 vm-design.md §4.9)。

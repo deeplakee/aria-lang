@@ -7,7 +7,7 @@
 
 ## 1. 语义模型（定调）
 
-捕获即引用（Lua/clox 语义）：内层函数引用外层局部，持一个指向该栈槽的 upvalue，外层后续修改对内层可见；局部所在作用域/帧退出时才「关闭」（把值迁进 `ObjUpvalue.closed`）。与 grammar.txt:193 既定解析顺序「局部 -> upvalue -> 模块全局」吻合。
+捕获即引用（Lua/clox 语义）：内层函数引用外层局部，持一个指向该栈槽的 upvalue，外层后续修改对内层可见；局部所在作用域/帧退出时才「关闭」（把值迁进 `ObjUpvalue.closed`）。与 `docs/grammar.txt`「作用域模型」既定解析顺序「局部 -> upvalue -> 模块全局」吻合。
 
 ## 2. 三个关键设计决策
 
@@ -40,8 +40,8 @@
     - `CLOSURE`：u16 常量取 fn（`as<ObjFunction>`）-> `new_closure` 入 guard -> 遍历 `fn->upvalue_descs()`：`is_local` -> 槽址 = `frame.slots + index`，`find_open_upvalue` 复用否则 `new_upvalue` + `link`；否则复制 `frame.closure->upvalues()[index]`；逐个 push 进闭包数组（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）-> 压闭包值。
     - `LOAD_UPVALUE idx`：`push(*closure->upvalues[idx]->value_slot())`。
     - `STORE_UPVALUE idx`：peek-store（写 `value_slot()` 留栈顶值，与 STORE_LOCAL 同形）。
-    - `CLOSE_UPVALUE`：`close_upvalues(top_ - 1)` + `pop()`（指令集 §4.4 语义：关指顶槽的 upvalue 并弹顶）。
-  - 三处关闭挂点：RETURN 在 `exit_frame`（AriaVM.cpp:1187）前 `close_upvalues(frame.slots)`；`unwind` handler 命中在 `truncate_stack`（AriaVM.cpp:684）前 `close_upvalues(slots + stack_depth 的槽址)`；未命中在 `exit_frame`（AriaVM.cpp:691）前 `close_upvalues(frame.slots)`。
+    - `CLOSE_UPVALUE`：**批量**关闭所有槽址 >= 当前栈顶的开 upvalue、无弹栈（Lua `OP_CLOSE` 式；实施中从「关顶槽 + `pop()`」改定，理由与终态见 §3 阶段 3 的 `emit_pop_locals_to` 条）。
+  - 三处关闭挂点：RETURN 在 `exit_frame`（内置 `close_upvalues(frame.slots)`）前关本帧区间；unwind 命中在 `unwind_to_handler` 内按 catch 槽址一关到底（被弃帧与 try 体段一并覆盖）；全帧未命中在 `reset()` 里 `close_upvalues(buf_.data())` 收全链。
   - vm_roots tracer（AriaVM.cpp:280-298）：沿 `current_` 链逐 Movement 标开链各节点（`mark_object`）--防「闭包已死而 upvalue 仍在链」的悬垂（clox 已知坑；vm-design M6 trace 清单本就含「open upvalue 链」）；同步删 AriaVM.hpp:41「open upvalues 留待 M4」类预告注释。
   - 消费点改写：trace_execution（AriaVM.cpp:229）与 RETURN 模块帧判定（AriaVM.cpp:1186）改走 closure（`closure->function()->name()`）。
 - **测试**（tests/runtime/test_ariavm.cpp，手写 emit）：捕获读/写、同槽捕获复用同一 `ObjUpvalue`、CLOSE 后读已迁值、open upvalue 下压 2048 值触发增长后仍读对（扩 `StackGrowsAndRebasesFrames` 模式）、unwind 跨帧关闭、AriaVMStress 下开链存活；`NotImplemented` 用例若占用了四 opcode 之一改用仍 fatal 的 M5 指令（MAKE_* 系）。
@@ -72,4 +72,4 @@
 
 - 路线表 M4 标准：计数器闭包等经典样例正确。
 - 双值表示配置 ctest 全绿（机制测试覆盖：捕获读/写/复用/关闭、unwind 关闭、栈增长重绑、stress GC 开链存活）。
-- 无新增 opcode（四条早已预留，`kOpCodeCount=63` 不变），Disassembler 零改动。
+- 无新增 opcode（四条早已预留），Disassembler 零改动。

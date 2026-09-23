@@ -179,7 +179,7 @@ ctx.push(thrown_value);   // 落在 slot stack_depth = catch 参数槽(值填槽
 ```cpp
 class ObjException final : Object {
     ErrorCode  code_;     // 错误码
-    ObjString* message_;   // 完整烘焙消息(与 Error::message() 同形;运行期装箱经 make_message 烘 "path:line: " 前缀,编译期为 path:line:col:,见坑 #15)
+    ObjString* message_;   // 完整烘焙消息(与 Error::message() 同形;运行期装箱**不含位置前缀**(2026-09-10 改定,位置归未捕获出口的 at 跟踪行),编译期透传的错误为 path:line:col:,见坑 #7/#15)
 public:
     ErrorCode  code()    const noexcept { return code_; }
     ObjString* message() const noexcept { return message_; }   // catch 的 print(e)/str(e) 渲染此串
@@ -187,14 +187,14 @@ public:
     String to_string() const override { return message_->view(); }        // print(e) -> 消息
 };
 ```
-工厂 `new_exception(gc, code, StringView message)`（工厂内部 `new_string` 驻留并自守，见 `ObjException.hpp`）。`message_` 存**完整烘焙消息**（含位置前缀）--与双寄存器 catch 绑的懒合成串一致，位置不丢、catch UX 不退化。
+工厂 `new_exception(gc, code, StringView message)`（工厂内部 `new_string` 驻留并自守，见 `ObjException.hpp`）。`message_` 存**完整烘焙消息**（运行期不含位置前缀，位置由未捕获出口的 `at` 跟踪行给出；透传的编译期错误自带位置，原样保留）--catch 绑 ObjException 即绑原码原消息，位置不丢、catch UX 不退化。
 
 **单寄存器 `pending_error_ : Opt<Value>`**（替代 `Opt<Error> + Opt<Value>` 双寄存器）：
 
 | 路径 | 写入 pending_error_ | catch 绑定 | 未捕获 run() 回传 |
 |---|---|---|---|
 | 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, format_value(V))` |
-| 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码+原消息含位置） |
+| 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`print(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码 + 原消息） |
 
 **Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.claude/rules/error.md`）。
 
@@ -208,7 +208,7 @@ public:
 
 **catch 绑 ObjException 的 M3 可用性**：`print(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
-**站点改动**：`call_*` 失败/`call_native`/`AriaVM::raise(code, detail)` 现在置 `pending_error_ = Error` → 改为置 `pending_error_ = new_exception(...)`（包一层，raise 一步烘齐完整消息含位置前缀，见坑 #15）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（原匿名 `ctx_fail` 已并入 `AriaVM::fail`，三处报错统一）。`throw_and_unwind_(V)` 存原值不包。`unwind` 命中 handler `push(*pending_error_)`（无需懒合成分支）。
+**站点改动**：`call_*` 失败/`call_native`/`AriaVM::raise(code, detail)` 现在置 `pending_error_ = Error` → 改为置 `pending_error_ = new_exception(...)`（包一层；2026-09-10 改定后 raise 不再烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #7/#15）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（原匿名 `ctx_fail` 已并入 `AriaVM::fail`，三处报错统一）。`throw_and_unwind_(V)` 存原值不包。`unwind` 命中 handler `push(*pending_error_)`（无需懒合成分支）。
 
 ---
 
@@ -350,6 +350,8 @@ unwind 从最内帧向外遍历：
 
 ## 坑 #14：Movement 改单寄存器 pending_error_ : Opt<Value> + truncate_stack
 
+> **后续改定（终态）**：`truncate_stack` 已删除。`unwind` 改为**纯搜索不动帧栈**（未命中的帧只记跟踪三元组），命中后由 `Movement::unwind_to_handler(命中帧索引, record)` 一体完成弃帧 + 关开指 + 截栈 + 跳 handler + 载荷落槽；全帧未命中走 `reset()` 清场。下文「新增 `truncate_stack`」一条为当时形态，读作历史；寄存器模型（单寄存器 + 四件套）与 rest 其余各条不变。
+
 `Movement`（`runtime/Movement.hpp`）改造：
 - `pending_error_` 类型从 `Opt<Error>` **改为 `Opt<Value>`**（单一挂起寄存器，装 ObjException 或原值，见坑 #7）。配套访问器 `raise(Value)`/`has_error()`/`take_error()`（返 `Opt<Value>`）/`clear_error()` 四件套语义不变，仅载荷类型变。
 - `raise` 的语义改为「一步烘齐后包成 ObjException 再存」（已落地为 `raise(ErrorCode, StringView detail)`，不收 Error 对象）：`pending_error_ = Value::from_obj(new_exception(gc, code, Error::make_message(code, runtime_loc(ctx), detail)))`--但 `Movement` 不持 `GC&`，故**包的过程上移到 `AriaVM`**：`AriaVM::raise(code, detail)`/`AriaVM::fail(...)` 负责构造 ObjException + `ctx.raise(Value)` 存入；`Movement` 只暴露 `raise(Value)`（存原值，不包）。`ctx_fail` 已并入 `AriaVM::fail`（current_ 重构），`call_*` 失败站点/`call_native` 经 `vm.fail(...)` 统一装箱，调用点不变。
@@ -477,7 +479,7 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 
 1. **B0（已落地）** `ObjException : Object{ErrorCode code_, ObjString* message_}`（`object/ObjException.hpp/.cpp`）+ 工厂 `new_exception(gc, code, StringView message)`（内部 `new_string` 驻留自守）+ `trace`（标 message_）+ `to_string`（返 message_->view()）；`ObjType::EXCEPTION` 枚举与 `to_string(ObjType)` 早已预留，无需改枚举。`Error::from_baked(code, baked_string)` 静态工厂（跳过 `make_message`，供 run() 反提，坑 #7）。`format_value`/`format_value_debug`/`type_name` 的 EXCEPTION 分支均已加。
 2. **B1（已落地）** `TryRecord` 定稿四字段 `{begin, end, handle, stack_depth}`（无 `catch_slot`，坑 #10）+ `find_try_handler` 返 `Opt<const TryRecord*>`（二分已是最内层语义，坑 #4 核对；begin 相等 tie 由反向扫描天然取最内层，运行期测试覆盖）。
-3. **B3（已落地）** `Movement::pending_error_ : Opt<Value>` + `raise(Value)` + `reset` 清 + `truncate_stack(usize)`（坑 #14）。
+3. **B3（已落地）** `Movement::pending_error_ : Opt<Value>` + `raise(Value)`/`has_error`/`take_error` + `reset` 清（坑 #14；当时同批的 `truncate_stack(usize)` 已删，截栈职责并入 `unwind_to_handler`，见坑 #14 改定注）。
 4. **B2（已落地）** `CallFrame` 加 `u8* last_ip`（**无 NSDMI**，`init_frame_` 置 code 起始，坑 #3；`dispatch_loop()` 循环顶每轮取指前写，坑 #1/#2；存指针、查表时反推 offset）。
 5. **B4（已落地）** `AriaVM` 成员 `unwind()`（入口断言寄存器非空 -- write 侧 `Movement::raise` 空寄存器断言的 read 侧成对）；装箱复用公共 `raise`/`fail`（2026-09-10 改定：不再烘位置，原 runtime_loc 助手退役，坑 #15）。**raise 与 unwind 不融合**成 `raise_and_unwind_`/`throw_and_unwind_` 具名助手（终态：全部站点就地 `raise`/`fail` 装箱 + 直接 `unwind`，与 CALL 失败善后同形 -- 两个直观动作不硬融，坑 #11）；vm_roots tracer 标 `pending_error_`（坑 #8）；未捕获物化经 `uncaught_error_parts` 反提拆件（ObjException 原码原消息 / 原值兜底 `UncaughtException`，拼完跟踪 `from_baked` 一次物化）；跟踪收集 + 物化时烘焙（坑 #16）；dispatch_loop 直报站点全部切换（坑 #11，`run_binary_numeric<Op>` 升 AriaVM 成员模板、数值语义内联）。
 6. **B5（已落地）** CodeGen `visitTryStmtNode`（入口预插占位 + 结尾回填，构造即非降序不排序，坑 #4；catch 参数值填槽无 STORE_LOCAL，坑 #9/#10；`finally` 一律 `not_impl` 占位 M3b，2026-09 随特性裁撤移除）/`visitThrowStmtNode`（`emit_expr` + `THROW`）。

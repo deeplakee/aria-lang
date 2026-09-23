@@ -29,10 +29,10 @@ struct LoopCtx {
 
 这是 `LoopCtx` 最关键的设计点：**continue 的目标地址在遇到 continue 时是否已知**，决定了走哪条路径。
 
-- **已知（后向）**：目标在 continue 之前已经发射。`continue` 直接 `emit_jump_back(loop_ctx.back_target)` 一条指令搞定，`continue_fwd_patches` 留空。用于 `while` / `for-in`（回 `L_start`）、无 `increment` 的 `for`（回 `L_cond`）——三者的 `back_target` 即 continue 目标。
+- **已知（后向）**：目标在 continue 之前已经发射。`continue` 直接 `emit_jump_back(loop_ctx.back_target)` 一条指令搞定，`continue_fwd_patches` 留空。用于 `while` / `for-in`（回 `L_start`）、无 `increment` 的 `for`（回 `L_cond`）--三者的 `back_target` 即 continue 目标。
 - **未知（前向）**：目标在 continue 之后才发射（`for` 的递增区 `L_incr`）。`continue_fwd_patches` 在入栈前 `emplace()` 打开，`continue` 发一条占位 `JUMP` 并把偏移塞进 `continue_fwd_patches`，等循环体编译完再统一回填。
 
-分派由 `continue_fwd_patches` 通道的存在性承担：`visitContinueStmtNode` 里用 `if (loop_ctx.continue_fwd_patches)` 判断——有通道就发占位入通道，没有就直接回跳。`back_target` 恒设（回边用它），与后向 continue 的目标语义同址（都是"重新求值条件处"），一个字段两用。
+分派由 `continue_fwd_patches` 通道的存在性承担：`visitContinueStmtNode` 里用 `if (loop_ctx.continue_fwd_patches)` 判断--有通道就发占位入通道，没有就直接回跳。`back_target` 恒设（回边用它），与后向 continue 的目标语义同址（都是"重新求值条件处"），一个字段两用。
 
 ## 3. 在代码中的实际使用
 

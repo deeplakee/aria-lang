@@ -51,7 +51,7 @@ class AriaVM {
     GC               gc_;          // VM 拥有 GC 值成员(已定:每 VM 一个 GC)
     AriaHashTable    modules_;     // 模块表(键=规范路径 ObjString*、值=ObjModule*,均装箱 Value)
     AriaHashTable    builtins_;    // VM 级只读内建表(LOAD_GLOBAL 模块 globals 未命中回退查此,§7)
-    ObjClass*        object_class_;// Object 根类(M5:VM 成员单独持有、不入任何名字空间;GC tracer 第 4 根,§4.6)
+    Vector<Value, kValueRegisterCount> registers_; // 值寄存器组(VM 单例值统一存放表;Object 根类在 ObjectClass 格,不进任何名字空间;GC tracer 逐格标根,§4.6)
     Movement         main_ctx_;    // 主上下文(值栈 + 帧栈;M6 协程期升级 ObjMovement : Object)
     Movement*        current_;     // 当前执行上下文(已落地:构造指 &main_ctx_;M6 单循环切换:resume/yield 原生函数在 CALL 善后点换指/回退,§4.9)
     List<String>     source_roots_;// 源根列表([0]=入口根、[1..]=配置根)
@@ -93,14 +93,14 @@ struct ExecOutcome {
 ### 4.5 异常衔接(与 AGENTS.md「错误处理」第 2 条一致)
 
 - **内部传播统一走寄存器 + unwind**：op 处理局部失败不再直接 `return runtime_err(...)` 短路出 dispatch_loop,而是就地 `raise`(一步烘消息装成 ObjException,不含位置前缀 -- 位置归未捕获跟踪行,见 §4.8)-> 存当前上下文挂起寄存器后调 `unwind` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点就地两步、与 CALL 失败善后同形;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。
-- `unwind()` 自最内帧向外遍历帧链(**只查当前上下文的帧链**,协程异常不跨协程传播),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;命中 -> `frames_.truncate` 到该帧 + 值栈截断到 `slots + stack_depth` + `push(异常值)`(恰落 catch 参数槽,见坑点文档 #10)+ `ip = handle` + 清寄存器;未命中 -> `exit_frame` 弹帧继续向外。
+- `unwind()` 自最内帧向外遍历帧链(**只查当前上下文的帧链**,协程异常不跨协程传播),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;**搜索阶段不动帧栈**(未命中的帧只记下跟踪三元组,帧引用全程有效)-> 命中 -> `Movement::unwind_to_handler(命中帧索引, record)` 一体完成:弃内层帧 + 按槽址关闭开 upvalue + 值栈截到 catch 参数槽 + `ip = handle` + 载荷 push 落槽(恰落 catch 参数槽,见坑点文档 #10)+ 清寄存器;全帧未命中 -> `Movement::reset()` 一次清场(载荷先行取走)。
 - **未命中任何 handler = 本次 run 以未捕获收场,是正常结局而非 fatal**:自寄存器反提 `Error`(ObjException 经 `Error::from_baked` 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),`dispatch_loop()` 返回 `std::unexpected`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`dispatch_loop` 保持返回 `Result<Value, Error>`**:客户不止 CLI(REPL/测试断言/嵌入都要 Error 而非死进程),且 M6 协程将扩三态(`Yielded`)。
 - **跨 Movement 模型**:unwind 只发生在单个 Movement 的帧栈内;错误不跨协程边界直接传播--协程内未捕获时,载荷留在该协程寄存器、其帧清空后,在 CALL 善后点(§4.9)切回 resume 调用者,以调用者的挂起寄存器承载(等价于「resume 作为一次失败的原生调用」),由调用方决定 catch 或再抛。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 已落地(构造指 &main_ctx_,dispatch_loop/call_value 族/raise 同源直读),M6 落地仅 CALL 善后点 + resume/yield 原生函数,本节语义不变。
 - **TryRecord 定稿字段**:`{begin, end, handle, stack_depth}`--不存 `frame_depth`(运行时量,编译期不可定)、不存 `catch_slot`(恒等于 `stack_depth`),见坑点文档 #5/#10。
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)
 
-> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时沿 `current_` -> `previous_` 执行链逐个标各上下文值栈 `[base, top)` + 各活动帧 `closure`/`module` + 挂起错误寄存器 + open upvalue 开链(「闭包已死而 upvalue 仍在链」的悬垂防线)+ `modules_`/`builtins_`/`object_class_`(M5 Object 根类,VM 成员单独持有);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表,协程根收敛为 `current_`(tracer 保留其 `-> previous_` 链遍历以覆盖不入堆的 main_ctx_,挂起协程走对象图;`contexts_` 与链尾断言退役,§4.9)。下方描述为 M6 目标形态。
+> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时沿 `current_` -> `previous_` 执行链逐个标各上下文值栈 `[base, top)` + 各活动帧 `closure`/`module` + 挂起错误寄存器 + open upvalue 开链(「闭包已死而 upvalue 仍在链」的悬垂防线)+ `modules_`/`builtins_`/`registers_`(值寄存器组,Object 根类在 ObjectClass 格);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 仍是纯 C++ 类(非 Object),以 tracer 直标代替升 Object;M6 升级 `ObjMovement : Object` 入对象链表,协程根收敛为 `current_`(tracer 保留其 `-> previous_` 链遍历以覆盖不入堆的 main_ctx_,挂起协程走对象图;`contexts_` 与链尾断言退役,§4.9)。下方描述为 M6 目标形态。
 
 - 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure`(trace 级联标 function 与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
@@ -124,7 +124,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **方法调用形态(M5 泛化;类表读路径仅绑定 defining class 戳定的方法闭包,原生绑定形态由对象层直接构造承载)** -- 经 `ObjBoundMethod` 绑定的原生方法(内建类型方法载体):调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生收到的 `slots[0]` = this,同时仍是返回槽;实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,`slots[0]` = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不写 `slots[0]` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
 
-**错误走侧信道寄存器** -- 原生函数调 `vm.fail(code, fmt, ...)`(或 `vm.raise(code, detail)`)写入 `VMContext` 的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`vm.fail` 返 `FailSignal` 哨兵(按调用点返回类型隐式转换:false/nullptr/nullopt)、`vm.raise` 返 void(语句式站点),故失败路径惯用一行 `return vm.fail(...)`(同时置寄存器与返回失败),成功路径 `slots[0] = ...; return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`drop(argc)`,`slots[0]` 升至栈顶),`false` 经 `take_error()` 取出寄存器中的 `Error` 沿现有 `runtime_err` 路径传播。约 56B（libc++)/64B（libstdc++) 的 `Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
+**错误走侧信道寄存器** -- 原生函数调 `vm.fail(code, fmt, ...)`(或 `vm.raise(code, detail)`)写入 `VMContext` 的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`vm.fail` 返 `FailSignal` 哨兵(按调用点返回类型隐式转换:false/nullptr/nullopt)、`vm.raise` 返 void(语句式站点),故失败路径惯用一行 `return vm.fail(...)`(同时置寄存器与返回失败),成功路径 `slots[0] = ...; return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`drop(argc)`,`slots[0]` 升至栈顶),`false` 经 `take_error()` 取出寄存器中的 `Error` 沿现有 `runtime_err` 路径传播。`Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
 
 **bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径仅 debug 断言 `!has_error()` 验证契约(寄存器本就空 -- 进场已守、原生未 raise,无需 clear_error;若违约 debug 暴露,release 不静默清掉掩盖),失败路径 `take_error()` 取载荷(寄存器空则 `*` 解引用空 Opt 属 UB,debug 断言先暴露)。debug 断言 `ok == !has_error()` 捕捉两类违约:
 - 调了 `vm.fail` 却 `return true`(忘 `return false`):`ok=true ∧ has_error=true` -- release 下不再 `clear_error` 掩盖,残留错误随寄存器泄漏至下次调用(违约属实现 bug,任其表面化胜于吞掉);debug 断言先暴露。
@@ -239,7 +239,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 ### M1 验证状态
 
-- **局部区预留约定**(见指令集文档 §4.3):帧的 `slots` 指向槽 0(callee),槽区不自动保留,函数序言必须先压 nil 预留全部局部槽,否则首个临时值覆写槽 1。
+- **局部槽填充约定**(见指令集文档 §4.3):帧的 `slots` 指向槽 0(callee),槽区不自动保留,故编译器**声明时不预占**--声明名登记时初始化器值(或 `LOAD_NIL`)恰好压在该槽位完成填充(「下个局部 slot = 当前栈高」,无 store/pop)。若预占发 `LOAD_NIL` 再覆写,首个临时值就会与预占槽错位。
 - **短路跳转的 L_end 是 `<b>` 之后的汇合点**(非 `<b>` 之前);跳转偏移以读完操作数后的 ip 为基准(与 Disassembler 解码一致),手写回填需按此计算。
 - 除法/真值语义(已定,指令集 §9 #8):int/int 截断整除、除/模零报运行时错误、f64 按 IEEE(除零得 inf/nan)、真值为 Lua 风格(仅 nil/false 为假)。
 
@@ -249,7 +249,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - **`ObjType` 无 `MOVEMENT`**(M6 增)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册)。
-- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtins.{hpp,cpp}` 的 `builtins::register_builtin_functions(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 grammar.txt §205-206),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 4 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
+- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtins.{hpp,cpp}` 的 `builtins::register_builtin_functions(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 4 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

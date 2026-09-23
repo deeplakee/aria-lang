@@ -6,13 +6,13 @@
 
 架构缝已由 M5 备置,本里程碑补生产侧:
 
-- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index`（**2026-09-22 今注:`op_*` 运算符族已整族删除、`op_call` 已改为同款的 `op_call_impl`（取 `__call__` 实现）**——算子改为「对象上的命名方法 + 经 `load_field_unbound` 取实现」，见本文件末「算子重载」节与 `src/aria.hpp` 的 `kOp*Name`）。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
-- **语言方法面(类表)**:语言可见方法(`s.upper`、`it.next`、`xs.iter`)一律住 `ObjClass` 表。内置类型由 VM 构造期 bootstrap 类承载(`string_class_`/`list_class_`/`map_class_`/`range_class_`/`iterator_class_`,对标既有 `object_class_`;GC 经 vm_roots tracer 标根,先例同)。
-- **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包——形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 override 自持 `new_bound_method(命中值, receiver)`」,查表即直调类协议(2026-09-18 review 改定:曾收口的内置侧专用 helper `load_builtin_member` 经两轮收窄后整体删除,各类型 override 直调 `ObjClass::load_field`,与实例路径「先委托类协议、后自己绑定」完全同形)。
-- **与实例路径不同构,不硬合**:实例路径的绑定判别是闭包戳(`is_method`)+ fields 缓存回填(M5 语义);内置类表全是原生函数,`is_method` 恒 false,戳判别不可复用。两路共享的只有 `ObjClass::load_field` 这层(本来就是共享);实例路径保持现状不动,内置侧另立 helper——「共享绑定 helper 自 ObjInstance 提炼」的早期设想作废。
+- **引擎缝(C++ 协议虚函数,备置已就绪)**:`Object::load_field/store_field/load_index/store_index`（**2026-09-22 今注:`op_*` 运算符族已整族删除、`op_call` 已改为同款的 `op_call_impl`（取 `__call__` 实现）**--算子改为「对象上的命名方法 + 经 `load_field_unbound` 取实现」，见本文件末「算子重载」节与 `src/aria.hpp` 的 `kOp*Name`）。VM 的唯一分派入口,不按子类型 switch;与 `equals`/`trace`/`debug_repr` 同族的引擎内多态,**语言不可见**。
+- **语言方法面(类表)**:语言可见方法(`s.upper`、`it.next`、`xs.iter`)一律住 `ObjClass` 表。内置类型由 VM 构造期 bootstrap 类承载,各入值寄存器组对应格(`string_class()`/`list_class()`/`map_class()`/`range_class()`/`iterator_class()` 读格,Object 根类同法;GC 经 vm_roots tracer 逐格标根)。
+- **绑定路径(内置侧 = 恒绑定)**:内置类表条目全为原生函数(用户类的方法是闭包--形态差别,机制相同),恒为方法、恒绑定。内置类型的 `load_field` override 收口为「委托自身 bootstrap 类链(`ObjClass::load_field` 读穿透)→ 命中即 override 自持 `new_bound_method(命中值, receiver)`」,查表即直调类协议(2026-09-18 review 改定:曾收口的内置侧专用 helper `load_builtin_member` 经两轮收窄后整体删除,各类型 override 直调 `ObjClass::load_field`,与实例路径「先委托类协议、后自己绑定」完全同形)。
+- **与实例路径不同构,不硬合**:实例路径的绑定判别是闭包戳(`is_method`)+ fields 缓存回填(M5 语义);内置类表全是原生函数,`is_method` 恒 false,戳判别不可复用。两路共享的只有 `ObjClass::load_field` 这层(本来就是共享);实例路径保持现状不动,内置侧另立 helper--「共享绑定 helper 自 ObjInstance 提炼」的早期设想作废。
 - **`store_field` 不 override**:基类默认「type X does not support field access」即内置类型的正确行为(不可变/无名成员)。
 
-**决策 D1(2026-09-16 拍板):内置类 super 挂 Object 根**。uniform OOP 提前半步;接受 `s.init` 经链解析到 Object 根类的 no-op init(原生不动槽 0,调用返回 receiver 自身)——已知的小语义毛边,uniform OOP 落地时随 Object 方法面一并审视。
+**决策 D1(2026-09-16 拍板):内置类 super 挂 Object 根**。uniform OOP 提前半步;接受 `s.init` 经链解析到 Object 根类的 no-op init(原生不动槽 0,调用返回 receiver 自身)--已知的小语义毛边,uniform OOP 落地时随 Object 方法面一并审视。
 
 **bound 物化缺口(已收口)**:内置类型无 fields 表可写,早期每次取方法现场物化 ObjBoundMethod(forIn 循环体每迭代 2 次小分配)。这条路径实测占 forIn 每迭代时间的七成(基线见 §4.4),已由批 9 收口:内置侧改走 `Object::load_field_unbound` override,`recv.name(args)` 不再铸 bound,分配列由 2.009/1.000 归零(见 §4.4/§4.5)。**实例侧的 bound 缓存随后整体取消**(§4.6):实例 `load_field_unbound` 也走不绑定形态,读路径改为每次访问现场绑定。备选「forIn 降糖时提升 `var __next = it.next` 到循环外」否决:隐藏局部污染作用域与 dump。
 
@@ -20,19 +20,19 @@
 
 ### 1.1 落地要点(批 4 契约)
 
-- **VM 成员与构造序**:`list_class_`/`iterator_class_`(批 4;`string_`/`map_`/`range_class_` 随批 5-7 出生即用)。ctor 里 `bootstrap_builtin_classes()` 排在 `bootstrap_object_class()` 之后(super = Object 先建)、`register_builtin_functions` 之前。
-- **注册面**:每类型一个 `register_<type>_builtins(GC&, ObjClass*)`,住 runtime/builtins/ 每类型一个 `<Type>Builtins.{hpp,cpp}`(2026-09-18 review 改定:方法面是 VM 侧语言面、object 层保持纯表示,对标 `Builtins.cpp` 先例;方法体同文件,VM 只编排)。内部 `new_native_fn` + `set_field`,对标 `Builtins.cpp` 的 kBuiltins 循环;注册名必经 intern 池——与 CodeGen `LOAD_FIELD` 常量同指针,`===` 查表成立(Builtins.cpp 先例)。
-- **tracer**:vm_roots 加 `mark_object`(各 bootstrap 类),对标 `object_class_` 第 4 根。
+- **VM 成员与构造序**:各 bootstrap 类入值寄存器组对应格(`list_class()`/`iterator_class()`/`string_class()`/`map_class()`/`range_class()` 访问器读格)。ctor 里各 `bootstrap_<类型>_class()` 收在 `bootstrap_registers()` 编排内,排在 Object 根类之后(super = Object 先建)、`register_builtin_functions` 之前。
+- **注册面**:每类型一个 `register_<type>_builtins(GC&, ObjClass*)`,住 runtime/builtins/ 每类型一个 `<Type>Builtins.{hpp,cpp}`(2026-09-18 review 改定:方法面是 VM 侧语言面、object 层保持纯表示,对标 `Builtins.cpp` 先例;方法体同文件,VM 只编排)。内部 `new_native_fn` + `set_field`,对标 `Builtins.cpp` 的 kBuiltins 循环;注册名必经 intern 池--与 CodeGen `LOAD_FIELD` 常量同指针,`===` 查表成立(Builtins.cpp 先例)。
+- **tracer**:vm_roots 经 `registers_` 一趟循环逐格 `mark_value`(各 bootstrap 类即各寄存器格的值)。
 - **调用链零改动**:`call_bound_method`(槽 0 覆写 receiver)→ `call_value` → `call_native`(`slots[0]` = this 兼返回槽),M5 已通;`ObjBoundMethod` 的 receiver Value 泛化即为此留的缝。
 - **GC 纪律**:bootstrap 期在 ctor 构造临界区(GC 挂起,`make_lock`)内免守卫、建成发布进寄存器组/表(tracer 恒标);`LOAD_FIELD` 绑定路径的 bound 对象白色,接收者在栈(peek 不弹)、方法值经类链可达,返回值写回原槽根化(与实例路径同纪律);iter_fn 覆写时序:被遍历 list 在 `slots[0]` 被覆写前仍为根,迭代器建成后先写槽发布再返回,中间无 GC 点。
 
 ## 2. 迭代协议
 
-**契约**:`coll.iter()` → 迭代器;`it.has_next()` → bool;`it.next()` → 下一值。三方法**纯约定名(结构性),编译器零魔法**——forIn 降糖已按此发射(`emit_method_call0`:LOAD_FIELD + CALL),用户类今日即可实现协议让 forIn 遍历自己;内置类型补齐后同一降糖走通,协议对两类来源不可区分。
+**契约**:`coll.iter()` → 迭代器;`it.has_next()` → bool;`it.next()` → 下一值。三方法**纯约定名(结构性),编译器零魔法**--forIn 降糖已按此发射(`emit_method_call0`:`PREPARE_METHOD` + `CALL_METHOD 0` 两段式),用户类今日即可实现协议让 forIn 遍历自己;内置类型补齐后同一降糖走通,协议对两类来源不可区分。
 
-**决策 D2(2026-09-16 拍板):协议三方法是方法表方法,不为迭代协议另开 Object 虚函数**。协议经既有 `load_field` 协议缝解析;理由:①方法必须一等(`var n = it.next; n()` 虚函数做不了);②与用户类统一,单一派发路径;③VM 内部无迭代消费者(解构走下标、GC 不迭代),双通道纯漂移风险;④决定性论据(拍板补记):能实现 iter 的对象必已支持 load_field、必已有方法表——协议放表内是自然归宿。「iter 做成虚函数」方案已否决(消费者不对称:op_add/load_index 的消费者是 VM 自身 opcode,iter 的消费者是编译产物与用户代码,虚函数会把用户类 iterable 排除/迫使 forIn 分叉;引擎侧 C++ 迭代便利留 stdlib 批按需另议,不入语言协议)。M6 红利:生成器 = Movement 类表挂 `next/has_next` 原生,forIn 零改动消费。
+**决策 D2(2026-09-16 拍板):协议三方法是方法表方法,不为迭代协议另开 Object 虚函数**。协议经既有 `load_field` 协议缝解析;理由:①方法必须一等(`var n = it.next; n()` 虚函数做不了);②与用户类统一,单一派发路径;③VM 内部无迭代消费者(解构走下标、GC 不迭代),双通道纯漂移风险;④决定性论据(拍板补记):能实现 iter 的对象必已支持 load_field、必已有方法表--协议放表内是自然归宿。「iter 做成虚函数」方案已否决(消费者不对称:op_add/load_index 的消费者是 VM 自身 opcode,iter 的消费者是编译产物与用户代码,虚函数会把用户类 iterable 排除/迫使 forIn 分叉;引擎侧 C++ 迭代便利留 stdlib 批按需另议,不入语言协议)。M6 红利:生成器 = Movement 类表挂 `next/has_next` 原生,forIn 零改动消费。
 
-**迭代器表示:每源迭代器子类 + 引擎缝虚函数**(2026-09-18 拍板改定,推翻早稿「单一 ObjIterator{source: Value, cursor: u64} + 原生按 source 四分支」——类型标签结构体与手写 switch 违背引擎缝「不按子类型分型」的架构;跨语言对照 Python/JS/Java/C#/C++ 均为每源独立迭代器对象 + 统一虚契约;C++ 迭代器因「GC 一等 Value/指针悬垂于元素缓冲扩容/用户类统一协议」三硬点不可直接用,但其「每类型自己的表示 + 统一契约」思想即本方案的运行期对应物):`ObjIterator` 基类(共享单数 `ObjType::ITERATOR`,`type(it)` 恒 "Iterator")钉引擎缝纯虚 `has_next() const noexcept -> bool`(纯查询无分配无 fail,不收 vm)/`next(AriaVM&) -> Opt<Value>`(越界 `return vm.fail(IterationExhausted)` 一行,FailSignal 哨兵)/`trace`(纯虚钉「各子类标各自的源」,忘标 = 编译错);`load_field` override 基类一次(直调 Iterator 类协议查表 + 自持绑定,全子类共享);debug_repr "<iterator>"。各源自持自然游标、源码住 `src/object/iterator/`(每源一对文件):ObjListIterator{list, 元素下标}/ObjStringIterator(批 6){str, 字节偏移,码点步进}/ObjMapIterator(批 5){map, 槽位扫描}/ObjRangeIterator(批 7){区间当前值,无 source 对象}。has_next/next 语言方法面经 Iterator 类表恒绑定(原生是虚缝薄壳,分派编译期封闭,无 switch 无 default);每集合的 iter 与其迭代器子类成对出生(铸造口按类型解开 receiver),批 5-7 只加子类、IteratorBuiltins 零改。迭代器对象不可省(早稿论证保持):游标状态须随迭代器走——容器不可自带游标(嵌套遍历同一列表互不串扰),「每次 iter() 产出一个带自己游标的小对象」是协议的结构必需,与派发机制选择无关。批 4 bootstrap List + Iterator 两类(String 空类表无验证价值,随批 6 带方法进场)。
+**迭代器表示:每源迭代器子类 + 引擎缝虚函数**(2026-09-18 拍板改定,推翻早稿「单一 ObjIterator{source: Value, cursor: u64} + 原生按 source 四分支」--类型标签结构体与手写 switch 违背引擎缝「不按子类型分型」的架构;跨语言对照 Python/JS/Java/C#/C++ 均为每源独立迭代器对象 + 统一虚契约;C++ 迭代器因「GC 一等 Value/指针悬垂于元素缓冲扩容/用户类统一协议」三硬点不可直接用,但其「每类型自己的表示 + 统一契约」思想即本方案的运行期对应物):`ObjIterator` 基类(共享单数 `ObjType::ITERATOR`,`type(it)` 恒 "Iterator")钉引擎缝纯虚 `has_next() const noexcept -> bool`(纯查询无分配无 fail,不收 vm)/`next(AriaVM&) -> Opt<Value>`(越界 `return vm.fail(IterationExhausted)` 一行,FailSignal 哨兵)/`trace`(纯虚钉「各子类标各自的源」,忘标 = 编译错);`load_field` override 基类一次(直调 Iterator 类协议查表 + 自持绑定,全子类共享);debug_repr "<iterator>"。各源自持自然游标、源码住 `src/object/iterator/`(每源一对文件):ObjListIterator{list, 元素下标}/ObjStringIterator(批 6){str, 字节偏移,码点步进}/ObjMapIterator(批 5){map, 槽位扫描}/ObjRangeIterator(批 7){区间当前值,无 source 对象}。has_next/next 语言方法面经 Iterator 类表恒绑定(原生是虚缝薄壳,分派编译期封闭,无 switch 无 default);每集合的 iter 与其迭代器子类成对出生(铸造口按类型解开 receiver),批 5-7 只加子类、IteratorBuiltins 零改。迭代器对象不可省(早稿论证保持):游标状态须随迭代器走--容器不可自带游标(嵌套遍历同一列表互不串扰),「每次 iter() 产出一个带自己游标的小对象」是协议的结构必需,与派发机制选择无关。批 4 bootstrap List + Iterator 两类(String 空类表无验证价值,随批 6 带方法进场)。
 
 - **D3(2026-09-16):`next()` 越界抛 `IterationExhausted`(新码,fail-fast)**。nil 哨兵否决理由:aria list 可合法存 nil,哨兵与真实 nil 元素不可区分(Lua 的 nil 哨兵依赖「表不能存 nil」前提,aria 无此前提);forIn 靠 has_next 把关,越界仅手写滥用时发生,静默吞 bug 劣于报错。
 - **D4(2026-09-16):map 迭代序 unspecified**,产出 `[k, v]` 二元 list(文法「元组」,无 tuple 类型,list 承载,每步一次小分配)。理由(拍板):非定序哈希表是性能上的正确选择,用户不应依赖这一边缘暧昧、各语言/实现标准不一的特性。插序将来另批(需额外内存)。
@@ -58,7 +58,7 @@
 
 > **落地状态(2026-09-16)**:批 1 已全部落地。底座(LOAD_REG + registers_ + 构造临界区 + LOAD_OBJECT 收编)先行落库;默认参数本批:DefaultMark 印章入寄存器(私有 no-op native `<default>`,不注册 builtins)、`ObjFunction.min_arity`、call_closure 区间检查(min==arity 单数文案保持)+ 印章垫充补满参栈深、序言 `LOAD_LOCAL s; LOAD_REG DefaultMark; EQUAL; JUMP_FALSE 跳过; <默认值>; STORE_LOCAL s` 逐槽换值、参数登记与序言单循环交错(先编缺省表达式后登记本参数名,见语义条 2026-09-16 改定)、validate_params 收窄为仅拒 varargs。附带:`LOAD_REG` 反汇编改专用 `RegU8` 格式附寄存器可读名注释(兑现名表「反汇编注释用」)。
 
-与对象无关的批次(2026-09-16 二次拍板先行);VM 侧 = `call_closure` 垫充 + 值寄存器底座(一条新指令 `LOAD_REG`)。**varargs 拆出至批 4**:rest 参数须把额外实参打包成 list,依赖 list 值表示——原 P0-1 的合称在此修正。
+与对象无关的批次(2026-09-16 二次拍板先行);VM 侧 = `call_closure` 垫充 + 值寄存器底座(一条新指令 `LOAD_REG`)。**varargs 拆出至批 4**:rest 参数须把额外实参打包成 list,依赖 list 值表示--原 P0-1 的合称在此修正。
 
 - 语义(文法既定):默认值在调用且该参数未传时求值,按缺省参数从左到右逐个补;默认值表达式可引用先于它的参数(序言按编译序先编缺省表达式、后登记本参数名,轮到本槽时前序槽必已就位;对前序参数赋值亦合法);引用自身/后序参数时名字未登记、按常规解析链落外层/全局--有同名全局静默用之、无则缺省被求值时 UndefinedVariable(2026-09-16 改定:纯自然序,Python/C++ 默认值作用域同款;JS 的 TDZ 式运行期专错与 Kotlin/Swift 式编译期检查不采,印章不可达故无需检查兜底,窗口机制与 DefaultParamSelfRef 码随之删除)。缺省块连续居后由文法结构性保证(`paramsBody` 定序 plainParams -> defaultParams -> varargs),validate_params 无需新增次序检查--not_impl 改为仅拒 `is_varargs`。
 - 底座:值寄存器组(批 1 落地,批 2 复用;2026-09-16 五次拍板:定位放宽为「VM 单例值的统一存放表」)。跨层共享小头注册表 `ARIA_VALUE_REGISTER_LIST` → `enum class ValueRegister` + `kValueRegisterCount`(风格对齐 ARIA_ERROR_LIST 先例,偏移常量 `k<名字>Offset`(即寄存器组内格位)与枚举/名表同源派生,scoped enum 不隐式转整型故下标走常量);**独立小头置 runtime 层**(寄存器是虚拟机的一部分,2026-09-16 拍板,如 `runtime/value_register.hpp`;自含叶子头仅依赖 common.hpp,编译侧 include 无回环--AriaVM → Compiler 的正向依赖不受影响)。`AriaVM` 持 `Value registers_[kValueRegisterCount]` 为**唯一存放处**:每个 VM 单例出生即登记一格(注册表行 + bootstrap 填充行,不再逐个声明成员),`set_vm_roots` 一趟循环标根全表(不再逐成员 tracer 行);现有 object_class_ 同批收编(accessor 改读寄存器,成员退役)。新指令 `LOAD_REG n:u8`(`[] -> [registers_[n]]`,寄存器只读、无 STORE_REG)。两角色分工:**存储面** = VM 单例出生即入格;**发射面** = 有字节码消费者的格才被编译侧 LOAD_REG 引用,其余纯 C++ 存取(`registers_[ValueRegister::ListClass]` 直读,高频位可配薄 accessor)。批次节奏:批 1 底座 + ObjectClass + DefaultMark;批 2 MatchNoArm;批 4 ListClass/IteratorClass;批 5-7 MapClass/StringClass/RangeClass。既有 LOAD_OBJECT 收编(`def` 无 super 的根类加载,发射点仅一处,专用零操作数指令退役);nil/true/false 保留专用指令不收编(全 VM 最热加载,收编徒增操作数字节与寻址一跳,已落地机制不为统一性翻工);可变 VM 状态(模块表/builtins 表/源根)非单例,不进寄存器。
@@ -68,15 +68,15 @@
 
 ### 4.2 批 2:match 语句 / 表达式(编译器前置批)
 
-> **落地状态(2026-09-17)**:批 2 已全部落地。对草稿形态一处改定:subject 不入隐藏临时局部,改驻留栈上 in-flight(逐臂 `DUP` 副本比较、命中臂入口 `POP` 消费、未命中路径由 `THROW` 的 unwind 清栈)——隐藏临时局部在 matchExpr 的 `L_end` 汇合点下压着臂值,弹区清理会连同臂值一起弹掉(值填槽窗口局限,即 2026-09-14 回退决策点名的窗口);in-flight 零局部登记,窗口无错位。其余同草稿:`JUMP_FALSE` 逐臂链 + `_` 直入 + `LOAD_REG MatchNoArm; THROW` 共享单例(值寄存器注册表加行 + `bootstrap_match_no_arm`,消息按 make_message 同源烘焙 `Runtime: MatchNoArm no arm matched`)。
+> **落地状态(2026-09-17)**:批 2 已全部落地。对草稿形态一处改定:subject 不入隐藏临时局部,改驻留栈上 in-flight(逐臂 `DUP` 副本比较、命中臂入口 `POP` 消费、未命中路径由 `THROW` 的 unwind 清栈)--隐藏临时局部在 matchExpr 的 `L_end` 汇合点下压着臂值,弹区清理会连同臂值一起弹掉(值填槽窗口局限,即 2026-09-14 回退决策点名的窗口);in-flight 零局部登记,窗口无错位。其余同草稿:`JUMP_FALSE` 逐臂链 + `_` 直入 + `LOAD_REG MatchNoArm; THROW` 共享单例(值寄存器注册表加行 + `bootstrap_match_no_arm`,消息按 make_message 同源烘焙 `Runtime: MatchNoArm no arm matched`)。
 > 通配臂恒末臂(2026-09-17 拍板,拒绝路线):其后臂任何输入下不可达,静默截断会吞臂序 bug,
-> 故编译期拒绝——新码 `UnreachableArm`(Semantic),模板辅助 `validate_match_arms`(validate_params
+> 故编译期拒绝--新码 `UnreachableArm`(Semantic),模板辅助 `validate_match_arms`(validate_params
 > 同款,两臂类型同 pattern/body 形)折入模板总口 `emit_match` 开头;多 `_` 由同条检查一并拒绝。
 > 两 visit 的重复臂链经用户点名收口同一总口(臂体经 `emit_arm_body` 重载分派,visit 退化一行委派)。
 
 纯降糖,零新指令(LOAD_REG 沿用批 1 底座):
 
-- 形态:subject 求值一次入隐藏临时局部(对标 forIn `<iter>` 隐藏命名);逐臂 `LOAD temp; <pattern 表达式>; EQUAL; JUMP_FALSE 下一臂; <臂体>; JUMP end`;`_` 臂无条件直入(不比较);全臂未命中落尾部 `LOAD_REG MatchNoArm; THROW`——抛寄存器持有的共享 `ObjException(MatchNoArm)`(批 2 注册表加行 + bootstrap 填充;消息静态、无 subject 插值),matchStmt 与 matchExpr 同构(后者臂体为表达式,每臂恰一值)。
+- 形态(**草稿形态,已被上方「落地状态(2026-09-17)」注改定**:subject 不建隐藏临时局部、改驻留栈上 in-flight,逐臂 `DUP` 副本比较、命中臂入口 `POP`,故下面的 `LOAD temp` 应读作「`DUP` 栈上 subject 副本」):subject 求值一次入隐藏临时局部(对标 forIn `<iter>` 隐藏命名);逐臂 `LOAD temp; <pattern 表达式>; EQUAL; JUMP_FALSE 下一臂; <臂体>; JUMP end`;`_` 臂无条件直入(不比较);全臂未命中落尾部 `LOAD_REG MatchNoArm; THROW`--抛寄存器持有的共享 `ObjException(MatchNoArm)`(批 2 注册表加行 + bootstrap 填充;消息静态、无 subject 插值),matchStmt 与 matchExpr 同构(后者臂体为表达式,每臂恰一值)。
 - 相等语义 = EQUAL(value_equal,Obj 走 equals 虚函数);pattern 表达式按臂顺序惰性求值(前面臂命中即短路,后面 pattern 不求值)。
 - 验收:命中首臂 / `_` 兜底 / 无兜底抛 MatchNoArm / matchExpr 取值 / subject 单次求值(副作用单测)/ pattern 短路不求值。
 
@@ -96,9 +96,9 @@
 
 顺序依赖(2026-09-16 二次拍板):批 1-2 与对象无关(批 1 含值寄存器底座),先行清掉;批 3(list 值表示)+ 批 4(方法机制 + 迭代协议)构成对象地基,批 5-7 各踩批 4 的方法表地基;批 8 依赖批 3(下标)+ 批 4(协议);批 9 性能批殿后。每批完成 = 构建 + ctest 双配置(主构建必跑;触及值表示时 TagValue 构建加跑)+ clang-format 幂等。
 
-> **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态(当时):`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)——`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`。**2026-09-22 今注:该形态已废弃**——执行体合并为 `run_binary_operator<Op>` 后,算子实现整体改为「对象上的命名方法」(`String` 的 `__add__` 是 StringBuiltins 里的原生),详见文件末「算子重载」节。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
+> **计划表外补缺 · 字符串 `+` 拼接(2026-09-21)**:批 1-9 收官后补的第一处表外缺口(该缺口原不在本表)。语义:两侧皆 `String` 才成立、产新串(经驻留池故与同内容串 `==`/`===` 同真)、其余含 `String` 的组合报运行期 TypeMismatch;不做隐式转字符串,显式转换走内置 `str()`;`+=` 经既有复合赋值 lowering 同域。接线形态(当时):`Object::op_add` 协议缝的**首个接线者**(此前为备置 API)--`ADD` 走新执行体 `run_binary_add`,对象左值派发协议(`ObjString` override,peek 不弹守「栈即根」),非对象左值照旧委托 `run_binary_numeric`。**2026-09-22 今注:该形态已废弃**--执行体合并为 `run_binary_operator<Op>` 后,算子实现整体改为「对象上的命名方法」(`String` 的 `__add__` 是 StringBuiltins 里的原生),详见文件末「算子重载」节。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`)。
 
-> **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 —— `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`load_field_unbound` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
+> **计划表外补缺 · 模块成员访问(2026-09-21)**:批 1-9 收官后补的第二处表外缺口(同样不在本表)。语义:**模块的顶层绑定即模块成员**(不另设 export 声明,`H.x` 读顶层 var/fun/class 原值、`H.f(args)` 直调;嵌套导入的模块本身也是成员,可 `H.Inner.tag`);成员**只读**(`H.x = v` 报 TypeMismatch -- 越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」,暴露可变状态由模块自己的函数承担);miss 报 UndefinedProperty(循环导入的半初始化模块只影响尚未执行到的绑定,读它同报错、可 catch)。接线形态:纯对象层 -- `ObjModule` override `load_field`(成员 = 查 `globals_`,nil 值绑定与 miss 由 find 空态区分)+ `store_field`(恒拒);`load_field_unbound` 不 override(基类默认即委托 load_field,成员是原值直读、无 bound 物化之虞);零新指令、零新错误码、VM 侧零改动。**仍缺**:字符串排序比较(`<`/`>`/`<=`/`>=`,见 `tests/language/README.md` 禁区)。
 
 > **计划表外补缺 · 字符串比较排序(2026-09-21)**:批 1-9 收官后补的第三处表外缺口。语义:四个比较算子
 > (`<`/`<=`/`>`/`>=`)的域扩到字符串 -- 两侧皆 `String` 时按**无符号字节序**比(`string_view::compare`,
@@ -219,7 +219,7 @@
 > drop+push 入栈根,MAKE_LIST case 同构;无多余实参铸空表),`enter_frame` 槽深 = arity + is_varargs。原稿「装配指令」修正为
 > 装配段(字节码侧无 argc 源,LOAD_ARGC 已否;§4.3 表行同步)。rest 每次调用新铸、可被闭包捕获、方法帧同构适用。
 > 测试 11 增(Compiler.Varargs* 9 端到端 + CodeGen.VarargsCompiles + ObjFunction.VarargsFlag)。Review 改定(2026-09-19):call_closure
-> 拆编排形(对标旧版 aria vm.cpp call_function 的 pack_varargs/create_call_frame 分层)——元数检查收 check_arity、
+> 拆编排形(对标旧版 aria vm.cpp call_function 的 pack_varargs/create_call_frame 分层)--元数检查收 check_arity、
 > 缺省垫充+varargs 打包+槽深推导收 prepare_call_args(返回帧参数槽深),call_closure 只剩四行编排。批 4 至此收官
 >(本子批工作区待 review,双配置 879/879 绿);AGENTS.md/README 进度行已同步(批 1-4 落地,待批 5+)。
 
@@ -231,7 +231,7 @@
 > debug_repr `{"k": v}` 式(键值 debug 形,PrintGuard 防环;多键渲染序随槽位)+ `ObjMapIterator`(槽位扫描游标,
 > next 产出 [k,v] 二元 list,每步一小分配 D4 接受;耗尽 IterationExhausted fail-fast)+ bootstrap MapClass(寄存器格
 > MapClass + `register_map_builtins` 单 iter 方法,has_next/next 住 Iterator 类表零改)+ len 增 Map 分支(文案改
-> "string, list or map")。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)——本批唯一非对齐面
+> "string, list or map")。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)--本批唯一非对齐面
 > 新代码。语义三拍板(2026-09-19):equals 键 === 值 ==(与表内键语义一致)、字面量重复键后键胜、kMaxMapEntries
 > 单立(条目对数 u16 上限,与 kMaxListElements 分名,注释各述「元素数/条目对数」)。forIn 解构目标随批 8(本批
 > forIn 循环变量拿整个 pair,验收口径收窄见 §4.3 表行)。后继演进(同日,批 5 收官后):HashTable 槽位原语
@@ -243,7 +243,7 @@
 > 走查呈报,用户全按建议):①upper/lower v1 ASCII only(Unicode casing 需 case 表后续批);②trim 空白 = ASCII
 > 六字符;③空模式串报错 + 新码 `EmptyPattern`(Runtime,插 KeyError 旁,split 空 sep 与 replace 空 old 共用);
 > ④split 保留空段("a,,b"->["a","","b"],空串输入->[\"\"],Python/JS 同款);⑤join receiver 挂 list、元素宽松经
-> format_value(JS 式,空 sep 合法、空 list 返空串)——批 5 收官铺的 util::join 底座在此兑现;⑥find 未命中返
+> format_value(JS 式,空 sep 合法、空 list 返空串)--批 5 收官铺的 util::join 底座在此兑现;⑥find 未命中返
 > -1(单参,字节下标);⑦replace 全部替换;⑧substring 越界(含负数)报 IndexOutOfBounds 不钳制,argc 1/2 双形态;
 > ⑨迭代与 s[i] 产出 1-char string;⑩cp 方法 v1 只 codepoint_at(i)->int(码点序号索引,O(i) 扫描无偏移表)。
 > 落地面:ObjString 三 override(下标读整数键字节域产出单字节 1-char 串/写恒 TypeMismatch "string does not
@@ -266,20 +266,20 @@
 > `0..10`/`0...10` 与源码拼写一致、trace 空体、store_field/下标/op_* 走基类默认)+ ObjRangeIterator(第五对,
 > **唯一无源对象者**:构造期拷三标量自足,不持指针、trace 空体;iter_fn 覆写 slots[0] 后源 range 可回收,标量
 > 自足不受影响)+ MAKE_RANGE 执行体(端点 peek 在栈跨 new_range,验整数铸完 drop+push,窗口内无 GC 点;无 u16
-> 计数、零上限检查——惰性两端点无物化)+ CodeGen visitRangeExprNode 翻转(端点左→右发射 + flags 字节)+
+> 计数、零上限检查--惰性两端点无物化)+ CodeGen visitRangeExprNode 翻转(端点左→右发射 + flags 字节)+
 > Range bootstrap(寄存器 RangeClass 格 + bootstrap_range_class + RangeBuiltins 单 iter 方法表)+ parser 非结合
 > 确认(rhs 调 term 不调 range,结构性防住 `a..b..c`)。测试 27 新(test_objrange 15 含哈希确定性/空区间/双迭代器
 > 独立/stress + Compiler.Range* 8 + 语料 4:range_forin/range_print_format golden/runtime_range_bounds_type_
 > mismatch 负 .err/compile_range_non_associative 负);存量翻转一(Interpret.StringNotImplementedIsCompileError
 > 钉子样本 `print 1..2` 退役换解构赋值,机制仍在)。
 
-> **后继演进(批 7 收官后 range 四批扩展,已拍板;本段记批 1)**:三方向跨语言对照呈报后拍板——①倒序走
+> **后继演进(批 7 收官后 range 四批扩展,已拍板;本段记批 1)**:三方向跨语言对照呈报后拍板--①倒序走
 > **端点自动推断**(low>high 即倒序,`10..1` 产出 10→1、不含上界 `10...1` 递减到 high+1 产出 10→2;**翻转批 7
 > 空区间拍板**:空区间只剩 low==high 且不含上界;ObjRange 本体零改动,方向住迭代器构造期,内容哈希/equals 不变,
 > 10..1 != 1..10;主流语言几乎全拒绝端点推断方向,空区间语义为其代价,直觉优先);端点命名改 **from/to**
->(批 1 review:倒序后 low/high 的「大小序」假设名不副实,from/to 零方向假设——start/end 的 end 有 C++
+>(批 1 review:倒序后 low/high 的「大小序」假设名不副实,from/to 零方向假设--start/end 的 end 有 C++
 > one-past 条件反射、begin/end 与容器 begin()/end() 撞语境,均否);②切片越界 fail-fast 不采
-> Python 钳制;③**单下标负数一并支持**(从尾计数 idx+len,推翻「单下标维持报错」建议——要做就做全套,list/string
+> Python 钳制;③**单下标负数一并支持**(从尾计数 idx+len,推翻「单下标维持报错」建议--要做就做全套,list/string
 > 下标读写对称);④倒序 range 作下标 v1 报错,倒序切片后议。批次:批 1 倒序 range → 批 2 负下标全套
 >(list/string) → 批 3 无上界开区间(文法 `term?` + flags unbounded 位 + ObjRange has_high_) → 批 4 切片
 >(list 下标 Range 分支,消费批 2+3)。
@@ -291,7 +291,7 @@
 >(对象级 ReversedInclusive/ReversedExclusive + 端到端 ReversedSums);grammar/instruction-set §6.3/进度行同步。
 >
 > **批 2(负下标)已落地(工作区待 review)**:从尾计数 idx+len 一次到位(list 读/写 + string 读,string 写恒
-> TypeMismatch 不变;map 任意键不涉)——归一化三处就地字面重复(行数过小不抽),raw=i64min 负支和恒不下溢
+> TypeMismatch 不变;map 任意键不涉)--归一化三处就地字面重复(行数过小不抽),raw=i64min 负支和恒不下溢
 > (len<=i64max);越界 fail-fast 报**原始键值**(list index -3 out of range)。测试:对象级翻转 2(越界钉子 -1→
 > -len-1)+ 新增 3(LoadIndexNegativeReadsFromTail/StoreIndexNegativeWritesFromTail/ObjString 负下标)+ 端到端
 > 4(读写对称/复合赋值同归一化/越界文案/string 负下标);语料翻转 1(runtime_list_negative_index 改 -len-1 形)+
@@ -307,7 +307,7 @@
 >
 > **切片端点表示(2026-09-19 拍板改定)**:`resolve_slice_bounds` 返回 `Opt<Pair<usize, usize>>` = **归一化端点对
 > (from, to)**(两端点各自经 `util::resolve_index` 从尾计数 + 越界判定,无上界取末元素),**含否上界不折算进返回
-> 值**——折算挪到消费端(`count = is_exclusive() ? to - from : to - from + 1`,两端相等即空切片 count 0),
+> 值**--折算挪到消费端(`count = is_exclusive() ? to - from : to - from + 1`,两端相等即空切片 count 0),
 > 方向由端点对大小关系自带(正序 from<=to、逆序 from>to)。取代早稿的 `Pair<i64,i64>` 有符号闭区间(其
 > `end = to - 1` 是推导值、to_index==0 时探到 -1,是 usize 装不下的根因;改 u64 会让 `xs[-1...0]` 这类经
 > `Array::ensure_capacity` 回绕成死循环,实测确认且现有测试全绿掩盖)。拍板理由:①两端点都是实元素位置、
@@ -335,22 +335,22 @@
 > 倒序负例对删除、断言并入 `list_slice.aria` 正向段(语料用例数 1021 → 1019)。
 
 > **批 8(解构)已落地**:Parser/AST/Visitor 早已就位,本批把 CodeGen 的四处占位翻为真实发射,
-> 零新指令、零新错误码。① 组织:P6 定稿——`bind_pattern(node, mode)` 只置模式后 `node.accept`,
+> 零新指令、零新错误码。① 组织:P6 定稿--`bind_pattern(node, mode)` 只置模式后 `node.accept`,
 > 发射住三个 `visit*PatternNode`(旧 `bind_pattern` 的 dyn_cast 链删除);新增
 > `PatternBindMode{Fill,Store}` 成员(对标 `lvalue_mode_`;模式对整个模式子树恒定,递归经 accept
 > 无参可传)。② Fill(var 声明 / for-in 目标)走值填槽:identifier 收 `bind_stack_value`(局部登记
 > 即初始化、顶层全局 `DEF_GLOBAL` 弹值),listPattern 按**访问数**(非 `_` 元素位 + rest 位)三分
-> ——0 次直弹源值、1 次源值即消耗品(取出元素恰落下一局部槽位)、>=2 次先把源值填成隐藏局部再逐
+> --0 次直弹源值、1 次源值即消耗品(取出元素恰落下一局部槽位)、>=2 次先把源值填成隐藏局部再逐
 > 位置复取;隐藏局部名 `<destructure_N>` 带槽号(N 为登记时 `locals_.size()`),因同作用域不许重名
 > (`is_defined_in_scope`)而同作用域两条解构语句必占不同槽。③ Store(解构赋值)源值恒驻栈顶作临时
 > 值,每次访问前 `DUP`、identifier 目标 resolve 后 `STORE_*` 再 `POP`(peek-store),收尾弹本层
-> 源值——净消耗栈顶一值,故调用点先 `DUP` 一份右值作表达式的值(**解构赋值求值 = 右值**)。④ `_`
+> 源值--净消耗栈顶一值,故调用点先 `DUP` 一份右值作表达式的值(**解构赋值求值 = 右值**)。④ `_`
 > 位置经 `is_wildcard_pattern` 过滤,**不产生下标访问**(故该位置越界/缺键都不报;反方案「取值后
 > 丢弃」对 map 源会误报缺键被否)。⑤ rest:压「元素数」下标 + `MAKE_RANGE`(无上界位)作键取后缀,
-> 绑名走 rest 节点自身 visit(AST 里 rest 位是与位置位同为 `IdentifierPatternNode` 的模式节点,非字符串);**空尾语义**——
+> 绑名走 rest 节点自身 visit(AST 里 rest 位是与位置位同为 `IdentifierPatternNode` 的模式节点,非字符串);**空尾语义**--
 > 无上界形态并入 `resolve_slice_bounds`(此前不做是因无消费者;解构 rest 即消费者):该函数返
 > `Opt<SliceSegment>`(升序源段起点 + 元素数 + 是否反向写入;长度与方向的折算全进解析口),
-> 有上界支照旧(两端点各从尾计数、须落在实元素位置),无上界支给后缀——起点从尾计数后**允许 == size**
+> 有上界支照旧(两端点各从尾计数、须落在实元素位置),无上界支给后缀--起点从尾计数后**允许 == size**
 > 得空段(`[][0..]`、`[7][1..]` 皆空 list),越过长度仍越界;`ObjList::slice` 退化为「解析 -> 段拷」
 > 单流,util 侧 resolve_index 与其钉子零改动,翻转对象级 `SliceOnEmptyListFails`
 > 的无上界例与语料负例 `runtime_list_slice_empty`(改钉有上界形态)。⑥ 逐位置发射(含 `_` 跳过、递归绑定与 rest 后缀)
@@ -455,11 +455,11 @@ cmake --build build/rel --target vm_bench -j
 
 ### 4.7 两段式派发(2026-09-21,取代 §4.5 的单条融合)
 
-**决定**:`recv.name(args)` 从单条 `INVOKE_METHOD name argc` 改成两段 `PREPARE_METHOD name` + `CALL_METHOD argc`——解析放回**实参求值之前**。`INVOKE_METHOD` 与其独占的 `OpFormat::Invoke` 一并删除(指令表净 +1 条:`PREPARE_METHOD`/`CALL_METHOD` 两条换 `INVOKE_METHOD` 一条)。
+**决定**:`recv.name(args)` 从单条 `INVOKE_METHOD name argc` 改成两段 `PREPARE_METHOD name` + `CALL_METHOD argc`--解析放回**实参求值之前**。`INVOKE_METHOD` 与其独占的 `OpFormat::Invoke` 一并删除(指令表净 +1 条:`PREPARE_METHOD`/`CALL_METHOD` 两条换 `INVOKE_METHOD` 一条)。
 
-**动机(语义)**:`obj.foo` 是接收者求值后紧接着的一步,应当先于实参求值完成,Python/Lua/JS 皆如此(它们的成员解析可能跑用户代码——描述符/getter/`__index` 元方法,故规范把「取」定死在实参之前)。单条融合把解析推到执行期,可观察两处:① 实参反过来改写接收者同名成员时,本次调用用的是**改写后**的值;② 解析失败时实参**已经跑过**(副作用已发生)。§4.6 收尾记的「已知偏差一处」即 ①。两处虽属病态/边角写法,但次序语义是语言面的确定性,不宜留特例——尤其它同时是「解析可跑用户代码」这一未来特性的**前提**(届时解析要在 `PREPARE_METHOD` 内跑,还需另做同步嵌套调用机制;该边界已写进指令集 §5.6)。
+**动机(语义)**:`obj.foo` 是接收者求值后紧接着的一步,应当先于实参求值完成,Python/Lua/JS 皆如此(它们的成员解析可能跑用户代码--描述符/getter/`__index` 元方法,故规范把「取」定死在实参之前)。单条融合把解析推到执行期,可观察两处:① 实参反过来改写接收者同名成员时,本次调用用的是**改写后**的值;② 解析失败时实参**已经跑过**(副作用已发生)。§4.6 收尾记的「已知偏差一处」即 ①。两处虽属病态/边角写法,但次序语义是语言面的确定性,不宜留特例--尤其它同时是「解析可跑用户代码」这一未来特性的**前提**(届时解析要在 `PREPARE_METHOD` 内跑,还需另做同步嵌套调用机制;该边界已写进指令集 §5.6)。
 
-**形态**:`<recv>` + `PREPARE_METHOD name`(解析、结果压栈:[recv] -> [recv, target])+ `<args>` + `CALL_METHOD argc`(纯调用:实参整体下移一格补掉 target 占的那格得 [recv, a1..aN],槽 0 = receiver = this,交 `call_value` 分发)。接收者先于实参求值不变;调用区与两步形态逐位一致,故进帧整形(缺省垫充/varargs 打包)与 unwind 零改动;不绑定解析与零物化照旧。名字索引沿用 `ConstU16`(与 `LOAD_FIELD` 等常量索引同宽)——短形 u8 + 长变体曾被引入,但那只为让两段式与融合编码**逐字节等长**(便于同二进制字节改写对照),不是设计需要,已去。
+**形态**:`<recv>` + `PREPARE_METHOD name`(解析、结果压栈:[recv] -> [recv, target])+ `<args>` + `CALL_METHOD argc`(纯调用:实参整体下移一格补掉 target 占的那格得 [recv, a1..aN],槽 0 = receiver = this,交 `call_value` 分发)。接收者先于实参求值不变;调用区与两步形态逐位一致,故进帧整形(缺省垫充/varargs 打包)与 unwind 零改动;不绑定解析与零物化照旧。名字索引沿用 `ConstU16`(与 `LOAD_FIELD` 等常量索引同宽)--短形 u8 + 长变体曾被引入,但那只为让两段式与融合编码**逐字节等长**(便于同二进制字节改写对照),不是设计需要,已去。
 
 **实测**:
 
@@ -473,8 +473,8 @@ cmake --build build/rel --target vm_bench -j
 
 | 形态 | 做法 | 实测 |
 | :--- | :--- | :--- |
-| target 放调用区**之下**(`[target, recv, a1..aN]`) | 调用侧零搬移;收尾由帧位承担——`CallFrame` 加一位「下方有 target 槽」,`RETURN` 把返回值写进那格并让栈顶落到帧基址;原生调用在 `CALL_METHOD` 里当场收尾 | 比现状慢 0.8~2 ns/次迭代;且改动落在 `RETURN` 上(纯函数调用也走那条路),端到端零派发对照行 +2.7~4.5% |
-| 上者 + 调用点补一条 `POP_UNDER` | 去掉帧位,收尾改由调用点后随的栈原语统一做(VM 零新状态) | 比现状慢 1.1~1.6 ns/次迭代——每次调用多一整条指令的 dispatch,是三者里最贵的 |
+| target 放调用区**之下**(`[target, recv, a1..aN]`) | 调用侧零搬移;收尾由帧位承担--`CallFrame` 加一位「下方有 target 槽」,`RETURN` 把返回值写进那格并让栈顶落到帧基址;原生调用在 `CALL_METHOD` 里当场收尾 | 比现状慢 0.8~2 ns/次迭代;且改动落在 `RETURN` 上(纯函数调用也走那条路),端到端零派发对照行 +2.7~4.5% |
+| 上者 + 调用点补一条 `POP_UNDER` | 去掉帧位,收尾改由调用点后随的栈原语统一做(VM 零新状态) | 比现状慢 1.1~1.6 ns/次迭代--每次调用多一整条指令的 dispatch,是三者里最贵的 |
 
 **测量纪律(这轮踩到的)**:跨构建比较被「代码布局手气」污染到 ±2~4%(同一份字节码在两个构建里可差 1.4~2.1 ns/次迭代;对照组 `plain_call` 自身在 37.9~43.9 间摆动),故**变体之间**的比较只用同二进制字节改写对照,跨构建只用于确认量级与「无意外回归」;端到端计时按每轮随机序 + 零派发对照负载扣除构建级偏移。
 
@@ -512,9 +512,9 @@ cmake --build build/rel --target vm_bench -j
 
 ## 5. 参照
 
-- `Object.hpp` 协议缝注释(成员/下标/可调用三组;原运算符组已随算子重载落地删除)——本计划的架构基准。
-- `ObjInstance::load_field`(绑定路径)与 `ObjClass::load_field`(链读穿透、类侧不绑定)——共享绑定 helper 的两处消费点。
-- `ObjBoundMethod`(method_/receiver_ 均 Value 泛化,原生方法调用约定「slots[0] = receiver」)——运行时侧已就绪,本计划只补生产侧。
+- `Object.hpp` 协议缝注释(成员/下标/可调用三组;原运算符组已随算子重载落地删除)--本计划的架构基准。
+- `ObjInstance::load_field`(绑定路径)与 `ObjClass::load_field`(链读穿透、类侧不绑定)--共享绑定 helper 的两处消费点。
+- `ObjBoundMethod`(method_/receiver_ 均 Value 泛化,原生方法调用约定「slots[0] = receiver」)--运行时侧已就绪,本计划只补生产侧。
 - `bytecode-instruction-set.md` §4.14/§6.4(五条预置指令的栈形与操作数)、`compound-assignment-lowering.md` §4.3(下标四模式)。
 - Wren 0.4(本地 `/Users/icelake/src/wren`):每值一类 + 类表方法派发(`wren_value.c` value 为 class 成员)、迭代即方法(Wren 无内建迭代器对象,list 迭代走下标,aria 取「协议方法 + 迭代器对象」路,与 Python/JS 同形)。
 
@@ -530,7 +530,7 @@ cmake --build build/rel --target vm_bench -j
 **查找序**:实例 `fields_` 优先(实例上一个叫 `__add__` 的字段遮蔽类链钩子)再沿类链;内置类型取自身 bootstrap 类表里的原生
 (由用户拍板:查找从实例 fields 起)。取不到即报错,**措辞随宿主**:实例落成员缺席(`<class Box> has no member '__add__'`,
 码 UndefinedProperty),其余类型落基类默认的 `type X does not support '<钩子名>'`(`[1] + [2]` 即 `type List does not
-support '__add__'`,码 TypeMismatch)——不再有
+support '__add__'`,码 TypeMismatch)--不再有
 「operator '...' requires numbers」那条针对对象左值的旧文案(数值左值仍走 `run_binary_numeric`,文案不变)。
 
 **内置侧**:string 的 `__add__`(拼接,经驻留池)与 `__lt__`/`__le__`/`__gt__`/`__ge__`(无符号字节序,GC-pure)是 StringBuiltins
@@ -543,14 +543,14 @@ Int`、`__lt__ expects 1 argument, got 2`):每个钩子的方法名与文案都�
 **调用协议同款**:对象被调用时按 `__call__`(`kOpCallName`)取实现后递归分发,未实现即 fail(`type X does not support '__call__'`,
 码 CallNonCallable);类本身仍走实例化。`Object::load_field_unbound` 的基类默认保持隐式委托 load_field
 (未 override 的类型照读路径取值,不设「显式参与」反转)。
-**边界(2026-09-22 拍板,不兜底)**:钩子自指或成环(`d.__call__ = d`、`a.__call__=b;b.__call__=a`)会无穷重入 `call_value` 直到 C++ 栈溢出(SIGSEGV,无错误消息)——按「手写死循环同类」处理,后果由使用者承担:**不加自指检测、不加重入深度上限、不改查找路径**(呈报过的两条修法均否)。
+**边界(2026-09-22 拍板,不兜底)**:钩子自指或成环(`d.__call__ = d`、`a.__call__=b;b.__call__=a`)会无穷重入 `call_value` 直到 C++ 栈溢出(SIGSEGV,无错误消息)--按「手写死循环同类」处理,后果由使用者承担:**不加自指检测、不加重入深度上限、不改查找路径**(呈报过的两条修法均否)。
 钩子元数由调用侧钉死(二元恒传 1 个实参、`__neg__` 零个):用户方法钩子经 `call_closure` 的 `check_arity` 检查,内建 string 钩子
 各自校验 `slots.size()` 报 `__lt__ expects 1 argument, got N`;左值非对象时**不走钩子**(`1 + box` 仍报数值路径的
 TypeMismatch,无 reflected 形态)。数值侧同批拆过:`run_binary_numeric` 只剩入口(弹 2 + 守卫 + 按域分流),双 Int 与
 任一 F64 升浮点各住 `run_binary_int<Op>` / `run_binary_f64<Op>`(前者除/模零就地 fail,后者 IEEE 无失败路径);
 实测数值热路径无成本(Release 15M 次数值算子:拆前 0.20s / 拆后 0.20s)。
 
-**坑**:①`FailSignal` 只在「不可由 bool 构造」的 `Opt<T>` 上转 nullopt——`return vm.fail(...)` 落到 `Opt<i32>`/`Opt<bool>`
+**坑**:①`FailSignal` 只在「不可由 bool 构造」的 `Opt<T>` 上转 nullopt--`return vm.fail(...)` 落到 `Opt<i32>`/`Opt<bool>`
 会构出「已初始化的 0/false」把 fail 吞成成功(协议族的 `Opt<Value>` 安全;标量返回型的站点改用 bool + 出参 -- StringBuiltins
 的算子钩子即按 native 契约返 bool、结果写 slots[0])。②Debug 构建下按名查找链未内联,单次算子
-成本被放大数倍,性能判断必须用 Release。③5M 轮字符串算子对照(20M 次操作,Release,best-of-N):改前基线 0.60s、「VM 直接 load_field_unbound」版 0.82s、**现形态(op_*_impl + 实现格直读)0.68s** —— 取实现分两路正是为省掉内建类型的类表查找(约 −7ns/次);余下 +4ns/次是「算子即方法调用」本身的代价。
+成本被放大数倍,性能判断必须用 Release。③5M 轮字符串算子对照(20M 次操作,Release,best-of-N):改前基线 0.60s、「VM 直接 load_field_unbound」版 0.82s、**现形态(op_*_impl + 实现格直读)0.68s** -- 取实现分两路正是为省掉内建类型的类表查找(约 −7ns/次);余下 +4ns/次是「算子即方法调用」本身的代价。

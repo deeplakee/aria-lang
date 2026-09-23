@@ -14,9 +14,9 @@
 
 **取消后仍成立的两条**：`fields_` 命中优先（现在是纯字段遮蔽类链，语义不变）；`LOAD_SUPER_FIELD` 不写 fields（现在无缓存可写，但「super 站点的解析结果不得驻留成实例成员」这条纪律保留 -- 它靠 `LOAD_SUPER_FIELD` 走独立的 `ObjClass::load_field` 实现，与实例表无关）。
 
-**首解析快照**：类上赋值改写方法槽后，新解析见新闭包、**已解析实例沿用旧绑定** -- 「免失效机制」的代价即此语义，钉住快照防误判为漏同步。
+**取消后的等价语义**：类上赋值改写方法槽后，**新解析一律见新值**（每次访问现场解析，实例上不留任何陈旧状态）；仍「沿用旧行为」的只有**已经取出的那个绑定值本身**--它是普通值拷贝，与后续改写无关（`MethodRewriteViaClassAssignmentSnapshot` 钉的就是这一条，不是实例级快照）。
 
-**测试**：铁则 1 `StaticCallableReadsRawOnInstance`；铁则 2 `SuperCallDoesNotPolluteCache`（super 调用后两次 `obj.m` 均仍走子类实现）；铁则 3 `InstanceFieldShadowsStatic`；快照 `MethodRewriteViaClassAssignmentSnapshot`；缓存项跨 stress GC 存活 `ClassGraphSurvivesExplicitCollect`。GC 侧零额外负担：缓存的 `ObjBoundMethod` 经实例 fields 表 trace 级联标。
+**测试**：`StaticCallableReadsRawOnInstance`（静态槽读原值不绑定）；`SuperCallDoesNotPolluteCache`（super 调用后两次 `obj.m` 均仍走子类实现）；`InstanceFieldShadowsStatic`（实例字段遮蔽类链）；`MethodRewriteViaClassAssignmentSnapshot`；`ClassGraphSurvivesExplicitCollect`（类图跨显式 collect 存活）。GC 侧零额外负担：绑定值本体经实例/类表的 trace 级联保命，无独立缓存表要标。
 
 ## 坑 #2：MAKE_* / LOAD_FIELD 的 peek-不弹栈纪律 -- 白色对象发布与「class 留栈」
 
@@ -29,7 +29,7 @@
 
 **反向坑（守卫过度）**：阶段 2 曾按「表 upsert 的 rehash 分配跨 GC 须守卫」写三处多余守卫 -- 认知错误，`HashTable` set/upsert 走 trivial 分配**永不触发 GC**（GC 核心不变式），review 后整删（其中 `MAKE_CLASS` 的 name 实为常量池可达，连 weak root 都不是）。守卫纪律按「真 GC 点」划，不按「看起来像分配」划。
 
-**测试**：`ClassGraphSurvivesExplicitCollect`（实例/绑定/类/缓存项跨 GC 存活）、`StoreFieldDeepStackShift`（`STORE_FIELD` 单槽下移在深栈多临时值下）、`ThisFieldDeepStackInMethod`。
+**测试**：`ClassGraphSurvivesExplicitCollect`（实例/绑定/类跨 GC 存活）、`StoreFieldDeepStackShift`（`STORE_FIELD` 单槽下移在深栈多临时值下）、`ThisFieldDeepStackInMethod`。
 
 ## 坑 #3：init_ 的一致性 -- 两写点 + 快照语义 + Value 形态兜底
 

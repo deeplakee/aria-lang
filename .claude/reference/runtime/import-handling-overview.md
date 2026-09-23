@@ -41,13 +41,13 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 | 环节 | 状态 | 位置 |
 | :--- | :--- | :--- |
-| ① 文法 `import "str" as id;` | 已定义 | `docs/grammar.txt:42` |
-| ① 词法关键字 `import` / `as` | 已实现 | `src/compile/Token.hpp:48-49`、`Token.cpp:23` |
-| ② Parser 解析 import 语句 | 已实现 | `src/compile/Parser.cpp:523-534` |
-| AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp:436`、`ast.cpp:295,653` |
+| ① 文法 `import "str" as id;` | 已定义 | `docs/grammar.txt` 的 `importStmt` 产生式 |
+| ① 词法关键字 `import` / `as` | 已实现 | `src/compile/TokenType.hpp`（`ARIA_TOKEN_LIST` 的 `Import`/`As` 两行） |
+| ② Parser 解析 import 语句 | 已实现 | `src/compile/Parser.cpp` 的 `import_stmt()` 与 `declaration()` 分派 |
+| AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp`（节点）+ `ast.cpp`（`dump`/`accept`） |
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
-| `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp:91-92` |
-| IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp:170-180,324-325` |
+| `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST` |
+| IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp` 的 `import_instruction` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（匿名命名空间） |
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp` `run_import` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 成功才入表 -> `entry` 经 `call_value` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
@@ -60,29 +60,27 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ## ① 文法与词法
 
-- **文法**（`docs/grammar.txt:42`）：`importStmt -> "import" string "as" identifier ";"`。
+- **文法**（`docs/grammar.txt` 的 `importStmt` 产生式）：`importStmt -> "import" string "as" identifier ";"`。
   强制字符串路径 + 强制 `as alias`，不支持裸名导入。
-- **设计说明**（`docs/grammar.txt:224-230`、`bytecode-instruction-set.md §5.9`）：文件 = 模块
-  （非类）；启动定源根列表（stdlib `lib` + 入口文件目录，环境变量留后续）；
-  `import "lib/utils" as Utils`（裸名，从源根搜）、`import "./utils" as U`（相对当前文件）、
-  `import "lib" as Lib`（目录包）；相对导入不得越出当前文件所属源根；目录 = 包；循环导入返回
-  半初始化对象；裸名不自动导入；符号链接按规范路径判定。
-- **关键字**（`src/compile/Token.hpp:48-49`、`Token.cpp:23`）：`TokenType::Import`、
-  `TokenType::As`。
+- **关键字**（`src/compile/TokenType.hpp` 的 `ARIA_TOKEN_LIST`）：`TokenType::Import`、`TokenType::As`。
+
+> 导入路径语义（源根列表与裸名/相对两类路径、目录包与源根越界的**未实现**状态、符号链接归一等）
+> 以 `docs/grammar.txt`「说明」区的模块导入条与 [`import-path-resolution.md`](./import-path-resolution.md)
+> 为准，本文不重复。
 
 ## ② Parser 与 AST
 
-- **派发**（`src/compile/Parser.cpp:204,367-368`）：`case TokenType::Import: return import_stmt();`。
-- **`import_stmt()`**（`src/compile/Parser.cpp:523-534`）：`expect(Import)` → 期望
+- **派发**（`src/compile/Parser.cpp`）：`declaration()` 的 `case TokenType::Import: return import_stmt();`。
+- **`import_stmt()`**（`src/compile/Parser.cpp`）：`expect(Import)` → 期望
   `TokenType::String`（否则 `ErrorCode::ExpectedToken`「期望字符串字面量作为模块路径」）
   → 取 `advance().string_value()` 作 path → `expect(As)` → `expect_identifier()` 作 alias
   → `expect(Semicolon)` → 构造 `ImportStmtNode(loc, path, alias)`。
   **path 是字符串字面量解析后的原始内容，此处不做任何路径解析或文件系统检查**。
-- **AST 节点**（`src/compile/ast.hpp:427-441`）：`struct ImportStmtNode : StmtNode`，字段
+- **AST 节点**（`src/compile/ast.hpp`）：`struct ImportStmtNode : StmtNode`，字段
   `String path;` / `String alias;`，注释说明 path = 字符串字面量解析后的内容（模块路径），
-  alias = 绑定模块的本地名。`dump` 渲染 `ImportStmt path=... as=...`（`ast.cpp:295-297`），
-  `accept` 调 `visitor.visitImportStmtNode(this)`（`ast.cpp:653`）。
-- **visitor**（`src/compile/AstVisitor.hpp:92`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
+  alias = 绑定模块的本地名。`dump` 渲染 `ImportStmt path=... as=...`（`ast.cpp`），
+  `accept` 调 `visitor.visitImportStmtNode(this)`。
+- **visitor**（`src/compile/AstVisitor.hpp`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
 > `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`
 > 发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽
@@ -90,12 +88,10 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ## ③ 字节码
 
-- **`OpCode::IMPORT`**（`src/bytecode/code.hpp:91-92`）：枚举项，归类于 "Module import"。
-- **指令格式**（`bytecode-instruction-set.md §4.15`）：`IMPORT path:u16`，栈效应
-  `... -> [module]`（压模块值）。`path` 为常量池 `ObjString` 索引；「模块解析、路径搜索、循环
-  导入检测留 VM / 嵌入层」。绑定不在 IMPORT 内--交 CodeGen 按作用域经 `DEF_GLOBAL` / 值填槽走。
-  **无 `SETUP_EXCEPT` / `END_EXCEPT`** 一类指令--import 不靠额外操作码。
-- **反汇编**（`src/bytecode/Disassembler.cpp:170-180,324-325`）：读一个 u16 常量池索引，
+- **`OpCode::IMPORT`**（`src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST`）：枚举项，格式类别 `Import`。
+- **指令格式**（`bytecode-instruction-set.md` §4.15）：`IMPORT path:u16`，栈效应
+  `... -> [module]`（压模块值）。`path` 为常量池 `ObjString` 索引。绑定不在 IMPORT 内--交 CodeGen 按作用域经 `DEF_GLOBAL` / 值填槽走。import 不靠额外操作码。
+- **反汇编**（`src/bytecode/Disassembler.cpp` 的 `import_instruction`）：读一个 u16 常量池索引，
   渲染 `IMPORT PPPP  ; path`。
 
 ## ④ VM 运行时
@@ -144,7 +140,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 > `declare_global` + `IMPORT` + `DEF_GLOBAL alias`；嵌套（函数体/块内）`declare_local` + `IMPORT`
 > （值填槽）。对齐文法「绑模块到当前作用域（函数体=局部）」。
 
-**根安全**：GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()` 不持 `LockGuard`；path 经常量池根；`canonical_path` 经 intern weak root 加 guard；命中分支的 module 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫。
+**根安全**：见下「加载层 load_module」节的根安全注。命中分支的 `module` 经 `modules_` 根可达，`current_->push` 期间指针稳定（非移动 GC），无需守卫；`dispatch_loop()` 不持 `LockGuard`。
 
 ### 源根列表（已实现，被 IMPORT 消费）
 
@@ -184,9 +180,11 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 **错误契约同 call_value 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 raise 入 `*current_`
 寄存器，调用方 `unwind()` 派发/物化；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT
 站点位置，与 resolve_module 失败形态统一），编译期 Error 就地 `new_exception` 原样装配箱透传
-（含被导入文件位置，不重烘）。**根安全**：`canonical_path`(intern weak root) 经 `run_import` 的
-`canonical_path_guard` 跨 `load_module` 内一串 new_* 分配根化；`modules_.set` 等 rehash 走
-trivial 分配不触 GC，不是守卫承重点；`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
+（含被导入文件位置，不重烘）。
+
+**根安全**：path 经常量池根；`canonical_path`(intern weak root) 经 `run_import` 的
+`gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 new_* 分配根化；`modules_.set` 等 rehash
+走 trivial 分配不触 GC（GC 核心不变式），不是守卫承重点；`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
 
 **后续缺口**：目录包 `index.aria` 查找、相对导入越出源根的检测（`weakly_canonical` 折叠 `..`
 后据源根列表判定报错）、解析缓存（IMPORT 重复执行同一 specifier 避免重复 stat，见

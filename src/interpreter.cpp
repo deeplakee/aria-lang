@@ -17,7 +17,7 @@ namespace aria {
 
     namespace {
 
-        // 构建 aria 解释器 CLI 定义（--help/-h 内置、--repl、--eval/-e、<file> 可选位置参数）。
+        // aria CLI 定义：注册顺序决定 help() 渲染次序与解析优先级（见 cli.hpp）。
         util::Cli build_cli() {
             util::Cli cli{kProductName};
             cli.set_description("aria 脚本语言解释器");
@@ -52,13 +52,13 @@ namespace aria {
             }
         }
 
-        // 一次性求值源码字符串：自建 VM，interpret_from_src 成功返回 0，否则 1。
+        // 一次性求值源码字符串。
         int run_src(const StringView src) {
             AriaVM vm;
             return vm.interpret_from_src(src) == InterpretResult::Ok ? 0 : 1;
         }
 
-        // 运行脚本文件：自建 VM，interpret_from_path 成功返回 0，否则 1。
+        // 运行脚本文件。
         int run_file(const StringView path) {
             AriaVM vm;
             return vm.interpret_from_path(path) == InterpretResult::Ok ? 0 : 1;

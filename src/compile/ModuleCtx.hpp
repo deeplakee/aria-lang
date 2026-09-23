@@ -3,7 +3,7 @@
 
 // 模块编译上下文：收口每模块状态 -- 模块句柄 + 当前函数上下文游标（兼拥有入口 fn 上下文）+ 顶层
 // 全局名注册表。与 FunctionCtx（每函数）对齐：模块 > 函数 > 作用域 三层各一席。「当前函数上下文」
-// 游标 current_fn_ctx_ 寄存于此，「当前 CodeUnit」不再单独存--由 CodeGen 经
+// 游标 current_fn_ctx_ 寄存于此，「当前 CodeUnit」不单独存--由 CodeGen 经
 // cur_cu() = &current_fn_ctx_->fn_->unit() 派生，随游标自动切换，免两指针同步。
 //
 // current_fn_ctx_ 是普通 FunctionCtx*：构造函数就 m.entry() new 一个入口 FunctionCtx

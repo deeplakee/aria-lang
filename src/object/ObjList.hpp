@@ -69,16 +69,14 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjInstance::load_field
-        // 形)--先委托 VM 的 List bootstrap 类协议(ObjClass::load_field 沿链查表,miss 类
-        // 措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不
-        // override:基类默认「does not support field access」即正确行为(不可变成员面)。
+        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑
+        // this(两步形态与 GC 走查见 Object.hpp 协议契约)。store_field 不 override:基类默认
+        // 「does not support field access」即内置类型的正确行为。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
-        // -- 恒绑定但不铸 ObjBoundMethod(内置侧 bound 无缓存可回填,每取一次白铸一个;forIn 每迭代
-        // 两个,见集合计划 §4.4 基线)。调用区槽 0 保持 receiver 原样,正是原生要的 this。
+        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
+        // 交 VM 调用(契约见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 

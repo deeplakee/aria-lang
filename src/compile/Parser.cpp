@@ -83,10 +83,6 @@ namespace aria {
 
     } // namespace
 
-    // ============================================================
-    // 构造与入口
-    // ============================================================
-
     // 一次性实例：构造即注入 token 流（契约见 Parser.hpp 构造注）。
     Parser::Parser(List<Token> tokens) noexcept : tokens_{std::move(tokens)}, pos_{0}, errors_{} {}
 
@@ -107,10 +103,6 @@ namespace aria {
         }
         return prog;
     }
-
-    // ============================================================
-    // token 游标辅助
-    // ============================================================
 
     const Token& Parser::peek(const usize ahead) const noexcept {
         const usize size     = tokens_.size();
@@ -145,10 +137,6 @@ namespace aria {
         ASSERT(pos_ > 0, "Parser::previous 在未消费任何 token 时调用");
         return tokens_[pos_ - 1];
     }
-
-    // ============================================================
-    // 错误与期待
-    // ============================================================
 
     const Token& Parser::expect(const TokenType t, const StringView what) {
         if (check(t)) {
@@ -205,10 +193,6 @@ namespace aria {
             }
         }
     }
-
-    // ============================================================
-    // 顶层与声明
-    // ============================================================
 
     UPtr<ProgramNode> Parser::program() {
         const SourceLoc      loc = peek().loc();
@@ -348,10 +332,6 @@ namespace aria {
         UPtr<ExprNode>    init   = match(TokenType::Equal) ? expression() : nullptr;
         return VarBinding{.target = std::move(target), .initializer = std::move(init)};
     }
-
-    // ============================================================
-    // 语句
-    // ============================================================
 
     UPtr<StmtNode> Parser::statement() {
         switch (peek().type()) {
@@ -588,10 +568,6 @@ namespace aria {
         expect(TokenType::RightBrace, "'}'");
         return std::make_unique<BlockNode>(loc, std::move(stmts));
     }
-
-    // ============================================================
-    // 表达式
-    // ============================================================
 
     UPtr<ExprNode> Parser::expression() { return assignment(); }
 
@@ -923,10 +899,6 @@ namespace aria {
         UPtr<ExprNode> body = expression();
         return MatchExprArm{.pattern = std::move(pat), .body = std::move(body)};
     }
-
-    // ============================================================
-    // 解构模式
-    // ============================================================
 
     UPtr<PatternNode> Parser::pattern() {
         const SourceLoc loc = peek().loc();

@@ -16,8 +16,7 @@ namespace aria {
     // 字节码帧)。builtins(type/len/str/assert)与未来嵌入 API 皆包成此类型。
     //
     //   - vm:宿主句柄(对标 lua_State*):报错 vm.fail/vm.raise(写入当前上下文挂起错误
-    //     寄存器,通道见 AriaVM.hpp)、分配 vm.gc()(跨分配持有的裸 Obj* 须 make_guard 根化;
-    //     M6 协程期 vm 路由到当前协程)。
+    //     寄存器,通道见 AriaVM.hpp)、分配 vm.gc()(跨分配持有的裸 Obj* 须 make_guard 根化)。
     //   - slots:调用区可写视图,指向值栈上 [callee, a1..aN] 的连续 argc+1 个槽:
     //       slots[0] = callee / **返回槽**(返回值直接写于此,省去 drop+push);
     //       slots[1..argc] = 实参;argc = slots.size() - 1。
@@ -32,8 +31,8 @@ namespace aria {
     //   行给出,原生不进帧顶帧即 caller)。
     //
     //   契约:①**叶子调用** -- 不得操作 VM 值栈(push/pop/drop),否则 slots 视图失效;只读
-    //   slots[1..]、写 slots[0]、经 vm.fail/raise 报错,需回调 aria 函数属未来机制(M6 重入
-    //   接缝)。②读即时值无 GC 任意阶段安全;写新生对象到 slots[0] 时中间对象须 Guard 入临时
+    //   slots[1..]、写 slots[0]、经 vm.fail/raise 报错,需回调 aria 函数属未来机制。
+    //   ②读即时值无 GC 任意阶段安全;写新生对象到 slots[0] 时中间对象须 Guard 入临时
     //   根(slots[0] 写入后即随值栈为根);vm.fail 内分配可能触 GC,载荷入寄存器后经 tracer
     //   标根。③错误走侧信道寄存器,不抛 C++ 异常、不用 longjmp。
     using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
@@ -76,9 +75,9 @@ namespace aria {
         NativeFn   fn_;
     };
 
-    // 工厂:分配 ObjNativeFn。**调用方须在调用前自行根化 name**(intern 串是 weak root,跨
-    //   new_object 顶 maybe_collect 可能被回收;工厂只做一次 new_object,不替调用方守卫);
-    //   fn 是标量无需入根。name 须非空(构造期 ASSERT)。
+    // 工厂:分配 ObjNativeFn。守卫纪律见 Object.hpp;**调用方须在调用前自行根化 name**(intern
+    //   串是 weak root,跨 new_object 顶 maybe_collect 可能被回收);fn 是标量无需入根。name 须
+    //   非空(构造期 ASSERT)。
     [[nodiscard]]
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, NativeFn fn);
 

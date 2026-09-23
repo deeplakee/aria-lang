@@ -238,7 +238,7 @@ namespace aria {
 
         // join(sep) -> string:元素经 format_value(显示形,嵌套字符串不带引号)转字符串后
         // 以 sep 连接(JS 式宽松,任意元素;空 list 返空串;sep 可为空串 --"ab" 式粘合)。
-        // 底座 util::join(HashTable 迭代器批铺的缝在此兑现)。GC 走查:util::join 遍历
+        // 底座 util::join。GC 走查:util::join 遍历
         // format_value 均无 GC 分配,唯一分配点 new_string 时 receiver 在 slots[0] 未覆写、
         // sep 在 slots[1] 经栈根。
         bool fn_join(AriaVM& vm, Span<Value> slots) {

@@ -6,7 +6,8 @@
 namespace aria {
 
     namespace {
-        // 编码上限(源自 CodeUnit.hpp 的位宽事实源, 值即上限位置, 越界判定直接与上限比较)。
+        // 编码侧上限常量:分块 POP 的块大小、短槽号变体阈值(u8 域),以及跳转偏移与常量池索引(u16 域)。
+        // 值即各操作数位宽上限(事实源 CodeUnit.hpp 的 kU8/kU16OperandMax),越界判定与上限直接比较。
         constexpr u32 kMaxPopChunk       = kU8OperandMax;
         constexpr u32 kMaxShortLocalSlot = kU8OperandMax;
         constexpr u32 kMaxJumpOffset     = kU16OperandMax;
@@ -14,8 +15,6 @@ namespace aria {
     } // namespace
 
     CodeUnit::CodeUnit(GC* gc) noexcept : code{gc}, constants{gc}, lines{gc}, try_records{gc} {}
-
-    // ---- emit ----
 
     void CodeUnit::emit_byte(const u8 byte, const u32 line) {
         record_line_(line);
@@ -29,8 +28,6 @@ namespace aria {
     }
 
     void CodeUnit::emit_op(const OpCode op, const u32 line) { emit_byte(static_cast<u8>(op), line); }
-
-    // ---- 字节码编码 ----
 
     void CodeUnit::emit_pop_n(const u32 count, const u32 line) {
         for (u32 remaining = count; remaining > 0;) {
@@ -102,16 +99,12 @@ namespace aria {
         }
     }
 
-    // ---- 常量池 ----
-
     u16 CodeUnit::add_constant(const Value value) {
         ASSERT(constants.size() <= kMaxConstantIndex, "constant pool overflow (>65535 constants)");
         const auto idx = static_cast<u16>(constants.size());
         constants.push(value);
         return idx;
     }
-
-    // ---- 行号 ----
 
     u32 CodeUnit::line_for_offset(const u32 offset) const noexcept {
         // RLE 二分: 找最大的 entry.offset <= offset, 返回其 line。
@@ -134,8 +127,6 @@ namespace aria {
         }
         return lines[low - 1].line;
     }
-
-    // ---- 异常记录表 ----
 
     Opt<const TryRecord*> CodeUnit::find_try_handler(const u32 ip) const noexcept {
         // 记录按 begin 单调; 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
@@ -164,11 +155,7 @@ namespace aria {
         return std::nullopt;
     }
 
-    // ---- 反汇编 ----
-
     String CodeUnit::disassemble(const StringView name) const { return Disassembler::disassembleCodeUnit(this, name); }
-
-    // ---- 私有 ----
 
     void CodeUnit::record_line_(const u32 line) noexcept {
         if (!lines.empty() && lines.top().line == line) {

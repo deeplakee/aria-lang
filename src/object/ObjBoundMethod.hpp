@@ -21,9 +21,9 @@ namespace aria {
     //     this(方法帧 [this, a1..aN]);原生方法调用时覆写调用区槽 0(与返回槽同位)。
     //
     //   地址哈希型可变对象(走 Object{ObjType::BOUND_METHOD} ctor);equals 按**内容相等**:
-    //     receiver 同一 && method 同一(Python bound method 的 `__eq__` 同款)。bound 缓存取消后
-    //     读路径每次访问都是新对象,`obj.m == obj.m` 靠本判等为真,而 `===`(身份)为假 -- 恰与
-    //     语言既有的 `==`(value_equal)/`===`(identity) 二分一致。final。
+    //     receiver 同一 && method 同一(Python bound method 的 `__eq__` 同款)。读路径每次访问
+    //     都产出新 bound 对象,`obj.m == obj.m` 靠本判等为真,`===`(身份)为假 -- 恰与语言既有
+    //     的 `==`(value_equal)/`===`(identity) 二分一致。final。
     //   trace():mark_value(method_) + mark_value(receiver_)。
     //   debug_repr():`<bound method m>`(m 经非虚 name() 取名);基类 to_string 默认
     //     委托之,显示同文案。
@@ -76,10 +76,9 @@ namespace aria {
         Value receiver_; // 绑定接收者(Value 泛化;闭包解包作方法帧槽 0 的 this,原生覆写调用区槽 0)
     };
 
-    // 工厂:分配 ObjBoundMethod。工厂不替调用方守卫入参(「每方只守自己创建的」)--只做一次
-    //     new_object、无内部新建对象,调用方须在调用前自行根化 method 与 receiver 中的对象
-    //     (LOAD_FIELD 路径:instance 仍 peek 在栈根化,方法值在类表内可达)。返回对象白色无根,
-    //     须立即发布进根(LOAD_FIELD 先写回原槽根化)。
+    // 工厂:分配 ObjBoundMethod(守卫纪律见 Object.hpp);调用方须在调用前自行根化 method 与
+    //     receiver 中的对象(LOAD_FIELD 路径:instance 仍 peek 在栈根化,方法值在类表内可达)。
+    //     建成须立即发布进根(LOAD_FIELD 先写回原槽根化)。
     [[nodiscard]]
     ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver);
 

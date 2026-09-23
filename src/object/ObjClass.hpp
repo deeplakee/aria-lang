@@ -99,10 +99,9 @@ namespace aria {
         Value         init_;  // 构造器方法值(闭包/原生)
     };
 
-    // 工厂:分配 ObjClass;init_ 由 **ObjClass 构造函数自 super 派生**,工厂纯分配。不替调用
-    // 方守卫入参(「每方只守自己创建的」):**调用方须在调用前自行根化 name 与 super**(跨
-    // new_object 顶 maybe_collect;name 经 intern 是 weak root,super 可能尚未入任何根,如
-    // MAKE_CLASS 的 peek-不弹栈纪律);返回对象白色无根,须立即发布进根。
+    // 工厂:分配 ObjClass;init_ 由 **ObjClass 构造函数自 super 派生**,工厂纯分配。守卫纪律见
+    // Object.hpp:**调用方须在调用前自行根化 name 与 super**(name 经 intern 是 weak root,super
+    // 可能尚未入任何根,如 MAKE_CLASS 的 peek-不弹栈纪律);建成须立即发布进根。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super);
 

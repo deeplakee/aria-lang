@@ -132,9 +132,8 @@ namespace aria {
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
-    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。ObjString* 版不替调用方守卫入参(「每方
-    //        只守卫自己创建的对象」:工厂不创建入参,不守卫)--module 与 name 经 intern/模块表
-    //        皆是 weak root,故**调用方须在调用前自行根化两者**(跨 new_object 顶 maybe_collect)。
+    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。守卫纪律见 Object.hpp;module 与 name 经
+    //         intern/模块表皆是 weak root,调用方须自行根化两者(跨 new_object 顶 maybe_collect)。
     // StringView 便捷重载:内部 intern name 并自守(工厂守「自己创建的」),调用方只需根化 module。
     [[nodiscard]]
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);

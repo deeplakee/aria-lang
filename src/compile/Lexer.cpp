@@ -4,9 +4,7 @@
 
 namespace aria {
 
-    // ============================================================
     // 数字字面量解析辅助（匿名命名空间,仅本文件可见;无状态纯函数）
-    // ============================================================
     namespace {
 
         bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
@@ -86,10 +84,6 @@ namespace aria {
         }
     } // namespace
 
-    // ============================================================
-    // 构造与入口
-    // ============================================================
-
     // 一次性实例：构造即注入扫描状态（契约见 Lexer.hpp 构造注）。
     Lexer::Lexer(SourceFile& src) noexcept :
         source_{src}, src_{src.content()}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
@@ -104,10 +98,6 @@ namespace aria {
         }
         return std::move(lexer.tokens_);
     }
-
-    // ============================================================
-    // 游标辅助
-    // ============================================================
 
     char Lexer::peek_byte(const u32 ahead) const noexcept {
         const u32 index = pos_ + ahead;
@@ -124,20 +114,12 @@ namespace aria {
 
     bool Lexer::is_eof() const noexcept { return pos_ >= src_.size(); }
 
-    // ============================================================
-    // 错误记账
-    // ============================================================
-
     void Lexer::error(const ErrorCode code, const StringView msg, const u32 offset) {
         errors_.push_back(Error::from_detail(code, SourceLoc{&source_, offset}, msg));
         if (errors_.size() >= kMaxErrors) {
             is_fatal_ = true;
         }
     }
-
-    // ============================================================
-    // 主循环
-    // ============================================================
 
     void Lexer::run() {
         while (!is_fatal_ && !is_eof()) {
@@ -193,10 +175,6 @@ namespace aria {
             break;
         }
     }
-
-    // ============================================================
-    // 数字
-    // ============================================================
 
     void Lexer::scan_number() {
         // 判定进制前缀：0b/0o/0x
@@ -302,10 +280,6 @@ namespace aria {
             tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
         }
     }
-
-    // ============================================================
-    // 字符串（plainString）
-    // ============================================================
 
     void Lexer::scan_string() {
         const u32  start = pos_;
@@ -430,10 +404,6 @@ namespace aria {
         }
     }
 
-    // ============================================================
-    // 标识符 / 关键字
-    // ============================================================
-
     void Lexer::scan_identifier() {
         const u32 start = pos_;
         // 主循环已判 is_id_start，而 is_id_continue 对起始字符恒真，故首码点由本循环一并消费
@@ -453,10 +423,6 @@ namespace aria {
         }
         tokens_.emplace_back(TokenType::Identifier, lex, SourceLoc{&source_, start});
     }
-
-    // ============================================================
-    // 运算符 / 标点（最长匹配）
-    // ============================================================
 
     void Lexer::scan_operator_or_punct() {
         const u32 start = pos_;

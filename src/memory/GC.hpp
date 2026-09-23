@@ -49,7 +49,6 @@ namespace aria {
         GC(GC&&)                 = delete;
         GC& operator=(GC&&)      = delete;
 
-        // ---- 类型化 trivial 分配 ----
         // 分配 count 个 T(= count*sizeof(T) 字节),失败走 fatal_error(OutOfMemory)。
         // **INVARIANT: 永不触发 GC(不调 maybe_collect)**--调用方可裸持白色对象跨本调用
         // (Array::push / InternPool::insert / HashTable::set 等全靠此,见类注释核心不变式)。
@@ -66,7 +65,6 @@ namespace aria {
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);
 
-        // ---- object allocation(可追踪层)----
         // **分配层唯一触发 GC 的入口**:顶部 maybe_collect() 在分配前完成(此刻新对象尚未诞生,
         // 不会被本轮 GC 扫到),再 allocate<u8> + placement-new 构造 + 链入 objects_head_。
         // 返回的对象此刻白色、无根,需调用方发布进某根后才安全(见类注释核心不变式)。
@@ -74,7 +72,6 @@ namespace aria {
         [[nodiscard]]
         T* new_object(Args&&... args);
 
-        // ---- tracing ----
         void mark_value(Value value) noexcept;
         void mark_object(Object* object) noexcept;
 
@@ -85,7 +82,6 @@ namespace aria {
         // -> 调整 next_gc_。
         void collect();
 
-        // ---- temp roots ----
         // C++ 局部变量持有的、尚未入值栈的对象,在分配序列间保护其不被回收。
         // 对外只暴露 Guard / make_guard RAII API(构造时 push,析构时 pop;禁拷贝/移动);
         // 底层 push_temp_root/pop_temp_root 为私有,由 Guard 内部调用。
@@ -135,8 +131,7 @@ namespace aria {
         }
 
         // 累计对象分配次数(new_object 调用数,单调不减)。bytes_allocated() 是**存活**字节、随回收
-        // 回落,看不出分配 churn;本计数器给确定性(零抖动)的分配读数,供性能基准对照「少分配」类
-        // 改动(如不绑定派发消灭临时对象),见 bench/vm_bench.cpp。
+        // 回落,看不出分配 churn;本计数器给确定性(零抖动)的分配读数,供基准对照「少分配」类改动。
         [[nodiscard]]
         usize allocation_count() const noexcept {
             return allocation_count_;
@@ -145,8 +140,8 @@ namespace aria {
         // 运行期压力开关(测试用):开启后每次 new_object 强制 collect。
         void set_stress(const bool enabled) noexcept { is_stress_ = enabled; }
 
-        // ---- GC 禁用锁(单线程,计数器实现,支持嵌套)----
-        // collect() 在 lock_count_>0 时跳过(临界区不回收);maybe_collect 经 collect() 间接受控。
+        // GC 禁用锁(单线程,计数器实现,支持嵌套):collect() 在 lock_count_>0 时跳过(临界区
+        // 不回收);maybe_collect 经 collect() 间接受控。
         void disable_gc() noexcept { ++lock_count_; }
         void enable_gc() noexcept {
             ASSERT(lock_count_ > 0, "enable_gc without matching disable_gc");
@@ -170,16 +165,14 @@ namespace aria {
 
         [[nodiscard]] LockGuard make_lock() noexcept { return LockGuard{this}; }
 
-        // ---- intern 驻留池(weak root,字符串专用)----
-        // 委托给 intern_ 成员(保持 private)。new_string 经此实现驻留:命中返回已有串,
-        // 未命中 new_object 后 insert。驻留池不进 mark_roots_,collect 在 sweep 前调
+        // Intern 驻留池(weak root,字符串专用),委托给 intern_ 成员(保持 private)。new_string
+        // 经此实现驻留:命中返回已有串,未命中 new_object 后 insert。驻留池不进 mark_roots_,collect 在 sweep 前调
         // intern_.remove_white() 摘除白色表项防悬垂。
         [[nodiscard]] ObjString* intern_find(StringView str) const noexcept;
 
         void intern_insert(ObjString* str);
 
-        // ---- VM 根 ----
-        // 解释器级共享状态(模块表等)经 std::function 回调接入 mark_roots_(组合而非继承:
+        // VM 根:解释器级共享状态(模块表等)经 std::function 回调接入 mark_roots_(组合而非继承:
         // GC 不识 VM 类型,避免双向 include;[this] 仅一指针,落在 std::function SBO 内,
         // 零堆分配)。调用方(AriaVM)注册一个 lambda(通常捕获 this,内部 trace 自己的
         // roots);collect -> mark_roots_ 末尾调用。
@@ -193,8 +186,7 @@ namespace aria {
         // 销毁单个对象:new_object 的逆(虚析构级联释放子内存 + 释放壳)。不含链表摘除,由调用方管。
         void delete_object(Object* obj) noexcept;
 
-        // ---- temp roots 底层(由 Guard 调用)----
-        // Object* 经 from_obj 装箱为 Value 存储。
+        // temp roots 底层(由 Guard 调用):Object* 经 from_obj 装箱为 Value 存储。
         void push_temp_root(Object* object) noexcept;
         void pop_temp_root(usize count = 1) noexcept;
 
@@ -214,8 +206,6 @@ namespace aria {
         // 挂起错误寄存器;AriaVM 注册,可为空)
         std::function<void(GC&)> vm_roots_tracer_;
     };
-
-    // ---- 模板实现 ----
 
     template<typename T>
     T* GC::allocate(const usize count) {

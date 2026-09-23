@@ -21,7 +21,7 @@ namespace aria {
     // ip/last_ip 仅作读取游标/锚点,运行期从不经其写字节;last_ip 反推 offset 前提:帧存活期间
     // code 缓冲恒定 -- 非移动 GC + 执行期零 emit。
     struct CallFrame {
-        ObjClosure* closure; // M4 起持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 function() 取
+        ObjClosure* closure; // 持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 function() 取
         CodeUnit*   unit;    // 缓存 closure->function()->unit(),省每条指令一跳
         ObjModule*  module;  // 缓存 closure->function()->module(),供 *_GLOBAL 定位模块 globals
         u8*         ip;      // 指令指针(冷路径按需反推 offset)
@@ -148,7 +148,7 @@ namespace aria {
         // 完整类型,避免头文件拖入 object 树)。
         void enter_frame(ObjClosure* closure, u8 argc);
 
-        // ---- open upvalue 开链(M4)----
+        // ---- open upvalue 开链 ----
         // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 最高);局部所在
         // 区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经 VM 根 tracer
         // 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂。「同一局部只有一份引用」不变式由
@@ -186,7 +186,7 @@ namespace aria {
         }
 
         // ---- 挂起错误寄存器(侧信道)----
-        // 原生函数等冷路径错误不走返回类型(避免把约 56B 的 Error 编进热路径返回值),经 raise
+        // 原生函数等冷路径错误不走返回类型(避免把 Error 值本身编进热路径返回值),经 raise
         // 写入本寄存器;VM 在 CALL 等安全点检查 has_error() 后用 take_error() 取出传播。寄存器
         // 随上下文走(M6 协程期各协程独立 raise/检查)。载荷为 Value:VM/原生错误装箱
         // ObjException 后写入,aria throw 原值入寄存器(catch 绑原值保类型);置入后由 VM 根
@@ -216,7 +216,7 @@ namespace aria {
             return pending_error_;
         }
 
-        // ---- 协程 resume 链(M6 前置落地)----
+        // ---- 协程 resume 链 ----
         // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
         // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
         // (current_),Movement 不自切;M6 前链长恒 1,字段为契约占位。

@@ -114,9 +114,8 @@ namespace aria {
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 
-    // 工厂:分配 ObjModule。dir 指针须非空(构造期 ASSERT;内容可空 -- 需「无目录 -> cwd
-    //        退化」语义用 2 参重载)。不替调用方守卫入参,**调用方须自行根化 name 与 dir**
-    //        (跨 new_object 顶 maybe_collect;intern 驻留池是 weak root)。
+    // 工厂:分配 ObjModule。dir 指针须非空(构造期 ASSERT;内容可空 -- 需「无目录 -> cwd 退化」
+    //        语义用 2 参重载)。守卫纪律见 Object.hpp,**调用方须自行根化 name 与 dir**。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir);
 

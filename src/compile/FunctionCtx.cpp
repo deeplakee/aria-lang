@@ -6,10 +6,6 @@
 
 namespace aria {
 
-    // ============================================================
-    // 构造
-    // ============================================================
-
     FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
         enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
         // 槽 0：实例方法族 = 具名局部 this（caller 压 receiver 占此槽）；其余 = 哑元
@@ -19,10 +15,6 @@ namespace aria {
         auto slot0 = Local{.name = std::move(name), .depth = 0, .is_captured = false};
         locals_.push_back(std::move(slot0));
     }
-
-    // ============================================================
-    // 局部 / 作用域
-    // ============================================================
 
     u16 FunctionCtx::add_local(const StringView name) {
         auto local = Local{.name = String{name}, .depth = scope_depth_, .is_captured = false};
@@ -66,10 +58,6 @@ namespace aria {
             locals_.pop_back();
         }
     }
-
-    // ============================================================
-    // upvalue 登记
-    // ============================================================
 
     Opt<u8> FunctionCtx::add_upvalue(const UpvalueDesc desc) {
         // 同 (is_local,index) 已登记 -> 复用其下标（同一局部被多处引用只占一个 upvalue，

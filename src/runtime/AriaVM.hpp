@@ -74,7 +74,7 @@ namespace aria {
 
         // 程序入口仪式:断言主上下文 + 源根入口槽 [0] 播种 + 前后 reset 清场 + 入口 fn 包空闭包
         // (顶层也闭包,统一「帧 = 闭包」模型)后委托 run_closure。fn 的 CodeUnit 假定良构
-        // (以 RETURN/HALT 终止),不逐指令设防;失败为未捕获运行时错误(M6 挂起将扩三态)。
+        // (以 RETURN/HALT 终止),不逐指令设防;失败为未捕获运行时错误。
         Result<Value, Error> run(ObjFunction* fn);
 
         // 编译 source 到 module 的入口 ObjFunction 并执行。source 须存活到返回(编译期 Error
@@ -343,7 +343,7 @@ namespace aria {
         // 调用(一元恒零实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
         bool run_negate();
 
-        // ---- 类与对象(M5):field 族指令执行体 ----
+        // ---- 类与对象:field 族指令执行体 ----
         //
         // bool 契约同 call_value:失败载荷已在寄存器(对象协议失败由 override 内 vm.fail 就地
         // 烘焙,非对象守卫由执行体 fail)。peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(「栈即根」)。

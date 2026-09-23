@@ -14,13 +14,11 @@ namespace aria::util {
     namespace detail {
 
         inline void emit_bytes(const u8* p, const int n, const int group_bits) {
-            const int total_bits = n * 8;
-            // 是否插入分隔符
-            const bool sep  = group_bits > 0;
-            const int  step = sep ? group_bits : total_bits; // 不分组时当作一整组
+            const int  total_bits = n * 8;
+            const bool sep        = group_bits > 0;
+            const int  step       = sep ? group_bits : total_bits; // 不分组时当作一整组
 
             for (int i = total_bits - 1; i >= 0; --i) { // 高位先行
-                // 第 i 位所在字节
                 const u8  b   = p[(i / 8)];
                 const int bit = (b >> (i % 8)) & 1;
                 io::print("{}", static_cast<char>('0' + bit));
@@ -113,7 +111,7 @@ namespace aria::util {
         return out;
     }
 
-    // 以“高位在前、每 group_bits 位一组、空格分隔”的形式打印 n 个字节。
+    // 以"高位在前、每 group_bits 位一组、空格分隔"的形式打印 n 个字节。
     // group_bits 控制多少位为一组用空格分隔，默认 8；传 0 或负数则不分隔。
     template<typename T>
     void print_binary(const T& value, const int group_bits = 8) {

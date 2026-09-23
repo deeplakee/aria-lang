@@ -83,8 +83,8 @@ namespace aria {
     constexpr i32 kVersionMinor = 1;
     constexpr i32 kVersionPatch = 0;
 
-    // 内建 stdlib 源根的安装约定:相对可执行文件目录的路径(<exe_dir>/../share/aria/lib,确切路径
-    // 待定),运行时经 fs::program_dir 推导、weakly_canonical 规范化后播种 source_roots_[1]。
+    // 内建 stdlib 源根的安装约定:相对可执行文件目录的路径(<exe_dir>/../share/aria/lib),
+    // 运行时经 fs::program_dir 推导、weakly_canonical 规范化后播种 source_roots_[1]。
     constexpr StringView kStdlibRelPath = "../share/aria/lib";
 
 } // namespace aria

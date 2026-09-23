@@ -108,7 +108,6 @@ namespace aria::fs {
             return errno_to_fserr(ec.default_error_condition().value());
         }
 
-        // 返回当前可执行文件的完整路径
         [[nodiscard]]
         inline Result<String, FsErrCode> executable_path() {
 #if defined(SYS_WINDOWS)

@@ -93,7 +93,7 @@ namespace aria {
         }
 
         // keys() -> list:全部键的快照(新 list,与源 map 解耦;此后改 map 不动本表)。序随占用槽,
-        // unspecified(计划 D4,与 for-in 同)。GC 时序同 ObjMapIterator::next:map 在 slots[0] 于
+        // unspecified(与 for-in 同)。GC 时序同 ObjMapIterator::next:map 在 slots[0] 于
         // 栈根,new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push 走 trivial 分配不触 GC,
         // 建成随返回值写回槽发布,窗口内无 GC 点。
         bool fn_keys(AriaVM& vm, Span<Value> slots) {
@@ -129,7 +129,7 @@ namespace aria {
 
         // pairs() -> list:全部键值对的快照(新 list,与源 map 解耦)。每元素是 [k, v] 二元 list,
         // 与 for-in 每轮产出、iter().next() 同一形状;与 keys()/values() 同槽位序,故
-        // pairs()[i] == [keys()[i], values()[i]]。序随占用槽 unspecified(计划 D4)。GC 时序:本表
+        // pairs()[i] == [keys()[i], values()[i]]。序随占用槽 unspecified。GC 时序:本表
         // 唯一「元素本身也是新对象」的方法 -- 循环里每铸一个内层 list 都过 new_list 顶
         // maybe_collect,而 receiver 之外无根的是外层与已铸内层,故外层须挂守卫(内层铸后仅
         // push 即入外层,push 走 trivial 分配不触 GC、窗口内无 GC 点,无需各自挂)。守卫存活至
@@ -166,8 +166,7 @@ namespace aria {
         }
 
         // map 方法表:注册进 Map bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只
-        // 加迭代器子类)。
+        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(每源只加迭代器子类)。
         constexpr builtins::BuiltinEntry kMapBuiltins[] = {
                 {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},     {"get", fn_get},
                 {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs}, {"remove", fn_remove},

@@ -8,7 +8,7 @@ namespace aria {
 
     class GC;
 
-    // Upvalue 对象:闭包对外层局部的「捕获即引用」载体(ObjType::UPVALUE,M4 闭包)。
+    // Upvalue 对象:闭包对外层局部的「捕获即引用」载体(ObjType::UPVALUE)。
     //
     //   语义(Lua/clox 式):open 态持指向值栈某槽的指针,内层函数经它读写外层局部--外层后续
     //   修改对内层可见;外层局部所在作用域/帧退出时 close(),把值迁进堆上的 closed_ 自持,

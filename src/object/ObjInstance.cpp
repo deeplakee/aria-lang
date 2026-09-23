@@ -33,9 +33,9 @@ namespace aria {
         }
         // 3) 命中值解包 member(类表成员值):方法命中(defining class 戳定的方法闭包,经
         //    is_method(Value) 一步判)现场绑定(this=本实例);其余(静态方法 fun/lambda/原生/静态值)
-        //    原值直读。**不写回 fields**(bound 缓存已取消,契约与理由见 ObjInstance.hpp):
-        //    读路径每次访问产出一个新 bound -- 方法值是一等值,这一步省不掉;换来的是类/父类
-        //    方法改写对既有实例立即生效(monkey patch 完整),以及 fields_ 回归纯字段。
+        //    原值直读。**不写回 fields**(契约与理由见 ObjInstance.hpp):读路径每次访问产出一个
+        //    新 bound(方法值是一等值,这一步省不掉);换来的是类/父类方法改写对既有实例立即生效
+        //    (monkey patch 完整),以及 fields_ 回归纯字段。
         //
         //    GC 走查:new_bound_method 是唯一分配点 --本实例经调用方根化(VM:LOAD_FIELD peek
         //    在栈 / LOAD_THIS_FIELD 帧槽 0 在栈),方法对象本体经本实例->class_ 链类表可达(本地
@@ -104,7 +104,7 @@ namespace aria {
 
     void ObjInstance::trace(GC& gc) const noexcept {
         gc.mark_object(class_);
-        fields_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);缓存 bound 经此级联
+        fields_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);字段里的可调用值经值级联
     }
 
     String ObjInstance::debug_repr() const {
@@ -113,8 +113,7 @@ namespace aria {
     }
 
     ObjInstance* new_instance(GC& gc, ObjClass* klass) {
-        // 工厂不替调用方守卫入参:调用方须在调用前自行根化 klass(实例化路径 klass 在栈根化);
-        // 返回对象白色无根,建成即写栈(值栈根)。
+        // 守卫纪律见 Object.hpp;调用方须自行根化 klass;建成即写栈(值栈根)。
         return gc.new_object<ObjInstance>(gc, klass);
     }
 

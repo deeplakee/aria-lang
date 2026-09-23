@@ -46,7 +46,7 @@ namespace aria {
     public:
         explicit Array(Alloc* alloc) noexcept : buf_{alloc}, len_{0} {}
 
-        ~Array() = default; // buf_ 自释放;len_ 为标量。
+        ~Array() = default;
 
         // 禁拷贝/禁移动:buf_ 持 GC 堆分配裸指针,浅 move 会 double-free;资源仅经析构释放,
         // 需转移所有权时用指针/就地构造(如 ObjList 持 AriaArray 成员)。
@@ -55,8 +55,8 @@ namespace aria {
         Array(Array&&)                 = delete;
         Array& operator=(Array&&)      = delete;
 
-        // 追加一个元素;满时经 ensure_capacity 长一档。Array 无指进缓冲的派生裸指针,
-        // 扩容后无需重定位。
+        // 追加一个元素;满时经 ensure_capacity 长一档。Array 不持指向缓冲的派生裸指针,
+        // 扩容后无需重定位调用方指针。
         void push(const T& value) {
             if (len_ == buf_.capacity()) {
                 ensure_capacity(buf_.capacity() + 1);
@@ -102,7 +102,7 @@ namespace aria {
         }
 
         // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);已分配指针可能
-        // 改变(Buffer::reserve 内部 reallocate)。薄封装内部 ensure_capacity。
+        // 改变(Buffer::reserve 内部 reallocate,故调用方持有的 data() 指针随之失效)。
         void reserve(const usize capacity) { ensure_capacity(capacity); }
 
         // 改变长度;增长部分用 fill 填充(默认 T{})。注意 Value{} 零填充是 f64 0.0 非 nil,

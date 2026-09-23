@@ -40,7 +40,7 @@ namespace aria {
 
     // 循环上下文（break / continue 回填）。简单聚合：
     //   - loop_scope_depth：循环体所在 scope 深度（break/continue 弹局部至此）。
-    //   - back_target：循环头（条件求值点,while/for-in 的 L_start、for 的 L_cond）——所有循环公有的
+    //   - back_target：循环头（条件求值点,while/for-in 的 L_start、for 的 L_cond）--所有循环公有的
     //     唯一编译期已知跳转目标：回边恒跳此，后向 continue 亦跳此。
     //   - continue_fwd_patches：前向 continue 占位偏移（-> L_incr），nullopt = 本循环无前向通道
     //     （continue 后向跳 back_target）；仅 for 带 incr 在入栈前 emplace 打开。
@@ -58,8 +58,8 @@ namespace aria {
         FunctionCtx() = delete;
 
         // 单构造：enclosing 为 nullptr 即入口 <main> 上下文（enclosing_=nullptr = entry），
-        // 否则嵌套函数上下文（指向外层）。kind 为函数种类（默认普通函数；实例方法时槽 0 =
-        // 具名局部 this，见 FnKind 注）。
+        // 否则嵌套函数上下文（指向外层）。kind 由调用方显式传入，无默认值（普通函数传
+        // FnKind::Function）；实例方法族时槽 0 = 具名局部 this，见 FnKind 注。
         explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, FnKind kind);
 
         FunctionCtx(const FunctionCtx&)                = delete;

@@ -61,7 +61,7 @@ namespace aria::src {
             return content_;
         }
 
-        // 行数。与 wc -l 在“内容以 LF 结尾”时一致；最后一行即便没有结尾 LF
+        // 行数。与 wc -l 在"内容以 LF 结尾"时一致；最后一行即便没有结尾 LF
         // 也算一行；末尾的 LF 不产生额外的空行。空内容返回 0。
         [[nodiscard]]
         u32 line_count() const {
@@ -119,7 +119,6 @@ namespace aria::src {
             }
             const u32 line  = line_at(offset);
             const u32 begin = line_starts_[line - 1];
-            // 列 = 该行内 [begin, offset) 的码点数 + 1
             return {line, count_codepoints(content_, begin, offset) + 1};
         }
 
@@ -146,7 +145,7 @@ namespace aria::src {
         String content_;
 
         // 懒构建：line_starts_[i] 是第 i+1 行（0-based i）在 content_ 中的起始字节偏移。
-        // 语义遵循主流惯例：一个“行”要么以 LF 结尾，要么是到 EOF 的一段内容；
+        // 语义遵循主流惯例：一个"行"要么以 LF 结尾，要么是到 EOF 的一段内容；
         // 因此末尾的 LF 不产生额外的空行起点，空内容则行表为空。
         //
         //   "a\nb\n" -> [0, 2]   (2 行)

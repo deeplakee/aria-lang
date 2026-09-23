@@ -16,11 +16,11 @@ namespace aria {
     //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变,恒非空
     //     (构造期 ASSERT)。
     //   - fields_:实例字段表(`init` 内 `this.x = ...` 落此,无字段预声明、动态)。键 intern
-    //     ObjString*,值 Value。**纯字段** -- 早期版本的 bound-method 缓存已取消(2026-09-20 反转
-    //     M5 决策 4):缓存让「类/父类上改写方法」对既有实例陈旧、且与新建实例不一致(取决于该
-    //     实例历史),monkey patch 半可用且难解释。现读路径每次访问现场绑定(方法值是一等值,必须
-    //     是个对象),调用路径经 `load_field_unbound` 走不绑定形态(零分配 + 每次按当前类链解析)。
-    //     惰性分配。**私有不对外暴露**:成员读写一律走 load_field/store_field 协议,无整表访问器。
+    //     ObjString*,值 Value。**纯字段** -- 只存真字段,不缓存方法绑定:缓存会让「类/父类上
+    //     改写方法」对既有实例陈旧、且与新建实例不一致(取决于该实例历史),monkey patch 半可用
+    //     且难解释。故读路径每次访问现场绑定新 bound(方法值是一等值,必须是个对象),调用路径经
+    //     `load_field_unbound` 走不绑定形态(零分配 + 每次按当前类链解析)。惰性分配。**私有不
+    //     对外暴露**:成员读写一律走 load_field/store_field 协议,无整表访问器。
     //
     //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(字段里存的
     //   可调用值经值级联标);to_string = `<Foo instance>`。
@@ -109,12 +109,12 @@ namespace aria {
 
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)
-        AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,bound 缓存已取消见类注释)
+        AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,方法绑定不缓存,见类注释)
     };
 
-    // 工厂:分配 ObjInstance(fields_ 空态)。shell 单次分配、无内部二级分配 ==> 工厂内无中间
-    //     GC 点;工厂不替调用方守卫入参(「每方只守自己创建的」),调用方须在调用前自行根化
-    //     klass(实例化路径 klass 在栈根化)。返回对象白色无根,建成即写栈(值栈根)。
+    // 工厂:分配 ObjInstance(fields_ 空态),shell 单次分配、无内部二级分配。守卫纪律见
+    //     Object.hpp;调用方须在调用前自行根化 klass(实例化路径 klass 在栈根化),建成即写栈
+    //     (值栈根)。
     [[nodiscard]]
     ObjInstance* new_instance(GC& gc, ObjClass* klass);
 

@@ -81,8 +81,8 @@ namespace aria {
                 obj->unmark(); // 复位,为下轮准备
                 slot = &obj->next_;
             } else {
-                *slot = obj->next_; // 从链表摘除
-                delete_object(obj); // 销毁(new_object 的逆)
+                *slot = obj->next_;
+                delete_object(obj);
             }
         }
     }

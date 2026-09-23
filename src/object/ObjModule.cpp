@@ -67,8 +67,7 @@ namespace aria {
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {
-        // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 name 与 dir(跨 new_object 顶 maybe_collect)。
+        // 守卫纪律见 Object.hpp;调用方须自行根化 name 与 dir。
         return gc.new_object<ObjModule>(gc, name, dir);
     }
 

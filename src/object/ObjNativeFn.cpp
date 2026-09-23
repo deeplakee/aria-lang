@@ -24,8 +24,7 @@ namespace aria {
     }
 
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
-        // 工厂不替调用方守卫入参:本工厂只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 name(跨 new_object 顶 maybe_collect)。fn 为标量,无需入根。
+        // 守卫纪律见 Object.hpp;调用方须自行根化 name。fn 为标量,无需入根。
         return gc.new_object<ObjNativeFn>(name, fn);
     }
 

@@ -26,7 +26,7 @@ namespace aria {
     //     沿其 superclass 链查被覆写前的实现)+ **方法性标记**(读路径据非空判绑 this,不按
     //     值类型判别;MAKE_STATIC/类上赋值不戳 ⟹ 静态槽持函数值/原生恒原值直读)。挂闭包而非
     //     ObjFunction(共享编译期常量):函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量,
-    //     戳共享 fn 会跨实例串链;闭包每实例一份无共享可变状态(见 M5 计划 §2.6)。
+    //     戳共享 fn 会跨实例串链;闭包每实例一份无共享可变状态。
     //     trace 容 nullptr。
     //
     //   地址哈希型(闭包按身份判等,同一 fn 的两次捕获是不同闭包);final。
@@ -94,8 +94,8 @@ namespace aria {
         ObjClass*          defining_class_; // 方法闭包所属类(ctor nullptr)
     };
 
-    // 工厂:分配 ObjClosure(upvalues_ 空态)。不替调用方守卫入参(「每方只守自己创建的」);
-    //     function_ 通常已入常量池(根)或调用方自行守卫。返回白色无根,须立即发布进根。
+    // 工厂:分配 ObjClosure(upvalues_ 空态)。守卫纪律见 Object.hpp;function_ 通常已入常量池
+    //     (根)或调用方自行守卫。建成须立即发布进根。
     [[nodiscard]]
     ObjClosure* new_closure(GC& gc, ObjFunction* function);
 

@@ -39,8 +39,8 @@ namespace aria {
     public:
         using HashTable<Value, Value, ValueHash, ValueEq>::HashTable; // 继承 explicit HashTable(GC*) ctor
 
-        // GC 标记:遍历占用槽 mark_value(key)+(value)。迭代器只看 ctrl、不加载非占用
-        // Entry,垃圾槽安全(HashTable::const_iterator 注释)。
+        // 迭代器只看 ctrl、不加载非占用 Entry,故遍历占用槽 mark_value(key)+(value) 时
+        // 垃圾槽安全(见 HashTable::const_iterator 注释)。
         void trace(GC& gc) const noexcept {
             for (const auto& [key, value]: *this) {
                 gc.mark_value(key);

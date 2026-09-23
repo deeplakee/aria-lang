@@ -70,8 +70,7 @@ namespace aria {
     }
 
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {
-        // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 name 与 super(跨 new_object 顶 maybe_collect)。init_ 出厂值由 ObjClass 构造
+        // 守卫纪律见 Object.hpp;调用方须自行根化 name 与 super。init_ 出厂值由 ObjClass 构造
         // 函数自 super 派生,工厂纯分配(详见头注释)。
         return gc.new_object<ObjClass>(gc, name, super);
     }

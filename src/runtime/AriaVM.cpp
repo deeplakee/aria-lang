@@ -48,7 +48,7 @@ namespace aria {
 
         // 寄存器组初值:全表灌 nil。Value{} 零填充并非 nil(NaN-boxing 下是 f64 0.0,见
         // NanBoxing.hpp 注),未填格须是合法 Value 才能被 tracer 与 dispatch 安全触碰,故构造
-        // 期经本工厂在初始化列表一步到位;各批 bootstrap 逐格覆写。
+        // 期经本工厂在初始化列表一步到位;bootstrap 逐格覆写。
         Vector<Value, kValueRegisterCount> make_nil_registers() noexcept {
             Vector<Value, kValueRegisterCount> regs{};
             for (auto& r: regs) {
@@ -253,10 +253,9 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 值寄存器组 bootstrap 编排:逐格初始化全部 VM 单例对象。须在 ctor 构造临界区(GC
-        // 挂起)内调用,创建免守卫;各 bootstrap_<单例> 建成即发布进寄存器/tracer 可达之家。
-        // 新单例随其批次在此加一行。算子方法名先落格:String 类 bootstrap 末段要按名取自身算子
-        // 钩子缓存进实现格。
+        // 编排顺序即依赖序:Object 根类先建(各内建类以它作 super);String 类 bootstrap 末段
+        // 要按名从自身类表取算子钩子缓存进实现格,故其类表须已填。新增单例两处收口:注册表
+        //(runtime/value_register.hpp)加一行,本函数加一行编排。
         bootstrap_object_class();
         bootstrap_iterator_class();
         bootstrap_list_class();
@@ -324,10 +323,9 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_object_class() {
-        // Object 根类 bootstrap:ObjClass("Object", super=nullptr) + 原生 no-op init(不合成
-        // ObjFunction,保「module 恒非空」不变式;收到 slots[0]=this 返回 true 不写槽,槽 0
-        // 原样即返回实例)。set_field 命中 "init" 同步 init_;"init" 键经 intern 命中
-        // init_native 的 name 串,零分配。须在 ctor 构造临界区内调用,创建免守卫。
+        // Object 根类:no-op init 收到 slots[0]=this 返回 true 不写槽,槽 0 原样即返回实例
+        //(不合成 ObjFunction,保「module 恒非空」不变式)。set_field 命中 "init" 同步 init_;
+        // "init" 键经 intern 命中 init_native 的 name 串,零分配。须在 ctor 构造临界区内调用,创建免守卫。
         const auto klass       = new_class(gc_, "Object", nullptr);
         const auto init_key    = new_string(gc_, "init");
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
@@ -338,18 +336,17 @@ namespace aria {
     void AriaVM::bootstrap_iterator_class() {
         // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next,方法体是 ObjIterator
         // 引擎缝虚函数的薄壳,住 runtime/builtins/IteratorBuiltins),经 ObjIterator::load_field 查表
-        // 命中后恒绑定触达;不注册 builtins/模块 globals。super 挂 Object 根,类名与 type()
-        // 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 标根。
+        // 命中后恒绑定触达;不注册 builtins/模块 globals。类名与 type() 的类型名一致。须在
+        // ctor 构造临界区内调用,创建免守卫;入格即经 tracer 标根。
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_builtins(gc_, klass);
         registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_list_class() {
-        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定触达;
-        // 不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根(计划 D1),
-        // 类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer
-        // 的 registers_ 一趟循环标根(tracer 零改动)。
+        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
+        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
+        // 须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "List", object_class());
         register_list_builtins(gc_, klass);
         registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -357,9 +354,8 @@ namespace aria {
 
     void AriaVM::bootstrap_map_class() {
         // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定
-        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
-        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
-        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名
+        // 一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "Map", object_class());
         register_map_builtins(gc_, klass);
         registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -367,9 +363,8 @@ namespace aria {
 
     void AriaVM::bootstrap_string_class() {
         // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后
-        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
-        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
-        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的
+        // 类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "String", object_class());
         register_string_builtins(gc_, klass);
         registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -377,10 +372,9 @@ namespace aria {
     }
 
     void AriaVM::cache_string_operator_fns(ObjClass& klass) {
-        // 算子实现缓存:类表是规范家(`"a".__add__` 的方法读路径查它),这里把**同一批**原生函数值
-        // 按名取回存进实现格 -- 算子派发热路径直读实现格,免每次过类表查找。类表 bootstrap 后无写
-        // 点(string 类对象语言不可达、bootstrap 表也不在 globals),故两份恒一致;DEBUG 下缺格即断言。
-        // 须在 ctor 构造临界区内调用(GC 挂起,入格免守卫;load_field 命中是纯读无分配)。
+        // 类表 bootstrap 后无写点(string 类对象语言不可达、bootstrap 表也不在 globals),故实现格与
+        // 类表两份恒一致;DEBUG 下缺格即断言。须在 ctor 构造临界区内调用(GC 挂起,入格免守卫;
+        // load_field 命中是纯读无分配)。
         constexpr Pair<StringView, u8> kStringOperatorFns[] = {
                 {kOpAddName, kStringAddFnOffset},         {kOpLessName, kStringLtFnOffset},
                 {kOpLessEqualName, kStringLeFnOffset},    {kOpGreaterName, kStringGtFnOffset},
@@ -396,26 +390,23 @@ namespace aria {
 
     void AriaVM::bootstrap_range_class() {
         // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后
-        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。super 挂 Object 根
-        //(计划 D1),类名与 type() 的类型名一致。须在 ctor 构造临界区内调用,创建免守卫;
-        // 入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的
+        // 类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
         const auto klass = new_class(gc_, "Range", object_class());
         register_range_builtins(gc_, klass);
         registers_[kRangeClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_default_mark() {
-        // 缺参印章:私有 no-op native(语义即空操作:返回 true 不写返回槽;正常路径永不被
-        // 调用)。身份判等的未传槽标记,不注册进 builtins/模块表,语言不可达 -- 实参显式传
-        // 任意函数值,身份均异于印章,不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
+        // 缺参印章:私有 no-op native(返回 true 不写返回槽;正常路径永不被调用)。实参显式传
+        // 任意函数值其身份均异于印章,故不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
         const auto default_mark        = new_native_fn(gc_, "<default>", [](AriaVM&, Span<Value>) { return true; });
         registers_[kDefaultMarkOffset] = Value::from_obj(default_mark);
     }
 
     void AriaVM::bootstrap_match_no_arm() {
-        // match 兜底异常:全臂未命中时 LOAD_REG + THROW 抛出的共享单例(消息静态、无 subject
-        // 插值;不注册 builtins 用户不可达,catch 绑到的即本对象)。消息按 raise 同源形态烘焙。
-        // 须在 ctor 构造临界区内调用,创建免守卫。
+        // match 兜底异常:catch 绑到的即本共享单例(消息静态、无 subject 插值;不注册 builtins
+        // 用户不可达)。消息按 raise 同源形态烘焙。须在 ctor 构造临界区内调用,创建免守卫。
         const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
         const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
         registers_[kMatchNoArmOffset] = Value::from_obj(no_arm);
@@ -557,19 +548,17 @@ namespace aria {
     }
 
     bool AriaVM::call_class(ObjClass* obj, const u8 argc) {
-        // 类实例化:new_instance 是唯一 GC 点,建成即写 callee 槽(槽 0 原位换实例 = 新帧
-        // this),余下交 call_value 通用分发。init 恒有值:闭包进方法帧(尾部 LOAD_LOCAL 0;
-        // RETURN 返回 this)、原生同步调用(no-op 不动 slots[0] 即返回实例)、非可调用值
-        // (类上赋值放行)由 call_value 报 CallNonCallable 兜底。
+        // 槽 0 原位换实例(即新帧 this),GC 点仅 new_instance,建成即写槽。init 恒有值:
+        // 闭包进方法帧(尾部 LOAD_LOCAL 0;RETURN 返回 this)、原生同步调用(no-op 不动
+        // slots[0] 即返回实例)、非可调用值(类上赋值放行)由 call_value 报 CallNonCallable。
         const auto instance  = new_instance(gc_, obj);
         current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
         return call_value(obj->init(), argc);
     }
 
     bool AriaVM::call_bound_method(const ObjBoundMethod* obj, const u8 argc) {
-        // 绑定方法调用:槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动),余下交
-        // call_value 分发。方法值无需守卫:覆写后闭包经 frame.closure 由帧 tracer 标根、
-        // 原生经类表槽/缓存可达。
+        // 槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动)。方法值无需守卫:覆写后
+        // 闭包经 frame.closure 由帧 tracer 标根,原生经类表槽/缓存可达。
         current_->peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
         return call_value(obj->method(), argc);
     }
@@ -641,14 +630,13 @@ namespace aria {
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!current_->has_error(), "call_native: pending error not cleared before native call");
         if (obj->fn()(*this, slots)) {
-            ASSERT(current_ == entered_ctx,
-                   "call_native: current_ not restored across native call"); // M6 删:切换合法化
-            // drop 实参使返回值升栈顶,一律落在 entered_ctx 上(M6 预铺)。
+            ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call");
+            // drop 实参使返回值升栈顶,恒落在 entered_ctx 上(current_ 切换后可能已非它)。
             ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
             entered_ctx->drop(argc);
             return true;
         }
-        ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call"); // M6 留:契约守卫
+        ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call");
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
         ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
         return false;
@@ -1453,7 +1441,7 @@ namespace aria {
                     break;
                 }
 
-                // ---- 类与对象(M5 阶段 2:VM 机制落地,编译器发射阶段 3 翻转)----
+                // ---- 类与对象 ----
                 case OpCode::MAKE_CLASS: {
                     // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶
                     // maybe_collect 须 super 在栈(「栈即根」);非类值是**语言可达**错误

@@ -21,16 +21,16 @@ namespace aria {
     public:
         using Array<Value>::Array; // 继承 explicit Array(GC*) ctor
 
-        // GC 标记:遍历所有元素 mark_value(nil/int/f64 无对象子节点)。由 owner(ObjList)
-        // 在 collect 的 trace 阶段调用;trace 期无 push 不扩容,range-for 迭代器恒有效。
+        // 由 owner(ObjList) 在 collect 的 trace 阶段调用;trace 期无 push 不扩容,range-for
+        // 迭代器恒有效。nil/int/f64 无对象子节点,mark_value 对其为空操作。
         void trace(GC& gc) const noexcept {
             for (const Value& v: *this) {
                 gc.mark_value(v);
             }
         }
 
-        // 首个 value_equal 命中元素的下标,未命中 nullopt。value_equal 无分配,GC-pure。
-        // 元素访问走 data()[i](同 Array 自有方法的内访风格,循环域结构性保证下标)。
+        // 首个 value_equal 命中元素的下标,未命中 nullopt。value_equal 无分配,GC-pure;
+        // 元素访问走 data()[i](与 Array 自有方法同风格,循环域结构性保证下标)。
         [[nodiscard]]
         Opt<usize> find(const Value& target) const noexcept {
             for (usize index = 0; index < size(); ++index) {
@@ -41,15 +41,13 @@ namespace aria {
             return std::nullopt;
         }
 
-        // value_equal 成员判定。
         [[nodiscard]]
         bool contains(const Value& target) const noexcept {
             return find(target).has_value();
         }
 
-        // 移除**全部** value_equal 命中元素(保序一趟压缩:未命中元素前移补位后截断),
-        // 返回是否命中(留存数与原元素数之差即判);未命中零操作。较反复单点移除一趟
-        // O(n),不受命中次数放大。
+        // 移除**全部** value_equal 命中元素(保序),返回是否命中(留存数与原元素数之差即判);
+        // 未命中零操作。较反复单点移除一趟 O(n),不受命中次数放大。
         bool remove(const Value& target) noexcept {
             const usize old_size = size();
             usize       kept     = 0;

@@ -141,7 +141,6 @@ namespace aria {
                 } else if (ctrl_is_empty(byte)) {
                     return nullptr; // 空槽,探针终止
                 }
-                // h2 命中但全键不等 / 墓碑 -> 继续探测
             }
             return nullptr; // 安全上限耗尽(不变式下不会到达)
         }

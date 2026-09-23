@@ -22,7 +22,7 @@ namespace aria {
     //     op_* 运算符(v1 无此需求;instruction-set §6.4 的解构 rest 切片若借 range+下标
     //     承载再议)。
     //   - debug_repr():`0..10` / `0...10` 式,与源码拼写一致;显示同文案(基类默认委托,
-    //     无 string 式显示/调试分叉)。from > to 即倒序区间(10..1 迭代产出 10→1,方向由
+    //     无 string 式显示/调试分叉)。from > to 即倒序区间(10..1 迭代产出 10->1,方向由
     //     迭代器推断,本体字段原样存,10..1 != 1..10);空区间只剩 from == to 且不含上界,
     //     迭代零次。
     class ObjRange final : public Object {
@@ -75,16 +75,14 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjMap::load_field
-        // 形)--先委托 VM 的 Range bootstrap 类协议(ObjClass::load_field 沿链查表,miss
-        // 类措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field
-        // 不 override:基类默认「does not support field access」即内置类型的正确行为。
+        // 命名成员读取协议 override:查 Range bootstrap 类表,命中自持 new_bound_method 恒绑
+        // this(两步形态与 GC 走查见 Object.hpp 协议契约)。store_field 不 override:基类默认
+        // 「does not support field access」即内置类型的正确行为。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
-        // -- 恒绑定但不铸 ObjBoundMethod(内置侧 bound 无缓存可回填,每取一次白铸一个;forIn 每迭代
-        // 两个,见集合计划 §4.4 基线)。调用区槽 0 保持 receiver 原样,正是原生要的 this。
+        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
+        // 交 VM 调用(契约见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 

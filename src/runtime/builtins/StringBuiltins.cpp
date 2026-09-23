@@ -20,7 +20,7 @@ namespace aria {
 
         // ---- string 方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽,读 slots[1..]) ----
         //
-        // 下标域:除 codepoint_at(码点序号)外全部字节域(计划 D5,与 len/s[i] 同域)。string
+        // 下标域:除 codepoint_at(码点序号)外全部字节域(与 len/s[i] 同域)。string
         // 不可变,全部产出新串;receiver 在 slots[0] 覆写前经栈根存活,单输出方法直接构造,
         // split 先拷内容进 C++ String(非 GC 内存)再逐段铸造。
 
@@ -282,7 +282,7 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域,计划 D5)。码点数不是本
+        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域)。码点数不是本
         // 方法 --那是 len(chars())。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;

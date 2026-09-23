@@ -29,8 +29,7 @@ namespace aria {
         }
 
         // range 方法表:注册进 Range bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(批 4 拍板,每源只
-        // 加迭代器子类)。
+        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(每源只加迭代器子类)。
         constexpr builtins::BuiltinEntry kRangeBuiltins[] = {
                 {"iter", fn_iter},
         };

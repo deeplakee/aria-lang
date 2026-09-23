@@ -87,6 +87,12 @@ namespace aria {
     // ObjException.hpp 依赖本头、两头互不 include,出定义避环)。
     class AriaVM;
 
+    // 工厂守卫纪律(**每方只守自己创建的**,全部 new_<type> 工厂通用 -- 各工厂不再复述):
+    // 工厂不替调用方守卫**入参**(入参非本工厂创建);工厂内部新建的对象(便捷重载内 intern 的
+    // 串)自带 make_guard 自守跨 new_object 顶 maybe_collect。故**调用方须在调用前自行根化自己
+    // 传入的对象入参**(name / klass / module / super 等经 intern 或模块表皆为 weak root);工厂
+    // 返回对象白色无根,建成即须发布进根(写回值栈槽 / 链入 VM 开链)。
+
     class Object {
     public:
         Object() = delete;
@@ -185,6 +191,14 @@ namespace aria {
         // 读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):name 为 intern 串(===
         // 同指针查表)。基类默认报 UndefinedProperty "X has no member 'y'";override 见
         // ObjInstance / ObjClass,默认体在 Object.cpp。
+        // **内置容器/迭代器(string/list/map/range/iterator)的 override 同形两步**(权威说明,
+        // 各子类不再复述):①委托自身 bootstrap 类表的 ObjClass::load_field 沿链查表,miss 类措辞
+        // fail 随协议透传;②命中即自持 new_bound_method 恒绑 this --内置类表条目全为原生函数、
+        // 恒为方法,判别无须戳(表契约由各 register_*_builtins 唯一写入口维持)。GC 走查:
+        // new_bound_method 是唯一分配点,receiver 经调用方 peek 在栈(栈即根)、klass 经 VM 寄存器
+        // 组根、命中值本体经类链 field_ 表可达(本地 hit 仅是值拷贝);新 bound 白色无根,由
+        // run_load_field 写回原槽根化。store_field 不 override:基类默认「does not support field
+        // access」即内置类型的正确行为。
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaVM& vm, ObjString* name);
 

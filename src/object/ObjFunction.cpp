@@ -30,8 +30,8 @@ namespace aria {
 
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, const u8 arity, const u8 min_arity,
                               const bool is_varargs) {
-        // 工厂不替调用方守卫入参:module 与 name 皆是 weak root,调用方须在调用前自行根化
-        //(契约见头注释)。调用方裸持 fresh 对象直接传入是 bug,需 make_guard。
+        // 守卫纪律见 Object.hpp;module 与 name 皆是 weak root,调用方须自行根化。裸持 fresh
+        // 对象直接传入是 bug,需 make_guard。
         return gc.new_object<ObjFunction>(gc, module, name, arity, min_arity, is_varargs);
     }
 

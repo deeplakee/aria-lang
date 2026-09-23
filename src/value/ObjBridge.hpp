@@ -23,9 +23,9 @@ namespace aria {
         return value.is_obj() ? Object::try_as<T>(value.as_obj()) : nullptr;
     }
 
-    // 类表成员值是否为「可调用」(M5):闭包(字节码方法)或原生函数(内建方法)。读路径的
-    // 绑定判别不走本谓词(改判 is_method(Value),背景见 m5 计划);本谓词保留为可调用集合的
-    // **泛化扩展缝**(未来再扩可调用集合改本谓词即可)。消费:ObjBoundMethod ctor ASSERT 守卫。
+    // 类表成员值是否为「可调用」:闭包(字节码方法)或原生函数(内建方法)。读路径的绑定判别
+    // 用 is_method;本谓词是可调用集合的**泛化扩展缝**(再扩可调用集合改本谓词即可)。
+    // 消费:ObjBoundMethod ctor ASSERT 守卫。
     [[nodiscard]]
     inline bool is_callable_value(const Value value) noexcept {
         if (!value.is_obj()) {
@@ -35,7 +35,7 @@ namespace aria {
         return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
     }
 
-    // 类表成员值是否为「方法」(M5):defining class 戳定的方法闭包(MAKE_METHOD 注册时戳;
+    // 类表成员值是否为「方法」:defining class 戳定的方法闭包(MAKE_METHOD 注册时戳;
     // MAKE_STATIC/类上赋值不戳 ⟹ 静态槽恒非方法)。读路径(ObjInstance::load_field /
     // LOAD_SUPER_FIELD)的绑定判别谓词:判别不看值类型,一步收「取闭包 + 查戳」两步守卫。
     // **泛化扩展缝**:未来再扩方法承载形态改本谓词即可。

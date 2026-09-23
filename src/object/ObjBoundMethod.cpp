@@ -50,8 +50,7 @@ namespace aria {
     }
 
     ObjBoundMethod* new_bound_method(GC& gc, const Value method, const Value receiver) {
-        // 工厂不替调用方守卫入参:只做一次 new_object、无内部新建对象,调用方须在调用前自行
-        // 根化 method 与 receiver 中的对象。
+        // 守卫纪律见 Object.hpp;调用方须自行根化 method 与 receiver 中的对象。
         return gc.new_object<ObjBoundMethod>(method, receiver);
     }
 

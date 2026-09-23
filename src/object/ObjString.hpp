@@ -19,8 +19,8 @@ namespace aria {
     //   trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。
     //   持 GC* gc_ 供 ~ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。
     //
-    //   Phase 2 起接 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,
-    //   未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
+    //   内容串经 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,未命中才
+    //   new_object + insert。等价内容的串共享同一 ObjString*。
     //
     //   下标读经 load_index 协议 override:整数键 = 字节语义(计划 D5,与 len 同域),产出
     //   单字节 1-char string;多字节序列中间字节取该字节自身(字节契约的自然结果)。下标
@@ -122,16 +122,14 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
 
-        // 命名成员读取协议 override:内置侧两步,与实例路径同构(同 ObjList::load_field
-        // 形)--先委托 VM 的 String bootstrap 类协议(ObjClass::load_field 沿链查表,miss
-        // 类措辞 fail 随协议透传),命中即自持 new_bound_method 恒绑定 this。store_field 不
-        // override:基类默认「does not support field access」即内置类型的正确行为。
+        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑
+        // this(两步形态与 GC 走查见 Object.hpp 协议契约)。store_field 不 override:基类默认
+        // 「does not support field access」即内置类型的正确行为。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:与 load_field 同一趟类表查找,命中直取类表原生值交 VM 调用
-        // -- 恒绑定但不铸 ObjBoundMethod(内置侧 bound 无缓存可回填,每取一次白铸一个;forIn 每迭代
-        // 两个,见集合计划 §4.4 基线)。调用区槽 0 保持 receiver 原样,正是原生要的 this。
+        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
+        // 交 VM 调用(契约见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
     };

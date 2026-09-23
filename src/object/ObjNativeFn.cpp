@@ -9,9 +9,9 @@
 namespace aria {
 
     ObjNativeFn::ObjNativeFn(ObjString* name, NativeFn fn) : Object{ObjType::NATIVE_FN}, name_{name}, fn_{fn} {
-        ASSERT(fn != nullptr, "ObjNativeFn: function pointer must not be null");
+        ASSERT(fn != nullptr, "function pointer must not be null");
         // name_ 恒非空:匿名用 kAnonymousName。
-        ASSERT(name != nullptr, "ObjNativeFn: name must not be null (use kAnonymousName for anonymous)");
+        ASSERT(name != nullptr, "function name must not be null (use kAnonymousName for anonymous)");
     }
 
     void ObjNativeFn::trace(GC& gc) const noexcept {

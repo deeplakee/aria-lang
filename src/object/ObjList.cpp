@@ -102,7 +102,7 @@ namespace aria {
         // 区间,唯一失败报错就地烘焙。长度与方向的折算全在解析口。
         const auto segment = resolve_slice_bounds(range, elements_.size());
         if (!segment) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
+            return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
         // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 的越界断言不容它(段空不 deref)。
         // GC 走查:receiver 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由

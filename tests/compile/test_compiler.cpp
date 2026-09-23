@@ -355,7 +355,7 @@ TEST(Compiler, ListSliceFails) {
     auto out_of_range = run_source("var xs = [1, 2, 3]; return xs[0..10];");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(out_of_range.error().message().find("slice index out of range"), std::string::npos);
+    EXPECT_NE(out_of_range.error().message().find("slice range 0..10 out of range"), std::string::npos);
 
     auto store = run_source("var xs = [1, 2, 3]; xs[0..2] = [9]; return 0;");
     ASSERT_FALSE(store.has_value());
@@ -793,7 +793,7 @@ TEST(Compiler, StringImmutableStoreFails) {
     auto out = run_source(R"(var s = "hi"; s[0] = "H"; return s;)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    EXPECT_NE(out.error().message().find("string does not support subscript assignment"), std::string::npos);
+    EXPECT_NE(out.error().message().find("type String does not support subscript assignment"), std::string::npos);
 }
 
 // forIn string:逐码点产出 1-char string(文法「string->字符」,D5)。产出验证用赋值 + 比较。
@@ -919,7 +919,7 @@ TEST(Compiler, StringRangeSlice) {
     auto out = run_source(R"(return "hello"[1..9];)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(out.error().message().find("slice index out of range"), std::string::npos);
+    EXPECT_NE(out.error().message().find("slice range 1..9 out of range"), std::string::npos);
 }
 
 // split():0 参按 ASCII 空白连续段切并丢空段(全空白/空串返 [];不做 Unicode 空白,与 trim 同

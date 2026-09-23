@@ -15,8 +15,8 @@ namespace aria {
     ObjModule::ObjModule(GC& gc, ObjString* name, ObjString* dir) :
         Object{ObjType::MODULE}, name_{name}, dir_{dir}, entry_{nullptr}, globals_{&gc} {
         // dir_ / name_ 恒非空(见 new_module 的 cwd 兜底与合成顶层构造);构造期拦截非法 null。
-        ASSERT(dir != nullptr, "ObjModule dir must not be null");
-        ASSERT(name != nullptr, "ObjModule name must not be null");
+        ASSERT(dir != nullptr, "module directory must not be null");
+        ASSERT(name != nullptr, "module name must not be null");
     }
 
     String ObjModule::abs_path() const {
@@ -67,8 +67,8 @@ namespace aria {
 
     bool ObjModule::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 模块成员只读:越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」;暴露可变状态
-        // 走模块自己的函数。
-        return vm.fail(ErrorCode::TypeMismatch, "module members are read-only");
+        // 走模块自己的函数。文案归协议族(与其它「不支持该写形态」同形)。
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", type_name());
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {

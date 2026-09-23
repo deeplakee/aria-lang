@@ -11,7 +11,7 @@ namespace aria {
 
     ObjStringIterator::ObjStringIterator(ObjString* str) : ObjIterator{}, str_{str}, offset_{0} {
         // str_ 恒非空:铸造点(fn_iter)解出的即对象,无空态语义。
-        ASSERT(str != nullptr, "ObjStringIterator str must not be null");
+        ASSERT(str != nullptr, "str must not be null");
     }
 
     void ObjStringIterator::trace(GC& gc) const noexcept {

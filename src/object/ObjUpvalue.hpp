@@ -20,7 +20,7 @@ namespace aria {
         // slot = 被捕获的值栈槽地址(open 起点;恒非空,栈槽必存在)。
         explicit ObjUpvalue(Value* slot) noexcept :
             Object{ObjType::UPVALUE}, location_{slot}, closed_{Value::nil_val()}, next_open_{nullptr} {
-            ASSERT(slot != nullptr, "ObjUpvalue: slot must not be null");
+            ASSERT(slot != nullptr, "upvalue slot must not be null");
         }
         ~ObjUpvalue() override = default; // 壳定长,无外挂子内存
 
@@ -54,8 +54,8 @@ namespace aria {
 
         // 重绑栈槽(grow_stack_ 搬迁值栈后由 VM 调):仅对 open 态有意义,closed 态不持栈槽。
         void set_location(Value* slot) noexcept {
-            ASSERT(is_open(), "ObjUpvalue::set_location on closed upvalue");
-            ASSERT(slot != nullptr, "ObjUpvalue::set_location: slot must not be null");
+            ASSERT(is_open(), "upvalue is closed");
+            ASSERT(slot != nullptr, "slot must not be null");
             location_ = slot;
         }
 

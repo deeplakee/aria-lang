@@ -10,7 +10,7 @@ namespace aria {
 
     ObjListIterator::ObjListIterator(ObjList* list) : ObjIterator{}, list_{list}, cursor_{0} {
         // list_ 恒非空:铸造点(fn_iter)解出的即对象,无空态语义。
-        ASSERT(list != nullptr, "ObjListIterator list must not be null");
+        ASSERT(list != nullptr, "list must not be null");
     }
 
     void ObjListIterator::trace(GC& gc) const noexcept {

@@ -12,9 +12,9 @@ namespace aria {
                              const bool is_varargs) :
         Object{ObjType::FUNCTION}, unit_{&gc}, module_{module}, name_{name}, arity_{arity}, min_arity_{min_arity},
         is_varargs_{is_varargs}, upvalue_descs_{&gc} {
-        ASSERT(module != nullptr, "ObjFunction: module must not be null (every function belongs to a module)");
-        ASSERT(name != nullptr, "ObjFunction: name must not be null (entry=<main>, lambda=<anonymous>)");
-        ASSERT(min_arity <= arity, "ObjFunction: min_arity must not exceed arity");
+        ASSERT(module != nullptr, "module must not be null (every function belongs to a module)");
+        ASSERT(name != nullptr, "function name must not be null (entry=<main>, lambda=<anonymous>)");
+        ASSERT(min_arity <= arity, "min_arity must not exceed arity");
     }
 
     void ObjFunction::trace(GC& gc) const noexcept {

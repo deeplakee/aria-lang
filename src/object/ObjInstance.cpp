@@ -13,7 +13,7 @@ namespace aria {
 
     ObjInstance::ObjInstance(GC& gc, ObjClass* klass) : Object{ObjType::INSTANCE}, class_{klass}, fields_{&gc} {
         // class_ 恒非空(ctor ASSERT):实例必有类。
-        ASSERT(klass != nullptr, "ObjInstance class must not be null");
+        ASSERT(klass != nullptr, "class must not be null");
     }
 
     void ObjInstance::trace(GC& gc) const noexcept {

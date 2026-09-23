@@ -1,2 +1,2 @@
-Runtime: TypeMismatch module members are read-only
+Runtime: TypeMismatch type Module does not support field assignment
 at <main> (

@@ -1,2 +1,2 @@
-Runtime: TypeMismatch string does not support subscript assignment
+Runtime: TypeMismatch type String does not support subscript assignment
 at <main> (

@@ -9,7 +9,7 @@ namespace aria {
 
     ObjClosure::ObjClosure(GC& gc, ObjFunction* function) :
         Object{ObjType::CLOSURE}, function_{function}, upvalues_{&gc}, defining_class_{nullptr} {
-        ASSERT(function != nullptr, "ObjClosure: function must not be null");
+        ASSERT(function != nullptr, "function must not be null");
     }
 
     ObjString* ObjClosure::name() const noexcept {
@@ -18,7 +18,7 @@ namespace aria {
     }
 
     void ObjClosure::add_upvalue(ObjUpvalue* uv) {
-        ASSERT(uv != nullptr, "ObjClosure::add_upvalue: upvalue must not be null");
+        ASSERT(uv != nullptr, "upvalue must not be null");
         upvalues_.push(uv);
     }
 

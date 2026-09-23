@@ -259,6 +259,6 @@ TEST(ObjModule, StoreFieldRejectedAsReadOnly) {
     EXPECT_FALSE(m->store_field(vm, key, Value::from_int(1)));
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch module members are read-only");
+    EXPECT_EQ(message, "Runtime: TypeMismatch type Module does not support field assignment");
     EXPECT_EQ(m->globals().find(Value::from_obj(key)), nullptr); // 拒绝不留痕
 }

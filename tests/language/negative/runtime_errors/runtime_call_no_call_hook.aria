@@ -1,4 +1,4 @@
 // 钉住：对象被调用时按 `__call__` 取实现；未实现的类型报「type List does not support '__call__'」；
-// 非对象值（如 Int）另走「call non-callable」短句，见 runtime_call_non_callable。
+// 非对象值（如 Int）同码同款文案，见 runtime_call_non_callable。
 var xs = [1];
 var x = xs();

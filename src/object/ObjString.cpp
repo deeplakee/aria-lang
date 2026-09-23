@@ -85,8 +85,8 @@ namespace aria {
     }
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
-        // string 不可变:下标写恒报错(定向文案;键值检查无意义,先拒操作本身)。
-        return vm.fail(ErrorCode::TypeMismatch, "string does not support subscript assignment");
+        // string 不可变:下标写恒报错(协议族文案;键值检查无意义,先拒操作本身)。
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
     }
 
     Opt<Value> ObjString::op_add_impl(AriaVM& vm) { return vm.register_value(kStringAddFnOffset); }
@@ -105,7 +105,7 @@ namespace aria {
         // 顶部 maybe_collect 时安全;倒序段在拷贝上按字节反转(字节域,多字节输入下产出非法 UTF-8)。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
+            return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
         String buffer{view().substr(segment->start, segment->count)};
         if (segment->is_reversed) {

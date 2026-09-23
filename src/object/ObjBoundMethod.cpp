@@ -13,7 +13,7 @@ namespace aria {
     ObjBoundMethod::ObjBoundMethod(const Value method, const Value receiver) :
         Object{ObjType::BOUND_METHOD}, method_{method}, receiver_{receiver} {
         // method_ 须为可调用值(闭包或原生函数);判定收口 is_callable_value。
-        ASSERT(is_callable_value(method), "ObjBoundMethod: method must be a callable (closure or native fn)");
+        ASSERT(is_callable_value(method), "method must be a callable (closure or native fn)");
     }
 
     ObjString* ObjBoundMethod::name() const noexcept {

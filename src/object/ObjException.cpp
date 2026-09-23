@@ -9,7 +9,7 @@ namespace aria {
     ObjException::ObjException(const ErrorCode code, ObjString* message) :
         Object{ObjType::EXCEPTION}, code_{code}, message_{message} {
         // message_ 恒非空:空串 intern 兜底(无合法指针空态);构造期拦截非法 null。
-        ASSERT(message != nullptr, "ObjException message must not be null");
+        ASSERT(message != nullptr, "error message must not be null");
     }
 
     Error ObjException::to_error() const {

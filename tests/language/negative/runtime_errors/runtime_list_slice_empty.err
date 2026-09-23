@@ -1,2 +1,2 @@
-Runtime: IndexOutOfBounds slice index out of range
+Runtime: IndexOutOfBounds slice range 0...0 out of range
 at <main> (

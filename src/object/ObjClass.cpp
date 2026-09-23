@@ -16,7 +16,7 @@ namespace aria {
         // name_ 恒非空;superclass_ 唯 Object 根为 nullptr。init_ 构造期自 super 派生(快照语义:
         // 此后父 init 变更不传导;Object 根出厂 nil,由 bootstrap 经 set_field 设)。ctor 内读
         // super->init() 纯读无分配,new_object 后 ctor 运行其间无 GC 点。
-        ASSERT(name != nullptr, "ObjClass name must not be null");
+        ASSERT(name != nullptr, "class name must not be null");
     }
 
     void ObjClass::set_field(ObjString* name, const Value value) {

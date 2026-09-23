@@ -105,7 +105,7 @@ namespace aria {
     private:
         // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
         // 统一),与 list 切片同口径 -- 端点从尾计数、无上界 i.. 允许空段、越界/空串 nullopt(报
-        // IndexOutOfBounds "slice index out of range",与 list 同串)。域仍是字节(与 s[i]/len
+        // IndexOutOfBounds "slice range {} out of range",与 list 同串)。域仍是字节(与 s[i]/len
         // 同域):倒序段产出**字节逆序**串,多字节输入下不是合法 UTF-8 -- 与 s[i] 能取到续接字节
         // 同属字节域契约(按码点反转需另立码点域口径,不在切片内)。私有:唯一调用方是本类 load_index。
         [[nodiscard]]

@@ -252,7 +252,7 @@ TEST(ObjString, SliceOutOfBoundsFails) {
     EXPECT_FALSE(s->load_index(vm, Value::from_obj(r1)).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
-    EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice index out of range");
+    EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice range 0..9 out of range");
     auto r2 = new_range(gc, -3);
     guard.push(r2);
     EXPECT_FALSE(s->load_index(vm, Value::from_obj(r2)).has_value());
@@ -278,7 +278,7 @@ TEST(ObjString, StoreIndexAlwaysFails) {
     EXPECT_FALSE(s->store_index(vm, Value::from_int(0), Value::from_obj(s)));
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
-    EXPECT_EQ(message, "Runtime: TypeMismatch string does not support subscript assignment");
+    EXPECT_EQ(message, "Runtime: TypeMismatch type String does not support subscript assignment");
 }
 
 // ---- 命名成员协议(load_field → VM 的 String bootstrap 类) ----

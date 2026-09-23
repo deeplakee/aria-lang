@@ -121,8 +121,9 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
 - VM 级只读 builtins 表 `builtins_`（构造期由 `builtins::register_builtin_functions` 一次性填充 type/str/println/assert，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib/`-L`）与值寄存器组 `registers_`（VM 单例值统一存放表，注册表见 `runtime/value_register.hpp`，寄存器只读）。
-- 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap registers 并注册 builtins。
-- **collect 时标四类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_value`）；④ `current_` 执行链（自 `*current_` 沿 `previous_` 走到链尾，挂起协程的值栈/帧/寄存器皆根；链尾断言 == `&main_ctx_` 锁切换纪律；M6 定稿后链尾断言退役、链遍历保留）。
+- 常量串表 `string_constants_`（`List<ObjString*>`，VM 自己按名取用的字符串常量的唯一存放处，注册表见 `runtime/string_constant.hpp`）：bootstrap 按表逐条 `new_string` 填入（与枚举同序），tracer 一趟 `mark_object` 标根--**驻留池是 weak root，不标根则下轮 collect 即摘除**（算子钩子名尤其如此：实例算子派发每次都要一个稳定的 `ObjString*`，不标根就退化成每轮重铸）。消费点经 `string_constant(StringConstant)` 取值，不再各自 `new_string`。注册表的**成员判据**：只收 VM 自己按名取用的串--代码里写下的常量名（字段/方法名）不进此表，那些编进常量池经 `ObjFunction::trace` 已可达。
+- 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：String 类 bootstrap 末段的算子钩子缓存按名取串，读的就是本表）。
+- **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_value`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 执行链（自 `*current_` 沿 `previous_` 走到链尾，挂起协程的值栈/帧/寄存器皆根；链尾断言 == `&main_ctx_` 锁切换纪律；M6 定稿后链尾断言退役、链遍历保留）。
 - 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。以 tracer 直标代替 Movement 升 Object（M6 升级 `ObjMovement : Object` 入链表）。
 - **`raise(code, fmt, args...)`/`fail`**：从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`），消息**不含位置前缀**（位置由 unwind 未捕获出口的逐帧 at 行给出）；`fail` = raise + `FailSignal`（`[[nodiscard]]` 强制 `return vm.fail(...);`）。公共访问器 `gc()`/`main_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
 

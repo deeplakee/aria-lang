@@ -48,7 +48,7 @@ paths:
 - **语言值域**：`kIntMin`/`kIntMax`（i48 = `Value::from_int` 的 48 位尾部；字面量闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text` 同界）。
 - **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
 - **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（Compiler/CodeGen 默认入口名）、`kModuleEntryName = "<module>"`（模块体入口名，RETURN 按名回查识别模块体帧）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用，compile 据名判定 lambda 留栈不绑定）。
-- **运算符与调用重载方法名**（十一个，前后双下划线形：普通 aria 标识符不会这么命名，故与用户方法名不撞）：`kOpAddName = "__add__"`/`kOpSubName = "__sub__"`/`kOpMulName = "__mul__"`/`kOpDivName = "__div__"`（`/` 是 aria 唯一除法算子，无 `//` 形态）/`kOpModName = "__mod__"`/`kOpLessName = "__lt__"`/`kOpLessEqualName = "__le__"`/`kOpGreaterName = "__gt__"`/`kOpGreaterEqualName = "__ge__"`/`kOpNegateName = "__neg__"`（一元取负）、`kOpCallName = "__call__"`（调用钩子）。aria 代码在这些名字下定义重载方法，运行期实例按该名沿成员查找路径取出（实例 fields 优先、可遮蔽，再沿类链），与 C++ 侧 `Object::op_*_impl` 虚函数族一一对应（那族回答「本对象上该算子/调用对应的可调用值」，内建类型直给自身实现，见 `object.md`）。
+- **运算符与调用重载方法名**（十一个 dunder，如 `__add__`/`__call__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（枚举 + 拼写同源展开）与「恒久存活」的根见 `runtime/string_constant.hpp`（见 `runtime.md`「共享状态」的常量串表）。
 - **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
 - **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。
 

@@ -25,6 +25,7 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::i8;
 using aria::kObjectClassOffset;
+using aria::kStringConstantSpellings;
 using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
@@ -39,6 +40,7 @@ using aria::ObjString;
 using aria::ObjUpvalue;
 using aria::OpCode;
 using aria::Span;
+using aria::StringConstant;
 using aria::StringView;
 using aria::TryRecord;
 using aria::u16;
@@ -2886,4 +2888,21 @@ TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
     const auto two_step_allocs = run_case(true);
     const auto invoke_allocs   = run_case(false);
     EXPECT_EQ(two_step_allocs, invoke_allocs); // 字段直读两侧都不物化
+}
+
+// 常量串表的根契约:注册表里的名字随 string_constants_ 恒久存活 -- collect 之后按名仍取回**同一**串。
+// 判据取同指针:名字若不在根里,驻留池的该项会在 collect 的 remove_white 处变墓碑、sweep 释放其对象,
+// 随后 new_string 会重铸一个内容相同的新串(指针不同)。这条从 aria 源码侧面观察不到,只能在 C++ 侧钉。
+TEST(AriaVM, StringConstantsOutliveCollect) {
+    AriaVM vm;
+    auto&  gc = vm.gc();
+    for (usize index = 0; index < std::size(kStringConstantSpellings); ++index) {
+        const auto id       = static_cast<StringConstant>(index);
+        const auto spelling = kStringConstantSpellings[index];
+        EXPECT_EQ(vm.string_constant(id)->view(), spelling); // bootstrap 已按注册表驻留填入
+        gc.collect();                                        // 不在根里的话,此处即被摘除
+        const auto relooked = new_string(gc, spelling);      // 命中驻留池则不分配(无需守卫)
+        EXPECT_EQ(relooked, vm.string_constant(id));         // 同指针 = 仍在池中且仍是同一对象
+        EXPECT_EQ(relooked->view(), spelling);               // 正面证明串活着(取内容不悬垂)
+    }
 }

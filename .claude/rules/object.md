@@ -55,8 +55,8 @@ paths:
 - **①'' `load_field_unbound`**：命名成员读取的**不绑定形态**（与 `load_field` 同一趟查找、命中方法值不铸 `ObjBoundMethod`）。消费方两类：`run_prepare_method`（`PREPARE_METHOD` 的成员解析缝，解析先于实参求值）与实例 11 个 `op_*_impl`（按钩子名取 `__add__`/`__call__` 等）。**基类默认 = 隐式委托 `load_field`**（未 override 的类型照读路径取值，不设「显式参与」反转）；实例与内置容器 / 迭代器 override 成不绑定取值（后者查自身 bootstrap 类表取原生值，免每次铸 bound）。
 - **①' `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `vm.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。
 - **② 算子与调用协议 `op_*_impl(AriaVM&) -> Opt<Value>`**（算术五 + 比较四 + 一元负 + `op_call_impl`，共 11 个）：**取实现，不执行**--回答「本对象上该算子对应的可调用值」（不是算好的结果），VM 的 `run_binary_operator<Op>` / `run_negate` / `call_value` 取到后按调用形态调它（调用区槽 0 保持 receiver）。非 const（取实现可能物化绑定）。
-- ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按名 `load_field_unbound`--实例 fields 可遮蔽，再类链取）；②**内置 string**（5 个算子直读实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③其余类型不实现即报错。
-- 钩子名是**语言级事实**（`aria.hpp` 的 `kOp*Name`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
+- ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按钩子名（VM 常量串表，见 `runtime.md`）`load_field_unbound`--实例 fields 可遮蔽，再类链取）；②**内置 string**（5 个算子直读实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③其余类型不实现即报错。
+- 钩子名是**语言级事实**（注册表 `runtime/string_constant.hpp` 的 `StringConstant`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
 - `op_call_impl` 的消费点 = `AriaVM::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 报「call non-callable X」。
 
 ### 内置类型的成员面

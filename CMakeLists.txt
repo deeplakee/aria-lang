@@ -79,6 +79,7 @@ add_library(aria_core STATIC
         src/runtime/builtins/StringBuiltins.hpp
         src/runtime/Movement.cpp
         src/runtime/Movement.hpp
+        src/runtime/string_constant.hpp
         src/runtime/value_register.hpp
         src/error/ErrorCode.hpp
         src/error/Error.hpp

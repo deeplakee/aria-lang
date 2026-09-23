@@ -219,19 +219,29 @@ namespace aria {
 
     } // namespace
 
-    // 构造:registers_ 经 make_nil_registers 全表灌 nil -> 注册 VM 根 tracer -> bootstrap 寄存器组
-    // -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
+    // 构造:registers_ 经 make_nil_registers 全表灌 nil -> 注册 VM 根 tracer -> bootstrap 常量串表 +
+    // 寄存器组 -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
         gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
-        registers_{make_nil_registers()} {
+        registers_{make_nil_registers()}, string_constants_{} {
         hook_vm_roots();
         init_source_roots();
         {
             // 构造临界区:GC 挂起,窗口内回收不可达,创建的白对象免逐个守卫;**解锁前须全部发布
-            // 进 tracer 可达的家**(registers_ / builtins_,tracer 已挂接)。
+            // 进 tracer 可达的家**(registers_ / string_constants_ / builtins_,tracer 已挂接)。
             const auto lock = gc_.make_lock();
+            bootstrap_string_constants();
             bootstrap_registers();
             builtins::register_builtin_functions(gc_, builtins_);
+        }
+    }
+
+    void AriaVM::bootstrap_string_constants() {
+        // 按注册表逐条驻留填入:顺序即契约(string_constant 按枚举取下标,表尾拼写数组与枚举同源同序)。
+        // 须在 ctor 构造临界区内调用(GC 挂起,创建免守卫);填入即经 string_constants_ 可达,故解锁前
+        // 发布完毕。须先于 bootstrap_registers:String 类 bootstrap 的钩子缓存按名取串,读的就是本表。
+        for (const auto spelling: kStringConstantSpellings) {
+            string_constants_.push_back(new_string(gc_, spelling));
         }
     }
 
@@ -250,14 +260,17 @@ namespace aria {
     }
 
     void AriaVM::hook_vm_roots() {
-        // VM 根 tracer:collect 时标四类根(modules_ / builtins_ / registers_ / current_ 执行链;
-        // 清单见 runtime.md「共享状态」)。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在
+        // VM 根 tracer:collect 时标五类根(modules_ / builtins_ / registers_ / string_constants_ /
+        // current_ 执行链;清单见 runtime.md「共享状态」)。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在
         // 链」的悬垂防线;链尾断言恒 &main_ctx_,锁定「resume/yield 严格成对」切换纪律。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
             for (const auto& reg: registers_) {
                 g.mark_value(reg);
+            }
+            for (const auto str: string_constants_) {
+                g.mark_object(str);
             }
             [[maybe_unused]] Movement* tail = nullptr;
             for (auto m = current_; m != nullptr; m = m->previous()) {
@@ -350,14 +363,13 @@ namespace aria {
     void AriaVM::cache_string_operator_fns(ObjClass& klass) {
         // 类表 bootstrap 后无写点,故实现格与类表两份恒一致;DEBUG 下缺格即断言。须在 ctor
         // 构造临界区内调用(GC 挂起,入格免守卫;load_field 命中是纯读无分配)。
-        constexpr Pair<StringView, u8> kStringOperatorFns[] = {
-                {kOpAddName, kStringAddFnOffset},         {kOpLessName, kStringLtFnOffset},
-                {kOpLessEqualName, kStringLeFnOffset},    {kOpGreaterName, kStringGtFnOffset},
-                {kOpGreaterEqualName, kStringGeFnOffset},
+        constexpr Pair<StringConstant, u8> kStringOperatorFns[] = {
+                {StringConstant::OpAdd, kStringAddFnOffset},         {StringConstant::OpLess, kStringLtFnOffset},
+                {StringConstant::OpLessEqual, kStringLeFnOffset},    {StringConstant::OpGreater, kStringGtFnOffset},
+                {StringConstant::OpGreaterEqual, kStringGeFnOffset},
         };
-        for (const auto& [hook_name, fn_offset]: kStringOperatorFns) {
-            const auto name = new_string(gc_, hook_name); // 名字取自 aria.hpp 常量,首次即驻留
-            const auto hit  = klass.load_field(*this, name);
+        for (const auto& [hook, fn_offset]: kStringOperatorFns) {
+            const auto hit = klass.load_field(*this, string_constant(hook));
             ASSERT(hit.has_value(), "String 类表缺算子钩子:类表与实现格两份已漂移");
             registers_[fn_offset] = *hit;
         }

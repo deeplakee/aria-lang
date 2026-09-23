@@ -62,8 +62,8 @@ namespace aria {
         // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
-        // 算子与调用协议的 11 个实现(基类默认直接 fail,故参与该协议须显式实现):各自按名(aria.hpp 的
-        // kOp*Name,new_string 取 intern 串)经 load_field_unbound 到实例 fields(字段可遮蔽类链钩子)再类链取。
+        // 算子与调用协议的 11 个实现(基类默认直接 fail,故参与该协议须显式实现):各自按钩子名(VM 常量串表,
+        // 注册表 runtime/string_constant.hpp)经 load_field_unbound 到实例 fields(字段可遮蔽类链钩子)再类链取。
         // 即「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;

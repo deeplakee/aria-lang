@@ -1,4 +1,4 @@
-// 钉住：用户类以 dunder 方法名定义运算符重载（名字见 src/aria.hpp 的 kOp*Name），算子运行期按名
+// 钉住：用户类以 dunder 方法名定义运算符重载（名字见 src/runtime/string_constant.hpp 的 StringConstant），算子运行期按名
 // 到对象上取实现并调用--类链继承、实例字段遮蔽、显式按名调用三条一起钉。
 def Box {
   init(v) { this.v = v; }

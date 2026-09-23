@@ -68,40 +68,50 @@ namespace aria {
     }
 
     // 算子/调用协议实现:按名到本实例(实例 fields 优先,可遮蔽类链钩子)再类链取实现 --
-    // 「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。名字经 new_string 取 intern 串(已驻留,
-    // 命中不分配)。
-    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpAddName)); }
+    // 「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。名字取自 VM 常量串表(AriaVM::string_constant;
+    // 注册表见 runtime/string_constant.hpp):表在 bootstrap 期驻留并随 VM 根恒久存活,故每次派发零取串开销、零分配。
+    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) {
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpAdd));
+    }
 
-    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpSubName)); }
+    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) {
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpSub));
+    }
 
-    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpMulName)); }
+    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) {
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpMul));
+    }
 
-    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpDivName)); }
+    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) {
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpDiv));
+    }
 
-    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return load_field_unbound(vm, new_string(vm.gc(), kOpModName)); }
+    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) {
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpMod));
+    }
 
     Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpLessName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpLess));
     }
 
     Opt<Value> ObjInstance::op_less_equal_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpLessEqualName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpLessEqual));
     }
 
     Opt<Value> ObjInstance::op_greater_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpGreaterName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpGreater));
     }
 
     Opt<Value> ObjInstance::op_greater_equal_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpGreaterEqualName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpGreaterEqual));
     }
 
     Opt<Value> ObjInstance::op_negate_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpNegateName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpNegate));
     }
 
     Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) {
-        return load_field_unbound(vm, new_string(vm.gc(), kOpCallName));
+        return load_field_unbound(vm, vm.string_constant(StringConstant::OpCall));
     }
 
     ObjInstance* new_instance(GC& gc, ObjClass* klass) {

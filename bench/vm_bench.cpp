@@ -9,6 +9,8 @@
 //   starts_with               单方法调用：一次 `PREPARE_METHOD` + `CALL_METHOD`（不涉迭代协议）
 //   instance_call/instance_read  用户类实例方法的调用与**读取**:调用走「类链查表 + 不绑定」,
 //                              读取每次现场绑定(方法值是一等值,必须产出 bound 对象)
+//   instance_operator         用户类算子重载:`a + b`(ADD -> 按名取实现 -> 调用) 对 `a.__add__(b)`
+//                             (名字由常量池给出),两形态只差「名字从哪来」
 //   plain_call                普通函数调用：无 `LOAD_FIELD` 的调用下界
 //   forin_string / forin_map  string 逐码点、map 逐 pair 迭代（每次迭代另有对象分配，非纯派发成本）
 //
@@ -309,6 +311,29 @@ namespace {
         return src;
     }
 
+    // 用户类算子重载：同一钩子的两条**取名**路径。钩子形态 `a + b` 走 ADD -> Object::op_add_impl ->
+    // ObjInstance 按名（VM 常量串表，零分配零哈希）沿实例 fields/类链取实现 -> call_value；显式按名形态
+    // `a.__add__(b)` 的名字由字节码常量池给出，走 PREPARE_METHOD + CALL_METHOD 两段派发，不经运行期取名。
+    // 两形态算同一结果，差值行的**符号**即「运行期按名取实现」相对「名字已在手边」的代价方向。
+    constexpr i64 kHookOperandSum = 7; // Box(3) + Box(4)
+    constexpr i64 kSumHookOperand = kHookOperandSum * kIterations;
+
+    [[nodiscard]] String make_instance_operator_source(const StringView op_expr) {
+        String src;
+        src += "def Box {\n";
+        src += "  init(v) { this.v = v; }\n";
+        src += "  __add__(o) { return this.v + o.v; }\n";
+        src += "}\n";
+        src += "var a = Box(3);\n";
+        src += "var b = Box(4);\n";
+        src += "var acc = 0;\n";
+        src += std::format("for (r in 0...{}) {{\n", kRounds);
+        src += std::format("  var i = 0;\n  while (i < {}) {{ acc = acc + {}; i += 1; }}\n", kSize, op_expr);
+        src += "}\n";
+        src += "return acc;\n";
+        return src;
+    }
+
     // 普通函数调用：无 LOAD_FIELD 的调用下界（进帧 + 返回 + 一次 dispatch）。
     [[nodiscard]] String make_plain_call_source() {
         String src;
@@ -385,6 +410,19 @@ int main() {
     println("-- 实例成员取用（方法调用 / 方法值读取）--");
     bench_alone("instance_call", make_instance_method_source(), kRounds * kSumPlusSize, "实例方法调用");
     bench_alone("instance_read", make_instance_read_source(), kIterations, "实例方法值读取(m=obj.m)");
+    println("");
+    println("-- 用户类算子重载（同一钩子的两条取名路径）--");
+    {
+        const auto hook_program     = make_program("bench", make_instance_operator_source("(a + b)"));
+        const auto explicit_program = make_program("bench", make_instance_operator_source("a.__add__(b)"));
+        const auto hook             = measure(hook_program);
+        const auto explicit_name    = measure(explicit_program);
+        BENCH_CHECK(hook.value == explicit_name.value, "两形态结果不一致");
+        BENCH_CHECK(hook.value == kSumHookOperand, "unexpected result");
+        print_row("instance_operator (钩子)", hook, "ADD -> 按名取实现 -> 调用");
+        print_row("instance_operator (显式名)", explicit_name, "名字由常量池给出（PREPARE/CALL_METHOD 两段）");
+        print_delta_row("^ 钩子 - 显式名", hook, explicit_name, "差值符号 = 运行期按名取实现的代价方向（负值即更省）");
+    }
     println("");
     println("-- 基线行（无对照；派发路径改动前后应保持稳定）--");
     bench_alone("plain_call", make_plain_call_source(), kRounds * kSumPlusSize, "调用下界（无 LOAD_FIELD）");

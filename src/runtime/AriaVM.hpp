@@ -7,6 +7,7 @@
 // raise 模板头内内联装箱需 ObjException 完整类型(其依赖已经 GC.hpp 传递拉入)。
 #include "object/ObjException.hpp"
 #include "runtime/Movement.hpp"
+#include "runtime/string_constant.hpp"
 #include "runtime/value_register.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
@@ -20,6 +21,7 @@ namespace aria {
     class ObjInstance;
     class ObjModule;
     class ObjNativeFn;
+    class ObjString;
 
     // 前置声明(bytecode/code.hpp 的 X 表生成物):run_binary_numeric<Op> 模板形参用,
     // 免头文件拖入 bytecode 树(定义处 AriaVM.cpp 已含)。
@@ -161,6 +163,14 @@ namespace aria {
             return registers_[offset];
         }
 
+        // 常量串表按枚举直读(下标契约与拼写见 runtime/string_constant.hpp):实例侧算子派发经它取钩子名,
+        // 免每次 new_string 从驻留池换串(名字由 bootstrap_string_constants 填好并随本表标根)。
+        [[nodiscard]]
+        ObjString* string_constant(const StringConstant id) const noexcept {
+            ASSERT(std::to_underlying(id) < std::size(kStringConstantSpellings), "StringConstant out of range");
+            return string_constants_[std::to_underlying(id)];
+        }
+
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
         // 命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。
@@ -240,6 +250,11 @@ namespace aria {
         // 构造临界区(GC 挂起)内调用,创建免守卫;各单例收口在 bootstrap_<单例> 系列函数,本
         // 函数只管编排;新单例在此加一行编排。
         void bootstrap_registers();
+
+        // 常量串表 bootstrap(ctor 一次调用,须先于 bootstrap_registers):按注册表
+        // (runtime/string_constant.hpp)逐条驻留填入 string_constants_。String 类 bootstrap 的
+        // 钩子缓存要按名取串,故编排上必须先于它。
+        void bootstrap_string_constants();
 
         // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
         // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
@@ -398,6 +413,11 @@ namespace aria {
         // 构造期经 make_nil_registers 全表灌 nil(Value{} 零填充非 nil);bootstrap 逐格覆写;
         // tracer 一趟循环标根。
         Vector<Value, kValueRegisterCount> registers_;
+
+        // 常量串表:VM 自己按名取用的字符串常量(唯一存放处;注册表见 runtime/string_constant.hpp)。
+        // bootstrap 一趟按表驻留填入,与枚举同序;tracer 一趟循环 mark_object 标根 -- 表在则串在
+        //(驻留池是 weak root,不标根则下轮 collect 即摘除)。List 空态起步,无 registers_ 那套灌 nil 仪式。
+        List<ObjString*> string_constants_;
     };
 
     // move 删除被移除时在此炸出,防静默变可移动后的悬垂 UB。

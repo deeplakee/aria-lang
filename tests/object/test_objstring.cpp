@@ -31,6 +31,7 @@ using aria::ObjString;
 using aria::Opt;
 using aria::Pair;
 using aria::String;
+using aria::StringConstant;
 using aria::StringView;
 using aria::try_obj;
 using aria::usize;
@@ -62,15 +63,14 @@ namespace {
         return result.has_value() && is_truthy(*result);
     }
 
-    // 算子的实现是 String 类表里的原生方法(名字见 aria.hpp 的 kOp*Name):取槽内裸原生值
+    // 算子的实现是 String 类表里的原生方法(钩子名取 VM 常量串表,注册表见 runtime/string_constant.hpp;
+    // 名字随表标根,故本函数无需自守):取槽内裸原生值
     // (不绑定;与 VM 侧 op_*_impl 读的实现格是同一批值,bootstrap 期拷入并断言一致)按原生契约调用 --slots[0] = receiver
     // 兼 返回槽、slots[1] = rhs。返回结果 Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责 让两侧存活(receiver 与
     // rhs 由 make_string 入根)。端到端路径(算子指令 -> 取钩子 -> 调用) 由语料覆盖(13_strings 的拼接/比较各例,语料开
     // stress GC)。
-    Opt<Value> invoke_string_hook(AriaVM& vm, const StringView hook_name, const Value lhs, const Value rhs) {
-        auto       guard = vm.gc().make_guard();
-        const auto name  = make_string(vm.gc(), guard, hook_name);
-        const auto hook  = vm.string_class()->load_field(vm, name);
+    Opt<Value> invoke_string_hook(AriaVM& vm, const StringConstant hook_id, const Value lhs, const Value rhs) {
+        const auto hook = vm.string_class()->load_field(vm, vm.string_constant(hook_id));
         if (!hook) {
             return std::nullopt;
         }
@@ -347,7 +347,7 @@ TEST(ObjString, OpAddConcatenates) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_string(gc, guard, "0123456789abcdefghij"); // 20 字节:SSO 外
     auto   rhs   = make_string(gc, guard, "KLM");
-    auto   sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto   sum   = invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     guard.push(sum->as_obj());
     const auto sum_str = try_obj<ObjString>(*sum);
@@ -364,7 +364,7 @@ TEST(ObjString, OpAddResultIsInterned) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_string(gc, guard, "in");
     auto   rhs   = make_string(gc, guard, "tern");
-    auto   sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto   sum   = invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     EXPECT_TRUE(value_identical(*sum, Value::from_obj(new_string(gc, "intern"))));
 }
@@ -376,13 +376,13 @@ TEST(ObjString, OpAddHandlesEmptyOperands) {
     auto   guard = gc.make_guard();
     auto   empty = make_string(gc, guard, "");
     auto   text  = make_string(gc, guard, "x");
-    auto   both  = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(empty), Value::from_obj(empty));
+    auto   both  = invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(empty), Value::from_obj(empty));
     ASSERT_TRUE(both.has_value());
     guard.push(both->as_obj());
     const auto both_str = try_obj<ObjString>(*both);
     ASSERT_NE(both_str, nullptr);
     EXPECT_EQ(both_str->length(), 0u);
-    auto one = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(text), Value::from_obj(empty));
+    auto one = invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(text), Value::from_obj(empty));
     ASSERT_TRUE(one.has_value());
     guard.push(one->as_obj());
     const auto one_str = try_obj<ObjString>(*one);
@@ -396,12 +396,12 @@ TEST(ObjString, OpAddNonStringRhsFails) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "a");
-    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(s), Value::from_int(1)).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(s), Value::from_int(1)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two strings, got String and Int");
 
-    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(s), Value::nil_val()).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(s), Value::nil_val()).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two strings, got String and Nil");
@@ -417,7 +417,7 @@ TEST(ObjString, OpAddSurvivesStressCollect) {
     auto  guard = gc.make_guard();
     auto  lhs   = make_string(gc, guard, "stress");
     auto  rhs   = make_string(gc, guard, "collect");
-    auto  sum   = invoke_string_hook(vm, aria::kOpAddName, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto  sum   = invoke_string_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     guard.push(sum->as_obj());
     EXPECT_EQ(sum->as_obj()->debug_repr(), "\"stresscollect\"");
@@ -436,28 +436,30 @@ TEST(ObjString, OpCompareByteOrderTruthTable) {
     auto   empty = make_string(gc, guard, "");
     auto   pre   = make_string(gc, guard, "app"); // a 的真前缀
 
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(a), Value::from_obj(b))));
-    EXPECT_FALSE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(b), Value::from_obj(a))));
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(b), Value::from_obj(a))));
-    EXPECT_FALSE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(a), Value::from_obj(b))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(a), Value::from_obj(b))));
+    EXPECT_FALSE(compared_true(invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(b), Value::from_obj(a))));
+    EXPECT_TRUE(
+            compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(b), Value::from_obj(a))));
+    EXPECT_FALSE(
+            compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(a), Value::from_obj(b))));
 
-    EXPECT_TRUE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessEqualName, Value::from_obj(same), Value::from_obj(a)))); // 相等:<= 真
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterEqualName, Value::from_obj(same),
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpLessEqual, Value::from_obj(same),
+                                                 Value::from_obj(a)))); // 相等:<= 真
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpGreaterEqual, Value::from_obj(same),
                                                  Value::from_obj(a)))); // 相等:>= 真
     EXPECT_FALSE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(same), Value::from_obj(a)))); // 相等:< 假
-    EXPECT_FALSE(
-            compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(same), Value::from_obj(a))));
+            invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(same), Value::from_obj(a)))); // 相等:< 假
+    EXPECT_FALSE(compared_true(
+            invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(same), Value::from_obj(a))));
 
     EXPECT_TRUE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(empty), Value::from_obj(a)))); // 空串最小
-    EXPECT_FALSE(
-            compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(empty), Value::from_obj(empty))));
+            invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(empty), Value::from_obj(a)))); // 空串最小
+    EXPECT_FALSE(compared_true(
+            invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(empty), Value::from_obj(empty))));
     EXPECT_TRUE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessEqualName, Value::from_obj(empty), Value::from_obj(empty))));
+            invoke_string_hook(vm, StringConstant::OpLessEqual, Value::from_obj(empty), Value::from_obj(empty))));
     EXPECT_TRUE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(pre), Value::from_obj(a)))); // 真前缀更小
+            invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(pre), Value::from_obj(a)))); // 真前缀更小
 }
 
 // 无符号字节序钉子:多字节 UTF-8 与孤立 continuation 字节串都按字节值比。
@@ -472,14 +474,14 @@ TEST(ObjString, OpCompareIsUnsignedBytewise) {
     auto lone  = make_string(gc, guard, "\xC3");
     auto tilde = make_string(gc, guard, "~"); // 0x7E
 
-    EXPECT_TRUE(compared_true(
-            invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(accent), Value::from_obj(z)))); // 0xC3 > 0x7A
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(lone),
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(accent),
+                                                 Value::from_obj(z)))); // 0xC3 > 0x7A
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(lone),
                                                  Value::from_obj(tilde)))); // 0xC3 > 0x7E
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(accent),
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(accent),
                                                  Value::from_obj(lone)))); // 0xC3 0xA9 > 0xC3(前缀)
-    EXPECT_FALSE(compared_true(
-            invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(accent), Value::from_obj(accent)))); // 自反不成立
+    EXPECT_FALSE(compared_true(invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(accent),
+                                                  Value::from_obj(accent)))); // 自反不成立
 }
 
 // rhs 非 String:TypeMismatch 定向文案,四个算子各自带符号(与算术族「override 自带符号」契约同形)。
@@ -489,12 +491,13 @@ TEST(ObjString, OpCompareNonStringRhsFails) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "a");
 
-    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(s), Value::from_int(1)).has_value());
+    EXPECT_FALSE(invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(s), Value::from_int(1)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __lt__ requires two strings, got String and Int");
 
-    EXPECT_FALSE(invoke_string_hook(vm, aria::kOpGreaterEqualName, Value::from_obj(s), Value::nil_val()).has_value());
+    EXPECT_FALSE(
+            invoke_string_hook(vm, StringConstant::OpGreaterEqual, Value::from_obj(s), Value::nil_val()).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __ge__ requires two strings, got String and Nil");
@@ -509,7 +512,8 @@ TEST(ObjString, OpCompareAllocatesNothing) {
     auto   b     = make_string(gc, guard, "bbb");
 
     const usize before = gc.bytes_allocated();
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpLessName, Value::from_obj(a), Value::from_obj(b))));
-    EXPECT_TRUE(compared_true(invoke_string_hook(vm, aria::kOpGreaterName, Value::from_obj(b), Value::from_obj(a))));
+    EXPECT_TRUE(compared_true(invoke_string_hook(vm, StringConstant::OpLess, Value::from_obj(a), Value::from_obj(b))));
+    EXPECT_TRUE(
+            compared_true(invoke_string_hook(vm, StringConstant::OpGreater, Value::from_obj(b), Value::from_obj(a))));
     EXPECT_EQ(gc.bytes_allocated(), before);
 }

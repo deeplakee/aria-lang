@@ -1,4 +1,4 @@
-// 钉住：对象被调用时按 `__call__` 取实现（名字见 src/aria.hpp 的 kOpCallName）--类链继承、
+// 钉住：对象被调用时按 `__call__` 取实现（名字见 src/runtime/string_constant.hpp 的 StringConstant）--类链继承、
 // 实例字段遮蔽、零参钩子三条一起钉；类本身仍走实例化（CLASS 臂不在此路径）。
 def Adder {
   init(base) { this.base = base; }

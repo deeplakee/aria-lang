@@ -16,8 +16,8 @@ namespace aria {
     // 器组内格位):scoped enum 不隐式转整型,C++ 侧数组下标与 LOAD_REG 操作数发射统一走常量,免逐点 std::to_underlying。
     // 末组 = 内置类型的算子实现缓存五格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生函数值):内置类型取
     // 实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。实现格的规范家仍是类表(方法读路径 `"a".__add__`
-    // 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的按名取实现不走寄存器:ObjInstance 的 override 各自
-    // new_string 取 intern 串。
+    // 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的按名取实现不走寄存器:ObjInstance 的 override 经
+    // AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)里的钩子名,再按名到实例/类链查表。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                    \
     X(ObjectClass)   /* Object 根类(def 无 super 父类;VM bootstrap 填充) */                                            \
     X(DefaultMark)   /* 缺参印章(私有 no-op native,call_closure 垫充未传槽;不注册 builtins 用户不可达) */              \

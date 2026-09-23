@@ -26,17 +26,17 @@ namespace aria {
         ObjRangeIterator(ObjRangeIterator&&)                 = delete;
         ObjRangeIterator& operator=(ObjRangeIterator&&)      = delete;
 
-        [[nodiscard]]
-        bool has_next() const noexcept override;
-
-        [[nodiscard]]
-        Opt<Value> next(AriaVM& vm) override;
-
         // 无源对象,标记空操作(对标 ObjString::trace)。
         void trace(GC&) const noexcept override {}
 
         [[nodiscard]]
         usize size() const noexcept override;
+
+        [[nodiscard]]
+        bool has_next() const noexcept override;
+
+        [[nodiscard]]
+        Opt<Value> next(AriaVM& vm) override;
 
     private:
         i64      current_;      // 下一个产出值(自 from 起步,按方向推进)

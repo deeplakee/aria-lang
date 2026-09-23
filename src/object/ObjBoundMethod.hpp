@@ -44,10 +44,6 @@ namespace aria {
         [[nodiscard]]
         ObjString* name() const noexcept;
 
-        // 内容相等(==):receiver 同一 && method 同一;`===` 仍按身份。
-        [[nodiscard]]
-        bool equals(const Object* other) const noexcept override;
-
         void trace(GC& gc) const noexcept override;
 
         // 壳定长(method_/receiver_ 内联在壳内,无外挂 buffer)。
@@ -55,6 +51,10 @@ namespace aria {
         usize size() const noexcept override {
             return sizeof(ObjBoundMethod);
         }
+
+        // 内容相等(==):receiver 同一 && method 同一;`===` 仍按身份。
+        [[nodiscard]]
+        bool equals(const Object* other) const noexcept override;
 
         // 调试渲染:`<bound method m>`;显示同文案。
         [[nodiscard]]

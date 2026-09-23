@@ -16,6 +16,16 @@ namespace aria {
         ASSERT(klass != nullptr, "ObjInstance class must not be null");
     }
 
+    void ObjInstance::trace(GC& gc) const noexcept {
+        gc.mark_object(class_);
+        fields_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);字段里的可调用值经值级联
+    }
+
+    String ObjInstance::debug_repr() const {
+        // class_ 恒非空(ctor ASSERT)。
+        return std::format("<{} instance>", class_->name()->view());
+    }
+
     Opt<Value> ObjInstance::load_field(AriaVM& vm, ObjString* name) {
         // 1) fields 命中:真字段优先,遮蔽类链同名成员。
         if (const auto entry = fields_.find(Value::from_obj(name))) {
@@ -92,16 +102,6 @@ namespace aria {
 
     Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) {
         return load_field_unbound(vm, new_string(vm.gc(), kOpCallName));
-    }
-
-    void ObjInstance::trace(GC& gc) const noexcept {
-        gc.mark_object(class_);
-        fields_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value);字段里的可调用值经值级联
-    }
-
-    String ObjInstance::debug_repr() const {
-        // class_ 恒非空(ctor ASSERT)。
-        return std::format("<{} instance>", class_->name()->view());
     }
 
     ObjInstance* new_instance(GC& gc, ObjClass* klass) {

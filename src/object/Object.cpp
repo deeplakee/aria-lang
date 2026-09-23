@@ -77,5 +77,4 @@ namespace aria {
         return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name());
     }
 
-
 } // namespace aria

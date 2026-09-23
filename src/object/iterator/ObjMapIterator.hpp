@@ -26,16 +26,16 @@ namespace aria {
         ObjMapIterator(ObjMapIterator&&)                 = delete;
         ObjMapIterator& operator=(ObjMapIterator&&)      = delete;
 
+        void trace(GC& gc) const noexcept override;
+
+        [[nodiscard]]
+        usize size() const noexcept override;
+
         [[nodiscard]]
         bool has_next() const noexcept override;
 
         [[nodiscard]]
         Opt<Value> next(AriaVM& vm) override;
-
-        void trace(GC& gc) const noexcept override;
-
-        [[nodiscard]]
-        usize size() const noexcept override;
 
     private:
         ObjMap*                       map_;    // 被遍历者(恒非空;经 trace 标根)

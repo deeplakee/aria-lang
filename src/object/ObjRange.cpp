@@ -36,6 +36,14 @@ namespace aria {
         return range != nullptr && from_ == range->from_ && to_ == range->to_ && is_exclusive_ == range->is_exclusive_;
     }
 
+    String ObjRange::debug_repr() const {
+        // 与源码拼写一致:.. 含上界、... 不含;无上界渲染 from..。
+        if (!to_) {
+            return std::format("{}..", from_);
+        }
+        return std::format("{}{}{}", from_, is_exclusive_ ? "..." : "..", *to_);
+    }
+
     Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) {
         // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.range_class()->load_field(vm, name);
@@ -48,14 +56,6 @@ namespace aria {
     Opt<Value> ObjRange::load_field_unbound(AriaVM& vm, ObjString* name) {
         // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
         return vm.range_class()->load_field(vm, name);
-    }
-
-    String ObjRange::debug_repr() const {
-        // 与源码拼写一致:.. 含上界、... 不含;无上界渲染 from..。
-        if (!to_) {
-            return std::format("{}..", from_);
-        }
-        return std::format("{}{}{}", from_, is_exclusive_ ? "..." : "..", *to_);
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

@@ -23,6 +23,17 @@ namespace aria {
         ObjIterator(ObjIterator&&)                 = delete;
         ObjIterator& operator=(ObjIterator&&)      = delete;
 
+        // 各子类标各自的源(子类的被遍历者成员),忘标 = 编译错。
+        void trace(GC& gc) const noexcept override = 0;
+
+        // 各子类返回 sizeof(自身)。
+        [[nodiscard]]
+        usize size() const noexcept override = 0;
+
+        // 调试渲染:"<iterator>"(源类型不进文案);显示同文案。
+        [[nodiscard]]
+        String debug_repr() const override;
+
         // 命名成员读取协议 override(基类一次、全子类共享):查 Iterator bootstrap 类表,命中自持
         // new_bound_method 恒绑 this(两步形态与 GC 走查见 Object.hpp;store_field 不 override)。
         [[nodiscard]]
@@ -40,17 +51,6 @@ namespace aria {
         //(FailSignal 哨兵,nullopt ⟺ 已 fail);返回值是元素拷贝。
         [[nodiscard]]
         virtual Opt<Value> next(AriaVM& vm) = 0;
-
-        // 各子类标各自的源(子类的被遍历者成员),忘标 = 编译错。
-        void trace(GC& gc) const noexcept override = 0;
-
-        // 各子类返回 sizeof(自身)。
-        [[nodiscard]]
-        usize size() const noexcept override = 0;
-
-        // 调试渲染:"<iterator>"(源类型不进文案);显示同文案。
-        [[nodiscard]]
-        String debug_repr() const override;
 
     protected:
         // 仅子类可造;地址哈希型。

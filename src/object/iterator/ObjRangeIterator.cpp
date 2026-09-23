@@ -9,6 +9,8 @@ namespace aria {
     ObjRangeIterator::ObjRangeIterator(const i64 from, const Opt<i64> to, const bool is_exclusive) :
         ObjIterator{}, current_{from}, to_{to}, is_exclusive_{is_exclusive}, forward_{!to.has_value() || from <= *to} {}
 
+    usize ObjRangeIterator::size() const noexcept { return sizeof(ObjRangeIterator); }
+
     bool ObjRangeIterator::has_next() const noexcept {
         // 无上界:has_next 恒真(无限序列,消费方自理边界)。正向:含上界 current<=to /
         // 不含 current<to;倒向(from>to):含上界 current>=to / 不含 current>to。空区间只剩
@@ -35,8 +37,6 @@ namespace aria {
         }
         return value;
     }
-
-    usize ObjRangeIterator::size() const noexcept { return sizeof(ObjRangeIterator); }
 
     ObjRangeIterator* new_range_iterator(GC& gc, const ObjRange* range) {
         // 工厂只读源的三标量,不持有(见头注释)。

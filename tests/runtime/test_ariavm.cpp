@@ -1369,8 +1369,8 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
     ASSERT_NE(c2_entry, nullptr);
     auto c1 = aria::Object::as<ObjClosure>(c1_entry->value.as_obj());
     auto c2 = aria::Object::as<ObjClosure>(c2_entry->value.as_obj());
-    ASSERT_EQ(c1->upvalue_count(), usize{1});
-    ASSERT_EQ(c2->upvalue_count(), usize{1});
+    ASSERT_EQ(c1->upvalues().size(), usize{1});
+    ASSERT_EQ(c2->upvalues().size(), usize{1});
     EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
 }
 

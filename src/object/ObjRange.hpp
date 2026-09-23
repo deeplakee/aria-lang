@@ -70,6 +70,10 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
+        // 调试渲染:0..10 / 0...10 / 0..(无上界)式。
+        [[nodiscard]]
+        String debug_repr() const override;
+
         // 命名成员读取协议 override:查 Range bootstrap 类表,命中自持 new_bound_method 恒绑 this
         //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
         [[nodiscard]]
@@ -78,10 +82,6 @@ namespace aria {
         // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
-
-        // 调试渲染:0..10 / 0...10 / 0..(无上界)式。
-        [[nodiscard]]
-        String debug_repr() const override;
 
     private:
         i64      from_;         // 区间起点端点(恒有)

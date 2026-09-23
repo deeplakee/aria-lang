@@ -56,14 +56,9 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
+        // 调试渲染:{"a": 1} 式。
         [[nodiscard]]
-        Opt<Value> load_index(AriaVM& vm, Value key) override;
-
-        // 下标写入:恒成功,命中覆写、未命中新增键(set 的两条路径均无报错;键值在调用方
-        // 值栈为根,set/rehash 走 GC 分配器不触 GC)。
-        [[nodiscard]]
-        bool store_index(AriaVM& vm, Value key, Value value) override;
+        String debug_repr() const override;
 
         // 命名成员读取协议 override:查 Map bootstrap 类表,命中自持 new_bound_method 恒绑 this
         //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
@@ -74,9 +69,14 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
-        // 调试渲染:{"a": 1} 式。
+        // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
         [[nodiscard]]
-        String debug_repr() const override;
+        Opt<Value> load_index(AriaVM& vm, Value key) override;
+
+        // 下标写入:恒成功,命中覆写、未命中新增键(set 的两条路径均无报错;键值在调用方
+        // 值栈为根,set/rehash 走 GC 分配器不触 GC)。
+        [[nodiscard]]
+        bool store_index(AriaVM& vm, Value key, Value value) override;
 
     private:
         AriaHashTable table_; // 键值表(GC 分配器绑定;set 惰性首分配,trivial 分配不触 GC)

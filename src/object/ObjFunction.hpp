@@ -77,14 +77,9 @@ namespace aria {
             return module_;
         }
 
-        // 捕获描述表(非 const:编译期 CodeGen 一次性 flush;const:VM 执行 CLOSURE 时读)。
+        // 捕获描述表(编译期 CodeGen 一次性 flush;VM 执行 CLOSURE 时读)。
         [[nodiscard]]
         Array<UpvalueDesc>& upvalue_descs() noexcept {
-            return upvalue_descs_;
-        }
-
-        [[nodiscard]]
-        const Array<UpvalueDesc>& upvalue_descs() const noexcept {
             return upvalue_descs_;
         }
 

@@ -42,27 +42,22 @@ namespace aria {
             return upvalues_;
         }
 
-        [[nodiscard]]
-        usize upvalue_count() const noexcept {
-            return upvalues_.size();
-        }
-
-        // CLOSURE 执行期逐个后填用(push 走 trivial 分配不触 GC,靠 GC 核心不变式免逐个守卫)。
-        void add_upvalue(ObjUpvalue* uv);
-
         // defining class(MAKE_METHOD 注册时 set,之后只读)。
         [[nodiscard]]
         ObjClass* defining_class() const noexcept {
             return defining_class_;
         }
 
-        void set_defining_class(ObjClass* klass) noexcept { defining_class_ = klass; }
-
         // 方法性标记:defining class 非空 ⟺ 方法闭包。
         [[nodiscard]]
         bool is_method() const noexcept {
             return defining_class_ != nullptr;
         }
+
+        // CLOSURE 执行期逐个后填用(push 走 trivial 分配不触 GC,靠 GC 核心不变式免逐个守卫)。
+        void add_upvalue(ObjUpvalue* uv);
+
+        void set_defining_class(ObjClass* klass) noexcept { defining_class_ = klass; }
 
         // 标 function_ + 全部 upvalue + defining_class_(容 nullptr)。
         void trace(GC& gc) const noexcept override;

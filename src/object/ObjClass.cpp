@@ -19,21 +19,24 @@ namespace aria {
         ASSERT(name != nullptr, "ObjClass name must not be null");
     }
 
-    Opt<Value> ObjClass::find_field(ObjString* name) noexcept {
-        for (auto klass = this; klass != nullptr; klass = klass->superclass_) {
-            if (const auto entry = klass->field_.find(Value::from_obj(name))) {
-                return entry->value; // 读穿透:链上首个命中值(拷出;写另经 set_field 落接收类)
-            }
-        }
-        return std::nullopt;
-    }
-
     void ObjClass::set_field(ObjString* name, const Value value) {
         // 创建路径唯一公开写入口:落本类自身表(不沿链);"init" 命中同步 init_。
         field_.set(Value::from_obj(name), value); // 继承名/新名新建键、本类已有原槽更新、父表不动
         if (name->view() == kInitName) {
             init_ = value;
         }
+    }
+
+    void ObjClass::trace(GC& gc) const noexcept {
+        gc.mark_object(name_);
+        gc.mark_object(superclass_); // Object 根为 nullptr,mark_object 容 nullptr
+        gc.mark_value(init_);        // 构造器方法值(闭包/原生装箱)
+        field_.trace(gc);            // 遍历占用槽 mark_value(key+value);方法闭包的 defining_class 经其 trace 级联
+    }
+
+    String ObjClass::debug_repr() const {
+        // name_ 恒非空(ctor ASSERT)。
+        return std::format("<class {}>", name_->view());
     }
 
     Opt<Value> ObjClass::load_field(AriaVM& vm, ObjString* name) {
@@ -51,16 +54,13 @@ namespace aria {
         return true;
     }
 
-    void ObjClass::trace(GC& gc) const noexcept {
-        gc.mark_object(name_);
-        gc.mark_object(superclass_); // Object 根为 nullptr,mark_object 容 nullptr
-        gc.mark_value(init_);        // 构造器方法值(闭包/原生装箱)
-        field_.trace(gc);            // 遍历占用槽 mark_value(key+value);方法闭包的 defining_class 经其 trace 级联
-    }
-
-    String ObjClass::debug_repr() const {
-        // name_ 恒非空(ctor ASSERT)。
-        return std::format("<class {}>", name_->view());
+    Opt<Value> ObjClass::find_field(ObjString* name) noexcept {
+        for (auto klass = this; klass != nullptr; klass = klass->superclass_) {
+            if (const auto entry = klass->field_.find(Value::from_obj(name))) {
+                return entry->value; // 读穿透:链上首个命中值(拷出;写另经 set_field 落接收类)
+            }
+        }
+        return std::nullopt;
     }
 
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {

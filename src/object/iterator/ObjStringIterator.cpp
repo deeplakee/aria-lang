@@ -14,6 +14,12 @@ namespace aria {
         ASSERT(str != nullptr, "ObjStringIterator str must not be null");
     }
 
+    void ObjStringIterator::trace(GC& gc) const noexcept {
+        gc.mark_object(str_); // 纯字节串,无子节点,标根即收口
+    }
+
+    usize ObjStringIterator::size() const noexcept { return sizeof(ObjStringIterator); }
+
     bool ObjStringIterator::has_next() const noexcept { return offset_ < str_->length(); }
 
     Opt<Value> ObjStringIterator::next(AriaVM& vm) {
@@ -29,12 +35,6 @@ namespace aria {
         // maybe_collect 在新串诞生前完成,新串随返回值写回槽发布,窗口内无失根对象。
         return Value::from_obj(new_string(vm.gc(), utf8::encode(cp)));
     }
-
-    void ObjStringIterator::trace(GC& gc) const noexcept {
-        gc.mark_object(str_); // 纯字节串,无子节点,标根即收口
-    }
-
-    usize ObjStringIterator::size() const noexcept { return sizeof(ObjStringIterator); }
 
     ObjStringIterator* new_string_iterator(GC& gc, ObjString* str) {
         // 工厂无守卫义务(见头注释)。

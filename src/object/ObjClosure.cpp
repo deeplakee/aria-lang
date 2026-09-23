@@ -12,14 +12,14 @@ namespace aria {
         ASSERT(function != nullptr, "ObjClosure: function must not be null");
     }
 
-    void ObjClosure::add_upvalue(ObjUpvalue* uv) {
-        ASSERT(uv != nullptr, "ObjClosure::add_upvalue: upvalue must not be null");
-        upvalues_.push(uv);
-    }
-
     ObjString* ObjClosure::name() const noexcept {
         // function_ 恒非空(ctor ASSERT),函数名恒非空,故指针恒非空。
         return function_->name();
+    }
+
+    void ObjClosure::add_upvalue(ObjUpvalue* uv) {
+        ASSERT(uv != nullptr, "ObjClosure::add_upvalue: upvalue must not be null");
+        upvalues_.push(uv);
     }
 
     void ObjClosure::trace(GC& gc) const noexcept {

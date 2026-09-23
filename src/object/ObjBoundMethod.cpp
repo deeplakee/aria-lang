@@ -16,6 +16,20 @@ namespace aria {
         ASSERT(is_callable_value(method), "ObjBoundMethod: method must be a callable (closure or native fn)");
     }
 
+    ObjString* ObjBoundMethod::name() const noexcept {
+        // 非虚读取:闭包取 fn 名、原生取 name_(两者皆 intern 驻留恒非空,指针随宿主对象保命)。
+        const auto m = method_.as_obj();
+        if (m->type() == ObjType::CLOSURE) {
+            return as<ObjClosure>(m)->name();
+        }
+        return as<ObjNativeFn>(m)->name();
+    }
+
+    void ObjBoundMethod::trace(GC& gc) const noexcept {
+        gc.mark_value(method_);   // 方法值装箱任意对象(闭包/原生),mark_value 分派
+        gc.mark_value(receiver_); // receiver 装箱任意值,mark_value 分派
+    }
+
     bool ObjBoundMethod::equals(const Object* other) const noexcept {
         // 先比指针,再比「同一方法值 + 同一 receiver」-- 绑定语义即「同一实现 + 同一接收者」。
         // 两者皆按身份(value_identical)比较,无 GC 分配,GC-pure 契约保持。
@@ -26,20 +40,6 @@ namespace aria {
             return value_identical(method_, rhs->method_) && value_identical(receiver_, rhs->receiver_);
         }
         return false;
-    }
-
-    void ObjBoundMethod::trace(GC& gc) const noexcept {
-        gc.mark_value(method_);   // 方法值装箱任意对象(闭包/原生),mark_value 分派
-        gc.mark_value(receiver_); // receiver 装箱任意值,mark_value 分派
-    }
-
-    ObjString* ObjBoundMethod::name() const noexcept {
-        // 非虚读取:闭包取 fn 名、原生取 name_(两者皆 intern 驻留恒非空,指针随宿主对象保命)。
-        const auto m = method_.as_obj();
-        if (m->type() == ObjType::CLOSURE) {
-            return as<ObjClosure>(m)->name();
-        }
-        return as<ObjNativeFn>(m)->name();
     }
 
     String ObjBoundMethod::debug_repr() const {

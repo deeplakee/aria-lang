@@ -54,6 +54,19 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
+        // 调试渲染:`[1, "ab"]`;显示同文案。
+        [[nodiscard]]
+        String debug_repr() const override;
+
+        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑 this
+        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        [[nodiscard]]
+        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+
         // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range 产
         // 出倒序段、只读;见 slice,切片路径有分配);整数键:负数从尾计数、归一化后越界
         // IndexOutOfBounds、非整数键 TypeMismatch(越界值就地拼进文案);整数键查读无分配。
@@ -65,27 +78,14 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
-        [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
-
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
-        [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
-
-        // 调试渲染:`[1, "ab"]`;显示同文案。
-        [[nodiscard]]
-        String debug_repr() const override;
-
     private:
-        AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
-
         // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
         // 皆在内;从尾计数,无上界给后缀、空后缀以两端相等+不含上界表示),本函数只管按方向折算
         // count 与铸新 list 段拷。
         [[nodiscard]]
         Opt<Value> slice(AriaVM& vm, const ObjRange* range);
+
+        AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
     };
 
     // 工厂:分配空 ObjList(单次分配,无入参对象可守);返回对象白色无根,调用方建成即发布进根。

@@ -27,7 +27,6 @@ namespace aria {
         // field_ 持 GC* 级联自释放;name_/superclass_/init_ 是 GC 对象,不归本类释放
         ~ObjClass() override = default;
 
-
         ObjClass(const ObjClass&)            = delete;
         ObjClass& operator=(const ObjClass&) = delete;
         ObjClass(ObjClass&&)                 = delete;
@@ -44,11 +43,6 @@ namespace aria {
             return superclass_;
         }
 
-        // 写入本类自身表的 name 槽(创建或更新,**不沿链** -- 继承名/新名新建键遮蔽、父表不动)。
-        // 类成员**创建路径的唯一公开写入口**(MAKE_STATIC/MAKE_METHOD、bootstrap 设 init、
-        // store_field 三路共用);name=="init" 时同步 init_。永不失败;set 走 trivial 分配不触 GC。
-        void set_field(ObjString* name, Value value);
-
         // 构造器方法值(实例化取用,call_value 的 CLASS 分支消费 -- 非字段协议职责,故不经
         // load/store_field;写点与快照语义见类注释)。
         [[nodiscard]]
@@ -56,15 +50,10 @@ namespace aria {
             return init_;
         }
 
-        // 命名成员读取协议 override:沿链 find_field 读穿透直读 -- 静态值/方法闭包/原生原样
-        // 取出,**不绑定不缓存**(类路径无 this,不经 ObjBoundMethod)。全链 miss 以类措辞
-        // fail UndefinedProperty;查找纯查询,fail 装箱是唯一分配点。
-        [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
-
-        // 命名成员写入协议 override:类上赋值落本类自身表恒成功(动态新增允许,"init" 命中同步
-        // init_);vm 为签名统一保留(本 override 无 fail 路径)。
-        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+        // 写入本类自身表的 name 槽(创建或更新,**不沿链** -- 继承名/新名新建键遮蔽、父表不动)。
+        // 类成员**创建路径的唯一公开写入口**(MAKE_STATIC/MAKE_METHOD、bootstrap 设 init、
+        // store_field 三路共用);name=="init" 时同步 init_。永不失败;set 走 trivial 分配不触 GC。
+        void set_field(ObjString* name, Value value);
 
         // 标 name_ + superclass_(容 nullptr)+ mark_value(init_)+ field_(key+value)。
         void trace(GC& gc) const noexcept override;
@@ -78,6 +67,16 @@ namespace aria {
         // 调试渲染:`<class Foo>`(name_ 恒非空,ctor ASSERT);显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
+
+        // 命名成员读取协议 override:沿链 find_field 读穿透直读 -- 静态值/方法闭包/原生原样
+        // 取出,**不绑定不缓存**(类路径无 this,不经 ObjBoundMethod)。全链 miss 以类措辞
+        // fail UndefinedProperty;查找纯查询,fail 装箱是唯一分配点。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 命名成员写入协议 override:类上赋值落本类自身表恒成功(动态新增允许,"init" 命中同步
+        // init_);vm 为签名统一保留(本 override 无 fail 路径)。
+        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
     private:
         // 沿 super 链查(self 起,逐父向上),命中返回首个命中值的拷贝、未命中 nullopt。
@@ -100,6 +99,7 @@ namespace aria {
     // 工厂重载(StringView 名):name 经工厂内部 intern 并自行守卫;super 根化约定同上。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, StringView name, ObjClass* super);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_CLASS_HPP

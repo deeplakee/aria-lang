@@ -53,11 +53,6 @@ namespace aria {
             return globals_;
         }
 
-        [[nodiscard]]
-        const AriaHashTable& globals() const noexcept {
-            return globals_;
-        }
-
         // 模块体(顶层语句编进的 ObjFunction,arity 0 匿名),导入时 run-once;nullptr 表无体。
         [[nodiscard]]
         ObjFunction* entry() const noexcept {
@@ -65,17 +60,6 @@ namespace aria {
         }
 
         void set_entry(ObjFunction* entry) noexcept { entry_ = entry; }
-
-        // 命名成员读取协议 override:模块成员 = 模块全局绑定,查 globals_ 直读原值(纯查询,
-        // GC-pure)。函数值为闭包、恒非方法,故不绑定 this(调用经 CALL_METHOD 时槽 0 留模块值,
-        // 闭包不读之);nil 值绑定与「无此成员」由 find 的空态区分。miss 文案同基类默认形。
-        [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
-
-        // 命名成员写入:模块成员只读(定向文案)。越模块写会隐式创建未声明全局,违「赋值
-        // 不隐式创建」;暴露可变状态走模块自己的函数。
-        [[nodiscard]]
-        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
         // 标 name_ + dir_ + entry_ + globals_(key+value)。
         void trace(GC& gc) const noexcept override;
@@ -90,11 +74,20 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
+        // 命名成员读取协议 override:模块成员 = 模块全局绑定,查 globals_ 直读原值(纯查询,
+        // GC-pure)。函数值为闭包、恒非方法,故不绑定 this(调用经 CALL_METHOD 时槽 0 留模块值,
+        // 闭包不读之);nil 值绑定与「无此成员」由 find 的空态区分。miss 文案同基类默认形。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 命名成员写入:模块成员只读(定向文案)。越模块写会隐式创建未声明全局,违「赋值
+        // 不隐式创建」;暴露可变状态走模块自己的函数。
+        [[nodiscard]]
+        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+
     private:
-        // 模块文件名去 .aria 后缀(intern 驻留;指针恒非空,内容可空)
-        ObjString* name_;
-        // 模块文件所在目录(intern;指针恒非空,内容可空)
-        ObjString*    dir_;
+        ObjString*    name_;    // 模块名(stem,intern;指针恒非空,内容可空)
+        ObjString*    dir_;     // 所在目录(intern;指针恒非空,内容可空)
         ObjFunction*  entry_;   // 模块体(run-once;可为 nullptr)
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };

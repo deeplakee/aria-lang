@@ -167,7 +167,7 @@ namespace aria {
             return debug_repr();
         }
 
-        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点):VM 不按子类型 switch 分型 --内建类型与用
+        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点):VM 不按子类型 switch 分型 -- 内建类型与用
         // 户类的成员语义在各自 override 一次收口,新增承载类型零 VM 改动。错误通道对齐 native fn 契约:签名收 AriaVM& 单
         // 一句柄,协议失败**自己 fail**(载荷直接入挂起寄存器,无返回值在途的白色无根窗口),返回值只留信号:load 族 Opt<
         // Value> 的 nullopt ⟺ 已 fail(nil 命中亦 somed)、store 族 bool 的 false ⟺ 已 fail,失败出口一律 `return vm.fail
@@ -262,7 +262,6 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
-
         // is<T>() 目前一律 dynamic_cast;性能敏感后可改 ObjType 查表(子类型均已落地)。
         template<DerivedFromObj T>
         [[nodiscard]]
@@ -309,14 +308,18 @@ namespace aria {
             return is<T>(object) ? as<T>(object) : nullptr;
         }
 
-        Object* next_;
-        u32     hash_;
-        ObjType type_;
-        bool    is_marked_;
-
     private:
+        // GC 侵入式对象链的节点:sweep/free_all 直接取 &next_ 摘链(链头 objects_head_ 住 GC),
+        // 字段级访问只能经友元;其余三字段对外只经访问器。
+        friend class GC;
+
         Object(Object* next, const u32 hash, const ObjType type, const bool is_marked) noexcept :
             next_{next}, hash_{hash}, type_{type}, is_marked_{is_marked} {}
+
+        Object* next_;      // GC 对象链下一节点(链尾 nullptr;链头住 GC)
+        u32     hash_;      // 内容哈希(不可变对象)/ 地址哈希(可变对象),构造期烘焙
+        ObjType type_;      // 子类型标识(构造期定,之后不可变)
+        bool    is_marked_; // GC 标记位(is_marked/mark/unmark 维护)
     };
 
     inline void log_obj_alloc(Object* obj) {

@@ -23,16 +23,16 @@ namespace aria {
         ObjListIterator(ObjListIterator&&)                 = delete;
         ObjListIterator& operator=(ObjListIterator&&)      = delete;
 
+        void trace(GC& gc) const noexcept override;
+
+        [[nodiscard]]
+        usize size() const noexcept override;
+
         [[nodiscard]]
         bool has_next() const noexcept override;
 
         [[nodiscard]]
         Opt<Value> next(AriaVM& vm) override;
-
-        void trace(GC& gc) const noexcept override;
-
-        [[nodiscard]]
-        usize size() const noexcept override;
 
     private:
         ObjList* list_;   // 被遍历者(恒非空;经 trace 标根)

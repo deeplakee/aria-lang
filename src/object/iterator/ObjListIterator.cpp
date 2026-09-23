@@ -13,6 +13,12 @@ namespace aria {
         ASSERT(list != nullptr, "ObjListIterator list must not be null");
     }
 
+    void ObjListIterator::trace(GC& gc) const noexcept {
+        gc.mark_object(list_); // 元素经 ObjList::trace 级联
+    }
+
+    usize ObjListIterator::size() const noexcept { return sizeof(ObjListIterator); }
+
     bool ObjListIterator::has_next() const noexcept { return cursor_ < list_->elements().size(); }
 
     Opt<Value> ObjListIterator::next(AriaVM& vm) {
@@ -23,12 +29,6 @@ namespace aria {
         }
         return list_->elements()[cursor_++];
     }
-
-    void ObjListIterator::trace(GC& gc) const noexcept {
-        gc.mark_object(list_); // 元素经 ObjList::trace 级联
-    }
-
-    usize ObjListIterator::size() const noexcept { return sizeof(ObjListIterator); }
 
     ObjListIterator* new_list_iterator(GC& gc, ObjList* list) {
         // 工厂无守卫义务(见头注释)。

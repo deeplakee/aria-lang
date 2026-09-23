@@ -42,6 +42,31 @@ namespace aria {
         return true;
     }
 
+    String ObjList::debug_repr() const {
+        // 环防护:自引用/互环时本 list 已在渲染路径上,截断 "[...]"(先查后挂,顺序反了
+        // 自身即命中);不截断则元素重遇无限递归栈溢出。
+        if (PrintGuard::is_cycle(this)) {
+            return "[...]";
+        }
+        const PrintGuard guard{this};
+        // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归)。
+        return "[" + util::join(elements_, ", ", format_value_debug) + "]";
+    }
+
+    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {
+        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
+        const auto hit = vm.list_class()->load_field(vm, name);
+        if (!hit) {
+            return std::nullopt; // 已 fail(契约透传)
+        }
+        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+    }
+
+    Opt<Value> ObjList::load_field_unbound(AriaVM& vm, ObjString* name) {
+        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
+        return vm.list_class()->load_field(vm, name);
+    }
+
     Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
         // Range 键 = 切片(流程见 slice)。
         if (const auto range = try_obj<ObjRange>(key)) {
@@ -90,31 +115,6 @@ namespace aria {
             list->elements().copy_from(source);
         }
         return Value::from_obj(list);
-    }
-
-    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
-        const auto hit = vm.list_class()->load_field(vm, name);
-        if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
-        }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
-    }
-
-    Opt<Value> ObjList::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
-        return vm.list_class()->load_field(vm, name);
-    }
-
-    String ObjList::debug_repr() const {
-        // 环防护:自引用/互环时本 list 已在渲染路径上,截断 "[...]"(先查后挂,顺序反了
-        // 自身即命中);不截断则元素重遇无限递归栈溢出。
-        if (PrintGuard::is_cycle(this)) {
-            return "[...]";
-        }
-        const PrintGuard guard{this};
-        // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归)。
-        return "[" + util::join(elements_, ", ", format_value_debug) + "]";
     }
 
     ObjList* new_list(GC& gc) {

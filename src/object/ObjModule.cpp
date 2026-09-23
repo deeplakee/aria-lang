@@ -19,6 +19,20 @@ namespace aria {
         ASSERT(name != nullptr, "ObjModule name must not be null");
     }
 
+    String ObjModule::abs_path() const {
+        // dir_ 指针恒非空,内容可空:空串表「无目录锚点」,resolve_module 据此判空(裸名分支跳过
+        // 空根、相对分支直接返 nullopt),避免拿 "." 碰运气锚到错目录。
+        if (dir_->view().empty()) {
+            return {};
+        }
+        const StringView dir = dir_->view();
+        // name_ 恒非空,仅判内容空:空串表合成顶层模块无文件名,仅返目录。
+        if (name_->view().empty()) {
+            return String{dir};
+        }
+        return std::format("{}/{}{}", dir, name_->view(), kAriaExtension);
+    }
+
     void ObjModule::trace(GC& gc) const noexcept {
         // entry_ 可为 nullptr(未编译/目录包占位),mark_object 容 nullptr。
         gc.mark_object(name_);
@@ -46,20 +60,6 @@ namespace aria {
         // 模块成员只读:越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」;暴露可变状态
         // 走模块自己的函数。
         return vm.fail(ErrorCode::TypeMismatch, "module members are read-only");
-    }
-
-    String ObjModule::abs_path() const {
-        // dir_ 指针恒非空,内容可空:空串表「无目录锚点」,resolve_module 据此判空(裸名分支跳过
-        // 空根、相对分支直接返 nullopt),避免拿 "." 碰运气锚到错目录。
-        if (dir_->view().empty()) {
-            return {};
-        }
-        const StringView dir = dir_->view();
-        // name_ 恒非空,仅判内容空:空串表合成顶层模块无文件名,仅返目录。
-        if (name_->view().empty()) {
-            return String{dir};
-        }
-        return std::format("{}/{}{}", dir, name_->view(), kAriaExtension);
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {

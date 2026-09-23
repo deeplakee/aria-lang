@@ -15,6 +15,12 @@ namespace aria {
         ASSERT(map != nullptr, "ObjMapIterator map must not be null");
     }
 
+    void ObjMapIterator::trace(GC& gc) const noexcept {
+        gc.mark_object(map_); // 键值经 ObjMap::trace 级联
+    }
+
+    usize ObjMapIterator::size() const noexcept { return sizeof(ObjMapIterator); }
+
     bool ObjMapIterator::has_next() const noexcept { return cursor_ != map_->table().end(); }
 
     Opt<Value> ObjMapIterator::next(AriaVM& vm) {
@@ -32,12 +38,6 @@ namespace aria {
         list->elements().push(value);
         return Value::from_obj(list);
     }
-
-    void ObjMapIterator::trace(GC& gc) const noexcept {
-        gc.mark_object(map_); // 键值经 ObjMap::trace 级联
-    }
-
-    usize ObjMapIterator::size() const noexcept { return sizeof(ObjMapIterator); }
 
     ObjMapIterator* new_map_iterator(GC& gc, ObjMap* map) {
         // 工厂无守卫义务(见头注释)。

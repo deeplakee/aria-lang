@@ -20,15 +20,6 @@ namespace aria {
     public:
         static constexpr usize kShortCapacity = 15;
 
-    private:
-        GC* gc_; // 供 ~ObjString 释放 long_chars_(仅长串用到)
-        union {
-            char  short_chars_[kShortCapacity + 1]; // 16 字节,与 char* 取大
-            char* long_chars_;
-        };
-        usize length_;
-
-    public:
         ObjString(GC& gc, StringView src);
         ~ObjString() override;
 
@@ -37,21 +28,6 @@ namespace aria {
         // 的 view(经 intern 持串则随持串者保命)。
         [[nodiscard]]
         StringView view() const noexcept;
-
-        // 内容相等(==):先比指针(intern 命中快速路径),再比 view() 字符内容。
-        // override Object::equals(默认地址相等)。
-        [[nodiscard]]
-        bool equals(const Object* other) const noexcept override;
-
-        // 可读描述(显示位):字符内容原文(无引号),如 hello。override Object::to_string
-        // (基类默认委托 debug_repr,本类型显示与调试分叉故两者都 override)。
-        [[nodiscard]]
-        String to_string() const override;
-
-        // 调试渲染(repr 位):字面量形式 `"<转义内容>"`--util::escape_string 转义内部、外层
-        // 补双引号(反汇编常量池等调试上下文的字符串约定形态);显示与调试分叉故两者都 override。
-        [[nodiscard]]
-        String debug_repr() const override;
 
         [[nodiscard]]
         usize length() const noexcept {
@@ -72,20 +48,36 @@ namespace aria {
             return sizeof(ObjString);
         }
 
+        // 内容相等(==):先比指针(intern 命中快速路径),再比 view() 字符内容。
+        // override Object::equals(默认地址相等)。
+        [[nodiscard]]
+        bool equals(const Object* other) const noexcept override;
+
+        // 调试渲染(repr 位):字面量形式 `"<转义内容>"`--util::escape_string 转义内部、外层
+        // 补双引号(反汇编常量池等调试上下文的字符串约定形态);显示与调试分叉故两者都 override。
+        [[nodiscard]]
+        String debug_repr() const override;
+
+        // 可读描述(显示位):字符内容原文(无引号),如 hello。override Object::to_string
+        // (基类默认委托 debug_repr,本类型显示与调试分叉故两者都 override)。
+        [[nodiscard]]
+        String to_string() const override;
+
+        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑 this
+        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+
+        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        [[nodiscard]]
+        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+
         // 下标读取:整数键(字节域,D5),产出单字节 1-char string;负数从尾计数、归一化后
         // 越界 IndexOutOfBounds、非整数 TypeMismatch;多字节序列中间字节取该字节自身(字节
         // 契约的自然结果)。Range 键走切片(见 slice)。查读含一次 new_string(intern)分配:
         // receiver 经调用方值栈为根。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
-
-        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
-        // 统一),与 list 切片同口径 -- 端点从尾计数、无上界 i.. 允许空段、越界/空串 nullopt(报
-        // IndexOutOfBounds "slice index out of range",与 list 同串)。域仍是字节(与 s[i]/len
-        // 同域):倒序段产出**字节逆序**串,多字节输入下不是合法 UTF-8 -- 与 s[i] 能取到续接字节
-        // 同属字节域契约(按码点反转需另立码点域口径,不在切片内)。
-        [[nodiscard]]
-        Opt<Value> slice(AriaVM& vm, const ObjRange* range) const;
 
         // 下标写入:string 不可变,恒 TypeMismatch 定向文案。
         [[nodiscard]]
@@ -110,14 +102,21 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
 
-        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+    private:
+        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
+        // 统一),与 list 切片同口径 -- 端点从尾计数、无上界 i.. 允许空段、越界/空串 nullopt(报
+        // IndexOutOfBounds "slice index out of range",与 list 同串)。域仍是字节(与 s[i]/len
+        // 同域):倒序段产出**字节逆序**串,多字节输入下不是合法 UTF-8 -- 与 s[i] 能取到续接字节
+        // 同属字节域契约(按码点反转需另立码点域口径,不在切片内)。私有:唯一调用方是本类 load_index。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> slice(AriaVM& vm, const ObjRange* range) const;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
-        [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        GC* gc_; // 供 ~ObjString 释放 long_chars_(仅长串用到)
+        union {
+            char  short_chars_[kShortCapacity + 1]; // 16 字节,与 char* 取大
+            char* long_chars_;
+        };
+        usize length_;
     };
 
     // 工厂:返回内容等于 src 的 ObjString*。经 GC 驻留池:命中返回已有串,未命中分配+驻留。

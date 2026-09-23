@@ -59,7 +59,6 @@ TEST(ObjClosure, WrapsFunction) {
     EXPECT_EQ(c->type(), aria::ObjType::CLOSURE);
     EXPECT_EQ(c->type_name(), "Closure");
     EXPECT_EQ(c->function(), fn);
-    EXPECT_EQ(c->upvalue_count(), usize{0});
     EXPECT_TRUE(c->upvalues().empty());
 }
 
@@ -75,7 +74,7 @@ TEST(ObjClosure, AddUpvaluesInOrder) {
     auto  u2    = new_upvalue(gc, &b);
     c->add_upvalue(u1);
     c->add_upvalue(u2);
-    EXPECT_EQ(c->upvalue_count(), usize{2});
+    EXPECT_EQ(c->upvalues().size(), usize{2});
     EXPECT_EQ(c->upvalues()[0], u1);
     EXPECT_EQ(c->upvalues()[1], u2);
 }
@@ -121,7 +120,7 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
     std::ignore = new_string(gc, "trigger"); // stress collect:全链经 c.trace 存活
     EXPECT_EQ(c->function(), fn);
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
-    ASSERT_EQ(c->upvalue_count(), usize{1});
+    ASSERT_EQ(c->upvalues().size(), usize{1});
     EXPECT_EQ(c->upvalues()[0], uv);
     EXPECT_TRUE(value_identical(*c->upvalues()[0]->value_slot(), v));
 }

@@ -42,18 +42,17 @@ namespace aria {
         return true;
     }
 
-    Opt<Value> ObjMap::load_index(AriaVM& vm, const Value key) {
-        // 任意键;miss KeyError,键走 debug 形入文案(嵌套字符串带引号;环防护由 debug_repr 自理)。
-        if (const auto entry = table_.find(key)) {
-            return entry->value;
+    String ObjMap::debug_repr() const {
+        // 环防护:自引用/互环时本 map 已在渲染路径上,截断 "{...}"(先查后挂,顺序反了自身即命中)。
+        if (PrintGuard::is_cycle(this)) {
+            return "{...}";
         }
-        return vm.fail(ErrorCode::KeyError, "map key not found: {}", format_value_debug(key));
-    }
-
-    bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {
-        // 恒成功,命中覆写、未命中新增键(set 两条路径均无报错);set/rehash 走 GC 分配器不触 GC。
-        table_.set(key, value);
-        return true;
+        const PrintGuard guard{this};
+        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同属 D4)。
+        const auto entry_repr = [](const AriaHashTable::Entry& entry) {
+            return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
+        };
+        return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
 
     Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) {
@@ -70,17 +69,18 @@ namespace aria {
         return vm.map_class()->load_field(vm, name);
     }
 
-    String ObjMap::debug_repr() const {
-        // 环防护:自引用/互环时本 map 已在渲染路径上,截断 "{...}"(先查后挂,顺序反了自身即命中)。
-        if (PrintGuard::is_cycle(this)) {
-            return "{...}";
+    Opt<Value> ObjMap::load_index(AriaVM& vm, const Value key) {
+        // 任意键;miss KeyError,键走 debug 形入文案(嵌套字符串带引号;环防护由 debug_repr 自理)。
+        if (const auto entry = table_.find(key)) {
+            return entry->value;
         }
-        const PrintGuard guard{this};
-        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同属 D4)。
-        const auto entry_repr = [](const AriaHashTable::Entry& entry) {
-            return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
-        };
-        return "{" + util::join(table_, ", ", entry_repr) + "}";
+        return vm.fail(ErrorCode::KeyError, "map key not found: {}", format_value_debug(key));
+    }
+
+    bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {
+        // 恒成功,命中覆写、未命中新增键(set 两条路径均无报错);set/rehash 走 GC 分配器不触 GC。
+        table_.set(key, value);
+        return true;
     }
 
     ObjMap* new_map(GC& gc) {

@@ -14,10 +14,9 @@ namespace aria {
 
     namespace {
 
-        // iter() -> 迭代器:铸造 ObjRangeIterator(range 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 MapBuiltins::fn_iter:range 在 slots[0] 于栈根,迭代器白色
-        // 建成**先写回槽发布再返回**,中间无 GC 点;此后源 range 不可达可回收,迭代器标量
-        // 自足(不持源指针,见 ObjRangeIterator 头注释)。
+        // iter() -> 迭代器:range 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:range 在
+        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点;此后源 range
+        // 不可达可回收,迭代器标量自足(不持源指针,见 ObjRangeIterator 头注释)。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {

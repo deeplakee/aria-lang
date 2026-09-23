@@ -13,7 +13,7 @@ namespace aria {
 
     namespace {
 
-        // ---- 迭代器方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽) ----
+        // 迭代器方法实现(NativeFn 方法调用形态见 Builtins.hpp)
         // 两原生都是 ObjIterator 引擎缝的薄壳:虚分派到各源子类(list/string/map/range),
         // 本文件不认识任何具体源。
 

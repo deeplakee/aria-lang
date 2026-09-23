@@ -18,14 +18,11 @@ namespace aria {
 
     namespace {
 
-        // ---- string 方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽,读 slots[1..]) ----
-        //
-        // 下标域:除 codepoint_at(码点序号)外全部字节域(与 len/s[i] 同域)。string
-        // 不可变,全部产出新串;receiver 在 slots[0] 覆写前经栈根存活,单输出方法直接构造,
-        // split 先拷内容进 C++ String(非 GC 内存)再逐段铸造。
+        // string 方法实现(NativeFn 方法调用形态见 Builtins.hpp)下标域:除 codepoint_at(码点
+        // 序号)外全部字节域(与 len/s[i] 同域)。string 不可变,全部产出新串;receiver 在 slots[0]
+        // 覆写前经栈根存活,单输出方法直接构造,split 先拷内容进 C++ String(非 GC 内存)再逐段铸造。
 
-        // upper() -> 新串:ASCII 范围(A-Z/a-z)逐字节转大写,其余字节原样(v1 ASCII only,
-        // Unicode casing 需 case 映射表,后续批按需)。
+        // upper() -> 新串:ASCII 范围(A-Z/a-z)逐字节转大写,其余字节原样。
         bool fn_upper(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -103,9 +100,8 @@ namespace aria {
             return list;
         }
 
-        // 无参形态:按 ASCII 空白**连续段**切开并丢弃空段(Python str.split 同款);全空白与空串
-        // 返 []。空白集与 trim 同源(is_ascii_space),故只在 ASCII 域判定 -- 0x80 以上的字节一律
-        // 非空白,多字节字符不会被劈开。建并返回新 list(守卫与 GC 时序同 split_by_sep)。
+        // 无参形态:按 ASCII 空白**连续段**切开并丢弃空段;全空白与空串返 []。空白集与 trim 同源
+        // (is_ascii_space),故只在 ASCII 域判定 -- 0x80 以上的字节一律非空白,多字节字符不会被劈开。
         ObjList* split_on_space(AriaVM& vm, const StringView src) {
             const auto list  = new_list(vm.gc());
             const auto guard = vm.gc().make_guard(list);
@@ -126,8 +122,8 @@ namespace aria {
             return list;
         }
 
-        // split([sep]) -> list<string>:1 参按分隔符切(保留空段,空串输入切出 [""],分隔符须非空
-        // string = EmptyPattern);0 参按 ASCII 空白连续段切、丢空段(见 split_on_space)。
+        // split([sep]) -> list<string>:1 参按分隔符切(保留空段,分隔符须非空 string = EmptyPattern);
+        // 0 参按 ASCII 空白连续段切、丢空段(见 split_on_space)。
         bool fn_split(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0 && argc != 1) {
@@ -153,8 +149,8 @@ namespace aria {
             return true;
         }
 
-        // find(sub) -> 整数或 nil:子串首现字节下标,未命中 nil(下标永不为 nil 故无歧义,
-        // Ruby 同款 --aria 有负下标,-1 是合法下标,miss 时 s[s.find(x)] 会静默取末字符)。
+        // find(sub) -> 整数或 nil:子串首现字节下标,未命中 nil(下标永不为 nil 故无歧义,miss 时
+        // s[s.find(x)] 会静默取末字符)。
         bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -170,8 +166,8 @@ namespace aria {
             return true;
         }
 
-        // contains(sub) -> Bool:子串包含判定(与 find 同域:按字节子串判,非字符集合);未命中
-        // 返 false 不报错,与 find 未命中返 nil 同族。空串参数恒真(空串在任何位置都算包含)。
+        // contains(sub) -> Bool:子串包含判定(与 find 同域:按字节子串判);未命中返 false 不报错。
+        // 空串参数恒真。
         bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -187,8 +183,8 @@ namespace aria {
             return true;
         }
 
-        // replace(old, new) -> 新串:全部替换(Python/JS replaceAll 同款);匹配串为空报
-        // EmptyPattern。拼接在 C++ String(非 GC 内存),末尾一次铸造。
+        // replace(old, new) -> 新串:全部替换;匹配串为空报 EmptyPattern。拼接在 C++ String(非
+        // GC 内存),末尾一次铸造。
         bool fn_replace(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
@@ -282,8 +278,7 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域)。码点数不是本
-        // 方法 --那是 len(chars())。
+        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域)。码点数那是 len(chars())。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -305,10 +300,10 @@ namespace aria {
             return true;
         }
 
-        // chars() -> list<string>:逐码点切出的 1-char string 快照 -- 码点域访问口,产出形态与
-        // 迭代、s[i] 同族;码点数即 len(chars()),与字节域的 len(s)/size() 相对。非法字节序列产出
-        // 替换码点串,口径同 ObjStringIterator::next(只吞一个坏字节)。GC 时序:receiver 留在
-        // slots[0] 由栈标根,新 list 白色须跨逐字符铸造的 GC 点,故挂临时根保命,循环结束才发布。
+        // chars() -> list<string>:逐码点切出的 1-char string 快照(码点域访问口;码点数即
+        // len(chars()),与字节域的 len(s)/size() 相对)。非法字节序列产出替换码点串,口径同
+        // ObjStringIterator::next(只吞一个坏字节)。GC 约束:receiver 留在 slots[0] 由栈标根,新
+        // list 白色须跨逐字符铸造的 GC 点,故挂临时根保命,循环结束才发布。
         bool fn_chars(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -327,9 +322,8 @@ namespace aria {
             return true;
         }
 
-        // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号索引,区别于字节域 s[i]);
-        // 越界 IndexOutOfBounds--负数与越过末码点同走循环走空后的同一处报错(负数不早退,多扫
-        // 一遍串换单出口)。逐码点扫描定位(O(i),无偏移索引表,v1 接受)。
+        // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号索引,区别于字节域 s[i]);越界
+        // IndexOutOfBounds(负数与越过末码点同走循环走空后的同一处报错)。
         bool fn_codepoint_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -353,8 +347,8 @@ namespace aria {
             return vm.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
         }
 
-        // to_int() -> 整数或 nil:整串十进制解析(util::parse_int_text,语法与域见其注);空串/杂字/
-        // 越 i48 域一律返 nil -- miss 返 nil 与 find/get 同族,nil 永不与合法整数二义。
+        // to_int() -> 整数或 nil:整串十进制解析(util::parse_int_text,语法与域见其注);失败返
+        // nil(miss 返 nil 与 find/get 同族,nil 永不与合法整数二义)。
         bool fn_to_int(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -365,8 +359,7 @@ namespace aria {
             return true;
         }
 
-        // to_float() -> 浮点或 nil:整串十进制解析(util::parse_float_text),失败同 to_int 返 nil;
-        // 整数形串给浮点值("3" -> 3.0),小数形不接受 to_int 而只在此。
+        // to_float() -> 浮点或 nil:整串十进制解析(util::parse_float_text),失败同 to_int 返 nil。
         bool fn_to_float(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -377,9 +370,8 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器:铸造 ObjStringIterator(string 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 ListBuiltins::fn_iter:str 在 slots[0] 于栈根,迭代器白色建成
-        // 先写回槽发布再返回,中间无 GC 点;此后 str 经迭代器 trace 可达。
+        // iter() -> 迭代器:string 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:str 在
+        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -390,19 +382,14 @@ namespace aria {
             return true;
         }
 
-        // ---- 运算符重载方法(函数名与 aria.hpp 的 kOp*Name 一一对应,经 AriaVM::run_binary_operator
-        // 取用;也是"算子 = 方法"的唯一实现处) ----
-        //
-        // 名字与失败文案都是**就地字面量**(与方法名同形,故不做模板参数也不逐调用点传):文案打方法名
-        // (`__lt__ requires two strings, got String and Int`),与注册键同处一文件、golden 亦钉住拼写。
-        // 两侧均为 String 才成立(无隐式转换,显式转换走内置 str());元数不符报 WrongArity(调用侧恒传
-        // 1 实参,故只在显式按名调用时触发)。string 只有 `+` 与四个比较:其余五个算子在 String 类表里
-        // 没有条目,故显式按名调用报成员缺席(`"a".__sub__("b")` -> `<class String> has no member
-        // '__sub__'`);算子路径 `"a" - "b"` 不经查找,落基类默认的 `type String does not support '__sub__'`。
+        // 运算符重载方法(函数名与 aria.hpp 的 kOp*Name 一一对应,经 AriaVM::run_binary_operator
+        // 取用;也是"算子 = 方法"的唯一实现处)
+        // 名字与失败文案都是**就地字面量**(与方法名同形):文案打方法名,与注册键同处一文件、golden
+        // 钉住拼写。两侧均为 String 才成立(无隐式转换);元数不符报 WrongArity。string 只有 `+` 与
+        // 四个比较。
 
         // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
-        // 未命中时(gc.new_object 顶部 maybe_collect),此刻两侧经调用区槽在栈(receiver 占 slots[0],
-        // 「栈即根」);C++ 局部 buffer 非 GC 对象,不受 collect 影响。
+        // 未命中时,此刻两侧经调用区槽在栈(receiver 占 slots[0],「栈即根」)。
         bool fn___add__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__add__ expects 1 argument, got {}", slots.size() - 1);
@@ -421,8 +408,8 @@ namespace aria {
         }
 
         // 四个比较钩子 -> Bool:两侧须皆 String,按**无符号字节序**比较。必须走 string_view::compare
-        //(char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
-        // ASCII 之前(`"é" < "z"` 会反过来)。纯读零分配(GC-pure),无 GC 点。四处校验同形、谓词各异。
+        // (char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
+        // ASCII 之前(`"é" < "z"` 会反过来)。纯读零分配(GC-pure),无 GC 点。
         bool fn___lt__(AriaVM& vm, Span<Value> slots) {
             if (slots.size() != 2) {
                 return vm.fail(ErrorCode::WrongArity, "__lt__ expects 1 argument, got {}", slots.size() - 1);

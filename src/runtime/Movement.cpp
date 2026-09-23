@@ -6,16 +6,14 @@
 
 namespace aria {
 
-    // 定义在 .cpp:init_frame_ 解引用 closure 需 ObjClosure 完整类型,头文件仅前向声明即可
-    // (避免 Movement.hpp 拖入 object/bytecode 树)。
+    // 定义在 .cpp:init_frame_ 解引用 closure 需 ObjClosure 完整类型,头文件仅前向声明即可。
     void Movement::enter_frame(ObjClosure* closure, const u8 argc) {
         CallFrame& f = frames_.acquire();
         init_frame_(f, closure, argc);
     }
 
     // 就位刚 acquire 的栈顶空帧:slots 按不变量设为 top - argc - 1(栈顶 [callee, a1..aN]),
-    // VM 专有字段从 closure 解引用填充(unit/module 缓存其 function 的,module 供 *_GLOBAL
-    // 定位模块 globals,ip 指向 function 字节码起始)。槽 0 语义见 Movement.hpp enter_frame 注释。
+    // VM 专有字段从 closure 解引用填充。槽 0 语义见 Movement.hpp enter_frame 注释。
     void Movement::init_frame_(CallFrame& f, ObjClosure* closure, const u8 argc) const {
         const auto fn = closure->function();
         f.slots       = top_ - argc - 1;
@@ -29,8 +27,7 @@ namespace aria {
     }
 
     // 捕获单点:「同一局部只有一份引用」不变式由此收口(链序与自愈说明见 Movement.hpp)。
-    // 建新路径:new_upvalue 返回白色无根,到插链之间无任何分配点(new_object 顶 maybe_collect
-    // 已过,插链纯指针操作),入链后即经 VM 根 tracer 保命。
+    // 建新路径:new_upvalue 返回白色无根,到插链之间无任何分配点,入链后即经 VM 根 tracer 保命。
     ObjUpvalue* Movement::capture_upvalue(GC& gc, Value* slot) noexcept {
         ObjUpvalue* prev = nullptr;
         ObjUpvalue* cur  = open_upvalues_;
@@ -52,8 +49,8 @@ namespace aria {
     }
 
     // 闭所有指向 >= from 槽址的开指:值迁入各自 closed_(close,location_ 转指自持)并整段摘链。
-    // 降序不变式下 >= from 恒为链头连续前缀,遇首个 < from 即停;摘下的节点 next_open_ 清空
-    // (close 后节点已离链,陈旧链指针无意义,防误遍历)。
+    // 降序不变式下 >= from 恒为链头连续前缀,遇首个 < from 即停;摘下的节点 next_open_ 清空(close
+    // 后节点已离链,陈旧链指针无意义,防误遍历)。
     void Movement::close_upvalues(const Value* from) noexcept {
         ObjUpvalue* uv = open_upvalues_;
         while (uv != nullptr && uv->value_slot() >= from) {
@@ -65,16 +62,11 @@ namespace aria {
         open_upvalues_ = uv;
     }
 
-    // 值栈 2x 扩容:经 Buffer::reserve -> GC reallocate 搬迁(内部 memcpy)。reallocate 释放
-    // 旧块,故指入旧块的 top_/活动帧 slots/open upvalue location_ 三类指针须重绑:搬运**前**
-    // (old_base 仍存活、指针减法有定义)算好相对 old_base 的槽偏移,搬运**后**用
-    // 「新基址 + 偏移」重建,全程不触碰 dangling 指针(对 dangling 指针做指针减法是 UB,
-    // [expr.add] p5;偏移须在搬运前算好,见 Buffer::reserve 注释)。
-    //
-    // open upvalue 链是第三类重绑:链节点是 GC 对象(非移动,mark-sweep 不搬块),链序
-    // 两趟间稳定,偏移按链序平行存取;暂存用 List(std::vector,与 GC 自身 scratch 容器同款;
-    // push_back 在 noexcept 函数内理论可抛 bad_alloc 终止进程 -- OOM 已是死局,与 Guard::push
-    // 的既有取舍一致)。
+    // 值栈 2x 扩容:经 Buffer::reserve -> GC reallocate 搬迁。reallocate 释放旧块,故指入旧块的
+    // top_/活动帧 slots/open upvalue location_ 三类指针须重绑:搬运**前**(old_base 仍存活)算好
+    // 相对 old_base 的槽偏移,搬运**后**用「新基址 + 偏移」重建,全程不触碰 dangling 指针(对
+    // dangling 指针做指针减法是 UB,[expr.add] p5;偏移须在搬运前算好,见 Buffer::reserve 注释)。
+    // open upvalue 链偏移按链序平行存取;暂存用 List(与 GC 自身 scratch 容器同款)。
     void Movement::grow_stack_() noexcept {
         const auto old_base    = buf_.data();
         const auto frame_count = frames_.size();

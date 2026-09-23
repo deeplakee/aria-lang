@@ -47,8 +47,8 @@ namespace aria {
     namespace {
 
         // 寄存器组初值:全表灌 nil。Value{} 零填充并非 nil(NaN-boxing 下是 f64 0.0,见
-        // NanBoxing.hpp 注),未填格须是合法 Value 才能被 tracer 与 dispatch 安全触碰,故构造
-        // 期经本工厂在初始化列表一步到位;bootstrap 逐格覆写。
+        // NanBoxing.hpp 注),未填格须是合法 Value 才能被 tracer 与 dispatch 安全触碰;
+        // bootstrap 逐格覆写。
         Vector<Value, kValueRegisterCount> make_nil_registers() noexcept {
             Vector<Value, kValueRegisterCount> regs{};
             for (auto& r: regs) {
@@ -76,22 +76,15 @@ namespace aria {
             return Object::as<ObjString>(frame.unit->constants[idx].as_obj());
         }
 
-        // 把 import 串(specifier)解析为命中文件的绝对规范路径(模块表键)。设计见
-        // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」:键 = weakly_canonical(候选)。
-        //   - spec:用户写的 import 串(如 "./helper" / "lib/utils")。
-        //   - current_module_path:发出 import 的当前模块的绝对文件路径(frame.module->abs_path());
-        //     相对分支仅取其 dirname 作基(.aria 后缀在末段,dirname 不受影响)。dir_ 内容可空
-        //     (cwd 不可用时 abs_path 返空串)-> 相对解析直接返 nullopt(拒绝锚定)。
-        //   - 相对("./" / "../" 开头,或正是 "." / ".."):单基 = 当前模块目录,caller-local,
-        //     不碰 source_roots,故相对导入永不逃逸到别的源根。
-        //   - 裸名(无 ./ ../ 前缀):基 = source_roots(入口槽 [0] + 配置根),逐个 exists-check,
-        //     首个存在 <base>/<spec>.aria 者命中(对齐 Python sys.path 顺序搜索)。
-        //   - 末尾 ".aria" 可选:剥后缀查找再统一补回,使 lib/math ≡ lib/math.aria。
-        //   - 键 = 绝对规范路径:同模块不同写法归一到各自真实路径,跨根不碰撞、相对不逃逸;
-        //     符号链接经 weakly_canonical 规避双加载。
+        // 把 import 串(specifier)解析为命中文件的绝对规范路径(模块表键 = weakly_canonical
+        // 候选,符号链接经它规避双加载)。spec 末尾 ".aria" 可选(剥后缀查找再统一补回,使
+        // lib/math ≡ lib/math.aria);相对 spec(./ ../ . ..)以当前模块目录为单基、caller-local,
+        // **永不逃逸到别的源根**;裸名沿 source_roots 逐个 exists-check(对齐 Python sys.path)。
+        // 当前模块路径为空(合成模块)时相对解析直接返 nullopt。设计全文见
+        // .claude/reference/runtime/import-path-resolution.md「加载层设计基线」。
         Opt<String> resolve_module(const StringView spec, const StringView current_module_path,
                                    const List<String>& source_roots) {
-            // 1. 剥末段 ".aria" 后缀(段长 > 扩展名长且以 ".aria" 结尾),使 lib/math ≡ lib/math.aria。
+            // 1. 剥末段 ".aria" 后缀(段长 > 扩展名长且以 ".aria" 结尾)。
             String spec_str{spec};
             {
                 const auto last_slash = spec_str.find_last_of('/');
@@ -162,9 +155,9 @@ namespace aria {
             }
         }
 
-        // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,
-        // abs_path 会拼出伪路径)或 abs_path 为空退化为 "<name>"。未捕获堆栈跟踪逐帧渲染
-        // (unwind 的 at 行)用 -- 消息本身不烘位置前缀(见 AriaVM::raise),位置串规则单一事实源。
+        // 模块位置串 "<loc>:<line>":文件模块渲染 abs_path;合成模块(名以 '<' 开头,abs_path 会
+        // 拼出伪路径)或 abs_path 为空退化为 "<name>"。未捕获堆栈跟踪的 at 行用;位置串规则单一
+        // 事实源(消息本身不烘位置前缀,见 AriaVM::raise)。
         String module_loc(const ObjModule* module, const u32 line) {
             if (const auto name = module->name()->view(); name.starts_with('<') || module->abs_path().empty()) {
                 return std::format("{}:{}", name, line);
@@ -172,12 +165,10 @@ namespace aria {
             return std::format("{}:{}", module->abs_path(), line);
         }
 
-        // 把寄存器取出的载荷拆为 (码, 完整烘焙消息) 两件:ObjException 直取
-        // 自身码与 message_(已是完整烘焙串,与 from_detail 直构文案逐字一致,re-throw 保码,
-        // 坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException,消息渲染值本身(经
-        // 烘焙单点 make_message,与 from_detail 同源同串)。消费方:unwind 未捕获出口(拼好
-        // 跟踪)与 run_closure 入口进帧失败(一帧未进,无跟踪),均经 Error::from_baked 一次
-        // 物化成边界 Error,不中转 Error 对象(Error 只在边界成型)。
+        // 把寄存器取出的载荷拆为 (码, 完整烘焙消息) 两件:ObjException 直取自身码与 message_
+        // (re-throw 保码,坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException。消费方:
+        // unwind 未捕获出口与 run_closure 入口进帧失败,均经 Error::from_baked 一次物化(Error
+        // 只在边界成型)。
         Pair<ErrorCode, String> uncaught_error_parts(const Value value) {
             if (const auto ex = try_obj<ObjException>(value)) {
                 return {ex->code(), String{ex->message()->view()}};
@@ -187,19 +178,14 @@ namespace aria {
         }
 
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态):dispatch_loop 各异常站点
-        // (unwind 返 somed Error)的统一收口,只剩 std::unexpected 样板。
+        // (unwind 返 somed Error)的统一收口。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 执行跟踪:每条指令执行**前**打印字节码/栈/帧/模块信息(stderr,调试用,详尽优先于简洁;
-        // 与 GC 调试日志 / DEBUG_PRINT_COMPILED_CODE 同走 stderr,与 PRINT 的 stdout 分流)。常态
-        // 编译(与 DEBUG_PRINT_COMPILED_CODE 同形,宏只守 dispatch_loop 内调用点),关闭时无调用点,
-        // 热路径零开销。供 dispatch_loop 主循环顶在取 opcode 前调用 -- 此时 frame.ip 指向待执行
-        // 指令,据此解码(仅读不推进 VM 的 ip)。
-        //   - 栈渲染经 format_value_debug(Value 层非重入渲染),不用 format_value -- 后者 Obj 走
-        //     可重载虚 to_string,trace 在 dispatch_loop 内会重入 VM 致无限递归;debug_repr 纯 C++,
-        //     绝不触用户重载。
-        //   - 三行:字节码行(模块 + 栈顶帧 fn 名 @ip 偏移 + 指令反汇编)/ 栈行(值栈逐槽渲染,
-        //     ^ 对齐当前帧栈底所在槽,联动指示本帧局部区)/ 帧栈底标记行。
+        // 执行跟踪:每条指令执行**前**打印字节码/栈/帧信息(stderr,调试用;与 PRINT 的 stdout
+        // 分流)。常态编译,宏只守 dispatch_loop 内调用点,关闭时零开销;主循环顶在取 opcode 前
+        // 调用 -- 此时 frame.ip 指向待执行指令,据此解码(仅读不推进 VM 的 ip)。栈渲染经
+        // format_value_debug 不用 format_value:后者 Obj 走可重载虚 to_string,在 dispatch_loop
+        // 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。输出形制见 runtime.md。
         [[maybe_unused]] void trace_execution(Movement& ctx) {
             auto&       frames = ctx.frames();
             const auto& frame  = frames.top();
@@ -233,19 +219,16 @@ namespace aria {
 
     } // namespace
 
-    // 构造:成员初始化(registers_ 经 make_nil_registers 全表灌 nil)-> 注册 VM 根 tracer ->
-    // bootstrap 寄存器组(Object 根类入格,先入根集)-> 注册 builtins。gc_ 值成员居声明首,
-    // 逆序析构下 tracer 与成员同生共死。
+    // 构造:registers_ 经 make_nil_registers 全表灌 nil -> 注册 VM 根 tracer -> bootstrap 寄存器组
+    // -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
         gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
         registers_{make_nil_registers()} {
         hook_vm_roots();
         init_source_roots();
         {
-            // 构造临界区:GC 挂起,窗口内回收不可达(bytes_allocated_ 自零起步、bootstrap 总
-            // 分配远小于 kInitialGcThreshold,且锁兜底 -- 将来 bootstrap 变重亦不破),窗口内
-            // 创建的白对象免逐个守卫;**解锁前须全部发布进 tracer 可达的家**(registers_ /
-            // builtins_,tracer 已挂接)。
+            // 构造临界区:GC 挂起,窗口内回收不可达,创建的白对象免逐个守卫;**解锁前须全部发布
+            // 进 tracer 可达的家**(registers_ / builtins_,tracer 已挂接)。
             const auto lock = gc_.make_lock();
             bootstrap_registers();
             builtins::register_builtin_functions(gc_, builtins_);
@@ -253,9 +236,9 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 编排顺序即依赖序:Object 根类先建(各内建类以它作 super);String 类 bootstrap 末段
-        // 要按名从自身类表取算子钩子缓存进实现格,故其类表须已填。新增单例两处收口:注册表
-        //(runtime/value_register.hpp)加一行,本函数加一行编排。
+        // 编排顺序即依赖序:Object 根类先建(各内建类以它作 super);String 类 bootstrap 末段要按名
+        // 从自身类表取算子钩子缓存进实现格,故其类表须已填。新增单例两处收口:注册表
+        // (runtime/value_register.hpp)加一行,本函数加一行编排。
         bootstrap_object_class();
         bootstrap_iterator_class();
         bootstrap_list_class();
@@ -267,11 +250,9 @@ namespace aria {
     }
 
     void AriaVM::hook_vm_roots() {
-        // VM 根 tracer:collect 时标四类根。①modules_ / ②builtins_(表内容);③registers_
-        // (值寄存器组,一趟循环逐格 mark_value,未填格 nil 对非对象 no-op);④current_ 执行
-        // 链沿 previous_ 逐个标 -- 值栈(run() 期局部/实参/临时只活在栈上,是最关键的缺失
-        // 根)、各帧 closure/module、挂起错误寄存器、open upvalue 开链(闭包已死而 upvalue
-        // 仍在链的悬垂防线)。链尾断言恒 &main_ctx_,锁定「resume/yield 严格成对」切换纪律。
+        // VM 根 tracer:collect 时标四类根(modules_ / builtins_ / registers_ / current_ 执行链;
+        // 清单见 runtime.md「共享状态」)。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在
+        // 链」的悬垂防线;链尾断言恒 &main_ctx_,锁定「resume/yield 严格成对」切换纪律。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
@@ -323,9 +304,8 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_object_class() {
-        // Object 根类:no-op init 收到 slots[0]=this 返回 true 不写槽,槽 0 原样即返回实例
-        //(不合成 ObjFunction,保「module 恒非空」不变式)。set_field 命中 "init" 同步 init_;
-        // "init" 键经 intern 命中 init_native 的 name 串,零分配。须在 ctor 构造临界区内调用,创建免守卫。
+        // Object 根类:no-op init 收到 slots[0]=this 返回 true 不写槽,槽 0 原样即返回实例(不
+        // 合成 ObjFunction,保「module 恒非空」不变式)。须在 ctor 构造临界区内调用,创建免守卫。
         const auto klass       = new_class(gc_, "Object", nullptr);
         const auto init_key    = new_string(gc_, "init");
         const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
@@ -334,10 +314,9 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_iterator_class() {
-        // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next,方法体是 ObjIterator
-        // 引擎缝虚函数的薄壳,住 runtime/builtins/IteratorBuiltins),经 ObjIterator::load_field 查表
-        // 命中后恒绑定触达;不注册 builtins/模块 globals。类名与 type() 的类型名一致。须在
-        // ctor 构造临界区内调用,创建免守卫;入格即经 tracer 标根。
+        // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next 薄壳,住 runtime/builtins/
+        // IteratorBuiltins),经 ObjIterator::load_field 查表命中后恒绑定触达;不入 builtins/模块
+        // globals。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_builtins(gc_, klass);
         registers_[kIteratorClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -345,26 +324,23 @@ namespace aria {
 
     void AriaVM::bootstrap_list_class() {
         // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
-        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
-        // 须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "List", object_class());
         register_list_builtins(gc_, klass);
         registers_[kListClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_map_class() {
-        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定
-        // 触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名
-        // 一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定触达;
+        // 不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Map", object_class());
         register_map_builtins(gc_, klass);
         registers_[kMapClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
     }
 
     void AriaVM::bootstrap_string_class() {
-        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后
-        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的
-        // 类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后恒
+        // 绑定触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "String", object_class());
         register_string_builtins(gc_, klass);
         registers_[kStringClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -372,9 +348,8 @@ namespace aria {
     }
 
     void AriaVM::cache_string_operator_fns(ObjClass& klass) {
-        // 类表 bootstrap 后无写点(string 类对象语言不可达、bootstrap 表也不在 globals),故实现格与
-        // 类表两份恒一致;DEBUG 下缺格即断言。须在 ctor 构造临界区内调用(GC 挂起,入格免守卫;
-        // load_field 命中是纯读无分配)。
+        // 类表 bootstrap 后无写点,故实现格与类表两份恒一致;DEBUG 下缺格即断言。须在 ctor
+        // 构造临界区内调用(GC 挂起,入格免守卫;load_field 命中是纯读无分配)。
         constexpr Pair<StringView, u8> kStringOperatorFns[] = {
                 {kOpAddName, kStringAddFnOffset},         {kOpLessName, kStringLtFnOffset},
                 {kOpLessEqualName, kStringLeFnOffset},    {kOpGreaterName, kStringGtFnOffset},
@@ -389,9 +364,8 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_range_class() {
-        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后
-        // 恒绑定触达;不注册 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的
-        // 类型名一致。须在 ctor 构造临界区内调用,创建免守卫;入格即经 tracer 的 registers_ 一趟循环标根(tracer 零改动)。
+        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后恒绑定
+        // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Range", object_class());
         register_range_builtins(gc_, klass);
         registers_[kRangeClassOffset] = Value::from_obj(klass); // 入寄存器组:此后经 tracer 保命
@@ -498,7 +472,7 @@ namespace aria {
         main_ctx_.reset();
 
         // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底;建成传入
-        // run_closure 即压栈(push 无 GC 点,入栈即根化)。
+        // run_closure 即压栈(入栈即根化)。
         auto       guard   = gc_.make_guard(fn);
         const auto closure = new_closure(gc_, fn);
         auto       result  = run_closure(closure); // 值拷贝,下方清场不影响返回值;持对象由调用方根化
@@ -534,10 +508,9 @@ namespace aria {
             case ObjType::BOUND_METHOD:
                 return call_bound_method(Object::as<ObjBoundMethod>(obj), argc);
             default: {
-                // 其余对象类型:按调用钩子 `__call__` 取本对象的实现后调(与算子族同款「取实现」协议;
-                // 非对象 callee 由上面已拒)。调用区就地复用:[callee, a1..aN] 恰是 [this, args],槽 0 兼
-                // 返回槽,故直接交 call_value 递归分发。取不到即报错(措辞随宿主:实例落成员缺席、
-                // 其余类型落「本类型不支持」)。
+                // 其余对象类型:按调用钩子 `__call__` 取实现后调。调用区就地复用 [callee, a1..aN]
+                // 恰是 [this, args],槽 0 兼返回槽,故直接交 call_value 递归分发;取不到即报错
+                //(措辞随宿主)。
                 const auto target = obj->op_call_impl(*this);
                 if (!target) {
                     return false; // 载荷已在挂起错误寄存器
@@ -548,9 +521,8 @@ namespace aria {
     }
 
     bool AriaVM::call_class(ObjClass* obj, const u8 argc) {
-        // 槽 0 原位换实例(即新帧 this),GC 点仅 new_instance,建成即写槽。init 恒有值:
-        // 闭包进方法帧(尾部 LOAD_LOCAL 0;RETURN 返回 this)、原生同步调用(no-op 不动
-        // slots[0] 即返回实例)、非可调用值(类上赋值放行)由 call_value 报 CallNonCallable。
+        // 槽 0 原位换实例(即新帧 this),GC 点仅 new_instance,建成即写槽。init 恒有值(非可
+        // 调用值由 call_value 报 CallNonCallable)。
         const auto instance  = new_instance(gc_, obj);
         current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
         return call_value(obj->init(), argc);
@@ -558,7 +530,7 @@ namespace aria {
 
     bool AriaVM::call_bound_method(const ObjBoundMethod* obj, const u8 argc) {
         // 槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动)。方法值无需守卫:覆写后
-        // 闭包经 frame.closure 由帧 tracer 标根,原生经类表槽/缓存可达。
+        // 经类表槽/缓存可达。
         current_->peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
         return call_value(obj->method(), argc);
     }
@@ -622,9 +594,9 @@ namespace aria {
 
     bool AriaVM::call_native(const ObjNativeFn* obj, const u8 argc) {
         // 原生函数同步调用,不进帧(契约见 ObjNativeFn.hpp)。entered_ctx 是全部事后簿记
-        // (drop/寄存器断言)的锚点:M6 前 current_ 恒等于它,断言锁「原生调用不得换走
-        // current_」;M6 切换合法化后仅删成功路径守卫(false 路径「禁止 false+切换」为永久
-        // 契约,§4.9)。实参留栈到 drop 亦是 GC 红利:切换型原生函数执行全程实参皆调用者栈根。
+        // (drop/寄存器断言)的锚点:M6 前 current_ 恒等于它,断言锁「原生调用不得换走 current_」;
+        // false 路径「禁止 false + 切换」为永久契约(§4.9)。实参留栈到 drop 亦是 GC 红利:切换型
+        // 原生函数执行全程实参皆调用者栈根。
         const auto entered_ctx = current_;
         const auto slots       = Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
@@ -643,36 +615,35 @@ namespace aria {
     }
 
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
-        // 契约总览见 AriaVM.hpp;canonical_path 已由调用方根化。加载事实源 = modules_ 表成员
-        // 资格:编译成功才入表,循环导入命中表内体执行中的对象即复用;失败不留表项。
+        // 契约总览见 AriaVM.hpp;canonical_path 已由调用方根化。加载事实源 = modules_ 表成员资格:
+        // 编译成功才入表,失败不留表项。
 
-        // 1. 读盘:resolve_module 已 exists-check,但读盘/编码仍可能失败(权限竞争/非法 UTF-8)。
+        // 1. 读盘(resolve_module 已 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src) {
             return fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
         }
         SourceFile source = std::move(*loaded_src);
 
-        // 2. 派生模块身份(name/dir):abs_path() 还原 canonical key,相对导入基正确。
+        // 2. 派生模块身份(name/dir):abs_path() 还原 canonical key。
         const auto [name_str, dir_str] = fs::module_name_and_dir(canonical_path->view());
         if (name_str.empty()) {
             return fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
-        // 3. 建模块(工厂内部 intern name/dir 并自守)+ 自守跨编译/入表。
+        // 3. 建模块(工厂内部 intern name/dir)+ 自守跨编译/入表。
         auto module = new_module(gc_, name_str, dir_str);
         auto guard  = gc_.make_guard(module);
 
-        // 4. 编译(入口名 kModuleEntryName,CodeGen::init_module 已 set_entry)。编译期 Error
-        //    就地 new_exception 装箱透传(消息不重烘,位置指向被导入文件内部);module 尚未
-        //    入表仅由 guard 根化,source 须存活到 compile() 返回。
+        // 4. 编译(入口名 kModuleEntryName)。编译期 Error 就地装箱透传;module 尚未入表仅由 guard
+        //    根化,source 须存活到 compile() 返回。
         if (auto compiled = Compiler::compile(gc_, source, module, kModuleEntryName); !compiled) {
             current_->raise(Value::from_obj(new_exception(gc_, compiled.error())));
             return nullptr;
         }
 
-        // 5. 入表:入表先于模块体 run-once(体由 IMPORT 分支调起),体执行期间的再导入命中
-        //    此表项即复用半初始化对象;canonical_path/module 均已根化,set rehash 触 GC 安全。
+        // 5. 入表先于模块体 run-once(体由 IMPORT 分支调起);canonical_path/module 均已根化,
+        //    set rehash 触 GC 安全。
         modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         return module;
     }
@@ -707,10 +678,8 @@ namespace aria {
 
     template<OpCode Op>
     bool AriaVM::run_binary_operator() {
-        // 对象左值:先取本对象的算子实现(内建类型直给自身原生,其余经成员协议按语言级方法名取),
-        // 取到即调 -- 调用区 [lhs, rhs] 恰好是 [this, arg1](槽 0 保持 receiver 原样)。取不到即报错
-        //(载荷已在寄存器,措辞随宿主)。非对象左值(数值/nil/bool 等)照旧落
-        // run_binary_numeric:数值热路径只此一次 tag 判定,不进实现查找。
+        // 对象左值取本对象算子实现后调;调用区 [lhs, rhs] 即 [this, arg1](槽 0 保持 receiver);
+        // 非对象左值落 run_binary_numeric。
         // GC 走查:receiver 占调用区槽 0(栈即根);取到的实现必可达(类表值经类 -> 寄存器组 /
         // 实例字段值经槽 0 的实例 / 内建实现格经寄存器组),故无白色在途窗口、不挂守卫。
         if (const auto lhs = current_->peek(1); lhs.is_obj()) {
@@ -723,9 +692,8 @@ namespace aria {
     }
 
     bool AriaVM::run_negate() {
-        // [v] -> [r]:整数/浮点就地取负(数值快路径不变);对象左值取 __neg__ 实现后调用(一元恒零
-        // 实参:调用区 [v] 即 [this]);其余类型照原内联路径报 InvalidOperand,文案逐字不变。
-        // GC 走查同 run_binary_operator。
+        // [v] -> [r]:整数/浮点就地取负;对象左值取 __neg__ 实现后调用(一元恒零实参,调用区
+        // [v] 即 [this]);其余类型报 InvalidOperand。GC 走查同 run_binary_operator。
         const Value operand = current_->peek(0);
         if (operand.is_int()) {
             current_->peek(0) = Value::from_int(-operand.as_int());
@@ -746,8 +714,8 @@ namespace aria {
 
     template<OpCode Op>
     Opt<Value> AriaVM::get_obj_binary_op_impl(Object& obj) {
-        // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举):二元九个,槽语义见 Object.hpp 的算子
-        // 协议(返回「该算子的实现」= 可从调用区 [recv, args] 直接调的值)。
+        // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举);槽语义见 Object.hpp 的算子协议
+        // (返回「该算子的实现」)。
         if constexpr (Op == OpCode::ADD) {
             return obj.op_add_impl(*this);
         } else if constexpr (Op == OpCode::SUBTRACT) {
@@ -879,7 +847,7 @@ namespace aria {
     bool AriaVM::run_prepare_method(ObjString* name) {
         // 契约见 AriaVM.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
         // (「栈即根」)-- 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是
-        // 分配点;解析先于实参求值亦是主流求值次序(指令集 §5.6)。
+        // 分配点。解析先于实参求值。
         const Value recv = current_->peek(0);
         if (!recv.is_obj()) {
             return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
@@ -893,8 +861,8 @@ namespace aria {
 
     bool AriaVM::run_call_method(const u8 argc) {
         // 契约见 AriaVM.hpp。纯调用,不再解析:[recv, target, a1..aN] 里实参整体下移一格补掉待调值
-        // 占的那格 -> [recv, a1..aN](与两步形态的调用区同形,槽 0 = receiver = this);待调值经寄存器
-        // 交 call_value 统一分发(argc == 0 时下移为空转,零搬移)。
+        // 占的那格 -> [recv, a1..aN](槽 0 = receiver = this);待调值交 call_value 统一分发
+        // (argc == 0 时下移为空转)。
         const Value target = current_->peek(argc);
         for (u8 i = argc; i >= 1; --i) {
             current_->peek(i) = current_->peek(i - 1);
@@ -935,12 +903,11 @@ namespace aria {
     }
 
     bool AriaVM::run_make_range(const u8 flags) {
-        // 契约见 AriaVM.hpp。有界两端点、无上界单端点均 peek 在栈跨 new_range 顶部
-        // maybe_collect(「栈即根」,端点为标量整数非对象);铸完 drop 再 push(窗口内无 GC 点)。
+        // 契约见 AriaVM.hpp。端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」,端点为标量
+        // 整数非对象);铸完 drop 再 push(窗口内无 GC 点)。非整数端点 TypeMismatch,静态文案不插端点值。
         if ((flags & kRangeFlagUnbounded) != 0) {
             const Value from = current_->peek(0);
             if (!from.is_int()) {
-                // 非整数端点 TypeMismatch,静态文案不插端点值。
                 return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
             }
             const auto range = new_range(gc_, from.as_int());
@@ -952,7 +919,6 @@ namespace aria {
         const Value to        = current_->peek(0);
         const Value from      = current_->peek(1);
         if (!from.is_int() || !to.is_int()) {
-            // 非整数端点 TypeMismatch,静态文案不插端点值。
             return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
         }
         const auto range = new_range(gc_, from.as_int(), to.as_int(), exclusive);
@@ -982,8 +948,8 @@ namespace aria {
     }
 
     Opt<Error> AriaVM::unwind() {
-        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发,
-        // 全未命中交 reset 清场。
+        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发,全未命中
+        // 交 reset 清场。
         struct TraceEntry {
             ObjFunction* fn;     // 帧函数(名字渲染)
             ObjModule*   mod;    // 帧模块(位置串渲染,module_loc)
@@ -999,19 +965,16 @@ namespace aria {
             auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
             const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
             if (const auto rec = unit->find_try_handler(ip_off)) {
-                // 命中:回退到命中帧并转入 catch handler(弃内层帧+帧内截到 catch 参数槽+ip
-                // 跳+载荷落槽,统一在 Movement::unwind_to_handler)。调用方 break 回循环顶重取
-                // 帧(坑 #11)。
+                // 命中:回退到命中帧并转入 catch handler(统一在 Movement::unwind_to_handler);
+                // 调用方 break 回循环顶重取帧(坑 #11)。
                 current_->unwind_to_handler(i, **rec);
                 return std::nullopt;
             }
             trace.push_back(TraceEntry{closure->function(), module, ip_off});
         }
 
-        // 全帧未命中 -> 未捕获:reset 一次清场(全链开指关闭+清帧+栈复位+清寄存器前的载荷
-        // 已先行取走),拆 (码, 消息) 逐帧烘焙跟踪行物化(透传的编译期 Error 不经本路径,无
-        // 跟踪)。trace 恒非空(调用点帧栈非空不变式);物化路径仅 std::string 拼接,无 GC
-        // 分配点,fn/mod 裸指针不悬垂。
+        // 全帧未命中 -> 未捕获:reset 一次清场,拆 (码, 消息) 逐帧烘焙跟踪行物化。trace 恒非空
+        // (调用点帧栈非空不变式);物化路径仅 std::string 拼接,无 GC 分配点,fn/mod 裸指针不悬垂。
         auto [code, msg] = uncaught_error_parts(*current_->take_error());
         current_->reset();
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
@@ -1022,28 +985,27 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::dispatch_loop() {
-        // 栈/帧/寄存器一律经 current_ 访问。M6 切换模型下「正在执行的字节码所在上下文恒等于
-        // current_」:切换只发生在原生函数体内,call_native 探测后循环顶自然采用新上下文,
-        // 本循环永不重入(§4.9)。
+        // 栈/帧/寄存器一律经 current_ 访问;M6 切换模型下「正在执行的字节码所在上下文恒等于
+        // current_」,切换点唯一且显式,本循环永不重入(§4.9)。
 
         while (true) {
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return;CALL/IMPORT 切帧后
-            // break 回循环顶重取)。取指前记本帧指令起始指针(last_ip):报错行号锚点 --
-            // 顶帧报错即故障指令、call_*/原生失败即 CALL 站点;unwind 查表同用此字段。
+            // break 回循环顶重取)。取指前记本帧指令起始指针(last_ip):报错行号锚点,unwind
+            // 查表同用此字段(顶帧 = 故障指令,外层帧 = CALL 站点)。
             CallFrame& frame = current_->frames().top();
             frame.last_ip    = frame.ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
             trace_execution(*current_);
 #endif
-            // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:一律 break 回循环顶 --
-            // unwind 返 Error 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用
-            // 已废。**switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提)。
+            // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:一律 break 回循环顶 -- unwind
+            // 返 Error 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废。
+            // **switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提)。
             switch (auto op = static_cast<OpCode>(read_u8(frame))) {
                 case OpCode::HALT:
                     return Value::nil_val();
 
-                // ---- 数据加载与存储 ----
+                // 数据加载与存储
                 case OpCode::LOAD_CONST: {
                     const auto idx = read_u16(frame);
                     current_->push(frame.unit->constants[idx]);
@@ -1065,8 +1027,8 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_REG: {
-                    // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表
-                    // 枚举值,编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
+                    // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表枚举值,
+                    // 编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
                     current_->push(registers_[read_u8(frame)]);
                     break;
                 }
@@ -1103,26 +1065,23 @@ namespace aria {
                     break;
                 }
                 case OpCode::CLOSE_UPVALUE: {
-                    // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担
-                    // (对齐 Lua OP_CLOSE:编译器在弹区 POP_N 之后发射,弹区槽已位于 top 之上,
-                    // 不 push 不覆写即安全)。
+                    // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担(编译器
+                    // 在弹区 POP_N 之后发射,弹区槽已位于 top 之上,不 push 不覆写即安全)。
                     current_->close_upvalues(current_->stack_top());
                     break;
                 }
                 case OpCode::DEF_GLOBAL: {
                     // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var -- 唯一
-                    // 创建全局的入口;重定义属编译期 RedefinedVariable,运行期按定义处理)。
-                    // 根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v 在值栈跨分配
-                    // (先 pop 则成裸局部被回收),set 返回后才 drop。
+                    // 创建全局的入口)。根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v
+                    // 在值栈跨分配(先 pop 则成裸局部被回收),set 返回后才 drop。
                     ObjString* name = read_name(frame);
                     frame.module->globals().set(Value::from_obj(name), current_->peek(0));
                     current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
-                    // [] -> [v]:按名查当前模块 globals,miss 回退 VM 级 builtins_(Python 式查找
-                    // 链);皆未命中 -> UndefinedVariable。STORE_GLOBAL 不回退 builtins(赋值不
-                    // 隐式创建)。push 先写栈再 grow,载荷已入栈后方可能 collect。
+                    // [] -> [v]:按名查当前模块 globals,miss 回退 VM 级 builtins_(Python 式查找链);
+                    // 皆未命中 -> UndefinedVariable。push 先写栈再 grow,载荷已入栈后方可能 collect。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
                     auto        entry = frame.module->globals().find(key);
@@ -1156,7 +1115,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_FIELD:
-                    // name:u16;[obj] -> [v]。执行体收口于 run_load_field。
+                    // name:u16;[obj] -> [v]
                     if (!run_load_field(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1165,7 +1124,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::STORE_FIELD:
-                    // name:u16;[obj, v] -> [v]。执行体收口于 run_store_field。
+                    // name:u16;[obj, v] -> [v](单槽下移留 v)
                     if (!run_store_field(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1174,7 +1133,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::LOAD_INDEX:
-                    // [obj, idx] -> [v]。执行体收口于 run_load_index。
+                    // [obj, idx] -> [v]
                     if (!run_load_index()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1183,7 +1142,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::STORE_INDEX:
-                    // [obj, idx, v] -> [v](peek-store)。执行体收口于 run_store_index。
+                    // [obj, idx, v] -> [v](peek-store,值下移两格)
                     if (!run_store_index()) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1206,8 +1165,8 @@ namespace aria {
                     break;
                 }
                 case OpCode::STORE_THIS_FIELD: {
-                    // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即
-                    // 创建;false 分支为契约透传防御形态,实例路径不可达)。
+                    // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
+                    // false 分支为契约透传防御形态,实例路径不可达)。
                     auto inst = try_obj<ObjInstance>(frame.slots[0]);
                     ASSERT(inst != nullptr, "STORE_THIS_FIELD: 'this' slot must be an instance (compiler invariant)");
                     if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
@@ -1218,7 +1177,7 @@ namespace aria {
                     break; // 值留栈(peek-store),this 不经栈
                 }
 
-                // ---- 算术与逻辑 ----
+                // 算术与逻辑
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
                 case OpCode::EQUAL: {
                     const Value b = current_->pop();
@@ -1244,7 +1203,7 @@ namespace aria {
                     current_->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
-                // 比较(执行体 run_binary_operator:对象左值按名取重载实现,其余落 run_binary_numeric)
+                // 比较
                 case OpCode::GREATER:
                     if (!run_binary_operator<OpCode::GREATER>()) {
                         if (auto u = unwind()) {
@@ -1277,8 +1236,7 @@ namespace aria {
                         break;
                     }
                     break;
-                // 算术(五算子共用同一执行体 run_binary_operator:对象左值按名取重载实现,其余落
-                // run_binary_numeric)
+                // 算术(五算子共用执行体 run_binary_operator)
                 case OpCode::ADD:
                     if (!run_binary_operator<OpCode::ADD>()) {
                         if (auto u = unwind()) {
@@ -1323,7 +1281,7 @@ namespace aria {
                 case OpCode::NOT:
                     current_->push(Value::from_bool(!is_truthy(current_->pop())));
                     break;
-                // 一元(执行体 run_negate:数值就地取负,对象左值派发 __neg__ 重载)
+                // 一元
                 case OpCode::NEGATE:
                     if (!run_negate()) {
                         if (auto u = unwind()) {
@@ -1333,7 +1291,7 @@ namespace aria {
                     }
                     break;
 
-                // ---- 栈操作 ----
+                // 栈操作
                 case OpCode::POP:
                     current_->drop(1);
                     break;
@@ -1353,15 +1311,15 @@ namespace aria {
                     break;
                 }
 
-                // ---- 输出与调试 ----
+                // 输出与调试
                 case OpCode::PRINT:
                     io::println("{}", format_value(current_->pop()));
                     break;
                 case OpCode::NOP:
                     break;
 
-                // ---- 控制流(u16 无符号;前向 JUMP* ip+=off,后向 JUMP_BACK ip-=off;
-                //      偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)----
+                // 控制流(u16 无符号;前向 JUMP* ip+=off,后向 JUMP_BACK ip-=off;
+                // 偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)
                 case OpCode::JUMP: {
                     const u16 off = read_u16(frame);
                     frame.ip += off;
@@ -1407,7 +1365,7 @@ namespace aria {
                     break;
                 }
 
-                // ---- 函数与闭包 ----
+                // 函数与闭包
                 case OpCode::CALL: {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
@@ -1421,12 +1379,12 @@ namespace aria {
                     break;
                 }
                 case OpCode::CLOSURE: {
-                    // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获
-                    // 描述表(upvalue_descs_,存 fn 元数据不进字节码流,指令集 §4.13)逐个填:
-                    // is_local 捕直接外围帧局部槽(经 capture_upvalue 单点收口「同一局部一份
-                    // 引用」),否则复制外围闭包的第 index 个 upvalue(共享同一份引用)。
-                    // 根安全(「栈即根」):闭包建成立即压栈,desc 循环内 new_upvalue 顶
-                    // maybe_collect 不再威胁闭包,免守卫。
+                    // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获描述表
+                    // (upvalue_descs_,存 fn 元数据不进字节码流,指令集 §4.13)逐个填:is_local 捕直接
+                    // 外围帧局部槽(经 capture_upvalue 单点收口「同一局部一份引用」),否则复制外围
+                    // 闭包的第 index 个 upvalue(共享同一份引用)。
+                    // 根安全(「栈即根」):闭包建成立即压栈,desc 循环内 new_upvalue 顶 maybe_collect
+                    // 不再威胁闭包,免守卫。
                     const auto idx     = read_u16(frame);
                     const auto fn      = Object::as<ObjFunction>(frame.unit->constants[idx].as_obj());
                     auto       closure = new_closure(gc_, fn);
@@ -1441,12 +1399,11 @@ namespace aria {
                     break;
                 }
 
-                // ---- 类与对象 ----
+                // 类与对象
                 case OpCode::MAKE_CLASS: {
-                    // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶
-                    // maybe_collect 须 super 在栈(「栈即根」);非类值是**语言可达**错误
-                    // (superclass 运行期才知值类型),故 raise 而非 ASSERT。建成写回原槽;
-                    // init 继承收进对象构造(new_class 出厂即自 super 派生),指令层零 seed 写点。
+                    // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶 maybe_collect
+                    // 须 super 在栈(「栈即根」);非类值是**语言可达**错误(superclass 运行期才知
+                    // 值类型),故 raise 而非 ASSERT。建成写回原槽;init 继承收进对象构造。
                     if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
                         const auto klass  = new_class(gc_, read_name(frame), super);
                         current_->peek(0) = Value::from_obj(klass);
@@ -1460,10 +1417,10 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_METHOD: {
-                    // name:u16;[class, closure] -> [class]:实例方法注册(静态经 MAKE_STATIC;
-                    // 仅收闭包 -- 方法性 = defining class 戳)。栈形经 ASSERT 钉(值恒来自上一条
-                    // CLOSURE,语言写不出违例)。副作用:set_field 命中 "init" 同步 init_ + 闭包戳
-                    // defining class(一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
+                    // name:u16;[class, closure] -> [class]:实例方法注册(静态经 MAKE_STATIC;仅收闭包
+                    // -- 方法性 = defining class 戳)。栈形经 ASSERT 钉(值恒来自上一条 CLOSURE,语言
+                    // 写不出违例)。副作用:set_field 命中 "init" 同步 init_ + 闭包戳 defining class
+                    // (一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
                     const auto klass  = try_obj<ObjClass>(current_->peek(1));
                     const auto method = current_->peek(0);
                     ASSERT(klass != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
@@ -1477,8 +1434,8 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_STATIC: {
-                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法
-                    // 同经此;不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
+                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
+                    // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
                     const auto klass = try_obj<ObjClass>(current_->peek(1));
                     ASSERT(klass != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), current_->peek(0));
@@ -1486,7 +1443,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_SUPER_FIELD:
-                    // name:u16;[] -> [v]。执行体收口于 run_load_super_field。
+                    // name:u16;[] -> [v]
                     if (!run_load_super_field(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1495,7 +1452,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::PREPARE_METHOD:
-                    // name:u16;[recv] -> [recv, target]。执行体收口于 run_prepare_method。
+                    // name:u16;[recv] -> [recv, target]
                     if (!run_prepare_method(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1504,7 +1461,7 @@ namespace aria {
                     }
                     break;
                 case OpCode::CALL_METHOD:
-                    // argc:u8;[recv, target, a1..aN] -> [r]。执行体收口于 run_call_method。
+                    // argc:u8;[recv, target, a1..aN] -> [r]
                     if (!run_call_method(read_u8(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1513,9 +1470,8 @@ namespace aria {
                     }
                     break;
                 case OpCode::MAKE_LIST: {
-                    // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect
-                    // (「栈即根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内
-                    // 无 GC 点);n 已由编译器上限检查保证 <= 栈深,字节码良构。
+                    // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect(「栈即
+                    // 根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内无 GC 点)。
                     const u16  count = read_u16(frame);
                     const auto list  = new_list(gc_);
                     list->elements().copy_from({current_->stack_top() - count, count});
@@ -1524,11 +1480,9 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_MAP: {
-                    // n:u16;[k1,v1..kn,vn] -> [map]:键值 peek 在栈跨 new_map 顶部
-                    // maybe_collect(「栈即根」);逐对 set 走 GC 分配器不触 GC(rehash 同,
-                    // HashTable 注释),拷完 drop 2n 再 push(窗口内无 GC 点)。重复键天然
-                    // 后键胜(set 命中原槽覆写,Python dict 同款);n 已由编译器上限检查,
-                    // 字节码良构。
+                    // n:u16;[k1,v1..kn,vn] -> [map]:键值 peek 在栈跨 new_map 顶部 maybe_collect
+                    // (「栈即根」);逐对 set 与 rehash 走 GC 分配器不触 GC(HashTable 注释),拷完
+                    // drop 2n 再 push(窗口内无 GC 点)。重复键后键胜(set 命中原槽覆写)。
                     const u16  count = read_u16(frame);
                     const auto map   = new_map(gc_);
                     const auto base  = current_->stack_top() - count * 2;
@@ -1540,8 +1494,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::MAKE_RANGE:
-                    // flags:u8;[from, to] -> [range](无上界 [from] -> [range])。执行体收口于
-                    // run_make_range。
+                    // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
                     if (!run_make_range(read_u8(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1550,9 +1503,9 @@ namespace aria {
                     }
                     break;
 
-                // ---- 模块导入 ----
+                // 模块导入
                 case OpCode::IMPORT:
-                    // path:u16;[..., module]。执行体收口于 run_import。
+                    // path:u16;[..., module]
                     if (!run_import(read_name(frame))) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1561,10 +1514,10 @@ namespace aria {
                     }
                     break;
 
-                // ---- 异常 ----
+                // 异常
                 case OpCode::THROW: {
-                    // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)
-                    // 后 unwind。
+                    // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
+                    // unwind。
                     current_->raise(current_->pop());
                     if (auto u = unwind()) {
                         return runtime_err(std::move(*u));
@@ -1572,12 +1525,12 @@ namespace aria {
                     break;
                 }
 
-                // ---- 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)----
+                // 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)
                 case OpCode::RETURN: {
                     const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
-                    // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),
-                    // 其 RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module
-                    // 与 fn 名再 exit_frame(其后 frame 引用悬垂)。
+                    // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
+                    // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
+                    // exit_frame(其后 frame 引用悬垂)。
                     auto mod     = frame.module;
                     auto fn_name = frame.closure->name()->view();
                     current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体

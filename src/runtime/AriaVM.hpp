@@ -52,14 +52,11 @@ namespace aria {
         LoadError,    // 源文件加载失败（仅 interpret_from_path：I/O 或 UTF-8 编码）
     };
 
-    // 解释器:持解释器级共享状态,驱动 Movement 执行字节码(阶段路线见 vm-design.md §6)。
-    // 循环状态全部取自 *current_(单一主上下文 main_ctx_;M6 resume/yield 只换走 current_,
-    // dispatch_loop 永不重入,§4.9)。GC 根经 std::function tracer 注册进自有 gc_(组合而非
-    // 继承:GC 不识 VM 类型),collect 时标 modules_/builtins_/registers_(值寄存器组一趟
-    // 循环) + current_ 执行链沿 previous_ 逐个标 -- 值栈(run() 期局部/实参/临时只活在栈上,
-    // 是最关键的缺失根)、各帧 closure/module、挂起错误寄存器、open upvalue 开链(闭包已死
-    // 而 upvalue 仍在链的悬垂防线)。成员声明序 gc_ 居首保证析构逆序下 tracer 与各成员同生
-    // 共死。异常通道:运行时错误统一 raise 入寄存器后经 unwind 查 CodeUnit 异常记录表派发。
+    // 解释器:持解释器级共享状态,驱动 Movement 执行字节码(路线见 vm-design.md §6,切换模型
+    // §4.9);循环状态全部取自 *current_。GC 根经 std::function tracer 注册进自有 gc_ -- 标根
+    // 清单见 runtime.md「共享状态」,其中 open upvalue 开链是「闭包已死而 upvalue 仍在链」的
+    // 悬垂防线。成员声明序 gc_ 居首保证析构逆序下 tracer 与各成员同生共死。运行时错误统一
+    // raise 入寄存器后经 unwind 查 CodeUnit 异常记录表派发。
     class AriaVM {
     public:
         AriaVM();
@@ -100,14 +97,12 @@ namespace aria {
             return main_ctx_;
         }
 
-        // ---- 挂起错误侧信道(供原生函数等冷路径报错)----
-        // 寄存器物理上在 Movement::pending_error_,经 *current_ 转发 -- 与 dispatch_loop/
-        // call_value 族同源同一上下文,错误必落进调用者正在执行的上下文。载荷为 Value(单寄存器
-        // 模型)。raise 从零构造消息装箱一步烘齐,**消息不含位置前缀**(位置由 unwind 未捕获
-        // 出口的逐帧 at 行给出,对齐 clox/Python);用户 throw 经 Movement::raise 原值入寄存器,
-        // 不走本层 API。fail 是 raise + 恒返失败信号(见 FailSignal),[[nodiscard]] 强制
-        // `return vm.fail(...);` 惯用法;原生函数以返回 bool 为成败信号,契约 false ⟺ 已 raise。
-        // raise 内 new_exception 分配可能触 GC,载荷构造后立即入寄存器(tracer 已标根)。
+        // 挂起错误侧信道(原生函数等冷路径报错):寄存器在 Movement::pending_error_,经 *current_
+        // 转发,错误必落进调用者正在执行的上下文。载荷为 Value(单寄存器模型)。raise 从零构造
+        // 消息装箱一步烘齐,**消息不含位置前缀**(位置由 unwind 未捕获出口的逐帧 at 行给出);
+        // 用户 throw 经 Movement::raise 原值入寄存器,不走本层。fail = raise + 恒返失败信号
+        // (FailSignal),[[nodiscard]] 强制 `return vm.fail(...);`;原生函数 bool 契约 false ⟺
+        // 已 raise。raise 内 new_exception 分配可能触 GC,载荷构造后立即入寄存器(tracer 已标根)。
         template<typename... Args>
         void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
             const auto msg = Error::make_message(code, std::format(fmt, std::forward<Args>(args)...));
@@ -120,8 +115,7 @@ namespace aria {
             return FailSignal{};
         }
 
-        // 模块表:键 = 规范路径 ObjString*(intern),值 = ObjModule*(均装箱为 Value),
-        // IMPORT 按键查重/插入。
+        // 模块表:键 = 规范路径 ObjString*(intern),值 = ObjModule*(均装箱为 Value)。
         [[nodiscard]]
         AriaHashTable& modules() noexcept {
             return modules_;
@@ -133,39 +127,35 @@ namespace aria {
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
-        // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放(迭代器的语言方法面,注册
-        // 入口 register_iterator_builtins 住 runtime/builtins/IteratorBuiltins);ObjIterator::load_field
+        // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,注册入口
+        // register_iterator_builtins(runtime/builtins/IteratorBuiltins);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
 
-        // List bootstrap 类:寄存器 ListClass 唯一存放(内置 list 的语言方法面,注册入口
-        // register_list_builtins 住 runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。
-        // 同 object_class 先例。
+        // List bootstrap 类:寄存器 ListClass 唯一存放,注册入口 register_list_builtins
+        // (runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* list_class() const noexcept;
 
-        // Map bootstrap 类:寄存器 MapClass 唯一存放(内置 map 的语言方法面,注册入口
-        // register_map_builtins 住 runtime/builtins/MapBuiltins);ObjMap::load_field 经它取自身类。
-        // 同 object_class 先例。
+        // Map bootstrap 类:寄存器 MapClass 唯一存放,注册入口 register_map_builtins
+        // (runtime/builtins/MapBuiltins);ObjMap::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* map_class() const noexcept;
 
-        // String bootstrap 类:寄存器 StringClass 唯一存放(内置 string 的语言方法面,注册
-        // 入口 register_string_builtins 住 runtime/builtins/StringBuiltins);ObjString::load_field 经它
-        // 取自身类。同 object_class 先例。
+        // String bootstrap 类:寄存器 StringClass 唯一存放,注册入口 register_string_builtins
+        // (runtime/builtins/StringBuiltins);ObjString::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
 
-        // Range bootstrap 类:寄存器 RangeClass 唯一存放(内置 range 的语言方法面,注册
-        // 入口 register_range_builtins 住 runtime/builtins/RangeBuiltins);ObjRange::load_field 经它
-        // 取自身类。同 object_class 先例。
+        // Range bootstrap 类:寄存器 RangeClass 唯一存放,注册入口 register_range_builtins
+        // (runtime/builtins/RangeBuiltins);ObjRange::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
 
-        // 值寄存器组按格位直读(与 LOAD_REG 同源同一组格,格位常量 k<名字>Offset 见
-        // runtime/value_register.hpp)。内置类型的算子实现格(String*Fn)经它取用:ObjString 的 5 个
-        // op_*_impl override 直读实现格交算子派发,免每次过类表查找。
+        // 值寄存器组按格位直读(格位常量 k<名字>Offset 见 runtime/value_register.hpp)。内置类型的
+        // 算子实现格(String*Fn)经它取用:ObjString 的 5 个 op_*_impl override 直读实现格交算子
+        // 派发,免每次过类表查找。
         [[nodiscard]]
         Value register_value(const u8 offset) const noexcept {
             return registers_[offset];
@@ -189,27 +179,22 @@ namespace aria {
         // 冲掉)、不断言主上下文;落地升公开时需 dispatch_loop 按基线帧深退出。
         Result<Value, Error> run_closure(ObjClosure* closure);
 
-        // 主循环:驱动 *current_ 直到顶层返回/错误/显式停止。模块体 run-once 经 IMPORT 未命中
-        // 分支以普通函数调用进帧(入口名固定 <module>),其 RETURN 按函数名判定模块体帧,压回
-        // 模块对象 -- 无递归调用。
+        // 主循环:驱动 *current_ 直到顶层返回/错误/显式停止。
         Result<Value, Error> dispatch_loop();
 
-        // IMPORT 执行体(path 已读出):resolve_module 解析 specifier -> new_string intern 后
-        // guard 根化 -> modules_ 查表(命中复用压栈;命中体执行中的对象即循环导入,按文法得
-        // 半初始化对象)-> 未命中 load_module 后以 entry 现场包闭包经 call_closure 进帧
-        // run-once(模块体 RETURN 按函数名 == <module> 弹弃返回值压回模块对象,两分支栈效应
-        // 统一 [..., module],无递归 dispatch_loop())。bool 契约同 call_* 族:false ⟺ 载荷已
-        // raise(解析/加载/进帧三类失败点),unwind 留 dispatch_loop 调用点;仅限 dispatch_loop
-        // 驱动期调用(同 load_module)。
+        // IMPORT 执行体(path 已读出):resolve_module 解析 -> new_string intern 后 guard 根化 ->
+        // modules_ 查表(命中复用压栈,命中体执行中的对象即循环导入)-> 未命中 load_module 后
+        // 以 entry 现场包闭包经 call_closure 进帧 run-once;两分支栈效应统一 [..., module],
+        // 无递归 dispatch_loop()。bool 契约同 call_* 族:false ⟺ 载荷已 raise(解析/加载/进帧
+        // 三类失败点),unwind 留 dispatch_loop 调用点;仅限 dispatch_loop 驱动期调用。
         bool run_import(const ObjString* path);
 
         // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译(入口名 <module>)
         // -> **编译成功才入表** -> 返回模块对象(已 set_entry)。只加载与编译,不执行模块体 --
-        // run-once 由调用方进帧驱动。nullptr ⟺ 载荷已 raise:读盘失败/名字无效经 fail 烘位置
-        // (raise 时顶帧即导入方帧);被导入模块的编译期 Error 原样装配箱透传(不重烘,位置指向
-        // 被导入文件内部)。失败不留表项,同路径重试重新加载。**仅限 dispatch_loop 驱动期调用**
-        // (寄存器随 *current_ 走,run() 入口 reset 会吞掉)。canonical_path 须调用方已根化
-        // (跨 modules_.set 的 rehash 触 GC,intern weak root 不保命)。
+        // nullptr ⟺ 载荷已 raise(读盘失败/名字无效经 fail,被导入模块的编译期 Error 原样装配箱
+        // 透传)。失败不留表项,同路径重试重新加载。**仅限 dispatch_loop 驱动期调用**(寄存器
+        // 随 *current_ 走,run() 入口 reset 会吞掉)。canonical_path 须调用方已根化
+        // (modules_.set 的 rehash 触 GC,intern weak root 不保命)。
         ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
 
         // interpret 共用尾段:编译 + 执行;失败渲染 stderr 并按**失败阶段**分类 -- 编译期 ->
@@ -217,32 +202,27 @@ namespace aria {
         // 模块编译错,故不构成 CompileError)。
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 
-        // CALL 分发:栈顶形如 [callee, a1..aN]。按 callee 的对象类型分派到对应 call_* 子例程,
-        // 其余对象类型按调用钩子 `__call__` 取实现(Object::op_call_impl)后递归分发;取不到的措辞随宿主
-        //(实例无该成员 = `<class X> has no member '__call__'`,其余类型 = `type X does not support '__call__'`);
-        // 非对象 callee 直接报 CallNonCallable(可调用集 = 上列四类 + 带 `__call__` 的对象)。
-        // **本文件 call_* 族的统一契约:return false/nullptr ⟺ 错误载荷已 raise 进 *current_
-        // 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
+        // CALL 分发:栈顶形如 [callee, a1..aN]。按 callee 类型分派到对应 call_* 子例程;其余对象
+        // 类型按调用钩子 `__call__` 取实现(Object::op_call_impl)后递归分发(措辞随宿主);非对象
+        // callee 直接报 CallNonCallable。**本文件 call_* 族的统一契约:return false/nullptr ⟺
+        // 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 取出沿 runtime_err 传播。
         bool call_value(Value callee, u8 argc);
 
         // 闭包调用的进帧单点(call_value 分发与 run_closure 共用),只编排:元数检查
-        //(check_arity)-> 帧余量检查 -> 实参整形(prepare_call_args,缺省垫充/varargs
-        // 打包)再进帧(callee 在槽 0,参数即局部槽 1..n)。失败 raise WrongArity/
-        // StackOverflow。
+        // (check_arity)-> 帧余量检查 -> 实参整形(prepare_call_args)再进帧(callee 在槽 0,
+        // 参数即局部槽 1..n)。失败 raise WrongArity/StackOverflow。
         bool call_closure(ObjClosure* obj, u8 argc);
 
         // call_closure 辅助:元数检查。普通函数区间 [min_arity, arity](差额为带默认值
         // 参数),无缺省报单数文案、有缺省报区间文案;varargs 函数只保下界(多余实参由
         // prepare_call_args 打包进 rest,无上界,上限即 CALL 操作数 u8)。函数名不进文案
-        //(函数可匿名);调用归属由未捕获出口的堆栈跟踪行给出。
+        // (函数可匿名);调用归属由未捕获出口的堆栈跟踪行给出。
         bool check_arity(const ObjFunction* fn, u8 argc);
 
         // call_closure 辅助:实参整形 --把调用区栈顶从实参深度整形成帧参数槽深并返回槽深。
-        // ①缺省垫充:未传的固定参数槽压入缺省印章,函数序言按身份判等现场换默认值,栈顶
-        // 同时补齐到固定参数深度(体局部槽号按满参编,参数槽 1..n、体局部自 n+1 起;方法帧
-        // 槽 0 = this 同构适用);②varargs 打包:超出固定参数数的实参整段收集为新 list 压入
-        // rest 槽(帧槽深 = arity + 1;无多余实参铸空表 --rest 恒为 list 非 nil,每次调用
-        // 新铸)。
+        // ①缺省垫充:未传的固定参数槽压入缺省印章,栈顶补齐到固定参数深度(体局部槽号按满参编,
+        // 参数槽 1..n、体局部自 n+1 起);②varargs 打包:超出固定参数数的实参整段收集为新 list
+        // 压入 rest 槽(帧槽深 = arity + 1;无多余实参铸空表 --rest 恒为 list 非 nil)。
         u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传(契约见 ObjNativeFn.hpp)。
@@ -257,8 +237,8 @@ namespace aria {
         bool call_bound_method(const ObjBoundMethod* obj, u8 argc);
 
         // 值寄存器组 bootstrap 编排(ctor 一次调用):逐格初始化全部 VM 单例对象。须在 ctor
-        // 构造临界区(GC 挂起)内调用,创建免守卫;各单例的创建与入格收口在 bootstrap_<单例>
-        // 系列函数,本函数只管编排;新单例在此加一行编排。
+        // 构造临界区(GC 挂起)内调用,创建免守卫;各单例收口在 bootstrap_<单例> 系列函数,本
+        // 函数只管编排;新单例在此加一行编排。
         void bootstrap_registers();
 
         // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
@@ -266,7 +246,7 @@ namespace aria {
         void bootstrap_object_class();
 
         // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根)并注册方法面
-        //(register_iterator_builtins),发布进寄存器 IteratorClass 格。
+        // (register_iterator_builtins),发布进寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
 
         // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
@@ -287,8 +267,8 @@ namespace aria {
 
         // String 的算子实现缓存(String 类 bootstrap 末段调用):把已注册进 String 类表的五个算子
         // 钩子(`__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生)按名取回,存入实现格
-        // StringAddFn..StringGeFn -- 算子派发热路径直读,免每次过类表查找。类表仍是规范家(方法读
-        // 路径查它),两份恒一致(类表 bootstrap 后无写点,DEBUG 缺格即断言)。
+        // StringAddFn..StringGeFn -- 算子派发热路径直读,免每次过类表查找。类表仍是规范家,两份
+        // 恒一致(类表 bootstrap 后无写点,DEBUG 缺格即断言)。
         void cache_string_operator_fns(ObjClass& klass);
 
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
@@ -299,10 +279,9 @@ namespace aria {
         // MatchNoArm 格。全臂未命中由字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         void bootstrap_match_no_arm();
 
-        // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包,collect 时标四类
-        // 根 -- modules_ / builtins_ / registers_(一趟循环逐格 mark_value,未填格 nil 对非
-        // 对象 no-op)/ current_ 执行链(值栈/各帧 closure+module/挂起错误寄存器/open upvalue
-        // 开链)。
+        // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
+        // runtime.md「共享状态」。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在链」的
+        // 悬垂防线;链尾断言锁定「resume/yield 严格成对」。
         void hook_vm_roots();
 
         // 源根默认值初始化(ctor 一次调用):入口槽 [0] 占位 cwd + 配置根 [1..] = 编译器相对
@@ -332,19 +311,18 @@ namespace aria {
         bool run_binary_f64(f64 lhs, f64 rhs) const;
 
         // 九个二元算子(ADD/SUBTRACT/MULTIPLY/DIVIDE/MOD 与四个比较指令)的执行体,也是算术/比较
-        // 两个 block 各自的唯一入口:非对象左值委托 run_binary_numeric(数值快路径与失败文案不变,
-        // 只多一次 is_obj() tag 判定),对象左值先经 get_obj_binary_op_impl<Op> 取本对象的算子实现
-        // (可调用值),再交 call_value 调(调用区 [lhs, rhs] 即 [this, arg1],槽 0 保持 receiver)。
-        // peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配与 miss fail。
+        // 两个 block 各自的唯一入口:非对象左值委托 run_binary_numeric;对象左值先经
+        // get_obj_binary_op_impl<Op> 取本对象的算子实现,再交 call_value 调(调用区 [lhs, rhs] 即
+        // [this, arg1],槽 0 保持 receiver)。peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内
+        // 分配与 miss fail。
         template<OpCode Op>
         bool run_binary_operator();
 
-        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负(数值快路径不变),对象左值取 __neg__ 实现后
-        // 调用(一元恒零实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
+        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负,对象左值取 __neg__ 实现后调用(一元恒零
+        // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
         bool run_negate();
 
-        // ---- 类与对象:field 族指令执行体 ----
-        //
+        // 类与对象:field 族指令执行体
         // bool 契约同 call_value:失败载荷已在寄存器(对象协议失败由 override 内 vm.fail 就地
         // 烘焙,非对象守卫由执行体 fail)。peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(「栈即根」)。
         // THIS 对(LOAD/STORE_THIS_FIELD)无执行体:编译器不变式保证 this 恒实例,case 内直调协议。
@@ -359,24 +337,23 @@ namespace aria {
         bool run_store_field(ObjString* name);
 
         // PREPARE_METHOD 执行体(两段式第一段,name 已读出):[recv] -> [recv, target]。接收者在栈顶
-        // (实参尚未求值),经 Object::load_field_unbound 协议解析此刻完成(miss 文案由 override 烘焙,
-        // 非对象守卫文案留执行体,同 run_load_field);待调值压栈跨指令存活(栈即根),实参随后压在
-        // 其上,由 CALL_METHOD 收口。解析先于实参求值,与两步形态「LOAD_FIELD + CALL」的时序一致。
+        // (实参尚未求值),经 Object::load_field_unbound 协议解析此刻完成(非对象守卫文案留执行体,
+        // 同 run_load_field);待调值压栈跨指令存活(栈即根),实参随后压其上,由 CALL_METHOD 收口。
+        // 解析先于实参求值。
         bool run_prepare_method(ObjString* name);
 
         // CALL_METHOD 执行体(两段式第二段,argc 已读出):[recv, target, a1..aN] -> [r]。待调值在
         // peek(argc)、接收者在 peek(argc + 1);实参整体下移一格补掉待调值占的那格,得调用区
-        // [recv, a1..aN](槽 0 = receiver = this),再交 call_value 统一分发。纯调用,不再解析,调用区
-        // 与两步形态留下的栈形逐位一致,故进帧整形(缺省垫充/varargs 打包)与 unwind 均不受影响。
+        // [recv, a1..aN](槽 0 = receiver = this),再交 call_value 统一分发。纯调用,不再解析。
         bool run_call_method(u8 argc);
 
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(方法闭包恒有戳,编译器
         // 不变式 ASSERT 钉),从其父类起走 ObjClass::load_field 沿链读穿透(不含 defining 自身,
-        // 类协议不绑定不缓存)。命中方法闭包 -> 绑 this=帧槽 0 压栈供 CALL;其余(静态方法/函数值
-        // 静态/原生/静态值)原值直读。全链 miss 为语言可达错误,经协议 fail。
+        // 类协议不绑定不缓存)。命中方法闭包 -> 绑 this=帧槽 0 压栈供 CALL;其余原值直读。全链
+        // miss 为语言可达错误,经协议 fail。
         bool run_load_super_field(ObjString* name);
 
-        // ---- 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族 ----
+        // 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族
 
         // LOAD_INDEX 执行体(操作数全在栈上):peek (obj, idx) 经 Object::load_index 协议,
         // 结果写回 obj 槽再弹 idx([obj, idx] -> [v]);非对象(含 nil)文案留执行体,对象侧
@@ -387,7 +364,7 @@ namespace aria {
         // 两格留 v([obj, idx, v] -> [v],peek-store -- 赋值表达式约定)。
         bool run_store_index();
 
-        // ---- range 构造指令执行体(MAKE_RANGE):契约同 field 族 ----
+        // range 构造指令执行体(MAKE_RANGE):契约同 field 族
 
         // MAKE_RANGE 执行体(flags 已读出,位义见 code.hpp kRangeFlag*):有界 [from, to] -> [range]、
         // 无上界 [from] -> [range]。端点须为整数,非整数 fail TypeMismatch(静态文案不插端点值);
@@ -396,12 +373,11 @@ namespace aria {
 
         // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
         // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
-        // 回退到命中帧并转入 catch handler(弃内层帧、帧内截到 catch 参数槽、ip 跳、载荷落槽,
-        // 统一在 Movement),返 nullopt(调用方 break 回循环顶重取帧,坑 #11);全帧未命中 ->
-        // reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息) 两件,逐帧烘焙 "\n  at <fn> (<loc>)"
-        // 进消息尾部(收集序内->外,渲染反转外->内,Python 式),经 Error::from_baked 一次物化
-        // 返回。前提:寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写
-        // (顶帧 = 故障指令,外层帧 = CALL 站点)。
+        // 回退到命中帧并转入 catch handler(统一在 Movement),返 nullopt(调用方 break 回循环顶
+        // 重取帧,坑 #11);全帧未命中 -> reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息),
+        // 逐帧烘焙 at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:
+        // 寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障
+        // 指令,外层帧 = CALL 站点)。
         Opt<Error> unwind();
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
@@ -418,9 +394,9 @@ namespace aria {
         // 源根列表:[0]=入口槽(cwd 占位,run() 换成入口 dir_),[1..]=配置根(stdlib/-L/环境变量)。
         List<String> source_roots_;
 
-        // 值寄存器组:VM 单例值统一存放表(唯一存放处;注册表单一事实源见
-        // runtime/value_register.hpp)。构造期经 make_nil_registers 全表灌 nil(Value{} 非
-        // nil),bootstrap 逐格覆写;tracer 一趟循环标根。
+        // 值寄存器组:VM 单例值统一存放表(唯一存放处;注册表见 runtime/value_register.hpp)。
+        // 构造期经 make_nil_registers 全表灌 nil(Value{} 零填充非 nil);bootstrap 逐格覆写;
+        // tracer 一趟循环标根。
         Vector<Value, kValueRegisterCount> registers_;
     };
 

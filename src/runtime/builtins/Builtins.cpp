@@ -16,7 +16,7 @@ namespace aria::builtins {
 
     namespace {
 
-        // ---- 内置原生函数实现(NativeFn 契约:读 slots[1..]、写 slots[0]、失败 return vm.fail(...)) ----
+        // 内置原生函数实现(NativeFn 契约:读 slots[1..]、写 slots[0]、失败 return vm.fail(...))
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
         bool fn_type(AriaVM& vm, Span<Value> slots) {
@@ -94,9 +94,9 @@ namespace aria::builtins {
     } // namespace
 
     // 把全部内置按名写入 VM 级 builtins 表。由 AriaVM ctor 在 tracer 挂接后于**构造临界区
-    // (GC 挂起)内**调用一次:new_native_fn 的白色对象免逐个守卫(窗口内回收不可达),建成即
-    // 入表、入表条目经 vm_roots tracer 的 builtins_.trace 标根;StringView 重载经 intern 池
-    // 建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
+    // (GC 挂起)内**调用一次:new_native_fn 的白色对象免逐个守卫,建成即入表、入表条目经
+    // vm_roots tracer 标根;StringView 重载经 intern 池建名,保证 name 指针与 CodeGen 发射
+    // LOAD_GLOBAL 所用同名常量同指。
     void register_builtin_functions(GC& gc, AriaHashTable& builtins) {
         for (const auto& [name, fn]: kBuiltins) {
             const auto fn_obj = new_native_fn(gc, name, fn);

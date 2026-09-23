@@ -19,13 +19,11 @@ namespace aria {
 
     namespace {
 
-        // ---- list 方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽,读 slots[1..]) ----
-        // 惯例:receiver 解开后直取 elements() 绑为 list(单次使用也不内联;仅 iter 需要
-        // ObjList* 本体传给迭代器);段搬移类变更(insert/remove_at)收口 Array 原语,方法体
-        // 只余域检查与调用。
+        // list 方法实现(NativeFn 方法调用形态见 Builtins.hpp)惯例:receiver 解开后直取
+        // elements() 绑为 list(仅 iter 需要 ObjList* 本体传给迭代器);段搬移类变更(insert/
+        // remove_at)收口 Array 原语,方法体只余域检查与调用。
 
-        // push(x) -> nil:追加 x 到末尾(任意 Value)。返回 nil(Python append 同款,变更方法
-        // 不鼓励链式)。
+        // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
         bool fn_push(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -40,7 +38,7 @@ namespace aria {
         }
 
         // pop() -> 末元素:移除并返回末元素(任意 Value);空表报 IndexOutOfBounds(fail-fast,
-        // nil 哨兵不可行 --list 可合法存 nil)。任意位置移除走 remove_at。
+        // nil 哨兵不可行 --list 可合法存 nil)。
         bool fn_pop(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -55,10 +53,9 @@ namespace aria {
             return true;
         }
 
-        // insert(i, x) -> nil:在位置 i 之前插入 x(任意 Value)。位置语义(Python insert 同款):
-        // i == 元素数即追加;负数从尾计数、指「该下标元素之前」(-1 即末元素之前),合法域
-        // [-(size), size] 收口 util::resolve_position(resolve_index 的姊妹函数,上界放宽到
-        // 追加位)。段右移腾位收口 Array::insert。
+        // insert(i, x) -> nil:在位置 i 之前插入 x(任意 Value)。负数从尾计数、指「该下标元素
+        // 之前」,合法域 [-(size), size] 收口 util::resolve_position(上界放宽到追加位)。段右移
+        // 腾位收口 Array::insert。
         bool fn_insert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
@@ -77,10 +74,8 @@ namespace aria {
             return true;
         }
 
-        // remove(x) -> Bool:移除**全部** == 命中元素(Ruby Array#delete 同款移全;只要一处
-        // 用 find + remove_at 组合),命中 true、未命中 false 不报错 --miss 走返回值,与
-        // find 返 -1 / contains 返 false 同族;错误通道留给无信号通道的结构性失败(如空表
-        // pop)。收口 AriaArray::remove(一趟稳定压缩)。
+        // remove(x) -> Bool:移除**全部** == 命中元素;命中 true、未命中 false 不报错 --miss 走
+        // 返回值,与 find 返 -1 / contains 返 false 同族。收口 AriaArray::remove(一趟稳定压缩)。
         bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -91,9 +86,8 @@ namespace aria {
             return true;
         }
 
-        // remove_at(i) -> i 处元素:按位置移除并返回(pop 的任意位置形,负数从尾计数、与下标
-        // 读写同语义,越界报原始键值)。段左移补位收口 Array::remove_at,trivial 搬移无 GC 点
-        //(receiver 已离 slots[0])。
+        // remove_at(i) -> i 处元素:按位置移除并返回(负数从尾计数、与下标读写同语义,越界报
+        // 原始键值)。段左移补位收口 Array::remove_at。
         bool fn_remove_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -112,7 +106,7 @@ namespace aria {
             return true;
         }
 
-        // clear() -> nil:清空(长度归零,容量保留)。重绑 xs = [] 换新表,别名仍见旧内容 --本方法
+        // clear() -> nil:清空(长度归零,容量保留)。重绑 xs = [] 换新表别名仍见旧内容,本方法
         // 供共享可变状态原地清空。
         bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -125,8 +119,7 @@ namespace aria {
             return true;
         }
 
-        // 排序域:比较算子的可比较域两支(数值 / 字符串)加域外单列(NotComparable 覆盖 nil/
-        // bool/容器等)。sort 域检的判定底座:域外元素在排序前即拒绝。
+        // 排序域:可比较域两支(数值 / 字符串)加域外单列(NotComparable 覆盖 nil/bool/容器等)。
         enum class SortDomain : u8 {
             Number,
             String,
@@ -143,11 +136,10 @@ namespace aria {
             return SortDomain::NotComparable;
         }
 
-        // sort() -> nil:就地升序(Python list.sort 同款,变更方法返 nil)。域 = 比较算子的可比较
-        // 域(全数值或全字符串),先整体域检再排序 --比较器免「不可比」分支,排序中途无失败路径;
-        // 升序判定收口 value_less(value 层自然序,域外未定义的契约由域检保证)。GC 走查:域检与
-        // 比较均无 GC 分配;stable_sort 的临时缓冲走 std 内存(非 GC 堆),receiver 在 slots[0] 未
-        // 覆写。稳定序:等值元素(如 int 1 与 f64 1.0)保输入相对序。
+        // sort() -> nil:就地升序(变更方法返 nil)。域 = 全数值或全字符串,先整体域检再排序 --
+        // 比较器免「不可比」分支,排序中途无失败路径;升序判定收口 value_less(value 层自然序)。
+        // GC 走查:域检与比较均无 GC 分配;stable_sort 临时缓冲走 std 内存(非 GC 堆),receiver 在
+        // slots[0] 未覆写。稳定序:等值元素(如 int 1 与 f64 1.0)保输入相对序。
         bool fn_sort(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -187,9 +179,8 @@ namespace aria {
             return true;
         }
 
-        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil(下标永不为 nil 故无歧义,
-        // Ruby Array#index 同款 --aria 有负下标,-1 是合法下标,miss 时 xs[find(x)] 会静默
-        // 取末元素)。判定收口 AriaArray::find,value_equal 无分配。
+        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil(下标永不为 nil 故无歧义,miss 时
+        // xs[find(x)] 会静默取末元素)。判定收口 AriaArray::find,value_equal 无分配。
         bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -201,8 +192,8 @@ namespace aria {
             return true;
         }
 
-        // contains(x) -> Bool:成员判定收口 AriaArray::contains(list 无 in 表达式算子,
-        // 本方法即成员测试口)。
+        // contains(x) -> Bool:成员判定收口 AriaArray::contains(list 无 in 表达式算子,本方法即
+        // 成员测试口)。
         bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -224,8 +215,7 @@ namespace aria {
             return true;
         }
 
-        // is_empty() -> Bool:空表判定(len == 0 的谓词形;has_next 式动词前缀,empty 动词义
-        // 会与 clear 混淆)。
+        // is_empty() -> Bool:空表判定(len == 0 的谓词形)。
         bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -236,11 +226,9 @@ namespace aria {
             return true;
         }
 
-        // join(sep) -> string:元素经 format_value(显示形,嵌套字符串不带引号)转字符串后
-        // 以 sep 连接(JS 式宽松,任意元素;空 list 返空串;sep 可为空串 --"ab" 式粘合)。
-        // 底座 util::join。GC 走查:util::join 遍历
-        // format_value 均无 GC 分配,唯一分配点 new_string 时 receiver 在 slots[0] 未覆写、
-        // sep 在 slots[1] 经栈根。
+        // join(sep) -> string:元素经 format_value 转字符串后以 sep 连接(任意元素;空 list 返空串;
+        // sep 可为空串)。底座 util::join。GC 走查:util::join 遍历 format_value 均无 GC 分配,唯一
+        // 分配点 new_string 时 receiver 在 slots[0] 未覆写、sep 在 slots[1] 经栈根。
         bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -256,9 +244,8 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器:铸造 ObjListIterator(list 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序:list 在 slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,
-        // 中间无 GC 点;此后 list 经迭代器 trace 可达。
+        // iter() -> 迭代器:list 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:list 在
+        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {

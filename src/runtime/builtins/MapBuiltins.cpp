@@ -15,10 +15,10 @@ namespace aria {
 
     namespace {
 
-        // ---- map 方法实现(NativeFn 方法调用形态:slots[0] = receiver 兼返回槽,读 slots[1..]) ----
-        // 惯例:receiver 解开后直取 table() 绑为 table(单次使用也不内联;仅 iter 需要 ObjMap*
-        // 本体传给迭代器)。键判定一律走表内判等 ===(find 即 value_identical 匹配,int 1 与
-        // f64 1.0 是不同键),与下标读同域 -- 判键的方法不做 value_equal 内容相等,那是 list 的域。
+        // map 方法实现(NativeFn 方法调用形态见 Builtins.hpp)惯例:receiver 解开后直取 table()
+        // 绑为 table(仅 iter 需要 ObjMap* 本体传给迭代器)。键判定一律走表内判等 ===(find 即
+        // value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域 -- 判键的方法不做
+        // value_equal 内容相等,那是 list 的域。
 
         // size() -> 整数:键值对数(len(m) 的方法形态)。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
@@ -43,7 +43,7 @@ namespace aria {
         }
 
         // has(key) -> Bool:键存在判定(miss 返 false 不报错,与 get 同族)。方法名取 has 不取
-        // contains --map 上 contains 有「判键还是判值」二义(JS Map 同款命名)。
+        // contains --map 上 contains 有「判键还是判值」二义。
         bool fn_has(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -54,9 +54,8 @@ namespace aria {
             return true;
         }
 
-        // get(key) -> 值或 nil:不带 KeyError 的读(miss 走返回值,与 list find 未命中返 nil
-        // 同族;下标读 m[k] miss 仍报 KeyError,兜底不靠本方法)。map 可合法存 nil,故 miss 与
-        // 「键存在而值为 nil」在返回值上不可分 -- 需要分清时用 has。
+        // get(key) -> 值或 nil:不带 KeyError 的读(miss 与「键存在而值为 nil」在返回值上不可分,
+        // 需要分清时用 has;下标读 m[k] miss 仍报 KeyError)。
         bool fn_get(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -68,8 +67,8 @@ namespace aria {
             return true;
         }
 
-        // remove(key) -> Bool:移除命中键(置墓碑,无分配),命中 true、miss false 不报错 --与
-        // list remove 同口径:miss 走返回值,错误通道留给无信号通道的结构性失败。
+        // remove(key) -> Bool:移除命中键(置墓碑,无分配),命中 true、miss false 不报错 --与 list
+        // remove 同口径。
         bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -80,8 +79,8 @@ namespace aria {
             return true;
         }
 
-        // clear() -> nil:清空(对数归零,容量保留)。重绑 m = {} 换新表,别名仍见旧内容 --本
-        // 方法供共享可变状态原地清空(与 list clear 同款)。
+        // clear() -> nil:清空(对数归零,容量保留)。重绑 m = {} 换新表别名仍见旧内容,本方法供
+        // 共享可变状态原地清空(与 list clear 同款)。
         bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -92,10 +91,9 @@ namespace aria {
             return true;
         }
 
-        // keys() -> list:全部键的快照(新 list,与源 map 解耦;此后改 map 不动本表)。序随占用槽,
-        // unspecified(与 for-in 同)。GC 时序同 ObjMapIterator::next:map 在 slots[0] 于
-        // 栈根,new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push 走 trivial 分配不触 GC,
-        // 建成随返回值写回槽发布,窗口内无 GC 点。
+        // keys() -> list:全部键的快照(新 list,与源 map 解耦;序随占用槽,unspecified)。GC 约束:
+        // map 在 slots[0] 于栈根,new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push 走 trivial
+        // 分配不触 GC,建成随返回值写回槽发布,窗口内无 GC 点。
         bool fn_keys(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -110,9 +108,8 @@ namespace aria {
             return true;
         }
 
-        // values() -> list:全部值的快照(同 keys 的分配与 GC 时序)。与 keys 同槽位序推进,故
-        // 两次调用产出的 keys()[i] 与 values()[i] 同源同对(序本身仍 unspecified,不可跨调用
-        // 依赖)。
+        // values() -> list:全部值的快照(同 keys 的分配与 GC 时序)。与 keys 同槽位序推进,故两次
+        // 调用产出的 keys()[i] 与 values()[i] 同源同对(序本身仍 unspecified,不可跨调用依赖)。
         bool fn_values(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -128,12 +125,10 @@ namespace aria {
         }
 
         // pairs() -> list:全部键值对的快照(新 list,与源 map 解耦)。每元素是 [k, v] 二元 list,
-        // 与 for-in 每轮产出、iter().next() 同一形状;与 keys()/values() 同槽位序,故
-        // pairs()[i] == [keys()[i], values()[i]]。序随占用槽 unspecified。GC 时序:本表
-        // 唯一「元素本身也是新对象」的方法 -- 循环里每铸一个内层 list 都过 new_list 顶
-        // maybe_collect,而 receiver 之外无根的是外层与已铸内层,故外层须挂守卫(内层铸后仅
-        // push 即入外层,push 走 trivial 分配不触 GC、窗口内无 GC 点,无需各自挂)。守卫存活至
-        // 函数末,slots[0] 写回时 receiver 让位的 map 也已不再需要。
+        // 与 keys()/values() 同槽位序,故 pairs()[i] == [keys()[i], values()[i]]。GC 约束:本表唯一
+        // 「元素本身也是新对象」的方法 -- 循环里每铸一个内层 list 都过 new_list 顶 maybe_collect,
+        // 而 receiver 之外无根的是外层与已铸内层,故外层须挂守卫(内层铸后仅 push 即入外层,窗口内
+        // 无 GC 点,无需各自挂)。
         bool fn_pairs(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -152,9 +147,8 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器:铸造 ObjMapIterator(map 与其迭代器成对,铸造口按类型解开
-        // receiver)。GC 时序同 ListBuiltins::fn_iter:map 在 slots[0] 于栈根,迭代器白色
-        // 建成**先写回槽发布再返回**,中间无 GC 点;此后 map 经迭代器 trace 可达。
+        // iter() -> 迭代器:map 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:map 在
+        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {

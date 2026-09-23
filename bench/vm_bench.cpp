@@ -1,12 +1,12 @@
 // bench/vm_bench.cpp
 //
-// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「是否值得做不绑定派发
-// 派发」这一性能批的依据（见 .claude/reference/runtime/collections-builtin-methods-plan.md §批 9），
+// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「不绑定派发」取舍的依据
+// （解读见 .claude/reference/runtime/collections-builtin-methods-plan.md），
 // 本程序是它们的可复现入口--改 CodeGen 发射或 VM 派发路径前后各跑一次对照，把新数字回写文档。
 //
-// 每行压一种派发形态，迭代次数统一 kIterations（循环体共 204,800 次），故 ns/次可跨行比较：
-//   forin_list / forin_range  迭代协议：iter/has_next/next 各一次 `LOAD_FIELD` + `CALL`
-//   starts_with               单方法调用：一次 `LOAD_FIELD` + `CALL`（不涉迭代协议）
+// 每行压一种派发形态，迭代次数统一 kIterations（循环体共 1,638,400 次），故 ns/次可跨行比较：
+//   forin_list / forin_range  迭代协议：iter/has_next/next 各一次 `PREPARE_METHOD` + `CALL_METHOD`
+//   starts_with               单方法调用：一次 `PREPARE_METHOD` + `CALL_METHOD`（不涉迭代协议）
 //   instance_call/instance_read  用户类实例方法的调用与**读取**:调用走「类链查表 + 不绑定」,
 //                              读取每次现场绑定(方法值是一等值,必须产出 bound 对象)
 //   plain_call                普通函数调用：无 `LOAD_FIELD` 的调用下界
@@ -274,7 +274,8 @@ namespace {
         return src;
     }
 
-    // 实例方法：bound 走 fields 缓存（每实例每名一生只物化一次），故成本落在缓存命中 + 一次 CALL。
+    // 实例方法调用：走不绑定形态（`load_field_unbound`：每次按当前类链解析、零 bound 分配），
+    // 成本落在类链查表 + 一次 CALL，与 instance_read 的「每次读现场绑定」形成对照。
     [[nodiscard]] String make_instance_method_source() {
         String src;
         src += "def Counter {\n";

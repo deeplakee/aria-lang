@@ -64,7 +64,6 @@ namespace {
     }
 
     // ---- 正确性校验(非计时)----
-    // 完整跑一遍 insert / 遍历 / find / erase,核验键和、值和、计数与删除后状态。
     template<class Hash>
     void verify_correctness(usize n) {
         GC             gc;

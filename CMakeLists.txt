@@ -202,7 +202,8 @@ FetchContent_Declare(
         URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-# Windows: 避免与 gtest 的 main 冲突
+# Windows: 令 gtest 保持共享 CRT(/MD),与主工程同一运行库--gtest 默认会把静态库构建的 CRT 改成 -MT,
+# 两边运行库不一致会在链接与运行期出现难以定位的问题。
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 

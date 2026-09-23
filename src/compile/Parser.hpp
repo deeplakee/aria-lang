@@ -9,22 +9,16 @@
 
 namespace aria {
 
-    // 递归下降语法分析器：把 Lexer 产出的 Token 流构造为 AST（ProgramNode）。
-    //
-    // 文法来源：docs/grammar.txt。各解析函数与非终结符一一对应，命名一致
-    // （program/declaration/statement/expression/assignment/logic_or/.../primary/pattern 等）。
-    //
-    // 错误处理（与 Lexer 风格一致，见 AGENTS.md「四条错误通道」之 1 与 3）：
-    //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--
-    //     error()/expect() 抛出，沿 C++ 调用栈上抛。
-    //   - 在 declaration() 层捕获：记入 errors_、做 panic-mode 同步（synchronize）
-    //     后继续解析下一条声明/语句，从而像 Lexer 一样收集多个错误。
-    //   - 边界 parse() 返回 Result<UPtr<ProgramNode>, List<Error>>：
-    //     有任何错误 -> 返回错误集合（丢弃部分 AST）；无错 -> 返回完整程序。
-    //
-    // 生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc
-    // （含 SourceFile*）提供，故调用方须保证 SourceFile 在解析期间存活（同 Lexer
-    //  的生命周期约束）。
+    // 递归下降语法分析器：把 Lexer 产出的 Token 流构造为 AST（ProgramNode）。文法来源：docs/grammar.txt。各解析函数与
+    // 非终结符一一对应，命名一致（program/declaration/statement/expression/assignment/logic_or/.../primary/pattern 等
+    // ）。错误处理（与 Lexer 风格一致，见 AGENTS.md「四条错误通道」之 1 与 3）：
+    //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--error()/expect() 抛出，沿 C++ 调用栈上抛
+    //     。
+    //   - 在 declaration() 层捕获：记入 errors_、做 panic-mode 同步（synchronize）后继续解析下一条声明/语句，从而像
+    //     Lexer 一样收集多个错误。
+    //   - 边界 parse() 返回 Result<UPtr<ProgramNode>, List<Error>>：有任何错误 -> 返回错误集合（丢弃部分 AST）；无错 -
+    //     > 返回完整程序。生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc（含 SourceFile*）
+    //     提供，故调用方须保证 SourceFile 在解析期间存活（同 Lexer 的生命周期约束）。
     class Parser {
     public:
         // 静态服务入口：解析 token 流为 Program AST，返回程序或错误集合。
@@ -35,12 +29,11 @@ namespace aria {
         // 一次性实例：构造即注入 token 流，仅静态入口 parse 构造。
         explicit Parser(List<Token> tokens) noexcept;
 
-        // --- 扫描状态（构造注入）---
         List<Token> tokens_;
         usize       pos_;
         List<Error> errors_;
 
-        // --- token 游标辅助 ---
+        // token 游标辅助
         // 越界（ahead 超出末尾）返回末尾 Eof token，安全。
         [[nodiscard]]
         const Token& peek(usize ahead = 0) const noexcept;
@@ -64,7 +57,7 @@ namespace aria {
         [[nodiscard]]
         const Token& previous() const noexcept;
 
-        // --- 错误与期待 ---
+        // 错误与期待
         // 以当前 token 位置构造 Error 并抛 AriaCompileException（[[noreturn]]），
         // 由 declaration() 捕获。EOF 时改报 UnexpectedEof。
         // 形态与 CodeGen::fail 同构（变参 std::format_string，格式化归报错入口）。
@@ -86,7 +79,7 @@ namespace aria {
         // （';' 之后，或 fun/def/var/if/while/for/.../print/'{' 等起首关键字）。
         void synchronize();
 
-        // --- 顶层与声明 ---
+        // 顶层与声明
         [[nodiscard]]
         UPtr<ProgramNode> program();
 
@@ -116,7 +109,6 @@ namespace aria {
         [[nodiscard]]
         VarBinding var_binding();
 
-        // --- 语句 ---
         [[nodiscard]]
         UPtr<StmtNode> statement();
 
@@ -161,7 +153,7 @@ namespace aria {
         [[nodiscard]]
         UPtr<BlockNode> block();
 
-        // --- 表达式（优先级自低向高）---
+        // 表达式（优先级自低向高）
         [[nodiscard]]
         UPtr<ExprNode> expression();
 
@@ -230,7 +222,7 @@ namespace aria {
         [[nodiscard]]
         MatchExprArm match_expr_arm();
 
-        // --- 解构模式 ---
+        // 解构模式
         // pattern -> identifier | "_" | listPattern。
         [[nodiscard]]
         UPtr<PatternNode> pattern();
@@ -243,7 +235,7 @@ namespace aria {
         [[nodiscard]]
         UPtr<IdentifierPatternNode> rest_pattern();
 
-        // --- for / for-in 消歧与收尾 ---
+        // for / for-in 消歧与收尾
         // pos_ 位于 '(' 后首个 token；判定是否为 <pattern> "in"（identifier/"_" 紧跟 in，
         // 或 [...] 后跟 in）。in 非表达式运算符，故 <pattern> in 唯一标识 forIn。
         [[nodiscard]]

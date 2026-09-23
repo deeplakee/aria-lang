@@ -16,26 +16,11 @@ namespace aria {
     // include 该头以调用 visitXxxNode。参数/返回值只用指针与引用，无需完整类型。
     class AstVisitor;
 
-    // =========================================================================
-    // AST 根基类
-    // =========================================================================
-    //
-    // 所有语法树节点的公共基类。设计要点：
-    //   - 持有 SourceLoc（源码位置）：parser 从构造的首个 token 拷入，供语义分析 /
-    //     代码生成阶段报错定位。默认构造为空态（src=nullptr），合成节点可保持空态。
-    //   - dump(indent) 把本节点（含子树）渲染为带缩进的树形文本并返回（存储到字符串）；
-    //     indent 为当前缩进层数（每层 2 空格）。所有派生节点必须实现（纯虚）。
-    //     标 [[nodiscard]]：返回的字符串不应被丢弃--丢弃通常意味着忘了拼接子树文本。
-    //   - display() 直接打印本节点（含子树）到终端：经 dump 构造文本后 io::print 输出。
-    //   - 多态通过指针使用（UPtr<ExprNode>/UPtr<StmtNode> 等）；ASTNode 因
-    //     dump 为纯虚而不可直接实例化。
-    //
-    // 命名约定：所有 ASTNode 派生类（含抽象分类基类）均以 Node 后缀命名，ASTNode 自身
-    // 已含 Node 故不变。辅助值类型（Param/MatchPattern/MatchArm/MatchExprArm/VarBinding/
-    // MapEntry）非 ASTNode 派生，不加后缀。
-    //
-    // 生命周期：节点持有的 UPtr 子节点随节点一起销毁；SourceLoc::src 为非拥有指针，
-    // 不得比所引用的 SourceFile 活得更久（同 Token::lexeme_ 约束）。
+    // AST 根基类：所有节点持 SourceLoc（parser 取构造首 token，供语义/代码生成报错定位；空态 = 合成节点）。dump(indent
+    // ) 渲染带缩进的树形文本（每层 2 空格，[[nodiscard]]：丢弃返回值通常意味着忘了拼子树）、display() 经 dump + io::
+    // print 打印；dump 为纯虚故 ASTNode 不可直接实例化，多态一律经 UPtr 指针。命名约定：派生类（含抽象分类基类）以
+    // Node 后缀；辅助值类型（Param/MatchPattern/MatchArm/MatchExprArm/VarBinding/MapEntry）非 ASTNode 派生、不带后缀。
+    // 生命周期：UPtr 子节点随节点销毁；SourceLoc::src 非拥有，不得比所引 SourceFile 活得久（同 Token::lexeme_ 约束）。
     struct ASTNode {
         ASTNode() noexcept = default;
         explicit ASTNode(const SourceLoc loc) noexcept : loc_{loc} {}
@@ -71,27 +56,14 @@ namespace aria {
         SourceLoc loc_;
     };
 
-    // =========================================================================
-    // 分类基类
-    // =========================================================================
-    //
-    //   - StmtNode：语句基类。文法 declaration 产生式为 funDecl|defDecl|varDecl|statement--
-    //     声明即「可出现在 program/block 顶层的语句」，故 FunDeclNode/DefDeclNode/
-    //     VarDeclNode 亦为 StmtNode 的派生。ProgramNode 与 BlockNode 持 List<UPtr<StmtNode>>。
-    //   - ExprNode：表达式基类。
-    //   - PatternNode：解构模式基类（var 声明的 varTarget、for-in 目标与解构赋值左侧目标）。
-    //
-    // 三者仅作分类标记、无额外数据，继承 ASTNode 的构造函数。
-    //
-    // 具体节点段定义顺序：ProgramNode -> StmtNode -> ExprNode -> PatternNode。依赖关系自洽，
-    // 无需任何前置声明：
-    //   - ProgramNode 持 List<UPtr<StmtNode>>（基，已完整）。
-    //   - StmtNode 段依赖 ExprNode 基（条件/返回等持 UPtr<ExprNode>）；段内 BlockNode
-    //     置首--TryStmtNode/FunDeclNode 持 UPtr<BlockNode>。
-    //   - ExprNode 段依赖 PatternNode 基（DestructureAssignmentNode）与 StmtNode 段
-    //     （LambdaExprNode 持 UPtr<BlockNode>--StmtNode 段在前，BlockNode 已完整，
-    //     构造函数可 inline，无需移至 .cpp）。
-    //   - PatternNode 段仅依赖 PatternNode 基与辅助类型。
+    // 分类基类（仅作分类标记、无额外数据，继承 ASTNode 构造）：
+    //   - StmtNode：语句基类。文法 declaration = funDecl|defDecl|varDecl|statement--声明即「可出现在 program/block 顶
+    //     层的语句」，故 FunDeclNode/DefDeclNode/VarDeclNode 亦为其派生；ProgramNode 与 BlockNode 持 List<UPtr<
+    //     StmtNode>>。
+    //   - ExprNode：表达式基类。- PatternNode：解构模式基类（var 的 varTarget、for-in 目标、解构赋值左侧目标）。段序
+    //     ProgramNode -> StmtNode -> ExprNode -> PatternNode 即满足依赖，无需任何前置声明（BlockNode 置于 StmtNode 段
+    //     首以支持 TryStmtNode/FunDeclNode；LambdaExprNode 持 UPtr<BlockNode> 故 ExprNode 段在其后，构造函数可 inline
+    //     ）。
     struct StmtNode : ASTNode {
         using ASTNode::ASTNode;
     };
@@ -104,15 +76,11 @@ namespace aria {
         using ASTNode::ASTNode;
     };
 
-    // =========================================================================
     // 运算符枚举（与 TokenType 解耦，AST 自持语义标识）
-    // =========================================================================
-    //
     // 不直接复用 TokenType：AST 是词法之上的语义结构，运算符语义独立于词法拼写
     // （如 "and"/"&&" 同为 Op::Binary::And）。parser 负责 TokenType->运算符枚举的映射。
 
     namespace Op {
-        // 二元运算符：覆盖 logic_or/logic_and/equality/comparison/term/factor 各层。
         enum class Binary : u8 {
             Or,              // ||
             And,             // &&
@@ -131,7 +99,6 @@ namespace aria {
             Percent,         // %
         };
 
-        // 一元（前缀）运算符：unary 产生式中的 - / ! / ++ / --。
         enum class Unary : u8 {
             Minus,  // -
             Not,    // !
@@ -160,10 +127,7 @@ namespace aria {
         StringView to_string(Assignment op) noexcept;
     } // namespace Op
 
-    // =========================================================================
     // 共享辅助类型（非 ASTNode：作为节点字段的值类型，持 UPtr 子节点）
-    // =========================================================================
-    //
     // 这些结构是 AST 节点字段的值类型（如 FunDeclNode 的参数列表、MapExprNode 的键值对），
     // 不是 ASTNode 派生（不参与多态，不加 Node 后缀），但同样提供 dump(usize) 以便父节点
     // 统一渲染。move-only（持 UPtr）。仅引用 StmtNode/ExprNode/PatternNode 基类（已完整）。
@@ -229,9 +193,7 @@ namespace aria {
         String dump(usize indent) const;
     };
 
-    // =========================================================================
     // dump 基础设施
-    // =========================================================================
     namespace detail::ast {
 
         inline void write_indent(String& out, const usize indent) {
@@ -296,9 +258,7 @@ namespace aria {
 
     } // namespace detail::ast
 
-    // =========================================================================
     // ProgramNode（AST 根）
-    // =========================================================================
 
     // ProgramNode：program -> declaration*。整个编译单元的根，持顶层声明（StmtNode）列表。
     struct ProgramNode : ASTNode {
@@ -313,9 +273,7 @@ namespace aria {
         List<UPtr<StmtNode>> declarations;
     };
 
-    // =========================================================================
     // 语句节点（StmtNode）
-    // =========================================================================
 
     // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
@@ -512,7 +470,7 @@ namespace aria {
         List<MatchArm> arms;
     };
 
-    // --- 声明节点（StmtNode 派生：声明即「可出现在 program/block 顶层的语句」） ---
+    // 声明节点（StmtNode 派生：声明即「可出现在 program/block 顶层的语句」）
 
     // 函数声明：fun identifier params block。kind 见 FnKind。
     struct FunDeclNode : StmtNode {
@@ -532,10 +490,9 @@ namespace aria {
 
     // def 声明："def" identifier (":" identifier)? "{" (memberVar | funDecl | function)* "}"。
     //   - superclass：nullopt 表无父类（无 ":"）；实例方法经此继承，super 仍可用。
-    //   - members：体内成员列表（按出现顺序保留，支撑静态变量初始化顺序--前一静态变量可被后续
-    //     初始化器引用）。三种成员节点：StaticVarMemberNode（静态变量）/ FunDeclNode
-    //     kind=StaticMethod（fun 声明，无 this 绑定）/ FunDeclNode kind=Method（裸
-    //     identifier 方法，有 this 绑定；名为 init 烙 InitMethod 构造角色）。
+    //   - members：体内成员列表（按出现顺序保留，支撑静态变量初始化顺序--前一静态变量可被后续初始化器引用）。三种成员
+    //     节点：StaticVarMemberNode（静态变量）/ FunDeclNode kind=StaticMethod（fun 声明，无 this 绑定）/ FunDeclNode
+    //     kind=Method（裸 identifier 方法，有 this 绑定；名为 init 烙 InitMethod 构造角色）。
     struct DefDeclNode : StmtNode {
         DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<UPtr<StmtNode>> members) :
             StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)} {}
@@ -578,12 +535,9 @@ namespace aria {
         UPtr<ExprNode> initializer;
     };
 
-    // =========================================================================
     // 表达式节点（ExprNode）
-    // =========================================================================
 
-    // ----- 字面量与基础表达式（primary） -----
-    //
+    // 字面量与基础表达式（primary）
     // 注：parenExpr -> "(" expression ")" 不设独立节点--括号仅用于结合优先级，
     //     AST 直接保留内层表达式（语义无差，且 dump 不受影响）。
 
@@ -682,13 +636,9 @@ namespace aria {
         String name;
     };
 
-    // ----- 运算符表达式 -----
-    //
-    // 文法层级见 grammar.txt：前置一元 + 后缀调用/取字段/取下标链；赋值（含复合与解构）
-    // 右结合，作 expression 顶层。
+    // 运算符表达式
 
-    // 二元运算表达式：logic_or / logic_and / equality / comparison / term / factor
-    // 各层统一为一个节点，运算种类由 op 区分（左结合，parser 已构建左倾树）。
+    // 二元运算表达式：各文法层级统一为一个节点，运算种类由 op 区分（左结合，parser 已构建左倾树）。
     struct BinaryExprNode : ExprNode {
         BinaryExprNode(const SourceLoc loc, const Op::Binary op, UPtr<ExprNode> lhs, UPtr<ExprNode> rhs) :
             ExprNode{loc}, op{op}, lhs{std::move(lhs)}, rhs{std::move(rhs)} {}
@@ -789,7 +739,7 @@ namespace aria {
         UPtr<ExprNode> index;
     };
 
-    // ----- 复合表达式（primary 的复合部分） -----
+    // 复合表达式（primary 的复合部分）
 
     // 列表字面量：[e, e, ...]。
     struct ListExprNode : ExprNode {
@@ -877,12 +827,7 @@ namespace aria {
         List<MatchExprArm> arms;
     };
 
-    // =========================================================================
-    // 解构模式节点（PatternNode）
-    // =========================================================================
-    //
-    // 对应文法 pattern 产生式。出现在 var 声明的 varTarget、for-in 目标与解构赋值
-    // （"=" 左侧目标）。
+    // 解构模式节点（PatternNode）：出现在 var 声明的 varTarget、for-in 目标与解构赋值左侧目标。
     //   - listPattern 映射为下标访问（位置 i 绑 list[i]），多余忽略、不足越界报错。
     //   - rest 仅 listPattern 支持（"..." 前缀，收集剩余为新 list）。
 

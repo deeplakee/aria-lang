@@ -19,7 +19,6 @@ namespace aria {
     using TokenValue = std::variant<std::monostate, i64, f64, String>;
 
     // 词法单元：lexer 产出的最小语法单位。
-    //
     // lexeme 为指向源码内容的 StringView，不得比所引用的 SourceFile 活得更久
     // （见 source_file.hpp 的生命周期约束）。字面量值经 lexer 解析后存于 value_，
     // 后续阶段无需再次扫描 lexeme。
@@ -33,7 +32,7 @@ namespace aria {
         Token(const TokenType type, const StringView lexeme, const SourceLoc loc) noexcept :
             Token{type, lexeme, loc, {}} {}
 
-        // --- 字面量 token 的工厂 ---
+        // 字面量 token 的工厂
         [[nodiscard]]
         static Token make_integer(const i64 value, const StringView lexeme, const SourceLoc loc) noexcept {
             return Token{TokenType::Integer, lexeme, loc, value};
@@ -96,7 +95,6 @@ namespace aria {
         String to_string() const;
 
     private:
-        // 全参私有构造函数：所有初始化在此收口。
         Token(const TokenType type, const StringView lexeme, const SourceLoc loc, TokenValue value) noexcept :
             type_{type}, loc_{loc}, lexeme_{lexeme}, value_{std::move(value)} {}
 

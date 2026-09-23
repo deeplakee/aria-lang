@@ -1,26 +1,18 @@
 #ifndef ARIA_ASTVISITOR_HPP
 #define ARIA_ASTVISITOR_HPP
 
-// AST 访问者（Visitor）接口：作为代码生成器（AST -> CodeUnit 的字节码编译器）等
-// 遍历类（如语义分析器）的父类。
-//
-// 这里前置声明所有具体 AST 节点类型（完整定义见 compile/ast.hpp）。本头文件只用到
-// 节点类型的引用，前置声明即可，与 ast.hpp 解耦；子类（代码生成器等）需自行 include
-// ast.hpp 以访问节点成员。
-//
-// 每个具体节点对应一个 visitXxxNode(XxxNode&) 纯虚方法--子类必须逐一实现，编译器据此
-// 强制覆盖全部节点类型，避免漏处理；双分派由节点的 accept(AstVisitor&) 完成
-// （见 compile/ast.hpp），访问者自身不做按运行时类型的集中分派。
-//
-// 参数统一用非 const 引用：子类可在遍历中读写节点（如语义分析阶段注记解析结果）。
-// 节点生命周期由 AST 的 UPtr 树持有者保证，访问者不拥有节点。
+// AST 访问者（Visitor）接口：代码生成器（AST -> CodeUnit 的字节码编译器）等遍历类的父类。
+// 前置声明所有具体 AST 节点类型（完整定义见 compile/ast.hpp），只用到引用，与 ast.hpp 解耦；
+// 子类需自行 include ast.hpp 访问节点成员。每个节点对应一个 visitXxxNode(XxxNode&) 纯虚方法，
+// 子类须逐一实现（编译器据此强制覆盖全部节点类型）；双分派由节点的 accept(AstVisitor&) 完成。
+// 参数统一用非 const 引用（子类可读写节点）；节点生命周期由 AST 的 UPtr 树持有者保证。
 
 namespace aria {
 
-    // --- 根节点 ---
+    // 根节点
     struct ProgramNode;
 
-    // --- 语句节点（StmtNode 派生） ---
+    // 语句节点（StmtNode 派生）
     struct BlockNode;
     struct ExprStmtNode;
     struct PrintStmtNode;
@@ -40,7 +32,7 @@ namespace aria {
     struct VarDeclNode;
     struct StaticVarMemberNode;
 
-    // --- 表达式节点（ExprNode 派生） ---
+    // 表达式节点（ExprNode 派生）
     struct IntegerLiteralNode;
     struct FloatLiteralNode;
     struct StringLiteralNode;
@@ -63,7 +55,7 @@ namespace aria {
     struct LambdaExprNode;
     struct MatchExprNode;
 
-    // --- 解构模式节点（PatternNode 派生） ---
+    // 解构模式节点（PatternNode 派生）
     struct IdentifierPatternNode;
     struct WildcardPatternNode;
     struct ListPatternNode;
@@ -72,10 +64,10 @@ namespace aria {
     public:
         virtual ~AstVisitor() = default;
 
-        // --- 根节点 ---
+        // 根节点
         virtual void visitProgramNode(ProgramNode& node) = 0;
 
-        // --- 语句节点 ---
+        // 语句节点
         virtual void visitBlockNode(BlockNode& node)                     = 0;
         virtual void visitExprStmtNode(ExprStmtNode& node)               = 0;
         virtual void visitPrintStmtNode(PrintStmtNode& node)             = 0;
@@ -95,7 +87,7 @@ namespace aria {
         virtual void visitVarDeclNode(VarDeclNode& node)                 = 0;
         virtual void visitStaticVarMemberNode(StaticVarMemberNode& node) = 0;
 
-        // --- 表达式节点 ---
+        // 表达式节点
         virtual void visitIntegerLiteralNode(IntegerLiteralNode& node)               = 0;
         virtual void visitFloatLiteralNode(FloatLiteralNode& node)                   = 0;
         virtual void visitStringLiteralNode(StringLiteralNode& node)                 = 0;
@@ -118,7 +110,7 @@ namespace aria {
         virtual void visitLambdaExprNode(LambdaExprNode& node)                       = 0;
         virtual void visitMatchExprNode(MatchExprNode& node)                         = 0;
 
-        // --- 解构模式节点 ---
+        // 解构模式节点
         virtual void visitIdentifierPatternNode(IdentifierPatternNode& node) = 0;
         virtual void visitWildcardPatternNode(WildcardPatternNode& node)     = 0;
         virtual void visitListPatternNode(ListPatternNode& node)             = 0;

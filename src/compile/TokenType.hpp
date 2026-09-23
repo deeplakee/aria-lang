@@ -12,15 +12,11 @@ namespace aria {
     //   - 运算符（算术 / 复合赋值 / 比较 / 逻辑 / 自增自减 / =>）
     //   - 标点（括号 / 逗号 / 冒号 / 分号 / 点 / ...）
     //   - 字面量（整数 / 浮点 / 字符串 / 标识符 / _ 占位符）
-    //   - 特殊（EOF）
-    //
-    // 类型全量注册表（单一事实源，同 code.hpp 的 ARIA_OPCODE_LIST / ErrorCode.hpp 的
-    // ARIA_ERROR_LIST 风格）：TokenType 枚举、可读名表 kTokenNames 与拼写表 kTokenLexemes
-    // 都由 ARIA_TOKEN_LIST(X) 展开，新增类型加一行 X(名字, 拼写, 是否关键字) 即收口，
-    // 名字串经 # 派生，无第二处手写。隐式连续编号，下标即 std::to_underlying(type)。
-    // 第二列拼写：关键字/运算符/标点/下划线为字面拼写，字面量与 EOF 无固定拼写记空串；
-    // 第三列标记该类型是否参与关键字查表（仅关键字 true）。
-    // 逐值注释用块注释（行注释会吞续行符）。
+    //   - 特殊（EOF）类型全量注册表（单一事实源，同 code.hpp 的 ARIA_OPCODE_LIST / ErrorCode.hpp 的 ARIA_ERROR_LIST 风
+    //     格）：TokenType 枚举、可读名表 kTokenNames 与拼写表 kTokenLexemes 都由 ARIA_TOKEN_LIST(X) 展开，新增类型加
+    //     一行 X(名字, 拼写, 是否关键字) 即收口，名字串经 # 派生，无第二处手写。隐式连续编号，下标即 std::
+    //     to_underlying(type)。第二列拼写：关键字/运算符/标点/下划线为字面拼写，字面量与 EOF 无固定拼写记空串；第三列
+    //     标记该类型是否参与关键字查表（仅关键字 true）。逐值注释用块注释（行注释会吞续行符）。
 #define ARIA_TOKEN_LIST(X)                                               \
     /* --- 特殊 --- */                                                   \
     X(Eof, "", false)                                                    \

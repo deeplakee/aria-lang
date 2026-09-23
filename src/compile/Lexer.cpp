@@ -9,7 +9,6 @@ namespace aria {
 
         bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
 
-        // 判定 ch 是否为 base 进制的合法数字字符。
         // 合法进制范围: 2 ~ 36
         bool is_radix_digit(const int base, const char ch) {
             if (base < 2 || base > 36) {

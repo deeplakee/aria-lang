@@ -217,7 +217,7 @@ namespace aria::src {
 
         // 真实位置构造：src 必须非空（断言保证），offset 为 token/节点起点的字节偏移。
         SourceLoc(SourceFile* src, const u32 offset) noexcept : src_{src}, offset_{offset} {
-            ASSERT(src != nullptr, "SourceLoc 需要非空 src 指针");
+            ASSERT(src != nullptr, "src must not be null");
         }
 
         [[nodiscard]]

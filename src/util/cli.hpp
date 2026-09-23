@@ -250,7 +250,7 @@ namespace aria::util {
                 const StringView default_value, const bool is_required, const Slot kind) :
                 long_name_{long_name}, short_name_{short_name}, description_{description},
                 default_value_{default_value}, is_required_{is_required}, kind_{kind} {
-                ASSERT(kind_ != Slot::Empty, "Def kind 不能为 Empty");
+                ASSERT(kind_ != Slot::Empty, "kind must not be Empty");
             }
 
             String long_name_;  // flag/option 长名；positional 参数名
@@ -394,13 +394,13 @@ namespace aria::util {
         // 注册名查重（长名 + 短名，共用一个长名空间；须在 defs_ emplace 之前调用）。
         // 重名（含占用内置 --help/-h）为调用方编程错误，注册期 ASSERT 拒绝；NDEBUG 下首个注册生效。
         void register_name(const StringView long_name, const char short_name) const {
-            ASSERT(!find_long(long_name), std::format("arg 名 {} 重复注册", long_name).c_str());
+            ASSERT(!find_long(long_name), std::format("long name {} registered twice", long_name).c_str());
 
             if (short_name == '\0') {
                 return;
             }
 
-            ASSERT(!find_short(short_name), std::format("arg 短名 -{} 重复注册", short_name).c_str());
+            ASSERT(!find_short(short_name), std::format("short name -{} registered twice", short_name).c_str());
         }
 
         // 注册内置 help flag 为 defs_[0]（恒居 help() 渲染首位，parse 命中即短路）；后续用户注册

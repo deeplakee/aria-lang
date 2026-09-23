@@ -94,7 +94,7 @@ namespace aria {
     X(InvalidState, Internal)    /* VM 处于非法内部状态 */                                                       \
     /* ========== RESOURCE ERROR（资源 / 环境）========== */                                                     \
     X(OutOfMemory, Resource)       /* GC 分配失败 */                                                             \
-    X(FileReadFailed, Resource)    /* 源码/模块文件读取失败（映射自 fs::FsErrCode） */                           \
+    X(FileReadFailed, Resource)    /* 入口源文件读取失败；import 侧读盘失败归 ModuleNotFound */                   \
     X(ModuleNotFound, Resource)    /* import 的模块不存在 */                                                     \
     X(CodeUnitTooLarge, Resource)  /* 常量/指令数超限 */                                                         \
     X(TooManyLocals, Resource)     /* 局部变量数超限 */                                                          \
@@ -115,7 +115,7 @@ namespace aria {
 #undef ARIA_ERROR_LIST
 
     static_assert(std::to_underlying(ErrorCategory::Resource) + 1 == std::size(kCategoryNames),
-                  "kCategoryNames 与 ErrorCategory 枚举不同步");
+                  "kCategoryNames and ErrorCategory enum are out of sync");
 
     // 错误大类可读名（如 "Syntax"）。
     [[nodiscard]]

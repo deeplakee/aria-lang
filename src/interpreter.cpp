@@ -19,11 +19,11 @@ namespace aria {
         // aria CLI 定义：注册顺序决定 help() 渲染次序与解析优先级（见 cli.hpp）。
         util::Cli build_cli() {
             util::Cli cli{kProductName};
-            cli.set_description("aria 脚本语言解释器");
-            cli.add_flag("repl", "启动交互式 REPL");
-            cli.add_option("eval", "求值源码字符串后退出", "", 'e');
-            cli.add_flag("version", "打印版本号后退出", 'v');
-            cli.add_positional("file", "待运行的 .aria 脚本文件", false);
+            cli.set_description("aria script interpreter");
+            cli.add_flag("repl", "Start an interactive REPL");
+            cli.add_option("eval", "Evaluate a source string and exit", "", 'e');
+            cli.add_flag("version", "Print version and exit", 'v');
+            cli.add_positional("file", "Script file to run", false);
             return cli;
         }
 

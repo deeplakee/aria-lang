@@ -134,7 +134,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## VM 异常通道（throw/catch）
 
-aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），设计全文见 `vm-design.md` §4.5-§4.8/§7，踩坑对策见 `exception-implementation-pitfalls.md`（坑 #1-#20）。
+aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），设计全文见 `vm-design.md` §4.5-§4.8/§7，踩坑对策见 `exception-implementation-pitfalls.md`（坑编号 #1-#20）。
 
 - 错误站点 raise 载荷入挂起寄存器 -> `AriaVM::unwind()` 自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈（未命中帧记跟踪三元组）。
 - 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 Movement 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。

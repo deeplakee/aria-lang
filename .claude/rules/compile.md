@@ -132,7 +132,7 @@ FunDecl/Lambda/类成员方法共用；kind 无默认值、调用处显式写明
 
 ### try/catch/throw 发射
 
-VM 侧语义见 `.claude/reference/runtime/exception-implementation-pitfalls.md`（坑 #4/#9/#10）与 `runtime.md`「VM 异常通道」。
+VM 侧语义见 `.claude/reference/runtime/exception-implementation-pitfalls.md`（坑 #4/#10）与 `runtime.md`「VM 异常通道」。
 
 - `visitThrowStmtNode` = `emit_expr(e)` + `THROW`（弹值入寄存器，unwind 派发时值落 catch 参数槽）。
 - `visitTryStmtNode`（仅 try/catch；`finally` 不支持、善后 defer 为可选后续；无 catch -> `fail TryWithoutHandler`）lowering 采用**入口预插占位 + 结尾回填**：入口快照 `stack_depth = cur_fn_ctx()->locals_.size()`（try 体 scope 开前）+ `begin = cur_cu()->size()` + `try_records.push` 占位 -> `begin_scope` + 编译 try 体（嵌套 try 在此各自预插，记录按 begin 非降序）+ `end_scope` -> `end = size()` + `emit_jump`（正常路径跳过 catch）-> L_catch `begin_scope` + `define_local_or_fail(catch_param)`（**无 STORE_LOCAL**--e 槽恒 == `stack_depth`，unwind 截栈后 push 恰落该槽，值填槽不变式）+ 编译 catch 体 + `end_scope` -> `patch_jump` -> 回填占位项 `end/handle/stack_depth`。

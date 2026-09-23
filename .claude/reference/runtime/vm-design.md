@@ -160,7 +160,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者经 raise 装箱(无位置),前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
-**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链时**每帧 `exit_frame` 前**顺带收集 `(function, module, last_ip)` 三元组(帧尚存活;坑点文档 #13 的遍历到「所有帧无 handler」时帧已全弹,届时无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接输出:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
+**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链搜索 handler 时,对**未命中的帧**顺带收集 `(function, module, last_ip)` 三元组(搜索阶段不动帧栈、帧引用全程有效;若等到「所有帧无 handler」再去查,帧已全弹、无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接输出:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
 
 ### 4.9 协程:单循环切换模型(M6 定稿,Wren 对照)
 
@@ -258,5 +258,5 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - `src/runtime/FrameStack.hpp`:帧栈模板 + `truncate`(unwind 用)。
 - `src/bytecode/CodeUnit.hpp`:`TryRecord`/`find_try_handler`(异常查表已就绪)。
 - AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。
-- `.claude/reference/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
+- `.claude/reference/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
 - **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现;本地副本 `/Users/icelake/src/wren`,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。

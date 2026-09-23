@@ -273,7 +273,7 @@ TEST(ObjMap, DebugRepr) {
     map->table().set(Value::from_obj(k), Value::from_obj(inner));
     EXPECT_EQ(map->debug_repr(), "{\"k\": [1, \"ab\"]}");
     EXPECT_EQ(map->to_string(), "{\"k\": [1, \"ab\"]}");                         // 显示同文案
-    EXPECT_EQ(aria::format_value(Value::from_obj(map)), "{\"k\": [1, \"ab\"]}"); // str/print 位
+    EXPECT_EQ(aria::format_value(Value::from_obj(map)), "{\"k\": [1, \"ab\"]}"); // str/println 位
 
     auto multi = make_map(gc, guard);
     multi->table().set(Value::from_int(1), Value::from_int(10));

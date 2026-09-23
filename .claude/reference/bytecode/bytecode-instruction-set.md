@@ -22,7 +22,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | this 字段（优化） | `LOAD_THIS_FIELD` `STORE_THIS_FIELD` |
 | 算术/比较/逻辑 | `EQUAL` `NOT_EQUAL` `STRICT_EQUAL` `STRICT_NOT_EQUAL` `GREATER` `GREATER_EQUAL` `LESS` `LESS_EQUAL` `ADD` `SUBTRACT` `MULTIPLY` `DIVIDE` `MOD` `NOT` `NEGATE` |
 | 栈操作 | `POP` `POP_N` `DUP` `DUP2` |
-| 输出/调试 | `PRINT` `NOP` |
+| 调试 | `NOP` |
 | 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` |
 | 函数/闭包 | `CALL` `CLOSURE` |
 | 类/对象 | `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `PREPARE_METHOD` `CALL_METHOD` `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` |
@@ -230,7 +230,6 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `PRINT` | 无 | `[v] -> []` | 弹出值并输出（对应 `print` 语句；格式化用 `io::println`+`std::format`） |
 
 ### 4.12 控制流（跳转）
 
@@ -640,7 +639,7 @@ try records:
 
 code:
 0000    1 LOAD_CONST        0000  ; "hello"
-0003    | PRINT
+0003    | POP
 0004    | LOAD_IMM          01  ; 1
 0006    | JUMP_FALSE        0002 -> 000B
 0009    | LOAD_NIL

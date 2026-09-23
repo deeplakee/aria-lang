@@ -27,7 +27,7 @@ using aria::Value;
 
 TEST(Disassembler, OpCodeTablesConsistentWithList) {
     // 名字/格式表与 X 表同源生成:数组以 kOpCodeCount 显式定界,行数不符即编译错;此处锁布局哨兵。
-    EXPECT_EQ(kOpCodeCount, 64u); // X 表行数哨兵,改指令集须同步改此值
+    EXPECT_EQ(kOpCodeCount, 63u); // X 表行数哨兵,改指令集须同步改此值
     EXPECT_EQ(kOpCodeNames[0], "HALT");
     EXPECT_EQ(kOpCodeNames[kOpCodeCount - 1], "RETURN");
     EXPECT_EQ(kOpCodeFormats[0], OpFormat::Simple);

@@ -10,4 +10,4 @@ try {
     caught = true;
 }
 assert(caught);
-print("caught module error");
+println("caught module error");

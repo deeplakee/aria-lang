@@ -2,4 +2,4 @@
 # 模块体（副作用在 import 返回前完成，故 import 之后即可读其成员）；配 .out golden 钉执行顺序。
 import "./lib/helper" as H;
 assert(H.value == 7);        // 体已跑完 -> 成员就位
-print("main after import");
+println("main after import");

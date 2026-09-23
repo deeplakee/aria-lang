@@ -50,7 +50,7 @@ TEST(ObjException, EmptyMessageIsNonNullInterned) {
 TEST(ObjException, ToStringRendersBakedMessage) {
     GC   gc;
     auto e = make_exception(gc, ErrorCode::WrongArity, "Runtime: WrongArity function expects 2 args, got 1");
-    // 渲染完整烘焙消息(M3 catch 的 print(e) 即 "Category: Name detail" 同款文案)。
+    // 渲染完整烘焙消息(M3 catch 的 println(e) 即 "Category: Name detail" 同款文案)。
     EXPECT_EQ(e->to_string(), "Runtime: WrongArity function expects 2 args, got 1");
 }
 

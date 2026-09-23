@@ -25,4 +25,4 @@ var inc = make_inc_closure();
 assert(inc() == 6);
 assert(inc() == 7);
 assert(count == 7);
-print("keeper ok");
+println("keeper ok");

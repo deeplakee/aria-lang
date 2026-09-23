@@ -1,0 +1,12 @@
+// 钉住：println 对 F64 的渲染--保留 .0、最短往返表示、inf；配同名 .out 逐字节比对。
+println(3.0);
+println(0.1 + 0.2);        # IEEE 误差以最短往返表示
+println(1.0 / 0.0);        # 除零不报错，渲染 inf
+println(0.0 - 1.0 / 0.0);  # -inf
+println(2.5);
+println(-0.75);
+println(1.5e2);            # 字面量 150.0
+println(1e-1);
+println(100.0);
+println(42 / 2.0);         # 21.0：升浮点后带 .0
+println(1 / 2);            # Int 除法截断：1/2 = 0，渲染无小数点

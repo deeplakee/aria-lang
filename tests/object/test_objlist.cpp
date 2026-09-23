@@ -165,7 +165,7 @@ TEST(ObjList, DebugRepr) {
     // 嵌套字符串带引号(debug 形),嵌套 list 递归。
     EXPECT_EQ(list->debug_repr(), "[1, \"ab\", nil, [2]]");
     EXPECT_EQ(list->to_string(), "[1, \"ab\", nil, [2]]");                         // 显示同文案
-    EXPECT_EQ(aria::format_value(Value::from_obj(list)), "[1, \"ab\", nil, [2]]"); // str/print 位
+    EXPECT_EQ(aria::format_value(Value::from_obj(list)), "[1, \"ab\", nil, [2]]"); // str/println 位
 }
 
 // 环防护:自引用/互环在渲染路径上重遇即截断 "[...]"(PrintGuard,防无限递归栈溢出)。
@@ -176,7 +176,7 @@ TEST(ObjList, DebugReprSelfCycleTruncates) {
     a->elements().push(Value::from_int(1));
     a->elements().push(Value::from_obj(a));
     EXPECT_EQ(a->debug_repr(), "[1, [...]]");
-    EXPECT_EQ(aria::format_value(Value::from_obj(a)), "[1, [...]]"); // print/str 位经 to_string 同路
+    EXPECT_EQ(aria::format_value(Value::from_obj(a)), "[1, [...]]"); // println/str 位经 to_string 同路
     EXPECT_EQ(a->debug_repr(), "[1, [...]]");                        // 前次守卫已出栈,再次渲染不受影响
 }
 

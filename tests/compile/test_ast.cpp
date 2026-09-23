@@ -46,7 +46,6 @@ using aria::NilLiteralNode;
 using aria::Opt;
 using aria::Param;
 using aria::PatternNode;
-using aria::PrintStmtNode;
 using aria::ProgramNode;
 using aria::ReturnStmtNode;
 using aria::SourceLoc;
@@ -276,15 +275,15 @@ TEST(AstDisplay, MatchExpr) {
 
 TEST(AstDisplay, BlockAndExprStmt) {
     List<UPtr<StmtNode>> stmts;
-    stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, i64lit(1)));
+    stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, i64lit(1)));
     BlockNode    block{kLoc, std::move(stmts)};
     const String out = dump_str(block);
-    EXPECT_EQ(out, "Block stmts=1\n  PrintStmt\n    IntegerLiteral 1\n");
+    EXPECT_EQ(out, "Block stmts=1\n  ExprStmt\n    IntegerLiteral 1\n");
 }
 
 TEST(AstDisplay, IfStmt) {
-    auto         then_b = std::make_unique<PrintStmtNode>(kLoc, i64lit(1));
-    auto         else_b = std::make_unique<PrintStmtNode>(kLoc, i64lit(2));
+    auto         then_b = std::make_unique<ExprStmtNode>(kLoc, i64lit(1));
+    auto         else_b = std::make_unique<ExprStmtNode>(kLoc, i64lit(2));
     IfStmtNode   node{kLoc, ident("flag"), std::move(then_b), std::move(else_b)};
     const String out = dump_str(node);
     expect_has(out, "IfStmt");
@@ -307,11 +306,11 @@ TEST(AstDisplay, ImportStmt) {
 
 TEST(AstDisplay, TryStmt) {
     List<UPtr<StmtNode>> try_body_stmts;
-    try_body_stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, i64lit(1)));
+    try_body_stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, i64lit(1)));
     auto try_body = std::make_unique<BlockNode>(kLoc, std::move(try_body_stmts));
 
     List<UPtr<StmtNode>> catch_body_stmts;
-    catch_body_stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, ident("e")));
+    catch_body_stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, ident("e")));
     auto catch_body = std::make_unique<BlockNode>(kLoc, std::move(catch_body_stmts));
 
     TryStmtNode  node{kLoc, std::move(try_body), Opt<String>{String{"e"}}, std::move(catch_body)};
@@ -372,9 +371,9 @@ TEST(AstDisplay, FunDecl) {
 
 TEST(AstDisplay, DefDecl) {
     List<UPtr<StmtNode>> members;
-    // bark() { print "woof"; }  -- 实例方法（Method）
+    // bark() { println("woof"); }  -- 实例方法（Method）
     List<UPtr<StmtNode>> bark_body_stmts;
-    bark_body_stmts.push_back(std::make_unique<PrintStmtNode>(kLoc, strlit("woof")));
+    bark_body_stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, strlit("woof")));
     auto bark_body = std::make_unique<BlockNode>(kLoc, std::move(bark_body_stmts));
     members.push_back(
             std::make_unique<FunDeclNode>(kLoc, String{"bark"}, List<Param>{}, std::move(bark_body), FnKind::Method));
@@ -387,7 +386,7 @@ TEST(AstDisplay, DefDecl) {
 }
 
 TEST(AstDisplay, Program) {
-    // var x = 1; print x;
+    // var x = 1; println(x);
     List<UPtr<StmtNode>> decls;
 
     List<VarBinding> bindings;
@@ -397,13 +396,13 @@ TEST(AstDisplay, Program) {
     bindings.push_back(std::move(b));
     decls.push_back(std::make_unique<VarDeclNode>(kLoc, std::move(bindings)));
 
-    decls.push_back(std::make_unique<PrintStmtNode>(kLoc, ident("x")));
+    decls.push_back(std::make_unique<ExprStmtNode>(kLoc, ident("x")));
 
     ProgramNode  prog{kLoc, std::move(decls)};
     const String out = dump_str(prog);
     expect_has(out, "Program decls=2");
     expect_has(out, "VarDecl bindings=1");
-    expect_has(out, "PrintStmt");
+    expect_has(out, "ExprStmt");
 }
 
 // ---------------------------------------------------------------------------

@@ -50,7 +50,7 @@
 
 下标是引擎原语不进方法表:有专门 opcode,复合赋值 lowering 依赖 `[obj, idx, v]` 栈形,方法化反而绕。lowering 按 `compound-assignment-lowering.md` §4.3 矩阵:Prepare 只发 `<obj> <idx>`、Load 发 `LOAD_INDEX`、Store 只发 `STORE_INDEX`、Locate 发 `DUP2 + LOAD_INDEX` 留副本对。
 
-`==` 判等:list/map 按内容递归(`equals` override,GC-pure 纪律);hash 恒地址型(可变对象,作 map 键按身份)。`===` 一律指针。str/print 渲染:`[1, "ab"]` 式,嵌套字符串走 debug 形(带引号),避免 `[1, ab]` 的歧义。
+`==` 判等:list/map 按内容递归(`equals` override,GC-pure 纪律);hash 恒地址型(可变对象,作 map 键按身份)。`===` 一律指针。str/println 渲染:`[1, "ab"]` 式,嵌套字符串走 debug 形(带引号),避免 `[1, ab]` 的歧义。
 
 ## 4. 实施批次与验收
 
@@ -86,7 +86,7 @@
 | :--- | :--- | :--- |
 | 1 | 值寄存器组底座(`LOAD_REG` + 收编 `LOAD_OBJECT`)+ 默认参数(§4.1;varargs 拆至批 4) | §4.1 |
 | 2 | match 语句 / 表达式(§4.2) | §4.2 |
-| 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + size/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
+| 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + size/str/println + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
 | 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体,call_closure 打包段)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
 | 5 | `ObjMap` + `MAKE_MAP` + map 下标 + size + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 循环变量拿到整个 `[k,v]` pair(解构目标随批 8,2026-09-19 拍板) |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
@@ -178,7 +178,7 @@
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
 > `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发
 >(`kMaxListElements`=65535 超限报新码 `TooManyElements`,Resource 类)+ size 经类型分派覆盖 List、
-> str/print 经 debug_repr 零改动。后半 = `LOAD_INDEX`/`STORE_INDEX`(执行体 `run_load_index`/`run_store_index`,
+> str/println 经 debug_repr 零改动。后半 = `LOAD_INDEX`/`STORE_INDEX`(执行体 `run_load_index`/`run_store_index`,
 > 统一走 `Object::load_index/store_index` 协议,list override:整数键,越界/负数 IndexOutOfBounds(越界值与长度
 > 就地拼文案)、非整数 TypeMismatch、store 不自动增长;非对象守卫文案留执行体,与 field 族同款)+ 下标四模式
 > lowering(Prepare 备 obj+idx 对/Locate `DUP2`+`LOAD_INDEX` 留副本对,locator-once)。既有性能坑随边界测试
@@ -251,7 +251,7 @@
 > slots[0] 覆写前经栈根;split 读 receiver 全程靠槽 0 栈根(receiver 不被覆写),新 list 挂 make_guard 跨段串
 > 铸造的 GC 点保命,循环结束才写回槽 0 发布。测试 33 新
 >(test_objstring 8 + ObjStringIterator 5 + Compiler.String* 14 + 语料 5:string_methods/string_subscript_iter/
-> string_print_format golden/runtime_string_split_empty/runtime_string_subscript_assign 负 .err);存量翻转一
+> string_println_format golden/runtime_string_split_empty/runtime_string_subscript_assign 负 .err);存量翻转一
 >(ObjectProtocolDefaults 基类默认钉子 string 换 Module)。string 的 + 拼接(op_add)不在批 6,仍基类默认报错。
 
 > **落地状态(2026-09-19,批 7)**:批 7 已全部落地(工作区待 review,双配置 994/994 绿)。走查五拍板(2026-09-19,
@@ -267,9 +267,9 @@
 > 计数、零上限检查--惰性两端点无物化)+ CodeGen visitRangeExprNode 翻转(端点左→右发射 + flags 字节)+
 > Range bootstrap(寄存器 RangeClass 格 + bootstrap_range_class + RangeBuiltins 单 iter 方法表)+ parser 非结合
 > 确认(rhs 调 term 不调 range,结构性防住 `a..b..c`)。测试 27 新(test_objrange 15 含哈希确定性/空区间/双迭代器
-> 独立/stress + Compiler.Range* 8 + 语料 4:range_forin/range_print_format golden/runtime_range_bounds_type_
+> 独立/stress + Compiler.Range* 8 + 语料 4:range_forin/range_println_format golden/runtime_range_bounds_type_
 > mismatch 负 .err/compile_range_non_associative 负);存量翻转一(Interpret.StringNotImplementedIsCompileError
-> 钉子样本 `print 1..2` 退役换解构赋值,机制仍在)。
+> 钉子样本 `println(1..2)` 退役换解构赋值,机制仍在)。
 
 > **后继演进(批 7 收官后 range 四批扩展,已拍板;本段记批 1)**:三方向跨语言对照呈报后拍板--①倒序走
 > **端点自动推断**(low>high 即倒序,`10..1` 产出 10→1、不含上界 `10...1` 递减到 high+1 产出 10→2;**翻转批 7

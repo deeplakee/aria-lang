@@ -181,7 +181,7 @@ namespace aria {
         // (unwind 返 somed Error)的统一收口。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 执行跟踪:每条指令执行**前**打印字节码/栈/帧信息(stderr,调试用;与 PRINT 的 stdout
+        // 执行跟踪:每条指令执行**前**打印字节码/栈/帧信息(stderr,调试用;与 println 的 stdout
         // 分流)。常态编译,宏只守 dispatch_loop 内调用点,关闭时零开销;主循环顶在取 opcode 前
         // 调用 -- 此时 frame.ip 指向待执行指令,据此解码(仅读不推进 VM 的 ip)。栈渲染经
         // format_value_debug 不用 format_value:后者 Obj 走可重载虚 to_string,在 dispatch_loop
@@ -1311,10 +1311,7 @@ namespace aria {
                     break;
                 }
 
-                // 输出与调试
-                case OpCode::PRINT:
-                    io::println("{}", format_value(current_->pop()));
-                    break;
+                // 调试
                 case OpCode::NOP:
                     break;
 

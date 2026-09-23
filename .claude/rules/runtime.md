@@ -128,7 +128,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`
 
-宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 主循环顶取 opcode 前（此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*current_)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `PRINT` 的 stdout 分流）：① `[trace] <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `format_value_debug` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`format_value_debug` 不用 `format_value`**：后者对 Obj 走可重载的虚 `Object::to_string()`，在 `dispatch_loop` 内逐指令调用会重入 VM 致无限递归；故对 Obj 走虚 `debug_repr()`（override 契约 = 纯 C++ 惰性渲染，绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp`）。函数常态编译，关闭时无调用点、零开销。
+宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 主循环顶取 opcode 前（此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*current_)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `println` 的 stdout 分流）：① `[trace] <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `format_value_debug` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`format_value_debug` 不用 `format_value`**：后者对 Obj 走可重载的虚 `Object::to_string()`，在 `dispatch_loop` 内逐指令调用会重入 VM 致无限递归；故对 Obj 走虚 `debug_repr()`（override 契约 = 纯 C++ 惰性渲染，绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp`）。函数常态编译，关闭时无调用点、零开销。
 
 ## VM 异常通道（throw/catch）
 

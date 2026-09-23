@@ -15,7 +15,6 @@ namespace aria {
     // 语句节点（StmtNode 派生）
     struct BlockNode;
     struct ExprStmtNode;
-    struct PrintStmtNode;
     struct IfStmtNode;
     struct WhileStmtNode;
     struct ForStmtNode;
@@ -70,7 +69,6 @@ namespace aria {
         // 语句节点
         virtual void visitBlockNode(BlockNode& node)                     = 0;
         virtual void visitExprStmtNode(ExprStmtNode& node)               = 0;
-        virtual void visitPrintStmtNode(PrintStmtNode& node)             = 0;
         virtual void visitIfStmtNode(IfStmtNode& node)                   = 0;
         virtual void visitWhileStmtNode(WhileStmtNode& node)             = 0;
         virtual void visitForStmtNode(ForStmtNode& node)                 = 0;

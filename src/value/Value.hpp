@@ -64,11 +64,11 @@ namespace aria {
     bool value_less(Value lhs, Value rhs) noexcept;
 
     // f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
-    //   收口于 Value 层供多处复用(PRINT 渲染 / 反汇编常量池小节等),避免逻辑散落重复。
+    //   收口于 Value 层供多处复用(输出渲染 / 反汇编常量池小节等),避免逻辑散落重复。
     [[nodiscard]]
     String format_f64(f64 value);
 
-    // 值的可读渲染(PRINT / REPL 回显等用):nil/true/false/整数/浮点/对象描述。Obj 统一走虚函数
+    // 值的可读渲染(println/str 与 REPL 回显等用):nil/true/false/整数/浮点/对象描述。Obj 统一走虚函数
     //   to_string()(显示位:多数内建类型经基类默认委托 debug_repr;ObjString 返回原文无引号)。
     [[nodiscard]]
     String format_value(Value value);

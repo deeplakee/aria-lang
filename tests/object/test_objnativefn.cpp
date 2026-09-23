@@ -26,14 +26,14 @@ namespace {
 // 具名原生函数:name 传入非空,渲染 `<fn name>`。
 TEST(ObjNativeFn, NamedRendersFnName) {
     GC           gc;
-    auto         name  = new_string(gc, "print");
+    auto         name  = new_string(gc, "sample");
     auto         guard = gc.make_guard(name); // name 是 weak root,跨 new_object 顶 maybe_collect 先保
     ObjNativeFn* nf    = new_native_fn(gc, name, noop_fn);
     EXPECT_TRUE(aria::Object::is<ObjNativeFn>(nf));
     EXPECT_EQ(nf->type(), aria::ObjType::NATIVE_FN);
     EXPECT_EQ(nf->name(), name); // intern 同指针
     EXPECT_EQ(nf->fn(), noop_fn);
-    EXPECT_EQ(nf->to_string(), "<fn print>");
+    EXPECT_EQ(nf->to_string(), "<fn sample>");
 }
 
 // 匿名重载:new_native_fn(gc, fn) 以 kAnonymousName("<anonymous>") 建名,渲染 `<fn <anonymous>>`。

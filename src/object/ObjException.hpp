@@ -53,7 +53,7 @@ namespace aria {
             return sizeof(ObjException);
         }
 
-        // 调试渲染:消息原文(无引号);显示同文案,catch 的 print(e)/str(e) 即此文案。
+        // 调试渲染:消息原文(无引号);显示同文案,catch 的 println(e)/str(e) 即此文案。
         [[nodiscard]]
         String debug_repr() const override;
 

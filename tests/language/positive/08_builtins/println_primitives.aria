@@ -1,0 +1,12 @@
+// 钉住：println 对 Int/Bool/nil 的渲染原文；配同名 .out 逐字节比对。
+println(42);
+println(-7);
+println(0);
+println(1_000_000);
+println(0xFF);
+println(true);
+println(false);
+println(nil);
+println(1 == 1.0);         # true
+println(nil == nil);       # true
+println(!0);               # false：0 为真

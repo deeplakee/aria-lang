@@ -75,8 +75,7 @@ namespace aria {
     X(POP_N, U8)                           \
     X(DUP, Simple)                         \
     X(DUP2, Simple)                        \
-    /* ---- output & debug ---- */         \
-    X(PRINT, Simple)                       \
+    /* ---- debug ---- */                  \
     X(NOP, Simple)                         \
     /* ---- control flow (jumps) ---- */   \
     X(JUMP, JumpFwd)                       \

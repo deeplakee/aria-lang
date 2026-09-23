@@ -1,4 +1,4 @@
-// 钉住：println 内建函数--渲染与 print 语句同源（format_value + 换行）、0/1 参、返 nil、可作一等值传参。
+// 钉住：println--渲染走 format_value 加换行、0/1 参、返 nil、可作一等值传参。
 println(42);
 println(-7);
 println(0);
@@ -7,10 +7,9 @@ println(nil);
 println(true);
 println(false);
 println(1.5);
-println(3.0);            # 与 print 同款渲染：保 .0
+println(3.0);            # 渲染经 format_value：保 .0
 println([1, "two", nil]);
 println({"k": 1});
-print("keyword\n");      # print 语句与 println 并存，输出同源
 
 # 无参：只输出一个换行（下列三行各产一个空行）
 println();
@@ -21,7 +20,7 @@ assert(println() == nil); # 0 参同样返 nil
 assert(println("ret") == nil);
 assert(type(println) == "NativeFn");
 
-# 一等值：可作实参传入、经形参调用（print 是关键字，做不到）
+# 一等值：可作实参传入、经形参调用
 fun twice(f, x) {
     f(x);
     f(x);

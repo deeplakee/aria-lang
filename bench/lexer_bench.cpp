@@ -99,7 +99,7 @@ namespace {
         for (int i = 0; i < blocks; ++i) {
             src += std::format("var name_{} = 1.5e2 + 0x1F; // comment 中文注释\n", i);
             src += std::format("fun f{}(a, b) {{ return a + b * 2 - 1; }}\n", i);
-            src += "if (a == b && c || d) { print \"s\" + 't'; }\n";
+            src += "if (a == b && c || d) { println(\"s\" + 't'); }\n";
         }
         return src;
     }
@@ -144,7 +144,7 @@ namespace {
         for (int i = 0; i < blocks; ++i) {
             src += std::format("var name_{} = 1.5e2 + 0x1F; // comment 中文注释\n", i);
             src += std::format("fun f{}(a, b) {{ return a + b * 2 - 1; }}\n", i);
-            src += "if (a == b && c || d) { print \"s\" + 't'; }\n";
+            src += "if (a == b && c || d) { println(\"s\" + 't'); }\n";
             src += "for (var j = 0; j < 10; ++j) { total += arr[j]; }\n";
         }
         return src;

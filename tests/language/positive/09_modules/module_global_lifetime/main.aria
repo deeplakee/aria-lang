@@ -10,4 +10,4 @@ assert(K1.count == 7);      // 体跑完时的值（keeper 内部自检一路写
 assert(K2.count == 7);
 assert(K1.bump() == 8);     // 跨模块调用：写的是同一份模块全局
 assert(K2.count == 8);
-print("main done");
+println("main done");

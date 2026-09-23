@@ -46,7 +46,6 @@ using aria::NilLiteralNode;
 using aria::Opt;
 using aria::Param;
 using aria::PatternNode;
-using aria::PrintStmtNode;
 using aria::ProgramNode;
 using aria::RangeExprNode;
 using aria::ReturnStmtNode;
@@ -95,7 +94,6 @@ namespace {
         // --- 语句节点 ---
         void visitBlockNode(BlockNode&) override { visited_.push_back("BlockNode"); }
         void visitExprStmtNode(ExprStmtNode&) override { visited_.push_back("ExprStmtNode"); }
-        void visitPrintStmtNode(PrintStmtNode&) override { visited_.push_back("PrintStmtNode"); }
         void visitIfStmtNode(IfStmtNode&) override { visited_.push_back("IfStmtNode"); }
         void visitWhileStmtNode(WhileStmtNode&) override { visited_.push_back("WhileStmtNode"); }
         void visitForStmtNode(ForStmtNode&) override { visited_.push_back("ForStmtNode"); }
@@ -172,7 +170,6 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     // 语句
     expect_visit(empty_block(), "BlockNode");
     expect_visit(std::make_unique<ExprStmtNode>(kLoc, i64lit(1)), "ExprStmtNode");
-    expect_visit(std::make_unique<PrintStmtNode>(kLoc, i64lit(1)), "PrintStmtNode");
     expect_visit(std::make_unique<IfStmtNode>(kLoc, ident("c"), empty_block(), empty_block()), "IfStmtNode");
     expect_visit(std::make_unique<WhileStmtNode>(kLoc, ident("c"), empty_block()), "WhileStmtNode");
     expect_visit(std::make_unique<ForStmtNode>(kLoc, nullptr, ident("c"), nullptr, empty_block()), "ForStmtNode");

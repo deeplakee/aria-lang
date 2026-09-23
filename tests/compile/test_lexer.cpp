@@ -66,14 +66,14 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
-    // 关键字 23 个（finally 非关键字，按普通 identifier 处理）
+    // 关键字 22 个（finally 非关键字，按普通 identifier 处理）
     const String        src      = "fun def var if else while for in break continue return import as "
-                                   "try catch throw print nil true false this super match";
-    const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,   TokType::If,    TokType::Else,
-                                    TokType::While,  TokType::For,    TokType::In,    TokType::Break, TokType::Continue,
-                                    TokType::Return, TokType::Import, TokType::As,    TokType::Try,   TokType::Catch,
-                                    TokType::Throw,  TokType::Print,  TokType::Nil,   TokType::True,  TokType::False,
-                                    TokType::This,   TokType::Super,  TokType::Match, TokType::Eof};
+                                   "try catch throw nil true false this super match";
+    const List<TokType> expected = {TokType::Fun,    TokType::Def,    TokType::Var,  TokType::If,    TokType::Else,
+                                    TokType::While,  TokType::For,    TokType::In,   TokType::Break, TokType::Continue,
+                                    TokType::Return, TokType::Import, TokType::As,   TokType::Try,   TokType::Catch,
+                                    TokType::Throw,  TokType::Nil,    TokType::True, TokType::False, TokType::This,
+                                    TokType::Super,  TokType::Match,  TokType::Eof};
     const auto          lexed    = lex_ok(src);
     const auto&         tokens   = lexed->tokens;
     ASSERT_EQ(tokens.size(), expected.size());

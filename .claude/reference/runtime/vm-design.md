@@ -133,7 +133,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **与 raise(§4.5)的关系** -- 本寄存器是 AGENTS.md「错误处理」第 2 条 `raise` 的载体:原生函数的 `vm.fail` 与 op 处理器的 `raise` 共用同一寄存器,`unwind` 查表派发逻辑见 §4.5。
 
-**错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 print(e) 不显示位置(同 Python str(e))。
+**错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 println(e) 不显示位置(同 Python str(e))。
 
 **不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符 `vm.fail(WrongArity, ...)`。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
@@ -160,7 +160,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者经 raise 装箱(无位置),前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
-**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链时**每帧 `exit_frame` 前**顺带收集 `(function, module, last_ip)` 三元组(帧尚存活;坑点文档 #13 的遍历到「所有帧无 handler」时帧已全弹,届时无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接 print:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
+**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链时**每帧 `exit_frame` 前**顺带收集 `(function, module, last_ip)` 三元组(帧尚存活;坑点文档 #13 的遍历到「所有帧无 handler」时帧已全弹,届时无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。烘焙进 message_ 而非 VM 直接输出:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
 
 ### 4.9 协程:单循环切换模型(M6 定稿,Wren 对照)
 
@@ -228,7 +228,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 | 阶段 | 内容 | 验收 |
 | :--- | :--- | :--- |
-| **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`、`PRINT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通 |
+| **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通 |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式)。实施计划与落地记录见 `m4-closure-implementation-plan.md`(defer 为可选后续) | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |

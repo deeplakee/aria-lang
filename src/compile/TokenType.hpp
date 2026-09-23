@@ -43,7 +43,6 @@ namespace aria {
     X(Try, "try", true)       /* 异常处理 */                             \
     X(Catch, "catch", true)                                              \
     X(Throw, "throw", true) /* 抛出异常 */                               \
-    X(Print, "print", true) /* 打印语句 */                               \
     X(Nil, "nil", true)     /* 空值字面量 */                             \
     X(True, "true", true)   /* 布尔真字面量 */                           \
     X(False, "false", true) /* 布尔假字面量 */                           \

@@ -28,11 +28,10 @@ varDecl        -> "var" varBinding ( "," varBinding )* ";"
 varBinding     -> varTarget ( "=" expression )?
 varTarget      -> identifier | pattern
 
-statement      -> printStmt | ifStmt | whileStmt | forStmt | forInStmt
+statement      -> ifStmt | whileStmt | forStmt | forInStmt
                | breakStmt | continueStmt | returnStmt | importStmt
                | tryCatchStmt | throwStmt | matchStmt | block | exprStmt
 
-printStmt      -> "print" expression ";"
 ifStmt         -> "if" "(" expression ")" statement ( "else" statement )?
 whileStmt      -> "while" "(" expression ")" statement
 forStmt        -> "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement
@@ -308,5 +307,5 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - 注释 // 或 # 到行尾，lexer 丢弃，不产生 token；无块注释。
 #
 # 关键字：fun def var if else while for in break continue return import as try catch
-# throw print nil true false this super match（... 仅作 varargs/rest
+# throw nil true false this super match（... 仅作 varargs/rest
 # 前缀，非独立关键字；_ 为占位/通配符，在 matchPattern 与 pattern 中识别，不绑定）。

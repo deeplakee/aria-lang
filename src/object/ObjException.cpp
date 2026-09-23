@@ -24,7 +24,7 @@ namespace aria {
     }
 
     String ObjException::debug_repr() const {
-        // 渲染完整烘焙消息(无引号);catch 的 print(e)/str(e) 即此文案。
+        // 渲染完整烘焙消息(无引号);catch 的 println(e)/str(e) 即此文案。
         return String{message_->view()};
     }
 

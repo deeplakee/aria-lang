@@ -1,5 +1,5 @@
 // 钉住：list 字面量与值表示--空表/多元素/嵌套构造、== 内容递归相等 vs === 指针严格、
-# size 计元素数、type 名；print 渲染见同目录 .out。
+# size 计元素数、type 名；println 渲染见同目录 .out。
 var empty = [];
 assert(empty.size() == 0);
 assert(type(empty) == "List");

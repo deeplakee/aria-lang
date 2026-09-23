@@ -122,7 +122,6 @@ namespace aria {
 
     String ExprStmtNode::dump(const usize indent) const { return dump_node(indent, "ExprStmt", expr); }
 
-    String PrintStmtNode::dump(const usize indent) const { return dump_node(indent, "PrintStmt", expr); }
 
     String IfStmtNode::dump(const usize indent) const {
         return dump_node(indent, "IfStmt", condition, then_branch, else_branch);
@@ -290,7 +289,6 @@ namespace aria {
 
     void BlockNode::accept(AstVisitor& visitor) { visitor.visitBlockNode(*this); }
     void ExprStmtNode::accept(AstVisitor& visitor) { visitor.visitExprStmtNode(*this); }
-    void PrintStmtNode::accept(AstVisitor& visitor) { visitor.visitPrintStmtNode(*this); }
     void IfStmtNode::accept(AstVisitor& visitor) { visitor.visitIfStmtNode(*this); }
     void WhileStmtNode::accept(AstVisitor& visitor) { visitor.visitWhileStmtNode(*this); }
     void ForStmtNode::accept(AstVisitor& visitor) { visitor.visitForStmtNode(*this); }

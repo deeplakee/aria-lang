@@ -21,4 +21,4 @@ assert(H.hit() == 2);
 assert(H.hits == 2);                 // 外部只读该状态
 
 assert(H.Inner.tag == "inner");      // 嵌套：holder 导入的模块也是它的成员
-print("module member ok");
+println("module member ok");

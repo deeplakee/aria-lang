@@ -573,12 +573,6 @@ namespace aria {
         cur_cu()->emit_op(OpCode::POP, line);
     }
 
-    void CodeGen::visitPrintStmtNode(PrintStmtNode& node) {
-        const u32 line = node.line();
-        emit_expr(*node.expr);
-        cur_cu()->emit_op(OpCode::PRINT, line);
-    }
-
     void CodeGen::visitIfStmtNode(IfStmtNode& node) {
         const u32 line = node.line();
         emit_expr(*node.condition);

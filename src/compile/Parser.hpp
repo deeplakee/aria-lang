@@ -76,7 +76,7 @@ namespace aria {
         String expect_identifier();
 
         // panic-mode 同步：跳过当前 token 后推进到下一条语句/声明边界
-        // （';' 之后，或 fun/def/var/if/while/for/.../print/'{' 等起首关键字）。
+        // （';' 之后，或 fun/def/var/if/while/for/.../'{' 等起首关键字）。
         void synchronize();
 
         // 顶层与声明
@@ -111,9 +111,6 @@ namespace aria {
 
         [[nodiscard]]
         UPtr<StmtNode> statement();
-
-        [[nodiscard]]
-        UPtr<StmtNode> print_stmt();
 
         [[nodiscard]]
         UPtr<StmtNode> if_stmt();

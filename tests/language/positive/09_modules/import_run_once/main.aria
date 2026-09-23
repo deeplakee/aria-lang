@@ -8,4 +8,4 @@ assert(A === B);
 assert(B === C);
 assert(A.token == "once");
 assert(C.token == "once");
-print("done");
+println("done");

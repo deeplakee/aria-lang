@@ -575,7 +575,7 @@ TEST(CodeGen, UpvalueWriteThrough) {
 // ============================================================
 
 TEST(CodeGen, ForInDisassembly) {
-    auto compiled = compile_only("for (x in iter) { print x; }");
+    auto compiled = compile_only("for (x in iter) { println(x); }");
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
     // 迭代协议：PREPARE_METHOD + CALL_METHOD "iter" / "has_next" / "next"（两段式，不经 LOAD_FIELD + CALL）
@@ -702,7 +702,7 @@ TEST(CodeGen, ForInPerIterationCloseUpvalue) {
 
 // 无捕获的 for-in 不发 CLOSE_UPVALUE（pattern 局部未被捕获,纯 POP_N）。
 TEST(CodeGen, ForInNoCloseWithoutCapture) {
-    auto compiled = compile_only("for (x in iter) { print x; }");
+    auto compiled = compile_only("for (x in iter) { println(x); }");
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
     EXPECT_EQ(text.find("CLOSE_UPVALUE"), aria::String::npos);
@@ -879,7 +879,7 @@ TEST(CodeGen, ErrInvalidAssignmentTarget) {
 }
 
 TEST(CodeGen, ErrTryWithoutHandler) {
-    auto c = compile_only("try { print 1; }");
+    auto c = compile_only("try { println(1); }");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::TryWithoutHandler);
 }
@@ -1159,7 +1159,7 @@ TEST(CodeGen, ErrUnreachableArmAfterWildcard) {
 
 TEST(CodeGen, MatchDisassembly) {
     auto compiled = compile_only(R"(
-        match (1) { 1 => print 1; 2 => print 2; _ => print 3; }
+        match (1) { 1 => println(1); 2 => println(2); _ => println(3); }
     )");
     ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
     const auto text = compiled->unit().disassemble("<test>");
@@ -1208,7 +1208,7 @@ TEST(CodeGen, BuiltinType) {
 }
 
 TEST(CodeGen, BuiltinStr) {
-    // str(x) -> 可读渲染（同 PRINT / format_value）。
+    // str(x) -> 可读渲染（复用 format_value）。
     EXPECT_EQ(aria::format_value((*run_source("return str(nil);"))), "nil");
     EXPECT_EQ(aria::format_value((*run_source("return str(42);"))), "42");
     EXPECT_EQ(aria::format_value((*run_source("return str(true);"))), "true");
@@ -1338,7 +1338,7 @@ TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
 }
 
 TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
-    // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，print/str 渲染之；
+    // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，println/str 渲染之；
     // 消息不含位置前缀，同 Python str(e)，位置只在未捕获出口的 at 跟踪行给出）。
     auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
@@ -1455,7 +1455,7 @@ mid();
 
 TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {
     // finally 非关键字:按普通标识符可绑定。
-    auto c = compile_only("var finally = 1; print finally;");
+    auto c = compile_only("var finally = 1; println(finally);");
     ASSERT_TRUE(c.has_value()) << c.error().message();
 }
 
@@ -1463,7 +1463,7 @@ TEST(CodeGen, TryCatchEmitsTryRecordAndThrow) {
     // 发射核对：try_records 一条，受保护区间 [begin, end) 覆盖 try 体（THROW 在内），
     // handle 指向跳过 catch 的 JUMP 之后，stack_depth = try 入口局部数（<main> 顶层仅
     // slot 0 哑元 = 1）；反汇编出现 try records 小节（非空才列）。
-    auto c = compile_only("try { throw 1; } catch (e) { print e; }");
+    auto c = compile_only("try { throw 1; } catch (e) { println(e); }");
     ASSERT_TRUE(c.has_value()) << c.error().message();
     const auto& cu = c->unit();
     ASSERT_EQ(cu.try_records.size(), 1u);
@@ -1479,7 +1479,8 @@ TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
     // 且内层区间整个嵌于外层区间内。begin 相等（内层是外层体首条语句、其间零发射）合法，
     // 查表靠反向扫描取最内层 -- 该 tie 语义由 NestedTryInnerCatches 运行期覆盖；本例内层
     // try 前有语句，begin 严格递增。
-    auto c = compile_only("try { print 0; try { print 1; } catch (a) { print 2; } } catch (b) { print 3; }");
+    auto c =
+            compile_only("try { println(0); try { println(1); } catch (a) { println(2); } } catch (b) { println(3); }");
     ASSERT_TRUE(c.has_value()) << c.error().message();
     const auto& recs = c->unit().try_records;
     ASSERT_EQ(recs.size(), 2u);
@@ -1869,7 +1870,7 @@ def Animal {
 }
 
 // ============================================================
-// list 字面量(值表示 + MAKE_LIST + str/print)
+// list 字面量(值表示 + MAKE_LIST + str/println)
 // ============================================================
 
 // 字面量求值:元素按序求值、恰好各一次(经全局计数器观察副作用),渲染保序。

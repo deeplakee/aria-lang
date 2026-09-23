@@ -438,7 +438,7 @@ TEST(ParserDecl, Fun) {
 }
 
 TEST(ParserDecl, FunNoParams) {
-    const String out = dump_ok("fun f() { print 1; }");
+    const String out = dump_ok("fun f() { println(1); }");
     expect_has(out, "FunDecl name=f params=0 kind=Function");
 }
 
@@ -461,7 +461,7 @@ TEST(ParserDecl, FunVarargsOnly) {
 }
 
 TEST(ParserDecl, DefWithSuper) {
-    const String out = dump_ok("def Dog : Animal { bark() { print \"woof\"; } }");
+    const String out = dump_ok("def Dog : Animal { bark() { println(\"woof\"); } }");
     expect_has(out, "DefDecl name=Dog super=Animal");
     expect_has(out, "FunDecl name=bark params=0 kind=Method");
     expect_has(out, "StringLiteral \"woof\"");
@@ -498,26 +498,24 @@ TEST(ParserDecl, DefInitMethodStamping) {
 // 语句
 // ---------------------------------------------------------------------------
 
-TEST(ParserStmt, Print) { expect_has(dump_ok("print 42;"), "PrintStmt"); }
-
 TEST(ParserStmt, IfElse) {
-    const String out = dump_ok("if (c) print 1; else print 2;");
+    const String out = dump_ok("if (c) println(1); else println(2);");
     expect_has(out, "IfStmt");
-    expect_has(out, "PrintStmt");
+    expect_has(out, "ExprStmt");
 }
 
 TEST(ParserStmt, IfNoElse) {
-    auto p    = parse_src("if (c) print 1;");
+    auto p    = parse_src("if (c) println(1);");
     auto stmt = first_decl(p);
     auto ifn  = dynamic_cast<const IfStmtNode*>(stmt);
     ASSERT_NE(ifn, nullptr);
     EXPECT_EQ(ifn->else_branch, nullptr);
 }
 
-TEST(ParserStmt, While) { expect_has(dump_ok("while (c) print 1;"), "WhileStmt"); }
+TEST(ParserStmt, While) { expect_has(dump_ok("while (c) println(1);"), "WhileStmt"); }
 
 TEST(ParserStmt, ForCStyle) {
-    auto p    = parse_src("for (var i = 0; i < 10; i = i + 1) print i;");
+    auto p    = parse_src("for (var i = 0; i < 10; i = i + 1) println(i);");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -527,7 +525,7 @@ TEST(ParserStmt, ForCStyle) {
 }
 
 TEST(ParserStmt, ForEmpty) {
-    auto p    = parse_src("for (;;) print 1;");
+    auto p    = parse_src("for (;;) println(1);");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -537,7 +535,7 @@ TEST(ParserStmt, ForEmpty) {
 }
 
 TEST(ParserStmt, ForInSingle) {
-    auto p    = parse_src("for (k in m) print k;");
+    auto p    = parse_src("for (k in m) println(k);");
     auto stmt = first_decl(p);
     auto fin  = dynamic_cast<const ForInStmtNode*>(stmt);
     ASSERT_NE(fin, nullptr);
@@ -548,7 +546,7 @@ TEST(ParserStmt, ForInSingle) {
 }
 
 TEST(ParserStmt, ForInMulti) {
-    const String out = dump_ok("for ([k, v] in m) print k;");
+    const String out = dump_ok("for ([k, v] in m) println(k);");
     expect_has(out, "ForInStmt");
     expect_has(out, "ListPattern elements=2");
     expect_has(out, "IdentifierPattern name=k");
@@ -557,18 +555,18 @@ TEST(ParserStmt, ForInMulti) {
 
 TEST(ParserStmt, ForInPatternVariants) {
     // forIn 目标支持完整 pattern："_" 占位、listPattern + rest。
-    const String w = dump_ok("for (_ in xs) print 1;");
+    const String w = dump_ok("for (_ in xs) println(1);");
     expect_has(w, "ForInStmt");
     expect_has(w, "WildcardPattern _");
 
-    const String r = dump_ok("for ([a, ...rest] in pairs) print 1;");
+    const String r = dump_ok("for ([a, ...rest] in pairs) println(1);");
     expect_has(r, "ForInStmt");
     expect_has(r, "ListPattern elements=1 rest=rest");
 }
 
 TEST(ParserStmt, ForCStyleExprInit) {
     // forStmt init 支持裸表达式：for (i = 0; ...) 走 exprStmt init。
-    auto p    = parse_src("for (i = 0; i < 10; i = i + 1) print i;");
+    auto p    = parse_src("for (i = 0; i < 10; i = i + 1) println(i);");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -579,7 +577,7 @@ TEST(ParserStmt, ForCStyleExprInit) {
 
 TEST(ParserStmt, ForCStyleDestructureInit) {
     // [...] 不跟 in -> forStmt 的解构赋值 exprStmt init（验证 [ 分流不走 forIn）。
-    auto p    = parse_src("for ([a, b] = c; a < b; a = a + 1) print a;");
+    auto p    = parse_src("for ([a, b] = c; a < b; a = a + 1) println(a);");
     auto stmt = first_decl(p);
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
@@ -608,7 +606,7 @@ TEST(ParserStmt, Import) {
 TEST(ParserStmt, Throw) { expect_has(dump_ok("throw e;"), "ThrowStmt"); }
 
 TEST(ParserStmt, TryCatch) {
-    const String out = dump_ok("try { print 1; } catch (e) { print e; }");
+    const String out = dump_ok("try { println(1); } catch (e) { println(e); }");
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");
     // finally 非关键字:解析器不产生 finally 子句节点
@@ -616,7 +614,7 @@ TEST(ParserStmt, TryCatch) {
 }
 
 TEST(ParserStmt, TryWithoutCatchParses) {
-    const String out = dump_ok("try { print 1; }");
+    const String out = dump_ok("try { println(1); }");
     expect_has(out, "TryStmt");
     // parse 层允许无 catch（CodeGen 期才校验 TryWithoutHandler）
     EXPECT_EQ(out.find("Catch"), String::npos);
@@ -624,23 +622,23 @@ TEST(ParserStmt, TryWithoutCatchParses) {
 
 TEST(ParserStmt, FinallyIsPlainIdentifier) {
     // finally 是普通标识符，可作变量名
-    const String out = dump_ok("var finally = 1; print finally;");
+    const String out = dump_ok("var finally = 1; println(finally);");
     expect_has(out, "VarDecl bindings=1");
 }
 
 TEST(ParserStmt, MatchStmt) {
-    const String out = dump_ok("match (x) { 1 => print 1; _ => print 0; }");
+    const String out = dump_ok("match (x) { 1 => println(1); _ => println(0); }");
     expect_has(out, "MatchStmt arms=2");
     expect_has(out, "MatchPattern _ (wildcard)");
 }
 
 TEST(ParserStmt, Block) {
-    const String out = dump_ok("{ var x = 1; print x; }");
+    const String out = dump_ok("{ var x = 1; println(x); }");
     expect_has(out, "Block stmts=2");
 }
 
 TEST(ParserStmt, NestedBlocksAndScope) {
-    const String out = dump_ok("fun f() { if (c) { print 1; } }");
+    const String out = dump_ok("fun f() { if (c) { println(1); } }");
     expect_has(out, "FunDecl name=f params=0 kind=Function");
     expect_has(out, "IfStmt");
     expect_has(out, "Block stmts=1");
@@ -745,9 +743,9 @@ TEST(ParserError, EofReportsClosingDelimiter) {
 }
 
 TEST(ParserError, ExpectedTokenSemicolon) {
-    // print 1 后缺 ';'，下一个 token 是标识符 x（非 EOF）-> ExpectedToken。
+    // println(1 后缺 ');'，下一个 token 是标识符 x（非 EOF）-> ExpectedToken。
     // （若在 EOF 处缺 ';'，expect 会报 UnexpectedEof，属另一码。）
-    auto p = parse_src("print 1 x;");
+    auto p = parse_src("println(1 x);");
     ASSERT_FALSE(p->result.has_value());
     ASSERT_FALSE(p->result.error().empty());
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedToken);

@@ -92,7 +92,7 @@ TEST(Interpret, NonStringPlusStringIsRuntimeError) {
 // 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
 TEST(Interpret, StringRuntimeUndefinedVariableIsRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("print nope;"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("println(nope);"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：给未声明名赋值 -> 运行期 STORE_GLOBAL miss 抛 UndefinedVariable（赋值不隐式创建）->

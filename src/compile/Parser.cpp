@@ -185,7 +185,6 @@ namespace aria {
                 case TokenType::Try:
                 case TokenType::Throw:
                 case TokenType::Match:
-                case TokenType::Print:
                 case TokenType::LeftBrace:
                     return;
                 default:
@@ -335,8 +334,6 @@ namespace aria {
 
     UPtr<StmtNode> Parser::statement() {
         switch (peek().type()) {
-            case TokenType::Print:
-                return print_stmt();
             case TokenType::If:
                 return if_stmt();
             case TokenType::While:
@@ -369,14 +366,6 @@ namespace aria {
         UPtr<ExprNode>  expr = expression();
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ExprStmtNode>(loc, std::move(expr));
-    }
-
-    UPtr<StmtNode> Parser::print_stmt() {
-        const SourceLoc loc = peek().loc();
-        expect(TokenType::Print, "\"print\"");
-        UPtr<ExprNode> expr = expression();
-        expect(TokenType::Semicolon, "';'");
-        return std::make_unique<PrintStmtNode>(loc, std::move(expr));
     }
 
     UPtr<StmtNode> Parser::if_stmt() {

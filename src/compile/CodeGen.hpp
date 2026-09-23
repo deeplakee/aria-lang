@@ -63,7 +63,6 @@ namespace aria {
 
         void visitBlockNode(BlockNode& node) override;
         void visitExprStmtNode(ExprStmtNode& node) override;
-        void visitPrintStmtNode(PrintStmtNode& node) override;
         void visitIfStmtNode(IfStmtNode& node) override;
         void visitWhileStmtNode(WhileStmtNode& node) override;
         void visitForStmtNode(ForStmtNode& node) override;

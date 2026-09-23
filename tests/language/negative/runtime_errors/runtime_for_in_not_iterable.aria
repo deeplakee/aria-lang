@@ -1,3 +1,3 @@
 // 钉住：对不可迭代值 for-in 为运行期错误（降糖为 .iter 方法调用，miss 走
 // UndefinedProperty；NotIterable 专用码预留未接线，措辞会变，故不配 .err）。
-for (v in 42) { print(v); }
+for (v in 42) { println(v); }

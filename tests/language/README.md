@@ -19,7 +19,7 @@ tests/language/
     05_functions/            # 声明/递归/一等值/lambda/if 表达式/默认参数/varargs
     06_closures/             # 捕获即引用各族
     07_exceptions/           # try/catch/throw 各族
-    08_builtins/             # print 格式（配 .out）/type/str/println/assert
+    08_builtins/             # println 格式（配 .out）/type/str/assert
     09_modules/              # import 各族；每用例一个子目录（main.aria + lib/）
     10_integration/          # 多特性组合的综合小程序
     11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
@@ -53,7 +53,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 - 每脚本聚焦一个语义组，文件名表意（snake_case），单脚本建议 < 80 行。
 - **正向脚本一律以 `assert` 收口**：期望值手算写死，不写同义反复（`assert(a == a)`
-  无效）；`print` 仅用于配 `.out` 的输出格式用例。
+  无效）；`println` 仅用于配 `.out` 的输出格式用例。
 - 头部一行中文注释说明本脚本钉住什么语义；脚本内注释用 `//` 或 `#`。
 - 负向用例只收**设计上永久如此**的错误（整除零、读未声明名、非法左值等）；
   「临时未实装」的行为（见下节禁区）不写负向用例--翻转日会变红。

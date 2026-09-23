@@ -25,25 +25,25 @@ fun make_counter() {
     return fun() { n += 1; return n; };
 }
 var next = make_counter();
-print(next()); print(next()); print(next());       # 1 2 3
+println(next()); println(next()); println(next());       # 1 2 3
 
 var g = Greeter("aria");
-print(g.greet());                                  # hello, aria!
-print(g.greet(true));                              # HELLO, ARIA!
+println(g.greet());                                  # hello, aria!
+println(g.greet(true));                              # HELLO, ARIA!
 
 var xs = [3, 1, 2];
 xs.sort();
 var [head, ...tail] = xs;
-print(head); print(tail);                          # 1 [2, 3]
+println(head); println(tail);                          # 1 [2, 3]
 
 var ages = {"ada": 36, "bob": 41};
 for ([name, age] in ages) {
-    print(name + " is " + str(age));               # 迭代序未规定
+    println(name + " is " + str(age));               # 迭代序未规定
 }
 
-print(match (2) { 0 => "zero", 2 => "two", _ => "many" });   # two
-print("  a,b,c  ".trim().split(",").join("-"));              # a-b-c
-print("42".to_int() + 1);                                    # 43
+println(match (2) { 0 => "zero", 2 => "two", _ => "many" });   # two
+println("  a,b,c  ".trim().split(",").join("-"));              # a-b-c
+println("42".to_int() + 1);                                    # 43
 ```
 
 `if` 与 `match` 既能作语句也能作表达式；`def` 体里 `init` 是构造器、`this` 指实例、方法可带
@@ -74,7 +74,7 @@ print("42".to_int() + 1);                                    # 43
   `substring`/`to_int` 等。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（别名必写）。模块顶层绑定即模块成员，
   `U.f()` 直调，成员只读。
-- **内置函数**：`type` / `str` / `assert` / `println`（`print` 语句关键字的函数形态，可当一等值传递）。
+- **内置函数**：`type` / `str` / `assert` / `println`（唯一的输出口，可当一等值传递）。
 
 ## 构建与运行
 
@@ -95,7 +95,7 @@ cmake --build build --target aria -j
 
 ```sh
 build/aria script.aria        # 运行脚本
-build/aria -e 'print(1 + 1);' # 求值一段源码
+build/aria -e 'println(1 + 1);' # 求值一段源码
 build/aria --repl             # 交互式 REPL（顶层 var 跨行保留）
 build/aria --version
 ```

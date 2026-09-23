@@ -28,7 +28,7 @@ namespace aria::builtins {
             return true;
         }
 
-        // str(x) -> 字符串:值的可读渲染(复用 format_value,与 PRINT 一致)。
+        // str(x) -> 字符串:值的可读渲染(复用 format_value)。
         bool fn_str(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -39,7 +39,7 @@ namespace aria::builtins {
             return true;
         }
 
-        // println([x]) -> nil:值的可读渲染加换行(format_value,与 PRINT 一致),省参只输出换行;可作一等值传参。
+        // println([x]) -> nil:值的可读渲染加换行(format_value + io::println),省参只输出换行;可作一等值传参。
         bool fn_println(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc > 1) {
@@ -74,8 +74,7 @@ namespace aria::builtins {
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
-        // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表;
-        // 它的函数形态是同表内的 `println`。
+        // 内置表:按名注册进 VM 级 builtins 表。
         constexpr BuiltinEntry kBuiltins[] = {
                 {"type", fn_type},
                 {"str", fn_str},

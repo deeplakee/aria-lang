@@ -1,4 +1,4 @@
 // 钉住：循环导入不报错--A 导入 B、B 反向导入 A（拿半初始化对象），两模块体都完整跑完；
 # 执行顺序配 .out golden（B 的体在 A 体结束前完整执行）。
 import "./lib/a" as A;
-print("main done");
+println("main done");

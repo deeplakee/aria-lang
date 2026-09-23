@@ -1,4 +1,4 @@
 // 辅助模块：body 打印一次；三种写法导入同一文件应只执行本体一次（主模块另经
 # A === B === C 钉住三次导入拿到的是同一模块对象）。
 var token = "once";
-print("once body");
+println("once body");

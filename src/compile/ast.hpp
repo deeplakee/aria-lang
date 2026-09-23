@@ -18,7 +18,7 @@ namespace aria {
 
     // AST 根基类：所有节点持 SourceLoc（parser 取构造首 token，供语义/代码生成报错定位；空态 = 合成节点）。dump(indent
     // ) 渲染带缩进的树形文本（每层 2 空格，[[nodiscard]]：丢弃返回值通常意味着忘了拼子树）、display() 经 dump + io::
-    // print 打印；dump 为纯虚故 ASTNode 不可直接实例化，多态一律经 UPtr 指针。命名约定：派生类（含抽象分类基类）以
+    // dump 为纯虚故 ASTNode 不可直接实例化，多态一律经 UPtr 指针。命名约定：派生类（含抽象分类基类）以
     // Node 后缀；辅助值类型（Param/MatchPattern/MatchArm/MatchExprArm/VarBinding/MapEntry）非 ASTNode 派生、不带后缀。
     // 生命周期：UPtr 子节点随节点销毁；SourceLoc::src 非拥有，不得比所引 SourceFile 活得久（同 Token::lexeme_ 约束）。
     struct ASTNode {
@@ -158,7 +158,7 @@ namespace aria {
     // match 语句分支：matchPattern "=>" statement。
     struct MatchArm {
         MatchPattern   pattern;
-        UPtr<StmtNode> body; // 单条语句（printStmt / exprStmt / block 等；多语句用 block）
+        UPtr<StmtNode> body; // 单条语句（exprStmt / block 等；多语句用 block）
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -291,18 +291,6 @@ namespace aria {
     // 表达式语句：expression ";"。
     struct ExprStmtNode : StmtNode {
         ExprStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
-
-        [[nodiscard]]
-        String dump(usize indent) const override;
-
-        void accept(AstVisitor& visitor) override;
-
-        UPtr<ExprNode> expr;
-    };
-
-    // print 语句：print expression ";"。
-    struct PrintStmtNode : StmtNode {
-        PrintStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;

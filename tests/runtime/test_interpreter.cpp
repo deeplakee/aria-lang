@@ -111,34 +111,34 @@ TEST(CliDispatch, NoArgsDefaultsToRepl) {
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
-// REPL 跨行全局持久：首行 var x = 42; 次行 print x; -> 打印 42，整轮退出码 0。
+// REPL 跨行全局持久：首行 var x = 42; 次行 println(x); -> 打印 42，整轮退出码 0。
 // 验证复用单个 <repl> 模块使顶层 var 经 DEF_GLOBAL 跨行保留。
 TEST(CliDispatch, ReplGlobalsPersistAcrossLines) {
-    std::istringstream in("var x = 42;\nprint x;\n");
+    std::istringstream in("var x = 42;\nprintln(x);\n");
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
-// REPL 赋值后读取跨行：var s = "hi"; 下一行 print s + "!"; -> 输出 hi!。
+// REPL 赋值后读取跨行：var s = "hi"; 下一行 println(s + "!"); -> 输出 hi!。
 TEST(CliDispatch, ReplStringGlobalsPersist) {
-    std::istringstream in("var s = \"hi\";\nprint s + \"!\";\n");
+    std::istringstream in("var s = \"hi\";\nprintln(s + \"!\");\n");
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
 // REPL 逐行容错：一行运行期错误（除零）后，后续行仍可正常执行，整轮退出码 0。
 TEST(CliDispatch, ReplContinuesAfterError) {
-    std::istringstream in("return 1 / 0;\nprint 2 + 3;\n");
+    std::istringstream in("return 1 / 0;\nprintln(2 + 3);\n");
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
 // REPL 空行跳过：空行不触发编译执行，后续有效行正常。
 TEST(CliDispatch, ReplSkipsEmptyLines) {
-    std::istringstream in("\n\nprint 1;\n\n");
+    std::istringstream in("\n\nprintln(1);\n\n");
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
 // --repl 显式进入 REPL（即使后有 file 位置参数也走 REPL，因 --repl 优先于 <file>）。
 TEST(CliDispatch, ExplicitReplFlag) {
-    std::istringstream in("print 1 + 1;\n");
+    std::istringstream in("println(1 + 1);\n");
     EXPECT_EQ(run_dispatch({"--repl"}, stream_reader(in)), 0);
 }
 

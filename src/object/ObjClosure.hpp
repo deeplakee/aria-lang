@@ -15,23 +15,13 @@ namespace aria {
     class ObjString;
 
     // 闭包对象:函数 + 捕获的 upvalue 数组(ObjType::CLOSURE)。
-    //
-    //   - function_:被包的 ObjFunction(字节码/常量/名字都在其上,恒非空,ctor ASSERT)。
-    //     ObjFunction 只是常量池内部物,运行期一律以 ObjClosure 进帧。
-    //   - upvalues_:捕获数组,与 fn 的捕获描述表(ObjFunction::upvalue_descs())按下标一一对应。
-    //     ctor 时为空,VM 执行 CLOSURE 指令时按描述表逐个后填(new_upvalue 建或沿开链复用),
-    //     之后只读。
-    //   - defining_class_:方法闭包所属的 defining class。MAKE_METHOD 注册时 set,其余闭包恒
-    //     nullptr(ctor 默认),一职双任:super 来源(LOAD_SUPER_FIELD 从 frame.closure 直读,
-    //     沿其 superclass 链查被覆写前的实现)+ **方法性标记**(读路径据非空判绑 this,不按
-    //     值类型判别;MAKE_STATIC/类上赋值不戳 ⟹ 静态槽持函数值/原生恒原值直读)。挂闭包而非
-    //     ObjFunction(共享编译期常量):函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量,
-    //     戳共享 fn 会跨实例串链;闭包每实例一份无共享可变状态。
-    //     trace 容 nullptr。
-    //
-    //   地址哈希型(闭包按身份判等,同一 fn 的两次捕获是不同闭包);final。
-    //   trace():标 function_ + 全部 upvalue(upvalue 再各自标其槽值/闭值)+ defining_class_。
-    //   to_string():委托 function_ 渲染 `<fn name>`(与纯函数同文案)。
+    //   - function_:被包 ObjFunction(恒非空,ctor ASSERT);运行期一律以 ObjClosure 进帧。
+    //   - upvalues_:与 fn 的捕获描述表(ObjFunction::upvalue_descs())按下标一一对应;ctor 空,VM 执行 CLOSURE 时按描述表
+    //     逐个后填(new_upvalue 建或沿开链复用),之后只读。
+    //   - defining_class_:MAKE_METHOD 注册时 set,其余恒 nullptr(ctor 默认),一职双任:super 来源(LOAD_SUPER_FIELD 直读后
+    //     沿 superclass 链查被覆写前的实现)+ **方法性标记**(读路径据非空判绑 this;MAKE_STATIC/类上赋值不戳 ⟹ 静态槽原
+    //     值直读)。挂闭包而非 ObjFunction:fn 是共享编译期常量,戳共享 fn 会跨实例串链,闭包每实例一份无共享可变状态。地
+    //     址哈希型(闭包按身份判等)、final。trace 标 function_ + 全部 upvalue + defining_class_。
     class ObjClosure final : public Object {
     public:
         ObjClosure(GC& gc, ObjFunction* function);
@@ -42,8 +32,7 @@ namespace aria {
             return function_;
         }
 
-        // 名字访问器:闭包的名 = 被包函数的名(intern 驻留,恒非空),与 ObjFunction/ObjNativeFn
-        // 等的 name() 同约定。定义在 .cpp(需 ObjFunction 完整类型)。
+        // 闭包的名 = 被包函数的名(intern 恒非空);定义在 .cpp(需 ObjFunction 完整类型)。
         [[nodiscard]]
         ObjString* name() const noexcept;
 
@@ -61,7 +50,7 @@ namespace aria {
         // CLOSURE 执行期逐个后填用(push 走 trivial 分配不触 GC,靠 GC 核心不变式免逐个守卫)。
         void add_upvalue(ObjUpvalue* uv);
 
-        // defining class(MAKE_METHOD 注册时 set,之后只读;语义见类注释)。
+        // defining class(MAKE_METHOD 注册时 set,之后只读)。
         [[nodiscard]]
         ObjClass* defining_class() const noexcept {
             return defining_class_;
@@ -84,7 +73,7 @@ namespace aria {
             return sizeof(ObjClosure);
         }
 
-        // 调试渲染:直取 function_ 名渲染 `<fn name>`(与 ObjFunction 同文案)。
+        // 调试渲染:直取 function_ 名渲染 `<fn name>`。
         [[nodiscard]]
         String debug_repr() const override;
 
@@ -94,8 +83,7 @@ namespace aria {
         ObjClass*          defining_class_; // 方法闭包所属类(ctor nullptr)
     };
 
-    // 工厂:分配 ObjClosure(upvalues_ 空态)。守卫纪律见 Object.hpp;function_ 通常已入常量池
-    //     (根)或调用方自行守卫。建成须立即发布进根。
+    // 工厂:分配 ObjClosure(upvalues_ 空态)。守卫纪律见 Object.hpp;function_ 通常已入常量池(根)。
     [[nodiscard]]
     ObjClosure* new_closure(GC& gc, ObjFunction* function);
 

@@ -29,7 +29,6 @@ namespace aria {
         }
 
     private:
-        // 当前渲染路径。
         static List<const Object*>& active_path() {
             static thread_local List<const Object*> path;
             return path;

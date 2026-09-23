@@ -10,22 +10,12 @@ namespace aria {
     class ObjRange;
 
     // 字符串对象:SSO(短串内联 / 长串独立 buffer)。
-    //
     //   - 长度 <= kShortCapacity(15):内联 short_chars_[16](15 字符 + NUL),无额外分配。
-    //   - 长度  > kShortCapacity:long_chars_ 指向 gc.allocate<char>(length_+1) 的独立 buffer,
-    //     ~ObjString 时 gc_->deallocate<char> 释放。壳本身定长(sizeof(ObjString))。
-    //
-    //   is_long() 由 length_ > kShortCapacity 派生(不存标志位,省 1 字节 + 填充)。
-    //   trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。
-    //   持 GC* gc_ 供 ~ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。
-    //
-    //   内容串经 intern 驻留池:new_string 先查 GC 的 InternPool,命中返回已有串,未命中才
-    //   new_object + insert。等价内容的串共享同一 ObjString*。
-    //
-    //   下标读经 load_index 协议 override:整数键 = 字节语义(计划 D5,与 len 同域),产出
-    //   单字节 1-char string;多字节序列中间字节取该字节自身(字节契约的自然结果)。下标
-    //   写恒报错(string 不可变,TypeMismatch 定向文案)。命名成员经 load_field 委托 VM 的
-    //   String bootstrap 类方法表恒绑定(两步,同 ObjList/ObjMap 形)。
+    //   - 长度 > kShortCapacity:long_chars_ 指向 gc.allocate<char>(length_+1) 的独立 buffer,~ObjString 时 gc_->
+    //     deallocate<char> 释放。壳本身定长(sizeof(ObjString))。 is_long() 由 length_ > kShortCapacity 派生(不存标志位
+    //     ,省 1 字节 + 填充)。trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。持 GC* gc_ 供 ~
+    //     ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。内容串经 intern 驻留池:new_string 先查 GC 的
+    //     InternPool,命中返回已有串,未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
     class ObjString final : public Object {
     public:
         static constexpr usize kShortCapacity = 15;
@@ -101,12 +91,10 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 算子协议 override(内建实现直给,**不经成员查找**):返回 String 类表里对应钩子的
-        // 原生函数值 -- 五个算子钩子(`__add__` 拼接、`__lt__`/`__le__`/`__gt__`/`__ge__` 无符号
-        // 字节序比较)在 bootstrap 期注册进 String 类表并同时拷进实现格(kString*Fn),这里读格即得
-        // (类表仍是规范家,`"a".__add__("b")` 读路径照旧查它)。string 只实现 `+` 与四个比较,其余
-        // 算子不 override -> 基类默认报「本类型不支持该算子」(`type String does not support '__sub__'`;
-        // 显式按名调用才落成员 miss 的 `<class String> has no member '__sub__'`)。
+        // 算子协议 override(内建实现直给,**不经成员查找**):返回 String 类表里对应钩子的原生
+        // 函数值(五钩子 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 在 bootstrap 期注册进类表
+        // 并同时拷进实现格 kString*Fn,这里读格即得;类表仍是规范家)。其余算子不 override -> 基类
+        // 默认报「本类型不支持该算子」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;
 
@@ -122,14 +110,12 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
 
-        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑
-        // this(两步形态与 GC 走查见 Object.hpp 协议契约)。store_field 不 override:基类默认
-        // 「does not support field access」即内置类型的正确行为。
+        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑 this
+        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
-        // 交 VM 调用(契约见 Object.hpp)。
+        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
     };

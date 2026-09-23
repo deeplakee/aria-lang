@@ -18,7 +18,7 @@ namespace aria {
     }
 
     ObjString* ObjClosure::name() const noexcept {
-        // function_ 恒非空(ctor ASSERT),函数名恒非空(ObjFunction ctor ASSERT),故指针恒非空。
+        // function_ 恒非空(ctor ASSERT),函数名恒非空,故指针恒非空。
         return function_->name();
     }
 
@@ -27,12 +27,11 @@ namespace aria {
         for (ObjUpvalue* uv: upvalues_) { // const Array<T*> 遍历出的元素是 T*(指针本身 const,不传染 pointee)
             gc.mark_object(uv);
         }
-        gc.mark_object(defining_class_); // 非方法闭包为 nullptr,mark_object 容 nullptr;类静态表方法闭包经此级联标所属类
+        gc.mark_object(defining_class_); // 非方法闭包为 nullptr,容 nullptr;方法闭包经此级联标所属类
     }
 
     String ObjClosure::debug_repr() const {
-        // function_ 恒非空(ctor ASSERT):直取其名渲染 `<fn name>`,与 ObjFunction 同文案
-        //(不经 function_->to_string() 虚委托,调试路径保持一跳纯 C++ 访问器)。
+        // function_ 恒非空(ctor ASSERT):直取名渲染,不经虚委托(调试路径保持一跳)。
         return std::format("<fn {}>", function_->name()->view());
     }
 

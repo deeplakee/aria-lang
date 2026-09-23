@@ -9,13 +9,11 @@ namespace aria {
     class AriaVM;
     class ObjString;
 
-    // 迭代器基类(ObjType::ITERATOR,语言层单数类型名 --type(it) 恒 "Iterator"):迭代协议的
-    // 引擎缝。每源一个小子类、各持自然游标(list 下标 / string 字节偏移 / map 槽位 / range
-    // 区间当前值,源码同目录),基类只钉三件契约:has_next 纯查询、next 越界 fail、trace 标
-    // 各自的源(纯虚钉住,忘标 = 编译错)。语言方法面(has_next/next 经 Iterator bootstrap
-    // 类表恒绑定,原生是本缝的薄壳)住 runtime/builtins/IteratorBuiltins;load_field override 基类一次,
-    // 全子类共享。debug_repr 渲染 "<iterator>"(对标 <upvalue> 稳定短文案);equals 默认地址
-    // 判等(同一容器的两个迭代器是不同对象)。
+    // 迭代器基类(ObjType::ITERATOR,type(it) 恒 "Iterator"):迭代协议的引擎缝。每源一个小子类、
+    // 各持自然游标(list 下标 / string 字节偏移 / map 槽位 / range 区间当前值,源码同目录),基类
+    // 只钉三件契约:has_next 纯查询、next 越界 fail、trace 标各自的源(纯虚钉住,忘标 = 编译错)。
+    // 语言方法面(has_next/next 经 Iterator bootstrap 类表恒绑定)住 runtime/builtins/IteratorBuiltins;
+    // load_field override 基类一次,全子类共享。debug_repr 渲染 "<iterator>";equals 默认地址判等。
     class ObjIterator : public Object {
     public:
         ~ObjIterator() override = default; // 子类成员是 GC 对象/标量,不归本类释放
@@ -25,14 +23,12 @@ namespace aria {
         ObjIterator(ObjIterator&&)                 = delete;
         ObjIterator& operator=(ObjIterator&&)      = delete;
 
-        // 命名成员读取协议 override(基类一次实现、全子类共享):查 Iterator bootstrap 类表,
-        // 命中自持 new_bound_method 恒绑 this(两步形态与 GC 走查见 Object.hpp 协议契约)。
-        // store_field 不 override(基类默认即正确行为)。
+        // 命名成员读取协议 override(基类一次、全子类共享):查 Iterator bootstrap 类表,命中自持
+        // new_bound_method 恒绑 this(两步形态与 GC 走查见 Object.hpp;store_field 不 override)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
-        // 交 VM 调用(契约见 Object.hpp)。
+        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 

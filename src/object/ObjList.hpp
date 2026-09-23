@@ -10,18 +10,15 @@ namespace aria {
     class GC;
     class ObjRange;
 
-    // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序
-    // 存 AriaArray(MAKE_LIST 一次整段拷入)。下标读写经 load_index/store_index 协议 override;
-    // 命名成员(push/pop 等)经 load_field 委托 VM 的 List bootstrap 类方法表恒绑定。
-    //
-    //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素
-    //     value_equal(嵌套 list 经各自 equals 递归),value_equal 无分配、GC-pure 契约保持;
-    //     入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);`===` 恒指针
-    //     (value_identical,不经本类)。
+    // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序存 AriaArray(MAKE_LIST 一次整段
+    // 拷入)。下标读写经 load_index/store_index 协议 override;命名成员(push/pop 等)经 load_field 委托 VM 的 List
+    // bootstrap 类方法表恒绑定。
+    //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素 value_equal(嵌套 list 经各自
+    //     equals 递归),value_equal 无分配、GC-pure 契约保持;入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);`=
+    //     ==` 恒指针(value_identical,不经本类)。
     //   - trace():委托 elements_.trace(遍历元素 mark_value)。
-    //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免
-    //     `[1, ab]` 歧义;嵌套 list 递归);入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,
-    //     Python 同款);显示同文案(to_string 经基类默认委托)。
+    //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免 `[1, ab]` 歧义;嵌套 list 递归);
+    //     入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,Python 同款);显示同文案(to_string 经基类默认委托)。
     class ObjList final : public Object {
     public:
         // 元素表惰性增长,ctor 只绑分配器(首字节预留由 copy_from/push 的扩容路径自理)。
@@ -34,8 +31,7 @@ namespace aria {
         ObjList(ObjList&&)                 = delete;
         ObjList& operator=(ObjList&&)      = delete;
 
-        // 元素表(非常量供填充:MAKE_LIST 的 copy_from 与 push/pop 方法;对标
-        // ObjModule::globals 的容器成员直曝)。
+        // 元素表(非常量供 MAKE_LIST 的 copy_from 与 push/pop 方法填充;容器成员直曝)。
         [[nodiscard]]
         AriaArray& elements() noexcept {
             return elements_;
@@ -69,14 +65,12 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑
-        // this(两步形态与 GC 走查见 Object.hpp 协议契约)。store_field 不 override:基类默认
-        // 「does not support field access」即内置类型的正确行为。
+        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑 this
+        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析协议 override:同一趟类表查找但**不铸 ObjBoundMethod**,命中直取类表原生值
-        // 交 VM 调用(契约见 Object.hpp)。
+        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
@@ -94,9 +88,7 @@ namespace aria {
         Opt<Value> slice(AriaVM& vm, const ObjRange* range);
     };
 
-    // 工厂:分配空 ObjList。只做一次 new_object、无内部新建对象,无入参对象可守;返回对象
-    //     白色无根,调用方建成即发布进根(MAKE_LIST:元素自值栈整段拷入走 trivial 分配不触
-    //     GC,随即 drop+push 入值栈根,窗口内无 GC 点)。
+    // 工厂:分配空 ObjList(单次分配,无入参对象可守);返回对象白色无根,调用方建成即发布进根。
     [[nodiscard]]
     ObjList* new_list(GC& gc);
 

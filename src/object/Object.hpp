@@ -71,16 +71,14 @@ namespace aria {
         }
     }
 
-    // Object 自前向声明:DerivedFromObj concept 在 class Object 定义之前引用 Object 名,
-    // 需先声明(concept 不在此求值 is_base_of,延迟到实例化点 Object 已完整)。
+    // Object 自前向声明(concept 延迟求值 is_base_of,须先有名字)。
     class Object;
 
-    // 供 is<T>/as<T> 与 GC::new_object<T> 约束 T 派生自 Object(is_base_of 延迟到实例化点,
-    // 届时 Object 已完整)。
+    // 供 is<T>/as<T> 与 GC::new_object<T> 约束 T 派生自 Object(is_base_of 延迟到实例化点)。
     template<typename T>
     concept DerivedFromObj = std::is_base_of_v<Object, T>;
 
-    // 以下前向声明:虚函数签名只需不完整类型,完整定义见各自头(子类 .cpp include 后才调用方法)。
+    // 前向声明:虚函数签名只需不完整类型,完整定义见各自头。
     class GC;
     class ObjString;
     // AriaVM:基类默认体定义在 Object.cpp(vm.fail 是 AriaVM.hpp 内模板,而 AriaVM.hpp 经
@@ -129,10 +127,7 @@ namespace aria {
 
         void unmark() noexcept { is_marked_ = false; }
 
-        ////////////////////////////
-        //
         // 公共虚函数:具体 Object 子类型实现这些。
-        //
 
         // GC 标记阶段:遍历本对象的 Value/Object 子节点,调 gc.mark_value/mark_object。
         // 纯字符串等无子节点者空实现。
@@ -172,55 +167,40 @@ namespace aria {
             return debug_repr();
         }
 
-        //////////////////////////
-        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点)
-        //
-        // VM 不按子类型 switch 分型 --内建类型与用户类的成员语义在各自 override 一次收口,
-        // 新增承载类型零 VM 改动。错误通道对齐 native fn 契约:签名收 AriaVM& 单一句柄,
-        // 协议失败**自己 fail**(载荷直接入挂起寄存器,无返回值在途的白色无根窗口),返回值
-        // 只留信号:load 族 Opt<Value> 的 nullopt ⟺ 已 fail(nil 命中亦 somed)、store 族
-        // bool 的 false ⟺ 已 fail,失败出口一律 `return vm.fail(...);`(FailSignal 按站点
-        // 返回类型转换)。
-        //   - 文案由最知道语境的一方就地烘焙(越界含长度/键错误含键值);组合场景(实例委托
-        //     类链、super 站点)直接委托 ObjClass::load_field,miss 的类措辞随协议传播。
-        //   - 纪律:①fail 文案渲染值走非重入的 format_value_debug,不用可重载 to_string;
-        //     ②至多 fail 一次、fail 后立即返回;③协议内可分配(绑定/装箱),调用方(VM)
-        //     保证接收者「栈即根」(peek 不弹)。
-        //////////////////////////
+        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点):VM 不按子类型 switch 分型 --内建类型与用
+        // 户类的成员语义在各自 override 一次收口,新增承载类型零 VM 改动。错误通道对齐 native fn 契约:签名收 AriaVM& 单
+        // 一句柄,协议失败**自己 fail**(载荷直接入挂起寄存器,无返回值在途的白色无根窗口),返回值只留信号:load 族 Opt<
+        // Value> 的 nullopt ⟺ 已 fail(nil 命中亦 somed)、store 族 bool 的 false ⟺ 已 fail,失败出口一律 `return vm.fail
+        // (...);`(FailSignal 按站点返回类型转换)。
+        //   - 文案由最知道语境的一方就地烘焙(越界含长度/键错误含键值);组合场景(实例委托类链、super 站点)直接委托
+        //     ObjClass::load_field,miss 的类措辞随协议传播。
+        //   - 纪律:①fail 文案渲染值走非重入的 format_value_debug,不用可重载 to_string;②至多 fail 一次、fail 后立即返回
+        //     ;③协议内可分配(绑定/装箱),调用方(VM)保证接收者「栈即根」(peek 不弹)。
 
-        // 读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):name 为 intern 串(===
-        // 同指针查表)。基类默认报 UndefinedProperty "X has no member 'y'";override 见
-        // ObjInstance / ObjClass,默认体在 Object.cpp。
-        // **内置容器/迭代器(string/list/map/range/iterator)的 override 同形两步**(权威说明,
-        // 各子类不再复述):①委托自身 bootstrap 类表的 ObjClass::load_field 沿链查表,miss 类措辞
-        // fail 随协议透传;②命中即自持 new_bound_method 恒绑 this --内置类表条目全为原生函数、
-        // 恒为方法,判别无须戳(表契约由各 register_*_builtins 唯一写入口维持)。GC 走查:
-        // new_bound_method 是唯一分配点,receiver 经调用方 peek 在栈(栈即根)、klass 经 VM 寄存器
-        // 组根、命中值本体经类链 field_ 表可达(本地 hit 仅是值拷贝);新 bound 白色无根,由
-        // run_load_field 写回原槽根化。store_field 不 override:基类默认「does not support field
-        // access」即内置类型的正确行为。
+        // 读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):name 为 intern 串(=== 同指针查表)。基类默认报
+        // UndefinedProperty "X has no member 'y'";override 见 ObjInstance / ObjClass,默认体在 Object.cpp。**内置容器/
+        // 迭代器(string/list/map/range/iterator)的 override 同形两步**(权威说明,各子类不再复述):①委托自身 bootstrap 类
+        // 表的 ObjClass::load_field 沿链查表,miss 类措辞 fail 随协议透传;②命中即自持 new_bound_method 恒绑 this --内置
+        // 类表条目全为原生函数、恒为方法,判别无须戳(表契约由各 register_*_builtins 唯一写入口维持)。GC 走查:
+        // new_bound_method 是唯一分配点,receiver 经调用方 peek 在栈(栈即根)、klass 经 VM 寄存器组根、命中值本体经类链
+        // field_ 表可达(本地 hit 仅是值拷贝);新 bound 白色无根,由 run_load_field 写回原槽根化。store_field 不 override
+        // :基类默认「does not support field access」即内置类型的正确行为。
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaVM& vm, ObjString* name);
 
-        // 命名成员读取的不绑定形态(PREPARE_METHOD 统一入口):与 load_field 同一趟查找,但
-        // **永不铸 ObjBoundMethod**、命中即原值直出;错误契约同 load_field(nullopt ⟺ 已
-        // fail,文案随宿主 override 就地烘焙)。消费方两类:①VM 的 run_prepare_method -- 实参
-        // 求值**之前**调本缝取被调值;②实例 11 个 op_*_impl -- 按算子/调用钩子名取 `__add__`/
-        // `__call__` 等实现。
-        // 调用时序与槽位:run_prepare_method 把返回值压在接收者之上,CALL_METHOD 再把实参整体
-        // 下移一格补掉它,调用区回到 [recv, a1..aN],槽 0 保持接收者原样不动 -- 这是不铸 bound
-        // 的关键:方法命中时 call_bound_method 自会用 bound 的 receiver 覆写槽 0;内置类表的
-        // 原生函数恰好**正需要**槽 0 = receiver(其 this 兼返回槽,call_native 从不碰槽 0);
-        // 字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。故本缝不涉槽位约定(「非方法成员
-        // 被调用时槽 0 为接收者而非成员值」这一形态差异见 bytecode-instruction-set.md §5.6)。
-        // **基类默认 = load_field**(类/模块等未 override 者:其读取本就不绑定,照读路径取值),
-        // 命中即该值本身,miss 文案随宿主烘焙。
-        // **实例与内置容器/迭代器各自 override**(同一个理由:读取路径要绑定,本缝永不铸
-        // ObjBoundMethod)--
-        //   实例:fields 命中优先,否则沿类链取**原值**(方法戳闭包不绑定,方法体从槽 0 读 this),
-        //         零分配且每次按当前类链解析(改类/父类方法立即生效,见 ObjInstance.hpp);
-        //   内置容器/迭代器:查自身 bootstrap 类表取原生值(条目恒为原生、恒绑定),miss 的类措辞
-        //          fail 随 ObjClass::load_field 透传。
+        // 命名成员读取的不绑定形态(PREPARE_METHOD 统一入口):与 load_field 同一趟查找,但**永不铸 ObjBoundMethod**、命中
+        // 即原值直出;错误契约同 load_field(nullopt ⟺ 已 fail,文案随宿主 override 就地烘焙)。消费方两类:①VM 的
+        // run_prepare_method -- 实参求值**之前**调本缝取被调值;②实例 11 个 op_*_impl -- 按算子/调用钩子名取 `__add__`/
+        // `__call__` 等实现。调用时序与槽位:run_prepare_method 把返回值压在接收者之上,CALL_METHOD 再把实参整体下移一格
+        // 补掉它,调用区回到 [recv, a1..aN],槽 0 保持接收者原样不动 -- 这是不铸 bound 的关键:方法命中时
+        // call_bound_method 自会用 bound 的 receiver 覆写槽 0;内置类表的原生函数恰好**正需要**槽 0 = receiver(其 this
+        // 兼返回槽,call_native 从不碰槽 0);字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。故本缝不涉槽位约定(「
+        // 非方法成员被调用时槽 0 为接收者而非成员值」这一形态差异见 bytecode-instruction-set.md §5.6)。**基类默认 =
+        // load_field**(类/模块等未 override 者:其读取本就不绑定,照读路径取值),命中即该值本身,miss 文案随宿主烘焙。**实
+        // 例与内置容器/迭代器各自 override**(同一个理由:读取路径要绑定,本缝永不铸 ObjBoundMethod)-- 实例:fields 命中优
+        // 先,否则沿类链取**原值**(方法戳闭包不绑定,方法体从槽 0 读 this),零分配且每次按当前类链解析(改类/父类方法立即
+        // 生效,见 ObjInstance.hpp); 内置容器/迭代器:查自身 bootstrap 类表取原生值(条目恒为原生、恒绑定),miss 的类措辞
+        // fail 随 ObjClass::load_field 透传。
         [[nodiscard]]
         virtual Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name);
 
@@ -239,19 +219,13 @@ namespace aria {
         [[nodiscard]]
         virtual bool store_index(AriaVM& vm, Value key, Value value);
 
-        //////////////////////////
-        // 可重载算子协议与调用协议(取实现,不执行)
-        //
-        // 每个算子/调用一个虚函数,回答「**本对象上该算子对应的可调用值**」-- 不是算好的结果:调用方
-        // (VM 的 run_binary_operator/run_negate/call_value)拿到后按调用形态调它(调用区槽 0 保持
-        // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(kOp*Name;调用钩子
-        // `__call__`)。
-        // **基类默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与
-        // load_field/store_field 等基类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 --
-        // 11 个 override 各按名 load_field_unbound(实例 fields 可遮蔽,再类链);②内置 string -- 5 个算子
-        // 直给实现格 String*Fn(免查找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")`
-        // 读路径不变)。非 const(取实现可能物化绑定,与 load_field/load_field_unbound 同族)。
-        //////////////////////////
+        // 可重载算子协议与调用协议(取实现,不执行):每个算子/调用一个虚函数,回答「**本对象上该算子对应的可调用值**」--
+        // 不是算好的结果:调用方(VM 的 run_binary_operator/run_negate/call_value)拿到后按调用形态调它(调用区槽 0 保持
+        // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(kOp*Name;调用钩子 `__call__`)。**基类
+        // 默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与 load_field/store_field 等基
+        // 类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 -- 11 个 override 各按名 load_field_unbound(实例
+        // fields 可遮蔽,再类链);②内置 string -- 5 个算子直给实现格 String*Fn(免查找);③其余类型不实现即报错(方法仍在类
+        // 表里,`"a".__add__("b")` 读路径不变)。非 const(取实现可能物化绑定,与 load_field/load_field_unbound 同族)。
 
         [[nodiscard]]
         virtual Opt<Value> op_add_impl(AriaVM& vm);
@@ -288,7 +262,6 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
-        ////////////////////////////
 
         // is<T>() 目前一律 dynamic_cast;性能敏感后可改 ObjType 查表(子类型均已落地)。
         template<DerivedFromObj T>

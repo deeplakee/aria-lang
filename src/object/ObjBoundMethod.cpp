@@ -12,15 +12,13 @@ namespace aria {
 
     ObjBoundMethod::ObjBoundMethod(const Value method, const Value receiver) :
         Object{ObjType::BOUND_METHOD}, method_{method}, receiver_{receiver} {
-        // method_ 须为可调用值(ctor ASSERT):闭包或原生函数 -- 非可调用值没有绑定语义,
-        // 静态值直读不走本类型。判定收口 is_callable_value。
+        // method_ 须为可调用值(闭包或原生函数);判定收口 is_callable_value。
         ASSERT(is_callable_value(method), "ObjBoundMethod: method must be a callable (closure or native fn)");
     }
 
     bool ObjBoundMethod::equals(const Object* other) const noexcept {
-        // 先比指针(同一对象恒等),再比「绑的是同一个方法值、且 receiver 同一」--绑定语义就是
-        // 「同一实现 + 同一接收者」。method_ 为闭包/原生对象、receiver_ 为任意 Value,皆按身份
-        // (value_identical)比较(无 GC 分配,GC-pure 契约保持)。
+        // 先比指针,再比「同一方法值 + 同一 receiver」-- 绑定语义即「同一实现 + 同一接收者」。
+        // 两者皆按身份(value_identical)比较,无 GC 分配,GC-pure 契约保持。
         if (this == other) {
             return true;
         }
@@ -45,7 +43,7 @@ namespace aria {
     }
 
     String ObjBoundMethod::debug_repr() const {
-        // 渲染方法名,与 <fn m> 渲染族同源(经非虚 name() 取名)。
+        // 渲染方法名(经非虚 name() 取名)。
         return std::format("<bound method {}>", name()->view());
     }
 

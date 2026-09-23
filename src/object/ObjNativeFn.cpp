@@ -10,32 +10,31 @@ namespace aria {
 
     ObjNativeFn::ObjNativeFn(ObjString* name, NativeFn fn) : Object{ObjType::NATIVE_FN}, name_{name}, fn_{fn} {
         ASSERT(fn != nullptr, "ObjNativeFn: function pointer must not be null");
-        // name_ 恒非空:无具名需求者用 kAnonymousName("<anonymous>"),与 ObjFunction 的 lambda 命名一致。
+        // name_ 恒非空:匿名用 kAnonymousName。
         ASSERT(name != nullptr, "ObjNativeFn: name must not be null (use kAnonymousName for anonymous)");
     }
 
     void ObjNativeFn::trace(GC& gc) const noexcept {
-        gc.mark_object(name_); // fn_ 是 C++ 指针,非 GC 对象,唯一 GC 子节点即 name_
+        gc.mark_object(name_); // fn_ 是 C++ 指针非 GC 对象,唯一 GC 子节点即 name_
     }
 
     String ObjNativeFn::debug_repr() const {
-        // name_ 恒非空(ctor ASSERT);匿名原生函数 name_ = kAnonymousName,渲染 `<fn <anonymous>>`。
+        // name_ 恒非空(ctor ASSERT)。
         return std::format("<fn {}>", name_->view());
     }
 
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 name。fn 为标量,无需入根。
+        // 守卫纪律见 Object.hpp;调用方须自行根化 name(fn 为标量)。
         return gc.new_object<ObjNativeFn>(name, fn);
     }
 
     ObjNativeFn* new_native_fn(GC& gc, const NativeFn fn) {
-        // 匿名重载:委托 StringView 名重载,驻留与守卫均由其内部完成。
+        // 匿名重载:委托 StringView 名重载,驻留与守卫由其内部完成。
         return new_native_fn(gc, kAnonymousName, fn);
     }
 
     ObjNativeFn* new_native_fn(GC& gc, const StringView name, const NativeFn fn) {
-        // StringView 名重载:name_str 经 intern 由本函数内部新建,工厂自行守卫跨下方 new_object
-        //(「每方守自己创建的」)。调用方传文本即可,无需手动建串根化。委托显式名重载。
+        // name_str 由本函数内部 intern 并自守跨下方 new_object;调用方传文本即可。
         const auto name_str = new_string(gc, name);
         const auto guard    = gc.make_guard(name_str);
         return new_native_fn(gc, name_str, fn);

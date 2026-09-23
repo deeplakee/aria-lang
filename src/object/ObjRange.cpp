@@ -37,7 +37,7 @@ namespace aria {
     }
 
     Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp 协议契约;命中自持 new_bound_method 恒绑 this。
+        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.range_class()->load_field(vm, name);
         if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
@@ -46,13 +46,12 @@ namespace aria {
     }
 
     Opt<Value> ObjRange::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值交 VM 调用(契约见 Object.hpp);miss 的 fail
-        // 装箱在 ObjClass::load_field 内就地完成,receiver 与 name 由调用方根化,本体是纯透传。
+        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
         return vm.range_class()->load_field(vm, name);
     }
 
     String ObjRange::debug_repr() const {
-        // 与源码拼写一致:.. 含上界、... 不含(空区间原样渲染两端点);无上界渲染 from..。
+        // 与源码拼写一致:.. 含上界、... 不含;无上界渲染 from..。
         if (!to_) {
             return std::format("{}..", from_);
         }
@@ -71,8 +70,7 @@ namespace aria {
         const bool is_unbounded = !range->has_upper();
 
         // 起点归一化(从尾计数 + 越界判定)两形态共用;无上界形态另放行「末尾之后一位」= 空段
-        // (「从末尾之后取剩余」即空,解构 rest 的空尾据此成立;负值经归一化只落 [0, size-1],
-        // 故该格就是裸值 == size 这一种),先短路它。
+        //(「从末尾之后取剩余」即空,解构 rest 的空尾据此成立),先短路它。
         if (is_unbounded && raw_from == static_cast<i64>(size)) {
             return SliceSegment{.start = size, .count = 0, .is_reversed = false};
         }
@@ -84,10 +82,8 @@ namespace aria {
         if (is_unbounded) {
             return SliceSegment{.start = *from, .count = size - *from, .is_reversed = false};
         }
-        // 有上界形态:上界同须落在实元素位置(空容器任何端点都解析不出,与单下标空表行为一致,
-        // 故空表切片自然落 nullopt)。方向由归一化端点的大小关系定(原始端点可因从尾计数翻转,
-        // 故不按原始值判);不含上界少走迭代序末元素,两端相等即空段;倒序的升序源段自低端的 to
-        // 起(被跳过的 to 在低端,须让开一位)。
+        // 有上界:上界同须落在实元素位置(空容器切片自然落 nullopt)。方向由归一化端点的大小关系
+        // 定(原始端点可因从尾计数翻转);不含上界少走末元素,两端相等即空段;倒序的升序源段自低端 to 起。
         const auto to = util::resolve_index(*range->to(), size);
         if (!to) {
             return std::nullopt;

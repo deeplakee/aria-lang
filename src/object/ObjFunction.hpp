@@ -23,35 +23,17 @@ namespace aria {
         bool operator==(const UpvalueDesc&) const = default;
     };
 
-    // 函数对象:持一个 CodeUnit(字节码容器,值成员)+ 所属模块 + 函数名 + 参数个数(arity)。
-    //
-    //   - unit_:CodeUnit 值成员(非 Object,见 CodeUnit 注释)。编译期由字节码编译器
-    //     经 unit() 直接操作裸字段 emit;运行期 VM 读 code/constants/try_records。
-    //     其内部 Array 持 GC* 自释放,~ObjFunction -> ~CodeUnit 级联释放。
-    //   - module_:所属模块(词法归属,构造时传入、不可变、非空)。函数必然定义在某个模块内
-    //     (模块体与其内嵌套函数同属一模块;入口脚本本身也是一个模块)。VM 据此定位「当前模块
-    //     globals」(LOAD/STORE/DEF_GLOBAL 查 frame.module->globals(),module_ 经 CallFrame.module
-    //     缓存)。ctor 断言非空,杜绝「无模块函数」。
-    //   - name_:ObjString*(经 intern 驻留,同名同指针;恒非空)。模块入口函数名 `<main>`(主入口)/`<module>`(导入)、
-    //     lambda 名 `<anonymous>`(`<>` 是正常标识符中不可用的符号,具独特辨识度);具名函数为
-    //     其声明名。统一模型:每个函数都有名字,ctor ASSERT 非空。to_string 渲染 `<fn name>`。
-    //   - arity_:固定参数数(u8,上限 255;编译期编译器保证不越界)。**不含 rest 参数**:
-    //     varargs 函数的帧参数槽深 = arity + is_varargs(rest 是末位的一个普通局部槽,
-    //     值由 call_closure 打包多余实参为 list 就位)。
-    //   - min_arity_:必传参数数(u8,<= arity_;差额即带默认值参数)。调用实参数落在
-    //     [min_arity, arity] 才合法,不足段由 call_closure 以缺省印章垫充、函数序言换默认值;
-    //     varargs 函数无上界(多余实参进 rest)。
-    //   - is_varargs_:varargs 函数标志(末位参数为 ...rest)。call_closure 据此分流元数
-    //     检查(只保下界)并把超出 arity 的实参打包成 list 压入 rest 槽;每次调用新铸。
-    //   - upvalue_descs_:捕获描述表(编译期一次性 flush,运行期只读)。每条 UpvalueDesc
-    //     描述本函数的一个捕获(语义见上 struct 注);存元数据、不进字节码流,CLOSURE 保持
-    //     定长 3B(ConstU16);与 ObjClosure::upvalues_ 按下标一一对应。描述项纯标量,trace 不标。
-    //
-    //   地址哈希型可变对象(走 Object{Kind} ctor);equals 保持默认地址相等--
-    //     函数无"内容相等"语义(同名函数体可不同)。
-    //   trace():标 name_ + module_ + 委托 unit_.trace(常量池中的 Value,code/lines 无子节点)。
-    //     module_ 回指形成 module <-> entry 环,mark-sweep 三色标记天然破环,无 double-free
-    //     (两者皆 GC 对象,各自由 sweep 整体回收,~ObjFunction 不释放 module_)。
+    // 函数对象:CodeUnit(值成员)+ 所属模块 + 名 + 元数。地址哈希型(函数无内容相等语义)。
+    //   - unit_:编译期经 unit() 直接 emit,运行期 VM 读 code/constants/try_records;内部 Array 持 GC* 自释放,~
+    //     ObjFunction -> ~CodeUnit 级联释放。
+    //   - module_:词法归属(不可变非空,ctor ASSERT);VM 经 frame.module->globals() 定位模块 globals。module_ 回指与
+    //     module->entry_ 成环,mark-sweep 三色标记破环、两者各自由 sweep 整体回收(~ObjFunction 不释放 module_)。
+    //   - name_:intern 驻留恒非空;入口 `<main>`/`<module>`、lambda `<anonymous>`。
+    //   - arity_ **不含 rest**(varargs 帧槽深 = arity + 1,rest 是末位普通局部槽);min_arity_ = 必传数(差额为带默认值参
+    //     数,不足段由 call_closure 垫缺省印章、序言换默认值),实参数须落 [min_arity, arity];is_varargs_ 只保下界并把超
+    //     arity 的实参打包成 list 压入 rest 槽。
+    //   - upvalue_descs_:捕获描述表(编译期一次性 flush,运行期只读),与 ObjClosure::upvalues_ 按下标一一对应;存元数据不
+    //     进字节码流(CLOSURE 保持定长 3B),纯标量 trace 不标。
     class ObjFunction final : public Object {
     public:
         ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
@@ -83,14 +65,13 @@ namespace aria {
             return min_arity_;
         }
 
-        // varargs 函数标志(末位参数为 ...rest):call_closure 只保元数下界、多余实参打包
-        // 成 list 压入 rest 槽(槽深 = arity + 1)。
+        // varargs 函数标志(末位参数为 ...rest;帧槽深 = arity + 1)。
         [[nodiscard]]
         bool is_varargs() const noexcept {
             return is_varargs_;
         }
 
-        // 所属模块(词法归属,构造时确定、不可变、非空),供 VM 定位模块 globals。
+        // 所属模块(不可变非空),供 VM 定位模块 globals。
         [[nodiscard]]
         ObjModule* module() const noexcept {
             return module_;
@@ -107,8 +88,7 @@ namespace aria {
             return upvalue_descs_;
         }
 
-        // 标 name_ + module_ + 常量池(code/lines 无 Value 子节点;upvalue_descs_ 纯标量不标)。
-        // module_ 非空;mark_object 容 nullptr 仅防御。
+        // 标 name_ + module_ + 常量池(code/lines 无 Value 子节点);module_ 非空,mark_object 容 nullptr 仅防御。
         void trace(GC& gc) const noexcept override;
 
         // 壳定长(CodeUnit / upvalue_descs_ 内部 Array 自管理,级联释放)。
@@ -117,14 +97,13 @@ namespace aria {
             return sizeof(ObjFunction);
         }
 
-        // 调试渲染:`<fn add>`(clox 风格;入口渲染 `<fn <main>>`/`<fn <module>>`、
-        // lambda 渲染 `<fn <anonymous>>`);显示同文案(to_string 经基类默认委托)。
+        // 调试渲染:`<fn add>`(入口 `<fn <main>>`、lambda `<fn <anonymous>>`);显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 
     private:
         CodeUnit           unit_;
-        ObjModule*         module_; // 所属模块(非空,构造时传入)
+        ObjModule*         module_; // 所属模块(恒非空)
         ObjString*         name_;
         u8                 arity_;
         u8                 min_arity_;
@@ -132,9 +111,8 @@ namespace aria {
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
-    // 工厂:分配 ObjFunction 并初始化空 CodeUnit。守卫纪律见 Object.hpp;module 与 name 经
-    //         intern/模块表皆是 weak root,调用方须自行根化两者(跨 new_object 顶 maybe_collect)。
-    // StringView 便捷重载:内部 intern name 并自守(工厂守「自己创建的」),调用方只需根化 module。
+    // 工厂:分配 ObjFunction。守卫纪律见 Object.hpp;module 与 name 皆 weak root,调用方须自行根化。
+    // StringView 重载内部 intern name 并自守,调用方只需根化 module。
     [[nodiscard]]
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
 

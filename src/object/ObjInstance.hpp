@@ -12,18 +12,12 @@ namespace aria {
     class ObjString;
 
     // 实例对象:类经实例化(call_value CLASS 分支)的产物(ObjType::INSTANCE)。
-    //
-    //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变,恒非空
-    //     (构造期 ASSERT)。
-    //   - fields_:实例字段表(`init` 内 `this.x = ...` 落此,无字段预声明、动态)。键 intern
-    //     ObjString*,值 Value。**纯字段** -- 只存真字段,不缓存方法绑定:缓存会让「类/父类上
-    //     改写方法」对既有实例陈旧、且与新建实例不一致(取决于该实例历史),monkey patch 半可用
-    //     且难解释。故读路径每次访问现场绑定新 bound(方法值是一等值,必须是个对象),调用路径经
-    //     `load_field_unbound` 走不绑定形态(零分配 + 每次按当前类链解析)。惰性分配。**私有不
-    //     对外暴露**:成员读写一律走 load_field/store_field 协议,无整表访问器。
-    //
-    //   地址哈希型(实例按身份判等),final。trace 标 class_ + 委托 fields_.trace(字段里存的
-    //   可调用值经值级联标);to_string = `<Foo instance>`。
+    //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变、恒非空(ctor ASSERT)。
+    //   - fields_:实例字段表(无字段预声明、动态;惰性分配)。**纯字段** -- 只存真字段,不缓存
+    //     方法绑定:缓存会让「类/父类改写方法」对既有实例陈旧、且与新建实例不一致(monkey patch
+    //     半可用且难解释)。故读路径每次访问现场绑定新 bound,调用路径经 `load_field_unbound` 走
+    //     不绑定形态(零分配 + 每次按当前类链解析)。**私有不对外暴露**,读写一律走协议。
+    //   地址哈希型、final。trace 标 class_ + fields_(字段里的可调用值经值级联标)。
     class ObjInstance final : public Object {
     public:
         explicit ObjInstance(GC& gc, ObjClass* klass);
@@ -41,16 +35,14 @@ namespace aria {
         }
 
         // 命名成员读取协议 override(方法值**读取**路径):fields 命中优先(真字段遮蔽类链同名
-        // 成员)-> **委托类协议** ObjClass::load_field 沿链读穿透(miss 的类措辞 fail 随协议
-        // 传播)。命中方法戳闭包即现场绑 this(每次访问一个新 bound,不缓存),其余原值直读;
-        // 分配点 GC 安全见 .cpp。
+        // 成员)-> **委托类协议** ObjClass::load_field 沿链读穿透(miss 的类措辞随协议传播)。命中
+        // 方法戳闭包即现场绑 this(每次访问一个新 bound,不缓存),其余原值直读;分配点 GC 安全见 .cpp。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 命名成员读取的不绑定形态 override(PREPARE_METHOD 与算子钩子取实现共用):与内置类型
-        // 同一条规则 -- 不绑定,返回字段/类链里的原值,交 VM 以 receiver 占调用区槽 0 直调(方法体
-        // 从槽 0 读 this;原生以槽 0 为 this 兼返回槽)。零分配,且每次按当前类链解析(与读路径
-        // 同一份可见性:改类/父类方法立即生效)。
+        // 命名成员读取的不绑定形态 override(PREPARE_METHOD 与算子钩子取实现共用):**不绑定**,
+        // 返回字段/类链里的原值,交 VM 以 receiver 占调用区槽 0 直调(方法体从槽 0 读 this)。
+        // 零分配,且每次按当前类链解析(改类/父类方法立即生效,与读路径同一份可见性)。
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
@@ -90,8 +82,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> op_call_impl(AriaVM& vm) override;
 
-        // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,
-        // 永不失败(恒 true;false ⟺ 已 fail)。
+        // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
         // 标 class_ + fields_(key+value;字段里存的可调用值经值级联)。
@@ -103,18 +94,17 @@ namespace aria {
             return sizeof(ObjInstance);
         }
 
-        // 调试渲染:`<Foo instance>`(class_ 恒非空);显示同文案(to_string 经基类默认委托)。
+        // 调试渲染:`<Foo instance>`(class_ 恒非空);显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)
-        AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,方法绑定不缓存,见类注释)
+        AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,方法绑定不缓存)
     };
 
-    // 工厂:分配 ObjInstance(fields_ 空态),shell 单次分配、无内部二级分配。守卫纪律见
-    //     Object.hpp;调用方须在调用前自行根化 klass(实例化路径 klass 在栈根化),建成即写栈
-    //     (值栈根)。
+    // 工厂:分配 ObjInstance(fields_ 空态),单次分配无内部二级分配。守卫纪律见 Object.hpp;
+    //     调用方须自行根化 klass;建成即写栈(值栈根)。
     [[nodiscard]]
     ObjInstance* new_instance(GC& gc, ObjClass* klass);
 

@@ -10,26 +10,13 @@ namespace aria {
     class ObjString;
     class Error;
 
-    // 异常对象:VM 检测到的运行时错误 / 原生函数报错的装箱载荷(ObjType::EXCEPTION),统一
-    // 异常通道(try/catch/throw)的运行时载体之一。持 ErrorCode + 错误消息串。
-    //
-    //   - code_ / message_:message_ 存**完整烘焙消息** -- 与 Error::message() 同形,含
-    //     "Category: Name" 前缀(运行期装箱不含位置前缀 -- 位置由未捕获出口的 at 跟踪行给出;
-    //     经 load_module 透传的编译期 Error 消息自带 path:line:col: 位置,原样保留)。烘焙
-    //     发生在 raise 侧(经 Error::make_message 烘齐),本对象原样持有,自身不做加工;
-    //     位置不丢、catch 里 print(e)/str(e) 渲染完整消息不退化。code_ 保留机器标识:
-    //     to_error() 与 catch 类型判定经它取。message_ 指针恒非空(ctor ASSERT;内容可空
-    //     -- 无细节的错误以空串兜底),经 intern 驻留同指针。设计定稿见
-    //     .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7(单寄存器模型)。
-    //   - to_error():经 Error::from_baked 把 message_ **原样**回传(跳过 make_message 重烘 --
-    //     否则双重前缀),供测试 / 嵌入方取 Error 断言。VM 未捕获出口不经本方法,经
-    //     AriaVM.cpp uncaught_error_parts 直读 code_/message_ 拆件后 from_baked 一次物化。
-    //   - trace():标 message_(唯一 GC 子节点)。
-    //   - to_string():渲染完整烘焙消息(catch 的 print(e) 显示 "Category: Name detail")。
-    //
-    // 地址哈希型可变对象(走 Object{ObjType::EXCEPTION} ctor);equals 保持默认地址相等。
-    // final,不再派生。注意区分:本类承载 **解释器报告的错误**,aria 语言自身的 throw
-    // 抛任意 Value,不限定 ObjException。
+    // 异常对象:VM 检测到的运行时错误 / 原生报错的装箱载荷(ObjType::EXCEPTION)。
+    //   - message_ 存**完整烘焙消息**(与 Error::message() 同形,含 "Category: Name" 前缀;运行期装箱不含位置前缀 -- 位置
+    //     由未捕获出口的 at 行给出,经 load_module 透传的编译期消息自带 path:line:col: 保留)。烘焙在 raise 侧完成(Error
+    //     ::make_message),本对象原样持有;指针恒非空(intern;ctor ASSERT),内容可空(空串兜底)。code_ 是机器标识。
+    //   - to_error():经 Error::from_baked **原样**回传(跳过 make_message 重烘,否则双重前缀)。VM 未捕获出口不经本方法,
+    //     在 AriaVM.cpp uncaught_error_parts 拆件后 from_baked 物化。地址哈希型、final;注意本类承载**解释器报告的错误
+    //     **,aria 的 throw 抛任意 Value。
     class ObjException final : public Object {
     public:
         // message = 完整烘焙消息串(intern;指针恒非空 -- ASSERT;内容可空)。
@@ -41,7 +28,7 @@ namespace aria {
         ObjException(ObjException&&)                 = delete;
         ObjException& operator=(ObjException&&)      = delete;
 
-        // 所属错误码(机器标识:分类/名称经 to_string(ErrorCode) / category_of 再取,同 Error)。
+        // 所属错误码(机器标识)。
         [[nodiscard]]
         ErrorCode code() const noexcept {
             return code_;
@@ -53,8 +40,7 @@ namespace aria {
             return message_;
         }
 
-        // 还原为边界 Error:message_ 已是完整烘焙串,经 Error::from_baked 原样回传、不再重烘
-        // 前缀(详见类注释);产物自有 String、脱离 GC。供测试 / 嵌入方断言。
+        // 还原为边界 Error(message_ 经 from_baked 原样回传,不再重烘);供测试 / 嵌入方断言。
         [[nodiscard]]
         Error to_error() const;
 
@@ -67,27 +53,22 @@ namespace aria {
             return sizeof(ObjException);
         }
 
-        // 调试渲染:消息原文(无引号);显示同文案(to_string 经基类默认委托),
-        // catch 的 print(e)/str(e) 即此文案。
+        // 调试渲染:消息原文(无引号);显示同文案,catch 的 print(e)/str(e) 即此文案。
         [[nodiscard]]
         String debug_repr() const override;
 
     private:
         ErrorCode  code_;    // 错误码(机器标识)
-        ObjString* message_; // 完整烘焙消息串,与 Error::message() 同形(intern;指针恒非空,内容可空)
+        ObjString* message_; // 完整烘焙消息串(intern;指针恒非空,内容可空)
     };
 
-    // 工厂:完整烘焙消息串以 StringView 传入(**原样存,不经 make_message 烘焙** -- 调用方须传
-    // Error::message() / Error::make_message 产物那种已烘好的串,常见形如 "Runtime: TypeMismatch ...")。
-    // 内部 new_string 驻留并自行守卫跨下方 new_object 顶 maybe_collect(工厂守「自己创建的」),
-    // 调用方传 StringView 即可,无需手动建串根化。返回对象白色无根:调用方须立即发布进某根
-    // (如 ctx.raise(Value::from_obj(...)) -- raise 到寄存器后由 VM 根 tracer 标 pending_error 保命)。
+    // 工厂:message 须为**已烘好的**完整消息串(原样存,不经 make_message);内部 new_string 驻留
+    // 并自行守卫,调用方传 StringView 即可。返回对象白色无根,须立即发布进根(如 raise 入寄存器)。
     [[nodiscard]]
     ObjException* new_exception(GC& gc, ErrorCode code, StringView message);
 
-    // Error 便捷重载:收**已烘焙完整消息**的 Error(Error 公开构造面 from_detail/from_baked
-    // 产物皆然),code + message 逐件转发上一形态,原样装箱不经 make_message 重烘(否则双重
-    // 前缀);与 to_error() 的 from_baked 反向桥对称(Error -> ObjException 方向)。
+    // Error 便捷重载:收**已烘焙完整消息**的 Error,code + message 逐件转发、原样装箱不重烘(
+    // 否则双重前缀);与 to_error() 的 from_baked 反向桥对称。
     [[nodiscard]]
     ObjException* new_exception(GC& gc, const Error& error);
 

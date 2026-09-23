@@ -8,26 +8,13 @@ namespace aria {
 
     class GC;
 
-    // Upvalue 对象:闭包对外层局部的「捕获即引用」载体(ObjType::UPVALUE)。
-    //
-    //   语义(Lua/clox 式):open 态持指向值栈某槽的指针,内层函数经它读写外层局部--外层后续
-    //   修改对内层可见;外层局部所在作用域/帧退出时 close(),把值迁进堆上的 closed_ 自持,
-    //   之后闭包读的是已关闭值。
-    //
-    //   - location_:open 态指入值栈(VM 值栈缓冲,grow_stack_ 搬迁后经 set_location 重绑);
-    //     closed 态恒指 &closed_。两态统一经 value_slot() 取读写槽,LOAD/STORE_UPVALUE 不分支。
-    //   - closed_:close() 时接收迁出值(ctor 播 nil_val,未 close 前无意义)。
-    //   - next_open_:open upvalue 按槽址降序的侵入式开链(VM 持链头 open_upvalues_):同槽重复捕获
-    //     经链查等值复用同一 ObjUpvalue,保证「同一局部只有一份引用」;close 时摘链。不叫 next_--
-    //     与基类 Object::next_(GC 对象链字段)撞名,GC::new_object 经基类字段链接会被派生字段遮蔽。
-    //
-    //   地址哈希型可变对象(走 Object{ObjType::UPVALUE} ctor);equals 保持默认地址相等。
-    //   final,不再派生;非拷贝/非移动--upvalue 按身份共享(同一局部同一份引用),浅拷贝会
-    //   破坏开链与 VM 侧「复用同一对象」不变式。
-    //
-    //   trace():标 *value_slot()(open 标栈槽内值 / closed 标 closed_;栈槽内的 Value 可能
-    //   装箱任意对象)。upvalue 本体从不出现在 aria 值面(语言层不可见),debug_repr 渲染
-    //   `<upvalue>` 稳定短文案(地址型描述噪声大且地址不稳)。
+    // Upvalue 对象:闭包对外层局部的「捕获即引用」载体(ObjType::UPVALUE)。open 态持指向值栈某槽的指针(外层后续修改对内
+    // 层可见);帧退出时 close() 把值迁进 closed_ 自持。
+    //   - location_:open 指入值栈(grow_stack_ 搬迁后经 set_location 重绑),closed 恒指 &closed_;两态统一经 value_slot()
+    //     取读写槽,LOAD/STORE_UPVALUE 不分支。
+    //   - next_open_:open upvalue 按槽址降序的侵入式开链(VM 持链头 open_upvalues_);同槽捕获经链查复用同一对象,close 摘
+    //     链。不叫 next_--撞基类 Object::next_(GC 对象链字段)遮蔽。地址哈希型、final、非拷贝/非移动(按身份共享,浅拷贝
+    //     破坏开链不变式)。trace 标 *value_slot()(open 标栈槽内值 / closed 标 closed_;槽内 Value 可装箱任意对象)。
     class ObjUpvalue final : public Object {
     public:
         // slot = 被捕获的值栈槽地址(open 起点;恒非空,栈槽必存在)。
@@ -89,7 +76,7 @@ namespace aria {
             return sizeof(ObjUpvalue);
         }
 
-        // 调试渲染:`<upvalue>` 稳定短文案(理由见类注释);显示同文案。
+        // 调试渲染:`<upvalue>` 稳定短文案;显示同文案。
         [[nodiscard]]
         String debug_repr() const override;
 
@@ -100,7 +87,7 @@ namespace aria {
     };
 
     // 工厂:分配 ObjUpvalue 并置 open 指向 slot。入参是裸栈槽地址,无对象可守;返回对象白色无根,
-    // 调用方须立即链入 VM 开链(或入闭包 upvalues_ 后由 VM 根 tracer 标根)。不做任何内部新建对象。
+    // 调用方须立即链入 VM 开链(或入闭包 upvalues_,经 VM 根 tracer 标根)。
     [[nodiscard]]
     ObjUpvalue* new_upvalue(GC& gc, Value* slot);
 

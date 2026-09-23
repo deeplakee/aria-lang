@@ -74,15 +74,14 @@ namespace aria {
 
     Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
         // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
-        // 区间,唯一失败报错就地烘焙(静态文案不插端点值)。长度与方向的折算全在解析口。
+        // 区间,唯一失败报错就地烘焙。长度与方向的折算全在解析口。
         const auto segment = resolve_slice_bounds(range, elements_.size());
         if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
         }
-        // 指针用 data() + 起点:空段(含无上界空后缀)起点落在末元素之后,operator[] 的越界断言
-        // 不容它(段空不 deref,copy_* 对空 src 直接早返回)。
-        // GC 走查:receiver 与 range 经调用方值栈为根,new_list 顶部 maybe_collect 安全;段拷
-        // trivial 不触 GC;新 list 白色由 run_load_index 写回原槽根化。
+        // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 的越界断言不容它(段空不 deref)。
+        // GC 走查:receiver 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由
+        // run_load_index 写回原槽根化。
         const auto list   = new_list(vm.gc());
         const auto source = Span<const Value>{elements_.data() + segment->start, segment->count};
         if (segment->is_reversed) {
@@ -94,7 +93,7 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp 协议契约;命中自持 new_bound_method 恒绑 this。
+        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.list_class()->load_field(vm, name);
         if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
@@ -103,8 +102,7 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值交 VM 调用(契约见 Object.hpp);miss 的 fail
-        // 装箱在 ObjClass::load_field 内就地完成,receiver 与 name 由调用方根化,本体是纯透传。
+        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
         return vm.list_class()->load_field(vm, name);
     }
 

@@ -71,10 +71,9 @@ namespace aria {
     }
 
     Opt<Value> ObjString::slice(AriaVM& vm, const ObjRange* range) const {
-        // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
-        // 区间,唯一失败报错就地烘焙(文案与 list 切片同串)。段内容先拷进 C++ String(非 GC 内存)
-        // 再铸串:receiver 与 range 皆经调用方值栈为根,new_string 顶部 maybe_collect 时安全;
-        // 倒序段在拷贝上按字节反转(字节域,多字节输入下产出非法 UTF-8,见头注释)。
+        // 切片段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间(文案与 list 切片同串)。
+        // 段内容先拷进非 GC 的 C++ String 再铸串:receiver 与 range 经调用方值栈为根,new_string
+        // 顶部 maybe_collect 时安全;倒序段在拷贝上按字节反转(字节域,多字节输入下产出非法 UTF-8)。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice index out of range");
@@ -87,8 +86,7 @@ namespace aria {
     }
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
-        // string 不可变:下标写恒报错(定向文案)。key/value 未消费:先拒操作本身,键值
-        // 检查无意义;签名由协议缝钉死(与 list/map 分支同形)。
+        // string 不可变:下标写恒报错(定向文案;键值检查无意义,先拒操作本身)。
         return vm.fail(ErrorCode::TypeMismatch, "string does not support subscript assignment");
     }
 
@@ -103,7 +101,7 @@ namespace aria {
     Opt<Value> ObjString::op_greater_equal_impl(AriaVM& vm) { return vm.register_value(kStringGeFnOffset); }
 
     Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp 协议契约;命中自持 new_bound_method 恒绑 this。
+        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.string_class()->load_field(vm, name);
         if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
@@ -112,8 +110,7 @@ namespace aria {
     }
 
     Opt<Value> ObjString::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值交 VM 调用(契约见 Object.hpp);miss 的 fail
-        // 装箱在 ObjClass::load_field 内就地完成,receiver 与 name 由调用方根化,本体是纯透传。
+        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
         return vm.string_class()->load_field(vm, name);
     }
 

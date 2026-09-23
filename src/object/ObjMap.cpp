@@ -43,8 +43,7 @@ namespace aria {
     }
 
     Opt<Value> ObjMap::load_index(AriaVM& vm, const Value key) {
-        // 任意键(不做 list 式键型检查);miss KeyError,键走 debug 形入文案(嵌套字符串带
-        // 引号,避免裸串歧义;环防护由 debug_repr 的 PrintGuard 自理)。
+        // 任意键;miss KeyError,键走 debug 形入文案(嵌套字符串带引号;环防护由 debug_repr 自理)。
         if (const auto entry = table_.find(key)) {
             return entry->value;
         }
@@ -52,14 +51,13 @@ namespace aria {
     }
 
     bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {
-        // 恒成功,命中覆写、未命中新增键(set 的两条路径均无报错)。vm 未消费:签名由协议
-        // 缝钉死(与 list 分支同形),报错面为空是 map 写语义的本形。
+        // 恒成功,命中覆写、未命中新增键(set 两条路径均无报错);set/rehash 走 GC 分配器不触 GC。
         table_.set(key, value);
         return true;
     }
 
     Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp 协议契约;命中自持 new_bound_method 恒绑 this。
+        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.map_class()->load_field(vm, name);
         if (!hit) {
             return std::nullopt; // 已 fail(契约透传)
@@ -68,20 +66,17 @@ namespace aria {
     }
 
     Opt<Value> ObjMap::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值交 VM 调用(契约见 Object.hpp);miss 的 fail
-        // 装箱在 ObjClass::load_field 内就地完成,receiver 与 name 由调用方根化,本体是纯透传。
+        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
         return vm.map_class()->load_field(vm, name);
     }
 
     String ObjMap::debug_repr() const {
-        // 环防护:自引用/互环时本 map 已在渲染路径上,截断 "{...}"(先查后挂,顺序反了
-        // 自身即命中);不截断则键值重遇无限递归栈溢出。
+        // 环防护:自引用/互环时本 map 已在渲染路径上,截断 "{...}"(先查后挂,顺序反了自身即命中)。
         if (PrintGuard::is_cycle(this)) {
             return "{...}";
         }
         const PrintGuard guard{this};
-        // {"a": 1} 式:键值均走 format_value_debug(嵌套字符串带引号;嵌套容器递归 debug_repr);
-        // 渲染序随占用槽(unspecified,与迭代序同属计划 D4)。
+        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同属 D4)。
         const auto entry_repr = [](const AriaHashTable::Entry& entry) {
             return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
         };

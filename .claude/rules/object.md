@@ -7,232 +7,125 @@ paths:
 
 # object 层模块参考
 
-## `object/Object.hpp`
-
-### 基类字段与访问器
-
-- 字段：`next_`（GC 对象链）/`hash_`/`type_`/`is_marked_`；地址哈希经 `util::hash_addr` + 两 ctor（内容哈希 `Object(u32, ObjType)` / 地址哈希 `Object(ObjType)`）。
-- `ObjType`：BASE/STRING/FUNCTION/NATIVE_FN/UPVALUE/CLASS/INSTANCE/BOUND_METHOD/LIST/MAP/MODULE/RANGE/ITERATOR/EXCEPTION/CLOSURE。
-- 虚函数：`trace(GC&)`/`size()`/`equals(const Object*)`（`==` 内容相等，默认 `this == other`，子类型按内容 override；递归比较的容器入口须挂 EqualGuard 防环，比较链重遇同对视为相等）/`debug_repr()`/`to_string()`/`~Object`。
-- `debug_repr()`（调试/repr 位，**虚**）：各具体子类型 override 自己的 debug 文案，基类默认 `<Type at 0xaddr>` 地址型兜底。**override 契约 = 纯 C++ 惰性渲染**--只读自身成员造返回串（String 走 std::allocator，不触 GC 回收），绝不执行 aria 字节码 / 调 `call_value` 等可重入 VM 路径；语言层无法新增 C++ 子类型、override 集合编译期封闭，故 `format_value_debug`/`trace_execution`/反汇编常量池等 `dispatch_loop` 内调试上下文经虚分派调用安全、绝不触用户重载，「防重入」由契约而非非虚分派维护。递归渲染子值者（容器）入口另挂 `object/PrintGuard.hpp` 的 PrintGuard 防环（thread_local 在印路径栈，重遇在印对象即截断 `[...]`，防自引用/互环无限递归栈溢出）。
-- `to_string()`（显示/str 位）：基类默认委托 `debug_repr()`--显示与调试同文案的内建类型只 override `debug_repr` 即可，显示分叉者（ObjString）两者都 override；未来用户类 `__str__` 在 `ObjInstance::to_string` 分叉，调试位保持惰性。
-- 公共访问器：`hash()`/`type()`/`is_marked()`/`mark()`/`unmark()`（GC 标记用）/`type_name()`（非虚 constexpr，委托 `to_string(ObjType)` 取 `type_` 的 PascalCase 类型名如 `String`/`NativeFn`/`Module`，供错误消息类型名打印与默认 `to_string` 渲染；类型名纯由 `type_` 决定故子类无需 override）。
-- `as<T>` 有 `Object*`/`const Object*` 两重载、`is<T>` 单 `const Object*` 重载（`Object*` 实参隐式转换；DEBUG `dynamic_cast`，否则 `static_cast`；`is<T>` 目前一律 `dynamic_cast`，性能敏感后可改 `ObjType` 查表）；`try_as<T>` 检查式转换（is+as 合一：匹配返 `T*` 否则 nullptr，含 null 入参，`Object*`/`const Object*` 两重载）。
-
-### 类型判断/转换约定（强制）
-
-- 纯谓词（断言 / 否定式 fail-fast / 不需要指针）用 `Object::is<T>(obj)`。
-- 「守卫后使用」成对场景优先一步 `Object::try_as<T>(obj)`（类型只写一次，消除 is/as 双类型参数漂移笔误；DEBUG 单次 dynamic_cast 优于成对的两次）。
-- `switch (obj->type())` 臂内等静态已知场合用 `Object::as<T>(obj)`（NDEBUG 裸 cast 不校验）。
-- `switch (obj->type()) { case ObjType::X: ... }` 多分支分派（如 `AriaVM::call_value`）属枚举分派天然合理，保留枚举写法、不必硬改。
-- **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验、收口类型转换。
-- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_obj<T>(v)` 一步收口（= `is_obj()` + `try_as` 合一，非对象/类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 判对象，再 `Object::is/as<X>(v.as_obj())`（`Value` 类体在两 boxing 头里各一份，typed 成员会双份重复，故 Value 层 typed helper 走独立小头而非成员）。
-- `Object.hpp` include `value/Value.hpp`：基类的**成员访问/运算符协议虚函数**签名需要 Value 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
-
-### 协议虚函数族
-
-错误通道为 native fn 契约模型：
-
-- 签名一律收 `AriaVM&` 单一状态句柄（分配经 `vm.gc()`、报错一行 `vm.fail(code, fmt, ...)`）。
-- 协议失败时**自己 fail**--错误载荷直接入 `*current_` 挂起错误寄存器（构造即入寄存器即被 VM 根 tracer 标根，无「返回值在途」的白色无根窗口），**返回值只留信号**：load 族 `Opt<Value>`（nullopt ⟺ 已 fail；somed 才是命中，命中值为 nil 亦 somed）、store 族 `bool`（false ⟺ 已 fail；失败出口经 `FailSignal` 哨兵（`AriaVM.hpp`，`fail` 的返回类型）一行化--override 一律 `return vm.fail(...);`，哨兵按所在函数返回类型隐式转换（`Opt` 站点转 nullopt、bool 站点转 false、指针站点转 nullptr），契约拼写由签名决定、写法全族统一）。与 native fn 的 bool 契约、`call_value` 族同构，对齐 CPython PyErr 模型。
-- **消息文案由最知道语境的一方就地烘焙**（同 CPython listobject.c）：各 override 用自身细节拼（渲染经非重入 `format_value_debug`，不用可重载 `to_string` 防未来语言级 `__str__` 重入），组合场景（实例委托类链、super 站点）直接**委托协议** `ObjClass::load_field`--命中值原样回传，miss 的类措辞 fail 随协议传播（成员表在类链上，文案随宿主，组合方不重复烘焙）。
-- 契约纪律：至多 fail 一次、fail 后立即返回，调用方（VM）保证接收者「栈即根」（peek 不弹）跨协议内 GC 点。基类默认体定义在 `Object.cpp`（默认语义一律「本类型不支持」，fail 后返失败信号；出声明因 `vm.fail` 是 AriaVM.hpp 内模板、两头互不 include）。
-
-**① `load_field(AriaVM&, ObjString*) -> Opt<Value>` / `store_field(AriaVM&, ObjString*, Value) -> bool`**--命名成员读写协议（LOAD/STORE_FIELD 族统一分派点，VM 不按子类型 switch 分型）。已落地 override：ObjInstance（fields 优先 + 委托类协议后可调用值绑 this 回填缓存 + 静态值直读不缓存 + miss 委托类协议、类措辞随协议透传）、ObjClass（沿链读穿透直读 + miss 以类措辞 fail；写遮蔽 + 动态新增允许 + "init" 命中同步 `init_`）、ObjModule（成员 = 模块顶层绑定查 `globals_` 直读；写恒拒 = 只读），内置集合类（ObjList/ObjMap/ObjString/ObjRange/ObjIterator）同走本协议经各自 bootstrap 类绑定方法面。
-
-**①'' `load_field_unbound(AriaVM&, ObjString*) -> Opt<Value>`**--命名成员读取的**不绑定形态**（与 `load_field` 同一趟查找、命中方法值不铸 `ObjBoundMethod`）：`PREPARE_METHOD` 的成员解析缝，只回答「该被调的值」，解析在实参求值之前（`run_prepare_method` 调它并把返回值压栈），调用区槽 0 由 `CALL_METHOD` 保持 receiver 原样（方法经 `call_bound_method` 自覆写、原生正需要槽 0 = receiver、闭包不读槽 0，故三者都无需指令干预）；实例 11 个 `op_*_impl` 亦经它按钩子名取 `__add__`/`__call__` 等实现。**基类默认 = 隐式委托 `load_field`**（未 override 的类型照读路径取值，不设「显式参与」反转），内置容器/迭代器 override 成「查自身 bootstrap 类表取原生值」以免每次调用铸 `ObjBoundMethod`。
-
-**①' `load_index(AriaVM&, Value key) -> Opt<Value>` / `store_index(AriaVM&, Value key, Value) -> bool`**--下标读写协议（LOAD/STORE_INDEX 的分派点，VM 侧执行体 `run_load_index`/`run_store_index`）：容器 override 直接 `vm.fail` 自选错误码（IndexOutOfBounds/KeyError），错误细节（越界值）就地拼进文案，无需类别中间协议；已落地 override 见 ObjList（整数键从尾计数 + Range 键切片）/ObjMap（任意键 miss KeyError、写恒 upsert）/ObjString（字节键产出 1-char 串、写恒拒）。
-
-**② `op_add_impl`/`op_sub_impl`/`op_mul_impl`/`op_div_impl`/`op_mod_impl`/`op_less_impl`/`op_less_equal_impl`/`op_greater_impl`/`op_greater_equal_impl`/`op_negate_impl`/`op_call_impl(AriaVM&) -> Opt<Value>`**--可重载算子协议与调用协议（**取实现，不执行**）：每个算子/调用一个虚函数，回答「本对象上该算子对应的可调用值」（不是算好的结果），VM 的 `run_binary_operator<Op>`/`run_negate`/`call_value` 取到后按调用形态调它（调用区槽 0 保持 receiver）。
-
-- **基类默认直接 fail**（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）--与 `load_field`/`store_field` 等基类默认同款「默认不支持，子类型实现才不 fail」。
-- 实现者：① **实例**（11 个 override，各自 `load_field_unbound(vm, new_string(gc, kOp*Name))` 按名到实例 fields（可遮蔽）再类链取）；② **内置 string**（5 个算子直给实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③ 其余类型不实现即报错。
-- 名字是语言级事实（`aria.hpp` 的 `kOp*Name`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。非 const（取实现可能物化绑定）。命名带 `_impl` 后缀：本族返回可调用实现而非算子结果。**类表是规范家**。
-
-**③ `op_call_impl(AriaVM&) -> Opt<Value>`**--调用协议（同款「取实现」）：回答「本对象被调用时该用的可调用值」；基类默认 fail（CallNonCallable），实例经 11 个 override 之一按 `__call__` 取。消费点 = `AriaVM::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 报「call non-callable X」。
-
-### 自由函数与类型名约定
-
-- `log_obj_alloc(Object*)`（DEBUG 日志：打印地址/size/`obj->type_name()`）。
-- `to_string(ObjType)`（`ObjType` 枚举的静态 PascalCase 映射，如 `String`/`NativeFn`/`Module`，是类型名的**单一来源**，`Object::type_name()` 委托之）。**类型名约定全项目统一 PascalCase**（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`、对象 `String`/`Function`/`NativeFn`/...）。
-- 已落地子类型：`ObjString`/`ObjFunction`（含捕获描述表 `UpvalueDesc`）/`ObjUpvalue`/`ObjClosure`（增 `defining_class_`）/`ObjClass`/`ObjInstance`/`ObjBoundMethod`/`ObjList`/`ObjMap`/`ObjNativeFn`/`ObjModule`/`ObjException`/`ObjRange`/迭代器族（`ObjIterator`/`ObjListIterator`/`ObjStringIterator`/`ObjMapIterator`/`ObjRangeIterator`）。
-
-## `object/ObjString.hpp` / `.cpp`
-
-SSO 字符串（`kShortCapacity = 15`，短串内联 / 长串 `long_chars_` 独立 buffer；`is_long()` 由 `length_ > kShortCapacity` 派生不存标志位），FNV-1a 哈希（经 `util::hash_str`）。
-
-- 访问器 `view()`/`length()`；`equals(const Object*)` override（先比指针 intern 命中快速路径、再比 `view()` 字符内容）。
-- `to_string()` override 返字符内容原文（无引号，如 `hello`；显示与调试分叉的唯一子类型，两者都 override）+ `debug_repr()` override 返字面量形式 `"<转义内容>"`（`util::escape_string` 转义 + 双引号包裹，反汇编常量池等调试上下文的字符串约定形态）。
-- **`new_string` 工厂**经 GC `InternPool` 驻留：等价内容共享同一 `ObjString*`，命中不分配不 GC，未命中 `new_object` + `intern_insert`。内部对 `intern_insert` 窗口**不加守卫**：`s` 虽此刻白色无根，但 `intern_insert -> InternPool::insert -> allocate<ObjString*>` 走 trivial 分配（永不触发 GC，见 `GC.hpp` 核心不变式），故 `s` 跨 insert 不会被回收。`name`/`module` 跨 `new_object` 顶部 `maybe_collect` 的守卫仍保留（那是真 GC 触发点，承重）。
-- **协议 override**：`load_index` 整数键 = 字节域（与 len 同域）产出单字节 1-char string（char 单字节重载 `new_string` intern 分配，receiver 经调用方值栈为根；多字节序列中间字节取该字节自身）、负数从尾计数、归一化后越界 IndexOutOfBounds、非整数 TypeMismatch；Range 键走 `slice`（段解析共用 `ObjRange.cpp` 的 `resolve_slice_bounds`，与 list 切片同口径：端点从尾计数、无上界 `i..` 允许空段、越界报 `slice index out of range` 与 list 同串；域仍是字节，故倒序段产出字节倒排串、多字节输入下非合法 UTF-8）；`store_index` 恒 TypeMismatch "string does not support subscript assignment"（不可变，键值不检查）。
-- `load_field` 两步委托 VM 的 String bootstrap 类（`vm.string_class()`，runtime/builtins/StringBuiltins 的方法表：17 个语言方法 upper/lower/trim/split/find/contains/replace/substring/starts_with/ends_with/size/is_empty/chars/codepoint_at/to_int/to_float/iter + 5 个算子钩子 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__`），与 ObjList/ObjMap 同形；算子侧 5 个 `op_*_impl` override 直读实现格（`String*Fn`，bootstrap 期从类表按名拷入并 ASSERT 一致）--内建实现直给、不过成员查找；`store_field` 不 override（基类默认即正确行为）。
-
-## `object/ObjFunction.hpp` / `.cpp`
-
-函数对象（`ObjFunction final : Object`，`ObjType::FUNCTION`）。
-
-- 持 `CodeUnit unit_` 值成员（编译器经 `unit()` 直接操作裸字段 emit）+ `ObjModule* module_`（所属模块，词法归属，构造时传入、不可变、非空；VM 据此定位「当前模块 globals」）+ `ObjString* name_`（intern 同指针；**恒非空**，ctor ASSERT 非空--入口函数名 `<main>`（主入口）/`<module>`（导入）、lambda 名 `<anonymous>`、具名函数为声明名；统一「每个函数都有名字」模型）。
-- `u8 arity_`（**固定参数数**，上限 255；不含 rest--varargs 函数帧参数槽深 = arity + is_varargs）+ `min_arity_`（必传参数数，<= arity，差额为带默认值参数；`call_closure` 区间检查下界，不足段印章垫充；rest 永非必传，不计）+ `bool is_varargs_`（末位参数为 `...rest`：`call_closure` 只保元数下界、超出 arity 的实参打包成新 list 压入 rest 槽）。
-- `Array<UpvalueDesc> upvalue_descs_` 捕获描述表（`UpvalueDesc{bool is_local; u16 index}` 定义于头，纯标量聚合：is_local=true 捕直接外围帧局部槽 index、false 穿透复用外围闭包的第 index 个 upvalue；编译期 CodeGen 一次性 flush、运行期只读，`upvalue_descs()` 非 const + const 读口；存元数据、不进字节码流，CLOSURE 保持定长 3B；与 `ObjClosure::upvalues_` 按下标一一对应；trace 不标）。
-- 访问器 `unit()`（非 const + const 重载）/`name()`/`arity()`/`module()`/`upvalue_descs()`（非 const + const 重载）。
-- 地址哈希型；`equals` 保持默认地址相等（函数无内容相等语义）；`trace()` 标 `name_` + `module_` + 委托 `unit_.trace`（常量池；module_ 回指形成 module <-> entry 环，mark-sweep 三色标记天然破环）；`debug_repr()` 统一渲染 `<fn name>`（入口 `<fn <main>>`/`<fn <module>>`、lambda `<fn <anonymous>>`、具名 `<fn add>`；基类 `to_string` 默认委托之）。
-- 工厂 `new_function(gc, module, name, arity, min_arity, is_varargs)` **不替调用方守卫入参**（「每方只守自己创建的」），只做一次 `new_object`、无内部新建对象；调用方须在调用前自行根化 module 与 name（皆不保命：module 可能尚未入 VM 模块表、name 经 intern 是 weak root），跨 `new_object` 顶 `maybe_collect`；`StringView name` 便捷重载内部 intern name 并自守（工厂守「自己创建的」），调用方只需根化 module。
-
-## `object/ObjUpvalue.hpp` / `.cpp`
-
-upvalue 对象（`ObjUpvalue final : Object`，`ObjType::UPVALUE`，非拷贝/非移动）：闭包「捕获即引用」的载体。
-
-- 持 `Value* location_`（open 态指入值栈槽，`grow_stack_` 搬迁后经 `set_location` 重绑；closed 态恒指 `&closed_`）+ `Value closed_`（ctor 播 `nil_val`，`close()` 时迁入自持值）+ `ObjUpvalue* next_open_`（侵入式开链节点，VM 按槽址降序维护链头；**不叫 `next_`**--与基类 `Object::next_`（GC 对象链字段）撞名，`GC::new_object` 经基类字段链接会被派生字段遮蔽）。
-- 访问器 `is_open()`/`value_slot()`（open -> `location_`、closed -> `&closed_`，LOAD/STORE_UPVALUE 统一走它，非 const + const 两重载）/`next_open()`/`set_next_open()`；`close()`（`closed_ = *location_; location_ = &closed_`）；`set_location()`（重绑用，仅 open 态，debug 断言）。
-- `trace` 标 `*value_slot()`（open 标栈槽内值 / closed 标 closed_，两态同一地址语义）；upvalue 本体从不出现在 aria 值面（语言层不可见），`debug_repr` override 渲染 `<upvalue>` 稳定短文案（地址型描述噪声大且地址不稳）。
-- 工厂 `new_upvalue(gc, Value* slot)`：入参是裸栈槽地址无对象可守，只做一次 `new_object`、无内部新建；返回白色无根，调用方须立即链入 VM 开链（链上节点经 VM 根 tracer 保命）。
-
-## `object/ObjClosure.hpp` / `.cpp`
-
-闭包对象（`ObjClosure final : Object`，`ObjType::CLOSURE`）：函数 + 捕获数组 + defining class。
-
-- 持 `ObjFunction* function_`（被包函数，恒非空，ctor ASSERT；callable 收敛为闭包后，运行期一律以 `ObjClosure` 进帧，`ObjFunction` 退为常量池内部物）+ `Array<ObjUpvalue*> upvalues_`（ctor 空态，VM 执行 CLOSURE 时按 `fn->upvalue_descs()` 捕获描述表逐个后填，之后只读；与描述表按下标一一对应）+ `ObjClass* defining_class_`（方法闭包所属 defining class，ctor nullptr，VM 执行 MAKE_METHOD 注册时 `set_defining_class` 一次、之后只读；非方法闭包（静态方法 fun/lambda/其余）恒 nullptr）。
-- **`defining_class_` 一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.closure->defining_class()` 直读）+ 方法性标记（读路径 `ObjInstance::load_field`/`LOAD_SUPER_FIELD` 据非空判绑 this，`is_method()` 访问器；判别按戳不按值类型）。**挂闭包而非共享的 ObjFunction 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
-- 访问器 `function()`/`name()`（闭包的名 = 被包函数名，`ObjString*` 恒非空，与各 name-bearing Obj* 的 `name()` 同约定；.cpp 定义，需 ObjFunction 完整类型）/`upvalues()`（const Array&）/`upvalue_count()`/`defining_class()`/`set_defining_class`/`is_method()`；`add_upvalue(ObjUpvalue*)` 供 CLOSURE 执行期逐个后填（Array push 走 trivial 分配不触 GC，靠 GC 核心不变式免逐个守卫）。
-- 地址哈希型；`equals` 默认地址相等（同一 fn 的两次捕获是不同闭包，按身份判等）；`trace` 标 `function_` + 全部 upvalue（upvalue 再各自标其槽值/闭值）+ `defining_class_`（容 nullptr；方法闭包经此级联标所属类）；`debug_repr()` 直取 `function_` 名渲染 `<fn name>`（与纯函数同文案，`trace_execution` 兼容；不经 `function_->to_string()` 虚委托，调试路径保持一跳纯 C++ 访问器；闭包身份经 `type()`/`type_name()` 反射可见）。
-- 工厂 `new_closure(gc, ObjFunction*)` 不替调用方守卫入参（「每方只守自己创建的」），只做一次 `new_object`、无内部新建；`function_` 通常已入常量池（根），返回对象白色无根须立即发布进根。
-
-## `object/ObjClass.hpp` / `.cpp`
-
-类对象（`ObjClass final : Object`，`ObjType::CLASS`）：def 类的运行期载体，语义模型 = 类级一张静态表 + superclass 单链（实例字段在 ObjInstance 的 fields 表，不在类上；查找序 `foo.x` 先实例 fields、未命中沿链查各类静态表）。
-
-- **类成员读写取 Python/JS 式读穿透、写遮蔽**：读沿链 fall-through；类上赋值落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许），方法槽亦允许改写（赋值闭包无 defining class 戳 ⟹ 改写后按静态读原值、不再绑定，方法性随值携带--类路径拷贝 MAKE_METHOD 出品的戳定闭包保方法性）、"init" 赋值同步 `init_`。
-- 持 `ObjString* name_`（类名，intern 驻留同指针，**指针恒非空**、ctor ASSERT）+ `ObjClass* superclass_`（父类，唯一 super 为 nullptr 者是 VM bootstrap 的 Object 根类；MAKE_CLASS 运行期注入、此后不可变）+ `AriaHashTable field_`（**静态变量 + 静态/实例方法同存一张表**；单数 `field_` 区分 ObjInstance 的实例字段表 `fields_`：键 intern `ObjString*`、值为绑定 Value，方法槽的值是 defining class 戳定的 `ObjClosure`（MAKE_METHOD）、静态变量/fun 静态方法槽是任意 Value（含未戳闭包/原生），**区分在 defining class 戳不在值类型、表内无 tag**；MAKE_STATIC/MAKE_METHOD 与类上赋值写此表（写遮蔽）；惰性分配）+ `Value init_`（构造器方法值，**Value--闭包/原生皆可**：实例化统一走 `call_value` 分发，类上赋非可调用值亦放行、实例化时 `call_value` 报 CallNonCallable 兜底；ctor 自 super 派生）。
-- **`init_` 写点全在对象内**：**构造期自 super 派生**（ctor；工厂纯分配不 seed）+ **`set_field` 命中 "init" 同步**（MAKE_METHOD/`store_field`/bootstrap 合流于此，表槽/`init_` 一致由对象自维护）；super 非空出厂即继承父 `init_` 当前值（快照语义：此后父 init 变更不传导），Object 根（super == nullptr）出厂 nil 由 bootstrap 经 `set_field` 设，「建成的类 `init_` 有值」由 ctor 派生维持；`call_value` CLASS 实例化取用。
-- 访问器 `name()`/`superclass()`/`init()`（init 为实例化机制接缝：`call_value` CLASS 分支消费、ctor 派生 + `set_field` 同步写，非字段协议职责；**无 `set_init` 可变器**；无整表访问器 `field()`--成员表不对外暴露，读走 `load_field` 协议、写走 `set_field`）。
-- **`set_field(ObjString*, Value)`（void，永不失败）**：写入本类自身表的 name 槽（创建或更新，**不沿链**--继承名新建遮蔽键、本类已有原槽更新、父表不动），类成员**创建路径的唯一公开写入口**--MAKE_STATIC/MAKE_METHOD 注册、bootstrap 设 init、`store_field` 命中后落表三路共用；命中 "init" 同步 `init_`（表槽/`init_` 一致由本写入口自维护）；落表 set 走 trivial 分配不触 GC（GC 核心不变式，无守卫负担）。
-- **`find_field(ObjString*) -> Opt<Value>`**（沿 super 链查，self 起、逐父向上，命中返回链上首个命中值拷贝、未命中 nullopt--拼写与协议 load 族一致；**纯查询无分配、不 fail**；**纯私有**、无友元（成员表不对外暴露且零类外使用，实例与 super 站点一律委托 `load_field` 协议，`find_field` 仅为本类型 override--`load_field` 读穿透 / `store_field` 存在性检查--的内部底座，槽指针不外借）；**无独立落表辅助**（`set_field` 落表即 `field_.set(name, value)` 一行））。
-- **成员访问协议 override**：`load_field(AriaVM&, name)` 沿链 `find_field` 读穿透直读（静态值/方法闭包/原样取出不绑定不缓存），全链 miss 以类措辞 fail UndefinedProperty（nullopt ⟺ 已 fail；查找纯查询、fail 装箱是唯一分配点）；`store_field(AriaVM&, name, v)` 写遮蔽（落本类自身表恒成功；本类已有原槽更新、继承名/新名新建键，父表不动；动态新增允许；"init" 同步内聚于此）。
-- 地址哈希型；`equals` 默认地址相等（类按身份判等）；`trace` 标 `name_` + `superclass_`（容 nullptr）+ `mark_value(init_)` + 委托 `field_.trace(gc)`（方法闭包的 defining_class 经 `ObjClosure::trace` 级联）；`debug_repr()` 渲染 `<class Foo>`。
-- 工厂 `new_class(gc, ObjString* name, ObjClass* super)` 不替调用方守卫入参（「每方只守自己创建的」），只做一次 `new_object`、无内部新建；**调用方须在调用前自行根化 name 与 super**（name 经 intern 是 weak root、super 可能尚未入任何根，如 MAKE_CLASS peek-不弹栈纪律），返回对象白色无根须立即发布进根（MAKE_CLASS 原槽写回即经值栈根）；**工厂只分配不 seed**（`init_` 出厂值由 ObjClass 构造函数自 super 派生，工厂纯分配与 `new_function`/`new_closure` 同纪律）。
-
-## `object/ObjInstance.hpp` / `.cpp`
-
-实例对象（`ObjInstance final : Object`，`ObjType::INSTANCE`）：类实例化的产物（`call_value` CLASS 分支）。
-
-- 持 `ObjClass* class_`（所属类，构造注入、不可变、**恒非空** ctor ASSERT；方法派发与字段未命中沿类链查静态表的起点）+ `AriaHashTable fields_`（实例字段表：`init` 内 `this.x = ...` 落此，无字段预声明、全动态、**纯字段**；惰性分配）。
-- 访问器 `klass()`（无 setter--实例不换类；无整表访问器 `fields()`--实例字段表不对外暴露，读写一律走 `load_field`/`store_field` 协议）。
-- **成员访问协议 override**：`load_field(AriaVM&, name)`--fields 命中直用 -> 沿类链读穿透委托类协议 `load_field`（命中直读、miss 随类措辞 fail，本 override 只透传信号）：方法闭包（经 `is_method(Value)`，ObjBridge--defining class 戳判据，看戳不看值类型）`new_bound_method` 绑 this（**每次访问现场绑定，不回填 fields**：缓存让「类/父类上改写方法」在已取过方法的实例上失效、monkey patch 半可用且难解释，故不设缓存）、其余（静态方法 fun/lambda/原生/静态值）原值直读不缓存、全链 miss 随类措辞 fail UndefinedProperty（nullopt ⟺ 已 fail）；分配点 = fail 装箱与 `new_bound_method`--本实例经调用方根化（VM：peek 在栈/帧槽 0）、方法值经 `this->klass` 链类表可达，无守卫必要；`store_field(AriaVM&, name, v)`--动态 set 即创建/更新，永不失败（恒 true；false ⟺ 已 fail）。
-- 地址哈希型；`equals` 默认地址相等（实例按身份判等）；`trace` 标 `class_` + 委托 `fields_.trace(gc)`；`debug_repr()` 渲染 `<Foo instance>`（未来用户类 `__str__` 落地时在本类型 `to_string` 分叉，`debug_repr` 保持惰性）。
-- 工厂 `new_instance(gc, ObjClass*)`：shell 单次分配、fields 惰性 ⟹ **无内部二级分配、工厂内无中间 GC 点**，不替调用方守卫入参（klass 由调用方根化，实例化路径 klass 在栈）；返回对象白色无根，建成即写栈（值栈根）。
-
-## `object/ObjList.hpp` / `.cpp`
-
-list 对象（`ObjList final : Object`，`ObjType::LIST`）：`[...]` 字面量的运行期载体。
-
-- 元素为任意 `Value`、按下标顺序存 `AriaArray` 成员 `elements_`（ctor 只绑分配器，`copy_from`/`push` 惰性增长，trivial 分配不触 GC；访问器 `elements()` 非 const + const 两重载，对标 `ObjModule::globals` 的容器成员直曝，供 VM 填充与方法面消费）。
-- 地址哈希型可变对象；`load_index`/`store_index` override（整数键：负数从尾计数、归一化后越界 IndexOutOfBounds、非整数 TypeMismatch，越界值就地拼文案；store 不自动增长；**Range 键 = 切片**：段解析（有上界与无上界两形态统一）收口 `resolve_slice_bounds`（ObjRange.cpp，返回 `Opt<SliceSegment>` = 升序源段起点 + 元素数 + 是否反向写入--长度与方向的折算全在解析口：有上界形态两端点各从尾计数、方向由归一化端点大小关系自带（与 range 迭代同一判据）、不含上界少走迭代序末元素、两端相等即空段；**无上界形态 `i..` 走后缀语义**：自起点取到末尾、起点从尾计数后**允许 == size 得空段**（`[][0..]`/`[7][1..]` 皆空 list，解构 rest 的空尾据此成立）；端点越界与空容器同为 nullopt，唯一失败文案 `slice index out of range`）铸新 list 段拷（正序整段一次拷 / 倒序经 `Array::copy_reversed_from` 反转追加，皆 trivial 分配不触 GC；新 list 由 `run_load_index` 写回原槽根化）；写路径不特殊对待，落整数键检查统一文案（切片只读））。
-- `load_field` override 内置侧两步、与实例路径同形（先委托 VM 的 List bootstrap 类协议 `ObjClass::load_field` 沿链查表，miss 类措辞随协议透传；命中自持 `new_bound_method` 恒绑定 this--内置类表条目全为原生、判别无须戳，方法面注册入口 `register_list_builtins` 住 runtime/builtins/ListBuiltins），`store_field` 不 override（基类默认「does not support field access」即正确行为--不可变成员面）。
-- `equals` override 按内容递归（同指针快速路径 -> 非 list / 长度不等 false -> 逐元素 `value_equal`，嵌套 list 经各自 `equals` 递归；`value_equal` 无分配，GC-pure 契约保持；入口挂 EqualGuard 防环，重遇同对视为相等）。
-- `trace` 委托 `elements_.trace`；`debug_repr()` 渲染 `[1, "ab"]` 式（元素走 `format_value_debug`，嵌套字符串带引号避免 `[1, ab]` 歧义，嵌套 list 递归；入口挂 PrintGuard 防环，自引用/互环截断 `[...]`；显示同文案，`to_string` 经基类默认委托，len/str/print 位即此）。
-- 工厂 `new_list(gc)` 只做一次 `new_object`、无内部新建对象、无入参对象可守，返回白色无根须建成即发布进根（MAKE_LIST：元素自值栈整段拷入不触 GC，随即 drop+push 入值栈根，窗口内无 GC 点）。
-
-## `object/ObjMap.hpp` / `.cpp`
-
-map 对象（`ObjMap final : Object`，`ObjType::MAP`）：`{...}` 字面量的运行期载体。
-
-- 键值均任意 `Value`、存 `AriaHashTable` 成员 `table_`（ctor 只绑分配器、set 惰性首分配，trivial 分配不触 GC；访问器 `table()` 非 const + const 两重载，对标 `ObjModule::globals` 容器成员直曝）。表内键判等 `===`（int 1 与 f64 1.0 是不同键；可变对象作键按身份）。
-- `load_index`/`store_index` override（任意键：miss KeyError、键走 debug 形入文案；写恒成功，命中覆写/未命中新增（upsert），键值在调用方值栈为根）。
-- `load_field` override 内置侧两步、与实例路径同形（先委托 VM 的 Map bootstrap 类协议沿链查表，miss 类措辞随协议透传；命中自持 `new_bound_method` 恒绑定 this，方法面注册入口 `register_map_builtins` 住 runtime/builtins/MapBuiltins，十方法 size/is_empty/has/get/keys/values/pairs/remove/clear/iter；键判定走表内判等 `===`、与下标读同域），`store_field` 不 override（基类默认即正确行为）。
-- 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；`equals` override 按内容（size 相等且逐键在对方命中同键、值 `value_equal`，嵌套容器经各自 `equals` 递归；入口挂 EqualGuard 防环）；`trace` 委托 `table_.trace`；`debug_repr()` 渲染 `{"a": 1}` 式（键值走 `format_value_debug`，渲染序随占用槽同 unspecified；入口挂 PrintGuard 防环截断 `{...}`；显示同文案）。
-- 工厂 `new_map(gc)` 只做一次 `new_object`、无入参对象可守，返回白色无根须建成即发布进根（MAKE_MAP：键值自值栈逐对 set 入表不触 GC，随即 drop+push 入值栈根）。
-
-## `object/ObjRange.hpp` / `.cpp`
-
-range 对象（`ObjRange final : Object`，`ObjType::RANGE`）：`a..b`（含上界）/ `a...b`（不含上界）/ `a..`（无上界开区间）的运行期载体，壳定长纯值（无外挂 buffer、无子对象）。
-
-- 持 `from_` + `Opt<i64> to_`（nullopt = 无上界；含否上界无意义，ctor 归一 `is_exclusive_ = false`，`5..` 与 `5...` 是同一个值）+ `is_exclusive_`。
-- 内容哈希型不可变对象（哈希构造期烘焙；`equals` 按内容三字段全等；`===` 恒指针）。from > to 即倒序区间（迭代产出 from -> to 递减，方向由迭代器推断、本体字段原样存，`10..1 != 1..10`）；空区间只剩 from == to 且不含上界。
-- 下标与算子钩子（`op_*_impl`）不 override（v1 无此需求）；`load_field` override 内置侧两步（委托 VM 的 Range bootstrap 类协议沿链查表，命中自持 `new_bound_method` 恒绑定 this，方法面注册入口 `register_range_builtins` 住 runtime/builtins/RangeBuiltins，v1 仅 iter），`store_field` 不 override；`debug_repr()` 渲染 `0..10`/`0...10`/`0..`（与源码拼写一致，显示同文案）。
-- `resolve_slice_bounds(range, size)`（ObjRange.cpp 收口的切片段解析：返 `Opt<SliceSegment>{start, count, is_reversed}`，两形态规格与语义见 ObjList 条）。
-- 工厂 `new_range(gc, from, to, is_exclusive)` / `new_range(gc, from)`（无上界重载，MAKE_RANGE unbounded 位）：端点是小整数非对象，无守卫义务；返回白色无根建成即发布。
-
-## `object/ObjBoundMethod.hpp` / `.cpp`
-
-绑定方法对象（`ObjBoundMethod final : Object`，`ObjType::BOUND_METHOD`）：被绑定的方法值 + 绑定的接收者。
-
-- `obj.m` 命中类表可调用值时由 LOAD_FIELD 现场绑定（`new_bound_method`），`call_value` BOUND_METHOD 分支按内部分派（闭包整形进帧 / 原生覆写槽 0 走 `call_native` 簿记）。
-- 持 `Value method_`（被绑定方法值，**闭包或原生函数**--ctor ASSERT 可调用（判定收口 `is_callable_value`，ObjBridge.hpp）；类表读路径仅对 defining class 戳定的方法闭包产生本类型（绑定原生由对象层直接构造承载）；静态访问经 `Foo.m` 取出的是裸值不经本类型）+ `Value receiver_`（绑定的接收者，**Value 而非 `ObjInstance*`**--为将来内建类型方法（如 `list.m`）留泛化，当前只产 ObjInstance 接收者；闭包解包作方法帧槽 0 的 this（方法帧 `[this, a1..aN]`）、原生覆写调用区槽 0--见 ObjNativeFn 契约「方法调用形态」）。
-- 访问器 `method()`/`receiver()`/`name()`（绑定的方法对象之名：闭包 fn 名 / 原生 `name_`，`ObjString*` 恒非空；非虚、.cpp 定义，需 ObjClosure/ObjNativeFn 完整类型；供 `debug_repr` 渲染共用）。
-- 地址哈希型；`equals` 默认地址相等（绑定按身份判等：同一方法绑不同实例是不同对象）；`trace` 标 `method_` + `mark_value(receiver_)`（两者皆装箱任意对象，值级联）；`debug_repr()` 渲染 `<bound method m>`。
-- 工厂 `new_bound_method(gc, Value, Value)` 不替调用方守卫入参，只做一次 `new_object`、无内部新建；调用方须在调用前自行根化 method 与 receiver 中的对象（LOAD_FIELD 路径 instance 仍 peek 在栈、方法值在类表内可达），返回对象白色无根须立即发布进根（LOAD_FIELD 先写回原槽根化）。
-
-## `object/ObjNativeFn.hpp` / `.cpp`
-
-原生函数对象（`ObjNativeFn final : Object`，`ObjType::NATIVE_FN`）：把 C++ 函数包成 aria `Value`，供 builtins 与嵌入 API 用。
-
-- 签名 `using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots)`：`slots[0]` = 槽 0（callee/返回槽，原生函数把返回值写于此）、`slots[1..argc]` = 实参（`argc = slots.size()-1`，天然变参、不存 arity，fn 自查元数）；返回 `bool`（true = 成功写槽 0、false = 失败），`vm.fail`/`vm.raise` 置 `Movement` 挂起错误寄存器并返回 `false`，故失败路径惯用一行 `return vm.fail(...)`。
-- `CALL` 命中时不进帧、同步直接调用，VM 以 bool 为成败信号、寄存器为错误载荷（debug 断言 `ok == !has_error()`）。详见 `.claude/reference/runtime/vm-design.md` §4.7。
-- 持 `ObjString* name_`（**恒非空**，ctor ASSERT--无具名需求者用 `kAnonymousName`（`"<anonymous>"`，定义于 `src/aria.hpp`，与 ObjFunction 的 lambda 命名一致）经 `new_native_fn(gc, fn)` 匿名重载自动 intern；渲染 `<fn <anonymous>>`）+ `NativeFn fn_`（恒非空）；访问器 `name()`/`fn()`；地址哈希型；`trace` 标 `name_`。
-- 工厂 `new_native_fn(gc, name, fn)` **不替调用方守卫入参**，只做一次 `new_object`；调用方须在调用前自行根化 name（intern weak root），fn 为标量无需入根。匿名重载 `new_native_fn(gc, fn)` 内部 `new_string(kAnonymousName)` 驻留并自守（工厂守「自己创建的」），调用方无需根化。
-
-## `object/ObjException.hpp` / `.cpp`
-
-异常对象（`ObjException final : Object`，`ObjType::EXCEPTION`，非拷贝/非移动）：VM 检测到的运行时错误 / 原生函数报错的装箱载荷（try/catch/throw 异常通道的运行时载体之一）。
-
-- 持 `ErrorCode code_`（机器标识：分类/名称经 `to_string(ErrorCode)`/`category_of` 再取，同 Error）+ `ObjString* message_`（**完整烘焙消息串**，与 `Error::message()` 同形--含 `"Category: Name"` 前缀（运行期装箱**不含位置前缀**，位置由未捕获出口的 at 跟踪行给出；经 `load_module` 透传的编译期 Error 消息自带 `path:line:col:` 位置，原样保留）；intern 驻留同指针，**恒非空**--ctor ASSERT，无消息错误以空串 intern 兜底）。
-- **`message_` 原样存调用方传入的已烘焙串、工厂不经 `make_message` 做任何加工**：烘焙发生在 raise 侧（经 `Error::make_message` 烘齐，`from_detail` 同源经它），`to_error()` 经 `Error::from_baked` 也**原样回传**（跳过 `make_message` 重烘--否则双重前缀）。位置不丢、catch 的 `print(e)` 渲染完整消息不退化；边界文案/测试断言与 `Error` 直构逐字一致（定稿见 `.claude/reference/runtime/exception-implementation-pitfalls.md` 坑 #7）。
-- 访问器 `code()`/`message()`。`to_error()`（定义在 .cpp）经 `Error::from_baked(code_, message_->view())` 还原为边界 `Error`（`Error` 自有 `String`，产物脱离 GC，异常本体被回收后仍可读；供测试/嵌入方断言--VM 未捕获出口经 `uncaught_error_parts` 直读 `code_`/`message_` 同源拆件，不中转 `Error`）。
-- `trace()` 标 `message_`（唯一 GC 子节点）；`size()` = sizeof 壳；`debug_repr()` 渲染完整烘焙消息（基类 `to_string` 默认委托之，catch 的 `print(e)`/`str(e)` 显示 `"Category: Name detail"` 同款文案）。地址哈希型；`equals` 默认地址相等。
-- 工厂 `new_exception` 两形态：`new_exception(gc, code, StringView message)` 入参是 **StringView 的已烘焙完整消息串**（如 `err.message()`/`Error::make_message` 产物）；`new_exception(gc, const Error&)` 便捷重载收**已烘焙完整消息**的 `Error`（公开构造面产物皆然），code + message 逐件转发上一形态、原样装箱不经 `make_message` 重烘（否则双重前缀），与 `to_error()` 的 `from_baked` 反向桥对称：内部 `new_string` 驻留并自行守卫跨下方 `new_object`（工厂守「自己创建的」），调用方无需手动建串根化；返回对象白色无根，须立即发布进某根（如 `ctx.raise(Value::from_obj(...))`--入寄存器后由 VM 根 tracer 标 `pending_error` 保命）。
-- **注意区分**：本类承载**解释器报告的错误**；aria 语言自身 throw 抛任意 Value，不限定 ObjException。
-
-## `object/ObjModule.hpp` / `.cpp`
-
-模块对象（`ObjModule final : Object`，`ObjType::MODULE`，非拷贝/非移动），aria 的「模块 = 命名空间」（非类），一个源文件 = 一个模块。
-
-- **绝对路径由 `dir_ + name_` 合成**：`dir_ + "/" + name_ + ".aria"`（= VM 模块表查重键）；切分由 `fs::module_name_and_dir` 按命中文件的绝对规范路径做：`name_` = basename 去 `.aria` 后缀（stem），`dir_` = dirname。即 `dir_` 是「模块文件所在目录」、`name_` 是「模块文件名去扩展名」--就是路径的 dirname/stem 切分（`name_` 恒为单段 stem，不支持「相对源根的多段路径」语义，不依赖源根概念）。
-- 持 `ObjString* name_`（stem，intern，显示名 + 合成绝对路径用，**指针恒非空**、内容可空--ctor ASSERT，合成顶层 `<script>`/REPL 等均以非空 intern 串构造）+ `ObjString* dir_`（模块文件所在目录，intern，指针恒非空、内容可空：cwd 不可用时 `new_module` 以空串兜底）+ `ObjFunction* entry_`（模块体，顶层语句编进的 arity 0 匿名函数，主入口名 `<main>` / 导入名 `<module>`，导入时 run-once；可为 nullptr）+ `AriaHashTable globals_`（模块级绑定表，顶层 var/fun/def 的目标，`LOAD/STORE/DEF_GLOBAL` 操作此表；惰性分配）。
-- **无加载状态字段**：加载事实源 = VM 模块表成员资格（未入表 = 未加载；入表 = 已编译待 run-once 或已跑完，run-once 与循环导入「命中即复用半初始化对象」语义均由表承载，不在对象上另设 `ModuleState` 之类的冗余第二事实源）。
-- 访问器 `name()`/`dir()`/`globals()`（非 const + const）/`entry()`/`set_entry(ObjFunction*)`。
-- **命名成员协议 override**：`load_field` 把「模块成员」解析为 `globals_` 查表（**顶层绑定即成员**，不另设 export 声明）：命中返原值（顶层函数值为闭包且恒非方法，故不绑定 this--调用经 `CALL_METHOD` 时槽 0 留模块值，`init_frame_` 的 `slots = top - argc - 1` 使闭包参数仍落 1..N，与普通调用同位）；nil 值绑定与 miss 由 `find` 空态区分（绑定 nil 亦命中）；miss 报 UndefinedProperty，文案与基类默认同形（模块描述走 `debug_repr`）。
-- `store_field` 恒拒（**模块成员只读**，`TypeMismatch "module members are read-only"`--越模块写会隐式创建他人未声明全局，违「赋值不隐式创建」；模块内写自己的全局不受限）。
-- `load_field_unbound` 不 override：基类默认即委托 `load_field`，模块成员是原值直读、无 bound 物化之虞，故无 ObjString/ObjInstance 那条 override 的理由。
-- `abs_path()` 合成绝对文件路径（= VM 模块表查重键形式）：`dir_` 内容空 -> 返空串（无目录锚点）；`name_` 内容空串 -> 仅返 `dir_`；否则 `dir_ + "/" + name_ + ".aria"`（供 IMPORT 相对导入取 dirname 作基；name_/dir_ 指针恒非空，不判 nullptr）。
-- 地址哈希型；`equals` 保持默认地址相等（模块按身份判等）；`trace()` 标 `name_` + `dir_` + `entry_` + 委托 `globals_.trace`；`debug_repr()` 渲染 `<module name>`（name_ 恒非空，内容空时渲染 `<module >`）。
-- 工厂（**均不替调用方守卫入参**，只做一次 `new_object`）：`new_module(gc, name, dir)`（显式目录，dir 指针须非空）/ `new_module(gc, name)`（无显式目录取 cwd，不可用空串兜底）/ `new_module(gc, StringView name)`（工厂内部 `new_string` 驻留并自行守卫，调用方无需手动建串根化）/ `new_module(gc, StringView name, StringView dir)`（两串均内部驻留 + 自守，调用方无需根化任何入参；dir 原样 intern 调用方给的串，空串即空串锚点，**不替调用方做 cwd 退化**--需退化用 2 参 StringView 重载）。3 参 `ObjString*` 版调用方须自行根化 name 与 dir；`ObjString*` 2 参版内部新建 dir_str（cwd 串）故自行守卫 dir_str，但 name 仍须调用方根化。
-
-## `object/iterator/ObjIterator.hpp` / `.cpp`
-
-迭代器基类（**首个非 final 的 Object 子类型**，`ObjType::ITERATOR`--语言层单数类型名，`type(it)` 恒 "Iterator"）：迭代协议的**引擎缝**（源码住 `object/iterator/` 子目录，每源一对文件）。
-
-- 每源一个小子类、各持自然游标，基类钉纯虚契约：`has_next() const noexcept -> bool`（纯查询无分配无 fail，故不收 vm）、`next(AriaVM&) -> Opt<Value>`（取下一元素并推进游标；越界 `return vm.fail(IterationExhausted)` 一行，FailSignal 哨兵）、`trace`（各子类标各自的源，纯虚钉住忘标 = 编译错）、`size()`（各子类 sizeof 自身）。
-- `load_field` override 基类一次全子类共享（与 `ObjList::load_field` 同形：直调 VM 的 Iterator bootstrap 类协议查表、命中自持 `new_bound_method` 恒绑定 this；`store_field` 不 override）。
-- `debug_repr` 渲染 `<iterator>`（对标 `<upvalue>` 稳定短文案，源类型不进文案）；`equals` 默认地址判等（同一容器的两个迭代器是不同对象）。
-- 语言方法面（has_next/next 经 Iterator 类表恒绑定，原生是本缝的薄壳）住 `runtime/builtins/IteratorBuiltins`。
-
-## `object/iterator/ObjListIterator.hpp` / `.cpp`
-
-list 迭代器（`ObjListIterator final : ObjIterator`）。
-
-- 持 `ObjList* list_`（被遍历者，恒非空 ctor ASSERT，经 trace 标根、元素经 `ObjList::trace` 级联）+ `usize cursor_`（下一元素下标，单调 +1；**下标式游标不悬垂**--元素缓冲扩容搬迁、下标仍有效，指针式则悬垂）。
-- `has_next` = `cursor < 元素数`；`next` 越界 fail `IterationExhausted`（"iterator exhausted"，forIn 靠 has_next 把关、仅手写滥用触此），否则返回元素拷贝并推进。
-- 迭代中变更容器不设防（v1 不承诺）：push 的新尾会被遍历到、pop 缩界后越界由 fail-fast 拦住。
-- 工厂 `new_list_iterator(gc, list)` 一次分配无内部新建；调用方须已根化 list（`fn_iter` 路径在 `slots[0]` 栈根），返回白色建成即写回槽发布（铸造口 iter 住 `runtime/builtins/ListBuiltins`）。
-
-## `object/iterator/ObjStringIterator.hpp` / `.cpp`
-
-string 迭代器。
-
-- 持 `ObjString* str_`（恒非空 ctor ASSERT，经 trace 标根）+ 字节偏移游标 `offset_`，按码点步进（`utf8::decode_one` 解码，推进宽度 = 码点字节宽，恒停字符边界）；`next` 每步产出该码点的 1-char string（`utf8::encode`，与 `s[i]` 产出形态一致）。
-- string 不可变，无迭代中变更问题。工厂 `new_string_iterator(gc, str)`（铸造口 iter 住 `runtime/builtins/StringBuiltins`）。
-
-## `object/iterator/ObjMapIterator.hpp` / `.cpp`
-
-map 迭代器。
-
-- 持 `ObjMap* map_`（恒非空 ctor ASSERT，经 trace 标根）+ `HashTable::const_iterator` 只读游标（跳空槽/墓碑，推进即占用槽序）；`next` 每步产出 `[k, v]` 二元 list（每步一次小分配，接受）。
-- 迭代中变更容器不设防（v1 不承诺）：rehash/compact 搬迁槽位使游标失效，由「不承诺」兜住。工厂 `new_map_iterator(gc, map)`（铸造口 iter 住 `runtime/builtins/MapBuiltins`）。
-
-## `object/iterator/ObjRangeIterator.hpp` / `.cpp`
-
-range 迭代器：五对迭代器中唯一无源对象者--range 不可变，ctor 期把端点拷成标量自足（`current_`/`to_`/`is_exclusive_`/`forward_`，trace 空体）。
-
-- 方向构造期定向（from > to 即倒序：含上界 `10..1` 产出 10 -> 1、不含上界 `10...1` 产出 10 -> 2）；无上界开区间 `has_next` 恒真、方向恒正序；空区间只剩 from == to 且不含上界。
-- 工厂 `new_range_iterator(gc, range)` 只读源的三标量不持有（铸造口 iter 住 `runtime/builtins/RangeBuiltins`）。
+本层只做**对象的表示与协议**。**每个类型的权威契约在其头注释**（字段 / 访问器 / 工厂守卫 / 各 override 的取舍都在那里）；本文件 = 类型地图 + 协议缝 + 跨类型规则，不复述头注释。
+
+## 类型地图
+
+- `Object`（`object/Object.hpp`）：所有 GC 对象的基类。持 `ObjType` 枚举、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。
+- `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`NativeFn`/...）。
+- `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
+- `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；显示位与调试位唯一分叉的子类型。
+- `ObjFunction`（`ObjFunction.hpp`）：`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。
+- `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
+- `ObjClosure`（`ObjClosure.hpp`）：被包函数 + upvalue 数组 + `defining_class_`；运行期一律以闭包进帧，`ObjFunction` 退为常量池内部物。
+- `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
+- `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
+- `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
+- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用）。
+- `ObjModule`（`ObjModule.hpp`）：模块 = 命名空间（一个源文件一个模块），非类。
+- `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。
+- `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
+- 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
+- `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `debug_repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
+- `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_obj<T>`、`is_callable_value`、`is_method`）。
+
+## 协议虚函数族
+
+声明在 `Object.hpp`，基类默认体在 `Object.cpp`（出声明因 `vm.fail` 是 AriaVM.hpp 内模板、两头互不 include）。
+
+### 错误与文案契约
+
+- **错误通道 = native fn 契约模型**：签名一律收 `AriaVM&` 单一句柄（分配经 `vm.gc()`、报错一行 `vm.fail(code, fmt, ...)`）。
+- 协议失败时**自己 fail**--载荷直接入 `*current_` 挂起错误寄存器（构造即入寄存器即被 VM 根 tracer 标根，无「返回值在途」的白色无根窗口），**返回值只留信号**：
+  - load 族 `Opt<Value>`：nullopt ⟺ 已 fail；somed 才是命中，命中 nil 亦 somed。
+  - store 族 `bool`：false ⟺ 已 fail；失败出口经 `FailSignal` 哨兵一行化--override 一律 `return vm.fail(...)`，哨兵按站点返回类型转 nullopt / false / nullptr。
+- 该模型与 native fn 的 bool 契约、`call_value` 族同构，对齐 CPython PyErr 模型。
+- **消息文案由最知道语境的一方就地烘焙**（同 CPython listobject.c）：各 override 用自身细节拼（渲染值走非重入 `format_value_debug`，不用可重载 `to_string`，防未来语言级 `__str__` 重入）。
+- 组合场景（实例委托类链、super 站点）直接**委托协议** `ObjClass::load_field`--命中值原样回传，miss 的类措辞 fail 随协议传播（成员表在类链上，文案随宿主，组合方不重复烘焙）。
+- 契约纪律：至多 fail 一次、fail 后立即返回；调用方（VM）保证接收者「栈即根」（peek 不弹）跨协议内 GC 点。
+- 基类默认体一律「本类型不支持」，fail 后返失败信号。
+
+### 四条缝
+
+- **① `load_field` / `store_field`**：命名成员读写协议（LOAD/STORE_FIELD 族统一分派点，VM 不按子类型 switch 分型）。override：`ObjInstance` / `ObjClass` / `ObjModule` 与内置集合 / 迭代器（见下）。
+- **①'' `load_field_unbound`**：命名成员读取的**不绑定形态**（与 `load_field` 同一趟查找、命中方法值不铸 `ObjBoundMethod`）。消费方两类：`run_prepare_method`（`PREPARE_METHOD` 的成员解析缝，解析先于实参求值）与实例 11 个 `op_*_impl`（按钩子名取 `__add__`/`__call__` 等）。**基类默认 = 隐式委托 `load_field`**（未 override 的类型照读路径取值，不设「显式参与」反转）；实例与内置容器 / 迭代器 override 成不绑定取值（后者查自身 bootstrap 类表取原生值，免每次铸 bound）。
+- **①' `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `vm.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。
+- **② 算子与调用协议 `op_*_impl(AriaVM&) -> Opt<Value>`**（算术五 + 比较四 + 一元负 + `op_call_impl`，共 11 个）：**取实现，不执行**--回答「本对象上该算子对应的可调用值」（不是算好的结果），VM 的 `run_binary_operator<Op>` / `run_negate` / `call_value` 取到后按调用形态调它（调用区槽 0 保持 receiver）。非 const（取实现可能物化绑定）。
+- ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按名 `load_field_unbound`--实例 fields 可遮蔽，再类链取）；②**内置 string**（5 个算子直读实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③其余类型不实现即报错。
+- 钩子名是**语言级事实**（`aria.hpp` 的 `kOp*Name`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
+- `op_call_impl` 的消费点 = `AriaVM::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 报「call non-callable X」。
+
+### 内置类型的成员面
+
+- **内置容器 / 迭代器（string/list/map/range/iterator）的 `load_field` / `load_field_unbound` 同形两步**（权威说明，各子类头不复述）：①委托自身 bootstrap 类表（`vm.string_class()` / `vm.list_class()` ...）的 `ObjClass::load_field` 沿链查表，miss 的类措辞 fail 随协议透传；②`load_field` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）；`load_field_unbound` 直取类表原生值。
+- 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
+- 方法面注册入口 `register_*_builtins` 住 `runtime/builtins/*Builtins`，方法清单见 `runtime.md`。
+
+## 跨类型规则
+
+### 工厂守卫
+
+- **工厂守卫原则**（全部 `new_<type>` 工厂通用，各工厂头注释不复述）：**每方只守自己创建的**。
+- 工厂不替调用方守卫**入参**（入参非本工厂创建；`name` 经 intern 是 weak root，`klass`/`module`/`super` 可能尚未入任何根）；工厂内部新建的对象（便捷重载内 intern 的串）自带 `make_guard` 自守。
+- 故调用方须在调用前自行根化自己传入的对象入参；工厂返回对象白色无根、建成即须发布进根（写回值栈槽 / 链入 VM 开链）。
+
+### `defining_class_` 戳规则
+
+- 闭包上的 `defining_class_` **一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.closure->defining_class()` 直读）+ **方法性标记**（`is_method()`；读路径 `ObjInstance::load_field` / `LOAD_SUPER_FIELD` 据非空判绑 this）。
+- **判别按戳不按值类型**：MAKE_METHOD 注册时戳、MAKE_STATIC / 类上赋值不戳 ⟹ 静态槽原值直读；赋值闭包无戳 ⟹ 改写后按静态读原值、不再绑定（方法性随值携带）。
+- **挂闭包而非共享的 `ObjFunction` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
+- 非方法闭包（静态方法 fun / lambda / 其余）恒 nullptr。
+
+### `init_` 派生
+
+- `ObjClass::init_` 是 `Value`（闭包 / 原生皆可），实例化统一走 `call_value` 分发；类上赋非可调用值亦放行，实例化时 `call_value` 报 CallNonCallable 兜底。
+- 写点**全在对象内**：构造期自 super 派生（**快照语义**：此后父 init 变更不传导；Object 根 super == nullptr 出厂 nil，由 bootstrap 经 `set_field` 设）+ `set_field` 命中 "init" 同步。
+- **工厂纯分配不 seed**；无 `set_init` 可变器；`call_value` CLASS 分支消费。
+- `set_field` 是类成员**创建路径的唯一公开写入口**（MAKE_STATIC / MAKE_METHOD 注册、bootstrap 设 init、`store_field` 落表三路共用；落本类自身表不沿链，命中 "init" 同步 `init_`）；`find_field` 是纯查询内部底座（沿 super 链、无分配、不 fail、私有）。
+
+### 类成员读写与绑定方法不缓存
+
+- **类成员读写取 Python/JS 式读穿透、写遮蔽**：读沿 super 链 fall-through；写落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新、沿链全 miss 的新名字亦落接收类，动态新增允许），父表不动。
+- **绑定方法不缓存**：`ObjInstance::load_field` 命中方法戳闭包即**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
+- 缓存会让「类 / 父类改写方法」对已取过方法的实例陈旧、monkey patch 半可用且难解释；不缓存换来改写对既有实例立即生效（monkey patch 完整）与 `fields_` 回归纯字段。
+- 方法值是一等值省不掉；**调用路径**（`PREPARE_METHOD` + 实例 `op_*_impl`）经 `load_field_unbound` 走零分配、不绑定形态。
+
+### 迭代器族契约
+
+- `ObjIterator` 是**首个非 final 的 Object 子类型**（`ObjType::ITERATOR`，语言层单数类型名 `type(it)` 恒 `"Iterator"`）。
+- 基类钉纯虚契约：`has_next() const noexcept -> bool`（纯查询、无分配无 fail，故不收 vm）、`next(AriaVM&) -> Opt<Value>`（取下一元素并推进；越界一行 `return vm.fail(IterationExhausted)`）、`trace`（各子类标各自的源，纯虚钉住忘标 = 编译错）、`size()`。
+- `load_field` / `load_field_unbound` override 基类一次、全子类共享（走 Iterator bootstrap 类表）；`debug_repr` 渲染 `<iterator>`；`equals` 默认地址判等。
+- 每源一个小子类、各持自然游标；**range 迭代器是唯一无源对象者**（range 不可变，ctor 期把端点拷成标量自足，`trace` 空体；方向构造期定向，from > to 即倒序）。
+- map 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；迭代中变更容器不设防（v1 不承诺）。
+- 语言方法面（has_next/next）住 `runtime/builtins/IteratorBuiltins`。
+
+### 模块身份
+
+- `ObjModule` 的绝对路径（= VM 模块表查重键）= `dir_ + "/" + name_ + ".aria"`，切分收口 `fs::module_name_and_dir`--`name_` = basename 去 `.aria` 后缀（stem）、`dir_` = dirname。
+- 即路径的 dirname/stem 切分，`name_` 恒为单段 stem，不支持「相对源根的多段路径」语义、不依赖源根概念；两指针**恒非空、内容可空**（合成顶层 `<script>` / REPL 等以非空 intern 串构造）。
+- `abs_path()` 即时合成：`dir_` 内容空 -> 返空串（无目录锚点）；`name_` 内容空 -> 仅返 `dir_`；否则拼接（供 IMPORT 相对导入取 dirname 作基）。
+- **无加载状态字段**：加载事实源 = VM 模块表成员资格（未入表 = 未加载；入表 = 已编译待 run-once 或已跑完）。
+- 成员协议：顶层绑定即成员（`load_field` 查 `globals_` 直读，不另设 export 声明；顶层函数值恒非方法、不绑 this；nil 值绑定与 miss 由 find 空态区分）；`store_field` 恒拒（模块成员只读--越模块写会隐式创建他人未声明全局）。
+
+### 切片段两类型共享
+
+- `resolve_slice_bounds(range, size)`（`ObjRange.cpp` 收口）是 `ObjList` 与 `ObjString` 切片的共同解析口，返 `Opt<SliceSegment>{start, count, is_reversed}`。
+- 长度与方向的折算全在解析口：有上界形态两端点各从尾计数、方向由归一化端点大小关系自带（与 range 迭代同一判据）、不含上界少走迭代序末元素、两端相等即空段；**无上界形态 `i..` 走后缀语义**，起点从尾计数后允许 `== size` 得空段（解构 rest 的空尾据此成立）。
+- 端点越界与空容器同为 nullopt，唯一失败文案 `slice index out of range`。
+- list 切片铸新 list 段拷（正序整段一次拷 / 倒序经 `Array::copy_reversed_from`）；string 切片域仍是字节，倒序段产出字节倒排串（多字节输入下非合法 UTF-8）。
+
+### GC / 根纪律
+
+- 协议内可分配（fail 装箱 `new_exception`、`new_bound_method`），调用方保证接收者「栈即根」（peek 不弹）。
+- 工厂返回的白色无根对象须发布进根--写回原槽（`run_load_field` / `run_load_index`）或链入 VM 开链（upvalue，链上节点经 VM 根 tracer 保命）。
+- `Object::equals` 契约须 **GC-pure**（EQUAL 在 off-stack 裸局部上比较，触发 collect 会回收操作数）。
+- 递归比较 / 渲染子值的容器入口须挂 `EqualGuard` / `PrintGuard` 防环（重遇同对视为相等 / 截断 `[...]`）。
+- `module_` 回指与 `module->entry_` 成环，mark-sweep 三色标记破环。
+
+### 类型判断 / 转换约定（强制）
+
+- 纯谓词（断言 / fail-fast / 不需要指针）用 `Object::is<T>(obj)`。
+- 「守卫后使用」成对场景优先一步 `Object::try_as<T>(obj)`（类型只写一次，DEBUG 单次 dynamic_cast 优于成对的两次）。
+- `switch (obj->type())` 臂内等静态已知场合用 `Object::as<T>(obj)`（NDEBUG 裸 cast 不校验）；多分支枚举分派（如 `AriaVM::call_value`）天然合理，保留枚举写法。
+- **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。
+- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `Object::is/as<X>(v.as_obj())`。

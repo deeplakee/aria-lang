@@ -39,8 +39,7 @@ namespace aria {
         usize    cursor_; // 下一元素下标(单调 +1)
     };
 
-    // 工厂:分配 ObjListIterator。只做一次 new_object、无内部新建;调用方须已根化 list
-    // (fn_iter 路径 list 在 slots[0] 栈根),返回对象白色无根,建成即写回槽发布。
+    // 工厂:分配 ObjListIterator(单次分配);调用方须已根化 list,返回对象白色无根,建成即写回槽发布。
     [[nodiscard]]
     ObjListIterator* new_list_iterator(GC& gc, ObjList* list);
 

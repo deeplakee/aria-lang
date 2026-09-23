@@ -24,21 +24,19 @@ namespace aria {
     }
 
     String ObjFunction::debug_repr() const {
-        // name_ 恒非空(ctor ASSERT),统一 `<fn name>`。
+        // name_ 恒非空(ctor ASSERT)。
         return std::format("<fn {}>", name_->view());
     }
 
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, const u8 arity, const u8 min_arity,
                               const bool is_varargs) {
-        // 守卫纪律见 Object.hpp;module 与 name 皆是 weak root,调用方须自行根化。裸持 fresh
-        // 对象直接传入是 bug,需 make_guard。
+        // 守卫纪律见 Object.hpp;module 与 name 皆是 weak root,调用方须自行根化。
         return gc.new_object<ObjFunction>(gc, module, name, arity, min_arity, is_varargs);
     }
 
     ObjFunction* new_function(GC& gc, ObjModule* module, const StringView name, const u8 arity, const u8 min_arity,
                               const bool is_varargs) {
-        // 便捷重载:name 串由工厂自己创建,自守跨下方 new_object(守「自己创建的」);
-        // module 仍须调用方根化,契约同 ObjString* 版。
+        // name 串由工厂自己创建,自守跨下方 new_object;module 仍须调用方根化。
         const auto name_str = new_string(gc, name);
         const auto guard    = gc.make_guard(name_str);
         return new_function(gc, module, name_str, arity, min_arity, is_varargs);

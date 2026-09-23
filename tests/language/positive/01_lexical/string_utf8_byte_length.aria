@@ -1,6 +1,6 @@
-// 钉住：len 按 UTF-8 字节数计（非码点数）：emoji 4 字节、中文每字 3 字节、é 两字节。
-assert(len("\u{1F600}") == 4);
-assert(len("中文") == 6);
-assert(len("héllo") == 6);
-assert(len("abc") == 3);
-assert(len("\u{41}\u{1F600}") == 5);
+// 钉住：size() 按 UTF-8 字节数计（非码点数）：emoji 4 字节、中文每字 3 字节、é 两字节。
+assert("\u{1F600}".size() == 4);
+assert("中文".size() == 6);
+assert("héllo".size() == 6);
+assert("abc".size() == 3);
+assert("\u{41}\u{1F600}".size() == 5);

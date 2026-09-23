@@ -127,12 +127,12 @@ TEST(Compiler, CompileErrorSyntax) {
 // push 追加到末尾、接受任意 Value、返回 nil（变更方法不鼓励链式）。
 TEST(Compiler, ListPushAppendsAndReturnsNil) {
     EXPECT_EQ(run_int("var xs = [1, 2]; var r = xs.push(3); if (r == nil) { return xs[2]; } return -1;"), 3);
-    EXPECT_EQ(run_int(R"(var xs = [1]; xs.push("ab"); xs.push(nil); xs.push([2]); return len(xs);)"), 4);
+    EXPECT_EQ(run_int(R"(var xs = [1]; xs.push("ab"); xs.push(nil); xs.push([2]); return xs.size();)"), 4);
 }
 
 // pop 移除并返回末元素，长度随之缩减。
 TEST(Compiler, ListPopReturnsLastAndShrinks) {
-    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var last = xs.pop(); return last * 10 + len(xs);"), 32);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; var last = xs.pop(); return last * 10 + xs.size();"), 32);
 }
 
 // 元数检查：push 恰 1 参、pop 恰 0 参（文案 builtins 同款）。
@@ -186,15 +186,15 @@ TEST(Compiler, ListInitResolvesToObjectRootNoOp) {
 // 循环内反复取方法（每次现场物化 bound 对象）+ stress GC（run_source 默认开）：
 // bound 白色建成即写回原槽根化、方法原生经寄存器组 -> 类链可达。
 TEST(Compiler, ListMethodLoopUnderStressGc) {
-    EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return len(xs);"), 61);
+    EXPECT_EQ(run_int("var xs = [0]; var i = 0; while (i < 60) { xs.push(i); i = i + 1; } return xs.size();"), 61);
 }
 
 // ---- list 方法面补全（insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty） ----
 
 // remove_at(i)：按位置移除并返回；负数从尾计数（与下标读写同语义）。
 TEST(Compiler, ListRemoveAt) {
-    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(0) * 10 + len(xs);"), 12);
-    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(-1) * 10 + len(xs);"), 32);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(0) * 10 + xs.size();"), 12);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(-1) * 10 + xs.size();"), 32);
     EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(1) * 10 + xs[0] + xs[1];"), 24);
 }
 
@@ -214,14 +214,15 @@ TEST(Compiler, ListRemoveAtFails) {
 // remove(x)：移除**全部** == 命中元素，命中 true / 未命中 false（不报错，miss 走返回值与 find/contains 同族）；
 // nil/嵌套容器按内容可移除；只要移一处用 find + remove_at 组合。
 TEST(Compiler, ListRemove) {
-    EXPECT_EQ(run_int("var xs = [1, 2, 3]; if (xs.remove(2) && len(xs) == 2) { return xs[0] + xs[1]; } return -1;"), 4);
+    EXPECT_EQ(run_int("var xs = [1, 2, 3]; if (xs.remove(2) && xs.size() == 2) { return xs[0] + xs[1]; } return -1;"),
+              4);
     EXPECT_EQ(run_int("var xs = [1, 2, 1, 1]; xs.remove(1); if (xs == [2]) { return 1; } return 0;"), 1); // 移全、保序
-    EXPECT_EQ(run_int("var xs = [1]; if (!xs.remove(9) && len(xs) == 1) { return 1; } return 0;"), 1);
+    EXPECT_EQ(run_int("var xs = [1]; if (!xs.remove(9) && xs.size() == 1) { return 1; } return 0;"), 1);
     EXPECT_EQ(run_int("var xs = [1, nil, nil]; if (xs.remove(nil) && xs == [1]) { return 1; } return 0;"), 1);
     EXPECT_EQ(run_int("var xs = [[1], 2]; if (xs.remove([1]) && xs == [2]) { return 1; } return 0;"), 1);
 }
 
-// size/is_empty：元素数与空表谓词（全局 len 的方法形态）。
+// size/is_empty：元素数与空表谓词。
 TEST(Compiler, ListSizeAndIsEmpty) {
     EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.size();"), 3);
     EXPECT_EQ(run_int("var xs = []; return xs.size();"), 0);
@@ -232,7 +233,7 @@ TEST(Compiler, ListSizeAndIsEmpty) {
 TEST(Compiler, ListInsert) {
     EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(1, 2); return xs[0] * 100 + xs[1] * 10 + xs[2];"), 123);
     EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(0, 9); return xs[0];"), 9);
-    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(2, 9); return len(xs) * 10 + xs[2];"), 39);
+    EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(2, 9); return xs.size() * 10 + xs[2];"), 39);
     EXPECT_EQ(run_int("var xs = [1, 3]; xs.insert(-1, 9); return xs[1];"), 9);
     EXPECT_EQ(run_int("var xs = []; xs.insert(0, 7); return xs[0];"), 7);
 }
@@ -253,7 +254,7 @@ TEST(Compiler, ListInsertOutOfRangeFails) {
 // clear：清空返 nil，长度归零；别名（共享可变状态）同见。
 TEST(Compiler, ListClear) {
     EXPECT_EQ(run_int(R"(var xs = [1, 2]; var alias = xs; var r = xs.clear();
-        if (r == nil && len(xs) == 0 && alias == []) { return 1; } return 0;)"),
+        if (r == nil && xs.size() == 0 && alias == []) { return 1; } return 0;)"),
               1);
 }
 
@@ -264,7 +265,7 @@ TEST(Compiler, ListSortNumbers) {
               123);
     EXPECT_EQ(run_int("var xs = [3, 1.5, 2]; xs.sort(); if (xs[0] == 1.5) { return xs[1] * 10 + xs[2]; } return -1;"),
               23);
-    EXPECT_EQ(run_int("var xs = []; if (xs.sort() == nil) { return len(xs); } return -1;"), 0);
+    EXPECT_EQ(run_int("var xs = []; if (xs.sort() == nil) { return xs.size(); } return -1;"), 0);
 }
 
 // sort 字符串域：无符号字节序（与比较算子同源，大写 < 小写）；别名可见就地变更。
@@ -294,7 +295,7 @@ TEST(Compiler, ListReverse) {
     EXPECT_EQ(run_int("var xs = [1, 2, 3]; var r = xs.reverse(); if (r == nil) { return xs[0] * 100 + xs[1] * 10 + "
                       "xs[2]; } return -1;"),
               321);
-    EXPECT_EQ(run_int("var xs = []; xs.reverse(); return len(xs);"), 0);
+    EXPECT_EQ(run_int("var xs = []; xs.reverse(); return xs.size();"), 0);
 }
 
 // find/contains：value_equal（== 内容递归）判定；find 未命中 nil（下标永不为 nil；
@@ -332,21 +333,21 @@ TEST(Compiler, ListNegativeIndexBoundsFail) {
 
 // ---- 切片（range 作下标键：含否上界/无上界/负端点/倒序产出/只读） ----
 
-// 切片产出新 list:闭区间/半开/无上界/负端点/倒序;len 与 forIn 消费切片结果。
+// 切片产出新 list:闭区间/半开/无上界/负端点/倒序;size 与 forIn 消费切片结果。
 TEST(Compiler, ListSliceReads) {
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; var s = xs[1..3]; return s[0] * 100 + s[1] * 10 + s[2];"), 2340);
-    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40]; return len(xs[1...3]);"), 2);
-    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return len(xs[-2..]);"), 2);
-    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return len(xs[2...2]);"), 0);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40]; return xs[1...3].size();"), 2);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[-2..].size();"), 2);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[2...2].size();"), 0);
     EXPECT_EQ(run_int("var xs = [10, 20, 30]; var t = 0; for (x in xs[-2..]) { t = t + x; } return t;"), 50);
     // 正起点配负终点(原始端点递减、归一化后正序):方向按归一化端点判,不误报倒序。
-    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return len(xs[1..-1]);"), 4);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return xs[1..-1].size();"), 4);
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return xs[1..-2][0] * 10 + xs[1..-2][1];"), 230);
     // 倒序 range 作下标:切片按倒序产出(方向判据与 range 迭代同一套)。
     EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; var t = 0; for (x in xs[3..1]) { t = t * 10 + x; } return t;"),
               4320);
     EXPECT_EQ(run_int("var xs = [10, 20, 30]; return xs[2..0][0];"), 30);
-    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return len(xs[-1...0]);"), 4);
+    EXPECT_EQ(run_int("var xs = [10, 20, 30, 40, 50]; return xs[-1...0].size();"), 4);
 }
 
 // 切片错误面:端点越界 fail-fast、切片写落整数键统一文案。
@@ -460,7 +461,7 @@ TEST(Compiler, MapLiteralAndSubscriptRead) {
 
 // 下标写:未命中新增键、已命中覆写,均恒成功。
 TEST(Compiler, MapSubscriptWriteUpserts) {
-    EXPECT_EQ(run_int("var m = {}; m[\"a\"] = 1; m[\"a\"] = 2; m[\"b\"] = 3; return len(m) * 10 + m[\"a\"];"), 22);
+    EXPECT_EQ(run_int("var m = {}; m[\"a\"] = 1; m[\"a\"] = 2; m[\"b\"] = 3; return m.size() * 10 + m[\"a\"];"), 22);
 }
 
 // miss 读:KeyError(运行期,键入文案)。
@@ -474,13 +475,13 @@ TEST(Compiler, MapReadMissFailsKeyError) {
 // 字面量重复键:后键胜(set 命中原槽覆写,Python dict 同款,零特判)。
 TEST(Compiler, MapLiteralDuplicateKeyLastWins) {
     EXPECT_EQ(run_int("var m = {\"a\": 1, \"a\": 2}; return m[\"a\"];"), 2);
-    EXPECT_EQ(run_int("return len({\"a\": 1, \"a\": 2});"), 1);
+    EXPECT_EQ(run_int("return {\"a\": 1, \"a\": 2}.size();"), 1);
 }
 
-// len:Map 返键值对数(与 string/list 并列)。
+// size:Map 返键值对数(与 string/list 并列)。
 TEST(Compiler, MapLenReturnsEntryCount) {
-    EXPECT_EQ(run_int("return len({});"), 0);
-    EXPECT_EQ(run_int("return len({1: 10, 2: 20, 3: 30});"), 3);
+    EXPECT_EQ(run_int("return {}.size();"), 0);
+    EXPECT_EQ(run_int("return {1: 10, 2: 20, 3: 30}.size();"), 3);
 }
 
 // 相等 ==:按内容(插入序无关),!= 取反;=== 恒指针。
@@ -496,7 +497,7 @@ TEST(Compiler, ForInMapYieldsKeyValuePairs) {
     EXPECT_EQ(run_int("var m = {\"a\": 1, \"b\": 2}; var sum = 0; for (pair in m) { sum = sum + pair[1]; } "
                       "return sum;"),
               3);
-    EXPECT_EQ(run_int("var m = {\"x\": 10}; var n = 0; for (pair in m) { if (len(pair) == 2 && pair[0] == \"x\" && "
+    EXPECT_EQ(run_int("var m = {\"x\": 10}; var n = 0; for (pair in m) { if (pair.size() == 2 && pair[0] == \"x\" && "
                       "pair[1] == 10) { n = 1; } } return n;"),
               1);
 }
@@ -604,21 +605,21 @@ TEST(Compiler, VarargsCollectsExtras) {
             345);
 }
 
-// 无多余实参:rest 为空 list(恒 list 非 nil);len 观察。
+// 无多余实参:rest 为空 list(恒 list 非 nil);size 观察。
 TEST(Compiler, VarargsEmptyRest) {
-    EXPECT_EQ(run_int("fun f(a, ...rest) { return a * 10 + len(rest); } return f(7);"), 70);
+    EXPECT_EQ(run_int("fun f(a, ...rest) { return a * 10 + rest.size(); } return f(7);"), 70);
 }
 
 // 默认参数与 varargs 共存矩阵:全传 / 只传必传(缺省走默认 + 空 rest)/ 恰传固定数。
 TEST(Compiler, VarargsWithDefaults) {
-    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1, 2, 3, 4, 5);"), 6);
-    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1);"), 11);
-    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + len(rest); } return f(1, 2);"), 3);
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + rest.size(); } return f(1, 2, 3, 4, 5);"), 6);
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + rest.size(); } return f(1);"), 11);
+    EXPECT_EQ(run_int("fun f(a, b = 10, ...rest) { return a + b + rest.size(); } return f(1, 2);"), 3);
 }
 
 // 纯 varargs(零固定参数):零参与多参皆合法。
 TEST(Compiler, VarargsPureRest) {
-    EXPECT_EQ(run_int("fun g(...xs) { return len(xs); } return g() * 10 + g(1, 2, 3);"), 3);
+    EXPECT_EQ(run_int("fun g(...xs) { return xs.size(); } return g() * 10 + g(1, 2, 3);"), 3);
 }
 
 // 元数下界仍守(必传不足报 WrongArity 至少式文案);上界取消(8 参照常)。
@@ -628,23 +629,23 @@ TEST(Compiler, VarargsArityBound) {
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(out.error().message().find("expects at least 1 args, got 0"), std::string::npos);
 
-    EXPECT_EQ(run_int("fun f(a, ...rest) { return len(rest); } return f(1, 2, 3, 4, 5, 6, 7, 8);"), 7);
+    EXPECT_EQ(run_int("fun f(a, ...rest) { return rest.size(); } return f(1, 2, 3, 4, 5, 6, 7, 8);"), 7);
 }
 
 // rest 每次调用新铸:对它 push 不外泄、两次调用互不相干。
 TEST(Compiler, VarargsFreshListPerCall) {
-    EXPECT_EQ(run_int("fun f(...xs) { xs.push(99); return len(xs); } var a = f(1); var b = f(1); return a * 10 + b;"),
+    EXPECT_EQ(run_int("fun f(...xs) { xs.push(99); return xs.size(); } var a = f(1); var b = f(1); return a * 10 + b;"),
               22);
 }
 
 // rest 是普通局部槽,可被闭包捕获。
 TEST(Compiler, VarargsCapturedByClosure) {
-    EXPECT_EQ(run_int("fun f(...xs) { var c = fun() { return len(xs); }; return c() + xs[0]; } return f(5, 6);"), 7);
+    EXPECT_EQ(run_int("fun f(...xs) { var c = fun() { return xs.size(); }; return c() + xs[0]; } return f(5, 6);"), 7);
 }
 
 // 方法帧同构适用(槽 0 = this 后照常收集)。
 TEST(Compiler, VarargsMethodFrame) {
-    EXPECT_EQ(run_int("def Box { init(a, ...rest) { this.a = a; this.n = len(rest); } } var b = Box(1, 2, 3); return "
+    EXPECT_EQ(run_int("def Box { init(a, ...rest) { this.a = a; this.n = rest.size(); } } var b = Box(1, 2, 3); return "
                       "b.a * 10 + b.n;"),
               12);
 }
@@ -675,10 +676,10 @@ TEST(Compiler, StringTrimAsciiWhitespace) {
 
 // split:保留空段、空串输入切出 [""],空分隔符 EmptyPattern。
 TEST(Compiler, StringSplitKeepsEmptySegments) {
-    EXPECT_EQ(run_int(R"(var parts = "a,,b".split(","); if (len(parts) == 3 && parts[0] == "a" && parts[1] == "" && )"
+    EXPECT_EQ(run_int(R"(var parts = "a,,b".split(","); if (parts.size() == 3 && parts[0] == "a" && parts[1] == "" && )"
                       R"(parts[2] == "b") { return 1; } return 0;)"),
               1);
-    EXPECT_EQ(run_int(R"(var one = "".split(","); if (len(one) == 1 && one[0] == "") { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(var one = "".split(","); if (one.size() == 1 && one[0] == "") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("x=y=z".split("=")[1] == "y") { return 1; } return 0;)"), 1);
 
     auto empty = run_source(R"(return "ab".split("");)");
@@ -691,7 +692,7 @@ TEST(Compiler, StringSplitKeepsEmptySegments) {
 // 内容须在覆写 slots[0] 前拷离 GC 堆。字面量 receiver 经常量池强根,故既有用例不覆盖此形态。
 TEST(Compiler, StringSplitTemporaryReceiverSurvivesStressGc) {
     EXPECT_EQ(run_int(R"(var xs = ("aaaa," + "bbbbbbbbbbbbbbbb").split(","); )"
-                      R"(if (len(xs) == 2 && xs[0] == "aaaa") { return 1; } return 0;)"),
+                      R"(if (xs.size() == 2 && xs[0] == "aaaa") { return 1; } return 0;)"),
               1);
     EXPECT_EQ(run_int(R"(var xs = ("aaaa," + "bbbbbbbbbbbbbbbb").split(","); )"
                       R"(if (xs[1] == "bbbbbbbbbbbbbbbb") { return 1; } return 0;)"),
@@ -768,7 +769,7 @@ TEST(Compiler, StringCodepointAtIndexesByCodepoint) {
 // 端到端只钉单字节产出)。
 TEST(Compiler, StringSubscriptIsByteSemantics) {
     EXPECT_EQ(run_int(R"(if ("hello"[1] == "e") { return 1; } return 0;)"), 1);
-    EXPECT_EQ(run_int(R"(if (len("héllo") == 6 && len("héllo"[1]) == 1) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("héllo".size() == 6 && "héllo"[1].size() == 1) { return 1; } return 0;)"), 1);
 
     auto out_of_range = run_source(R"(return "hi"[5];)");
     ASSERT_FALSE(out_of_range.has_value());
@@ -829,12 +830,12 @@ TEST(Compiler, StringBuiltinsUnderStressGc) {
     EXPECT_EQ(run_int(R"(var it = "abc".iter(); var n1 = it.next; if (n1() == "a" && it.has_next()) { return 1; } )"
                       R"(return 0;)"),
               1);
-    EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { s = s + len(\"ab\".upper().trim()); i = i + 1; } "
+    EXPECT_EQ(run_int("var s = 0; var i = 0; while (i < 20) { s = s + \"ab\".upper().trim().size(); i = i + 1; } "
                       "return s;"),
               40);
 }
 
-// size/is_empty:字节域(len 的方法形态);码点数走 len(chars())。
+// size/is_empty:字节域;码点数走 chars().size()。
 TEST(Compiler, StringSizeIsEmpty) {
     EXPECT_EQ(run_int(R"(return "héllo".size();)"), 6); // 字节域:6 字节、5 码点
     EXPECT_EQ(run_int(R"(return "".size();)"), 0);
@@ -852,16 +853,17 @@ TEST(Compiler, StringContainsSubstring) {
     EXPECT_NE(bad.error().message().find("contains argument must be a string, got Int"), std::string::npos);
 }
 
-// chars:逐码点切 1-char string(与迭代同单位);len(chars()) 即码点数;join 回原文;非法字节序列
+// chars:逐码点切 1-char string(与迭代同单位);chars().size() 即码点数;join 回原文;非法字节序列
 // 产出替换码点串(同迭代口径)。循环调用 + stress GC 锻炼 list 与逐串铸造的根化路径(guard 承重)。
 TEST(Compiler, StringCharsSplitsCodepoints) {
-    EXPECT_EQ(run_int(R"(return len("héllo".chars());)"), 5); // 字节 6、码点 5
+    EXPECT_EQ(run_int(R"(return "héllo".chars().size();)"), 5); // 字节 6、码点 5
     EXPECT_EQ(run_int(R"(if ("héllo".chars()[1] == "é") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("héllo".chars().join("") == "héllo") { return 1; } return 0;)"), 1);
-    EXPECT_EQ(run_int(R"(return len("".chars());)"), 0);
+    EXPECT_EQ(run_int(R"(return "".chars().size();)"), 0);
     EXPECT_EQ(run_int(R"(if ("héllo"[1].chars()[0] == "\u{FFFD}") { return 1; } return 0;)"), 1);
-    EXPECT_EQ(run_int("var n = 0; var i = 0; while (i < 20) { n = n + len(\"héllo\".chars()); i = i + 1; } return n;"),
-              100);
+    EXPECT_EQ(
+            run_int("var n = 0; var i = 0; while (i < 20) { n = n + \"héllo\".chars().size(); i = i + 1; } return n;"),
+            100);
 }
 
 // to_int/to_float:整串十进制解析,失败(空串/杂字/空白/下划线/进制前缀/越值域)返 nil -- miss 返
@@ -909,7 +911,7 @@ TEST(Compiler, StringRangeSlice) {
     EXPECT_EQ(run_int(R"(if ("hello"[1..3] == "ell" && "hello"[1...3] == "el") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("hello"[-3..] == "llo" && "hello"[1..-1] == "ello") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("hello"[3..1] == "lle" && "hello"[0..] == "hello") { return 1; } return 0;)"), 1);
-    EXPECT_EQ(run_int(R"(if (len("hello"[5..]) == 0) { return 1; } return 0;)"), 1); // 末尾之后取剩余 = 空段
+    EXPECT_EQ(run_int(R"(if ("hello"[5..].size() == 0) { return 1; } return 0;)"), 1); // 末尾之后取剩余 = 空段
     // 倒序是字节域反转:s[i] 取出的单字节串可拼出同一结果(多字节串按字节倒排,非合法 UTF-8)。
     EXPECT_EQ(run_int(R"(if ("héllo"[2..0] == "héllo"[2] + "héllo"[1] + "héllo"[0]) { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(var [c, ...r] = "abc"; if (c == "a" && r == "bc") { return 1; } return 0;)"), 1);
@@ -924,10 +926,10 @@ TEST(Compiler, StringRangeSlice) {
 // 空白集);1 参形态保留空段不变。
 TEST(Compiler, StringSplitOnWhitespace) {
     EXPECT_EQ(run_int(R"(var xs = "  a  b\tc ".split(); )"
-                      R"(if (len(xs) == 3 && xs[0] == "a" && xs[1] == "b" && xs[2] == "c") { return 1; } return 0;)"),
+                      R"(if (xs.size() == 3 && xs[0] == "a" && xs[1] == "b" && xs[2] == "c") { return 1; } return 0;)"),
               1);
-    EXPECT_EQ(run_int(R"(if (len("   ".split()) == 0 && len("".split()) == 0) { return 1; } return 0;)"), 1);
-    EXPECT_EQ(run_int(R"(if (len("a,,b".split(",")) == 3) { return 1; } return 0;)"), 1); // 1 参保留空段
+    EXPECT_EQ(run_int(R"(if ("   ".split().size() == 0 && "".split().size() == 0) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(if ("a,,b".split(",").size() == 3) { return 1; } return 0;)"), 1); // 1 参保留空段
 }
 
 // ============================================================
@@ -958,8 +960,8 @@ TEST(Compiler, DestructureNestsRecursively) {
 // `_` 占位：该位置不产生下标访问（故越界、缺键都不报），其余位置照常绑。
 TEST(Compiler, WildcardSkipsAccess) {
     EXPECT_EQ(run_int("var [a, _, c] = [1, 2, 3]; return a * 10 + c;"), 13);
-    EXPECT_EQ(run_int("var [a, _] = [5]; return a;"), 5);                        // `_` 位越界不访问
-    EXPECT_EQ(run_int("var m = {1: \"x\"}; var [_, c] = m; return len(c);"), 1); // `_` 位缺键不报（c 取 m[1]）
+    EXPECT_EQ(run_int("var [a, _] = [5]; return a;"), 5);                          // `_` 位越界不访问
+    EXPECT_EQ(run_int("var m = {1: \"x\"}; var [_, c] = m; return c.size();"), 1); // `_` 位缺键不报（c 取 m[1]）
 }
 
 // for-in 目标解构：map 迭代产出 [k, v] 对，逐位置绑循环变量（每轮 fresh 作用域）。
@@ -1010,23 +1012,23 @@ TEST(Compiler, DestructureFailureFaces) {
 // rest 位（...rest）：收集位置数之后的剩余为新 list；空尾给空 list（源恰比前缀多零个元素、
 // 源为空皆然），故 head/tail 惯用法成立；嵌套与解构赋值同支持。
 TEST(Compiler, DestructureRestCollectsSuffix) {
-    EXPECT_EQ(run_int("var [h, ...t] = [1, 2, 3]; return h * 100 + len(t) * 10 + t[0];"), 122);
-    EXPECT_EQ(run_int("var [h, ...t] = [1]; return h * 10 + len(t);"), 10); // 空尾
-    EXPECT_EQ(run_int("var [...t] = []; return len(t);"), 0);               // 空源仅 rest
-    EXPECT_EQ(run_int("var [...t] = [1, 2]; return len(t);"), 2);           // rest 覆盖全表
+    EXPECT_EQ(run_int("var [h, ...t] = [1, 2, 3]; return h * 100 + t.size() * 10 + t[0];"), 122);
+    EXPECT_EQ(run_int("var [h, ...t] = [1]; return h * 10 + t.size();"), 10); // 空尾
+    EXPECT_EQ(run_int("var [...t] = []; return t.size();"), 0);               // 空源仅 rest
+    EXPECT_EQ(run_int("var [...t] = [1, 2]; return t.size();"), 2);           // rest 覆盖全表
     // 前缀为 `_` 位时该位置不访问，但 rest 起点仍按位置数算（t 自位置 1 起）。
-    EXPECT_EQ(run_int("var [_, ...t] = [1, 2, 3]; return len(t) * 10 + t[0];"), 22);
+    EXPECT_EQ(run_int("var [_, ...t] = [1, 2, 3]; return t.size() * 10 + t[0];"), 22);
     // 嵌套 listPattern 里的 rest。
-    EXPECT_EQ(run_int("var [[h, ...t], b] = [[1, 2, 3], 4]; return h * 100 + len(t) * 10 + b;"), 124);
+    EXPECT_EQ(run_int("var [[h, ...t], b] = [[1, 2, 3], 4]; return h * 100 + t.size() * 10 + b;"), 124);
     // 解构赋值里的 rest（右值先整体求值，rest 也是新 list）。
-    EXPECT_EQ(run_int("var h = 0; var t = []; [h, ...t] = [7, 8, 9]; return h * 100 + len(t) * 10 + t[0];"), 728);
+    EXPECT_EQ(run_int("var h = 0; var t = []; [h, ...t] = [7, 8, 9]; return h * 100 + t.size() * 10 + t[0];"), 728);
     // for-in 目标里的 rest：map 迭代产出 [k, v] 对，rest 收剩余位置。
-    EXPECT_EQ(run_int("var m = {\"a\": 1}; var n = 0; for ([k, ...rest] in m) { n = len(rest); } return n;"), 1);
+    EXPECT_EQ(run_int("var m = {\"a\": 1}; var n = 0; for ([k, ...rest] in m) { n = rest.size(); } return n;"), 1);
 }
 
 // rest 落在 string 源上走切片语义（Range 下标已支持）：前缀位绑单字节串、rest 位绑字节后缀。
 TEST(Compiler, DestructureRestOnStringSlicesSuffix) {
     EXPECT_EQ(run_int(R"(var [c, ...r] = "abc"; if (c == "a" && r == "bc") { return 1; } return 0;)"), 1);
     // 字节域：héllo 的 rest 位是余下 5 字节，不是「剩余字符」。
-    EXPECT_EQ(run_int(R"(var [h, ...rest] = "héllo"; if (h == "h" && len(rest) == 5) { return 1; } return 0;)"), 1);
+    EXPECT_EQ(run_int(R"(var [h, ...rest] = "héllo"; if (h == "h" && rest.size() == 5) { return 1; } return 0;)"), 1);
 }

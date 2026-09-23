@@ -959,10 +959,10 @@ TEST(CodeGen, DefaultParamSideEffectOnlyWhenMissing) {
 TEST(CodeGen, DefaultParamFunctionArgNotMisjudged) {
     // 实参为原生函数值(与印章同类型)不误判未传:身份判等,函数值非印章。
     auto out = run_source("fun f(g = 1) { return g; }"
-                          "var with_fn = f(len);"
+                          "var with_fn = f(type);"
                           "var with_default = f();"
                           "var r = 0;"
-                          "if (with_fn === len) { r = r + 100; }" // 函数实参原样透传
+                          "if (with_fn === type) { r = r + 100; }" // 函数实参原样透传
                           "return r + with_default;");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 101);
@@ -1193,7 +1193,7 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 }
 
 // ============================================================
-// 内置函数（type / len / str / println / assert）
+// 内置函数（type / str / println / assert）
 // ============================================================
 // 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
 // （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFunction*)，
@@ -1205,19 +1205,6 @@ TEST(CodeGen, BuiltinType) {
     EXPECT_EQ(aria::format_value((*run_source("return type(true);"))), "Bool");
     EXPECT_EQ(aria::format_value((*run_source("return type(nil);"))), "Nil");
     EXPECT_EQ(aria::format_value((*run_source("return type(\"x\");"))), "String");
-}
-
-TEST(CodeGen, BuiltinLen) {
-    // len(s) -> String 的 UTF-8 字节数（List/Map 各返元素数/键值对数，见各自用例）。
-    EXPECT_EQ(run_int("return len(\"abc\");"), 3);
-    EXPECT_EQ(run_int("return len(\"\");"), 0);
-}
-
-TEST(CodeGen, BuiltinLenNonString) {
-    // len 对非 String/List/Map 报 TypeMismatch。
-    auto out = run_source("return len(42);");
-    ASSERT_FALSE(out.has_value());
-    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
 
 TEST(CodeGen, BuiltinStr) {
@@ -1264,8 +1251,8 @@ TEST(CodeGen, BuiltinAssertFailWithMessage) {
 
 TEST(CodeGen, BuiltinShadowedByUserGlobal) {
     // 用户顶层 var 同名覆盖内置：DEF_GLOBAL 在运行期 set 覆写同名全局，内置被替换。
-    // 内置仅注册进运行期 globals 表，不入编译期 defined_globals_，故 var len 不触发 RedefinedVariable。
-    EXPECT_EQ(run_int("var len = 5; return len;"), 5);
+    // 内置仅注册进运行期 globals 表，不入编译期 defined_globals_，故 var str 不触发 RedefinedVariable。
+    EXPECT_EQ(run_int("var str = 5; return str;"), 5);
     EXPECT_EQ(run_int("var type = 99; return type;"), 99);
 }
 
@@ -1292,30 +1279,30 @@ TEST(CodeGen, BuiltinAssertArityCheck) {
 }
 
 TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
-    // 跨 run() 复用同一模块（模拟 REPL 逐行）：第 1 行 `var len = 5` 写入模块 globals；
-    // 第 2 行 `return len` 应命中模块 globals 返回 5，而非被内置覆写回 <fn len>。
+    // 跨 run() 复用同一模块（模拟 REPL 逐行）：第 1 行 `var str = 5` 写入模块 globals；
+    // 第 2 行 `return str` 应命中模块 globals 返回 5，而非被内置覆写回 <fn str>。
     // VM 级只读 builtins_ 表不随 run() 重新注入，shadow 跨行持久。stress GC 锻炼 builtins_ 根接线。
     auto  vm = std::make_unique<AriaVM>();
     auto& gc = vm->gc();
     gc.set_stress(true);
     auto module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
 
-    auto c1 = compile_source(gc, module, "var len = 5;");
+    auto c1 = compile_source(gc, module, "var str = 5;");
     ASSERT_TRUE(c1.has_value());
     auto r1 = vm->run(*c1);
     ASSERT_TRUE(r1.has_value()) << r1.error().message();
 
-    auto c2 = compile_source(gc, module, "return len;");
+    auto c2 = compile_source(gc, module, "return str;");
     ASSERT_TRUE(c2.has_value());
     auto r2 = vm->run(*c2);
     ASSERT_TRUE(r2.has_value()) << r2.error().message();
-    EXPECT_EQ(r2->as_int(), 5); // 非内置 <fn len>
+    EXPECT_EQ(r2->as_int(), 5); // 非内置 <fn str>
 }
 
 TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
-    // 裸名赋值 `len = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
+    // 裸名赋值 `str = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
     // 写（STORE_GLOBAL 不回退，与 grammar §205-206「赋值不隐式创建、必须先 var 声明」一致）。
-    auto out = run_source("len = 5; return len;");
+    auto out = run_source("str = 5; return str;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
@@ -1373,12 +1360,12 @@ TEST(CodeGen, RethrowPreservesCode) {
 }
 
 TEST(CodeGen, NativeFailCaughtByTry) {
-    // 原生报错（len 收非 String/List/Map 值）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
+    // 原生报错（type 收到错元数）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
     // 经 unwind 被捕获；str(e) 渲染完整消息（无位置前缀，位置只在未捕获跟踪行给出；
     // 原生不进帧时即 CALL 站点行，坑 #15）。
-    auto out = run_source("try { return len(nil); } catch (e) { return str(e); }");
+    auto out = run_source("try { return type(); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: TypeMismatch len requires a string, list or map, got Nil");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: WrongArity type expects 1 argument, got 0");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
@@ -1882,7 +1869,7 @@ def Animal {
 }
 
 // ============================================================
-// list 字面量(值表示 + MAKE_LIST + len/str/print)
+// list 字面量(值表示 + MAKE_LIST + str/print)
 // ============================================================
 
 // 字面量求值:元素按序求值、恰好各一次(经全局计数器观察副作用),渲染保序。
@@ -1902,20 +1889,6 @@ return n;
 TEST(CodeGen, ListLiteralEmptyAndNested) {
     EXPECT_EQ(aria::format_value(*run_source("return [];")), "[]");
     EXPECT_EQ(aria::format_value(*run_source(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
-}
-
-// len:list 元素数;str/print 走同一渲染位。
-TEST(CodeGen, ListLen) {
-    EXPECT_EQ(run_int("return len([]);"), 0);
-    EXPECT_EQ(run_int("return len([10, 20, 30]);"), 3);
-    EXPECT_EQ(run_int("return len([[], [1]]);"), 2);
-}
-
-// len 类型面:非 String/List/Map 报 TypeMismatch(运行期)。
-TEST(CodeGen, ListLenTypeMismatch) {
-    auto out = run_source("return len(1);");
-    ASSERT_FALSE(out.has_value());
-    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
 
 // == 按内容递归;=== 恒指针;自比较 == 快速路径。
@@ -1956,11 +1929,11 @@ TEST(CodeGen, ErrTooManyElements) {
 // 容量下界钉子:恰 65535 个元素(MAKE_LIST 操作数 u16 上限位置)合法编译且运行正确 --
 // 勿把边界「修正」为 65534(那会白禁合法操作数 65535)。
 TEST(CodeGen, ExactlyMaxListElementsCompiles) {
-    std::string src = "return len([";
+    std::string src = "return [";
     for (int i = 0; i < 65534; ++i) {
         src += "1,";
     }
-    src += "1]);"; // 65534 + 1 = 65535 个元素
+    src += "1].size();"; // 65534 + 1 = 65535 个元素
     EXPECT_EQ(run_int(src), 65535);
 }
 

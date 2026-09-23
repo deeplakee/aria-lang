@@ -19,7 +19,7 @@ tests/language/
     05_functions/            # 声明/递归/一等值/lambda/if 表达式/默认参数/varargs
     06_closures/             # 捕获即引用各族
     07_exceptions/           # try/catch/throw 各族
-    08_builtins/             # print 格式（配 .out）/type/len/str/assert
+    08_builtins/             # print 格式（配 .out）/type/str/println/assert
     09_modules/              # import 各族；每用例一个子目录（main.aria + lib/）
     10_integration/          # 多特性组合的综合小程序
     11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
@@ -90,15 +90,14 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值仍报
   `call non-callable Int`，类本身仍走实例化。
 - **字符串 `+` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：都要求两侧皆 `String`、不做隐式转换
-  （显式转换走 `str()`），比较按**无符号字节序**（与 `len`/`s[i]` 同字节域，大小写敏感、无 collation）。
+  （显式转换走 `str()`），比较按**无符号字节序**（与 `size`/`s[i]` 同字节域，大小写敏感、无 collation）。
 - **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报
   `TypeMismatch`；09_modules 直接经 `H.x` 观察辅助模块。
 - **list 方法面**（push/pop/insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/
   join/iter）：变更方法一律就地改、返 nil；`remove` 例外（移除**全部** `==` 命中元素、返命中布尔，
   miss 走返回值不报错）；`remove_at(i)` 按位置移除返元素、负数从尾计数；`sort` 就地升序，域为全数值
   或全字符串（与比较算子同源），NaN 排最前；`find` 未命中返 nil（aria 有负下标，故「未命中返 -1」
-  是 Python 式坑）、`find`/`contains`/`remove` 走 `==` 内容判定；`size`/`is_empty` 为元素数与空表
-  谓词（全局 `len` 的方法形态）。
+  是 Python 式坑）、`find`/`contains`/`remove` 走 `==` 内容判定；`size`/`is_empty` 为元素数与空表谓词。
 - **map 方法面**（size/is_empty/has/get/keys/values/pairs/remove/clear/iter）：**键判定一律走表内
   判等 `===`、与下标读同域**（int 1 与 f64 1.0 是不同键、可变对象作键按身份；判键方法不做 `==`
   内容相等，那是 list 的域）；`has(key)` 取 `has` 不取 `contains`（后者在 map 上「判键还是判值」

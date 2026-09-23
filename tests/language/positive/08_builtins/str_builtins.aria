@@ -1,0 +1,13 @@
+// 钉住：str（任意值转 String）--渲染与 print 同源、结果可再消费。
+assert(str(42) == "42");
+assert(str(-7) == "-7");
+assert(str(nil) == "nil");
+assert(str(true) == "true");
+assert(str(false) == "false");
+assert(str("raw") == "raw");
+assert(str(1.5) == "1.5");
+assert(str(3.0) == "3.0");            # 与 print 同款渲染：保 .0
+assert(str("abc".size()) == "3");     # 组合：size -> Int -> str
+# str 结果是普通字符串：可 == 比较、可再取 size
+assert(str(140737488355327).size() == 15);
+assert(str(1 == 1.0) == "true");

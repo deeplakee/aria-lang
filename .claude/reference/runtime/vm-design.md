@@ -108,7 +108,7 @@ struct ExecOutcome {
 
 ### 4.7 原生函数(ObjNativeFn)与侧信道错误寄存器
 
-原生函数把一个 C++ 函数包成 aria `Value`,供 builtins(`print`/`len`/`type`/...)与未来嵌入 API 使用。`CALL` 命中 `ObjNativeFn` 时**不进字节码帧**,同步直接调用。其调用约定三件套配套设计,核心是把冷路径错误踢出返回类型--错误是少发的,不该位于热路径上。
+原生函数把一个 C++ 函数包成 aria `Value`,供 builtins(`type`/`str`/`println`/...)与未来嵌入 API 使用。`CALL` 命中 `ObjNativeFn` 时**不进字节码帧**,同步直接调用。其调用约定三件套配套设计,核心是把冷路径错误踢出返回类型--错误是少发的,不该位于热路径上。
 
 **签名**
 
@@ -142,10 +142,10 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 **内建作者体感**(从 `Result<Value, Error>` 的啰嗦降到一行):
 
 ```cpp
-bool len_native(AriaVM& vm, Span<Value> slots) {
+bool str_native(AriaVM& vm, Span<Value> slots) {
     const auto argc = slots.size() - 1;
-    if (argc != 1) { return vm.fail(ErrorCode::WrongArity, "len expects 1 arg, got {}", argc); }
-    slots[0] = Value::from_int(compute_len(slots[1]));  // 就地返回
+    if (argc != 1) { return vm.fail(ErrorCode::WrongArity, "str expects 1 arg, got {}", argc); }
+    slots[0] = Value::from_obj(new_string(vm.gc(), format_value(slots[1])));  // 就地返回
     return true;
 }
 ```
@@ -249,7 +249,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - **`ObjType` 无 `MOVEMENT`**(M6 增)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册)。
-- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtins.{hpp,cpp}` 的 `builtins::register_builtin_functions(GC&, AriaHashTable&)` 把 `type`/`len`/`str`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 4 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
+- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtins.{hpp,cpp}` 的 `builtins::register_builtin_functions(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 是关键字/语句走 `PRINT` 指令,不入此表)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 4 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

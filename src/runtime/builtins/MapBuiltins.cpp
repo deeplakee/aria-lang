@@ -20,7 +20,7 @@ namespace aria {
         // value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域 -- 判键的方法不做
         // value_equal 内容相等,那是 list 的域。
 
-        // size() -> 整数:键值对数(len(m) 的方法形态)。
+        // size() -> 整数:键值对数。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {

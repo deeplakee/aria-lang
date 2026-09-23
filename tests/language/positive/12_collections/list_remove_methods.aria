@@ -7,7 +7,7 @@ assert(xs.remove_at(0) == 1);       // 头部出队
 assert(xs == [2, 3]);
 assert(xs.remove_at(-1) == 3);      // 负数从尾计数，等价 pop()
 assert(xs == [2]);
-assert(xs.remove_at(0) == 2 && len(xs) == 0);
+assert(xs.remove_at(0) == 2 && xs.size() == 0);
 
 // remove：全部 == 命中元素被移除，剩余保序
 var ys = [1, 2, 1];

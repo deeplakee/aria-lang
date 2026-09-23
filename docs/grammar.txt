@@ -137,7 +137,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 左值合法性留语义阶段。加减与乘除模层以数值为域（Int/F64 混合升浮点），唯一例外是 +
 # 的字符串拼接：两侧皆为 String 时产新串（经驻留池，故与同内容串 == 与 === 同真），
 # 其余含 String 的类型组合报运行期 TypeMismatch；无隐式转字符串，显式转换走内置 str()。
-# 比较层（< <= > >=）为数值与字符串两域：两侧皆 String 时按**无符号字节序**比（与 len/s[i]
+# 比较层（< <= > >=）为数值与字符串两域：两侧皆 String 时按**无符号字节序**比（与 size/s[i]
 # 的字节域同域，s[i] 切出的非法单字节串亦全序；UTF-8 保序故合法文本上与按码点比较一致；
 # 大小写敏感、无 locale/collation），结果 Bool；含 String 的混合组合报 TypeMismatch；
 # 其余类型（含 list/map）仍仅数值。
@@ -211,7 +211,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # try/finally 裁撤记录（2026-09）：finally 子句已从文法移除（tryCatchStmt 仅存可选 catch，
 # 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
-# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/len/str/println/assert）；参照实现 Lua/Wren 均
+# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert）；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
 # finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
 # 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常

@@ -4,7 +4,7 @@ var r = 0..2;
 var m = {};
 m[r] = "a";
 assert(m[r] == "a");
-assert(len(m) == 1);
+assert(m.size() == 1);
 
 var rev = 3..1;
 m[rev] = "rev";
@@ -14,5 +14,5 @@ var open = 5..;
 m[open] = "open";
 assert(m[open] == "open");
 
-assert(len(m) == 3);
+assert(m.size() == 3);
 assert(m[r] == "a" && m[rev] == "rev" && m[open] == "open");

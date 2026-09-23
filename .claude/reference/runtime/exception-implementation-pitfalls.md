@@ -18,7 +18,7 @@
 
 finally 子句（原 M3b 范围）在定稿控制流语义后整体裁撤，不再进入路线图；文法层（tryCatchStmt 产生式 / `finally` 关键字 / AST `finally_body` 字段 / CodeGen 占位）已同步移除，`finally` 回归普通标识符。try/catch 保持 M3 落地形态不变（try 须有 catch，`ErrTryWithoutHandler`）。
 
-- **裁撤理由**：finally 的存在价值是资源善后，而语言层尚无制造 OS 资源的内建（builtins 仅 type/len/str/assert），当前为零实际损失；参照实现 Lua/Wren 均无 finally；其控制流语义是剩余异常机制中最贵的一块。单向门：裁撤后将来重新引入是向后兼容的语法增补。
+- **裁撤理由**：finally 的存在价值是资源善后，而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert），当前为零实际损失；参照实现 Lua/Wren 均无 finally；其控制流语义是剩余异常机制中最贵的一块。单向门：裁撤后将来重新引入是向后兼容的语法增补。
 - **善后后继：defer**（已降级为可选后续，2026-09 决定：优先级最低，其他功能完成后另定，不再绑定 M4）：defer 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）重启设计时定。
 - **两机制共享的 VM 难点（defer 落地时须面对，保留备忘）**：unwind 途中执行用户代码 + 善后代码自身抛错替换在途异常（原异常丢失）；且在途状态不能只住 `pending_error_`（unwind 途中执行嵌套 try/catch 时，catch 命中会清寄存器吞掉在途异常），须另存专用槽位后续传（坑 #7/#14 单寄存器模型的边界）。
 - **曾定稿的 finally 控制流语义存档**（若将来重新引入 finally，按此起步）：finally 必达（正常结束 / catch 命中 / 异常续传三退出路径各执行一次）；finally 体内 return 一律禁止（嵌套 fun/lambda 的 return 绑定自身函数不受限）、break/continue 指向 finally 外循环禁止（体内自含循环允许）--编译期语义错误；throw 放行但替换挂起中的异常。「不继承 Java/Python/JS 覆盖语义」的既定取向（公认 footgun、生态以 lint 劝阻、与 aria 无静默错误行为取向冲突）复用于 defer 的善后体设计。
@@ -491,11 +491,11 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 ## 测试矩阵（B7）
 
 - 正向：throw 被 catch 捕获；catch 绑定值保类型（`throw 42` -> e==42 Int）；未捕获 throw -> `UncaughtException`；嵌套 try（内层捕获 / 外层捕获内层 rethrow）；catch 内再 throw；跨帧捕获（被调函数 throw、调用者 try 捕获）。
-- 运行时错误可捕获：`try { 1/0 } catch (e) {}`（e 绑定 `ObjException`，`print(e)` 渲染消息）；`try { len(nil) } catch (e) {}` 捕获 native fn 错误（e 是 ObjException，`e.code()` 待 M5）。
+- 运行时错误可捕获：`try { 1/0 } catch (e) {}`（e 绑定 `ObjException`，`print(e)` 渲染消息）；`try { type() } catch (e) {}` 捕获 native fn 错误（e 是 ObjException，`e.code()` 待 M5）。
 - **re-throw 保码（单寄存器语义收益）**：`try { 1/0 } catch (e) { throw e }` 未捕获 -> `run()` 回码 `DivisionByZero` 的 Error（非 `UncaughtException`）；对比用户 `throw 42` 未捕获 -> `UncaughtException`。
 - 反向：`ErrTryWithoutHandler` 既有保留（finally 裁撤后消息为「try 须有 catch」）；`finally` 不再是关键字、回归普通标识符（裁撤后新增标识符回归用例）。
 - stress GC：try/catch 路径 `gc.set_stress(true)` 验根接线（坑 #8，标 `pending_error_`）。
-- 位置（坑 #15；2026-09-10 改定）：`try` 外 `1/0` 未捕获 -> 消息首行无位置前缀，错误位置 = 最内 `at` 行（行号 == 除法指令行）；catch 场景 `print(e)` 渲染的消息无位置（同 Python str(e)）；原生 `vm.fail`（如 `len(nil)`）跟踪行位置 == CALL 站点行；跨帧未捕获 message 含逐帧 `at` 行（外->内，坑 #16）。
+- 位置（坑 #15；2026-09-10 改定）：`try` 外 `1/0` 未捕获 -> 消息首行无位置前缀，错误位置 = 最内 `at` 行（行号 == 除法指令行）；catch 场景 `print(e)` 渲染的消息无位置（同 Python str(e)）；原生 `vm.fail`（如 `type()`）跟踪行位置 == CALL 站点行；跨帧未捕获 message 含逐帧 `at` 行（外->内，坑 #16）。
 - 透传不标注（坑 #15/#16）：import 的模块含编译错误 -> 透传 Error 消息为**被导入文件**的 `path:line:col:` 前缀、无调用方位置前缀、无 `at` 行。
 - 既有 `NativeFnSideChannelError` 仍期望 `TypeMismatch`（单寄存器 + ObjException 保码：未加 try 时运行时错误包成 ObjException 存入 `pending_error_`，未捕获经 `from_baked` 回原码，坑 #7）。
 

@@ -3,7 +3,7 @@
 var xs = [1, 2];
 assert(xs.push(3) == nil);        // push 返 nil
 assert(xs == [1, 2, 3]);
-assert(len(xs) == 3);
+assert(xs.size() == 3);
 
 assert(xs.pop() == 3);            // pop 返末元素
 assert(xs == [1, 2]);
@@ -11,7 +11,7 @@ assert(xs == [1, 2]);
 var empty = [];
 empty.push(9);                    // 空表 push 后可 pop
 assert(empty.pop() == 9);
-assert(len(empty) == 0);
+assert(empty.size() == 0);
 
 // push 多值顺序保持（作队列消费）
 var queue = [];

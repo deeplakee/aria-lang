@@ -37,7 +37,7 @@
 - **D3(2026-09-16):`next()` 越界抛 `IterationExhausted`(新码,fail-fast)**。nil 哨兵否决理由:aria list 可合法存 nil,哨兵与真实 nil 元素不可区分(Lua 的 nil 哨兵依赖「表不能存 nil」前提,aria 无此前提);forIn 靠 has_next 把关,越界仅手写滥用时发生,静默吞 bug 劣于报错。
 - **D4(2026-09-16):map 迭代序 unspecified**,产出 `[k, v]` 二元 list(文法「元组」,无 tuple 类型,list 承载,每步一次小分配)。理由(拍板):非定序哈希表是性能上的正确选择,用户不应依赖这一边缘暧昧、各语言/实现标准不一的特性。插序将来另批(需额外内存)。
 - **迭代中变更容器:v1 不承诺**(rehash 作废游标),文档明示,不做版本守卫(YAGNI)。
-- **D5(2026-09-16):string 迭代单位 = 码点**(文法「string->字符」;Go 式分工);**len/s[i]/size = 字节**(拍板);cp 级访问方法已提供 `codepoint_at(i)`(码点值)与 `chars()`(逐码点切分,码点数 = `len(chars())`)。`s[i]` 越界 IndexOutOfBounds、非整数键 TypeMismatch;多字节序列中间字节取到的是该字节自身(字节语义契约的自然结果,非完整字符)。
+- **D5(2026-09-16):string 迭代单位 = 码点**(文法「string->字符」;Go 式分工);**s[i]/size = 字节**(拍板);cp 级访问方法已提供 `codepoint_at(i)`(码点值)与 `chars()`(逐码点切分,码点数 = `chars().size()`)。`s[i]` 越界 IndexOutOfBounds、非整数键 TypeMismatch;多字节序列中间字节取到的是该字节自身(字节语义契约的自然结果,非完整字符)。
 - 不可迭代值 forIn:`iter` miss 走 `UndefinedProperty` 基类默认,v1 接受;`NotIterable`/`IteratorProtocol` 两码预留,接线时机 = 后续协议强校验需求出现时。
 
 ## 3. 下标语义(LOAD_INDEX/STORE_INDEX,栈形见指令集 §4.14)
@@ -86,9 +86,9 @@
 | :--- | :--- | :--- |
 | 1 | 值寄存器组底座(`LOAD_REG` + 收编 `LOAD_OBJECT`)+ 默认参数(§4.1;varargs 拆至批 4) | §4.1 |
 | 2 | match 语句 / 表达式(§4.2) | §4.2 |
-| 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + len/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
+| 3 | `ObjList` + `MAKE_LIST`/`LOAD_INDEX`/`STORE_INDEX` + size/str/print + 下标四模式 lowering(字面量元素数 u16 上限先检后发,新码 TooManyElements) | 字面量/嵌套/下标读写/复合赋值 locator-once(`arr[f()] += 1` 的 f() 单调)/越界与键类型报错 |
 | 4 | 对象地基 II:方法机制(bootstrap 类 List + Iterator)+ `ObjIterator` + list 的 iter/has_next/next/push/pop + forIn 走通 list + varargs(list 载体,call_closure 打包段)+ 新码 IterationExhausted(有消费者才加码,本批) | forIn 求和/嵌套遍历、用户类 iterable 与内置同降糖路径、varargs 收集正确、GC stress 下无悬垂 |
-| 5 | `ObjMap` + `MAKE_MAP` + map 下标 + len + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 循环变量拿到整个 `[k,v]` pair(解构目标随批 8,2026-09-19 拍板) |
+| 5 | `ObjMap` + `MAKE_MAP` + map 下标 + size + 迭代器 map 分支(`[k,v]`) | map 字面量/键读写/KeyError/forIn 循环变量拿到整个 `[k,v]` pair(解构目标随批 8,2026-09-19 拍板) |
 | 6 | string 方法批:string 下标/迭代 + upper/lower/trim/split/join/find/replace/substring/starts_with/ends_with(+cp 方法届时命名) | 逐方法单测 + 字符串 forIn 按码点 |
 | 7 | `ObjRange` + `MAKE_RANGE` + 区间迭代(range 分支) | `for (i in 0..10)`、`..`/`...` 含否上界、非结合 |
 | 8 | 解构:var 声明 pattern / forIn 目标 / 解构赋值(依赖批 3/4) | 文法说明区既定语义:多余忽略、不足越界报错、rest 末尾绑名 **[已落地]** |
@@ -103,7 +103,7 @@
 > **计划表外补缺 · 字符串比较排序(2026-09-21)**:批 1-9 收官后补的第三处表外缺口。语义:四个比较算子
 > (`<`/`<=`/`>`/`>=`)的域扩到字符串 -- 两侧皆 `String` 时按**无符号字节序**比(`string_view::compare`,
 > memcmp 语义),结果 Bool;含 String 的混合组合报 TypeMismatch 定向文案;其余类型(含 list/map)仍仅数值。
-> **域选择依据**:与 `len`/`s[i]` 的字节域同域,且 `s[i]` 能切出非法单字节串(`"héllo"[1]` = 孤立
+> **域选择依据**:与 `s[i]`/`size()` 的字节域同域,且 `s[i]` 能切出非法单字节串(`"héllo"[1]` = 孤立
 > continuation 字节,实测一等值)故必须对任意字节串全序;UTF-8 保序,故合法文本上结果与按码点比较一致。
 > 接线形态:比较四件入算术族的虚函数族(`op_less`/`op_less_equal`/`op_greater`/`op_greater_equal`,命名
 > 对齐 OpCode 的 LESS/LESS_EQUAL/GREATER/GREATER_EQUAL;今已整族更名 `op_*_impl`、改为「取实现」形态),四个比较指令经新执行体
@@ -134,8 +134,7 @@
 > `contains` 走 `value_equal`(== 内容递归,嵌套容器按内容),find 未命中 **nil**(下标永不为
 > nil;aria 有负下标,-1 是合法下标,miss 时 xs[find(x)] 会静默取末元素 --Python str.find 的
 > 坑,Ruby Array#index 返 nil 同款;string 的 find 同批一并翻转,其原「-1 非合法下标」注释
-> 是负下标落地前的过时前提);⑦`size`/`is_empty` 为元素数与空表谓词(全局 len 的方法形态;方法名定 `size`
-> 不用 `len`,空表谓词 is_empty --empty 动词义与 clear 混淆);⑧`clear` 原地清空,区别于
+> 是负下标落地前的过时前提);⑦`size`/`is_empty` 为元素数与空表谓词(空表谓词 is_empty --empty 动词义与 clear 混淆);⑧`clear` 原地清空,区别于
 > 重绑 `xs = []` 换新表。回调型方法(map/filter/sort 自定义比较器)不做 --原生回调调
 > aria 闭包的 VM 重入是未来机制(run_closure 私有 + dispatch_loop 不可重入),无消费者
 > 不预留。GC 走查:各方法体变更全 trivial、无 GC 分配点,receiver 在 slots[0] 跨全程
@@ -178,7 +177,7 @@
 > **落地状态(2026-09-18)**:批 3 已全部落地(两步两 commit:前半「列表字面量与 list 值表示」/后半「下标读写」)。
 > 前半 = `ObjList`(元素 `AriaArray` 成员直曝 `elements()`,equals 按内容递归,debug_repr 渲染 `[1, "ab"]`)+
 > `MAKE_LIST`(VM:元素 peek 在栈跨分配「栈即根」,`copy_from` 整段拷入 trivial 不触 GC)+ 字面量发射先检后发
->(`kMaxListElements`=65535 超限报新码 `TooManyElements`,Resource 类)+ len 增 List 分支(消息改 string or list)、
+>(`kMaxListElements`=65535 超限报新码 `TooManyElements`,Resource 类)+ size 经类型分派覆盖 List、
 > str/print 经 debug_repr 零改动。后半 = `LOAD_INDEX`/`STORE_INDEX`(执行体 `run_load_index`/`run_store_index`,
 > 统一走 `Object::load_index/store_index` 协议,list override:整数键,越界/负数 IndexOutOfBounds(越界值与长度
 > 就地拼文案)、非整数 TypeMismatch、store 不自动增长;非对象守卫文案留执行体,与 field 族同款)+ 下标四模式
@@ -230,8 +229,7 @@
 > 未消费系协议缝签名钉死)+ equals(键 === 表内 find 语义、值 == 递归,EqualGuard 防环;槽位扫描支持首 miss 早退)+
 > debug_repr `{"k": v}` 式(键值 debug 形,PrintGuard 防环;多键渲染序随槽位)+ `ObjMapIterator`(槽位扫描游标,
 > next 产出 [k,v] 二元 list,每步一小分配 D4 接受;耗尽 IterationExhausted fail-fast)+ bootstrap MapClass(寄存器格
-> MapClass + `register_map_builtins` 单 iter 方法,has_next/next 住 Iterator 类表零改)+ len 增 Map 分支(文案改
-> "string, list or map")。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)--本批唯一非对齐面
+> MapClass + `register_map_builtins` 单 iter 方法,has_next/next 住 Iterator 类表零改)+ size 经类型分派覆盖 Map。HashTable 增槽位扫描原语 `next_occupied`/`entry_at`(kNpos 转公开)--本批唯一非对齐面
 > 新代码。语义三拍板(2026-09-19):equals 键 === 值 ==(与表内键语义一致)、字面量重复键后键胜、kMaxMapEntries
 > 单立(条目对数 u16 上限,与 kMaxListElements 分名,注释各述「元素数/条目对数」)。forIn 解构目标随批 8(本批
 > forIn 循环变量拿整个 pair,验收口径收窄见 §4.3 表行)。后继演进(同日,批 5 收官后):HashTable 槽位原语
@@ -260,7 +258,7 @@
 > 全按建议):①空区间(low>high 含上界,或 low==high 不含上界)迭代零轮(Python/Rust 同款,端点是运行期值不设预判义务);
 > ②非整数端点 TypeMismatch("range bounds must be integers",静态文案不插端点值;review 改定,原双值插值方案作废);
 > ③RangeFlags 位义 0x00 含上界/0x01 不含上界(常量 `kRangeFlagExclusive` 收口 code.hpp X 表后,编译发射与 VM
-> 解码同源);④v1 方法面仅 iter(len/下标/contains 不做,基类默认报错;解构 rest 切片若借 range+下标承载再议);
+> 解码同源);④v1 方法面仅 iter(长度/下标/contains 不做,基类默认报错;解构 rest 切片若借 range+下标承载再议);
 > ⑤TagValue 配置下算术回绕推满上界的理论边不设防(整数域 i48 规格兜底,与 map 迭代中变更同级不承诺)。
 > 落地面:ObjRange 纯值壳定长(low/high/is_exclusive,内容哈希构造期烘焙、equals 按内容三字段全等、debug_repr
 > `0..10`/`0...10` 与源码拼写一致、trace 空体、store_field/下标/op_* 走基类默认)+ ObjRangeIterator(第五对,
@@ -482,7 +480,7 @@ cmake --build build/rel --target vm_bench -j
 
 ### 4.8 string 方法面补齐(2026-09-22)
 
-**决定**:补 `chars()`、`size()`、`is_empty()`、`contains(sub)` 四方法,string 方法面 11 -> 15。`chars()` 是 D5 欠账的兑现 -- 码点域此前只有 `codepoint_at(i)`(给码点值),没有「第 i 个字符」与「码点总数」的口子(数码点得手写 `for` 计数),`chars()` 一次补齐:与迭代同为逐码点切分、产出 1-char string,故 `len(chars())` 即码点数、`chars().join("")` 回原文。`size()`/`is_empty()`/`contains(sub)` 纯为与 list/map 方法面对齐(`len(s)`/`len(s)==0`/`find(sub)!=nil` 已可替代);`size()` **是字节域**(与 `len`/`s[i]` 同域),码点数须走 `len(chars())`。`contains` 按字节子串判(非字符集合)、空串参数恒真、非 string 参数 TypeMismatch,与 `find` 同域。
+**决定**:补 `chars()`、`size()`、`is_empty()`、`contains(sub)` 四方法,string 方法面 11 -> 15。`chars()` 是 D5 欠账的兑现 -- 码点域此前只有 `codepoint_at(i)`(给码点值),没有「第 i 个字符」与「码点总数」的口子(数码点得手写 `for` 计数),`chars()` 一次补齐:与迭代同为逐码点切分、产出 1-char string,故 `chars().size()` 即码点数、`chars().join("")` 回原文。`size()`/`is_empty()`/`contains(sub)` 纯为与 list/map 方法面对齐(`s.size()`/`s.size()==0`/`find(sub)!=nil` 已可替代);`size()` **是字节域**(与 `s[i]` 同域),码点数须走 `chars().size()`。`contains` 按字节子串判(非字符集合)、空串参数恒真、非 string 参数 TypeMismatch,与 `find` 同域。
 
 **口径边界**:负数索引与 range 只属下标访问(`s[i]`、list 切片),内建方法一律不收负值/区间 -- 故 `substring`/`find`/`codepoint_at` 的现有口径不变(不加负端点、不加 `from` 起参、`codepoint_at` 仍拒负数)。
 
@@ -492,7 +490,7 @@ cmake --build build/rel --target vm_bench -j
 
 ### 4.9 string 切片与空白切分(2026-09-22)
 
-**决定**:①`ObjString::load_index` 收 Range 键走切片,段解析直接复用 `ObjRange.cpp` 的 `resolve_slice_bounds`(本就 size 泛化),故与 list 切片逐格同口径:含/不含上界、端点从尾计数、无上界 `i..` 取到末尾(`size..` 得空段)、越界与空串 `nullopt` -> `IndexOutOfBounds` 且文案与 list 同串(`slice index out of range`)。**域是字节**(与 `s[i]`/`len`/`size` 同域),故倒序段是字节倒排:多字节输入下产出非合法 UTF-8,与 `s[i]` 能取到续接字节同属字节域契约(按码点反转不在切片口径内)。②`split` 增 0 参形态:按 ASCII 空白**连续段**切开并丢空段(Python `str.split` 同款),全空白与空串返 `[]`;空白集与 `trim` 同源(`is_ascii_space`),故只在 ASCII 域判定。1 参形态语义不变(保留空段)。两形态各由一个匿名命名空间自由函数承载(`split_by_sep`/`split_on_space`),各自建并返回新 list(白色对象跨逐段铸造的 GC 点,由函数内守卫保命),`split_fn` 只余 arity/类型检查与「helper 返回 -> 写回槽 0」两句(其间无 GC 点)。
+**决定**:①`ObjString::load_index` 收 Range 键走切片,段解析直接复用 `ObjRange.cpp` 的 `resolve_slice_bounds`(本就 size 泛化),故与 list 切片逐格同口径:含/不含上界、端点从尾计数、无上界 `i..` 取到末尾(`size..` 得空段)、越界与空串 `nullopt` -> `IndexOutOfBounds` 且文案与 list 同串(`slice index out of range`)。**域是字节**(与 `s[i]`/`size` 同域),故倒序段是字节倒排:多字节输入下产出非合法 UTF-8,与 `s[i]` 能取到续接字节同属字节域契约(按码点反转不在切片口径内)。②`split` 增 0 参形态:按 ASCII 空白**连续段**切开并丢空段(Python `str.split` 同款),全空白与空串返 `[]`;空白集与 `trim` 同源(`is_ascii_space`),故只在 ASCII 域判定。1 参形态语义不变(保留空段)。两形态各由一个匿名命名空间自由函数承载(`split_by_sep`/`split_on_space`),各自建并返回新 list(白色对象跨逐段铸造的 GC 点,由函数内守卫保命),`split_fn` 只余 arity/类型检查与「helper 返回 -> 写回槽 0」两句(其间无 GC 点)。
 
 **连带翻转**:string 的 rest 解构(`var [c, ...r] = "abc"`)此前按「string 无 Range 下标」钉成 TypeMismatch,现经 `MAKE_RANGE i.. + LOAD_INDEX` 同一机制走后缀切片成立;两个负向语料(`runtime_string_range_index`、`runtime_destructure_rest_on_string`)删除,新增正向语料 `13_strings/string_slice.aria`,`Compiler.DestructureRestOnStringFails` 翻为 `DestructureRestOnStringSlicesSuffix`。
 

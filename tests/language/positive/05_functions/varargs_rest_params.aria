@@ -8,7 +8,7 @@ fun count_all(first, ...rest) {
 assert(count_all(1) == 1);
 assert(count_all(1, 2, 3, 4) == 4);
 
-fun just_rest(...all) { return len(all); }
+fun just_rest(...all) { return all.size(); }
 assert(just_rest() == 0);
 assert(just_rest(9, 8, 7) == 3);
 
@@ -21,18 +21,18 @@ fun accumulator(...xs) { return xs; }
 var first_call = accumulator(1, 2);
 var second_call = accumulator(3);
 first_call.push(99);
-assert(len(first_call) == 3);
-assert(len(second_call) == 1);
+assert(first_call.size() == 3);
+assert(second_call.size() == 1);
 
 // rest 可被闭包捕获（逃逸后仍存活）
 fun make_rest_collector(...seed) {
-    return fun() { return len(seed); };
+    return fun() { return seed.size(); };
 }
 var rc = make_rest_collector(1, 2, 3);
 assert(rc() == 3);
 
 // 默认参数与 varargs 混合：按位填充，未传走默认，剩余进 rest
-fun mixed(a, b = 2, ...c) { return a * 100 + b * 10 + len(c); }
+fun mixed(a, b = 2, ...c) { return a * 100 + b * 10 + c.size(); }
 assert(mixed(1) == 120);
 assert(mixed(1, 5) == 150);
 assert(mixed(1, 5, 6, 7) == 152);

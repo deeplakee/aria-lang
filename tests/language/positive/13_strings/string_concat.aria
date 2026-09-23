@@ -7,7 +7,7 @@ assert(a == "hello");                   // 原串不变（拼接产新串）
 assert("" + "" == "");                  // 两侧空
 assert("" + "x" == "x");                // 一侧空
 assert("x" + "" == "x");
-assert(len("ab" + "cde") == 5);         // 结果可再消费（len）
+assert(("ab" + "cde").size() == 5);         // 结果可再消费（size）
 assert(("ab" + "cde")[2] == "c");       // 结果可再下标
 
 // 复合赋值 +=：a = a + rhs 的 lowering，左值只求值一次
@@ -26,7 +26,7 @@ assert("nil=" + str(nil) == "nil=nil");
 var long = "0123456789abcdefghij";      // 20 字节
 var tail = "KLMNOPQRSTUVWXYZ";
 var cat = long + tail;
-assert(len(cat) == 36);
+assert(cat.size() == 36);
 assert(cat[19] == "j");                  // 边界两侧各取一字节
 assert(cat[20] == "K");
 assert(cat == "0123456789abcdefghijKLMNOPQRSTUVWXYZ");
@@ -47,5 +47,5 @@ while (i < 50) {
     acc = acc + "ab";
     i = i + 1;
 }
-assert(len(acc) == 100);
+assert(acc.size() == 100);
 assert(acc[-1] == "b");

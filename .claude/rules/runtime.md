@@ -95,7 +95,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 指令 case 与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 case 语义见 `AriaVM.cpp` dispatch_loop（case 注释即契约）。本层只需记住的跨文件约定：
 
-- **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/len/str/println/assert 经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
+- **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert 经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
 - **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`，非对象左值委托 `run_binary_numeric<Op>`，对象左值经 tag 判定取本对象的 `Object::op_*_impl` 再 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`）；取不到的措辞随宿主。`+` 与四个比较算子的域 = 数值 ∪ 侧为 String（String 的 5 个 override 直给实现格，拼接经驻留池、比较按无符号字节序，见 object.md ②）。
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：callable 收敛为闭包（`ObjFunction` 退为常量池内部物），`call_value` 编排后按 callee 类型分发到 `call_closure`/`call_native`/`call_class`/`call_bound_method`，其余对象类型按调用钩子 `__call__` 取实现后递归分发。
@@ -119,7 +119,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 - 自有 `GC gc_`（值成员，每 VM 一个）+ 主上下文 `main_ctx_` + 当前执行上下文 `current_`（构造指 `&main_ctx_`；dispatch_loop/`call_value` 族/raise 的作用对象。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、dispatch_loop 永不重入，任何时刻正在执行的字节码所在上下文恒等于 `current_`）。
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
-- VM 级只读 builtins 表 `builtins_`（构造期由 `builtins::register_builtin_functions` 一次性填充 type/len/str/println/assert，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
+- VM 级只读 builtins 表 `builtins_`（构造期由 `builtins::register_builtin_functions` 一次性填充 type/str/println/assert，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib/`-L`）与值寄存器组 `registers_`（VM 单例值统一存放表，注册表见 `runtime/value_register.hpp`，寄存器只读）。
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap registers 并注册 builtins。
 - **collect 时标四类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_value`）；④ `current_` 执行链（自 `*current_` 沿 `previous_` 走到链尾，挂起协程的值栈/帧/寄存器皆根；链尾断言 == `&main_ctx_` 锁切换纪律；M6 定稿后链尾断言退役、链遍历保留）。

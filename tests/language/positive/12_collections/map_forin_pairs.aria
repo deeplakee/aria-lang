@@ -4,7 +4,7 @@ var m = {"a": 1, "b": 2, "c": 3};
 var sum = 0;
 var hits = 0;
 for (pair in m) {
-    assert(len(pair) == 2);
+    assert(pair.size() == 2);
     sum = sum + pair[1];
     if (pair[0] == "a" && pair[1] == 1) { hits = hits + 1; }
     if (pair[0] == "b" && pair[1] == 2) { hits = hits + 1; }

@@ -12,7 +12,7 @@ var sum = 0;
 var hits = 0;
 var i = 0;
 while (i < ps.size()) {
-    assert(len(ps[i]) == 2);
+    assert(ps[i].size() == 2);
     assert(m.get(ps[i][0]) == ps[i][1]);
     sum = sum + ps[i][1];
     if (ps[i][0] == "a" && ps[i][1] == 1) { hits = hits + 1; }
@@ -34,7 +34,7 @@ while (j < ps.size()) {
 }
 
 // 每元素是各自新铸的 list（不是同一对象）
-assert(len(ps) > 1);
+assert(ps.size() > 1);
 assert(!(ps[0] === ps[1]));
 
 // 快照与源解耦：改源不动已产出的表

@@ -11,14 +11,14 @@ assert("\t\n hi \r\n".trim() == "hi");
 assert("   ".trim() == "");
 
 var parts = "a,,b".split(",");
-assert(len(parts) == 3 && parts[0] == "a" && parts[1] == "" && parts[2] == "b");
+assert(parts.size() == 3 && parts[0] == "a" && parts[1] == "" && parts[2] == "b");
 assert("".split(",")[0] == "");
 
 // split() 无参：按 ASCII 空白连续段切、丢空段（Python str.split 同款；全空白/空串返 []）。
 var words = "  a  b\tc ".split();
-assert(len(words) == 3 && words[0] == "a" && words[1] == "b" && words[2] == "c");
-assert(len("   ".split()) == 0);
-assert(len("".split()) == 0);
+assert(words.size() == 3 && words[0] == "a" && words[1] == "b" && words[2] == "c");
+assert("   ".split().size() == 0);
+assert("".split().size() == 0);
 
 assert("hello".find("llo") == 2);
 assert("hello".find("x") == nil);
@@ -38,16 +38,16 @@ assert("hello".starts_with("he"));
 assert("hello".ends_with("lo"));
 assert("".starts_with(""));
 
-// size/is_empty 与 len 同域（字节）；码点数走 chars()（下段）。
+// size/is_empty 是字节域（与 s[i] 同域）；码点数走 chars()（下段）。
 assert("héllo".size() == 6);
 assert("".size() == 0);
 assert("".is_empty() && !"a".is_empty());
 
-// chars：逐码点切 1-char string，码点数 = len(chars())，join 回原文。
-assert(len("héllo".chars()) == 5);          // 字节 6、码点 5
+// chars：逐码点切 1-char string，码点数 = chars().size()，join 回原文。
+assert("héllo".chars().size() == 5);          // 字节 6、码点 5
 assert("héllo".chars()[1] == "é");
 assert("héllo".chars().join("") == "héllo");
-assert(len("".chars()) == 0);
+assert("".chars().size() == 0);
 assert("héllo"[1].chars()[0] == "\u{FFFD}"); // 多字节中间字节：非法单字节串产出替换码点
 
 assert("héllo".codepoint_at(1) == 233);   // é 的码点值（码点序号索引）

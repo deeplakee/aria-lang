@@ -27,7 +27,7 @@ assert(ws[1] == "apple" && ws[2] == "pear");
 // 空表 no-op
 var empty = [];
 empty.sort();
-assert(len(empty) == 0);
+assert(empty.size() == 0);
 
 // reverse：就地整段反转返 nil
 var ys = [1, 2, 3];

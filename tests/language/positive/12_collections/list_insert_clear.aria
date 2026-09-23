@@ -25,12 +25,12 @@ assert(empty == ["s"]);
 var zs = [];
 zs.insert(0, nil);
 zs.insert(1, [1]);
-assert(len(zs) == 2);
+assert(zs.size() == 2);
 assert(zs[0] == nil && zs[1] == [1]);
 
 // clear：原地清空，别名同见
 var shared = [1, 2, 3];
 var alias = shared;
 shared.clear();
-assert(len(shared) == 0);
+assert(shared.size() == 0);
 assert(alias == [] && alias === shared);

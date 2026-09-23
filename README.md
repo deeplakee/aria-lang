@@ -70,11 +70,11 @@ print("42".to_int() + 1);                                    # 43
   （`xs[1..3]`，倒序 range 得到倒序段）；`for-in` 由统一迭代协议驱动，也可显式取迭代器。
   方法面按类型分布：list 14 个、string 17 个、map 10 个。
 - **字符串**：`+` 拼接只在两侧都是 String 时成立（无隐式转换，要转就用内置 `str()`）；比较按
-  无符号字节序；下标与 `len` 都是字节域，逐码点走 `chars()`。方法面含 `split`/`trim`/`upper`/
+  无符号字节序；下标与 `size()` 都是字节域，逐码点走 `chars()`。方法面含 `split`/`trim`/`upper`/
   `substring`/`to_int` 等。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（别名必写）。模块顶层绑定即模块成员，
   `U.f()` 直调，成员只读。
-- **内置函数**：`type` / `len` / `str` / `assert` / `println`（`print` 语句关键字的函数形态，可当一等值传递）。
+- **内置函数**：`type` / `str` / `assert` / `println`（`print` 语句关键字的函数形态，可当一等值传递）。
 
 ## 构建与运行
 

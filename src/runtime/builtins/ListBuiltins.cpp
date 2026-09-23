@@ -204,7 +204,7 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:元素数(全局 len(xs) 的方法形态)。
+        // size() -> 整数:元素数。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {

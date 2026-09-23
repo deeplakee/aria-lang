@@ -278,7 +278,7 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:UTF-8 字节数(len(s) 的方法形态,与 s[i] 同域)。码点数那是 len(chars())。
+        // size() -> 整数:UTF-8 字节数(与 s[i] 同域)。码点数那是 chars().size()。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -301,7 +301,7 @@ namespace aria {
         }
 
         // chars() -> list<string>:逐码点切出的 1-char string 快照(码点域访问口;码点数即
-        // len(chars()),与字节域的 len(s)/size() 相对)。非法字节序列产出替换码点串,口径同
+        // chars().size(),与字节域的 size() 相对)。非法字节序列产出替换码点串,口径同
         // ObjStringIterator::next(只吞一个坏字节)。GC 约束:receiver 留在 slots[0] 由栈标根,新
         // list 白色须跨逐字符铸造的 GC 点,故挂临时根保命,循环结束才发布。
         bool fn_chars(AriaVM& vm, Span<Value> slots) {

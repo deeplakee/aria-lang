@@ -3,8 +3,6 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjList.hpp"
-#include "object/ObjMap.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
@@ -28,29 +26,6 @@ namespace aria::builtins {
             const auto name = new_string(vm.gc(), type_name(slots[1])); // 静态名 intern,无 GC 风险
             slots[0]        = Value::from_obj(name);
             return true;
-        }
-
-        // len(x) -> 整数:String 返 UTF-8 字节数(ObjString::length()),List 返元素数,
-        // Map 返键值对数。
-        bool fn_len(AriaVM& vm, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "len expects 1 argument, got {}", argc);
-            }
-            const Value v = slots[1];
-            if (const auto s = try_obj<ObjString>(v)) {
-                slots[0] = Value::from_int(static_cast<i64>(s->length()));
-                return true;
-            }
-            if (const auto list = try_obj<ObjList>(v)) {
-                slots[0] = Value::from_int(static_cast<i64>(list->elements().size()));
-                return true;
-            }
-            if (const auto map = try_obj<ObjMap>(v)) {
-                slots[0] = Value::from_int(static_cast<i64>(map->table().size()));
-                return true;
-            }
-            return vm.fail(ErrorCode::TypeMismatch, "len requires a string, list or map, got {}", type_name(v));
         }
 
         // str(x) -> 字符串:值的可读渲染(复用 format_value,与 PRINT 一致)。
@@ -102,7 +77,10 @@ namespace aria::builtins {
         // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表;
         // 它的函数形态是同表内的 `println`。
         constexpr BuiltinEntry kBuiltins[] = {
-                {"type", fn_type}, {"len", fn_len}, {"str", fn_str}, {"println", fn_println}, {"assert", fn_assert},
+                {"type", fn_type},
+                {"str", fn_str},
+                {"println", fn_println},
+                {"assert", fn_assert},
         };
 
     } // namespace

@@ -1,4 +1,4 @@
-// 钉住：字符串四个比较算子按字节序（unsigned/memcmp 语义，与 len/s[i] 同字节域）比较；
+// 钉住：字符串四个比较算子按字节序（unsigned/memcmp 语义，与 size/s[i] 同字节域）比较；
 # 空前缀最小、真前缀更小、相等时 <= 与 >= 为真而 < 与 > 为假；大小写敏感（无 collation）；
 # 多字节与 s[i] 切出的孤立 continuation 字节串均按字节值比；含 String 的混合组合报错（负向另配）。
 assert("a" < "b");

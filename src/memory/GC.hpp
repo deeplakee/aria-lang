@@ -169,6 +169,8 @@ namespace aria {
         static constexpr usize kInitialGcThreshold = 1024 * 4;
         static constexpr usize kGcGrowFactor       = 2;
 
+        // 声明序:基本类型在前,scratch List/InternPool/tracer 在后 -- 析构逆序使 scratch List 先析构
+        // (其 dtor 不碰 bytes_allocated_,无依赖)。
         Object*        objects_head_;
         usize          bytes_allocated_;
         usize          allocation_count_; // 累计分配次数(单调),基准用确定性读数

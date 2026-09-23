@@ -95,7 +95,7 @@ namespace {
 
 // ---- 下标协议(load_index 字节域 / store_index 不可变) ----
 
-// 字节域读:整数键产出单字节 1-char string(与 len 同域,计划 D5)。
+// 字节域读:整数键产出单字节 1-char string(与 len 同域)。
 TEST(ObjString, LoadIndexYieldsSingleByteString) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -283,7 +283,7 @@ TEST(ObjString, StoreIndexAlwaysFails) {
 
 // ---- 命名成员协议(load_field → VM 的 String bootstrap 类) ----
 
-// bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根(计划 D1)。
+// bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根。
 TEST(ObjString, BootstrapClassContract) {
     AriaVM vm;
     auto*  string_class = vm.string_class();

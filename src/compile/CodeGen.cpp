@@ -644,7 +644,7 @@ namespace aria {
 
     void CodeGen::visitForInStmtNode(ForInStmtNode& node) {
         const u32 line = node.line();
-        // lowering 等价形式（无预占/peek-store，值填槽；走查见 collections-builtin-methods-plan.md）：
+        // lowering 等价形式（无预占/peek-store，值填槽--下个局部 slot 即当前栈高，见指令集 §4.3）：
         // 外层 for-in scope 挂隐藏局部 <iter> = iterable.iter()（"<iter>" 含 <> 不可作标识符，不撞用户名）；
         // 循环头 = has_next() 判断处（continue 跳此，无 increment 步）；每轮 per-iteration scope 里
         // <pattern> = iter.next()（bind_pattern Fill）后跑体、end_scope 收口（每轮 fresh 绑定）。

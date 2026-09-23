@@ -210,7 +210,7 @@ namespace aria {
 
         // 只读槽位迭代器(begin/end 语义,消费场景全只读故不设非 const 版):跳过空槽与
         // 墓碑,operator* 取占用槽 Entry。迭代序 = 槽位序(map 语言面迭代序 unspecified,
-        // 契约见计划 D4/ObjMapIterator);失效语义同 std::unordered_map 惯例 --erase 使
+        // 契约见 ObjMapIterator);失效语义同 std::unordered_map 惯例 --erase 使
         // 被删元素失效,rehash/compact 搬迁槽位使全部迭代器失效,迭代中变更容器不设防。
         // 对称基线:Array 的 begin/end/cbegin/cend。
         class const_iterator {

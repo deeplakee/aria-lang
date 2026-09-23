@@ -1,12 +1,12 @@
 # VM 设计与实施计划
 
-本文档规划 `AriaVM` 与执行上下文的设计,并给出分阶段实施路线。基准:`bytecode-instruction-set.md`(指令集/栈效应/操作数编码)、`gc-implementation-plan.md` Phase 4(协程单元 + VM 根)、`FrameStack.hpp`、`CodeUnit.hpp`(含 `TryRecord`/`find_try_handler`)。
+本文档规划 `AriaVM` 与执行上下文的设计,并给出分阶段实施路线。基准:`bytecode-instruction-set.md`(指令集/栈效应/操作数编码)、`FrameStack.hpp`、`CodeUnit.hpp`(含 `TryRecord`/`find_try_handler`)。
 
 > **实施原则:先让虚拟机跑起来。** 完整的协程/GC 根/闭包等机制按阶段推进(见 §6),早期阶段(M1)刻意收敛到最小,不在第一步背上全部设计复杂度。
 
 ## 1. 命名决定
 
-- 协程/执行上下文实体类名:**`ObjMovement`**(最终形态,`Object` 子类型,与 `gc-implementation-plan.md` Phase 4 的 "Movement" 一脉相承)。
+- 协程/执行上下文实体类名:**`ObjMovement`**(最终形态,`Object` 子类型,M6 起自纯 C++ 类 `Movement` 升级而来)。
 - **`VMContext` 是 `ObjMovement` 的别名**:`using VMContext = ObjMovement;`。代码中按语义选用--泛指「一段执行的状态」时用 `VMContext`,强调「协程对象」时用 `ObjMovement`。
 - `ObjType` 需增补 `MOVEMENT` 枚举值(当前枚举没有,升级为 Object 时一并加,见 §6 M6)。
 - 早期(M1)该类先以纯 C++ 类 `Movement` 落地(`using VMContext = Movement;`),不继承 Object;M6 升级为 `ObjMovement : Object` 时仅重命名 + 加 trace,别名的存在使调用方代码零改动。
@@ -76,7 +76,7 @@ struct ExecOutcome {
 
 ### 4.1 值栈可增长,搬迁时重定位指针
 
-值栈初始定容(`kStackInit`)、`push` 溢出时 2x 增长:整体搬迁(GC reallocate,内部 memcpy)后,把 `top_` 与所有活动帧的 `slots` 按新旧基址差重定位。增长打破「指针绝对稳定」,故每次增长后指进值栈的裸指针都必须重定位--M4 起共**三类**:`top_`、各活动帧 `slots`、open upvalue 链的 `location_`(M4 已落地第三类:搬运前走链把各 `location_` 相对 old_base 的偏移记入 `List<usize>`(链序两趟间稳定,免数节点一趟),搬运后 `new_base + 偏移`重建;同法偏移两趟、从不触碰 dangling 指针,见 `Movement::grow_stack_`。指针式 upvalue 表示的既定取舍,「索引式免重绑」方案的否决理由见 `m4-closure-implementation-plan.md` 决策 1)。帧栈 `FrameStack` 仍一次分配永不扩容:帧数少、无需增长,且其指针稳定性不受值栈搬迁影响。
+值栈初始定容(`kStackInit`)、`push` 溢出时 2x 增长:整体搬迁(GC reallocate,内部 memcpy)后,把 `top_` 与所有活动帧的 `slots` 按新旧基址差重定位。增长打破「指针绝对稳定」,故每次增长后指进值栈的裸指针都必须重定位--M4 起共**三类**:`top_`、各活动帧 `slots`、open upvalue 链的 `location_`(M4 已落地第三类:搬运前走链把各 `location_` 相对 old_base 的偏移记入 `List<usize>`(链序两趟间稳定,免数节点一趟),搬运后 `new_base + 偏移`重建;同法偏移两趟、从不触碰 dangling 指针,见 `Movement::grow_stack_`。指针式 upvalue 表示的既定取舍--「索引式免重绑」方案被否:它省下重绑,但每次 `LOAD/STORE_UPVALUE` 多一次加法,且偏离 clox/Wren/Lua 与本文 §4.1/指令集 §4.4 预写的指针式模型,不取)。帧栈 `FrameStack` 仍一次分配永不扩容:帧数少、无需增长,且其指针稳定性不受值栈搬迁影响。
 
 ### 4.2 值栈不复用 `FrameStack<Value, N>`
 
@@ -220,7 +220,7 @@ if (obj->fn()(*this, slots)) {
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。当时的收敛项现状:
 
 - **不继承 Object**:值栈/帧/open upvalue 开链已经 vm_roots tracer 接 GC 根(见 §4.6「已前拉」),`run()` 不禁 GC,`JUMP_BACK` 已是 safe point;M6 才升级 `ObjMovement : Object` 入对象链表(trace 收口到对象自身),协程根收敛 `current_` 单根(§4.9 定稿,不设 movements_ 并集)。
-- **闭包已闭环(M4)**:`CallFrame` 持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包),`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 四指令实装,open upvalue 开链 + 值栈增长第三类重绑已落地(见 §4.1 与 `m4-closure-implementation-plan.md` 落地记录);M5 类指令(九 opcode)已于阶段 2 实装、编译发射经阶段 3 翻转落地(见 `m5-class-implementation-plan.md`)。
+- **闭包已闭环(M4)**:`CallFrame` 持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包),`CLOSURE`/`LOAD_UPVALUE`/`STORE_UPVALUE`/`CLOSE_UPVALUE` 四指令实装,open upvalue 开链 + 值栈增长第三类重绑已落地(见 §4.1);M5 类指令(九 opcode)已实装、编译发射已翻转落地。
 - **异常已闭环(M3)**:挂起错误寄存器升为运行期主通道,`unwind` 查表派发(见 §4.5 与坑点文档)。
 - `dispatch_loop()` 永不重入(M6 单循环切换模型,§4.9);循环状态全部堆驻留于 Movement/CallFrame(无 C 局部工作副本,每指令自 `current_` 重取),这一性质即 M6「切换零同步成本」的来源。
 
@@ -231,8 +231,8 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片) | 手写字节码算术/循环/函数调用/原生函数跑通 |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(指令集 §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
-| **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式)。实施计划与落地记录见 `m4-closure-implementation-plan.md`(defer 为可选后续) | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
-| **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5;实施计划见 `m5-class-implementation-plan.md`,六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已于 2026-09-20 反转取消,见 collections-builtin-methods-plan.md §4.6)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
+| **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
+| **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(指令集 §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根** | `Movement` -> `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`)、`VMContext` 别名指向之、GC 根收敛 `current_` 单根(协程经对象图可达)、**单循环切换模型**(§4.9):`coroutine.resume/yield/status` 原生函数 + CALL 善后点采用新 `current_` + RETURN 完成切回解链、`run()` 扩三态 `ExecOutcome`(`Yielded` = 根挂起) | 协程生成器样例;stress GC 下多协程无悬垂 |
 
 顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,43 个 visit)。
@@ -255,7 +255,6 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 ## 8. 参考
 
 - `.claude/reference/bytecode/bytecode-instruction-set.md`:指令集/操作数编码/栈效应/lowering(VM 实现的操作语义基准)。
-- `.claude/reference/memory/gc-implementation-plan.md` §5 Phase 4:Movement + VM 根 + safe point(本文 §4.6 的细化来源)。
 - `src/runtime/FrameStack.hpp`:帧栈模板 + `truncate`(unwind 用)。
 - `src/bytecode/CodeUnit.hpp`:`TryRecord`/`find_try_handler`(异常查表已就绪)。
 - AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。

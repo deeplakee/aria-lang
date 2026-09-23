@@ -11,7 +11,7 @@ namespace aria {
 
     // map 迭代器(ObjIterator 引擎缝的 map 消费者):被遍历 map + HashTable 只读迭代器作
     // 槽位游标(跳空槽/墓碑,推进即占用槽序)。next 每步产出 [k, v] 二元 list(每步一次
-    // 小分配,计划 D4 拍板接受)。迭代中变更容器不设防(v1 不承诺,D4):rehash/compact
+    // 小分配,拍板接受)。迭代中变更容器不设防(v1 不承诺):rehash/compact
     // 搬迁槽位使游标失效(HashTable::const_iterator 失效语义),可能跳元素或重复,由
     // 「不承诺」兜住,不做版本守卫。
     class ObjMapIterator final : public ObjIterator {

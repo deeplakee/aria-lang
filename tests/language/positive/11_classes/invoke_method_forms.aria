@@ -61,7 +61,7 @@ try { slot.nope(noisy()); } catch (e) { side = side + 100; }
 assert(side == 100);              // 解析失败在前：实参一次都没跑
 
 // 两段式不进调用区：槽 0 保持接收者。故实例上调用经类链解析到的**原生** no-op init
-// （Object 根，不被绑定）返回实例本身（计划 D1「调用返回 receiver 自身」）。
+// （Object 根，不被绑定）返回实例本身（调用返回 receiver 自身）。
 def Bare { }
 var bare = Bare();
 assert(type(bare.init()) == "Instance");

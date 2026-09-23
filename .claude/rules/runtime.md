@@ -7,7 +7,7 @@ paths:
 
 # runtime 层模块参考
 
-VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-design.md`；import 端到端处理见 `.claude/reference/runtime/import-handling-overview.md`，路径解析细节见 `.claude/reference/runtime/import-path-resolution.md`；M3 异常（try/catch/throw）的踩坑归档与对策见 `.claude/reference/runtime/exception-implementation-pitfalls.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的成本基线与测量手法见 `collections-builtin-methods-plan.md` §4.4（基准入口 `bench/vm_bench.cpp`，动 VM 派发路径前先读）。均按需 Read。
+VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-design.md`；import 端到端处理见 `.claude/reference/runtime/import-handling-overview.md`，路径解析细节见 `.claude/reference/runtime/import-path-resolution.md`；M3 异常（try/catch/throw）的踩坑归档与对策见 `.claude/reference/runtime/exception-implementation-pitfalls.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的成本基线与测量手法见 `bench/vm_bench.cpp` 文件头与 `bytecode-instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
 
 ## `runtime/FrameStack.hpp`
 
@@ -16,6 +16,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 零开销（`acquire` 即返回槽引用 + 计数自增），一次分配永不扩容（指针绝对稳定）。
 - `truncate(n)` 供异常 unwind 跨多帧（按异常记录表登记的深度一步回退）。
 - 要求 T trivial + trivially-copyable + trivially-destructible（`static_assert` 三连把关）；GC trace 经 `span()` 读已用区间。
+- 与 `Array<T>` 不通用：`Array` 是堆背书、可扩容、非 trivial（持 `GC*`、不可拷贝/移动），`FrameStack` 是定容槽位池；语义不同故不套用。
 
 ## `runtime/Movement.hpp`
 

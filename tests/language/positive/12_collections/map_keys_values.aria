@@ -1,6 +1,6 @@
 // 钉住：map 快照方法面--keys()/values() 产出新 list（与源 map 解耦，此后改 map 不动
 # 已产出的表）；两方法同槽位序推进，故同一次快照的 keys()[i] 与 values()[i] 同源同对
-#（序本身 unspecified，计划 D4，用例不依赖具体序：计数 + 求和 + 逐下标配对校验）。
+#（序本身 unspecified，用例不依赖具体序：计数 + 求和 + 逐下标配对校验）。
 var m = {"a": 1, "b": 2, "c": 3};
 var ks = m.keys();
 var vs = m.values();

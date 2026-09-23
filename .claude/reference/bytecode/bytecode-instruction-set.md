@@ -100,6 +100,12 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `STORE_INDEX` | `[obj, idx, v] -> [v]` |
 
 > `STORE_FIELD` 接收者为 `ObjClass` 时即类上赋值 -- `MAKE_STATIC` 的镜像形态（写遮蔽落接收类自身表，见 §5.5）。
+>
+> **为何必须是两条镜像指令**：静态成员的「创建」（类体内，栈 `[class, v]`，出口留 `class` 弹 `v`）与「赋值」（体外
+> `Foo.x = v`，栈进同形 `[class, v]`，出口却要弹 `class` 留 `v` 以保赋值表达式的值）**栈进同形、出口要求互反**，
+> 单一栈形态服务不了两者：复用 peek-store `STORE_FIELD` 于创建，需每成员额外 `DUP class` + 尾 `POP` 两条凑指令；
+> 改弹净形态则赋值表达式约定（值留栈顶）会迫使**热路径**每次字段赋值多一次 `DUP` 右值。故取专用指令
+> `MAKE_STATIC`/`MAKE_METHOD [class,v] -> [class]`，两场景均零冗余，成本落在一次性创建路径。
 
 语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。此约定**消解** `compound-assignment-lowering.md` §5 末尾「STORE 留值与否未决」的备注：采用留值，§4 各序列的末尾 `[]` 应理解为「语句上下文补 `POP` 后」的形态。详见 §5.3。
 
@@ -127,7 +133,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
 | `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（VM 单例值统一存放表 `AriaVM::registers_`，bootstrap 填充、tracer 逐格标根；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`，Object 根类即其中 ObjectClass 格） |
 
-> 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `gc-implementation-plan.md` §6）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
+> 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.claude/rules/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
 
 ### 4.3 局部变量
 
@@ -454,7 +460,7 @@ Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Objec
 **作用域模型：模块即命名空间 + 裸名走词法+模块全局**（编译期/VM 语义，Python/JS 路子）：
 
 - **模块 = 命名空间（非类）**：文件是一个模块，顶层 `var`/`fun`/`class` 是**模块级绑定**（模块全局），不是某个类的静态；顶层可执行语句编进模块体（`ObjFn`），导入时跑一次（run-once）。模块存于 VM 内部模块表，不是某个 root 类的静态。
-- **ObjClass 指针**：仅 `super`（继承），无 meta 元类指针（uniform OOP 未来需要时再增）。**根**：`Object`（`super=nil`，继承终止）。
+- **ObjClass 指针**：仅 `super`（继承），无 meta 元类指针（uniform OOP 未来需要时再增--现在预留只多一个空指针与一条 `trace` 分支，YAGNI）。**根**：`Object`（`super=nil`，继承终止）。
 - **裸名解析（词法 + 模块全局，无类静态）**：编译期判定局部/参数 -> `LOAD_LOCAL`、upvalue -> `LOAD_UPVALUE`；否则发 `LOAD_GLOBAL`，运行期查**当前模块的全局表**。**不走 enclosing+super，不查类静态**--类静态不在裸名作用域。未命中则全局未定义（报错）。裸名只看：局部、upvalue（外围函数局部）、模块全局。
 - **裸名赋值与声明（写路径，与读对称）**：裸名赋值 `x = v`（无 `var`）走与读相同路径（`STORE_LOCAL` / `STORE_UPVALUE` / `STORE_GLOBAL` 查模块全局表），命中即写，未命中报错（不隐式创建，必须先 `var` 声明）。`STORE_UPVALUE` 与 `LOAD_UPVALUE` 对称（闭包变异）。`var` 声明：**函数体**=局部、**模块顶层**=模块全局、**类体**=静态（经 `ClassName.x` 访问，不进裸名）。实例字段写经 `STORE_FIELD`（`this.x = v` / `obj.x = v`，动态创建）。
 - **类静态访问（限定，运行期）**：`ClassName.x`--解析 `ClassName`（裸名，通常是模块全局或经全路径），再沿其 super 链查静态（含继承，共享槽语义），运行期。`this.x` / `obj.x`--实例访问，先查实例字段，未命中回退类静态（沿实例 class 的 super 链）。**裸名看不到类静态**，必须限定。
@@ -488,11 +494,11 @@ CALL_METHOD argc        ; [r]                  实参整体下移一格补掉 ta
 
 > 设计边界：本缝要求解析是**纯查询**（当前实现满足：字段命中 / 类链走表，无用户代码）。若将来引入「解析可跑用户代码」的成员面（getter/property/`__getattr__`），解析位置已经正确（`PREPARE_METHOD` 内），但还需另做「同步跑到该帧返回再取值」的嵌套调用机制，不得把用户代码塞进 `load_field_unbound` override 的返回值语义里。
 
-一处**形态差异**：非方法成员被调用时，调用区槽 0 是**接收者**而非那个成员值本身（两步形态下 `LOAD_FIELD` 会把接收者顶替成成员值）。可观察的有两处：① `x.init()`（实例上经类链解析到 Object 根的**原生** no-op init，不被绑定）返回**实例本身**，而非那个原生函数对象--与集合计划决策 D1「调用返回 receiver 自身」一致；② `C.m(args)`（经类调实例方法：方法戳闭包被当值调、不被绑定）时方法体里的 `this` 是**类对象**（两步形态下是那个闭包自身）。① 由语料钉住，② 为同一条规则的派生形态、不作承诺。
+一处**形态差异**：非方法成员被调用时，调用区槽 0 是**接收者**而非那个成员值本身（两步形态下 `LOAD_FIELD` 会把接收者顶替成成员值）。可观察的有两处：① `x.init()`（实例上经类链解析到 Object 根的**原生** no-op init，不被绑定）返回**实例本身**，而非那个原生函数对象--内置类 super 挂 Object 根、调用返回 receiver 自身是同一取舍的两面：uniform OOP 提前半步落地（内置类型也走 bootstrap 类 + Object 根），代价是 `s.init()` 这类调用会经链解析到 Object 根的 no-op init，属已知的小语义毛边，uniform OOP 落地时随 Object 方法面一并审视；② `C.m(args)`（经类调实例方法：方法戳闭包被当值调、不被绑定）时方法体里的 `this` 是**类对象**（两步形态下是那个闭包自身）。① 由语料钉住，② 为同一条规则的派生形态、不作承诺。
 
 **槽 0 保持接收者为什么可行**（三方各得其所）：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数恰好**正需要**槽 0 = receiver（其 `this` 兼返回槽，且 `call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
 
-`super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代协议每迭代两次方法调用，是这条路径收益最大的地方，见 §6.2 与集合计划 §4.4-§4.7）。
+`super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代协议每迭代两次方法调用，是这条路径收益最大的地方，见 §6.2）。
 
 ### 5.7 match（糖 -> 逐臂比较链，已落地）
 
@@ -585,11 +591,11 @@ L_end:
 | `forin_range`（同上） | 79.8 | 33.8~34.2 | 2.001 -> 0.000 |
 | `starts_with`（单方法调用） | 71.6 | 43.0~47.0 | 1.000 -> 0.000 |
 
-> ② 单条融合那一代（见 commit 历史与集合计划 §4.5）在这些行上是 31.1~31.6 / 31.9~32.4 / 41.9~45.0。①②③ 之间的绝对差含跨构建的代码布局抖动（同批对照里**未受影响的**基线行 `plain_call` 自身就在 37.9~43.9 间摆动），故 ②→③ 的代价以**同二进制字节改写对照**为准：原型期实测（同一份字节码、只把两段改写成融合编码）`forin_list` +1.8~2.5、`forin_range` +1.8~2.1、`starts_with` +0.3~1.4、`instance_call` +1.5~1.8 ns/次迭代 -- 即**每次调用约 1 ns**，argc = 0 时下移为空转。
+> ② 单条融合那一代（见 commit 历史）在这些行上是 31.1~31.6 / 31.9~32.4 / 41.9~45.0。①②③ 之间的绝对差含跨构建的代码布局抖动（同批对照里**未受影响的**基线行 `plain_call` 自身就在 37.9~43.9 间摆动），故 ②→③ 的代价以**同二进制字节改写对照**为准：原型期实测（同一份字节码、只把两段改写成融合编码）`forin_list` +1.8~2.5、`forin_range` +1.8~2.1、`starts_with` +0.3~1.4、`instance_call` +1.5~1.8 ns/次迭代 -- 即**每次调用约 1 ns**，argc = 0 时下移为空转。
 
 两段式相对 ② 多出的工作是：第二次 dispatch、一次压栈 + 一次弹栈、argc 次 Value 下移、一次 peek。端到端真实程序（Release 解释器、四个工作负载、随机序 best-of-12）上：集合/迭代密集型 +5.8~5.9%、字符串+map 型 +4.9~5.0%、类方法密集型 +0~3%、**零派发对照负载 +0~0.7%**（对照组用于剔除构建级布局偏移）。两段式保留 ① 消除的物化收益的 ~96%，分配列不变。
 
-**备选形态（都已实现并实测，均不如现状）**：① 目标槽放调用区之**下** + 帧位（`RETURN` 收尾）--少一次下移，但多一次帧深比较 + 帧位写 + `RETURN` 分支，且改动落在 `RETURN` 上（纯函数调用也走那条路，端到端对照行 +2.7~4.5%），实测比现状慢 0.8~2 ns/次迭代；② 目标槽放调用区之下 + 调用点补一条 `POP_UNDER`--无帧状态但每次调用多一整条指令的 dispatch，实测慢 1.1~1.6 ns/次迭代。细节与逐轮数据见 `collections-builtin-methods-plan.md` §4.7。
+**备选形态（都已实现并实测，均不如现状）**：① 目标槽放调用区之**下** + 帧位（`RETURN` 收尾）--少一次下移，但多一次帧深比较 + 帧位写 + `RETURN` 分支，且改动落在 `RETURN` 上（纯函数调用也走那条路，端到端对照行 +2.7~4.5%），实测比现状慢 0.8~2 ns/次迭代；② 目标槽放调用区之下 + 调用点补一条 `POP_UNDER`--无帧状态但每次调用多一整条指令的 dispatch，实测慢 1.1~1.6 ns/次迭代。
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
@@ -680,7 +686,6 @@ code:
 - `src/bytecode/code.hpp`：`OpCode` 枚举（本文基准）。
 - `docs/grammar.txt`：语言文法（lowering 的需求来源）。
 - `.claude/reference/compile/compound-assignment-lowering.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
-- `.claude/reference/memory/gc-implementation-plan.md` §5 Phase 3：CodeUnit / ObjFunction / ObjList / ObjMap 等子类型路线。
 - `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
 - `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
 - AGENTS.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。

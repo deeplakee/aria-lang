@@ -178,7 +178,7 @@ TEST(Compiler, ListMemberStoreNotSupported) {
 }
 
 // init 沿链解析到 Object 根的 no-op init：不动槽 0（已是 receiver），调用返回 receiver 自身
-// （计划 D1 已知悉接受的小语义毛边，钉住防无声漂移）。
+// （已知悉接受的小语义毛边，钉住防无声漂移）。
 TEST(Compiler, ListInitResolvesToObjectRootNoOp) {
     EXPECT_EQ(run_int("var xs = [1]; if (xs.init() === xs) { return 1; } return 0;"), 1);
 }
@@ -657,7 +657,7 @@ TEST(Compiler, VarargsUnderStressGc) {
               630);
 }
 
-// ---- string 方法面（字节下标/码点迭代/11 方法；下标域 = 字节,计划 D5） ----
+// ---- string 方法面（字节下标/码点迭代/11 方法；下标域 = 字节） ----
 
 // upper/lower:ASCII 逐字节转换,非字母字节原样。
 TEST(Compiler, StringUpperLowerAscii) {

@@ -1,10 +1,10 @@
 # M5 类与对象实现坑点记录
 
-> M5 类（设计基线见 `m5-class-implementation-plan.md`，以六项设计决策与各决策补记为准）在 M4 的闭包/值栈机制上叠加了「类表 + 实例 fields 表（+ 早期的 bound-method 缓存，已于 2026-09-20 取消）+ 方法帧槽 0 = this」维度。阶段 2 整改（虚函数协议 / 错误通道 vm.fail 模型 / 检查分层）已归档进该计划补记，本文不重复；只录实施/复盘期确认的四个坑点高发区。对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（类机制节）与 `tests/compile/test_codegen.cpp`（M5 节）。
+> M5 类在 M4 的闭包/值栈机制上叠加了「类表 + 实例 fields 表（+ 早期的 bound-method 缓存，已于 2026-09-20 取消）+ 方法帧槽 0 = this」维度（现行语义契约见 `.claude/rules/object.md` 与 `.claude/rules/compile.md` 类发射节，本文不复述）。只录实施/复盘期确认的四个坑点高发区，对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（类机制节）与 `tests/compile/test_codegen.cpp`（M5 节）。
 
 ## 坑 #1：bound-method 缓存与遮蔽的交互 -- 三铁则 + 首解析快照（**已反转：缓存取消**）
 
-**结局（2026-09-20）**：整个缓存机制连同三铁则一起删除，见 `collections-builtin-methods-plan.md` §4.6。反转理由是语义而非性能：缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜，同一表达式的结果取决于该实例是否取过该方法（实测：`C.who = f` 后老实例仍返旧值、新实例返新值），属最难解释的一类语义。取消后成员解析每次都按当前类链进行，monkey patch 完整可用；调用路径经 `load_field_unbound` 走不绑定形态（零分配），代价只在读路径（`obj.m` 每次访问铸一个 bound，与 JS/Python 同款）。
+**结局（2026-09-20）**：整个缓存机制连同三铁则一起删除（现行契约见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」）。反转理由是语义而非性能：缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜，同一表达式的结果取决于该实例是否取过该方法（实测：`C.who = f` 后老实例仍返旧值、新实例返新值），属最难解释的一类语义。取消后成员解析每次都按当前类链进行，monkey patch 完整可用；调用路径经 `load_field_unbound` 走不绑定形态（零分配），代价只在读路径（`obj.m` 每次访问铸一个 bound，与 JS/Python 同款）。
 
 **保留的历史记录**（当时缓存与真字段同表同 keyspace，三类误用都是隐性 bug）：
 

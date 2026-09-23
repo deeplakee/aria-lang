@@ -260,7 +260,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
 }
 
 // defining class 级联:类仅经方法闭包的 defining_class_ 可达(闭包为根),collect 后类存活
-// --静态方法闭包经 Foo.m 上栈时类亡指针不悬垂(M5 计划 §2.6)。
+// --静态方法闭包经 Foo.m 上栈时类亡指针不悬垂（defining_class_ 戳住闭包，见 .claude/rules/object.md）。
 TEST(ObjClass, DefiningClassSurvivesViaClosureTrace) {
     GC          gc;
     ObjClass*   klass  = nullptr;

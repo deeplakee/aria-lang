@@ -1,6 +1,6 @@
 // 钉住：map 的 pairs() 快照--新 list（与源 map 解耦），每元素是 [k, v] 二元 list（与
 # for-in 每轮产出、iter().next() 同一形状）；与 keys()/values() 同槽位序，故
-# pairs()[i] == [keys()[i], values()[i]]；序 unspecified（计划 D4），用例只做形状/配对/
+# pairs()[i] == [keys()[i], values()[i]]；序 unspecified，用例只做形状/配对/
 # 计数/求和校验，不依赖具体序。
 var m = {"a": 1, "b": 2, "c": 3};
 var ps = m.pairs();

@@ -12,7 +12,7 @@ namespace aria {
     // map 对象(ObjType::MAP):`{...}` 字面量的运行期载体,键值均任意 Value、存 AriaHashTable(Swiss Table;表内键判等 ===,
     // int 1 与 f64 1.0 是不同键;可变对象作键按身份哈希)。下标读写经 load_index/store_index 协议 override;命名成员经
     // load_field 委托 VM 的 Map bootstrap 类方法表恒绑定。
-    //   - 迭代序 unspecified(计划 D4):非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器 v1 不
+    //   - 迭代序 unspecified:非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器 v1 不
     //     承诺(rehash 搬迁槽位),文档明示。
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容:size 相等且逐键在对方命中同键(键按表内语义 ===,find
     //     即 value_identical 匹配)、值 value_equal(嵌套容器经各自 equals 递归);入口挂 EqualGuard 防环(重遇同对视为相等

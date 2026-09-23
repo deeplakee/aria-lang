@@ -11,7 +11,7 @@ paths:
 
 ## 类型地图
 
-- `Object`（`object/Object.hpp`）：所有 GC 对象的基类。持 `ObjType` 枚举、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。
+- `Object`（`object/Object.hpp`）：所有 GC 对象的基类。持 `ObjType` 枚举、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。两 ctor 即「缓存哈希」的**构造期分发**--不可变对象传算好的内容哈希、可变对象取地址哈希；故 `hash_` 留在基类，查询期无需按类型分发的自由函数（`object_hash(o)` 退化为 `o->hash()`）。
 - `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`NativeFn`/...）。
 - `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
 - `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；显示位与调试位唯一分叉的子类型。
@@ -58,12 +58,13 @@ paths:
 - ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按钩子名（VM 常量串表，见 `runtime.md`）`load_field_unbound`--实例 fields 可遮蔽，再类链取）；②**内置 string**（5 个算子直读实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③其余类型不实现即报错。
 - 钩子名是**语言级事实**（注册表 `runtime/string_constant.hpp` 的 `StringConstant`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
 - `op_call_impl` 的消费点 = `AriaVM::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 报「call non-callable X」。
+- **钩子自指/成环不兜底**（拍板）：`d.__call__ = d` 或 `a.__call__ = b; b.__call__ = a` 会无穷重入 `call_value` 直到 C++ 栈溢出（SIGSEGV，无错误消息）。按「手写死循环同类」处理、后果由使用者承担--不加自指检测、不加重入深度上限、不改查找路径。
 
 ### 内置类型的成员面
 
 - **内置容器 / 迭代器（string/list/map/range/iterator）的 `load_field` / `load_field_unbound` 同形两步**（权威说明，各子类头不复述）：①委托自身 bootstrap 类表（`vm.string_class()` / `vm.list_class()` ...）的 `ObjClass::load_field` 沿链查表，miss 的类措辞 fail 随协议透传；②`load_field` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）；`load_field_unbound` 直取类表原生值。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
-- 方法面注册入口 `register_*_builtins` 住 `runtime/builtins/*Builtins`，方法清单见 `runtime.md`。
+- 方法面注册入口 `register_*_builtins` 住 `runtime/builtins/*Builtins`，方法清单即各 `*Builtins.cpp` 的注册表。
 
 ## 跨类型规则
 
@@ -100,7 +101,9 @@ paths:
 - 基类钉纯虚契约：`has_next() const noexcept -> bool`（纯查询、无分配无 fail，故不收 vm）、`next(AriaVM&) -> Opt<Value>`（取下一元素并推进；越界一行 `return vm.fail(IterationExhausted)`）、`trace`（各子类标各自的源，纯虚钉住忘标 = 编译错）、`size()`。
 - `load_field` / `load_field_unbound` override 基类一次、全子类共享（走 Iterator bootstrap 类表）；`debug_repr` 渲染 `<iterator>`；`equals` 默认地址判等。
 - 每源一个小子类、各持自然游标；**range 迭代器是唯一无源对象者**（range 不可变，ctor 期把端点拷成标量自足，`trace` 空体；方向构造期定向，from > to 即倒序）。
-- map 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；迭代中变更容器不设防（v1 不承诺）。
+- map 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；迭代中变更容器不设防（v1 不承诺）。序不承诺的理由：非定序哈希表是性能上的正确选择，且这一边缘特性各语言/实现标准不一，用户不应依赖。
+- **协议三方法（`iter`/`has_next`/`next`）是类表方法，不为迭代协议另开 Object 虚函数**：① 方法必须一等（`var n = it.next; n()` 虚函数做不了）；② 与用户类统一，单一派发路径；③ VM 内部无迭代消费者（解构走下标、GC 不迭代），双通道纯漂移风险；④ 能实现 `iter` 的对象必已支持 `load_field`、必已有方法表。
+- **形态判据（每源子类 + 纯虚契约，而非单一结构体 + switch）**：单一 `ObjIterator{source, cursor}` 兼多义、按类型 `switch` 分派，违背引擎缝「不按子类型分型」的架构；跨语言（Python/JS/Java/C#/C++）均为每源独立迭代器 + 统一虚契约。C++ STL 迭代器不能直接当语言值（GC 一等 Value、指针悬于元素缓冲扩容、用户类需统一协议），但其「每类型自己的表示 + 统一契约」思想即本方案的运行期对应物。迭代器对象不可省：游标状态须随迭代器走，容器不可自带游标（否则嵌套遍历同一容器互相串扰）。
 - 语言方法面（has_next/next）住 `runtime/builtins/IteratorBuiltins`。
 
 ### 模块身份

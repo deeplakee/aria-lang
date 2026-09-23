@@ -71,7 +71,7 @@ namespace aria {
         if (const auto range = try_obj<ObjRange>(key)) {
             return slice(vm, range);
         }
-        // 整数键 = 字节域(计划 D5,与 len 同域):产出单字节 1-char string;多字节序列
+        // 整数键 = 字节域(与 len 同域):产出单字节 1-char string;多字节序列
         // 中间字节取该字节自身(字节契约的自然结果,非完整字符)。非整数 TypeMismatch;
         // 负下标从尾计数、归一化后越界 IndexOutOfBounds(文案报原始键值,同 list)。
         if (!key.is_int()) {

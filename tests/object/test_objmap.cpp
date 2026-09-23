@@ -340,7 +340,7 @@ TEST(ObjMap, UnrootedMapSwept) {
 
 // ---- 命名成员协议(load_field → VM 的 Map bootstrap 类) ----
 
-// bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根(计划 D1)。
+// bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根。
 TEST(ObjMap, BootstrapClassContract) {
     AriaVM vm;
     auto*  map_class = vm.map_class();

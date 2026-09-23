@@ -430,7 +430,7 @@ lib/x.aria:12: Runtime: DivisionByZero integer division by zero
 
 ## M4 补录：闭包 upvalue 关闭与 unwind 的交互坑点（2026-09，已落地）
 
-> M4 闭包（见 `m4-closure-implementation-plan.md`）在 M3 的截栈/弹帧机制上叠加了「upvalue 关闭」维度：局部槽不再只被值栈管理，还可能被 open upvalue 链上的 `ObjUpvalue` 开指着。「丢弃一段栈区」的每条路径（RETURN 弹帧 / unwind 命中截栈 / unwind 未命中弹帧 / 作用域退出）都必须先回答「区间内开指何时关、谁负责关」，与坑 #6/#10/#13 的截栈/弹帧细节交叠，是坑点高发区。四条记录如下，对策均已实施；测试钉在 `tests/runtime/test_ariavm.cpp`（闭包机制节）与 `tests/compile/test_codegen.cpp`（M4 节）。
+> M4 闭包在 M3 的截栈/弹帧机制上叠加了「upvalue 关闭」维度：局部槽不再只被值栈管理，还可能被 open upvalue 链上的 `ObjUpvalue` 开指着。「丢弃一段栈区」的每条路径（RETURN 弹帧 / unwind 命中截栈 / unwind 未命中弹帧 / 作用域退出）都必须先回答「区间内开指何时关、谁负责关」，与坑 #6/#10/#13 的截栈/弹帧细节交叠，是坑点高发区。四条记录如下，对策均已实施；测试钉在 `tests/runtime/test_ariavm.cpp`（闭包机制节）与 `tests/compile/test_codegen.cpp`（M4 节）。
 
 ## 坑 #17：unwind 命中分支的关闭点 -- close 必须先于截栈与 push，且 handler 帧不退、不经 exit_frame
 

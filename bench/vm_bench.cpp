@@ -1,7 +1,7 @@
 // bench/vm_bench.cpp
 //
-// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「不绑定派发」取舍的依据
-// （解读见 .claude/reference/runtime/collections-builtin-methods-plan.md），
+// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「不绑定派发」取舍的依据（解读见
+// .claude/reference/bytecode/bytecode-instruction-set.md §6.2），
 // 本程序是它们的可复现入口--改 CodeGen 发射或 VM 派发路径前后各跑一次对照，把新数字回写文档。
 //
 // 每行压一种派发形态，迭代次数统一 kIterations（循环体共 1,638,400 次），故 ns/次可跨行比较：
@@ -20,7 +20,7 @@
 //     零 ObjBoundMethod，即「不绑定派发能达到的下界」。预绑定不是正常写法，只作对照。
 //   两形态算同一个结果（BENCH_CHECK 断言相等），差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次
 //   dispatch 上的成本，也就是不绑定派发可回收的**上界**（两段式 PREPARE_METHOD + CALL_METHOD 相对两步
-//   形态节省的量;两段式自身的开销见 collections-builtin-methods-plan.md §4.7）。两侧同处一个二进制，跨构建抖动
+//   形态节省的量;两段式自身的开销见指令集 §6.2）。两侧同处一个二进制，跨构建抖动
 //   （±5-10%，见 lexer-notes §1）不进入差值结论。
 //
 // 计时纪律（同 lexer_bench）：进程内 best-of-N 取最小，不单发进程计时（同一二进制重复运行的抖动在

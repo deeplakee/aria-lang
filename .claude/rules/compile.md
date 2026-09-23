@@ -140,10 +140,17 @@ VM 侧语义见 `.claude/reference/runtime/exception-implementation-pitfalls.md`
 
 ### M5 类发射
 
-VM 机制见 `runtime.md` 与 m5 计划。
+VM 机制见 `runtime.md`。
 
 - **`visitDefDeclNode` lowering**（成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不查重）：① superclass 有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析 superclass 值，编译期不查全局）/ 无 -> `LOAD_REG`（寄存器 `ObjectClass`，用户 shadow 免疫）② `MAKE_CLASS name` ③ 成员按源序发射（静态变量初始化顺序即此序，前一静态可被后续初始化器引用）④ 尾绑定按语境：顶层 -> `declare_global_or_fail` + `DEF_GLOBAL`；函数/块内 -> `define_local_or_fail`（值填槽）。成员初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未绑定（`TryRecord.stack_depth` 记在 def 语句前）。
 - **this/super 解析**：`visitThisExprNode` -> `resolve_this_or_fail`（沿 fn ctx 链找 `kThisName` 的局部--当前帧命中 -> Local 恒槽 0；外层命中 -> `resolve_upvalue` 捕获（arrow 语义，穿透多层）；链上无实例方法 -> `fail ThisOutsideClass`；**永不落全局**）。`visitSuperExprNode`（`super.成员` 文法单形，裸 super 解析期 `ExpectedToken`）-> 语境检查（`SuperOutsideMethod`）+ `LOAD_SUPER_FIELD`（方法闭包绑 this、静态槽原值直读）；super 写形态无对应语义 -> `validate_lvalue_target` 拒绝报 `InvalidAssignmentTarget`。`super.m(args)` 经 visitCallNode 通用路径复用本 visit。
+  - **this/super 的不对称判据**：this 允许嵌套捕获而 super 禁止。this 是帧槽 0 的具名局部，栈槽值可 upvalue 化；super 是
+    `(defining class, this)` 二元组，而 defining class 挂在闭包上、不是局部，无槽可捕。故 super 仅直接方法帧可用，
+    嵌套函数内需先取后用（`var m = super.m;` 语义等价，表达力无损）。
+  - **否决的替代路线**：Wren 式 superclass 常量池烘焙（方法绑定时刻扫字节码回填 SUPER 常量槽、`CODE_CLOSURE`
+    递归进嵌套 fn）机制成立且支持嵌套 super，但绑定时刻回填字节码过于 tricky，且表达力经先取后用无损，不值
+    `LOAD_SUPER_FIELD` 加常量操作数 + `MAKE_METHOD` 回填扫描的改动面；defining class 戳复制给嵌套闭包亦否--
+    戳一职双任（super 来源 + 方法性标记），嵌套闭包带戳会被 `is_method` 误判为方法性。
 - **`visitFieldAccessNode` 四模式**（take 入口取）：object 为 this 且 `is_in_method()`（当前帧直接方法帧，槽 0 即具名 this）-> `LOAD_THIS_FIELD`/`STORE_THIS_FIELD`（this 取帧槽 0 不经栈，Store peek-store `[v]->[v]`；Prepare no-op；Locate 与 Load 同形）；其余退化/一般经栈：Prepare = 只发 `<obj>`（普通 = 首腿，不读值）；Load = `<obj>`（捕获 this 走 LOAD_UPVALUE）+ `LOAD_FIELD`；Store = **只发 `STORE_FIELD`**（`[obj, v] -> [v]`，接收者由 Prepare 腿备好）；Locate = `<obj> DUP LOAD_FIELD`（DUP 副本供 Store 腿复用）。普通 `=` 三腿与复合只在中间腿不同，接收者发射权在节点 Prepare 臂。
 - **`visitIndexAccessNode` 四模式**（同款 take 入口取）：Load = `<obj>`+`<idx>`+`LOAD_INDEX`；Prepare（普通 = 首腿）= 只发 `<obj>`+`<idx>` 备对；Store = 只发 `STORE_INDEX`（obj/idx 由 Prepare 腿备好）；Locate = `<obj>`+`<idx>`+`DUP2`+`LOAD_INDEX` 复制对垫底供 Store 腿复用，locator 单次求值（compound-assignment-lowering.md §4.3）。
 - **列表字面量发射**（`visitListExprNode`）：元素数先检后发（`> kMaxListElements` -> `fail TooManyElements`，`visitCallNode` 同款），逐元素 `emit_expr` 后 `MAKE_LIST n:u16`。

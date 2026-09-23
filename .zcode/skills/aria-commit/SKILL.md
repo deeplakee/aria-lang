@@ -55,7 +55,7 @@ scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `by
 | 评审/决策过程 | "(user decision)"、"as discussed, we picked option B" | 直述理由本身 |
 | 被否方案推导 | "deliberately not shared with the Lexer parser (which accepts `_`)" | 一行结论或不写 |
 | 实测数据 | "extracting the helper measured 9% slower" | 删；数字属 reference 文档或 `perf` 提交 |
-| 文档指针 | "full rationale in collections-builtin-methods-plan.md" | 删；文档随批提交，`git show --stat` 即可见 |
+| 文档指针 | "full rationale in some-plan.md" | 删；文档随批提交，`git show --stat` 即可见 |
 | 项目状态叙述 | "there was previously nowhere to put this" | 删；只写现在的行为与机制 |
 | 规划词汇 | "M5 phase 3"、"batch 9"、"finalize" | 按语言域名称描述改动 |
 | 空泛评价与完成体 | "improve"、"clean up"、"fixed X" | 说机制变化；动词用原形 |

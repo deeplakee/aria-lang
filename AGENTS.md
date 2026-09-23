@@ -30,13 +30,9 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 - `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
 - `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
-- `runtime/m4-closure-implementation-plan.md` -- M4 闭包实施计划（已全部落地，存档）。
-- `runtime/m5-class-implementation-plan.md` -- M5 类实施计划（已全部落地，存档；含语义模型与六项设计决策）。
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、init_ 两写点、Locate 合流栈泄漏；类相关特性重启前重读）。
-- `runtime/collections-builtin-methods-plan.md` -- P0 语言面补齐实施计划与落地记录（编译器前置批 + 方法机制与迭代协议、下标语义、各类型方法面、解构）。
-- `memory/gc-implementation-plan.md` -- GC 设计、分阶段路线与落地记录。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 

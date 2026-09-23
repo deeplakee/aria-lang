@@ -7,8 +7,6 @@ paths:
 
 # memory 层模块参考
 
-GC 分阶段路线与各阶段落地细节见 `.claude/reference/memory/gc-implementation-plan.md`（按需 Read）。
-
 ## `memory/Buffer.hpp`
 
 - `Buffer<T, Alloc = GC>`（`TriviallyCopyable`/`TrivialAllocator` 约束）：只持 `{alloc, data, cap}` 的最小可增长缓冲底座，集中 `allocate`/`reallocate`/`deallocate`，**无逻辑长度**。

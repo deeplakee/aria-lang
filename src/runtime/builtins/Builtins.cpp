@@ -8,6 +8,7 @@
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
+#include "util/io.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/ObjBridge.hpp" // try_obj<T>
 #include "value/Value.hpp"
@@ -63,6 +64,21 @@ namespace aria::builtins {
             return true;
         }
 
+        // println([x]) -> nil:值的可读渲染加换行(format_value,与 PRINT 一致),省参只输出换行;可作一等值传参。
+        bool fn_println(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc > 1) {
+                return vm.fail(ErrorCode::WrongArity, "println expects 0 or 1 arguments, got {}", argc);
+            }
+            if (argc == 0) {
+                io::println();
+            } else {
+                io::println("{}", format_value(slots[1]));
+            }
+            slots[0] = Value::nil_val();
+            return true;
+        }
+
         // assert(x[, msg]) -> nil:x 真值则成功返 nil;否则抛 AssertionFailed(msg 为 string
         // 时用之,非 string 静默忽略落默认消息)。
         bool fn_assert(AriaVM& vm, Span<Value> slots) {
@@ -83,12 +99,10 @@ namespace aria::builtins {
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
-        // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表。
+        // 内置表:按名注册进 VM 级 builtins 表。`print` 是关键字/语句(走 PRINT 指令),不入此表;
+        // 它的函数形态是同表内的 `println`。
         constexpr BuiltinEntry kBuiltins[] = {
-                {"type", fn_type},
-                {"len", fn_len},
-                {"str", fn_str},
-                {"assert", fn_assert},
+                {"type", fn_type}, {"len", fn_len}, {"str", fn_str}, {"println", fn_println}, {"assert", fn_assert},
         };
 
     } // namespace

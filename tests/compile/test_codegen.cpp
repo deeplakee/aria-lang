@@ -1193,7 +1193,7 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 }
 
 // ============================================================
-// 内置函数（type / len / str / assert）
+// 内置函数（type / len / str / println / assert）
 // ============================================================
 // 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
 // （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFunction*)，
@@ -1225,6 +1225,19 @@ TEST(CodeGen, BuiltinStr) {
     EXPECT_EQ(aria::format_value((*run_source("return str(nil);"))), "nil");
     EXPECT_EQ(aria::format_value((*run_source("return str(42);"))), "42");
     EXPECT_EQ(aria::format_value((*run_source("return str(true);"))), "true");
+}
+
+TEST(CodeGen, BuiltinPrintln) {
+    // println 是 print 语句的函数形态（print 是关键字，不能作值），输出渲染钉在语料
+    // 08_builtins/println_builtin（配 .out 逐字节比对），此处只钉可取值与身份。
+    EXPECT_EQ(aria::format_value((*run_source("return type(println);"))), "NativeFn");
+}
+
+TEST(CodeGen, BuiltinPrintlnArityCheck) {
+    // println 自检 argc：>1 参 -> WrongArity（0 参合法、输出空行，行为钉在语料 .out）。
+    auto out = run_source("return println(1, 2);");
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
 }
 
 TEST(CodeGen, BuiltinAssertPass) {

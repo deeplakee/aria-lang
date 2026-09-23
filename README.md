@@ -74,7 +74,7 @@ print("42".to_int() + 1);                                    # 43
   `substring`/`to_int` 等。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（别名必写）。模块顶层绑定即模块成员，
   `U.f()` 直调，成员只读。
-- **内置函数**：`type` / `len` / `str` / `assert`。
+- **内置函数**：`type` / `len` / `str` / `assert` / `println`（`print` 语句关键字的函数形态，可当一等值传递）。
 
 ## 构建与运行
 

@@ -43,7 +43,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 | `positive/**` + 同名 `.out` | 另捕获 stdout，与 `.out` **逐字节精确比对**（含末尾换行） |
 | `negative/compile_errors/compile_*.aria` | 须 `CompileError` |
 | `negative/runtime_errors/runtime_*.aria` | 须 `RuntimeError` |
-| 同名 `.err` | 捕获 stderr，`.err` **每行一个子串**，全部须出现 |
+| 两类负向 + 同名 `.err` | 捕获 stderr，`.err` **每行一个子串**，全部须出现（编译期与运行期同规则；编译错误无堆栈跟踪行，故只钉消息正文，不钉位置串） |
 
 `09_modules` 每个用例一个子目录：`用例名/main.aria`（入口固定叫 main.aria）+
 `用例名/lib/*.aria`（辅助模块，被 runner 跳过）。`negative/runtime_errors/` 需要
@@ -87,8 +87,8 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   的 `StringConstant`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
   缺席（`<class Box> has no member '__add__'`），内置类型没实现该算子报「本类型不支持」
   （`type List does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
-  `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值仍报
-  `call non-callable Int`，类本身仍走实例化。
+  `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值同码报
+  `type Int does not support '__call__'`，类本身仍走实例化。
 - **字符串 `+` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：都要求两侧皆 `String`、不做隐式转换
   （显式转换走 `str()`），比较按**无符号字节序**（与 `size`/`s[i]` 同字节域，大小写敏感、无 collation）。
 - **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报

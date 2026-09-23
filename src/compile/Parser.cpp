@@ -134,7 +134,7 @@ namespace aria {
     }
 
     const Token& Parser::previous() const noexcept {
-        ASSERT(pos_ > 0, "Parser::previous 在未消费任何 token 时调用");
+        ASSERT(pos_ > 0, "no token consumed yet");
         return tokens_[pos_ - 1];
     }
 
@@ -142,10 +142,12 @@ namespace aria {
         if (check(t)) {
             return advance();
         }
+        // 违规片段取 peek 的 lexeme(源码原片段)而非 to_string(TokenType):后者是调试用的
+        // CamelCase 类型名,用户看不到 '}' 这类实际写法。
         if (is_at_end()) {
-            error(ErrorCode::UnexpectedEof, "期望 {} 但遇到文件结束", what);
+            error(ErrorCode::UnexpectedEof, "expected {}, got end of file", what);
         }
-        error(ErrorCode::ExpectedToken, "期望 {} 但遇到 '{}'", what, to_string(peek().type()));
+        error(ErrorCode::ExpectedToken, "expected {}, got '{}'", what, peek().lexeme());
     }
 
     String Parser::expect_identifier() {
@@ -154,9 +156,9 @@ namespace aria {
             return String{t.lexeme()};
         }
         if (is_at_end()) {
-            error(ErrorCode::UnexpectedEof, "期望标识符但遇到文件结束");
+            error(ErrorCode::UnexpectedEof, "expected identifier, got end of file");
         }
-        error(ErrorCode::ExpectedIdentifier, "期望标识符但遇到 '{}'", to_string(peek().type()));
+        error(ErrorCode::ExpectedIdentifier, "expected identifier, got '{}'", peek().lexeme());
     }
 
     void Parser::synchronize() {
@@ -226,7 +228,7 @@ namespace aria {
 
     UPtr<FunDeclNode> Parser::fun_decl(const FnKind kind) {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Fun, "\"fun\"");
+        expect(TokenType::Fun, "'fun'");
         String          name = expect_identifier();
         List<Param>     ps   = params();
         UPtr<BlockNode> body = block();
@@ -251,7 +253,7 @@ namespace aria {
                     seen_default = true;
                 } else {
                     if (seen_default) {
-                        error(ErrorCode::DefaultAfterPlain, "默认参数之后不得再有无默认参数");
+                        error(ErrorCode::DefaultAfterPlain, "non-default parameter after default parameter");
                     }
                     result.push_back(Param{.name = std::move(name)});
                 }
@@ -260,7 +262,7 @@ namespace aria {
                 }
             }
             if (!result.empty() && result.back().is_varargs && !check(TokenType::RightParen)) {
-                error(ErrorCode::VarargsNotLast, "varargs '...' 必须位于参数列表末尾");
+                error(ErrorCode::VarargsNotLast, "varargs '...' must be the last parameter");
             }
         }
         expect(TokenType::RightParen, "')'");
@@ -269,7 +271,7 @@ namespace aria {
 
     UPtr<DefDeclNode> Parser::def_decl() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Def, "\"def\"");
+        expect(TokenType::Def, "'def'");
         String      name       = expect_identifier();
         Opt<String> superclass = match(TokenType::Colon) ? Opt{expect_identifier()} : std::nullopt;
         expect(TokenType::LeftBrace, "'{'");
@@ -295,7 +297,8 @@ namespace aria {
                 members.push_back(
                         std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody), kind));
             } else {
-                error(ErrorCode::ExpectedToken, "def 体内只允许 var/fun/方法，但遇到 '{}'", to_string(peek().type()));
+                error(ErrorCode::ExpectedToken, "expected 'var', 'fun' or a method name in def body, got '{}'",
+                      peek().lexeme());
             }
         }
         expect(TokenType::RightBrace, "'}'");
@@ -307,7 +310,7 @@ namespace aria {
         // 语句级 varDecl 的多绑定/解构 pattern 在成员位不收，就地语法错（成员是类对象上的具名槽，
         // 名字一等，见 grammar.txt member 注）。
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Var, "\"var\"");
+        expect(TokenType::Var, "'var'");
         String         name = expect_identifier();
         UPtr<ExprNode> init = match(TokenType::Equal) ? expression() : nullptr;
         expect(TokenType::Semicolon, "';'");
@@ -316,7 +319,7 @@ namespace aria {
 
     UPtr<VarDeclNode> Parser::var_decl() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Var, "\"var\"");
+        expect(TokenType::Var, "'var'");
         List<VarBinding> bindings;
         do {
             bindings.push_back(var_binding());
@@ -370,7 +373,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::if_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::If, "\"if\"");
+        expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = expression();
         expect(TokenType::RightParen, "')'");
@@ -381,7 +384,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::while_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::While, "\"while\"");
+        expect(TokenType::While, "'while'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = expression();
         expect(TokenType::RightParen, "')'");
@@ -391,7 +394,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::for_or_for_in_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::For, "\"for\"");
+        expect(TokenType::For, "'for'");
         expect(TokenType::LeftParen, "'('");
 
         // forStmt 空 init：'(' 后即 ';'。
@@ -430,7 +433,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::finish_for_in_stmt(const SourceLoc loc) {
         UPtr<PatternNode> target = pattern(); // forIn 目标为 pattern
-        expect(TokenType::In, "\"in\"");
+        expect(TokenType::In, "'in'");
         UPtr<ExprNode> iterable = expression();
         expect(TokenType::RightParen, "')'");
         UPtr<StmtNode> body = statement();
@@ -470,21 +473,21 @@ namespace aria {
 
     UPtr<StmtNode> Parser::break_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Break, "\"break\"");
+        expect(TokenType::Break, "'break'");
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<BreakStmtNode>(loc);
     }
 
     UPtr<StmtNode> Parser::continue_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Continue, "\"continue\"");
+        expect(TokenType::Continue, "'continue'");
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ContinueStmtNode>(loc);
     }
 
     UPtr<StmtNode> Parser::return_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Return, "\"return\"");
+        expect(TokenType::Return, "'return'");
         UPtr<ExprNode> value = nullptr;
         if (!check(TokenType::Semicolon) && !is_at_end()) {
             value = expression();
@@ -495,12 +498,12 @@ namespace aria {
 
     UPtr<StmtNode> Parser::import_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Import, "\"import\"");
+        expect(TokenType::Import, "'import'");
         if (!check(TokenType::String)) {
-            error(ErrorCode::ExpectedToken, "期望字符串字面量作为模块路径");
+            error(ErrorCode::ExpectedToken, "expected a string literal as module path, got '{}'", peek().lexeme());
         }
         const StringView path = advance().string_value();
-        expect(TokenType::As, "\"as\"");
+        expect(TokenType::As, "'as'");
         String alias = expect_identifier();
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ImportStmtNode>(loc, String{path}, std::move(alias));
@@ -508,7 +511,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::try_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Try, "\"try\"");
+        expect(TokenType::Try, "'try'");
         UPtr<BlockNode> body        = block();
         Opt<String>     catch_param = std::nullopt;
         UPtr<BlockNode> catch_body  = nullptr;
@@ -523,7 +526,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::throw_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Throw, "\"throw\"");
+        expect(TokenType::Throw, "'throw'");
         UPtr<ExprNode> expr = expression();
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ThrowStmtNode>(loc, std::move(expr));
@@ -531,7 +534,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::match_stmt() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Match, "\"match\"");
+        expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> subject = expression();
         expect(TokenType::RightParen, "')'");
@@ -789,9 +792,9 @@ namespace aria {
                 break;
         }
         if (is_at_end()) {
-            error(ErrorCode::UnexpectedEof, "期望表达式却遇到文件结束");
+            error(ErrorCode::UnexpectedEof, "expected expression, got end of file");
         }
-        error(ErrorCode::ExpectedExpression, "期望表达式却遇到 '{}'", to_string(peek().type()));
+        error(ErrorCode::ExpectedExpression, "expected expression, got '{}'", peek().lexeme());
     }
 
     UPtr<ExprNode> Parser::list_expr() {
@@ -829,14 +832,14 @@ namespace aria {
 
     UPtr<ExprNode> Parser::if_expr() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::If, "\"if\"");
+        expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = expression();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
         UPtr<ExprNode> then_expr = expression();
         expect(TokenType::RightBrace, "'}'");
-        expect(TokenType::Else, "\"else\"");
+        expect(TokenType::Else, "'else'");
         expect(TokenType::LeftBrace, "'{'");
         UPtr<ExprNode> else_expr = expression();
         expect(TokenType::RightBrace, "'}'");
@@ -845,7 +848,7 @@ namespace aria {
 
     UPtr<ExprNode> Parser::lambda_expr() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Fun, "\"fun\"");
+        expect(TokenType::Fun, "'fun'");
         List<Param>     ps   = params();
         UPtr<BlockNode> body = block();
         return std::make_unique<LambdaExprNode>(loc, std::move(ps), std::move(body));
@@ -853,7 +856,7 @@ namespace aria {
 
     UPtr<ExprNode> Parser::match_expr() {
         const SourceLoc loc = peek().loc();
-        expect(TokenType::Match, "\"match\"");
+        expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> subject = expression();
         expect(TokenType::RightParen, "')'");
@@ -902,9 +905,9 @@ namespace aria {
             return list_pattern();
         }
         if (is_at_end()) {
-            error(ErrorCode::UnexpectedEof, "期望标识符或模式却遇到文件结束");
+            error(ErrorCode::UnexpectedEof, "expected identifier or pattern, got end of file");
         }
-        error(ErrorCode::ExpectedIdentifier, "期望标识符或模式却遇到 '{}'", to_string(peek().type()));
+        error(ErrorCode::ExpectedIdentifier, "expected identifier or pattern, got '{}'", peek().lexeme());
     }
 
     UPtr<ListPatternNode> Parser::list_pattern() {
@@ -922,7 +925,7 @@ namespace aria {
             } while (match(TokenType::Comma));
             // rest 之后必须紧跟 ']'，否则报 InvalidPattern。
             if (rest && !check(TokenType::RightBracket)) {
-                error(ErrorCode::InvalidPattern, "rest 模式 '...' 必须位于列表末尾");
+                error(ErrorCode::InvalidPattern, "rest pattern '...' must be last");
             }
         }
         expect(TokenType::RightBracket, "']'");
@@ -933,7 +936,7 @@ namespace aria {
         expect(TokenType::DotDotDot, "'...'");
         if (check(TokenType::Underscore)) {
             // ..._ 与不写 rest 等价，冗余非法。
-            error(ErrorCode::InvalidPattern, "rest 模式不接受 '_'（..._ 等价于不写 rest）");
+            error(ErrorCode::InvalidPattern, "rest pattern cannot bind '_'");
         }
         // 绑名即 pattern 位（Position i 之后的剩余绑到该名），故按 IdentifierPatternNode 出生。
         const SourceLoc loc = peek().loc();

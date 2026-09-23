@@ -161,4 +161,4 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### finally 不支持
 
-善后后继 defer 已降为可选后续、不绑定里程碑：`finally` 回归普通标识符；try 无 catch 报 `TryWithoutHandler`（消息「try 须有 catch」）。
+善后后继 defer 已降为可选后续、不绑定里程碑：`finally` 回归普通标识符；try 无 catch 报 `TryWithoutHandler`（消息 `'try' requires a catch clause`）。

@@ -173,7 +173,7 @@ namespace aria {
         // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge（CodeUnit::add_constant 内部
         // ASSERT 兜底，本预检保证永不触达）。
         if (cur_cu()->constants.size() > kMaxConstants) {
-            fail(ErrorCode::CodeUnitTooLarge, loc, "常量池溢出(>{})", kMaxConstants);
+            fail(ErrorCode::CodeUnitTooLarge, loc, "too many constants (max {})", kMaxConstants);
         }
         return cur_cu()->add_constant(value);
     }
@@ -213,10 +213,10 @@ namespace aria {
         // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
         // 仅登记不发指令（值填槽：调用方保证值已压栈、登记槽位即值位置，登记即初始化）。
         if (cur_fn_ctx()->is_defined_in_scope(name)) {
-            fail(ErrorCode::RedefinedVariable, loc, "重复定义局部变量: {}", name);
+            fail(ErrorCode::RedefinedVariable, loc, "redefined local variable '{}'", name);
         }
         if (cur_fn_ctx()->locals_.size() > kMaxLocals) {
-            fail(ErrorCode::TooManyLocals, loc, "局部变量过多(>{})", kMaxLocals);
+            fail(ErrorCode::TooManyLocals, loc, "too many locals (max {})", kMaxLocals);
         }
         return cur_fn_ctx()->add_local(name); // 纯登记
     }
@@ -257,25 +257,26 @@ namespace aria {
         if (const auto upvalue_idx = resolve_upvalue(cur_fn_ctx(), kThisName, loc)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Upvalue, .index = *upvalue_idx};
         }
-        fail(ErrorCode::ThisOutsideClass, loc, "this 不在实例方法内");
+        fail(ErrorCode::ThisOutsideClass, loc, "'this' outside method");
     }
 
     u8 CodeGen::add_upvalue_or_fail(FunctionCtx* ctx, const UpvalueDesc desc, const SourceLoc loc) const {
         if (const auto idx = ctx->add_upvalue(desc)) {
             return *idx;
         }
-        fail(ErrorCode::TooManyUpvalues, loc, "闭包捕获变量过多(>{})", kMaxUpvalues);
+        fail(ErrorCode::TooManyUpvalues, loc, "too many upvalues (max {})", kMaxUpvalues);
     }
 
     void CodeGen::patch_jump_or_fail(const u32 src_off, const SourceLoc loc) const {
         if (!cur_cu()->patch_jump(src_off)) {
-            fail(ErrorCode::CodeUnitTooLarge, loc, "跳转偏移超过 64KB");
+            fail(ErrorCode::CodeUnitTooLarge, loc, "function too large: jump offset exceeds {}", kU16OperandMax);
         }
     }
 
     void CodeGen::emit_jump_back_or_fail(const u32 target_off, const SourceLoc loc) const {
         if (!cur_cu()->emit_jump_back(target_off, loc.line())) {
-            fail(ErrorCode::CodeUnitTooLarge, loc, "回边偏移超过 64KB");
+            fail(ErrorCode::CodeUnitTooLarge, loc, "function too large: backward jump offset exceeds {}",
+                 kU16OperandMax);
         }
     }
 
@@ -289,7 +290,7 @@ namespace aria {
 
     void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc loc) const {
         if (!mod_ctx_->declare_global(name)) {
-            fail(ErrorCode::RedefinedVariable, loc, "重复定义全局变量: {}", name);
+            fail(ErrorCode::RedefinedVariable, loc, "redefined global variable '{}'", name);
         }
     }
 
@@ -316,7 +317,7 @@ namespace aria {
         if (dynamic_cast<IndexAccessNode*>(&target) != nullptr) {
             return;
         }
-        fail(ErrorCode::InvalidAssignmentTarget, target.loc(), "非法赋值左值");
+        fail(ErrorCode::InvalidAssignmentTarget, target.loc(), "invalid assignment target");
     }
 
     void CodeGen::emit_lvalue(ExprNode& node, const LvalueMode mode) {
@@ -415,7 +416,7 @@ namespace aria {
     void CodeGen::emit_expr(ExprNode& node) {
         // rvalue 上下文恒 Load：emit_lvalue 分派后必恢复为 Load。断言（非预防性赋值）以在开发期捕获漏恢复。
         ASSERT(lvalue_mode_ == LvalueMode::Load,
-               "lvalue_mode_ 应为 Load（rvalue 上下文）；非 Load 表明 emit_lvalue 分派后未恢复");
+               "lvalue_mode_ must be Load (emit_lvalue did not restore it after dispatch)");
         node.accept(*this);
     }
 
@@ -432,13 +433,13 @@ namespace aria {
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc loc) const {
         // 契约见 CodeGen.hpp validate_params 注;此处只读 params,不触碰编译器状态。
         if (params.size() > kMaxArity) {
-            fail(ErrorCode::TooManyParameters, loc, "形参过多(>{})", kMaxArity);
+            fail(ErrorCode::TooManyParameters, loc, "too many parameters (max {})", kMaxArity);
         }
 
         for (usize i = 0; i < params.size(); ++i) {
             for (usize j = i + 1; j < params.size(); ++j) {
                 if (params[i].name == params[j].name) {
-                    fail(ErrorCode::DuplicateParam, loc, "形参重名: {}", params[i].name);
+                    fail(ErrorCode::DuplicateParam, loc, "duplicate parameter '{}'", params[i].name);
                 }
             }
         }
@@ -687,7 +688,7 @@ namespace aria {
     void CodeGen::visitBreakStmtNode(BreakStmtNode& node) {
         const u32 line = node.line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
-            fail(ErrorCode::BreakOutsideLoop, node.loc(), "break 不在循环内");
+            fail(ErrorCode::BreakOutsideLoop, node.loc(), "'break' outside loop");
         }
         auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
         emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
@@ -698,7 +699,7 @@ namespace aria {
     void CodeGen::visitContinueStmtNode(ContinueStmtNode& node) {
         const u32 line = node.line();
         if (cur_fn_ctx()->loop_stack_.empty()) {
-            fail(ErrorCode::ContinueOutsideLoop, node.loc(), "continue 不在循环内");
+            fail(ErrorCode::ContinueOutsideLoop, node.loc(), "'continue' outside loop");
         }
         auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
         emit_pop_locals_to(loop_ctx.loop_scope_depth, line);
@@ -732,7 +733,7 @@ namespace aria {
         const u32 line = node.line();
         // try 须有 catch（parse 层允许无 catch，语义收口在此）。
         if (node.catch_body == nullptr) {
-            fail(ErrorCode::TryWithoutHandler, node.loc(), "try 须有 catch");
+            fail(ErrorCode::TryWithoutHandler, node.loc(), "'try' requires a catch clause");
         }
 
         // lowering：入口预插 try_records 占位（begin 已定、余待结尾回填）-> 编译 try 体（嵌套 try 在此
@@ -777,7 +778,7 @@ namespace aria {
     void CodeGen::validate_match_arms(const List<Arm>& arms) const {
         for (usize i = 1; i < arms.size(); ++i) {
             if (arms[i - 1].pattern.value == nullptr) {
-                fail(ErrorCode::UnreachableArm, arms[i].body->loc(), "通配臂后的分支不可达");
+                fail(ErrorCode::UnreachableArm, arms[i].body->loc(), "unreachable arm after '_'");
             }
         }
     }
@@ -885,7 +886,7 @@ namespace aria {
 
     void CodeGen::validate_int_literal(const i64 value, const SourceLoc loc) const {
         if (value < kIntMin || value > kIntMax) {
-            fail(ErrorCode::NumberOutOfRange, loc, "整数字面量超出 i48 范围: {}", value);
+            fail(ErrorCode::NumberOutOfRange, loc, "integer literal {} out of range", value);
         }
     }
 
@@ -988,7 +989,7 @@ namespace aria {
         // 方法闭包由 VM 绑 this 成 bound method、静态槽原值直读。super.m(args) 经 visitCallNode 通用
         // 路径复用本 visit，无特判分支；写形态非左值（validate_lvalue_target 拒绝）。
         if (!is_in_method()) {
-            fail(ErrorCode::SuperOutsideMethod, node.loc(), "super 不在实例方法内");
+            fail(ErrorCode::SuperOutsideMethod, node.loc(), "'super' outside method");
         }
         const auto name_idx = add_name_or_fail(node.name, node.loc());
         const u32  line     = node.line();
@@ -1098,7 +1099,7 @@ namespace aria {
         const u32 line = node.line();
         // 实参上限 kMaxArguments（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
         if (node.args.size() > kMaxArguments) {
-            fail(ErrorCode::TooManyArguments, node.loc(), "实参数超过 {}", kMaxArguments);
+            fail(ErrorCode::TooManyArguments, node.loc(), "too many arguments (max {})", kMaxArguments);
         }
         // recv.name(args) 两段式发射（见 try_emit_method_call）；未命中交下方一般路径。
         if (try_emit_method_call(node)) {
@@ -1208,7 +1209,7 @@ namespace aria {
         const u32 line = node.line();
         // 元素数上限 kMaxListElements(MAKE_LIST 操作数 u16):先检后发(visitCallNode 同款)。
         if (node.elements.size() > kMaxListElements) {
-            fail(ErrorCode::TooManyElements, node.loc(), "列表元素数超过 {}", kMaxListElements);
+            fail(ErrorCode::TooManyElements, node.loc(), "too many list elements (max {})", kMaxListElements);
         }
         for (const auto& element: node.elements) {
             emit_expr(*element);
@@ -1221,7 +1222,7 @@ namespace aria {
         const u32 line = node.line();
         // 条目数上限 kMaxMapEntries(MAKE_MAP 操作数 u16,条目对数):先检后发(visitListExprNode 同款)。
         if (node.entries.size() > kMaxMapEntries) {
-            fail(ErrorCode::TooManyElements, node.loc(), "map 条目数超过 {}", kMaxMapEntries);
+            fail(ErrorCode::TooManyElements, node.loc(), "too many map entries (max {})", kMaxMapEntries);
         }
         for (const auto& [key, value]: node.entries) {
             emit_expr(*key);

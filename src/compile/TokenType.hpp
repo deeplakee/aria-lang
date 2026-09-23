@@ -106,8 +106,9 @@ namespace aria {
 
 #undef ARIA_TOKEN_LIST
 
-    // TokenType 的可读名映射（如 "Integer"、"FatArrow"）；Token::to_string 渲染与
-    // Parser 错误信息复用。非法值（u8 强转越界）为编程错误，ASSERT 拦截（同 ErrorCode）。
+    // TokenType 的可读名映射（如 "Integer"、"FatArrow"）；Token::to_string 渲染（调试面）用。
+    // 报错文案不用它 -- 违规片段取 Token::lexeme() 的源码原片段。非法值（u8 强转越界）为编程
+    // 错误，ASSERT 拦截（同 ErrorCode）。
     [[nodiscard]]
     constexpr StringView to_string(const TokenType type) noexcept {
         const auto index = std::to_underlying(type);

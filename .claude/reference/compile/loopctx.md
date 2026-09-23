@@ -154,7 +154,7 @@ emit_loop_backedge_and_exits(loop_ctx, node->loc());  // 回边 + exit 统一回
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
-    fail(ErrorCode::BreakOutsideLoop, node->loc(), "break 不在循环内");
+    fail(ErrorCode::BreakOutsideLoop, node->loc(), "'break' outside loop");
 auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();   // 最内层循环
 emit_pop_locals_to(loop_ctx.loop_scope_depth, line);          // 弹循环体内局部
 const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_end（待回填）
@@ -167,7 +167,7 @@ loop_ctx.exit_fwd_patches.push_back(patch);                 // 发占位 JUMP，
 
 ```cpp
 if (cur_fn_ctx()->loop_stack_.empty())
-    fail(ErrorCode::ContinueOutsideLoop, node->loc(), "continue 不在循环内");
+    fail(ErrorCode::ContinueOutsideLoop, node->loc(), "'continue' outside loop");
 auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
 emit_pop_locals_to(loop_ctx.loop_scope_depth, line);          // 弹循环体内局部
 if (loop_ctx.continue_fwd_patches) {                    // 前向：通道已打开（for 带 incr），占位待回填

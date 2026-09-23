@@ -8,7 +8,7 @@
 namespace aria {
 
     ModuleCtx::ModuleCtx(ObjModule* module) : module_{module} {
-        ASSERT(module->entry() != nullptr, "ModuleCtx 构造前须 set_entry 入口函数");
+        ASSERT(module->entry() != nullptr, "module entry must be set before construction");
         current_fn_ctx_ = new FunctionCtx(module->entry(), nullptr, FnKind::Function);
     }
 

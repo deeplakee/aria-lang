@@ -107,7 +107,7 @@ namespace aria {
     }
 
     void Lexer::advance(const u32 n) noexcept {
-        ASSERT(pos_ + n <= src_.size(), "Lexer::advance 推进越界");
+        ASSERT(pos_ + n <= src_.size(), "beyond end of source");
         pos_ += n;
     }
 
@@ -195,7 +195,7 @@ namespace aria {
         // 前缀后必须紧跟一个进制数字（文法：0x[0-9a-fA-F]... 至少一位，首字符不能是 _）。
         // 直接断言，避免循环消费后再判，报错更早更准。
         if (is_eof() || !is_radix_digit(base, src_[pos_])) {
-            error(ErrorCode::InvalidNumber, "进制字面量缺少数字", start);
+            error(ErrorCode::InvalidNumber, "expected a digit after the base prefix", start);
             return;
         }
         // 消费后续的数字与 _（_ 位置合法性由 validate_underscores 校验）
@@ -205,13 +205,13 @@ namespace aria {
         const auto lex_no_tag = StringView{src_.data() + start + 2, pos_ - start - 2}; // 剥掉 2 字节前缀
 
         if (!validate_underscores(lex_no_tag, base)) {
-            error(ErrorCode::InvalidNumber, "数字字面量下划线位置非法", start);
+            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal", start);
             return;
         }
 
         i64 value = 0;
         if (!parse_int(lex_no_tag, base, value)) {
-            error(ErrorCode::InvalidNumber, "数字字面量解析失败", start);
+            error(ErrorCode::InvalidNumber, "integer literal out of range", start);
             return;
         }
         tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
@@ -259,21 +259,21 @@ namespace aria {
         const auto lex = StringView{src_.data() + start, pos_ - start};
 
         if (!validate_underscores(lex, 10)) {
-            error(ErrorCode::InvalidNumber, "数字字面量下划线位置非法", start);
+            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal", start);
             return;
         }
 
         if (has_dot || has_exp) {
             f64 value = 0.0;
             if (!parse_float(lex, value)) {
-                error(ErrorCode::InvalidNumber, "浮点字面量解析失败", start);
+                error(ErrorCode::InvalidNumber, "float literal out of range", start);
                 return;
             }
             tokens_.push_back(Token::make_float(value, lex, SourceLoc{&source_, start}));
         } else {
             i64 value = 0;
             if (!parse_int(lex, 10, value)) {
-                error(ErrorCode::InvalidNumber, "数字字面量解析失败", start);
+                error(ErrorCode::InvalidNumber, "integer literal out of range", start);
                 return;
             }
             tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
@@ -292,13 +292,13 @@ namespace aria {
             }
             if (is_eof()) {
                 // 串未闭合：记错后推进到 EOF，主循环继续扫后续（若还有内容）
-                error(ErrorCode::UnterminatedString, "字符串未闭合", start);
+                error(ErrorCode::UnterminatedString, "unterminated string", start);
                 return;
             }
             const char c = src_[pos_];
             if (c == '\n') {
                 // 裸换行：记错后推进到换行后，主循环从下一行继续
-                error(ErrorCode::UnterminatedString, "字符串跨行未闭合", start);
+                error(ErrorCode::UnterminatedString, "unterminated string: line break in literal", start);
                 advance(); // 跨过换行，让后续能继续扫
                 return;
             }
@@ -325,7 +325,7 @@ namespace aria {
 
     // 解析转义序列（pos_ 指向 '\\'）。
     // 成功追加到 value；可恢复错误（InvalidEscape）记账后追加原样继续；
-    // 遇 EOF（\ 在串尾）不报错，由 scan_string 的 is_eof 统一报"字符串未闭合"。
+    // 遇 EOF（\ 在串尾）不报错，由 scan_string 的 is_eof 统一报 "unterminated string"。
     void Lexer::scan_escape(String& value) {
         advance(); // 消费 '\'
         if (is_eof()) {
@@ -355,7 +355,7 @@ namespace aria {
             case 'u': {
                 advance(); // 消费 u
                 if (peek_byte(0) != '{') {
-                    error(ErrorCode::InvalidEscape, "\\u 转义缺少 '{'", pos_ - 1);
+                    error(ErrorCode::InvalidEscape, "expected '{' after '\\u'", pos_ - 1);
                     value += "\\u";
                     return;
                 }
@@ -368,7 +368,7 @@ namespace aria {
 
                 if (peek_byte(0) != '}') {
                     // \u{...} 到 EOF 也无 }
-                    error(ErrorCode::InvalidEscape, "\\u{...} 转义缺少 '}'", start - 1);
+                    error(ErrorCode::InvalidEscape, "expected '}' to close '\\u{'", start - 1);
                     value += "\\u";
                     return;
                 }
@@ -380,14 +380,14 @@ namespace aria {
                 i64        cp_i64 = 0;
                 if (const auto [ptr, ec] = std::from_chars(lex.data(), lex.data() + lex.size(), cp_i64, 16);
                     ec != std::errc{} || ptr != lex.data() + lex.size()) {
-                    error(ErrorCode::InvalidEscape, "\\u{...} 转义缺少十六进制或含非合法 hex 字符", start - 1);
+                    error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{...}'", start - 1);
                     value += "\\u";
                     return;
                 }
 
                 const u32 cp = static_cast<u32>(cp_i64);
                 if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-                    error(ErrorCode::InvalidEscape, "\\u{...} 转义码点非法", start - 1);
+                    error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{...}'", start - 1);
                     value.push_back(static_cast<char>(utf8::kReplacementChar));
                     return;
                 }
@@ -395,7 +395,7 @@ namespace aria {
                 return;
             }
             default:
-                error(ErrorCode::InvalidEscape, "未识别的转义序列", pos_ - 1);
+                error(ErrorCode::InvalidEscape, std::format("invalid escape sequence '\\{}'", c), pos_ - 1);
                 value.push_back('\\');
                 value.push_back(c);
                 advance(); // 消费该字符
@@ -427,8 +427,8 @@ namespace aria {
         const u32 start = pos_;
         // 非 ASCII 码点 -> InvalidCharacter（主循环已判定它不是空白/数字/标识符起始）
         if (!utf8::is_ascii(src_[pos_])) {
-            const u8 len = utf8::decode_one(src_, pos_).second;
-            error(ErrorCode::InvalidCharacter, "非法字符", start);
+            const auto [cp, len] = utf8::decode_one(src_, pos_);
+            error(ErrorCode::InvalidCharacter, std::format("invalid character U+{:04X}", cp), start);
             advance(len); // 推进一个码点确保前进
             return;
         }
@@ -541,7 +541,7 @@ namespace aria {
                     make_token(TokenType::AndAnd);
                 } else {
                     advance();
-                    error(ErrorCode::InvalidCharacter, "单独的 '&' 非法", start);
+                    error(ErrorCode::InvalidCharacter, "expected '&&', got '&'", start);
                 }
                 return;
             case '|':
@@ -550,7 +550,7 @@ namespace aria {
                     make_token(TokenType::OrOr);
                 } else {
                     advance();
-                    error(ErrorCode::InvalidCharacter, "单独的 '|' 非法", start);
+                    error(ErrorCode::InvalidCharacter, "expected '||', got '|'", start);
                 }
                 return;
             case '.':
@@ -605,7 +605,8 @@ namespace aria {
                 return;
             default:
                 advance();
-                error(ErrorCode::InvalidCharacter, "非法字符", start);
+                error(ErrorCode::InvalidCharacter,
+                      std::format("invalid character U+{:04X}", utf8::decode_one(src_, start).first), start);
                 return;
         }
     }

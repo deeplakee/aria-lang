@@ -5,8 +5,8 @@
 //   positive/**                 -> interpret_from_path 须 Ok（脚本内以 assert 自检；
 //                                  存在同名 .out 时 stdout 逐字节精确比对）。
 //   negative/compile_errors/compile_*.aria -> 须 CompileError。
-//   negative/runtime_errors/runtime_*.aria -> 须 RuntimeError（存在同名 .err 时，
-//                                  stderr 须包含 .err 每行子串）。
+//   negative/runtime_errors/runtime_*.aria -> 须 RuntimeError。
+//   两类负向均支持同名 .err：存在时 stderr 须包含 .err 每行子串。
 // 路径中任何分量名为 lib 的目录整体跳过（09_modules 的辅助模块只经 import 驱动）。
 #include <gtest/gtest.h>
 
@@ -182,6 +182,26 @@ namespace {
 
     class LanguageCorpusSuite : public testing::TestWithParam<CorpusCase> {};
 
+    // 负向用例的共同判定：预期失败类别 + 可选 .err 子串比对（编译期与运行期两类负向只在预期
+    // result 与失败文案上不同，判定流程同形，故收口于此）。stdout/stderr 捕获须在断言前取回：
+    // gtest 失败输出走 stdout，取晚会污染捕获流。
+    void expect_negative(AriaVM& vm, const CorpusCase& c, const InterpretResult expected, const char* what) {
+        if (c.has_err) {
+            testing::internal::CaptureStderr();
+        }
+        const auto result   = vm.interpret_from_path(c.path);
+        auto       captured = String{};
+        if (c.has_err) {
+            std::fflush(stderr);
+            captured = testing::internal::GetCapturedStderr();
+        }
+        ASSERT_EQ(result, expected) << "期望 " << what << ": " << c.rel_path;
+        for (const auto& sub: c.err_substrings) {
+            EXPECT_NE(captured.find(sub), String::npos)
+                    << ".err 子串未出现在 stderr: \"" << sub << "\"（来自 " << c.rel_path << ".err）";
+        }
+    }
+
     // 单脚本判定。stdout/stderr 捕获须在断言前取回（gtest 失败输出走 stdout，会污染捕获流）。
     TEST_P(LanguageCorpusSuite, MatchesExpectedOutcome) {
         const auto& c = GetParam();
@@ -214,25 +234,11 @@ namespace {
                 break;
             }
             case CaseKind::CompileError: {
-                EXPECT_EQ(vm.interpret_from_path(c.path), InterpretResult::CompileError)
-                        << "期望 CompileError: " << c.rel_path;
+                expect_negative(vm, c, InterpretResult::CompileError, "CompileError");
                 break;
             }
             case CaseKind::RuntimeError: {
-                if (c.has_err) {
-                    testing::internal::CaptureStderr();
-                }
-                const auto result   = vm.interpret_from_path(c.path);
-                auto       captured = String{};
-                if (c.has_err) {
-                    std::fflush(stderr);
-                    captured = testing::internal::GetCapturedStderr();
-                }
-                ASSERT_EQ(result, InterpretResult::RuntimeError) << "期望 RuntimeError: " << c.rel_path;
-                for (const auto& sub: c.err_substrings) {
-                    EXPECT_NE(captured.find(sub), String::npos)
-                            << ".err 子串未出现在 stderr: \"" << sub << "\"（来自 " << c.rel_path << ".err）";
-                }
+                expect_negative(vm, c, InterpretResult::RuntimeError, "RuntimeError");
                 break;
             }
             case CaseKind::Malformed:

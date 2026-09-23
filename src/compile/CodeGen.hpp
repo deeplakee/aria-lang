@@ -194,7 +194,8 @@ namespace aria {
         // 跳转回填 / 全局登记失败翻译（void：仅翻译失败，无解包）：与上面 _or_fail 同一职责约定，
         // 但底层返 bool（patch_jump/emit_jump_back/declare_global），故为 void 封装；文案收口于此。
 
-        // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「跳转偏移超过 64KB」。
+        // patch_jump 越界(跳转偏移超 u16 上限) -> fail CodeUnitTooLarge「function too large: jump offset exceeds
+        // ...」。
         void patch_jump_or_fail(u32 src_off, SourceLoc loc) const;
 
         // emit_jump_back 越界(回边偏移超 u16 上限/反向) -> fail CodeUnitTooLarge；行号现场取 loc。

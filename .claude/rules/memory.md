@@ -56,9 +56,10 @@ GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计�
 
 - `modules_`（解释器级共享模块表）+ `builtins_`。
 - `registers_`（值寄存器组 = `List<Object*>`，VM 单例对象的统一存放表，Object 根类在其中；`hook_vm_roots` 一趟循环逐格 mark_object）。
-- `current_` 执行链（自 `*current_` 沿 `previous_`，现为单节点 main_ctx_）上各上下文：值栈 `[base, top)`（run() 期局部/实参/临时值，最关键的根；run() 外为空态）、各活动帧 `closure`（trace 级联标 function/upvalues）与 `module`、挂起错误寄存器、open upvalue 开链节点（「闭包已死而 upvalue 仍在链」的悬垂防线，链上节点单独标根）。
+- `string_constants_`（常量串表，一趟循环 mark_object--驻留池是 weak root，不标根下轮 collect 即摘除）。
+- `current_` 一点：执行上下文（`Movement : Object`）已入对象链表，其 `trace` 自标值栈 `[base, top)`（run() 期局部/实参/临时值，最关键的根；run() 外为空态）、各活动帧 `closure`（级联标 function/upvalues）与 `module`、挂起错误寄存器、open upvalue 开链节点（「闭包已死而 upvalue 仍在链」的悬垂防线），并经 `mark_object(previous_)` 沿 resume 链级联。
 
-组合而非继承，GC 不识 VM 类型。以此 tracer 直标代替 Movement 升 Object，M6 协程期再升级 `ObjMovement : Object` 入对象链表。
+组合而非继承，GC 不识 VM 类型（经 `set_vm_roots` 回调接入）。
 
 **核心不变式**
 

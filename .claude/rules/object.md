@@ -1,6 +1,6 @@
 ---
 name: aria-object
-description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFunction（含捕获描述表 UpvalueDesc）、ObjClosure/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjNativeFn、ObjException、ObjModule。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
+description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFunction（含捕获描述表 UpvalueDesc）、ObjClosure/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjNativeFn、ObjException、ObjModule、Movement（执行上下文对象，文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
 paths:
   - "src/object/**"
 ---
@@ -26,6 +26,7 @@ paths:
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
+- `Movement`（`runtime/Movement.hpp`，文件住 runtime 层）：执行上下文对象（`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine>`；成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。trace 自标值栈/帧/开链/挂起载荷并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
 - `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `debug_repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
 - `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_obj<T>`、`is_callable_value`、`is_method`）。
 
@@ -125,7 +126,7 @@ paths:
 ### GC / 根纪律
 
 - 协议内可分配（fail 装箱 `new_exception`、`new_bound_method`），调用方保证接收者「栈即根」（peek 不弹）。
-- 工厂返回的白色无根对象须发布进根--写回原槽（`run_load_field` / `run_load_index`）或链入 VM 开链（upvalue，链上节点经 VM 根 tracer 保命）。
+- 工厂返回的白色无根对象须发布进根--写回原槽（`run_load_field` / `run_load_index`）或链入 VM 开链（upvalue，链上节点经宿主 `Movement` 的 trace 保命）。
 - `Object::equals` 契约须 **GC-pure**（EQUAL 在 off-stack 裸局部上比较，触发 collect 会回收操作数）。
 - 递归比较 / 渲染子值的容器入口须挂 `EqualGuard` / `PrintGuard` 防环（重遇同对视为相等 / 截断 `[...]`）。
 - `module_` 回指与 `module->entry_` 成环，mark-sweep 三色标记破环。

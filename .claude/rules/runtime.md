@@ -1,6 +1,6 @@
 ---
 name: aria-runtime
-description: aria 解释器 runtime 层模块参考：FrameStack、Movement 执行上下文（值栈/帧栈/开 upvalue 链/挂起错误寄存器）、AriaVM（主循环/闭包与 upvalue 指令/全局与 builtins 回退/IMPORT 模块加载，含 VM 异常通道落地状态清单）。读写 src/runtime/**、实现 VM 里程碑（M3 异常、M4 闭包等）时使用。
+description: aria 解释器 runtime 层模块参考：FrameStack、Movement 执行上下文（Object 子类：值栈/帧栈/开 upvalue 链/resume 链/挂起错误寄存器）、AriaVM（主循环/闭包与 upvalue 指令/全局与 builtins 回退/IMPORT 模块加载，含 VM 异常通道落地状态清单）。读写 src/runtime/**、实现 VM 里程碑（M3 异常、M4 闭包等）时使用。
 paths:
   - "src/runtime/**"
 ---
@@ -20,7 +20,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/Movement.hpp`
 
-执行上下文（纯 C++ 类，非 Object：值栈/帧不进对象链表，内部标记经本类 `trace(GC&)` 收口（VM 根 tracer 只标 current_，链上其余上下文由 trace 沿 previous_ 递归），M6 协程期升级 `ObjMovement : Object` 入链表；`using VMContext = Movement` 别名）。
+执行上下文（`Movement : Object` final，`ObjType::MOVEMENT`：主上下文与协程统一为本类型 GC 对象，`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine>`；`using VMContext = Movement` 别名）。trace 自标值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点。
 
 ### 值栈与帧栈
 
@@ -43,7 +43,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 协程 resume 链字段 `previous_`
 
-`previous()`/`set_previous()`--M6 前置落地：主上下文恒 nullptr 链尾，VM 根 tracer 自 `current_` 沿链逐个标根，「resume/yield 严格成对」的切换纪律由 `run()` 出口断言钉住；**M6 前链长恒 1**。M6 定稿单循环切换模型后 `previous_` 对齐 Wren caller 语义（yield/完成解链、允许再 resume）；上下文对象化批落地后链遍历一并退役（主上下文转 GC 对象、tracer 只标 `current_` 一点），见 vm-design.md §4.9。
+`previous()`/`set_previous()`--resume 链：A resume B 即 `B->previous_` 置 A、`current_` 换指 B；链尾恒为主上下文（`previous_` 恒 nullptr），「resume/yield 严格成对」的切换纪律由 `run()` 出口断言钉住；**M6 前链长恒 1**。M6 定稿单循环切换模型后 `previous_` 对齐 Wren caller 语义（yield/完成解链、允许再 resume）。VM 根 tracer 只标 `current_` 一点，链上其余上下文经 trace 尾部 `mark_object(previous_)` 级联标根（挂起中 resumer 的唯一可达边）。见 vm-design.md §4.9。
 
 ### 挂起错误寄存器
 
@@ -90,7 +90,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### GC 已启用
 
-值栈 `[base, top)` + 各活动帧 `closure`/`module` + open upvalue 开链经 `Movement::trace` 标根（VM 根 tracer 只标 current_，链上其余上下文由 trace 沿 previous_ 递归；见下「共享状态」）；`IMPORT` 取到模块对象后 `current_->push(module)` 压栈（经 `modules_` 根可达，非移动 GC 故指针稳定，**不加守卫**）；`JUMP_BACK`（循环回边）为 safe point 调 `gc_.maybe_collect()`。
+值栈 `[base, top)` + 各活动帧 `closure`/`module` + open upvalue 开链经 `Movement::trace` 标根（VM 根 tracer 只标 `current_` 一点，各上下文内部与 previous_ 链经对象图级联；见下「共享状态」）；`IMPORT` 取到模块对象后 `current_->push(module)` 压栈（经 `modules_` 根可达，非移动 GC 故指针稳定，**不加守卫**）；`JUMP_BACK`（循环回边）为 safe point 调 `gc_.maybe_collect()`。
 
 ### 指令子集
 
@@ -118,14 +118,14 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 共享状态
 
-- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`Movement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 堆分配、`~AriaVM` 释放--壳不进 GC 对象链，值栈 Buffer 走 GC 字节账，内部标记经 `Movement::trace`（tracer 只调 current_，链由 trace 沿 previous_ 递归）。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、dispatch_loop 永不重入，任何时刻正在执行的字节码所在上下文恒等于 `current_`）。
+- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`Movement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `Movement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、dispatch_loop 永不重入，任何时刻正在执行的字节码所在上下文恒等于 `current_`）。
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
 - VM 级只读 builtins 表 `builtins_`（构造期由 `builtins::register_builtin_functions` 一次性填充 type/str/println/assert，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib/`-L`）与值寄存器组 `registers_`（`List<Object*>`，VM 单例对象的统一存放表，构造期按表长预置格、bootstrap 按 `k<名字>Offset` 具名格位填、填完经 `assert_slots_filled` 收口，注册表见 `runtime/value_register.hpp`，寄存器只读）。
 - 常量串表 `string_constants_`（`List<ObjString*>`，VM 自己按名取用的字符串常量的唯一存放处，注册表见 `runtime/string_constant.hpp`）：构造期按表长预置格、bootstrap 按下标（枚举值）逐格 `new_string` 填入，填完经 `assert_slots_filled` 收口；tracer 一趟 `mark_object` 标根--**驻留池是 weak root，不标根则下轮 collect 即摘除**（算子钩子名尤其如此：实例算子派发每次都要一个稳定的 `ObjString*`，不标根就退化成每轮重铸）。消费点经 `string_constant(StringConstant)` 取值，不再各自 `new_string`。注册表的**成员判据**：只收 VM 自己按名取用的串--代码里写下的常量名（字段/方法名）不进此表，那些编进常量池经 `ObjFunction::trace` 已可达。
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：String 类 bootstrap 末段的算子钩子缓存按名取串，读的就是本表）。
-- **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_object`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 执行链（只标 `current_`，其 trace 沿 `previous_` 递归覆盖整条链 -- 挂起协程的值栈/帧/寄存器皆根；对象化批落地后递归改为 `mark_object(previous_)` 入灰栈级联）。
-- 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单收口在 `Movement::trace`（含 `previous_` 递归；VM 根 tracer 只标 `current_`）；对象化批落地后 trace 升 `Object` override、`previous_` 改经 `mark_object` 入灰栈级联。
+- **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_object`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 一点（其 trace 经 `mark_object(previous_)` 沿 resume 链级联 -- 挂起协程的值栈/帧/寄存器皆根）。
+- 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单住 `Movement::trace`（`Object` override；VM 根 tracer 只标 `current_` 一点，`previous_` 经 `mark_object` 入灰栈级联）。
 - **`raise(code, fmt, args...)`/`fail`**：从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`），消息**不含位置前缀**（位置由 unwind 未捕获出口的逐帧 at 行给出）；`fail` = raise + `FailSignal`（`[[nodiscard]]` 强制 `return vm.fail(...);`）。公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`

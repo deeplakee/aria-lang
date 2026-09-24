@@ -23,7 +23,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 | `src/compile/**` | `.claude/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
 | `src/bytecode/**` | `.claude/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
 | `src/runtime/**` | `.claude/rules/runtime.md` | FrameStack / Movement / AriaVM / Builtins（含异常通道落地状态） |
-| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjUpvalue / ObjClosure / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjNativeFn / ObjException / ObjModule / iterator 族 |
+| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFunction / ObjUpvalue / ObjClosure / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjNativeFn / ObjException / ObjModule / Movement / iterator 族 |
 | `src/memory/**` | `.claude/rules/memory.md` | Buffer / Array / Allocator / HashTable / InternPool / GC |
 
 ### 深度设计文档 `.claude/reference/`（不自动加载，需要时 Read）

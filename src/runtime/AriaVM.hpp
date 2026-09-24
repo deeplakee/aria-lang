@@ -63,14 +63,11 @@ namespace aria {
     public:
         AriaVM();
 
-        // 释放堆上执行上下文(时点与 gc_ 存活性依据见 .cpp 定义处)。
-        ~AriaVM();
-
         AriaVM(const AriaVM&)            = delete;
         AriaVM& operator=(const AriaVM&) = delete;
 
-        // VM 不可移动:成员持指向彼此/自身的指针(modules_ borrow &gc_、堆上 current_ 所指上下文
-        // 的值栈 borrow &gc_、tracer 捕 [this]),move 后不重绑 -> 悬垂。就地构造或以 unique_ptr 持有。
+        // VM 不可移动:成员持指向彼此/自身的指针(modules_ borrow &gc_、current_ 指 GC 对象、
+        // tracer 捕 [this]),move 后不重绑 -> 悬垂。就地构造或以 unique_ptr 持有。
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
 
@@ -317,8 +314,8 @@ namespace aria {
         void bootstrap_match_no_arm();
 
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
-        // runtime.md「共享状态」。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在链」的
-        // 悬垂防线;链尾断言锁定「resume/yield 严格成对」。
+        // runtime.md「共享状态」。执行上下文只标 current_ 一点,各上下文内部与 previous_ resume
+        // 链由 Movement::trace 经对象图级联。
         void hook_vm_roots();
 
         // 源根默认值初始化(ctor 一次调用):入口槽 [0] 占位 cwd + 配置根 [1..] = 编译器相对
@@ -425,9 +422,9 @@ namespace aria {
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 
-        // 当前执行上下文:dispatch_loop/call_value 族/raise 的作用对象;ctor 堆分配、~AriaVM
-        // 释放(壳不进 GC 对象链,值栈 Buffer 走 GC 字节账,内部由 tracer 沿链直标)。主上下文
-        // 即其初值(M6 切换落地后为 resume 链链根,由 run() 入口锚 + 出口断言钉住),切换模型见
+        // 当前执行上下文:dispatch_loop/call_value 族/raise 的作用对象;ctor 首笔 GC 分配、随
+        // ~GC 的 free_all_ 释放(GC 对象,内部与 previous_ 链经 trace 级联标根)。主上下文即其
+        // 初值(M6 切换落地后为 resume 链链根,由 run() 入口锚 + 出口断言钉住),切换模型见
         // vm-design.md §4.9。
         Movement* current_;
 

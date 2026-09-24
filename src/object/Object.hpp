@@ -30,6 +30,7 @@ namespace aria {
         ITERATOR,
         EXCEPTION,
         CLOSURE,
+        MOVEMENT,
     };
 
     // ObjType 的静态可读名映射(PascalCase);Object::type_name() 委托本函数,日志与默认渲染复用。
@@ -66,6 +67,8 @@ namespace aria {
                 return "Exception";
             case ObjType::CLOSURE:
                 return "Closure";
+            case ObjType::MOVEMENT:
+                return "Movement";
             default:
                 UNREACHABLE();
         }

@@ -180,34 +180,24 @@ namespace aria {
 
     } // namespace
 
-    // 构造:分配堆上执行上下文 -> 注册 VM 根 tracer -> bootstrap 常量串表 + 寄存器组 -> 注册 builtins
-    // (两张单例表 registers_ / string_constants_ 各按注册表长度预置格位)。gc_ 值成员居声明首,
-    // 逆序析构下 tracer 与成员同生共死。
+    // 构造:分配执行上下文(GC 对象) -> 注册 VM 根 tracer -> bootstrap 常量串表 + 寄存器组 ->
+    // 注册 builtins(两张单例表 registers_ / string_constants_ 各按注册表长度预置格位)。gc_ 值
+    // 成员居声明首,逆序析构下 tracer 与成员同生共死;主上下文随 ~GC 的 free_all_ 释放。
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
         string_constants_{kStringConstantCount} {
-        current_ = new (std::nothrow) Movement(&gc_); // 壳走 std 堆;ctor 内值栈 Buffer 走 GC 分配
-                                                      // (allocate 永不触发 GC,此时无根也安全)
-        if (current_ == nullptr) {
-            fatal_error(ErrorCode::OutOfMemory, "failed to allocate main context");
-        }
+        current_ = gc_.new_object<Movement>(&gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
         {
             // 构造临界区:GC 挂起,窗口内回收不可达,创建的白对象免逐个守卫;**解锁前须全部发布
-            // 进 tracer 可达的家**(registers_ / string_constants_ / builtins_,tracer 已挂接)。
+            // 进 tracer 可达的家**(registers_ / string_constants_ / builtins_,tracer 已挂接;
+            // 主上下文经 current_ 可达)。
             const auto lock = gc_.make_lock();
             bootstrap_string_constants();
             bootstrap_registers();
             builtins::register_builtin_functions(gc_, builtins_);
         }
-    }
-
-    AriaVM::~AriaVM() {
-        // 析构体先于成员析构执行:此刻 gc_ 仍存活,~Movement 内 ~Buffer 经自持 GC* 释放值栈合法。
-        // delete current_ 的依据:它自 ctor 起即本 VM 堆分配的那个上下文(切换原语落地前恒不
-        // 换指;落地后由 run() 出口断言钉住控制流回到入口上下文)。
-        delete current_;
     }
 
     void AriaVM::bootstrap_string_constants() {
@@ -237,13 +227,13 @@ namespace aria {
 
     void AriaVM::hook_vm_roots() {
         // VM 根 tracer:collect 时标五类根 -- 四类表(modules_ / builtins_ / registers_ /
-        // string_constants_)+ current_ 执行链(只调 current_->trace -- 链上其余上下文由
-        // Movement::trace 沿 previous_ 递归;清单见 runtime.md「共享状态」)。链根交接纪律由
+        // string_constants_)+ current_ 一点(各上下文内部与 previous_ resume 链经
+        // Movement::trace / 对象图级联;清单见 runtime.md「共享状态」)。链根交接纪律由
         // run() 出口断言承担,此处不重复设防。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
-            current_->trace(g);
+            g.mark_object(current_);
             for (const auto reg: registers_) {
                 g.mark_object(reg);
             }

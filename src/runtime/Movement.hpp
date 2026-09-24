@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "memory/Buffer.hpp"
 #include "memory/GC.hpp"
+#include "object/Object.hpp"
 #include "runtime/FrameStack.hpp"
 #include "util/util.hpp"
 #include "value/Value.hpp"
@@ -28,22 +29,26 @@ namespace aria {
         u8*         last_ip; // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)
     };
 
-    // 执行上下文:一段执行的完整状态(可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
+    // 执行上下文:一段执行的完整状态(Object 子类 + 可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
+    //   - Object 子类(ObjType::MOVEMENT):主上下文与协程统一为本类型 GC 对象。trace 自标值栈已用
+    //     区间/活动帧/open upvalue 开链/挂起错误寄存器,并经 mark_object(previous_) 沿 resume 链
+    //     级联;VM 根 tracer 只标 current_ 一点 -- 链遍历删去后,previous_ 是挂起中 resumer 的
+    //     唯一可达边,不标即悬垂。
     //   - 值栈走 Buffer<Value> 底座(GC 分配),push 溢出 2x 增长;top_/活动帧 slots/open upvalue
     //     location_ 三类指入值栈的指针在增长时按「搬运前记槽偏移、搬运后新基址重建」重绑。
-    //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧)。
-    //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,逐上下文标记经本类 trace(GC&) 收口
-    //     (VM 根 tracer 只标 current_,链上其余上下文由 trace 沿 previous_ 递归;M6 协程期再
-    //     升级 ObjMovement : Object)。
-    class Movement {
+    //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧);UPtr 底座走 std 分配器,
+    //     不进 GC 字节账。
+    class Movement final : public Object {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
 
         explicit Movement(GC* gc) noexcept :
-            buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr}, previous_{nullptr} {}
+            Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},
+            previous_{nullptr} {}
 
-        ~Movement() = default; // buf_ 自释放值栈;frames_ 定容无资源;open_upvalues_ 节点是 GC 对象,归 GC 管。
+        ~Movement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
+                                        // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
 
         Movement(const Movement&)            = delete;
         Movement& operator=(const Movement&) = delete;
@@ -59,12 +64,6 @@ namespace aria {
             frames_.clear();
             pending_error_.reset();
         }
-
-        // GC 标记(VM 根 tracer 只标 current_,链上其余上下文由本方法沿 previous_ 递归):值栈
-        // 已用区间、各活动帧 closure/module、open upvalue 开链(「闭包已死而 upvalue 仍在链」
-        // 的悬垂防线)、挂起错误寄存器。定义在 .cpp(帧成员 mark_object 的基类转换需
-        // ObjClosure/ObjModule 完整类型)。
-        void trace(GC& gc) const noexcept;
 
         // 值栈(热路径裸指针)
 
@@ -152,13 +151,13 @@ namespace aria {
 
         // open upvalue 开链
         // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 最高);局部所在
-        // 区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经 VM 根 tracer 标根
+        // 区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经本类 trace 标根
         // -- 防「闭包已死而 upvalue 仍在链」悬垂。「同一局部只有一份引用」不变式由 capture_upvalue
         // 单点收口(命中复用或建新插链,无旁路)。
 
         // 捕获:沿降序链一趟完成查等值与插链点定位,等值即复用(内外层共享同一 ObjUpvalue)、更小/
         // 链尾则建新并在该处插链;即使链上出现同槽双节点(不变式被破)也命中复用(自愈)。建新到插链
-        // 之间无分配点(白色窗口不被 sweep),入链后即经 tracer 根化。定义在 .cpp(需 ObjUpvalue 完整类型)。
+        // 之间无分配点(白色窗口不被 sweep),入链后即随本对象 trace 根化。定义在 .cpp(需 ObjUpvalue 完整类型)。
         [[nodiscard]]
         ObjUpvalue* capture_upvalue(GC& gc, Value* slot) noexcept;
 
@@ -167,8 +166,8 @@ namespace aria {
         // reset(全链)。降序不变式下 >= from 恒为链头连续前缀。
         void close_upvalues(const Value* from) noexcept;
 
-        // 只读链头(VM 根 tracer 遍历标根用;节点 next 经 ObjUpvalue::next_open)。返非 const 指针:
-        // mark_object(Object*) 需要可变指针;tracer 只读遍历,不改链。
+        // 只读链头(trace 遍历标根用;节点 next 经 ObjUpvalue::next_open)。返非 const 指针:
+        // mark_object(Object*) 需要可变指针;遍历只读,不改链。
         [[nodiscard]]
         ObjUpvalue* open_upvalues() const noexcept {
             return open_upvalues_;
@@ -186,10 +185,10 @@ namespace aria {
 
         // 挂起错误寄存器(侧信道)
         // 原生函数等冷路径错误不走返回类型,经 raise 写入本寄存器;VM 在 CALL 等安全点检查
-        // has_error() 后用 take_error() 取出传播。寄存器随上下文走(M6 协程期各协程独立)。载荷为
-        // Value:VM/原生错误装箱 ObjException 后写入,aria throw 原值入寄存器(catch 绑原值保类型);
-        // 置入后由 VM 根 tracer 标根,取出前跨安全点分配不回收。raise 断言当前无挂起(防嵌套 raise
-        // 未取走就再 raise);reset() 一并清空。
+        // has_error() 后用 take_error() 取出传播。寄存器随上下文走。载荷为 Value:VM/原生错误
+        // 装箱 ObjException 后写入,aria throw 原值入寄存器(catch 绑原值保类型);置入后随本对象
+        // trace 标根,取出前跨安全点分配不回收。raise 断言当前无挂起(防嵌套 raise 未取走就再
+        // raise);reset() 一并清空。
 
         void raise(const Value err) noexcept {
             ASSERT(!pending_error_.has_value(), "pending error already set (take/clear before re-raise)");
@@ -206,7 +205,7 @@ namespace aria {
             return util::take(pending_error_);
         }
 
-        // 挂起载荷的只读引用(为空态时无值)。供 VM 根 tracer 标根用(take_error 取走会清空,
+        // 挂起载荷的只读引用(为空态时无值)。供 trace 标根用(take_error 取走会清空,
         // 不能经它只读查询)。
         [[nodiscard]]
         const Opt<Value>& pending_error() const noexcept {
@@ -216,14 +215,36 @@ namespace aria {
         // 协程 resume 链
         // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
         // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
-        // (current_),Movement 不自切;M6 前链长恒 1,字段为契约占位。
+        // (current_),Movement 不自切;切换原语落地前链长恒 1,字段为契约占位。挂起态
+        // previous_ 恒 nullptr(yield/RETURN 完成/未捕获跳链三处切换点一律解链)。标根经 trace
+        // 尾部的 mark_object(previous_) 级联。
         [[nodiscard]]
         Movement* previous() const noexcept {
             return previous_;
         }
 
-        // 链接/重链(resume 方向:置恢复者)。挂起回退时是否清 nullptr 属 M6 设计点。
+        // 链接/重链(resume 方向:置恢复者)。
         void set_previous(Movement* prev) noexcept { previous_ = prev; }
+
+        // Object 协议(声明序随 Object.hpp)。
+
+        // GC 标记:值栈已用区间、各活动帧 closure/module、open upvalue 开链(「闭包已死而
+        // upvalue 仍在链」的悬垂防线)、挂起错误寄存器;尾部 mark_object(previous_) 沿 resume 链
+        // 级联(mark_object 容 nullptr 且幂等)。定义在 .cpp(帧成员 mark_object 的基类转换需
+        // ObjClosure/ObjModule 完整类型)。
+        void trace(GC& gc) const noexcept override;
+
+        // 壳字节数(不含值栈/帧数组等子内存:值栈由 ~Movement 经自持 GC* 释放,帧数组由 UPtr 自释放)。
+        [[nodiscard]]
+        usize size() const noexcept override {
+            return sizeof(Movement);
+        }
+
+        // 调试渲染(惰性契约见 Object::debug_repr):<coroutine>。
+        [[nodiscard]]
+        String debug_repr() const override {
+            return "<coroutine>";
+        }
 
     private:
         // 就位一帧:slots 指向槽 0,VM 专有字段(closure/unit/module/ip)从 closure 解引用填充。
@@ -245,12 +266,12 @@ namespace aria {
         Value*                           top_; // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
         FrameStack<CallFrame, kFrameMax> frames_;
         ObjUpvalue*                      open_upvalues_; // open upvalue 开链头(按槽址降序;nullptr 空链)
-        Opt<Value>                       pending_error_; // 挂起错误寄存器(置入后由 VM 根 tracer 标根)
+        Opt<Value>                       pending_error_; // 挂起错误寄存器(置入后随本对象 trace 标根)
         Movement*                        previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
     };
 
     // VMContext 是 Movement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用
-    // VMContext,强调「协程对象」用 ObjMovement(M6 升级为 Object 子类后的类名)。
+    // VMContext,强调「协程对象」用 Movement。
     using VMContext = Movement;
 
 } // namespace aria

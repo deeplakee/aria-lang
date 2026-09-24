@@ -23,9 +23,7 @@ namespace aria {
         if (const auto& pending = pending_error()) {
             gc.mark_value(*pending);
         }
-        if (previous_ != nullptr) {
-            previous_->trace(gc);
-        }
+        gc.mark_object(previous_); // resume 链链上成员经灰栈级联,容 nullptr
     }
 
     // 定义在 .cpp:init_frame_ 解引用 closure 需 ObjClosure 完整类型,头文件仅前向声明即可。
@@ -49,7 +47,7 @@ namespace aria {
     }
 
     // 捕获单点:「同一局部只有一份引用」不变式由此收口(链序与自愈说明见 Movement.hpp)。
-    // 建新路径:new_upvalue 返回白色无根,到插链之间无任何分配点,入链后即经 VM 根 tracer 保命。
+    // 建新路径:new_upvalue 返回白色无根,到插链之间无任何分配点,入链后即随本对象 trace 保命。
     ObjUpvalue* Movement::capture_upvalue(GC& gc, Value* slot) noexcept {
         ObjUpvalue* prev = nullptr;
         ObjUpvalue* cur  = open_upvalues_;

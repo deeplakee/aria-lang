@@ -32,8 +32,9 @@ namespace aria {
     //   - 值栈走 Buffer<Value> 底座(GC 分配),push 溢出 2x 增长;top_/活动帧 slots/open upvalue
     //     location_ 三类指入值栈的指针在增长时按「搬运前记槽偏移、搬运后新基址重建」重绑。
     //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧)。
-    //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,由 AriaVM 的 vm_roots tracer 沿
-    //     current_ -> previous_ 链逐上下文直标(M6 协程期再升级 ObjMovement : Object)。
+    //   - 纯 C++ 类(非 Object):值栈/帧不进对象链表,逐上下文标记经本类 trace(GC&) 收口
+    //     (VM 根 tracer 只标 current_,链上其余上下文由 trace 沿 previous_ 递归;M6 协程期再
+    //     升级 ObjMovement : Object)。
     class Movement {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
@@ -58,6 +59,12 @@ namespace aria {
             frames_.clear();
             pending_error_.reset();
         }
+
+        // GC 标记(VM 根 tracer 只标 current_,链上其余上下文由本方法沿 previous_ 递归):值栈
+        // 已用区间、各活动帧 closure/module、open upvalue 开链(「闭包已死而 upvalue 仍在链」
+        // 的悬垂防线)、挂起错误寄存器。定义在 .cpp(帧成员 mark_object 的基类转换需
+        // ObjClosure/ObjModule 完整类型)。
+        void trace(GC& gc) const noexcept;
 
         // 值栈(热路径裸指针)
 

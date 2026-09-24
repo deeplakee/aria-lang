@@ -184,8 +184,8 @@ namespace aria {
     // (两张单例表 registers_ / string_constants_ 各按注册表长度预置格位)。gc_ 值成员居声明首,
     // 逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
-        gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
-        registers_{kValueRegisterCount}, string_constants_{kStringConstantCount} {
+        gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
+        string_constants_{kStringConstantCount} {
         current_ = new (std::nothrow) Movement(&gc_); // 壳走 std 堆;ctor 内值栈 Buffer 走 GC 分配
                                                       // (allocate 永不触发 GC,此时无根也安全)
         if (current_ == nullptr) {
@@ -236,33 +236,19 @@ namespace aria {
     }
 
     void AriaVM::hook_vm_roots() {
-        // VM 根 tracer:collect 时标五类根(modules_ / builtins_ / registers_ / string_constants_ /
-        // current_ 执行链;清单见 runtime.md「共享状态」)。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在
-        // 链」的悬垂防线。链根交接纪律由 run() 出口断言承担,此处不重复设防。
+        // VM 根 tracer:collect 时标五类根 -- 四类表(modules_ / builtins_ / registers_ /
+        // string_constants_)+ current_ 执行链(只调 current_->trace -- 链上其余上下文由
+        // Movement::trace 沿 previous_ 递归;清单见 runtime.md「共享状态」)。链根交接纪律由
+        // run() 出口断言承担,此处不重复设防。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
+            current_->trace(g);
             for (const auto reg: registers_) {
                 g.mark_object(reg);
             }
             for (const auto str: string_constants_) {
                 g.mark_object(str);
-            }
-            for (auto m = current_; m != nullptr; m = m->previous()) {
-                for (auto p = m->stack_base(); p < m->stack_top(); ++p) {
-                    g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
-                }
-                for (const auto& frame: m->frames().span()) {
-                    g.mark_object(frame.closure); // trace 级联标 function/upvalues;容 nullptr
-                    g.mark_object(frame.module);
-                }
-                // 开链节点可能仅被本链引用(闭包已死),须单独标根(mark 幂等,双标无害)。
-                for (auto upvalue = m->open_upvalues(); upvalue != nullptr; upvalue = upvalue->next_open()) {
-                    g.mark_object(upvalue);
-                }
-                if (const auto& pending = m->pending_error()) {
-                    g.mark_value(*pending);
-                }
             }
         });
     }

@@ -2,9 +2,31 @@
 
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjModule.hpp"
 #include "object/ObjUpvalue.hpp"
 
 namespace aria {
+
+    // 清单见 Movement.hpp trace 注释;帧成员 mark_object 的基类转换需完整类型,故住 .cpp。
+    void Movement::trace(GC& gc) const noexcept {
+        for (auto p = buf_.data(); p < top_; ++p) {
+            gc.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
+        }
+        for (const auto& frame: frames_.span()) {
+            gc.mark_object(frame.closure); // trace 级联标 function/upvalues;容 nullptr
+            gc.mark_object(frame.module);
+        }
+        // 开链节点可能仅被本链引用(闭包已死),须单独标(mark 幂等,双标无害)。
+        for (auto upvalue = open_upvalues_; upvalue != nullptr; upvalue = upvalue->next_open()) {
+            gc.mark_object(upvalue);
+        }
+        if (const auto& pending = pending_error()) {
+            gc.mark_value(*pending);
+        }
+        if (previous_ != nullptr) {
+            previous_->trace(gc);
+        }
+    }
 
     // 定义在 .cpp:init_frame_ 解引用 closure 需 ObjClosure 完整类型,头文件仅前向声明即可。
     void Movement::enter_frame(ObjClosure* closure, const u8 argc) {

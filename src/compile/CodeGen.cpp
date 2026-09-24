@@ -171,16 +171,18 @@ namespace aria {
 
     u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc loc) const {
         // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge（CodeUnit::add_constant 内部
-        // ASSERT 兜底，本预检保证永不触达）。
+        // ASSERT 兜底，本预检保证永不触达）。同值常量复用池内已有索引：去重收口在 FunctionCtx 的去重
+        // 索引（编译期草稿），池本体只追加。
         if (cur_cu()->constants.size() > kMaxConstants) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "too many constants (max {})", kMaxConstants);
         }
-        return cur_cu()->add_constant(value);
+        return cur_fn_ctx()->add_constant(value);
     }
 
     u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc loc) const {
-        // intern name 入常量池返回索引；new_string 结果立即 add_constant（trivial push 不触发 GC，
-        // 见类首 GC 安全注），无需守卫。溢出由 add_constant_or_fail fail。
+        // intern name 入常量池返回索引；new_string 结果立即入池（trivial 分配不触发 GC，见类首 GC
+        // 安全注），无需守卫--已 intern 的串与池内同值项同指针，去重命中时池里那份本就是它。
+        // 溢出由 add_constant_or_fail fail。
         const auto str = new_string(gc_, name);
         return add_constant_or_fail(Value::from_obj(str), loc);
     }
@@ -860,7 +862,7 @@ namespace aria {
         }
 
         // ④ 尾绑定:类体全部建成,异常路径半成品类随 unwind 截栈丢弃后类名从未绑定。类名经
-        //    MAKE_CLASS 已入池,全局腿 bind_stack_value 再入池一次（常量池不去重,同全局引用常态）。
+        //    MAKE_CLASS 已入池,全局腿 bind_stack_value 再取一次名字(常量池按值去重,复用同一池项)。
         bind_stack_value(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值 / 值填槽
     }
 

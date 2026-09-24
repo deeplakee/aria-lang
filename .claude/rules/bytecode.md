@@ -26,7 +26,7 @@ paths:
 - **操作数位宽事实源** `kU8OperandMax`/`kU16OperandMax`（u8/u16 操作数最大 255/65535，`namespace aria` 级 constexpr）在头内置；本类与 CodeGen 的各语义上限常量（本侧 `kMaxPopChunk`/`kMaxShortLocalSlot`/`kMaxJumpOffset`/`kMaxConstantIndex`、CodeGen 侧 `kMaxArity`/`kMaxArguments`/`kMaxConstants`/`kMaxLocals`）以之为源。
 - **四个容器字段直接 public 裸露**（VM/编译器/反汇编器直接操作裸字段）：`code`（`Array<u8>` 字节流，opcode + 内联操作数小端）、`constants`（`AriaArray` 常量池，白赚 `trace`）、`lines`（`Array<LineEntry>` RLE 行段表）、`try_records`（`Array<TryRecord>` 异常记录表）。
 - `try_records` **按 `begin` 非降序**（CodeGen 入口预插占位 + 结尾回填保证；相等合法--内层 try 是外层体首条语句时零发射间隔），`find_try_handler` 二分前溯取最内层；`TryRecord{begin,end,handle,stack_depth}` 的 `stack_depth` 是 try 入口局部数编译期快照，unwind 据此截值栈并把异常值落 catch 参数槽。
-- **仅保留有不可散落逻辑的方法**：`emit_byte`/`emit_word`/`emit_op`（带 `line`）、`emit_pop_n`（分块 <= 255）、`emit_jump`/`patch_jump`/`emit_jump_back`（占位回填，越界返 false 不写）、`emit_load_local`/`emit_store_local`（短变体 +u8 / 长变体 `_L` +u16）、`size`、`add_constant`、`line_for_offset`（RLE 二分）、`find_try_handler`、`trace`、`disassemble`（完整签名与语义见头注释）。
+- **仅保留有不可散落逻辑的方法**：`emit_byte`/`emit_word`/`emit_op`（带 `line`）、`emit_pop_n`（分块 <= 255）、`emit_jump`/`patch_jump`/`emit_jump_back`（占位回填，越界返 false 不写）、`emit_load_local`/`emit_store_local`（短变体 +u8 / 长变体 `_L` +u16）、`size`、`add_constant`（**只追加不去重**--按值去重收口在编译期 `FunctionCtx::add_constant`，池内无同值重复项）、`line_for_offset`（RLE 二分）、`find_try_handler`、`trace`、`disassemble`（完整签名与语义见头注释）。
 - **字节码编码逻辑（emit/跳转编码/回填/分块/槽位变体）收口于此**，编译器不再自持薄包装；越界以 bool 返回交调用方翻译为 Error，本类不持 Error 语义。
 - **行号无状态模型**：emit 一律带 `line`（无重载、无 `last_line_`，调用方自跟踪当前行；RLE 去重收口私有 `record_line_`）。`explicit CodeUnit(GC* gc)`（容器分配器绑定 GC）；非拷贝/非移动。
 

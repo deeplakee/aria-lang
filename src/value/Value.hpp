@@ -14,6 +14,7 @@ namespace aria {
     using namespace tagvalue;
 }
 #endif
+#include <functional>
 
 namespace aria {
 
@@ -82,5 +83,28 @@ namespace aria {
     String format_value_debug(Value value);
 
 } // namespace aria
+
+// std 容器以 Value 作键所需的两个特化:哈希转发 value_hash、判等转发 value_identical(===)。二者自洽
+// (value_hash 已按类型/位型计算),故 int 1 与 f64 1.0、-0.0 与 0.0 各为不同键--若用 ==(value_equal)
+// 作判等,它们会合并成一项、改变语义。
+namespace std {
+
+    template<>
+    struct hash<aria::Value> {
+        [[nodiscard]]
+        aria::usize operator()(const aria::Value value) const noexcept {
+            return aria::value_hash(value);
+        }
+    };
+
+    template<>
+    struct equal_to<aria::Value> {
+        [[nodiscard]]
+        bool operator()(const aria::Value lhs, const aria::Value rhs) const noexcept {
+            return aria::value_identical(lhs, rhs);
+        }
+    };
+
+} // namespace std
 
 #endif // ARIA_VALUE_HPP

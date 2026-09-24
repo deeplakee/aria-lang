@@ -39,10 +39,11 @@ AST 访问者接口，作为代码生成阶段「字节码编译器」等遍历�
 
 ## `compile/FunctionCtx.hpp` / `.cpp`
 
-单函数编译上下文，收口每函数可变状态：**本类只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述），「发射」仍由 CodeGen 负责。
+单函数编译上下文，收口每函数可变状态：**本类只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池索引），「发射」仍由 CodeGen 负责。
 
 - **单构造 `explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, FnKind kind)`**（kind 无默认值；enclosing 空 = 入口 `<main>`，否则嵌套指向外层）。**所有权**：入口 fn 上下文由 `ModuleCtx` ctor `new`、dtor 沿 `enclosing_` 链 `delete`；子上下文由 `compile_function` `new`（成功路径 delete、出错交 `~ModuleCtx` 走链）。父编译期长于子，故 `enclosing_` 裸指针在子生命期内稳定。
-- **字段与方法**：`locals_`（clox 风格局部栈，`locals_[0]` = 哑元 slot 0 = callee，1..A = 形参，A+1.. = 体局部）、`scope_depth_`、`loop_stack_`、`upvalues_`（捕获描述表，体编译期经 `add_upvalue` 登记、成功路径由 `compile_function` 尾部整表 flush 进 `fn->upvalue_descs()`）、`kind_`；`add_local`（压 `Local{name, scope_depth_, is_captured=false}` 返 slot，**纯登记**不发射/不查重）、`add_upvalue`（同 `(is_local,index)` 去重复用；追加将越出 u8 索引域 (`size > kMaxUpvalues`) 返 `nullopt` 交 CodeGen `fail TooManyUpvalues`）、`is_defined_in_scope`/`find_local`、`begin_scope`/`end_scope`（退出块作用域时 `--scope_depth_` 后弹出原 scope 局部并真正移除登记；break/continue 不得走此--跳转后的语句仍在作用域内可引用这些局部，须保留登记）。
+- **字段与方法**：`locals_`（clox 风格局部栈，`locals_[0]` = 哑元 slot 0 = callee，1..A = 形参，A+1.. = 体局部）、`scope_depth_`、`loop_stack_`、`upvalues_`（捕获描述表，体编译期经 `add_upvalue` 登记、成功路径由 `compile_function` 尾部整表 flush 进 `fn->upvalue_descs()`）、`kind_`、`constant_index_`（**常量池去重索引** `HashMap<Value,u16>`，键相等用 `===`，走值层 std 特化）；`add_local`（压 `Local{name, scope_depth_, is_captured=false}` 返 slot，**纯登记**不发射/不查重）、`add_constant`（同值复用池内已有索引、未命中追加并登记，返池索引；池溢出不在本层判）、`add_upvalue`（同 `(is_local,index)` 去重复用；追加将越出 u8 索引域 (`size > kMaxUpvalues`) 返 `nullopt` 交 CodeGen `fail TooManyUpvalues`）、`is_defined_in_scope`/`find_local`、`begin_scope`/`end_scope`（退出块作用域时 `--scope_depth_` 后弹出原 scope 局部并真正移除登记；break/continue 不得走此--跳转后的语句仍在作用域内可引用这些局部，须保留登记）。
+- **常量池去重索引为什么在这**：索引是**编译期草稿**（每个函数一份、随本上下文销毁；池本体 `fn_->unit().constants` 才是产物），故不放进 `CodeUnit`--否则每个函数对象常驻 40 字节壳与索引堆。不参与 GC（std 分配器）、不是 GC 根：键在池内都有同值副本保活。**每函数一份是硬约束**：共用一张表漏清一次就会从上一个函数的池里拿到索引，那是静默发射错常量。
 - `FnKind`（Function/Lambda/StaticMethod/Method/InitMethod，含 `is_method`；`kThisName = "this"`，this 是关键字不可能与用户标识符撞名）：this 解析「沿 ctx 链找最近实例方法」与 super 判据「当前帧为实例方法族」两判据消费。`LoopCtx` 字段语义与三种循环 + break/continue 的占位回填用法详见 `.claude/reference/compile/loopctx.md`。**循环上下文随函数走**：进新函数即得空 `loop_stack_`，break/continue 不会跨函数绑定外层循环。
 
 ## `compile/ModuleCtx.hpp` / `.cpp`

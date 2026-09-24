@@ -37,6 +37,7 @@ paths:
 值操作 `value_hash`/`value_equal`/`value_identical`/`value_less` 声明在此（基于 `type()` + `as_*()`，两表示都编译），定义在 `Value.cpp`。
 
 - **双相等**：`value_equal`（`==` 内容相等，Int/F64 跨类型 IEEE 数值、Obj 调 `Object::equals` 虚函数）、`value_identical`（`===` 严格相等，类型严格、f64 按位、Obj 指针）；哈希键用 `===`。
+- **std 容器键设施**：`std::hash<Value>`/`std::equal_to<Value>` 特化在头末，分别转发 `value_hash`/`value_identical`，令 std 容器可以 Value 作键（消费方：`FunctionCtx` 的常量池去重索引 `HashMap<Value,u16>`）。与 `AriaHashTable` 的键语义一致--`===` 而非 `==`，故 int 1 与 f64 1.0、`-0.0` 与 `0.0` 各为不同键。
 - **自然序小于** `value_less`（排序底座）：双数值按数值序（NaN 排在一切数值之前保严格弱序）；双字符串按无符号字节序走 `string_view::compare`。域外组合未定义、调用方先域检，list.sort 消费。
 - **辅助自由函数**：`is_num(Value)`、`is_truthy(Value)`（Lua 风格真值：仅 nil/false 为假）、`type_name(Value)`（**精确类型名**统一入口，PascalCase：原语走 constexpr 成员、Obj 取对象子类型；区别于成员的 constexpr 粗分类--后者 Obj 一律返 `Obj`；错误消息类型名打印一律用本自由函数）。
 - **渲染**：`format_f64(f64)`/`format_value(Value)`（println/str、REPL 回显 / 错误渲染用，Obj 走显示位虚 `to_string()`）；`format_value_debug(Value)` 是**非重入**调试渲染（执行跟踪 / 反汇编常量池共用），Obj 走虚 **`debug_repr()`** 而非可重载的 `to_string()`（后者是未来用户类 `__str__` 的挂载点，可重入 VM 致无限递归）；`debug_repr` 的 override 契约是纯 C++ 惰性渲染（见 `Object.hpp`）。

@@ -22,6 +22,17 @@ namespace aria {
         return static_cast<u16>(locals_.size() - 1);
     }
 
+    u16 FunctionCtx::add_constant(const Value value) {
+        // 按值去重(=== 判等,见 value_identical):同值常量复用已有索引,池内无同值重复项,故池上限由
+        // 互异常量数而非出现次数决定。
+        if (const auto entry = constant_index_.find(value); entry != constant_index_.end()) {
+            return entry->second;
+        }
+        // 先入池后登记:索引不是 GC 根,键的保活只靠池(入池是 trivial 分配,不触 GC,见 CodeGen 类首注)。
+        const auto index = fn_->unit().add_constant(value);
+        constant_index_.emplace(value, index);
+        return index;
+    }
 
     bool FunctionCtx::is_defined_in_scope(const StringView name) const {
         for (const auto& local: std::views::reverse(locals_)) {

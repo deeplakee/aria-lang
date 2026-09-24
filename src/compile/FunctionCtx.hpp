@@ -58,6 +58,9 @@ namespace aria {
         // 压 Local{name, scope_depth_}，返回 slot（纯登记，不发射、不查重）。
         u16 add_local(StringView name);
 
+        // 常量入池（带去重）：池内已有 === 同值常量即复用其索引，未命中追加并登记，返回池索引。
+        // 纯登记不发射；池溢出不在本层判（由 CodeGen 预检后 fail）。
+        u16 add_constant(Value value);
 
         // 当前作用域是否已定义同名局部（外层同名允许 shadow）。
         [[nodiscard]]
@@ -90,6 +93,12 @@ namespace aria {
         u32               scope_depth_;
         Stack<LoopCtx>    loop_stack_;
         List<UpvalueDesc> upvalues_; // M4 闭包捕获描述表（按下标即 upvalue 索引），经 add_upvalue 逐条登记
+
+        // 常量池去重索引（Value -> 池索引，键相等用 ===，见 Value.hpp 的 std 特化）。**编译期草稿**：每个
+        // 函数一份、随本上下文销毁（池本体 fn_->unit().constants 才是产物）。不参与 GC（std 分配器）、不是
+        // GC 根：键在池内都有同值副本，保活靠池。每函数一份是硬约束--共用一张表漏清一次就会从上一个函数的
+        // 池里拿到索引，那是静默发射错常量。
+        HashMap<Value, u16> constant_index_;
     };
 
 } // namespace aria

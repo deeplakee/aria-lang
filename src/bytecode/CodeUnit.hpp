@@ -81,7 +81,8 @@ namespace aria {
         }
 
         // 常量池
-        // 暂不去重(ObjString 经 intern 同指针)。索引 u16,超 65535 断言。
+        // 只追加、不去重--按值去重收口在编译期索引（FunctionCtx::add_constant，同值复用已有索引），故池内
+        // 无同值重复项、池上限由互异常量数而非出现次数决定。索引 u16，超 65535 断言。
         u16 add_constant(Value value);
 
         // 行号查询

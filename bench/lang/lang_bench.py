@@ -18,9 +18,10 @@ MicroPython run-perfbench 都用平均;CLBG / Ruby benchmark-driver 默认用最
 (JVM 启动 60-100 ms、Node 与 CPython 也各有几十毫秒),只有负载段是同一份负载的读数。
 
 输出:测量期间进度打 stderr,测完在 stdout 打整份报告——速览(每门对照语言领先/落后多少行)、aria
-自身的绝对值表、跨语言比值表、值一致性门禁,末尾是固定列宽的 `[summary]` 原始数字块(含 sd 与
-min,`diff` 两次构建即 A/B)。故 `> 文件` 存下来的是一份没有进度噪音的报告。报告默认 text 格式
-(终端定宽表),`--format=md` 出 markdown 表(贴进文档 / PR 用),两种格式是同一份数据的两种渲染。
+自身的绝对值表、跨语言对照表(每门语言的绝对耗时 + 相对 aria 的倍数)、值一致性门禁,末尾是固定列宽
+的 `[summary]` 原始数字块(含 sd 与 min,`diff` 两次构建即 A/B)。故 `> 文件` 存下来的是一份没有进度
+噪音的报告。报告默认 text 格式(终端定宽表),`--format=md` 出 markdown 表(贴进文档 / PR 用),
+两种格式是同一份数据的两种渲染。
 
 对照语言按 PATH 探测(缺谁不出哪一列):CPython(当前解释器)、Node、Lua、Java(需 javac,编译产物
 落在 build/bench-java/,每次运行编译一次)。**值一致性门禁**:每个脚本(含各语言端口)都要打印
@@ -199,11 +200,16 @@ def group_rows(cases, results):
     return groups
 
 
+def comparable_ms(sample, base):
+    """该样本在这一行里的读数(ms):两边都有负载段就用负载段,否则退回进程总耗时(与 ratio 同口径)。"""
+    if base.inner_mean and sample.inner_mean:
+        return sample.inner_mean
+    return sample.total_mean
+
+
 def ratio(port, base):
     """该语言 ÷ aria:优先按负载段(跨语言唯一可比的一列),整行无负载段时退回进程总耗时。"""
-    if base.inner_mean and port.inner_mean:
-        return port.inner_mean / base.inner_mean
-    return port.total_mean / base.total_mean
+    return comparable_ms(port, base) / comparable_ms(base, base)
 
 
 def display_width(text):
@@ -339,21 +345,25 @@ def report_aria_table(groups):
 
 
 def report_cross_table(groups, lang_names):
-    """跨语言:只列比值(绝对耗时与 sd 在文末 [summary]),一眼看出比 aria 快还是慢多少倍。"""
+    """跨语言:每门语言给绝对耗时 + 相对 aria 的倍数,一行看全(比值 > 1 = 比 aria 慢)。"""
     blocks = [
         ("heading", "三、跨语言对照"),
-        ("paragraph", "数字 = 该语言负载段耗时 ÷ aria 的同一值:> 1 表示比 aria 慢,< 1 表示比 aria 快;"
-                      "各语言绝对耗时与 sd / min 见文末,startup_floor 无负载段、该行按进程总耗时算。"),
+        ("paragraph", "每格 = 该语言负载段耗时 ms(该语言 ÷ aria 的倍数);> 1 表示比 aria 慢,< 1 表示比 aria 快。"
+                      "sd / min 见文末;带 * 的行无负载段(地板行),整行按进程总耗时算。"),
     ]
     aligns = ["l", "r"] + ["r"] * len(lang_names)
     for label, entries in groups:
         rows = []
         for name, _rel, samples in entries:
             aria = samples["aria"]
-            cells = [name, "-" if aria.inner_mean is None else f"{aria.inner_mean:.1f}"]
+            mark = "*" if aria.inner_mean is None else ""
+            cells = [name, f"{comparable_ms(aria, aria):.1f}{mark}"]
             for lang in lang_names:
-                value = ratio(samples[lang], aria) if lang in samples else None
-                cells.append(f"{value:.2f}x" if value else "-")
+                if lang not in samples:
+                    cells.append("-")
+                    continue
+                cells.append(f"{comparable_ms(samples[lang], aria):.1f}{mark} "
+                             f"({ratio(samples[lang], aria):.2f}x)")
             rows.append(cells)
         blocks += [("subheading", label), ("table", (["基准", "aria ms"] + lang_names, rows, aligns))]
     blocks.append(("blank", None))

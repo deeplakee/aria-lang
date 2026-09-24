@@ -2,15 +2,18 @@
 
 > 语料与清单:`bench/lang/`(每个基准量什么、怎么跑,见 `bench/lang/README.md`)
 > 驱动:`bench/lang/lang_bench.py`
-> 用途:改基准本身、或判断一次读数可不可信时读这篇。**数字不在这里**——跑一次驱动就有(README 里
+> 用途:改基准本身、或判断一次读数可不可信时读这篇。**数字不在这里**--跑一次驱动就有(README 里
 > 有把输出落到临时文件的写法),本文只收**纪律**、**覆盖差异的理由**与**已实测排除项**。
 
 ## 1. 测量纪律
 
-- 机器与构建:Apple M4,macOS 26.6.1,Homebrew clang 22.1.8,构建即原样的 Release 配置
-  (`-DCMAKE_BUILD_TYPE=Release`:LTO 默认开、`-O3 -DNDEBUG`)。对照语言:CPython(用
-  `sys.executable`,与驱动同解释器)、Node、Lua、OpenJDK。
-- **量的是实际发布的那份二进制**:这一层的数字要和其它语言的发行构建比,所以不加任何缩水开关——
+- 机器与构建:Apple M4,macOS 26.6.1;编译器随 CMake 默认(`/usr/bin/c++`,本机为 Apple clang
+  21.0.0)。构建即原样的 Release 配置(`-DCMAKE_BUILD_TYPE=Release`:LTO 默认开、`-O3 -DNDEBUG`),
+  全部 TU(含 isocline)都是这一套。对照语言:CPython(用 `sys.executable`,与驱动同解释器)、
+  Node、Lua、OpenJDK。
+- **读数里含 GC**:mark-sweep GC 在所有构建里都开(开发期即开,设计使然);`ASSERT` 则在 Release 下被
+  `NDEBUG` 编译为空(`common.hpp`),即量的是没有断言开销的路径。
+- **量的是实际发布的那份二进制**:这一层的数字要和其它语言的发行构建比,所以不加任何缩水开关--
   LTO / `-O3` 关掉会让每一行都慢一大截(两位数百分比,薄的派发热路径吃亏最多),那样比出来的位次没有
   意义。进程内基准(`lexer_bench` / `vm_bench`)相反,为了复现文档里的存档数字约定用无 LTO 配方,两层
   的配方别混用。跨构建对比前先固定 Debug/Release 与 LTO 两项。
@@ -20,7 +23,7 @@
   一并留着供对照。轮数用 `--trials` / `--warmup` 调。
 - 每行两列数字:**总耗时** = 进程启动 + 词法/编译 + VM bootstrap + 负载;**内部** = 脚本用内置 `clock()`
   自测的纯负载段(经 stdout 的 `bench-time: <n> ms` 标记行报出)。两者之差即该脚本的启动+编译开销。
-  **跨语言一律只看内部列**——总耗时把各运行时的启动成本混了进来(JVM 启动数十毫秒,CPython / Node /
+  **跨语言一律只看内部列**--总耗时把各运行时的启动成本混了进来(JVM 启动数十毫秒,CPython / Node /
   Lua 也各有几十毫秒),不可比。
 - 抖动:同一二进制重复运行的总耗时标准差约 1%(个别行到 5%);负载段的标准差更小。跨构建另有 ±5-10%
   的差异,**小于 5% 的跨构建差异不要当结论**。
@@ -28,10 +31,10 @@
   的通行做法,负载本身仍是同一份、同一规模,只是多跑一遍。Node 也有 JIT,但 V8 的分层编译在毫秒级
   完成,对这些长度的负载不构成系统性偏差,故不另跑热身。
 - **Lua 无单调墙钟标准函数**,端口用 `os.clock()`(**CPU 时间**)。纯计算负载上它与本进程墙钟接近,
-  但它不是墙钟——Lua 行不要与其它语言的行做亚毫秒级的比较。
-- 想留一次运行的报告:`python3 bench/lang/lang_bench.py --aria=build/rel/aria > <文件>`——进度打
+  但它不是墙钟--Lua 行不要与其它语言的行做亚毫秒级的比较。
+- 想留一次运行的报告:`python3 bench/lang/lang_bench.py --aria=build/rel/aria > <文件>`--进度打
   stderr、报告打 stdout,故重定向得到的文件就是纯报告;报告里给人读的是前三节(速览 / aria 绝对值 /
-  跨语言比值,比值一律「该语言 ÷ aria」),拿来做 A/B 的是末尾固定列宽的 `[summary]` 块(mean / sd /
+  跨语言对照,倍数一律「该语言 ÷ aria」),拿来做 A/B 的是末尾固定列宽的 `[summary]` 块(mean / sd /
   min / inner 四列),`diff` 两次构建的该块即可。`--format=md` 把同一份数据渲染成 markdown 表
   (贴文档 / PR 用),渲染层只换格式,不动采样与口径。
 - **别为看格式跑全量**:全量一次要几分钟(每脚本 6 轮 × 5 语言),验证格式/路径/解析这类改动用
@@ -42,7 +45,7 @@
 - **同算法、同规模、同校验和**:端口必须与 aria 版做同一份工作、断出同一批读数,否则对比表在比两件
   不同的事。规模常量写在各脚本头部,改规模时所有语言同步改。
 - **值一致性门禁**:每个脚本(含各语言端口)都要打印 `value <键>: <整数>` 行,驱动逐语言比对同一基准的
-  键值表,任一键不同即判该行失败。这把「同算法」从口头承诺变成机械保证——批量写端口时它是唯一安全网
+  键值表,任一键不同即判该行失败。这把「同算法」从口头承诺变成机械保证--批量写端口时它是唯一安全网
   (实测抓到过凭记忆写错的断言值)。因此**只有各语言读数一致的量才进 `value` 行**:反例是字符串的字节
   长度(UTF-8 语言与 UTF-16 语言不同),故 `string_codepoint` 只收码点域读数。
 - 容器与写法按**各语言自然形态**取,不追求逐 op 同构:`sieve` 用 Python `bytearray` / JS `Uint8Array` /
@@ -72,17 +75,17 @@
 
 | 行 | 近似写法 |
 | --- | --- |
-| `match_dispatch` | Lua 用 `if/elseif` 链;JS / Java 用 `switch`;Python 用 `match` —— 各用本语言的多路派发 |
+| `match_dispatch` | Lua 用 `if/elseif` 链;JS / Java 用 `switch`;Python 用 `match` -- 各用本语言的多路派发 |
 | `bound_method_read` | Lua 读方法值不绑定(函数是一等值,self 显式传),与 aria 读路径现场绑定机制不同 |
 | `closure_upvalue` | Java 的 lambda 只能捕获 effectively-final 局部,可变捕获用单元素数组当持有槽 |
 | `string_concat_compare` | Java 无字符串比较算子,用 `compareTo`;拼接用非 final 局部以避免 javac 常量折叠 |
-| `list_methods` / `list_slice` / `string_ops` / `string_methods`(Lua) | Lua 的表与字符串库没有 `find` / 切片 / `split`,这些操作只能手写循环 —— 这些行比的是**实现形态**而不是派发速度,读 Lua 列时要留意 |
+| `list_methods` / `list_slice` / `string_ops` / `string_methods`(Lua) | Lua 的表与字符串库没有 `find` / 切片 / `split`,这些操作只能手写循环 -- 这些行比的是**实现形态**而不是派发速度,读 Lua 列时要留意 |
 
 ## 4. 已实测排除项
 
 - **不含需要数学内建的负载**:语言面暂无 `sqrt`,故 classic 的 `nbody` / `spectral-norm` 无法表达;
   `pidigits` 需任意精度整数,与 i48 域冲突。将来若加数学内建,这三项可直接补进 `workloads/`。
-- **fannkuch_redux 钉的不是公开那个 checksum**:公开的带符号约定复原不出来——用「置换奇偶」「枚举
+- **fannkuch_redux 钉的不是公开那个 checksum**:公开的带符号约定复原不出来--用「置换奇偶」「枚举
   序号」「flips 奇偶」三种符号约定分别算 N=10 得 -78 / -292742 / -78158,都不等于公开的 73196。
   翻面语义本身确凿(`max_flips` 在 N=9 / N=10 得 30 / 38,与公开 `Pfannkuchen` 值一致),故该脚本改钉
   `max_flips`(公开可比)+ `flips_sum`(本语料自定义)+ `perm_count`(闭式)三个序无关量。
@@ -116,4 +119,4 @@
 3. **JIT 语言(Node / Java)是另一个量级**,只作参照:可被 JIT 完全消除的循环差距最大(如类字段读写),
    库实现主导的行差距最小(如 `sort_int`,aria 的原生排序反而稳定胜过 V8 的)。
 4. **Lua 是最接近的解释器同侪**,多数行落在 aria 的零点几倍;但凡是 Lua 只能手写、aria 有原生实现的
-   行(第 3 节末表),差距会拉到数倍到数十倍 —— 那些行比的是实现形态,不是解释器速度。
+   行(第 3 节末表),差距会拉到数倍到数十倍 -- 那些行比的是实现形态,不是解释器速度。

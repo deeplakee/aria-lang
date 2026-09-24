@@ -29,8 +29,13 @@
   完成,对这些长度的负载不构成系统性偏差,故不另跑热身。
 - **Lua 无单调墙钟标准函数**,端口用 `os.clock()`(**CPU 时间**)。纯计算负载上它与本进程墙钟接近,
   但它不是墙钟——Lua 行不要与其它语言的行做亚毫秒级的比较。
-- 想留一次运行的报告:`python3 bench/lang/lang_bench.py --aria=build/rel/aria > <文件>`,末尾的
-  `[summary]` 块是固定列宽(mean / sd / min / inner 四列),`diff` 两次构建的该块即 A/B。
+- 想留一次运行的报告:`python3 bench/lang/lang_bench.py --aria=build/rel/aria > <文件>`——进度打
+  stderr、报告打 stdout,故重定向得到的文件就是纯报告;报告里给人读的是前三节(速览 / aria 绝对值 /
+  跨语言比值,比值一律「该语言 ÷ aria」),拿来做 A/B 的是末尾固定列宽的 `[summary]` 块(mean / sd /
+  min / inner 四列),`diff` 两次构建的该块即可。`--format=md` 把同一份数据渲染成 markdown 表
+  (贴文档 / PR 用),渲染层只换格式,不动采样与口径。
+- **别为看格式跑全量**:全量一次要几分钟(每脚本 6 轮 × 5 语言),验证格式/路径/解析这类改动用
+  `--filter=<片段> --trials=2` 挑两三个脚本就够,全量留给真要做性能测量的时候。
 
 ## 2. 端口纪律(对照语言怎么写才算数)
 

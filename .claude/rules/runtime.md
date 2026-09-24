@@ -139,7 +139,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 - 错误站点 raise 载荷入挂起寄存器 -> `AriaVM::unwind()` 自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈（未命中帧记跟踪三元组）。
 - 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 Movement 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。
 - 全帧未命中：`reset()` 一次清场后从未捕获出口物化 `Error`。
-- **`unwind()`** 负责查表派发 + 未捕获物化（经匿名 `uncaught_error_parts` 反提拆 (码, 烘焙消息)：ObjException 直取原码原消息；非 ObjException 载荷兜底 `UncaughtException`）与堆栈跟踪烘焙，拼好后经 `Error::from_baked` 一次物化。`Error` 仅在 unwind 未捕获出口物化，与 AGENTS.md 通道 2 一致。
+- **`unwind()`** 负责查表派发 + 未捕获物化（经 `AriaVM::take_uncaught_error` 反提拆 (码, 烘焙消息)：ObjException 直取原码原消息；非 ObjException 载荷兜底 `UncaughtException`）与堆栈跟踪烘焙，拼好后经 `Error::from_baked` 一次物化。`Error` 仅在 unwind 未捕获出口物化，与 AGENTS.md 通道 2 一致。
 
 ### 构成件
 

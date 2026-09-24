@@ -17,7 +17,7 @@ namespace aria {
 
     // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与运行期未捕获出口的边界物化形态--运行
     // 期在途错误实体是 ObjException（存挂起错误寄存器，见 .claude/rules/runtime.md「VM 异常通道落地状态」），Error 仅
-    // 在 dispatch_loop 返回时经反提拆件（AriaVM uncaught_error_parts）+ from_baked 物化，不参与其内部传播。只两个字段
+    // 在 dispatch_loop 返回时经反提拆件（AriaVM::take_uncaught_error）+ from_baked 物化，不参与其内部传播。只两个字段
     // ：code_ + message_。message_ 在构造期一次性烘焙成型，构造完成后 Error 完全自有、**不持任何 SourceFile* 裸指针**
     // ，可任意拷贝/移动/跨流程传递，无悬空风险；不保留结构化位置（LineCol/SourceLoc）字段--需要位置时直接读 message_
     // 串。注意：本类只承载「解释器报告的错误」。aria 语言自身的 throw/catch 抛的是 Value，由 VM 用 THROW 操作码 +
@@ -55,7 +55,7 @@ namespace aria {
         }
 
         // 报错点的格式化细节在调用处自行 std::format 后走 from_detail(运行期一律 make_message
-        // 烘齐 -- 见 AriaVM.hpp 的 raise 装箱与 uncaught_error_parts 兜底)。
+        // 烘齐 -- 见 AriaVM.hpp 的 raise 装箱与 take_uncaught_error 兜底)。
 
         // 烘焙单点(公开,一对共名重载,以位置参数区分,与 from_detail 两重载同构镜像):
         // 完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
@@ -63,7 +63,7 @@ namespace aria {
         // from_detail 经此合成;装箱点 AriaVM::raise 亦直接使用(烘齐后 new_exception 装箱)。
 
         // 无位置版:消息 = "Category: Name"[ + " " + detail]。供无位置语义的报错点直接使用
-        // (from_detail 无 loc 重载 / uncaught_error_parts 非 ObjException 兜底)。
+        // (from_detail 无 loc 重载 / take_uncaught_error 非 ObjException 兜底)。
         static String make_message(const ErrorCode code, const StringView detail) {
             String s = std::format("{}: {}", to_string(category_of(code)), to_string(code));
             if (!detail.empty()) {

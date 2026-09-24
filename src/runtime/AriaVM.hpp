@@ -403,6 +403,12 @@ namespace aria {
         // 端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」),铸完 drop 再 push。
         bool run_make_range(u8 flags);
 
+        // 取走 *current_ 挂起载荷(清空寄存器),拆为 (码, 完整烘焙消息) 两件:ObjException 直取自身
+        // 码与 message_(re-throw 保码,坑 #7);其它载荷(用户 throw 的任意值)兜底 UncaughtException。
+        // 两个消费点(run_closure 进帧失败 / unwind 未捕获出口)均经 Error::from_baked 一次物化 --
+        // Error 只在边界成型。
+        Pair<ErrorCode, String> take_uncaught_error() const;
+
         // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
         // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
         // 回退到命中帧并转入 catch handler(统一在 Movement),返 nullopt(调用方 break 回循环顶
@@ -410,7 +416,7 @@ namespace aria {
         // 逐帧烘焙 at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:
         // 寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障
         // 指令,外层帧 = CALL 站点)。
-        Opt<Error> unwind();
+        Opt<Error> unwind() const;
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 

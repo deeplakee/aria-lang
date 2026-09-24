@@ -15,7 +15,7 @@ namespace aria {
     //     由未捕获出口的 at 行给出,经 load_module 透传的编译期消息自带 path:line:col: 保留)。烘焙在 raise 侧完成(Error
     //     ::make_message),本对象原样持有;指针恒非空(intern;ctor ASSERT),内容可空(空串兜底)。code_ 是机器标识。
     //   - to_error():经 Error::from_baked **原样**回传(跳过 make_message 重烘,否则双重前缀)。VM 未捕获出口不经本方法,
-    //     在 AriaVM.cpp uncaught_error_parts 拆件后 from_baked 物化。地址哈希型、final;注意本类承载**解释器报告的错误
+    //     在 AriaVM::take_uncaught_error 拆件后 from_baked 物化。地址哈希型、final;注意本类承载**解释器报告的错误
     //     **,aria 的 throw 抛任意 Value。
     class ObjException final : public Object {
     public:

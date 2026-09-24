@@ -127,18 +127,6 @@ namespace aria {
             return std::nullopt;
         }
 
-        // 把寄存器取出的载荷拆为 (码, 完整烘焙消息) 两件:ObjException 直取自身码与 message_
-        // (re-throw 保码,坑 #7);其它载荷(用户 throw 的非异常值)兜底 UncaughtException。消费方:
-        // unwind 未捕获出口与 run_closure 入口进帧失败,均经 Error::from_baked 一次物化(Error
-        // 只在边界成型)。
-        Pair<ErrorCode, String> uncaught_error_parts(const Value value) {
-            if (const auto ex = try_obj<ObjException>(value)) {
-                return {ex->code(), String{ex->message()->view()}};
-            }
-            const auto msg = std::format("uncaught exception: {}", format_value(value));
-            return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
-        }
-
         // 构造运行时错误结果(Result<Value, Error> 的 unexpected 态):dispatch_loop 各异常站点
         // (unwind 返 somed Error)的统一收口。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
@@ -466,7 +454,7 @@ namespace aria {
         if (!call_closure(closure, 0)) {
             // 进帧失败(重入路径帧满为真实分支):载荷直转 Result -- 不经 unwind(帧栈叠着
             // 调用者的帧,弹不得),一帧未进亦无跟踪可烘。
-            const auto [code, msg] = uncaught_error_parts(*current_->take_error());
+            const auto [code, msg] = take_uncaught_error();
             return runtime_err(Error::from_baked(code, msg));
         }
         return dispatch_loop();
@@ -940,7 +928,16 @@ namespace aria {
         return true;
     }
 
-    Opt<Error> AriaVM::unwind() {
+    Pair<ErrorCode, String> AriaVM::take_uncaught_error() const {
+        const auto payload = *current_->take_error();
+        if (const auto ex = try_obj<ObjException>(payload)) {
+            return {ex->code(), String{ex->message()->view()}};
+        }
+        const auto msg = std::format("uncaught exception: {}", format_value(payload));
+        return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
+    }
+
+    Opt<Error> AriaVM::unwind() const {
         // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发,全未命中
         // 交 reset 清场。
         struct TraceEntry {
@@ -968,7 +965,7 @@ namespace aria {
 
         // 全帧未命中 -> 未捕获:reset 一次清场,拆 (码, 消息) 逐帧烘焙跟踪行物化。trace 恒非空
         // (调用点帧栈非空不变式);物化路径仅 std::string 拼接,无 GC 分配点,fn/mod 裸指针不悬垂。
-        auto [code, msg] = uncaught_error_parts(*current_->take_error());
+        auto [code, msg] = take_uncaught_error();
         current_->reset();
         for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
             const u32 line = fn->unit().line_for_offset(ip_off);

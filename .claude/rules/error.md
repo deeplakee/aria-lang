@@ -12,7 +12,7 @@ paths:
 ## 四条错误通道（原则常驻 `AGENTS.md`「错误处理」节，此处收口实例）
 
 - ① **`Result<T, Error>` 返回**（编译期通道 + VM 边界返回类型）：`Lexer::tokenize() -> Result<List<Token>, List<Error>>` / `Parser::parse() -> Result<UPtr<ProgramNode>, List<Error>>`（恢复式收集）、`Compiler::compile -> Result<ObjFunction*, Error>`。`AriaVM::run()` 的 `Result` 仅为未捕获出口的边界返回类型，运行期错误不再以 Result 逐站传播。
-- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `Movement::pending_error_`（装箱点 `AriaVM::raise(code, detail)` 一步烘齐，`vm.fail`/`call_value` 族 bool 契约共用；消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出）。`Error` 仅在 `dispatch_loop` 未捕获出口经 `uncaught_error_parts` 反提拆件 + `from_baked` 物化构造。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.claude/rules/runtime.md`，设计见 vm-design.md §4.5。
+- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `Movement::pending_error_`（装箱点 `AriaVM::raise(code, detail)` 一步烘齐，`vm.fail`/`call_value` 族 bool 契约共用；消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出）。`Error` 仅在 `dispatch_loop` 未捕获出口经 `AriaVM::take_uncaught_error` 反提拆件 + `from_baked` 物化构造。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.claude/rules/runtime.md`，设计见 vm-design.md §4.5。
 - ③ **`AriaException`**（C++ 异常）：仅跨 C++ 调用栈边界（Parser/CodeGen 深层 `fail()`）。
 - ④ **`fatal_error()`**：Internal/Resource 不可恢复。
 
@@ -33,13 +33,13 @@ paths:
 - 公开构造一律走静态工厂，语义在工厂名上自文档化，构造点无法拼写错语义：
   - `from_detail(ErrorCode, StringView detail)`（细节语义/无位置）：经 `make_message` 烘为 `"Category: Name[ detail]"`。detail 是只读组件故取 `StringView`，字面量/格式化临时零额外构造直传、烘进 `message_` 的那份拷贝省不掉；**无默认值**--无 detail 的错误缺上下文，有意为空须显式传 `{}`/`""`，强制每个报错点说出发生了什么。
   - `from_detail(ErrorCode, SourceLoc, StringView detail)`（细节语义/带位置）：与 ① 共名，以 `SourceLoc` 参数区分（位置是细节语义的可选变体，不单独立名）；烘为 `"path:line:col: Category: Name[ detail]"`，空态 loc 渲染空串即无位置、细节空则无尾。
-  - `from_baked(ErrorCode, StringView)`（成品语义）：**原样装载**已烘焙完整消息串，跳过 `make_message`。两类合法调用方：`ObjException::to_error()`（其 `message_` 与 `Error::message()` 同形，经 `from_detail` 会把前缀再烘一遍成双重前缀；供测试/嵌入方断言）与 VM 未捕获出口 `AriaVM::unwind`（`uncaught_error_parts` 反提拆件拼好堆栈跟踪后经本工厂一次物化）。禁止传组件串。
+  - `from_baked(ErrorCode, StringView)`（成品语义）：**原样装载**已烘焙完整消息串，跳过 `make_message`。两类合法调用方：`ObjException::to_error()`（其 `message_` 与 `Error::message()` 同形，经 `from_detail` 会把前缀再烘一遍成双重前缀；供测试/嵌入方断言）与 VM 未捕获出口 `AriaVM::unwind`（`take_uncaught_error` 反提拆件拼好堆栈跟踪后经本工厂一次物化）。禁止传组件串。
 
 **`make_message`（烘焙单点）**
 
 - 一对共名公开重载（以位置参数区分、与 `from_detail` 两重载同构镜像）：无位置版 `(ErrorCode, StringView detail)` 烘 `"Category: Name"[ + " " + detail]`；带位置版 `(ErrorCode, StringView location, StringView detail)` 非空位置串前缀 `"location: "`、空位置串退化为无位置版。
 - from_detail 两重载经此合成--带位置重载经 `loc.to_string()` 格式化后委托带位置版，空态 loc 渲染空串即自然落退化路、无须特判（空态 loc 合法存在：默认构造供容器占位、测试/嵌入方无源文件构 AST、`CodeGen::fail` 取 `node->loc()`）。
-- 亦公开供 VM 冷路径直接使用：装箱点 `AriaVM::raise(code, detail)` 一步烘齐完整消息后 `new_exception` 装箱（不经 Error 对象中转，走**无位置版**）；未捕获兜底 `AriaVM` 匿名 `uncaught_error_parts`（非 ObjException 载荷烘 `UncaughtException` 消息，与 from_detail 同源同串，走无位置版）。
+- 亦公开供 VM 冷路径直接使用：装箱点 `AriaVM::raise(code, detail)` 一步烘齐完整消息后 `new_exception` 装箱（不经 Error 对象中转，走**无位置版**）；未捕获兜底 `AriaVM::take_uncaught_error`（非 ObjException 载荷烘 `UncaughtException` 消息，与 from_detail 同源同串，走无位置版）。
 
 **接口与其它**
 

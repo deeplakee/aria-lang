@@ -1,0 +1,16 @@
+// 量多路值派发:每轮一次 match 表达式(5 臂,末臂兜底)。
+var iterations = 4000000;  // 规模
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    var bucket = match (i % 5) { 0 => 3, 1 => 5, 2 => 7, 3 => 11, _ => 13 };
+    acc = (acc + bucket) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 199907);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

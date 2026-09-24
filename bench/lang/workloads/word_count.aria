@@ -1,0 +1,38 @@
+// 真实负载:LCG 造词表文本 -> join -> split -> map 计数。量字符串构造/切分与 map 查表。
+// 规模见 words(词数)。
+var vocab = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+var words = 3000000;  // 规模:词数
+
+var t0 = clock();
+var state = 1;
+var parts = [];
+var i = 0;
+while (i < words) {
+    state = (state * 48271) % 2147483647;
+    parts.push(vocab[state % 8]);
+    i += 1;
+}
+var text = parts.join(" ");
+
+var counts = {};
+for (w in text.split(" ")) {
+    if (counts.has(w)) {
+        counts[w] = counts[w] + 1;
+    } else {
+        counts[w] = 1;
+    }
+}
+
+var total = 0;
+for (w in vocab) {
+    total += counts.get(w);
+}
+var dt = clock() - t0;
+assert(total == 3000000);
+assert(counts.get("alpha") == 374756);
+assert(counts.get("theta") == 374622);
+
+println("value checksum: " + str(total));
+println("value alpha: " + str(counts.get("alpha")));
+println("value theta: " + str(counts.get("theta")));
+println("bench-time: " + str(dt * 1000.0) + " ms");

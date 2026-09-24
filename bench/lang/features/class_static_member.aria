@@ -1,0 +1,23 @@
+// 量静态成员:每轮一次静态方法调用,方法体内读写类静态 var(经类名自指,类内裸名不可见)。
+var iterations = 4200000;  // 规模
+
+def Counter {
+    var n = 0;
+    fun add(d) {
+        Counter.n = Counter.n + d;
+        return Counter.n;
+    }
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = (acc + Counter.add(1)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 640075);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

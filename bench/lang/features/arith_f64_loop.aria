@@ -1,0 +1,23 @@
+// 量浮点域算术:ADD/SUB/MUL/DIV 的成本。校验和取「谓词命中的轮数」而非浮点结果本身:
+// 整数在三个语言里逐位一致,而浮点结果的打印格式各语言不同。
+var iterations = 5000000; // 规模
+
+var t0 = clock();
+var x = 0.5;
+var hits = 0;
+var i = 0;
+while (i < iterations) {
+    x = x * 1.0000001 + 0.25;
+    if (x > 100.0) {
+        x = x / 2.0;
+    }
+    if (x > 50.0) {
+        hits += 1;
+    }
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(hits == 4999803);
+println("value checksum: " + str(hits));
+println("bench-time: " + str(dt * 1000.0) + " ms");

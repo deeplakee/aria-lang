@@ -1,0 +1,44 @@
+// 真实负载:LCG 造碱基序列(按累积概率选字符),join 成整串后按字符滚动取模校验;不含经典版的
+// 行宽折行(校验和定义在原始序列上)。规模见 bases。
+var im = 139968;
+var ia = 3877;
+var ic = 29573;
+var state = 42;
+
+var chars = ["a", "c", "g", "t", "B", "D", "H", "K", "M", "N", "R", "S", "V", "W", "Y"];
+var probs = [0.27, 0.12, 0.12, 0.27, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02];
+var cum = [];
+var running = 0.0;
+for (p in probs) {
+    running = running + p;
+    cum.push(running);
+}
+
+var bases = 2000000;  // 规模:碱基数
+
+var t0 = clock();
+var parts = [];
+var checksum = 0;
+var i = 0;
+while (i < bases) {
+    state = (state * ia + ic) % im;
+    var pick = state * 1.0 / im;
+    var idx = 0;
+    while (idx < 15 && cum[idx] <= pick) {
+        idx += 1;
+    }
+    if (idx == 15) {
+        idx = 14;
+    }
+    parts.push(chars[idx]);
+    checksum = (checksum * 131 + chars[idx].codepoint_at(0)) % 1000000007;
+    i += 1;
+}
+var seq = parts.join("");
+var dt = clock() - t0;
+assert(checksum == 575313243);
+assert(seq.size() == 2000000);
+
+println("value checksum: " + str(checksum));
+println("value length: " + str(seq.size()));
+println("bench-time: " + str(dt * 1000.0) + " ms");

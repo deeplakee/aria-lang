@@ -1,0 +1,44 @@
+// 真实负载:复平面迭代(每像素最多 max_iter 次)。校验和 = 逐像素迭代数的滚动取模(避开移位算子,
+// 三语言同式),另钉内部点计数与像素总数。规模见 size/max_iter。
+var size = 500;      // 规模:每边像素数
+var max_iter = 50;   // 规模:每像素最大迭代数
+
+var t0 = clock();
+var checksum = 0;
+var inside = 0;
+var py_idx = 0;
+while (py_idx < size) {
+    var y0 = py_idx * 1.0 / size * 2.0 - 1.0;
+    var px = 0;
+    while (px < size) {
+        var x0 = px * 1.0 / size * 2.5 - 2.0;
+        var x = 0.0;
+        var y = 0.0;
+        var i = 0;
+        while (i < max_iter) {
+            var x2 = x * x;
+            var y2 = y * y;
+            if (x2 + y2 > 4.0) {
+                break;
+            }
+            y = 2.0 * x * y + y0;
+            x = x2 - y2 + x0;
+            i += 1;
+        }
+        checksum = (checksum * 2 + i) % 1000000007;
+        if (i == max_iter) {
+            inside += 1;
+        }
+        px += 1;
+    }
+    py_idx += 1;
+}
+var dt = clock() - t0;
+assert(checksum == 140394512);
+assert(inside == 79596);
+assert(size * size == 250000);
+
+println("value checksum: " + str(checksum));
+println("value inside: " + str(inside));
+println("value pixels: " + str(size * size));
+println("bench-time: " + str(dt * 1000.0) + " ms");

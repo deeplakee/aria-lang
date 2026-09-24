@@ -1,0 +1,33 @@
+// 量 list 方法面:每轮 push / insert(0,·) / contains / find / remove_at / pop / size 各一次,
+// 末尾一次 join(整数渲染成串)。
+var size = 2000;   // 初始表长
+var rounds = 800000;    // 规模:轮数
+
+var xs = [];
+var i = 0;
+while (i < size) {
+    xs.push(i);
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    xs.push(r);
+    xs.insert(0, r);
+    if (xs.contains(r)) {
+        acc = (acc + xs.find(r)) % 1000003;
+    }
+    acc = (acc + xs.remove_at(2)) % 1000003;
+    acc = (acc + xs.pop()) % 1000003;
+    acc = (acc + xs.size()) % 1000003;
+    r += 1;
+}
+var joined = xs.join(",");
+acc = (acc + joined.size()) % 1000003;
+var dt = clock() - t0;
+
+assert(acc == 684118);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

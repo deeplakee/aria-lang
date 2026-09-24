@@ -1,0 +1,23 @@
+// 量比较 + 分支:取模、四个比较算子与 if/else-if/else 三级链的派发成本。
+var iterations = 4000000; // 规模
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    if (i % 15 == 0) {
+        acc += 3;
+    } else if (i % 5 == 0) {
+        acc += 2;
+    } else if (i % 3 == 0) {
+        acc += 1;
+    } else {
+        acc += 0;
+    }
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 2933334);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

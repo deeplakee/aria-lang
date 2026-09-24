@@ -35,6 +35,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、`init_` 写点（ctor 自 super 派生 + `set_field` 同步）、Locate 合流栈泄漏；类相关特性重启前重读）。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
+- `bench/lang-bench-notes.md` -- aria 源文件级性能基准（`bench/lang/` 与它的驱动 `lang_bench.py`）的测量纪律与端口纪律、跨语言覆盖差异的理由、已实测排除项。
 
 ### 语言文法 `docs/grammar.txt`
 
@@ -152,5 +153,6 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - 测试链接 `aria_core` + `gtest_main`，用 `gtest_discover_tests` 注册到 ctest。
 - 临时文件用 `testing::TempDir()`（gtest 提供）写入，测试结束自动清理。
 - `tests/language/` 另有 aria 自己写的脚本语料（正向 assert 收口、负向钉错误码，端到端驱动解释器，兼作 GC 压力网），跑法与约束见 `tests/language/README.md`；改语言面时它同样是验收面。
+- `bench/lang/` 是**性能**语料（同为 aria 源码，但逐文件起进程计时、可与 `.py` / `.js` / `.lua` / `.java` 端口对照）：清单与跑法见 `bench/lang/README.md`，驱动 `bench/lang/lang_bench.py`（数字是它的输出，不留档），纪律与覆盖差异的理由见 `.claude/reference/bench/lang-bench-notes.md`；被测二进制用原样的 Release 构建（LTO 默认开，别为跑基准关优化）。
 
 `build/` 与 `cmake-build-*` 均已加入 `.gitignore`。

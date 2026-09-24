@@ -1,0 +1,25 @@
+// 量一等函数与 lambda:组合子(传入函数、返回 lambda)每轮的调用链 = 三次闭包调用。
+var iterations = 5000000; // 规模
+
+fun compose(f, g) {
+    return fun(x) {
+        return f(g(x));
+    };
+}
+
+var inc = fun(x) { return x + 1; };
+var dbl = fun(x) { return x * 2; };
+var chain = compose(inc, dbl);
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = chain(acc) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 395508);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

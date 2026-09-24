@@ -1,0 +1,28 @@
+// 量显式迭代器协议:每轮取一次 iter(),再 has_next/next 逐元素拉取(与 for-in 降糖形态同路径,
+// 但不受循环语法影响)。**aria-only**:各语言的显式迭代写法不对齐(Python/JS 的 next() 以抛异常
+// 报尽,Java 的 Iterator 同名不同序),故不配对照端口。
+var size = 512;    // 源表长
+var rounds = 20000; // 规模:轮数
+
+var xs = [];
+var i = 0;
+while (i < size) {
+    xs.push(i);
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    var it = xs.iter();
+    while (it.has_next()) {
+        acc = (acc + it.next()) % 1000003;
+    }
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 312152);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

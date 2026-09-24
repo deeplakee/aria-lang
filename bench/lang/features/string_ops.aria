@@ -1,0 +1,22 @@
+// 量 string 方法面:每轮 contains/find/substring/split 各一次,含每轮的分配(切分出的子串与
+// 列表),故同时压 GC。
+var rounds = 1000000;  // 规模
+
+var base = "the quick brown fox jumps over the lazy dog";
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < rounds) {
+    if (base.contains("brown")) {
+        acc += base.find("fox");
+    }
+    var parts = base.split(" ");
+    acc = (acc + parts.size() + base.substring(4, 9).size()) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 999913);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

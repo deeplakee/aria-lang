@@ -118,9 +118,22 @@ ctest --test-dir build --output-on-failure
 下用 aria 自己写的**脚本语料**（正向脚本以 `assert` 收口，负向脚本钉错误码，端到端驱动解释器，
 兼作 GC 压力安全网），详见 `tests/language/README.md`。
 
-`bench/` 下有独立的性能基准（`lexer_bench` / `hashtable_bench` / `vm_bench`），数字只在优化构建下
-有意义：Release 默认开 LTO（`-DARIA_ENABLE_LTO=OFF` 可关），LTO 本身与 Debug/Release 之差都足以
-量级性地改变读数，跨构建对比前先固定这两项。
+`bench/` 下有独立的性能基准。进程内微项有三个可执行（`lexer_bench` / `hashtable_bench` /
+`vm_bench`，量单条路径的单次成本），另有**源文件级**基准 `bench/lang/`：里面的 `.aria` 都是能直接
+运行的完整程序（40 个语言功能细项 + 8 个真实负载，负载与多数功能项带 CPython / Node / Lua / Java
+对照端口），同目录的 `lang_bench.py` 逐个起进程计时，报多轮**平均值 ± 标准差**，并逐语言比对脚本自报
+的校验量：
+
+```sh
+cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release    # 原样 Release 即可（LTO 默认开）
+cmake --build build/rel --target aria -j
+python3 bench/lang/lang_bench.py --aria=build/rel/aria
+```
+
+数字只在实际发布的那份二进制上有意义：Release 默认开 LTO、带 `-O3 -DNDEBUG`，别为跑基准关掉优化
+开关，Debug / Release 之差足以量级性地改变读数。清单与写法见 `bench/lang/README.md`；本次运行的数字
+就是驱动的输出（要留档就重定向到文件），测量纪律与端口纪律见
+`.claude/reference/bench/lang-bench-notes.md`。
 
 值表示默认取 NaN-boxing；想验证等价的 TagValue 路径，另配一个构建目录：
 

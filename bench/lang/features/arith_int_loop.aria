@@ -1,0 +1,17 @@
+// 量整数域算术:ADD/SUB/MUL/MOD 与复合赋值的组合成本(全在 i48 域内,每轮取模压住增长)。
+var iterations = 5000000; // 规模
+
+var t0 = clock();
+var acc = 1;
+var i = 0;
+while (i < iterations) {
+    acc = (acc + i) % 1000003;
+    acc = acc * 3 - 1;
+    acc += i % 7;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 109608);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

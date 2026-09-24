@@ -1,0 +1,41 @@
+// 量 for-in 迭代协议:list / range / string / map 四种源各走一遍 iter + has_next + next
+// 方法面(list 与 map 每轮另有迭代器对象分配)。
+var size = 512;   // 各源的元素数
+var rounds = 4000; // 规模:重复轮数
+
+var xs = [];
+var i = 0;
+while (i < size) {
+    xs.push(i);
+    i += 1;
+}
+var m = {};
+var k = 0;
+while (k < size) {
+    m[k] = k;
+    k += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    for (v in xs) {
+        acc = (acc + v) % 1000003;
+    }
+    for (v in 0...size) {
+        acc = (acc + v) % 1000003;
+    }
+    for (ch in "abc") {
+        acc = acc + 1;
+    }
+    for (pair in m) {
+        acc = (acc + pair[0]) % 1000003;
+    }
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 799293);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

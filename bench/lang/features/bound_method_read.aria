@@ -1,0 +1,28 @@
+// 量方法值读取:每轮读一次 obj.method--读路径每次现场绑定(方法值是一等值,必须产出 bound 对象),
+// 故每轮一次分配,与调用路径(零绑定)形成对照。
+var iterations = 3800000;  // 规模
+
+def Cell {
+    init(v) {
+        this.v = v;
+    }
+    step(d) {
+        return this.v + d;
+    }
+}
+
+var obj = Cell(1);
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    var f = obj.step;
+    acc = (acc + f(i)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 240060);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

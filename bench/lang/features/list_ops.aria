@@ -1,0 +1,30 @@
+// 量 list 下标与变更:先 push 建表,再每轮一次下标读 + 一次下标写 + size()(下标越界检查
+// 与负下标折算都在读路径上)。
+var size = 200000;   // 表长
+var rounds = 20;     // 规模:整表遍历轮数
+
+var xs = [];
+var i = 0;
+while (i < size) {
+    xs.push(i);
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    var j = 0;
+    while (j < size) {
+        acc = (acc + xs[j] + xs[size - 1 - j]) % 1000003;
+        xs[j] = (xs[j] + 1) % 1000003;
+        j += 1;
+    }
+    r += 1;
+}
+acc = (acc + xs.size()) % 1000003;
+var dt = clock() - t0;
+
+assert(acc == 799787);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

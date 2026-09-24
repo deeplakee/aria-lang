@@ -1,0 +1,31 @@
+// 量就地排序与反转:每轮 sort(升序)+ reverse(降序),再对全表滚动校验(排序后序确定)。
+var size = 200000;  // 元素数
+var rounds = 20;     // 规模:轮数
+
+var xs = [];
+var state = 1;
+var i = 0;
+while (i < size) {
+    state = (state * 48271) % 2147483647;
+    xs.push(state);
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    xs.sort();
+    xs.reverse();
+    var j = 0;
+    while (j < size) {
+        acc = (acc * 31 + xs[j] % 1009) % 1000000007;
+        j += 1;
+    }
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 745687805);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

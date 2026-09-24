@@ -1,0 +1,19 @@
+// 量默认参数:每次调用都少传一个固定参数,走缺省印章垫充。
+var iterations = 5500000;  // 规模
+
+fun step(v, k = 3) {
+    return v + k;
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = (acc + step(i)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 375096);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -1,0 +1,22 @@
+// 量解构赋值:每轮一次两元交换式解构 + 一次带 rest 的解构绑定。
+var rounds = 1200000;  // 规模
+
+var p = 1;
+var q = 2;
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < rounds) {
+    [p, q] = [q, p + q];
+    p = p % 1000003;
+    q = q % 1000003;
+    var [x, ...rest] = [p, q, p + q];
+    acc = (acc + x + rest.size()) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 180840);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

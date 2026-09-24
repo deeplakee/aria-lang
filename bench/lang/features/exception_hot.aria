@@ -1,0 +1,19 @@
+// 量异常热路径:每轮一次 throw + catch(装箱 ObjException、unwind 查异常记录表、catch 槽落载荷)。
+var iterations = 8000000;  // 规模
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    try {
+        throw i;
+    } catch (e) {
+        acc = (acc + e) % 1000003;
+    }
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 300);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

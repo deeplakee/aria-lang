@@ -1,0 +1,23 @@
+// 量实例字段读写:LOAD/STORE_FIELD 协议往返(字段表哈希查找在每次访问上)。
+var iterations = 7000000; // 规模
+
+def Cell {
+    init() {
+        this.v = 0;
+    }
+}
+
+var cell = Cell();
+
+var t0 = clock();
+var i = 0;
+while (i < iterations) {
+    cell.v = cell.v + 1;
+    i += 1;
+}
+var acc = cell.v;
+var dt = clock() - t0;
+
+assert(acc == 7000000);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

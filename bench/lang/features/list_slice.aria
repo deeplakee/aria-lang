@@ -1,0 +1,26 @@
+// 量切片:每轮三次--正区间、负下标区间、倒序区间(倒序 range 得到倒序段),各取新列表。
+var size = 512;    // 源表长
+var rounds = 900000;  // 规模:轮数
+
+var xs = [];
+var i = 0;
+while (i < size) {
+    xs.push(i);
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    var a = xs[10..20];
+    var b = xs[-20..-1];
+    var c = xs[20..10];
+    acc = (acc + a.size() + b.size() + c.size() + a[0] + b[0] + c[0]) % 1000003;
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 598479);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

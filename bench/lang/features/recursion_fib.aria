@@ -1,0 +1,23 @@
+// 量递归调用:朴素 fib 的调用/返回密度最高(每轮两次递归),帧深 = 参数(远小于 kFrameMax 256)。
+var rounds = 20;          // 规模:重复次数
+var fib_input = 27;       // 每次 fib(27)
+
+fun fib(n) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    acc += fib(fib_input);
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 3928360);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -1,0 +1,25 @@
+// 量闭包与 upvalue:每轮一次「捕获变量的读 + 写 + 调用」,覆盖 open upvalue 链的存取路径。
+var iterations = 6000000; // 规模
+
+fun make_counter() {
+    var n = 0;
+    return fun() {
+        n = n + 1;
+        return n;
+    };
+}
+
+var next = make_counter();
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = acc + next();
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 18000003000000);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

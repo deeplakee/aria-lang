@@ -1,0 +1,19 @@
+// 量普通函数调用:进帧 + 返回 + 一次 CALL 派遣的下界(无 LOAD_FIELD,不经成员解析)。
+var iterations = 6000000; // 规模
+
+fun step(v) {
+    return v + 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = acc + step(i);
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 18000003000000);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

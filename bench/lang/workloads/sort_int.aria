@@ -1,0 +1,30 @@
+// 真实负载:Park-Miller LCG 造数 -> 就地排序 -> 滚动校验和(排序后序确定,故校验和确定)。
+// 规模见 n(元素数)。
+var n = 2500000;  // 规模:元素数
+
+var t0 = clock();
+var xs = [];
+var state = 1;
+var i = 0;
+while (i < n) {
+    state = (state * 48271) % 2147483647;
+    xs.push(state);
+    i += 1;
+}
+xs.sort();
+
+var checksum = 0;
+i = 0;
+while (i < n) {
+    checksum = (checksum * 31 + xs[i] % 1009) % 1000000007;
+    i += 1;
+}
+var dt = clock() - t0;
+assert(checksum == 947379667);
+assert(xs[0] == 145);
+assert(xs[n - 1] == 2147483426);
+
+println("value checksum: " + str(checksum));
+println("value min: " + str(xs[0]));
+println("value max: " + str(xs[n - 1]));
+println("bench-time: " + str(dt * 1000.0) + " ms");

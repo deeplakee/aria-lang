@@ -1,0 +1,26 @@
+// 量调用钩子:每轮一次 obj(args),按 __call__ 取实现再调用(非函数 callee 的派发路径)。
+var iterations = 6000000;  // 规模
+
+def Adder {
+    init(k) {
+        this.k = k;
+    }
+    __call__(x) {
+        return this.k + x;
+    }
+}
+
+var add2 = Adder(2);
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = (acc + add2(i)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 135);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -1,0 +1,38 @@
+// 真实负载:埃拉托斯特尼筛。aria 只有 list,故用 0/1 整数表(参照端口各用本语言的字节容器)。
+// 三个规模各钉素数个数(9592 / 78498 / 148933)。规模见 n 序列。
+var t0 = clock();
+var total = 0;
+var counts = [];
+var sizes = [100000, 1000000, 4000000];
+for (n in sizes) {
+    var composite = [];
+    var k = 0;
+    while (k < n) {
+        composite.push(0);
+        k += 1;
+    }
+    var count = 0;
+    var i = 2;
+    while (i < n) {
+        if (composite[i] == 0) {
+            count += 1;
+            var j = i * i;
+            while (j < n) {
+                composite[j] = 1;
+                j += i;
+            }
+        }
+        i += 1;
+    }
+    total += count;
+    counts.push(count);
+    println("value count_" + str(n) + ": " + str(count));
+}
+var dt = clock() - t0;
+assert(counts[0] == 9592);
+assert(counts[1] == 78498);
+assert(counts[2] == 283146);
+assert(total == 371236);
+
+println("value checksum: " + str(total));
+println("bench-time: " + str(dt * 1000.0) + " ms");

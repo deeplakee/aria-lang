@@ -1,0 +1,25 @@
+// 量 for-in 解构:每轮遍历全表,每轮解构出 [k, v] 二元组(与 map 迭代协议同一形状)。
+var size = 256;    // 表长
+var rounds = 13000; // 规模:轮数
+
+var m = {};
+var i = 0;
+while (i < size) {
+    m[i] = i * 2;
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    for ([k, v] in m) {
+        acc = (acc + k + v) % 1000003;
+    }
+    r += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 956184);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

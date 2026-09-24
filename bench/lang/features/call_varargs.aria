@@ -1,0 +1,23 @@
+// 量 varargs:每轮一次三实参调用,超出固定参数的部分打包成 rest。
+var iterations = 1300000;  // 规模
+
+fun total(...xs) {
+    var s = 0;
+    for (v in xs) {
+        s = s + v;
+    }
+    return s;
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    acc = (acc + total(i, i + 1, i + 2)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 345018);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

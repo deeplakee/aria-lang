@@ -1,0 +1,27 @@
+// 量局部槽读写与块作用域:函数体内多局部串算 + 一层内嵌块的进出。
+var rounds = 4500000;  // 规模
+
+fun work(a) {
+    var b = a + 1;
+    var c = b * 2;
+    var d = c - 3;
+    var out = d;
+    {
+        var e = d + 4;
+        out = e % 1000003;
+    }
+    return out;
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < rounds) {
+    acc = (acc + work(i)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 250156);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

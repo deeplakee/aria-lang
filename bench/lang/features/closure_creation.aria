@@ -1,0 +1,22 @@
+// 量闭包创建:每轮建一个捕获参数的闭包再立即调用(upvalue 装箱与释放)。
+var iterations = 2800000;  // 规模
+
+fun make(base) {
+    return fun(d) {
+        return base + d;
+    };
+}
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < iterations) {
+    var f = make(i);
+    acc = (acc + f(2)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 440024);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

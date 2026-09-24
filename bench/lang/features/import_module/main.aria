@@ -1,0 +1,19 @@
+// 量模块机制:跨模块调用(入口 main.aria + 辅助模块 lib/helper.aria)。**aria-only**:各语言
+// 模块机制不可对齐(Python 的 import 是进程启动期执行、Java 全在编译期),故不配对照端口。
+// lib/ 下的辅助模块由驱动跳过,只作 import 目标。
+import "./lib/helper" as H;
+
+var rounds = 6000000;  // 规模
+
+var t0 = clock();
+var acc = 0;
+var i = 0;
+while (i < rounds) {
+    acc = (acc + H.step(i)) % 1000003;
+    i += 1;
+}
+var dt = clock() - t0;
+
+assert(acc == 153);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

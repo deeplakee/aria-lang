@@ -1,0 +1,43 @@
+// 量 map 方法面:每轮 remove/has/get/size;每十轮再取 keys/values/pairs 三份快照并求和
+// (快照序 unspecified,故只做与序无关的求和与计数)。
+var entries = 20000;  // 表长
+var rounds = 1600;      // 规模:轮数
+
+var m = {};
+var i = 0;
+while (i < entries) {
+    m[i] = i * 2;
+    i += 1;
+}
+
+var t0 = clock();
+var acc = 0;
+var r = 0;
+while (r < rounds) {
+    var key = r % entries;
+    m.remove(key);
+    m[key] = r;
+    if (m.has(key)) {
+        acc = (acc + m.get(key)) % 1000003;
+    }
+    acc = (acc + m.size()) % 1000003;
+    if (r % 10 == 0) {
+        var ks = m.keys();
+        var vs = m.values();
+        var ps = m.pairs();
+        acc = (acc + ks.size() + vs.size() + ps.size()) % 1000003;
+        var j = 0;
+        while (j < ks.size()) {
+            acc = (acc + ks[j]) % 1000003;
+            j += 1;
+        }
+    }
+    r += 1;
+}
+m.clear();
+acc = (acc + m.size()) % 1000003;
+var dt = clock() - t0;
+
+assert(acc == 183077);
+println("value checksum: " + str(acc));
+println("bench-time: " + str(dt * 1000.0) + " ms");

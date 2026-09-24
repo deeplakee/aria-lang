@@ -1,0 +1,40 @@
+// 真实负载:建满二叉树再数节点(分配 + 字段访问密集,兼压 GC)。节点数是闭式 2^(depth+1)-1。
+// 规模见 depth/iterations。
+var depth = 12;        // 规模:树深(递归帧深 = depth+1)
+var iterations = 300;  // 规模:建树轮数
+
+def Node {
+    init(left, right) {
+        this.left = left;
+        this.right = right;
+    }
+}
+
+fun make_tree(d) {
+    if (d == 0) {
+        return Node(nil, nil);
+    }
+    return Node(make_tree(d - 1), make_tree(d - 1));
+}
+
+fun count_nodes(node) {
+    if (node == nil) {
+        return 0;
+    }
+    return 1 + count_nodes(node.left) + count_nodes(node.right);
+}
+
+var t0 = clock();
+var total = 0;
+var i = 0;
+while (i < iterations) {
+    total += count_nodes(make_tree(depth));
+    i += 1;
+}
+var dt = clock() - t0;
+assert(total == 2457300);
+assert(total == iterations * 8191);
+
+println("value checksum: " + str(total));
+println("value per_tree: " + str(count_nodes(make_tree(depth))));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -1,0 +1,4 @@
+// import_module 基准的辅助模块:顶层 fun 即模块成员,经 H.step 直调。
+fun step(v) {
+    return v + 1;
+}

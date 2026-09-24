@@ -1,0 +1,76 @@
+// 真实负载:字典序枚举全部置换,对首元素非 0 者统计 pancake 翻面次数。公开的带符号 checksum
+// 约定无法从公开说明复原,故钉三个序无关量:max_flips(与公开 Pfannkuchen 值可比)、flips_sum
+// (本文自定义求和)、perm_count(闭式 n!-(n-1)!)。规模见 n。
+var n = 9;  // 规模:置换长度(帧深恒 1,翻面用循环)
+
+var t0 = clock();
+var perm = [];
+var i = 0;
+while (i < n) {
+    perm.push(i);
+    i += 1;
+}
+var max_flips = 0;
+var flips_sum = 0;
+var perm_count = 0;
+while (true) {
+    if (perm[0] != 0) {
+        var work = [];
+        var c = 0;
+        while (c < n) {
+            work.push(perm[c]);
+            c += 1;
+        }
+        var flips = 0;
+        while (work[0] != 0) {
+            var k = work[0] + 1;
+            var left = 0;
+            var right = k - 1;
+            while (left < right) {
+                var tmp = work[left];
+                work[left] = work[right];
+                work[right] = tmp;
+                left += 1;
+                right -= 1;
+            }
+            flips += 1;
+        }
+        if (flips > max_flips) {
+            max_flips = flips;
+        }
+        flips_sum += flips;
+        perm_count += 1;
+    }
+    var i = n - 2;
+    while (i >= 0 && perm[i] >= perm[i + 1]) {
+        i -= 1;
+    }
+    if (i < 0) {
+        break;
+    }
+    var j = n - 1;
+    while (perm[j] <= perm[i]) {
+        j -= 1;
+    }
+    var tmp2 = perm[i];
+    perm[i] = perm[j];
+    perm[j] = tmp2;
+    var left2 = i + 1;
+    var right2 = n - 1;
+    while (left2 < right2) {
+        var tmp3 = perm[left2];
+        perm[left2] = perm[right2];
+        perm[right2] = tmp3;
+        left2 += 1;
+        right2 -= 1;
+    }
+}
+var dt = clock() - t0;
+assert(flips_sum == 1911505);
+assert(max_flips == 30);
+assert(perm_count == 322560);
+
+println("value checksum: " + str(flips_sum));
+println("value max_flips: " + str(max_flips));
+println("value perm_count: " + str(perm_count));
+println("bench-time: " + str(dt * 1000.0) + " ms");

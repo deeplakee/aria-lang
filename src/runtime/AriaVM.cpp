@@ -136,7 +136,7 @@ namespace aria {
         // 调用 -- 此时 frame.ip 指向待执行指令,据此解码(仅读不推进 VM 的 ip)。栈渲染经
         // format_value_debug 不用 format_value:后者 Obj 走可重载虚 to_string,在 dispatch_loop
         // 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。输出形制见 runtime.md。
-        [[maybe_unused]] void trace_execution(Movement* ctx) {
+        [[maybe_unused]] void trace_execution(ObjMovement* ctx) {
             auto&       frames = ctx->frames();
             const auto& frame  = frames.top();
             const auto  ip_off = static_cast<u32>(frame.ip - frame.unit->code.data());
@@ -186,7 +186,7 @@ namespace aria {
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
         string_constants_{kStringConstantCount} {
-        current_ = gc_.new_object<Movement>(&gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
+        current_ = gc_.new_object<ObjMovement>(&gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
         {
@@ -228,7 +228,7 @@ namespace aria {
     void AriaVM::hook_vm_roots() {
         // VM 根 tracer:collect 时标五类根 -- 四类表(modules_ / builtins_ / registers_ /
         // string_constants_)+ current_ 一点(各上下文内部与 previous_ resume 链经
-        // Movement::trace / 对象图级联;清单见 runtime.md「共享状态」)。链根交接纪律由
+        // ObjMovement::trace / 对象图级联;清单见 runtime.md「共享状态」)。链根交接纪律由
         // run() 出口断言承担,此处不重复设防。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
@@ -945,7 +945,7 @@ namespace aria {
             auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
             const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
             if (const auto rec = unit->find_try_handler(ip_off)) {
-                // 命中:回退到命中帧并转入 catch handler(统一在 Movement::unwind_to_handler);
+                // 命中:回退到命中帧并转入 catch handler(统一在 ObjMovement::unwind_to_handler);
                 // 调用方 break 回循环顶重取帧(坑 #11)。
                 current_->unwind_to_handler(i, **rec);
                 return std::nullopt;

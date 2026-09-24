@@ -59,7 +59,7 @@ namespace aria {
             location_ = slot;
         }
 
-        // 开链访问器(链头在执行上下文,按槽址降序;遍历/插链/摘链由 Movement 管)。
+        // 开链访问器(链头在执行上下文,按槽址降序;遍历/插链/摘链由 ObjMovement 管)。
         [[nodiscard]]
         ObjUpvalue* next_open() const noexcept {
             return next_open_;

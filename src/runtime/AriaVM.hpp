@@ -6,7 +6,7 @@
 #include "memory/GC.hpp"
 // raise 模板头内内联装箱需 ObjException 完整类型(其依赖已经 GC.hpp 传递拉入)。
 #include "object/ObjException.hpp"
-#include "runtime/Movement.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "runtime/string_constant.hpp"
 #include "runtime/value_register.hpp"
 #include "value/AriaHashTable.hpp"
@@ -54,7 +54,7 @@ namespace aria {
         LoadError,    // 源文件加载失败（仅 interpret_from_path：I/O 或 UTF-8 编码）
     };
 
-    // 解释器:持解释器级共享状态,驱动 Movement 执行字节码(路线见 vm-design.md §6,切换模型
+    // 解释器:持解释器级共享状态,驱动 ObjMovement 执行字节码(路线见 vm-design.md §6,切换模型
     // §4.9);循环状态全部取自 *current_。GC 根经 std::function tracer 注册进自有 gc_ -- 标根
     // 清单见 runtime.md「共享状态」,其中 open upvalue 开链是「闭包已死而 upvalue 仍在链」的
     // 悬垂防线。成员声明序 gc_ 居首保证析构逆序下 tracer 与各成员同生共死。运行时错误统一
@@ -97,14 +97,14 @@ namespace aria {
 
         // 当前执行上下文(测试用;切换原语落地前恒为主上下文)。
         [[nodiscard]]
-        Movement* current_context() noexcept {
+        ObjMovement* current_context() noexcept {
             return current_;
         }
 
-        // 挂起错误侧信道(原生函数等冷路径报错):寄存器在 Movement::pending_error_,经 *current_
+        // 挂起错误侧信道(原生函数等冷路径报错):寄存器在 ObjMovement::pending_error_,经 *current_
         // 转发,错误必落进调用者正在执行的上下文。载荷为 Value(单寄存器模型)。raise 从零构造
         // 消息装箱一步烘齐,**消息不含位置前缀**(位置由 unwind 未捕获出口的逐帧 at 行给出);
-        // 用户 throw 经 Movement::raise 原值入寄存器,不走本层。fail = raise + 恒返失败信号
+        // 用户 throw 经 ObjMovement::raise 原值入寄存器,不走本层。fail = raise + 恒返失败信号
         // (FailSignal),[[nodiscard]] 强制 `return vm.fail(...);`;原生函数 bool 契约 false ⟺
         // 已 raise。raise 内 new_exception 分配可能触 GC,载荷构造后立即入寄存器(tracer 已标根)。
         template<typename... Args>
@@ -315,7 +315,7 @@ namespace aria {
 
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
         // runtime.md「共享状态」。执行上下文只标 current_ 一点,各上下文内部与 previous_ resume
-        // 链由 Movement::trace 经对象图级联。
+        // 链由 ObjMovement::trace 经对象图级联。
         void hook_vm_roots();
 
         // 源根默认值初始化(ctor 一次调用):入口槽 [0] 占位 cwd + 配置根 [1..] = 编译器相对
@@ -413,7 +413,7 @@ namespace aria {
 
         // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
         // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
-        // 回退到命中帧并转入 catch handler(统一在 Movement),返 nullopt(调用方 break 回循环顶
+        // 回退到命中帧并转入 catch handler(统一在 ObjMovement),返 nullopt(调用方 break 回循环顶
         // 重取帧,坑 #11);全帧未命中 -> reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息),
         // 逐帧烘焙 at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:
         // 寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障
@@ -426,7 +426,7 @@ namespace aria {
         // ~GC 的 free_all_ 释放(GC 对象,内部与 previous_ 链经 trace 级联标根)。主上下文即其
         // 初值(M6 切换落地后为 resume 链链根,由 run() 入口锚 + 出口断言钉住),切换模型见
         // vm-design.md §4.9。
-        Movement* current_;
+        ObjMovement* current_;
 
         AriaHashTable modules_;  // 模块表(GC 根)
         AriaHashTable builtins_; // 只读 builtins 表(GC 根)

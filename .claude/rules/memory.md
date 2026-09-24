@@ -10,8 +10,8 @@ paths:
 ## `memory/Buffer.hpp`
 
 - `Buffer<T, Alloc = GC>`（`TriviallyCopyable`/`TrivialAllocator` 约束）：只持 `{alloc, data, cap}` 的最小可增长缓冲底座，集中 `allocate`/`reallocate`/`deallocate`，**无逻辑长度**。
-- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，**不返回基址差**（算 delta 是 UB）--有派生裸指针的调用方（Movement 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `Movement::grow_stack_`）。
-- 非拷贝/非移动。`Array` 与 `Movement` 值栈均建于其上；不适用于内容需重定位的容器（HashTable rehash / InternPool rehash 直接用分配器）。
+- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，**不返回基址差**（算 delta 是 UB）--有派生裸指针的调用方（ObjMovement 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `ObjMovement::grow_stack_`）。
+- 非拷贝/非移动。`Array` 与 `ObjMovement` 值栈均建于其上；不适用于内容需重定位的容器（HashTable rehash / InternPool rehash 直接用分配器）。
 
 ## `memory/Array.hpp`
 
@@ -22,7 +22,7 @@ paths:
 ## `memory/Allocator.hpp`
 
 - `TriviallyCopyable` / `TrivialAllocator` concept（后者以 `u8` 为代表类型校验 `allocate<T>`/`reallocate<T>`/`deallocate<T>`）+ `class GC;` 前向声明。
-- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`，使用 GC 作分配器的具体类（`AriaArray`/`AriaHashTable`/`CodeUnit`/`Movement`/`InternPool`）自行 include（`InternPool` 经 ctor 函数体内 `static_assert(TrivialAllocator<Alloc>)` 约束--GC 为其值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
+- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`，使用 GC 作分配器的具体类（`AriaArray`/`AriaHashTable`/`CodeUnit`/`ObjMovement`/`InternPool`）自行 include（`InternPool` 经 ctor 函数体内 `static_assert(TrivialAllocator<Alloc>)` 约束--GC 为其值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
 
 ## `memory/HashTable.hpp`
 
@@ -57,7 +57,7 @@ GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计�
 - `modules_`（解释器级共享模块表）+ `builtins_`。
 - `registers_`（值寄存器组 = `List<Object*>`，VM 单例对象的统一存放表，Object 根类在其中；`hook_vm_roots` 一趟循环逐格 mark_object）。
 - `string_constants_`（常量串表，一趟循环 mark_object--驻留池是 weak root，不标根下轮 collect 即摘除）。
-- `current_` 一点：执行上下文（`Movement : Object`）已入对象链表，其 `trace` 自标值栈 `[base, top)`（run() 期局部/实参/临时值，最关键的根；run() 外为空态）、各活动帧 `closure`（级联标 function/upvalues）与 `module`、挂起错误寄存器、open upvalue 开链节点（「闭包已死而 upvalue 仍在链」的悬垂防线），并经 `mark_object(previous_)` 沿 resume 链级联。
+- `current_` 一点：执行上下文（`ObjMovement : Object`）已入对象链表，其 `trace` 自标值栈 `[base, top)`（run() 期局部/实参/临时值，最关键的根；run() 外为空态）、各活动帧 `closure`（级联标 function/upvalues）与 `module`、挂起错误寄存器、open upvalue 开链节点（「闭包已死而 upvalue 仍在链」的悬垂防线），并经 `mark_object(previous_)` 沿 resume 链级联。
 
 组合而非继承，GC 不识 VM 类型（经 `set_vm_roots` 回调接入）。
 

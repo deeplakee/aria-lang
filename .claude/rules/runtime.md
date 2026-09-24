@@ -1,6 +1,6 @@
 ---
 name: aria-runtime
-description: aria 解释器 runtime 层模块参考：FrameStack、Movement 执行上下文（Object 子类：值栈/帧栈/开 upvalue 链/resume 链/挂起错误寄存器）、AriaVM（主循环/闭包与 upvalue 指令/全局与 builtins 回退/IMPORT 模块加载，含 VM 异常通道落地状态清单）。读写 src/runtime/**、实现 VM 里程碑（M3 异常、M4 闭包等）时使用。
+description: aria 解释器 runtime 层模块参考：FrameStack、ObjMovement 执行上下文（Object 子类：值栈/帧栈/开 upvalue 链/resume 链/挂起错误寄存器）、AriaVM（主循环/闭包与 upvalue 指令/全局与 builtins 回退/IMPORT 模块加载，含 VM 异常通道落地状态清单）。读写 src/runtime/**、实现 VM 里程碑（M3 异常、M4 闭包等）时使用。
 paths:
   - "src/runtime/**"
 ---
@@ -18,15 +18,15 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 要求 T trivial + trivially-copyable + trivially-destructible（`static_assert` 三连把关）；GC trace 经 `span()` 读已用区间。
 - 与 `Array<T>` 不通用：`Array` 是堆背书、可扩容、非 trivial（持 `GC*`、不可拷贝/移动），`FrameStack` 是定容槽位池；语义不同故不套用。
 
-## `runtime/Movement.hpp`
+## `runtime/ObjMovement.hpp`
 
-执行上下文（`Movement : Object` final，`ObjType::MOVEMENT`：主上下文与协程统一为本类型 GC 对象，`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine>`；`using VMContext = Movement` 别名）。trace 自标值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点。
+执行上下文（`ObjMovement : Object` final，`ObjType::MOVEMENT`：主上下文与协程统一为本类型 GC 对象，`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine>`；`using VMContext = ObjMovement` 别名）。trace 自标值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点。
 
 ### 值栈与帧栈
 
 - 可增长值栈：GC 分配的 `Buffer<Value>` 底座 + `top_` 裸指针，初始 `kStackInit = 1024`，push 溢出 2x 增长并重定位活动帧 slots 与 open upvalue 链 location_。
 - 值栈 API `push`/`pop`/`drop`/`peek`/`stack_size`/`stack_capacity`/`stack_base`/`stack_top`；帧栈 `frames()`/`frames_full`。
-- `FrameStack<CallFrame, kFrameMax = 256>`；私有 `set_stack_top_` 收口「值栈顶只由 Movement 自身改」。
+- `FrameStack<CallFrame, kFrameMax = 256>`；私有 `set_stack_top_` 收口「值栈顶只由 ObjMovement 自身改」。
 - 进/出帧 `enter_frame(closure, argc)`/`exit_frame()` 收口「栈顶帧 slots 即值栈本帧槽 0」；`exit_frame` 内置 `close_upvalues(frame.slots)`（弹帧 + 关本帧区间开指 + 复位）；`enter_frame` 定义在 `.cpp`（需 `ObjClosure` 完整类型）。
 - **方法帧共用本入口**：调用方进帧前把槽 0 原位写为 this--普通帧槽 0 = 闭包自身、方法帧槽 0 = this，闭包经 `frame.closure` 携带不上栈（对齐 clox 方法语义；无专用方法进帧）。
 - **`unwind_to_handler(n, record)` 异常派发**：`truncate(n+1)` 一步弃内层帧 -> `close_upvalues(catch 槽)` 按槽址一关到底（此时栈顶未动、槽区全存活）-> 栈顶截到 catch 参数槽 -> 置 ip 跳 handler -> 寄存器载荷 push 落槽。
@@ -36,7 +36,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 链头 `open_upvalues_`：按槽址降序的侵入式单链，链上节点经本类 trace 标根。
 
-- **`capture_upvalue(slot)` 捕获单点**：单趟同时完成复用判定与降序插链--等值即复用（同槽同局部一份引用，「捕获即引用」内外层共享同一 `ObjUpvalue`），更小/链尾则经调用方传入的 GC `new_upvalue` 建新插链（Movement 不自持分配器创建对象）；建新到插链间无分配点，入链即随本类 trace 根化；同槽双节点也命中复用而非再插（自愈）。
+- **`capture_upvalue(slot)` 捕获单点**：单趟同时完成复用判定与降序插链--等值即复用（同槽同局部一份引用，「捕获即引用」内外层共享同一 `ObjUpvalue`），更小/链尾则经调用方传入的 GC `new_upvalue` 建新插链（ObjMovement 不自持分配器创建对象）；建新到插链间无分配点，入链即随本类 trace 根化；同槽双节点也命中复用而非再插（自愈）。
 - **`close_upvalues(from)`**：闭所有 `location >= from`（迁值 close + 整段摘链，降序不变式下恒为链头前缀）。
 - 只读链头 `open_upvalues()` 供 trace 遍历标根。
 - **关闭挂点**：`exit_frame`（本帧区间，RETURN 经此）/ `CLOSE_UPVALUE`（`stack_top()`）/ `unwind_to_handler`（catch 槽）/ `reset()`（全链）。
@@ -90,7 +90,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### GC 已启用
 
-值栈 `[base, top)` + 各活动帧 `closure`/`module` + open upvalue 开链经 `Movement::trace` 标根（VM 根 tracer 只标 `current_` 一点，各上下文内部与 previous_ 链经对象图级联；见下「共享状态」）；`IMPORT` 取到模块对象后 `current_->push(module)` 压栈（经 `modules_` 根可达，非移动 GC 故指针稳定，**不加守卫**）；`JUMP_BACK`（循环回边）为 safe point 调 `gc_.maybe_collect()`。
+值栈 `[base, top)` + 各活动帧 `closure`/`module` + open upvalue 开链经 `ObjMovement::trace` 标根（VM 根 tracer 只标 `current_` 一点，各上下文内部与 previous_ 链经对象图级联；见下「共享状态」）；`IMPORT` 取到模块对象后 `current_->push(module)` 压栈（经 `modules_` 根可达，非移动 GC 故指针稳定，**不加守卫**）；`JUMP_BACK`（循环回边）为 safe point 调 `gc_.maybe_collect()`。
 
 ### 指令子集
 
@@ -118,14 +118,14 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 共享状态
 
-- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`Movement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `Movement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、dispatch_loop 永不重入，任何时刻正在执行的字节码所在上下文恒等于 `current_`）。
+- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`ObjMovement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `ObjMovement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、dispatch_loop 永不重入，任何时刻正在执行的字节码所在上下文恒等于 `current_`）。
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
 - VM 级只读 builtins 表 `builtins_`（构造期由 `builtins::register_builtin_functions` 一次性填充 type/str/println/assert，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib/`-L`）与值寄存器组 `registers_`（`List<Object*>`，VM 单例对象的统一存放表，构造期按表长预置格、bootstrap 按 `k<名字>Offset` 具名格位填、填完经 `assert_slots_filled` 收口，注册表见 `runtime/value_register.hpp`，寄存器只读）。
 - 常量串表 `string_constants_`（`List<ObjString*>`，VM 自己按名取用的字符串常量的唯一存放处，注册表见 `runtime/string_constant.hpp`）：构造期按表长预置格、bootstrap 按下标（枚举值）逐格 `new_string` 填入，填完经 `assert_slots_filled` 收口；tracer 一趟 `mark_object` 标根--**驻留池是 weak root，不标根则下轮 collect 即摘除**（算子钩子名尤其如此：实例算子派发每次都要一个稳定的 `ObjString*`，不标根就退化成每轮重铸）。消费点经 `string_constant(StringConstant)` 取值，不再各自 `new_string`。注册表的**成员判据**：只收 VM 自己按名取用的串--代码里写下的常量名（字段/方法名）不进此表，那些编进常量池经 `ObjFunction::trace` 已可达。
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：String 类 bootstrap 末段的算子钩子缓存按名取串，读的就是本表）。
 - **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_object`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 一点（其 trace 经 `mark_object(previous_)` 沿 resume 链级联 -- 挂起协程的值栈/帧/寄存器皆根）。
-- 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单住 `Movement::trace`（`Object` override；VM 根 tracer 只标 `current_` 一点，`previous_` 经 `mark_object` 入灰栈级联）。
+- 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单住 `ObjMovement::trace`（`Object` override；VM 根 tracer 只标 `current_` 一点，`previous_` 经 `mark_object` 入灰栈级联）。
 - **`raise(code, fmt, args...)`/`fail`**：从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`），消息**不含位置前缀**（位置由 unwind 未捕获出口的逐帧 at 行给出）；`fail` = raise + `FailSignal`（`[[nodiscard]]` 强制 `return vm.fail(...);`）。公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`
@@ -137,7 +137,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），设计全文见 `vm-design.md` §4.5-§4.8/§7，踩坑对策见 `exception-implementation-pitfalls.md`（坑编号 #1-#20）。
 
 - 错误站点 raise 载荷入挂起寄存器 -> `AriaVM::unwind()` 自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈（未命中帧记跟踪三元组）。
-- 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 Movement 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。
+- 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 ObjMovement 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。
 - 全帧未命中：`reset()` 一次清场后从未捕获出口物化 `Error`。
 - **`unwind()`** 负责查表派发 + 未捕获物化（经 `AriaVM::take_uncaught_error` 反提拆 (码, 烘焙消息)：ObjException 直取原码原消息；非 ObjException 载荷兜底 `UncaughtException`）与堆栈跟踪烘焙，拼好后经 `Error::from_baked` 一次物化。`Error` 仅在 unwind 未捕获出口物化，与 AGENTS.md 通道 2 一致。
 
@@ -145,7 +145,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 - `OpCode::THROW`（dispatch_loop 弹值 `current_->raise(v)`，原值入寄存器不包 ObjException--catch 绑原值保类型、未捕获物化兜底 `UncaughtException`）。
 - `CodeUnit::try_records` + `find_try_handler`（`TryRecord{begin, end, handle, stack_depth}`，按 begin 非降序二分 + 前溯，begin 相等（内层 try 是外层体首条语句）由反向扫描天然取最内层）。
-- `Movement::unwind_to_handler`（回退+转入 handler 一体）。
+- `ObjMovement::unwind_to_handler`（回退+转入 handler 一体）。
 - `AriaVM::raise`/`fail`（装箱点一步烘消息、不含位置前缀）与 `unwind`（private，仅 dispatch_loop 驱动期，入口断言寄存器非空）。
 - `ObjException`（携码 + 完整烘焙消息，re-throw 保码；`to_error` 经 `Error::from_baked` 原码原消息回传供测试/嵌入方）；VM 根 tracer 标 `pending_error_`（raise 到 unwind 间跨安全点不回收）；CodeGen 侧见 compile.md。
 

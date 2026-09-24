@@ -1,5 +1,5 @@
-#ifndef ARIA_MOVEMENT_HPP
-#define ARIA_MOVEMENT_HPP
+#ifndef ARIA_OBJ_MOVEMENT_HPP
+#define ARIA_OBJ_MOVEMENT_HPP
 
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
@@ -38,22 +38,22 @@ namespace aria {
     //     location_ 三类指入值栈的指针在增长时按「搬运前记槽偏移、搬运后新基址重建」重绑。
     //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧);UPtr 底座走 std 分配器,
     //     不进 GC 字节账。
-    class Movement final : public Object {
+    class ObjMovement final : public Object {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
 
-        explicit Movement(GC* gc) noexcept :
+        explicit ObjMovement(GC* gc) noexcept :
             Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},
             previous_{nullptr} {}
 
-        ~Movement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
-                                        // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
+        ~ObjMovement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
+                                           // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
 
-        Movement(const Movement&)            = delete;
-        Movement& operator=(const Movement&) = delete;
-        Movement(Movement&&)                 = delete;
-        Movement& operator=(Movement&&)      = delete;
+        ObjMovement(const ObjMovement&)            = delete;
+        ObjMovement& operator=(const ObjMovement&) = delete;
+        ObjMovement(ObjMovement&&)                 = delete;
+        ObjMovement& operator=(ObjMovement&&)      = delete;
 
         // 清空值栈与帧栈与挂起错误(容量保留,不缩回初始)。先关全部开指再清场:HALT 收场不弹帧,
         // 若无此安全网,链上残留的开指会跨 run 复用同一栈区继续指入(槽值被下一轮覆写),再经闭包
@@ -215,16 +215,16 @@ namespace aria {
         // 协程 resume 链
         // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
         // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
-        // (current_),Movement 不自切;切换原语落地前链长恒 1,字段为契约占位。挂起态
+        // (current_),ObjMovement 不自切;切换原语落地前链长恒 1,字段为契约占位。挂起态
         // previous_ 恒 nullptr(yield/RETURN 完成/未捕获跳链三处切换点一律解链)。标根经 trace
         // 尾部的 mark_object(previous_) 级联。
         [[nodiscard]]
-        Movement* previous() const noexcept {
+        ObjMovement* previous() const noexcept {
             return previous_;
         }
 
         // 链接/重链(resume 方向:置恢复者)。
-        void set_previous(Movement* prev) noexcept { previous_ = prev; }
+        void set_previous(ObjMovement* prev) noexcept { previous_ = prev; }
 
         // Object 协议(声明序随 Object.hpp)。
 
@@ -234,10 +234,10 @@ namespace aria {
         // ObjClosure/ObjModule 完整类型)。
         void trace(GC& gc) const noexcept override;
 
-        // 壳字节数(不含值栈/帧数组等子内存:值栈由 ~Movement 经自持 GC* 释放,帧数组由 UPtr 自释放)。
+        // 壳字节数(不含值栈/帧数组等子内存:值栈由 ~ObjMovement 经自持 GC* 释放,帧数组由 UPtr 自释放)。
         [[nodiscard]]
         usize size() const noexcept override {
-            return sizeof(Movement);
+            return sizeof(ObjMovement);
         }
 
         // 调试渲染(惰性契约见 Object::debug_repr):<coroutine>。
@@ -251,8 +251,8 @@ namespace aria {
         // 与 enter_frame 分工:enter_frame 管 acquire,此函数管填字段;槽 0 语义见 enter_frame 注释。
         void init_frame_(CallFrame& f, ObjClosure* closure, u8 argc) const;
 
-        // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 Movement 内部独占(exit_frame /
-        // unwind_to_handler / reset),不对外暴露,收紧「值栈顶只由 Movement 自身改」的边界。
+        // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 ObjMovement 内部独占(exit_frame /
+        // unwind_to_handler / reset),不对外暴露,收紧「值栈顶只由 ObjMovement 自身改」的边界。
         void set_stack_top_(Value* t) noexcept {
             ASSERT(t >= buf_.data() && t <= top_, "stack top out of range");
             top_ = t;
@@ -267,13 +267,13 @@ namespace aria {
         FrameStack<CallFrame, kFrameMax> frames_;
         ObjUpvalue*                      open_upvalues_; // open upvalue 开链头(按槽址降序;nullptr 空链)
         Opt<Value>                       pending_error_; // 挂起错误寄存器(置入后随本对象 trace 标根)
-        Movement*                        previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
+        ObjMovement*                     previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
     };
 
-    // VMContext 是 Movement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用
-    // VMContext,强调「协程对象」用 Movement。
-    using VMContext = Movement;
+    // VMContext 是 ObjMovement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用
+    // VMContext,强调「协程对象」用 ObjMovement。
+    using VMContext = ObjMovement;
 
 } // namespace aria
 
-#endif // ARIA_MOVEMENT_HPP
+#endif // ARIA_OBJ_MOVEMENT_HPP

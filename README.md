@@ -148,9 +148,9 @@ src/
   object/    Object 及 Obj* 子类型（string / function / native / module / exception /
              closure / upvalue / class / instance / bound-method / list / map / range / iterator）
   memory/    Buffer / Array / Allocator / HashTable / InternPool / GC
-  runtime/   FrameStack / Movement / AriaVM / value_register；builtins/ 内建函数与各类型方法面
+  runtime/   FrameStack / ObjMovement / AriaVM / value_register；builtins/ 内建函数与各类型方法面
 tests/       C++ GTest（tests/<module>/）与 aria 脚本语料（tests/language/）
-bench/       性能基准（独立可执行）
+bench/       性能基准（lexer/vm/hashtable 三个进程内可执行 + lang/ 源文件级基准与对照端口）
 external/    isocline（REPL 行编辑）
 docs/        grammar.txt（语言文法）
 tools/       check_commit_msg.py 等开发脚本

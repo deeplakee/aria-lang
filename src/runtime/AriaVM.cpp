@@ -179,6 +179,17 @@ namespace aria {
             io::print(stderr, "{}^ frame[{}]\n", String(col, ' '), static_cast<u32>(frames.size() - 1));
         }
 
+        // 元数规格措辞:0 -> "no arguments"、1 -> "1 argument"、N -> "N arguments"(单数只在恰好 1)。
+        String arity_phrase(const usize count) {
+            if (count == 0) {
+                return "no arguments";
+            }
+            if (count == 1) {
+                return "1 argument";
+            }
+            return std::format("{} arguments", count);
+        }
+
     } // namespace
 
     // 构造:两张单例表(registers_ / string_constants_)各按注册表长度预置格位 -> 注册 VM 根 tracer ->
@@ -254,7 +265,7 @@ namespace aria {
                 }
                 tail = m;
             }
-            ASSERT(tail == &main_ctx_, "VM roots: context chain must terminate at main_ctx_");
+            ASSERT(tail == &main_ctx_, "context chain must terminate at main_ctx_");
         });
     }
 
@@ -324,7 +335,7 @@ namespace aria {
         };
         for (const auto& [hook, fn_offset]: kStringOperatorFns) {
             const auto hit = klass.load_field(*this, string_constant(hook));
-            ASSERT(hit.has_value(), "String 类表缺算子钩子:类表与实现格两份已漂移");
+            ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
             registers_[fn_offset] = hit->as_obj();
         }
     }
@@ -407,10 +418,11 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_from_path(const StringView path) {
-        // 读盘 + BOM/CRLF/UTF-8 处理;失败渲染路径返 LoadError(无 SourceLoc)。
+        // 读盘 + BOM/CRLF/UTF-8 处理;失败渲染路径返 LoadError(无 SourceLoc,故 Error 走无位置版)。
         auto loaded = SourceFile::from_path(path);
         if (!loaded) {
-            io::println(stderr, "无法加载源文件 '{}'", path);
+            const auto detail = std::format("cannot read source file '{}'", path);
+            io::println(stderr, "{}", Error::from_detail(ErrorCode::FileReadFailed, detail).message());
             return InterpretResult::LoadError;
         }
         SourceFile source = std::move(*loaded);
@@ -419,7 +431,8 @@ namespace aria {
         // fs::module_name_and_dir);name 为空(目录/空/无文件名)与读盘失败同属加载失败。
         auto [name_s, dir_s] = fs::module_name_and_dir(path);
         if (name_s.empty()) {
-            io::println(stderr, "源文件路径无有效模块名: '{}'", path);
+            const auto detail = std::format("module path has no valid name: '{}'", path);
+            io::println(stderr, "{}", Error::from_detail(ErrorCode::ModuleNotFound, detail).message());
             return InterpretResult::LoadError;
         }
         auto module = new_module(gc_, name_s, dir_s); // 3 参：显式 dir
@@ -429,7 +442,7 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
-        ASSERT(current_ == &main_ctx_, "AriaVM::run: current_ is not main_ctx_ (unbalanced context switch)");
+        ASSERT(current_ == &main_ctx_, "current_ is not main_ctx_ (unbalanced context switch)");
         // 入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0],配置根 [1..] 不动);
         // dir_ 可空(cwd 不可用的 <script>),由 resolve_module 跳空根处理,此处不判空。
         source_roots_[0] = fn->module()->dir()->view();
@@ -461,7 +474,7 @@ namespace aria {
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return fail(ErrorCode::CallNonCallable, "call non-callable {}", type_name(callee));
+            return fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name(callee));
         }
 
         switch (Object* obj = callee.as_obj(); obj->type()) {
@@ -507,17 +520,30 @@ namespace aria {
         const auto min_arity = fn->min_arity();
         if (fn->is_varargs()) {
             if (argc < min_arity) {
-                return fail(ErrorCode::WrongArity, "expects at least {} args, got {}", min_arity, argc);
+                return arity_error_at_least(argc, min_arity);
             }
             return true;
         }
         if (argc < min_arity || argc > arity) {
             if (min_arity == arity) {
-                return fail(ErrorCode::WrongArity, "expects {} args, got {}", arity, argc);
+                return arity_error(argc, arity);
             }
-            return fail(ErrorCode::WrongArity, "expects {} to {} args, got {}", min_arity, arity, argc);
+            return arity_error_range(argc, min_arity, arity);
         }
         return true;
+    }
+
+    FailSignal AriaVM::arity_error(const usize argc, const usize expected) {
+        return fail(ErrorCode::WrongArity, "function expects {}, got {}", arity_phrase(expected), argc);
+    }
+
+    FailSignal AriaVM::arity_error_range(const usize argc, const usize low, const usize high) {
+        // 区间恒复数(n or m arguments):"0 or 1 argument" 这类读起来像单数,不成句。
+        return fail(ErrorCode::WrongArity, "function expects {} or {} arguments, got {}", low, high, argc);
+    }
+
+    FailSignal AriaVM::arity_error_at_least(const usize argc, const usize low) {
+        return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
     }
 
     u8 AriaVM::prepare_call_args(const ObjFunction* fn, const u8 argc) {
@@ -566,15 +592,15 @@ namespace aria {
         const auto entered_ctx = current_;
         const auto slots       = Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
-        ASSERT(!current_->has_error(), "call_native: pending error not cleared before native call");
+        ASSERT(!current_->has_error(), "pending error not cleared before native call");
         if (obj->fn()(*this, slots)) {
-            ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call");
+            ASSERT(current_ == entered_ctx, "current_ not restored across native call");
             // drop 实参使返回值升栈顶,恒落在 entered_ctx 上(current_ 切换后可能已非它)。
             ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
             entered_ctx->drop(argc);
             return true;
         }
-        ASSERT(current_ == entered_ctx, "call_native: current_ not restored across native call");
+        ASSERT(current_ == entered_ctx, "current_ not restored across native call");
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
         ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
         return false;
@@ -635,7 +661,7 @@ namespace aria {
         }
         // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
         const auto entry = module->entry();
-        ASSERT(entry != nullptr, "load_module 返回非空模块须已 set_entry");
+        ASSERT(entry != nullptr, "load_module returned a module whose entry is not set");
         const auto closure = new_closure(gc_, entry);
         current_->push(Value::from_obj(closure));
         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
@@ -870,11 +896,11 @@ namespace aria {
 
     bool AriaVM::run_make_range(const u8 flags) {
         // 契约见 AriaVM.hpp。端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」,端点为标量
-        // 整数非对象);铸完 drop 再 push(窗口内无 GC 点)。非整数端点 TypeMismatch,静态文案不插端点值。
+        // 整数非对象);铸完 drop 再 push(窗口内无 GC 点)。非整数端点 TypeMismatch,文案报端点类型。
         if ((flags & kRangeFlagUnbounded) != 0) {
             const Value from = current_->peek(0);
             if (!from.is_int()) {
-                return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
+                return fail(ErrorCode::TypeMismatch, "range bound must be an integer, got {}", type_name(from));
             }
             const auto range = new_range(gc_, from.as_int());
             current_->drop(1);
@@ -885,7 +911,8 @@ namespace aria {
         const Value to        = current_->peek(0);
         const Value from      = current_->peek(1);
         if (!from.is_int() || !to.is_int()) {
-            return fail(ErrorCode::TypeMismatch, "range bounds must be integers");
+            return fail(ErrorCode::TypeMismatch, "range bounds must be integers, got {} and {}", type_name(from),
+                        type_name(to));
         }
         const auto range = new_range(gc_, from.as_int(), to.as_int(), exclusive);
         current_->drop(2);
@@ -897,9 +924,9 @@ namespace aria {
         // 契约见 AriaVM.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
         const auto& frame    = current_->frames().top();
         const auto  defining = frame.closure->defining_class();
-        ASSERT(defining != nullptr, "LOAD_SUPER_FIELD: closure has no defining class (compiler invariant)");
+        ASSERT(defining != nullptr, "closure has no defining class (compiler invariant)");
         const auto super = defining->superclass();
-        ASSERT(super != nullptr, "LOAD_SUPER_FIELD: method class has no superclass (compiler invariant)");
+        ASSERT(super != nullptr, "method class has no superclass (compiler invariant)");
         const auto hit = super->load_field(*this, name); // 从父类起读穿透(类协议)
         if (!hit) {
             return false;
@@ -922,7 +949,7 @@ namespace aria {
             u32          ip_off; // 行号经 fn->unit().line_for_offset 查
         };
 
-        ASSERT(current_->has_error(), "unwind: no pending payload");
+        ASSERT(current_->has_error(), "no pending payload");
         List<TraceEntry> trace; // 收集序:内 -> 外;物化时反转为外 -> 内(Python 式 most recent call last)
 
         // 自最内(栈顶)向外搜索 try 记录;命中帧保留 -- handler 偏移与栈基址都属于它。
@@ -1120,7 +1147,7 @@ namespace aria {
                     // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
                     // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。
                     auto inst = try_obj<ObjInstance>(frame.slots[0]);
-                    ASSERT(inst != nullptr, "LOAD_THIS_FIELD: 'this' slot must be an instance (compiler invariant)");
+                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
                     if (const auto result = inst->load_field(*this, read_name(frame))) {
                         current_->push(*result); // [] -> [v]
                         break;
@@ -1134,7 +1161,7 @@ namespace aria {
                     // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
                     // false 分支为契约透传防御形态,实例路径不可达)。
                     auto inst = try_obj<ObjInstance>(frame.slots[0]);
-                    ASSERT(inst != nullptr, "STORE_THIS_FIELD: 'this' slot must be an instance (compiler invariant)");
+                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
                     if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1332,7 +1359,7 @@ namespace aria {
                 case OpCode::CALL: {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
-                    ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "CALL on malformed stack");
+                    ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
                     if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
                         if (auto u = unwind()) {
                             return runtime_err(std::move(*u));
@@ -1386,12 +1413,11 @@ namespace aria {
                     // (一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
                     const auto klass  = try_obj<ObjClass>(current_->peek(1));
                     const auto method = current_->peek(0);
-                    ASSERT(klass != nullptr, "MAKE_METHOD: slot-1 is not a class (malformed stack)");
+                    ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), method);
 
                     const auto closure = try_obj<ObjClosure>(method);
-                    ASSERT(closure != nullptr,
-                           "MAKE_METHOD: slot-0 is not a closure (method registration is closure-only)");
+                    ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
                     closure->set_defining_class(klass);
                     current_->drop(1);
                     break;
@@ -1400,7 +1426,7 @@ namespace aria {
                     // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
                     // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
                     const auto klass = try_obj<ObjClass>(current_->peek(1));
-                    ASSERT(klass != nullptr, "MAKE_STATIC: slot-1 is not a class (malformed stack)");
+                    ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), current_->peek(0));
                     current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
                     break;

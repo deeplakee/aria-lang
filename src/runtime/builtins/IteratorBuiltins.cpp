@@ -21,7 +21,7 @@ namespace aria {
         bool fn_has_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "has_next expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             // 绑定路径契约:slots[0] 恒 ObjIterator 子类实例,DEBUG 下 as 走 dynamic_cast 校验。
             const auto iter = Object::as<ObjIterator>(slots[0].as_obj());
@@ -34,7 +34,7 @@ namespace aria {
         bool fn_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "next expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto iter  = Object::as<ObjIterator>(slots[0].as_obj());
             const auto value = iter->next(vm);

@@ -12,7 +12,7 @@
 
 `Category` / `Code` 是 `ErrorCategory` / `ErrorCode` 的枚举名，经 X-Macro 的 `#` 派生（`src/error/ErrorCode.hpp`）--**单一事实源，不另加中文名表**。故 `detail` 一律英文：换语言要连壳一起换，而壳改中文需再手写一张 55 码 + 6 类别的名表，与「名字串经 `#` 派生、无第二处手写」的设计直接冲突。
 
-`detail` **不带位置**：位置由壳或 `at` 行承载。同理 `detail` 不重复函数名（函数可匿名），归属由 `at` 行给出。
+`detail` **不带位置**：位置由壳或 `at` 行承载；也不重复 `at` 行已给的**当前帧**函数名。元数族的 `<name>` 位是被调者**标签**而非当前帧名，见 §3 元数族。
 
 ## 2. `detail` 通则
 
@@ -30,7 +30,7 @@
 | 语义 | 唯一形状 | 例 |
 | :--- | :--- | :--- |
 | 语法期望 | `expected <what>, got <spelling\|end of file>` | `expected ')', got '}'` |
-| 元数 | `[<name> ]expects <spec>, got <n>` | `push expects 1 argument, got 0` |
+| 元数 | `function expects <spec>, got <n>` | `function expects 2 arguments, got 1` |
 | 实参/下标类型 | `<what> must be <T>, got <actual>` | `list index must be an integer, got F64` |
 | 值域 | `<what> must be <T>, got <actual>` | `range bounds must be integers, got F64 and Int` |
 | 越界 | `<what> <value\|range> out of range` | `list index 5 out of range`、`slice range 3..9 out of range` |
@@ -44,7 +44,9 @@
 | 模块 | `module not found: '<path>'` / `failed to load module '<path>': <why>` / `cannot read source file '<path>'` | |
 | 除零 / 迭代器 | `integer division by zero` / `integer modulo by zero` / `iterator exhausted` | |
 
-**`<spec>` 取值集（元数族）**：`no arguments` / `1 argument` / `N arguments` / `N or M arguments` / `at least N arguments`。单数为 `1 argument`，其余一律 `arguments`（复数形）。措辞由 `AriaVM::arity_error` 一处构造，调用点只给数量与名，不得手写格式串。
+**`<spec>` 取值集（元数族）**：`no arguments` / `1 argument` / `N arguments` / `N or M arguments` / `at least N arguments`。单数为 `1 argument`，其余一律 `arguments`（复数形）。措辞由 `AriaVM::arity_error` 族一处构造——三形态三名（`arity_error` 精确数 / `arity_error_range` 闭区间 / `arity_error_at_least` 仅下界），三者是三种约束语义、各对应一种措辞串，故不共用重载；调用点只给数量，不得手写格式串。
+
+**元数族的被调者一律报泛称 `function`**，不收名字、不分 builtins 与用户函数。真名不可用：匿名函数的真名是 `<anonymous>`（无区分力），函数值与绑定的方法被取出后再调用（`var p = xs.push; p()`）时真名根本不在调用点上出现--报它等于让用户去源码里找一个他并没写过的名字；而直调场合（`f(1)`、`xs.push()`）名字本就在调用点上，detail 重复它没有增益。报错文案描述的是**用户写下的那次调用**，被调者的内部身份不是他能从调用点核对的东西（要看可 `println(p)`）。归属交给 `at` 行的调用点：arity 失败发生在进帧检查处、被调帧未进，故 `at` 行只到调用者帧，但那正是「哪一行哪一次调用」的答案。
 
 **`<op>` 取值（协议族）**：`field access` / `field assignment` / `subscript access` / `subscript assignment` / `'<钩子名>'`（如 `'__add__'`、`'__call__'`）。读形态与写形态各占一个 op，不合并（`field access` 与 `field assignment` 是可分辨的两种失败）。
 
@@ -73,4 +75,4 @@
 
 - **词法各变体保留字面**（`compile/lexer-notes.md` 的「相邻报错变体字面重复优于模板抽段」继续有效）：那条管的是**各变体原因各不相同**（`invalid escape` vs `unterminated string`，每条措辞唯一、无漂移风险）。元数是 60 处**同一措辞**重复，漂移即缺陷，故收口进 `arity_error`。判据是「该措辞在库内出现几次、是否应当逐字相同」。
 - **码名 + detail 语义重叠保留**（通则 7）。
-- **用户函数元数不带函数名**（函数可匿名，归属由 `at` 行给出）；builtins 方法名在 detail 内（方法名不一定进 `at` 行）。
+- **元数族的被调者报泛称 `function` 而非真名**（builtins 亦然）：真名在匿名函数上无区分力，在函数值/绑定方法被取出时又不在调用点上出现；直调场合的名字已在调用点。

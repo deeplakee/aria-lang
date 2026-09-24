@@ -34,38 +34,38 @@ namespace aria {
 
         // 占用下一个空闲槽并推进计数。不构造--调用方就地填充字段。
         [[nodiscard]] T& acquire() {
-            ASSERT(count_ < Capacity, "FrameStack overflow");
+            ASSERT(count_ < Capacity, "frame stack overflow");
             return storage_[count_++];
         }
 
         void pop() noexcept {
-            ASSERT(count_ > 0, "FrameStack underflow");
+            ASSERT(count_ > 0, "frame stack underflow");
             --count_;
         }
 
         // 任意截断到 n（n <= 当前计数）。供异常 unwind 一步跨越多帧。
         void truncate(const usize n) noexcept {
-            ASSERT(n <= count_, "FrameStack truncate: n exceeds current size");
+            ASSERT(n <= count_, "n exceeds current size");
             count_ = n;
         }
 
         void clear() noexcept { count_ = 0; }
 
         [[nodiscard]] T& operator[](usize index) noexcept {
-            ASSERT(index < count_, "FrameStack index out of range");
+            ASSERT(index < count_, "frame stack index out of range");
             return storage_[index];
         }
         [[nodiscard]] const T& operator[](usize index) const noexcept {
-            ASSERT(index < count_, "FrameStack index out of range");
+            ASSERT(index < count_, "frame stack index out of range");
             return storage_[index];
         }
 
         [[nodiscard]] T& top() noexcept {
-            ASSERT(count_ > 0, "FrameStack empty");
+            ASSERT(count_ > 0, "frame stack is empty");
             return storage_[count_ - 1];
         }
         [[nodiscard]] const T& top() const noexcept {
-            ASSERT(count_ > 0, "FrameStack empty");
+            ASSERT(count_ > 0, "frame stack is empty");
             return storage_[count_ - 1];
         }
 

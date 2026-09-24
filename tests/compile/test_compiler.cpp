@@ -140,12 +140,12 @@ TEST(Compiler, ListMethodWrongArity) {
     auto push = run_source("var xs = [1]; return xs.push();");
     ASSERT_FALSE(push.has_value());
     EXPECT_EQ(push.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(push.error().message().find("push expects 1 argument, got 0"), std::string::npos);
+    EXPECT_NE(push.error().message().find("function expects 1 argument, got 0"), std::string::npos);
 
     auto pop = run_source("var xs = [1]; return xs.pop(9);");
     ASSERT_FALSE(pop.has_value());
     EXPECT_EQ(pop.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(pop.error().message().find("pop expects no arguments, got 1"), std::string::npos);
+    EXPECT_NE(pop.error().message().find("function expects no arguments, got 1"), std::string::npos);
 }
 
 // pop 空表：IndexOutOfBounds（nil 哨兵不可行 --list 可合法存 nil，fail-fast）。
@@ -198,12 +198,12 @@ TEST(Compiler, ListRemoveAt) {
     EXPECT_EQ(run_int("var xs = [1, 2, 3]; return xs.remove_at(1) * 10 + xs[0] + xs[1];"), 24);
 }
 
-// remove_at 越界/非整数：静态文案（与切片「slice index out of range」同款，不带键值）。
+// remove_at 越界/非整数：越界文案报原键值，非整数文案报实参类型。
 TEST(Compiler, ListRemoveAtFails) {
     auto out = run_source("var xs = [1]; return xs.remove_at(5);");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(out.error().message().find("remove_at index out of range"), std::string::npos);
+    EXPECT_NE(out.error().message().find("remove_at index 5 out of range"), std::string::npos);
 
     auto bad = run_source("var xs = [1]; return xs.remove_at(\"a\");");
     ASSERT_FALSE(bad.has_value());
@@ -238,17 +238,17 @@ TEST(Compiler, ListInsert) {
     EXPECT_EQ(run_int("var xs = []; xs.insert(0, 7); return xs[0];"), 7);
 }
 
-// insert 越界：合法域 [-(size), size]，静态文案（与切片同款，不带键值）。
+// insert 越界：合法域 [-(size), size]，文案报原键值。
 TEST(Compiler, ListInsertOutOfRangeFails) {
     auto high = run_source("var xs = [1]; xs.insert(5, 0); return 1;");
     ASSERT_FALSE(high.has_value());
     EXPECT_EQ(high.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(high.error().message().find("insert index out of range"), std::string::npos);
+    EXPECT_NE(high.error().message().find("insert index 5 out of range"), std::string::npos);
 
     auto low = run_source("var xs = [1]; xs.insert(-5, 0); return 1;");
     ASSERT_FALSE(low.has_value());
     EXPECT_EQ(low.error().code(), ErrorCode::IndexOutOfBounds);
-    EXPECT_NE(low.error().message().find("insert index out of range"), std::string::npos);
+    EXPECT_NE(low.error().message().find("insert index -5 out of range"), std::string::npos);
 }
 
 // clear：清空返 nil，长度归零；别名（共享可变状态）同见。
@@ -627,7 +627,7 @@ TEST(Compiler, VarargsArityBound) {
     auto out = run_source("fun f(a, ...rest) { return a; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(out.error().message().find("expects at least 1 args, got 0"), std::string::npos);
+    EXPECT_NE(out.error().message().find("expects at least 1 argument, got 0"), std::string::npos);
 
     EXPECT_EQ(run_int("fun f(a, ...rest) { return rest.size(); } return f(1, 2, 3, 4, 5, 6, 7, 8);"), 7);
 }
@@ -901,7 +901,7 @@ TEST(Compiler, StringToIntAndToFloat) {
     auto arity = run_source(R"(return "1".to_int(9);)");
     ASSERT_FALSE(arity.has_value());
     EXPECT_EQ(arity.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(arity.error().message().find("to_int expects no arguments, got 1"), std::string::npos);
+    EXPECT_NE(arity.error().message().find("function expects no arguments, got 1"), std::string::npos);
 }
 
 // 切片:Range 键走字节域切片,与 list 同口径(含/不含上界、负端点从尾计数、无上界后缀、倒序段),

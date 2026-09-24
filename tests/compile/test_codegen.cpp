@@ -980,12 +980,12 @@ TEST(CodeGen, DefaultParamWrongArityRange) {
     auto lo = run_source("fun f(a, b = 2) { return b; } return f();");
     ASSERT_FALSE(lo.has_value());
     EXPECT_EQ(lo.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(lo.error().message().find("expects 1 to 2 args, got 0"), std::string::npos);
+    EXPECT_NE(lo.error().message().find("expects 1 or 2 arguments, got 0"), std::string::npos);
 
     auto hi = run_source("fun f(a, b = 2) { return b; } return f(1, 2, 3);");
     ASSERT_FALSE(hi.has_value());
     EXPECT_EQ(hi.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(hi.error().message().find("expects 1 to 2 args, got 3"), std::string::npos);
+    EXPECT_NE(hi.error().message().find("expects 1 or 2 arguments, got 3"), std::string::npos);
 }
 
 TEST(CodeGen, DefaultParamSingularArityMessageKept) {
@@ -993,7 +993,7 @@ TEST(CodeGen, DefaultParamSingularArityMessageKept) {
     auto out = run_source("fun f(a) { return a; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
-    EXPECT_NE(out.error().message().find("expects 1 args, got 0"), std::string::npos);
+    EXPECT_NE(out.error().message().find("expects 1 argument, got 0"), std::string::npos);
 }
 
 TEST(CodeGen, DefaultParamFillKeepsSlotInvariantWithBodyLocals) {
@@ -1365,7 +1365,7 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_source("try { return type(); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: WrongArity type expects 1 argument, got 0");
+    EXPECT_EQ(aria::format_value(*out), "Runtime: WrongArity function expects 1 argument, got 0");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {

@@ -26,7 +26,7 @@ namespace aria {
         bool fn_upper(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "upper expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto str = Object::as<ObjString>(slots[0].as_obj());
             String     out{str->view()};
@@ -43,7 +43,7 @@ namespace aria {
         bool fn_lower(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "lower expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto str = Object::as<ObjString>(slots[0].as_obj());
             String     out{str->view()};
@@ -66,7 +66,7 @@ namespace aria {
         bool fn_trim(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "trim expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             // 视图自身收缩(remove_prefix/remove_suffix):两轮空判即首尾边界,无须下标账。
             auto trimmed = Object::as<ObjString>(slots[0].as_obj())->view();
@@ -127,7 +127,7 @@ namespace aria {
         bool fn_split(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0 && argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "split expects 0 or 1 arguments, got {}", argc);
+                return vm.arity_error_range(argc, 0, 1);
             }
             ObjString* sep = nullptr;
             if (argc == 1) {
@@ -154,7 +154,7 @@ namespace aria {
         bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "find expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto sub = try_obj<ObjString>(slots[1]);
             if (sub == nullptr) {
@@ -171,7 +171,7 @@ namespace aria {
         bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto sub = try_obj<ObjString>(slots[1]);
             if (sub == nullptr) {
@@ -188,7 +188,7 @@ namespace aria {
         bool fn_replace(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
-                return vm.fail(ErrorCode::WrongArity, "replace expects 2 arguments, got {}", argc);
+                return vm.arity_error(argc, 2);
             }
             const auto old_str = try_obj<ObjString>(slots[1]);
             const auto new_str = try_obj<ObjString>(slots[2]);
@@ -224,7 +224,7 @@ namespace aria {
         bool fn_substring(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
-                return vm.fail(ErrorCode::WrongArity, "substring expects 1 or 2 arguments, got {}", argc);
+                return vm.arity_error_range(argc, 1, 2);
             }
             if (!slots[1].is_int()) {
                 return vm.fail(ErrorCode::TypeMismatch, "substring index must be an integer, got {}",
@@ -251,7 +251,7 @@ namespace aria {
         bool fn_starts_with(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "starts_with expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto prefix = try_obj<ObjString>(slots[1]);
             if (prefix == nullptr) {
@@ -266,7 +266,7 @@ namespace aria {
         bool fn_ends_with(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "ends_with expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto suffix = try_obj<ObjString>(slots[1]);
             if (suffix == nullptr) {
@@ -282,7 +282,7 @@ namespace aria {
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto str = Object::as<ObjString>(slots[0].as_obj());
             slots[0]       = Value::from_int(static_cast<i64>(str->length()));
@@ -293,7 +293,7 @@ namespace aria {
         bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto str = Object::as<ObjString>(slots[0].as_obj());
             slots[0]       = Value::from_bool(str->length() == 0);
@@ -307,7 +307,7 @@ namespace aria {
         bool fn_chars(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "chars expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
             const auto list  = new_list(vm.gc());
@@ -327,7 +327,7 @@ namespace aria {
         bool fn_codepoint_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "codepoint_at expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             if (!slots[1].is_int()) {
                 return vm.fail(ErrorCode::TypeMismatch, "codepoint index must be an integer, got {}",
@@ -352,7 +352,7 @@ namespace aria {
         bool fn_to_int(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "to_int expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto parsed = util::parse_int_text(Object::as<ObjString>(slots[0].as_obj())->view());
             slots[0]          = parsed ? Value::from_int(*parsed) : Value::nil_val();
@@ -363,7 +363,7 @@ namespace aria {
         bool fn_to_float(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "to_float expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto parsed = util::parse_float_text(Object::as<ObjString>(slots[0].as_obj())->view());
             slots[0]          = parsed ? Value::from_f64(*parsed) : Value::nil_val();
@@ -375,7 +375,7 @@ namespace aria {
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto str = Object::as<ObjString>(slots[0].as_obj());
             slots[0]       = Value::from_obj(new_string_iterator(vm.gc(), str));
@@ -385,14 +385,15 @@ namespace aria {
         // 运算符重载方法(函数名与 runtime/string_constant.hpp 的 StringConstant 一一对应,经 AriaVM::run_binary_operator
         // 取用;也是"算子 = 方法"的唯一实现处)
         // 名字与失败文案都是**就地字面量**(与方法名同形):文案打方法名,与注册键同处一文件、golden
-        // 钉住拼写。两侧均为 String 才成立(无隐式转换);元数不符报 WrongArity。string 只有 `+` 与
-        // 四个比较。
+        // 钉住拼写。两侧均为 String 才成立(无隐式转换);元数不符走 vm.arity_error(措辞家族唯一口)。
+        // string 只有 `+` 与四个比较。
 
         // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
         // 未命中时,此刻两侧经调用区槽在栈(receiver 占 slots[0],「栈即根」)。
         bool fn___add__(AriaVM& vm, Span<Value> slots) {
-            if (slots.size() != 2) {
-                return vm.fail(ErrorCode::WrongArity, "__add__ expects 1 argument, got {}", slots.size() - 1);
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
             }
             const auto rhs = try_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
@@ -411,8 +412,9 @@ namespace aria {
         // (char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
         // ASCII 之前(`"é" < "z"` 会反过来)。纯读零分配(GC-pure),无 GC 点。
         bool fn___lt__(AriaVM& vm, Span<Value> slots) {
-            if (slots.size() != 2) {
-                return vm.fail(ErrorCode::WrongArity, "__lt__ expects 1 argument, got {}", slots.size() - 1);
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
             }
             const auto rhs = try_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
@@ -425,8 +427,9 @@ namespace aria {
         }
 
         bool fn___le__(AriaVM& vm, Span<Value> slots) {
-            if (slots.size() != 2) {
-                return vm.fail(ErrorCode::WrongArity, "__le__ expects 1 argument, got {}", slots.size() - 1);
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
             }
             const auto rhs = try_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
@@ -439,8 +442,9 @@ namespace aria {
         }
 
         bool fn___gt__(AriaVM& vm, Span<Value> slots) {
-            if (slots.size() != 2) {
-                return vm.fail(ErrorCode::WrongArity, "__gt__ expects 1 argument, got {}", slots.size() - 1);
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
             }
             const auto rhs = try_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
@@ -453,8 +457,9 @@ namespace aria {
         }
 
         bool fn___ge__(AriaVM& vm, Span<Value> slots) {
-            if (slots.size() != 2) {
-                return vm.fail(ErrorCode::WrongArity, "__ge__ expects 1 argument, got {}", slots.size() - 1);
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
             }
             const auto rhs = try_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {

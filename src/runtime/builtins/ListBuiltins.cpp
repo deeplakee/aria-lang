@@ -27,7 +27,7 @@ namespace aria {
         bool fn_push(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "push expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             // 绑定路径契约:slots[0] 恒本 list(仅经 load_field 绑定触达),DEBUG 下 as 走
             // dynamic_cast 校验。
@@ -42,7 +42,7 @@ namespace aria {
         bool fn_pop(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "pop expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             if (list.empty()) {
@@ -59,7 +59,7 @@ namespace aria {
         bool fn_insert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
-                return vm.fail(ErrorCode::WrongArity, "insert expects 2 arguments, got {}", argc);
+                return vm.arity_error(argc, 2);
             }
             if (!slots[1].is_int()) {
                 return vm.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(slots[1]));
@@ -67,7 +67,7 @@ namespace aria {
             auto&      list     = Object::as<ObjList>(slots[0].as_obj())->elements();
             const auto position = util::resolve_position(slots[1].as_int(), list.size());
             if (!position) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "insert index out of range");
+                return vm.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", slots[1].as_int());
             }
             list.insert(*position, slots[2]);
             slots[0] = Value::nil_val();
@@ -79,7 +79,7 @@ namespace aria {
         bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "remove expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             slots[0]   = Value::from_bool(list.remove(slots[1]));
@@ -91,15 +91,16 @@ namespace aria {
         bool fn_remove_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "remove_at expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             if (!slots[1].is_int()) {
-                return vm.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer");
+                return vm.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
+                               type_name(slots[1]));
             }
             auto&      list = Object::as<ObjList>(slots[0].as_obj())->elements();
             const auto slot = util::resolve_index(slots[1].as_int(), list.size());
             if (!slot) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "remove_at index out of range");
+                return vm.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", slots[1].as_int());
             }
             slots[0] = list[*slot];
             list.remove_at(*slot);
@@ -111,7 +112,7 @@ namespace aria {
         bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "clear expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             list.clear();
@@ -143,7 +144,7 @@ namespace aria {
         bool fn_sort(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "sort expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             if (!list.empty()) {
@@ -171,7 +172,7 @@ namespace aria {
         bool fn_reverse(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "reverse expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             std::ranges::reverse(list); // trivial 交换,无 GC 点
@@ -184,7 +185,7 @@ namespace aria {
         bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "find expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             const auto  hit  = list.find(slots[1]);
@@ -197,7 +198,7 @@ namespace aria {
         bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "contains expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             slots[0]         = Value::from_bool(list.contains(slots[1]));
@@ -208,7 +209,7 @@ namespace aria {
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             slots[0]         = Value::from_int(static_cast<i64>(list.size()));
@@ -219,7 +220,7 @@ namespace aria {
         bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             slots[0]         = Value::from_bool(list.empty());
@@ -232,7 +233,7 @@ namespace aria {
         bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "join expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto sep = try_obj<ObjString>(slots[1]);
             if (sep == nullptr) {
@@ -249,7 +250,7 @@ namespace aria {
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto list = Object::as<ObjList>(slots[0].as_obj());
             slots[0]        = Value::from_obj(new_list_iterator(vm.gc(), list));

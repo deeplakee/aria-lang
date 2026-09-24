@@ -232,7 +232,7 @@ namespace {
     bool double_native(AriaVM& vm, Span<Value> slots) {
         const auto argc = slots.size() - 1;
         if (argc != 1) {
-            return vm.fail(ErrorCode::WrongArity, "double expects 1 arg, got {}", argc);
+            return vm.arity_error(argc, 1);
         }
         slots[0] = Value::from_int(slots[1].as_int() * 2);
         return true;
@@ -2494,7 +2494,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 // 返回值写 slots[0] 原地,实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
 bool echo_this_native(AriaVM& vm, Span<Value> slots) {
     if (slots.size() - 1 != 0) {
-        return vm.fail(ErrorCode::WrongArity, "echo_this expects 0 args, got {}", slots.size() - 1);
+        return vm.arity_error(slots.size() - 1, 0);
     }
     if (!slots[0].is_obj() || slots[0].as_obj()->type() != aria::ObjType::INSTANCE) {
         return vm.fail(ErrorCode::TypeMismatch, "echo_this receiver is not an instance");

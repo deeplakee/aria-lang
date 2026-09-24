@@ -20,7 +20,7 @@ namespace aria {
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto range = Object::as<ObjRange>(slots[0].as_obj());
             slots[0]         = Value::from_obj(new_range_iterator(vm.gc(), range));

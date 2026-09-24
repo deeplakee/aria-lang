@@ -24,7 +24,7 @@ namespace aria {
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "size expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             slots[0]          = Value::from_int(static_cast<i64>(table.size()));
@@ -35,7 +35,7 @@ namespace aria {
         bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "is_empty expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             slots[0]          = Value::from_bool(table.empty());
@@ -47,7 +47,7 @@ namespace aria {
         bool fn_has(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "has expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             slots[0]          = Value::from_bool(table.find(slots[1]) != nullptr);
@@ -59,7 +59,7 @@ namespace aria {
         bool fn_get(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "get expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             const auto  entry = table.find(slots[1]);
@@ -72,7 +72,7 @@ namespace aria {
         bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "remove expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             slots[0]    = Value::from_bool(table.erase(slots[1]));
@@ -84,7 +84,7 @@ namespace aria {
         bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "clear expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             Object::as<ObjMap>(slots[0].as_obj())->table().clear();
             slots[0] = Value::nil_val();
@@ -97,7 +97,7 @@ namespace aria {
         bool fn_keys(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "keys expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             const auto  list  = new_list(vm.gc());
@@ -113,7 +113,7 @@ namespace aria {
         bool fn_values(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "values expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             const auto  list  = new_list(vm.gc());
@@ -132,7 +132,7 @@ namespace aria {
         bool fn_pairs(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "pairs expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
             const auto  pairs = new_list(vm.gc());
@@ -152,7 +152,7 @@ namespace aria {
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.fail(ErrorCode::WrongArity, "iter expects no arguments, got {}", argc);
+                return vm.arity_error(argc, 0);
             }
             const auto map = Object::as<ObjMap>(slots[0].as_obj());
             slots[0]       = Value::from_obj(new_map_iterator(vm.gc(), map));

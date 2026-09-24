@@ -117,6 +117,21 @@ namespace aria {
             return FailSignal{};
         }
 
+        // 元数报错唯一口:措辞家族「function expects <spec>, got <n>」的唯一构造点,builtins 方法面与
+        // call_closure 的用户函数面共用(形状唯一化见 reference/error-message-style.md)。三形态三名
+        // (不共用重载:三者是三种约束语义、各对应一种措辞串):精确数 / 闭区间「<lo> or <hi> arguments」
+        // / 仅下界「at least <lo> ...」。**比较留在各调用点**(热路径零额外调用),只在失败路径进本口。
+        // 被调者一律报泛称 function,不收名字:真名不可靠(匿名函数无区分力;绑定方法/函数值被取出后,
+        // 真名不在调用点上出现),而直调场合的名字本就在调用点上。
+        [[nodiscard]]
+        FailSignal arity_error(usize argc, usize expected);
+
+        [[nodiscard]]
+        FailSignal arity_error_range(usize argc, usize low, usize high);
+
+        [[nodiscard]]
+        FailSignal arity_error_at_least(usize argc, usize low);
+
         // 模块表:键 = 规范路径 ObjString*(intern),值 = ObjModule*(均装箱为 Value)。
         [[nodiscard]]
         AriaHashTable& modules() noexcept {
@@ -225,8 +240,10 @@ namespace aria {
 
         // call_closure 辅助:元数检查。普通函数区间 [min_arity, arity](差额为带默认值
         // 参数),无缺省报单数文案、有缺省报区间文案;varargs 函数只保下界(多余实参由
-        // prepare_call_args 打包进 rest,无上界,上限即 CALL 操作数 u8)。函数名不进文案
-        // (函数可匿名);调用归属由未捕获出口的堆栈跟踪行给出。
+        // prepare_call_args 打包进 rest,无上界,上限即 CALL 操作数 u8)。文案经 arity_error
+        // 族构造(措辞家族唯一口),被调者位报泛称 function:真名在一等公民下不可靠(匿名函数无
+        // 区分力;被取出赋值的函数/绑定方法,其真名不在调用点上出现),归属交给 at 行的调用点
+        // (arity 失败在进帧检查处,被调帧未进,at 行只到调用者帧)。
         bool check_arity(const ObjFunction* fn, u8 argc);
 
         // call_closure 辅助:实参整形 --把调用区栈顶从实参深度整形成帧参数槽深并返回槽深。

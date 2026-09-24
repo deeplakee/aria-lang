@@ -115,7 +115,7 @@ namespace aria {
         // catch 参数槽,置 ip 跳 record.handle,寄存器载荷 push 落槽(取走后至 push 无分配,不失根)。
         // 全帧未命中不走本函数,交 reset()。
         void unwind_to_handler(const usize n, const TryRecord& record) noexcept {
-            ASSERT(n < frames_.size(), "unwind_to_handler: frame index out of range");
+            ASSERT(n < frames_.size(), "frame index out of range");
             frames_.truncate(n + 1);
             CallFrame& frame      = frames_.top();
             const auto catch_slot = frame.slots + record.stack_depth;
@@ -185,8 +185,7 @@ namespace aria {
         // 未取走就再 raise);reset() 一并清空。
 
         void raise(const Value err) noexcept {
-            ASSERT(!pending_error_.has_value(),
-                   "Movement::raise: pending error already set (take/clear before re-raise)");
+            ASSERT(!pending_error_.has_value(), "pending error already set (take/clear before re-raise)");
             pending_error_ = err;
         }
 
@@ -227,7 +226,7 @@ namespace aria {
         // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 Movement 内部独占(exit_frame /
         // unwind_to_handler / reset),不对外暴露,收紧「值栈顶只由 Movement 自身改」的边界。
         void set_stack_top_(Value* t) noexcept {
-            ASSERT(t >= buf_.data() && t <= top_, "Movement::set_stack_top_ out of range");
+            ASSERT(t >= buf_.data() && t <= top_, "stack top out of range");
             top_ = t;
         }
 

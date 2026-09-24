@@ -135,7 +135,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 
 **错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 println(e) 不显示位置(同 Python str(e))。
 
-**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符 `vm.fail(WrongArity, ...)`。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
+**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `slots.size()` 做元数校验,不符经 `vm.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/error-message-style.md`)。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
 **叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop`),否则 `slots` 视图失效(值栈增长会搬迁重定位,见 §4.1)。只读 `slots[1..]`、写 `slots[0]`、经 `vm.fail`/`raise` 报错。回调 aria 函数属未来机制(由 `vm` 提供,自管栈纪律;接缝已备:`AriaVM::run_closure(closure)`--私有执行本体,压 callee + 经 `call_closure` 进帧 + 驱动 `dispatch_loop`,无入口装饰、不 reset/不播源根/不断言主上下文;callable 收敛为闭包(M4)后接缝通货即闭包,裸 `ObjFunction` 的现场包装归入口仪式 `run()`,落地重入时升公开并补 `dispatch_loop` 按基线帧深退出(现仅 `frames().empty()` 返回,中途重入会穿掉调用者帧)与实参布线)。GC 已启用(值栈/帧接根),原生函数内可经 `vm.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,`slots[0]` 写入后即随值栈为根。
 
@@ -144,7 +144,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 ```cpp
 bool str_native(AriaVM& vm, Span<Value> slots) {
     const auto argc = slots.size() - 1;
-    if (argc != 1) { return vm.fail(ErrorCode::WrongArity, "str expects 1 arg, got {}", argc); }
+    if (argc != 1) { return vm.arity_error(argc, "str", 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
     slots[0] = Value::from_obj(new_string(vm.gc(), format_value(slots[1])));  // 就地返回
     return true;
 }

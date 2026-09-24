@@ -1,2 +1,2 @@
-Runtime: CallNonCallable call non-callable Int
+Runtime: CallNonCallable type Int does not support '__call__'
 at <main> (

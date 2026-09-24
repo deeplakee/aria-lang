@@ -21,7 +21,7 @@ namespace aria::builtins {
         bool fn_type(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "type expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto name = new_string(vm.gc(), type_name(slots[1])); // 静态名 intern,无 GC 风险
             slots[0]        = Value::from_obj(name);
@@ -32,7 +32,7 @@ namespace aria::builtins {
         bool fn_str(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.fail(ErrorCode::WrongArity, "str expects 1 argument, got {}", argc);
+                return vm.arity_error(argc, 1);
             }
             const auto s = new_string(vm.gc(), format_value(slots[1])); // format_value 返 String,临时 view 跨调用有效
             slots[0]     = Value::from_obj(s);
@@ -43,7 +43,7 @@ namespace aria::builtins {
         bool fn_println(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc > 1) {
-                return vm.fail(ErrorCode::WrongArity, "println expects 0 or 1 arguments, got {}", argc);
+                return vm.arity_error_range(argc, 0, 1);
             }
             if (argc == 0) {
                 io::println();
@@ -59,7 +59,7 @@ namespace aria::builtins {
         bool fn_assert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
-                return vm.fail(ErrorCode::WrongArity, "assert expects 1 or 2 arguments, got {}", argc);
+                return vm.arity_error_range(argc, 1, 2);
             }
             if (is_truthy(slots[1])) {
                 slots[0] = Value::nil_val();

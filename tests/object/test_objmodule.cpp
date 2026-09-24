@@ -52,7 +52,7 @@ namespace {
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
     // (协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
-        auto payload = vm.main_context().take_error();
+        auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
         const auto ex = try_obj<aria::ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
@@ -209,7 +209,7 @@ TEST(ObjModule, LoadFieldReadsGlobalBinding) {
     const auto hit = m->load_field(vm, key);
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->as_obj(), fn); // 原值直读:同指针,无 bound/包裹
-    EXPECT_FALSE(vm.main_context().has_error());
+    EXPECT_FALSE(vm.current_context()->has_error());
 }
 
 // 绑定 nil 与「无此成员」的区分:键在表内、值为 nil 仍是命中(somed nil);仅 miss 才 fail。
@@ -227,7 +227,7 @@ TEST(ObjModule, LoadFieldNilBindingIsHit) {
     const auto hit = m->load_field(vm, key);
     ASSERT_TRUE(hit.has_value());
     EXPECT_TRUE(hit->is_nil());
-    EXPECT_FALSE(vm.main_context().has_error());
+    EXPECT_FALSE(vm.current_context()->has_error());
 }
 
 // miss:UndefinedProperty,文案与基类默认同形(模块描述经 debug_repr)。

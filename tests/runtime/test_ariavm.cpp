@@ -380,8 +380,8 @@ TEST_F(AriaVMStress, FunctionCall) {
     const auto out = vm.run(main_fn);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(out->as_int(), 7);
-    EXPECT_EQ(vm.main_context().stack_size(), usize{0}); // callee 与帧已清干净
-    EXPECT_TRUE(vm.main_context().frames().empty());
+    EXPECT_EQ(vm.current_context()->stack_size(), usize{0}); // callee 与帧已清干净
+    EXPECT_TRUE(vm.current_context()->frames().empty());
 }
 
 TEST_F(AriaVMStress, StackGrowsAndRebasesFrames) {
@@ -410,7 +410,7 @@ TEST_F(AriaVMStress, StackGrowsAndRebasesFrames) {
     ASSERT_TRUE(out.has_value());
     EXPECT_TRUE(out->is_int());
     EXPECT_EQ(out->as_int(), 42);
-    EXPECT_GT(vm.main_context().stack_capacity(), usize{1024}); // 增长确已发生
+    EXPECT_GT(vm.current_context()->stack_capacity(), usize{1024}); // 增长确已发生
 }
 
 TEST_F(AriaVMStress, TruthinessAndShortCircuit) {
@@ -1461,7 +1461,7 @@ TEST_F(AriaVMStress, StackGrowsRebasesOpenUpvalues) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(out->as_int(), 42);
-    EXPECT_GT(vm.main_context().stack_capacity(), usize{2048}); // 增长确已发生(两轮)
+    EXPECT_GT(vm.current_context()->stack_capacity(), usize{2048}); // 增长确已发生(两轮)
 }
 
 // unwind 跨帧关闭(未命中路径):被调函数捕获 n=42 后 throw,其帧无 handler 被弹 --

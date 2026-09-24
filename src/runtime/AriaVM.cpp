@@ -136,8 +136,8 @@ namespace aria {
         // 调用 -- 此时 frame.ip 指向待执行指令,据此解码(仅读不推进 VM 的 ip)。栈渲染经
         // format_value_debug 不用 format_value:后者 Obj 走可重载虚 to_string,在 dispatch_loop
         // 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。输出形制见 runtime.md。
-        [[maybe_unused]] void trace_execution(Movement& ctx) {
-            auto&       frames = ctx.frames();
+        [[maybe_unused]] void trace_execution(Movement* ctx) {
+            auto&       frames = ctx->frames();
             const auto& frame  = frames.top();
             const auto  ip_off = static_cast<u32>(frame.ip - frame.unit->code.data());
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
@@ -147,10 +147,10 @@ namespace aria {
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。
-            const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
+            const String prefix = std::format("        stack[{}]: ", ctx->stack_size());
             usize        col    = prefix.size();
             String       stack_str;
-            for (Value* p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
+            for (Value* p = ctx->stack_base(); p < ctx->stack_top(); ++p) {
                 const auto s = std::format("[ {} ]", format_value_debug(*p));
                 if (p < frame.slots) {
                     col += s.size();
@@ -180,11 +180,17 @@ namespace aria {
 
     } // namespace
 
-    // 构造:两张单例表(registers_ / string_constants_)各按注册表长度预置格位 -> 注册 VM 根 tracer ->
-    // bootstrap 常量串表 + 寄存器组 -> 注册 builtins。gc_ 值成员居声明首,逆序析构下 tracer 与成员同生共死。
+    // 构造:分配堆上执行上下文 -> 注册 VM 根 tracer -> bootstrap 常量串表 + 寄存器组 -> 注册 builtins
+    // (两张单例表 registers_ / string_constants_ 各按注册表长度预置格位)。gc_ 值成员居声明首,
+    // 逆序析构下 tracer 与成员同生共死。
     AriaVM::AriaVM() :
-        gc_{}, main_ctx_{&gc_}, current_{&main_ctx_}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
+        gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{},
         registers_{kValueRegisterCount}, string_constants_{kStringConstantCount} {
+        current_ = new (std::nothrow) Movement(&gc_); // 壳走 std 堆;ctor 内值栈 Buffer 走 GC 分配
+                                                      // (allocate 永不触发 GC,此时无根也安全)
+        if (current_ == nullptr) {
+            fatal_error(ErrorCode::OutOfMemory, "failed to allocate main context");
+        }
         hook_vm_roots();
         init_source_roots();
         {
@@ -195,6 +201,13 @@ namespace aria {
             bootstrap_registers();
             builtins::register_builtin_functions(gc_, builtins_);
         }
+    }
+
+    AriaVM::~AriaVM() {
+        // 析构体先于成员析构执行:此刻 gc_ 仍存活,~Movement 内 ~Buffer 经自持 GC* 释放值栈合法。
+        // delete current_ 的依据:它自 ctor 起即本 VM 堆分配的那个上下文(切换原语落地前恒不
+        // 换指;落地后由 run() 出口断言钉住控制流回到入口上下文)。
+        delete current_;
     }
 
     void AriaVM::bootstrap_string_constants() {
@@ -225,7 +238,7 @@ namespace aria {
     void AriaVM::hook_vm_roots() {
         // VM 根 tracer:collect 时标五类根(modules_ / builtins_ / registers_ / string_constants_ /
         // current_ 执行链;清单见 runtime.md「共享状态」)。open upvalue 开链单独标根是「闭包已死而 upvalue 仍在
-        // 链」的悬垂防线;链尾断言恒 &main_ctx_,锁定「resume/yield 严格成对」切换纪律。
+        // 链」的悬垂防线。链根交接纪律由 run() 出口断言承担,此处不重复设防。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
@@ -235,7 +248,6 @@ namespace aria {
             for (const auto str: string_constants_) {
                 g.mark_object(str);
             }
-            [[maybe_unused]] Movement* tail = nullptr;
             for (auto m = current_; m != nullptr; m = m->previous()) {
                 for (auto p = m->stack_base(); p < m->stack_top(); ++p) {
                     g.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
@@ -251,9 +263,7 @@ namespace aria {
                 if (const auto& pending = m->pending_error()) {
                     g.mark_value(*pending);
                 }
-                tail = m;
             }
-            ASSERT(tail == &main_ctx_, "context chain must terminate at main_ctx_");
         });
     }
 
@@ -430,22 +440,26 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFunction* fn) {
-        ASSERT(current_ == &main_ctx_, "current_ is not main_ctx_ (unbalanced context switch)");
+        // 入口锚:本轮入口上下文(即主上下文)。dispatch_loop 的出口(顶层 RETURN / 未捕获物化)
+        // 都发生在 resume 链链根 = 入口上下文,出口断言据此钉住切换交接的完整 -- 漏交接当场炸,
+        // 不等下一轮入口。
+        const auto entry_ctx = current_;
         // 入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0],配置根 [1..] 不动);
         // dir_ 可空(cwd 不可用的 <script>),由 resolve_module 跳空根处理,此处不判空。
         source_roots_[0] = fn->module()->dir()->view();
 
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
-        main_ctx_.reset();
+        current_->reset();
 
         // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底;建成传入
         // run_closure 即压栈(入栈即根化)。
         auto       guard   = gc_.make_guard(fn);
         const auto closure = new_closure(gc_, fn);
         auto       result  = run_closure(closure); // 值拷贝,下方清场不影响返回值;持对象由调用方根化
+        ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
         // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值(清场归本入口,run_closure 为
         // 重入接缝不自清)。
-        main_ctx_.reset();
+        current_->reset();
         return result;
     }
 
@@ -986,7 +1000,7 @@ namespace aria {
             frame.last_ip    = frame.ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
-            trace_execution(*current_);
+            trace_execution(current_);
 #endif
             // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:一律 break 回循环顶 -- unwind
             // 返 Error 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废。

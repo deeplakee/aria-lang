@@ -63,17 +63,21 @@ namespace aria {
     public:
         AriaVM();
 
+        // 释放堆上执行上下文(时点与 gc_ 存活性依据见 .cpp 定义处)。
+        ~AriaVM();
+
         AriaVM(const AriaVM&)            = delete;
         AriaVM& operator=(const AriaVM&) = delete;
 
-        // VM 不可移动:成员持指向彼此/自身的指针(main_ctx_/modules_ borrow &gc_、current_ 指
-        // main_ctx_、tracer 捕 [this]),move 后不重绑 -> 悬垂。就地构造或以 unique_ptr 持有。
+        // VM 不可移动:成员持指向彼此/自身的指针(modules_ borrow &gc_、堆上 current_ 所指上下文
+        // 的值栈 borrow &gc_、tracer 捕 [this]),move 后不重绑 -> 悬垂。就地构造或以 unique_ptr 持有。
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
 
-        // 程序入口仪式:断言主上下文 + 源根入口槽 [0] 播种 + 前后 reset 清场 + 入口 fn 包空闭包
-        // (顶层也闭包,统一「帧 = 闭包」模型)后委托 run_closure。fn 的 CodeUnit 假定良构
-        // (以 RETURN/HALT 终止),不逐指令设防;失败为未捕获运行时错误。
+        // 程序入口仪式:入口锚定执行上下文(出口断言控制流回到锚点) + 源根入口槽 [0] 播种 +
+        // 前后 reset 清场 + 入口 fn 包空闭包(顶层也闭包,统一「帧 = 闭包」模型)后委托
+        // run_closure。fn 的 CodeUnit 假定良构(以 RETURN/HALT 终止),不逐指令设防;失败为
+        // 未捕获运行时错误。
         Result<Value, Error> run(ObjFunction* fn);
 
         // 编译 source 到 module 的入口 ObjFunction 并执行。source 须存活到返回(编译期 Error
@@ -94,9 +98,10 @@ namespace aria {
             return gc_;
         }
 
+        // 当前执行上下文(测试用;切换原语落地前恒为主上下文)。
         [[nodiscard]]
-        Movement& main_context() noexcept {
-            return main_ctx_;
+        Movement* current_context() noexcept {
+            return current_;
         }
 
         // 挂起错误侧信道(原生函数等冷路径报错):寄存器在 Movement::pending_error_,经 *current_
@@ -420,10 +425,10 @@ namespace aria {
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 
-        Movement main_ctx_;
-
-        // 当前执行上下文:dispatch_loop/call_value 族/raise 的作用对象,构造即指 &main_ctx_
-        // (M6 切换模型见 vm-design.md §4.9)。
+        // 当前执行上下文:dispatch_loop/call_value 族/raise 的作用对象;ctor 堆分配、~AriaVM
+        // 释放(壳不进 GC 对象链,值栈 Buffer 走 GC 字节账,内部由 tracer 沿链直标)。主上下文
+        // 即其初值(M6 切换落地后为 resume 链链根,由 run() 入口锚 + 出口断言钉住),切换模型见
+        // vm-design.md §4.9。
         Movement* current_;
 
         AriaHashTable modules_;  // 模块表(GC 根)

@@ -66,7 +66,7 @@ namespace {
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
     //(引擎缝契约:next 越界 ⟺ 寄存器必有载荷)。
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
-        auto payload = vm.main_context().take_error();
+        auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
         const auto ex = try_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);

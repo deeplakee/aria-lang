@@ -307,9 +307,11 @@ def report_verdict(groups, lang_names):
             if not values:
                 rows[lang].append("-")
                 continue
-            faster = sum(1 for value in values if value < 1.0)
+            # 比值 = 该语言 ÷ aria:> 1 才是 aria 更快(对方花的时间更多)。
+            aria_faster = sum(1 for value in values if value > 1.0)
             median = statistics.median(values)
-            rows[lang].append(f"aria 更快 {faster} / 更慢 {len(values) - faster} 行,中位 {median:.2f}x")
+            rows[lang].append(f"aria 更快 {aria_faster} / 更慢 {len(values) - aria_faster} 行,"
+                              f"中位 {median:.2f}x")
     return [
         ("heading", "一、速览"),
         ("paragraph", "只统计有该语言端口、且双方都有负载段的行;中位倍数 =「该语言负载段 ÷ aria 负载段」"

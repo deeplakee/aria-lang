@@ -12,6 +12,13 @@ if(ARIA_USE_TAGVALUE)
     add_compile_definitions(ARIA_USE_TAGVALUE)
 endif()
 
+# VM 主循环派发策略（见 src/common.hpp）：computed goto（labels-as-values 跳转表派发）；
+# 不支持该扩展的编译器自动回退传统 switch。
+option(ARIA_USE_COMPUTED_GOTO "VM 主循环用 computed goto 派发（不支持的编译器回退 switch）" OFF)
+if(ARIA_USE_COMPUTED_GOTO)
+    add_compile_definitions(ARIA_USE_COMPUTED_GOTO)
+endif()
+
 add_subdirectory(external/isocline)
 
 

@@ -19,6 +19,14 @@ namespace aria {
     #define USING_NANBOXING
 #endif
 
+// 派发策略选择：定义 ARIA_USE_COMPUTED_GOTO（根 CMakeLists.txt 的同名 option 注入，亦可
+// 编译命令行手工 -D）且编译器支持 labels-as-values（GCC/Clang，不含 MSVC 及 clang-cl）时，
+// VM 主循环用 computed goto 跳转表派发；否则回退传统 switch。两形态由 AriaVM.cpp 文件局部
+// 的 TARGET/DISPATCH 宏统一成单一 handler 源，行为等价。
+#if defined(ARIA_USE_COMPUTED_GOTO) && !defined(_MSC_VER) && (defined(__clang__) || defined(__GNUC__))
+    #define USING_COMPUTED_GOTO
+#endif
+
 
 #ifdef NDEBUG
     #define UNREACHABLE() std::unreachable()

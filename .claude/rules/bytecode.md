@@ -11,10 +11,10 @@ paths:
 
 ## `bytecode/code.hpp`
 
-**指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（64 条；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0）。
+**指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（63 条；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0）。
 
 - 表展开生成 `OpCode` 枚举 / `kOpCodeCount`（越界判定用，替代依赖枚举稠密）/ `kOpCodeNames` / `kOpCodeFormats`（`inline constexpr` 查表，供 Disassembler 等冷路径消费；VM 热路径不查表）；`OpFormat` 是独立的操作数格式类别枚举（`Simple`/`U8`/`U16`/`ConstU16`/`ImmI8`/`JumpFwd`/`JumpBack`/`RangeFlags`/`RegU8`/`Import`）。
-- **新增指令流程**：X 表加一行（选既有 OpFormat）-> AriaVM 加对应 case -> 文档同步；Disassembler 与名字/格式表零改动（仅引入新格式类别时才同步其分发 switch）。未来 computed goto 跳转表是同表再加一行消费。
+- **新增指令流程**：X 表加一行（选既有 OpFormat）-> AriaVM 加对应 TARGET handler -> 文档同步；Disassembler 与名字/格式表零改动（仅引入新格式类别时才同步其分发 switch）。computed goto 跳转表（AriaVM.cpp dispatch_loop 内的 `kDispatchTable`）是本表的下游消费，注册表宏为此保持定义（不同于 `TokenType` 的头内收口）；表行与 TARGET 标签原子新增，漏一个即编译错。
 - `op_symbol(OpCode)`（`inline constexpr`）：二元算术/比较指令 -> 报错消息里的源码算子记号（`ADD` 为 `"+"`），其余 opcode 取到即 `"?"`（消费方只对本组取号，别的落 `default` 表编程错误）。消费方 = VM 数值二元的类型守卫。
 - **表内不放说明性注释**（中英混排难以列对齐），语义细节统一放表头注释块速览与 `bytecode-instruction-set.md`；续行符 `\` 对齐交给 clang-format（`RightAlignEscapedNewlines`）自动维护；若确需表内注释只能用块注释 `/* */`（多行宏体内 `//` 会因反斜杠续行吞掉下一行）。
 - **无 `SETUP_EXCEPT`/`END_EXCEPT`**：异常走 CodeUnit 内记录表，见 `AGENTS.md`「错误处理」第 2 条。完整指令清单见 `bytecode-instruction-set.md`。

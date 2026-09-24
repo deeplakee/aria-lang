@@ -22,10 +22,10 @@ namespace aria {
     };
 
     // 指令集单一事实源: 每行 X(枚举名, 操作数格式), 枚举顺序即 opcode 数值(首条 HALT 隐式为 0, 依赖稠密递增)。OpCode /
-    // kOpCodeCount / kOpCodeNames / kOpCodeFormats 均由本表展开生成(生成器宏用完即 #undef); 未来 computed goto 跳转表
-    // 可同表再加一行消费(见 vm-design.md)。新增指令流程: 本表加一行(选既有 OpFormat 类别) -> AriaVM 加对应 case -> 文
-    // 档 bytecode-instruction-set.md 同步; Disassembler 与名字/格式表零改动。表内不放说明性注释, 语义细节统一见
-    // bytecode-instruction-set.md §4。易踩点速览:
+    // kOpCodeCount / kOpCodeNames / kOpCodeFormats 均由本表展开生成(条目宏用完即 #undef); 注册表宏本身保持定义, 供
+    // 下游文件再展开(AriaVM.cpp 的 computed goto 跳转表即同表的下游消费)。新增指令流程: 本表加一行(选既有 OpFormat
+    // 类别) -> AriaVM 加对应 TARGET handler -> 文档 bytecode-instruction-set.md 同步; Disassembler 与名字/格式表零改
+    // 动。表内不放说明性注释, 语义细节统一见 bytecode-instruction-set.md §4。易踩点速览:
     //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
     //   - PREPARE_METHOD/CALL_METHOD: 两段式方法调用(解析先于实参求值, 见 §5.6); 待调值槽由实参整体下移一格补掉, 调用
     //     区恒为 [recv, a1..aN] 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
@@ -122,8 +122,6 @@ namespace aria {
 #define ARIA_OP_FORMAT(name, format) OpFormat::format,
     inline constexpr OpFormat kOpCodeFormats[kOpCodeCount] = {ARIA_OPCODE_LIST(ARIA_OP_FORMAT)};
 #undef ARIA_OP_FORMAT
-
-#undef ARIA_OPCODE_LIST
 
     // opcode -> 报错消息里的算子记号(ADD 为 "+" 等):只有二元算术/比较指令对应源码算子,其余取到即
     // "?" -- 消费方(数值二元的类型守卫)只对本组指令取号,别的 opcode 落在 default 表编程错误,以可见

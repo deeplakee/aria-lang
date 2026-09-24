@@ -1,5 +1,7 @@
 #include "runtime/builtins/Builtins.hpp"
 
+#include <chrono>
+
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
@@ -74,12 +76,23 @@ namespace aria::builtins {
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
+        // clock() -> f64:单调时钟当前读数(秒)。起点未定(非 Unix 纪元),只有两次读数**相减**才有
+        // 意义;同进程内跨调用单调不减,不受系统调时影响。返 f64 秒而非微秒整数:自开机起的微秒
+        // 计数会超出 i48 值域(2^47 微秒约 51 天),而秒制下 f64 精度仍在微秒级。基准脚本靠它把
+        // 启动/编译成本从进程总耗时里剥出来(aria 脚本无 argv,耗时只能语言内自测)。
+        bool fn_clock(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.arity_error(argc, 0);
+            }
+            const auto raw_now = std::chrono::steady_clock::now().time_since_epoch();
+            slots[0]           = Value::from_f64(std::chrono::duration<double>(raw_now).count());
+            return true;
+        }
+
         // 内置表:按名注册进 VM 级 builtins 表。
         constexpr BuiltinEntry kBuiltins[] = {
-                {"type", fn_type},
-                {"str", fn_str},
-                {"println", fn_println},
-                {"assert", fn_assert},
+                {"type", fn_type}, {"str", fn_str}, {"println", fn_println}, {"assert", fn_assert}, {"clock", fn_clock},
         };
 
     } // namespace

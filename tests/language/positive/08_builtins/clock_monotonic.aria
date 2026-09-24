@@ -1,0 +1,30 @@
+// 钉住：clock()--0 参、返 f64 秒的单调时钟读数。起点未定(非 Unix 纪元)故只钉「可相减」的性质：
+# 读数恒 F64、同进程内跨调用单调不减、差值非负、可作一等值传递、多给实参报 WrongArity。
+assert(type(clock()) == "F64");
+
+var t0 = clock();
+var acc = 0;
+for (i in 0...1000) {
+    acc = acc + i;
+}
+var dt = clock() - t0;
+assert(acc == 499500);
+assert(type(dt) == "F64");
+assert(dt >= 0.0); // 单调不减:差值非负(两次读数之间耗时趋近 0 也不为负)
+
+# 单调性:连续读数不减
+var a = clock();
+var b = clock();
+assert(b >= a);
+
+# 一等值:取出后仍可调用
+var now = clock;
+assert(type(now()) == "F64");
+
+# 元数错:clock 恒 0 参,多给一个实参报运行期错误,可 catch
+try {
+    clock(1);
+    assert(false); // 不可达
+} catch (e) {
+    assert(type(e) == "Exception");
+}

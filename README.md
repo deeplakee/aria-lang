@@ -74,7 +74,8 @@ println("42".to_int() + 1);                                    # 43
   `substring`/`to_int` 等。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（别名必写）。模块顶层绑定即模块成员，
   `U.f()` 直调，成员只读。
-- **内置函数**：`type` / `str` / `assert` / `println`（唯一的输出口，可当一等值传递）。
+- **内置函数**：`type` / `str` / `assert` / `println` / `clock`（都可当一等值传递；`println` 是唯一的
+  输出口，`clock` 返单调时钟秒数、只可相减）。
 
 ## 构建与运行
 

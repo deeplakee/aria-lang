@@ -964,507 +964,499 @@ namespace aria {
         return Error::from_baked(code, msg);
     }
 
-    // dispatch_loop 派发双形态的文件局部宏(用完即 #undef)。computed goto 形态下 TARGET(name)
-    // 是 handler 标签、DISPATCH() 是「重取帧 + 记 last_ip + trace + 跳表派发」一体的取指点;
-    // 回退形态(编译器无 labels-as-values,或未开 ARIA_USE_COMPUTED_GOTO)逐一退化为 case
-    // 标签与 break,与既有单 switch 结构同构。TRACE_DISPATCH 是取指前的 trace 钩子(见
-    // trace_execution),两种形态共用:computed goto 形态在 DISPATCH 宏体内,回退形态在循环
-    // 顶前导;开关仅由 DEBUG_TRACE_EXECUTION 决定,与派发形态正交。
-#if defined(DEBUG_TRACE_EXECUTION)
-    #define TRACE_DISPATCH() trace_execution(current_)
-#else
-    #define TRACE_DISPATCH() ((void) 0)
-#endif
-
-#if defined(USING_COMPUTED_GOTO)
-    #define TARGET(name) L_##name
-    #define DISPATCH()                                  \
-        do {                                            \
-            frame          = &current_->frames().top(); \
-            frame->last_ip = frame->ip;                 \
-            TRACE_DISPATCH();                           \
-            goto* kDispatchTable[read_u8(frame)];       \
-        } while (false)
-#else
-    #define TARGET(name) case OpCode::name
-    #define DISPATCH()   break
-#endif
-
     Result<Value, Error> AriaVM::dispatch_loop() {
         // 栈/帧/寄存器一律经 current_ 访问;M6 切换模型下「正在执行的字节码所在上下文恒等于
         // current_」,切换点唯一且显式,本循环永不重入(§4.9)。
-#if defined(USING_COMPUTED_GOTO)
-        // 跳转表:与 bytecode/code.hpp 的 ARIA_OPCODE_LIST 同源展开(表行与 TARGET 标签原子
-        // 新增,漏一个即编译错)。label 地址仅函数内可取,故表住函数内;常量初始化,无 guard。
-        static void* const kDispatchTable[kOpCodeCount] = {
-    #define ARIA_OP_LABEL(name, format) &&L_##name,
-                ARIA_OPCODE_LIST(ARIA_OP_LABEL)
-    #undef ARIA_OP_LABEL
-        };
-        CallFrame* frame = nullptr; // 仅供进作用域;首个 DISPATCH 即赋值
-#endif
 
         while (true) {
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return;CALL/IMPORT 切帧后
-            // 由 DISPATCH 收尾重取)。取指前记本帧指令起始指针(last_ip):报错行号锚点,
-            // unwind 查表同用此字段(顶帧 = 故障指令,外层帧 = CALL 站点)。computed goto
-            // 形态的取指前导收进 DISPATCH 宏,由每条派发点自带;回退形态就在此处。
-#if defined(USING_COMPUTED_GOTO)
-            DISPATCH();
-#else
+            // break 回循环顶重取)。取指前记本帧指令起始指针(last_ip):报错行号锚点,unwind
+            // 查表同用此字段(顶帧 = 故障指令,外层帧 = CALL 站点)。
             auto frame     = &current_->frames().top();
             frame->last_ip = frame->ip;
-            TRACE_DISPATCH();
-            // 各 handler 按 bytecode/code.hpp 枚举序排列。退出约定:成功路径一律 DISPATCH()
-            // (回退形态即 break 出 switch、经循环尾 continue 回循环顶;computed goto 形态就
-            // 地取指跳表,不再回循环顶);错误站点(raise / run_* 返 false)一律 goto
-            // unwind_check -- 收口处 unwind 返 Error 即未捕获(return 终止循环),返 nullopt
-            // 即已派发 handler、帧引用已废,落回循环顶重取。**DISPATCH 之后与 unwind_check
-            // 标签体不得新增引用 frame 的代码**(坑 #11 的防御前提)。
-            switch (auto op = static_cast<OpCode>(read_u8(frame))) {
+#ifdef DEBUG_TRACE_EXECUTION
+            // 取 opcode 前打印执行状态(见 trace_execution)。
+            trace_execution(current_);
 #endif
-            TARGET(HALT) : return Value::nil_val();
+            // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:成功路径一律 break 回循环顶;
+            // 错误站点(raise / run_* 返 false)一律 goto unwind_check -- 收口处 unwind 返 Error
+            // 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废,落回循环顶
+            // 重取。**switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提,unwind_check
+            // 标签体同守)。
+            switch (auto op = static_cast<OpCode>(read_u8(frame))) {
+                case OpCode::HALT:
+                    return Value::nil_val();
 
-            // 数据加载与存储
-            TARGET(LOAD_CONST) : {
-                const auto idx = read_u16(frame);
-                current_->push(frame->unit->constants[idx]);
-                DISPATCH();
-            }
-            TARGET(LOAD_NIL) : current_->push(Value::nil_val());
-            DISPATCH();
-            TARGET(LOAD_TRUE) : current_->push(Value::true_val());
-            DISPATCH();
-            TARGET(LOAD_FALSE) : current_->push(Value::false_val());
-            DISPATCH();
-            TARGET(LOAD_IMM) : {
-                const u8 raw = read_u8(frame);
-                // u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8,见 CodeGen)。
-                current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
-                DISPATCH();
-            }
-            TARGET(LOAD_REG) : {
-                // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表枚举值,
-                // 编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
-                current_->push(Value::from_obj(registers_[read_u8(frame)]));
-                DISPATCH();
-            }
-            TARGET(LOAD_LOCAL) : {
-                const u8 slot = read_u8(frame);
-                current_->push(frame->slots[slot]);
-                DISPATCH();
-            }
-            TARGET(STORE_LOCAL) : {
-                const u8 slot      = read_u8(frame);
-                frame->slots[slot] = current_->peek(0);
-                DISPATCH();
-            }
-            TARGET(LOAD_LOCAL_L) : {
-                const auto slot = read_u16(frame);
-                current_->push(frame->slots[slot]);
-                DISPATCH();
-            }
-            TARGET(STORE_LOCAL_L) : {
-                const auto slot    = read_u16(frame);
-                frame->slots[slot] = current_->peek(0);
-                DISPATCH();
-            }
-            TARGET(LOAD_UPVALUE) : {
-                // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
-                const u8 idx = read_u8(frame);
-                current_->push(*frame->closure->upvalues()[idx]->value_slot());
-                DISPATCH();
-            }
-            TARGET(STORE_UPVALUE) : {
-                // peek-store 到该 upvalue:open 态写穿到栈槽,closed 态写自持。
-                const u8 idx                                   = read_u8(frame);
-                *frame->closure->upvalues()[idx]->value_slot() = current_->peek(0);
-                DISPATCH();
-            }
-            TARGET(CLOSE_UPVALUE) : {
-                // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担(编译器
-                // 在弹区 POP_N 之后发射,弹区槽已位于 top 之上,不 push 不覆写即安全)。
-                current_->close_upvalues(current_->stack_top());
-                DISPATCH();
-            }
-            TARGET(DEF_GLOBAL) : {
-                // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var -- 唯一
-                // 创建全局的入口)。根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v
-                // 在值栈跨分配(先 pop 则成裸局部被回收),set 返回后才 drop。
-                ObjString* name = read_name(frame);
-                frame->module->globals().set(Value::from_obj(name), current_->peek(0));
-                current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
-                DISPATCH();
-            }
-            TARGET(LOAD_GLOBAL) : {
-                // [] -> [v]:按名查当前模块 globals,miss 回退 VM 级 builtins_(Python 式查找链);
-                // 皆未命中 -> UndefinedVariable。push 先写栈再 grow,载荷已入栈后方可能 collect。
-                ObjString*  name  = read_name(frame);
-                const Value key   = Value::from_obj(name);
-                auto        entry = frame->module->globals().find(key);
-                if (entry == nullptr) {
-                    entry = builtins_.find(key); // 回退 builtins_
+                // 数据加载与存储
+                case OpCode::LOAD_CONST: {
+                    const auto idx = read_u16(frame);
+                    current_->push(frame->unit->constants[idx]);
+                    break;
+                }
+                case OpCode::LOAD_NIL:
+                    current_->push(Value::nil_val());
+                    break;
+                case OpCode::LOAD_TRUE:
+                    current_->push(Value::true_val());
+                    break;
+                case OpCode::LOAD_FALSE:
+                    current_->push(Value::false_val());
+                    break;
+                case OpCode::LOAD_IMM: {
+                    const u8 raw = read_u8(frame);
+                    // u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8,见 CodeGen)。
+                    current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
+                    break;
+                }
+                case OpCode::LOAD_REG: {
+                    // [] -> [regs[n]]:压 VM 值寄存器(单例对象,bootstrap 填充;索引即注册表枚举值,
+                    // 编译器只发合法下标,同 LOAD_LOCAL 槽访问不设防)。
+                    current_->push(Value::from_obj(registers_[read_u8(frame)]));
+                    break;
+                }
+                case OpCode::LOAD_LOCAL: {
+                    const u8 slot = read_u8(frame);
+                    current_->push(frame->slots[slot]);
+                    break;
+                }
+                case OpCode::STORE_LOCAL: {
+                    const u8 slot      = read_u8(frame);
+                    frame->slots[slot] = current_->peek(0);
+                    break;
+                }
+                case OpCode::LOAD_LOCAL_L: {
+                    const auto slot = read_u16(frame);
+                    current_->push(frame->slots[slot]);
+                    break;
+                }
+                case OpCode::STORE_LOCAL_L: {
+                    const auto slot    = read_u16(frame);
+                    frame->slots[slot] = current_->peek(0);
+                    break;
+                }
+                case OpCode::LOAD_UPVALUE: {
+                    // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
+                    const u8 idx = read_u8(frame);
+                    current_->push(*frame->closure->upvalues()[idx]->value_slot());
+                    break;
+                }
+                case OpCode::STORE_UPVALUE: {
+                    // peek-store 到该 upvalue:open 态写穿到栈槽,closed 态写自持。
+                    const u8 idx                                   = read_u8(frame);
+                    *frame->closure->upvalues()[idx]->value_slot() = current_->peek(0);
+                    break;
+                }
+                case OpCode::CLOSE_UPVALUE: {
+                    // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担(编译器
+                    // 在弹区 POP_N 之后发射,弹区槽已位于 top 之上,不 push 不覆写即安全)。
+                    current_->close_upvalues(current_->stack_top());
+                    break;
+                }
+                case OpCode::DEF_GLOBAL: {
+                    // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var -- 唯一
+                    // 创建全局的入口)。根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v
+                    // 在值栈跨分配(先 pop 则成裸局部被回收),set 返回后才 drop。
+                    ObjString* name = read_name(frame);
+                    frame->module->globals().set(Value::from_obj(name), current_->peek(0));
+                    current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
+                    break;
+                }
+                case OpCode::LOAD_GLOBAL: {
+                    // [] -> [v]:按名查当前模块 globals,miss 回退 VM 级 builtins_(Python 式查找链);
+                    // 皆未命中 -> UndefinedVariable。push 先写栈再 grow,载荷已入栈后方可能 collect。
+                    ObjString*  name  = read_name(frame);
+                    const Value key   = Value::from_obj(name);
+                    auto        entry = frame->module->globals().find(key);
+                    if (entry == nullptr) {
+                        entry = builtins_.find(key); // 回退 builtins_
+                        if (entry == nullptr) {
+                            raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            goto unwind_check;
+                        }
+                    }
+                    current_->push(entry->value);
+                    break;
+                }
+                case OpCode::STORE_GLOBAL: {
+                    // [v] -> [v]:peek-store 到模块 globals;未定义 -> UndefinedVariable(赋值不
+                    // 隐式创建)。无分配。
+                    ObjString*  name  = read_name(frame);
+                    const Value key   = Value::from_obj(name);
+                    const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
                         raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                         goto unwind_check;
                     }
+                    entry->value = current_->peek(0);
+                    break;
                 }
-                current_->push(entry->value);
-                DISPATCH();
-            }
-            TARGET(STORE_GLOBAL) : {
-                // [v] -> [v]:peek-store 到模块 globals;未定义 -> UndefinedVariable(赋值不
-                // 隐式创建)。无分配。
-                ObjString*  name  = read_name(frame);
-                const Value key   = Value::from_obj(name);
-                const auto  entry = frame->module->globals().find(key);
-                if (entry == nullptr) {
-                    raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
-                    goto unwind_check;
-                }
-                entry->value = current_->peek(0);
-                DISPATCH();
-            }
-            TARGET(LOAD_FIELD) :
-                // name:u16;[obj] -> [v]
-                if (!run_load_field(read_name(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(STORE_FIELD) :
-                // name:u16;[obj, v] -> [v](单槽下移留 v)
-                if (!run_store_field(read_name(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(LOAD_INDEX) :
-                // [obj, idx] -> [v]
-                if (!run_load_index()) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(STORE_INDEX) :
-                // [obj, idx, v] -> [v](peek-store,值下移两格)
-                if (!run_store_index()) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(LOAD_THIS_FIELD) : {
-                // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
-                // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。
-                auto inst = try_obj<ObjInstance>(frame->slots[0]);
-                ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
-                if (const auto result = inst->load_field(*this, read_name(frame))) {
-                    current_->push(*result); // [] -> [v]
-                    DISPATCH();
-                }
-                goto unwind_check;
-            }
-            TARGET(STORE_THIS_FIELD) : {
-                // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
-                // false 分支为契约透传防御形态,实例路径不可达)。
-                auto inst = try_obj<ObjInstance>(frame->slots[0]);
-                ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
-                if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
-                    goto unwind_check;
-                }
-                DISPATCH(); // 值留栈(peek-store),this 不经栈
-            }
-
-            // 算术与逻辑
-            // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
-            TARGET(EQUAL) : {
-                const Value b = current_->pop();
-                const Value a = current_->pop();
-                current_->push(Value::from_bool(value_equal(a, b)));
-                DISPATCH();
-            }
-            TARGET(NOT_EQUAL) : {
-                const Value b = current_->pop();
-                const Value a = current_->pop();
-                current_->push(Value::from_bool(!value_equal(a, b)));
-                DISPATCH();
-            }
-            TARGET(STRICT_EQUAL) : {
-                const Value b = current_->pop();
-                const Value a = current_->pop();
-                current_->push(Value::from_bool(value_identical(a, b)));
-                DISPATCH();
-            }
-            TARGET(STRICT_NOT_EQUAL) : {
-                const Value b = current_->pop();
-                const Value a = current_->pop();
-                current_->push(Value::from_bool(!value_identical(a, b)));
-                DISPATCH();
-            }
-            // 比较
-            TARGET(GREATER) : if (!run_binary_operator<OpCode::GREATER>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(GREATER_EQUAL) : if (!run_binary_operator<OpCode::GREATER_EQUAL>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(LESS) : if (!run_binary_operator<OpCode::LESS>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(LESS_EQUAL) : if (!run_binary_operator<OpCode::LESS_EQUAL>()) { goto unwind_check; }
-            DISPATCH();
-            // 算术(五算子共用执行体 run_binary_operator)
-            TARGET(ADD) : if (!run_binary_operator<OpCode::ADD>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(SUBTRACT) : if (!run_binary_operator<OpCode::SUBTRACT>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(MULTIPLY) : if (!run_binary_operator<OpCode::MULTIPLY>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(DIVIDE) : if (!run_binary_operator<OpCode::DIVIDE>()) { goto unwind_check; }
-            DISPATCH();
-            TARGET(MOD) : if (!run_binary_operator<OpCode::MOD>()) { goto unwind_check; }
-            DISPATCH();
-            // 一元
-            TARGET(NOT) : current_->push(Value::from_bool(!is_truthy(current_->pop())));
-            DISPATCH();
-            // 一元
-            TARGET(NEGATE) : if (!run_negate()) { goto unwind_check; }
-            DISPATCH();
-
-            // 栈操作
-            TARGET(POP) : current_->drop(1);
-            DISPATCH();
-            TARGET(POP_N) : {
-                const u8 n = read_u8(frame);
-                current_->drop(n);
-                DISPATCH();
-            }
-            TARGET(DUP) : current_->push(current_->peek(0));
-            DISPATCH();
-            TARGET(DUP2) : {
-                const Value b = current_->peek(0);
-                const Value a = current_->peek(1);
-                current_->push(a);
-                current_->push(b);
-                DISPATCH();
-            }
-
-            // 调试
-            TARGET(NOP) : DISPATCH();
-
-            // 控制流(u16 无符号;前向 JUMP* ip+=off,后向 JUMP_BACK ip-=off;
-            // 偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)
-            TARGET(JUMP) : {
-                const u16 off = read_u16(frame);
-                frame->ip += off;
-                DISPATCH();
-            }
-            TARGET(JUMP_TRUE) : {
-                const u16 off = read_u16(frame);
-                if (is_truthy(current_->pop())) {
-                    frame->ip += off;
-                }
-                DISPATCH();
-            }
-            TARGET(JUMP_TRUE_OR_POP) : {
-                const u16 off = read_u16(frame);
-                if (is_truthy(current_->peek(0))) {
-                    frame->ip += off; // 命中:不弹,被测值即结果
-                } else {
-                    current_->drop(1); // 落空:弹掉
-                }
-                DISPATCH();
-            }
-            TARGET(JUMP_FALSE) : {
-                const u16 off = read_u16(frame);
-                if (!is_truthy(current_->pop())) {
-                    frame->ip += off;
-                }
-                DISPATCH();
-            }
-            TARGET(JUMP_FALSE_OR_POP) : {
-                const u16 off = read_u16(frame);
-                if (!is_truthy(current_->peek(0))) {
-                    frame->ip += off; // 命中:不弹,被测值即结果
-                } else {
-                    current_->drop(1); // 落空:弹掉
-                }
-                DISPATCH();
-            }
-            TARGET(JUMP_BACK) : {
-                const u16 off = read_u16(frame);
-                frame->ip -= off;
-                // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 指针跨调用有效。
-                gc_.maybe_collect();
-                DISPATCH();
-            }
-
-            // 函数与闭包
-            TARGET(CALL) : {
-                const u8 argc = read_u8(frame);
-                // 良构不变式:栈上必有 callee + argc 个实参。
-                ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
-                if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
-                    goto unwind_check;
-                }
-                DISPATCH();
-            }
-            TARGET(CLOSURE) : {
-                // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获描述表
-                // (upvalue_descs_,存 fn 元数据不进字节码流,指令集 §4.13)逐个填:is_local 捕直接
-                // 外围帧局部槽(经 capture_upvalue 单点收口「同一局部一份引用」),否则复制外围
-                // 闭包的第 index 个 upvalue(共享同一份引用)。
-                // 根安全(「栈即根」):闭包建成立即压栈,desc 循环内 new_upvalue 顶 maybe_collect
-                // 不再威胁闭包,免守卫。
-                const auto idx     = read_u16(frame);
-                const auto fn      = Object::as<ObjFunction>(frame->unit->constants[idx].as_obj());
-                auto       closure = new_closure(gc_, fn);
-                current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
-                for (const auto& [is_local, index]: fn->upvalue_descs()) {
-                    if (is_local) {
-                        closure->add_upvalue(current_->capture_upvalue(gc_, frame->slots + index));
-                    } else {
-                        closure->add_upvalue(frame->closure->upvalues()[index]);
+                case OpCode::LOAD_FIELD:
+                    // name:u16;[obj] -> [v]
+                    if (!run_load_field(read_name(frame))) {
+                        goto unwind_check;
                     }
+                    break;
+                case OpCode::STORE_FIELD:
+                    // name:u16;[obj, v] -> [v](单槽下移留 v)
+                    if (!run_store_field(read_name(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::LOAD_INDEX:
+                    // [obj, idx] -> [v]
+                    if (!run_load_index()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::STORE_INDEX:
+                    // [obj, idx, v] -> [v](peek-store,值下移两格)
+                    if (!run_store_index()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::LOAD_THIS_FIELD: {
+                    // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
+                    // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。
+                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
+                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
+                    if (const auto result = inst->load_field(*this, read_name(frame))) {
+                        current_->push(*result); // [] -> [v]
+                        break;
+                    }
+                    goto unwind_check;
                 }
-                DISPATCH();
-            }
-
-            // 类与对象
-            TARGET(MAKE_CLASS) : {
-                // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶 maybe_collect
-                // 须 super 在栈(「栈即根」);非类值是**语言可达**错误(superclass 运行期才知
-                // 值类型),故 raise 而非 ASSERT。建成写回原槽;init 继承收进对象构造。
-                if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
-                    const auto klass  = new_class(gc_, read_name(frame), super);
-                    current_->peek(0) = Value::from_obj(klass);
-                    DISPATCH();
+                case OpCode::STORE_THIS_FIELD: {
+                    // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
+                    // false 分支为契约透传防御形态,实例路径不可达)。
+                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
+                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
+                    if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
+                        goto unwind_check;
+                    }
+                    break; // 值留栈(peek-store),this 不经栈
                 }
 
-                raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
-                goto unwind_check;
-            }
-            TARGET(MAKE_METHOD) : {
-                // name:u16;[class, closure] -> [class]:实例方法注册(静态经 MAKE_STATIC;仅收闭包
-                // -- 方法性 = defining class 戳)。栈形经 ASSERT 钉(值恒来自上一条 CLOSURE,语言
-                // 写不出违例)。副作用:set_field 命中 "init" 同步 init_ + 闭包戳 defining class
-                // (一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
-                const auto klass  = try_obj<ObjClass>(current_->peek(1));
-                const auto method = current_->peek(0);
-                ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
-                klass->set_field(read_name(frame), method);
-
-                const auto closure = try_obj<ObjClosure>(method);
-                ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
-                closure->set_defining_class(klass);
-                current_->drop(1);
-                DISPATCH();
-            }
-            TARGET(MAKE_STATIC) : {
-                // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
-                // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
-                const auto klass = try_obj<ObjClass>(current_->peek(1));
-                ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
-                klass->set_field(read_name(frame), current_->peek(0));
-                current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
-                DISPATCH();
-            }
-            TARGET(LOAD_SUPER_FIELD) :
-                // name:u16;[] -> [v]
-                if (!run_load_super_field(read_name(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(PREPARE_METHOD) :
-                // name:u16;[recv] -> [recv, target]
-                if (!run_prepare_method(read_name(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(CALL_METHOD) :
-                // argc:u8;[recv, target, a1..aN] -> [r]
-                if (!run_call_method(read_u8(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-            TARGET(MAKE_LIST) : {
-                // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect(「栈即
-                // 根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内无 GC 点)。
-                const u16  count = read_u16(frame);
-                const auto list  = new_list(gc_);
-                list->elements().copy_from({current_->stack_top() - count, count});
-                current_->drop(count);
-                current_->push(Value::from_obj(list));
-                DISPATCH();
-            }
-            TARGET(MAKE_MAP) : {
-                // n:u16;[k1,v1..kn,vn] -> [map]:键值 peek 在栈跨 new_map 顶部 maybe_collect
-                // (「栈即根」);逐对 set 与 rehash 走 GC 分配器不触 GC(HashTable 注释),拷完
-                // drop 2n 再 push(窗口内无 GC 点)。重复键后键胜(set 命中原槽覆写)。
-                const u16  count = read_u16(frame);
-                const auto map   = new_map(gc_);
-                const auto base  = current_->stack_top() - count * 2;
-                for (usize i = 0; i < count; ++i) {
-                    map->table().set(base[i * 2], base[i * 2 + 1]);
+                // 算术与逻辑
+                // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
+                case OpCode::EQUAL: {
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(value_equal(a, b)));
+                    break;
                 }
-                current_->drop(count * 2);
-                current_->push(Value::from_obj(map));
-                DISPATCH();
-            }
-            TARGET(MAKE_RANGE) :
-                // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
-                if (!run_make_range(read_u8(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-
-            // 模块导入
-            TARGET(IMPORT) :
-                // path:u16;[..., module]
-                if (!run_import(read_name(frame))) {
-                goto unwind_check;
-            }
-            DISPATCH();
-
-            // 异常
-            TARGET(THROW) : {
-                // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
-                // unwind。
-                current_->raise(current_->pop());
-                goto unwind_check;
-            }
-
-            // 返回(exit_frame 后 frame 失效,故先取返回值与判模块体帧)
-            TARGET(RETURN) : {
-                const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
-                // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
-                // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
-                // exit_frame(其后 frame 悬垂)。
-                auto mod     = frame->module;
-                auto fn_name = frame->closure->name()->view();
-                current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
-                if (current_->frames().empty()) {
-                    return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
+                case OpCode::NOT_EQUAL: {
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(!value_equal(a, b)));
+                    break;
                 }
-                if (fn_name == kModuleEntryName) { // 模块体帧:名字经 intern 驻留,短串逐 RETURN 比较开销可忽略
-                    current_->push(Value::from_obj(mod));
-                } else {
-                    current_->push(ret);
+                case OpCode::STRICT_EQUAL: {
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(value_identical(a, b)));
+                    break;
                 }
-                DISPATCH();
-            }
+                case OpCode::STRICT_NOT_EQUAL: {
+                    const Value b = current_->pop();
+                    const Value a = current_->pop();
+                    current_->push(Value::from_bool(!value_identical(a, b)));
+                    break;
+                }
+                // 比较
+                case OpCode::GREATER:
+                    if (!run_binary_operator<OpCode::GREATER>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::GREATER_EQUAL:
+                    if (!run_binary_operator<OpCode::GREATER_EQUAL>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::LESS:
+                    if (!run_binary_operator<OpCode::LESS>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::LESS_EQUAL:
+                    if (!run_binary_operator<OpCode::LESS_EQUAL>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                // 算术(五算子共用执行体 run_binary_operator)
+                case OpCode::ADD:
+                    if (!run_binary_operator<OpCode::ADD>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::SUBTRACT:
+                    if (!run_binary_operator<OpCode::SUBTRACT>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::MULTIPLY:
+                    if (!run_binary_operator<OpCode::MULTIPLY>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::DIVIDE:
+                    if (!run_binary_operator<OpCode::DIVIDE>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::MOD:
+                    if (!run_binary_operator<OpCode::MOD>()) {
+                        goto unwind_check;
+                    }
+                    break;
+                // 一元
+                case OpCode::NOT:
+                    current_->push(Value::from_bool(!is_truthy(current_->pop())));
+                    break;
+                // 一元
+                case OpCode::NEGATE:
+                    if (!run_negate()) {
+                        goto unwind_check;
+                    }
+                    break;
 
-#if !defined(USING_COMPUTED_GOTO)
-            default:
-                UNREACHABLE();
-        }
-        continue; // 正常路径:break 出 switch 后回循环顶,不落 unwind_check
-#endif
-    // unwind 收口:错误站点(raise / run_* 返 false)统一跳此。未捕获 -> 物化 Error 终止
-    // 循环;已派发 handler -> 落回循环尾、经循环顶取指(computed goto 形态即循环顶的
-    // DISPATCH)。标签体不引用 frame(坑 #11)。
-    unwind_check:
-        if (auto u = unwind()) {
-            return runtime_err(std::move(*u));
+                // 栈操作
+                case OpCode::POP:
+                    current_->drop(1);
+                    break;
+                case OpCode::POP_N: {
+                    const u8 n = read_u8(frame);
+                    current_->drop(n);
+                    break;
+                }
+                case OpCode::DUP:
+                    current_->push(current_->peek(0));
+                    break;
+                case OpCode::DUP2: {
+                    const Value b = current_->peek(0);
+                    const Value a = current_->peek(1);
+                    current_->push(a);
+                    current_->push(b);
+                    break;
+                }
+
+                // 调试
+                case OpCode::NOP:
+                    break;
+
+                // 控制流(u16 无符号;前向 JUMP* ip+=off,后向 JUMP_BACK ip-=off;
+                // 偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)
+                case OpCode::JUMP: {
+                    const u16 off = read_u16(frame);
+                    frame->ip += off;
+                    break;
+                }
+                case OpCode::JUMP_TRUE: {
+                    const u16 off = read_u16(frame);
+                    if (is_truthy(current_->pop())) {
+                        frame->ip += off;
+                    }
+                    break;
+                }
+                case OpCode::JUMP_TRUE_OR_POP: {
+                    const u16 off = read_u16(frame);
+                    if (is_truthy(current_->peek(0))) {
+                        frame->ip += off; // 命中:不弹,被测值即结果
+                    } else {
+                        current_->drop(1); // 落空:弹掉
+                    }
+                    break;
+                }
+                case OpCode::JUMP_FALSE: {
+                    const u16 off = read_u16(frame);
+                    if (!is_truthy(current_->pop())) {
+                        frame->ip += off;
+                    }
+                    break;
+                }
+                case OpCode::JUMP_FALSE_OR_POP: {
+                    const u16 off = read_u16(frame);
+                    if (!is_truthy(current_->peek(0))) {
+                        frame->ip += off; // 命中:不弹,被测值即结果
+                    } else {
+                        current_->drop(1); // 落空:弹掉
+                    }
+                    break;
+                }
+                case OpCode::JUMP_BACK: {
+                    const u16 off = read_u16(frame);
+                    frame->ip -= off;
+                    // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 指针跨调用有效。
+                    gc_.maybe_collect();
+                    break;
+                }
+
+                // 函数与闭包
+                case OpCode::CALL: {
+                    const u8 argc = read_u8(frame);
+                    // 良构不变式:栈上必有 callee + argc 个实参。
+                    ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
+                    if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
+                        goto unwind_check;
+                    }
+                    break;
+                }
+                case OpCode::CLOSURE: {
+                    // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获描述表
+                    // (upvalue_descs_,存 fn 元数据不进字节码流,指令集 §4.13)逐个填:is_local 捕直接
+                    // 外围帧局部槽(经 capture_upvalue 单点收口「同一局部一份引用」),否则复制外围
+                    // 闭包的第 index 个 upvalue(共享同一份引用)。
+                    // 根安全(「栈即根」):闭包建成立即压栈,desc 循环内 new_upvalue 顶 maybe_collect
+                    // 不再威胁闭包,免守卫。
+                    const auto idx     = read_u16(frame);
+                    const auto fn      = Object::as<ObjFunction>(frame->unit->constants[idx].as_obj());
+                    auto       closure = new_closure(gc_, fn);
+                    current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
+                    for (const auto& [is_local, index]: fn->upvalue_descs()) {
+                        if (is_local) {
+                            closure->add_upvalue(current_->capture_upvalue(gc_, frame->slots + index));
+                        } else {
+                            closure->add_upvalue(frame->closure->upvalues()[index]);
+                        }
+                    }
+                    break;
+                }
+
+                // 类与对象
+                case OpCode::MAKE_CLASS: {
+                    // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶 maybe_collect
+                    // 须 super 在栈(「栈即根」);非类值是**语言可达**错误(superclass 运行期才知
+                    // 值类型),故 raise 而非 ASSERT。建成写回原槽;init 继承收进对象构造。
+                    if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
+                        const auto klass  = new_class(gc_, read_name(frame), super);
+                        current_->peek(0) = Value::from_obj(klass);
+                        break;
+                    }
+
+                    raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
+                    goto unwind_check;
+                }
+                case OpCode::MAKE_METHOD: {
+                    // name:u16;[class, closure] -> [class]:实例方法注册(静态经 MAKE_STATIC;仅收闭包
+                    // -- 方法性 = defining class 戳)。栈形经 ASSERT 钉(值恒来自上一条 CLOSURE,语言
+                    // 写不出违例)。副作用:set_field 命中 "init" 同步 init_ + 闭包戳 defining class
+                    // (一职双任:super 来源 + 方法性标记,读路径据非空判绑)。
+                    const auto klass  = try_obj<ObjClass>(current_->peek(1));
+                    const auto method = current_->peek(0);
+                    ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
+                    klass->set_field(read_name(frame), method);
+
+                    const auto closure = try_obj<ObjClosure>(method);
+                    ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
+                    closure->set_defining_class(klass);
+                    current_->drop(1);
+                    break;
+                }
+                case OpCode::MAKE_STATIC: {
+                    // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
+                    // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形 ASSERT 钉。
+                    const auto klass = try_obj<ObjClass>(current_->peek(1));
+                    ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
+                    klass->set_field(read_name(frame), current_->peek(0));
+                    current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
+                    break;
+                }
+                case OpCode::LOAD_SUPER_FIELD:
+                    // name:u16;[] -> [v]
+                    if (!run_load_super_field(read_name(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::PREPARE_METHOD:
+                    // name:u16;[recv] -> [recv, target]
+                    if (!run_prepare_method(read_name(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::CALL_METHOD:
+                    // argc:u8;[recv, target, a1..aN] -> [r]
+                    if (!run_call_method(read_u8(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::MAKE_LIST: {
+                    // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect(「栈即
+                    // 根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内无 GC 点)。
+                    const u16  count = read_u16(frame);
+                    const auto list  = new_list(gc_);
+                    list->elements().copy_from({current_->stack_top() - count, count});
+                    current_->drop(count);
+                    current_->push(Value::from_obj(list));
+                    break;
+                }
+                case OpCode::MAKE_MAP: {
+                    // n:u16;[k1,v1..kn,vn] -> [map]:键值 peek 在栈跨 new_map 顶部 maybe_collect
+                    // (「栈即根」);逐对 set 与 rehash 走 GC 分配器不触 GC(HashTable 注释),拷完
+                    // drop 2n 再 push(窗口内无 GC 点)。重复键后键胜(set 命中原槽覆写)。
+                    const u16  count = read_u16(frame);
+                    const auto map   = new_map(gc_);
+                    const auto base  = current_->stack_top() - count * 2;
+                    for (usize i = 0; i < count; ++i) {
+                        map->table().set(base[i * 2], base[i * 2 + 1]);
+                    }
+                    current_->drop(count * 2);
+                    current_->push(Value::from_obj(map));
+                    break;
+                }
+                case OpCode::MAKE_RANGE:
+                    // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
+                    if (!run_make_range(read_u8(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+
+                // 模块导入
+                case OpCode::IMPORT:
+                    // path:u16;[..., module]
+                    if (!run_import(read_name(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
+
+                // 异常
+                case OpCode::THROW: {
+                    // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
+                    // unwind。
+                    current_->raise(current_->pop());
+                    goto unwind_check;
+                }
+
+                // 返回(exit_frame 后 frame 失效,故先取返回值与判模块体帧)
+                case OpCode::RETURN: {
+                    const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
+                    // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
+                    // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
+                    // exit_frame(其后 frame 悬垂)。
+                    auto mod     = frame->module;
+                    auto fn_name = frame->closure->name()->view();
+                    current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
+                    if (current_->frames().empty()) {
+                        return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
+                    }
+                    if (fn_name == kModuleEntryName) { // 模块体帧:名字经 intern 驻留,短串逐 RETURN 比较开销可忽略
+                        current_->push(Value::from_obj(mod));
+                    } else {
+                        current_->push(ret);
+                    }
+                    break;
+                }
+
+                default:
+                    UNREACHABLE();
+            }
+            continue; // 正常路径:break 出 switch 后回循环顶,不落 unwind_check
+        // unwind 收口:错误站点(raise / run_* 返 false)统一跳此。未捕获 -> 物化 Error 终止
+        // 循环;已派发 handler -> 落回循环尾、回循环顶重取帧。标签体不引用 frame(坑 #11)。
+        unwind_check:
+            if (auto u = unwind()) {
+                return runtime_err(std::move(*u));
+            }
         }
     }
-}
-
-#undef TARGET
-#undef TRACE_DISPATCH
-#undef DISPATCH
 
 } // namespace aria

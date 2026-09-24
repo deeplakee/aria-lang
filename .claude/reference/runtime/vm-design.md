@@ -215,6 +215,16 @@ if (obj->fn()(*this, slots)) {
 
 **性能注记**:Wren 以 C 局部寄存器缓存 frame/ip/stackStart 换取每指令速度,代价是切换须显式同步;aria 目前反其道(全堆驻留,切换零成本,每指令多几次内存载入)。若将来测得热路径受损,可引入「指令内工作副本 + 指令边界写回」的缓存--注意快照的正确形态是**指令级 + 显式同步点**,而非「整个 `dispatch_loop` 生命期的入口快照」(后者已废弃,见 runtime.md)。
 
+### 4.10 派发策略:单 switch 跳表(computed goto 实测后弃用)
+
+`dispatch_loop` 保持单一 switch,由编译器 Lower 成单点跳表派发。曾落地过 computed goto 双形态(`TARGET`/`DISPATCH` 宏 + 标签地址跳表,CMake 开关 `ARIA_USE_COMPUTED_GOTO`,机制见 commit 264acab,本批已删),并在 Apple Silicon + clang 上做了两基准 A/B 与二进制取证,结论:
+
+- **clang 系优化器会把全部派发尾尾合并成共享 trampoline,per-site 间接分支在二进制里根本不存在**;而 indirectbr 的 CFG 语义又迫使优化器在共享派发点做「全状态广播」(把常驻状态复制进大量寄存器与栈槽),代码体量与每派发指令数双增,实测显著更慢。逐站点唯一指令可强制保住 per-site 分支,但真 per-site 也不赢--现代宽核的分支预测对单一跳表已无余利可挖。
+- **GCC 系能兑现 per-site 且无广播成本,派发热路径确有小胜**;但其 switch 被编成比较链、基线本身弱,语言级(整程序)收益微小且在浮点重型负载上大幅回退,绝对水平仍全面落后 clang 的 switch 构建,不足以养双形态基础设施。
+- CPython/Lua 同为「switch 与 computed goto 两形态按编译器条件择一」,其保留 computed goto 的前提是主场 GCC 上有两位数收益;aria 实测不存在这个前提。
+
+结论:**默认恒为 switch 形态**;若未来主平台/主编译器变化且实测 computed goto 净赢,从 264acab 复活机制再评估。测量原始数据与取证细节见仓库根 `computed-goto-bench-ab.md`(测量工件,不入库)。
+
 ## 5. 早期简化(M1 的刻意收敛,均已演化)
 
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。当时的收敛项现状:

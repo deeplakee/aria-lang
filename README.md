@@ -143,15 +143,6 @@ cmake --build build/tagvalue --target aria_tests -j
 ctest --test-dir build/tagvalue --output-on-failure
 ```
 
-VM 主循环派发默认走 switch；computed goto（labels-as-values 跳转表，与 switch 形态共用同一份
-handler 源）默认关闭，验证时另配构建目录（不支持的编译器会自动回退 switch）：
-
-```sh
-cmake -S . -B build/goto -DARIA_USE_COMPUTED_GOTO=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/goto --target aria_tests -j
-ctest --test-dir build/goto --output-on-failure
-```
-
 ## 实现
 
 源码到执行的路径是 `Lexer` → `Parser` → `AstVisitor`（`CodeGen` 单遍产出 `CodeUnit`）→ `AriaVM` 主循环。

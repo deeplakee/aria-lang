@@ -94,7 +94,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 指令子集
 
-指令 handler（`TARGET` 标签，回退形态即 `case`）与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），回退形态未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 handler 语义见 `AriaVM.cpp` dispatch_loop（handler 注释即契约）。**派发双形态**：CMake `ARIA_USE_COMPUTED_GOTO`（默认 OFF）开 computed goto -- `TARGET(name)` 是 handler 标签、`DISPATCH()` 是「重取帧 + 记 last_ip + trace + 经 `kDispatchTable`（注册表 X-macro 同源展开，住函数内）跳转」一体的取指点，每 handler 尾部各带一份；回退形态（编译器无 labels-as-values 时亦自动回退）`TARGET`/`DISPATCH` 退化为 case 标签与 break，结构同既有单 switch。两形态 handler 源单一、行为等价；`DISPATCH()` 之后与 `unwind_check` 标签体不得引用 frame（坑 #11）。本层只需记住的跨文件约定：
+指令 case 与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 case 语义见 `AriaVM.cpp` dispatch_loop（case 注释即契约）。本层只需记住的跨文件约定：
 
 - **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert/clock 经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
 - **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`，非对象左值委托 `run_binary_numeric<Op>`，对象左值经 tag 判定取本对象的 `Object::op_*_impl` 再 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`）；取不到的措辞随宿主。`+` 与四个比较算子的域 = 数值 ∪ 侧为 String（String 的 5 个 override 直给实现格，拼接经驻留池、比较按无符号字节序，见 object.md ②）。
@@ -130,7 +130,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`
 
-宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 取 opcode 前（回退形态在主循环顶、computed goto 形态在 `DISPATCH` 宏内；此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*current_)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `println` 的 stdout 分流）：① `[trace] <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `format_value_debug` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`format_value_debug` 不用 `format_value`**：后者对 Obj 走可重载的虚 `Object::to_string()`，在 `dispatch_loop` 内逐指令调用会重入 VM 致无限递归；故对 Obj 走虚 `debug_repr()`（override 契约 = 纯 C++ 惰性渲染，绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp`）。函数常态编译，关闭时无调用点、零开销。
+宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 主循环顶取 opcode 前（此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*current_)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `println` 的 stdout 分流）：① `[trace] <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `format_value_debug` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`format_value_debug` 不用 `format_value`**：后者对 Obj 走可重载的虚 `Object::to_string()`，在 `dispatch_loop` 内逐指令调用会重入 VM 致无限递归；故对 Obj 走虚 `debug_repr()`（override 契约 = 纯 C++ 惰性渲染，绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp`）。函数常态编译，关闭时无调用点、零开销。
 
 ## VM 异常通道（throw/catch）
 
@@ -151,7 +151,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 闭环与无 Result 直报形态
 
-- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步（raise / run_* 返 false 后显式 `goto`）、与 `CALL` 失败善后同形。检查收口在循环尾单一标签 `unwind_check`：`unwind` 返有值 `Error` 即 `return runtime_err(std::move(err))` 出栈，返 `nullopt`（命中 handler，帧栈已 truncate）则落回循环尾、经循环顶取指重取帧；正常路径回退形态 `break` 出 switch 后经 `continue` 跳过标签、computed goto 形态就地取指跳表，皆不落标签（**取指点之后不得新增引用 frame 的代码**，标签体同守，该前提钉在 dispatch_loop 循环顶注释）。
+- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步（raise / run_* 返 false 后显式 `goto`）、与 `CALL` 失败善后同形。检查收口在循环尾单一标签 `unwind_check`：`unwind` 返有值 `Error` 即 `return runtime_err(std::move(err))` 出栈，返 `nullopt`（命中 handler，帧栈已 truncate）则落回循环尾、回循环顶重取帧；正常路径 `break` 出 switch 后经 `continue` 跳过标签（**switch 之后不得新增引用 frame 的代码**，标签体同守，该前提钉在 dispatch_loop 循环顶注释）。
 - 9 个算术/比较 case 经 `run_binary_operator<Op>`（bool 契约同 `call_value`）；`NEGATE`/`LOAD|STORE_GLOBAL` 解析失败经 `raise` 就地装箱，`IMPORT` 解析失败在 `run_import` 经 `fail` 同源装箱返 false，`THROW` 弹值存原值，`CALL`/`load_module` 失败载荷已在寄存器，随后一律 `unwind()` 查表派发/物化。
 
 ### 未捕获堆栈跟踪（坑 #16）

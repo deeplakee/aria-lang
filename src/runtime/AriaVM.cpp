@@ -56,12 +56,12 @@ namespace aria {
         }
 
         // 读 1 字节操作数(假定字节码良构),推进 ip。
-        u8 read_u8(CallFrame& frame) noexcept { return *frame.ip++; }
+        u8 read_u8(CallFrame* frame) noexcept { return *frame->ip++; }
 
         // 读 2 字节小端 u16 操作数(假定字节码良构),推进 ip。拼装走 util::make_u16。
-        u16 read_u16(CallFrame& frame) noexcept {
-            const u16 value = util::make_u16(frame.ip[0], frame.ip[1]);
-            frame.ip += 2;
+        u16 read_u16(CallFrame* frame) noexcept {
+            const u16 value = util::make_u16(frame->ip[0], frame->ip[1]);
+            frame->ip += 2;
             return value;
         }
 
@@ -69,9 +69,9 @@ namespace aria {
         // 良构前提:该常量必为经 intern 驻留的 ObjString*(编译期保证)。故此处不二次校验,
         // 直接 as_obj 取 ObjString*(若编译期出错,后续按 intern 同指针查表会查不到,
         // 属编译器 bug 而非运行期可恢复错)。供 DEF/LOAD/STORE_GLOBAL 与 IMPORT 复用。
-        ObjString* read_name(CallFrame& frame) noexcept {
+        ObjString* read_name(CallFrame* frame) noexcept {
             const auto idx = read_u16(frame);
-            return Object::as<ObjString>(frame.unit->constants[idx].as_obj());
+            return Object::as<ObjString>(frame->unit->constants[idx].as_obj());
         }
 
         // 把 import 串(specifier)解析为命中文件的绝对规范路径(模块表键 = weakly_canonical
@@ -972,8 +972,8 @@ namespace aria {
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return;CALL/IMPORT 切帧后
             // break 回循环顶重取)。取指前记本帧指令起始指针(last_ip):报错行号锚点,unwind
             // 查表同用此字段(顶帧 = 故障指令,外层帧 = CALL 站点)。
-            CallFrame& frame = current_->frames().top();
-            frame.last_ip    = frame.ip;
+            auto frame     = &current_->frames().top();
+            frame->last_ip = frame->ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
             trace_execution(current_);
@@ -988,7 +988,7 @@ namespace aria {
                 // 数据加载与存储
                 case OpCode::LOAD_CONST: {
                     const auto idx = read_u16(frame);
-                    current_->push(frame.unit->constants[idx]);
+                    current_->push(frame->unit->constants[idx]);
                     break;
                 }
                 case OpCode::LOAD_NIL:
@@ -1014,34 +1014,34 @@ namespace aria {
                 }
                 case OpCode::LOAD_LOCAL: {
                     const u8 slot = read_u8(frame);
-                    current_->push(frame.slots[slot]);
+                    current_->push(frame->slots[slot]);
                     break;
                 }
                 case OpCode::STORE_LOCAL: {
-                    const u8 slot     = read_u8(frame);
-                    frame.slots[slot] = current_->peek(0);
+                    const u8 slot      = read_u8(frame);
+                    frame->slots[slot] = current_->peek(0);
                     break;
                 }
                 case OpCode::LOAD_LOCAL_L: {
                     const auto slot = read_u16(frame);
-                    current_->push(frame.slots[slot]);
+                    current_->push(frame->slots[slot]);
                     break;
                 }
                 case OpCode::STORE_LOCAL_L: {
-                    const auto slot   = read_u16(frame);
-                    frame.slots[slot] = current_->peek(0);
+                    const auto slot    = read_u16(frame);
+                    frame->slots[slot] = current_->peek(0);
                     break;
                 }
                 case OpCode::LOAD_UPVALUE: {
                     // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
                     const u8 idx = read_u8(frame);
-                    current_->push(*frame.closure->upvalues()[idx]->value_slot());
+                    current_->push(*frame->closure->upvalues()[idx]->value_slot());
                     break;
                 }
                 case OpCode::STORE_UPVALUE: {
                     // peek-store 到该 upvalue:open 态写穿到栈槽,closed 态写自持。
-                    const u8 idx                                  = read_u8(frame);
-                    *frame.closure->upvalues()[idx]->value_slot() = current_->peek(0);
+                    const u8 idx                                   = read_u8(frame);
+                    *frame->closure->upvalues()[idx]->value_slot() = current_->peek(0);
                     break;
                 }
                 case OpCode::CLOSE_UPVALUE: {
@@ -1055,7 +1055,7 @@ namespace aria {
                     // 创建全局的入口)。根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v
                     // 在值栈跨分配(先 pop 则成裸局部被回收),set 返回后才 drop。
                     ObjString* name = read_name(frame);
-                    frame.module->globals().set(Value::from_obj(name), current_->peek(0));
+                    frame->module->globals().set(Value::from_obj(name), current_->peek(0));
                     current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
@@ -1064,7 +1064,7 @@ namespace aria {
                     // 皆未命中 -> UndefinedVariable。push 先写栈再 grow,载荷已入栈后方可能 collect。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
-                    auto        entry = frame.module->globals().find(key);
+                    auto        entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
                         entry = builtins_.find(key); // 回退 builtins_
                         if (entry == nullptr) {
@@ -1083,7 +1083,7 @@ namespace aria {
                     // 隐式创建)。无分配。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
-                    const auto  entry = frame.module->globals().find(key);
+                    const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
                         raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                         if (auto u = unwind()) {
@@ -1133,7 +1133,7 @@ namespace aria {
                 case OpCode::LOAD_THIS_FIELD: {
                     // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
                     // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。
-                    auto inst = try_obj<ObjInstance>(frame.slots[0]);
+                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
                     ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
                     if (const auto result = inst->load_field(*this, read_name(frame))) {
                         current_->push(*result); // [] -> [v]
@@ -1147,7 +1147,7 @@ namespace aria {
                 case OpCode::STORE_THIS_FIELD: {
                     // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
                     // false 分支为契约透传防御形态,实例路径不可达)。
-                    auto inst = try_obj<ObjInstance>(frame.slots[0]);
+                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
                     ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
                     if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
                         if (auto u = unwind()) {
@@ -1299,20 +1299,20 @@ namespace aria {
                 // 偏移以读完操作数后的 ip 为基准,同 Disassembler 解码约定)
                 case OpCode::JUMP: {
                     const u16 off = read_u16(frame);
-                    frame.ip += off;
+                    frame->ip += off;
                     break;
                 }
                 case OpCode::JUMP_TRUE: {
                     const u16 off = read_u16(frame);
                     if (is_truthy(current_->pop())) {
-                        frame.ip += off;
+                        frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_TRUE_OR_POP: {
                     const u16 off = read_u16(frame);
                     if (is_truthy(current_->peek(0))) {
-                        frame.ip += off; // 命中:不弹,被测值即结果
+                        frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
                         current_->drop(1); // 落空:弹掉
                     }
@@ -1321,14 +1321,14 @@ namespace aria {
                 case OpCode::JUMP_FALSE: {
                     const u16 off = read_u16(frame);
                     if (!is_truthy(current_->pop())) {
-                        frame.ip += off;
+                        frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE_OR_POP: {
                     const u16 off = read_u16(frame);
                     if (!is_truthy(current_->peek(0))) {
-                        frame.ip += off; // 命中:不弹,被测值即结果
+                        frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
                         current_->drop(1); // 落空:弹掉
                     }
@@ -1336,8 +1336,8 @@ namespace aria {
                 }
                 case OpCode::JUMP_BACK: {
                     const u16 off = read_u16(frame);
-                    frame.ip -= off;
-                    // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 引用跨调用有效。
+                    frame->ip -= off;
+                    // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 指针跨调用有效。
                     gc_.maybe_collect();
                     break;
                 }
@@ -1363,14 +1363,14 @@ namespace aria {
                     // 根安全(「栈即根」):闭包建成立即压栈,desc 循环内 new_upvalue 顶 maybe_collect
                     // 不再威胁闭包,免守卫。
                     const auto idx     = read_u16(frame);
-                    const auto fn      = Object::as<ObjFunction>(frame.unit->constants[idx].as_obj());
+                    const auto fn      = Object::as<ObjFunction>(frame->unit->constants[idx].as_obj());
                     auto       closure = new_closure(gc_, fn);
                     current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {
                         if (is_local) {
-                            closure->add_upvalue(current_->capture_upvalue(gc_, frame.slots + index));
+                            closure->add_upvalue(current_->capture_upvalue(gc_, frame->slots + index));
                         } else {
-                            closure->add_upvalue(frame.closure->upvalues()[index]);
+                            closure->add_upvalue(frame->closure->upvalues()[index]);
                         }
                     }
                     break;
@@ -1501,14 +1501,14 @@ namespace aria {
                     break;
                 }
 
-                // 返回(exit_frame 后 frame 引用作废,故先取返回值与判模块体帧)
+                // 返回(exit_frame 后 frame 失效,故先取返回值与判模块体帧)
                 case OpCode::RETURN: {
                     const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
                     // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
                     // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
-                    // exit_frame(其后 frame 引用悬垂)。
-                    auto mod     = frame.module;
-                    auto fn_name = frame.closure->name()->view();
+                    // exit_frame(其后 frame 悬垂)。
+                    auto mod     = frame->module;
+                    auto fn_name = frame->closure->name()->view();
                     current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
                     if (current_->frames().empty()) {
                         return ret; // 顶层(主入口 <main>)返回:返回值为程序结果

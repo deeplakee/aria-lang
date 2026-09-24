@@ -198,6 +198,13 @@ endif()
 enable_testing()
 
 include(FetchContent)
+# 本地副本优先：external/googletest 存在时离线复用，配置不再联网拉取（该目录不入库，
+# 见 .gitignore；首次使用或版本更新时从 build/_deps/googletest-src 复制一份即可）。
+# 内容必须与上方 URL 锁定的 v1.14.0 一致--换版本时删除旧副本重新拉取。
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest/CMakeLists.txt")
+    set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest" CACHE PATH
+            "googletest 本地源码目录（FetchContent 离线复用）")
+endif ()
 FetchContent_Declare(
         googletest
         URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip

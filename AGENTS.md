@@ -147,7 +147,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 测试
 
-用 Google Test，位于 `tests/`（按 `tests/<module>/` 分目录）。GTest 通过 `FetchContent_Declare`（CMakeLists.txt 末尾）下载，配置时联网拉取 `v1.14.0`。配置 / 构建 / 运行命令见 `README.md`「测试与基准」。
+用 Google Test，位于 `tests/`（按 `tests/<module>/` 分目录）。GTest 由 `FetchContent_Declare`（CMakeLists.txt 末尾）提供，锁定 `v1.14.0`：`external/googletest/`（本地副本，不入库）存在时离线复用、配置秒级完成；缺失时退回联网下载（首次或换版本时从任一构建目录的 `build/_deps/googletest-src` 复制一份即可，内容须与锁定版本一致）。配置 / 构建 / 运行命令见 `README.md`「测试与基准」。
 
 - 新增测试：在 `tests/<module>/` 加 `test_<module>.cpp`，并在 `tests/CMakeLists.txt` 的 `aria_tests` 源列表里登记。
 - 测试链接 `aria_core` + `gtest_main`，用 `gtest_discover_tests` 注册到 ctest。

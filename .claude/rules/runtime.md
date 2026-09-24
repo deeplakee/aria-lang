@@ -151,7 +151,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 闭环与无 Result 直报形态
 
-- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步、与 `CALL` 失败善后同形。各站点 `unwind` 返 somed `Error` 即 `return runtime_err(std::move(err))` 出栈，返 `nullopt`（命中 handler，帧栈已 truncate）则 `break` 回循环顶重取帧（switch 即整个 while 体；**switch 之后不得新增引用 frame 的代码**，该前提钉在 dispatch_loop 循环顶注释）。
+- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步（raise / run_* 返 false 后显式 `goto`）、与 `CALL` 失败善后同形。检查收口在循环尾单一标签 `unwind_check`：`unwind` 返有值 `Error` 即 `return runtime_err(std::move(err))` 出栈，返 `nullopt`（命中 handler，帧栈已 truncate）则落回循环尾、回循环顶重取帧；正常路径 `break` 出 switch 后经 `continue` 跳过标签（**switch 之后不得新增引用 frame 的代码**，标签体同守，该前提钉在 dispatch_loop 循环顶注释）。
 - 9 个算术/比较 case 经 `run_binary_operator<Op>`（bool 契约同 `call_value`）；`NEGATE`/`LOAD|STORE_GLOBAL` 解析失败经 `raise` 就地装箱，`IMPORT` 解析失败在 `run_import` 经 `fail` 同源装箱返 false，`THROW` 弹值存原值，`CALL`/`load_module` 失败载荷已在寄存器，随后一律 `unwind()` 查表派发/物化。
 
 ### 未捕获堆栈跟踪（坑 #16）

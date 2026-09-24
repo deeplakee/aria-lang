@@ -978,9 +978,11 @@ namespace aria {
             // 取 opcode 前打印执行状态(见 trace_execution)。
             trace_execution(current_);
 #endif
-            // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:一律 break 回循环顶 -- unwind
-            // 返 Error 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废。
-            // **switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提)。
+            // 各 case 按 bytecode/code.hpp 枚举序排列。退出约定:成功路径一律 break 回循环顶;
+            // 错误站点(raise / run_* 返 false)一律 goto unwind_check -- 收口处 unwind 返 Error
+            // 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废,落回循环顶
+            // 重取。**switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提,unwind_check
+            // 标签体同守)。
             switch (auto op = static_cast<OpCode>(read_u8(frame))) {
                 case OpCode::HALT:
                     return Value::nil_val();
@@ -1069,10 +1071,7 @@ namespace aria {
                         entry = builtins_.find(key); // 回退 builtins_
                         if (entry == nullptr) {
                             raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
-                            if (auto u = unwind()) {
-                                return runtime_err(std::move(*u));
-                            }
-                            break;
+                            goto unwind_check;
                         }
                     }
                     current_->push(entry->value);
@@ -1086,10 +1085,7 @@ namespace aria {
                     const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
                         raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     entry->value = current_->peek(0);
                     break;
@@ -1097,37 +1093,25 @@ namespace aria {
                 case OpCode::LOAD_FIELD:
                     // name:u16;[obj] -> [v]
                     if (!run_load_field(read_name(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_FIELD:
                     // name:u16;[obj, v] -> [v](单槽下移留 v)
                     if (!run_store_field(read_name(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_INDEX:
                     // [obj, idx] -> [v]
                     if (!run_load_index()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_INDEX:
                     // [obj, idx, v] -> [v](peek-store,值下移两格)
                     if (!run_store_index()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_THIS_FIELD: {
@@ -1139,10 +1123,7 @@ namespace aria {
                         current_->push(*result); // [] -> [v]
                         break;
                     }
-                    if (auto u = unwind()) {
-                        return runtime_err(std::move(*u));
-                    }
-                    break;
+                    goto unwind_check;
                 }
                 case OpCode::STORE_THIS_FIELD: {
                     // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
@@ -1150,9 +1131,7 @@ namespace aria {
                     auto inst = try_obj<ObjInstance>(frame->slots[0]);
                     ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
                     if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
+                        goto unwind_check;
                     }
                     break; // 值留栈(peek-store),this 不经栈
                 }
@@ -1186,75 +1165,48 @@ namespace aria {
                 // 比较
                 case OpCode::GREATER:
                     if (!run_binary_operator<OpCode::GREATER>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
                     if (!run_binary_operator<OpCode::GREATER_EQUAL>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::LESS:
                     if (!run_binary_operator<OpCode::LESS>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::LESS_EQUAL:
                     if (!run_binary_operator<OpCode::LESS_EQUAL>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 // 算术(五算子共用执行体 run_binary_operator)
                 case OpCode::ADD:
                     if (!run_binary_operator<OpCode::ADD>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::SUBTRACT:
                     if (!run_binary_operator<OpCode::SUBTRACT>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::MULTIPLY:
                     if (!run_binary_operator<OpCode::MULTIPLY>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::DIVIDE:
                     if (!run_binary_operator<OpCode::DIVIDE>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::MOD:
                     if (!run_binary_operator<OpCode::MOD>()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 // 一元
@@ -1264,10 +1216,7 @@ namespace aria {
                 // 一元
                 case OpCode::NEGATE:
                     if (!run_negate()) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
 
@@ -1348,10 +1297,7 @@ namespace aria {
                     // 良构不变式:栈上必有 callee + argc 个实参。
                     ASSERT(current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
                     if (const Value callee = current_->peek(argc); !call_value(callee, argc)) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 }
@@ -1388,10 +1334,7 @@ namespace aria {
                     }
 
                     raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
-                    if (auto u = unwind()) {
-                        return runtime_err(std::move(*u));
-                    }
-                    break;
+                    goto unwind_check;
                 }
                 case OpCode::MAKE_METHOD: {
                     // name:u16;[class, closure] -> [class]:实例方法注册(静态经 MAKE_STATIC;仅收闭包
@@ -1421,28 +1364,19 @@ namespace aria {
                 case OpCode::LOAD_SUPER_FIELD:
                     // name:u16;[] -> [v]
                     if (!run_load_super_field(read_name(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::PREPARE_METHOD:
                     // name:u16;[recv] -> [recv, target]
                     if (!run_prepare_method(read_name(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::CALL_METHOD:
                     // argc:u8;[recv, target, a1..aN] -> [r]
                     if (!run_call_method(read_u8(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
                 case OpCode::MAKE_LIST: {
@@ -1472,10 +1406,7 @@ namespace aria {
                 case OpCode::MAKE_RANGE:
                     // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
                     if (!run_make_range(read_u8(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
 
@@ -1483,10 +1414,7 @@ namespace aria {
                 case OpCode::IMPORT:
                     // path:u16;[..., module]
                     if (!run_import(read_name(frame))) {
-                        if (auto u = unwind()) {
-                            return runtime_err(std::move(*u));
-                        }
-                        break;
+                        goto unwind_check;
                     }
                     break;
 
@@ -1495,10 +1423,7 @@ namespace aria {
                     // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
                     // unwind。
                     current_->raise(current_->pop());
-                    if (auto u = unwind()) {
-                        return runtime_err(std::move(*u));
-                    }
-                    break;
+                    goto unwind_check;
                 }
 
                 // 返回(exit_frame 后 frame 失效,故先取返回值与判模块体帧)
@@ -1523,6 +1448,13 @@ namespace aria {
 
                 default:
                     UNREACHABLE();
+            }
+            continue; // 正常路径:break 出 switch 后回循环顶,不落 unwind_check
+        // unwind 收口:错误站点(raise / run_* 返 false)统一跳此。未捕获 -> 物化 Error 终止
+        // 循环;已派发 handler -> 落回循环尾、回循环顶重取帧。标签体不引用 frame(坑 #11)。
+        unwind_check:
+            if (auto u = unwind()) {
+                return runtime_err(std::move(*u));
             }
         }
     }

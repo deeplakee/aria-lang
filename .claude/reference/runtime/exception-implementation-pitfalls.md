@@ -265,6 +265,8 @@ break;                                   // 命中 handler -> frame 已废,回�
 
 **终态（2026-09）**：派发站点与普通 case 统一以 `break` 退出（switch 即整个 while 体、其后无语句，与早期写法 `continue` 等效）；防御意图改由 dispatch_loop 循环顶注释钉住（switch 之后不得新增引用 `frame` 的代码）。
 
+**终态补记（2026-09-24）**：26 处站点的三行检查样板收口为循环尾单一标签 `unwind_check`（switch 后 `continue` 隔离正常路径，错误站点 `goto` 跳入；未捕获 `return`、命中 handler 落回循环尾回循环顶重取帧）。switch 之后现有标签体，仍不引用 `frame`，坑前提不变。
+
 例外（已消除，M3 前置改造）：IMPORT 内 `load_module` 已统一走寄存器--返 `ObjModule*`（`nullptr ⟺` 载荷已 raise 入 `*current_`），编译期 Error 就地 `new_exception` 原样装配箱（from_baked 语义不重烘，code+消息逐字节保真，位置语义见坑 #15/#16）、`ModuleNotFound` 经 `fail` 烘 IMPORT 站点位置，调用方 `take_error` 取出传播。M3 改造时它不再是直传残留。
 
 `call_value` 失败站点：

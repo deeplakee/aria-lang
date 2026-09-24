@@ -18,20 +18,20 @@ namespace aria {
     // 实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。实现格的规范家仍是类表(方法读路径 `"a".__add__`
     // 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的按名取实现不走寄存器:ObjInstance 的 override 经
     // AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)里的钩子名,再按名到实例/类链查表。
-#define ARIA_VALUE_REGISTER_LIST(X)                                                                                    \
-    X(ObjectClass)   /* Object 根类(def 无 super 父类;VM bootstrap 填充) */                                            \
-    X(DefaultMark)   /* 缺参印章(私有 no-op native,call_closure 垫充未传槽;不注册 builtins 用户不可达) */              \
-    X(MatchNoArm)    /* match 全臂未命中兜底异常(共享 ObjException;LOAD_REG + THROW 抛出) */                           \
-    X(IteratorClass) /* Iterator bootstrap 类(迭代器的语言方法面 has_next/next,super 挂 Object 根;纯 C++ 存取) */      \
-    X(ListClass)     /* List bootstrap 类(内置 list 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */     \
-    X(MapClass)      /* Map bootstrap 类(内置 map 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */       \
-    X(StringClass)   /* String bootstrap 类(内置 string 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */ \
-    X(RangeClass)    /* Range bootstrap 类(内置 range 的语言方法面,super 挂 Object 根;纯 C++ 存取,无字节码消费者) */   \
-    X(StringAddFn)   /* __add__ 原生,从 String 类表拷入;op_add_impl 直读本格          */                               \
-    X(StringLtFn)    /* __lt__ 原生,从 String 类表拷入;op_less_impl 直读本格          */                               \
-    X(StringLeFn)    /* __le__ 原生,从 String 类表拷入;op_less_equal_impl 直读本格    */                               \
-    X(StringGtFn)    /* __gt__ 原生,从 String 类表拷入;op_greater_impl 直读本格       */                               \
-    X(StringGeFn)    /* __ge__ 原生,从 String 类表拷入;op_greater_equal_impl 直读本格 */
+#define ARIA_VALUE_REGISTER_LIST(X)                                                                                 \
+    X(ObjectClass)   /* Object root class (base of a def with no super; filled at bootstrap) */                     \
+    X(DefaultMark)   /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \
+    X(MatchNoArm)    /* fallback exception when no match arm matches (shared ObjException; LOAD_REG + THROW) */     \
+    X(IteratorClass) /* Iterator bootstrap class (has_next/next; super is Object; C++ access only) */               \
+    X(ListClass)     /* List bootstrap class (built-in list methods; super is Object; C++ access only) */           \
+    X(MapClass)      /* Map bootstrap class (built-in map methods; super is Object; C++ access only) */             \
+    X(StringClass)   /* String bootstrap class (built-in string methods; super is Object; C++ access only) */       \
+    X(RangeClass)    /* Range bootstrap class (built-in range methods; super is Object; C++ access only) */         \
+    X(StringAddFn)   /* __add__ native, copied from the String class table; op_add_impl reads this cell          */ \
+    X(StringLtFn)    /* __lt__ native, copied from the String class table; op_less_impl reads this cell          */ \
+    X(StringLeFn)    /* __le__ native, copied from the String class table; op_less_equal_impl reads this cell    */ \
+    X(StringGtFn)    /* __gt__ native, copied from the String class table; op_greater_impl reads this cell       */ \
+    X(StringGeFn)    /* __ge__ native, copied from the String class table; op_greater_equal_impl reads this cell */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

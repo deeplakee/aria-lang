@@ -17,76 +17,76 @@ namespace aria {
     //     一行 X(名字, 拼写, 是否关键字) 即收口，名字串经 # 派生，无第二处手写。隐式连续编号，下标即 std::
     //     to_underlying(type)。第二列拼写：关键字/运算符/标点/下划线为字面拼写，字面量与 EOF 无固定拼写记空串；第三列
     //     标记该类型是否参与关键字查表（仅关键字 true）。逐值注释用块注释（行注释会吞续行符）。
-#define ARIA_TOKEN_LIST(X)                                               \
-    /* --- 特殊 --- */                                                   \
-    X(Eof, "", false)                                                    \
-    /* --- 字面量 --- */                                                 \
-    X(Integer, "", false)                                                \
-    X(Float, "", false)                                                  \
-    X(String, "", false) /* 字符串字面量（"..." / '...'），转义已解析 */ \
-    X(Identifier, "", false)                                             \
-    X(Underscore, "_", false) /* 占位/通配符 */                          \
-    /* --- 关键字 --- */                                                 \
-    X(Fun, "fun", true)     /* 函数声明 / lambda 表达式 */               \
-    X(Def, "def", true)     /* 类型/类声明（静态成员 + 实例方法） */     \
-    X(Var, "var", true)     /* 变量声明 */                               \
-    X(If, "if", true)       /* if 语句 / if 表达式 */                    \
-    X(Else, "else", true)   /* if 的 else 分支 */                        \
-    X(While, "while", true) /* while 循环 */                             \
-    X(For, "for", true)     /* for / for-in 循环 */                      \
-    X(In, "in", true)       /* for-in 遍历 */                            \
-    X(Break, "break", true)                                              \
-    X(Continue, "continue", true)                                        \
-    X(Return, "return", true)                                            \
-    X(Import, "import", true) /* 模块导入 */                             \
-    X(As, "as", true)         /* import 的别名 */                        \
-    X(Try, "try", true)       /* 异常处理 */                             \
-    X(Catch, "catch", true)                                              \
-    X(Throw, "throw", true) /* 抛出异常 */                               \
-    X(Nil, "nil", true)     /* 空值字面量 */                             \
-    X(True, "true", true)   /* 布尔真字面量 */                           \
-    X(False, "false", true) /* 布尔假字面量 */                           \
-    X(This, "this", true)   /* 当前实例 */                               \
-    X(Super, "super", true) /* 父类方法 */                               \
-    X(Match, "match", true) /* match 语句 / match 表达式 */              \
-    /* --- 运算符 --- */                                                 \
-    X(Plus, "+", false)                                                  \
-    X(Minus, "-", false)                                                 \
-    X(Star, "*", false)                                                  \
-    X(Slash, "/", false)                                                 \
-    X(Percent, "%", false)                                               \
-    X(PlusEqual, "+=", false)                                            \
-    X(MinusEqual, "-=", false)                                           \
-    X(StarEqual, "*=", false)                                            \
-    X(SlashEqual, "/=", false)                                           \
-    X(PercentEqual, "%=", false)                                         \
-    X(Equal, "=", false)                                                 \
-    X(EqualEqual, "==", false)                                           \
-    X(EqualEqualEqual, "===", false)                                     \
-    X(BangEqual, "!=", false)                                            \
-    X(BangEqualEqual, "!==", false)                                      \
-    X(Bang, "!", false)                                                  \
-    X(Greater, ">", false)                                               \
-    X(GreaterEqual, ">=", false)                                         \
-    X(Less, "<", false)                                                  \
-    X(LessEqual, "<=", false)                                            \
-    X(AndAnd, "&&", false)                                               \
-    X(OrOr, "||", false)                                                 \
-    X(PlusPlus, "++", false)                                             \
-    X(MinusMinus, "--", false)                                           \
-    X(FatArrow, "=>", false)                                             \
-    X(DotDot, "..", false) /* 区间（含上界，a..b） */                    \
-    /* --- 标点 --- */                                                   \
-    X(LeftParen, "(", false)                                             \
-    X(RightParen, ")", false)                                            \
-    X(LeftBrace, "{", false)                                             \
-    X(RightBrace, "}", false)                                            \
-    X(LeftBracket, "[", false)                                           \
-    X(RightBracket, "]", false)                                          \
-    X(Comma, ",", false)                                                 \
-    X(Colon, ":", false)                                                 \
-    X(Semicolon, ";", false)                                             \
-    X(Dot, ".", false)                                                   \
+#define ARIA_TOKEN_LIST(X)                                                                   \
+    /* --- special --- */                                                                    \
+    X(Eof, "", false)                                                                        \
+    /* --- literals --- */                                                                   \
+    X(Integer, "", false)                                                                    \
+    X(Float, "", false)                                                                      \
+    X(String, "", false) /* string literal ("..." / '...'), escapes already resolved */      \
+    X(Identifier, "", false)                                                                 \
+    X(Underscore, "_", false) /* placeholder / wildcard */                                   \
+    /* --- keywords --- */                                                                   \
+    X(Fun, "fun", true)     /* function declaration / lambda */                              \
+    X(Def, "def", true)     /* type/class declaration (static members + instance methods) */ \
+    X(Var, "var", true)     /* variable declaration */                                       \
+    X(If, "if", true)       /* if statement / if expression */                               \
+    X(Else, "else", true)   /* else branch of if */                                          \
+    X(While, "while", true) /* while loop */                                                 \
+    X(For, "for", true)     /* for / for-in loop */                                          \
+    X(In, "in", true)       /* for-in iteration */                                           \
+    X(Break, "break", true)                                                                  \
+    X(Continue, "continue", true)                                                            \
+    X(Return, "return", true)                                                                \
+    X(Import, "import", true) /* module import */                                            \
+    X(As, "as", true)         /* import alias */                                             \
+    X(Try, "try", true)       /* exception handling */                                       \
+    X(Catch, "catch", true)                                                                  \
+    X(Throw, "throw", true) /* throw an exception */                                         \
+    X(Nil, "nil", true)     /* nil literal */                                                \
+    X(True, "true", true)   /* boolean true literal */                                       \
+    X(False, "false", true) /* boolean false literal */                                      \
+    X(This, "this", true)   /* current instance */                                           \
+    X(Super, "super", true) /* base class method */                                          \
+    X(Match, "match", true) /* match statement / match expression */                         \
+    /* --- operators --- */                                                                  \
+    X(Plus, "+", false)                                                                      \
+    X(Minus, "-", false)                                                                     \
+    X(Star, "*", false)                                                                      \
+    X(Slash, "/", false)                                                                     \
+    X(Percent, "%", false)                                                                   \
+    X(PlusEqual, "+=", false)                                                                \
+    X(MinusEqual, "-=", false)                                                               \
+    X(StarEqual, "*=", false)                                                                \
+    X(SlashEqual, "/=", false)                                                               \
+    X(PercentEqual, "%=", false)                                                             \
+    X(Equal, "=", false)                                                                     \
+    X(EqualEqual, "==", false)                                                               \
+    X(EqualEqualEqual, "===", false)                                                         \
+    X(BangEqual, "!=", false)                                                                \
+    X(BangEqualEqual, "!==", false)                                                          \
+    X(Bang, "!", false)                                                                      \
+    X(Greater, ">", false)                                                                   \
+    X(GreaterEqual, ">=", false)                                                             \
+    X(Less, "<", false)                                                                      \
+    X(LessEqual, "<=", false)                                                                \
+    X(AndAnd, "&&", false)                                                                   \
+    X(OrOr, "||", false)                                                                     \
+    X(PlusPlus, "++", false)                                                                 \
+    X(MinusMinus, "--", false)                                                               \
+    X(FatArrow, "=>", false)                                                                 \
+    X(DotDot, "..", false) /* range (upper bound inclusive, a..b) */                         \
+    /* --- punctuation --- */                                                                \
+    X(LeftParen, "(", false)                                                                 \
+    X(RightParen, ")", false)                                                                \
+    X(LeftBrace, "{", false)                                                                 \
+    X(RightBrace, "}", false)                                                                \
+    X(LeftBracket, "[", false)                                                               \
+    X(RightBracket, "]", false)                                                              \
+    X(Comma, ",", false)                                                                     \
+    X(Colon, ":", false)                                                                     \
+    X(Semicolon, ";", false)                                                                 \
+    X(Dot, ".", false)                                                                       \
     X(DotDotDot, "...", false)
 
 #define ARIA_TOKEN_ENUM(name, lexeme, is_keyword) name,

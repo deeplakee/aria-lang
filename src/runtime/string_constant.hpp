@@ -19,18 +19,18 @@ namespace aria {
     // 注册表用毕即 #undef(其后只剩派生常量)。逐条注释用块注释(行注释会吞续行符)。**不另生成可读名表**
     //(kValueRegisterNames 那种是给反汇编打印 LOAD_REG 操作数用的):本表无字节码消费者,故无名表,只派生
     // 表长 kStringConstantCount(与 kValueRegisterCount 同式),供 VM 预置 string_constants_ 格位。
-#define ARIA_STRING_CONSTANT_LIST(X)                            \
-    X(OpAdd, "__add__")         /* 二元 + */                    \
-    X(OpSub, "__sub__")         /* 二元 - */                    \
-    X(OpMul, "__mul__")         /* 二元 * */                    \
-    X(OpDiv, "__div__")         /* 二元 /(aria 唯一除法算子) */ \
-    X(OpMod, "__mod__")         /* 二元 % */                    \
-    X(OpLess, "__lt__")         /* 比较 < */                    \
-    X(OpLessEqual, "__le__")    /* 比较 <= */                   \
-    X(OpGreater, "__gt__")      /* 比较 > */                    \
-    X(OpGreaterEqual, "__ge__") /* 比较 >= */                   \
-    X(OpNegate, "__neg__")      /* 一元取负 */                  \
-    X(OpCall, "__call__")       /* 调用钩子 */
+#define ARIA_STRING_CONSTANT_LIST(X)                                           \
+    X(OpAdd, "__add__")         /* binary + */                                 \
+    X(OpSub, "__sub__")         /* binary - */                                 \
+    X(OpMul, "__mul__")         /* binary * */                                 \
+    X(OpDiv, "__div__")         /* binary / (aria's only division operator) */ \
+    X(OpMod, "__mod__")         /* binary % */                                 \
+    X(OpLess, "__lt__")         /* comparison < */                             \
+    X(OpLessEqual, "__le__")    /* comparison <= */                            \
+    X(OpGreater, "__gt__")      /* comparison > */                             \
+    X(OpGreaterEqual, "__ge__") /* comparison >= */                            \
+    X(OpNegate, "__neg__")      /* unary negation */                           \
+    X(OpCall, "__call__")       /* call hook */
 
 #define ARIA_STRING_CONSTANT_ENUM(name, spelling) name,
     enum class StringConstant : u8 { ARIA_STRING_CONSTANT_LIST(ARIA_STRING_CONSTANT_ENUM) };

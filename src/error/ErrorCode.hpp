@@ -39,70 +39,70 @@ namespace aria {
 // 下标即 std::to_underlying(code)。逐值注释用块注释（行注释会吞续行符）。
 #define ARIA_ERROR_LIST(X)                                                                                       \
     X(Ok, Ok)                                                                                                    \
-    /* ========== SYNTAX ERROR（词法 / 语法阶段）========== */                                                   \
-    /* --- 词法 --- */                                                                                           \
-    X(UnterminatedString, Syntax) /* 字符串未闭合 / 跨行 */                                                      \
-    X(InvalidEscape, Syntax)      /* 未识别转义（无 \x；\u{} 非法） */                                           \
-    X(InvalidNumber, Syntax)      /* 数字字面量非法（前缀 / 下划线位置 / 空 mantissa 等） */                     \
-    X(InvalidCharacter, Syntax)   /* 无法归入任何 token 的字符 */                                                \
-    /* --- 语法 --- */                                                                                           \
-    X(UnexpectedEof, Syntax)      /* 源码提前结束 */                                                             \
-    X(ExpectedExpression, Syntax) /* 期待表达式却遇到他物 */                                                     \
-    X(ExpectedIdentifier, Syntax) /* 期待标识符 */                                                               \
-    X(ExpectedToken, Syntax)      /* 期待特定符号/关键字（具体对象由报错信息补充） */                            \
-    X(InvalidPattern, Syntax)     /* 解构模式结构非法（rest 非末尾、..._ 等） */                                 \
-    X(VarargsNotLast, Syntax)     /* ... 必须位于参数列表末尾 */                                                 \
-    X(DefaultAfterPlain, Syntax)  /* 默认参数后不得再有无默认参数（文法强制顺序） */                             \
-    /* ========== SEMANTIC ERROR（语义分析阶段，多为文法明确推迟到语义阶段的检查）========== */                  \
-    X(InvalidAssignmentTarget, Semantic) /* 赋值左值须为 identifier / obj.field / obj[index] */                  \
-    X(SuperOutsideMethod, Semantic)      /* super 出现在非方法上下文 */                                          \
-    X(ThisOutsideClass, Semantic)        /* this 出现在类外 */                                                   \
-    X(BreakOutsideLoop, Semantic)        /* break 须在循环内 */                                                  \
-    X(ContinueOutsideLoop, Semantic)     /* continue 须在循环内 */                                               \
-    X(TryWithoutHandler, Semantic)       /* try 须有 catch */                                                    \
-    X(UnreachableArm, Semantic)          /* match 通配臂后仍有臂（死臂；_ 恒末臂、至多一条） */                  \
-    X(DuplicateParam, Semantic)          /* 同函数形参重名 */                                                    \
-    X(UndefinedType, Semantic)           /* 引用未定义的类名 */                                                  \
-    X(RedefinedVariable, Semantic)       /* 同作用域重复定义变量 */                                              \
-    X(RedefinedClass, Semantic)          /* 重复定义类 */                                                        \
-    X(NumberOutOfRange, Semantic)        /* 整数字面量超出 i48 范围（溢出，文法约定语义阶段处理） */             \
-    /* ========== RUNTIME ERROR（运行时阶段）========== */                                                       \
-    X(TypeMismatch, Runtime)       /* 运算/操作的类型不符（如 number + 非数） */                                 \
-    X(InvalidOperand, Runtime)     /* 一元操作数非法（如对非数取负） */                                          \
-    X(IndexOutOfBounds, Runtime)   /* 下标/切片/区间越界（list/string 下标、切片、substring、空表 pop 等） */    \
-    X(DivisionByZero, Runtime)     /* 除零 */                                                                    \
-    X(ModuloByZero, Runtime)       /* 模零 */                                                                    \
-    X(KeyError, Runtime)           /* map 键不存在 */                                                            \
-    X(EmptyPattern, Runtime)       /* 空模式串（split 分隔符 / replace 匹配串为空） */                           \
-    X(UndefinedVariable, Runtime)  /* 引用未定义的变量/函数（运行期查表 miss） */                                \
-    X(UndefinedProperty, Runtime)  /* 对象无该字段/方法 */                                                       \
-    X(CallNonCallable, Runtime)    /* 调用非函数值 */                                                            \
-    X(WrongArity, Runtime)         /* 实参数量不符（含默认参数/varargs 填充后） */                               \
-    X(NotIterable, Runtime)        /* forIn 目标不可遍历 */                                                      \
-    X(IteratorProtocol, Runtime)   /* has_next/next 缺失或返回类型错 */                                          \
-    X(IterationExhausted, Runtime) /* 迭代器耗尽后调用 next */                                                   \
-    X(MatchNoArm, Runtime)         /* match 无匹配分支且无 "_" 兜底 */                                           \
-    X(SuperNoBaseClass, Runtime)   /* super 无父类可访问 */                                                      \
-    X(UncaughtException, Runtime)  /* 用户 throw 的值未被 catch 捕获 */                                          \
-    X(StackOverflow, Runtime)      /* 递归过深 */                                                                \
-    X(CircularImport, Runtime)     /* import 形成循环 */                                                         \
-    /* ========== INTERNAL ERROR（解释器不变式）========== */                                                    \
-    X(Unreachable, Internal)     /* 逻辑上不可达的代码被执行 */                                                  \
-    X(AssertionFailed, Internal) /* 内部断言失败 */                                                              \
-    X(InvalidBytecode, Internal) /* codeunit 损坏 / 非法操作码 */                                                \
-    X(StackUnderflow, Internal)  /* VM 栈失衡（弹出超过已压入） */                                               \
-    X(InvalidState, Internal)    /* VM 处于非法内部状态 */                                                       \
-    /* ========== RESOURCE ERROR（资源 / 环境）========== */                                                     \
-    X(OutOfMemory, Resource)       /* GC 分配失败 */                                                             \
-    X(FileReadFailed, Resource)    /* 入口源文件读取失败；import 侧读盘失败归 ModuleNotFound */                   \
-    X(ModuleNotFound, Resource)    /* import 的模块不存在 */                                                     \
-    X(CodeUnitTooLarge, Resource)  /* 常量/指令数超限 */                                                         \
-    X(TooManyLocals, Resource)     /* 局部变量数超限 */                                                          \
-    X(TooManyArguments, Resource)  /* 单次调用实参数超限（CALL 操作数 u8 上限 255） */                           \
-    X(TooManyParameters, Resource) /* 函数形参数超限（arity u8 上限 255） */                                     \
-    X(TooManyUpvalues, Resource)   /* upvalue 数超限 */                                                          \
-    X(TooManyElements, Resource)   /* 集合字面量元素数超限（MAKE_LIST/MAKE_MAP 操作数 u16 上限） */              \
-    X(SourceTooLarge, Resource)    /* 单个源文件过大 */
+    /* ========== SYNTAX ERROR (lexer / parser stage) ========== */                                              \
+    /* --- lexer --- */                                                                                          \
+    X(UnterminatedString, Syntax)        /* string not closed / crosses a line break */                          \
+    X(InvalidEscape, Syntax)             /* unknown escape (no \x; malformed \u{}) */                            \
+    X(InvalidNumber, Syntax)             /* malformed number literal (base prefix, underscores, mantissa) */     \
+    X(InvalidCharacter, Syntax)          /* character that starts no token */                                    \
+                                         /* --- parser --- */                                                    \
+    X(UnexpectedEof, Syntax)             /* source ends early */                                                 \
+    X(ExpectedExpression, Syntax)        /* expression expected, something else found */                         \
+    X(ExpectedIdentifier, Syntax)        /* identifier expected */                                               \
+    X(ExpectedToken, Syntax)             /* expected symbol or keyword (named by the message) */                 \
+    X(InvalidPattern, Syntax)            /* malformed destructuring pattern (rest not last, ..._) */             \
+    X(VarargsNotLast, Syntax)            /* '...' must be the last parameter */                                  \
+    X(DefaultAfterPlain, Syntax)         /* no plain parameter after a defaulted one */                          \
+                                         /* ========== SEMANTIC ERROR (checks the grammar defers) ========== */  \
+    X(InvalidAssignmentTarget, Semantic) /* lvalue must be identifier / obj.field / obj[index] */                \
+    X(SuperOutsideMethod, Semantic)      /* super outside a method */                                            \
+    X(ThisOutsideClass, Semantic)        /* this outside a class */                                              \
+    X(BreakOutsideLoop, Semantic)        /* break outside a loop */                                              \
+    X(ContinueOutsideLoop, Semantic)     /* continue outside a loop */                                           \
+    X(TryWithoutHandler, Semantic)       /* try without a catch clause */                                        \
+    X(UnreachableArm, Semantic)          /* arm after the '_' arm (dead arm; '_' comes last, at most once) */    \
+    X(DuplicateParam, Semantic)          /* parameter name used twice in one function */                         \
+    X(UndefinedType, Semantic)           /* class name that is not defined */                                    \
+    X(RedefinedVariable, Semantic)       /* variable defined twice in one scope */                               \
+    X(RedefinedClass, Semantic)          /* class defined twice */                                               \
+    X(NumberOutOfRange, Semantic)        /* integer literal beyond i48 (the grammar defers overflow here) */     \
+                                         /* ========== RUNTIME ERROR (execution stage) ========== */             \
+    X(TypeMismatch, Runtime)             /* operand type mismatch (number + non-number) */                       \
+    X(InvalidOperand, Runtime)           /* bad unary operand (negating a non-number) */                         \
+    X(IndexOutOfBounds, Runtime)         /* index or slice out of bounds (list, string, substring, empty pop) */ \
+    X(DivisionByZero, Runtime)           /* division by zero */                                                  \
+    X(ModuloByZero, Runtime)             /* modulo by zero */                                                    \
+    X(KeyError, Runtime)                 /* map key missing */                                                   \
+    X(EmptyPattern, Runtime)             /* empty pattern (split separator or replace needle is empty) */        \
+    X(UndefinedVariable, Runtime)        /* name not found at runtime (variable, function or global) */          \
+    X(UndefinedProperty, Runtime)        /* receiver has no such field or method */                              \
+    X(CallNonCallable, Runtime)          /* calling a non-callable value */                                      \
+    X(WrongArity, Runtime)               /* argument count wrong (after defaults and varargs fill) */            \
+    X(NotIterable, Runtime)              /* for-in target is not iterable */                                     \
+    X(IteratorProtocol, Runtime)         /* has_next/next missing or wrongly typed */                            \
+    X(IterationExhausted, Runtime)       /* next called after the iterator was exhausted */                      \
+    X(MatchNoArm, Runtime)               /* no arm matched and no '_' fallback */                                \
+    X(SuperNoBaseClass, Runtime)         /* super with no base class */                                          \
+    X(UncaughtException, Runtime)        /* thrown value never caught */                                         \
+    X(StackOverflow, Runtime)            /* recursion too deep */                                                \
+    X(CircularImport, Runtime)           /* import cycle */                                                      \
+                                         /* ========== INTERNAL ERROR (interpreter invariants) ========== */     \
+    X(Unreachable, Internal)             /* code that should be unreachable ran */                               \
+    X(AssertionFailed, Internal)         /* internal assertion failed */                                         \
+    X(InvalidBytecode, Internal)         /* corrupt code unit or invalid opcode */                               \
+    X(StackUnderflow, Internal)          /* VM stack imbalance (popped more than pushed) */                      \
+    X(InvalidState, Internal)            /* VM in an invalid internal state */                                   \
+                                         /* ========== RESOURCE ERROR (resources / environment) ========== */    \
+    X(OutOfMemory, Resource)             /* allocation failed */                                                 \
+    X(FileReadFailed, Resource)          /* entry source file unreadable; import reads report ModuleNotFound */  \
+    X(ModuleNotFound, Resource)          /* imported module not found */                                         \
+    X(CodeUnitTooLarge, Resource)        /* too many constants or instructions */                                \
+    X(TooManyLocals, Resource)           /* too many locals */                                                   \
+    X(TooManyArguments, Resource)        /* too many arguments (CALL operand is u8) */                           \
+    X(TooManyParameters, Resource)       /* too many parameters (arity is u8) */                                 \
+    X(TooManyUpvalues, Resource)         /* too many upvalues */                                                 \
+    X(TooManyElements, Resource)         /* too many elements (MAKE_LIST/MAKE_MAP operand is u16) */             \
+    X(SourceTooLarge, Resource)          /* single source file too large */
 
 #define ARIA_ERROR_ENUM(name, category) name,
     enum class ErrorCode : u8 { ARIA_ERROR_LIST(ARIA_ERROR_ENUM) };

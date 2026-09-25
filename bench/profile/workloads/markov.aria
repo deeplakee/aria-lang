@@ -1,0 +1,110 @@
+// 真实负载:二阶马尔可夫文本模型 -- LCG 造语料后训练(词对 -> 后续词计数)再按计数加权采样
+// 生成文本。状态表 = map(「w1 w2」复合键 -> [word, count, word, count, ...] 平行数组),
+// 线性扫行更新/采样;采样序 = 行内插入序,结果可复现。规模见 sentences/gen_words。
+var sentences = 6500;   // 规模:训练句数
+var gen_words = 20000;  // 规模:生成词数
+
+var vocab = ["the", "of", "and", "a", "to", "in", "is", "it", "was", "that", "for", "time",
+             "world", "life", "mind", "light", "river", "stone", "forest", "winter", "summer",
+             "harbor", "signal", "memory", "shadow", "window", "garden", "mirror", "voyage", "silence"];
+
+var state = 12345;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+var t0 = clock();
+
+var corpus = [];
+var i = 0;
+while (i < sentences) {
+    var len = 6 + rnd(9);
+    var j = 0;
+    while (j < len) {
+        corpus.push(vocab[rnd(vocab.size())]);
+        j += 1;
+    }
+    i += 1;
+}
+
+var states = {};
+var w0 = corpus[0];
+var w1 = corpus[1];
+i = 2;
+while (i < corpus.size()) {
+    var key = w0 + " " + w1;
+    var row = states.get(key);
+    if (row == nil) {
+        row = [];
+        states[key] = row;
+    }
+    var w2 = corpus[i];
+    var found = false;
+    var p = 0;
+    while (p < row.size()) {
+        if (row[p] == w2) {
+            row[p + 1] += 1;
+            found = true;
+        }
+        p += 2;
+    }
+    if (found == false) {
+        row.push(w2);
+        row.push(1);
+    }
+    w0 = w1;
+    w1 = w2;
+    i += 1;
+}
+
+var produced = [];
+var checksum = 0;
+var g0 = corpus[0];
+var g1 = corpus[1];
+var made = 0;
+while (made < gen_words) {
+    var row = states.get(g0 + " " + g1);
+    if (row == nil) {
+        g0 = corpus[0];
+        g1 = corpus[1];
+        continue;
+    }
+    var total = 0;
+    var p = 1;
+    while (p < row.size()) {
+        total += row[p];
+        p += 2;
+    }
+    var pick = rnd(total);
+    var w = row[0];
+    p = 1;
+    while (p < row.size()) {
+        if (pick < row[p]) {
+            w = row[p - 1];
+            break;
+        }
+        pick -= row[p];
+        p += 2;
+    }
+    produced.push(w);
+    checksum = (checksum * 31 + w.size()) % 1000003;
+    g0 = g1;
+    g1 = w;
+    made += 1;
+}
+
+var seen = {};
+for (w in produced) {
+    seen[w] = 1;
+}
+
+assert(states.size() == 900);
+assert(checksum == 679528);
+assert(seen.size() == 30);
+
+var dt = clock() - t0;
+println("value states: " + str(states.size()));
+println("value checksum: " + str(checksum));
+println("value distinct: " + str(seen.size()));
+println("bench-time: " + str(dt * 1000.0) + " ms");

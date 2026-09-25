@@ -1,0 +1,148 @@
+// 真实负载:Huffman 编解码 -- LCG 按倾斜词频造文本,统计频率、有序插入队列建树、递归分配
+// 码表,逐字符编码成位串,再逐位走树解码还原,与原文逐位比对(压缩管线的完整一圈)。
+// 规模见 messages/msg_len。
+var messages = 1150;  // 规模:消息数
+var msg_len = 80;     // 每条消息字符数
+
+var letters = "etaoinshrdlucmfwypvbgkxjqz";
+var weights = [113, 90, 80, 75, 70, 67, 63, 61, 60, 43, 40, 28, 24, 22, 21, 19, 19, 18, 17, 16, 15, 13, 10, 9, 5, 2];
+
+var state = 31337;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+fun gen_char() {
+    var r = rnd(1000);
+    var acc = 0;
+    var i = 0;
+    while (i < weights.size()) {
+        acc += weights[i];
+        if (r < acc) {
+            return letters[i];
+        }
+        i += 1;
+    }
+    return letters[0];
+}
+
+def HNode {
+    init(w, ch, left, right) {
+        this.w = w;
+        this.ch = ch;
+        this.left = left;
+        this.right = right;
+    }
+    is_leaf() {
+        return this.left == nil;
+    }
+}
+
+var t0 = clock();
+
+var texts = [];
+var mi = 0;
+while (mi < messages) {
+    var parts = [];
+    var j = 0;
+    while (j < msg_len) {
+        parts.push(gen_char());
+        j += 1;
+    }
+    texts.push(parts.join(""));
+    mi += 1;
+}
+
+var freq = {};
+for (msg in texts) {
+    for (ch in msg) {
+        if (freq.has(ch)) {
+            freq[ch] += 1;
+        } else {
+            freq[ch] = 1;
+        }
+    }
+}
+
+var pq = [];
+for ([ch, n] in freq) {
+    var pos = pq.size();
+    while (pos > 0 && pq[pos - 1].w > n) {
+        pos -= 1;
+    }
+    pq.insert(pos, HNode(n, ch, nil, nil));
+}
+while (pq.size() > 1) {
+    var a = pq.remove_at(0);
+    var b = pq.remove_at(0);
+    var merged = HNode(a.w + b.w, "", a, b);
+    var pos = pq.size();
+    while (pos > 0 && pq[pos - 1].w > merged.w) {
+        pos -= 1;
+    }
+    pq.insert(pos, merged);
+}
+var root = pq[0];
+
+var codes = {};
+fun walk(node, prefix) {
+    if (node.is_leaf()) {
+        codes[node.ch] = prefix;
+        return;
+    }
+    walk(node.left, prefix + "0");
+    walk(node.right, prefix + "1");
+}
+walk(root, "");
+
+var bit_total = 0;
+var encoded = [];
+for (msg in texts) {
+    var bits = [];
+    for (ch in msg) {
+        var code = codes[ch];
+        bit_total += code.size();
+        var j = 0;
+        while (j < code.size()) {
+            bits.push(code[j]);
+            j += 1;
+        }
+    }
+    encoded.push(bits.join(""));
+}
+
+var decoded_ok = 0;
+var di = 0;
+while (di < messages) {
+    var enc = encoded[di];
+    var node = root;
+    var out = [];
+    var i = 0;
+    while (i < enc.size()) {
+        if (enc[i] == "0") {
+            node = node.left;
+        } else {
+            node = node.right;
+        }
+        if (node.is_leaf()) {
+            out.push(node.ch);
+            node = root;
+        }
+        i += 1;
+    }
+    if (out.join("") == texts[di]) {
+        decoded_ok += 1;
+    }
+    di += 1;
+}
+
+assert(codes.size() == 26);
+assert(bit_total == 395969);
+assert(decoded_ok == messages);
+
+var dt = clock() - t0;
+println("value symbols: " + str(codes.size()));
+println("value bit_total: " + str(bit_total));
+println("value decoded_ok: " + str(decoded_ok));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -1,0 +1,134 @@
+// 真实负载:模板引擎 -- 把 mustache 式模板编译成捕获片段的闭包列表(文本/变量/section 三种段,
+// section 递归编译),再对 LCG 造的订单数据反复渲染;变量段做 HTML 转义与缺失键兜底。
+// 编译一次、渲染多次,渲染段以闭包调用、map 查表与字符串拼接为主。规模见 orders/rounds。
+var orders_n = 900;  // 规模:订单数
+var rounds = 20;     // 规模:渲染轮数
+
+var state = 2024;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+fun esc_html(s) {
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+}
+
+fun lookup(d, name) {
+    if (d.has(name)) {
+        return d.get(name);
+    }
+    return nil;
+}
+
+fun find_from(src, needle, from) {
+    var hit = src.substring(from, src.size()).find(needle);
+    if (hit == nil) {
+        return nil;
+    }
+    return from + hit;
+}
+
+fun render(segs, data) {
+    var out = "";
+    for (seg in segs) {
+        out += seg(data);
+    }
+    return out;
+}
+
+fun compile(src) {
+    var segs = [];
+    var pos = 0;
+    while (true) {
+        var open = find_from(src, "{{", pos);
+        if (open == nil) {
+            var rest = src.substring(pos, src.size());
+            if (rest.size() > 0) {
+                var tail = rest;
+                segs.push(fun(d) {
+                    return tail;
+                });
+            }
+            break;
+        }
+        if (open > pos) {
+            var lit = src.substring(pos, open);
+            segs.push(fun(d) {
+                return lit;
+            });
+        }
+        var close = find_from(src, "}}", open);
+        var tag = src.substring(open + 2, close);
+        if (tag[0] == "#") {
+            var name = tag.substring(1, tag.size());
+            var endtag = "{{/" + name + "}}";
+            var end = find_from(src, endtag, close);
+            var body = compile(src.substring(close + 2, end));
+            segs.push(fun(d) {
+                var items = lookup(d, name);
+                if (items == nil) {
+                    return "";
+                }
+                var out = "";
+                for (item in items) {
+                    out += render(body, item);
+                }
+                return out;
+            });
+            pos = end + endtag.size();
+        } else {
+            var name2 = tag;
+            segs.push(fun(d) {
+                var v = lookup(d, name2);
+                if (v == nil) {
+                    return "";
+                }
+                return esc_html(str(v));
+            });
+            pos = close + 2;
+        }
+    }
+    return segs;
+}
+
+var t0 = clock();
+
+var item_names = ["widget", "gadget", "cable", "mount", "panel", "sensor"];
+var buyers = ["acme", "globex", "initech", "umbrella", "stark", "wayne"];
+var orders = [];
+var i = 0;
+while (i < orders_n) {
+    var items = [];
+    var n = 1 + rnd(4);
+    var j = 0;
+    while (j < n) {
+        items.push({ "name": item_names[rnd(item_names.size())], "qty": 1 + rnd(9), "price": 5 + rnd(200) });
+        j += 1;
+    }
+    orders.push({ "id": 1000 + i, "customer": buyers[rnd(buyers.size())], "items": items });
+    i += 1;
+}
+
+var tpl_invoice = compile("Invoice #{{id}} -- {{customer}}\n{{#items}}  {{name}} x{{qty}} @ {{price}}\n{{/items}}");
+var tpl_receipt = compile("Receipt {{id}} ({{customer}}): {{#items}}{{qty}}x{{name}};{{/items}}");
+var tpl_summary = compile("Summary {{customer}} {{missing_key}} {{#items}}{{name}},{{/items}}");
+
+var total = 0;
+var r = 0;
+while (r < rounds) {
+    for (o in orders) {
+        var a = render(tpl_invoice, o);
+        var b = render(tpl_receipt, o);
+        var c = render(tpl_summary, o);
+        total = (total + a.size() + b.size() + c.size()) % 1000003;
+    }
+    r += 1;
+}
+
+assert(total == 552394);
+
+var dt = clock() - t0;
+println("value checksum: " + str(total));
+println("value sample: " + str(render(tpl_invoice, orders[0]).size()));
+println("bench-time: " + str(dt * 1000.0) + " ms");

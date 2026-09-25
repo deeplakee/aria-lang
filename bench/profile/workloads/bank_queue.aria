@@ -1,0 +1,147 @@
+// 真实负载:离散事件仿真 -- 银行柜台排队(到达/开始服务/服务完成三类事件),事件队列为数组
+// 二叉堆(键 = time*1000000 + seq 保稳定序),柜员是有状态的类实例,公共排队用 FIFO 表。
+// 到达间隔与服务时长由 LCG 采样,到达率低于服务能力(队列有界)。规模见 customers_n。
+var customers_n = 78000;   // 规模:服务完的客户数
+var key_unit = 1000000;    // 时间->堆键的放大系数(seq 占低位)
+
+var state = 424242;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+def Teller {
+    init() {
+        this.busy_until = 0;
+        this.served = 0;
+    }
+}
+
+var tellers = [];
+var ti = 0;
+while (ti < 4) {
+    tellers.push(Teller());
+    ti += 1;
+}
+
+var heap = [];
+var queue = [];
+var seq = 0;
+var served = 0;
+var wait_sum = 0;
+var last_time = 0;
+
+fun heap_push(entry) {
+    heap.push(entry);
+    var i = heap.size() - 1;
+    while (i > 0) {
+        var parent = (i - 1) / 2;
+        if (heap[parent][0] <= heap[i][0]) {
+            break;
+        }
+        var tmp = heap[parent];
+        heap[parent] = heap[i];
+        heap[i] = tmp;
+        i = parent;
+    }
+}
+
+fun heap_pop() {
+    var top = heap[0];
+    var last = heap.pop();
+    if (heap.size() > 0) {
+        heap[0] = last;
+        var i = 0;
+        var n = heap.size();
+        while (true) {
+            var l = 2 * i + 1;
+            var r = l + 1;
+            var m = i;
+            if (l < n && heap[l][0] < heap[m][0]) {
+                m = l;
+            }
+            if (r < n && heap[r][0] < heap[m][0]) {
+                m = r;
+            }
+            if (m == i) {
+                break;
+            }
+            var tmp = heap[m];
+            heap[m] = heap[i];
+            heap[i] = tmp;
+            i = m;
+        }
+    }
+    return top;
+}
+
+fun start_service(idx, now) {
+    served += 1;
+    tellers[idx].served += 1;
+    var svc = 20 + rnd(60);
+    tellers[idx].busy_until = now + svc;
+    seq += 1;
+    heap_push([(now + svc) * key_unit + seq, 1, idx]);
+}
+
+fun on_arrival(key) {
+    var now = key / key_unit;
+    last_time = now;
+    var next = now + 1 + rnd(40);
+    seq += 1;
+    heap_push([next * key_unit + seq, 0, 0]);
+    var free = -1;
+    var k = 0;
+    while (k < tellers.size()) {
+        if (tellers[k].busy_until <= now) {
+            free = k;
+        }
+        k += 1;
+    }
+    if (free >= 0) {
+        start_service(free, now);
+    } else {
+        queue.push(now);
+    }
+}
+
+fun on_done(key, idx) {
+    var now = key / key_unit;
+    last_time = now;
+    if (queue.size() > 0) {
+        var arrive = queue.remove_at(0);
+        wait_sum += now - arrive;
+        start_service(idx, now);
+    }
+}
+
+var t0 = clock();
+
+seq += 1;
+heap_push([(1 + rnd(40)) * key_unit + seq, 0, 0]);
+while (served < customers_n) {
+    var ev = heap_pop();
+    match (ev[1]) {
+        0 => { on_arrival(ev[0]); }
+        _ => { on_done(ev[0], ev[2]); }
+    }
+}
+
+var load_sum = 0;
+var k2 = 0;
+while (k2 < tellers.size()) {
+    load_sum += tellers[k2].served;
+    k2 += 1;
+}
+
+assert(served == customers_n);
+assert(load_sum == served);
+assert(wait_sum == 101322);
+assert(last_time == 1604597);
+
+var dt = clock() - t0;
+println("value served: " + str(served));
+println("value wait_sum: " + str(wait_sum));
+println("value last_time: " + str(last_time));
+println("value load_sum: " + str(load_sum));
+println("bench-time: " + str(dt * 1000.0) + " ms");

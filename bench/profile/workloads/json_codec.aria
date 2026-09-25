@@ -1,0 +1,364 @@
+// 真实负载:JSON 编解码 -- 生成嵌套文档并序列化,再走「解析 -> 再序列化 -> 逐位比对」往返,
+// 外加对一批(部分截断残缺的)片段做合法性校验。解析器是手写递归下降(递归 + 字符扫描 +
+// 转义还原);序列化按 canonical JSON 约定对对象键排序(map 迭代序不保证),逐位比对即树比对;
+// 校验段用 try/catch 收非法输入。规模见 doc_count/passes。
+var doc_count = 120;  // 规模:文档数
+var passes = 20;       // 规模:往返遍数
+var snippets = 2000;  // 规模:校验片段数
+
+var state = 7;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+var names = ["id", "name", "count", "active", "tags", "meta", "score", "note", "kind", "level"];
+var words = ["core", "edge", "node", "wire", "mesh", "flux", "grid", "pulse"];
+
+fun gen_string() {
+    var n = 2 + rnd(4);
+    var out = "";
+    var i = 0;
+    while (i < n) {
+        out += words[rnd(words.size())];
+        var k = rnd(9);
+        if (k == 0) {
+            out += "\\";
+        } else if (k == 1) {
+            out += "\"";
+        } else if (k == 2) {
+            out += "\n";
+        }
+        i += 1;
+    }
+    return out;
+}
+
+fun gen_value(depth) {
+    var t = rnd(10);
+    if (depth >= 3 || t < 3) {
+        return rnd(100000);
+    }
+    if (t == 3) {
+        return gen_string();
+    }
+    if (t == 4) {
+        return nil;
+    }
+    if (t <= 6) {
+        var arr = [];
+        var n = 1 + rnd(4);
+        var i = 0;
+        while (i < n) {
+            arr.push(gen_value(depth + 1));
+            i += 1;
+        }
+        return arr;
+    }
+    var obj = {};
+    var n = 1 + rnd(3);
+    var i = 0;
+    while (i < n) {
+        obj[names[rnd(names.size())]] = gen_value(depth + 1);
+        i += 1;
+    }
+    return obj;
+}
+
+fun gen_doc() {
+    var obj = {};
+    var n = 3 + rnd(4);
+    var i = 0;
+    while (i < n) {
+        obj[names[rnd(names.size())]] = gen_value(1);
+        i += 1;
+    }
+    return obj;
+}
+
+fun escape_json(s) {
+    var out = "\"";
+    var i = 0;
+    while (i < s.size()) {
+        var c = s[i];
+        if (c == "\"" || c == "\\") {
+            out += "\\" + c;
+        } else if (c == "\n") {
+            out += "\\n";
+        } else if (c == "\t") {
+            out += "\\t";
+        } else {
+            out += c;
+        }
+        i += 1;
+    }
+    return out + "\"";
+}
+
+fun json_stringify(v) {
+    var t = type(v);
+    if (t == "Nil") {
+        return "null";
+    }
+    if (t == "Int") {
+        return str(v);
+    }
+    if (t == "String") {
+        return escape_json(v);
+    }
+    if (t == "List") {
+        var out = "[";
+        var first = true;
+        for (item in v) {
+            if (!first) {
+                out += ",";
+            }
+            first = false;
+            out += json_stringify(item);
+        }
+        return out + "]";
+    }
+    var out = "{";
+    var ks = v.keys();
+    ks.sort();
+    var first = true;
+    for (k in ks) {
+        if (!first) {
+            out += ",";
+        }
+        first = false;
+        out += escape_json(k) + ":" + json_stringify(v.get(k));
+    }
+    return out + "}";
+}
+
+def JsonParser {
+    init(src) {
+        this.src = src;
+        this.pos = 0;
+    }
+    fail(msg) {
+        throw "json: " + msg;
+    }
+    skip_ws() {
+        while (this.pos < this.src.size()) {
+            var c = this.src[this.pos];
+            if (c == " " || c == "\n" || c == "\t" || c == "\r") {
+                this.pos += 1;
+            } else {
+                break;
+            }
+        }
+    }
+    peek() {
+        if (this.pos >= this.src.size()) {
+            this.fail("unexpected end");
+        }
+        return this.src[this.pos];
+    }
+    expect(ch) {
+        if (this.peek() != ch) {
+            this.fail("expected '" + ch + "' at " + str(this.pos));
+        }
+        this.pos += 1;
+    }
+    parse_lit(word, value) {
+        var end = this.pos + word.size();
+        if (end > this.src.size() || this.src.substring(this.pos, end) != word) {
+            this.fail("bad literal");
+        }
+        this.pos = end;
+        return value;
+    }
+    parse_number() {
+        var start = this.pos;
+        while (this.pos < this.src.size()) {
+            var c = this.src[this.pos];
+            if (c == "-" || (c >= "0" && c <= "9")) {
+                this.pos += 1;
+            } else {
+                break;
+            }
+        }
+        if (this.pos == start) {
+            this.fail("bad number at " + str(start));
+        }
+        var v = this.src.substring(start, this.pos).to_int();
+        if (v == nil) {
+            this.fail("bad number at " + str(start));
+        }
+        return v;
+    }
+    parse_string() {
+        this.expect("\"");
+        var out = "";
+        while (true) {
+            if (this.pos >= this.src.size()) {
+                this.fail("unterminated string");
+            }
+            var c = this.src[this.pos];
+            if (c == "\"") {
+                this.pos += 1;
+                return out;
+            }
+            if (c == "\\") {
+                this.pos += 1;
+                var e = this.peek();
+                if (e == "n") {
+                    out += "\n";
+                } else if (e == "t") {
+                    out += "\t";
+                } else {
+                    out += e;
+                }
+                this.pos += 1;
+                continue;
+            }
+            out += c;
+            this.pos += 1;
+        }
+    }
+    parse_array() {
+        this.expect("[");
+        var arr = [];
+        this.skip_ws();
+        if (this.peek() == "]") {
+            this.pos += 1;
+            return arr;
+        }
+        while (true) {
+            arr.push(this.parse_value());
+            this.skip_ws();
+            if (this.peek() == ",") {
+                this.pos += 1;
+                continue;
+            }
+            this.expect("]");
+            return arr;
+        }
+    }
+    parse_object() {
+        this.expect("{");
+        var obj = {};
+        this.skip_ws();
+        if (this.peek() == "}") {
+            this.pos += 1;
+            return obj;
+        }
+        while (true) {
+            var key = this.parse_string();
+            this.skip_ws();
+            this.expect(":");
+            obj[key] = this.parse_value();
+            this.skip_ws();
+            if (this.peek() == ",") {
+                this.pos += 1;
+                continue;
+            }
+            this.expect("}");
+            return obj;
+        }
+    }
+    parse_value() {
+        this.skip_ws();
+        var c = this.peek();
+        if (c == "{") {
+            return this.parse_object();
+        }
+        if (c == "[") {
+            return this.parse_array();
+        }
+        if (c == "\"") {
+            return this.parse_string();
+        }
+        if (c == "n") {
+            return this.parse_lit("null", nil);
+        }
+        return this.parse_number();
+    }
+}
+
+fun parse_json(src) {
+    var p = JsonParser(src);
+    var v = p.parse_value();
+    p.skip_ws();
+    if (p.pos != src.size()) {
+        p.fail("trailing content");
+    }
+    return v;
+}
+
+fun count_nodes(v) {
+    var t = type(v);
+    if (t == "List") {
+        var n = 1;
+        for (item in v) {
+            n += count_nodes(item);
+        }
+        return n;
+    }
+    if (t == "Map") {
+        var n = 1;
+        for (k in v.keys()) {
+            n += count_nodes(v.get(k));
+        }
+        return n;
+    }
+    return 1;
+}
+
+var t0 = clock();
+
+var docs = [];
+var i = 0;
+while (i < doc_count) {
+    docs.push(json_stringify(gen_doc()));
+    i += 1;
+}
+
+var node_acc = 0;
+var roundtrip_ok = 0;
+var p = 0;
+while (p < passes) {
+    for (text in docs) {
+        var v = parse_json(text);
+        if (json_stringify(v) == text) {
+            roundtrip_ok += 1;
+        }
+        node_acc = (node_acc + count_nodes(v)) % 1000003;
+    }
+    p += 1;
+}
+
+var valid = 0;
+var invalid = 0;
+i = 0;
+while (i < snippets) {
+    var text = docs[i % doc_count];
+    var probe = text.substring(0, 1 + rnd(text.size() / 2));
+    if (rnd(3) == 0) {
+        probe = probe + "}";
+    } else if (rnd(3) == 0) {
+        probe = probe + text[0];
+    }
+    try {
+        parse_json(probe);
+        valid += 1;
+    } catch (e) {
+        invalid += 1;
+    }
+    i += 1;
+}
+
+assert(roundtrip_ok == doc_count * passes);
+assert(roundtrip_ok == 2400);
+assert(node_acc == 31480);
+assert(valid == 58);
+assert(invalid == 1942);
+
+var dt = clock() - t0;
+println("value roundtrip_ok: " + str(roundtrip_ok));
+println("value node_acc: " + str(node_acc));
+println("value valid: " + str(valid));
+println("value invalid: " + str(invalid));
+println("bench-time: " + str(dt * 1000.0) + " ms");

@@ -154,5 +154,6 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - 临时文件用 `testing::TempDir()`（gtest 提供）写入，测试结束自动清理。
 - `tests/language/` 另有 aria 自己写的脚本语料（正向 assert 收口、负向钉错误码，端到端驱动解释器，兼作 GC 压力网），跑法与约束见 `tests/language/README.md`；改语言面时它同样是验收面。
 - `bench/lang/` 是**性能**语料（同为 aria 源码，但逐文件起进程计时、可与 `.py` / `.js` / `.lua` / `.java` 端口对照）：清单与跑法见 `bench/lang/README.md`，驱动 `bench/lang/lang_bench.py`（数字是它的输出，不留档），纪律与覆盖差异的理由见 `.claude/reference/bench/lang-bench-notes.md`；被测二进制用原样的 Release 构建（LTO 默认开，别为跑基准关优化）。
+- `bench/profile/` 是**指令频度画像**语料（8 个真实世界形态的画像负载 + 复用 `bench/lang/workloads`）与驱动 `opcode_profile.py`，配 `-DARIA_OPCODE_PROFILE=ON` 探针构建（`src/runtime/opcode_profile.hpp`，常态构建零开销）：量指令构成（高频指令 / 相邻对 / 操作数分布 / 方法面调用量）而非墙钟，为特化 / 融合 / 快派发类改动供数；快照报告住其目录。
 
 `build/` 与 `cmake-build-*` 均已加入 `.gitignore`。

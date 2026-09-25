@@ -1,0 +1,84 @@
+// 真实负载:路网最短路 -- LCG 建带权有向图(邻接表),对全部源点跑朴素 Dijkstra(线性扫描取
+// 未定最小 + 松弛),累加各源点的距离和与可达数(导航类服务的批量查询形态)。规模见 nodes_n。
+var nodes_n = 120;  // 规模:路口数
+var degree = 5;     // 每路口出边数
+
+var state = 8080;
+fun rnd(n) {
+    state = (state * 48271) % 2147483647;
+    return state % n;
+}
+
+fun dijkstra_sum(src) {
+    var dist = [];
+    var done = [];
+    for (i in 0...nodes_n) {
+        dist.push(-1);
+        done.push(false);
+    }
+    dist[src] = 0;
+    var total = 0;
+    var reached = 0;
+    while (true) {
+        var u = -1;
+        var best = 0;
+        i = 0;
+        while (i < nodes_n) {
+            if (done[i] == false && dist[i] >= 0) {
+                if (u < 0 || dist[i] < best) {
+                    u = i;
+                    best = dist[i];
+                }
+            }
+            i += 1;
+        }
+        if (u < 0) {
+            break;
+        }
+        done[u] = true;
+        reached += 1;
+        total = (total + best) % 1000003;
+        for (e in adj[u]) {
+            var v = e[0];
+            var w = e[1];
+            if (dist[v] < 0 || best + w < dist[v]) {
+                dist[v] = best + w;
+            }
+        }
+    }
+    return [total, reached];
+}
+
+var t0 = clock();
+
+var adj = {};
+var i = 0;
+while (i < nodes_n) {
+    var edges = [];
+    var j = 0;
+    while (j < degree) {
+        var v = rnd(nodes_n);
+        if (v != i) {
+            edges.push([v, 1 + rnd(99)]);
+        }
+        j += 1;
+    }
+    adj[i] = edges;
+    i += 1;
+}
+
+var total_sum = 0;
+var reach_sum = 0;
+for (i in 0...nodes_n) {
+    var [t, r] = dijkstra_sum(i);
+    total_sum = (total_sum + t) % 1000003;
+    reach_sum += r;
+}
+
+assert(total_sum == 429150);
+assert(reach_sum == 14281);
+
+var dt = clock() - t0;
+println("value total_sum: " + str(total_sum));
+println("value reach_sum: " + str(reach_sum));
+println("bench-time: " + str(dt * 1000.0) + " ms");

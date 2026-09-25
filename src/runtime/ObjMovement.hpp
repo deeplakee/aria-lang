@@ -1,6 +1,8 @@
 #ifndef ARIA_OBJ_MOVEMENT_HPP
 #define ARIA_OBJ_MOVEMENT_HPP
 
+#include <format>
+
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
 #include "memory/Buffer.hpp"
@@ -29,6 +31,36 @@ namespace aria {
         u8*         last_ip; // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)
     };
 
+    // 执行状态(协程生命周期五态,切换模型见 vm-design.md §4.9)。主上下文同样参与换位
+    //(resume 置 Normal、yield/完成切回时置 Running),但其 state_ 不参与任何判定、语言面不可达
+    //(用户拿不到主上下文的引用:ObjMovement 值唯一暴露口是 create 的返回值)。
+    enum class ExecState : u8 {
+        Suspended, // 已创建未首启,或 yield 挂起(可 resume)
+        Normal,    // 自己 resume 了别人,自身在链中间挂起(Lua 的 normal)
+        Running,   // 正在执行(== VM 的 current_)
+        Done,      // 协程体正常返回(死态)
+        Failed,    // 未捕获错误死亡(死态)
+    };
+
+    // 状态拼写小写(status 返回值与 debug_repr 渲染同源)。
+    [[nodiscard]]
+    constexpr StringView to_string(const ExecState state) noexcept {
+        switch (state) {
+            case ExecState::Suspended:
+                return "suspended";
+            case ExecState::Normal:
+                return "normal";
+            case ExecState::Running:
+                return "running";
+            case ExecState::Done:
+                return "done";
+            case ExecState::Failed:
+                return "failed";
+            default:
+                UNREACHABLE();
+        }
+    }
+
     // 执行上下文:一段执行的完整状态(Object 子类 + 可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
     //   - Object 子类(ObjType::MOVEMENT):主上下文与协程统一为本类型 GC 对象。trace 自标值栈已用
     //     区间/活动帧/open upvalue 开链/挂起错误寄存器,并经 mark_object(previous_) 沿 resume 链
@@ -45,7 +77,7 @@ namespace aria {
 
         explicit ObjMovement(GC* gc) noexcept :
             Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},
-            previous_{nullptr} {}
+            pending_error_{}, previous_{nullptr}, state_{ExecState::Suspended} {}
 
         ~ObjMovement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
                                            // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
@@ -57,7 +89,8 @@ namespace aria {
 
         // 清空值栈与帧栈与挂起错误(容量保留,不缩回初始)。先关全部开指再清场:HALT 收场不弹帧,
         // 若无此安全网,链上残留的开指会跨 run 复用同一栈区继续指入(槽值被下一轮覆写),再经闭包
-        // 读出脏值。
+        // 读出脏值。不碰 state_ / previous_:那是执行状态不是栈状态,由切换点(resume/yield/
+        // RETURN 完成)显式处置。
         void reset() noexcept {
             close_upvalues(buf_.data());
             top_ = buf_.data();
@@ -212,12 +245,12 @@ namespace aria {
             return pending_error_;
         }
 
-        // 协程 resume 链
+        // 协程状态与 resume 链
         // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
         // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
-        // (current_),ObjMovement 不自切;切换原语落地前链长恒 1,字段为契约占位。挂起态
-        // previous_ 恒 nullptr(yield/RETURN 完成/未捕获跳链三处切换点一律解链)。标根经 trace
-        // 尾部的 mark_object(previous_) 级联。
+        // (current_),ObjMovement 不自切。挂起态 previous_ 恒 nullptr(resume 先置链、yield/
+        // RETURN 完成两处切换点一律解链;主上下文恒为链尾)。标根经 trace 尾部的
+        // mark_object(previous_) 级联。
         [[nodiscard]]
         ObjMovement* previous() const noexcept {
             return previous_;
@@ -225,6 +258,14 @@ namespace aria {
 
         // 链接/重链(resume 方向:置恢复者)。
         void set_previous(ObjMovement* prev) noexcept { previous_ = prev; }
+
+        // 执行状态(status 直接投影,不做谓词派生)。主上下文的 state_ 无人读(见 ExecState 注)。
+        [[nodiscard]]
+        ExecState state() const noexcept {
+            return state_;
+        }
+
+        void set_state(const ExecState state) noexcept { state_ = state; }
 
         // Object 协议(声明序随 Object.hpp)。
 
@@ -240,10 +281,11 @@ namespace aria {
             return sizeof(ObjMovement);
         }
 
-        // 调试渲染(惰性契约见 Object::debug_repr):<coroutine>。
+        // 调试渲染(惰性契约见 Object::debug_repr):<coroutine 状态拼写>。(基类有同名无参成员
+        // to_string,此处经 aria:: 限定取自由函数重载。)
         [[nodiscard]]
         String debug_repr() const override {
-            return "<coroutine>";
+            return std::format("<coroutine {}>", aria::to_string(state_));
         }
 
     private:
@@ -268,6 +310,7 @@ namespace aria {
         ObjUpvalue*                      open_upvalues_; // open upvalue 开链头(按槽址降序;nullptr 空链)
         Opt<Value>                       pending_error_; // 挂起错误寄存器(置入后随本对象 trace 标根)
         ObjMovement*                     previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
+        ExecState                        state_;         // 执行状态(五态;主上下文亦参与换位但无人读)
     };
 
     // VMContext 是 ObjMovement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用

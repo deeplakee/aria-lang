@@ -15,6 +15,8 @@ namespace aria {
     // **命名**:算子/调用钩子取前后双下划线形 -- 普通 aria 标识符不会这么命名,故与用户自己的方法名不撞、一眼可辨是
     // 协议名;十一个名字与 Object::op_*_impl 虚函数族一一对应(那族回答「本对象上该算子/调用对应的可调用值」,
     // 内建类型直给自身实现)。`/` 是 aria 唯一的除法算子(无 // 形态),故取 __div__。
+    // 第二类成员是 coroutine.status 的 5 个状态拼写(与 ObjMovement 的 to_string(ExecState) 同拼写;此处进表是为
+    // 返参经 AriaVM::string_constant(ExecState) 重载直取已驻留串,免每次 new_string)。
     // 形态同 ARIA_VALUE_REGISTER_LIST / ARIA_OPCODE_LIST:条目宏 define 顶格 + 容器单行内联 use + undef 紧随,
     // 注册表用毕即 #undef(其后只剩派生常量)。逐条注释用块注释(行注释会吞续行符)。**不另生成可读名表**
     //(kValueRegisterNames 那种是给反汇编打印 LOAD_REG 操作数用的):本表无字节码消费者,故无名表,只派生
@@ -30,7 +32,12 @@ namespace aria {
     X(OpGreater, "__gt__")      /* comparison > */                             \
     X(OpGreaterEqual, "__ge__") /* comparison >= */                            \
     X(OpNegate, "__neg__")      /* unary negation */                           \
-    X(OpCall, "__call__")       /* call hook */
+    X(OpCall, "__call__")       /* call hook */                                \
+    X(CoSuspended, "suspended") /* coroutine status spelling */                \
+    X(CoRunning, "running")     /* coroutine status spelling */                \
+    X(CoNormal, "normal")       /* coroutine status spelling */                \
+    X(CoDone, "done")           /* coroutine status spelling */                \
+    X(CoFailed, "failed")       /* coroutine status spelling */
 
 #define ARIA_STRING_CONSTANT_ENUM(name, spelling) name,
     enum class StringConstant : u8 { ARIA_STRING_CONSTANT_LIST(ARIA_STRING_CONSTANT_ENUM) };

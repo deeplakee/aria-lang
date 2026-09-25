@@ -196,6 +196,24 @@ namespace aria {
             return string_constants_[std::to_underlying(id)];
         }
 
+        // 常量串表按执行状态直读(status 的返回值,五拼写与 to_string(ExecState) 同源)。
+        [[nodiscard]]
+        ObjString* string_constant(const ExecState state) const noexcept {
+            switch (state) {
+                case ExecState::Suspended:
+                    return string_constant(StringConstant::CoSuspended);
+                case ExecState::Normal:
+                    return string_constant(StringConstant::CoNormal);
+                case ExecState::Running:
+                    return string_constant(StringConstant::CoRunning);
+                case ExecState::Done:
+                    return string_constant(StringConstant::CoDone);
+                case ExecState::Failed:
+                    return string_constant(StringConstant::CoFailed);
+            }
+            UNREACHABLE();
+        }
+
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
         // <源根>/<spec>.aria 首个存在者命中(详见 import-path-resolution.md)。模块表键为
         // 命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。

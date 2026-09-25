@@ -35,6 +35,7 @@
 #include "runtime/builtins/MapBuiltins.hpp"
 #include "runtime/builtins/RangeBuiltins.hpp"
 #include "runtime/builtins/StringBuiltins.hpp"
+#include "runtime/opcode_profile.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -982,8 +983,9 @@ namespace aria {
             // 错误站点(raise / run_* 返 false)一律 goto unwind_check -- 收口处 unwind 返 Error
             // 即未捕获(return 终止循环),返 nullopt 即已派发 handler、帧引用已废,落回循环顶
             // 重取。**switch 之后不得新增引用 frame 的代码**(坑 #11 的防御前提,unwind_check
-            // 标签体同守)。
-            switch (auto op = static_cast<OpCode>(read_u8(frame))) {
+            // 标签体同守)。取指经 ARIA_FETCH_OPCODE 宏:常态构建即原表达式,探针构建在此单点
+            // 记账(见 runtime/opcode_profile.hpp)。
+            switch (auto op = ARIA_FETCH_OPCODE(frame)) {
                 case OpCode::HALT:
                     return Value::nil_val();
 

@@ -7,6 +7,7 @@
 // raise 模板头内内联装箱需 ObjException 完整类型(其依赖已经 GC.hpp 传递拉入)。
 #include "object/ObjException.hpp"
 #include "runtime/ObjMovement.hpp"
+#include "runtime/opcode_profile.hpp"
 #include "runtime/string_constant.hpp"
 #include "runtime/value_register.hpp"
 #include "value/AriaHashTable.hpp"
@@ -70,6 +71,13 @@ namespace aria {
         // tracer 捕 [this]),move 后不重绑 -> 悬垂。就地构造或以 unique_ptr 持有。
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
+
+#ifdef ARIA_OPCODE_PROFILE
+        // 指令频度探针(仅探针构建,定义见 runtime/opcode_profile.hpp):以成员 opcode_profiler_
+        // 挂载,经友元取 current_ 等私有状态;唯一探测点 = dispatch_loop 取指行的
+        // ARIA_FETCH_OPCODE 宏,本类其余代码零探针痕迹。
+        friend class OpcodeProfiler;
+#endif
 
         // 程序入口仪式:入口锚定执行上下文(出口断言控制流回到锚点) + 源根入口槽 [0] 播种 +
         // 前后 reset 清场 + 入口 fn 包空闭包(顶层也闭包,统一「帧 = 闭包」模型)后委托
@@ -443,6 +451,11 @@ namespace aria {
         // 构造期预置表长格,bootstrap 按下标(枚举值)逐格驻留填,同样经 assert_slots_filled 收口;
         // tracer 一趟循环 mark_object 标根 -- 表在则串在(驻留池是 weak root,不标根则下轮 collect 即摘除)。
         List<ObjString*> string_constants_;
+
+#ifdef ARIA_OPCODE_PROFILE
+        // 指令频度探针(仅探针构建):计数状态自持,析构时按 ARIA_OPCODE_STATS 环境变量门控 dump。
+        OpcodeProfiler opcode_profiler_;
+#endif
     };
 
     // move 删除被移除时在此炸出,防静默变可移动后的悬垂 UB。

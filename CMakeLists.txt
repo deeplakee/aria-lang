@@ -79,6 +79,8 @@ add_library(aria_core STATIC
         src/runtime/builtins/StringBuiltins.hpp
         src/runtime/ObjMovement.cpp
         src/runtime/ObjMovement.hpp
+        src/runtime/opcode_profile.cpp
+        src/runtime/opcode_profile.hpp
         src/runtime/string_constant.hpp
         src/runtime/value_register.hpp
         src/error/ErrorCode.hpp
@@ -153,6 +155,13 @@ endif ()
 option(ARIA_DEBUG_TRACE_EXECUTION "Enable bytecode execution tracing" OFF)
 if (ARIA_DEBUG_TRACE_EXECUTION)
     target_compile_definitions(aria_core PUBLIC DEBUG_TRACE_EXECUTION)
+endif ()
+
+# 指令频度探针(经 ARIA_OPCODE_PROFILE 宏,被 AriaVM 取指点与调用/方法解析站点记计数;run() 出口
+# 按 ARIA_OPCODE_STATS 环境变量门控 dump 到 stderr,供工作负载指令画像。关闭时零开销)
+option(ARIA_OPCODE_PROFILE "Enable opcode frequency profiling counters" OFF)
+if (ARIA_OPCODE_PROFILE)
+    target_compile_definitions(aria_core PUBLIC ARIA_OPCODE_PROFILE)
 endif ()
 
 add_executable(aria src/main.cpp src/interpreter.cpp src/interpreter.hpp)

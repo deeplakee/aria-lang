@@ -17,7 +17,7 @@ namespace aria {
     // VM 执行 CLOSURE 指令时遍历本表逐个建/复用 ObjUpvalue 填 ObjClosure::upvalues_。
     struct UpvalueDesc {
         bool is_local; // true:捕获直接外围帧的局部槽 index;false:穿透复用外围闭包的第 index 个 upvalue
-        u16  index;    // 局部槽号或外围闭包 upvalue 下标(与 LOAD_LOCAL_L 的 slot:u16 同域)
+        u16  index;    // 局部槽号或外围闭包 upvalue 下标(与 LOAD_LOCAL 的 slot:u16 同域)
 
         // 按值相等(纯标量聚合,逐字段默认比较):编译期 FunctionCtx::add_upvalue 去重复用判定用。
         bool operator==(const UpvalueDesc&) const = default;

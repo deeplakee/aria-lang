@@ -6,12 +6,12 @@
 namespace aria {
 
     namespace {
-        // 编码侧上限常量:分块 POP 的块大小、短槽号变体阈值(u8 域),以及跳转偏移与常量池索引(u16 域)。
-        // 值即各操作数位宽上限(事实源 CodeUnit.hpp 的 kU8/kU16OperandMax),越界判定与上限直接比较。
-        constexpr u32 kMaxPopChunk       = kU8OperandMax;
-        constexpr u32 kMaxShortLocalSlot = kU8OperandMax;
-        constexpr u32 kMaxJumpOffset     = kU16OperandMax;
-        constexpr u32 kMaxConstantIndex  = kU16OperandMax;
+        // 编码侧上限常量:分块 POP 的块大小、N 短变体槽域上界(槽 1..8),以及跳转偏移与常量池索引(u16 域)。
+        // 值即各操作数位宽上限(事实源 CodeUnit.hpp 的 kU16OperandMax),越界判定与上限直接比较。
+        constexpr u32 kMaxPopChunk      = kU8OperandMax;
+        constexpr u32 kMaxNLocalSlot    = 8;
+        constexpr u32 kMaxJumpOffset    = kU16OperandMax;
+        constexpr u32 kMaxConstantIndex = kU16OperandMax;
     } // namespace
 
     CodeUnit::CodeUnit(GC* gc) noexcept : code{gc}, constants{gc}, lines{gc}, try_records{gc} {}
@@ -79,21 +79,20 @@ namespace aria {
     }
 
     void CodeUnit::emit_load_local(const u16 slot, const u32 line) {
-        if (slot <= kMaxShortLocalSlot) {
-            emit_op(OpCode::LOAD_LOCAL, line);
-            emit_byte(static_cast<u8>(slot), line);
+        if (slot >= 1 && slot <= kMaxNLocalSlot) {
+            // N 短变体:槽号即枚举名尾号,按枚举差换算(连续性由 code.hpp static_assert 钉住)。
+            emit_op(static_cast<OpCode>(static_cast<u8>(OpCode::LOAD_LOCAL_1) + (slot - 1)), line);
         } else {
-            emit_op(OpCode::LOAD_LOCAL_L, line);
+            emit_op(OpCode::LOAD_LOCAL, line);
             emit_word(slot, line);
         }
     }
 
     void CodeUnit::emit_store_local(const u16 slot, const u32 line) {
-        if (slot <= kMaxShortLocalSlot) {
-            emit_op(OpCode::STORE_LOCAL, line);
-            emit_byte(static_cast<u8>(slot), line);
+        if (slot >= 1 && slot <= kMaxNLocalSlot) {
+            emit_op(static_cast<OpCode>(static_cast<u8>(OpCode::STORE_LOCAL_1) + (slot - 1)), line);
         } else {
-            emit_op(OpCode::STORE_LOCAL_L, line);
+            emit_op(OpCode::STORE_LOCAL, line);
             emit_word(slot, line);
         }
     }

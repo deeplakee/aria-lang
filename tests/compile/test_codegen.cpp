@@ -1003,8 +1003,8 @@ TEST(CodeGen, DefaultParamFillKeepsSlotInvariantWithBodyLocals) {
     EXPECT_EQ(run_int("fun f(n, m = n + 2) { var a = 100; var b = 7; return a + b + n + m; } return f(1, 2);"), 110);
 }
 
-// 序言形态:逐缺省槽 LOAD_LOCAL -> LOAD_REG DefaultMark -> EQUAL -> JUMP_FALSE -> 默认值
-// 表达式 -> STORE_LOCAL。全为既有指令,栈形平衡(序言后栈空)。
+// 序言形态:逐缺省槽 LOAD_LOCAL_N -> LOAD_REG DefaultMark -> EQUAL -> JUMP_FALSE -> 默认值
+// 表达式 -> STORE_LOCAL_N(缺省槽 1..8 走 N 短变体)。全为既有指令,栈形平衡(序言后栈空)。
 TEST(CodeGen, DefaultParamPrologueDisassembly) {
     auto c = compile_only("fun f(a, b = 5) { return b; } return f(1);");
     ASSERT_TRUE(c.has_value()) << c.error().message();
@@ -1015,12 +1015,12 @@ TEST(CodeGen, DefaultParamPrologueDisassembly) {
     EXPECT_EQ(f->arity(), 2);
     EXPECT_EQ(f->min_arity(), 1); // 必传 a,缺省 b
     const auto text = f->unit().disassemble("f");
-    EXPECT_NE(text.find("LOAD_LOCAL"), aria::String::npos);
+    EXPECT_NE(text.find("LOAD_LOCAL_2"), aria::String::npos); // 缺省槽 2 经 N 短变体读印章
     EXPECT_NE(text.find("LOAD_REG"), aria::String::npos);
     EXPECT_NE(text.find("DefaultMark"), aria::String::npos); // 寄存器可读名入反汇编注释
     EXPECT_NE(text.find("EQUAL"), aria::String::npos);
     EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
-    EXPECT_NE(text.find("STORE_LOCAL"), aria::String::npos);
+    EXPECT_NE(text.find("STORE_LOCAL_2"), aria::String::npos);
 }
 
 TEST(CodeGen, DefaultParamReferencesEarlierParam) {
@@ -2050,7 +2050,7 @@ TEST(CodeGen, DestructureFillReusesSourceSlot) {
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
     EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 2);
-    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL", "LOAD_IMM")); // 每个位置一条「复取源值」
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL_", "LOAD_IMM")); // 每个位置一条「复取源值」(N 短变体)
 }
 
 // Fill 访问数 1：不建隐藏局部--源值即消耗品，取出的元素恰落在下一局部槽位。
@@ -2095,7 +2095,7 @@ TEST(CodeGen, DestructureRestTakesSuffixViaUnboundedRange) {
     const auto text = compiled->unit().disassemble("<test>");
     EXPECT_EQ(count_occurrences(text, "LOAD_INDEX"), 2); // 元素位 + rest 位
     EXPECT_TRUE(lines_adjacent(text, "MAKE_RANGE", "LOAD_INDEX"));
-    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL", "LOAD_IMM")); // 两处访问均复取隐藏局部
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_LOCAL_", "LOAD_IMM")); // 两处访问均复取隐藏局部(N 短变体)
 
     auto only_rest = compile_only("var [...t] = [1, 2];");
     ASSERT_TRUE(only_rest.has_value());

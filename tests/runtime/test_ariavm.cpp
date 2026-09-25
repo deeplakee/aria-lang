@@ -58,10 +58,10 @@ namespace {
         cu.emit_byte(static_cast<u8>(v), line);
     }
 
-    // 局部槽的 u8 短操作数指令(LOAD_LOCAL/STORE_LOCAL)。
-    void emit_local(CodeUnit& cu, const OpCode op, const u8 slot, const u32 line = 1) {
+    // 局部槽的 u16 槽号指令(LOAD_LOCAL/STORE_LOCAL 通用形态)。
+    void emit_local(CodeUnit& cu, const OpCode op, const u16 slot, const u32 line = 1) {
         cu.emit_op(op, line);
-        cu.emit_byte(slot, line);
+        cu.emit_word(slot, line);
     }
 
     // 回填一条 u16 跳转偏移(编译器 backpatch 的手写版;偏移以读完操作数后 ip 为基准)。

@@ -27,6 +27,8 @@ namespace aria {
     // 档 bytecode-instruction-set.md 同步; Disassembler 与名字/格式表零改动。表内不放说明性注释, 语义细节统一见
     // bytecode-instruction-set.md §4。易踩点速览:
     //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
+    //   - LOAD/STORE_LOCAL_N(1..8): 槽号即枚举名尾号, 零操作数(直线型); 通用 LOAD/STORE_LOCAL
+    //     槽号 u16(槽 0 与 >8 走此形态), N 域与连续性契约见下方 static_assert
     //   - PREPARE_METHOD/CALL_METHOD: 两段式方法调用(解析先于实参求值, 见 §5.6); 待调值槽由实参整体下移一格补掉, 调用
     //     区恒为 [recv, a1..aN] 若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
 #define ARIA_OPCODE_LIST(X)                \
@@ -38,10 +40,24 @@ namespace aria {
     X(LOAD_FALSE, Simple)                  \
     X(LOAD_IMM, ImmI8)                     \
     X(LOAD_REG, RegU8)                     \
-    X(LOAD_LOCAL, U8)                      \
-    X(STORE_LOCAL, U8)                     \
-    X(LOAD_LOCAL_L, U16)                   \
-    X(STORE_LOCAL_L, U16)                  \
+    X(LOAD_LOCAL, U16)                     \
+    X(LOAD_LOCAL_1, Simple)                \
+    X(LOAD_LOCAL_2, Simple)                \
+    X(LOAD_LOCAL_3, Simple)                \
+    X(LOAD_LOCAL_4, Simple)                \
+    X(LOAD_LOCAL_5, Simple)                \
+    X(LOAD_LOCAL_6, Simple)                \
+    X(LOAD_LOCAL_7, Simple)                \
+    X(LOAD_LOCAL_8, Simple)                \
+    X(STORE_LOCAL, U16)                    \
+    X(STORE_LOCAL_1, Simple)               \
+    X(STORE_LOCAL_2, Simple)               \
+    X(STORE_LOCAL_3, Simple)               \
+    X(STORE_LOCAL_4, Simple)               \
+    X(STORE_LOCAL_5, Simple)               \
+    X(STORE_LOCAL_6, Simple)               \
+    X(STORE_LOCAL_7, Simple)               \
+    X(STORE_LOCAL_8, Simple)               \
     X(LOAD_UPVALUE, U8)                    \
     X(STORE_UPVALUE, U8)                   \
     X(CLOSE_UPVALUE, Simple)               \
@@ -124,6 +140,13 @@ namespace aria {
 #undef ARIA_OP_FORMAT
 
 #undef ARIA_OPCODE_LIST
+
+    // N 短变体槽号内嵌枚举序:LOAD/STORE_LOCAL_k 即读/写槽 k(k = 1..8),VM 侧与发射侧均按
+    // 枚举差换算槽号/opcode,表内 8 行连续是换算前提,此处钉死(表行重排即编译错)。
+    static_assert(std::to_underlying(OpCode::LOAD_LOCAL_8) == std::to_underlying(OpCode::LOAD_LOCAL_1) + 7,
+                  "LOAD_LOCAL_1..8 must stay contiguous");
+    static_assert(std::to_underlying(OpCode::STORE_LOCAL_8) == std::to_underlying(OpCode::STORE_LOCAL_1) + 7,
+                  "STORE_LOCAL_1..8 must stay contiguous");
 
     // opcode -> 报错消息里的算子记号(ADD 为 "+" 等):只有二元算术/比较指令对应源码算子,其余取到即
     // "?" -- 消费方(数值二元的类型守卫)只对本组指令取号,别的 opcode 落在 default 表编程错误,以可见

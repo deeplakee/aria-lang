@@ -2,19 +2,19 @@
 
 aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，供后续 CodeUnit / 反汇编器 / 字节码编译器 / VM 实现参考。
 
-> 现状：`OpCode` 已升级为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，64 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文标「建议」「待决」者为面向实现的提案，非既成事实。
+> 现状：`OpCode` 已升级为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，78 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文标「建议」「待决」者为面向实现的提案，非既成事实。
 
 ## 1. 现状与基准
 
 ### 1.1 枚举现状（以 `code.hpp` 为准）
 
-`OpCode : u8`，共 64 条（含 2 条 `_L` 长变体），按功能分组：
+`OpCode : u8`，共 78 条（含 16 条局部槽 N 短变体），按功能分组：
 
 | 分组 | 指令 |
 | :--- | :--- |
 | 停机 | `HALT` |
 | 常量/字面量加载 | `LOAD_CONST` `LOAD_NIL` `LOAD_TRUE` `LOAD_FALSE` `LOAD_IMM` `LOAD_REG` |
-| 局部变量 | `LOAD_LOCAL` `STORE_LOCAL` `LOAD_LOCAL_L` `STORE_LOCAL_L` |
+| 局部变量 | `LOAD_LOCAL` `STORE_LOCAL`（通用，`slot:u16`）+ `LOAD_LOCAL_1..8` `STORE_LOCAL_1..8`（N 短变体，零操作数） |
 | Upvalue | `LOAD_UPVALUE` `STORE_UPVALUE` `CLOSE_UPVALUE` |
 | 全局变量 | `DEF_GLOBAL` `LOAD_GLOBAL` `STORE_GLOBAL` |
 | 字段 | `LOAD_FIELD` `STORE_FIELD` |
@@ -30,13 +30,13 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
 
-`u8` 上限 256，当前 64 条，扩空间充裕。
+`u8` 上限 256，当前 78 条，扩空间充裕。
 
 ### 1.2 已定决策
 
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
-- **跳转 `u16` 方向拆分 + 局部槽 `_L`**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)。见 §2.3/§4.12。
+- **跳转 `u16` 方向拆分 + 局部槽 N 短变体**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `slot:u16` 通用形态 + `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8` 零操作数 N 短变体。见 §2.3/§4.3/§4.12。
 - **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::load_field_unbound` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
 
 ## 2. 操作数编码约定（建议）
@@ -51,12 +51,12 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 ### 2.2 操作数位宽（建议）
 
-下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽 `u8`/`u16` -> `U8`/`U16`；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
+下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽通用形态 `u16` -> `U16`（N 短变体零操作数 -> `Simple`）；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
 | 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器 |
-| 局部槽号 | `u8`（1B，0..255）短 / `u16`（2B）长 | `LOAD_LOCAL` `STORE_LOCAL`（+ `_L` 变体） | 短型覆盖 <256；`slot>=256` 编译器直接发 `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)，值发射时已知、无需回填 |
+| 局部槽号 | N 短变体（零操作数，槽 1..8 内嵌枚举名）/ `u16`（2B）通用 | `LOAD_LOCAL` `STORE_LOCAL`（通用）+ `LOAD_LOCAL_1..8` `STORE_LOCAL_1..8`（N 短变体） | 画像实测槽 1..8 覆盖动态执行 98%+，1 字节指令消掉最热操作数；槽 0 与 >8 走通用 u16（65535 槽无硬上限），发射时已知、无需回填 |
 | Upvalue 索引 | `u8` | `LOAD_UPVALUE` `STORE_UPVALUE` | 256 upvalue 远超实际 |
 | 调用参数数 | `u8` | `CALL` | 255 参数足够 |
 | 跳转偏移 | `u16`（2B 无符号） | `JUMP*`（前向 `ip+=off`）/ `JUMP_BACK`（后向 `ip-=off`） | 方向编码于 opcode，各得 64KB 量程；后向恒无条件（while/for/for-in 回边），条件跳转恒前向（§2.3/§4.12） |
@@ -67,17 +67,17 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 > 待决：常量索引是否走「`u8` + 长变体（`LOAD_CONST_L` 等）」clox 风格以省字节。本文建议 `u16` 统一，代价是每条常量引用多 1 字节；若实测代码段体积敏感可改长短双形态。
 
-### 2.3 操作数位宽策略：长变体与方向拆分
+### 2.3 操作数位宽策略：N 短变体与方向拆分
 
-局部槽与跳转这两类可能溢出的操作数，分别用不同策略保范围又省字节。
+局部槽与跳转这两类高频/可能溢出的操作数，分别用不同策略保范围又省字节。
 
-**局部槽 -- 长变体 `_L`**：`LOAD_LOCAL`/`STORE_LOCAL` 默认 `slot:u8`（2B）；`slot>=256` 时编译器直接发 `LOAD_LOCAL_L`/`STORE_LOCAL_L`（`slot:u16`，3B）。槽号在编译器分配槽时就确定，**发长无需回填**，零代价，无硬上限（`u16` = 65535 槽）。
+**局部槽 -- N 短变体 + `u16` 通用**：`LOAD_LOCAL`/`STORE_LOCAL` 为通用形态（`slot:u16`，3B）；槽 1..8 编译器直接发零操作数短变体 `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8`（1B，槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射/VM 均按枚举差换算）。槽号在编译器分配槽时就确定，**发射时即定形态、无需回填**；槽 0（哑元/this）与 >8 走通用形态，`u16` = 65535 槽无硬上限。
 
 **跳转 -- `u16` + 方向拆分（无长变体）**：偏移 `u16` 无符号，方向编码于 opcode：前向（`ip += off`）`JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`，后向（`ip -= off`）`JUMP_BACK`（仅此一条、且无条件）。依据：aria 只有 `while`/`for`/`for-in` 三种循环（文法无 `do-while`/`repeat-until`），回边恒为「循环体末尾无条件跳回条件判断处」-- 后向跳转天然恒无条件；条件跳转（`if`/`while` 条件、`&&`/`||` 短路、`match`）恒前向。故前向/后向各分得完整 `u16` 量程（64KB，约 26K 指令），无需有符号 `i16` 的 ±32KB，也无需 `_L` 长变体与分支松弛。
 
 | 操作数 | 何时可知 | 策略 |
 | :--- | :--- | :--- |
-| 局部槽号 | 编译器分配槽时即知 | 长变体 `_L`(`u16`)，零回填 |
+| 局部槽号 | 编译器分配槽时即知 | 槽 1..8 发 N 短变体（零操作数），其余 `u16` 通用，零回填 |
 | 后向跳转偏移 | 发射时已知（回边目标先于跳转） | `u16`，`JUMP_BACK` |
 | 前向跳转偏移 | 回填时才知（前向目标后于跳转） | `u16`，方向在 opcode；超 64KB 编译错误 |
 
@@ -139,10 +139,12 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_LOCAL` | `slot:u8` | `[] -> [v]` | 压入当前帧 `slots_[slot]` |
-| `STORE_LOCAL` | `slot:u8` | `[v] -> [v]` | peek-store 到 `slots_[slot]` |
-| `LOAD_LOCAL_L` | `slot:u16` | `[] -> [v]` | 同 `LOAD_LOCAL`，`slot>=256` 时用（3B，见 §2.3） |
-| `STORE_LOCAL_L` | `slot:u16` | `[v] -> [v]` | 同 `STORE_LOCAL`，`slot>=256` 时用（3B） |
+| `LOAD_LOCAL` | `slot:u16` | `[] -> [v]` | 压入当前帧 `slots_[slot]`（通用形态，槽 0 与 >8 用） |
+| `STORE_LOCAL` | `slot:u16` | `[v] -> [v]` | peek-store 到 `slots_[slot]`（通用形态） |
+| `LOAD_LOCAL_1..8` | 无 | `[] -> [v]` | 压入 `slots_[k]`，槽号 k 内嵌枚举名尾号（1B，画像实测槽 1..8 覆盖动态执行 98%+） |
+| `STORE_LOCAL_1..8` | 无 | `[v] -> [v]` | peek-store 到 `slots_[k]`（1B） |
+
+N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射选择收口在 `CodeUnit::emit_load_local`/`emit_store_local`（slot 1..8 发 N 短变体，否则通用 + u16），VM 侧按枚举差换算槽号（表内 8 行连续由 `code.hpp` static_assert 钉住）。
 
 局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
 
@@ -268,7 +270,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
 
-`index` 用 `u16` 与 `LOAD_LOCAL_L` 的 `slot:u16` 同域（0..65535），无捕获范围短板。捕获描述不进字节码流，`CLOSURE` 定长 3B、反汇编器线性扫即可（无需按元数据步进 `ip`）。编译器侧捕获解析见 `CodeGen::resolve_upvalue`（递归：外层局部命中 -> `{is_local=true, slot}` 并置该局部 `is_captured`；否则穿透外层 upvalue -> `{is_local=false, idx}`；容量超限报 `TooManyUpvalues`）。
+`index` 用 `u16` 与 `LOAD_LOCAL` 的 `slot:u16` 同域（0..65535），无捕获范围短板。捕获描述不进字节码流，`CLOSURE` 定长 3B、反汇编器线性扫即可（无需按元数据步进 `ip`）。编译器侧捕获解析见 `CodeGen::resolve_upvalue`（递归：外层局部命中 -> `{is_local=true, slot}` 并置该局部 `is_captured`；否则穿透外层 upvalue -> `{is_local=false, idx}`；容量超限报 `TooManyUpvalues`）。
 
 ### 4.14 类与对象
 
@@ -672,7 +674,7 @@ code:
 | :--- | :--- | :--- | :--- |
 | 1 | `STORE_*` 留值 vs 弹值 | peek-store（留值） | pop-store + 旋转/临时槽 |
 | 2 | 常量索引位宽 | `u16` 统一（暂不变；真超 65535 再加 `LOAD_CONST_L`） | `u8` + 长变体 |
-| 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部 `u8` + `LOAD_LOCAL_L`/`STORE_LOCAL_L`(`u16`)（**已定**，§2.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
+| 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部槽 N 短变体（槽 1..8 零操作数）+ `u16` 通用（**已定**，§2.3/§4.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
 | 4 | `ADD` 重载 | **已定并落地**：九个算子/比较指令统一经 `op_*_impl` 钩子族（左操作数为对象即取实现再调），数值左值走快路径；String 的 `+` 与四比较是内建钩子，用户类经 dunder 方法重载；list 拼接不做（`list + list` 报错） | -- |
 | 5 | 方法调用派发 | 已落地并**两段化**：`PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，解析经 `Object::load_field_unbound`，内置侧零 bound 物化）；曾以单条 `INVOKE_METHOD` 融合实现，因次序语义改判（见 §6.2） | 目标槽放调用区之下（需帧位/收尾指令，实测更慢）；`LOAD_FIELD` + `CALL` 两步（每次调用物化 bound） |
 | 6 | 异常机制 | CodeUnit 内记录表（已落地; `finally` 不做、后继 defer 为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |

@@ -93,8 +93,6 @@ namespace aria {
         // 操作数里),出边按实际落点记 -- 落空记 pairs_(可融合面),跳走记 jt_。
         switch (op) {
             // u8 操作数族(槽位/元数/寄存器格位/range flags)
-            case OpCode::LOAD_LOCAL:
-            case OpCode::STORE_LOCAL:
             case OpCode::LOAD_UPVALUE:
             case OpCode::STORE_UPVALUE:
             case OpCode::POP_N:
@@ -104,8 +102,8 @@ namespace aria {
                 break;
             // u16 操作数族(槽位/常量池索引/元素数)
             case OpCode::LOAD_CONST:
-            case OpCode::LOAD_LOCAL_L:
-            case OpCode::STORE_LOCAL_L:
+            case OpCode::LOAD_LOCAL:
+            case OpCode::STORE_LOCAL:
             case OpCode::DEF_GLOBAL:
             case OpCode::LOAD_GLOBAL:
             case OpCode::STORE_GLOBAL:
@@ -178,6 +176,22 @@ namespace aria {
             case OpCode::LOAD_NIL:
             case OpCode::LOAD_TRUE:
             case OpCode::LOAD_FALSE:
+            case OpCode::LOAD_LOCAL_1:
+            case OpCode::LOAD_LOCAL_2:
+            case OpCode::LOAD_LOCAL_3:
+            case OpCode::LOAD_LOCAL_4:
+            case OpCode::LOAD_LOCAL_5:
+            case OpCode::LOAD_LOCAL_6:
+            case OpCode::LOAD_LOCAL_7:
+            case OpCode::LOAD_LOCAL_8:
+            case OpCode::STORE_LOCAL_1:
+            case OpCode::STORE_LOCAL_2:
+            case OpCode::STORE_LOCAL_3:
+            case OpCode::STORE_LOCAL_4:
+            case OpCode::STORE_LOCAL_5:
+            case OpCode::STORE_LOCAL_6:
+            case OpCode::STORE_LOCAL_7:
+            case OpCode::STORE_LOCAL_8:
             case OpCode::CLOSE_UPVALUE:
             case OpCode::LOAD_INDEX:
             case OpCode::STORE_INDEX:

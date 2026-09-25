@@ -27,7 +27,7 @@ using aria::Value;
 
 TEST(Disassembler, OpCodeTablesConsistentWithList) {
     // 名字/格式表与 X 表同源生成:数组以 kOpCodeCount 显式定界,行数不符即编译错;此处锁布局哨兵。
-    EXPECT_EQ(kOpCodeCount, 63u); // X 表行数哨兵,改指令集须同步改此值
+    EXPECT_EQ(kOpCodeCount, 77u); // X 表行数哨兵,改指令集须同步改此值
     EXPECT_EQ(kOpCodeNames[0], "HALT");
     EXPECT_EQ(kOpCodeNames[kOpCodeCount - 1], "RETURN");
     EXPECT_EQ(kOpCodeFormats[0], OpFormat::Simple);
@@ -40,12 +40,22 @@ TEST(Disassembler, SimpleFormat) {
     EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "ADD");
 }
 
+TEST(Disassembler, LocalNVariantFormat) {
+    GC       gc;
+    CodeUnit cu{&gc};
+    // N 短变体(Simple 格式):槽号内嵌枚举名,零操作数。
+    cu.emit_op(OpCode::LOAD_LOCAL_3, 1);
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_LOCAL_3");
+    cu.emit_op(OpCode::STORE_LOCAL_8, 1);
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 1), "STORE_LOCAL_8");
+}
+
 TEST(Disassembler, U8Format) {
     GC       gc;
     CodeUnit cu{&gc};
-    cu.emit_op(OpCode::LOAD_LOCAL, 1);
+    cu.emit_op(OpCode::LOAD_UPVALUE, 1);
     cu.emit_byte(0x05, 1);
-    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_LOCAL        05");
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_UPVALUE      05");
 }
 
 TEST(Disassembler, U16Format) {
@@ -54,6 +64,15 @@ TEST(Disassembler, U16Format) {
     cu.emit_op(OpCode::MAKE_LIST, 1);
     cu.emit_word(0x0102, 1);
     EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "MAKE_LIST         0102");
+}
+
+TEST(Disassembler, LocalU16SlotFormat) {
+    GC       gc;
+    CodeUnit cu{&gc};
+    // 通用 LOAD_LOCAL:u16 槽号(槽 0 与 >8 走此形态)。
+    cu.emit_op(OpCode::LOAD_LOCAL, 1);
+    cu.emit_word(0x0102, 1);
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_LOCAL        0102");
 }
 
 TEST(Disassembler, ConstU16Format) {
@@ -135,6 +154,6 @@ TEST(Disassembler, BadOpcodeOutOfRange) {
 TEST(Disassembler, TruncatedOperand) {
     GC       gc;
     CodeUnit cu{&gc};
-    cu.emit_op(OpCode::LOAD_LOCAL, 1); // u8 操作数缺失
-    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_LOCAL        <truncated>");
+    cu.emit_op(OpCode::LOAD_UPVALUE, 1); // u8 操作数缺失
+    EXPECT_EQ(Disassembler::disassembleInstruction(&cu, 0), "LOAD_UPVALUE      <truncated>");
 }

@@ -1017,25 +1017,64 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_LOCAL: {
-                    const u8 slot = read_u8(frame);
-                    current_->push(frame->slots[slot]);
-                    break;
-                }
-                case OpCode::STORE_LOCAL: {
-                    const u8 slot      = read_u8(frame);
-                    frame->slots[slot] = current_->peek(0);
-                    break;
-                }
-                case OpCode::LOAD_LOCAL_L: {
                     const auto slot = read_u16(frame);
                     current_->push(frame->slots[slot]);
                     break;
                 }
-                case OpCode::STORE_LOCAL_L: {
+                // N 短变体:槽号即枚举名尾号,零操作数;逐条独立 case 写死槽号常量,免运行期换算。
+                case OpCode::LOAD_LOCAL_1:
+                    current_->push(frame->slots[1]);
+                    break;
+                case OpCode::LOAD_LOCAL_2:
+                    current_->push(frame->slots[2]);
+                    break;
+                case OpCode::LOAD_LOCAL_3:
+                    current_->push(frame->slots[3]);
+                    break;
+                case OpCode::LOAD_LOCAL_4:
+                    current_->push(frame->slots[4]);
+                    break;
+                case OpCode::LOAD_LOCAL_5:
+                    current_->push(frame->slots[5]);
+                    break;
+                case OpCode::LOAD_LOCAL_6:
+                    current_->push(frame->slots[6]);
+                    break;
+                case OpCode::LOAD_LOCAL_7:
+                    current_->push(frame->slots[7]);
+                    break;
+                case OpCode::LOAD_LOCAL_8:
+                    current_->push(frame->slots[8]);
+                    break;
+                case OpCode::STORE_LOCAL: {
                     const auto slot    = read_u16(frame);
                     frame->slots[slot] = current_->peek(0);
                     break;
                 }
+                case OpCode::STORE_LOCAL_1:
+                    frame->slots[1] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_2:
+                    frame->slots[2] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_3:
+                    frame->slots[3] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_4:
+                    frame->slots[4] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_5:
+                    frame->slots[5] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_6:
+                    frame->slots[6] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_7:
+                    frame->slots[7] = current_->peek(0);
+                    break;
+                case OpCode::STORE_LOCAL_8:
+                    frame->slots[8] = current_->peek(0);
+                    break;
                 case OpCode::LOAD_UPVALUE: {
                     // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
                     const u8 idx = read_u8(frame);

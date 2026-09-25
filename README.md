@@ -165,12 +165,13 @@ src/
 tests/       C++ GTest（tests/<module>/）与 aria 脚本语料（tests/language/）
 bench/       性能基准（lexer/vm/hashtable 三个进程内可执行 + lang/ 源文件级基准与对照端口）
 external/    isocline（REPL 行编辑）
-docs/        grammar.txt（语言文法）
+  docs/        grammar.txt（语言文法）与 guide/（语言教程）
 tools/       check_commit_msg.py 等开发脚本
 ```
 
 ## 进一步阅读
 
+- `docs/guide/` -- 语言教程（面向有编程经验读者，16 章入门到全景，含内建速查附录）。
 - `docs/grammar.txt` -- 语言文法规范，语言语义的单一事实源。
 - `AGENTS.md` -- 项目规则与进度，以及构建 / 命名 / 类型 / 错误处理等通用约定。
 - `.claude/rules/` -- 按源码目录拆分的模块参考（带 `paths:` frontmatter，读对应源码时自动加载）。

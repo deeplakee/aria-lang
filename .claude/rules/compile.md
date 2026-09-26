@@ -65,7 +65,7 @@ AST 访问者接口，作为代码生成阶段「字节码编译器」等遍历�
 ### emit 解耦与失败翻译
 
 - 字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`/`size`）**下沉 CodeUnit**，CodeGen 不再自持这些薄包装；发射目标由 `cur_cu()` 决定，越界（跳转偏移/回边超 64KB）由 CodeUnit 方法返 bool、CodeGen 翻译为 Error。
-- **单层 `_or_fail`（操作 + 失败即 fail）**：`add_constant_or_fail`（溢出 `> kMaxConstants` -> `fail CodeUnitTooLarge`）/`add_name_or_fail`（`new_string` intern 后入池，无守卫）/`define_local_or_fail`（同 scope 重名 -> `fail RedefinedVariable`、`> kMaxLocals` -> `fail TooManyLocals`）/`add_upvalue_or_fail`（越出 u8 upvalue 索引域 -> `fail TooManyUpvalues`）/`resolve_name_or_fail`（局部 -> Local / 外层 -> Upvalue / 否则 Global）供 visit 层（有节点 loc）调用，失败即 `fail(...)`（`[[noreturn]]`，之后值恒有效）并返回解包值；`patch_jump_or_fail`/`emit_jump_back_or_fail`/`declare_global_or_fail` 底层返 bool、无解包值，故 void 封装仅翻译失败。
+- **单层 `_or_fail`（操作 + 失败即 fail）**：`add_constant_or_fail`（溢出 `> kMaxConstants` -> `fail CodeUnitTooLarge`）/`add_name_or_fail`（`new_string` intern 后入池，无守卫）/`define_local_or_fail`（同 scope 重名 -> `fail RedefinedVariable`、`> kMaxLocals` -> `fail TooManyLocals`）/`define_global_or_fail`（全局重名 -> `fail RedefinedVariable`，判重后发 `DEF_GLOBAL` 弹值定义）/`add_upvalue_or_fail`（越出 u8 upvalue 索引域 -> `fail TooManyUpvalues`）/`resolve_name_or_fail`（局部 -> Local / 外层 -> Upvalue / 否则 Global）供 visit 层（有节点 loc）调用，失败即 `fail(...)`（`[[noreturn]]`，之后值恒有效）并返回解包值；`patch_jump_or_fail`/`emit_jump_back_or_fail` 底层返 bool、无解包值，故 void 封装仅翻译失败。
 - **声明绑定收口 `bind_stack_value(name,loc)`**（值已在栈顶的声明名：全局 -> declare 判重 + `DEF_GLOBAL` 弹值定义 / 局部 -> 值填槽 declare；var/fun/def/import 四处共用，var 的初始化器先于绑定求值）。
 
 ### 值填槽不变式
@@ -87,7 +87,7 @@ AST 访问者接口，作为代码生成阶段「字节码编译器」等遍历�
 
 作用域模型（Python/JS）：
 
-- `mod_ctx_->is_global_scope()`（当前函数为入口且第 0 层 scope）的 `var`/`fun`/`import` 别名 -> 模块全局（`DEF_GLOBAL` / `IMPORT` + `declare_global_or_fail` 内容判重重定义检查）；嵌套块/函数内 -> 局部（`define_local_or_fail` 重名 -> `fail RedefinedVariable`、溢出 -> `fail TooManyLocals`，否则纯登记、不发指令）。有初始化器：`emit_expr(init)` 先求值，值恰好压在 slot；无初始化器：发 `LOAD_NIL` 填槽。无需预扫。
+- `mod_ctx_->is_global_scope()`（当前函数为入口且第 0 层 scope）的 `var`/`fun`/`import` 别名 -> 模块全局（`DEF_GLOBAL` / `IMPORT` + `define_global_or_fail` 内容判重重定义检查）；嵌套块/函数内 -> 局部（`define_local_or_fail` 重名 -> `fail RedefinedVariable`、溢出 -> `fail TooManyLocals`，否则纯登记、不发指令）。有初始化器：`emit_expr(init)` 先求值，值恰好压在 slot；无初始化器：发 `LOAD_NIL` 填槽。无需预扫。
 - 全局**不做编译期 init 追踪**（支持前向引用如互递归，定义与否属运行期属性），故全局自引用 `var x = x + 1` 在初始化器里 `LOAD_GLOBAL x`（此时 `DEF_GLOBAL x` 未执行）-> 运行期 `UndefinedVariable`（同型语义：函数体局部 var 的 init 里的同名引用也落此外层）。
 - **裸名解析** `resolve_name_or_fail(name, loc) -> ResolvedVar` 序「局部 -> upvalue -> 全局」：当前函数局部 -> Local；外层 -> Upvalue（`resolve_upvalue(ctx, name, loc)` 递归（clox resolveUpvalue 形）--直接外层命中 -> 置该局部 `is_captured=true` + `add_upvalue({is_local=true, slot})`；未命中 -> 递归穿透捕获 -> `add_upvalue({is_local=false, 外层视角 upvalue 索引})`；到 entry 之上无外层 -> 返 `nullopt` 落 Global。`add_upvalue` 同 `(is_local,index)` 去重复用；登记经 `add_upvalue_or_fail`（越界 -> `fail TooManyUpvalues`，nullopt 不外泄免被误读为「落全局」））；否则 -> Global（运行期查模块全局表，未定义报 `UndefinedVariable`）。解析序与 grammar.txt 既定一致。
 
@@ -98,7 +98,7 @@ FunDecl/Lambda/类成员方法共用；kind 无默认值、调用处显式写明
 - **参数合法性检查抽成 `validate_params(params, loc)`**（compile_function 体首调用；只读 params、不触碰编译器状态，首错即 fail）：形参重名 -> `DuplicateParam`、> 255 形参 -> `TooManyParameters`，loc 取声明节点（fun 关键字）。**成员不查重**：类体成员各自 `accept` 分派后直接落类表（与体外 `Foo.x = v` 同形态），重名**后写遮蔽**、不报错（见 grammar.txt）。
 - **绑定分派**（收口在 `bind_function_value` 的穷尽 switch）：方法三态留栈不绑定、就地注册 `MAKE_STATIC`/`MAKE_METHOD` 消费；Lambda 留栈作表达式值（名恒 `kAnonymousName`）；具名 fun 绑定全局（顶层 `DEF_GLOBAL`）/局部（嵌套 `define_local_or_fail` + `CLOSURE`，值填槽）。建子函数经 `new_function` 后直接 `add_constant_or_fail` 入父常量池（**无守卫**：`add_constant -> constants.push -> reallocate<T>` 走 trivial 分配不触 GC）+ 父发 `CLOSURE fn_idx`（描述表在体编译后 flush 进 `fn->upvalue_descs()`，存 `ObjFunction` 元数据、不在字节码流）；建子上下文 `new FunctionCtx{fn, cur_fn_ctx(), kind}` + 摆动游标。成功收尾在子 unit 发隐式 return（**InitMethod 尾 = `LOAD_LOCAL 0; RETURN` 返回 this**、其余 = `LOAD_NIL; RETURN`）+ flush upvalues + 游标摆回父 + `delete child`；出错则 `fail()` unwind 跳过，子留链交 `~ModuleCtx`。
 - **缺省参数序言**（印章方案）：与参数登记单循环交错、按声明序--先逐缺省槽发 `LOAD_LOCAL s; LOAD_REG DefaultMark; EQUAL; JUMP_FALSE 跳过; <默认值表达式>; STORE_LOCAL s; 跳过:`（运行期 `call_closure` 已把未传槽 `[argc+1..n]` 垫充 DefaultMark 印章并补齐满参栈深；默认值仅未传时求值、按声明序从左到右补）、后 `add_local` 登记本参数名--前序参数已登记可被缺省表达式引用，自身/后序参数名未登记、对解析结构性不可见、按常规解析链落外层/全局（Python/C++ 默认值作用域同款）。
-- **import 按作用域绑定**：`visitImportStmtNode` 按 `is_global_scope()` 分派，与 `var`/`fun` 同形 lowering（`IMPORT` 仅压模块值于栈顶，绑定由 CodeGen 走：顶层 -> `declare_global_or_fail(alias)` + `DEF_GLOBAL`；嵌套 -> `define_local_or_fail(alias)` 值填槽，无 `STORE_LOCAL`）。
+- **import 按作用域绑定**：`visitImportStmtNode` 按 `is_global_scope()` 分派，与 `var`/`fun` 同形 lowering（`IMPORT` 仅压模块值于栈顶，绑定由 CodeGen 走：顶层 -> `define_global_or_fail(alias)` 判重 + `DEF_GLOBAL` 弹值；嵌套 -> `define_local_or_fail(alias)` 值填槽，无 `STORE_LOCAL`）。
 - **GC 根纪律（启用 GC 后）**：`new_string` 返回的 name 串是 weak root（intern 不保命），裸持跨任何可能触发 `maybe_collect` 的子编译/分配即可能被扫--故 name 建串与守卫收口在工厂 StringView 重载内。这些守卫保护的是「跨 `new_object`/`new_function`/`emit_expr` 等**真 `maybe_collect` 触发点**」的窗口；反之「fresh 对象裸持跨一次 trivial 分配（`add_constant` 的 `constants.push`/`intern_insert` 的 `allocate`）再发布进结构」的窗口**不需要守卫**（trivial 分配永不触发 GC，`GC.hpp` 核心不变式），故 `add_name_or_fail` 的 `new_string`、`compile_function` 的 `new_function` 结果均立即入池。
 
 ### 跳转回填（编码在 CodeUnit）
@@ -143,7 +143,7 @@ VM 侧语义见 `.claude/reference/runtime/exception-implementation-pitfalls.md`
 
 VM 机制见 `runtime.md`。
 
-- **`visitDefDeclNode` lowering**（成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不查重）：① superclass 有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析 superclass 值，编译期不查全局）/ 无 -> `LOAD_REG`（寄存器 `ObjectClass`，用户 shadow 免疫）② `MAKE_CLASS name` ③ 类名先于成员绑定（对齐函数先例：体内自引用要求绑定先于体编译）：函数/块内 -> `define_local_or_fail`（值填槽，类值恰在 `locals_.size()` 槽位；unwind 截栈槽与半成品同弃，不留可见绑定）④ 成员按源序发射（静态变量初始化顺序即此序，前一静态可被后续初始化器引用）⑤ 顶层 -> `declare_global_or_fail` + `DEF_GLOBAL`（类体后才绑定：静态初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未入全局；`TryRecord.stack_depth` 记在 def 语句前）。
+- **`visitDefDeclNode` lowering**（成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不查重）：① superclass 有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析 superclass 值，编译期不查全局）/ 无 -> `LOAD_REG`（寄存器 `ObjectClass`，用户 shadow 免疫）② `MAKE_CLASS name` ③ 类名先于成员绑定（对齐函数先例：体内自引用要求绑定先于体编译）：函数/块内 -> `define_local_or_fail`（值填槽，类值恰在 `locals_.size()` 槽位；unwind 截栈槽与半成品同弃，不留可见绑定）④ 成员按源序发射（静态变量初始化顺序即此序，前一静态可被后续初始化器引用）⑤ 顶层 -> `define_global_or_fail`（判重 + `DEF_GLOBAL` 弹值；类体后才绑定：静态初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未入全局；`TryRecord.stack_depth` 记在 def 语句前）。
 - **this/super 解析**：`visitThisExprNode` -> `resolve_this_or_fail`（沿 fn ctx 链找 `kThisName` 的局部--当前帧命中 -> Local 恒槽 0；外层命中 -> `resolve_upvalue` 捕获（arrow 语义，穿透多层）；链上无实例方法 -> `fail ThisOutsideClass`；**永不落全局**）。`visitSuperExprNode`（`super.成员` 文法单形，裸 super 解析期 `ExpectedToken`）-> 语境检查（`SuperOutsideMethod`）+ `LOAD_SUPER_FIELD`（方法闭包绑 this、静态槽原值直读）；super 写形态无对应语义 -> `validate_lvalue_target` 拒绝报 `InvalidAssignmentTarget`。`super.m(args)` 经 visitCallNode 通用路径复用本 visit。
   - **this/super 的不对称判据**：this 允许嵌套捕获而 super 禁止。this 是帧槽 0 的具名局部，栈槽值可 upvalue 化；super 是
     `(defining class, this)` 二元组，而 defining class 挂在闭包上、不是局部，无槽可捕。故 super 仅直接方法帧可用，

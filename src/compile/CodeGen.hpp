@@ -152,6 +152,10 @@ namespace aria {
         [[nodiscard]]
         u16 define_local_or_fail(StringView name, SourceLoc loc) const;
 
+        // 全局绑定：同名全局已登记 -> fail RedefinedVariable；add_name 入池后发 DEF_GLOBAL 弹栈值
+        // 绑定全局（值已在栈顶，弹值即定义）。行号与报错位置取 loc。
+        void define_global_or_fail(StringView name, SourceLoc loc) const;
+
         void begin_scope() const;
 
         // 退出作用域（块 / for / for-in / try 共用）：先 emit_pop_locals_to 发射弹区清理
@@ -206,11 +210,8 @@ namespace aria {
         // 调用点先处理（时序见 visitForStmtNode）。
         void emit_loop_backedge_and_exits(const LoopCtx& loop_ctx, SourceLoc loc) const;
 
-        // declare_global 已存在(重定义) -> fail RedefinedVariable。
-        void declare_global_or_fail(StringView name, SourceLoc loc) const;
-
-        // 栈顶值绑定收口（var/fun/def/import 四处共用）：全局 -> declare 判重 + add_name 入池 +
-        // DEF_GLOBAL 弹值；局部 -> 值填槽 declare（登记即初始化，值恰在槽位）。行号与报错位置取 loc。
+        // 栈顶值绑定收口（var/fun/def/import 四处共用）：全局 -> define_global_or_fail（判重 +
+        // DEF_GLOBAL 弹值）；局部 -> define_local_or_fail（值填槽，登记即初始化，值恰在槽位）。
         // var 的初始化器先于本调用求值（init 里的同名引用沿 resolve 链落外层），见 visitVarDeclNode。
         void bind_stack_value(StringView name, SourceLoc loc) const;
 

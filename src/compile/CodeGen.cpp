@@ -223,6 +223,17 @@ namespace aria {
         return cur_fn_ctx()->add_local(name); // 纯登记
     }
 
+    void CodeGen::define_global_or_fail(const StringView name, const SourceLoc loc) const {
+        // 同名全局已登记 -> RedefinedVariable（局部侧对应物 define_local_or_fail）。
+        if (!mod_ctx_->declare_global(name)) {
+            fail(ErrorCode::RedefinedVariable, loc, "redefined global variable '{}'", name);
+        }
+        const u32  line     = loc.line();
+        const auto name_idx = add_name_or_fail(name, loc);
+        cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
+        cur_cu()->emit_word(name_idx, line); // 弹值定义全局
+    }
+
     CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc loc) {
         // 解析序「局部 -> upvalue -> 全局」，契约见 CodeGen.hpp resolve_name_or_fail 注。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
@@ -290,20 +301,10 @@ namespace aria {
         }
     }
 
-    void CodeGen::declare_global_or_fail(const StringView name, const SourceLoc loc) const {
-        if (!mod_ctx_->declare_global(name)) {
-            fail(ErrorCode::RedefinedVariable, loc, "redefined global variable '{}'", name);
-        }
-    }
-
     void CodeGen::bind_stack_value(const StringView name, const SourceLoc loc) const {
-        // 契约见 CodeGen.hpp bind_stack_value 注；行号就地取 loc（声明行）。
-        const u32 line = loc.line();
+        // 契约见 CodeGen.hpp bind_stack_value 注。
         if (mod_ctx_->is_global_scope()) {
-            declare_global_or_fail(name, loc);
-            const auto name_idx = add_name_or_fail(name, loc);
-            cur_cu()->emit_op(OpCode::DEF_GLOBAL, line);
-            cur_cu()->emit_word(name_idx, line); // 弹值定义全局
+            define_global_or_fail(name, loc); // 弹值定义全局
         } else {
             std::ignore = define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
         }
@@ -895,11 +896,11 @@ namespace aria {
             member->accept(*this);
         }
 
-        // ⑤ 全局腿尾绑定:类体全部建成后才 DEF_GLOBAL,异常路径半成品类随 unwind 截栈丢弃后类名
-        //    从未入全局(全局无编译期登记可先行)。类名经 MAKE_CLASS 已入池,bind_stack_value 再取
-        //    一次名字(常量池按值去重,复用同一池项);局部腿已在 ③ 登记,不再进 bind_stack_value。
+        // ⑤ 全局腿尾绑定:类体全部建成后才 define_global_or_fail(判重 + DEF_GLOBAL 弹值),异常路径
+        //    半成品类随 unwind 截栈丢弃后类名从未入全局(全局无编译期登记可先行)。类名经 MAKE_CLASS
+        //    已入池,此处 add_name 再取一次名字(常量池按值去重,复用同一池项);局部腿已在 ③ 登记。
         if (mod_ctx_->is_global_scope()) {
-            bind_stack_value(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值
+            define_global_or_fail(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值
         }
     }
 

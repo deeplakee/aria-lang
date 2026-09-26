@@ -124,4 +124,6 @@ namespace aria {
         }
     }
 
+    ObjMovement* new_movement(GC& gc) { return gc.new_object<ObjMovement>(&gc); }
+
 } // namespace aria

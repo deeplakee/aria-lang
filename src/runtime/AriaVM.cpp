@@ -187,7 +187,7 @@ namespace aria {
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
         string_constants_{kStringConstantCount} {
-        current_ = gc_.new_object<ObjMovement>(&gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
+        current_ = new_movement(gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
         {

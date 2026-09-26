@@ -313,6 +313,11 @@ namespace aria {
         ExecState                        state_;         // 执行状态(五态;主上下文亦参与换位但无人读)
     };
 
+    // 工厂:分配执行上下文。守卫纪律见 Object.hpp,返回对象白色无根,调用方须自行根化
+    //(主上下文经 current_、协程经 create 原语的返回槽发布)。
+    [[nodiscard]]
+    ObjMovement* new_movement(GC& gc);
+
     // VMContext 是 ObjMovement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用
     // VMContext,强调「协程对象」用 ObjMovement。
     using VMContext = ObjMovement;

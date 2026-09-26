@@ -17,7 +17,9 @@ namespace aria {
     //   - slots:调用区可写视图 [callee, a1..aN](argc = size()-1);slots[0] 兼**返回槽**(返回值直接写于此),方法调用形态
     //     下 VM 预先把槽 0 覆写为 receiver(仍是返回槽)。
     //   - 返回 bool:true = 成功(值已写 slots[0]);**契约 false ⟺ 已调 vm.fail/raise**,惯用法 `return vm.fail(...);`。VM
-    //     调用后 drop(argc) 升 slots[0] 为栈顶,失败载荷留寄存器交调用方 unwind;消息为烘齐完整串、不含位置前缀。
+    //     调用后 drop(argc) 升 slots[0] 为栈顶,失败载荷留寄存器交调用方 unwind;消息为烘齐完整串、不含位置前缀。例外:
+    //     **切换型原生**(coroutine.resume/yield,见 vm-design.md §4.9)返 true 时不写 slots[0] -- 该槽是对侧原语要写的
+    //     预留结果槽,且 current_ 已切至对侧(「禁止 false + 切换」仍恒成立)。
     //   - 纪律:①**叶子调用**,不得操作 VM 值栈(push/pop/drop)否则 slots 失效;②写新生对象到 slots[0] 时中间对象须 Guard
     //     入临时根;③错误走侧信道寄存器,不抛 C++ 异常。
     using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);

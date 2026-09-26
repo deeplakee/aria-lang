@@ -1,0 +1,8 @@
+// 钉住：yield 可从任意调用深度发起——挂起的是整个上下文，帧链原样保留、逐层返回。
+fun leaf(v) { return coroutine.yield(v * 2); }
+fun mid(v) { return leaf(v) + 1; }
+var c = coroutine.create(fun(x) { return mid(x); });
+assert(coroutine.resume(c, 10) == 20);    // leaf 内 yield(20)
+assert(coroutine.status(c) == "suspended");
+assert(coroutine.resume(c, 100) == 101);  // leaf 返回 100，mid +1 -> 101
+assert(coroutine.status(c) == "done");

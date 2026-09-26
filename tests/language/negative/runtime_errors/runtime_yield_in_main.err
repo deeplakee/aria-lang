@@ -1,0 +1,2 @@
+Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
+at <main> (

@@ -1,0 +1,2 @@
+// 钉住：主上下文里 yield 为运行期错误 YieldOutsideCoroutine。
+coroutine.yield(1);

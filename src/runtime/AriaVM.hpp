@@ -72,6 +72,10 @@ namespace aria {
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
 
+        // 协程模块方法面宿主:四原语静态方法经友元访问 check_arity/prepare_call_args/current_
+        // 等私有面(宿主类注释见 runtime/builtins/CoroutineModule.hpp)。
+        friend class CoroutineModule;
+
 #ifdef ARIA_OPCODE_PROFILE
         // 指令频度探针(仅探针构建,定义见 runtime/opcode_profile.hpp):以成员 opcode_profiler_
         // 挂载,经友元取 current_ 等私有状态;唯一探测点 = dispatch_loop 取指行的
@@ -283,6 +287,17 @@ namespace aria {
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传(契约见 ObjNativeFn.hpp)。
         bool call_native(const ObjNativeFn* obj, u8 argc);
 
+        // 协程切换原语对(切换序列的唯一实现处:状态改写 + 链接/解链 + current_ 换指不再由
+        // 调用方手拼;恢复者恒取 current_):
+        //   enter_coroutine -- 进入协程 coroutine:置链(coroutine -> current_)、双方状态换位
+        //   (coroutine Running / current_ Normal)、换指。
+        //   leave_coroutine -- current_ 让位回恢复者(previous_):本侧置 departing_state 并解
+        //   链、恢复者置 Running、换指。yield(Suspended)/RETURN 完成(Done)/未捕获跳链
+        //   (Failed,链式 unwind 共用)三个回切方向收敛于此;让位方的 reset/载荷善后归调用方。
+        void enter_coroutine(ObjMovement* coroutine);
+
+        void leave_coroutine(ExecState departing_state);
+
         // 类实例化:new_instance 为唯一 GC 点,建成即写 callee 槽 -- **槽 0 原位换实例**(即
         // 新帧的 this),余下交 call_value 通用分发(init 恒有值)。
         bool call_class(ObjClass* obj, u8 argc);
@@ -338,6 +353,11 @@ namespace aria {
         // match 兜底异常 bootstrap:铸共享 ObjException(MatchNoArm,消息静态)入寄存器
         // MatchNoArm 格。全臂未命中由字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         void bootstrap_match_no_arm();
+
+        // <coroutine> 合成模块 bootstrap:建模块(不入 modules_ 表)并经 CoroutineModule::
+        // register_functions 装载协程方法面,再以 "coroutine" 键注册进 builtins_。须在 ctor
+        // 构造临界区内调用(GC 挂起,创建免守卫)。
+        void bootstrap_coroutine_module();
 
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
         // runtime.md「共享状态」。执行上下文只标 current_ 一点,各上下文内部与 previous_ resume

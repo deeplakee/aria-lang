@@ -74,8 +74,11 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 ## 当前禁区（写新用例前必读）
 
 1. **不要钉临时未实装行为**：`range` 方法面（现仅 `iter`）、**判等（`==`/`!=`）与下标的重载**
-   （算子与调用的重载已落地，见下）、`NotIterable`/`IteratorProtocol` 专用码接线、defer 与协程
-   均未落地--写「期待报错」的负向用例会在翻转日变红。
+   （算子与调用的重载已落地，见下）、`NotIterable`/`IteratorProtocol` 专用码接线、defer
+   未落地--写「期待报错」的负向用例会在翻转日变红。协程切换模型已落地
+   （`coroutine.create/resume/yield/status`，见 14_coroutines），但**协程内未捕获错误仍是禁区**
+   （跨协程错误路径未接线：run() 出口断言当场炸；负向用例「resume 在链上的协程」只能发生在
+   协程内、同样禁写，待跨协程错误批次解锁）。
 2. **不钉拿不准的消息全文**：如 assert 失败消息、异常烘焙消息里的路径/行号；对不可迭代值
    for-in 目前报 `UndefinedProperty`（降糖为 `.iter` 方法调用 miss，非对象落原语统一文案
    `type Int does not support field access`），`NotIterable` 专用码已预留未接线，措辞会变

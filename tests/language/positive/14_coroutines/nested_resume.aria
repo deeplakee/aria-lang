@@ -1,0 +1,17 @@
+// 钉住：嵌套两级 resume——协程内创建并 resume 另一协程，各自独立往返；嵌套实参位
+// （resume 的载荷表达式内含另一个 yield 所在上下文的值）不互相干扰。
+fun inner(k) {
+    var got = coroutine.yield(k * 100);
+    return got + 7;
+}
+fun outer() {
+    var ic = coroutine.create(inner);
+    var first = coroutine.resume(ic, 3);
+    coroutine.yield(first + 1);
+    return coroutine.resume(ic, 4);
+}
+var oc = coroutine.create(outer);
+assert(coroutine.resume(oc) == 301);
+assert(coroutine.status(oc) == "suspended");
+assert(coroutine.resume(oc) == 11);
+assert(coroutine.status(oc) == "done");

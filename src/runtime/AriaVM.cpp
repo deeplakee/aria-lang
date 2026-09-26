@@ -30,6 +30,7 @@
 #include "object/iterator/ObjMapIterator.hpp"
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/CoroutineModule.hpp"
 #include "runtime/builtins/IteratorBuiltins.hpp"
 #include "runtime/builtins/ListBuiltins.hpp"
 #include "runtime/builtins/MapBuiltins.hpp"
@@ -143,8 +144,8 @@ namespace aria {
             const auto  ip_off = static_cast<u32>(frame.ip - frame.unit->code.data());
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
-            io::print(stderr, "[trace] {}  {} @{:04X}  {}\n", frame.module->to_string(),
-                      frame.closure->function()->to_string(), ip_off, instr);
+            io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(ctx),
+                      frame.module->to_string(), frame.closure->function()->to_string(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。
@@ -198,6 +199,7 @@ namespace aria {
             bootstrap_string_constants();
             bootstrap_registers();
             builtins::register_builtin_functions(gc_, builtins_);
+            bootstrap_coroutine_module();
         }
     }
 
@@ -336,6 +338,18 @@ namespace aria {
         const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
         const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
         registers_[kMatchNoArmOffset] = no_arm;
+    }
+
+    void AriaVM::bootstrap_coroutine_module() {
+        // <coroutine> 合成模块:语言面 coroutine.create/resume/yield/status 的载体(P1:合成
+        // ObjModule 而非新对象类型 -- ObjMap 当不了命名空间,map.foo 查的是 Map 类方法表)。
+        // 方法面自持于 CoroutineModule(四原语与表私有,唯一公有口 register_functions,装载经
+        // builtins::register_module_functions 底座);模块永不入 modules_ 表,经 builtins_ 的
+        // "coroutine" 键可达。须在 ctor 构造临界区内调用(GC 挂起,创建免守卫)。
+        const auto module = new_module(gc_, "<coroutine>", ""); // dir 空:纯命名空间,无目录锚点
+        CoroutineModule::register_functions(gc_, module);
+        const auto name = new_string(gc_, "coroutine");
+        builtins_.set(Value::from_obj(name), Value::from_obj(module));
     }
 
     void AriaVM::init_source_roots() {
@@ -565,24 +579,43 @@ namespace aria {
 
     bool AriaVM::call_native(const ObjNativeFn* obj, const u8 argc) {
         // 原生函数同步调用,不进帧(契约见 ObjNativeFn.hpp)。entered_ctx 是全部事后簿记
-        // (drop/寄存器断言)的锚点:M6 前 current_ 恒等于它,断言锁「原生调用不得换走 current_」;
-        // false 路径「禁止 false + 切换」为永久契约(§4.9)。实参留栈到 drop 亦是 GC 红利:切换型
-        // 原生函数执行全程实参皆调用者栈根。
+        // (drop/寄存器断言)的锚点:成功路径 current_ 可能已被切换型原生(coroutine.resume/
+        // yield)换至对侧,drop 恒落在 entered_ctx 上、使栈顶停在该调用的槽 0(切换模型下即
+        // 「预留结果槽」,由对侧原语写,见 vm-design.md §4.9);false 路径「禁止 false + 切换」
+        // 为永久契约(失败载荷在调用方上下文,切走了就没人消费)。实参留栈到 drop 亦是 GC 红利:
+        // 切换型原生执行全程实参皆调用者栈根。
         const auto entered_ctx = current_;
         const auto slots       = Span<Value>{&current_->peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!current_->has_error(), "pending error not cleared before native call");
         if (obj->fn()(*this, slots)) {
-            ASSERT(current_ == entered_ctx, "current_ not restored across native call");
-            // drop 实参使返回值升栈顶,恒落在 entered_ctx 上(current_ 切换后可能已非它)。
             ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
             entered_ctx->drop(argc);
             return true;
         }
-        ASSERT(current_ == entered_ctx, "current_ not restored across native call");
+        ASSERT(current_ == entered_ctx, "native fn returned false after switching current_");
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
         ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
         return false;
+    }
+
+    void AriaVM::enter_coroutine(ObjMovement* coroutine) {
+        // 顺序不变式:置链必须先于换指 -- 换指后恢复者只经 coroutine->previous_ 这一条边可达
+        //(GC 根只标 current_),其调用区的实参/载荷以此跨切换后的 GC 点存活(「实参留栈到
+        // drop」是 call_native 的既定红利)。
+        coroutine->set_previous(current_);
+        coroutine->set_state(ExecState::Running);
+        current_->set_state(ExecState::Normal);
+        current_ = coroutine;
+    }
+
+    void AriaVM::leave_coroutine(const ExecState departing_state) {
+        const auto resumer = current_->previous();
+        ASSERT(resumer != nullptr, "leaving context is not on the resume chain");
+        resumer->set_state(ExecState::Running);
+        current_->set_state(departing_state);
+        current_->set_previous(nullptr);
+        current_ = resumer;
     }
 
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
@@ -987,6 +1020,9 @@ namespace aria {
             // 记账(见 runtime/opcode_profile.hpp)。
             switch (auto op = ARIA_FETCH_OPCODE(frame)) {
                 case OpCode::HALT:
+                    // 真实程序不产 HALT(仅手写字节码用);运行态空 previous 即主上下文(切换点
+                    // 先置链、挂起即解链),协程内落 HALT 会打破 run() 出口断言,提前在此钉住。
+                    ASSERT(current_->previous() == nullptr, "HALT reached inside a coroutine");
                     return Value::nil_val();
 
                 // 数据加载与存储
@@ -1472,15 +1508,27 @@ namespace aria {
                     const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
                     // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
                     // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
-                    // exit_frame(其后 frame 悬垂)。
-                    auto mod     = frame->module;
+                    // exit_frame(其后 frame 悬垂);resumer 于空帧分支内取(上下文字段,
+                    // 不随帧失效)。
+                    auto module  = frame->module;
                     auto fn_name = frame->closure->name()->view();
                     current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
                     if (current_->frames().empty()) {
-                        return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
+                        const auto resumer = current_->previous();
+                        if (resumer == nullptr) {
+                            return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
+                        }
+                        // 协程最外帧(闭包体)返回即完成:值写 resumer 预留槽 -> reset 清场
+                        //(死协程不留栈,[closure] 槽一并清;ret 已弹入局部,reset 不殃及;reset
+                        // 先关开指,泄漏闭包取值安全)-> leave_coroutine 置 Done、解链、resumer
+                        // 置 Running 并换指。不往协程自己栈上 push 返回值。
+                        resumer->peek(0) = ret;
+                        current_->reset();
+                        leave_coroutine(ExecState::Done);
+                        break;
                     }
                     if (fn_name == kModuleEntryName) { // 模块体帧:名字经 intern 驻留,短串逐 RETURN 比较开销可忽略
-                        current_->push(Value::from_obj(mod));
+                        current_->push(Value::from_obj(module));
                     } else {
                         current_->push(ret);
                     }

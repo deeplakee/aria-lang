@@ -8,6 +8,7 @@ namespace aria {
 
     class GC;
     class ObjClass;
+    class ObjModule;
     class AriaHashTable;
 
     // 内置函数注册机制:把内建原生函数按名注册进 **VM 级只读 builtins_ 表**(全 VM 共享),用户代码
@@ -16,17 +17,20 @@ namespace aria {
     // 模块 globals 优先命中;内置不入编译期 defined_globals_,不触发 RedefinedVariable;STORE_GLOBAL 不回退 builtins(赋值
     // 不隐式创建)。本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局自由函数表**(本文件
     // ,LOAD_GLOBAL 回退触达);**XXXBuiltins = XXX 类型的内建方法面**(List/Map/Iterator/String/Range,恒经 bootstrap 类表
-    // 分派、恒绑定 receiver)。前缀有无即两类机制的区分;两者共用的底座(条目形态 BuiltinEntry、类型方法面装载
-    // register_builtin_methods)亦住本文件 --本文件即目录伞文件,先述底座再述全局表。
+    // 分派、恒绑定 receiver);**XXXModule = 内建模块的方法面**(CoroutineModule,经模块 globals 触达,
+    // 方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 register_functions,resume 须访问
+    // 切换私有面故为 AriaVM 友元,见该文件头)。前缀即机制区分;
+    // 三个底座(条目形态 BuiltinEntry、类型方法面装载 register_builtin_methods、模块方法面装载
+    // register_module_functions)亦住本文件 --本文件即目录伞文件,先述底座再述全局表。
     namespace builtins {
 
         // NativeFn 方法调用形态(全部 XXXBuiltins 方法共用,四个方法面文件不再复述):slots[0] =
         // receiver 兼返回槽,读 slots[1..] 为实参;失败 `return vm.fail(...)`(bool 契约
         // false ⟺ 已 raise)。receiver 在 slots[0] 于栈根,方法产出新对象须在覆写 slots[0] 前发布。
 
-        // 内建表条目:名 + 原生函数指针。全局自由函数表(kBuiltins)与各类型方法表
+        // 内建表条目:名 + 原生函数指针。全局自由函数表(kBuiltins)、各类型方法表
         // (kListBuiltins / kStringBuiltins / kMapBuiltins / kRangeBuiltins / kIteratorBuiltins)
-        // 同此一形态。
+        // 与模块方法表(CoroutineModule::kModuleFunctions)同此一形态。
         struct BuiltinEntry {
             StringView name;
             NativeFn   fn;
@@ -36,6 +40,12 @@ namespace aria {
         // name 作字段键,经 new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射
         // 的同名常量同指针,查表按指针命中。全局表不经此(只此一处填,循环就地写在定义里)。
         void register_builtin_methods(GC& gc, ObjClass* klass, Span<const BuiltinEntry> methods);
+
+        // 按名把内建方法表逐条注册进**模块全局表**(内建模块的成员 = 模块全局绑定,load_field
+        // 查表即命中):键 intern 同上;不绑定 receiver -- 方法调用区槽 0 恒模块值,原语不读它。
+        // 与 register_builtin_methods 是类表/模块表两个装载面,签名平行。由 AriaVM ctor 构造
+        // 临界区内的 bootstrap 调用。
+        void register_module_functions(GC& gc, ObjModule* module, Span<const BuiltinEntry> fns);
 
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次(在建对象经 make_guard
         // 双守卫,见定义)。

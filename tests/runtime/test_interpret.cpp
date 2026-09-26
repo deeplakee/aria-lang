@@ -140,3 +140,58 @@ TEST(Interpret, PathCompileError) {
     AriaVM     vm;
     EXPECT_EQ(vm.interpret_from_path(path), InterpretResult::CompileError);
 }
+
+// 协程挂起期间 stress GC：挂起协程经用户全局变量可达，其值栈中含唯一引用对象（列表）时
+// 不被回收；多轮垃圾分配后再 resume，协程内部读到的值完好。
+TEST(Interpret, SuspendedCoroutineValuesSurviveStressGc) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    const auto src = R"(
+        fun body() {
+            var inner = [1, 2, 3];
+            coroutine.yield(inner.size());
+            return inner[1];
+        }
+        var co = coroutine.create(body);
+        assert(coroutine.resume(co) == 3);
+        var junk = [];
+        var i = 0;
+        while (i < 50) {
+            junk.push([i]);
+            i = i + 1;
+        }
+        assert(coroutine.resume(co) == 2);
+    )";
+    EXPECT_EQ(vm.interpret_from_src(src), InterpretResult::Ok);
+}
+
+// 两协程交错挂起：各自值栈持唯一引用对象（string 与 list），交错 resume + 垃圾压力下互不干扰。
+TEST(Interpret, InterleavedCoroutinesSurviveStressGc) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    const auto src = R"(
+        fun a_body() {
+            var m = "aaa";
+            coroutine.yield(m);
+            return m.size();
+        }
+        fun b_body() {
+            var m = [9];
+            coroutine.yield(m);
+            return m[0];
+        }
+        var ca = coroutine.create(a_body);
+        var cb = coroutine.create(b_body);
+        assert(coroutine.resume(ca) == "aaa");
+        assert(coroutine.resume(cb) == [9]);
+        var junk = [];
+        var i = 0;
+        while (i < 50) {
+            junk.push([i]);
+            i = i + 1;
+        }
+        assert(coroutine.resume(ca) == 3);
+        assert(coroutine.resume(cb) == 9);
+    )";
+    EXPECT_EQ(vm.interpret_from_src(src), InterpretResult::Ok);
+}

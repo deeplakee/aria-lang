@@ -5,6 +5,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
+#include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
@@ -112,6 +113,13 @@ namespace aria::builtins {
         for (const auto& [name, fn]: methods) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
+        }
+    }
+
+    void register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinEntry> fns) {
+        for (const auto& [name, fn]: fns) {
+            const auto fn_obj = new_native_fn(gc, name, fn);
+            module->globals().set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
         }
     }
 

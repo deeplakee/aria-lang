@@ -66,6 +66,8 @@ add_library(aria_core STATIC
         src/runtime/AriaVM.hpp
         src/runtime/builtins/Builtins.cpp
         src/runtime/builtins/Builtins.hpp
+        src/runtime/builtins/CoroutineModule.cpp
+        src/runtime/builtins/CoroutineModule.hpp
         src/runtime/FrameStack.hpp
         src/runtime/builtins/IteratorBuiltins.cpp
         src/runtime/builtins/IteratorBuiltins.hpp

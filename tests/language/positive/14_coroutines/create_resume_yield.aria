@@ -1,0 +1,11 @@
+// 钉住：create 首启、yield 值往返、完成切回的返回值与 done 态（槽协议基础闭环）。
+fun gen(n) {
+    var x = coroutine.yield(n + 1);
+    return x * 2;
+}
+var g = coroutine.create(gen);
+assert(coroutine.status(g) == "suspended");
+assert(coroutine.resume(g, 5) == 6);
+assert(coroutine.status(g) == "suspended");
+assert(coroutine.resume(g, 10) == 20);
+assert(coroutine.status(g) == "done");

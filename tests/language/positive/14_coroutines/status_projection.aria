@@ -1,0 +1,22 @@
+// 钉住：status 五态投影中的四态（failed 随跨协程错误批次）；running/normal 经首启载荷
+// 把协程对象自身传入查询（首启载荷即被调函数实参）。
+fun body(mirror) {
+    assert(coroutine.status(mirror) == "running");
+    coroutine.yield(1);
+}
+var c = coroutine.create(body);
+assert(coroutine.status(c) == "suspended");
+coroutine.resume(c, c);
+
+fun inner(mirror) {
+    assert(coroutine.status(mirror) == "normal");
+    coroutine.yield(9);
+}
+fun outer(mirror) {
+    assert(coroutine.status(mirror) == "running");
+    var ic = coroutine.create(inner);
+    assert(coroutine.resume(ic, mirror) == 9);
+}
+var oc = coroutine.create(outer);
+coroutine.resume(oc, oc);
+assert(coroutine.status(oc) == "done");

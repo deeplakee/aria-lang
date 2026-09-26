@@ -1,0 +1,11 @@
+// 钉住：已挂起协程的 resume 载荷 = yield 表达式的值；0 参 yield/resume 均为 nil。
+fun echo() {
+    var a = coroutine.yield();
+    var b = coroutine.yield(a);
+    return b;
+}
+var c = coroutine.create(echo);
+assert(coroutine.resume(c) == nil);          // 首启 0 载荷；yield() 0 参 -> nil
+assert(coroutine.resume(c, "hi") == "hi");   // 载荷写 yield 预留槽 -> a = "hi"；yield(a) 回传
+assert(coroutine.resume(c) == nil);          // b = nil，完成返回 nil
+assert(coroutine.status(c) == "done");

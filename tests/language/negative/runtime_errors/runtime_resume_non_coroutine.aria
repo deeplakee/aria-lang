@@ -1,0 +1,2 @@
+// 钉住：resume 实参非协程对象为 TypeMismatch。
+coroutine.resume(5);

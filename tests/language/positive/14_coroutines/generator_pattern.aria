@@ -1,0 +1,17 @@
+// 钉住：生成器惯用法——循环 yield、main 循环 resume 驱动到完成；yield 值与完成返回值
+// 同走 resume 表达式（末元素 3 是完成值，非 yield 值）。
+fun counter(n) {
+    var i = 0;
+    while (i < n) {
+        coroutine.yield(i);
+        i = i + 1;
+    }
+    return n;
+}
+var g = coroutine.create(counter);
+var acc = [];
+while (coroutine.status(g) == "suspended") {
+    acc.push(coroutine.resume(g, 3));
+}
+assert(acc == [0, 1, 2, 3]);
+assert(coroutine.status(g) == "done");

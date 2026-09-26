@@ -129,7 +129,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 3. 以绝对键 `Value::from_obj(key)` 在 VM 模块表 `modules_`（`AriaHashTable`）查：
    - **命中**（编译成功才入表,表内进度 = 体待 run-once / 跑中 / 已跑完）：`module = module_entry->value`。
      命中正在 run-once 的模块即循环导入,按文法直接用其半初始化对象不报错。
-   - **未命中**：调 `load_module(key, path)` 加载 + 编译（见下「加载层」），其 RETURN 判定与错误
+   - **未命中**：调 `load_module(key, path)` 加载 + 编译（见下「加载层」），其返回值来源与错误
      契约见该节。
 4. **压模块值于栈顶**（`current_->push(module)`，栈效应 `... -> [module]`）。命中分支 module 经
    `modules_` 根可达（非移动 GC，push 期间指针稳定，无需守卫）。
@@ -174,8 +174,9 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 3. `Compiler{gc_}.compile(source, module, "<module>")` 编译（`set_entry` 由 `CodeGen::init_module`
    编译期挂入）；编译成功才 `modules_.set` 入表（供循环导入命中体执行中的对象；加载事实源 =
    表成员资格，对象无状态字段；失败一律不留表项，同路径重试重新加载），返回模块（体待 run-once）。
-4. IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧交主循环执行（run-once），其 RETURN
-   按函数名 == `<module>` 判定模块体帧后压回模块对象；**无递归 `dispatch_loop()`**。
+4. IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧交主循环执行（run-once）；模块体入口
+   的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」），RETURN 通用写回
+   callee 槽即完成栈效应；**无递归 `dispatch_loop()`**。
 
 **错误契约同 call_value 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 raise 入 `*current_`
 寄存器，调用方 `unwind()` 派发/物化；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT
@@ -214,7 +215,12 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 
 其余覆盖：`tests/compile/test_parser.cpp`（`import "math" as m;` 解析）、`tests/compile/test_ast.cpp`
 （`ImportStmtNode` dump）、`tests/compile/test_astvisitor.cpp`（visitor 桩）、`tests/compile/test_lexer.cpp`
-（`import` / `as` 关键字）。`tests/runtime/test_ariavm.cpp` 新增加载层端到端测试（`ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals`/`ImportModuleCompileErrorPropagates`/`ImportModuleRuntimeErrorPropagates`/`CircularImportCompletesBothLoaded`/`ReimportReusesLoadedModule`，stress GC 下经 `interpret_from_path` 跑真实 `.aria` 文件并白盒检视 `modules_`）。
+（`import` / `as` 关键字）。入口返回值语义（返回值恒为模块对象）由
+`tests/compile/test_codegen.cpp` 的 `EntryReturnYieldsModuleObject` / `ModuleEntryEpilogueLoadsModuleConstant`
+/ `TopLevelBareReturnCompiles` / `ErrTopLevelReturnValue` 与语料
+`positive/09_modules/module_early_return`（裸 `return;` 早退 + IMPORT 栈效应）、
+`negative/compile_errors/compile_top_level_return_value`（顶层带值 return 拒绝）钉住。
+`tests/runtime/test_ariavm.cpp` 新增加载层端到端测试（`ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals`/`ImportModuleCompileErrorPropagates`/`ImportModuleRuntimeErrorPropagates`/`CircularImportCompletesBothLoaded`/`ReimportReusesLoadedModule`，stress GC 下经 `interpret_from_path` 跑真实 `.aria` 文件并白盒检视 `modules_`）。
 
 ## 相关文档
 

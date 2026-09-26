@@ -58,7 +58,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - `closure`（callable 收敛为闭包，顶层入口也闭包）、`unit`（缓存 `closure->function()->unit()`，省每条指令一跳）、`module`（缓存供 `LOAD/STORE/DEF_GLOBAL` 定位模块 globals）。
 - `ip`（裸指针）；`slots`（局部基址，callee 在槽 0、参数从槽 1 起）。
 - `last_ip`（本帧最近取指指令起始指针，主循环取指前写/`init_frame_` 置 code 起始）：运行期报错定位行号与 unwind 查表共用锚点，按 `last_ip - unit->code.data()` 反推 offset（前提：帧存活期间 code 缓冲恒定--非移动 GC + 执行期零 emit），无 NSDMI 保 trivial 聚合。
-- 模块体 run-once 帧不另设标志位：RETURN 按函数名 == `<module>` 判定（导入模块入口名固定为 `<module>`，用户代码产生不出含 `<>` 的名字；`kModuleEntryName`，见 aria.hpp）。
+- 模块体 run-once 帧与普通帧同构：模块值由模块体入口自己的返回值带回（入口收尾压模块对象常量，见 compile.md `FnKind::ModuleEntry`）。
 
 ### `grow_stack_` 三类指针重绑
 
@@ -101,7 +101,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：callable 收敛为闭包（`ObjFunction` 退为常量池内部物），`call_value` 编排后按 callee 类型分发到 `call_closure`/`call_native`/`call_class`/`call_bound_method`，其余对象类型按调用钩子 `__call__` 取实现后递归分发。
 - 三个 `call_*` 均不收 ctx 参数、作用于 `*current_`（直接读 `current_`，与 dispatch_loop/raise 语义统一），返 `bool` 成败：失败时错误载荷已 `raise` 进 `*current_` 挂起寄存器，调用方据 bool 调 `unwind()`。
-- **`RETURN`**：弹返回值 + `exit_frame`（内置关本帧被捕获局部，值迁入各自 upvalue 自持）；帧栈弹空后按 `previous_` 分派--空 = 主入口返回程序结果，非空 = 协程最外帧完成切回（见「协程」节）；模块体帧（按函数名 == `<module>`）弹弃返回值、改压模块对象。
+- **`RETURN`**：弹返回值 + `exit_frame`（内置关本帧被捕获局部，值迁入各自 upvalue 自持）；非空帧栈把返回值通用写回 callee 槽（IMPORT 的模块值 = 模块体自己的返回值）；帧栈弹空后按 `previous_` 分派--空 = 主入口返回（主模块对象，入口收尾所压），非空 = 协程最外帧完成切回（见「协程」节）。
 - **闭包与 upvalue**：`CLOSURE` 取常量池 `ObjFunction` 现场包闭包并**立即压栈**（「栈即根」，跨捕获循环免守卫）；`is_local` 槽址经 `capture_upvalue` 单点复用/新建插链，`false` 穿透复制外层 upvalue；`LOAD/STORE_UPVALUE` 经 `value_slot()` 开/闭两态同址不分叉；`CLOSE_UPVALUE` 批量关槽址 >= 栈顶的开 upvalue、无弹栈（对齐 Lua `OP_CLOSE`，编译器在弹区 `POP_N` 后发射）。
 - **类与对象 bootstrap**：ctor 期 `bootstrap_registers()` 编排 + `bootstrap_object_class()`（Object 根类 + 原生 no-op init，init Value 化 `return true` 不写槽、保 ObjFunction「module 恒非空」不变式）；List/Iterator/Map/String/Range bootstrap 类（`ObjClass(super=Object 根)`）各经 `register_*_builtins` 装方法面（住 `runtime/builtins/`，方法面是 VM 侧语言面、object 层保持纯表示），入各值寄存器格。
 - **八指令**：`LOAD_REG`（压只读值寄存器）、`MAKE_CLASS`（peek super 不弹跨分配；非类值语言可达报 `TypeMismatch`）、`MAKE_METHOD`/`MAKE_STATIC`（经 `ObjClass::set_field` 落接收类表；MAKE_METHOD 仅实例方法仅收闭包、戳 defining class 一职双任 = super 来源 + 方法性标记，MAKE_STATIC 收静态变量与 fun 静态方法不戳）、`LOAD_FIELD`/`STORE_FIELD`（命名成员读/写统一走 `Object::load_field`/`store_field` 协议，执行体只透传信号）、`LOAD_THIS_FIELD`/`STORE_THIS_FIELD`（case 内直调协议不设执行体，this 取帧槽 0 不经栈，编译器不变式 + ASSERT 钉）、`LOAD_SUPER_FIELD`（defining class 从方法闭包直读，从父类起沿链查不含自身）、`PREPARE_METHOD`/`CALL_METHOD`（见下）。
@@ -111,7 +111,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### `IMPORT` 与 `load_module`
 
-- **`IMPORT`**（执行体私有 `run_import`，bool 契约同 `call_*` 族，unwind 留 dispatch_loop 调用点）：`resolve_module` 解析 specifier 为绝对规范路径（模块表键）-> intern -> `modules_` 查表：命中（体待 run-once / 循环导入跑中 / 已跑完）复用并压栈；未命中 `load_module` 得模块，以其 `entry` 现场包空闭包经 `call_closure` 进帧后 break--**模块体 run-once 即执行一个函数**，由主循环照常驱动，其 RETURN 按函数名 == `<module>` 判定模块体帧、弹弃返回值压回模块对象，故命中/未命中栈效应统一 `[..., module]`，**无递归 `dispatch_loop()`**。解析失败（`resolve_module` 返 `nullopt`）报 `ModuleNotFound`。
+- **`IMPORT`**（执行体私有 `run_import`，bool 契约同 `call_*` 族，unwind 留 dispatch_loop 调用点）：`resolve_module` 解析 specifier 为绝对规范路径（模块表键）-> intern -> `modules_` 查表：命中（体待 run-once / 循环导入跑中 / 已跑完）复用并压栈；未命中 `load_module` 得模块，以其 `entry` 现场包空闭包经 `call_closure` 进帧后 break--**模块体 run-once 即执行一个函数**，由主循环照常驱动；模块体入口的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」，见 compile.md `FnKind::ModuleEntry`），RETURN 通用写回 callee 槽即完成栈效应，故命中/未命中栈效应统一 `[..., module]`，**无递归 `dispatch_loop()`**。解析失败（`resolve_module` 返 `nullopt`）报 `ModuleNotFound`。
 - **`load_module(canonical_path, import_specifier)`**（私有，**仅加载与编译**、**仅限 dispatch_loop 驱动期调用**（寄存器随 `*current_` 走，run 外直调错误会被吞））：读盘 -> 派生身份（`fs::module_name_and_dir`，同入口约定）-> `new_module` + `make_guard` -> `Compiler::compile(..., kModuleEntryName)` -> **编译成功才 `modules_.set` 入表**（加载事实源 = 表成员资格，供循环导入命中体执行中的半初始化对象；失败一律不留表项、同路径重试重新加载）。`canonical_path` 一身二任：`modules_` 表键 + 读盘路径。
 - **错误契约同 `call_value` 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 `raise`；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT 站点位置），编译期 `Error` 就地 `new_exception` 原样装配箱透传（含被导入文件位置，不重烘）。
 - **根安全**：`run_import` 的 `gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 `new_*` 分配根化（intern weak root 不保命）；`modules_.set` 等表 rehash 走 trivial 分配不触 GC、不是守卫承重点；`module`/`entry` 经 `modules_` + `module->entry_` 根可达。详见 `import-handling-overview.md`/`import-path-resolution.md`。

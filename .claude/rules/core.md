@@ -47,7 +47,7 @@ paths:
 
 - **语言值域**：`kIntMin`/`kIntMax`（i48 = `Value::from_int` 的 48 位尾部；字面量闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text` 同界）。
 - **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
-- **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（Compiler/CodeGen 默认入口名）、`kModuleEntryName = "<module>"`（模块体入口名，RETURN 按名回查识别模块体帧）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用，compile 据名判定 lambda 留栈不绑定）。
+- **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（主入口名）、`kModuleEntryName = "<module>"`（模块体入口名；两者入口体同为 ModuleEntry 形态，返回值恒为模块对象）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用，compile 据名判定 lambda 留栈不绑定）。
 - **运算符与调用重载方法名**（十一个 dunder，如 `__add__`/`__call__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（枚举 + 拼写同源展开）与「恒久存活」的根见 `runtime/string_constant.hpp`（见 `runtime.md`「共享状态」的常量串表）。
 - **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
 - **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。

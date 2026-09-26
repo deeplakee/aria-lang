@@ -310,7 +310,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `RETURN` | 无 | `[v] -> ` | 从当前函数返回 `v`（无返回值时编译器先发 `LOAD_NIL`）。退出当前 `CallFrame`，把 `v` 压入调用者栈顶，`ip` 恢复到 `CALL` 之后 |
 
-`RETURN` 也用于顶层执行结束：主模块体（入口名 `<main>`）返回值即程序结果；导入模块体帧（函数名 == `<module>`，由 IMPORT 加载层驱动 run-once）**弹弃返回值**、改压模块对象（「模块体返回模块」），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
+`RETURN` 也用于顶层执行结束：入口函数（主入口 `<main>` 与导入模块体 `<module>` 同为 ModuleEntry 形态）的返回值恒为模块对象——编译器在入口收尾发射「压模块对象常量 + RETURN」（裸 `return;` 同形，带值 `return` 编译期拒绝 `ReturnValueAtTopLevel`），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
 
 ## 5. 关键 lowering
 

@@ -122,8 +122,9 @@ IMPORT 以绝对键查 `modules_`：
     模块返回半初始化对象」直接用，不报错。
 - **未命中**（文件解析命中但模块未入表）：调 `load_module(key, path)` 得模块(已编译 `set_entry`，体待 run-once)，
   IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行
-  一个函数,由主循环照常驱动;其 RETURN 按函数名 == `<module>` 判定模块体帧,弹弃返回值、
-  改压模块对象(模块体「返回模块」),故命中/未命中栈效应统一 `[..., module]`。**无递归 `dispatch_loop()`**。被导入模块的
+  一个函数,由主循环照常驱动;模块体入口的返回值恒为模块对象(编译器在入口收尾发射「压模块对象
+  常量 + RETURN」,见 compile.md `FnKind::ModuleEntry`),RETURN 通用写回 callee 槽,故命中/未命中栈效应
+  统一 `[..., module]`。**无递归 `dispatch_loop()`**。被导入模块的
   编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
   `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `unwind()` 派发/物化);
   读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
@@ -168,8 +169,8 @@ GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()
   `ObjModule::dir_`/`name_` + `abs_path()`（合成绝对路径，`dir_` 指针恒非空、内容可空 --
   `new_module` 默认 cwd）、`.aria` 后缀剥离、模块表命中复用（含循环导入半初始化）、循环导入语义、**未命中分支
   加载链路**（`load_module`：读文件 → `Compiler::compile` 编为被导入模块 CodeUnit（入口名 `<module>`、
-  `set_entry`）→ 编译成功才入表；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,其
-  RETURN 按函数名 == `<module>` 判定模块体帧后压回模块对象,无递归 `dispatch_loop()`）。
+  `set_entry`）→ 编译成功才入表；IMPORT 未命中分支以 `entry` 作普通 0 参函数调用进帧交主循环 run-once,模块体入口
+  返回值恒为模块对象（编译器发射保证）,RETURN 通用写回 callee 槽,无递归 `dispatch_loop()`）。
 - **解析缓存**：IMPORT 重复执行同一 specifier 需避免重复 stat。计划加一层缓存，键
   `(当前模块绝对目录, specifier ObjString*)` -> 已解析绝对键 `ObjString*`，命中即跳过磁盘。
   确切结构 / 存放位置留待实现时定。

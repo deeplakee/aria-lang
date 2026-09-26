@@ -4,8 +4,8 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M5（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子）。
-- **待落地**：M6 协程（单循环切换模型见 `vm-design.md` §4.9）；range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
+- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M6（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子）。
+- **待落地**：range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
 - 里程碑级细节见 `.claude/reference/runtime/vm-design.md` §6 路线表，各特性语义决策见对应 `.claude/reference/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 
 ## 文档与参考（按需加载）
@@ -33,6 +33,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、`init_` 写点（ctor 自 super 派生 + `set_field` 同步）、Locate 合流栈泄漏；类相关特性重启前重读）。
+- `runtime/coroutine-implementation-pitfalls.md` -- M6 协程踩坑归档（槽协议、切换根安全、链式 unwind 四步定序、嵌套 run_closure 红线；协程相关特性重启前重读）。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 - `bench/lang-bench-notes.md` -- aria 源文件级性能基准（`bench/lang/` 与它的驱动 `lang_bench.py`）的测量纪律与端口纪律、跨语言覆盖差异的理由、已实测排除项。

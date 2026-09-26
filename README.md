@@ -6,7 +6,7 @@ aria 是一门自研的动态类型脚本语言，解释器从零用 C++23 实�
 
 语言的设计取向偏“小而完整”：闭包捕获即引用、不做隐式类型转换、字符串以字节为一等索引域、
 模块即文件、异常只有 `try/catch`。它没有想成为第二个 Python，只是把一门脚本语言该有的东西
-（函数、闭包、类、容器、迭代协议、模块、异常）按同一套语义收干净。
+（函数、闭包、类、容器、迭代协议、模块、异常、协程）按同一套语义收干净。
 
 ## 看一眼 aria
 
@@ -66,6 +66,9 @@ println("42".to_int() + 1);                                    # 43
 - **解构**：`var [a, b] = ...`、`[a, b] = [b, a]`、`for ([k, v] in ...)`，支持嵌套、`_` 占位与
   `...rest` 后缀。
 - **异常**：`try`/`catch`（无 `finally`），`throw` 任意值且 `catch` 绑原值；未捕获时打印逐帧堆栈跟踪。
+- **协程**：`coroutine.create/resume/yield/status`（非关键字，普通成员调用）。`resume` 首启的
+  载荷即协程函数实参，返回 `yield` 交出值或完成值；`yield` 可从任意调用深度发起；协程内未捕获
+  错误转投恢复者（外层 `try/catch` 可接住），未捕获跟踪截断在协程边界。
 - **容器与迭代协议**：list/map/range 字面量与下标（负数从尾计数），range 作下标键即切片
   （`xs[1..3]`，倒序 range 得到倒序段）；`for-in` 由统一迭代协议驱动，也可显式取迭代器。
   方法面按类型分布：list 14 个、string 17 个、map 10 个。
@@ -148,7 +151,8 @@ ctest --test-dir build/tagvalue --output-on-failure
 源码到执行的路径是 `Lexer` → `Parser` → `AstVisitor`（`CodeGen` 单遍产出 `CodeUnit`）→ `AriaVM` 主循环。
 运行期错误与用户 `throw` 走同一条 VM 自管异常通道：错误装箱成 `ObjException` 存入当前执行上下文的
 挂起寄存器，`unwind` 由内向外查字节码里的异常记录表定位 handler，全未命中才物化 `Error` 并附带
-堆栈跟踪。
+堆栈跟踪。协程走单循环切换模型：`resume`/`yield` 是原生函数、在 CALL 善后点换执行上下文，主循环
+永不重入；协程内未捕获错误沿 resume 链逐跳转投恢复者。
 
 ```
 src/

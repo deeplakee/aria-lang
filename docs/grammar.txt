@@ -210,7 +210,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # try/finally 裁撤记录（2026-09）：finally 子句已从文法移除（tryCatchStmt 仅存可选 catch，
 # 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
-# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock）；参照实现 Lua/Wren 均
+# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock，另挂 coroutine
+# 模块）；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
 # finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
 # 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常
@@ -290,6 +291,23 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     暴露可变状态由模块自己的函数承担（模块内写自己的全局不受限）。未声明的名不是成员，
 #     读它报 UndefinedProperty；循环导入的半初始化模块只影响尚未执行到的绑定（读它同报
 #     UndefinedProperty，可 catch）。
+#
+# 协程（编译期/VM 语义，文法不编码）：coroutine 模块提供 create/resume/yield/status 四件，
+# 非关键字——coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
+# 回退 builtins 表，命中合成 <coroutine> 模块）。协程本体即执行上下文对象，type(co) 报
+# "Movement"。语义（Lua/Wren 式）：
+#   - create(f) 收闭包建协程（状态 suspended，栈仅 [f]）；resume 首启的载荷即 f 的实参
+#     （上界交被调者元数，默认参数/varargs 照常）；已挂起后只收 0 或 1 个载荷（yield 是
+#     单值表达式），写入即 yield 表达式的值。
+#   - resume 的值即 yield 交出值或协程完成值；yield 可从协程内任意调用深度发起（挂起的
+#     是整个上下文，帧链原样保留）。
+#   - status 五态投影："suspended"/"running"/"normal"（自己 resume 了别人、在链中间）/
+#     "done"/"failed"。
+#   - 主上下文里 yield 报运行期错误；resume 死协程（done/failed）与在链上的协程
+#     （running/normal）各报专用错误码。
+#   - 协程内未捕获错误不终止程序：错误沿 resume 链转投恢复者（可 try/catch 接住，载荷
+#     保码保消息），中间层无 handler 即连死，协程终态 failed；未捕获堆栈跟踪截断在协程
+#     边界（at 行只含接收侧帧链，最内层 = resume 调用点）。
 #
 # 词法要点：
 #   - int 为 i48（[-2^47, 2^47)），float 为 f64；溢出/精度语义阶段处理。

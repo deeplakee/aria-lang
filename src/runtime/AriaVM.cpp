@@ -3,7 +3,6 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
-#include <ranges>
 #include <system_error>
 #include <utility>
 
@@ -975,8 +974,8 @@ namespace aria {
         ASSERT(current_->has_error(), "no pending payload");
 
         while (true) {
-            List<TraceEntry> trace; // 收集序:内 -> 外;物化时反转为外 -> 内(Python 式 most recent
-                                    // call last)。每跳重新收集:死在边界的协程帧不并入物化侧的跟踪
+            List<TraceEntry> trace; // 收集序即物化序:内 -> 外,最内帧紧贴错误消息行(主流 traceback
+                                    // 惯例)。每跳重新收集:死在边界的协程帧不并入物化侧的跟踪
             // 自最内(栈顶)向外搜索 try 记录;命中帧保留 -- handler 偏移与栈基址都属于它。
             auto& frames = current_->frames();
             for (usize i = frames.size() - 1; i < frames.size(); --i) { // 无符号反向:下溢即终止
@@ -1008,7 +1007,7 @@ namespace aria {
                 // 拼接,无 GC 分配点,fn/mod 裸指针不悬垂。
                 auto [code, msg] = take_uncaught_error();
                 current_->reset();
-                for (const auto& [fn, mod, ip_off]: std::views::reverse(trace)) {
+                for (const auto& [fn, mod, ip_off]: trace) {
                     const u32 line = fn->unit().line_for_offset(ip_off);
                     msg += std::format("\n  at {} ({})", fn->name()->view(), mod->format_location(line));
                 }

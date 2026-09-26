@@ -1312,7 +1312,7 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
 // ============================================================
 // 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表。
 // 单寄存器模型：用户 throw 存原值保类型、运行时错误装箱 ObjException 携码；未捕获物化 Error
-// 并烘焙逐帧堆栈跟踪（外 -> 内）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
+// 并烘焙逐帧堆栈跟踪（内 -> 外，最内帧紧贴消息行）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
 // （pitfalls 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
 
 TEST(CodeGen, ThrowIntCaughtBindsValue) {
@@ -1432,8 +1432,8 @@ try {
     EXPECT_EQ(out->as_int(), 8);
 }
 
-TEST(CodeGen, UncaughtStackTraceListsFramesOuterToInner) {
-    // 未捕获跨帧错误：消息尾部逐帧 at 行，外 -> 内（Python 式 most recent call last，坑 #16）；
+TEST(CodeGen, UncaughtStackTraceListsFramesInnerToOuter) {
+    // 未捕获跨帧错误：消息尾部逐帧 at 行，内 -> 外（最内帧紧贴消息行，主流 traceback 惯例，坑 #16）；
     // 行号 = 各帧执行位置（div 的除法行 / mid 的 CALL 行 / <main> 的 CALL 行，同一 last_ip）。
     auto out = run_source(R"(
 fun div() {
@@ -1448,9 +1448,9 @@ mid();
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
     // 消息首行无位置前缀，错误位置 = 最内 at 行（div 的除法行）。
     EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
-                                     "  at <main> (<test>:8)\n"
+                                     "  at div (<test>:3)\n"
                                      "  at mid (<test>:6)\n"
-                                     "  at div (<test>:3)");
+                                     "  at <main> (<test>:8)");
 }
 
 TEST(CodeGen, FinallyIsPlainIdentifierAfterRemoval) {

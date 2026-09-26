@@ -235,10 +235,10 @@ spin(0);
 
 ```text
 Runtime: StackOverflow call frame stack overflow
-  at <main> (spin.aria:2)
   at spin (spin.aria:1)
   at spin (spin.aria:1)
   ...
+  at <main> (spin.aria:2)
 ```
 
 （堆栈跟踪把 256 帧全部打印出来，这里省略中段。）

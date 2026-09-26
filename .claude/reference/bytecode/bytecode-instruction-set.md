@@ -567,7 +567,7 @@ L_end:
 # 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程（`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目（纯搜索，不动帧栈）-> 命中帧处调 `Movement::unwind_to_handler(n, record)` 一体完成：弃内层帧 + 按槽址关闭开 upvalue（含被弃帧与 try 体段的开指，槽区存活时迁值）+ 栈顶截到 catch 参数槽 + `ip = handle` + 载荷 push 落 catch 参数槽；全帧未命中则 `Movement::reset()` 一次清场（全链关开指、清帧、栈复位，载荷先行取走）后从未捕获出口物化 `Error`（反提寄存器载荷）并烘焙外->内逐帧 `at` 堆栈跟踪。`finally` 不支持（善后后继 defer 为可选后续），unwind 流程无 finally 汇合点。
+`raise` 流程（`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目（纯搜索，不动帧栈）-> 命中帧处调 `Movement::unwind_to_handler(n, record)` 一体完成：弃内层帧 + 按槽址关闭开 upvalue（含被弃帧与 try 体段的开指，槽区存活时迁值）+ 栈顶截到 catch 参数槽 + `ip = handle` + 载荷 push 落 catch 参数槽；全帧未命中则 `Movement::reset()` 一次清场（全链关开指、清帧、栈复位，载荷先行取走）后从未捕获出口物化 `Error`（反提寄存器载荷）并烘焙内->外逐帧 `at` 堆栈跟踪（最内帧紧贴消息行）。`finally` 不支持（善后后继 defer 为可选后续），unwind 流程无 finally 汇合点。
 
 ## 6. 缺口分析（相对文法与 AGENTS.md）
 

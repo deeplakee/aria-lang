@@ -173,7 +173,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 未捕获堆栈跟踪（坑 #16）
 
-- `unwind` 搜索阶段对未命中帧记 `TraceEntry{fn, mod, ip_off}`（搜索不动帧栈，帧引用全程有效），全未命中时反转为外 -> 内（Python 式 most recent call last）逐帧烘焙 `\n  at <fn名> (<loc>)` 进 `Error.message_` 尾部。跟踪**每跳重新收集**（`trace` 是循环内局部）：协程内未捕获时死在边界的协程帧不并入物化侧的跟踪 -- 跟踪截断在协程边界，物化只含最终命中/物化那一层的帧链，最内层 at 行 = resume 调用点（原生不进帧，与 §4.8「原生报错即 caller 帧」同源）。
+- `unwind` 搜索阶段对未命中帧记 `TraceEntry{fn, mod, ip_off}`（搜索不动帧栈，帧引用全程有效），全未命中时按收集序（内 -> 外，最内帧紧贴消息行，主流 traceback 惯例）逐帧烘焙 `\n  at <fn名> (<loc>)` 进 `Error.message_` 尾部。跟踪**每跳重新收集**（`trace` 是循环内局部）：协程内未捕获时死在边界的协程帧不并入物化侧的跟踪 -- 跟踪截断在协程边界，物化只含最终命中/物化那一层的帧链，最内层 at 行 = resume 调用点（原生不进帧，与 §4.8「原生报错即 caller 帧」同源）。
 - 行号源 = 各帧 `last_ip` 查 `line_for_offset`（位置串 = `ObjModule::format_location(line)`，文件模块取 `abs_path` / 合成模块退化为 `<name>`，见 object 层「模块身份」）--跟踪行是运行期错误的唯一位置标注（消息不含位置前缀）。透传的被导入模块编译期 `Error` 不经 unwind，无跟踪。
 
 ### finally 不支持

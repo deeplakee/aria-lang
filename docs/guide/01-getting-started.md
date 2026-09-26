@@ -115,7 +115,7 @@ hello.aria:1:9: Syntax: UnterminatedString unterminated string: line break in li
 字符串字面量不能跨行（第 2 章讲字符串时细说）。再如把保留字拼错、`break` 写在循环外，
 都是编译期拦下。
 
-**运行期错误**（执行中才暴露），`Runtime:` 前缀 + 逐帧堆栈跟踪（从 `<main>` 逐帧列到出错位置）：
+**运行期错误**（执行中才暴露），`Runtime:` 前缀 + 逐帧堆栈跟踪（从出错位置逐帧列回 `<main>`）：
 
 <!-- expect-error: DivisionByZero -->
 ```aria
@@ -127,9 +127,9 @@ println(outer(5));
 
 ```text
 Runtime: DivisionByZero integer division by zero
-  at <main> (divzero.aria:4)
-  at outer (divzero.aria:2)
   at inner (divzero.aria:1)
+  at outer (divzero.aria:2)
+  at <main> (divzero.aria:4)
 ```
 
 堆栈跟踪里的 `<main>` 是模块顶层。运行期错误同样可以被 `try/catch` 接住（第 14 章），

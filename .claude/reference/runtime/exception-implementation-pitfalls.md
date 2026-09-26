@@ -305,7 +305,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 ## 坑 #16：未捕获堆栈跟踪（unwind 顺路收集，物化时烘焙）
 
-**约束**：跟踪在 uncaught 出口一次性生成、**不存 `ObjException`**（对标 Python：traceback 取自活帧，异常对象不背全程 trace；catch 掉的异常多数用不上）。落点 = `unwind()` 遍历帧链时**每帧退出前**顺带收集 `(function, module, last_ip)` 三元组--走到未捕获时帧已全弹，故必须顺路收集；命中 handler 则收集弃用。`last_ip` 在此两用（查表 + 跟踪行号）：顶帧 = 故障指令、外层帧 = CALL 站点。物化 `Error` 时把收集序（内 -> 外）反转为外 -> 内（Python 式 most recent call last），逐帧格式化为 `  at <fn名> (<位置串>)` 追加到 `Error::message_` 尾部--烘焙进 message 而非 VM 直接输出，`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。透传错误无跟踪。语义与输出示例见 `vm-design.md` §4.8 与 `rules/runtime.md`「未捕获堆栈跟踪」。
+**约束**：跟踪在 uncaught 出口一次性生成、**不存 `ObjException`**（对标 Python：traceback 取自活帧，异常对象不背全程 trace；catch 掉的异常多数用不上）。落点 = `unwind()` 遍历帧链时**每帧退出前**顺带收集 `(function, module, last_ip)` 三元组--走到未捕获时帧已全弹，故必须顺路收集；命中 handler 则收集弃用。`last_ip` 在此两用（查表 + 跟踪行号）：顶帧 = 故障指令、外层帧 = CALL 站点。物化 `Error` 时按收集序（内 -> 外，最内帧紧贴消息行，主流 traceback 惯例）逐帧格式化为 `  at <fn名> (<位置串>)` 追加到 `Error::message_` 尾部--烘焙进 message 而非 VM 直接输出，`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。透传错误无跟踪。语义与输出示例见 `vm-design.md` §4.8 与 `rules/runtime.md`「未捕获堆栈跟踪」。
 
 ---
 

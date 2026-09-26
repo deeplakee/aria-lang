@@ -465,7 +465,7 @@ namespace aria {
         // unwind 时的上下文);本上下文全帧未命中且在 resume 链上 -> 让位方先 take 载荷再 reset、
         // leave_coroutine 置 Failed 解链换指、caller raise 载荷续搜(中间层连死),逐跳向链根
         // 推进;链终止 = 主上下文 -> reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息),逐帧烘焙
-        // at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:寄存器已有
+        // at 跟踪行进消息尾部(渲染内->外),经 Error::from_baked 一次物化返回。前提:寄存器已有
         // 载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障指令,外层帧 =
         // CALL 站点)。
         Opt<Error> unwind();

@@ -157,7 +157,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者经 raise 装箱(无位置),前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
-**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链搜索 handler 时,对**未命中的帧**顺带收集 `(function, module, last_ip)` 三元组(搜索阶段不动帧栈、帧引用全程有效;若等到「所有帧无 handler」再去查,帧已全弹、无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,把收集序(内->外)反转为外->内(Python 式 most recent call last),格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。**每跳重新收集(M6,跟踪截断在协程边界)**:trace 是 unwind 跳链循环的逐跳局部,死在边界的协程帧不并入物化侧的跟踪--物化只含最终命中/物化那一层的帧链,最内层 at 行 = resume 调用点(原生不进帧,与上文「原生报错即 caller 帧」同源)。烘焙进 message_ 而非 VM 直接输出:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
+**未捕获堆栈跟踪:unwind 时逐帧收集、物化时烘焙,不存 ObjException** -- 跟踪在 uncaught 出口一次性生成(对标 Python:traceback 取自活帧,异常对象不背全程 trace;catch 掉的异常大多数用不上,逐次 throw 收集不值得)。落点:`unwind()` 遍历帧链搜索 handler 时,对**未命中的帧**顺带收集 `(function, module, last_ip)` 三元组(搜索阶段不动帧栈、帧引用全程有效;若等到「所有帧无 handler」再去查,帧已全弹、无帧可查,故须顺路收集)。`last_ip` 在此**两用**:unwind 查表(坑 #1/#2)、跟踪行号--顶帧 = 故障指令、外层帧 = CALL 站点,恰是「该帧执行到哪」的正确答案。走到未捕获出口物化 Error 时,按收集序(内->外,最内帧紧贴错误消息行,主流 traceback 惯例)格式化为逐帧 `  at <fn名> (<位置串>)` 行附加到 `Error::message_` 尾部;命中 handler 则收集弃用。**每跳重新收集(M6,跟踪截断在协程边界)**:trace 是 unwind 跳链循环的逐跳局部,死在边界的协程帧不并入物化侧的跟踪--物化只含最终命中/物化那一层的帧链,最内层 at 行 = resume 调用点(原生不进帧,与上文「原生报错即 caller 帧」同源)。烘焙进 message_ 而非 VM 直接输出:与「message 一次性烘焙、Error 自足」一致,`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。
 
 ### 4.9 协程:单循环切换模型(M6 已落地,Wren 对照)
 

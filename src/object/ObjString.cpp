@@ -86,7 +86,8 @@ namespace aria {
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
         // string 不可变:下标写恒报错(协议族文案;键值检查无意义,先拒操作本身)。
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment",
+                       aria_type_name(type()));
     }
 
     Opt<Value> ObjString::op_add_impl(AriaVM& vm) { return vm.register_value(kStringAddFnOffset); }

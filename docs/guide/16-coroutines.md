@@ -243,8 +243,8 @@ Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
 - **单线程协作式**：切换只发生在 `yield`、体完成、错误转投三处，此外代码原子执行。没有
   抢占、没有超时、没有数据竞争，也不存在任何并行收益 -- 协程的价值在**以线性代码写交错
   逻辑**（生成器、状态机、按需生产）。
-- 协程的 `type()` 名是 `"Movement"`（执行上下文的实现名）；`println` 渲染为
-  `<coroutine suspended>` 形态、带当前状态。
+- 协程的 `type()` 名是 `"Coroutine"`；`println` 渲染为 `<coroutine suspended>` 形态、
+  带当前状态。
 - 协程是 GC 对象：持有它的变量、容器是根，不可达的挂起协程（连同其整套帧链与捕获）
   会被回收。
 

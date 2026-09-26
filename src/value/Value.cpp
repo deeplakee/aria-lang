@@ -68,7 +68,7 @@ namespace aria {
 
     StringView type_name(const Value value) noexcept {
         if (value.is_obj()) {
-            return value.as_obj()->type_name();
+            return aria_type_name(value.as_obj()->type());
         }
         return value.type_name();
     }

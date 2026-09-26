@@ -68,7 +68,8 @@ namespace aria {
     bool ObjModule::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 模块成员只读:越模块写会隐式创建他人未声明全局,违「赋值不隐式创建」;暴露可变状态
         // 走模块自己的函数。文案归协议族(与其它「不支持该写形态」同形)。
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment",
+                       aria_type_name(type()));
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {

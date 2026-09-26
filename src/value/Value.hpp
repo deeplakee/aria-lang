@@ -40,7 +40,7 @@ namespace aria {
     }
 
     // 值的精确类型名(PascalCase,全项目统一约定):原语走 Value::type_name() constexpr 成员,
-    // Obj 走 obj->type_name() 取对象子类型(区别于成员版的 constexpr 粗分类,后者对 Obj 返 "Obj")。
+    // Obj 走 aria_type_name() 取对象子类型的语言面拼写(区别于成员版的 constexpr 粗分类,后者对 Obj 返 "Obj")。
     // 本自由函数是**精确类型名**的统一入口(错误消息打印用);定义在 Value.cpp(需 Object 完整类型)。
     [[nodiscard]]
     StringView type_name(Value value) noexcept;

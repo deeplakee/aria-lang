@@ -74,6 +74,18 @@ namespace aria {
         }
     }
 
+    // 语言面类型名(type() 内建与用户可见报错的拼写源):条目按语言词汇拼写,与 to_string 的
+    // C++ 机械名分立;仅在分叉处覆写,其余委托 to_string(新增 ObjType 默认继承机械名)。
+    [[nodiscard]]
+    constexpr StringView aria_type_name(const ObjType kind) noexcept {
+        switch (kind) {
+            case ObjType::MOVEMENT:
+                return "Coroutine"; // 语言概念是协程(coroutine 模块/报错文案/debug_repr 同此拼写)
+            default:
+                return to_string(kind);
+        }
+    }
+
     // Object 自前向声明(concept 延迟求值 is_base_of,须先有名字)。
     class Object;
 

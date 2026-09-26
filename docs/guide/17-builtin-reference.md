@@ -26,7 +26,7 @@
 | 函数与闭包 | `"Closure"` |
 | 类 / 实例 | `"Class"` / `"Instance"`（不区分类名） |
 | 模块 | `"Module"` |
-| 协程 | `"Movement"` |
+| 协程 | `"Coroutine"` |
 | VM 运行期错误装箱 | `"Exception"` |
 
 ## coroutine 模块（4 个）

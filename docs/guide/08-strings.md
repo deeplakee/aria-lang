@@ -185,7 +185,7 @@ Runtime: IndexOutOfBounds substring range 3..9 out of range
 
 - `replace(old, new)` 替换全部命中，`old` 为空串报 `EmptyPattern`。
 
-完整的方法签名表见[附录](16-builtin-reference.md)。
+完整的方法签名表见[附录](17-builtin-reference.md)。
 
 ## 小结
 

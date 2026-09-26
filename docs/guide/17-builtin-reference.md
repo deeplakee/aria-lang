@@ -1,4 +1,4 @@
-# 第 16 章 附录：内建参考
+# 第 17 章 附录：内建参考
 
 本章是速查手册：全局内建函数、各类型方法面、下标与切片规则、`type()` 返回名、常见错误
 消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语义的完整规范以
@@ -26,7 +26,22 @@
 | 函数与闭包 | `"Closure"` |
 | 类 / 实例 | `"Class"` / `"Instance"`（不区分类名） |
 | 模块 | `"Module"` |
+| 协程 | `"Movement"` |
 | VM 运行期错误装箱 | `"Exception"` |
+
+## coroutine 模块（4 个）
+
+内建模块 `coroutine`（经内建表解析，见第 16 章）。成员函数对协程操作，`co` 一律指
+协程值：
+
+| 函数 | 元数 | 行为 |
+| :--- | :--- | :--- |
+| `coroutine.create(fn)` | 1 | 以 fn 为体建协程（登记不执行），返新协程；fn 非函数报 `TypeMismatch` |
+| `coroutine.resume(co[, v...])` | 1..∞ | 首启：其余实参作协程体实参（元数照查）；已挂起：至多 1 个载荷作 `yield` 表达式值。返回 yield 值，协程体完成时返回其返回值 |
+| `coroutine.yield([v])` | 0..1 | 挂起当前协程，v 作恢复侧 `resume` 表达式的值；可从任意调用深度发起；主上下文调用报 `YieldOutsideCoroutine` |
+| `coroutine.status(co)` | 1 | 返回状态拼写串：`"suspended"` / `"running"` / `"normal"` / `"done"` / `"failed"` |
+
+`co` 非协程报 `TypeMismatch`（`create` 对应报 fn 非函数）。
 
 ## string 方法面（17 个 + 5 个算子钩子）
 
@@ -137,6 +152,7 @@ Runtime: TypeMismatch range bounds must be integers, got F64 and Int
 Runtime: TypeMismatch list index must be an integer, got Range
 Runtime: TypeMismatch type Module does not support field assignment
 Runtime: TypeMismatch sort requires all numbers or all strings, got Int and String
+Runtime: TypeMismatch argument must be a coroutine, got Int
 Runtime: UndefinedVariable undefined global 'nope'
 Runtime: UndefinedProperty <class Box> has no member '__add__'
 Runtime: UndefinedProperty <module util> has no member 'absent'
@@ -146,6 +162,9 @@ Runtime: IterationExhausted iterator exhausted
 Runtime: StackOverflow call frame stack overflow
 Runtime: CallNonCallable type Int does not support '__call__'
 Runtime: EmptyPattern split separator must not be empty
+Runtime: ResumeDeadCoroutine cannot resume a dead coroutine
+Runtime: ResumeNonSuspendedCoroutine cannot resume a non-suspended coroutine
+Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
 Internal: AssertionFailed assertion failed
 Resource: ModuleNotFound module not found: 'nope'
 ```
@@ -159,4 +178,4 @@ Resource: ModuleNotFound module not found: 'nope'
 
 ---
 
-[上一章：模块](15-modules.md) · [返回目录](README.md)
+[上一章：协程](16-coroutines.md) · [返回目录](README.md)

@@ -197,7 +197,7 @@ Internal: AssertionFailed custom message
 
 ## 常见运行期错误码
 
-教程各章已经零散见过，这里集中列一次（完整消息见[附录](16-builtin-reference.md)）：
+教程各章已经零散见过，这里集中列一次（完整消息见[附录](17-builtin-reference.md)）：
 
 | 码 | 典型触发 |
 | :--- | :--- |

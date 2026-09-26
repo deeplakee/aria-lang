@@ -1521,35 +1521,25 @@ namespace aria {
                     goto unwind_check;
                 }
 
-                // 返回(exit_frame 后 frame 失效,故先取返回值与判模块体帧)
+                // 返回(exit_frame 后 frame 失效,故先取返回值)
                 case OpCode::RETURN: {
                     const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
-                    // 模块体 run-once 帧名固定 <module>(主入口 <main> 与用户函数名均不含 '<>'),其
-                    // RETURN 弹弃返回值、改压该模块对象,使 IMPORT 栈效应统一。先取 module 与 fn 名再
-                    // exit_frame(其后 frame 悬垂);resumer 于空帧分支内取(上下文字段,
-                    // 不随帧失效)。
-                    auto module  = frame->module;
-                    auto fn_name = frame->closure->name()->view();
                     current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
                     if (current_->frames().empty()) {
                         const auto resumer = current_->previous();
                         if (resumer == nullptr) {
-                            return ret; // 顶层(主入口 <main>)返回:返回值为程序结果
+                            return ret; // 顶层(主入口 <main>)返回:写回值即主模块对象(入口收尾所压)
                         }
                         // 协程最外帧(闭包体)返回即完成:值写 resumer 预留槽 -> reset 清场
-                        //(死协程不留栈,[closure] 槽一并清;ret 已弹入局部,reset 不殃及;reset
-                        // 先关开指,泄漏闭包取值安全)-> leave_coroutine 置 Done、解链、resumer
+                        //(死协程不留栈,[closure] 槽一并清;ret 已弹入局部,reset
+                        // 不殃及;reset 先关开指,泄漏闭包取值安全)-> leave_coroutine 置 Done、解链、resumer
                         // 置 Running 并换指。不往协程自己栈上 push 返回值。
                         resumer->peek(0) = ret;
                         current_->reset();
                         leave_coroutine(ExecState::Done);
                         break;
                     }
-                    if (fn_name == kModuleEntryName) { // 模块体帧:名字经 intern 驻留,短串逐 RETURN 比较开销可忽略
-                        current_->push(Value::from_obj(module));
-                    } else {
-                        current_->push(ret);
-                    }
+                    current_->push(ret); // 通用写回 callee 槽:IMPORT 的模块值 = 模块体自己的返回值
                     break;
                 }
 

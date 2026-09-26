@@ -28,12 +28,12 @@ namespace aria {
     // 模块)、kAnonymousName(匿名函数)。
 
     // 模块体入口函数名:IMPORT 加载的模块体 ObjFunction 之名。runtime 经 Compiler 以此名
-    // 编译模块体,RETURN 处按名回查识别模块体帧(弹弃返回值、改压模块对象)--
-    // 以名字这一函数固有属性取代帧上 is_module_body 标志位,无进帧置位/复位与槽复用残留之虞。
+    // 编译模块体(入口 ctx 烙 FnKind::ModuleEntry,返回尾恒压模块对象常量,IMPORT 栈效应由
+    // 此兑现)。
     constexpr StringView kModuleEntryName = "<module>";
 
-    // 主入口函数名:源文件/求值串顶层代码编进的 ObjFunction 之名(Compiler/CodeGen 的默认参数);
-    // RETURN 顶层帧返回即程序结果。
+    // 主入口函数名:源文件/求值串顶层代码编进的 ObjFunction 之名;同为 ModuleEntry 形态,
+    // 顶层帧 RETURN 写回的是主模块对象。
     constexpr StringView kMainEntryName = "<main>";
 
     // 求值串合成模块名(--eval / interpret_from_src):无文件身份的源,模块与 SourceFile 名共用。

@@ -272,7 +272,7 @@ namespace aria {
         // IteratorClass),经 ObjIterator::load_field 查表命中后恒绑定触达;不入 builtins/模块
         // globals。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Iterator", object_class());
-        register_iterator_builtins(gc_, klass);
+        IteratorClass::register_methods(gc_, klass);
         registers_[kIteratorClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
@@ -280,7 +280,7 @@ namespace aria {
         // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
         // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "List", object_class());
-        register_list_builtins(gc_, klass);
+        ListClass::register_methods(gc_, klass);
         registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
@@ -288,7 +288,7 @@ namespace aria {
         // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定触达;
         // 不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Map", object_class());
-        register_map_builtins(gc_, klass);
+        MapClass::register_methods(gc_, klass);
         registers_[kMapClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 
@@ -296,21 +296,13 @@ namespace aria {
         // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后恒
         // 绑定触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "String", object_class());
-        register_string_builtins(gc_, klass);
+        StringClass::register_methods(gc_, klass);
         registers_[kStringClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-        cache_string_operator_fns(*klass);
-    }
-
-    void AriaVM::cache_string_operator_fns(ObjClass& klass) {
-        // 类表 bootstrap 后无写点,故实现格与类表两份恒一致;DEBUG 下缺格即断言。须在 ctor
-        // 构造临界区内调用(GC 挂起,入格免守卫;load_field 命中是纯读无分配)。
-        constexpr Pair<StringConstant, u8> kStringOperatorFns[] = {
-                {StringConstant::OpAdd, kStringAddFnOffset},         {StringConstant::OpLess, kStringLtFnOffset},
-                {StringConstant::OpLessEqual, kStringLeFnOffset},    {StringConstant::OpGreater, kStringGtFnOffset},
-                {StringConstant::OpGreaterEqual, kStringGeFnOffset},
-        };
-        for (const auto& [hook, fn_offset]: kStringOperatorFns) {
-            const auto hit = klass.load_field(*this, string_constant(hook));
+        // 算子实现缓存:按 StringClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
+        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;命中是
+        // 纯读无分配,入格免守卫。
+        for (const auto& [hook, fn_offset]: StringClass::kOperatorFns) {
+            const auto hit = klass->load_field(*this, string_constant(hook));
             ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
             registers_[fn_offset] = hit->as_obj();
         }
@@ -320,7 +312,7 @@ namespace aria {
         // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后恒绑定
         // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Range", object_class());
-        register_range_builtins(gc_, klass);
+        RangeClass::register_methods(gc_, klass);
         registers_[kRangeClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 

@@ -491,7 +491,7 @@ namespace aria {
                 {"to_float", fn_to_float},
                 {"iter", fn_iter},
                 // 运算符重载方法(String 只有 `+` 与四个比较;键与函数名对应的钩子名同形,漏改其一时
-                // cache_string_operator_fns 按名查不到、bootstrap 断言即报)
+                // StringClass::kOperatorFns 清单按名查不到、bootstrap 断言即报)
                 {"__add__", fn___add__},
                 {"__lt__", fn___lt__},
                 {"__le__", fn___le__},
@@ -501,6 +501,6 @@ namespace aria {
 
     } // namespace
 
-    void register_string_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kStringBuiltins); }
+    void StringClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kStringBuiltins); }
 
 } // namespace aria

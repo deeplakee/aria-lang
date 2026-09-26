@@ -17,11 +17,13 @@ namespace aria {
     // 模块 globals 优先命中;内置不入编译期 defined_globals_,不触发 RedefinedVariable;STORE_GLOBAL 不回退 builtins(赋值
     // 不隐式创建)。本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局自由函数表**(本文件
     // ,LOAD_GLOBAL 回退触达);**XXXClass = XXX 类型的内建方法面**(List/Map/Iterator/String/Range,恒经 bootstrap 类表
-    // 分派、恒绑定 receiver);**XXXModule = 内建模块的方法面**(CoroutineModule,经模块 globals 触达,
-    // 方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 register_functions,resume 须访问
-    // 切换私有面故为 AriaVM 友元,见该文件头)。前缀即机制区分;
-    // 三个底座(条目形态 BuiltinEntry、类型方法面装载 register_builtin_methods、模块方法面装载
-    // register_module_functions)亦住本文件 --本文件即目录伞文件,先述底座再述全局表。
+    // 分派、恒绑定 receiver;注册口 = 宿主类公有静态方法 XxxClass::register_methods,方法体与表仍住各 .cpp 匿名命名空间;
+    // String 另有算子实现缓存清单 kOperatorFns(钩子名 -> 寄存器格),bootstrap_string_class
+    // 据此拷实现进寄存器格);**XXXModule = 内建模块的方法面** (CoroutineModule,经模块 globals
+    // 触达,方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 register_functions,resume 须访问切换私有面故为
+    // AriaVM 友元,见该文件头)。前缀即机制区分; 三个底座(条目形态 BuiltinEntry、类型方法面装载
+    // register_class_methods、模块方法面装载 register_module_functions)亦住本文件
+    // --本文件即目录伞文件,先述底座再述全局表。
     namespace builtins {
 
         // NativeFn 方法调用形态(全部 XXXClass 方法共用,四个方法面文件不再复述):slots[0] =

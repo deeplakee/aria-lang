@@ -158,29 +158,29 @@ namespace aria {
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
-        // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,注册入口
-        // register_iterator_builtins(runtime/builtins/IteratorClass);ObjIterator::load_field
+        // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,方法面宿主类
+        // IteratorClass(runtime/builtins/);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
 
-        // List bootstrap 类:寄存器 ListClass 唯一存放,注册入口 register_list_builtins
-        // (runtime/builtins/ListClass);ObjList::load_field 经它取自身类。同 object_class 先例。
+        // List bootstrap 类:寄存器 ListClass 唯一存放,方法面宿主类 ListClass
+        // (runtime/builtins/);ObjList::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* list_class() const noexcept;
 
-        // Map bootstrap 类:寄存器 MapClass 唯一存放,注册入口 register_map_builtins
-        // (runtime/builtins/MapClass);ObjMap::load_field 经它取自身类。同 object_class 先例。
+        // Map bootstrap 类:寄存器 MapClass 唯一存放,方法面宿主类 MapClass
+        // (runtime/builtins/);ObjMap::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* map_class() const noexcept;
 
-        // String bootstrap 类:寄存器 StringClass 唯一存放,注册入口 register_string_builtins
-        // (runtime/builtins/StringClass);ObjString::load_field 经它取自身类。同 object_class 先例。
+        // String bootstrap 类:寄存器 StringClass 唯一存放,方法面宿主类 StringClass
+        // (runtime/builtins/);ObjString::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
 
-        // Range bootstrap 类:寄存器 RangeClass 唯一存放,注册入口 register_range_builtins
-        // (runtime/builtins/RangeClass);ObjRange::load_field 经它取自身类。同 object_class 先例。
+        // Range bootstrap 类:寄存器 RangeClass 唯一存放,方法面宿主类 RangeClass
+        // (runtime/builtins/);ObjRange::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
 
@@ -320,31 +320,26 @@ namespace aria {
         // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
-        // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根)并注册方法面
-        // (register_iterator_builtins),发布进寄存器 IteratorClass 格。
+        // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根),经方法面宿主类
+        // IteratorClass::register_methods 注册,发布进寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
 
-        // List bootstrap 类:建 ObjClass("List", super=Object 根)并注册方法面
-        // (register_list_builtins),发布进寄存器 ListClass 格。
+        // List bootstrap 类:建 ObjClass("List", super=Object 根),经方法面宿主类
+        // ListClass::register_methods 注册,发布进寄存器 ListClass 格。
         void bootstrap_list_class();
 
-        // Map bootstrap 类:建 ObjClass("Map", super=Object 根)并注册方法面
-        //(register_map_builtins),发布进寄存器 MapClass 格。
+        // Map bootstrap 类:建 ObjClass("Map", super=Object 根),经方法面宿主类
+        // MapClass::register_methods 注册,发布进寄存器 MapClass 格。
         void bootstrap_map_class();
 
-        // String bootstrap 类:建 ObjClass("String", super=Object 根)并注册方法面
-        //(register_string_builtins),发布进寄存器 StringClass 格。
+        // String bootstrap 类:建 ObjClass("String", super=Object 根),经方法面宿主类
+        // StringClass::register_methods 注册,发布进寄存器 StringClass 格;末段按公开清单
+        // StringClass::kOperatorFns 把类表里的五个算子实现拷进寄存器实现格。
         void bootstrap_string_class();
 
-        // Range bootstrap 类:建 ObjClass("Range", super=Object 根)并注册方法面
-        //(register_range_builtins),发布进寄存器 RangeClass 格。
+        // Range bootstrap 类:建 ObjClass("Range", super=Object 根),经方法面宿主类
+        // RangeClass::register_methods 注册,发布进寄存器 RangeClass 格。
         void bootstrap_range_class();
-
-        // String 的算子实现缓存(String 类 bootstrap 末段调用):把已注册进 String 类表的五个算子
-        // 钩子(`__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生)按名取回,存入实现格
-        // StringAddFn..StringGeFn -- 算子派发热路径直读,免每次过类表查找。类表仍是规范家,两份
-        // 恒一致(类表 bootstrap 后无写点,DEBUG 缺格即断言)。
-        void cache_string_operator_fns(ObjClass& klass);
 
         // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。

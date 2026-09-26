@@ -270,6 +270,6 @@ namespace aria {
 
     } // namespace
 
-    void register_list_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kListBuiltins); }
+    void ListClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kListBuiltins); }
 
 } // namespace aria

@@ -35,6 +35,6 @@ namespace aria {
 
     } // namespace
 
-    void register_range_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kRangeBuiltins); }
+    void RangeClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kRangeBuiltins); }
 
 } // namespace aria

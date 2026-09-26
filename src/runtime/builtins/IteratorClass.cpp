@@ -54,6 +54,8 @@ namespace aria {
 
     } // namespace
 
-    void register_iterator_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kIteratorBuiltins); }
+    void IteratorClass::register_methods(GC& gc, ObjClass* klass) {
+        register_class_methods(gc, klass, kIteratorBuiltins);
+    }
 
 } // namespace aria

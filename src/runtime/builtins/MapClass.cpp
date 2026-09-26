@@ -169,6 +169,6 @@ namespace aria {
 
     } // namespace
 
-    void register_map_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kMapBuiltins); }
+    void MapClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kMapBuiltins); }
 
 } // namespace aria

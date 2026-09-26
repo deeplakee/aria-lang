@@ -12,7 +12,7 @@ namespace aria {
     // 迭代器基类(ObjType::ITERATOR,type(it) 恒 "Iterator"):迭代协议的引擎缝。每源一个小子类、
     // 各持自然游标(list 下标 / string 字节偏移 / map 槽位 / range 区间当前值,源码同目录),基类
     // 只钉三件契约:has_next 纯查询、next 越界 fail、trace 标各自的源(纯虚钉住,忘标 = 编译错)。
-    // 语言方法面(has_next/next 经 Iterator bootstrap 类表恒绑定)住 runtime/builtins/IteratorBuiltins;
+    // 语言方法面(has_next/next 经 Iterator bootstrap 类表恒绑定)住 runtime/builtins/IteratorClass;
     // load_field override 基类一次,全子类共享。debug_repr 渲染 "<iterator>";equals 默认地址判等。
     class ObjIterator : public Object {
     public:

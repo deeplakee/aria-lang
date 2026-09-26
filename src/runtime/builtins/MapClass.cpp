@@ -1,4 +1,4 @@
-#include "runtime/builtins/MapBuiltins.hpp"
+#include "runtime/builtins/MapClass.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -169,6 +169,6 @@ namespace aria {
 
     } // namespace
 
-    void register_map_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kMapBuiltins); }
+    void register_map_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kMapBuiltins); }
 
 } // namespace aria

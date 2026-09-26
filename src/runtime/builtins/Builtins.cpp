@@ -109,7 +109,7 @@ namespace aria::builtins {
         }
     }
 
-    void register_builtin_methods(GC& gc, ObjClass* klass, const Span<const BuiltinEntry> methods) {
+    void register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinEntry> methods) {
         for (const auto& [name, fn]: methods) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));

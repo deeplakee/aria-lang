@@ -1,4 +1,4 @@
-#include "runtime/builtins/ListBuiltins.hpp"
+#include "runtime/builtins/ListClass.hpp"
 
 #include <algorithm>
 
@@ -270,6 +270,6 @@ namespace aria {
 
     } // namespace
 
-    void register_list_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kListBuiltins); }
+    void register_list_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kListBuiltins); }
 
 } // namespace aria

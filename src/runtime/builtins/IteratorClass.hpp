@@ -1,5 +1,5 @@
-#ifndef ARIA_ITERATOR_BUILTINS_HPP
-#define ARIA_ITERATOR_BUILTINS_HPP
+#ifndef ARIA_ITERATOR_CLASS_HPP
+#define ARIA_ITERATOR_CLASS_HPP
 
 #include "common.hpp"
 
@@ -16,4 +16,4 @@ namespace aria {
 
 } // namespace aria
 
-#endif // ARIA_ITERATOR_BUILTINS_HPP
+#endif // ARIA_ITERATOR_CLASS_HPP

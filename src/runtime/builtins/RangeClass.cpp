@@ -1,4 +1,4 @@
-#include "runtime/builtins/RangeBuiltins.hpp"
+#include "runtime/builtins/RangeClass.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -35,6 +35,6 @@ namespace aria {
 
     } // namespace
 
-    void register_range_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kRangeBuiltins); }
+    void register_range_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kRangeBuiltins); }
 
 } // namespace aria

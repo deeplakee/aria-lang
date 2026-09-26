@@ -16,7 +16,7 @@ namespace aria {
     // 模块注入:预填 globals 会在 REPL 逐行 run() 时重注册、覆写用户 shadow。shadow 语义:用户顶层 var 经 DEF_GLOBAL 写
     // 模块 globals 优先命中;内置不入编译期 defined_globals_,不触发 RedefinedVariable;STORE_GLOBAL 不回退 builtins(赋值
     // 不隐式创建)。本目录(runtime/builtins/)是语言内建面的统一收纳:命名规律 --**裸 Builtins = 全局自由函数表**(本文件
-    // ,LOAD_GLOBAL 回退触达);**XXXBuiltins = XXX 类型的内建方法面**(List/Map/Iterator/String/Range,恒经 bootstrap 类表
+    // ,LOAD_GLOBAL 回退触达);**XXXClass = XXX 类型的内建方法面**(List/Map/Iterator/String/Range,恒经 bootstrap 类表
     // 分派、恒绑定 receiver);**XXXModule = 内建模块的方法面**(CoroutineModule,经模块 globals 触达,
     // 方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 register_functions,resume 须访问
     // 切换私有面故为 AriaVM 友元,见该文件头)。前缀即机制区分;
@@ -24,7 +24,7 @@ namespace aria {
     // register_module_functions)亦住本文件 --本文件即目录伞文件,先述底座再述全局表。
     namespace builtins {
 
-        // NativeFn 方法调用形态(全部 XXXBuiltins 方法共用,四个方法面文件不再复述):slots[0] =
+        // NativeFn 方法调用形态(全部 XXXClass 方法共用,四个方法面文件不再复述):slots[0] =
         // receiver 兼返回槽,读 slots[1..] 为实参;失败 `return vm.fail(...)`(bool 契约
         // false ⟺ 已 raise)。receiver 在 slots[0] 于栈根,方法产出新对象须在覆写 slots[0] 前发布。
 
@@ -39,7 +39,7 @@ namespace aria {
         // 按名把内建方法表逐条注册进**类字段表**,成为该类实例的内建方法面(receiver 恒绑定):
         // name 作字段键,经 new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射
         // 的同名常量同指针,查表按指针命中。全局表不经此(只此一处填,循环就地写在定义里)。
-        void register_builtin_methods(GC& gc, ObjClass* klass, Span<const BuiltinEntry> methods);
+        void register_class_methods(GC& gc, ObjClass* klass, Span<const BuiltinEntry> methods);
 
         // 按名把内建方法表逐条注册进**模块全局表**(内建模块的成员 = 模块全局绑定,load_field
         // 查表即命中):键 intern 同上;不绑定 receiver -- 方法调用区槽 0 恒模块值,原语不读它。

@@ -69,16 +69,16 @@ add_library(aria_core STATIC
         src/runtime/builtins/CoroutineModule.cpp
         src/runtime/builtins/CoroutineModule.hpp
         src/runtime/FrameStack.hpp
-        src/runtime/builtins/IteratorBuiltins.cpp
-        src/runtime/builtins/IteratorBuiltins.hpp
-        src/runtime/builtins/ListBuiltins.cpp
-        src/runtime/builtins/ListBuiltins.hpp
-        src/runtime/builtins/MapBuiltins.cpp
-        src/runtime/builtins/MapBuiltins.hpp
-        src/runtime/builtins/RangeBuiltins.cpp
-        src/runtime/builtins/RangeBuiltins.hpp
-        src/runtime/builtins/StringBuiltins.cpp
-        src/runtime/builtins/StringBuiltins.hpp
+        src/runtime/builtins/IteratorClass.cpp
+        src/runtime/builtins/IteratorClass.hpp
+        src/runtime/builtins/ListClass.cpp
+        src/runtime/builtins/ListClass.hpp
+        src/runtime/builtins/MapClass.cpp
+        src/runtime/builtins/MapClass.hpp
+        src/runtime/builtins/RangeClass.cpp
+        src/runtime/builtins/RangeClass.hpp
+        src/runtime/builtins/StringClass.cpp
+        src/runtime/builtins/StringClass.hpp
         src/runtime/ObjMovement.cpp
         src/runtime/ObjMovement.hpp
         src/runtime/opcode_profile.cpp

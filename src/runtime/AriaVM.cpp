@@ -30,11 +30,11 @@
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/builtins/Builtins.hpp"
 #include "runtime/builtins/CoroutineModule.hpp"
-#include "runtime/builtins/IteratorBuiltins.hpp"
-#include "runtime/builtins/ListBuiltins.hpp"
-#include "runtime/builtins/MapBuiltins.hpp"
-#include "runtime/builtins/RangeBuiltins.hpp"
-#include "runtime/builtins/StringBuiltins.hpp"
+#include "runtime/builtins/IteratorClass.hpp"
+#include "runtime/builtins/ListClass.hpp"
+#include "runtime/builtins/MapClass.hpp"
+#include "runtime/builtins/RangeClass.hpp"
+#include "runtime/builtins/StringClass.hpp"
 #include "runtime/opcode_profile.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
@@ -269,7 +269,7 @@ namespace aria {
 
     void AriaVM::bootstrap_iterator_class() {
         // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next 薄壳,住 runtime/builtins/
-        // IteratorBuiltins),经 ObjIterator::load_field 查表命中后恒绑定触达;不入 builtins/模块
+        // IteratorClass),经 ObjIterator::load_field 查表命中后恒绑定触达;不入 builtins/模块
         // globals。类名与 type() 的类型名一致。
         const auto klass = new_class(gc_, "Iterator", object_class());
         register_iterator_builtins(gc_, klass);

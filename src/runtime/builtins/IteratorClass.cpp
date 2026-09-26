@@ -1,4 +1,4 @@
-#include "runtime/builtins/IteratorBuiltins.hpp"
+#include "runtime/builtins/IteratorClass.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -54,6 +54,6 @@ namespace aria {
 
     } // namespace
 
-    void register_iterator_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kIteratorBuiltins); }
+    void register_iterator_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kIteratorBuiltins); }
 
 } // namespace aria

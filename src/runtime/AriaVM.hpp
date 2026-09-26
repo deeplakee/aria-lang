@@ -32,7 +32,7 @@ namespace aria {
     // Opt<T> -> nullopt),失败出口惯用法一行 `return vm.fail(...);`。
     // **Opt<T> 转换只对「不可由 bool 构造」的 T 成立**(Value/指针/类类型,如协议族的 Opt<Value>);
     // T 为标量时 optional<T> 会经 operator bool() 构造出**已初始化的 0/false**,把 fail 吞成成功
-    // --标量返回型的站点改用 bool + 出参(先例:StringBuiltins 的算子钩子按 native 契约返 bool、
+    // --标量返回型的站点改用 bool + 出参(先例:StringClass 的算子钩子按 native 契约返 bool、
     // 结果写 slots[0])。
     struct FailSignal {
         operator bool() const noexcept { return false; }
@@ -159,28 +159,28 @@ namespace aria {
         ObjClass* object_class() const noexcept;
 
         // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,注册入口
-        // register_iterator_builtins(runtime/builtins/IteratorBuiltins);ObjIterator::load_field
+        // register_iterator_builtins(runtime/builtins/IteratorClass);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
 
         // List bootstrap 类:寄存器 ListClass 唯一存放,注册入口 register_list_builtins
-        // (runtime/builtins/ListBuiltins);ObjList::load_field 经它取自身类。同 object_class 先例。
+        // (runtime/builtins/ListClass);ObjList::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* list_class() const noexcept;
 
         // Map bootstrap 类:寄存器 MapClass 唯一存放,注册入口 register_map_builtins
-        // (runtime/builtins/MapBuiltins);ObjMap::load_field 经它取自身类。同 object_class 先例。
+        // (runtime/builtins/MapClass);ObjMap::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* map_class() const noexcept;
 
         // String bootstrap 类:寄存器 StringClass 唯一存放,注册入口 register_string_builtins
-        // (runtime/builtins/StringBuiltins);ObjString::load_field 经它取自身类。同 object_class 先例。
+        // (runtime/builtins/StringClass);ObjString::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
 
         // Range bootstrap 类:寄存器 RangeClass 唯一存放,注册入口 register_range_builtins
-        // (runtime/builtins/RangeBuiltins);ObjRange::load_field 经它取自身类。同 object_class 先例。
+        // (runtime/builtins/RangeClass);ObjRange::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
 

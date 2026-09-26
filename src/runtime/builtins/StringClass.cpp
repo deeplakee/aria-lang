@@ -1,4 +1,4 @@
-#include "runtime/builtins/StringBuiltins.hpp"
+#include "runtime/builtins/StringClass.hpp"
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -501,6 +501,6 @@ namespace aria {
 
     } // namespace
 
-    void register_string_builtins(GC& gc, ObjClass* klass) { register_builtin_methods(gc, klass, kStringBuiltins); }
+    void register_string_builtins(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kStringBuiltins); }
 
 } // namespace aria

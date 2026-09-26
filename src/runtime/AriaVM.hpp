@@ -457,14 +457,18 @@ namespace aria {
         // Error 只在边界成型。
         Pair<ErrorCode, String> take_uncaught_error() const;
 
-        // 自最内帧向外按 last_ip 纯搜索各帧 CodeUnit 异常记录表(find_try_handler 取最内层
-        // 覆盖),不动帧栈/值栈;未命中帧记跟踪三元组(fn/mod/ip_off)。命中:unwind_to_handler
-        // 回退到命中帧并转入 catch handler(统一在 ObjMovement),返 nullopt(调用方 break 回循环顶
-        // 重取帧,坑 #11);全帧未命中 -> reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息),
-        // 逐帧烘焙 at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:
-        // 寄存器已有载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障
-        // 指令,外层帧 = CALL 站点)。
-        Opt<Error> unwind() const;
+        // 异常派发与未捕获物化,链式多跳:自最内帧向外按 last_ip 纯搜索本上下文各帧 CodeUnit
+        // 异常记录表(find_try_handler 取最内层覆盖),不动帧栈/值栈;未命中帧记跟踪三元组
+        //(fn/mod/ip_off;每跳重新收集,死在边界的协程帧不并入 -- 跟踪截断在协程边界)。命中:
+        // unwind_to_handler 回退到命中帧并转入 catch handler(统一在 ObjMovement),返 nullopt
+        //(调用方 break 回循环顶自 current_ 重取帧,坑 #11;命中可能在多跳之后,current_ 已非进入
+        // unwind 时的上下文);本上下文全帧未命中且在 resume 链上 -> 让位方先 take 载荷再 reset、
+        // leave_coroutine 置 Failed 解链换指、caller raise 载荷续搜(中间层连死),逐跳向链根
+        // 推进;链终止 = 主上下文 -> reset 一次清场,从寄存器反提载荷拆 (码, 烘焙消息),逐帧烘焙
+        // at 跟踪行进消息尾部(渲染外->内),经 Error::from_baked 一次物化返回。前提:寄存器已有
+        // 载荷(入口断言把关);帧内 last_ip 由 dispatch_loop 循环顶写(顶帧 = 故障指令,外层帧 =
+        // CALL 站点)。
+        Opt<Error> unwind();
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 

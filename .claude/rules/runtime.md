@@ -69,7 +69,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/AriaVM.hpp` / `.cpp`
 
-解释器（M1-M5 与 M6 协程切换模型已落地；跨协程错误链式多跳待）。循环状态全部取自 `*current_`。
+解释器（M1-M6 已落地；M6 = 协程单循环切换模型）。循环状态全部取自 `*current_`。
 
 ### 执行入口
 
@@ -116,7 +116,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - **错误契约同 `call_value` 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 `raise`；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT 站点位置），编译期 `Error` 就地 `new_exception` 原样装配箱透传（含被导入文件位置，不重烘）。
 - **根安全**：`run_import` 的 `gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 `new_*` 分配根化（intern weak root 不保命）；`modules_.set` 等表 rehash 走 trivial 分配不触 GC、不是守卫承重点；`module`/`entry` 经 `modules_` + `module->entry_` 根可达。详见 `import-handling-overview.md`/`import-path-resolution.md`。
 
-### 协程（M6 切换模型已落地；跨协程错误链式多跳待）
+### 协程（M6 已落地）
 
 语言面 `coroutine.create/resume/yield/status`，载体是合成 `<coroutine>` 模块（ctor 临界区第 4 步 `bootstrap_coroutine_module`：四原语按名写进模块 globals、模块经 `builtins_["coroutine"]` 可达、永不入 `modules_` 表；零新对象类型零新指令，协程本体即 ObjMovement）。**编译面零改动**：coroutine/yield 等都不是关键字，`coroutine.resume(co, v)` 就是普通成员调用表达式。
 
@@ -127,7 +127,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - **顺序不变式（根安全承重，住 enter_coroutine）**：置链必须先于换指 -- 换指后 resumer 只经 `co->previous_` 这一条边可达，`prepare_call_args` 的垫充/varargs 打包经 `new_object` 顶 `maybe_collect`，切换后 resumer 与其实参以此边存活（实参留在 resumer 调用区是「实参留栈到 drop」的红利）。两臂的可失败检查先于切换（失败载荷须落 resumer 寄存器，call_native 的 false 路径契约锁「current_ 未切」）；首启切换后直取 `prepare_call_args` + `enter_frame`（call_closure 的检查段全为死分支）。
 - **RETURN 完成切回**：帧栈弹空且 `previous_` 非空 -> 完成值写 `resumer->peek(0)` -> `reset()`（死协程不留栈，`[closure]` 槽一并清）-> `leave_coroutine(Done)`，不往协程自己栈 push 返回值。HALT case 补断言（协程内落 HALT 即主上下文之外，提前钉住 run() 出口断言不变式）。
 - **`call_native` 守卫语义（M6 后）**：成功路径 `current_` 可已被切换型原生换走（旧「不得换走」守卫已删），drop 恒落 `entered_ctx`；false 路径「禁止 false + 切换」为永久契约（断言钉）。
-- **已知边界（B3 前中间态）**：协程内未捕获错误仍走单上下文 unwind -- 物化的是协程自己的跟踪且控制流不回主上下文，run() 出口断言当场炸；语料与 C++ 用例不得触碰该形态，链式多跳落地后作废。
+- **跨协程错误（unwind 链式多跳）**：协程内未捕获错误不是终局 -- `unwind()` 在本上下文全帧未命中且在 resume 链上时转投一跳（四步定序承重：`take_error` 先于 `reset`（寄存器在 reset 内一并清空）-> `reset`（先关开指再清场，死协程向外泄漏的捕获闭包取值安全）-> `leave_coroutine(Failed)`（置 Failed 解链、恢复者置 Running 换指）-> caller `raise` 载荷续搜；caller 寄存器必空 = call_native 进场断言 + 切换型原生返 true 不写载荷 + 挂起期间无人可写非执行上下文的寄存器；take 到 raise 之间无 GC 点）。中间层无 handler 即连死（其 Running 瞬态被 Failed 覆盖），载荷逐跳向链根推进；链终止 = 主上下文才物化。调用点唯一（dispatch_loop 循环尾 `unwind_check` 标签）不收链参数，命中可能在多跳之后、调用方经循环顶自 `current_` 重取帧。
 
 ### 共享状态
 
@@ -153,10 +153,10 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），设计全文见 `vm-design.md` §4.5-§4.8/§7，踩坑对策见 `exception-implementation-pitfalls.md`（坑编号 #1-#20）。
 
-- 错误站点 raise 载荷入挂起寄存器 -> `AriaVM::unwind()` 自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈（未命中帧记跟踪三元组）。
+- 错误站点 raise 载荷入挂起寄存器 -> `AriaVM::unwind()`（非 const，链式多跳会切换 `current_`）自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查本上下文各帧 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈（未命中帧记跟踪三元组）。
 - 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 ObjMovement 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。
-- 全帧未命中：`reset()` 一次清场后从未捕获出口物化 `Error`。
-- **`unwind()`** 负责查表派发 + 未捕获物化（经 `AriaVM::take_uncaught_error` 反提拆 (码, 烘焙消息)：ObjException 直取原码原消息；非 ObjException 载荷兜底 `UncaughtException`）与堆栈跟踪烘焙，拼好后经 `Error::from_baked` 一次物化。`Error` 仅在 unwind 未捕获出口物化，与 AGENTS.md 通道 2 一致。
+- 本上下文全帧未命中且在 resume 链上：协程转投一跳续搜（见「协程」节「跨协程错误」条）；链终止 = 主上下文才 `reset()` 一次清场后从未捕获出口物化 `Error`。
+- **`unwind()`** 负责查表派发 + 跳链 + 未捕获物化（经 `AriaVM::take_uncaught_error` 反提拆 (码, 烘焙消息)：ObjException 直取原码原消息；非 ObjException 载荷兜底 `UncaughtException`）与堆栈跟踪烘焙，拼好后经 `Error::from_baked` 一次物化。`Error` 仅在 unwind 未捕获出口物化，与 AGENTS.md 通道 2 一致。
 
 ### 构成件
 
@@ -173,7 +173,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 未捕获堆栈跟踪（坑 #16）
 
-- `unwind` 搜索阶段对未命中帧记 `TraceEntry{fn, mod, ip_off}`（搜索不动帧栈，帧引用全程有效），全未命中时反转为外 -> 内（Python 式 most recent call last）逐帧烘焙 `\n  at <fn名> (<loc>)` 进 `Error.message_` 尾部。
+- `unwind` 搜索阶段对未命中帧记 `TraceEntry{fn, mod, ip_off}`（搜索不动帧栈，帧引用全程有效），全未命中时反转为外 -> 内（Python 式 most recent call last）逐帧烘焙 `\n  at <fn名> (<loc>)` 进 `Error.message_` 尾部。跟踪**每跳重新收集**（`trace` 是循环内局部）：协程内未捕获时死在边界的协程帧不并入物化侧的跟踪 -- 跟踪截断在协程边界，物化只含最终命中/物化那一层的帧链，最内层 at 行 = resume 调用点（原生不进帧，与 §4.8「原生报错即 caller 帧」同源）。
 - 行号源 = 各帧 `last_ip` 查 `line_for_offset`（位置串 = `ObjModule::format_location(line)`，文件模块取 `abs_path` / 合成模块退化为 `<name>`，见 object 层「模块身份」）--跟踪行是运行期错误的唯一位置标注（消息不含位置前缀）。透传的被导入模块编译期 `Error` 不经 unwind，无跟踪。
 
 ### finally 不支持

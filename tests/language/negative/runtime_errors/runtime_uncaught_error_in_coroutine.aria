@@ -1,0 +1,7 @@
+// 钉住：协程内未捕获错误转投主上下文，主上下文亦未捕获——未捕获物化终止程序；
+// 跟踪截断在协程边界（at 行只含主上下文帧链，最内层 = resume 调用点）。
+fun leaf() {
+    throw "boom in coroutine";
+}
+var co = coroutine.create(fun() { leaf(); });
+coroutine.resume(co);

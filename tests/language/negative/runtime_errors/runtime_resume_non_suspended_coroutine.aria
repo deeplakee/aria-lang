@@ -1,0 +1,11 @@
+// 钉住：resume 在链上的协程（Normal——它 resume 了当前执行者）为运行期错误；该形态
+// 只能发生在协程内，错误经跨协程路径转投主上下文物化，两层协程连死。
+fun inner(resumer) {
+    coroutine.resume(resumer);    # resumer 现处 Normal（链中间）
+}
+fun outer(mirror) {
+    var ic = coroutine.create(inner);
+    coroutine.resume(ic, mirror); # mirror 即 outer 自己
+}
+var oc = coroutine.create(outer);
+coroutine.resume(oc, oc);

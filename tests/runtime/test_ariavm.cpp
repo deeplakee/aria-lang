@@ -570,6 +570,28 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
     EXPECT_EQ(out.error().code(), ErrorCode::StackOverflow);
 }
 
+// M6:协程内未捕获错误经 unwind 链式多跳转投主上下文,主上下文亦未捕获 -> 物化 Error。跟踪截断
+// 在协程边界(P4):at 行只含主上下文帧链,最内层 = resume 调用点(原生不进帧),协程内帧(匿名
+// 闭包体与 leaf)不并入 -- 语料 .err 是子串判定、钉不了缺席,精确等值断言钉在这里。
+TEST_F(AriaVMStress, UncaughtInCoroutineTraceTruncatedAtBoundary) {
+
+    const auto src = "\n"
+                     "fun leaf() {\n"
+                     "    throw \"boom\";\n"
+                     "}\n"
+                     "var co = coroutine.create(fun() { leaf(); });\n"
+                     "coroutine.resume(co);\n";
+    aria::SourceFile source{aria::String{aria::kScriptModuleName}, aria::String{aria::kScriptModuleName},
+                            aria::String{src}};
+    auto module = make_module(vm.gc());
+    auto guard  = vm.gc().make_guard(module);
+    auto out    = vm.run(source, module);
+    ASSERT_FALSE(out.has_value()) << out.error().message();
+    EXPECT_EQ(out.error().code(), ErrorCode::UncaughtException);
+    EXPECT_EQ(out.error().message(), "Runtime: UncaughtException uncaught exception: boom\n"
+                                     "  at <main> (<script>:6)");
+}
+
 // 模块表是 GC 根:collect 经 VM 根 tracer -> modules_.trace 标全部模块,
 // 模块进而 trace name_/entry_/globals_,整条链存活。
 TEST_F(AriaVMStress, ModuleTableIsGcRoot) {

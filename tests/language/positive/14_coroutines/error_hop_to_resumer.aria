@@ -1,0 +1,34 @@
+// 钉住：协程内未捕获错误跨协程边界转投恢复者——resume 调用点外层 try/catch 接住，
+// 载荷原样保真（throw 原值保类型、内建错误保烘焙消息）；协程死为 failed。
+fun thrower() {
+    throw "from coroutine";
+}
+var co = coroutine.create(fun() {
+    thrower();               # 跨调用深度抛出
+});
+var got = "";
+try {
+    coroutine.resume(co);
+    assert(false);           # 上一行必抛，不可达
+} catch (e) {
+    got = e;                 # 用户 throw 原值保类型
+}
+assert(got == "from coroutine");
+assert(coroutine.status(co) == "failed");
+
+# 内建运行期错误同样跨边界：catch 绑 ObjException，str 渲染烘焙消息
+var msg = "";
+try {
+    coroutine.resume(coroutine.create(fun() { var x = 1 / 0; }));
+} catch (e) {
+    msg = str(e);
+}
+assert(msg == "Runtime: DivisionByZero integer division by zero");
+
+# catch 内继续 resume 新协程不受污染（寄存器已取空）
+try {
+    coroutine.resume(co);    # 连死协程不可恢复
+    assert(false);
+} catch (e) {
+    assert(type(e) == "Exception");
+}

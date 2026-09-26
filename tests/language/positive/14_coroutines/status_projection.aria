@@ -1,5 +1,5 @@
-// 钉住：status 五态投影中的四态（failed 随跨协程错误批次）；running/normal 经首启载荷
-// 把协程对象自身传入查询（首启载荷即被调函数实参）。
+// 钉住：status 五态投影；running/normal 经首启载荷把协程对象自身传入查询（首启载荷即
+// 被调函数实参），failed 经未捕获错误杀死后查询。
 fun body(mirror) {
     assert(coroutine.status(mirror) == "running");
     coroutine.yield(1);
@@ -20,3 +20,15 @@ fun outer(mirror) {
 var oc = coroutine.create(outer);
 coroutine.resume(oc, oc);
 assert(coroutine.status(oc) == "done");
+
+fun fail_body(mirror) {
+    assert(coroutine.status(mirror) == "running");
+    throw "x";
+}
+var fc = coroutine.create(fail_body);
+try {
+    coroutine.resume(fc, fc);
+    assert(false);
+} catch (e) {
+}
+assert(coroutine.status(fc) == "failed");

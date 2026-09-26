@@ -28,7 +28,8 @@ namespace aria {
         // 方法表:装载经 register_functions,条目即上四原语。通用形 slots = [<coroutine> 模块
         //(接收者兼返回槽), co, payload..],argc = slots.size() - 1。create/status 是普通原生;
         // resume/yield 是切换型:**返 true 时 current_ 已切至对侧上下文**且不写 slots[0](该槽
-        // 是对侧要写的预留结果槽,由 yield/RETURN 完成写);false ⟺ 已 vm.fail 且未切换。
+        // 是对侧要写的预留结果槽,由 yield/RETURN 完成写;对侧死于未捕获错误时载荷走本侧挂起
+        // 寄存器经 unwind 链式多跳,该槽随调用区一并截弃);false ⟺ 已 vm.fail 且未切换。
         static constexpr builtins::BuiltinEntry kModuleFunctions[] = {
                 {"create", create},
                 {"resume", resume},

@@ -1,0 +1,37 @@
+// 钉住：三上下文连死多跳——最内协程未捕获错误经中间协程转投主上下文；中间层无
+// handler 即连死（瞬态 Running 被 Failed 覆盖），两层协程终态皆 failed。
+fun leaf() {
+    throw 42;
+}
+fun middle(ic) {
+    coroutine.resume(ic);    # ic 未捕获：错误先落这里、再跳向 main
+}
+var mc = coroutine.create(middle);
+var ic = coroutine.create(leaf);
+try {
+    coroutine.resume(mc, ic);
+    assert(false);
+} catch (e) {
+    assert(e == 42);         # 原值保类型穿越两级边界
+}
+assert(coroutine.status(mc) == "failed");
+assert(coroutine.status(ic) == "failed");
+
+# 中间层自己带 handler 则就地接住、不连死（主上下文无感，协程照常挂起/完成）
+fun throws7() {
+    throw 7;
+}
+fun guarded() {
+    var inner = coroutine.create(throws7);
+    try {
+        coroutine.resume(inner);
+    } catch (e) {
+        coroutine.yield(e);  # 接住后照常挂起
+    }
+    return "survived";
+}
+var gc = coroutine.create(guarded);
+assert(coroutine.resume(gc) == 7);
+assert(coroutine.status(gc) == "suspended");
+assert(coroutine.resume(gc) == "survived");
+assert(coroutine.status(gc) == "done");

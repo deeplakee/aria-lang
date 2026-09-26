@@ -1,0 +1,7 @@
+// 钉住：resume 已死协程——未捕获错误杀死（Failed）与完成（Done）同码同文案。
+var co = coroutine.create(fun() { throw "boom"; });
+try {
+    coroutine.resume(co);
+} catch (e) {
+}
+coroutine.resume(co);

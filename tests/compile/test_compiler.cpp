@@ -11,6 +11,7 @@
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
 #include "util/source_file.hpp"
 
@@ -60,6 +61,43 @@ namespace {
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
+    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象——入口
+    // 的 RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
+    // __probe__ 的 ObjFunction 直接 run：探针是普通函数，RETURN 通用写回 callee 槽，其返回值
+    // 即 run() 返回值（fn 经 run() 内 make_guard 根化）。仅取值/错误码站点走此入口；钉模块
+    // 顶层语义的站点走 run_source（不包）。
+    RunResult run_value(std::string_view src) {
+        auto  vm = std::make_unique<AriaVM>();
+        auto& gc = vm->gc();
+        gc.set_stress(true);
+        auto        module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        std::string wrapped{"fun __probe__() {\n"};
+        wrapped += src;
+        wrapped += "\n}\n";
+        auto source   = std::make_unique<SourceFile>("<test>", "<test>", aria::String{wrapped});
+        auto compiled = Compiler::compile(gc, *source, module, aria::kMainEntryName);
+        if (!compiled) {
+            return RunResult{std::move(vm), std::move(source), std::unexpected(std::move(compiled).error())};
+        }
+        ObjFunction* probe = nullptr;
+        for (const auto& constant: (*compiled)->unit().constants) {
+            if (!constant.is_obj() || !aria::Object::is<ObjFunction>(constant.as_obj())) {
+                continue;
+            }
+            auto* fn = aria::Object::as<ObjFunction>(constant.as_obj());
+            if (fn->name()->view() == "__probe__") {
+                probe = fn;
+            }
+        }
+        if (probe == nullptr) {
+            ADD_FAILURE() << "探针函数应在入口常量池";
+            return RunResult{std::move(vm), std::move(source),
+                             std::unexpected(Error::from_detail(ErrorCode::AssertionFailed, "probe fn missing"))};
+        }
+        auto result = vm->run(probe);
+        return RunResult{std::move(vm), std::move(source), std::move(result)};
+    }
+
     // 编译失败时返回首错 Error（SourceLoc 指向 source，经 unique_ptr 活到检视完，format() 不触悬垂）。
     // Error 无默认构造，故存整个 Result。
     struct CompileFail {
@@ -82,8 +120,8 @@ namespace {
     }
 
     i64 run_int(std::string_view src) {
-        auto out = run_source(src);
-        EXPECT_TRUE(out.has_value()) << "expected success";
+        auto out = run_value(src);
+        EXPECT_TRUE(out.has_value()) << out.error().message();
         return out ? out->as_int() : 0;
     }
 
@@ -109,7 +147,7 @@ TEST(Compiler, GlobalsAndWhile) {
 // UndefinedVariable。Error 构造期已把位置烘进自有消息串（含源名 <test>），message() 不依赖
 // SourceFile 存活、不应崩溃。
 TEST(Compiler, VarSelfRefRuntimeError) {
-    auto out = run_source("fun f() { var x = x + 1; return x; } return f();");
+    auto out = run_value("fun f() { var x = x + 1; return x; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
     const auto rendered = out.error().message();
@@ -137,12 +175,12 @@ TEST(Compiler, ListPopReturnsLastAndShrinks) {
 
 // 元数检查：push 恰 1 参、pop 恰 0 参（文案 builtins 同款）。
 TEST(Compiler, ListMethodWrongArity) {
-    auto push = run_source("var xs = [1]; return xs.push();");
+    auto push = run_value("var xs = [1]; return xs.push();");
     ASSERT_FALSE(push.has_value());
     EXPECT_EQ(push.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(push.error().message().find("function expects 1 argument, got 0"), std::string::npos);
 
-    auto pop = run_source("var xs = [1]; return xs.pop(9);");
+    auto pop = run_value("var xs = [1]; return xs.pop(9);");
     ASSERT_FALSE(pop.has_value());
     EXPECT_EQ(pop.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(pop.error().message().find("function expects no arguments, got 1"), std::string::npos);
@@ -150,7 +188,7 @@ TEST(Compiler, ListMethodWrongArity) {
 
 // pop 空表：IndexOutOfBounds（nil 哨兵不可行 --list 可合法存 nil，fail-fast）。
 TEST(Compiler, ListPopEmptyFails) {
-    auto out = run_source("var xs = []; return xs.pop();");
+    auto out = run_value("var xs = []; return xs.pop();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out.error().message().find("pop from empty list"), std::string::npos);
@@ -163,7 +201,7 @@ TEST(Compiler, ListMethodBoundToReceiver) {
 
 // 成员 miss：类措辞随协议传播（与实例路径 obj.x 的报错形态一致）。
 TEST(Compiler, ListMemberMissFailsWithClassWording) {
-    auto out = run_source("var xs = [1]; return xs.foo;");
+    auto out = run_value("var xs = [1]; return xs.foo;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(out.error().message().find("<class List> has no member 'foo'"), std::string::npos);
@@ -171,7 +209,7 @@ TEST(Compiler, ListMemberMissFailsWithClassWording) {
 
 // 成员写入不受支持：store_field 不 override，基类默认即正确行为（不可变成员面）。
 TEST(Compiler, ListMemberStoreNotSupported) {
-    auto out = run_source("var xs = [1]; xs.foo = 2; return 1;");
+    auto out = run_value("var xs = [1]; xs.foo = 2; return 1;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(out.error().message().find("type List does not support field access"), std::string::npos);
@@ -200,12 +238,12 @@ TEST(Compiler, ListRemoveAt) {
 
 // remove_at 越界/非整数：越界文案报原键值，非整数文案报实参类型。
 TEST(Compiler, ListRemoveAtFails) {
-    auto out = run_source("var xs = [1]; return xs.remove_at(5);");
+    auto out = run_value("var xs = [1]; return xs.remove_at(5);");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out.error().message().find("remove_at index 5 out of range"), std::string::npos);
 
-    auto bad = run_source("var xs = [1]; return xs.remove_at(\"a\");");
+    auto bad = run_value("var xs = [1]; return xs.remove_at(\"a\");");
     ASSERT_FALSE(bad.has_value());
     EXPECT_EQ(bad.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(bad.error().message().find("remove_at index must be an integer"), std::string::npos);
@@ -240,12 +278,12 @@ TEST(Compiler, ListInsert) {
 
 // insert 越界：合法域 [-(size), size]，文案报原键值。
 TEST(Compiler, ListInsertOutOfRangeFails) {
-    auto high = run_source("var xs = [1]; xs.insert(5, 0); return 1;");
+    auto high = run_value("var xs = [1]; xs.insert(5, 0); return 1;");
     ASSERT_FALSE(high.has_value());
     EXPECT_EQ(high.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(high.error().message().find("insert index 5 out of range"), std::string::npos);
 
-    auto low = run_source("var xs = [1]; xs.insert(-5, 0); return 1;");
+    auto low = run_value("var xs = [1]; xs.insert(-5, 0); return 1;");
     ASSERT_FALSE(low.has_value());
     EXPECT_EQ(low.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(low.error().message().find("insert index -5 out of range"), std::string::npos);
@@ -277,13 +315,13 @@ TEST(Compiler, ListSortStrings) {
 
 // sort 域外：数值与字符串混居 / 不可比元素（nil），TypeMismatch 报两类类型。
 TEST(Compiler, ListSortMixedFails) {
-    auto mixed = run_source("var xs = [1, \"a\"]; xs.sort(); return 1;");
+    auto mixed = run_value("var xs = [1, \"a\"]; xs.sort(); return 1;");
     ASSERT_FALSE(mixed.has_value());
     EXPECT_EQ(mixed.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(mixed.error().message().find("sort requires all numbers or all strings, got Int and String"),
               std::string::npos);
 
-    auto incomparable = run_source("var xs = [nil]; xs.sort(); return 1;");
+    auto incomparable = run_value("var xs = [nil]; xs.sort(); return 1;");
     ASSERT_FALSE(incomparable.has_value());
     EXPECT_EQ(incomparable.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(incomparable.error().message().find("sort requires all numbers or all strings, got Nil"),
@@ -325,7 +363,7 @@ TEST(Compiler, ListNegativeIndexWrites) {
 
 // 越界:归一化后仍负(< -len)即报错,文案报用户写的原始负值。
 TEST(Compiler, ListNegativeIndexBoundsFail) {
-    auto out = run_source("var xs = [1, 2]; return xs[-3];");
+    auto out = run_value("var xs = [1, 2]; return xs[-3];");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out.error().message().find("list index -3 out of range"), std::string::npos);
@@ -352,12 +390,12 @@ TEST(Compiler, ListSliceReads) {
 
 // 切片错误面:端点越界 fail-fast、切片写落整数键统一文案。
 TEST(Compiler, ListSliceFails) {
-    auto out_of_range = run_source("var xs = [1, 2, 3]; return xs[0..10];");
+    auto out_of_range = run_value("var xs = [1, 2, 3]; return xs[0..10];");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out_of_range.error().message().find("slice range 0..10 out of range"), std::string::npos);
 
-    auto store = run_source("var xs = [1, 2, 3]; xs[0..2] = [9]; return 0;");
+    auto store = run_value("var xs = [1, 2, 3]; xs[0..2] = [9]; return 0;");
     ASSERT_FALSE(store.has_value());
     EXPECT_EQ(store.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(store.error().message().find("list index must be an integer, got Range"), std::string::npos);
@@ -402,7 +440,7 @@ TEST(Compiler, IterReturnsFreshIterator) {
 
 // next 越界抛 IterationExhausted:未捕获走 RuntimeError,消息可核对。
 TEST(Compiler, NextExhaustedIsRuntimeError) {
-    auto out = run_source("var it = [1].iter(); it.next(); return it.next();");
+    auto out = run_value("var it = [1].iter(); it.next(); return it.next();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IterationExhausted);
     EXPECT_NE(out.error().message().find("iterator exhausted"), std::string::npos);
@@ -432,12 +470,12 @@ TEST(Compiler, UserClassIterableSamePath) {
 // 不可迭代:原语走 LOAD_FIELD 非对象守卫;对象无 iter 方法则类措辞 miss（均 UndefinedProperty,
 // NotIterable/IteratorProtocol 两码预留不接线）。
 TEST(Compiler, ForInNotIterableFails) {
-    auto primitive = run_source("var z = 0; for (x in 5) { z = z + 1; } return 1;");
+    auto primitive = run_value("var z = 0; for (x in 5) { z = z + 1; } return 1;");
     ASSERT_FALSE(primitive.has_value());
     EXPECT_EQ(primitive.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(primitive.error().message().find("type Int does not support field access"), std::string::npos);
 
-    auto missing = run_source("def NoIter { init() { } } for (x in NoIter()) { } return 1;");
+    auto missing = run_value("def NoIter { init() { } } for (x in NoIter()) { } return 1;");
     ASSERT_FALSE(missing.has_value());
     EXPECT_EQ(missing.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(missing.error().message().find("<class NoIter> has no member 'iter'"), std::string::npos);
@@ -466,7 +504,7 @@ TEST(Compiler, MapSubscriptWriteUpserts) {
 
 // miss 读:KeyError(运行期,键入文案)。
 TEST(Compiler, MapReadMissFailsKeyError) {
-    auto out = run_source("var m = {\"a\": 1}; return m[\"nope\"];");
+    auto out = run_value("var m = {\"a\": 1}; return m[\"nope\"];");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::KeyError);
     EXPECT_NE(out.error().message().find("map key not found"), std::string::npos);
@@ -504,12 +542,12 @@ TEST(Compiler, ForInMapYieldsKeyValuePairs) {
 
 // map 成员 miss:类措辞随协议传播(与 list 同文案形);成员写不受支持。
 TEST(Compiler, MapMemberMissAndStoreNotSupported) {
-    auto miss = run_source("var m = {}; return m.foo;");
+    auto miss = run_value("var m = {}; return m.foo;");
     ASSERT_FALSE(miss.has_value());
     EXPECT_EQ(miss.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(miss.error().message().find("<class Map> has no member 'foo'"), std::string::npos);
 
-    auto store = run_source("var m = {}; m.foo = 2; return 1;");
+    auto store = run_value("var m = {}; m.foo = 2; return 1;");
     ASSERT_FALSE(store.has_value());
     EXPECT_EQ(store.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(store.error().message().find("type Map does not support field access"), std::string::npos);
@@ -570,7 +608,7 @@ TEST(Compiler, RangeEqualityIsContent) {
 
 // 非整数端点:TypeMismatch,双值 debug 形文案(执行体就地烘焙)。
 TEST(Compiler, RangeNonIntBoundsTypeMismatch) {
-    auto out = run_source("return 1.5..10;");
+    auto out = run_value("return 1.5..10;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(out.error().message().find("range bounds must be integers"), std::string::npos);
@@ -624,7 +662,7 @@ TEST(Compiler, VarargsPureRest) {
 
 // 元数下界仍守(必传不足报 WrongArity 至少式文案);上界取消(8 参照常)。
 TEST(Compiler, VarargsArityBound) {
-    auto out = run_source("fun f(a, ...rest) { return a; } return f();");
+    auto out = run_value("fun f(a, ...rest) { return a; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(out.error().message().find("expects at least 1 argument, got 0"), std::string::npos);
@@ -682,7 +720,7 @@ TEST(Compiler, StringSplitKeepsEmptySegments) {
     EXPECT_EQ(run_int(R"(var one = "".split(","); if (one.size() == 1 && one[0] == "") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("x=y=z".split("=")[1] == "y") { return 1; } return 0;)"), 1);
 
-    auto empty = run_source(R"(return "ab".split("");)");
+    auto empty = run_value(R"(return "ab".split("");)");
     ASSERT_FALSE(empty.has_value());
     EXPECT_EQ(empty.error().code(), ErrorCode::EmptyPattern);
     EXPECT_NE(empty.error().message().find("split separator must not be empty"), std::string::npos);
@@ -711,7 +749,7 @@ TEST(Compiler, StringReplaceAll) {
     EXPECT_EQ(run_int(R"(if ("aaa".replace("a", "bb") == "bbbbbb") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("abc".replace("x", "y") == "abc") { return 1; } return 0;)"), 1);
 
-    auto empty = run_source(R"(return "ab".replace("", "x");)");
+    auto empty = run_value(R"(return "ab".replace("", "x");)");
     ASSERT_FALSE(empty.has_value());
     EXPECT_EQ(empty.error().code(), ErrorCode::EmptyPattern);
     EXPECT_NE(empty.error().message().find("replace pattern must not be empty"), std::string::npos);
@@ -723,11 +761,11 @@ TEST(Compiler, StringSubstringRangeChecked) {
     EXPECT_EQ(run_int(R"(if ("hello".substring(1, 3) == "el") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("hello".substring(2, 2) == "") { return 1; } return 0;)"), 1);
 
-    auto out_of_range = run_source(R"(return "hello".substring(3, 9);)");
+    auto out_of_range = run_value(R"(return "hello".substring(3, 9);)");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
 
-    auto negative = run_source(R"(return "hello".substring(-1);)");
+    auto negative = run_value(R"(return "hello".substring(-1);)");
     ASSERT_FALSE(negative.has_value());
     EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
 }
@@ -735,12 +773,12 @@ TEST(Compiler, StringSubstringRangeChecked) {
 // substring 非整数参数:报错须报**违规的那个**参数(两参形态下首个参数违规时报的是它,不是
 // 合法的第二个)。
 TEST(Compiler, StringSubstringReportsOffendingArgument) {
-    auto first_bad = run_source(R"(return "hello".substring("x", 1);)");
+    auto first_bad = run_value(R"(return "hello".substring("x", 1);)");
     ASSERT_FALSE(first_bad.has_value());
     EXPECT_EQ(first_bad.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(first_bad.error().message().find("got String"), std::string::npos);
 
-    auto second_bad = run_source(R"(return "hello".substring(1, "x");)");
+    auto second_bad = run_value(R"(return "hello".substring(1, "x");)");
     ASSERT_FALSE(second_bad.has_value());
     EXPECT_EQ(second_bad.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(second_bad.error().message().find("got String"), std::string::npos);
@@ -759,7 +797,7 @@ TEST(Compiler, StringCodepointAtIndexesByCodepoint) {
     EXPECT_EQ(run_int(R"(return "héllo".codepoint_at(1);)"), 0xE9);
     EXPECT_EQ(run_int(R"(return "abc".codepoint_at(2);)"), 'c');
 
-    auto out_of_range = run_source(R"(return "héllo".codepoint_at(5);)");
+    auto out_of_range = run_value(R"(return "héllo".codepoint_at(5);)");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
 }
@@ -771,7 +809,7 @@ TEST(Compiler, StringSubscriptIsByteSemantics) {
     EXPECT_EQ(run_int(R"(if ("hello"[1] == "e") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("héllo".size() == 6 && "héllo"[1].size() == 1) { return 1; } return 0;)"), 1);
 
-    auto out_of_range = run_source(R"(return "hi"[5];)");
+    auto out_of_range = run_value(R"(return "hi"[5];)");
     ASSERT_FALSE(out_of_range.has_value());
     EXPECT_EQ(out_of_range.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out_of_range.error().message().find("string index 5 out of range"), std::string::npos);
@@ -782,7 +820,7 @@ TEST(Compiler, StringNegativeIndexReads) {
     EXPECT_EQ(run_int(R"(if ("hello"[-1] == "o") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("hello"[-5] == "h") { return 1; } return 0;)"), 1);
 
-    auto out = run_source(R"(return "hi"[-3];)");
+    auto out = run_value(R"(return "hi"[-3];)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out.error().message().find("string index -3 out of range"), std::string::npos);
@@ -790,7 +828,7 @@ TEST(Compiler, StringNegativeIndexReads) {
 
 // string 不可变:下标写恒 TypeMismatch。
 TEST(Compiler, StringImmutableStoreFails) {
-    auto out = run_source(R"(var s = "hi"; s[0] = "H"; return s;)");
+    auto out = run_value(R"(var s = "hi"; s[0] = "H"; return s;)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(out.error().message().find("type String does not support subscript assignment"), std::string::npos);
@@ -819,7 +857,7 @@ TEST(Compiler, StringJoinOnListReceiver) {
 
 // 成员 miss:类措辞随协议传播(与 list/map 同文案形)。
 TEST(Compiler, StringMemberMissFailsWithClassWording) {
-    auto out = run_source(R"(return "hi".nope;)");
+    auto out = run_value(R"(return "hi".nope;)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
     EXPECT_NE(out.error().message().find("<class String> has no member 'nope'"), std::string::npos);
@@ -847,7 +885,7 @@ TEST(Compiler, StringContainsSubstring) {
     EXPECT_EQ(run_int(R"(if ("hello".contains("ell") && !"hello".contains("xyz")) { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if ("hello".contains("") && "".contains("")) { return 1; } return 0;)"), 1);
 
-    auto bad = run_source(R"(return "hello".contains(1);)");
+    auto bad = run_value(R"(return "hello".contains(1);)");
     ASSERT_FALSE(bad.has_value());
     EXPECT_EQ(bad.error().code(), ErrorCode::TypeMismatch);
     EXPECT_NE(bad.error().message().find("contains argument must be a string, got Int"), std::string::npos);
@@ -898,7 +936,7 @@ TEST(Compiler, StringToIntAndToFloat) {
             run_int(R"(if ("".to_float() == nil && "3 ".to_float() == nil && "1e400".to_float() == nil) { return 1; } return 0;)"),
             1);
 
-    auto arity = run_source(R"(return "1".to_int(9);)");
+    auto arity = run_value(R"(return "1".to_int(9);)");
     ASSERT_FALSE(arity.has_value());
     EXPECT_EQ(arity.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(arity.error().message().find("function expects no arguments, got 1"), std::string::npos);
@@ -916,7 +954,7 @@ TEST(Compiler, StringRangeSlice) {
     EXPECT_EQ(run_int(R"(if ("héllo"[2..0] == "héllo"[2] + "héllo"[1] + "héllo"[0]) { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(var [c, ...r] = "abc"; if (c == "a" && r == "bc") { return 1; } return 0;)"), 1);
 
-    auto out = run_source(R"(return "hello"[1..9];)");
+    auto out = run_value(R"(return "hello"[1..9];)");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::IndexOutOfBounds);
     EXPECT_NE(out.error().message().find("slice range 1..9 out of range"), std::string::npos);
@@ -992,19 +1030,19 @@ TEST(Compiler, DestructureAssignmentValueIsRhs) {
 // 解构的失败面：位置不足复用下标越界；源不可下标取按类型错；解构赋值目标未声明按赋值不隐式创建；
 // 新名同作用域重名按声明判重。
 TEST(Compiler, DestructureFailureFaces) {
-    auto short_source = run_source("var [a, b] = [1]; return 0;");
+    auto short_source = run_value("var [a, b] = [1]; return 0;");
     ASSERT_FALSE(short_source.has_value());
     EXPECT_EQ(short_source.error().code(), ErrorCode::IndexOutOfBounds);
 
-    auto unsubscriptable = run_source("var [a] = 5; return 0;");
+    auto unsubscriptable = run_value("var [a] = 5; return 0;");
     ASSERT_FALSE(unsubscriptable.has_value());
     EXPECT_EQ(unsubscriptable.error().code(), ErrorCode::TypeMismatch);
 
-    auto undeclared_target = run_source("[zz] = [1]; return 0;");
+    auto undeclared_target = run_value("[zz] = [1]; return 0;");
     ASSERT_FALSE(undeclared_target.has_value());
     EXPECT_EQ(undeclared_target.error().code(), ErrorCode::UndefinedVariable);
 
-    auto duplicate_name = run_source("var [a, a] = [1, 2]; return 0;");
+    auto duplicate_name = run_value("var [a, a] = [1, 2]; return 0;");
     ASSERT_FALSE(duplicate_name.has_value());
     EXPECT_EQ(duplicate_name.error().code(), ErrorCode::RedefinedVariable);
 }

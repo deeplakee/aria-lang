@@ -46,6 +46,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
+#include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
 #include "util/io.hpp"
 #include "util/source_file.hpp"
@@ -103,13 +104,27 @@ namespace {
     };
 
     [[nodiscard]] Program make_program(const StringView name, String content) {
-        auto  vm       = std::make_unique<AriaVM>();
-        auto& gc       = vm->gc();
-        auto  source   = std::make_unique<SourceFile>(String{name}, String{name}, std::move(content));
+        // 顶层已禁带值 return（入口返回值恒为模块对象）：场景源码包进探针函数（不调用）编译，
+        // 再从入口常量池取 __probe__ 直接 run——探针是普通函数，RETURN 通用写回 callee 槽，
+        // 其返回值（各场景尾部的 acc）即 run() 返回值。
+        auto   vm = std::make_unique<AriaVM>();
+        auto&  gc = vm->gc();
+        String wrapped{"fun __probe__() {\n"};
+        wrapped += content;
+        wrapped += "\n}\n";
+        auto  source   = std::make_unique<SourceFile>(String{name}, String{name}, std::move(wrapped));
         auto* module   = new_module(gc, name); // StringView 重载：名字经工厂内部 intern 并自守
         auto  compiled = Compiler::compile(gc, *source, module, kMainEntryName);
         BENCH_CHECK(compiled.has_value(), "compile failed");
-        return Program{std::move(vm), std::move(source), *compiled};
+        ObjFunction* probe = nullptr;
+        for (const auto& constant: (*compiled)->unit().constants) {
+            if (constant.is_obj() && aria::Object::is<ObjFunction>(constant.as_obj()) &&
+                aria::Object::as<ObjFunction>(constant.as_obj())->name()->view() == "__probe__") {
+                probe = aria::Object::as<ObjFunction>(constant.as_obj());
+            }
+        }
+        BENCH_CHECK(probe != nullptr, "probe fn missing from entry constants");
+        return Program{std::move(vm), std::move(source), probe};
     }
 
     struct Sample {
@@ -120,7 +135,7 @@ namespace {
         i64    value;
     };
 
-    // 每次试验都是整段 VM 运行：run() 自带前后清场，同一 fn 可重复跑；模块顶层 var 每轮重建，
+    // 每次试验都是整段 VM 运行：run() 自带前后清场，同一 fn 可重复跑；探针函数局部 var 每轮重建，
     // 故各轮状态互不影响（不预热，取最小即已排除首轮冷态）。
     //
     // 分配读数取**最后一次**试验（首轮还在填 intern 池，会比稳定态多算一批串对象）；另断言最后两轮

@@ -59,6 +59,7 @@ namespace aria {
     X(ThisOutsideClass, Semantic)           /* this outside a class */                                              \
     X(BreakOutsideLoop, Semantic)           /* break outside a loop */                                              \
     X(ContinueOutsideLoop, Semantic)        /* continue outside a loop */                                           \
+    X(ReturnValueAtTopLevel, Semantic)      /* return with a value at top level */                                  \
     X(TryWithoutHandler, Semantic)          /* try without a catch clause */                                        \
     X(UnreachableArm, Semantic)             /* arm after the '_' arm (dead arm; '_' comes last, at most once) */    \
     X(DuplicateParam, Semantic)             /* parameter name used twice in one function */                         \

@@ -332,15 +332,17 @@ namespace aria {
         // 表达式可引用前序参数、自身/后序参数名对解析结构性不可见。须在子上下文就位后、体编译前调用。
         void compile_params(const List<Param>& params, SourceLoc loc);
 
-        // 函数体尾隐式返回：init 方法返回 this（LOAD_LOCAL 0，实例化不变式 Foo() 得实例），其余返回
-        // nil（显式 return 后为死代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标上下文就位后调用。
-        void emit_implicit_return(u32 line) const;
+        // 函数体尾隐式返回：init 方法返回 this（LOAD_LOCAL 0，实例化不变式 Foo() 得实例）、入口
+        // ModuleEntry 返回模块对象常量（主脚本与导入模块同规，IMPORT 栈效应的兑现），其余返回 nil
+        // （显式 return 后为死代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标上下文就位后调用。
+        // loc 供模块对象常量的溢出报错定位；行号取 loc.line()。
+        void emit_implicit_return(SourceLoc loc) const;
 
         // name 为函数名 StringView（具名 fun 声明名 / lambda kAnonymousName / 入口 `<main>` / 类成员方法
         // 名）。name 建串与守卫收口在工厂 StringView 重载内（工厂守「自己创建的」）。kind 决定 CLOSURE
         // 后的绑定/注册分派（收口 bind_function_value）与帧形态（实例方法族槽 0 = 具名局部 this）及隐式
         // 返回尾。完成后切回父上下文，函数值已在父序列压栈。decl_loc 供 validate_params 报错与声明区
-        // 发射行号，隐式返回尾行号取 body.line()。无默认值。
+        // 发射行号，隐式返回尾 loc 取 body.loc()。无默认值。
         void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc,
                               FnKind kind);
 

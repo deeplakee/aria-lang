@@ -1,0 +1,13 @@
+// 钉住：裸 return 在模块体/主脚本顶层 = 提前退出；导入绑定仍是模块对象（早退不夺走
+// IMPORT 栈效应），早退前的全局与函数存活，早退后的语句不执行。
+import "lib/counter" as C;
+
+assert(C.count == 1);          // bump 的副作用已发生
+assert(C.bump() == 2);         // 早退前声明的函数可用
+var ghost_absent = false;
+try { C.ghost; } catch (e) { ghost_absent = true; }
+assert(ghost_absent);          // 早退后声明的函数不存在（成员 miss 可捕获）
+
+println("before");
+return;
+println("after");              // 不可达

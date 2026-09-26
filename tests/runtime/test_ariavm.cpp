@@ -575,17 +575,17 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
 // 闭包体与 leaf)不并入 -- 语料 .err 是子串判定、钉不了缺席,精确等值断言钉在这里。
 TEST_F(AriaVMStress, UncaughtInCoroutineTraceTruncatedAtBoundary) {
 
-    const auto src = "\n"
-                     "fun leaf() {\n"
-                     "    throw \"boom\";\n"
-                     "}\n"
-                     "var co = coroutine.create(fun() { leaf(); });\n"
-                     "coroutine.resume(co);\n";
+    const auto       src = "\n"
+                           "fun leaf() {\n"
+                           "    throw \"boom\";\n"
+                           "}\n"
+                           "var co = coroutine.create(fun() { leaf(); });\n"
+                           "coroutine.resume(co);\n";
     aria::SourceFile source{aria::String{aria::kScriptModuleName}, aria::String{aria::kScriptModuleName},
                             aria::String{src}};
-    auto module = make_module(vm.gc());
-    auto guard  = vm.gc().make_guard(module);
-    auto out    = vm.run(source, module);
+    auto             module = make_module(vm.gc());
+    auto             guard  = vm.gc().make_guard(module);
+    auto             out    = vm.run(source, module);
     ASSERT_FALSE(out.has_value()) << out.error().message();
     EXPECT_EQ(out.error().code(), ErrorCode::UncaughtException);
     EXPECT_EQ(out.error().message(), "Runtime: UncaughtException uncaught exception: boom\n"
@@ -1040,11 +1040,12 @@ TEST_F(AriaVMStress, ImportModuleCompileErrorNotCached) {
                                       "    import \"./helper\" as H1;\n"
                                       "} catch (e) {\n"
                                       "}\n"
+                                      "var retried = 0;\n"
                                       "try {\n"
                                       "    import \"./helper\" as H2;\n"
-                                      "    return 0;\n" // 仅残留占位模块被复用才会走到这
+                                      "    retried = 1;\n" // 仅残留占位模块被复用才会走到这
                                       "} catch (e) {\n"
-                                      "    return 1;\n"
+                                      "    retried = 2;\n"
                                       "}\n");
 
     auto loaded = aria::SourceFile::from_path(main_path);
@@ -1055,8 +1056,10 @@ TEST_F(AriaVMStress, ImportModuleCompileErrorNotCached) {
     auto             guard  = vm.gc().make_guard(module);
     const auto       out    = vm.run(source, module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out->is_int());
-    EXPECT_EQ(out->as_int(), 1); // 重试仍报编译错误,未静默复用空模块
+
+    const auto flag = module->globals().find(Value::from_obj(new_string(vm.gc(), "retried")));
+    ASSERT_NE(flag, nullptr);
+    EXPECT_EQ(flag->value.as_int(), 2); // 重试仍报编译错误进 catch,未静默复用空模块
 
     EXPECT_EQ(find_module_by_name(vm.modules(), "helper"), nullptr); // 编译失败不留表项
 }
@@ -1076,15 +1079,19 @@ TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {
 
 // M3:模块体 run-once 期间 throw -- unwind 弹 <module> 帧后,导入方 IMPORT 站点所在 try 捕获
 // (外层帧 last_ip = IMPORT 指令,pitfalls 坑 #2),异常值落 catch 参数槽;boomer 半初始化仍在
-// 表中(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 取返回值断言(interpret 只回类别)。
+// 表中(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 跑完后检视捕获全局(interpret 只回类别)。
 TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
 
     vm.set_source_roots({});
     const auto base = test_canon_dir();
     write_aria(base, "boomer.aria", "var x = 1; throw \"boom\";");
-    const auto main_path =
-            write_aria(base, "main.aria",
-                       "try {\n    import \"./boomer\" as B;\n    return 0;\n} catch (e) {\n    return e;\n}\n");
+    const auto main_path = write_aria(base, "main.aria",
+                                      "var caught = nil;\n"
+                                      "try {\n"
+                                      "    import \"./boomer\" as B;\n"
+                                      "} catch (e) {\n"
+                                      "    caught = e;\n"
+                                      "}\n");
 
     auto loaded = aria::SourceFile::from_path(main_path);
     ASSERT_TRUE(loaded.has_value());
@@ -1094,8 +1101,11 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
     auto             guard  = vm.gc().make_guard(module);
     const auto       out    = vm.run(source, module);
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    ASSERT_TRUE(out->is_obj());
-    const auto thrown = aria::Object::as<ObjString>(out->as_obj());
+
+    const auto caught = module->globals().find(Value::from_obj(new_string(vm.gc(), "caught")));
+    ASSERT_NE(caught, nullptr);
+    ASSERT_TRUE(caught->value.is_obj());
+    const auto thrown = aria::Object::as<ObjString>(caught->value.as_obj());
     ASSERT_NE(thrown, nullptr);
     EXPECT_EQ(thrown->view(), "boom");
 

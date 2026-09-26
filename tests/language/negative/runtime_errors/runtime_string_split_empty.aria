@@ -1,3 +1,2 @@
 // 钉住：split 分隔符为空串 -> EmptyPattern（运行期）。
-var parts = "ab".split("");
-return parts;
+"ab".split("");

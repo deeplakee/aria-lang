@@ -74,14 +74,15 @@ namespace {
         Result<ObjFunction*, Error> result;
         bool                        has_value() const noexcept { return result.has_value(); }
         ObjFunction*                operator->() const noexcept { return *result; }
+        ObjFunction&                operator*() const noexcept { return **result; }
         Error&                      error() noexcept { return result.error(); }
         const Error&                error() const noexcept { return result.error(); }
     };
 
-    // 取入口函数常量池里名为 name 的嵌套 ObjFunction（方法与 lambda 体各占一个 CodeUnit）：
-    // 方法体内的发射断言要看它们的 unit，入口 unit 只有 CLOSURE/调用序列。
-    ObjFunction* find_nested_function(Compiled& compiled, const std::string_view name) {
-        for (const auto& constant: compiled->unit().constants) {
+    // 从入口函数常量池取名为 name 的嵌套 ObjFunction（run_value 探针提取与 find_nested_function
+    // 共用;调用方保证 entry 存活期间使用返回值,对象经常量池根链可达）。
+    ObjFunction* find_entry_nested(ObjFunction& entry, const std::string_view name) {
+        for (const auto& constant: entry.unit().constants) {
             if (!constant.is_obj() || !aria::Object::is<ObjFunction>(constant.as_obj())) {
                 continue;
             }
@@ -91,6 +92,12 @@ namespace {
             }
         }
         return nullptr;
+    }
+
+    // 取入口函数常量池里名为 name 的嵌套 ObjFunction（方法与 lambda 体各占一个 CodeUnit）：
+    // 方法体内的发射断言要看它们的 unit，入口 unit 只有 CLOSURE/调用序列。
+    ObjFunction* find_nested_function(Compiled& compiled, const std::string_view name) {
+        return find_entry_nested(*compiled, name);
     }
 
     // 端到端：源码 -> 编译 -> VM 运行。返回 RunResult（持 vm 活到调用方检视完返回值）。
@@ -110,6 +117,33 @@ namespace {
         return RunResult{std::move(vm), std::move(result)};
     }
 
+    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象——入口
+    // 的 RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
+    // __probe__ 的 ObjFunction 直接 run：探针是普通函数，RETURN 通用写回 callee 槽，其返回值
+    // 即 run() 返回值（fn 经 run() 内 make_guard 根化）。仅取值站点走此入口；钉模块顶层语义
+    // （顶层 var 落全局等）的站点走 run_source（不包）。
+    RunResult run_value(std::string_view src) {
+        auto  vm = std::make_unique<AriaVM>();
+        auto& gc = vm->gc();
+        gc.set_stress(true);
+        auto        module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        std::string wrapped{"fun __probe__() {\n"};
+        wrapped += src;
+        wrapped += "\n}\n";
+        auto compiled = compile_source(gc, module, wrapped);
+        if (!compiled) {
+            return RunResult{std::move(vm), std::unexpected(compiled.error())};
+        }
+        auto* probe = find_entry_nested(**compiled, "__probe__");
+        if (probe == nullptr) {
+            ADD_FAILURE() << "探针函数应在入口常量池";
+            return RunResult{std::move(vm),
+                             std::unexpected(Error::from_detail(ErrorCode::AssertionFailed, "probe fn missing"))};
+        }
+        auto result = vm->run(probe);
+        return RunResult{std::move(vm), std::move(result)};
+    }
+
     // 仅编译（不入 VM），供反汇编 / 编译期错误测试用。返回 Compiled（持 vm 活到反汇编/检视完）。
     // 同 run_source 开 stress GC，锻炼编译期根接线。
     Compiled compile_only(std::string_view src) {
@@ -123,8 +157,8 @@ namespace {
 
     // 便捷：断言运行成功并返回整数（整数即值，无 GC 对象依赖，但仍经 RunResult 在 vm 存活期取值）。
     i64 run_int(std::string_view src) {
-        auto out = run_source(src);
-        EXPECT_TRUE(out.has_value()) << "expected success";
+        auto out = run_value(src);
+        EXPECT_TRUE(out.has_value()) << out.error().message();
         return out ? out->as_int() : 0;
     }
 
@@ -173,52 +207,52 @@ TEST(CodeGen, IntDivAndMod) {
 }
 
 TEST(CodeGen, FloatConstantAndPromotion) {
-    auto out = run_source("return 2.5 + 0.5;");
+    auto out = run_value("return 2.5 + 0.5;");
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_f64());
     EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
 TEST(CodeGen, IntFloatPromotion) {
-    auto out = run_source("return 1 + 2.0;");
+    auto out = run_value("return 1 + 2.0;");
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_f64());
     EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
 TEST(CodeGen, ComparisonAndEquality) {
-    auto gt = run_source("return 3 > 2;");
+    auto gt = run_value("return 3 > 2;");
     ASSERT_TRUE(gt.has_value());
     ASSERT_TRUE(gt->is_bool());
     EXPECT_TRUE(gt->as_bool());
 
-    auto lt = run_source("return 1 < 0;");
+    auto lt = run_value("return 1 < 0;");
     ASSERT_TRUE(lt.has_value());
     ASSERT_TRUE(lt->is_bool());
     EXPECT_FALSE(lt->as_bool());
 
-    EXPECT_TRUE((*run_source("return 1 == 1;")).as_bool());
-    EXPECT_FALSE((*run_source("return 1 != 1;")).as_bool());
+    EXPECT_TRUE((*run_value("return 1 == 1;")).as_bool());
+    EXPECT_FALSE((*run_value("return 1 != 1;")).as_bool());
     // 严格相等：1 === 1.0 为假（类型不同）
-    EXPECT_FALSE((*run_source("return 1 === 1.0;")).as_bool());
-    EXPECT_TRUE((*run_source("return 1 !== 1.0;")).as_bool());
+    EXPECT_FALSE((*run_value("return 1 === 1.0;")).as_bool());
+    EXPECT_TRUE((*run_value("return 1 !== 1.0;")).as_bool());
 }
 
 TEST(CodeGen, Literals) {
-    auto t = run_source("return true;");
+    auto t = run_value("return true;");
     ASSERT_TRUE(t.has_value());
     ASSERT_TRUE(t->is_bool());
     EXPECT_TRUE(t->as_bool());
 
-    auto f = run_source("return false;");
+    auto f = run_value("return false;");
     ASSERT_TRUE(f.has_value());
     EXPECT_FALSE(f->as_bool());
 
-    auto n = run_source("return nil;");
+    auto n = run_value("return nil;");
     ASSERT_TRUE(n.has_value());
     EXPECT_TRUE(n->is_nil());
 
-    auto s = run_source("return \"hello\";");
+    auto s = run_value("return \"hello\";");
     ASSERT_TRUE(s.has_value());
     ASSERT_TRUE(s->is_obj());
     EXPECT_EQ(aria::format_value(*s), "hello");
@@ -233,12 +267,12 @@ TEST(CodeGen, UnaryMinusAndNot) {
     EXPECT_EQ(run_int("return -140737488355328;"), -140737488355328); // i48 下界 -2^47 可写
     EXPECT_EQ(run_int("return -140737488355327;"), -140737488355327);
     EXPECT_EQ(run_int("return -(1 + 2);"), -3); // 非字面量操作数不走折叠
-    auto nt = run_source("return !false;");
+    auto nt = run_value("return !false;");
     ASSERT_TRUE(nt.has_value());
     ASSERT_TRUE(nt->is_bool());
     EXPECT_TRUE(nt->as_bool());
     // Lua 真值：!nil -> true
-    EXPECT_TRUE((*run_source("return !nil;")).as_bool());
+    EXPECT_TRUE((*run_value("return !nil;")).as_bool());
 }
 
 // 负字面量折叠：-<数值字面量> 的取负并进常量，只发一条加载指令（LOAD_IMM 立即数按 i8 有符号
@@ -246,7 +280,7 @@ TEST(CodeGen, UnaryMinusAndNot) {
 TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     // i8 内：单条 LOAD_IMM 负立即数（0xFF 位型 i8 = -1）
     {
-        const auto compiled = compile_only("return -1;");
+        const auto compiled = compile_only("-1;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("LOAD_IMM          FF  ; -1"), aria::String::npos);
@@ -254,14 +288,14 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
     // i8 边界：-128 仍走立即数（0x80 位型 i8 = -128），-129 越出有符号域落常量池负面值
     {
-        const auto compiled = compile_only("return -128;");
+        const auto compiled = compile_only("-128;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("LOAD_IMM          80  ; -128"), aria::String::npos);
         EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
     }
     {
-        const auto compiled = compile_only("return -129;");
+        const auto compiled = compile_only("-129;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("LOAD_CONST        0000  ; -129"), aria::String::npos);
@@ -269,7 +303,7 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
     // i48 下界：值域按字面量自身的值判，-2^47 是域内合法值，仍是单条池内负面值加载
     {
-        const auto compiled = compile_only("return -140737488355328;");
+        const auto compiled = compile_only("-140737488355328;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("; -140737488355328"), aria::String::npos);
@@ -277,14 +311,14 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
     // 浮点同折；-0.0 的负零位型随常量保留
     {
-        const auto compiled = compile_only("return -1.5;");
+        const auto compiled = compile_only("-1.5;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("; -1.5"), aria::String::npos);
         EXPECT_EQ(text.find("NEGATE"), aria::String::npos);
     }
     {
-        const auto compiled = compile_only("return -0.0;");
+        const auto compiled = compile_only("-0.0;");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("; -0.0"), aria::String::npos);
@@ -292,7 +326,7 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
     // 只折一层：内层折成 -5，外层操作数是 UnaryExpr，仍发一条 NEGATE
     {
-        const auto compiled = compile_only("return -(-5);");
+        const auto compiled = compile_only("-(-5);");
         ASSERT_TRUE(compiled.has_value());
         const auto text = compiled->unit().disassemble("<test>");
         EXPECT_NE(text.find("LOAD_IMM          FB  ; -5"), aria::String::npos);
@@ -300,17 +334,17 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
     // 非字面量操作数不折：复合表达式/变量/字符串照旧走 NEGATE（运行期取负与报错语义不变）
     {
-        const auto compiled = compile_only("return -(1 + 2);");
+        const auto compiled = compile_only("-(1 + 2);");
         ASSERT_TRUE(compiled.has_value());
         EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
     }
     {
-        const auto compiled = compile_only("var x = 1; return -x;");
+        const auto compiled = compile_only("var x = 1; -x;");
         ASSERT_TRUE(compiled.has_value());
         EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
     }
     {
-        const auto compiled = compile_only("return -\"abc\";");
+        const auto compiled = compile_only("-\"abc\";");
         ASSERT_TRUE(compiled.has_value());
         EXPECT_NE(compiled->unit().disassemble("<test>").find("NEGATE"), aria::String::npos);
     }
@@ -322,24 +356,24 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
 
 TEST(CodeGen, LogicShortCircuit) {
     // nil || 5 -> 5（nil 假，求 rhs 留值）
-    auto or1 = run_source("return nil || 5;");
+    auto or1 = run_value("return nil || 5;");
     ASSERT_TRUE(or1.has_value());
     ASSERT_TRUE(or1->is_int());
     EXPECT_EQ(or1->as_int(), 5);
 
     // true || x -> true（短路，不求 x）
-    auto or2 = run_source("return true || nil;");
+    auto or2 = run_value("return true || nil;");
     ASSERT_TRUE(or2.has_value());
     ASSERT_TRUE(or2->is_bool());
     EXPECT_TRUE(or2->as_bool());
 
     // nil && 5 -> nil（短路假，留 lhs）
-    auto and1 = run_source("return nil && 5;");
+    auto and1 = run_value("return nil && 5;");
     ASSERT_TRUE(and1.has_value());
     EXPECT_TRUE(and1->is_nil());
 
     // 3 && 5 -> 5（lhs 真，求 rhs）
-    auto and2 = run_source("return 3 && 5;");
+    auto and2 = run_value("return 3 && 5;");
     ASSERT_TRUE(and2.has_value());
     ASSERT_TRUE(and2->is_int());
     EXPECT_EQ(and2->as_int(), 5);
@@ -376,7 +410,7 @@ TEST(CodeGen, PreIncDec) {
     EXPECT_EQ(run_int("var a = 5; ++a; return a;"), 6);
     EXPECT_EQ(run_int("var a = 5; --a; return a;"), 4);
     // 前置 ++ 作为表达式留新值
-    auto e = run_source("var a = 5; return ++a;");
+    auto e = run_value("var a = 5; return ++a;");
     ASSERT_TRUE(e.has_value());
     ASSERT_TRUE(e->is_int());
     EXPECT_EQ(e->as_int(), 6);
@@ -596,7 +630,7 @@ TEST(CodeGen, MethodCallEmitsPrepareCall) {
     auto call = compile_only(R"(
 def C { m(v) { return v; } }
 var c = C();
-return c.m(1);
+c.m(1);
 )");
     ASSERT_TRUE(call.has_value());
     const auto call_text  = call->unit().disassemble("<test>");
@@ -608,7 +642,7 @@ return c.m(1);
     auto read = compile_only(R"(
 def C { m(v) { return v; } }
 var c = C();
-return c.m;
+c.m;
 )");
     ASSERT_TRUE(read.has_value());
     const auto read_text = read->unit().disassemble("<test>");
@@ -623,7 +657,7 @@ TEST(CodeGen, PrepareCallEmissionBoundaries) {
     auto super_call = compile_only(R"(
 def A { m() { return 1; } }
 def B : A { n() { return super.m(); } }
-return B().n();
+B().n();
 )");
     ASSERT_TRUE(super_call.has_value());
     EXPECT_NE(super_call->unit().disassemble("<test>").find("PREPARE_METHOD"),
@@ -638,7 +672,7 @@ return B().n();
     auto index_call = compile_only(R"(
 fun f() { return 1; }
 var xs = [f];
-return xs[0]();
+xs[0]();
 )");
     ASSERT_TRUE(index_call.has_value());
     const auto index_text = index_call->unit().disassemble("<test>");
@@ -653,7 +687,7 @@ def C {
     m() { return 1; }
     n() { return this.m(); }
 }
-return C().n();
+C().n();
 )");
     ASSERT_TRUE(compiled.has_value());
     EXPECT_NE(compiled->unit().disassemble("<test>").find("PREPARE_METHOD"), aria::String::npos);
@@ -680,8 +714,11 @@ TEST(CodeGen, ClosureDisassembly) {
     ASSERT_TRUE(compiled.has_value());
     const auto text = compiled->unit().disassemble("<test>");
     EXPECT_NE(text.find("CLOSURE"), aria::String::npos); // 函数值经 CLOSURE 上栈
-    EXPECT_EQ(text.find("LOAD_CONST"), aria::String::npos)
-            << "入口 unit 不应再发 LOAD_CONST fn（x=1 走 LOAD_IMM,无其他常量加载）";
+    // 入口唯一的 LOAD_CONST 是隐式收尾的模块对象常量;fn 不经 LOAD_CONST 上栈。
+    const auto first_const = text.find("LOAD_CONST");
+    EXPECT_NE(first_const, aria::String::npos);
+    EXPECT_EQ(text.find("LOAD_CONST", first_const + 1), aria::String::npos)
+            << "除模块对象常量外,入口 unit 不应发 LOAD_CONST fn";
 }
 
 // for-in per-iteration 出口的新鲜绑定语义:pattern 变量被捕获 -> 每轮 end_scope 发
@@ -748,10 +785,53 @@ TEST(CodeGen, ImportNestedInBlock) {
     EXPECT_EQ(text.find("DEF_GLOBAL"), aria::String::npos) << "嵌套 import 不走 DEF_GLOBAL";
 }
 
+// ============================================================
+// 模块入口返回值（ModuleEntry）
+// ============================================================
+// 入口函数（主脚本与导入模块同规，ModuleCtx 构造烙定）返回值恒为模块对象：隐式收尾与裸
+// return 都发「压模块对象常量 + RETURN」（IMPORT 命中/未命中两路栈效应的兑现，VM RETURN
+// 通用写回 callee 槽即 IMPORT 预留结果槽）；带值 return 编译期拒绝（ReturnValueAtTopLevel）。
+TEST(CodeGen, EntryReturnYieldsModuleObject) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto module   = new_module(vm.gc(), "<mod>");
+    auto compiled = compile_source(vm.gc(), module, "var x = 1;");
+    ASSERT_TRUE(compiled.has_value());
+    const auto out = vm.run(*compiled);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    ASSERT_TRUE(out->is_obj());
+    EXPECT_EQ(out->as_obj(), module); // 顶层返回值即模块对象本身
+}
+
+TEST(CodeGen, ModuleEntryEpilogueLoadsModuleConstant) {
+    // 入口隐式收尾形态：模块对象常量入池（debug 形渲染出 <module ...>）+ LOAD_CONST + RETURN。
+    auto c = compile_only("var x = 1;");
+    ASSERT_TRUE(c.has_value());
+    const auto text = c->unit().disassemble("<mod>");
+    EXPECT_NE(text.find("<module <test>>"), aria::String::npos);
+    EXPECT_TRUE(lines_adjacent(text, "LOAD_CONST", "RETURN"));
+}
+
+TEST(CodeGen, TopLevelBareReturnCompiles) {
+    // 裸 return = 模块体提前退出，任意块深度合法（与隐式收尾同形）。
+    auto c = compile_only("var done = false;\nif (!done) { return; }\nvar after = 1;");
+    ASSERT_TRUE(c.has_value()) << c.error().message();
+}
+
+TEST(CodeGen, ErrTopLevelReturnValue) {
+    auto c = compile_only("return 42;");
+    ASSERT_FALSE(c.has_value());
+    EXPECT_EQ(c.error().code(), ErrorCode::ReturnValueAtTopLevel);
+    // 入口体内任意块深度的 return 都算入口 return，带值同拒。
+    auto d = compile_only("if (true) { return 1; }");
+    ASSERT_FALSE(d.has_value());
+    EXPECT_EQ(d.error().code(), ErrorCode::ReturnValueAtTopLevel);
+}
+
 // var 自引用：声明名在初始化器求值后才登记，init 里的 x 沿 resolve 链落外层。函数内无外层
 // x -> 落全局，双 miss 抛运行期 UndefinedVariable（编译期不做定值检查，直接放行）。
 TEST(CodeGen, VarSelfRefUndefinedGlobalAtRuntime) {
-    auto out = run_source("fun f() { var x = x + 1; return x; } return f();");
+    auto out = run_value("fun f() { var x = x + 1; return x; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
@@ -892,12 +972,12 @@ TEST(CodeGen, ErrDuplicateParam) {
 
 TEST(CodeGen, ErrNumberOutOfRange) {
     // i48 上界 2^47-1 = 140737488355327；此值在 i64 内（lex 通过）但超 i48 -> NumberOutOfRange。
-    auto c = compile_only("return 999999999999999;");
+    auto c = compile_only("999999999999999;");
     ASSERT_FALSE(c.has_value());
     EXPECT_EQ(c.error().code(), ErrorCode::NumberOutOfRange);
 
     // 负字面量按取负后的值判值域：越下界报错，且报文数值带源码写出的符号。
-    auto neg = compile_only("return -999999999999999;");
+    auto neg = compile_only("-999999999999999;");
     ASSERT_FALSE(neg.has_value());
     EXPECT_EQ(neg.error().code(), ErrorCode::NumberOutOfRange);
     EXPECT_NE(neg.error().message().find("-999999999999999"), aria::String::npos) << "报文应报字面量自身的值（带符号）";
@@ -944,26 +1024,26 @@ TEST(CodeGen, DefaultParamLambdaAndNestedCapture) {
 
 TEST(CodeGen, DefaultParamSideEffectOnlyWhenMissing) {
     // 默认值表达式仅在实际未传时求值。
-    auto out = run_source("var n = 0;"
-                          "fun bump() { n = n + 1; return 100; }"
-                          "fun f(a, b = bump()) { return b; }"
-                          "var r1 = f(1, 9);" // b 实参在位,bump 不执行
-                          "var v1 = n;"
-                          "var r2 = f(1);" // b 未传,bump 执行
-                          "var v2 = n;"
-                          "return r1 * 1000 + v1 * 100 + r2 * 10 + v2;");
+    auto out = run_value("var n = 0;"
+                         "fun bump() { n = n + 1; return 100; }"
+                         "fun f(a, b = bump()) { return b; }"
+                         "var r1 = f(1, 9);" // b 实参在位,bump 不执行
+                         "var v1 = n;"
+                         "var r2 = f(1);" // b 未传,bump 执行
+                         "var v2 = n;"
+                         "return r1 * 1000 + v1 * 100 + r2 * 10 + v2;");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 10001); // r1=9, v1=0, r2=100, v2=1
 }
 
 TEST(CodeGen, DefaultParamFunctionArgNotMisjudged) {
     // 实参为原生函数值(与印章同类型)不误判未传:身份判等,函数值非印章。
-    auto out = run_source("fun f(g = 1) { return g; }"
-                          "var with_fn = f(type);"
-                          "var with_default = f();"
-                          "var r = 0;"
-                          "if (with_fn === type) { r = r + 100; }" // 函数实参原样透传
-                          "return r + with_default;");
+    auto out = run_value("fun f(g = 1) { return g; }"
+                         "var with_fn = f(type);"
+                         "var with_default = f();"
+                         "var r = 0;"
+                         "if (with_fn === type) { r = r + 100; }" // 函数实参原样透传
+                         "return r + with_default;");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 101);
 }
@@ -977,12 +1057,12 @@ TEST(CodeGen, DefaultParamOuterScopeStillReachable) {
 
 TEST(CodeGen, DefaultParamWrongArityRange) {
     // 低于 min_arity / 高于 arity 均报 WrongArity;有缺省参数报区间文案。
-    auto lo = run_source("fun f(a, b = 2) { return b; } return f();");
+    auto lo = run_value("fun f(a, b = 2) { return b; } return f();");
     ASSERT_FALSE(lo.has_value());
     EXPECT_EQ(lo.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(lo.error().message().find("expects 1 or 2 arguments, got 0"), std::string::npos);
 
-    auto hi = run_source("fun f(a, b = 2) { return b; } return f(1, 2, 3);");
+    auto hi = run_value("fun f(a, b = 2) { return b; } return f(1, 2, 3);");
     ASSERT_FALSE(hi.has_value());
     EXPECT_EQ(hi.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(hi.error().message().find("expects 1 or 2 arguments, got 3"), std::string::npos);
@@ -990,7 +1070,7 @@ TEST(CodeGen, DefaultParamWrongArityRange) {
 
 TEST(CodeGen, DefaultParamSingularArityMessageKept) {
     // 无缺省参数(min_arity == arity)保持单数文案,区间文案仅在真有缺省时出现。
-    auto out = run_source("fun f(a) { return a; } return f();");
+    auto out = run_value("fun f(a) { return a; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
     EXPECT_NE(out.error().message().find("expects 1 argument, got 0"), std::string::npos);
@@ -1006,7 +1086,7 @@ TEST(CodeGen, DefaultParamFillKeepsSlotInvariantWithBodyLocals) {
 // 序言形态:逐缺省槽 LOAD_LOCAL_N -> LOAD_REG DefaultMark -> EQUAL -> JUMP_FALSE -> 默认值
 // 表达式 -> STORE_LOCAL_N(缺省槽 1..8 走 N 短变体)。全为既有指令,栈形平衡(序言后栈空)。
 TEST(CodeGen, DefaultParamPrologueDisassembly) {
-    auto c = compile_only("fun f(a, b = 5) { return b; } return f(1);");
+    auto c = compile_only("fun f(a, b = 5) { return b; } f(1);");
     ASSERT_TRUE(c.has_value()) << c.error().message();
     // 序言发射在子函数 f 的 unit 内(入口 unit 只有 CLOSURE/调用序列):经入口常量池取 f 的
     // ObjFunction 再反汇编其 unit。
@@ -1039,7 +1119,7 @@ TEST(CodeGen, DefaultParamMutationOfEarlierParam) {
 TEST(CodeGen, DefaultParamUnregisteredFallsToGlobal) {
     // 自身/后序参数未登记,名字按常规解析链落外层/全局(Python/C++ 默认值作用域同款):
     // 无同名全局 -> 缺省被求值时 UndefinedVariable;有同名全局 -> 用全局值(不指向参数)。
-    auto out = run_source("fun f(a = b, b = 2) { return b; } return f();");
+    auto out = run_value("fun f(a = b, b = 2) { return b; } return f();");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
     EXPECT_EQ(run_int("var b = 9; fun f(a = b, b = 2) { return a * 10 + b; } return f();"), 92);
@@ -1088,7 +1168,7 @@ TEST(CodeGen, MatchStmtNoArmThrowsMatchNoArm) {
 
 TEST(CodeGen, MatchNoArmCatchableAndShared) {
     // 兜底异常是寄存器里的共享单例:可被 try/catch 捕获(catch 绑原值),两次抛出身份恒一。
-    auto out = run_source(R"(
+    auto out = run_value(R"(
         var e1 = nil;
         var e2 = nil;
         try { match (9) { 1 => 2; } } catch (e) { e1 = e; }
@@ -1152,7 +1232,7 @@ TEST(CodeGen, ErrUnreachableArmAfterWildcard) {
     auto d = compile_only("match (1) { _ => 2; _ => 3; }");
     ASSERT_FALSE(d.has_value());
     EXPECT_EQ(d.error().code(), ErrorCode::UnreachableArm);
-    auto e = compile_only("return match (1) { _ => 2, 3 => 4 };");
+    auto e = compile_only("var m = match (1) { _ => 2, 3 => 4 };"); // 逗号臂形式在表达式位才合法
     ASSERT_FALSE(e.has_value());
     EXPECT_EQ(e.error().code(), ErrorCode::UnreachableArm);
 }
@@ -1180,7 +1260,7 @@ TEST(CodeGen, MatchDisassembly) {
 
 TEST(CodeGen, ErrRuntimeUndefinedVariable) {
     // 裸名非局部 -> LOAD_GLOBAL；VM 运行期查表未定义 -> UndefinedVariable
-    auto out = run_source("return x;");
+    auto out = run_value("return x;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
@@ -1201,28 +1281,28 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 
 TEST(CodeGen, BuiltinType) {
     // type(x) -> 值的精确类型名（PascalCase）。Int/Bool/Nil/String 各一。
-    EXPECT_EQ(aria::format_value((*run_source("return type(42);"))), "Int");
-    EXPECT_EQ(aria::format_value((*run_source("return type(true);"))), "Bool");
-    EXPECT_EQ(aria::format_value((*run_source("return type(nil);"))), "Nil");
-    EXPECT_EQ(aria::format_value((*run_source("return type(\"x\");"))), "String");
+    EXPECT_EQ(aria::format_value((*run_value("return type(42);"))), "Int");
+    EXPECT_EQ(aria::format_value((*run_value("return type(true);"))), "Bool");
+    EXPECT_EQ(aria::format_value((*run_value("return type(nil);"))), "Nil");
+    EXPECT_EQ(aria::format_value((*run_value("return type(\"x\");"))), "String");
 }
 
 TEST(CodeGen, BuiltinStr) {
     // str(x) -> 可读渲染（复用 format_value）。
-    EXPECT_EQ(aria::format_value((*run_source("return str(nil);"))), "nil");
-    EXPECT_EQ(aria::format_value((*run_source("return str(42);"))), "42");
-    EXPECT_EQ(aria::format_value((*run_source("return str(true);"))), "true");
+    EXPECT_EQ(aria::format_value((*run_value("return str(nil);"))), "nil");
+    EXPECT_EQ(aria::format_value((*run_value("return str(42);"))), "42");
+    EXPECT_EQ(aria::format_value((*run_value("return str(true);"))), "true");
 }
 
 TEST(CodeGen, BuiltinPrintln) {
     // println 是内建函数，可作一等值传参；输出渲染钉在语料 08_builtins/println_builtin
     // （配 .out 逐字节比对），此处只钉可取值与身份。
-    EXPECT_EQ(aria::format_value((*run_source("return type(println);"))), "NativeFn");
+    EXPECT_EQ(aria::format_value((*run_value("return type(println);"))), "NativeFn");
 }
 
 TEST(CodeGen, BuiltinPrintlnArityCheck) {
     // println 自检 argc：>1 参 -> WrongArity（0 参合法、输出空行，行为钉在语料 .out）。
-    auto out = run_source("return println(1, 2);");
+    auto out = run_value("return println(1, 2);");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
 }
@@ -1236,14 +1316,14 @@ TEST(CodeGen, BuiltinAssertPass) {
 
 TEST(CodeGen, BuiltinAssertFail) {
     // assert(false) -> AssertionFailed，未捕获即 run() 返回该错误。
-    auto out = run_source("assert(false); return 1;");
+    auto out = run_value("assert(false); return 1;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::AssertionFailed);
 }
 
 TEST(CodeGen, BuiltinAssertFailWithMessage) {
     // assert(false, "boom") -> AssertionFailed，消息含自定义串。
-    auto out = run_source("assert(false, \"boom\"); return 1;");
+    auto out = run_value("assert(false, \"boom\"); return 1;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::AssertionFailed);
     EXPECT_TRUE(out.error().message().find("boom") != std::string::npos);
@@ -1258,22 +1338,22 @@ TEST(CodeGen, BuiltinShadowedByUserGlobal) {
 
 TEST(CodeGen, BuiltinArityCheck) {
     // 内置自检 argc：type() 0 参 / type(1,2) 2 参 -> WrongArity。
-    auto a = run_source("return type();");
+    auto a = run_value("return type();");
     ASSERT_FALSE(a.has_value());
     EXPECT_EQ(a.error().code(), ErrorCode::WrongArity);
 
-    auto b = run_source("return type(1, 2);");
+    auto b = run_value("return type(1, 2);");
     ASSERT_FALSE(b.has_value());
     EXPECT_EQ(b.error().code(), ErrorCode::WrongArity);
 }
 
 TEST(CodeGen, BuiltinAssertArityCheck) {
     // assert 自检 argc：assert() 0 参 / assert(1,2,3) 3 参 -> WrongArity。
-    auto a = run_source("assert(); return 1;");
+    auto a = run_value("assert(); return 1;");
     ASSERT_FALSE(a.has_value());
     EXPECT_EQ(a.error().code(), ErrorCode::WrongArity);
 
-    auto b = run_source("assert(1, 2, 3); return 1;");
+    auto b = run_value("assert(1, 2, 3); return 1;");
     ASSERT_FALSE(b.has_value());
     EXPECT_EQ(b.error().code(), ErrorCode::WrongArity);
 }
@@ -1292,17 +1372,16 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
     auto r1 = vm->run(*c1);
     ASSERT_TRUE(r1.has_value()) << r1.error().message();
 
-    auto c2 = compile_source(gc, module, "return str;");
+    auto c2 = compile_source(gc, module, "assert(str == 5);"); // 第 2 行读到模块 globals 的 5,而非被内置覆写回 <fn str>
     ASSERT_TRUE(c2.has_value());
     auto r2 = vm->run(*c2);
     ASSERT_TRUE(r2.has_value()) << r2.error().message();
-    EXPECT_EQ(r2->as_int(), 5); // 非内置 <fn str>
 }
 
 TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
     // 裸名赋值 `str = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
     // 写（STORE_GLOBAL 不回退，与 grammar §205-206「赋值不隐式创建、必须先 var 声明」一致）。
-    auto out = run_source("str = 5; return str;");
+    auto out = run_value("str = 5; return str;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
@@ -1321,7 +1400,7 @@ TEST(CodeGen, ThrowIntCaughtBindsValue) {
 }
 
 TEST(CodeGen, ThrowStringCaughtBindsValue) {
-    auto out = run_source("try { throw \"boom\"; } catch (e) { return e; }");
+    auto out = run_value("try { throw \"boom\"; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     // 渲染即串内容，证绑的是 ObjString 原值（非消息串）。
     EXPECT_EQ(aria::format_value(*out), "boom");
@@ -1340,7 +1419,7 @@ TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
 TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
     // 运行时错误（除零）可捕获：e 绑 ObjException（携码 + 完整烘焙消息，println/str 渲染之；
     // 消息不含位置前缀，同 Python str(e)，位置只在未捕获出口的 at 跟踪行给出）。
-    auto out = run_source("try { return 1 / 0; } catch (e) { return e; }");
+    auto out = run_value("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out->is_obj());
     const auto ex = aria::Object::as<aria::ObjException>(out->as_obj());
@@ -1352,7 +1431,7 @@ TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
 TEST(CodeGen, RethrowPreservesCode) {
     // re-throw 保码（单寄存器收益，坑 #7）：catch 绑 ObjException 再 throw（catch 体不在
     // 本层受保护区间内，向外传播），未捕获经 from_baked 回 DivisionByZero（非 UncaughtException）。
-    auto out = run_source("try { return 1 / 0; } catch (e) { throw e; }");
+    auto out = run_source("try { 1 / 0; } catch (e) { throw e; }");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
     EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
@@ -1363,21 +1442,21 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生报错（type 收到错元数）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
     // 经 unwind 被捕获；str(e) 渲染完整消息（无位置前缀，位置只在未捕获跟踪行给出；
     // 原生不进帧时即 CALL 站点行，坑 #15）。
-    auto out = run_source("try { return type(); } catch (e) { return str(e); }");
+    auto out = run_value("try { return type(); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(aria::format_value(*out), "Runtime: WrongArity function expects 1 argument, got 0");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
     // 嵌套 try：内层捕获（find_try_handler 取最内层覆盖区间）。
-    auto out = run_source("try { try { throw 1; } catch (i) { return i; } } catch (o) { return 2; }");
+    auto out = run_value("try { try { throw 1; } catch (i) { return i; } } catch (o) { return 2; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 1);
 }
 
 TEST(CodeGen, NestedTryOuterCatchesInnerRethrow) {
     // 内层 catch re-throw：THROW 指令在 catch 体（本层区间之外、外层区间之内）-> 外层捕获。
-    auto out = run_source("try { try { throw 1; } catch (i) { throw i; } } catch (o) { return o + 10; }");
+    auto out = run_value("try { try { throw 1; } catch (i) { throw i; } } catch (o) { return o + 10; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(out->as_int(), 11);
 }
@@ -1385,14 +1464,14 @@ TEST(CodeGen, NestedTryOuterCatchesInnerRethrow) {
 TEST(CodeGen, CrossFrameCatch) {
     // 跨帧捕获：被调函数 throw，unwind 逐帧 exit_frame 后在调用者帧命中 handler（坑 #13），
     // 截值栈到 frame.slots + stack_depth，异常值 push 落 catch 参数槽。
-    auto out = run_source("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
+    auto out = run_value("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(aria::format_value(*out), "cross");
 }
 
 TEST(CodeGen, DeepCallChainUnwind) {
     // 三层调用链（a -> b -> c）内 throw，顶层 try 捕获：unwind 连弹三层帧后派发 handler。
-    auto out = run_source(R"(
+    auto out = run_value(R"(
 fun c() {
     throw 7;
 }
@@ -1415,7 +1494,7 @@ try {
 TEST(CodeGen, TryBodyLocalsDiscardedOnUnwind) {
     // unwind 截栈丢弃 try 体临时值与被调帧残留（截到 stack_depth），try 外变量与 catch 体
     // 局部照常可用 -- 栈不腐坏（坑 #6/#10 的值填槽不变式）。
-    auto out = run_source(R"(
+    auto out = run_value(R"(
 var keep = 1;
 fun f() {
     var in_f = 2;
@@ -1515,7 +1594,7 @@ return made * 10 + bound;
 // superclass 运行期解析：非类值 -> MAKE_CLASS 报 TypeMismatch（编译期不查全局，未命中沿用
 // 运行期 UndefinedVariable）。
 TEST(CodeGen, SuperclassNotAClassIsRuntimeError) {
-    auto out = run_source("var B = 5; def F : B { } return 1;");
+    auto out = run_value("var B = 5; def F : B { } return 1;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
 }
@@ -1612,8 +1691,10 @@ return s.get();
 }
 
 // 路线表验收样例 4：静态成员（var 静态 eager 求值 + fun 静态方法 + 类上赋值原槽更新）。
+// 保持源码在模块顶层：方法体内裸名自引用类名依赖顶层 def 的 DEF_GLOBAL（类名绑定在类体
+// 编译之后，fn 局部类的方法经 upvalue 取不到它）——既有局限，非本机制引入；取值经 assert 收口。
 TEST(CodeGen, StaticVarAndStaticMethod) {
-    EXPECT_EQ(run_int(R"(
+    auto out = run_source(R"(
 def Counter {
     var count = 10;
     fun get() { return Counter.count; }
@@ -1621,9 +1702,9 @@ def Counter {
 var a = Counter.count;
 Counter.count = 20;
 var b = Counter.get();
-return a + b;
-)"),
-              30);
+assert(a == 10 && b == 20 && a + b == 30);
+)");
+    ASSERT_TRUE(out.has_value()) << out.error().message();
 }
 
 // 类成员读穿透 / 写遮蔽：Sub.tag 读沿链命中 Base，赋值落 Sub 自身表，Base 不变。
@@ -1756,7 +1837,7 @@ return sum;
 
 // 字段访问运行期错误：原语类型不支持字段访问（nil 与原语同走 UndefinedProperty 统一文案）。
 TEST(CodeGen, FieldAccessOnPrimitiveIsRuntimeError) {
-    auto out = run_source("var a = 1; return a.x;");
+    auto out = run_value("var a = 1; return a.x;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
 }
@@ -1888,25 +1969,25 @@ return n;
 
 // 空字面量与嵌套:嵌套字符串走 debug 形(带引号),嵌套 list 递归渲染。
 TEST(CodeGen, ListLiteralEmptyAndNested) {
-    EXPECT_EQ(aria::format_value(*run_source("return [];")), "[]");
-    EXPECT_EQ(aria::format_value(*run_source(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
+    EXPECT_EQ(aria::format_value(*run_value("return [];")), "[]");
+    EXPECT_EQ(aria::format_value(*run_value(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
 }
 
 // == 按内容递归;=== 恒指针;自比较 == 快速路径。
 TEST(CodeGen, ListEqualityContentVsIdentity) {
-    EXPECT_TRUE((*run_source("return [1, [2]] == [1, [2]];")).as_bool()); // 嵌套递归
-    EXPECT_FALSE((*run_source("return [1] == [2];")).as_bool());
-    EXPECT_FALSE((*run_source("return [1, 2] == [1, 2, 3];")).as_bool()); // 长度不等
-    EXPECT_FALSE((*run_source(R"(return [1] === [1];)")).as_bool());      // 两字面量两对象
-    EXPECT_TRUE((*run_source("var xs = [1]; return xs == xs;")).as_bool());
-    EXPECT_TRUE((*run_source("var xs = [1]; return xs === xs;")).as_bool());
-    EXPECT_FALSE((*run_source("return [1] == \"1\";")).as_bool()); // 跨类型
+    EXPECT_TRUE((*run_value("return [1, [2]] == [1, [2]];")).as_bool()); // 嵌套递归
+    EXPECT_FALSE((*run_value("return [1] == [2];")).as_bool());
+    EXPECT_FALSE((*run_value("return [1, 2] == [1, 2, 3];")).as_bool()); // 长度不等
+    EXPECT_FALSE((*run_value(R"(return [1] === [1];)")).as_bool());      // 两字面量两对象
+    EXPECT_TRUE((*run_value("var xs = [1]; return xs == xs;")).as_bool());
+    EXPECT_TRUE((*run_value("var xs = [1]; return xs === xs;")).as_bool());
+    EXPECT_FALSE((*run_value("return [1] == \"1\";")).as_bool()); // 跨类型
 }
 
 // list 作一等值:实参传递、经变量返回、跨 GC 点存活(run_source 开 stress GC,
 // 元素串经 MAKE_LIST「栈即根」+ ObjList::trace 级联保命)。
 TEST(CodeGen, ListPassingAndGcStress) {
-    EXPECT_EQ(aria::format_value(*run_source(R"(
+    EXPECT_EQ(aria::format_value(*run_value(R"(
 fun echo(xs) { return xs; }
 var kept = ["aaa", ["bbb", "ccc"]];
 return echo(kept);
@@ -1988,13 +2069,13 @@ return n * 100 + xs[0];
 // 越界:读/负数越界/写都报 IndexOutOfBounds(运行期,可 catch);负下标从尾计数合法,
 // 归一化后仍越界(< -len)才报。
 TEST(CodeGen, ErrIndexOutOfBounds) {
-    auto read = run_source("return [1][5];");
+    auto read = run_value("return [1][5];");
     ASSERT_FALSE(read.has_value());
     EXPECT_EQ(read.error().code(), ErrorCode::IndexOutOfBounds);
-    auto negative = run_source("return [1, 2][0 - 3];");
+    auto negative = run_value("return [1, 2][0 - 3];");
     ASSERT_FALSE(negative.has_value());
     EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
-    auto store = run_source("var xs = [1]; xs[3] = 1; return 0;");
+    auto store = run_value("var xs = [1]; xs[3] = 1; return 0;");
     ASSERT_FALSE(store.has_value());
     EXPECT_EQ(store.error().code(), ErrorCode::IndexOutOfBounds);
 }
@@ -2003,7 +2084,7 @@ TEST(CodeGen, ErrIndexOutOfBounds) {
 TEST(CodeGen, ErrIndexKeyTypeMismatch) {
     for (const std::string_view src:
          {"return [1][1.5];", "return [1][nil];", "return [1][true];", "var x = 1; return x[0];"}) {
-        auto out = run_source(src);
+        auto out = run_value(src);
         ASSERT_FALSE(out.has_value()) << src;
         EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch) << src;
     }
@@ -2011,7 +2092,7 @@ TEST(CodeGen, ErrIndexKeyTypeMismatch) {
 
 // 下标运行期错误经异常通道可 catch,消息含越界值。
 TEST(CodeGen, IndexErrorCaughtByTry) {
-    auto out = run_source(R"(try { return [1][9]; } catch (e) { return str(e); })");
+    auto out = run_value(R"(try { return [1][9]; } catch (e) { return str(e); })");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range");
 }
@@ -2019,7 +2100,7 @@ TEST(CodeGen, IndexErrorCaughtByTry) {
 // 互环 == 判等(余归纳:同对重遇视为相等,两环展开同一棵无限树);EQUAL 弹栈后操作数
 // 无根,equals 全程零分配方可在 stress GC 下存活。
 TEST(CodeGen, CycleEqualsCoinductive) {
-    auto out = run_source(R"(
+    auto out = run_value(R"(
 var a = [1];
 var b = [2];
 a[0] = b;
@@ -2031,7 +2112,7 @@ return a == b;
 
 // 写入新鲜对象跨 GC 点(run_source 开 stress GC,元素 list 经值栈/对象图级联保命)。
 TEST(CodeGen, IndexWriteGcStress) {
-    EXPECT_EQ(aria::format_value(*run_source(R"(
+    EXPECT_EQ(aria::format_value(*run_value(R"(
 var xs = [[1], [2]];
 xs[0] = ["aa", xs[1]];
 return xs;

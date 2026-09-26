@@ -9,7 +9,9 @@ namespace aria {
 
     ModuleCtx::ModuleCtx(ObjModule* module) : module_{module} {
         ASSERT(module->entry() != nullptr, "module entry must be set before construction");
-        current_fn_ctx_ = new FunctionCtx(module->entry(), nullptr, FnKind::Function);
+        // 入口上下文恒为 ModuleEntry(主脚本与导入模块同规):返回值恒为模块对象,体顶层带值
+        // return 在 CodeGen 拒绝(见 visitReturnStmtNode)。
+        current_fn_ctx_ = new FunctionCtx(module->entry(), nullptr, FnKind::ModuleEntry);
     }
 
     // 沿 enclosing_ 链逐个 delete（成功 / 出错两路径的游标位置分析见头注）；先存 next 再 delete

@@ -1,0 +1,12 @@
+// 模块体带裸 return 的提前退出：早退前的绑定/声明生效，后续语句不可达。
+var count = 0;
+fun bump() {
+    count += 1;
+    return count;
+}
+bump();
+return;
+count = 99;          // 不可达
+fun ghost() {
+    return -1;
+}

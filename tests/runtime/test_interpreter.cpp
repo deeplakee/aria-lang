@@ -66,7 +66,7 @@ TEST(CliDispatch, VersionReturnsZero) { EXPECT_EQ(run_dispatch({"--version"}, eo
 
 // --version 优先于 --eval：eval 给出运行期必错的表达式（-> 1），版本短路则返 0。
 TEST(CliDispatch, VersionTakesPrecedenceOverEval) {
-    EXPECT_EQ(run_dispatch({"--version", "--eval", "return 1 / 0;"}, eof_reader()), 0);
+    EXPECT_EQ(run_dispatch({"--version", "--eval", "1 / 0;"}, eof_reader()), 0);
 }
 
 // 未知选项：CLI 解析失败、退出码 1。
@@ -76,20 +76,20 @@ TEST(CliDispatch, UnknownOptionReturnsOne) { EXPECT_EQ(run_dispatch({"--nope"}, 
 TEST(CliDispatch, EvalWithoutValueReturnsOne) { EXPECT_EQ(run_dispatch({"--eval"}, eof_reader()), 1); }
 
 // --eval 合法算术：编译执行成功 -> 0。
-TEST(CliDispatch, EvalOk) { EXPECT_EQ(run_dispatch({"--eval", "return 1 + 2 * 3;"}, eof_reader()), 0); }
+TEST(CliDispatch, EvalOk) { EXPECT_EQ(run_dispatch({"--eval", "assert(1 + 2 * 3 == 7);"}, eof_reader()), 0); }
 
 // -e 短形式等价。
-TEST(CliDispatch, EvalShortForm) { EXPECT_EQ(run_dispatch({"-e", "return 7 * 6;"}, eof_reader()), 0); }
+TEST(CliDispatch, EvalShortForm) { EXPECT_EQ(run_dispatch({"-e", "assert(7 * 6 == 42);"}, eof_reader()), 0); }
 
 // --eval 编译错误（语法）-> 1。
 TEST(CliDispatch, EvalCompileError) { EXPECT_EQ(run_dispatch({"-e", "var = ;"}, eof_reader()), 1); }
 
 // --eval 运行期错误（整除零）-> 1。
-TEST(CliDispatch, EvalRuntimeError) { EXPECT_EQ(run_dispatch({"-e", "return 1 / 0;"}, eof_reader()), 1); }
+TEST(CliDispatch, EvalRuntimeError) { EXPECT_EQ(run_dispatch({"-e", "1 / 0;"}, eof_reader()), 1); }
 
 // <file> 合法脚本文件 -> 0。
 TEST(CliDispatch, FileOk) {
-    const auto path = write_tmp_aria("ok.aria", "return 7 * 6;");
+    const auto path = write_tmp_aria("ok.aria", "assert(7 * 6 == 42);");
     EXPECT_EQ(run_dispatch({path.c_str()}, eof_reader()), 0);
 }
 
@@ -126,7 +126,7 @@ TEST(CliDispatch, ReplStringGlobalsPersist) {
 
 // REPL 逐行容错：一行运行期错误（除零）后，后续行仍可正常执行，整轮退出码 0。
 TEST(CliDispatch, ReplContinuesAfterError) {
-    std::istringstream in("return 1 / 0;\nprintln(2 + 3);\n");
+    std::istringstream in("1 / 0;\nprintln(2 + 3);\n");
     EXPECT_EQ(run_dispatch({}, stream_reader(in)), 0);
 }
 
@@ -144,5 +144,5 @@ TEST(CliDispatch, ExplicitReplFlag) {
 
 // --eval 优先于 --repl：同时给 --eval 与 --repl 时走 eval 一次性求值。
 TEST(CliDispatch, EvalTakesPrecedenceOverRepl) {
-    EXPECT_EQ(run_dispatch({"--eval", "return 0;", "--repl"}, eof_reader()), 0);
+    EXPECT_EQ(run_dispatch({"--eval", "println(\"eval\");", "--repl"}, eof_reader()), 0);
 }

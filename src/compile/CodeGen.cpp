@@ -140,7 +140,7 @@ namespace aria {
             for (const auto& decl: program.declarations) {
                 emit_stmt(*decl);
             }
-            emit_implicit_return(program.line());
+            emit_implicit_return(program.loc());
         } catch (AriaCompileException& e) {
             // 出错即 unwind 到此：~ModuleCtx 随一次性对象析构沿 enclosing_ 链释放入口 + 未还原的子上下文。
             return std::unexpected(e.error());
@@ -468,6 +468,9 @@ namespace aria {
                 cur_cu()->emit_word(member_idx, line); // [class]
                 break;
             }
+            case FnKind::ModuleEntry:
+                // 入口 ctx 由 ModuleCtx 构造直出(不经 compile_function),永不到此。
+                UNREACHABLE();
         }
     }
 
@@ -497,11 +500,26 @@ namespace aria {
         }
     }
 
-    void CodeGen::emit_implicit_return(const u32 line) const {
-        if (cur_fn_ctx()->kind_ == FnKind::InitMethod) {
-            cur_cu()->emit_load_local(0, line);
-        } else {
-            cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+    void CodeGen::emit_implicit_return(const SourceLoc loc) const {
+        const u32 line = loc.line();
+        switch (cur_fn_ctx()->kind_) {
+            case FnKind::ModuleEntry: {
+                // 入口(主脚本与导入模块同规)返回值恒为模块对象:IMPORT 命中/未命中两路栈效应的
+                // 统一靠它兑现--体跑完 RETURN 通用写回 callee 槽(即 IMPORT 预留结果槽)。
+                const auto module_idx = add_constant_or_fail(Value::from_obj(mod_ctx_->module_), loc);
+                cur_cu()->emit_op(OpCode::LOAD_CONST, line);
+                cur_cu()->emit_word(module_idx, line);
+                break;
+            }
+            case FnKind::InitMethod:
+                cur_cu()->emit_load_local(0, line);
+                break;
+            case FnKind::Function:
+            case FnKind::Lambda:
+            case FnKind::StaticMethod:
+            case FnKind::Method:
+                cur_cu()->emit_op(OpCode::LOAD_NIL, line);
+                break;
         }
         cur_cu()->emit_op(OpCode::RETURN, line);
     }
@@ -538,7 +556,7 @@ namespace aria {
         // 编译体（BlockNode 自带 scope）。
         // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
         emit_stmt(body);
-        emit_implicit_return(body.line());
+        emit_implicit_return(body.loc());
 
         // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
         // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
@@ -714,8 +732,16 @@ namespace aria {
     }
 
     void CodeGen::visitReturnStmtNode(ReturnStmtNode& node) {
+        // 入口上下文(主脚本与导入模块同规,见 ModuleCtx 构造):返回值恒为模块对象--带值 return
+        // 编译期拒绝,裸 return 即模块体提前退出(压模块对象常量后 RETURN,与隐式收尾同序)。
+        if (cur_fn_ctx()->kind_ == FnKind::ModuleEntry) {
+            if (node.value != nullptr) {
+                fail(ErrorCode::ReturnValueAtTopLevel, node.loc(), "'return' at top level must not carry a value");
+            }
+            emit_implicit_return(node.loc());
+            return;
+        }
         const u32 line = node.line();
-        // 入口 <main> 亦为函数，故顶层 return 合法（cur_fn_ctx()->fn_ 恒非空）。
         emit_expr_or_nil(node.value.get(), line);
         cur_cu()->emit_op(OpCode::RETURN, line);
     }

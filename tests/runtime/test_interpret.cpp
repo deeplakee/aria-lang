@@ -28,7 +28,7 @@ namespace {
 TEST(Interpret, StringOk) {
     AriaVM vm;
     vm.gc().set_stress(true);
-    EXPECT_EQ(vm.interpret_from_src("return 1 + 2 * 3;"), InterpretResult::Ok);
+    EXPECT_EQ(vm.interpret_from_src("assert(1 + 2 * 3 == 7);"), InterpretResult::Ok);
 }
 
 // 字符串源：语法错误（缺右操作数）-> CompileError。
@@ -40,7 +40,7 @@ TEST(Interpret, StringCompileError) {
 // 字符串源：整除零 -> 运行期错误 -> RuntimeError。
 TEST(Interpret, StringRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("return 1 / 0;"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("1 / 0;"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：解构赋值目标未声明 -> 运行期 STORE_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
@@ -53,13 +53,14 @@ TEST(Interpret, StringDestructureAssignmentToUndeclaredNameIsRuntimeError) {
 TEST(Interpret, StringConcatOk) {
     AriaVM vm;
     vm.gc().set_stress(true);
-    EXPECT_EQ(vm.interpret_from_src("var s = \"a\" + \"b\"; s += \"c\"; return s + str(1);"), InterpretResult::Ok);
+    EXPECT_EQ(vm.interpret_from_src("var s = \"a\" + \"b\"; s += \"c\"; assert(s + str(1) == \"abc1\");"),
+              InterpretResult::Ok);
 }
 
 // 字符串源：String + 非 String -> 运行期 TypeMismatch（无隐式转字符串）-> RuntimeError。
 TEST(Interpret, StringPlusNonStringIsRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("return \"a\" + 1;"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("\"a\" + 1;"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：四个比较算子按字节序可用（含空串、前缀、多字节）-> Ok。
@@ -67,26 +68,26 @@ TEST(Interpret, StringComparisonOk) {
     AriaVM vm;
     vm.gc().set_stress(true);
     EXPECT_EQ(vm.interpret_from_src("assert(\"a\" < \"b\"); assert(\"b\" >= \"b\");"
-                                    "assert(\"\" < \"a\"); assert(\"é\" > \"z\"); return nil;"),
+                                    "assert(\"\" < \"a\"); assert(\"é\" > \"z\");"),
               InterpretResult::Ok);
 }
 
 // 字符串源：String < 非 String -> 运行期 TypeMismatch（定向文案）-> RuntimeError。
 TEST(Interpret, StringCompareNonStringIsRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("return \"a\" < 1;"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("\"a\" < 1;"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：非 String < String 同样类型错（左值非对象，仍走数值路径）-> RuntimeError。
 TEST(Interpret, NonStringCompareStringIsRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("return 1 < \"a\";"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("1 < \"a\";"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：非 String + String 同样类型错（左值非对象，仍走数值路径）-> RuntimeError。
 TEST(Interpret, NonStringPlusStringIsRuntimeError) {
     AriaVM vm;
-    EXPECT_EQ(vm.interpret_from_src("return 1 + \"a\";"), InterpretResult::RuntimeError);
+    EXPECT_EQ(vm.interpret_from_src("1 + \"a\";"), InterpretResult::RuntimeError);
 }
 
 // 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
@@ -115,7 +116,7 @@ TEST(Interpret, PathImportedModuleCompileErrorIsRuntimeError) {
 
 // 路径源：合法文件 -> Ok。
 TEST(Interpret, PathOk) {
-    const auto path = write_tmp_aria("ok.aria", "return 7 * 6;");
+    const auto path = write_tmp_aria("ok.aria", "assert(7 * 6 == 42);");
     AriaVM     vm;
     vm.gc().set_stress(true);
     EXPECT_EQ(vm.interpret_from_path(path), InterpretResult::Ok);

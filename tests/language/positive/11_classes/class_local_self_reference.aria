@@ -1,0 +1,28 @@
+// 钉住：fn 局部类名先于成员绑定（对齐具名函数先例）--方法体/静态初始化器经局部或
+# upvalue 自引用类名；外层函数返回后经闭合 upvalue 仍可用；局部类名遮蔽外层同名绑定。
+
+var C = fun() {
+    def Counter {
+        var count = 10;
+        fun get() { return Counter.count; }   // 方法体自引用（upvalue 捕获类）
+        fun spawn() { return Counter(); }     // 经自引用构造实例
+    }
+    return Counter;
+}();
+assert(C.get() == 10);
+assert(C.spawn().get() == 10);                // 闭合 upvalue：外层帧已销毁仍可用
+
+// 静态初始化器自引用：初始化器在类定义点于外层作用域求值，类名已登记
+var D = fun() {
+    def Self { var me = Self; }
+    return Self;
+}();
+assert(D.me == D);
+
+// 局部类名遮蔽外层同名绑定：方法体内自引用解析到类本身
+var X = "outer";
+var Tag = fun() {
+    def X { fun who() { return X; } }
+    return X;
+}();
+assert(Tag.who() == Tag);

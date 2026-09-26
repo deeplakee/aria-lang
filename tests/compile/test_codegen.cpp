@@ -1691,8 +1691,6 @@ return s.get();
 }
 
 // 路线表验收样例 4：静态成员（var 静态 eager 求值 + fun 静态方法 + 类上赋值原槽更新）。
-// 保持源码在模块顶层：方法体内裸名自引用类名依赖顶层 def 的 DEF_GLOBAL（类名绑定在类体
-// 编译之后，fn 局部类的方法经 upvalue 取不到它）——既有局限，非本机制引入；取值经 assert 收口。
 TEST(CodeGen, StaticVarAndStaticMethod) {
     auto out = run_source(R"(
 def Counter {
@@ -1705,6 +1703,55 @@ var b = Counter.get();
 assert(a == 10 && b == 20 && a + b == 30);
 )");
     ASSERT_TRUE(out.has_value()) << out.error().message();
+}
+
+// fn 局部类名先于成员绑定（对齐函数先例）：方法体经局部/upvalue 自引用类名，外层函数返回后
+// 经闭合 upvalue 仍可用（类已随局部槽闭合）。
+TEST(CodeGen, FnLocalClassSelfReference) {
+    EXPECT_EQ(run_int(R"(
+fun make_counter() {
+    def Counter {
+        var count = 10;
+        fun get() { return Counter.count; }
+        fun spawn() { return Counter(); }
+    }
+    return Counter;
+}
+var C = make_counter();
+var a = C.spawn();
+assert(a.get() == 10);
+return C.get() * 100 + a.get();
+)"),
+              1010);
+}
+
+// fn 局部类静态初始化器自引用：初始化器在类定义点于 enclosing 作用域求值，类名已预登记为局部。
+TEST(CodeGen, FnLocalClassStaticInitSelfReference) {
+    EXPECT_EQ(run_int(R"(
+fun make() {
+    def C { var self = C; }
+    return C;
+}
+var C = make();
+assert(C.self == C);
+return 1;
+)"),
+              1);
+}
+
+// fn 局部类遮蔽外层同名绑定：方法体内自引用解析到类本身（预登记局部），非外层值。
+TEST(CodeGen, FnLocalClassShadowsOuterName) {
+    EXPECT_EQ(run_int(R"(
+var Tag = "outer";
+fun make() {
+    def Tag { fun who() { return Tag; } }
+    return Tag;
+}
+var C = make();
+assert(C.who() == C);
+return 1;
+)"),
+              1);
 }
 
 // 类成员读穿透 / 写遮蔽：Sub.tag 读沿链命中 Base，赋值落 Sub 自身表，Base 不变。

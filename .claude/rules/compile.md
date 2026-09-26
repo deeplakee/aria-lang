@@ -143,7 +143,7 @@ VM 侧语义见 `.claude/reference/runtime/exception-implementation-pitfalls.md`
 
 VM 机制见 `runtime.md`。
 
-- **`visitDefDeclNode` lowering**（成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不查重）：① superclass 有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析 superclass 值，编译期不查全局）/ 无 -> `LOAD_REG`（寄存器 `ObjectClass`，用户 shadow 免疫）② `MAKE_CLASS name` ③ 成员按源序发射（静态变量初始化顺序即此序，前一静态可被后续初始化器引用）④ 尾绑定按语境：顶层 -> `declare_global_or_fail` + `DEF_GLOBAL`；函数/块内 -> `define_local_or_fail`（值填槽）。成员初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未绑定（`TryRecord.stack_depth` 记在 def 语句前）。
+- **`visitDefDeclNode` lowering**（成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不查重）：① superclass 有 -> `resolve_name_or_fail` + `emit_load_var`（运行期解析 superclass 值，编译期不查全局）/ 无 -> `LOAD_REG`（寄存器 `ObjectClass`，用户 shadow 免疫）② `MAKE_CLASS name` ③ 类名先于成员绑定（对齐函数先例：体内自引用要求绑定先于体编译）：函数/块内 -> `define_local_or_fail`（值填槽，类值恰在 `locals_.size()` 槽位；unwind 截栈槽与半成品同弃，不留可见绑定）④ 成员按源序发射（静态变量初始化顺序即此序，前一静态可被后续初始化器引用）⑤ 顶层 -> `declare_global_or_fail` + `DEF_GLOBAL`（类体后才绑定：静态初始化器 throw -> 半成品类随 unwind 截栈丢弃、类名从未入全局；`TryRecord.stack_depth` 记在 def 语句前）。
 - **this/super 解析**：`visitThisExprNode` -> `resolve_this_or_fail`（沿 fn ctx 链找 `kThisName` 的局部--当前帧命中 -> Local 恒槽 0；外层命中 -> `resolve_upvalue` 捕获（arrow 语义，穿透多层）；链上无实例方法 -> `fail ThisOutsideClass`；**永不落全局**）。`visitSuperExprNode`（`super.成员` 文法单形，裸 super 解析期 `ExpectedToken`）-> 语境检查（`SuperOutsideMethod`）+ `LOAD_SUPER_FIELD`（方法闭包绑 this、静态槽原值直读）；super 写形态无对应语义 -> `validate_lvalue_target` 拒绝报 `InvalidAssignmentTarget`。`super.m(args)` 经 visitCallNode 通用路径复用本 visit。
   - **this/super 的不对称判据**：this 允许嵌套捕获而 super 禁止。this 是帧槽 0 的具名局部，栈槽值可 upvalue 化；super 是
     `(defining class, this)` 二元组，而 defining class 挂在闭包上、不是局部，无槽可捕。故 super 仅直接方法帧可用，

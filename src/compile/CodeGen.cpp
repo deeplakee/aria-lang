@@ -881,15 +881,26 @@ namespace aria {
         cur_cu()->emit_op(OpCode::MAKE_CLASS, line);
         cur_cu()->emit_word(name_idx, line); // [class]
 
-        // ③ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
+        // ③ 类名先于成员绑定:体内自引用(方法体/静态初始化器)要求绑定先于体编译,对齐
+        //    compile_function 局部绑定先于体的函数先例。局部腿此刻值填槽登记(类值恰在
+        //    locals_.size() 槽位,登记即初始化);异常路径半成品类随 unwind 截栈,槽与半成品
+        //    同弃,不留可见绑定。
+        if (!mod_ctx_->is_global_scope()) {
+            std::ignore = define_local_or_fail(node.name, node.loc());
+        }
+
+        // ④ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
         //    accept 分派。成员重名不查重:成员即表写入(与体外 Foo.x = v 同形态),后写遮蔽。
         for (const auto& member: node.members) {
             member->accept(*this);
         }
 
-        // ④ 尾绑定:类体全部建成,异常路径半成品类随 unwind 截栈丢弃后类名从未绑定。类名经
-        //    MAKE_CLASS 已入池,全局腿 bind_stack_value 再取一次名字(常量池按值去重,复用同一池项)。
-        bind_stack_value(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值 / 值填槽
+        // ⑤ 全局腿尾绑定:类体全部建成后才 DEF_GLOBAL,异常路径半成品类随 unwind 截栈丢弃后类名
+        //    从未入全局(全局无编译期登记可先行)。类名经 MAKE_CLASS 已入池,bind_stack_value 再取
+        //    一次名字(常量池按值去重,复用同一池项);局部腿已在 ③ 登记,不再进 bind_stack_value。
+        if (mod_ctx_->is_global_scope()) {
+            bind_stack_value(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值
+        }
     }
 
     void CodeGen::visitVarDeclNode(VarDeclNode& node) {
@@ -904,7 +915,8 @@ namespace aria {
 
     void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
         // 静态变量成员（def 体 var）：求值初始化器(无则 nil)+ MAKE_STATIC。初始化器在类定义点、
-        // enclosing 作用域求值(eager);类名尚未绑定,自引用 -> 运行期 UndefinedVariable。
+        // enclosing 作用域求值(eager);类名自引用:局部腿经预登记局部解析可用,全局腿(顶层)尚未
+        // DEF_GLOBAL -> 运行期 UndefinedVariable。
         const u32 line = node.line();
         emit_expr_or_nil(node.initializer.get(), line); // [class, v]
         const auto member_idx = add_name_or_fail(node.name, node.loc());

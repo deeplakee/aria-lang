@@ -12,7 +12,7 @@
 cmake -S . -B build/profile -DCMAKE_BUILD_TYPE=Release -DARIA_OPCODE_PROFILE=ON
 cmake --build build/profile -j
 
-# 动态画像:15 个负载逐个起进程,聚合报告打 stdout,原始数据可 --json 留档
+# 动态画像:16 个负载逐个起进程,聚合报告打 stdout,原始数据可 --json 留档
 python3 bench/profile/opcode_profile.py --aria=build/profile/aria
 python3 bench/profile/opcode_profile.py --aria=build/profile/aria --json=/tmp/opprof.json > /tmp/report.md
 
@@ -24,9 +24,10 @@ python3 bench/profile/opcode_profile.py --static --aria=build/disasm/aria
 
 ## 语料
 
-`workloads/` 下 8 个**真实世界形态**的负载(aria-only,不配跨语言端口 -- 不量墙钟,无需对照),
-外加 `bench/lang/workloads/` 的 8 个真实负载一起进报告。`bench/lang/workloads` 各语言端口齐全、
-有值一致性门禁;本目录每个负载都是一台「完整的小应用」(编解码器 / 解释器 / 模板引擎 / diff /
+画像负载 8 个**真实世界形态**的负载(aria-only,不配跨语言端口)与 `bench/lang/workloads/` 的
+8 个真实负载于 2026-09-27 合并为一份语料,统一住 `bench/lang/workloads/`(16 个负载),两个驱动
+共享:本驱动跑画像,`bench/lang/lang_bench.py` 跑墙钟。`bench/lang/workloads` 各语言端口齐全、
+有值一致性门禁;每个负载都是一台「完整的小应用」(编解码器 / 解释器 / 模板引擎 / diff /
 事件仿真 / 压缩 / 图查询),把语言面(字符串/map/类/闭包/异常/堆/DP)按真实程序里的**自然配比**
 顶进画像,避免特性微负载单边放大某一协议的占比,也避免画像被数值循环单边支配。负载间共用
 约定:确定性 LCG(minstd)驱动输入,`assert` 烘死校验和,结果跨机器逐位可复现。

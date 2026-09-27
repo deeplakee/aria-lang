@@ -70,6 +70,7 @@
 | `destructure_assign` / `destructure_slice` | Java | Java 无解构绑定 |
 | `forin_destructure` | Java | Java 无 `for ([k, v] of ...)` 这种解构式迭代 |
 | `call_default_params` | Java | Java 无默认参数(惯用做法是重载,那是另一个构造) |
+| `workloads/` 下 8 个画像源负载(`json_codec` / `brainfuck` / `markov` / `template_render` / `word_diff` / `bank_queue` / `huffman` / `route_planner`) | 全部端口(aria-only) | 原为 `bench/profile` 指令画像语料,2026-09-27 语料合并并入;跨语言端口未写(校验和已烘死,要补按「怎么加一个基准」同法) |
 
 以下几行**有端口,但是「构造不存在、用本语言惯用写法近似」**(读数仍逐位一致):
 

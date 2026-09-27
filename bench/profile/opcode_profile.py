@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """opcode_profile.py -- aria 指令频度画像驱动。
 
-跑 workload 集合(默认 bench/lang/workloads 与 bench/profile/workloads),每个负载独立起一次
+跑 workload 集合(默认 bench/lang/workloads 的合并语料,16 个负载:lang 8 + 画像 8),每个负载独立起一次
 aria 进程(ARIA_OPCODE_STATS=1,探针构建),解析 stderr 的 [opprofile] 行块,聚合成 markdown
 报告(stdout)并可选存 JSON(--json)。静态发射计数用 --static --aria=<print-code 构建>:
 该构建以 -DARIA_DEBUG_PRINT_CODE=ON 配置,每函数反汇编打 stderr,按行解析 opcode 记静态数。
@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DEFAULT_WORKLOAD_DIRS = ["bench/lang/workloads", "bench/profile/workloads"]
+DEFAULT_WORKLOAD_DIRS = ["bench/lang/workloads"]
 
 INSTR_RE = re.compile(r"^\s*[0-9A-Fa-f]{4}\s+(?:\d+\s+)?\|?\s*([A-Z][A-Z0-9_]*)")
 

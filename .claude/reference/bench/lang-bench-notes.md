@@ -54,6 +54,10 @@
 - 校验和一律取**整数**:浮点结果的十进制渲染各语言不同(aria `format_value` / Python `repr` /
   JS `Number` / Lua `%.14g` / Java `Double`),整数才逐位可比。浮点负载(`mandelbrot`)因此把校验和定义
   为「迭代数滚动取模」,另钉内部点个数。
+- **校验量不得吃 map 迭代序**:aria 的 map 迭代序是开放寻址的槽位序且语言面 unspecified
+  (`HashTable` 契约),依赖它的读数跨语言不可复现。`huffman` 的建树队列因此按「词首次出现序」取
+  确定序(2026-09-28 从 freq 表迭代序改出,烘死值恰好未变);`json_codec` 的 canonical 序列化
+  (键排序输出)同理。新基准写校验量时遵守同一约束。
 - 端口自带断言(Python `assert` / Node 与 Java `check()` / Lua `assert`),漂移即非零退出。
 - 计时函数:aria `clock()`(单调秒)、Python `time.perf_counter()`、Node `performance.now()`、
   Java `System.nanoTime()`、Lua `os.clock()`(见上)。
@@ -70,7 +74,6 @@
 | `destructure_assign` / `destructure_slice` | Java | Java 无解构绑定 |
 | `forin_destructure` | Java | Java 无 `for ([k, v] of ...)` 这种解构式迭代 |
 | `call_default_params` | Java | Java 无默认参数(惯用做法是重载,那是另一个构造) |
-| `workloads/` 下 8 个画像源负载(`json_codec` / `brainfuck` / `markov` / `template_render` / `word_diff` / `bank_queue` / `huffman` / `route_planner`) | 全部端口(aria-only) | 原为 `bench/profile` 指令画像语料,2026-09-27 语料合并并入;跨语言端口未写(校验和已烘死,要补按「怎么加一个基准」同法) |
 
 以下几行**有端口,但是「构造不存在、用本语言惯用写法近似」**(读数仍逐位一致):
 
@@ -81,6 +84,7 @@
 | `closure_upvalue` | Java 的 lambda 只能捕获 effectively-final 局部,可变捕获用单元素数组当持有槽 |
 | `string_concat_compare` | Java 无字符串比较算子,用 `compareTo`;拼接用非 final 局部以避免 javac 常量折叠 |
 | `list_methods` / `list_slice` / `string_ops` / `string_methods`(Lua) | Lua 的表与字符串库没有 `find` / 切片 / `split`,这些操作只能手写循环 -- 这些行比的是**实现形态**而不是派发速度,读 Lua 列时要留意 |
+| `json_codec` | Java 以 `RuntimeException` 表达解析失败(aria 可 throw 任意值,零分配);Lua 以唯一哨兵表表示 JSON null(表槽存不了 nil),空表只出现在校验段被丢弃的残缺值里 |
 
 ## 4. 已实测排除项
 

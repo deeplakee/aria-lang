@@ -15,7 +15,7 @@
 cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release
 cmake --build build/rel --target aria -j
 
-python3 bench/lang/lang_bench.py --aria=build/rel/aria        # 全部 56 个基准 × 各语言端口(画像 8 个 aria-only)
+python3 bench/lang/lang_bench.py --aria=build/rel/aria        # 全部 56 个基准 × 各语言端口
 python3 bench/lang/lang_bench.py --filter=workloads/sort_int  # 只跑几个(子串匹配)
 python3 bench/lang/lang_bench.py --list                       # 只列清单,不跑
 python3 bench/lang/lang_bench.py --help                       # 全部参数
@@ -144,11 +144,11 @@ bench/lang/
 
 ## 真实负载(workloads/,16 个)
 
-整程序。前 8 个各语言端口齐全,规模约 0.4-0.9 s;其中 `mandelbrot` / `binary_trees` / `fannkuch_redux`
+整程序,各语言端口齐全。前 8 个规模约 0.4-0.9 s;其中 `mandelbrot` / `binary_trees` / `fannkuch_redux`
 是 Computer Language Benchmarks Game 的经典项(算法与规模与公开版本一致者,数字可与公开结果对照),
 其余是本地定义的等价负载。后 8 个原是 `bench/profile/` 的指令画像语料(2026-09-27 两处语料合并
-为本目录),aria-only、规模 0.09-0.19 s(画像语料的原设计;重标会破烘死的校验和)——确定性 LCG
-驱动输入、`assert` 烘死校验和的约定与前 8 个相同,分配器 / 回归类 A/B 照常可用。
+为本目录,2026-09-28 补齐端口),规模保持画像原设计的 0.09-0.19 s(重标会破烘死的校验和)——确定性 LCG
+驱动输入、`assert` 烘死校验和的约定与全组相同,分配器 / 回归类 A/B 照常可用。
 
 | 基准 | 量什么 | 对照端口 |
 | --- | --- | --- |
@@ -160,14 +160,14 @@ bench/lang/
 | `sieve` | 埃拉托斯特尼筛(三段规模) | Python JS Lua Java |
 | `sort_int` | LCG 造数 -> 就地排序 -> 滚动校验和 | Python JS Lua Java |
 | `word_count` | 造词表文本 -> join -> split -> map 计数 | Python JS Lua Java |
-| `bank_queue` | 离散事件仿真:银行排队,二叉堆事件队列 + 有状态柜员类 + match 分派 | aria-only |
-| `brainfuck` | BF 解释器:括号配对预处理 + 字符级取指/纸带读写热派发循环 | aria-only |
-| `huffman` | Huffman 编解码:词频统计 + 有序建树 + 递归码表 + 逐位编码/解码 | aria-only |
-| `json_codec` | JSON 编解码:递归下降解析 + canonical 序列化往返 + 残缺片段校验 | aria-only |
-| `markov` | 二阶马尔可夫文本模型:map 复合键训练 + 按计数加权采样生成 | aria-only |
-| `route_planner` | 路网最短路:邻接表建图 + 全源点朴素 Dijkstra + range for-in | aria-only |
-| `template_render` | 模板引擎:编译成闭包片段,对订单数据反复渲染 + HTML 转义 | aria-only |
-| `word_diff` | 词级 diff:版本变异 + LCS 全表 DP + 回溯统计(二维表分配压 GC) | aria-only |
+| `bank_queue` | 离散事件仿真:银行排队,二叉堆事件队列 + 有状态柜员类 + match 分派 | Python JS Lua Java |
+| `brainfuck` | BF 解释器:括号配对预处理 + 字符级取指/纸带读写热派发循环 | Python JS Lua Java |
+| `huffman` | Huffman 编解码:词频统计 + 按首次出现序稳定建树 + 递归码表 + 逐位编码/解码 | Python JS Lua Java |
+| `json_codec` | JSON 编解码:递归下降解析 + canonical 序列化往返 + 残缺片段校验 | Python JS Lua Java |
+| `markov` | 二阶马尔可夫文本模型:map 复合键训练 + 按计数加权采样生成 | Python JS Lua Java |
+| `route_planner` | 路网最短路:邻接表建图 + 全源点朴素 Dijkstra + range for-in | Python JS Lua Java |
+| `template_render` | 模板引擎:编译成闭包片段,对订单数据反复渲染 + HTML 转义 | Python JS Lua Java |
+| `word_diff` | 词级 diff:版本变异 + LCS 全表 DP + 回溯统计(二维表分配压 GC) | Python JS Lua Java |
 
 ## 为什么有些行只有 aria、有些行缺某个语言
 

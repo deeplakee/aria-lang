@@ -1,6 +1,6 @@
-// 真实负载:Huffman 编解码 -- LCG 按倾斜词频造文本,统计频率、有序插入队列建树、递归分配
-// 码表,逐字符编码成位串,再逐位走树解码还原,与原文逐位比对(压缩管线的完整一圈)。
-// 规模见 messages/msg_len。
+// 真实负载:Huffman 编解码 -- LCG 按倾斜词频造文本,统计频率(建树队列按词首次出现序,
+// 不依赖 map 迭代序)、有序插入队列建树、递归分配码表,逐字符编码成位串,再逐位走树解码
+// 还原,与原文逐位比对(压缩管线的完整一圈)。规模见 messages/msg_len。
 var messages = 1150;  // 规模:消息数
 var msg_len = 80;     // 每条消息字符数
 
@@ -55,18 +55,21 @@ while (mi < messages) {
 }
 
 var freq = {};
+var order = [];   // 词首次出现序:map 迭代序 unspecified(HashTable 契约),建树队列改走确定序
 for (msg in texts) {
     for (ch in msg) {
         if (freq.has(ch)) {
             freq[ch] += 1;
         } else {
             freq[ch] = 1;
+            order.push(ch);
         }
     }
 }
 
 var pq = [];
-for ([ch, n] in freq) {
+for (ch in order) {
+    var n = freq.get(ch);
     var pos = pq.size();
     while (pos > 0 && pq[pos - 1].w > n) {
         pos -= 1;

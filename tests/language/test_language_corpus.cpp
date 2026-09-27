@@ -141,7 +141,7 @@ namespace {
 
             auto c     = CorpusCase{};
             c.path     = entry.path().string();
-            c.rel_path = stdfs::relative(entry.path(), root).string();
+            c.rel_path = stdfs::relative(entry.path(), root).generic_string();
             c.name     = make_name(c.rel_path);
             c.kind     = classify(c.rel_path);
 

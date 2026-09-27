@@ -89,8 +89,8 @@ println("42".to_int() + 1);                                    # 43
 # Linux / macOS
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
-# Windows（MinGW Makefiles + clang）
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+# Windows（Ninja + clang；clang++ 为 MSVC target 时链接器走本机 Visual Studio）
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
 
 cmake --build build --target aria -j
 ```

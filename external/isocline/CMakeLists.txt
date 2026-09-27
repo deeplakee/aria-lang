@@ -4,6 +4,11 @@
 # MIT License
 #
 # This CMakeLists.txt wraps isocline as a third-party module for C++ projects.
+# Vendored from upstream v1.1.0 (https://github.com/daanx/isocline): src/ and
+# include/ are byte-identical to the upstream tag (no local modifications);
+# only this wrapper is local. Upstream doc/haskell/ide/test/util and the
+# cabal/pkgconfig/stack packaging files are not vendored; all src/*.c are
+# reachable from src/isocline.c (amalgamation) in this build.
 # Usage in your project:
 #   add_subdirectory(isocline)
 #   target_link_libraries(your_target PRIVATE isocline)
@@ -58,8 +63,3 @@ endif()
 
 # Enable PIC for shared library consumers
 set_property(TARGET isocline PROPERTY POSITION_INDEPENDENT_CODE ON)
-
-# -----------------------------------------------------------------------------
-# IDE folder
-# -----------------------------------------------------------------------------
-set_target_properties(isocline PROPERTIES FOLDER "third_party")

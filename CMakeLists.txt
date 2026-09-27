@@ -229,23 +229,14 @@ endif()
 # === 测试 ===
 enable_testing()
 
-include(FetchContent)
-# 本地副本优先：external/googletest 存在时离线复用，配置不再联网拉取（该目录不入库，
-# 见 .gitignore；首次使用或版本更新时从 build/_deps/googletest-src 复制一份即可）。
-# 内容必须与上方 URL 锁定的 v1.14.0 一致--换版本时删除旧副本重新拉取。
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest/CMakeLists.txt")
-    set(FETCHCONTENT_SOURCE_DIR_GOOGLETEST "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest" CACHE PATH
-            "googletest 本地源码目录（FetchContent 离线复用）")
-endif ()
-FetchContent_Declare(
-        googletest
-        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
+# googletest v1.14.0 vendored 于 external/googletest（裁剪为 gtest 所需：BUILD_GMOCK=OFF，
+# 不构建 googlemock；samples/test/docs 未入库）。configure 零网络依赖。
 # Windows: 令 gtest 保持共享 CRT(/MD),与主工程同一运行库--gtest 默认会把静态库构建的 CRT 改成 -MT,
 # 两边运行库不一致会在链接与运行期出现难以定位的问题。
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+add_subdirectory(external/googletest)
 
 add_subdirectory(tests)
 

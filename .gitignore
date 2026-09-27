@@ -20,9 +20,6 @@ CMakeSettings.json
 # OS
 .DS_Store
 
-# googletest 本地副本（FetchContent 离线复用，不入库；缺失时 CMake 退回联网拉取）
-/external/googletest/
-
 # bench/profile 画像快照报告（本机生成产物，不入库）
 bench/profile/opcode-profile-*.md
 

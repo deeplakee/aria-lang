@@ -21,6 +21,7 @@
 
 using aria::GC;
 using aria::HashTable;
+using aria::i64;
 using aria::u32;
 using aria::usize;
 using aria::io::print;
@@ -73,14 +74,15 @@ namespace {
         }
         BENCH_CHECK(ht.size() == n, "size after insert");
 
-        long sum_k = 0, sum_v = 0, cnt = 0;
+        // i64 而非 long:Windows(LLP64)上 long 仅 32 位,n>=100'000 时求和/期望值溢出。
+        i64 sum_k = 0, sum_v = 0, cnt = 0;
         for (const auto& entry: ht) {
             sum_k += entry.key;
             sum_v += entry.value;
             ++cnt;
         }
-        const long expected = static_cast<long>(n) * (static_cast<long>(n) - 1) / 2;
-        BENCH_CHECK(cnt == static_cast<long>(n), "iteration count");
+        const i64 expected = static_cast<i64>(n) * (static_cast<i64>(n) - 1) / 2;
+        BENCH_CHECK(cnt == static_cast<i64>(n), "iteration count");
         BENCH_CHECK(sum_k == expected, "sum of keys");
         BENCH_CHECK(sum_v == expected * 7, "sum of values");
 
@@ -129,8 +131,8 @@ namespace {
         double best = std::numeric_limits<double>::max();
         for (int t = 0; t < trials; ++t) {
             best = std::min(best, elapsed_nanos([&] {
-                                volatile long sink = 0;
-                                long          acc  = 0;
+                                volatile i64 sink = 0;
+                                i64          acc  = 0;
                                 for (usize i = 0; i < n; ++i) {
                                     auto e = ht.find(static_cast<int>(i));
                                     acc += e ? e->value : -1;
@@ -151,8 +153,8 @@ namespace {
         double best = std::numeric_limits<double>::max();
         for (int t = 0; t < trials; ++t) {
             best = std::min(best, elapsed_nanos([&] {
-                                volatile long sink = 0;
-                                long          acc  = 0;
+                                volatile i64 sink = 0;
+                                i64          acc  = 0;
                                 for (usize i = 0; i < n; ++i) {
                                     auto e = ht.find(static_cast<int>(i + n)); // 必不在表中
                                     acc += e ? e->value : -1;

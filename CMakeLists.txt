@@ -12,6 +12,11 @@ if(ARIA_USE_TAGVALUE)
     add_compile_definitions(ARIA_USE_TAGVALUE)
 endif()
 
+# GC 层分配器选择（源码 vendored 在 external/mimalloc）：默认 ON，GC::allocate/deallocate/
+# reallocate 显式路由到 mimalloc（不接管进程 malloc）；OFF 退回 std::malloc 家族。
+# 评估记录见 bench/lang/mimalloc-2026-09-27.md。
+option(ARIA_USE_MIMALLOC "用 mimalloc 作为 GC 层分配器（显式路由，不接管 malloc）" ON)
+
 add_subdirectory(external/isocline)
 
 
@@ -138,6 +143,22 @@ if (NOT WIN32)
     target_link_libraries(aria_core PRIVATE m)
 endif ()
 target_compile_features(aria_core PUBLIC cxx_std_23)
+
+# mimalloc 子目录与接线在 aria_core 定义之后：PUBLIC 使 libmimalloc.a 与 ARIA_USE_MIMALLOC
+# 宏随静态库传给 aria / 测试 / 基准。只构建静态库，关掉共享/对象库与测试目标；
+# MI_OVERRIDE 必须显式关掉（其默认 ON 会在进程级接管 malloc，macOS 上静态接管不可用）。
+# vendored 副本裁剪为构建所需（src/include/cmake + CMakeLists/LICENSE/readme/pc.in），
+# 上游 doc/docs/bin/ide/contrib/test 已删；bin/ 里有 Windows 共享库的 redirect 二进制，
+# 将来若要 MI_BUILD_SHARED 需从上游 v3.5.3 回填。
+if (ARIA_USE_MIMALLOC)
+    set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+    set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(external/mimalloc)
+    target_compile_definitions(aria_core PUBLIC ARIA_USE_MIMALLOC)
+    target_link_libraries(aria_core PUBLIC mimalloc-static)
+endif ()
 
 # GC 调试日志(经 DEBUG_LOG_GC 宏,被 log_obj_alloc / GC::collect 使用)
 option(ARIA_DEBUG_GC "Enable GC debug logging" OFF)

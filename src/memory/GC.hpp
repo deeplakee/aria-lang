@@ -1,9 +1,8 @@
 #ifndef ARIA_GC_HPP
 #define ARIA_GC_HPP
 
-#include <algorithm>
+#include <cstdlib>
 #include <functional>
-#include <new>
 
 #include "common.hpp"
 #include "error/Error.hpp"
@@ -12,6 +11,24 @@
 #include "value/Value.hpp"
 
 namespace aria {
+
+    namespace detail::mem {
+        // GC 底层字节分配原语,GC 侧全部裸字节分配收口于此。三口必须同族:alloc 的块只能喂同族的
+        // realloc/free,跨族混配(如 new 的块喂 realloc)是 UB。用 std::malloc 家族而非 ::operator new
+        // 正是为此;GC 内存是裸字节 + trivially-copyable 容器契约(Buffer/Array 按 memcpy 重定位),
+        // std::malloc 的基本对齐保证与 nothrow new 相同,足够。
+        inline void* raw_alloc(const usize bytes) noexcept {
+            return std::malloc(bytes);
+        }
+
+        inline void* raw_realloc(void* p, const usize bytes) noexcept {
+            return std::realloc(p, bytes);
+        }
+
+        inline void raw_free(void* p) noexcept {
+            std::free(p);
+        }
+    } // namespace detail::mem
 
     // GC:解释器统一内存分配器 + mark-sweep 回收器。回收:roots = 临时根 + VM 根(经 std::function 回调,标 modules_ +
     // builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误寄存器 + open upvalue 开链节点)。 **核心不
@@ -39,8 +56,9 @@ namespace aria {
         template<typename T>
         void deallocate(T* p, usize count) noexcept;
 
-        // realloc 语义:new_count==0 退化为 deallocate;否则新分配 + 拷贝 min(old,new) 个 T + 释放旧。
-        // **INVARIANT: 永不触发 GC** -- 同 allocate,调本函数期间裸持的白色对象不会被回收。
+        // realloc 语义:new_count==0 退化为 deallocate;否则原生 realloc(可能原地扩展,基址
+        // 可能不变;扩缩容都允许)。**INVARIANT: 永不触发 GC** -- 同 allocate,调本函数期间裸持的
+        // 白色对象不会被回收。
         template<typename T>
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);
@@ -187,7 +205,7 @@ namespace aria {
 
     template<typename T>
     T* GC::allocate(const usize count) {
-        void* p = ::operator new(count * sizeof(T), std::nothrow);
+        void* p = detail::mem::raw_alloc(count * sizeof(T));
         if (p == nullptr) {
             fatal_error(ErrorCode::OutOfMemory, "failed to allocate {} bytes", count * sizeof(T));
         }
@@ -201,7 +219,7 @@ namespace aria {
             return;
         }
         bytes_allocated_ -= count * sizeof(T);
-        ::operator delete(p);
+        detail::mem::raw_free(p);
     }
 
     template<typename T>
@@ -210,15 +228,12 @@ namespace aria {
             deallocate(p, old_count);
             return nullptr;
         }
-        void* q = ::operator new(new_count * sizeof(T), std::nothrow);
+        // 原生 realloc:失败时旧块仍有效,但本出口即 fatal_error 进程退出,无需回收旧块。
+        void* q = detail::mem::raw_realloc(p, new_count * sizeof(T));
         if (q == nullptr) {
             fatal_error(ErrorCode::OutOfMemory, "failed to reallocate {} bytes", new_count * sizeof(T));
         }
-        if (p != nullptr) {
-            std::memcpy(q, p, std::min(old_count, new_count) * sizeof(T));
-            deallocate(p, old_count);
-        }
-        bytes_allocated_ += new_count * sizeof(T);
+        bytes_allocated_ += (new_count - old_count) * sizeof(T);
         return static_cast<T*>(q);
     }
 

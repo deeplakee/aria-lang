@@ -82,17 +82,18 @@ namespace aria {
         open_upvalues_ = uv;
     }
 
-    // 值栈 2x 扩容:经 Buffer::reserve -> GC reallocate 搬迁。reallocate 释放旧块,故指入旧块的
-    // top_/活动帧 slots/open upvalue location_ 三类指针须重绑:搬运**前**(old_base 仍存活)算好
-    // 相对 old_base 的槽偏移,搬运**后**用「新基址 + 偏移」重建,全程不触碰 dangling 指针(对
-    // dangling 指针做指针减法是 UB,[expr.add] p5;偏移须在搬运前算好,见 Buffer::reserve 注释)。
+    // 值栈 2x 扩容:经 Buffer::reserve -> GC reallocate(后端原生 realloc,可能原地扩展也可能
+    // 搬迁)。旧基址一律失效(原地时不变、搬迁时释放),指入旧块的 top_/活动帧 slots/open upvalue
+    // location_ 三类指针须重绑:调 reserve **前**(old_base 存活)算好相对 old_base 的槽偏移,
+    // 调**后**用「新基址 + 偏移」重建(基址未变则刷新为同值),全程不触碰 dangling 指针(对
+    // dangling 指针做指针减法是 UB,[expr.add] p5;偏移须在扩容前算好,见 Buffer::reserve 注释)。
     // open upvalue 链偏移按链序平行存取;暂存用 List(与 GC 自身 scratch 容器同款)。
     void ObjMovement::grow_stack_() noexcept {
         const auto old_base    = buf_.data();
         const auto frame_count = frames_.size();
 
-        // 搬运前:记 top_/各活动帧 slots 相对 old_base 的槽偏移(偏移而非绝对指针 --
-        // 搬运后旧块释放,绝对指针成 dangling 不可再用)。
+        // 扩容前:记 top_/各活动帧 slots 相对 old_base 的槽偏移(偏移而非绝对指针 --
+        // 扩容后旧基址失效,绝对指针成 dangling 不可再用)。
         const auto top_offset = static_cast<usize>(top_ - old_base);
 
         usize slot_offsets[kFrameMax];
@@ -106,14 +107,14 @@ namespace aria {
             upvalue_offsets.push_back(static_cast<usize>(upvalue->value_slot() - old_base));
         }
 
-        buf_.reserve(buf_.capacity() * 2); // 搬迁:旧块释放,新块就位
+        buf_.reserve(buf_.capacity() * 2); // 扩容:旧基址失效,新基址就位(可能原地)
 
         const auto new_base = buf_.data();
         if (new_base == old_base) {
-            return; // 原地扩容,无需重绑(当前 reallocate 恒换块,此分支为防御性保留)
+            return; // 原地扩展,无需重绑(realloc 允许原地;此分支现是活路径,非防御性保留)
         }
 
-        // 搬运后:用「新基址 + 偏移」重算指针,不读任何 dangling 指针值。
+        // 搬迁后:用「新基址 + 偏移」重算指针,不读任何 dangling 指针值。
         top_ = new_base + top_offset;
         for (usize i = 0; i < frame_count; ++i) {
             frames_[i].slots = new_base + slot_offsets[i];

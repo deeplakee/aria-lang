@@ -60,4 +60,4 @@ python3 bench/profile/opcode_profile.py --static --aria=build/disasm/aria
   机的 Release 原样构建上成立(报告里标注机器)。
 - 性能结论一律回到 `build/rel` 原样 Release 做 A/B(对齐 `bench/lang` 纪律);探针构建只出计数,
   不出时间。
-- 报告快照存 `opcode-profile-<日期>.md`(分析型文档,数字是当时的语料与本机结论)。
+- 报告快照存 `local-opcode-profile-<日期>.md`(分析型文档,数字是当时的语料与本机结论;`local-` 前缀的 markdown 一律本机报告,不入库)。

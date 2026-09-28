@@ -14,7 +14,7 @@ endif()
 
 # GC 层分配器选择（源码 vendored 在 external/mimalloc）：默认 ON，GC::allocate/deallocate/
 # reallocate 显式路由到 mimalloc（不接管进程 malloc）；OFF 退回 std::malloc 家族。
-# 评估记录见 bench/lang/mimalloc-2026-09-27.md。
+# 评估记录见 bench/lang/local-mimalloc-2026-09-27.md（local- 前缀 = 本机报告，不入库）。
 option(ARIA_USE_MIMALLOC "用 mimalloc 作为 GC 层分配器（显式路由，不接管 malloc）" ON)
 
 add_subdirectory(external/isocline)

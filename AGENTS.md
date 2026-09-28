@@ -55,7 +55,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - CMake ≥ 3.20，C++23。clang++ / clang-format / clangd 均已在 PATH 中，可直接调用。在 `build` 目录中进行构建（配置 / 构建 / 测试命令见 `README.md`「构建与运行」「测试与基准」）。
 - 单文件语法检查必须带 `-I src`，否则 `common.hpp`/`type.hpp` 找不到：`clang++ -std=c++23 -I src -fsyntax-only <file>`。
 - 验证 TagValue 值表示（`common.hpp` 的 `USING_NANBOXING` 关闭路径）：另配独立 build 目录并配 `-DARIA_USE_TAGVALUE=ON` 全量构建 + ctest（命令同 README，构建目录换 `build/tagvalue`）。
-- GC 层分配器默认 mimalloc（vendored 于 `external/mimalloc`，MI_OVERRIDE=OFF 显式路由、不接管进程 malloc；`-DARIA_USE_MIMALLOC=OFF` 退回 std::malloc 家族。性能取舍与复测命令见 `bench/lang/mimalloc-2026-09-27.md`）。
+- GC 层分配器默认 mimalloc（vendored 于 `external/mimalloc`，MI_OVERRIDE=OFF 显式路由、不接管进程 malloc；`-DARIA_USE_MIMALLOC=OFF` 退回 std::malloc 家族。性能取舍与复测命令见 `bench/lang/local-mimalloc-2026-09-27.md`；`local-` 前缀的 markdown 一律本机分析报告，不入库）。
 - 依赖 `external/isocline`（REPL）。IO 通过封装 `std::print`/`std::println` 实现。
 
 ## Git 提交纪律（强制）

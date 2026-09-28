@@ -23,6 +23,10 @@ CMakeSettings.json
 # bench/profile 画像快照报告（本机生成产物，不入库）
 bench/profile/opcode-profile-*.md
 
+# 分配器性能评测报告（本机生成产物，不入库）
+bench/lang/mimalloc-2026-09-27.md
+bench/lang/allocator-matrix-2026-09-28.md
+
 # Python 字节码（bench 驱动）
 __pycache__/
 

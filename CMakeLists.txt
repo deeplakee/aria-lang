@@ -48,6 +48,8 @@ add_library(aria_core STATIC
         src/memory/GC.hpp
         src/memory/HashTable.hpp
         src/memory/InternPool.hpp
+        src/memory/RawAlloc.hpp
+        src/memory/ShellPool.hpp
         src/compile/Token.cpp
         src/compile/Token.hpp
         src/compile/TokenType.hpp

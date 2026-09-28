@@ -70,7 +70,8 @@ namespace aria {
         const usize sz = obj->size();
         // 级联释放子内存(Array / long_chars_)
         obj->~Object();
-        deallocate<u8>(reinterpret_cast<u8*>(obj), sz); // 释放壳
+        bytes_allocated_ -= sz;
+        shell_pool_.push(sz, obj); // 壳归还(池化复用;超池上限尺寸由池内直连后端)
     }
 
     void GC::sweep_() noexcept {

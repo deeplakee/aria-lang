@@ -1,52 +1,17 @@
 #ifndef ARIA_GC_HPP
 #define ARIA_GC_HPP
 
-#include <cstdlib>
 #include <functional>
 
 #include "common.hpp"
 #include "error/Error.hpp"
 #include "memory/InternPool.hpp"
+#include "memory/RawAlloc.hpp"
+#include "memory/ShellPool.hpp"
 #include "object/Object.hpp"
 #include "value/Value.hpp"
 
-#if defined(ARIA_USE_MIMALLOC)
-    #include <mimalloc.h>
-#endif
-
 namespace aria {
-
-    namespace detail::mem {
-        // GC 底层字节分配原语(后端二选一,分配/扩容/释放必须同族):ARIA_USE_MIMALLOC 走 vendored
-        // mimalloc -- MI_OVERRIDE=OFF,仅 GC 层显式调用,不接管进程 malloc(macOS 上静态接管不可用,
-        // 评估见 bench/lang/mimalloc-2026-09-27.md);关掉该选项走 std::malloc 家族。
-        // 两后端都不用 ::operator new:realloc 原语要求三口同族,new 的块喂 realloc 是 UB;GC 内存
-        // 是裸字节 + trivially-copyable 容器契约(Buffer/Array 按 memcpy 重定位),malloc 家族安全,
-        // 且 mi_malloc 的保证对齐(16 B,64 位)与 std::malloc 的基本对齐都不低于 nothrow new 的口径。
-        inline void* raw_alloc(const usize bytes) noexcept {
-#if defined(ARIA_USE_MIMALLOC)
-            return mi_malloc(bytes);
-#else
-            return std::malloc(bytes);
-#endif
-        }
-
-        inline void* raw_realloc(void* p, const usize bytes) noexcept {
-#if defined(ARIA_USE_MIMALLOC)
-            return mi_realloc(p, bytes);
-#else
-            return std::realloc(p, bytes);
-#endif
-        }
-
-        inline void raw_free(void* p) noexcept {
-#if defined(ARIA_USE_MIMALLOC)
-            mi_free(p);
-#else
-            std::free(p);
-#endif
-        }
-    } // namespace detail::mem
 
     // GC:解释器统一内存分配器 + mark-sweep 回收器。回收:roots = 临时根 + VM 根(经 std::function 回调,标 modules_ +
     // builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误寄存器 + open upvalue 开链节点)。 **核心不
@@ -82,7 +47,8 @@ namespace aria {
         T* reallocate(T* p, usize old_count, usize new_count);
 
         // **分配层唯一触发 GC 的入口**:顶部 maybe_collect() 在分配前完成(新对象尚未诞生,
-        // 不会被本轮 GC 扫到),再 allocate<u8> + placement-new 构造 + 链入 objects_head_。
+        // 不会被本轮 GC 扫到),再经壳池取槽 + placement-new 构造 + 链入 objects_head_。壳记账
+        // 留在本函数逐对象口径(bytes_allocated_ += sizeof,span 开销不计),壳池只管内存复用。
         // 返回的对象此刻白色、无根,需调用方发布进某根后才安全(见类注释核心不变式)。
         template<DerivedFromObj T, typename... Args>
         [[nodiscard]]
@@ -195,7 +161,7 @@ namespace aria {
         void trace_gray_() noexcept;
         void sweep_() noexcept;
         void free_all_() noexcept; // ~GC:释放所有残留对象
-        // 销毁单个对象:new_object 的逆(虚析构级联释放子内存 + 释放壳)。不含链表摘除,由调用方管。
+        // 销毁单个对象:new_object 的逆(虚析构级联释放子内存 + 归还壳给壳池)。不含链表摘除,由调用方管。
         void delete_object(Object* obj) noexcept;
 
         // temp roots 底层(由 Guard 调用):Object* 经 from_obj 装箱为 Value 存储。
@@ -215,6 +181,7 @@ namespace aria {
         u32            lock_count_; // GC 禁用计数(>0 禁用,支持嵌套 disable/enable)
         List<Object*>  gray_stack_; // GC scratch,不计入 bytes_allocated_
         List<Value>    temp_roots_; // GC scratch,不计入 bytes_allocated_
+        ShellPool      shell_pool_; // 对象壳池(壳经 new_object/delete_object 进出,span 随析构排空)
         InternPool<GC> intern_;     // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
         // VM 根标记回调(modules_ + builtins_ + current_ 执行链上各上下文值栈/活动帧/
         // 挂起错误寄存器;AriaVM 注册,可为空)
@@ -223,7 +190,7 @@ namespace aria {
 
     template<typename T>
     T* GC::allocate(const usize count) {
-        void* p = detail::mem::raw_alloc(count * sizeof(T));
+        void* p = mem::alloc(count * sizeof(T));
         if (p == nullptr) {
             fatal_error(ErrorCode::OutOfMemory, "failed to allocate {} bytes", count * sizeof(T));
         }
@@ -237,7 +204,7 @@ namespace aria {
             return;
         }
         bytes_allocated_ -= count * sizeof(T);
-        detail::mem::raw_free(p);
+        mem::free(p);
     }
 
     template<typename T>
@@ -247,7 +214,7 @@ namespace aria {
             return nullptr;
         }
         // 原生 realloc:失败时旧块仍有效,但本出口即 fatal_error 进程退出,无需回收旧块。
-        void* q = detail::mem::raw_realloc(p, new_count * sizeof(T));
+        void* q = mem::realloc(p, new_count * sizeof(T));
         if (q == nullptr) {
             fatal_error(ErrorCode::OutOfMemory, "failed to reallocate {} bytes", new_count * sizeof(T));
         }
@@ -258,7 +225,8 @@ namespace aria {
     template<DerivedFromObj T, typename... Args>
     T* GC::new_object(Args&&... args) {
         maybe_collect();
-        T* obj        = new (allocate<u8>(sizeof(T))) T{std::forward<Args>(args)...};
+        T* obj = new (shell_pool_.alloc<T>()) T{std::forward<Args>(args)...};
+        bytes_allocated_ += sizeof(T);
         obj->next_    = objects_head_;
         objects_head_ = obj;
         ++allocation_count_;

@@ -1,6 +1,6 @@
 ---
 name: aria-memory
-description: aria 解释器 memory 层模块参考：Buffer/Array（trivial 可增长容器）、Allocator 约束、HashTable（Swiss Table）、InternPool 驻留池、GC（mark-sweep/临时根/VM 根 tracer/核心不变式）。读写 src/memory/** 或涉及分配器、GC 触发点与守卫纪律时使用。
+description: aria 解释器 memory 层模块参考：Buffer/Array（trivial 可增长容器）、Allocator 约束、HashTable（Swiss Table）、InternPool 驻留池、ShellPool 对象壳池、RawAlloc 后端原语、GC（mark-sweep/临时根/VM 根 tracer/核心不变式）。读写 src/memory/** 或涉及分配器、GC 触发点与守卫纪律时使用。
 paths:
   - "src/memory/**"
 ---
@@ -39,9 +39,21 @@ header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**
 - 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用），8B/槽（`kInitialCap = 8`），无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。
 - 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破（同 `Object.hpp` 对 GC 的处理）。
 
+## `memory/RawAlloc.hpp`
+
+`aria::mem::alloc/realloc/free` 三原语（自 GC.hpp 抽出，原 `raw_*` 前缀在命名空间隔离下已冗余）：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口。
+
+## `memory/ShellPool.hpp`
+
+header-only 对象壳池：按槽尺寸类（8 B 一档，槽尺寸 = sizeof 上取整到 8，≤ `kMaxPooledSlotBytes`=256；超大壳直连后端，正确性不变）的定长空壳仓库，接在 GC 与 RawAlloc 之间。壳只经 `new_object`/`delete_object` 生死，同尺寸死壳就地复用，后端只见 span 大块与容器缓冲流量。
+
+- `alloc<T>()`：`sizeof(T)` 编译期落格（零运行期查表）+ `static_assert(alignof(T) <= 8)` 兜底；`push(shell_bytes, shell)`：按 `Object::size()` 的精确 sizeof 落格，与 alloc 侧同源恒命中同格。
+- span = 64 KB 后端大块，块头 `SpanHeader`（链 + bump 游标）切槽；空壳链节点寄生死壳内存头 8 B（析构后死字节，构造时覆写）。
+- span 只获取不归还（峰值驻留到进程结束），`~ShellPool` 排空全还后端（~GC `free_all_` 先把残留壳压回池）。**永不触发 GC**；`bytes_allocated_` 逐对象记账留在 `GC::new_object`/`delete_object`，span 开销不计。
+
 ## `memory/GC.hpp` / `.cpp`
 
-GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计数）+ 对象链表 + `new_object<T>`/`delete_object`（私有，`new_object` 的逆，供 `sweep_`/`free_all_` 调）。
+GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计数，**容器/缓冲路径**）+ 对象链表 + `new_object<T>`（壳经 `shell_pool_.alloc<T>` 取槽）/`delete_object`（私有，`new_object` 的逆，壳 `push` 回池，供 `sweep_`/`free_all_` 调）。
 
 **公共入口与设施**
 
@@ -63,6 +75,6 @@ GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计�
 
 **核心不变式**
 
-`allocate<T>`/`reallocate<T>` **永不触发 GC**；GC 仅在 `new_object` 顶部 `maybe_collect` 与 VM safe point 触发。
+`allocate<T>`/`reallocate<T>` **永不触发 GC**（壳池 `ShellPool::alloc` 同：取槽/span 获取都不调 `maybe_collect`）；GC 仅在 `new_object` 顶部 `maybe_collect` 与 VM safe point 触发。
 
 这是与「link-on-alloc + publish-after」对象模型绑定的定义性约束，非性能取舍--`new_object` 返回的对象此刻白色无根，需发布进根才安全，而发布动作本身是 trivial 分配；若该分配触发 GC 会扫掉白色无根对象致悬垂。故 `add_constant`/`intern_insert`/`globals().set` 等「fresh 对象跨 trivial 分配再发布」写法免守卫全靠此。`allocate`/`reallocate` 是叶函数，靠契约注释 + review 守；另一方向（裸持白色对象跨真 GC 点漏 `make_guard`）靠显式守卫 + stress GC 测试守。

@@ -1,0 +1,3 @@
+Runtime: TypeMismatch field access requires an instance, got Class
+  at im (
+  at <main> (

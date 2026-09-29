@@ -2664,6 +2664,50 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
     EXPECT_TRUE(out->as_bool());
 }
 
+// 戳定方法(decorating class 戳)经普通 CALL 自由调用:方法帧槽 0 = callee(closure),非实例。
+// LOAD_THIS_FIELD 命中 -> 响亮 TypeMismatch 兜底(旧为 ASSERT 开发期捕,Release 下空指针段错误);
+// 消息取 TypeMismatch 族的 requires 形状,type_name 渲染 Closure。与
+// NativeSlotClassAccessIsFreeCall 互补:那里原生体内自查,这里方法体经 this 指令触达兜底站。
+TEST_F(AriaVMStress, StampedMethodFreeCallThisFieldFails) {
+
+    auto& gc    = vm.gc();
+    auto  m     = make_module(gc);
+    auto  guard = gc.make_guard(m);
+    auto  im_f  = make_function(gc, m, "im", 0);
+    guard.push(im_f);
+    {
+        const u16 tag = im_f->unit().add_constant(Value::from_obj(new_string(gc, "tag")));
+        emit_named(im_f->unit(), OpCode::LOAD_THIS_FIELD, tag);
+        im_f->unit().emit_op(OpCode::RETURN, 1);
+    }
+
+    auto fn = make_function(gc, m, "<main>", 0);
+    guard.push(fn);
+    {
+        auto&     cu      = fn->unit();
+        const u16 foo     = cu.add_constant(Value::from_obj(new_string(gc, "Foo")));
+        const u16 im_name = cu.add_constant(Value::from_obj(new_string(gc, "im")));
+        cu.emit_op(OpCode::LOAD_REG, 1);
+        cu.emit_byte(kObjectClassOffset, 1);
+        emit_named(cu, OpCode::MAKE_CLASS, foo);
+        emit_closure(cu, cu.add_constant(Value::from_obj(im_f)));
+        emit_named(cu, OpCode::MAKE_METHOD, im_name); // 戳 defining class(实例方法)
+        emit_global(cu, OpCode::DEF_GLOBAL, foo);
+        emit_global(cu, OpCode::LOAD_GLOBAL, foo);   // [Foo]
+        emit_named(cu, OpCode::LOAD_FIELD, im_name); // [closure](类路径:裸值,无绑定)
+        cu.emit_op(OpCode::CALL, 1);
+        cu.emit_byte(0, 1); // 自由调用:方法帧槽 0 = callee(闭包) -> LOAD_THIS_FIELD 触发兜底
+        cu.emit_op(OpCode::RETURN, 1);
+    }
+
+    const auto out = vm.run(fn);
+    ASSERT_FALSE(out.has_value());
+    EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
+    EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch field access requires an instance, got Closure\n"
+                                     "  at im (<script>:1)\n"
+                                     "  at <main> (<script>:1)");
+}
+
 // super 读静态成员(LOAD_SUPER_FIELD 语义 = 沿父链读成员,方法性看 defining class 戳):
 // Base 静态 var x=1,Sub 覆写 m 内 super.x 命中静态值原值直读压栈(不绑定;super 站点
 // 解析结果不驻留成实例成员);返回值即父类静态,验证父链真被读到。

@@ -1,0 +1,6 @@
+// 钉住：this 帧形不变式的兜底站（LOAD/STORE_THIS_FIELD 槽 0 需实例）。类上读实例方法
+// 恒原值不绑定，receiver 直调时槽 0 = 类对象，方法体内 this 指令命中兜底报 TypeMismatch。
+def A {
+    im() { return this.tag; }
+}
+A.im();

@@ -401,7 +401,6 @@ namespace aria {
         // 类与对象:field 族指令执行体
         // bool 契约同 call_value:失败载荷已在寄存器(对象协议失败由 override 内 vm.fail 就地
         // 烘焙,非对象守卫由执行体 fail)。peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(「栈即根」)。
-        // THIS 对(LOAD/STORE_THIS_FIELD)无执行体:编译器不变式保证 this 恒实例,case 内直调协议。
 
         // LOAD_FIELD 执行体(name 已读出):peek obj,经 Object::load_field 协议解析,结果写回
         // 原槽([obj] -> [v]);非对象(含 nil)是协议外原语,文案留执行体,对象 miss 文案由协议
@@ -411,6 +410,15 @@ namespace aria {
         // STORE_FIELD 执行体:[obj, v] -> [v](完成时单槽下移留 v -- 赋值表达式约定)。经
         // Object::store_field 协议。
         bool run_store_field(ObjString* name);
+
+        // THIS 对执行体:this 取顶帧槽 0(方法帧形 [this, a1..aN]),this 不经值栈,与 obj.m 同走
+        // field 协议。槽 0 非实例 = 方法原值经自由调用/类 receiver 直调掏空 this(经 call_closure
+        // 的语言写法不可达),响亮 TypeMismatch 兜底(帧形不变式只对 call_closure 成立)。
+        bool run_load_this_field(ObjString* name);
+
+        // STORE 腿:[v] -> [v](peek-store 经 this 的 store_field,实例字段动态即创建)。非实例
+        // 兜底同 LOAD 腿,文案 field assignment 形态。
+        bool run_store_this_field(ObjString* name);
 
         // PREPARE_METHOD 执行体(两段式第一段,name 已读出):[recv] -> [recv, target]。接收者在栈顶
         // (实参尚未求值),经 Object::load_field_unbound 协议解析此刻完成(非对象守卫文案留执行体,

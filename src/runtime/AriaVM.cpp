@@ -847,6 +847,33 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_load_this_field(ObjString* name) {
+        // 契约见 AriaVM.hpp;this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
+        // load_field 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
+        const Value this_value = current_->frames().top().slots[0];
+        if (const auto inst = try_obj<ObjInstance>(this_value)) {
+            if (const auto result = inst->load_field(*this, name)) {
+                current_->push(*result); // [] -> [v]
+                return true;
+            }
+            return false;
+        }
+        return fail(ErrorCode::TypeMismatch, "field access requires an instance, got {}", type_name(this_value));
+    }
+
+    bool AriaVM::run_store_this_field(ObjString* name) {
+        // 契约见 AriaVM.hpp;写腿:[v] -> [v](peek-store,值留栈,this 不经值栈)。store_field
+        // 恒成功(实例字段动态),false 分支为契约透传防御形态。非实例兜底同 LOAD 腿。
+        const Value this_value = current_->frames().top().slots[0];
+        if (const auto inst = try_obj<ObjInstance>(this_value)) {
+            if (inst->store_field(*this, name, current_->peek(0))) { // false ⟺ 已 fail(契约)
+                return true;                                         // 值留栈(peek-store)
+            }
+            return false;
+        }
+        return fail(ErrorCode::TypeMismatch, "field assignment requires an instance, got {}", type_name(this_value));
+    }
+
     bool AriaVM::run_prepare_method(ObjString* name) {
         // 契约见 AriaVM.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
         // (「栈即根」)-- 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是
@@ -1209,27 +1236,18 @@ namespace aria {
                         goto unwind_check;
                     }
                     break;
-                case OpCode::LOAD_THIS_FIELD: {
-                    // name:u16;[] -> [v]:this 取帧槽 0(方法帧形 [this, a1..aN]),与 obj.m 同走
-                    // load_field 协议。帧槽 0 恒实例(编译器不变式,ASSERT 钉)。
-                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
-                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
-                    if (const auto result = inst->load_field(*this, read_name(frame))) {
-                        current_->push(*result); // [] -> [v]
-                        break;
-                    }
-                    goto unwind_check;
-                }
-                case OpCode::STORE_THIS_FIELD: {
-                    // name:u16;[v] -> [v]:peek-store 经 this 的 store_field(实例字段动态即创建;
-                    // false 分支为契约透传防御形态,实例路径不可达)。
-                    auto inst = try_obj<ObjInstance>(frame->slots[0]);
-                    ASSERT(inst != nullptr, "'this' slot must be an instance (compiler invariant)");
-                    if (!inst->store_field(*this, read_name(frame), current_->peek(0))) { // false ⟺ 已 fail(契约)
+                case OpCode::LOAD_THIS_FIELD:
+                    // name:u16;[] -> [v]
+                    if (!run_load_this_field(read_name(frame))) {
                         goto unwind_check;
                     }
-                    break; // 值留栈(peek-store),this 不经栈
-                }
+                    break;
+                case OpCode::STORE_THIS_FIELD:
+                    // name:u16;[v] -> [v](peek-store)
+                    if (!run_store_this_field(read_name(frame))) {
+                        goto unwind_check;
+                    }
+                    break;
 
                 // 算术与逻辑
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)

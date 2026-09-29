@@ -1743,6 +1743,19 @@ return C.get();
               5);
 }
 
+// 实例方法体内不用 this 的自由调用不受兜底影响：类上原值读出、普通调用返回常量。
+TEST(CodeGen, MethodValueFreeCallWithoutThis) {
+    EXPECT_EQ(run_int(R"(
+def C {
+    im() { return 7; }
+    fun get() { return C.im; }
+}
+var f = C.get();
+return f();
+)"),
+              7);
+}
+
 // fn 局部类名先于成员绑定（对齐函数先例）：方法体经局部/upvalue 自引用类名，外层函数返回后
 // 经闭合 upvalue 仍可用（类已随局部槽闭合）。
 TEST(CodeGen, FnLocalClassSelfReference) {

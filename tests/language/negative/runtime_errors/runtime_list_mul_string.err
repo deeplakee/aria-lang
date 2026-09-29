@@ -1,0 +1,2 @@
+Runtime: TypeMismatch __mul__ requires a list and an integer, got List and String
+at <main> (

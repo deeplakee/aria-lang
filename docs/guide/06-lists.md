@@ -162,6 +162,57 @@ true
 `find` 返 `nil` 与负下标组合时要小心：`xs[xs.find(v)]` 在未命中时不会报错，而是静默取到
 末元素（`nil` 参与下标归一）。判断存在用 `contains`，取下标前先判 `nil`。
 
+## 拼接与重复
+
+`+` 把两个列表拼成一个新表（两侧都必须是列表）；`*` 按整数次数重复出新表。两者都产出
+**新列表**，原表不变：
+
+```aria
+var xs = [1, 2];
+println(xs + [3, 4]);
+println(xs * 2);
+println(xs);
+println(xs * 0);
+```
+
+输出：
+
+```text
+[1, 2, 3, 4]
+[1, 2, 1, 2]
+[1, 2]
+[]
+```
+
+元素是浅拷贝：嵌套的列表在两表间共享同一对象（要独立副本得逐元素另建）：
+
+```aria
+var inner = [7];
+var two = [inner] * 2;
+inner[0] = 8;
+println(two);
+```
+
+输出：
+
+```text
+[[8], [8]]
+```
+
+复合赋值 `+=`/`*=` 同语义：`xs += [3]` 等价 `xs = xs + [3]`（左值只求值一次）。注意这是
+**重绑新值**，旧表的其他别名看不到追加（要与别名共享变更用 `push`）。乘数必须是整数：
+浮点一律报错，负数报错而不静默得空表：
+
+<!-- expect-error: TypeMismatch -->
+```aria
+var xs = [1] * -1;
+```
+
+```text
+Runtime: TypeMismatch __mul__ requires a non-negative integer, got -1
+  at <main> (repeat.aria:1)
+```
+
 ## 排序与连接
 
 `sort()` **就地**升序排序（稳定序），要求全数值或全字符串；`reverse()` 就地整段反转；

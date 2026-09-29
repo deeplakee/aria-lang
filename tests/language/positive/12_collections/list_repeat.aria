@@ -1,0 +1,34 @@
+// 钉住：list * 整数重复——乘数严格 int（f64 一律 TypeMismatch、负数报错，负向语料另配）、
+# 0 次得空表；产出新 list（浅拷，元素按 Value 逐位复制、嵌套容器共享）；*= 复合赋值同语义。
+assert([1, 2] * 2 == [1, 2, 1, 2]);
+assert([1] * 1 == [1]);
+assert([1] * 0 == []);
+assert([] * 3 == []);
+
+// 源表不动、结果独立
+var xs = [1];
+var rep = xs * 3;
+assert(xs == [1]);
+assert(rep == [1, 1, 1]);
+rep[0] = 9;
+assert(xs[0] == 1);
+
+// 浅拷：嵌套 list 按元素共享（=== 同对象）
+var inner = [7];
+var two = [inner] * 2;
+assert(two[0] === inner);
+assert(two[1] === inner);
+inner[0] = 8;
+assert(two[0][0] == 8);
+assert(two[1][0] == 8);
+
+// 复合赋值 *=：s = s * rhs 的 lowering，左值只求值一次
+var l = [0];
+l *= 3;
+assert(l == [0, 0, 0]);
+
+// 结果可再消费
+assert(([1] * 2).size() == 2);
+var t = 0;
+for (x in [1, 2] * 2) { t = t + x; }
+assert(t == 6);

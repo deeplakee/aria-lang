@@ -91,6 +91,8 @@ namespace aria {
 
     Opt<Value> ObjString::op_add_impl(AriaVM& vm) { return vm.register_value(kStringAddFnOffset); }
 
+    Opt<Value> ObjString::op_mul_impl(AriaVM& vm) { return vm.register_value(kStringMulFnOffset); }
+
     Opt<Value> ObjString::op_less_impl(AriaVM& vm) { return vm.register_value(kStringLtFnOffset); }
 
     Opt<Value> ObjString::op_less_equal_impl(AriaVM& vm) { return vm.register_value(kStringLeFnOffset); }

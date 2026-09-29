@@ -325,7 +325,8 @@ namespace aria {
         void bootstrap_iterator_class();
 
         // List bootstrap 类:建 ObjClass("List", super=Object 根),经方法面宿主类
-        // ListClass::register_methods 注册,发布进寄存器 ListClass 格。
+        // ListClass::register_methods 注册,发布进寄存器 ListClass 格;末段按公开清单
+        // ListClass::kOperatorFns 把类表里的两个算子实现拷进寄存器实现格。
         void bootstrap_list_class();
 
         // Map bootstrap 类:建 ObjClass("Map", super=Object 根),经方法面宿主类
@@ -334,7 +335,7 @@ namespace aria {
 
         // String bootstrap 类:建 ObjClass("String", super=Object 根),经方法面宿主类
         // StringClass::register_methods 注册,发布进寄存器 StringClass 格;末段按公开清单
-        // StringClass::kOperatorFns 把类表里的五个算子实现拷进寄存器实现格。
+        // StringClass::kOperatorFns 把类表里的六个算子实现拷进寄存器实现格。
         void bootstrap_string_class();
 
         // Range bootstrap 类:建 ObjClass("Range", super=Object 根),经方法面宿主类

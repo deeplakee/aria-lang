@@ -14,10 +14,11 @@ namespace aria {
     // Offset 同源展开,新增寄存器加一行 X(名字) 即收口,名字串经 # 派生。表长 kValueRegisterCount = 名表长度,两表同源无
     // 不同步风险。逐值注释用块注释(行注释会吞续行符)。偏移常量 k<名字>Offset(如 kObjectClassOffset,值 = 枚举值,即寄存
     // 器组内格位):scoped enum 不隐式转整型,C++ 侧下标与 LOAD_REG 操作数发射统一走常量,免逐点 std::to_underlying。
-    // 末组 = 内置类型的算子实现缓存五格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 原生函数值):内置类型取
-    // 实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。实现格的规范家仍是类表(方法读路径 `"a".__add__`
-    // 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的按名取实现不走寄存器:ObjInstance 的 override 经
-    // AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)里的钩子名,再按名到实例/类链查表。
+    // 末组 = 内置类型的算子实现缓存八格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__`/`__mul__` 与 List 的
+    // `__add__`/`__mul__` 原生函数值):内置类型取实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。
+    // 实现格的规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的
+    // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)
+    // 里的钩子名,再按名到实例/类链查表。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                 \
     X(ObjectClass)   /* Object root class (base of a def with no super; filled at bootstrap) */                     \
     X(DefaultMark)   /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \
@@ -27,11 +28,14 @@ namespace aria {
     X(MapClass)      /* Map bootstrap class (built-in map methods; super is Object; C++ access only) */             \
     X(StringClass)   /* String bootstrap class (built-in string methods; super is Object; C++ access only) */       \
     X(RangeClass)    /* Range bootstrap class (built-in range methods; super is Object; C++ access only) */         \
-    X(StringAddFn)   /* __add__ native, copied from the String class table; op_add_impl reads this cell          */ \
     X(StringLtFn)    /* __lt__ native, copied from the String class table; op_less_impl reads this cell          */ \
     X(StringLeFn)    /* __le__ native, copied from the String class table; op_less_equal_impl reads this cell    */ \
     X(StringGtFn)    /* __gt__ native, copied from the String class table; op_greater_impl reads this cell       */ \
-    X(StringGeFn)    /* __ge__ native, copied from the String class table; op_greater_equal_impl reads this cell */
+    X(StringGeFn)    /* __ge__ native, copied from the String class table; op_greater_equal_impl reads this cell */ \
+    X(StringAddFn)   /* __add__ native, copied from the String class table; op_add_impl reads this cell          */ \
+    X(StringMulFn)   /* __mul__ native, copied from the String class table; op_mul_impl reads this cell          */ \
+    X(ListAddFn)     /* __add__ native, copied from the List class table; op_add_impl reads this cell            */ \
+    X(ListMulFn)     /* __mul__ native, copied from the List class table; op_mul_impl reads this cell            */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

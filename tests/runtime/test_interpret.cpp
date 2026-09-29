@@ -90,6 +90,29 @@ TEST(Interpret, NonStringPlusStringIsRuntimeError) {
     EXPECT_EQ(vm.interpret_from_src("1 + \"a\";"), InterpretResult::RuntimeError);
 }
 
+// 字符串源：String * int 重复与 List + List / List * int 拼接重复（含复合赋值 *= / +=，重绑新值）->
+// Ok。
+TEST(Interpret, RepeatAndListConcatOk) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    EXPECT_EQ(vm.interpret_from_src("var s = \"ab\" * 3; s *= 2; assert(s == \"abababababab\");"
+                                    "var l = [1, 2] + [3]; l += [4]; assert(l == [1, 2, 3, 4]);"
+                                    "assert([0] * 3 == [0, 0, 0]); assert(\"\" * 5 == \"\");"),
+              InterpretResult::Ok);
+}
+
+// 字符串源：String * 负数 -> 运行期 TypeMismatch -> RuntimeError。
+TEST(Interpret, StringRepeatNegativeIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("\"ab\" * -1;"), InterpretResult::RuntimeError);
+}
+
+// 字符串源：List + 非 List -> 运行期 TypeMismatch -> RuntimeError。
+TEST(Interpret, ListPlusNonListIsRuntimeError) {
+    AriaVM vm;
+    EXPECT_EQ(vm.interpret_from_src("[1] + 2;"), InterpretResult::RuntimeError);
+}
+
 // 字符串源：读未定义全局 -> 运行期 LOAD_GLOBAL miss 抛 UndefinedVariable -> RuntimeError。
 TEST(Interpret, StringRuntimeUndefinedVariableIsRuntimeError) {
     AriaVM vm;

@@ -282,6 +282,14 @@ namespace aria {
         const auto klass = new_class(gc_, "List", object_class());
         ListClass::register_methods(gc_, klass);
         registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
+        // 算子实现缓存:按 ListClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
+        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;命中是
+        // 纯读无分配,入格免守卫。
+        for (const auto& [hook, fn_offset]: ListClass::kOperatorFns) {
+            const auto hit = klass->load_field(*this, string_constant(hook));
+            ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
+            registers_[fn_offset] = hit->as_obj();
+        }
     }
 
     void AriaVM::bootstrap_map_class() {

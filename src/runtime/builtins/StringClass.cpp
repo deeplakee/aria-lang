@@ -386,27 +386,7 @@ namespace aria {
         // 取用;也是"算子 = 方法"的唯一实现处)
         // 名字与失败文案都是**就地字面量**(与方法名同形):文案打方法名,与注册键同处一文件、golden
         // 钉住拼写。两侧均为 String 才成立(无隐式转换);元数不符走 vm.arity_error(措辞家族唯一口)。
-        // string 只有 `+` 与四个比较。
-
-        // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
-        // 未命中时,此刻两侧经调用区槽在栈(receiver 占 slots[0],「栈即根」)。
-        bool fn___add__(AriaVM& vm, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
-                return vm.arity_error(argc, 1);
-            }
-            const auto rhs = try_obj<ObjString>(slots[1]);
-            if (rhs == nullptr) {
-                return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
-                               type_name(slots[0]), aria::type_name(slots[1]));
-            }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            String     buffer;
-            buffer.reserve(lhs->length() + rhs->length());
-            buffer.append(lhs->view()).append(rhs->view());
-            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
-            return true;
-        }
+        // string 只有 `+`/`*` 与四个比较。
 
         // 四个比较钩子 -> Bool:两侧须皆 String,按**无符号字节序**比较。必须走 string_view::compare
         // (char_traits 的 memcmp 语义)--char 在多数平台有符号,手写逐 char 比较会把 0x80 以上的字节排到
@@ -471,6 +451,54 @@ namespace aria {
             return true;
         }
 
+        // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针)。GC 走查:分配点在 intern
+        // 未命中时,此刻两侧经调用区槽在栈(receiver 占 slots[0],「栈即根」)。
+        bool fn___add__(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
+            }
+            const auto rhs = try_obj<ObjString>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
+                               type_name(slots[0]), type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
+            String     buffer;
+            buffer.reserve(lhs->length() + rhs->length());
+            buffer.append(lhs->view()).append(rhs->view());
+            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
+            return true;
+        }
+
+        // __mul__ -> 新串:整次重复(count 次原样拼接自身,0 次得空串;字节域整段复制,多字节序列
+        // 原样成倍)。乘数严格 int(f64 一律拒,同下标访问口径),负数报错不静默得空(空结果易掩盖
+        // 调用方 bug,与负数下标报错约定一致)。结果经 new_string 驻留(同 `+`,同内容必同指针)。
+        // GC 走查:receiver 占 slots[0]「栈即根」,内容先累积进非 GC 的 C++ String,唯一分配点在
+        // 末尾铸造。
+        bool fn___mul__(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
+            }
+            if (!slots[1].is_int()) {
+                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a string and an integer, got {} and {}",
+                               type_name(slots[0]), type_name(slots[1]));
+            }
+            const i64 count = slots[1].as_int();
+            if (count < 0) {
+                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
+            }
+            const auto src = Object::as<ObjString>(slots[0].as_obj())->view();
+            String     buffer;
+            buffer.reserve(src.size() * static_cast<usize>(count));
+            for (i64 i = 0; i < count; ++i) {
+                buffer.append(src);
+            }
+            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
+            return true;
+        }
+
         // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kStringBuiltins[] = {
                 {"upper", fn_upper},
@@ -490,13 +518,14 @@ namespace aria {
                 {"to_int", fn_to_int},
                 {"to_float", fn_to_float},
                 {"iter", fn_iter},
-                // 运算符重载方法(String 只有 `+` 与四个比较;键与函数名对应的钩子名同形,漏改其一时
+                // 运算符重载方法(String 只有 `+`/`*` 与四个比较;键与函数名对应的钩子名同形,漏改其一时
                 // StringClass::kOperatorFns 清单按名查不到、bootstrap 断言即报)
-                {"__add__", fn___add__},
                 {"__lt__", fn___lt__},
                 {"__le__", fn___le__},
                 {"__gt__", fn___gt__},
                 {"__ge__", fn___ge__},
+                {"__add__", fn___add__},
+                {"__mul__", fn___mul__},
         };
 
     } // namespace

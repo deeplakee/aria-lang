@@ -257,15 +257,80 @@ namespace aria {
             return true;
         }
 
+        // 运算符重载方法(函数名与 runtime/string_constant.hpp 的 StringConstant 一一对应,经 AriaVM::run_binary_operator
+        // 取用;也是"算子 = 方法"的唯一实现处)。名字与失败文案都是**就地字面量**(与方法名同形):
+        // 文案打方法名,与注册键同处一文件、golden 钉住拼写。list 只有 `+` 与 `*`(乘数严格 int,
+        // f64 一律拒 -- 同下标访问口径;负数报错不静默得空,与负数下标报错约定一致);乘除模、
+        // 比较不重载(判等与下标本就不参与重载)。
+
+        // __add__ -> 新 list:两表拼接。浅拷:元素 Value 逐位复制,嵌套容器两表共享同一对象
+        //(与下标读同口径,深拷需逐元素另建)。GC 走查:new_list 顶部 maybe_collect 时两侧实参
+        // 经调用区槽在栈(receiver 占 slots[0],「栈即根」);此后 reserve/copy_from 全程 trivial
+        // 无 GC 点,建成即写回槽 0 发布。
+        bool fn___add__(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
+            }
+            const auto rhs = try_obj<ObjList>(slots[1]);
+            if (rhs == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
+                               type_name(slots[0]), type_name(slots[1]));
+            }
+            const auto lhs = Object::as<ObjList>(slots[0].as_obj());
+            const auto out = new_list(vm.gc());
+            out->elements().reserve(lhs->elements().size() + rhs->elements().size());
+            out->elements().copy_from(lhs->elements());
+            out->elements().copy_from(rhs->elements());
+            slots[0] = Value::from_obj(out);
+            return true;
+        }
+
+        // __mul__ -> 新 list:整次重复(count 次接尾追加自身元素,0 次得空表;浅拷同 __add__)。
+        // GC 走查同 __add__:唯一分配点 new_list,其后 reserve + 逐轮 copy_from 全程 trivial。
+        bool fn___mul__(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1) {
+                return vm.arity_error(argc, 1);
+            }
+            if (!slots[1].is_int()) {
+                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a list and an integer, got {} and {}",
+                               type_name(slots[0]), type_name(slots[1]));
+            }
+            const i64 count = slots[1].as_int();
+            if (count < 0) {
+                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
+            }
+            const auto lhs = Object::as<ObjList>(slots[0].as_obj());
+            const auto out = new_list(vm.gc());
+            out->elements().reserve(lhs->elements().size() * static_cast<usize>(count));
+            for (i64 i = 0; i < count; ++i) {
+                out->elements().copy_from(lhs->elements());
+            }
+            slots[0] = Value::from_obj(out);
+            return true;
+        }
+
         // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         constexpr builtins::BuiltinEntry kListBuiltins[] = {
-                {"push", fn_push},           {"pop", fn_pop},
-                {"insert", fn_insert},       {"remove", fn_remove},
-                {"remove_at", fn_remove_at}, {"clear", fn_clear},
-                {"sort", fn_sort},           {"reverse", fn_reverse},
-                {"find", fn_find},           {"contains", fn_contains},
-                {"size", fn_size},           {"is_empty", fn_is_empty},
-                {"join", fn_join},           {"iter", fn_iter},
+                {"push", fn_push},
+                {"pop", fn_pop},
+                {"insert", fn_insert},
+                {"remove", fn_remove},
+                {"remove_at", fn_remove_at},
+                {"clear", fn_clear},
+                {"sort", fn_sort},
+                {"reverse", fn_reverse},
+                {"find", fn_find},
+                {"contains", fn_contains},
+                {"size", fn_size},
+                {"is_empty", fn_is_empty},
+                {"join", fn_join},
+                {"iter", fn_iter},
+                // 运算符重载方法(list 只有 `+` 与 `*`;键与函数名对应的钩子名同形,漏改其一时
+                // ListClass::kOperatorFns 清单按名查不到、bootstrap 断言即报)
+                {"__add__", fn___add__},
+                {"__mul__", fn___mul__},
         };
 
     } // namespace

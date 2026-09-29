@@ -18,13 +18,13 @@ namespace aria {
         // 注册口:按名把方法表装进 String bootstrap 类(经 builtins::register_class_methods 底座)。
         static void register_methods(GC& gc, ObjClass* klass);
 
-        // 算子实现缓存清单:五个算子钩子名 -> AriaVM 寄存器实现格,bootstrap_string_class 装载类表后
-        // 据此逐条把实现拷进 StringAddFn..StringGeFn 格(算子派发热路径直读,免每次过类表查找;类表
+        // 算子实现缓存清单:六个算子钩子名 -> AriaVM 寄存器实现格,bootstrap_string_class 装载类表后
+        // 据此逐条把实现拷进 StringAddFn..StringMulFn 格(算子派发热路径直读,免每次过类表查找;类表
         // 仍是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言)。
         static constexpr Pair<StringConstant, u8> kOperatorFns[] = {
-                {StringConstant::OpAdd, kStringAddFnOffset},         {StringConstant::OpLess, kStringLtFnOffset},
-                {StringConstant::OpLessEqual, kStringLeFnOffset},    {StringConstant::OpGreater, kStringGtFnOffset},
-                {StringConstant::OpGreaterEqual, kStringGeFnOffset},
+                {StringConstant::OpLess, kStringLtFnOffset},    {StringConstant::OpLessEqual, kStringLeFnOffset},
+                {StringConstant::OpGreater, kStringGtFnOffset}, {StringConstant::OpGreaterEqual, kStringGeFnOffset},
+                {StringConstant::OpAdd, kStringAddFnOffset},    {StringConstant::OpMul, kStringMulFnOffset},
         };
     };
 

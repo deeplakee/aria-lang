@@ -84,11 +84,14 @@ namespace aria {
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
         // 算子协议 override(内建实现直给,**不经成员查找**):返回 String 类表里对应钩子的原生
-        // 函数值(五钩子 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 在 bootstrap 期注册进类表
-        // 并同时拷进实现格 kString*Fn,这里读格即得;类表仍是规范家)。其余算子不 override -> 基类
+        // 函数值(六钩子 `__add__`/`__mul__`/`__lt__`/`__le__`/`__gt__`/`__ge__` 在 bootstrap 期注册进类
+        // 表并同时拷进实现格 kString*Fn,这里读格即得;类表仍是规范家)。其余算子不 override -> 基类
         // 默认报「本类型不支持该算子」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_mul_impl(AriaVM& vm) override;
 
         [[nodiscard]]
         Opt<Value> op_less_impl(AriaVM& vm) override;

@@ -244,7 +244,8 @@ println(b);  # 2
 
 ### 算术：`+` `-` `*` `/` `%`
 
-数值域内运算，`+` 有一个唯一例外：两侧都是字符串时拼接出新串。**没有其他隐式转换** -- 
+数值域内运算，`+` 与 `*` 有内建例外：`+` 两侧都是字符串时拼接出新串；`*` 左侧是字符串、
+右侧是整数时按次数重复出新串（列表的同款 `+`/`*` 见第 6 章）。**没有其他隐式转换** -- 
 字符串加数字直接报错：
 
 <!-- expect-error: TypeMismatch -->
@@ -255,6 +256,14 @@ var s = "n=" + 42;
 ```text
 Runtime: TypeMismatch __add__ requires two strings, got String and Int
   at <main> (concat.aria:1)
+```
+
+字符串重复的乘数必须是整数（浮点一律报错，负数也报错而不静默得空串）：
+
+```aria
+println("ab" * 3);      # ababab
+println("ab" * 1);      # ab
+println("ab" * 0);      #（空串）
 ```
 
 整数 `/` 是向零截断的整除，`%` 的符号跟随被除数（与 C 一致）：
@@ -395,6 +404,8 @@ println(n);    # 4
 | :--- | :--- |
 | `missing = 1;`（未声明就赋值） | `Runtime: UndefinedVariable undefined global 'missing'` |
 | `"n=" + 42` | `Runtime: TypeMismatch __add__ requires two strings, got String and Int` |
+| `"ab" * 2.5`（乘数须整数） | `Runtime: TypeMismatch __mul__ requires a string and an integer, got String and F64` |
+| `[1] + 2`（拼接两侧须皆列表） | `Runtime: TypeMismatch __add__ requires two lists, got List and Int` |
 | `1 / 0`（整数除零） | `Runtime: DivisionByZero integer division by zero` |
 | `1 < "a"` | `Runtime: TypeMismatch operator '<' requires numbers, got Int and String` |
 | `var x = 140737488355328;` | `Semantic: NumberOutOfRange ...`（编译期） |

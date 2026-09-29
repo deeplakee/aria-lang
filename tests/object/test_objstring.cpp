@@ -423,6 +423,103 @@ TEST(ObjString, OpAddSurvivesStressCollect) {
     EXPECT_EQ(sum->as_obj()->debug_repr(), "\"stresscollect\"");
 }
 
+// ---- 重复钩子(String 类表里的 __mul__ 原生) ----
+
+// 整次重复:count 次原样拼接自身(字节域整段复制,多字节序列原样成倍);0 次得空串、1 次得
+// 同内容串。
+TEST(ObjString, OpMulRepeats) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   lhs   = make_string(gc, guard, "0123456789abcdefghij"); // 20 字节:SSO 外
+    auto   twice = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(2));
+    ASSERT_TRUE(twice.has_value());
+    guard.push(twice->as_obj());
+    const auto twice_str = try_obj<ObjString>(*twice);
+    ASSERT_NE(twice_str, nullptr);
+    EXPECT_EQ(twice_str->debug_repr(), "\"0123456789abcdefghij0123456789abcdefghij\"");
+    EXPECT_EQ(twice_str->length(), 40u);
+
+    auto ab  = make_string(gc, guard, "h\xC3\xA9"); // 多字节:é 两字节原样成倍
+    auto one = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(ab), Value::from_int(1));
+    ASSERT_TRUE(one.has_value());
+    guard.push(one->as_obj());
+    const auto one_str = try_obj<ObjString>(*one);
+    ASSERT_NE(one_str, nullptr);
+    EXPECT_EQ(one_str->view(), "h\xC3\xA9");
+    auto zero = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(ab), Value::from_int(0));
+    ASSERT_TRUE(zero.has_value());
+    guard.push(zero->as_obj());
+    const auto zero_str = try_obj<ObjString>(*zero);
+    ASSERT_NE(zero_str, nullptr);
+    EXPECT_EQ(zero_str->length(), 0u);
+}
+
+// 结果为驻留串:与同内容字面量同指针(=== 与 == 同真,与 __add__ 同契约)。
+TEST(ObjString, OpMulResultIsInterned) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   lhs   = make_string(gc, guard, "ab");
+    auto   rep   = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(3));
+    ASSERT_TRUE(rep.has_value());
+    guard.push(rep->as_obj());
+    EXPECT_TRUE(value_identical(*rep, Value::from_obj(new_string(gc, "ababab"))));
+}
+
+// 空串源:任意非负次数都得空串。
+TEST(ObjString, OpMulEmptySourceYieldsEmpty) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   empty = make_string(gc, guard, "");
+    auto   rep   = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(empty), Value::from_int(3));
+    ASSERT_TRUE(rep.has_value());
+    const auto rep_str = try_obj<ObjString>(*rep);
+    ASSERT_NE(rep_str, nullptr);
+    EXPECT_EQ(rep_str->length(), 0u);
+}
+
+// 乘数非 int(f64/nil/bool):TypeMismatch 定向文案(严格 int,同下标访问口径)。
+TEST(ObjString, OpMulNonIntCountFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "a");
+    for (const Value count: {Value::from_f64(2.5), Value::from_f64(2.0), Value::nil_val(), Value::from_bool(true)}) {
+        EXPECT_FALSE(invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(s), count).has_value());
+        const auto [code, message] = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::TypeMismatch);
+        EXPECT_EQ(message, "Runtime: TypeMismatch __mul__ requires a string and an integer, got String and " +
+                                   String{aria::type_name(count)});
+    }
+}
+
+// 负数乘数:TypeMismatch(值域文案,不静默得空)。
+TEST(ObjString, OpMulNegativeCountFails) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   s     = make_string(gc, guard, "a");
+    EXPECT_FALSE(invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(s), Value::from_int(-1)).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::TypeMismatch);
+    EXPECT_EQ(message, "Runtime: TypeMismatch __mul__ requires a non-negative integer, got -1");
+}
+
+// stress collect 下的重复:分配点两侧须为根(receiver 在调用区槽 0,此处经 make_string 入根)。
+TEST(ObjString, OpMulSurvivesStressCollect) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto& gc    = vm.gc();
+    auto  guard = gc.make_guard();
+    auto  lhs   = make_string(gc, guard, "go");
+    auto  rep   = invoke_string_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(3));
+    ASSERT_TRUE(rep.has_value());
+    guard.push(rep->as_obj());
+    EXPECT_EQ(rep->as_obj()->debug_repr(), "\"gogogo\"");
+}
+
 // ---- 比较钩子(__lt__/__le__/__gt__/__ge__ = 字节序) ----
 
 // 四算子的真值表(含空串、真前缀、相等四态)。

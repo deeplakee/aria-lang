@@ -1,0 +1,2 @@
+// 钉住：list 重复乘数必须为整数（String 乘数报 TypeMismatch）。
+var xs = [1] * "2";

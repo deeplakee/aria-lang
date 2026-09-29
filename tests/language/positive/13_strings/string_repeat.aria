@@ -1,0 +1,39 @@
+// 钉住：字符串 * 整数重复——乘数严格 int（f64 一律 TypeMismatch，负向语料另配）、0 次得空串；
+# 结果为新串（原串不变）、经驻留池故同内容 === 同真（与 + 一致）；*= 复合赋值同语义。
+assert("ab" * 3 == "ababab");
+assert("ab" * 1 == "ab");
+assert("ab" * 0 == "");
+assert("" * 3 == "");
+assert("x" * 5 == "xxxxx");
+assert(("ab" * 3).size() == 6);        // 结果可再消费（size）
+assert(("héllo" * 2).size() == 12);    // 字节域整段成倍（é 两字节原样复制）
+
+var s = "ab";
+assert(s * 2 == "abab");
+assert(s == "ab");                     // 原串不变（重复产新串）
+
+// 复合赋值 *=：s = s * rhs 的 lowering，左值只求值一次
+s *= 3;
+assert(s == "ababab");
+
+// 驻留语义：与 + 一致，同内容 === 同真
+assert("ab" * 3 === "ab" * 3);
+assert("ab" * 3 === "ababab");
+
+// 结果可作方法接收者/迭代源（对象值路径，非特例）
+assert(("ab" * 2).upper() == "ABAB");
+var count = 0;
+for (ch in "xy" * 2) {
+    count = count + 1;
+}
+assert(count == 4);
+
+// 循环内重复再拼接（一次性中间串；GC 压力下结果仍正确）
+var acc = "";
+var i = 0;
+while (i < 20) {
+    acc = acc + "-" * 2;
+    i = i + 1;
+}
+assert(acc.size() == 40);
+assert(acc[-1] == "-");

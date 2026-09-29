@@ -1,0 +1,2 @@
+// 钉住：list 拼接两侧均为 List（右侧非 List 报 TypeMismatch，不做隐式包装）。
+var xs = [1] + 2;

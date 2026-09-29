@@ -1,0 +1,2 @@
+Runtime: TypeMismatch __mul__ requires a string and an integer, got String and F64
+at <main> (

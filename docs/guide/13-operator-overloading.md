@@ -122,10 +122,11 @@ Runtime: UndefinedProperty <class Box> has no member '__add__'
 
 字符串的 `+` 与 `<` 就是 String 类上的内建 `__add__` / `__lt__` -- 第 2 章见过的
 `"n=" + 42` 报错（`__add__ requires two strings, got String and Int`）正是 String 的
-`__add__` 在抱怨右操作数。内置类型与用户类没有两套运算机制：list 不支持 `+`，不是
-「运算符碰巧没实现」，而是 List 类上没有 `__add__` 这个成员（`type List does not
-support '__add__'`）。统一通道也意味着：给自己的类定义 `__add__` 后，它与字符串等内置
-类型在运算层面平起平坐。
+`__add__` 在抱怨右操作数。列表的 `+` 与 `*` 同理是 List 类上的内建 `__add__` / `__mul__`
+（第 6 章），字符串的重复 `"ab" * 3` 走的也是 String 的 `__mul__`。内置类型与用户类没有
+两套运算机制：map 不支持 `+`，不是「运算符碰巧没实现」，而是 Map 类上没有 `__add__` 这个
+成员（`type Map does not support '__add__'`）。统一通道也意味着：给自己的类定义
+`__add__` 后，它与字符串等内置类型在运算层面平起平坐。
 
 ## 小结
 

@@ -78,6 +78,15 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
+        // 算子协议 override(内建实现直给,**不经成员查找**):返回 List 类表里对应钩子的原生
+        // 函数值(`__add__`/`__mul__` 在 bootstrap 期注册进类表并同时拷进实现格 kList*Fn,这里
+        // 读格即得;类表仍是规范家)。其余算子不 override -> 基类默认报「本类型不支持该算子」。
+        [[nodiscard]]
+        Opt<Value> op_add_impl(AriaVM& vm) override;
+
+        [[nodiscard]]
+        Opt<Value> op_mul_impl(AriaVM& vm) override;
+
     private:
         // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
         // 皆在内;从尾计数,无上界给后缀、空后缀以两端相等+不含上界表示),本函数只管按方向折算

@@ -88,11 +88,16 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - **运算符重载**：用户类按 dunder 方法名定义（`+ - * / %`、四个比较、一元 `-`，见 `src/runtime/string_constant.hpp`
   的 `StringConstant`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
   缺席（`<class Box> has no member '__add__'`），内置类型没实现该算子报「本类型不支持」
-  （`type List does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
+  （`type Map does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
   `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值同码报
   `type Int does not support '__call__'`，类本身仍走实例化。
-- **字符串 `+` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：都要求两侧皆 `String`、不做隐式转换
-  （显式转换走 `str()`），比较按**无符号字节序**（与 `size`/`s[i]` 同字节域，大小写敏感、无 collation）。
+- **字符串 `+`/`*` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：`+` 与比较要求两侧皆 `String`、不做
+  隐式转换（显式转换走 `str()`），比较按**无符号字节序**（与 `size`/`s[i]` 同字节域，大小写敏感、
+  无 collation）；`*` 按整数次数重复出新串，乘数严格 Int（F64 一律拒）、负数报 `TypeMismatch`
+  不静默得空，结果经驻留池（`===` 同内容同真），见 13_strings/string_repeat。
+- **list `+`/`*` 算子**（拼接/重复）：`+` 两侧皆 `List` 产浅拷新表（嵌套容器按元素共享）、源表
+  不动；`*` 按整数次数重复，乘数校验同 string（严格 Int、负数报错）；`+=`/`*=` 复合赋值重绑
+  新值不原地改（与 push 的就地语义相对照），见 12_collections/list_concat、list_repeat。
 - **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报
   `TypeMismatch`；09_modules 直接经 `H.x` 观察辅助模块。
 - **list 方法面**（push/pop/insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/

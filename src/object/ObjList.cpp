@@ -97,6 +97,10 @@ namespace aria {
         return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
+    Opt<Value> ObjList::op_add_impl(AriaVM& vm) { return vm.register_value(kListAddFnOffset); }
+
+    Opt<Value> ObjList::op_mul_impl(AriaVM& vm) { return vm.register_value(kListMulFnOffset); }
+
     Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
         // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
         // 区间,唯一失败报错就地烘焙。长度与方向的折算全在解析口。

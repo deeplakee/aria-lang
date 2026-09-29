@@ -82,13 +82,15 @@ println(cs[1]);
 
 ## 拼接与转换
 
-`+` 只在两侧都是字符串时拼接（第 2 章），任意值转字符串用 `str()`。列表侧的 `join(sep)`
-把元素串起来：
+`+` 只在两侧都是字符串时拼接（第 2 章），任意值转字符串用 `str()`；`*` 按整数次数重复
+出新串（乘数须非负整数，负数报错），结果与 `+` 一样经驻留池 -- 同内容 `===` 同真。列表侧
+的 `join(sep)` 把元素串起来：
 
 ```aria
 var parts = ["aria", "is", "small"];
 println(parts.join(" "));
 println("n = " + str(42));
+println("ab" * 3);
 ```
 
 输出：
@@ -96,6 +98,7 @@ println("n = " + str(42));
 ```text
 aria is small
 n = 42
+ababab
 ```
 
 字符串到数字用 `to_int()` / `to_float()`，**失败返 `nil` 而不报错** -- 配合 `if` 判空就是

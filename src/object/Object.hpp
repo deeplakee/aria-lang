@@ -248,8 +248,9 @@ namespace aria {
         // 调用钩子 `__call__`)。**基类
         // 默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与 load_field/store_field 等基
         // 类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 -- 11 个 override 各按名 load_field_unbound(实例
-        // fields 可遮蔽,再类链);②内置 string -- 5 个算子直给实现格 String*Fn(免查找);③其余类型不实现即报错(方法仍在类
-        // 表里,`"a".__add__("b")` 读路径不变)。非 const(取实现可能物化绑定,与 load_field/load_field_unbound 同族)。
+        // fields 可遮蔽,再类链);②内置 string -- 6 个算子、内置 list -- 2 个(加/乘)直给实现格 String*Fn/List*Fn(免查
+        // 找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")` 读路径不变)。非 const(取实现可能物化绑定,与
+        // load_field/load_field_unbound 同族)。
 
         [[nodiscard]]
         virtual Opt<Value> op_add_impl(AriaVM& vm);

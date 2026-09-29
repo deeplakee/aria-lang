@@ -1,0 +1,2 @@
+Runtime: TypeMismatch __mul__ requires a non-negative integer, got -1
+at <main> (

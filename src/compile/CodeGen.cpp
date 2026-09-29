@@ -475,6 +475,22 @@ namespace aria {
         }
     }
 
+    void CodeGen::bind_class_value(const StringView name, const SourceLoc loc) const {
+        // 类名绑定先于体编译（对齐 bind_function_value 函数先例；clox classDeclaration 的
+        // OP_CLASS+OP_DEFINE_GLOBAL 先于类体同形）。全局腿 DUP 后 DEF_GLOBAL 提前入全局：原类值
+        // 驻栈贯穿类体供 MAKE_STATIC/MAKE_METHOD peek、尾部 POP 归位（visitDefDeclNode ⑤），构建
+        // 窗口内裸名经全局解析到构建中类对象（MAKE_CLASS 即完整类对象，成员挂载持续进行），初始
+        // 化器 throw 后类名保持绑定（残留语义，对齐 Ruby；重定义仍由编译期注册表兜底）。局部腿
+        // （块内/函数内）值填槽预登记：类值恰在 locals_.size() 槽位、登记即初始化，异常路径槽与
+        // 半成品随截栈同弃。
+        if (mod_ctx_->is_global_scope()) {
+            cur_cu()->emit_op(OpCode::DUP, loc.line()); // [class, class]
+            define_global_or_fail(name, loc);           // [class] 弹走 DUP 副本绑定全局
+        } else {
+            std::ignore = define_local_or_fail(name, loc); // 值填槽，纯登记
+        }
+    }
+
     void CodeGen::compile_params(const List<Param>& params, const SourceLoc loc) {
         // 参数登记与缺省序言单循环交错、按声明序：先编缺省表达式、后登记本参数名 -- 轮到本槽时前序
         // 参数必已登记可引用，自身/后序参数名对解析结构性不可见、按常规链落外层/全局（同 Python/C++
@@ -882,13 +898,9 @@ namespace aria {
         cur_cu()->emit_op(OpCode::MAKE_CLASS, line);
         cur_cu()->emit_word(name_idx, line); // [class]
 
-        // ③ 类名先于成员绑定:体内自引用(方法体/静态初始化器)要求绑定先于体编译,对齐
-        //    compile_function 局部绑定先于体的函数先例。局部腿此刻值填槽登记(类值恰在
-        //    locals_.size() 槽位,登记即初始化);异常路径半成品类随 unwind 截栈,槽与半成品
-        //    同弃,不留可见绑定。
-        if (!mod_ctx_->is_global_scope()) {
-            std::ignore = define_local_or_fail(node.name, node.loc());
-        }
+        // ③ 类名绑定先于体编译:体内自引用(方法体/静态初始化器)要求绑定先于体,两腿收口
+        //    bind_class_value(全局腿 DUP 早绑 + 局部腿值填槽,见其注)。
+        bind_class_value(node.name, node.loc());
 
         // ④ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
         //    accept 分派。成员重名不查重:成员即表写入(与体外 Foo.x = v 同形态),后写遮蔽。
@@ -896,11 +908,10 @@ namespace aria {
             member->accept(*this);
         }
 
-        // ⑤ 全局腿尾绑定:类体全部建成后才 define_global_or_fail(判重 + DEF_GLOBAL 弹值),异常路径
-        //    半成品类随 unwind 截栈丢弃后类名从未入全局(全局无编译期登记可先行)。类名经 MAKE_CLASS
-        //    已入池,此处 add_name 再取一次名字(常量池按值去重,复用同一池项);局部腿已在 ③ 登记。
+        // ⑤ 全局腿尾部弹栈:头部 DEF_GLOBAL 弹走的是 DUP 副本,原类值驻栈贯穿类体后在此归位
+        //    ([class] -> [];局部腿无尾,类值即局部、随作用域收尾弹出)。
         if (mod_ctx_->is_global_scope()) {
-            define_global_or_fail(node.name, node.loc()); // [class] -> [] DEF_GLOBAL 弹值
+            cur_cu()->emit_op(OpCode::POP, line); // [class] -> [] 弹驻留类值
         }
     }
 
@@ -916,8 +927,8 @@ namespace aria {
 
     void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
         // 静态变量成员（def 体 var）：求值初始化器(无则 nil)+ MAKE_STATIC。初始化器在类定义点、
-        // enclosing 作用域求值(eager);类名自引用:局部腿经预登记局部解析可用,全局腿(顶层)尚未
-        // DEF_GLOBAL -> 运行期 UndefinedVariable。
+        // enclosing 作用域求值(eager);类名自引用两腿均可用(类名绑定先于体:全局腿经头部
+        // DEF_GLOBAL 解析到构建中类对象,局部腿经预登记局部槽)。
         const u32 line = node.line();
         emit_expr_or_nil(node.initializer.get(), line); // [class, v]
         const auto member_idx = add_name_or_fail(node.name, node.loc());

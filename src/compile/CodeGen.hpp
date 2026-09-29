@@ -328,6 +328,12 @@ namespace aria {
         // 上下文建立之前调用（嵌套具名函数递归自捕获）。
         void bind_function_value(FnKind kind, StringView name, SourceLoc loc) const;
 
+        // MAKE_CLASS 后类名绑定分派（镜像 bind_function_value）：全局腿 DUP + DEF_GLOBAL 提前入全局
+        // （类体前绑定，对齐 clox classDeclaration 的 OP_CLASS+OP_DEFINE_GLOBAL 先于类体与函数先例：
+        // 构建窗口内裸名经全局解析到构建中类对象，初始化器 throw 后类名保持绑定 = 残留语义）；局部腿
+        // （块内/函数内）值填槽预登记。全局腿配对义务：visitDefDeclNode ⑤ 须补 POP 弹掉驻留类值。
+        void bind_class_value(StringView name, SourceLoc loc) const;
+
         // 形参登记 + 缺省序言（印章方案）：单循环按声明序交错--带默认值的参数先发印章判等序言（未传槽
         // 命中才求值默认值 STORE_LOCAL 换入）、后 add_local 登记本参数名（slot 1..n）；交错时序保证缺省
         // 表达式可引用前序参数、自身/后序参数名对解析结构性不可见。须在子上下文就位后、体编译前调用。

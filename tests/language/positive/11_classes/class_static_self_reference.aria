@@ -1,0 +1,12 @@
+// 钉住：类名绑定先于类体（def 头部 DUP + DEF_GLOBAL 早绑，对齐函数先例）--顶层类静态初始化器
+// 裸名自引用与静态互访可用，裸名指向构建中类对象；方法体自引用走调用期全局晚绑。
+
+def Counter {
+    var count = 10;
+    var self = Counter;
+    var doubled = Counter.count * 2;
+    fun bump() { return Counter.count + 1; }
+}
+assert(Counter.self == Counter);
+assert(Counter.doubled == 20);
+assert(Counter.bump() == 11);

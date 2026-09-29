@@ -1705,6 +1705,44 @@ assert(a == 10 && b == 20 && a + b == 30);
     ASSERT_TRUE(out.has_value()) << out.error().message();
 }
 
+// 顶层类静态初始化器自引用：类名绑定先于类体（DUP + DEF_GLOBAL 头部早绑，对齐函数先例），
+// 裸名指向构建中类对象，与终态同对象。
+TEST(CodeGen, TopLevelClassStaticInitSelfReference) {
+    EXPECT_EQ(run_int(R"(
+def C { var self = C; }
+assert(C.self == C);
+return 1;
+)"),
+              1);
+}
+
+// 顶层类静态互访：后续静态初始化器经类名限定引用先前静态（源序）。
+TEST(CodeGen, TopLevelClassStaticMutualAccess) {
+    EXPECT_EQ(run_int(R"(
+def A {
+    var a = 1;
+    var b = A.a;
+    var c = A.b;
+}
+return A.c * 100 + A.b * 10 + A.a;
+)"),
+              111);
+}
+
+// 顶层类方法体自引用回归：仍经全局解析（调用期类已完整），与静态初始化器窗口同对象。
+TEST(CodeGen, TopLevelClassMethodSelfReference) {
+    EXPECT_EQ(run_int(R"(
+def C {
+    var n = 5;
+    fun get() { return C.n; }
+    fun self_class() { return C; }
+}
+assert(C.self_class() == C);
+return C.get();
+)"),
+              5);
+}
+
 // fn 局部类名先于成员绑定（对齐函数先例）：方法体经局部/upvalue 自引用类名，外层函数返回后
 // 经闭合 upvalue 仍可用（类已随局部槽闭合）。
 TEST(CodeGen, FnLocalClassSelfReference) {

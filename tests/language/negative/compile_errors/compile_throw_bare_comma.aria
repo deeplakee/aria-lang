@@ -1,0 +1,3 @@
+// 钉住：throw 位保持单表达式（窄化）--"throw E, msg" 惯读为 Python 2 raise 双实参形态，报语法错；
+// 携值出口位与 return 对称，序列须经括号：throw (a, b)。
+throw "bad", "worse";

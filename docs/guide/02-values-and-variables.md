@@ -391,6 +391,38 @@ println(n);    # 4
 
 没有后缀 `i++`。写惯 `for (i = 0; i < n; i++)` 的读者请改用 `i += 1` 或 `++i`。
 
+### 序列：逗号
+
+逗号能把多个表达式连成一个**序列表达式**：从左到右逐个求值，整个序列的值是**最后
+一个**表达式的值。它是优先级最低的运算符（比赋值还低），元素位可以直接写赋值：
+
+```aria
+var log = "";
+var note = fun (tag, ret) { log = log + tag; return ret; };
+var v = (note("a", 1), note("b", 2));
+println(v);      # 2
+println(log);    # ab
+```
+
+输出：
+
+```text
+2
+ab
+```
+
+序列最常配合三段 `for` 使用（第 3 章）：init 与增量位各容许多个表达式。注意两处
+逗号的区别：`var i = 0, j = 9` 是 var 的多绑定声明（逗号是分隔符），`++i, --j` 才是
+序列。
+
+`(a, b)` 产出的是序列值，不是元组：没有独立的"元组类型"，值就是最后一个元素。
+两处易混的边界：
+
+- 实参列表、列表与 map 字面量、`var` 多绑定里的逗号都是**分隔符**；想把序列值传给
+  函数，须再包一层括号：`f((a, b))`。
+- `return a, b` 与 `throw a, b` 不支持（直接语法错）--return 的多返回值用 `return [a, b]`
+  配解构接收（第 10 章）；throw 要序列语义显式加括号 `throw (a, b)`。
+
 ## str() 与 println()
 
 `str()` 把任意值转成可读字符串（与 `println` 的渲染同一套）：`str(3.0)` 得 `"3.0"`，
@@ -410,6 +442,8 @@ println(n);    # 4
 | `1 < "a"` | `Runtime: TypeMismatch operator '<' requires numbers, got Int and String` |
 | `var x = 140737488355328;` | `Semantic: NumberOutOfRange ...`（编译期） |
 | `var x = .5;` | `Syntax: ExpectedExpression expected expression, got '.'`（编译期） |
+| `return 1, 2;` | `Syntax: ExpectedToken expected ';', got ','`（编译期；return 不收逗号序列，多返回值用 `return [a, b]`） |
+| `throw "bad", "worse";` | `Syntax: ExpectedToken expected ';', got ','`（编译期；throw 不收逗号序列，要序列写 `throw (a, b)`） |
 
 ## 小结
 
@@ -420,6 +454,7 @@ println(n);    # 4
 - 只有 `var`；赋值不创建变量；赋值是表达式。
 - 相等分 `==`（内容）与 `===`（严格）；比较限数值与字符串两域；`||`/`&&` 返回操作数值。
 - 一元自增自减只有前置 `++i` / `--i`。
+- 逗号序列优先级最低：逐个求值、值取最后一个；`(a, b)` 是序列值不是元组。
 
 ## 练习
 

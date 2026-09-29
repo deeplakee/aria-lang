@@ -32,9 +32,9 @@ statement      -> ifStmt | whileStmt | forStmt | forInStmt
                | breakStmt | continueStmt | returnStmt | importStmt
                | tryCatchStmt | throwStmt | matchStmt | block | exprStmt
 
-ifStmt         -> "if" "(" expression ")" statement ( "else" statement )?
-whileStmt      -> "while" "(" expression ")" statement
-forStmt        -> "for" "(" ( varDecl | exprStmt | ";" ) expression? ";" expression? ")" statement
+ifStmt         -> "if" "(" sequenceExpr ")" statement ( "else" statement )?
+whileStmt      -> "while" "(" sequenceExpr ")" statement
+forStmt        -> "for" "(" ( varDecl | exprStmt | ";" ) sequenceExpr? ";" sequenceExpr? ")" statement
 forInStmt      -> "for" "(" pattern "in" expression ")" statement
 breakStmt      -> "break" ";"
 continueStmt   -> "continue" ";"
@@ -42,13 +42,14 @@ returnStmt     -> "return" expression? ";"
 importStmt     -> "import" string "as" identifier ";"
 tryCatchStmt   -> "try" block ( "catch" "(" identifier ")" block )?
 throwStmt      -> "throw" expression ";"
-matchStmt      -> "match" "(" expression ")" "{" matchArm+ "}"
+matchStmt      -> "match" "(" sequenceExpr ")" "{" matchArm+ "}"
 matchArm       -> matchPattern "=>" statement
 matchPattern   -> expression | "_"
 block          -> "{" declaration* "}"
-exprStmt       -> expression ";"
+exprStmt       -> sequenceExpr ";"
 
 expression     -> assignment
+sequenceExpr   -> expression ( "," expression )*
 
 assignment     -> logic_or ( ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) assignment )?
                | listPattern "=" assignment
@@ -68,13 +69,13 @@ primary        -> number | string | identifier | "nil" | "false" | "true"
                | "this" | superExpr | parenExpr | listExpr | mapExpr | ifExpr | lambdaExpr | matchExpr
 
 superExpr      -> "super" "." identifier
-parenExpr      -> "(" expression ")"
+parenExpr      -> "(" sequenceExpr ")"
 listExpr       -> "[" ( expression ( "," expression )* )? "]"
 mapExpr        -> "{" ( pair ( "," pair )* )? "}"
 pair           -> expression ":" expression
-ifExpr         -> "if" "(" expression ")" "{" expression "}" "else" "{" expression "}"
+ifExpr         -> "if" "(" sequenceExpr ")" "{" sequenceExpr "}" "else" "{" sequenceExpr "}"
 lambdaExpr     -> "fun" params block
-matchExpr      -> "match" "(" expression ")" "{" matchExprArm ( "," matchExprArm )* "}"
+matchExpr      -> "match" "(" sequenceExpr ")" "{" matchExprArm ( "," matchExprArm )* "}"
 matchExprArm   -> matchPattern "=>" expression
 
 # --- 解构模式 ---
@@ -125,10 +126,29 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # 表达式与语句的边界：if/fun/while/for 等既是语句关键字，又能出现在表达式位置
 # （ifExpr、lambdaExpr）。parser 按调用上下文调度--解析 statement 时走语句产生式，
-# 解析 expression 时走表达式产生式，无文法层冲突。aria 无逗号表达式，故 "a, b" 仅
-# 出现在解构模式中。
+# 解析 expression 时走表达式产生式，无文法层冲突。
 #
-# 运算符优先级（从低到高）：赋值 < || < && < 相等 < 比较 < 区间 < 加减 < 乘除模 < 一元
+# 序列表达式（sequenceExpr -> expression ("," expression)*）：逗号连接的序列，逐个求值、
+# 值为最后一个、不短路；逗号是最低优先级（赋值之下）。应用位 = 其后不紧跟逗号分隔符的
+# 产生式位：parenExpr、exprStmt（forStmt 的 exprStmt init 复用之，故 for (i = 0, j = 0; ...)
+# 成立）、forStmt 条件与增量、ifStmt/whileStmt/ifExpr/matchStmt/matchExpr 的条件与 subject、
+# ifExpr 两臂。单元素透明（"(a)" 即纯分组，不产序列节点，"(a) = v" 左值行为
+# 不变）；尾逗号与空括号非法（"(a,)" / "()" 报语法错，全语言同款拒绝尾逗号）。多元素
+# "(a, b)" 是序列值而非元组：作赋值目标报 InvalidAssignmentTarget；传给调用须再包一层
+# 括号 f((a, b))（args 的逗号是分隔符）。保持单表达式 expression 的位（逗号在此响亮报
+# 语法错）：
+#   - 逗号分隔位：args/listExpr/mapExpr/varDecl 多绑定初始化器/参数默认值/matchExpr 臂体
+#     （臂间逗号是分隔符）。
+#   - 窄化位（文法无冲突，但同形异读风险收窄）：携值出口位 return/throw（"return a, b" 在
+#     多值语言惯读为多返回，此处逼写 return [a, b]（既有惯用法）或 return (a, b)；"throw E,
+#     msg" 惯读为 Python 2 raise 双实参形态，实际行为却是求值并丢弃 E、抛出末位值，静默错值；
+#     C++ throw-expression 同款收窄为单 assignment-expression。两处要序列均显式加括号）；
+#     forIn 的 iterable（"for (x in a, b)" 惯读为双可迭代）；类体 memberVar 初始化器
+#     （"var x = a, b;" 在语句层是双绑定，同形异义）；下标 obj[expr]（"m[a, b]" 惯读为
+#     多维下标）；matchPattern（模式位序列值无意义）。
+#
+# 运算符优先级（从低到高）：逗号(序列) < 赋值 < || < && < 相等 < 比较 < 区间 < 加减
+# < 乘除模 < 一元
 # (含前置 ++/--/!/-) < 后缀调用/取字段/取下标。同层多为左结合；一元右结合；
 # 赋值右结合。相等层含 ==/!=/===/!==（同优先级、左结合）：== 内容相等(value_equal，
 # Int/F64 跨类型 IEEE 数值、Obj 调 Object::equals 虚函数)、=== 严格相等(value_identical，

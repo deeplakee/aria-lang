@@ -269,6 +269,10 @@ namespace aria {
         return dump_node(indent, std::format("MatchExpr arms={}", arms.size()), subject, arms);
     }
 
+    String SequenceExprNode::dump(const usize indent) const {
+        return dump_node(indent, std::format("SequenceExpr expressions={}", expressions.size()), expressions);
+    }
+
     // 解构模式节点 dump
 
     String IdentifierPatternNode::dump(const usize indent) const {
@@ -329,6 +333,7 @@ namespace aria {
     void IfExprNode::accept(AstVisitor& visitor) { visitor.visitIfExprNode(*this); }
     void LambdaExprNode::accept(AstVisitor& visitor) { visitor.visitLambdaExprNode(*this); }
     void MatchExprNode::accept(AstVisitor& visitor) { visitor.visitMatchExprNode(*this); }
+    void SequenceExprNode::accept(AstVisitor& visitor) { visitor.visitSequenceExprNode(*this); }
 
     void IdentifierPatternNode::accept(AstVisitor& visitor) { visitor.visitIdentifierPatternNode(*this); }
     void WildcardPatternNode::accept(AstVisitor& visitor) { visitor.visitWildcardPatternNode(*this); }

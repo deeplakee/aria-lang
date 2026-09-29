@@ -1332,6 +1332,17 @@ namespace aria {
 
     void CodeGen::visitMatchExprNode(MatchExprNode& node) { emit_match(node); }
 
+    void CodeGen::visitSequenceExprNode(SequenceExprNode& node) {
+        // 逐元素求值，非末位求值后 POP 弃（同 ExprStmt 惯用法），末位留栈即序列值。零新指令。
+        // 单元素已由 parser 透明化，size >= 2 是本 visit 的入参不变式。
+        ASSERT(node.expressions.size() >= 2, "sequence node requires two or more expressions");
+        for (usize index = 0; index + 1 < node.expressions.size(); ++index) {
+            emit_expr(*node.expressions[index]);
+            cur_cu()->emit_op(OpCode::POP, node.expressions[index]->line());
+        }
+        emit_expr(*node.expressions.back());
+    }
+
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode& node) {
         // 栈顶值即待绑值；identifier 位置与 listPattern 的 rest 位（同为 IdentifierPatternNode）都经此。
         // Fill：按名绑为当前作用域的新变量（收 bind_stack_value）。Store：写既有名（resolve + STORE_*），

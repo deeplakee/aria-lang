@@ -1,0 +1,4 @@
+// 钉住：forIn 的 iterable 位保持单表达式（窄化）--"for (x in a, b)" 报语法错而非静默只迭代 b。
+for (x in [1], [2]) {
+    println(x);
+}

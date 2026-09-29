@@ -1,0 +1,26 @@
+// 钉住：for 三位的序列用法——init 双计数器、增量序列、条件位取序列值；varDecl init 多绑定不受扰。
+var i;
+var j;
+for (i = 0, j = 9; i < j; i += 1, j -= 1) {}
+assert(i == 5 && j == 4);
+
+// varDecl init 的逗号仍是多绑定分隔符，不是序列
+var total = 0;
+for (var a = 0, b = 10; a < b; a += 1) {
+    total += 1;
+}
+assert(total == 10);
+
+// 条件位序列：spins < 3 求值后被弃，条件值 = k < 5
+var spins = 0;
+var k = 0;
+for (spins = 0, k = 0; spins < 3, k < 5; k += 1) {
+    spins += 1;
+}
+assert(spins == 5 && k == 5);
+
+// while 条件位同款（对比 forIn 的 iterable 位不受影响：见 negative/compile_errors）
+var limit = 10;
+var steps = 0;
+while (steps = steps + 1, steps < limit) {}
+assert(steps == 10 && limit == 10);

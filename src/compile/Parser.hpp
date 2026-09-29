@@ -157,6 +157,11 @@ namespace aria {
         [[nodiscard]]
         UPtr<ExprNode> expression();
 
+        // 序列层：expression ("," expression)*，逗号最低优先级。单元素透明（直接返回内层节点）；
+        // 仅用于其后不紧跟逗号分隔符的文法位，位次清单见 grammar.txt 说明区「序列表达式」。
+        [[nodiscard]]
+        UPtr<ExprNode> sequence();
+
         [[nodiscard]]
         UPtr<ExprNode> assignment();
 

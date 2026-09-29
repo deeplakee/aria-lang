@@ -53,6 +53,7 @@ namespace aria {
     struct IfExprNode;
     struct LambdaExprNode;
     struct MatchExprNode;
+    struct SequenceExprNode;
 
     // 解构模式节点（PatternNode 派生）
     struct IdentifierPatternNode;
@@ -107,6 +108,7 @@ namespace aria {
         virtual void visitIfExprNode(IfExprNode& node)                               = 0;
         virtual void visitLambdaExprNode(LambdaExprNode& node)                       = 0;
         virtual void visitMatchExprNode(MatchExprNode& node)                         = 0;
+        virtual void visitSequenceExprNode(SequenceExprNode& node)                   = 0;
 
         // 解构模式节点
         virtual void visitIdentifierPatternNode(IdentifierPatternNode& node) = 0;

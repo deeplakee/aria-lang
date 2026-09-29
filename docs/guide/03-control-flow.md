@@ -188,6 +188,24 @@ println(i);
 
 aria 没有后缀 `i++`，循环步进惯用 `i += 1` 或 `++i`（见第 2 章一元运算符）。
 
+init 与增量位是**序列表达式**位，可以各写多个表达式（逗号序列，第 2 章）；init 位
+写 `var i = 0, j = 9` 则是 var 的多绑定声明。双计数器向中点收敛：
+
+```aria
+var i;
+var j;
+for (i = 0, j = 9; i < j; i += 1, j -= 1) {}
+println(i);  # 5
+println(j);  # 4
+```
+
+输出：
+
+```text
+5
+4
+```
+
 ## break 与 continue
 
 `break` 跳出最内层循环，`continue` 进入下一轮。用在循环外是编译期错误：

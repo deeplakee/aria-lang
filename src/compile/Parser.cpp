@@ -371,7 +371,7 @@ namespace aria {
 
     UPtr<StmtNode> Parser::expression_stmt() {
         const SourceLoc loc  = peek().loc();
-        UPtr<ExprNode>  expr = expression();
+        UPtr<ExprNode>  expr = sequence(); // 语句位收序列层：a = 1, b = 2;（for-init 复用本入口）
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ExprStmtNode>(loc, std::move(expr));
     }
@@ -380,7 +380,7 @@ namespace aria {
         const SourceLoc loc = peek().loc();
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = expression();
+        UPtr<ExprNode> cond = sequence();
         expect(TokenType::RightParen, "')'");
         UPtr<StmtNode> then_branch = statement();
         UPtr<StmtNode> else_branch = match(TokenType::Else) ? statement() : nullptr;
@@ -391,7 +391,7 @@ namespace aria {
         const SourceLoc loc = peek().loc();
         expect(TokenType::While, "'while'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = expression();
+        UPtr<ExprNode> cond = sequence();
         expect(TokenType::RightParen, "')'");
         UPtr<StmtNode> body = statement();
         return std::make_unique<WhileStmtNode>(loc, std::move(cond), std::move(body));
@@ -423,12 +423,12 @@ namespace aria {
     UPtr<StmtNode> Parser::finish_for_stmt(const SourceLoc loc, UPtr<StmtNode> init) {
         UPtr<ExprNode> condition = nullptr;
         if (!check(TokenType::Semicolon) && !is_at_end()) {
-            condition = expression();
+            condition = sequence();
         }
         expect(TokenType::Semicolon, "';'");
         UPtr<ExprNode> increment = nullptr;
         if (!check(TokenType::RightParen) && !is_at_end()) {
-            increment = expression();
+            increment = sequence(); // 增量位收序列层：++i, --j（经典 C 式双计数器）
         }
         expect(TokenType::RightParen, "')'");
         UPtr<StmtNode> body = statement();
@@ -541,7 +541,7 @@ namespace aria {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> subject = expression();
+        UPtr<ExprNode> subject = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
         List<MatchArm> arms;
@@ -567,6 +567,21 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::expression() { return assignment(); }
+
+    // 序列表达式：expression ("," expression)*。单元素透明（直接返回，不产节点，
+    // "(a)" 保持纯分组与既有左值行为）；多元素产 SequenceExprNode。
+    UPtr<ExprNode> Parser::sequence() {
+        const SourceLoc      loc = peek().loc();
+        List<UPtr<ExprNode>> expressions;
+        expressions.push_back(assignment());
+        while (match(TokenType::Comma)) {
+            expressions.push_back(assignment());
+        }
+        if (expressions.size() == 1) {
+            return std::move(expressions[0]);
+        }
+        return std::make_unique<SequenceExprNode>(loc, std::move(expressions));
+    }
 
     UPtr<ExprNode> Parser::assignment() {
         const SourceLoc loc = peek().loc();
@@ -779,7 +794,7 @@ namespace aria {
             }
             case TokenType::LeftParen: {
                 advance();
-                UPtr<ExprNode> e = expression(); // parenExpr 不设独立节点
+                UPtr<ExprNode> e = sequence(); // 逗号序列层：单元素=纯分组（透明），多元素=SequenceExprNode
                 expect(TokenType::RightParen, "')'");
                 return e;
             }
@@ -839,14 +854,14 @@ namespace aria {
         const SourceLoc loc = peek().loc();
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = expression();
+        UPtr<ExprNode> cond = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
-        UPtr<ExprNode> then_expr = expression();
+        UPtr<ExprNode> then_expr = sequence();
         expect(TokenType::RightBrace, "'}'");
         expect(TokenType::Else, "'else'");
         expect(TokenType::LeftBrace, "'{'");
-        UPtr<ExprNode> else_expr = expression();
+        UPtr<ExprNode> else_expr = sequence();
         expect(TokenType::RightBrace, "'}'");
         return std::make_unique<IfExprNode>(loc, std::move(cond), std::move(then_expr), std::move(else_expr));
     }
@@ -863,7 +878,7 @@ namespace aria {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> subject = expression();
+        UPtr<ExprNode> subject = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
         List<MatchExprArm> arms;

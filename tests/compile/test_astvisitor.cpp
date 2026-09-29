@@ -49,6 +49,7 @@ using aria::PatternNode;
 using aria::ProgramNode;
 using aria::RangeExprNode;
 using aria::ReturnStmtNode;
+using aria::SequenceExprNode;
 using aria::SourceLoc;
 using aria::StaticVarMemberNode;
 using aria::StmtNode;
@@ -134,6 +135,7 @@ namespace {
         void visitIfExprNode(IfExprNode&) override { visited_.push_back("IfExprNode"); }
         void visitLambdaExprNode(LambdaExprNode&) override { visited_.push_back("LambdaExprNode"); }
         void visitMatchExprNode(MatchExprNode&) override { visited_.push_back("MatchExprNode"); }
+        void visitSequenceExprNode(SequenceExprNode&) override { visited_.push_back("SequenceExprNode"); }
 
         // --- 解构模式节点 ---
         void visitIdentifierPatternNode(IdentifierPatternNode&) override {
@@ -222,6 +224,7 @@ TEST(AstVisitorDispatch, Expressions) {
     expect_visit(std::make_unique<IfExprNode>(kLoc, i64lit(1), i64lit(2), i64lit(3)), "IfExprNode");
     expect_visit(std::make_unique<LambdaExprNode>(kLoc, List<Param>{}, empty_block()), "LambdaExprNode");
     expect_visit(std::make_unique<MatchExprNode>(kLoc, ident("s"), List<MatchExprArm>{}), "MatchExprNode");
+    expect_visit(std::make_unique<SequenceExprNode>(kLoc, List<UPtr<ExprNode>>{}), "SequenceExprNode");
 }
 
 TEST(AstVisitorDispatch, Patterns) {

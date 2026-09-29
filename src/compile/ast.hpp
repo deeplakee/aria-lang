@@ -819,6 +819,21 @@ namespace aria {
         List<MatchExprArm> arms;
     };
 
+    // 序列表达式：e1, e2, ...（逗号层，优先级在赋值之下）。逐个求值、值为最后一个、不短路。
+    // 只出现在其后不紧跟逗号分隔符的文法位（应用位清单见 grammar.txt 说明区）；单元素由
+    // parser 透明化不产本节点（"(a)" 保持纯分组，"(a) = v" 左值行为不回归）。
+    struct SequenceExprNode : ExprNode {
+        SequenceExprNode(const SourceLoc loc, List<UPtr<ExprNode>> expressions) :
+            ExprNode{loc}, expressions{std::move(expressions)} {}
+
+        [[nodiscard]]
+        String dump(usize indent) const override;
+
+        void accept(AstVisitor& visitor) override;
+
+        List<UPtr<ExprNode>> expressions;
+    };
+
     // 解构模式节点（PatternNode）：出现在 var 声明的 varTarget、for-in 目标与解构赋值左侧目标。
     //   - listPattern 映射为下标访问（位置 i 绑 list[i]），多余忽略、不足越界报错。
     //   - rest 仅 listPattern 支持（"..." 前缀，收集剩余为新 list）。

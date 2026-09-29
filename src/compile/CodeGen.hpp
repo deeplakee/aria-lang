@@ -100,6 +100,7 @@ namespace aria {
         void visitIfExprNode(IfExprNode& node) override;
         void visitLambdaExprNode(LambdaExprNode& node) override;
         void visitMatchExprNode(MatchExprNode& node) override;
+        void visitSequenceExprNode(SequenceExprNode& node) override;
 
         void visitIdentifierPatternNode(IdentifierPatternNode& node) override;
         void visitWildcardPatternNode(WildcardPatternNode& node) override;

@@ -1,0 +1,87 @@
+// 钉住：序列表达式 (a, b, c) 逐个求值、值为最后一个；单元素透明；条件/ifExpr 臂/实参/match subject/语句位应用；throw/return 经括号用序列。
+var log = "";
+
+var side = fun (tag, ret) {
+    log = log + tag;
+    return ret;
+};
+
+// 值 = 最后一个，左到右求值
+log = "";
+var x = (side("a", 1), side("b", 2), side("c", 3));
+assert(x == 3);
+assert(log == "abc");
+
+// 元素是完整赋值表达式（逗号优先级在赋值之下）
+var m = 0;
+var n = 0;
+var r = (m = 1, n = 2);
+assert(m == 1 && n == 2 && r == 2);
+
+// 单元素透明：不产序列，值与副作用和裸表达式一致
+log = "";
+var y = (side("s", 7));
+assert(y == 7);
+assert(log == "s");
+
+// 单元素括号保持左值透明：(t) = v 与 t = v 同款
+var t = 0;
+(t) = 5;
+assert(t == 5);
+
+// 嵌套：内层序列的值参与外层
+assert((1, (2, 3), 4) == 4);
+
+// 条件位：取序列值（最后一个）为条件
+log = "";
+if (side("i", true)) {
+    assert(log == "i");
+} else {
+    assert(false);
+}
+
+var hits = 0;
+var turn = false;
+while (turn = !turn, turn) {
+    hits += 1;
+}
+assert(hits == 1);
+
+// ifExpr 臂：{ e1, e2 } 取最后值为臂值
+var z = if (true) { side("t", 5), 99 } else { 0 };
+assert(z == 99);
+
+// 实参位：f((a, b)) 是单实参（args 逗号是分隔符，序列须再包一层括号）
+log = "";
+var got = 0;
+var take_one = fun (v) {
+    got = v;
+    return v;
+};
+assert(take_one((side("p", 10), side("q", 20))) == 20);
+assert(got == 20);
+assert(log == "pq");
+
+// match 表达式 subject 位：取序列值参与臂匹配
+var w = match ((side("j", 3), 8)) { 8 => "eight", _ => "other" };
+assert(w == "eight");
+
+// 语句位：p = 1, q = 2;（for 的 exprStmt init 复用同款文法位）
+var p = 0;
+var q = 0;
+p = 1, q = 2;
+assert(p == 1 && q == 2);
+
+// throw 位经括号用序列（裸逗号非法，见 negative/compile_errors）：抛的是序列值（最后一个）
+try {
+    throw (side("h", 1), "boom");
+    assert(false);
+} catch (e) {
+    assert(e == "boom");
+}
+
+// return 位括号形式：序列值随 return 交出
+var ret_fun = fun () {
+    return (side("k", 1), 42);
+};
+assert(ret_fun() == 42);

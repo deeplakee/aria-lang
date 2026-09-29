@@ -1,0 +1,4 @@
+// 钉住：多元素序列非左值--(a, b) = ... 报 InvalidAssignmentTarget（与既有非法左值同文案）。
+var a = 0;
+var b = 0;
+(a, b) = (1, 2);

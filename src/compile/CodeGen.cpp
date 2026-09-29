@@ -475,15 +475,26 @@ namespace aria {
         }
     }
 
-    void CodeGen::bind_class_value(const StringView name, const SourceLoc loc) const {
-        // 类名绑定先于体编译（对齐 bind_function_value 函数先例；clox classDeclaration 的
-        // OP_CLASS+OP_DEFINE_GLOBAL 先于类体同形）。全局腿 DUP 后 DEF_GLOBAL 提前入全局：原类值
-        // 驻栈贯穿类体供 MAKE_STATIC/MAKE_METHOD peek、尾部 POP 归位（visitDefDeclNode ⑤），构建
-        // 窗口内裸名经全局解析到构建中类对象（MAKE_CLASS 即完整类对象，成员挂载持续进行），初始
-        // 化器 throw 后类名保持绑定（残留语义，对齐 Ruby；重定义仍由编译期注册表兜底）。局部腿
-        // （块内/函数内）值填槽预登记：类值恰在 locals_.size() 槽位、登记即初始化，异常路径槽与
-        // 半成品随截栈同弃。
-        if (mod_ctx_->is_global_scope()) {
+    void CodeGen::bind_class_value(const bool is_member, const StringView name, const SourceLoc loc) const {
+        // 类名绑定先于体编译（三腿分派，对齐 bind_function_value 函数先例；clox classDeclaration
+        // 的 OP_CLASS+OP_DEFINE_GLOBAL 先于类体同形）。
+        //   - 成员腿（嵌套类）：仿全局腿早绑，DUP2 对复制挂表--栈 [enclosing, class] 复制栈顶对
+        //     -> [e, c, e, c]，MAKE_STATIC 以 peek(1)=enclosing 为接收类挂本类、drop 值副本 ->
+        //     [e, c, e]，POP 弃 klass 副本恢复 [e, c]（DUP2 对复制惯用法同 IndexAccess 定位腿）；
+        //     体内自引用经全路径 A.B，裸名不解析（文法：无 enclosing 链、无裸名）。
+        //   - 全局腿：DUP 后 DEF_GLOBAL 提前入全局，原类值驻栈贯穿类体供 MAKE_STATIC/MAKE_METHOD
+        //     peek、尾部 POP 归位（visitDefDeclNode ⑤）；构建窗口内裸名经全局解析到构建中类对象
+        //     （MAKE_CLASS 即完整类对象，成员挂载持续进行），初始化器 throw 后类名保持绑定（残留
+        //     语义，对齐 Ruby；重定义仍由编译期注册表兜底）。
+        //   - 局部腿（块内/函数内）：值填槽预登记，类值恰在 locals_.size() 槽位、登记即初始化，
+        //     异常路径槽与半成品随截栈同弃。
+        if (is_member) {
+            const auto member_idx = add_name_or_fail(name, loc); // 名字经 MAKE_CLASS 已入池,复用同池项
+            cur_cu()->emit_op(OpCode::DUP2, loc.line());         // [e, c, e, c]
+            cur_cu()->emit_op(OpCode::MAKE_STATIC, loc.line());  // [e, c, e] peek(1)=enclosing 挂表
+            cur_cu()->emit_word(member_idx, loc.line());
+            cur_cu()->emit_op(OpCode::POP, loc.line()); // [e, c] 弃 klass 副本
+        } else if (mod_ctx_->is_global_scope()) {
             cur_cu()->emit_op(OpCode::DUP, loc.line()); // [class, class]
             define_global_or_fail(name, loc);           // [class] 弹走 DUP 副本绑定全局
         } else {
@@ -898,9 +909,9 @@ namespace aria {
         cur_cu()->emit_op(OpCode::MAKE_CLASS, line);
         cur_cu()->emit_word(name_idx, line); // [class]
 
-        // ③ 类名绑定先于体编译:体内自引用(方法体/静态初始化器)要求绑定先于体,两腿收口
-        //    bind_class_value(全局腿 DUP 早绑 + 局部腿值填槽,见其注)。
-        bind_class_value(node.name, node.loc());
+        // ③ 类名绑定先于体编译:体内自引用(方法体/静态初始化器)要求绑定先于体,三腿收口
+        //    bind_class_value(成员位 DUP2 对复制挂表 + 全局腿 DUP 早绑 + 局部腿值填槽,见其注)。
+        bind_class_value(node.is_member, node.name, node.loc());
 
         // ④ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
         //    accept 分派。成员重名不查重:成员即表写入(与体外 Foo.x = v 同形态),后写遮蔽。
@@ -908,9 +919,10 @@ namespace aria {
             member->accept(*this);
         }
 
-        // ⑤ 全局腿尾部弹栈:头部 DEF_GLOBAL 弹走的是 DUP 副本,原类值驻栈贯穿类体后在此归位
-        //    ([class] -> [];局部腿无尾,类值即局部、随作用域收尾弹出)。
-        if (mod_ctx_->is_global_scope()) {
+        // ⑤ 尾部弹栈:头部绑定留有驻留类值的腿在此归位([class] -> [])--全局腿 DEF_GLOBAL 弹的
+        //    是 DUP 副本,成员腿 MAKE_STATIC 弹的是值副本,驻留原值都在尾部弹;局部腿无尾,类值即
+        //    局部、随作用域收尾弹出。
+        if (node.is_member || mod_ctx_->is_global_scope()) {
             cur_cu()->emit_op(OpCode::POP, line); // [class] -> [] 弹驻留类值
         }
     }

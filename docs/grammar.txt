@@ -21,7 +21,7 @@ defaultParam   -> identifier "=" expression
 varargs        -> "..." identifier
 
 defDecl        -> "def" identifier ( ":" identifier )? "{" member* "}"
-member         -> memberVar | funDecl | function
+member         -> memberVar | funDecl | function | defDecl
 memberVar      -> "var" identifier ( "=" expression )? ";"
 
 varDecl        -> "var" varBinding ( "," varBinding )* ";"
@@ -174,8 +174,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - fun 声明 vs lambda：statement 位置遇 "fun" + identifier -> funDecl；expression
 #     位置遇 "fun" + "(" -> lambdaExpr。
 #   - def 体内成员分派：首 token 为 "var" -> 静态变量；"fun" + identifier -> 静态方法；
-#     裸 identifier -> 实例方法（identifier params block）。"fun" 后非标识符（lambda）不得
-#     作成员，报错。
+#     裸 identifier -> 实例方法（identifier params block）；"def" -> 嵌套类（递归 defDecl，
+#     烙成员身份，深度不限）。"fun" 后非标识符（lambda）不得作成员，报错。
 #   - "{" 两用：block（statement 位置）、mapExpr（expression 位置）。按调用上下文区分。
 #
 # 解构：pattern 出现在 var 声明的 varTarget 与 forIn 的目标；解构赋值以 listPattern
@@ -260,8 +260,10 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - 类静态访问（限定，运行期）：ClassName.x（沿 super 链读穿透）、this.x/obj.x
 #     （先查实例字段，未命中回退类静态）。裸名看不到类静态。
 #   - 嵌套类（全路径）：class B 在 class A 内 -> B 是 A 的静态 A.B，经 A.B 全路径引用，无
-#     enclosing 链、无裸名。模块顶层类是模块全局，裸名可访；嵌套类须全路径。
-#     （parser 现状：member 分派无 defDecl，嵌套类暂不可解析，本条为后继方向。）
+#     enclosing 链、无裸名。模块顶层类是模块全局，裸名可访；嵌套类须全路径。绑定先于 B 的
+#     体（def 头部 DUP2 对复制 + MAKE_STATIC 挂进 A 的静态表、POP 弃接收类副本，体尾 POP，
+#     对齐顶层腿早绑）--B 的静态初始化器经 A.B 自引用可用；同名嵌套走成员表后写遮蔽；
+#     superclass 位是裸 identifier（无点路径），嵌套兄弟类不作 superclass（非裸名）。
 #   - 方法闭包（ObjClosure）持 defining class：一职双任--super 来源（LOAD_SUPER_FIELD）+
 #     方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经
 #     MAKE_STATIC 不戳）。无 enclosing 走链。
@@ -280,6 +282,11 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     （静态初始化器与方法体）裸名类名恒可用、指向构建中类对象（MAKE_CLASS 即完整类对象，
 #     成员挂载持续进行）；静态初始化器 throw 后类名保持绑定到构建中对象（残留），重定义仍由
 #     编译期判重拒绝。
+#   - 成员求值序（编译期/VM 语义，文法不编码）：成员按源序逐个「求值 -> 注册」，每个成员的
+#     初始化器恰见前序成员全集；前一成员的静态变量/静态方法/函数值静态可被后一成员的初始化器
+#     经类名限定引用（Foo.x / Foo.m() / Foo.f(...)），引用未注册的成员响亮 UndefinedProperty；
+#     方法体在调用期才解析其引用的成员（体内读更晚的静态不炸注册期、炸调用期）。类名先于全体
+#     成员（见上条头部绑定）。
 #   - 静态初始化（eager）：静态初始化器类定义时求值，非首次访问；class A{var x=B();} 要求
 #     B 先于 A 定义。
 #   - 动态加静态：允许（2026-09-11 改定，原 monkey-patch 拒绝废止），Foo.newStatic=v（新名）落

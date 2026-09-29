@@ -213,7 +213,7 @@ namespace aria {
                 return fun_decl(FnKind::Function);
             }
             if (check(TokenType::Def)) {
-                return def_decl();
+                return def_decl(false);
             }
             if (check(TokenType::Var)) {
                 return var_decl();
@@ -269,17 +269,19 @@ namespace aria {
         return result;
     }
 
-    UPtr<DefDeclNode> Parser::def_decl() {
+    UPtr<DefDeclNode> Parser::def_decl(const bool is_member) {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Def, "'def'");
         String      name       = expect_identifier();
         Opt<String> superclass = match(TokenType::Colon) ? Opt{expect_identifier()} : std::nullopt;
         expect(TokenType::LeftBrace, "'{'");
-        // def 体：(memberVar | funDecl | function)*。按首 token 分派成员种类：
+        // def 体：(memberVar | funDecl | function | defDecl)*。按首 token 分派成员种类：
         //   - var 声明 -> 静态变量（StaticVar，窄形态 memberVar，见 member_var 注）；
         //   - fun 声明 -> 静态方法（StaticMethod，无 this）；
         //   - 裸 identifier（identifier params block）-> 实例方法（有 this；名为 init 烙
-        //     InitMethod 构造角色）。
+        //     InitMethod 构造角色）；
+        //   - def 声明 -> 嵌套类成员（递归 def_decl 烙 is_member；绑定经外层类静态表，见
+        //     grammar.txt 嵌套类注）。
         // 其余 token 走 else 报错。
         List<UPtr<StmtNode>> members;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
@@ -287,6 +289,8 @@ namespace aria {
                 members.push_back(member_var());
             } else if (check(TokenType::Fun)) {
                 members.push_back(fun_decl(FnKind::StaticMethod));
+            } else if (check(TokenType::Def)) {
+                members.push_back(def_decl(true));
             } else if (check(TokenType::Identifier)) {
                 const SourceLoc mloc  = peek().loc();
                 String          mname = expect_identifier();
@@ -297,12 +301,13 @@ namespace aria {
                 members.push_back(
                         std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody), kind));
             } else {
-                error(ErrorCode::ExpectedToken, "expected 'var', 'fun' or a method name in def body, got '{}'",
+                error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
                       peek().lexeme());
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<DefDeclNode>(loc, std::move(name), std::move(superclass), std::move(members));
+        return std::make_unique<DefDeclNode>(loc, std::move(name), std::move(superclass), std::move(members),
+                                             is_member);
     }
 
     UPtr<StaticVarMemberNode> Parser::member_var() {

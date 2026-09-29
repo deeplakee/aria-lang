@@ -476,14 +476,17 @@ namespace aria {
         FnKind          kind;
     };
 
-    // def 声明："def" identifier (":" identifier)? "{" (memberVar | funDecl | function)* "}"。
+    // def 声明："def" identifier (":" identifier)? "{" member* "}"（成员含嵌套 defDecl）。
     //   - superclass：nullopt 表无父类（无 ":"）；实例方法经此继承，super 仍可用。
-    //   - members：体内成员列表（按出现顺序保留，支撑静态变量初始化顺序--前一静态变量可被后续初始化器引用）。三种成员
+    //   - members：体内成员列表（按出现顺序保留，支撑静态变量初始化顺序--前一静态变量可被后续初始化器引用）。四种成员
     //     节点：StaticVarMemberNode（静态变量）/ FunDeclNode kind=StaticMethod（fun 声明，无 this 绑定）/ FunDeclNode
-    //     kind=Method（裸 identifier 方法，有 this 绑定；名为 init 烙 InitMethod 构造角色）。
+    //     kind=Method（裸 identifier 方法，有 this 绑定；名为 init 烙 InitMethod 构造角色）/ DefDeclNode is_member=true
+    //     （嵌套类，绑定经外层类静态表，体内自引用经全路径）。
     struct DefDeclNode : StmtNode {
-        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<UPtr<StmtNode>> members) :
-            StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)} {}
+        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<UPtr<StmtNode>> members,
+                    bool is_member) :
+            StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)},
+            is_member{is_member} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -493,6 +496,7 @@ namespace aria {
         String               name;
         Opt<String>          superclass;
         List<UPtr<StmtNode>> members;
+        bool                 is_member; // parser 烙定:语句位声明(false)/类体成员位嵌套类(true)
     };
 
     // var 声明：var varTarget ("=" expr)? ("," ...)* ";"。

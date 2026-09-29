@@ -1,0 +1,6 @@
+// 钉住：嵌套类不在裸名作用域（文法：无 enclosing 链、无裸名）--体内裸名 B 落全局查，
+// 运行期 UndefinedVariable；可达形态唯全路径 A.B。
+def A {
+    def B { var tag = 1; }
+    var x = B;
+}

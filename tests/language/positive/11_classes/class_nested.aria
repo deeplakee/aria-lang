@@ -1,0 +1,32 @@
+// 钉住：嵌套类 --def 成员腿绑定经外层类静态表（DUP2 对复制头部挂表），经全路径 A.B 引用，
+// 无裸名（裸名 miss 见 negative/runtime_errors/runtime_nested_class_bare_name）；体内静态
+// 初始化器经全路径自引用；成员源序求值注册；同名嵌套走成员表后写遮蔽。
+
+def Outer {
+    def Middle {
+        def Inner { var tag = 3; }
+        var itag = Outer.Middle.Inner.tag;
+    }
+    var mtag = Outer.Middle.itag;
+}
+assert(Outer.Middle.Inner.tag == 3);
+assert(Outer.Middle.itag == 3);
+assert(Outer.mtag == 3);
+
+var inst = Outer.Middle.Inner();
+assert(inst.tag == 3);
+
+fun make() {
+    def Local {
+        def Inner { var outer_ref = Local; }
+    }
+    return Local;
+}
+var l = make();
+assert(l.Inner.outer_ref == l);
+
+def Shadow {
+    def Inner { var tag = 1; }
+    def Inner { var tag = 2; }
+}
+assert(Shadow.Inner.tag == 2);

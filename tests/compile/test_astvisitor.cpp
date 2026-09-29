@@ -186,7 +186,7 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     // 声明
     expect_visit(std::make_unique<FunDeclNode>(kLoc, String{"f"}, List<Param>{}, empty_block(), FnKind::Function),
                  "FunDeclNode");
-    expect_visit(std::make_unique<DefDeclNode>(kLoc, String{"C"}, Opt<String>{}, List<UPtr<StmtNode>>{}),
+    expect_visit(std::make_unique<DefDeclNode>(kLoc, String{"C"}, Opt<String>{}, List<UPtr<StmtNode>>{}, false),
                  "DefDeclNode");
     expect_visit(std::make_unique<VarDeclNode>(kLoc, List<VarBinding>{}), "VarDeclNode");
     expect_visit(std::make_unique<StaticVarMemberNode>(kLoc, String{"x"}, i64lit(1)), "StaticVarMemberNode");

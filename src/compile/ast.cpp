@@ -175,6 +175,9 @@ namespace aria {
         if (superclass) {
             header += std::format(" super={}", *superclass);
         }
+        if (is_member) {
+            header += " member";
+        }
         return dump_node(indent, header, members);
     }
 

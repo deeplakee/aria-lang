@@ -378,7 +378,7 @@ TEST(AstDisplay, DefDecl) {
     members.push_back(
             std::make_unique<FunDeclNode>(kLoc, String{"bark"}, List<Param>{}, std::move(bark_body), FnKind::Method));
 
-    DefDeclNode  node{kLoc, String{"Dog"}, Opt<String>{String{"Animal"}}, std::move(members)};
+    DefDeclNode  node{kLoc, String{"Dog"}, Opt<String>{String{"Animal"}}, std::move(members), false};
     const String out = dump_str(node);
     expect_has(out, "DefDecl name=Dog super=Animal");
     expect_has(out, "FunDecl name=bark params=0 kind=Method");

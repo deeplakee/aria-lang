@@ -1756,6 +1756,57 @@ return f();
               7);
 }
 
+// 嵌套类：def 成员腿绑定经外层类静态表（DUP2 对复制头部挂表），三层嵌套 + 全路径互访 +
+// 成员源序初始化（Inner 先于 itag 注册）。
+TEST(CodeGen, NestedClassFullPath) {
+    EXPECT_EQ(run_int(R"(
+def Outer {
+    def Middle {
+        def Inner { var tag = 3; }
+        var itag = Outer.Middle.Inner.tag;
+    }
+    var mtag = Outer.Middle.itag;
+}
+return Outer.Middle.Inner.tag * 100 + Outer.Middle.itag * 10 + Outer.mtag;
+)"),
+              333);
+}
+
+// 嵌套类继承与全路径实例化：superclass 位收裸名（顶层类）；经外层类静态表取类值实例化，
+// 构造器 this 由 call_class 原位写入。
+TEST(CodeGen, NestedClassInheritAndInstantiate) {
+    EXPECT_EQ(run_int(R"(
+def Base {
+    init(v) { this.v = v; }
+    get() { return this.v; }
+}
+def Holder {
+    def Item : Base {
+        bump() { return this.get() + 1; }
+    }
+}
+var item = Holder.Item(10);
+return item.bump();
+)"),
+              11);
+}
+
+// 嵌套类 fn 局部外层：外层类名经帧通道（局部/upvalue）可用，嵌套类本身走全路径。
+TEST(CodeGen, NestedClassFnLocalEnclosing) {
+    EXPECT_EQ(run_int(R"(
+fun make() {
+    def Outer {
+        def Inner { var outer_ref = Outer; }
+    }
+    return Outer;
+}
+var o = make();
+assert(o.Inner.outer_ref == o);
+return 1;
+)"),
+              1);
+}
+
 // fn 局部类名先于成员绑定（对齐函数先例）：方法体经局部/upvalue 自引用类名，外层函数返回后
 // 经闭合 upvalue 仍可用（类已随局部槽闭合）。
 TEST(CodeGen, FnLocalClassSelfReference) {

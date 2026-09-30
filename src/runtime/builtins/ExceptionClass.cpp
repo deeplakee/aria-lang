@@ -93,8 +93,13 @@ namespace aria {
 
     } // namespace
 
-    void ExceptionClass::register_methods(GC& gc, ObjClass* klass) {
+    ObjClass* ExceptionClass::make_class(GC& gc, ObjClass* super) {
+        // Exception bootstrap 类:用户异常基类(继承它定义自己的异常类型);方法面注册默认 init 落
+        // _message/_code 字段,face 按接收者分派:ObjException 经各异常自持 class_ 沿链触达读原生
+        // 成员,链上实例读同名字段。
+        const auto klass = new_class(gc, "Exception", super);
         Builtin::register_class_methods(gc, klass, kExceptionBuiltins);
+        return klass;
     }
 
 } // namespace aria

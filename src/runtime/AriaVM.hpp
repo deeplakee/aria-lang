@@ -311,38 +311,37 @@ namespace aria {
         // 钩子缓存要按名取串,故编排上必须先于它。
         void bootstrap_string_constants();
 
-        // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr),经方法面宿主类
-        // ObjectClass::register_methods 注册,发布进寄存器 ObjectClass 格。
+        // Object 根类 bootstrap:构造经宿主类 ObjectClass::make_class(根类,super 为空),发布进
+        // 寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
-        // Exception bootstrap 类:建 ObjClass("Exception", super=Object 根),经方法面宿主类
-        // ExceptionClass::register_methods 注册,发布进寄存器 ExceptionClass 格;末段经
-        // builtins_ 的 "Exception" 键暴露。
+        // Exception bootstrap 类:构造经宿主类 ExceptionClass::make_class(super=Object 根),发布
+        // 进寄存器 ExceptionClass 格;末段经 builtins_ 的 "Exception" 键暴露。
         void bootstrap_exception_class();
 
-        // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根),经方法面宿主类
-        // IteratorClass::register_methods 注册,发布进寄存器 IteratorClass 格。
+        // Iterator bootstrap 类:构造经宿主类 IteratorClass::make_class(super=Object 根),发布进
+        // 寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
 
-        // List bootstrap 类:建 ObjClass("List", super=Object 根),经方法面宿主类
-        // ListClass::register_methods 注册,发布进寄存器 ListClass 格;末段按公开清单
-        // ListClass::kOperatorFns 把类表里的两个算子实现拷进寄存器实现格。
+        // List bootstrap 类:构造经宿主类 ListClass::make_class(super=Object 根),发布进寄存器
+        // ListClass 格;末段按公开清单 ListClass::kOperatorFns 把类表里的两个算子实现拷进寄存器
+        // 实现格。
         void bootstrap_list_class();
 
-        // Map bootstrap 类:建 ObjClass("Map", super=Object 根),经方法面宿主类
-        // MapClass::register_methods 注册,发布进寄存器 MapClass 格。
+        // Map bootstrap 类:构造经宿主类 MapClass::make_class(super=Object 根),发布进寄存器
+        // MapClass 格。
         void bootstrap_map_class();
 
-        // String bootstrap 类:建 ObjClass("String", super=Object 根),经方法面宿主类
-        // StringClass::register_methods 注册,发布进寄存器 StringClass 格;末段按公开清单
-        // StringClass::kOperatorFns 把类表里的六个算子实现拷进寄存器实现格。
+        // String bootstrap 类:构造经宿主类 StringClass::make_class(super=Object 根),发布进寄存器
+        // StringClass 格;末段按公开清单 StringClass::kOperatorFns 把类表里的六个算子实现拷进
+        // 寄存器实现格。
         void bootstrap_string_class();
 
-        // Range bootstrap 类:建 ObjClass("Range", super=Object 根),经方法面宿主类
-        // RangeClass::register_methods 注册,发布进寄存器 RangeClass 格。
+        // Range bootstrap 类:构造经宿主类 RangeClass::make_class(super=Object 根),发布进寄存器
+        // RangeClass 格。
         void bootstrap_range_class();
 
-        // 缺参印章 bootstrap:铸私有 no-op native 入寄存器 DefaultMark 格。身份判等的未传槽
+        // 缺参印章 bootstrap:铸私有 ObjClass 身份令牌入寄存器 DefaultMark 格。身份判等的未传槽
         // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。
         void bootstrap_default_mark();
 

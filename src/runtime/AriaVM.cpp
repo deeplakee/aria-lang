@@ -262,41 +262,23 @@ namespace aria {
 
     ObjClass* AriaVM::range_class() const noexcept { return Object::as<ObjClass>(registers_[kRangeClassOffset]); }
 
-    void AriaVM::bootstrap_object_class() {
-        // Object 根类:唯一 super 为空;方法面经宿主类 ObjectClass 注册。
-        // 须在 ctor 构造临界区内调用,创建免守卫。
-        const auto klass = new_class(gc_, "Object", nullptr);
-        ObjectClass::register_methods(gc_, klass);
-        registers_[kObjectClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-    }
+    void AriaVM::bootstrap_object_class() { registers_[kObjectClassOffset] = ObjectClass::make_class(gc_); }
 
     void AriaVM::bootstrap_exception_class() {
-        // Exception bootstrap 类:用户异常基类(经 builtins_ 裸名可达,继承它定义自己的异常
-        // 类型);方法面经宿主类 ExceptionClass 注册(默认 init 落 _message/_code 字段,face 按
-        // 接收者分派:ObjException 经各异常自持 class_ 沿链触达读原生成员,链上实例读同名字段)。
-        // 末段经 builtins_ 的 "Exception" 键暴露 -- 唯一入 builtins_ 的 bootstrap 类。须在 ctor
-        // 构造临界区内调用,创建免守卫。
-        const auto klass = new_class(gc_, "Exception", object_class());
-        ExceptionClass::register_methods(gc_, klass);
+        const auto klass                  = ExceptionClass::make_class(gc_, object_class());
         registers_[kExceptionClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-        const auto name                   = new_string(gc_, "Exception");
-        builtins_.set(Value::from_obj(name), Value::from_obj(klass)); // 裸名可达:LOAD_GLOBAL miss 回退 builtins_
+        // 末段经 builtins_ 的 "Exception" 键暴露 -- 唯一入 builtins_ 的 bootstrap 类;键即类自持
+        // 的驻留名(intern 池保证与 CodeGen 同名常量同指)。
+        builtins_.set(Value::from_obj(klass->name()),
+                      Value::from_obj(klass)); // 裸名可达:LOAD_GLOBAL miss 回退 builtins_
     }
 
     void AriaVM::bootstrap_iterator_class() {
-        // Iterator bootstrap 类:迭代器的语言方法面载体(has_next/next 薄壳,住 runtime/builtins/
-        // IteratorClass),经 ObjIterator::load_field 查表命中后恒绑定触达;不入 builtins/模块
-        // globals。类名与 type() 的类型名一致。
-        const auto klass = new_class(gc_, "Iterator", object_class());
-        IteratorClass::register_methods(gc_, klass);
-        registers_[kIteratorClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
+        registers_[kIteratorClassOffset] = IteratorClass::make_class(gc_, object_class());
     }
 
     void AriaVM::bootstrap_list_class() {
-        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
-        // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
-        const auto klass = new_class(gc_, "List", object_class());
-        ListClass::register_methods(gc_, klass);
+        const auto klass             = ListClass::make_class(gc_, object_class());
         registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
         // 算子实现缓存:按 ListClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
         // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
@@ -308,19 +290,10 @@ namespace aria {
         }
     }
 
-    void AriaVM::bootstrap_map_class() {
-        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定触达;
-        // 不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
-        const auto klass = new_class(gc_, "Map", object_class());
-        MapClass::register_methods(gc_, klass);
-        registers_[kMapClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-    }
+    void AriaVM::bootstrap_map_class() { registers_[kMapClassOffset] = MapClass::make_class(gc_, object_class()); }
 
     void AriaVM::bootstrap_string_class() {
-        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后恒
-        // 绑定触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
-        const auto klass = new_class(gc_, "String", object_class());
-        StringClass::register_methods(gc_, klass);
+        const auto klass               = StringClass::make_class(gc_, object_class());
         registers_[kStringClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
         // 算子实现缓存:按 StringClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
         // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
@@ -333,26 +306,21 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_range_class() {
-        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后恒绑定
-        // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
-        const auto klass = new_class(gc_, "Range", object_class());
-        RangeClass::register_methods(gc_, klass);
-        registers_[kRangeClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
+        registers_[kRangeClassOffset] = RangeClass::make_class(gc_, object_class());
     }
 
     void AriaVM::bootstrap_default_mark() {
-        // 缺参印章:私有 no-op native(返回 true 不写返回槽;正常路径永不被调用)。实参显式传
-        // 任意函数值其身份均异于印章,故不误判未传。须在 ctor 构造临界区内调用,创建免守卫。
-        const auto default_mark        = new_native_fn(gc_, "<default>", [](AriaVM&, Span<Value>) { return true; });
-        registers_[kDefaultMarkOffset] = default_mark;
+        // 缺参印章:私有 ObjClass("<default>")占位身份令牌,不注册 builtins/任何表(用户不可达,
+        // 不可伪造)。prepare_call_args 以它垫充未传槽,缺省序言 EQUAL 按值等比对 -- ObjClass 未
+        // 覆写 equals(恒地址型),任何显式实参身份均异于印章,不误判未传。须在 ctor 构造临界区内
+        // 调用,创建免守卫。
+        registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
     }
 
     void AriaVM::bootstrap_match_no_arm() {
         // match 兜底异常:catch 绑到的即本共享单例(消息静态、无 subject 插值;不注册 builtins
         // 用户不可达)。消息按 raise 同源形态烘焙。须在 ctor 构造临界区内调用,创建免守卫。
-        const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
-        const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
-        registers_[kMatchNoArmOffset] = no_arm;
+        registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
     }
 
     void AriaVM::init_source_roots() {

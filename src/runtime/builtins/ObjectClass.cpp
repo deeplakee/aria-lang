@@ -81,6 +81,11 @@ namespace aria {
 
     } // namespace
 
-    void ObjectClass::register_methods(GC& gc, ObjClass* klass) { Builtin::register_class_methods(gc, klass, kObjectBuiltins); }
+    ObjClass* ObjectClass::make_class(GC& gc) {
+        // Object 根类:唯一 super 为空的 bootstrap 类,全类链之根(各内建类以它作 super)。
+        const auto klass = new_class(gc, "Object", nullptr);
+        Builtin::register_class_methods(gc, klass, kObjectBuiltins);
+        return klass;
+    }
 
 } // namespace aria

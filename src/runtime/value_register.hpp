@@ -20,7 +20,8 @@ namespace aria {
     // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::str 取常量串表(runtime/str_table.hpp)
     // 里的钩子名,再按名到实例/类链查表。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                  \
-    X(DefaultMark)    /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \
+    X(DefaultMark)    /* missing-argument stamp (private ObjClass identity token fills unfilled slots; not           \
+                         user-reachable) */                                                                          \
     X(MatchNoArm)     /* fallback exception when no match arm matches (shared ObjException; LOAD_REG + THROW) */     \
     X(ObjectClass)    /* Object root class (base of a def with no super; filled at bootstrap) */                     \
     X(ExceptionClass) /* Exception bootstrap class (message/code; super is Object; reachable via builtins) */        \

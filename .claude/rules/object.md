@@ -65,7 +65,7 @@ paths:
 
 - **内置容器 / 迭代器（string/list/map/range/iterator）与异常（exception）的 `load_field` / `load_field_unbound` 同形两步**（权威说明，各子类头不复述）：①委托自身 bootstrap 类表（`vm.string_class()` / `vm.list_class()` / `vm.exception_class()` ...）的 `ObjClass::load_field` 沿链查表，miss 的类措辞 fail 随协议透传；②`load_field` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）；`load_field_unbound` 直取类表原生值。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
-- 方法面注册口 = 各宿主类公有静态 `XxxClass::register_methods`（经 `Builtin::register_class_methods` 底座装载），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
+- 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
 
 ## 跨类型规则
 

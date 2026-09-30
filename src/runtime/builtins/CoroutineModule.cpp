@@ -115,7 +115,9 @@ namespace aria {
         if (co == nullptr) {
             return vm.fail(ErrorCode::TypeMismatch, "argument must be a coroutine, got {}", type_name(slots[1]));
         }
-        slots[0] = Value::from_obj(vm.string_constant(co->state()));
+        // 状态串经 to_string(ExecState) 拼写走 new_string 驻留命中:五串皆注册表条目,命中即注册表
+        // 对象、零分配(窗口内零 GC 点,免守卫)。
+        slots[0] = Value::from_obj(new_string(vm.gc(), to_string(co->state())));
         return true;
     }
 

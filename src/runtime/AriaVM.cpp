@@ -299,12 +299,12 @@ namespace aria {
         ListClass::register_methods(gc_, klass);
         registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
         // 算子实现缓存:按 ListClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
-        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;命中是
-        // 纯读无分配,入格免守卫。
-        for (const auto& [hook, fn_offset]: ListClass::kOperatorFns) {
-            const auto hit = klass->load_field(*this, string_constant(hook));
+        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
+        // new_string 驻留命中取串(皆注册表条目,零分配),load_field 命中是纯读,入格免守卫。
+        for (const auto& [name, offset]: ListClass::kOperatorFns) {
+            const auto hit = klass->load_field(*this, new_string(gc_, name));
             ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
-            registers_[fn_offset] = hit->as_obj();
+            registers_[offset] = hit->as_obj();
         }
     }
 
@@ -323,12 +323,12 @@ namespace aria {
         StringClass::register_methods(gc_, klass);
         registers_[kStringClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
         // 算子实现缓存:按 StringClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
-        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;命中是
-        // 纯读无分配,入格免守卫。
-        for (const auto& [hook, fn_offset]: StringClass::kOperatorFns) {
-            const auto hit = klass->load_field(*this, string_constant(hook));
+        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
+        // new_string 驻留命中取串(皆注册表条目,零分配),load_field 命中是纯读,入格免守卫。
+        for (const auto& [name, offset]: StringClass::kOperatorFns) {
+            const auto hit = klass->load_field(*this, new_string(gc_, name));
             ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
-            registers_[fn_offset] = hit->as_obj();
+            registers_[offset] = hit->as_obj();
         }
     }
 

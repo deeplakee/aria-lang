@@ -2,8 +2,7 @@
 #define ARIA_STRING_CLASS_HPP
 
 #include "common.hpp"
-#include "runtime/string_constant.hpp" // StringConstant(算子钩子名)
-#include "runtime/value_register.hpp"  // kString*FnOffset(寄存器实现格偏移)
+#include "runtime/value_register.hpp" // kString*FnOffset(寄存器实现格偏移)
 
 namespace aria {
 
@@ -20,11 +19,11 @@ namespace aria {
 
         // 算子实现缓存清单:六个算子钩子名 -> AriaVM 寄存器实现格,bootstrap_string_class 装载类表后
         // 据此逐条把实现拷进 StringAddFn..StringMulFn 格(算子派发热路径直读,免每次过类表查找;类表
-        // 仍是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言)。
-        static constexpr Pair<StringConstant, u8> kOperatorFns[] = {
-                {StringConstant::OpLess, kStringLtFnOffset},    {StringConstant::OpLessEqual, kStringLeFnOffset},
-                {StringConstant::OpGreater, kStringGtFnOffset}, {StringConstant::OpGreaterEqual, kStringGeFnOffset},
-                {StringConstant::OpAdd, kStringAddFnOffset},    {StringConstant::OpMul, kStringMulFnOffset},
+        // 仍是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言)。键为钩子拼写,bootstrap
+        // 消费端经 new_string 驻留命中取串(皆注册表条目,零分配)。
+        static constexpr Pair<StringView, u8> kOperatorFns[] = {
+                {"__lt__", kStringLtFnOffset}, {"__le__", kStringLeFnOffset},   {"__gt__", kStringGtFnOffset},
+                {"__ge__", kStringGeFnOffset}, {"__add__", kStringAddFnOffset}, {"__mul__", kStringMulFnOffset},
         };
     };
 

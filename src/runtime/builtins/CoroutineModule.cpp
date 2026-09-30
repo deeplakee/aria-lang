@@ -123,4 +123,13 @@ namespace aria {
         Builtin::register_module_functions(gc, module, kModuleFunctions);
     }
 
+    Value CoroutineModule::make_module(GC& gc) {
+        // <coroutine> 合成模块:语言面 coroutine.create/resume/yield/status 的载体(P1:合成
+        // ObjModule 而非新对象类型 -- ObjMap 当不了命名空间,map.foo 查的是 Map 类方法表)。
+        // dir 空:纯命名空间,无目录锚点。
+        const auto module = new_module(gc, "<coroutine>", "");
+        register_functions(gc, module);
+        return Value::from_obj(module);
+    }
+
 } // namespace aria

@@ -29,7 +29,6 @@
 #include "object/iterator/ObjMapIterator.hpp"
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/builtins/Builtin.hpp"
-#include "runtime/builtins/CoroutineModule.hpp"
 #include "runtime/builtins/ExceptionClass.hpp"
 #include "runtime/builtins/IteratorClass.hpp"
 #include "runtime/builtins/ListClass.hpp"
@@ -200,7 +199,6 @@ namespace aria {
             bootstrap_string_constants();
             bootstrap_registers();
             Builtin::register_builtin(gc_, builtins_);
-            bootstrap_coroutine_module();
         }
     }
 
@@ -355,18 +353,6 @@ namespace aria {
         const auto msg                = Error::make_message(ErrorCode::MatchNoArm, "no arm matched");
         const auto no_arm             = new_exception(gc_, ErrorCode::MatchNoArm, msg);
         registers_[kMatchNoArmOffset] = no_arm;
-    }
-
-    void AriaVM::bootstrap_coroutine_module() {
-        // <coroutine> 合成模块:语言面 coroutine.create/resume/yield/status 的载体(P1:合成
-        // ObjModule 而非新对象类型 -- ObjMap 当不了命名空间,map.foo 查的是 Map 类方法表)。
-        // 方法面自持于 CoroutineModule(四原语与表私有,唯一公有口 register_functions,装载经
-        // Builtin::register_module_functions 底座);模块永不入 modules_ 表,经 builtins_ 的
-        // "coroutine" 键可达。须在 ctor 构造临界区内调用(GC 挂起,创建免守卫)。
-        const auto module = new_module(gc_, "<coroutine>", ""); // dir 空:纯命名空间,无目录锚点
-        CoroutineModule::register_functions(gc_, module);
-        const auto name = new_string(gc_, "coroutine");
-        builtins_.set(Value::from_obj(name), Value::from_obj(module));
     }
 
     void AriaVM::init_source_roots() {

@@ -10,6 +10,7 @@
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/builtins/CoroutineModule.hpp"
 #include "util/io.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/ObjBridge.hpp" // try_obj<T>
@@ -123,8 +124,10 @@ namespace aria {
                 {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
         };
 
-        // 内建变量表:暂无变量,以空 span 占位(零长数组非 ISO,MSVC 拒);首个变量落地时换数组。
-        constexpr Span<const BuiltinVarEntry> kBuiltinVars{};
+        // 内建变量表:名 + 自含构造的变量值。
+        constexpr BuiltinVarEntry kBuiltinVars[] = {
+                {"coroutine", CoroutineModule::make_module}, // <coroutine> 合成模块
+        };
 
         // 全局面函数装载口:把实参函数条目按名写入指定 builtins 表。由 register_builtin 于
         // **构造临界区(GC 挂起)内**调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表

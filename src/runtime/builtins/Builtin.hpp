@@ -24,7 +24,7 @@ namespace aria {
     // 分派、恒绑定 receiver;注册口 = 宿主类公有静态方法 XxxClass::register_methods,方法体与表仍住各 .cpp 匿名命名空间;
     // String 另有算子实现缓存清单 kOperatorFns(钩子名 -> 寄存器格),bootstrap_string_class
     // 据此拷实现进寄存器格);**XXXModule = 内建模块的方法面** (CoroutineModule,经模块 globals
-    // 触达,方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 register_functions,resume 须访问切换私有面故为
+    // 触达,构造与方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 make_module,resume 须访问切换私有面故为
     // AriaVM 友元,见该文件头)。前缀即机制区分;条目形态两式(BuiltinFnEntry/BuiltinVarEntry)亦住本文件
     // --本文件即目录伞文件。
 
@@ -36,8 +36,8 @@ namespace aria {
         NativeFn   fn;
     };
 
-    // 内建变量条目的初始化函数:收 GC 引用自含构造变量值(纯常量形态;VM bootstrap 单例
-    // 够不着,Exception 等类腿不经此)。
+    // 内建变量条目的初始化函数:收 GC 引用自含构造变量值,复合 bootstrap(如 <coroutine>
+    // 模块)同在此能力圈内;registers_ 寄存器单例够不着 -- Exception 类腿须写 registers_,不经此。
     using VarInitFn = Value (*)(GC&);
 
     // 内建变量条目:名 + 初始化函数指针。仅全局内建变量表(kBuiltinVars)用此形态。

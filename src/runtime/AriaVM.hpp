@@ -362,11 +362,6 @@ namespace aria {
         // MatchNoArm 格。全臂未命中由字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         void bootstrap_match_no_arm();
 
-        // <coroutine> 合成模块 bootstrap:建模块(不入 modules_ 表)并经 CoroutineModule::
-        // register_functions 装载协程方法面,再以 "coroutine" 键注册进 builtins_。须在 ctor
-        // 构造临界区内调用(GC 挂起,创建免守卫)。
-        void bootstrap_coroutine_module();
-
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
         // runtime.md「共享状态」。执行上下文只标 current_ 一点,各上下文内部与 previous_ resume
         // 链由 ObjMovement::trace 经对象图级联。

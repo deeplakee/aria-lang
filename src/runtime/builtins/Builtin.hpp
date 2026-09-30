@@ -1,5 +1,5 @@
-#ifndef ARIA_BUILTINS_HPP
-#define ARIA_BUILTINS_HPP
+#ifndef ARIA_BUILTIN_HPP
+#define ARIA_BUILTIN_HPP
 
 #include "common.hpp"
 #include "object/ObjNativeFn.hpp" // NativeFn
@@ -55,7 +55,7 @@ namespace aria {
     public:
         // 按名把内建方法表逐条注册进**类字段表**,成为该类实例的内建方法面(receiver 恒绑定):
         // name 作字段键,经 new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射
-        // 的同名常量同指针,查表按指针命中。全局表不经此(全局面装载口私有于 Builtins.cpp)。
+        // 的同名常量同指针,查表按指针命中。全局表不经此(全局面装载口私有于 Builtin.cpp)。
         static void register_class_methods(GC& gc, ObjClass* klass, Span<const BuiltinFnEntry> methods);
 
         // 按名把内建方法表逐条注册进**模块全局表**(内建模块的成员 = 模块全局绑定,load_field
@@ -71,4 +71,4 @@ namespace aria {
 
 } // namespace aria
 
-#endif // ARIA_BUILTINS_HPP
+#endif // ARIA_BUILTIN_HPP

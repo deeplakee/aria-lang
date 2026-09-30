@@ -6,14 +6,14 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjIterator.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
 
     namespace {
 
-        // 迭代器方法实现(NativeFn 方法调用形态见 Builtins.hpp)
+        // 迭代器方法实现(NativeFn 方法调用形态见 Builtin.hpp)
         // 两原生都是 ObjIterator 引擎缝的薄壳:虚分派到各源子类(list/string/map/range),
         // 本文件不认识任何具体源。
 
@@ -45,7 +45,7 @@ namespace aria {
             return true;
         }
 
-        // 迭代器方法表:注册进 Iterator bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp;
+        // 迭代器方法表:注册进 Iterator bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp;
         // 注册名与 CodeGen forIn 降糖 emit_method_call0 发射的同名常量同指针,查表按指针命中)。
         constexpr BuiltinFnEntry kIteratorBuiltins[] = {
                 {"has_next", fn_has_next},

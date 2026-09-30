@@ -2,7 +2,7 @@
 #define ARIA_COROUTINE_MODULE_HPP
 
 #include "common.hpp"
-#include "runtime/builtins/Builtins.hpp" // BuiltinFnEntry(方法表条目形态)
+#include "runtime/builtins/Builtin.hpp" // BuiltinFnEntry(方法表条目形态)
 #include "value/Value.hpp"
 
 namespace aria {

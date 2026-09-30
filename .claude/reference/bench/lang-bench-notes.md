@@ -96,7 +96,7 @@
   `max_flips`(公开可比)+ `flips_sum`(本语料自定义)+ `perm_count`(闭式)三个序无关量。
 - **aria 整数是 i48**:脚本的中间量与校验和须留在 ±2^47 内(Debug 下 `Value::from_int` 有断言)。现存
   脚本的 LCG 中间积约 1.0e14,贴着上限但安全;改规模时先算一遍。
-- **内建 `clock()` 返 f64 秒、单调、起点未定**(`src/runtime/builtins/Builtins.cpp`):只能相减,别当
+- **内建 `clock()` 返 f64 秒、单调、起点未定**(`src/runtime/builtins/Builtin.cpp`):只能相减,别当
   时间戳用。返 f64 而非常量级整数,是因为自开机起的微秒计数会越过 i48(2^47 µs ≈ 51 天)。
 
 ## 5. 与进程内基准的分工

@@ -71,8 +71,8 @@ add_library(aria_core STATIC
         src/compile/Compiler.hpp
         src/runtime/AriaVM.cpp
         src/runtime/AriaVM.hpp
-        src/runtime/builtins/Builtins.cpp
-        src/runtime/builtins/Builtins.hpp
+        src/runtime/builtins/Builtin.cpp
+        src/runtime/builtins/Builtin.hpp
         src/runtime/builtins/CoroutineModule.cpp
         src/runtime/builtins/CoroutineModule.hpp
         src/runtime/builtins/ExceptionClass.cpp

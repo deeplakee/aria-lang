@@ -28,7 +28,7 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
 #include "object/iterator/ObjRangeIterator.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "runtime/builtins/CoroutineModule.hpp"
 #include "runtime/builtins/ExceptionClass.hpp"
 #include "runtime/builtins/IteratorClass.hpp"

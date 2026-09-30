@@ -8,14 +8,14 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
 
     namespace {
 
-        // map 方法实现(NativeFn 方法调用形态见 Builtins.hpp)惯例:receiver 解开后直取 table()
+        // map 方法实现(NativeFn 方法调用形态见 Builtin.hpp)惯例:receiver 解开后直取 table()
         // 绑为 table(仅 iter 需要 ObjMap* 本体传给迭代器)。键判定一律走表内判等 ===(find 即
         // value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域 -- 判键的方法不做
         // value_equal 内容相等,那是 list 的域。
@@ -159,7 +159,7 @@ namespace aria {
             return true;
         }
 
-        // map 方法表:注册进 Map bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // map 方法表:注册进 Map bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
         // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(每源只加迭代器子类)。
         constexpr BuiltinFnEntry kMapBuiltins[] = {
                 {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},     {"get", fn_get},

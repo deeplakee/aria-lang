@@ -9,7 +9,7 @@
 #include "object/ObjInstance.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "runtime/string_constant.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
@@ -18,7 +18,7 @@ namespace aria {
 
     namespace {
 
-        // Exception 类方法实现(NativeFn 方法调用形态见 Builtins.hpp)。face 按槽 0 类型分派:
+        // Exception 类方法实现(NativeFn 方法调用形态见 Builtin.hpp)。face 按槽 0 类型分派:
         // ObjException(VM 报错装箱与 Error 工厂产物)读 C++ 成员;ObjInstance(用户子类实例)经
         // load_field 读 _message/_code 字段;其余接收者(类静态槽裸调等 stray)响亮 TypeMismatch。
 
@@ -87,7 +87,7 @@ namespace aria {
             return vm.fail(ErrorCode::TypeMismatch, "code requires an Exception receiver, got {}", type_name(slots[0]));
         }
 
-        // Exception 类方法表:注册进 Exception bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // Exception 类方法表:注册进 Exception bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
         constexpr BuiltinFnEntry kExceptionBuiltins[] = {
                 {"init", fn_init},
                 {"message", fn_message},

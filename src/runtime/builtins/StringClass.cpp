@@ -8,7 +8,7 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjStringIterator.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "util/utf8.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -18,7 +18,7 @@ namespace aria {
 
     namespace {
 
-        // string 方法实现(NativeFn 方法调用形态见 Builtins.hpp)下标域:除 codepoint_at(码点
+        // string 方法实现(NativeFn 方法调用形态见 Builtin.hpp)下标域:除 codepoint_at(码点
         // 序号)外全部字节域(与 len/s[i] 同域)。string 不可变,全部产出新串;receiver 在 slots[0]
         // 覆写前经栈根存活,单输出方法直接构造,split 先拷内容进 C++ String(非 GC 内存)再逐段铸造。
 
@@ -499,7 +499,7 @@ namespace aria {
             return true;
         }
 
-        // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
         constexpr BuiltinFnEntry kStringBuiltins[] = {
                 {"upper", fn_upper},
                 {"lower", fn_lower},

@@ -7,7 +7,7 @@
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 

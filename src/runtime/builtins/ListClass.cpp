@@ -10,7 +10,7 @@
 #include "object/Object.hpp"
 #include "object/iterator/ObjListIterator.hpp"
 #include "runtime/AriaVM.hpp"
-#include "runtime/builtins/Builtins.hpp"
+#include "runtime/builtins/Builtin.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
@@ -19,7 +19,7 @@ namespace aria {
 
     namespace {
 
-        // list 方法实现(NativeFn 方法调用形态见 Builtins.hpp)惯例:receiver 解开后直取
+        // list 方法实现(NativeFn 方法调用形态见 Builtin.hpp)惯例:receiver 解开后直取
         // elements() 绑为 list(仅 iter 需要 ObjList* 本体传给迭代器);段搬移类变更(insert/
         // remove_at)收口 Array 原语,方法体只余域检查与调用。
 
@@ -311,7 +311,7 @@ namespace aria {
             return true;
         }
 
-        // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
+        // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
         constexpr BuiltinFnEntry kListBuiltins[] = {
                 {"push", fn_push},
                 {"pop", fn_pop},

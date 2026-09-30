@@ -272,6 +272,28 @@ namespace aria::util {
         }
         return out;
     }
+
+    // 定长字符串载体,专供字符串字面量作 NTTP(非类型模板参数)用:C++20 类类型 NTTP 须为
+    // 结构化类型(literal class 且数据成员全 public 非 mutable),std::string_view 成员私有
+    // 当不了 NTTP、const char* 又收不了字符串字面量实参,此为社区通行的最小自建载体。capacity
+    // 与存储均含结尾 '\0'(data_ 即合法 C 串);view() 不含 '\0',与无哨兵的 StringView 逐条
+    // 比较才恒可命中。模板实参只接受字符串字面量经 consteval 构造器转换,调用方无需写出类型名。
+    template<usize capacity>
+    class FixedString {
+    public:
+        char data_[capacity]{}; // public 是结构化类型的硬条件,非风格选择
+
+        consteval FixedString(const char (&s)[capacity]) {
+            for (usize i = 0; i < capacity; ++i) {
+                data_[i] = s[i]; // 连 '\0' 一起拷
+            }
+        }
+
+        [[nodiscard]]
+        constexpr StringView view() const noexcept {
+            return StringView{data_, capacity - 1};
+        }
+    };
 } // namespace aria::util
 
 #endif // ARIA_UTIL_HPP

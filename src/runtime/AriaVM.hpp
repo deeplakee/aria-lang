@@ -316,8 +316,8 @@ namespace aria {
         // 钩子缓存要按名取串,故编排上必须先于它。
         void bootstrap_string_constants();
 
-        // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr) + 原生 no-op init(无
-        // ObjFunction,保「module 恒非空」不变式)并发布进类表 init 槽与寄存器 ObjectClass 格。
+        // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr),经方法面宿主类
+        // ObjectClass::register_methods 注册,发布进寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
         // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根),经方法面宿主类

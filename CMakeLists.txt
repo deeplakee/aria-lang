@@ -82,6 +82,8 @@ add_library(aria_core STATIC
         src/runtime/builtins/ListClass.hpp
         src/runtime/builtins/MapClass.cpp
         src/runtime/builtins/MapClass.hpp
+        src/runtime/builtins/ObjectClass.cpp
+        src/runtime/builtins/ObjectClass.hpp
         src/runtime/builtins/RangeClass.cpp
         src/runtime/builtins/RangeClass.hpp
         src/runtime/builtins/StringClass.cpp

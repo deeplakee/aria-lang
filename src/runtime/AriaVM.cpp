@@ -33,6 +33,7 @@
 #include "runtime/builtins/IteratorClass.hpp"
 #include "runtime/builtins/ListClass.hpp"
 #include "runtime/builtins/MapClass.hpp"
+#include "runtime/builtins/ObjectClass.hpp"
 #include "runtime/builtins/RangeClass.hpp"
 #include "runtime/builtins/StringClass.hpp"
 #include "runtime/opcode_profile.hpp"
@@ -258,12 +259,10 @@ namespace aria {
     ObjClass* AriaVM::range_class() const noexcept { return Object::as<ObjClass>(registers_[kRangeClassOffset]); }
 
     void AriaVM::bootstrap_object_class() {
-        // Object 根类:no-op init 收到 slots[0]=this 返回 true 不写槽,槽 0 原样即返回实例(不
-        // 合成 ObjFunction,保「module 恒非空」不变式)。须在 ctor 构造临界区内调用,创建免守卫。
-        const auto klass       = new_class(gc_, "Object", nullptr);
-        const auto init_key    = new_string(gc_, "init");
-        const auto init_native = new_native_fn(gc_, "init", [](AriaVM&, Span<Value>) { return true; });
-        klass->set_field(init_key, Value::from_obj(init_native));
+        // Object 根类:唯一 super 为空;方法面经宿主类 ObjectClass 注册。
+        // 须在 ctor 构造临界区内调用,创建免守卫。
+        const auto klass = new_class(gc_, "Object", nullptr);
+        ObjectClass::register_methods(gc_, klass);
         registers_[kObjectClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
     }
 

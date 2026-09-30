@@ -311,42 +311,22 @@ namespace aria {
         // 钩子缓存要按名取串,故编排上必须先于它。
         void bootstrap_string_constants();
 
-        // Object 根类 bootstrap:构造经宿主类 ObjectClass::make_class(根类,super 为空),发布进
-        // 寄存器 ObjectClass 格。
         void bootstrap_object_class();
 
-        // Exception bootstrap 类:构造经宿主类 ExceptionClass::make_class(super=Object 根),发布
-        // 进寄存器 ExceptionClass 格;末段经 builtins_ 的 "Exception" 键暴露。
         void bootstrap_exception_class();
 
-        // Iterator bootstrap 类:构造经宿主类 IteratorClass::make_class(super=Object 根),发布进
-        // 寄存器 IteratorClass 格。
         void bootstrap_iterator_class();
 
-        // List bootstrap 类:构造经宿主类 ListClass::make_class(super=Object 根),发布进寄存器
-        // ListClass 格;末段按公开清单 ListClass::kOperatorFns 把类表里的两个算子实现拷进寄存器
-        // 实现格。
         void bootstrap_list_class();
 
-        // Map bootstrap 类:构造经宿主类 MapClass::make_class(super=Object 根),发布进寄存器
-        // MapClass 格。
         void bootstrap_map_class();
 
-        // String bootstrap 类:构造经宿主类 StringClass::make_class(super=Object 根),发布进寄存器
-        // StringClass 格;末段按公开清单 StringClass::kOperatorFns 把类表里的六个算子实现拷进
-        // 寄存器实现格。
         void bootstrap_string_class();
 
-        // Range bootstrap 类:构造经宿主类 RangeClass::make_class(super=Object 根),发布进寄存器
-        // RangeClass 格。
         void bootstrap_range_class();
 
-        // 缺参印章 bootstrap:铸私有 ObjClass 身份令牌入寄存器 DefaultMark 格。身份判等的未传槽
-        // 标记,不注册 builtins/任何表 -- 用户不可达,不可伪造是印章方案的长期不变式。
         void bootstrap_default_mark();
 
-        // match 兜底异常 bootstrap:铸共享 ObjException(MatchNoArm,消息静态)入寄存器
-        // MatchNoArm 格。全臂未命中由字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         void bootstrap_match_no_arm();
 
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见

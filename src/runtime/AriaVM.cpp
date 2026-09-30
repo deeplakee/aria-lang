@@ -266,11 +266,8 @@ namespace aria {
 
     void AriaVM::bootstrap_exception_class() {
         const auto klass                  = ExceptionClass::make_class(gc_, object_class());
-        registers_[kExceptionClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-        // 末段经 builtins_ 的 "Exception" 键暴露 -- 唯一入 builtins_ 的 bootstrap 类;键即类自持
-        // 的驻留名(intern 池保证与 CodeGen 同名常量同指)。
-        builtins_.set(Value::from_obj(klass->name()),
-                      Value::from_obj(klass)); // 裸名可达:LOAD_GLOBAL miss 回退 builtins_
+        registers_[kExceptionClassOffset] = klass;
+        builtins_.set(Value::from_obj(klass->name()), Value::from_obj(klass)); // 唯一入 builtins_ 的 bootstrap 类
     }
 
     void AriaVM::bootstrap_iterator_class() {
@@ -279,10 +276,7 @@ namespace aria {
 
     void AriaVM::bootstrap_list_class() {
         const auto klass             = ListClass::make_class(gc_, object_class());
-        registers_[kListClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-        // 算子实现缓存:按 ListClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
-        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
-        // new_string 驻留命中取串(皆注册表条目,零分配),load_field 命中是纯读,入格免守卫。
+        registers_[kListClassOffset] = klass;
         for (const auto& [name, offset]: ListClass::kOperatorFns) {
             const auto hit = klass->load_field(*this, new_string(gc_, name));
             ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
@@ -294,10 +288,7 @@ namespace aria {
 
     void AriaVM::bootstrap_string_class() {
         const auto klass               = StringClass::make_class(gc_, object_class());
-        registers_[kStringClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
-        // 算子实现缓存:按 StringClass::kOperatorFns 把类表里的算子钩子拷进寄存器实现格(热路径直读,
-        // 免每次过类表查找)。类表是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言;钩子键经
-        // new_string 驻留命中取串(皆注册表条目,零分配),load_field 命中是纯读,入格免守卫。
+        registers_[kStringClassOffset] = klass;
         for (const auto& [name, offset]: StringClass::kOperatorFns) {
             const auto hit = klass->load_field(*this, new_string(gc_, name));
             ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
@@ -310,16 +301,12 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_default_mark() {
-        // 缺参印章:私有 ObjClass("<default>")占位身份令牌,不注册 builtins/任何表(用户不可达,
-        // 不可伪造)。prepare_call_args 以它垫充未传槽,缺省序言 EQUAL 按值等比对 -- ObjClass 未
-        // 覆写 equals(恒地址型),任何显式实参身份均异于印章,不误判未传。须在 ctor 构造临界区内
-        // 调用,创建免守卫。
+        // 缺参印章:私有 ObjClass 身份令牌,用户不可达;equals 恒地址型,显式实参身份均异于印章。
         registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
     }
 
     void AriaVM::bootstrap_match_no_arm() {
-        // match 兜底异常:catch 绑到的即本共享单例(消息静态、无 subject 插值;不注册 builtins
-        // 用户不可达)。消息按 raise 同源形态烘焙。须在 ctor 构造临界区内调用,创建免守卫。
+        // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
     }
 

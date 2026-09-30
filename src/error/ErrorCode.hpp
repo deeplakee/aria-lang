@@ -85,6 +85,7 @@ namespace aria {
     X(MatchNoArm, Runtime)                  /* no arm matched and no '_' fallback */                                \
     X(SuperNoBaseClass, Runtime)            /* super with no base class */                                          \
     X(UncaughtException, Runtime)           /* thrown value never caught */                                         \
+    X(Error, Runtime)                       /* user-raised exception object (the Error builtin) */                  \
     X(ResumeDeadCoroutine, Runtime)         /* resume on a Done/Failed coroutine */                                 \
     X(ResumeNonSuspendedCoroutine, Runtime) /* resume on a coroutine still on the resume chain */                   \
     X(YieldOutsideCoroutine, Runtime)       /* yield in the main context */                                         \

@@ -158,6 +158,13 @@ namespace aria {
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
+        // Exception bootstrap 类:寄存器 ExceptionClass 唯一存放,方法面宿主类
+        // ExceptionClass(runtime/builtins/);ObjException::load_field 经它取自身类。
+        // 同 object_class 先例。与其余 bootstrap 类不同:经 builtins_ 的 "Exception" 键
+        // 暴露(裸名可达,可被子类化)。
+        [[nodiscard]]
+        ObjClass* exception_class() const noexcept;
+
         // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,方法面宿主类
         // IteratorClass(runtime/builtins/);ObjIterator::load_field
         // 经它取自身类。同 object_class 先例。
@@ -319,6 +326,11 @@ namespace aria {
         // Object 根类 bootstrap:建 ObjClass("Object", super=nullptr),经方法面宿主类
         // ObjectClass::register_methods 注册,发布进寄存器 ObjectClass 格。
         void bootstrap_object_class();
+
+        // Exception bootstrap 类:建 ObjClass("Exception", super=Object 根),经方法面宿主类
+        // ExceptionClass::register_methods 注册,发布进寄存器 ExceptionClass 格;末段经
+        // builtins_ 的 "Exception" 键暴露。
+        void bootstrap_exception_class();
 
         // Iterator bootstrap 类:建 ObjClass("Iterator", super=Object 根),经方法面宿主类
         // IteratorClass::register_methods 注册,发布进寄存器 IteratorClass 格。

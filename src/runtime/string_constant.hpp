@@ -17,6 +17,8 @@ namespace aria {
     // 内建类型直给自身实现)。`/` 是 aria 唯一的除法算子(无 // 形态),故取 __div__。
     // 第二类成员是 coroutine.status 的 5 个状态拼写(与 ObjMovement 的 to_string(ExecState) 同拼写;此处进表是为
     // 返参经 AriaVM::string_constant(ExecState) 重载直取已驻留串,免每次 new_string)。
+    // 第三类成员是 Exception face 的字段键 _message/_code:默认 init 落字段与 face 实例腿读据都按名取用;字段键
+    // 只活在实例 fields,无任何类表键锚定,weak root 下无实例存活即被摘除重铸,故入表保命。
     // 形态同 ARIA_VALUE_REGISTER_LIST / ARIA_OPCODE_LIST:条目宏 define 顶格 + 容器单行内联 use + undef 紧随,
     // 注册表用毕即 #undef(其后只剩派生常量)。逐条注释用块注释(行注释会吞续行符)。**不另生成可读名表**
     //(kValueRegisterNames 那种是给反汇编打印 LOAD_REG 操作数用的):本表无字节码消费者,故无名表,只派生
@@ -33,6 +35,8 @@ namespace aria {
     X(OpGreaterEqual, "__ge__") /* comparison >= */                            \
     X(OpNegate, "__neg__")      /* unary negation */                           \
     X(OpCall, "__call__")       /* call hook */                                \
+    X(ExcMessage, "_message")   /* Exception face field key */                 \
+    X(ExcCode, "_code")         /* Exception face field key */                 \
     X(CoSuspended, "suspended") /* coroutine status spelling */                \
     X(CoRunning, "running")     /* coroutine status spelling */                \
     X(CoNormal, "normal")       /* coroutine status spelling */                \

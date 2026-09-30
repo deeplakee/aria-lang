@@ -30,6 +30,7 @@
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/builtins/Builtins.hpp"
 #include "runtime/builtins/CoroutineModule.hpp"
+#include "runtime/builtins/ExceptionClass.hpp"
 #include "runtime/builtins/IteratorClass.hpp"
 #include "runtime/builtins/ListClass.hpp"
 #include "runtime/builtins/MapClass.hpp"
@@ -214,10 +215,11 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 编排顺序即依赖序:Object 根类先建(各内建类以它作 super);String 类 bootstrap 末段要按名
+        // 编排顺序即依赖序:Object 根类先建(Exception 等各内建类以它作 super);String 类 bootstrap 末段要按名
         // 从自身类表取算子钩子缓存进实现格,故其类表须已填。新增单例两处收口:注册表
         // (runtime/value_register.hpp)加一行,本函数加一行编排。
         bootstrap_object_class();
+        bootstrap_exception_class();
         bootstrap_iterator_class();
         bootstrap_list_class();
         bootstrap_map_class();
@@ -248,6 +250,10 @@ namespace aria {
 
     ObjClass* AriaVM::object_class() const noexcept { return Object::as<ObjClass>(registers_[kObjectClassOffset]); }
 
+    ObjClass* AriaVM::exception_class() const noexcept {
+        return Object::as<ObjClass>(registers_[kExceptionClassOffset]);
+    }
+
     ObjClass* AriaVM::iterator_class() const noexcept { return Object::as<ObjClass>(registers_[kIteratorClassOffset]); }
 
     ObjClass* AriaVM::list_class() const noexcept { return Object::as<ObjClass>(registers_[kListClassOffset]); }
@@ -264,6 +270,19 @@ namespace aria {
         const auto klass = new_class(gc_, "Object", nullptr);
         ObjectClass::register_methods(gc_, klass);
         registers_[kObjectClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
+    }
+
+    void AriaVM::bootstrap_exception_class() {
+        // Exception bootstrap 类:用户异常基类(经 builtins_ 裸名可达,继承它定义自己的异常
+        // 类型);方法面经宿主类 ExceptionClass 注册(默认 init 落 _message/_code 字段,face 按
+        // 接收者分派:ObjException 经各异常自持 class_ 沿链触达读原生成员,链上实例读同名字段)。
+        // 末段经 builtins_ 的 "Exception" 键暴露 -- 唯一入 builtins_ 的 bootstrap 类。须在 ctor
+        // 构造临界区内调用,创建免守卫。
+        const auto klass = new_class(gc_, "Exception", object_class());
+        ExceptionClass::register_methods(gc_, klass);
+        registers_[kExceptionClassOffset] = klass; // 入寄存器组:此后经 tracer 保命
+        const auto name                   = new_string(gc_, "Exception");
+        builtins_.set(Value::from_obj(name), Value::from_obj(klass)); // 裸名可达:LOAD_GLOBAL miss 回退 builtins_
     }
 
     void AriaVM::bootstrap_iterator_class() {

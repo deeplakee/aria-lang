@@ -19,23 +19,24 @@ namespace aria {
     // 实现格的规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的
     // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)
     // 里的钩子名,再按名到实例/类链查表。
-#define ARIA_VALUE_REGISTER_LIST(X)                                                                                 \
-    X(ObjectClass)   /* Object root class (base of a def with no super; filled at bootstrap) */                     \
-    X(DefaultMark)   /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \
-    X(MatchNoArm)    /* fallback exception when no match arm matches (shared ObjException; LOAD_REG + THROW) */     \
-    X(IteratorClass) /* Iterator bootstrap class (has_next/next; super is Object; C++ access only) */               \
-    X(ListClass)     /* List bootstrap class (built-in list methods; super is Object; C++ access only) */           \
-    X(MapClass)      /* Map bootstrap class (built-in map methods; super is Object; C++ access only) */             \
-    X(StringClass)   /* String bootstrap class (built-in string methods; super is Object; C++ access only) */       \
-    X(RangeClass)    /* Range bootstrap class (built-in range methods; super is Object; C++ access only) */         \
-    X(StringLtFn)    /* __lt__ native, copied from the String class table; op_less_impl reads this cell          */ \
-    X(StringLeFn)    /* __le__ native, copied from the String class table; op_less_equal_impl reads this cell    */ \
-    X(StringGtFn)    /* __gt__ native, copied from the String class table; op_greater_impl reads this cell       */ \
-    X(StringGeFn)    /* __ge__ native, copied from the String class table; op_greater_equal_impl reads this cell */ \
-    X(StringAddFn)   /* __add__ native, copied from the String class table; op_add_impl reads this cell          */ \
-    X(StringMulFn)   /* __mul__ native, copied from the String class table; op_mul_impl reads this cell          */ \
-    X(ListAddFn)     /* __add__ native, copied from the List class table; op_add_impl reads this cell            */ \
-    X(ListMulFn)     /* __mul__ native, copied from the List class table; op_mul_impl reads this cell            */
+#define ARIA_VALUE_REGISTER_LIST(X)                                                                                  \
+    X(DefaultMark)    /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \
+    X(MatchNoArm)     /* fallback exception when no match arm matches (shared ObjException; LOAD_REG + THROW) */     \
+    X(ObjectClass)    /* Object root class (base of a def with no super; filled at bootstrap) */                     \
+    X(ExceptionClass) /* Exception bootstrap class (message/code; super is Object; reachable via builtins) */        \
+    X(IteratorClass)  /* Iterator bootstrap class (has_next/next; super is Object; C++ access only) */               \
+    X(ListClass)      /* List bootstrap class (built-in list methods; super is Object; C++ access only) */           \
+    X(MapClass)       /* Map bootstrap class (built-in map methods; super is Object; C++ access only) */             \
+    X(StringClass)    /* String bootstrap class (built-in string methods; super is Object; C++ access only) */       \
+    X(RangeClass)     /* Range bootstrap class (built-in range methods; super is Object; C++ access only) */         \
+    X(StringLtFn)     /* __lt__ native, copied from the String class table; op_less_impl reads this cell          */ \
+    X(StringLeFn)     /* __le__ native, copied from the String class table; op_less_equal_impl reads this cell    */ \
+    X(StringGtFn)     /* __gt__ native, copied from the String class table; op_greater_impl reads this cell       */ \
+    X(StringGeFn)     /* __ge__ native, copied from the String class table; op_greater_equal_impl reads this cell */ \
+    X(StringAddFn)    /* __add__ native, copied from the String class table; op_add_impl reads this cell          */ \
+    X(StringMulFn)    /* __mul__ native, copied from the String class table; op_mul_impl reads this cell          */ \
+    X(ListAddFn)      /* __add__ native, copied from the List class table; op_add_impl reads this cell            */ \
+    X(ListMulFn)      /* __mul__ native, copied from the List class table; op_mul_impl reads this cell            */
 
 #define ARIA_VALUE_REGISTER_ENUM(name) name,
     enum class ValueRegister : u8 { ARIA_VALUE_REGISTER_LIST(ARIA_VALUE_REGISTER_ENUM) };

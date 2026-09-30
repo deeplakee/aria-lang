@@ -129,7 +129,7 @@ namespace aria {
                 {"coroutine", CoroutineModule::make_module}, // <coroutine> 合成模块
         };
 
-        // 全局面函数装载口:把实参函数条目按名写入指定 builtins 表。由 register_builtin 于
+        // 全局面函数装载口:把实参函数条目按名写入指定 builtins 表。由 register_builtins 于
         // **构造临界区(GC 挂起)内**调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表
         // 条目经 vm_roots tracer 标根;StringView 重载经 intern 池建名,保证 name 指针与 CodeGen
         // 发射 LOAD_GLOBAL 所用同名常量同指。
@@ -165,7 +165,7 @@ namespace aria {
         }
     }
 
-    void Builtin::register_builtin(GC& gc, AriaHashTable& builtins) {
+    void Builtin::register_builtins(GC& gc, AriaHashTable& builtins) {
         register_functions(gc, builtins, kBuiltinFns);
         register_variables(gc, builtins, kBuiltinVars);
     }

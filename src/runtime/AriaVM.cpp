@@ -187,7 +187,7 @@ namespace aria {
     // 成员居声明首,逆序析构下 tracer 与成员同生共死;主上下文随 ~GC 的 free_all_ 释放。
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
-        string_constants_{kStringConstantCount} {
+        string_constants_{str_table::kCount} {
         current_ = new_movement(gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
@@ -198,16 +198,16 @@ namespace aria {
             const auto lock = gc_.make_lock();
             bootstrap_string_constants();
             bootstrap_registers();
-            Builtin::register_builtin(gc_, builtins_);
+            Builtin::register_builtins(gc_, builtins_);
         }
     }
 
     void AriaVM::bootstrap_string_constants() {
-        // 按下标(即枚举值)逐格驻留填入:string_constant 按枚举取下标,故下标即格位,与拼写表同源同序。
-        // 须在 ctor 构造临界区内调用(GC 挂起,创建免守卫);填入即经 string_constants_ 可达,故解锁前
-        // 发布完毕。须先于 bootstrap_registers:String 类 bootstrap 的钩子缓存按名取串,读的就是本表。
-        for (usize index = 0; index < kStringConstantCount; ++index) {
-            string_constants_[index] = new_string(gc_, kStringConstantSpellings[index]);
+        // 按下标(即表序)逐格驻留填入:str 字面量形态编译期经 index_of 折算同一下标,故下标即格位,
+        // 与拼写表同源同序。须在 ctor 构造临界区内调用(GC 挂起,创建免守卫);填入即经 string_constants_
+        // 可达,故解锁前发布完毕。须先于 bootstrap_registers:String 类 bootstrap 的钩子缓存按名取串,读的就是本表。
+        for (usize index = 0; index < str_table::kCount; ++index) {
+            string_constants_[index] = new_string(gc_, str_table::kConstants[index]);
         }
         assert_slots_filled(string_constants_, "string_constants_: unfilled slot after bootstrap");
     }
@@ -240,8 +240,8 @@ namespace aria {
             for (const auto reg: registers_) {
                 g.mark_object(reg);
             }
-            for (const auto str: string_constants_) {
-                g.mark_object(str);
+            for (const auto string: string_constants_) {
+                g.mark_object(string);
             }
         });
     }

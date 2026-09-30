@@ -31,7 +31,6 @@ using aria::ObjString;
 using aria::Opt;
 using aria::Pair;
 using aria::String;
-using aria::StringConstant;
 using aria::StringView;
 using aria::try_obj;
 using aria::usize;
@@ -86,13 +85,13 @@ namespace {
         return {ex->code(), String{ex->message()->view()}};
     }
 
-    // 算子的实现是 List 类表里的原生方法(钩子名取 VM 常量串表,注册表见 runtime/string_constant.hpp;
-    // 名字随表标根,故本函数无需自守):取类表内裸原生值(不绑定;与 VM 侧 op_*_impl 读的实现格是
+    // 算子的实现是 List 类表里的原生方法(钩子键经 new_string 驻留命中取串,皆注册表条目零分配,
+    // 故本函数无需自守):取类表内裸原生值(不绑定;与 VM 侧 op_*_impl 读的实现格是
     // 同一批值,bootstrap 期拷入并断言一致)按原生契约调用 -- slots[0] = receiver 兼返回槽、slots[1] =
     // rhs。返回结果 Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责让两侧存活(两侧经
     // make_list 入根)。端到端路径(算子指令 -> 取钩子 -> 调用)由语料覆盖(12_collections 拼接/重复各例)。
-    Opt<Value> invoke_list_hook(AriaVM& vm, const StringConstant hook_id, const Value lhs, const Value rhs) {
-        const auto hook = vm.list_class()->load_field(vm, vm.string_constant(hook_id));
+    Opt<Value> invoke_list_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
+        const auto hook = vm.list_class()->load_field(vm, new_string(vm.gc(), hook_key));
         if (!hook) {
             return std::nullopt;
         }
@@ -657,7 +656,7 @@ TEST(ObjList, OpAddConcatenates) {
     lhs->elements().copy_from(lhs_src);
     auto rhs = make_list(gc, guard);
     rhs->elements().push(Value::from_int(3));
-    auto out = invoke_list_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto out = invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     expect_elements(out, {1, 2, 3});
     const auto merged = try_obj<ObjList>(*out);
     ASSERT_NE(merged, nullptr);
@@ -677,7 +676,7 @@ TEST(ObjList, OpAddSharesNestedElements) {
     auto lhs = make_list(gc, guard);
     lhs->elements().push(Value::from_obj(inner));
     auto rhs = make_list(gc, guard);
-    auto out = invoke_list_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto out = invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(out.has_value());
     EXPECT_FALSE(value_identical(*out, Value::from_obj(lhs))); // 新表,非源表本身
     const auto merged = try_obj<ObjList>(*out);
@@ -697,7 +696,7 @@ TEST(ObjList, OpAddSurvivesStressCollect) {
     lhs->elements().push(Value::from_int(1));
     auto rhs = make_list(gc, guard);
     rhs->elements().push(Value::from_int(2));
-    auto out = invoke_list_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_obj(rhs));
+    auto out = invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     expect_elements(out, {1, 2});
 }
 
@@ -708,12 +707,12 @@ TEST(ObjList, OpAddNonListRhsFails) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_list(gc, guard);
     lhs->elements().push(Value::from_int(1));
-    EXPECT_FALSE(invoke_list_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::from_int(2)).has_value());
+    EXPECT_FALSE(invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_int(2)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two lists, got List and Int");
 
-    EXPECT_FALSE(invoke_list_hook(vm, StringConstant::OpAdd, Value::from_obj(lhs), Value::nil_val()).has_value());
+    EXPECT_FALSE(invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::nil_val()).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __add__ requires two lists, got List and Nil");
@@ -727,12 +726,12 @@ TEST(ObjList, OpMulRepeats) {
     auto        lhs   = make_list(gc, guard);
     const Value src[] = {Value::from_int(10), Value::from_int(20)};
     lhs->elements().copy_from(src);
-    auto twice = invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(2));
+    auto twice = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(2));
     expect_elements(twice, {10, 20, 10, 20});
     EXPECT_EQ(lhs->elements().size(), 2u);
-    auto zero = invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(0));
+    auto zero = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(0));
     expect_elements(zero, {});
-    auto once = invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(1));
+    auto once = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(1));
     expect_elements(once, {10, 20});
 }
 
@@ -745,7 +744,7 @@ TEST(ObjList, OpMulSharesNestedElements) {
     inner->elements().push(Value::from_int(7));
     auto lhs = make_list(gc, guard);
     lhs->elements().push(Value::from_obj(inner));
-    auto out = invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(2));
+    auto out = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(2));
     ASSERT_TRUE(out.has_value());
     const auto repeated = try_obj<ObjList>(*out);
     ASSERT_NE(repeated, nullptr);
@@ -762,12 +761,12 @@ TEST(ObjList, OpMulCountValidationFails) {
     auto   guard = gc.make_guard();
     auto   lhs   = make_list(gc, guard);
     lhs->elements().push(Value::from_int(1));
-    EXPECT_FALSE(invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_f64(2.0)).has_value());
+    EXPECT_FALSE(invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_f64(2.0)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __mul__ requires a list and an integer, got List and F64");
 
-    EXPECT_FALSE(invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(-2)).has_value());
+    EXPECT_FALSE(invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(-2)).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch __mul__ requires a non-negative integer, got -2");
@@ -781,6 +780,6 @@ TEST(ObjList, OpMulSurvivesStressCollect) {
     auto  guard = gc.make_guard();
     auto  lhs   = make_list(gc, guard);
     lhs->elements().push(Value::from_int(3));
-    auto out = invoke_list_hook(vm, StringConstant::OpMul, Value::from_obj(lhs), Value::from_int(3));
+    auto out = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(3));
     expect_elements(out, {3, 3, 3});
 }

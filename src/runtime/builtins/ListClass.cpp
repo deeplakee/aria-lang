@@ -257,7 +257,7 @@ namespace aria {
             return true;
         }
 
-        // 运算符重载方法(函数名与 runtime/string_constant.hpp 的 StringConstant 一一对应,经 AriaVM::run_binary_operator
+        // 运算符重载方法(函数名与 runtime/str_table.hpp 的注册表拼写一一对应,经 AriaVM::run_binary_operator
         // 取用;也是"算子 = 方法"的唯一实现处)。名字与失败文案都是**就地字面量**(与方法名同形):
         // 文案打方法名,与注册键同处一文件、golden 钉住拼写。list 只有 `+` 与 `*`(乘数严格 int,
         // f64 一律拒 -- 同下标访问口径;负数报错不静默得空,与负数下标报错约定一致);乘除模、
@@ -335,6 +335,8 @@ namespace aria {
 
     } // namespace
 
-    void ListClass::register_methods(GC& gc, ObjClass* klass) { Builtin::register_class_methods(gc, klass, kListBuiltins); }
+    void ListClass::register_methods(GC& gc, ObjClass* klass) {
+        Builtin::register_class_methods(gc, klass, kListBuiltins);
+    }
 
 } // namespace aria

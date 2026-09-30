@@ -19,7 +19,7 @@ namespace aria {
     // **Builtin 类 = 全局内建面宿主 + 两装载底座**(type/str/println/assert/clock/Error 六原生、两张表
     // kBuiltinFns/kBuiltinVars 与全局面两个装载口 register_functions/register_variables 私有于同名 .cpp;
     // 公有面 = 类表/模块表装载底座 register_class_methods/register_module_functions 加编排口
-    // register_builtin,见类注释);**XXXClass = XXX 类型的内建方法面**
+    // register_builtins,见类注释);**XXXClass = XXX 类型的内建方法面**
     // (List/Map/Iterator/String/Range/Exception/Object,恒经 bootstrap 类表
     // 分派、恒绑定 receiver;注册口 = 宿主类公有静态方法 XxxClass::register_methods,方法体与表仍住各 .cpp 匿名命名空间;
     // String 另有算子实现缓存清单 kOperatorFns(钩子名 -> 寄存器格),bootstrap_string_class
@@ -48,7 +48,7 @@ namespace aria {
 
     // 全局内建面宿主类:六原生实现、两张表(kBuiltinFns / kBuiltinVars)与全局面两个装载口
     // (register_functions / register_variables)私有于同名 .cpp,公有面 = 类表/模块表两个装载
-    // 底座加把全局两表一次装齐的编排口 register_builtin(AriaVM ctor 于 set_vm_roots 之后、
+    // 底座加把全局两表一次装齐的编排口 register_builtins(AriaVM ctor 于 set_vm_roots 之后、
     // 构造临界区内调用一次)。静态类无实例(与 ObjModule 的模块对象概念经此消歧,同
     // CoroutineModule 先例)。
     class Builtin {
@@ -66,7 +66,7 @@ namespace aria {
 
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次(在建对象经 make_guard
         // 双守卫,见定义)。
-        static void register_builtin(GC& gc, AriaHashTable& builtins);
+        static void register_builtins(GC& gc, AriaHashTable& builtins);
     };
 
 } // namespace aria

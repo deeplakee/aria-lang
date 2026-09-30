@@ -57,7 +57,7 @@ paths:
 - **①' `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `vm.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。
 - **② 算子与调用协议 `op_*_impl(AriaVM&) -> Opt<Value>`**（算术五 + 比较四 + 一元负 + `op_call_impl`，共 11 个）：**取实现，不执行**--回答「本对象上该算子对应的可调用值」（不是算好的结果），VM 的 `run_binary_operator<Op>` / `run_negate` / `call_value` 取到后按调用形态调它（调用区槽 0 保持 receiver）。非 const（取实现可能物化绑定）。
 - ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按钩子名（VM 常量串表，见 `runtime.md`）`load_field_unbound`--实例 fields 可遮蔽，再类链取）；②**内置 string**（5 个算子直读实现格 `String*Fn`--bootstrap 期从 String 类表按名拷入并 ASSERT 一致，免每次过类表查找）；③其余类型不实现即报错。
-- 钩子名是**语言级事实**（注册表 `runtime/string_constant.hpp` 的 `StringConstant`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
+- 钩子名是**语言级事实**（拼写注册表 `runtime/str_table.hpp`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
 - `op_call_impl` 的消费点 = `AriaVM::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 同码同款文案（`type X does not support '__call__'`，码 CallNonCallable）。
 - **钩子自指/成环不兜底**（拍板）：`d.__call__ = d` 或 `a.__call__ = b; b.__call__ = a` 会无穷重入 `call_value` 直到 C++ 栈溢出（SIGSEGV，无错误消息）。按「手写死循环同类」处理、后果由使用者承担--不加自指检测、不加重入深度上限、不改查找路径。
 
@@ -65,7 +65,7 @@ paths:
 
 - **内置容器 / 迭代器（string/list/map/range/iterator）与异常（exception）的 `load_field` / `load_field_unbound` 同形两步**（权威说明，各子类头不复述）：①委托自身 bootstrap 类表（`vm.string_class()` / `vm.list_class()` / `vm.exception_class()` ...）的 `ObjClass::load_field` 沿链查表，miss 的类措辞 fail 随协议透传；②`load_field` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）；`load_field_unbound` 直取类表原生值。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
-- 方法面注册口 = 各宿主类公有静态 `XxxClass::register_methods`（经 `Builtin::register_class_methods` 底座装载），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtin`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
+- 方法面注册口 = 各宿主类公有静态 `XxxClass::register_methods`（经 `Builtin::register_class_methods` 底座装载），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
 
 ## 跨类型规则
 

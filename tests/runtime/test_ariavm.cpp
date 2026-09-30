@@ -27,7 +27,6 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::i8;
 using aria::kObjectClassOffset;
-using aria::kStringConstantSpellings;
 using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
@@ -42,7 +41,6 @@ using aria::ObjString;
 using aria::ObjUpvalue;
 using aria::OpCode;
 using aria::Span;
-using aria::StringConstant;
 using aria::StringView;
 using aria::TryRecord;
 using aria::u16;
@@ -51,6 +49,7 @@ using aria::u8;
 using aria::UpvalueDesc;
 using aria::usize;
 using aria::Value;
+using aria::str_table::kConstants;
 
 namespace {
 
@@ -3024,13 +3023,12 @@ TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
 TEST(AriaVM, StringConstantsOutliveCollect) {
     AriaVM vm;
     auto&  gc = vm.gc();
-    for (usize index = 0; index < std::size(kStringConstantSpellings); ++index) {
-        const auto id       = static_cast<StringConstant>(index);
-        const auto spelling = kStringConstantSpellings[index];
-        EXPECT_EQ(vm.string_constant(id)->view(), spelling); // bootstrap 已按注册表驻留填入
-        gc.collect();                                        // 不在根里的话,此处即被摘除
-        const auto relooked = new_string(gc, spelling);      // 命中驻留池则不分配(无需守卫)
-        EXPECT_EQ(relooked, vm.string_constant(id));         // 同指针 = 仍在池中且仍是同一对象
-        EXPECT_EQ(relooked->view(), spelling);               // 正面证明串活着(取内容不悬垂)
+    for (const auto key: kConstants) {
+        const auto original = new_string(gc, key); // 驻留命中即注册表对象,零分配(无需守卫)
+        EXPECT_EQ(original->view(), key);          // bootstrap 已按注册表驻留填入
+        gc.collect();                              // 不在根里的话,此处即被摘除
+        const auto relooked = new_string(gc, key); // 命中驻留池则不分配(无需守卫)
+        EXPECT_EQ(relooked, original);             // 同指针 = 仍在池中且仍是同一对象
+        EXPECT_EQ(relooked->view(), key);          // 正面证明串活着(取内容不悬垂)
     }
 }

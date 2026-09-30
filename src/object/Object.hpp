@@ -244,7 +244,7 @@ namespace aria {
 
         // 可重载算子协议与调用协议(取实现,不执行):每个算子/调用一个虚函数,回答「**本对象上该算子对应的可调用值**」--
         // 不是算好的结果:调用方(VM 的 run_binary_operator/run_negate/call_value)拿到后按调用形态调它(调用区槽 0 保持
-        // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(StringConstant;
+        // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(拼写注册在 runtime/str_table.hpp;
         // 调用钩子 `__call__`)。**基类
         // 默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与 load_field/store_field 等基
         // 类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 -- 11 个 override 各按名 load_field_unbound(实例

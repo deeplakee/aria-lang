@@ -70,7 +70,7 @@ TEST(ObjectTryAs, ConstOverload) {
 // 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
 // 防将来基类签名漂移。探针取当下仍未 override 的类型:string 探 store_field(ObjString 无
 // store_field override)、Module 探下标(Module override 了 load/store_field)。算子与可调用
-// 两侧另属独立协议缝(算子实现是对象上的命名方法,见 runtime/string_constant.hpp 的 StringConstant;可调用侧是
+// 两侧另属独立协议缝(算子实现是对象上的命名方法,见 runtime/str_table.hpp 的注册表;可调用侧是
 // Object::op_call_impl,由 call_value 的 switch default 臂消费),故各自的基类默认不在此钉。
 
 TEST(ObjectProtocolDefaults, MemberIndexDefaults) {

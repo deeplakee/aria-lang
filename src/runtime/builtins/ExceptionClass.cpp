@@ -10,7 +10,6 @@
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
 #include "runtime/builtins/Builtin.hpp"
-#include "runtime/string_constant.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
@@ -37,10 +36,8 @@ namespace aria {
             }
             // GC 走查:receiver 经槽 0 栈根;键经常量串表强根零分配;_code 值无分配,_message 值
             // 建成即存(创建到入表窗口内零 GC 点,免守卫)。
-            inst->store_field(vm, vm.string_constant(StringConstant::ExcCode),
-                              Value::from_int(std::to_underlying(ErrorCode::Error)));
-            inst->store_field(vm, vm.string_constant(StringConstant::ExcMessage),
-                              Value::from_obj(new_string(vm.gc(), "")));
+            inst->store_field(vm, vm.str<"_code">(), Value::from_int(std::to_underlying(ErrorCode::Error)));
+            inst->store_field(vm, vm.str<"_message">(), Value::from_obj(new_string(vm.gc(), "")));
             return true;
         }
 
@@ -56,7 +53,7 @@ namespace aria {
                 return true;
             }
             if (const auto inst = try_obj<ObjInstance>(slots[0])) {
-                if (const auto hit = inst->load_field(vm, vm.string_constant(StringConstant::ExcMessage))) {
+                if (const auto hit = inst->load_field(vm, vm.str<"_message">())) {
                     slots[0] = *hit; // 建成即写槽:load_field 内绑定分配的新 bound 经此根化
                     return true;
                 }
@@ -78,7 +75,7 @@ namespace aria {
                 return true;
             }
             if (const auto inst = try_obj<ObjInstance>(slots[0])) {
-                if (const auto hit = inst->load_field(vm, vm.string_constant(StringConstant::ExcCode))) {
+                if (const auto hit = inst->load_field(vm, vm.str<"_code">())) {
                     slots[0] = *hit; // 建成即写槽:load_field 内绑定分配的新 bound 经此根化
                     return true;
                 }

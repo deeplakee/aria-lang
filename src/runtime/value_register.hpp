@@ -17,7 +17,7 @@ namespace aria {
     // 末组 = 内置类型的算子实现缓存八格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__`/`__mul__` 与 List 的
     // `__add__`/`__mul__` 原生函数值):内置类型取实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。
     // 实现格的规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的
-    // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::string_constant 取常量串表(runtime/string_constant.hpp)
+    // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::str 取常量串表(runtime/str_table.hpp)
     // 里的钩子名,再按名到实例/类链查表。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                  \
     X(DefaultMark)    /* missing-argument stamp (private no-op native fills unfilled slots; not user-reachable) */   \

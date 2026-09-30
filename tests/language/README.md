@@ -85,8 +85,8 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 
 ### 可正常写用例的语言特性
 
-- **运算符重载**：用户类按 dunder 方法名定义（`+ - * / %`、四个比较、一元 `-`，见 `src/runtime/string_constant.hpp`
-  的 `StringConstant`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
+- **运算符重载**：用户类按 dunder 方法名定义（`+ - * / %`、四个比较、一元 `-`，拼写注册于
+  `src/runtime/str_table.hpp`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
   缺席（`<class Box> has no member '__add__'`），内置类型没实现该算子报「本类型不支持」
   （`type Map does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
   `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值同码报

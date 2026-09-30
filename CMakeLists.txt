@@ -94,7 +94,7 @@ add_library(aria_core STATIC
         src/runtime/ObjMovement.hpp
         src/runtime/opcode_profile.cpp
         src/runtime/opcode_profile.hpp
-        src/runtime/string_constant.hpp
+        src/runtime/str_table.hpp
         src/runtime/value_register.hpp
         src/error/ErrorCode.hpp
         src/error/Error.hpp

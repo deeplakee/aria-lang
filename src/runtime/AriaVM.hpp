@@ -8,8 +8,9 @@
 #include "object/ObjException.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/opcode_profile.hpp"
-#include "runtime/string_constant.hpp"
+#include "runtime/str_table.hpp"
 #include "runtime/value_register.hpp"
+#include "util/util.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
 
@@ -199,30 +200,17 @@ namespace aria {
             return Value::from_obj(registers_[offset]);
         }
 
-        // 常量串表按枚举直读(下标契约与拼写见 runtime/string_constant.hpp):实例侧算子派发经它取钩子名,
-        // 免每次 new_string 从驻留池换串(名字由 bootstrap_string_constants 填好并随本表标根)。
+        // 常量串表按键直读(注册表与下标契约见 runtime/str_table.hpp):实例侧算子派发经它取钩子名,
+        // 免每次 new_string 从驻留池换串(名字由 bootstrap_string_constants 填好并随本表标根)。键经 NTTP
+        // 编译期定下标,static_assert 校验(不在表内的字面量编不过),生成物是基址+常量下标的一次加载。
+        // 本类唯一的常量串访问口;运行期键(kOperatorFns 表键、coroutine status 等)一律 new_string
+        // 驻留命中取串 -- 命中即本表对象,零分配。
+        template<util::FixedString key>
         [[nodiscard]]
-        ObjString* string_constant(const StringConstant id) const noexcept {
-            ASSERT(std::to_underlying(id) < std::size(kStringConstantSpellings), "StringConstant out of range");
-            return string_constants_[std::to_underlying(id)];
-        }
-
-        // 常量串表按执行状态直读(status 的返回值,五拼写与 to_string(ExecState) 同源)。
-        [[nodiscard]]
-        ObjString* string_constant(const ExecState state) const noexcept {
-            switch (state) {
-                case ExecState::Suspended:
-                    return string_constant(StringConstant::CoSuspended);
-                case ExecState::Normal:
-                    return string_constant(StringConstant::CoNormal);
-                case ExecState::Running:
-                    return string_constant(StringConstant::CoRunning);
-                case ExecState::Done:
-                    return string_constant(StringConstant::CoDone);
-                case ExecState::Failed:
-                    return string_constant(StringConstant::CoFailed);
-            }
-            UNREACHABLE();
+        ObjString* str() const noexcept {
+            constexpr auto found = str_table::index_of(key.view());
+            static_assert(found.has_value(), "constant string key is not in the registry");
+            return string_constants_[*found];
         }
 
         // 源根列表(语义对齐 Python sys.path):裸名导入的搜索根,解析器沿各源根找
@@ -319,7 +307,7 @@ namespace aria {
         void bootstrap_registers();
 
         // 常量串表 bootstrap(ctor 一次调用,须先于 bootstrap_registers):按注册表
-        // (runtime/string_constant.hpp)逐条驻留填入 string_constants_。String 类 bootstrap 的
+        // (runtime/str_table.hpp)逐条驻留填入 string_constants_。String 类 bootstrap 的
         // 钩子缓存要按名取串,故编排上必须先于它。
         void bootstrap_string_constants();
 
@@ -500,8 +488,8 @@ namespace aria {
         // 收口;tracer 一趟循环标根。格位恒持对象,故元素类型即消费者要的裸指针。
         List<Object*> registers_;
 
-        // 常量串表:VM 自己按名取用的字符串常量(唯一存放处;注册表见 runtime/string_constant.hpp)。
-        // 构造期预置表长格,bootstrap 按下标(枚举值)逐格驻留填,同样经 assert_slots_filled 收口;
+        // 常量串表:VM 自己按名取用的字符串常量(唯一存放处;注册表见 runtime/str_table.hpp)。
+        // 构造期预置表长格,bootstrap 按下标(表序)逐格驻留填,同样经 assert_slots_filled 收口;
         // tracer 一趟循环 mark_object 标根 -- 表在则串在(驻留池是 weak root,不标根则下轮 collect 即摘除)。
         List<ObjString*> string_constants_;
 

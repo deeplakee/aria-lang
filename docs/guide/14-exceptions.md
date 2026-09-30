@@ -102,6 +102,145 @@ nil
 
 catch 里 `return` 没有任何限制，函数正常返回。
 
+## Exception 对象：message、code 与 Error
+
+异常对象有两个方法：`message()` 返回消息（运行期错误是完整消息，含 `类别: 码` 前缀），
+`code()` 返回**错误码数字**（每个错误码对应一个注册表序号，如除零是 `28`）：
+
+```aria
+try {
+    var x = 1 / 0;
+} catch (e) {
+    println(e.code());
+    println(e.message());
+}
+```
+
+输出：
+
+```text
+28
+Runtime: DivisionByZero integer division by zero
+```
+
+自己要抛一个「像样的异常」时，不必先定义类——内建 `Error(message)` 直接造一个异常
+对象，`message` 是什么 `message()` 就还回什么；第二个可选实参设置错误码，收一个
+**整数**（原样携带，`code()` 即其值），不设则 `code()` 返回 `Error` 码的序号：
+
+```aria
+fun parse_age(s) {
+    var n = s.to_int();
+    if (n == nil || n < 0) {
+        throw Error("invalid age: " + s);
+    }
+    return n;
+}
+try {
+    parse_age("-3");
+} catch (e) {
+    println(e.code());
+    println(e.message());
+}
+```
+
+输出：
+
+```text
+42
+invalid age: -3
+```
+
+数字码在「给异常分类编号」时有用（自己的错误码表自己定）：
+
+```aria
+fun age_of(name) {
+    if (!users.has(name)) {
+        throw Error("no such user: " + name, 404);
+    }
+    return users[name];
+}
+var users = {"alice": 31, "bob": 27};
+try {
+    age_of("carol");
+} catch (e) {
+    println(e.code());
+    println(e.message());
+}
+```
+
+输出：
+
+```text
+404
+no such user: carol
+```
+
+## 自定义异常类型
+
+要给异常分类时，继承内建 `Exception` 定义自己的类型。链上实例经默认 `init` 恒有两个
+字段：`_message`（默认空串）与 `_code`（默认 `Error` 的缺省码）；自带载荷时写自己的
+`init` 落这两个字段（额外字段随意）：
+
+```aria
+def HttpError : Exception {
+    init(status, msg) {
+        this.status = status;
+        this._code = status;
+        this._message = msg;
+    }
+}
+
+try {
+    throw HttpError(404, "not found");
+} catch (e) {
+    println(e.status);
+    println(e._message);
+    println(e.message());    # face 实例腿：读 _message 字段
+    println(e.code());       # face 实例腿：读 _code 字段
+}
+```
+
+输出：
+
+```text
+404
+not found
+not found
+404
+```
+
+`message()`/`code()` 对子类实例读同名 `_` 字段，对内建异常对象（VM 报错与
+`Error(...)` 的产物）读原生载荷——两个世界同一个 face。不写 `init` 就沿链继承
+默认构造，实例不带载荷（`message()` 是空串、`code()` 是缺省码）；自有 `init`
+两个都没落就调 face，会得到 `UndefinedProperty`（成员读取的常规措辞）。
+
+分类之后用根类方法 `is_a(类型)` 判归属——它沿继承链判定，子类命中以父类型提出的
+询问（内建异常对 `Exception` 也命中）：
+
+```aria
+def Timeout : Exception {
+}
+
+fun describe(e) {
+    if (e.is_a(Timeout)) {
+        return "timed out";
+    }
+    if (e.is_a(HttpError)) {
+        return "http " + str(e.status);
+    }
+    return "unknown";
+}
+println(describe(HttpError(500, "oops")));
+println(describe(Timeout()));
+```
+
+输出：
+
+```text
+http 500
+timed out
+```
+
 ## 嵌套与跨帧展开
 
 嵌套 try 取**最近的** handler；异常沿调用链向外展开（unwind），途中任何一层都能接：
@@ -218,6 +357,8 @@ Internal: AssertionFailed custom message
 ## 小结
 
 - `throw` 任意值，`catch` 绑原值保类型；运行期错误装箱为 `type(e) == "Exception"`。
+- 异常对象有 `message()` / `code()`；`Error(msg, 码?)` 直接造用户异常（码为整数原样携带）。
+- 继承 `Exception` 定义自己的异常类型，实例字段自管；`e.is_a(类型)` 沿继承链判归属。
 - 嵌套取最近 handler，沿调用链展开；catch 内可 `return`、可再 `throw`。
 - `try` 必带 `catch`；没有 `finally`（设计取舍，当前无 OS 资源类内建）。
 - `assert` 失败即抛 `AssertionFailed`（`Internal:` 前缀），同样可 catch。

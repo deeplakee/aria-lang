@@ -10,7 +10,7 @@
 | 编译期 | `path:line:col: Category: Code detail` | 位置串前缀（编译错误无堆栈，位置是唯一锚点） |
 | 运行期 | `Category: Code detail` | 未捕获出口的逐帧 `at <fn> (<mod>:line)` 行 |
 
-`Category` / `Code` 是 `ErrorCategory` / `ErrorCode` 的枚举名，经 X-Macro 的 `#` 派生（`src/error/ErrorCode.hpp`）--**单一事实源，不另加中文名表**。故 `detail` 一律英文：换语言要连壳一起换，而壳改中文需再手写一张 55 码 + 6 类别的名表，与「名字串经 `#` 派生、无第二处手写」的设计直接冲突。
+`Category` / `Code` 是 `ErrorCategory` / `ErrorCode` 的枚举名，经 X-Macro 的 `#` 派生（`src/error/ErrorCode.hpp`）--**单一事实源，不另加中文名表**。故 `detail` 一律英文：换语言要连壳一起换，而壳改中文需再手写一张 56 码 + 6 类别的名表，与「名字串经 `#` 派生、无第二处手写」的设计直接冲突。
 
 `detail` **不带位置**：位置由壳或 `at` 行承载；也不重复 `at` 行已给的**当前帧**函数名。元数族的 `<name>` 位是被调者**标签**而非当前帧名，见 §3 元数族。
 

@@ -235,8 +235,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #
 # try/finally 裁撤记录（2026-09）：finally 子句已从文法移除（tryCatchStmt 仅存可选 catch，
 # 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
-# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock，另挂 coroutine
-# 模块）；参照实现 Lua/Wren 均
+# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock/Error，另挂
+# Exception 类与 coroutine 模块）；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
 # finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
 # 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常

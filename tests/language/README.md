@@ -114,6 +114,11 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   `keys()`/`values()`/`pairs()` 各铸新 list 快照（与源 map 解耦，序 unspecified、与 for-in 同，
   用例不得依赖具体序；三者同槽位序，故同一次快照内 `keys()[i]`、`values()[i]` 与 `pairs()[i]`
   三元对齐）；`pairs()` 每元素是 `[k, v]` 二元 list（与 for-in 每轮产出、`iter().next()` 同一形状）。
+- **Exception 面**（07_exceptions）：运行期错误装箱对象与 `Error(msg[, code])` 工厂产物有
+  `message()`/`code()` 方法（完整烘焙消息 / 错误码数字：VM 报错 = 注册表序号，Error 码参
+  收整数原样携带，非整数报 `TypeMismatch`）；裸名 `Exception` 可被子类化（实例是普通
+  ObjInstance，字段自管，`type` 恒 `"Instance"`）；根类方法 `x.is_a(类)` 沿继承链判归属
+  （实例/异常/内置容器/类接收者同走一路，目标位须类值非类报 `TypeMismatch`）。
 
 ## 如何新增用例
 

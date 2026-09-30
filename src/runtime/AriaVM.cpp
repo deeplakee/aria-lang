@@ -199,7 +199,7 @@ namespace aria {
             const auto lock = gc_.make_lock();
             bootstrap_string_constants();
             bootstrap_registers();
-            builtins::register_builtin_functions(gc_, builtins_);
+            builtins::register_builtin(gc_, builtins_);
             bootstrap_coroutine_module();
         }
     }

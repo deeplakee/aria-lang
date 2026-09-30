@@ -118,32 +118,33 @@ namespace aria::builtins {
         }
 
         // 内置表:按名注册进 VM 级 builtins 表。
-        constexpr BuiltinEntry kBuiltins[] = {
+        constexpr BuiltinFnEntry kBuiltinFns[] = {
                 {"type", fn_type},     {"str", fn_str},     {"println", fn_println},
                 {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
         };
 
     } // namespace
 
-    // 把全部内置按名写入 VM 级 builtins 表。由 AriaVM ctor 在 tracer 挂接后于**构造临界区
-    // (GC 挂起)内**调用一次:new_native_fn 的白色对象免逐个守卫,建成即入表、入表条目经
-    // vm_roots tracer 标根;StringView 重载经 intern 池建名,保证 name 指针与 CodeGen 发射
-    // LOAD_GLOBAL 所用同名常量同指。
-    void register_builtin_functions(GC& gc, AriaHashTable& builtins) {
-        for (const auto& [name, fn]: kBuiltins) {
+    // 把实参函数条目按名写入指定 builtins 表。由 register_builtin 于**构造临界区(GC 挂起)内**
+    // 调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根;
+    // StringView 重载经 intern 池建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
+    void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
+        for (const auto& [name, fn]: fns) {
             const auto fn_obj = new_native_fn(gc, name, fn);
-            builtins.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
+            table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
         }
     }
 
-    void register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinEntry> methods) {
+    void register_builtin(GC& gc, AriaHashTable& builtins) { register_functions(gc, builtins, kBuiltinFns); }
+
+    void register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
     }
 
-    void register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinEntry> fns) {
+    void register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinFnEntry> fns) {
         for (const auto& [name, fn]: fns) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             module->globals().set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));

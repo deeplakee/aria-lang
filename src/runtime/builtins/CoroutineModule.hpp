@@ -2,7 +2,7 @@
 #define ARIA_COROUTINE_MODULE_HPP
 
 #include "common.hpp"
-#include "runtime/builtins/Builtins.hpp" // BuiltinEntry(方法表条目形态)
+#include "runtime/builtins/Builtins.hpp" // BuiltinFnEntry(方法表条目形态)
 #include "value/Value.hpp"
 
 namespace aria {
@@ -30,7 +30,7 @@ namespace aria {
         // resume/yield 是切换型:**返 true 时 current_ 已切至对侧上下文**且不写 slots[0](该槽
         // 是对侧要写的预留结果槽,由 yield/RETURN 完成写;对侧死于未捕获错误时载荷走本侧挂起
         // 寄存器经 unwind 链式多跳,该槽随调用区一并截弃);false ⟺ 已 vm.fail 且未切换。
-        static constexpr builtins::BuiltinEntry kModuleFunctions[] = {
+        static constexpr builtins::BuiltinFnEntry kModuleFunctions[] = {
                 {"create", create},
                 {"resume", resume},
                 {"yield", yield},

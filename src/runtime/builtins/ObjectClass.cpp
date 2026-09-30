@@ -74,7 +74,7 @@ namespace aria {
         }
 
         // Object 根类方法表:注册进 Object bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        constexpr builtins::BuiltinEntry kObjectBuiltins[] = {
+        constexpr builtins::BuiltinFnEntry kObjectBuiltins[] = {
                 {"init", fn_init},
                 {"is_a", fn_is_a},
         };

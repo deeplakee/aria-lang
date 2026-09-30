@@ -1,6 +1,6 @@
 # 钉住：Object 根类 is_a 方法——类链归属判定：实例自本类沿 super 链、异常自 Exception、
 # 内置容器自各自 bootstrap 类、类接收者自自身。经继承触达，用户异常类型与内建异常同走
-# 一路。（Object 根类裸名不可达，根命中由 Exception 命中传递覆盖。）
+# 一路。（七个 bootstrap 类经 builtins_ 裸名曝光，内置类与 Object 根可直接提问。）
 def Base : Exception {
 }
 def Derived : Base {
@@ -46,3 +46,12 @@ assert(!"s".is_a(Base));
 assert(!{}.is_a(Exception));
 assert(!(1..2).is_a(Base));
 assert(![].iter().is_a(Exception));
+
+# 内置类裸名曝光：内置值对内置类与根类的归属判定
+assert([1, 2].is_a(List));
+assert("s".is_a(String));
+assert({}.is_a(Map));
+assert((1..2).is_a(Range));
+assert([].iter().is_a(Iterator));
+assert([1, 2].is_a(Object));     # 任意对象沿链命中根
+assert(Object.is_a(Object));     # 类接收者自自身，根类同律

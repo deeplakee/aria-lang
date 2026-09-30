@@ -239,8 +239,14 @@ namespace aria {
             registers_[offset] = hit->as_obj();
         }
 
-        // 唯一入 builtins_ 的 bootstrap 类
+        // 类裸名曝光:is_a 链判定与类值触达。
+        builtins_.set(Value::from_obj(object_class()->name()), Value::from_obj(object_class()));
         builtins_.set(Value::from_obj(exception_class()->name()), Value::from_obj(exception_class()));
+        builtins_.set(Value::from_obj(iterator_class()->name()), Value::from_obj(iterator_class()));
+        builtins_.set(Value::from_obj(list_class()->name()), Value::from_obj(list_class()));
+        builtins_.set(Value::from_obj(map_class()->name()), Value::from_obj(map_class()));
+        builtins_.set(Value::from_obj(string_class()->name()), Value::from_obj(string_class()));
+        builtins_.set(Value::from_obj(range_class()->name()), Value::from_obj(range_class()));
         assert_slots_filled(registers_, "registers_: unfilled slot after bootstrap");
     }
 

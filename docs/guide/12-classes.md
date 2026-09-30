@@ -40,7 +40,9 @@ Class
 - `type()` 对一切实例返回 `"Instance"`、对类本身返回 `"Class"`，不区分类名。
 - 每个对象都有一个继承自 `Object` 的方法 `is_a(类)`：沿自己的继承链判定归属，子类命中
   以父类型提出的询问（`d.is_a(Base)`），类本身也可作接收者（`Derived.is_a(Base)` 即
-  「Derived 继承自 Base」）；用法见[异常章](14-exceptions.md)的自定义异常分类。
+  「Derived 继承自 Base」）。七个内建类 `Object`/`Exception`/`Iterator`/`List`/`Map`/
+  `String`/`Range` 以内建名直接可达，内置值同判（`[1, 2].is_a(List)`、`"s".is_a(Object)`）；
+  用法见[异常章](14-exceptions.md)的自定义异常分类。
 
 ## this：沿外围就近捕获
 

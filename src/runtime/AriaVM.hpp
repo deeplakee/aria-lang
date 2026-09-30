@@ -302,32 +302,13 @@ namespace aria {
         bool call_bound_method(const ObjBoundMethod* obj, u8 argc);
 
         // 值寄存器组 bootstrap 编排(ctor 一次调用):逐格初始化全部 VM 单例对象。须在 ctor
-        // 构造临界区(GC 挂起)内调用,创建免守卫;各单例收口在 bootstrap_<单例> 系列函数,本
-        // 函数只管编排;新单例在此加一行编排。
+        // 构造临界区(GC 挂起)内调用,创建免守卫;新单例在此加一行编排。
         void bootstrap_registers();
 
         // 常量串表 bootstrap(ctor 一次调用,须先于 bootstrap_registers):按注册表
         // (runtime/str_table.hpp)逐条驻留填入 string_constants_。String 类 bootstrap 的
         // 钩子缓存要按名取串,故编排上必须先于它。
         void bootstrap_string_constants();
-
-        void bootstrap_object_class();
-
-        void bootstrap_exception_class();
-
-        void bootstrap_iterator_class();
-
-        void bootstrap_list_class();
-
-        void bootstrap_map_class();
-
-        void bootstrap_string_class();
-
-        void bootstrap_range_class();
-
-        void bootstrap_default_mark();
-
-        void bootstrap_match_no_arm();
 
         // VM 根 tracer 挂接(ctor 一次调用):gc_.set_vm_roots 挂标根闭包;标根清单见
         // runtime.md「共享状态」。执行上下文只标 current_ 一点,各上下文内部与 previous_ resume

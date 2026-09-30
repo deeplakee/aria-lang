@@ -213,18 +213,34 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 编排顺序即依赖序:Object 根类先建(Exception 等各内建类以它作 super);String 类 bootstrap 末段要按名
-        // 从自身类表取算子钩子缓存进实现格,故其类表须已填。新增单例两处收口:注册表
-        // (runtime/value_register.hpp)加一行,本函数加一行编排。
-        bootstrap_object_class();
-        bootstrap_exception_class();
-        bootstrap_iterator_class();
-        bootstrap_list_class();
-        bootstrap_map_class();
-        bootstrap_string_class();
-        bootstrap_range_class();
-        bootstrap_default_mark();
-        bootstrap_match_no_arm();
+        // 编排顺序即依赖序:Object 根类先建(其余内建类以它作 super);算子实现格缓存须待类表全填;
+        // builtins_ 曝光最后。新增单例两处收口:注册表(runtime/value_register.hpp)加一行,本函数
+        // 加一行编排。
+        registers_[kObjectClassOffset]    = ObjectClass::make_class(gc_);
+        registers_[kExceptionClassOffset] = ExceptionClass::make_class(gc_, object_class());
+        registers_[kIteratorClassOffset]  = IteratorClass::make_class(gc_, object_class());
+        registers_[kListClassOffset]      = ListClass::make_class(gc_, object_class());
+        registers_[kMapClassOffset]       = MapClass::make_class(gc_, object_class());
+        registers_[kStringClassOffset]    = StringClass::make_class(gc_, object_class());
+        registers_[kRangeClassOffset]     = RangeClass::make_class(gc_, object_class());
+        // 缺参印章:私有 ObjClass 身份令牌,用户不可达;equals 恒地址型,显式实参身份均异于印章。
+        registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
+        // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
+        registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
+
+        for (const auto& [name, offset]: ListClass::kOperatorFns) {
+            const auto hit = list_class()->load_field(*this, new_string(gc_, name));
+            ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
+            registers_[offset] = hit->as_obj();
+        }
+        for (const auto& [name, offset]: StringClass::kOperatorFns) {
+            const auto hit = string_class()->load_field(*this, new_string(gc_, name));
+            ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
+            registers_[offset] = hit->as_obj();
+        }
+
+        // 唯一入 builtins_ 的 bootstrap 类
+        builtins_.set(Value::from_obj(exception_class()->name()), Value::from_obj(exception_class()));
         assert_slots_filled(registers_, "registers_: unfilled slot after bootstrap");
     }
 
@@ -261,54 +277,6 @@ namespace aria {
     ObjClass* AriaVM::string_class() const noexcept { return Object::as<ObjClass>(registers_[kStringClassOffset]); }
 
     ObjClass* AriaVM::range_class() const noexcept { return Object::as<ObjClass>(registers_[kRangeClassOffset]); }
-
-    void AriaVM::bootstrap_object_class() { registers_[kObjectClassOffset] = ObjectClass::make_class(gc_); }
-
-    void AriaVM::bootstrap_exception_class() {
-        const auto klass                  = ExceptionClass::make_class(gc_, object_class());
-        registers_[kExceptionClassOffset] = klass;
-        builtins_.set(Value::from_obj(klass->name()), Value::from_obj(klass)); // 唯一入 builtins_ 的 bootstrap 类
-    }
-
-    void AriaVM::bootstrap_iterator_class() {
-        registers_[kIteratorClassOffset] = IteratorClass::make_class(gc_, object_class());
-    }
-
-    void AriaVM::bootstrap_list_class() {
-        const auto klass             = ListClass::make_class(gc_, object_class());
-        registers_[kListClassOffset] = klass;
-        for (const auto& [name, offset]: ListClass::kOperatorFns) {
-            const auto hit = klass->load_field(*this, new_string(gc_, name));
-            ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
-            registers_[offset] = hit->as_obj();
-        }
-    }
-
-    void AriaVM::bootstrap_map_class() { registers_[kMapClassOffset] = MapClass::make_class(gc_, object_class()); }
-
-    void AriaVM::bootstrap_string_class() {
-        const auto klass               = StringClass::make_class(gc_, object_class());
-        registers_[kStringClassOffset] = klass;
-        for (const auto& [name, offset]: StringClass::kOperatorFns) {
-            const auto hit = klass->load_field(*this, new_string(gc_, name));
-            ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
-            registers_[offset] = hit->as_obj();
-        }
-    }
-
-    void AriaVM::bootstrap_range_class() {
-        registers_[kRangeClassOffset] = RangeClass::make_class(gc_, object_class());
-    }
-
-    void AriaVM::bootstrap_default_mark() {
-        // 缺参印章:私有 ObjClass 身份令牌,用户不可达;equals 恒地址型,显式实参身份均异于印章。
-        registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
-    }
-
-    void AriaVM::bootstrap_match_no_arm() {
-        // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
-        registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
-    }
 
     void AriaVM::init_source_roots() {
         // 入口槽 [0] 占位 cwd(REPL / 未显式设 dir_ 时裸名搜 cwd);cwd 不可用时空串兜底

@@ -88,7 +88,7 @@ namespace aria {
         }
 
         // Exception 类方法表:注册进 Exception bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        constexpr builtins::BuiltinFnEntry kExceptionBuiltins[] = {
+        constexpr BuiltinFnEntry kExceptionBuiltins[] = {
                 {"init", fn_init},
                 {"message", fn_message},
                 {"code", fn_code},
@@ -97,7 +97,7 @@ namespace aria {
     } // namespace
 
     void ExceptionClass::register_methods(GC& gc, ObjClass* klass) {
-        register_class_methods(gc, klass, kExceptionBuiltins);
+        Builtin::register_class_methods(gc, klass, kExceptionBuiltins);
     }
 
 } // namespace aria

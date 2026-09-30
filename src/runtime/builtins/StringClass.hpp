@@ -15,7 +15,7 @@ namespace aria {
     // bootstrap_string_class 编排调用;须在 ctor 构造临界区内调用(创建免守卫,入表/入格即根)。
     class StringClass {
     public:
-        // 注册口:按名把方法表装进 String bootstrap 类(经 builtins::register_class_methods 底座)。
+        // 注册口:按名把方法表装进 String bootstrap 类(经 Builtin::register_class_methods 底座)。
         static void register_methods(GC& gc, ObjClass* klass);
 
         // 算子实现缓存清单:六个算子钩子名 -> AriaVM 寄存器实现格,bootstrap_string_class 装载类表后

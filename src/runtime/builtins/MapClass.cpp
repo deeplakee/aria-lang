@@ -161,7 +161,7 @@ namespace aria {
 
         // map 方法表:注册进 Map bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
         // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(每源只加迭代器子类)。
-        constexpr builtins::BuiltinFnEntry kMapBuiltins[] = {
+        constexpr BuiltinFnEntry kMapBuiltins[] = {
                 {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},     {"get", fn_get},
                 {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs}, {"remove", fn_remove},
                 {"clear", fn_clear}, {"iter", fn_iter},
@@ -169,6 +169,6 @@ namespace aria {
 
     } // namespace
 
-    void MapClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kMapBuiltins); }
+    void MapClass::register_methods(GC& gc, ObjClass* klass) { Builtin::register_class_methods(gc, klass, kMapBuiltins); }
 
 } // namespace aria

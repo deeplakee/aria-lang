@@ -47,7 +47,7 @@ namespace aria {
 
         // 迭代器方法表:注册进 Iterator bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp;
         // 注册名与 CodeGen forIn 降糖 emit_method_call0 发射的同名常量同指针,查表按指针命中)。
-        constexpr builtins::BuiltinFnEntry kIteratorBuiltins[] = {
+        constexpr BuiltinFnEntry kIteratorBuiltins[] = {
                 {"has_next", fn_has_next},
                 {"next", fn_next},
         };
@@ -55,7 +55,7 @@ namespace aria {
     } // namespace
 
     void IteratorClass::register_methods(GC& gc, ObjClass* klass) {
-        register_class_methods(gc, klass, kIteratorBuiltins);
+        Builtin::register_class_methods(gc, klass, kIteratorBuiltins);
     }
 
 } // namespace aria

@@ -500,7 +500,7 @@ namespace aria {
         }
 
         // string 方法表:注册进 String bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        constexpr builtins::BuiltinFnEntry kStringBuiltins[] = {
+        constexpr BuiltinFnEntry kStringBuiltins[] = {
                 {"upper", fn_upper},
                 {"lower", fn_lower},
                 {"trim", fn_trim},
@@ -530,6 +530,6 @@ namespace aria {
 
     } // namespace
 
-    void StringClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kStringBuiltins); }
+    void StringClass::register_methods(GC& gc, ObjClass* klass) { Builtin::register_class_methods(gc, klass, kStringBuiltins); }
 
 } // namespace aria

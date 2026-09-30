@@ -120,7 +120,7 @@ namespace aria {
     }
 
     void CoroutineModule::register_functions(GC& gc, ObjModule* module) {
-        builtins::register_module_functions(gc, module, kModuleFunctions);
+        Builtin::register_module_functions(gc, module, kModuleFunctions);
     }
 
 } // namespace aria

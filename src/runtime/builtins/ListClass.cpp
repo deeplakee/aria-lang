@@ -312,7 +312,7 @@ namespace aria {
         }
 
         // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtins.hpp)。
-        constexpr builtins::BuiltinFnEntry kListBuiltins[] = {
+        constexpr BuiltinFnEntry kListBuiltins[] = {
                 {"push", fn_push},
                 {"pop", fn_pop},
                 {"insert", fn_insert},
@@ -335,6 +335,6 @@ namespace aria {
 
     } // namespace
 
-    void ListClass::register_methods(GC& gc, ObjClass* klass) { register_class_methods(gc, klass, kListBuiltins); }
+    void ListClass::register_methods(GC& gc, ObjClass* klass) { Builtin::register_class_methods(gc, klass, kListBuiltins); }
 
 } // namespace aria

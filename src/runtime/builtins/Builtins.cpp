@@ -15,7 +15,7 @@
 #include "value/ObjBridge.hpp" // try_obj<T>
 #include "value/Value.hpp"
 
-namespace aria::builtins {
+namespace aria {
 
     namespace {
 
@@ -126,44 +126,45 @@ namespace aria::builtins {
         // 内建变量表:暂无变量,以空 span 占位(零长数组非 ISO,MSVC 拒);首个变量落地时换数组。
         constexpr Span<const BuiltinVarEntry> kBuiltinVars{};
 
+        // 全局面函数装载口:把实参函数条目按名写入指定 builtins 表。由 register_builtin 于
+        // **构造临界区(GC 挂起)内**调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表
+        // 条目经 vm_roots tracer 标根;StringView 重载经 intern 池建名,保证 name 指针与 CodeGen
+        // 发射 LOAD_GLOBAL 所用同名常量同指。
+        void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
+            for (const auto& [name, fn]: fns) {
+                const auto fn_obj = new_native_fn(gc, name, fn);
+                table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
+            }
+        }
+
+        // 全局面变量装载口:GC 纪律同 register_functions(构造临界区内,init 产出即时入表不落中间)。
+        void register_variables(GC& gc, AriaHashTable& table, const Span<const BuiltinVarEntry> vars) {
+            for (const auto& [name, init_fn]: vars) {
+                const auto key   = new_string(gc, name); // intern,与 CodeGen 发射的同名常量同指
+                const auto value = init_fn(gc);
+                table.set(Value::from_obj(key), value);
+            }
+        }
+
     } // namespace
 
-    // 把实参函数条目按名写入指定 builtins 表。由 register_builtin 于**构造临界区(GC 挂起)内**
-    // 调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根;
-    // StringView 重载经 intern 池建名,保证 name 指针与 CodeGen 发射 LOAD_GLOBAL 所用同名常量同指。
-    void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
-        for (const auto& [name, fn]: fns) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
-        }
-    }
-
-    // 变量装载口:GC 纪律同 register_functions(构造临界区内,init 产出即时入表不落中间)。
-    void register_variables(GC& gc, AriaHashTable& table, const Span<const BuiltinVarEntry> vars) {
-        for (const auto& [name, init_fn]: vars) {
-            const auto key   = new_string(gc, name); // intern,与 CodeGen 发射的同名常量同指
-            const auto value = init_fn(gc);
-            table.set(Value::from_obj(key), value);
-        }
-    }
-
-    void register_builtin(GC& gc, AriaHashTable& builtins) {
-        register_functions(gc, builtins, kBuiltinFns);
-        register_variables(gc, builtins, kBuiltinVars);
-    }
-
-    void register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
+    void Builtin::register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
     }
 
-    void register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinFnEntry> fns) {
+    void Builtin::register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinFnEntry> fns) {
         for (const auto& [name, fn]: fns) {
             const auto fn_obj = new_native_fn(gc, name, fn);
             module->globals().set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
         }
     }
 
-} // namespace aria::builtins
+    void Builtin::register_builtin(GC& gc, AriaHashTable& builtins) {
+        register_functions(gc, builtins, kBuiltinFns);
+        register_variables(gc, builtins, kBuiltinVars);
+    }
+
+} // namespace aria

@@ -5,6 +5,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -91,9 +92,35 @@ namespace aria::builtins {
             return true;
         }
 
+        // Error(message[, code]) -> ObjException:用户异常工厂,直接产出 VM 同款异常对象(与
+        // 继承 Exception 的子类实例相对,免用户自定义类型)。code 可选:错误码数字(int,原样
+        // 携带,e.code() 即其值;未设 = ErrorCode::Error 的注册表序号)。message 收 String 原样
+        // 入 message_(不烘 "Category: Name" 前缀 -- 用户异常的消息即用户所给,catch 侧
+        // e.message() 原文取回)。
+        bool fn_Error(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 1 && argc != 2) {
+                return vm.arity_error_range(argc, 1, 2);
+            }
+            const auto msg = try_obj<ObjString>(slots[1]);
+            if (msg == nullptr) {
+                return vm.fail(ErrorCode::TypeMismatch, "argument must be a string, got {}", type_name(slots[1]));
+            }
+            auto code = static_cast<i64>(std::to_underlying(ErrorCode::Error));
+            if (argc == 2) {
+                if (!slots[2].is_int()) {
+                    return vm.fail(ErrorCode::TypeMismatch, "argument must be an integer, got {}", type_name(slots[2]));
+                }
+                code = slots[2].as_int();
+            }
+            slots[0] = Value::from_obj(new_exception(vm.gc(), code, msg->view()));
+            return true;
+        }
+
         // 内置表:按名注册进 VM 级 builtins 表。
         constexpr BuiltinEntry kBuiltins[] = {
-                {"type", fn_type}, {"str", fn_str}, {"println", fn_println}, {"assert", fn_assert}, {"clock", fn_clock},
+                {"type", fn_type},     {"str", fn_str},     {"println", fn_println},
+                {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
         };
 
     } // namespace

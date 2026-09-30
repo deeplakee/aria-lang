@@ -1,0 +1,7 @@
+# 违约钉：自有 init 未落 _message -> face 实例腿读据 miss，类措辞 UndefinedProperty
+def BadError : Exception {
+    init(x) {
+        this.x = x;
+    }
+}
+BadError(1).message();

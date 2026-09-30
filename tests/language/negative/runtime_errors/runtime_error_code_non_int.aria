@@ -1,0 +1,3 @@
+# 钉住：Error 的码参只收整数（语言层错误码即数字，未来引入枚举类型前以 int 表达），
+# 非整数实参响亮 TypeMismatch。
+Error("boom", "KeyError");

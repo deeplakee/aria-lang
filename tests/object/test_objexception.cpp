@@ -1,6 +1,8 @@
 #include <format>
 #include <gtest/gtest.h>
 
+#include <utility>
+
 #include "error/Error.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
@@ -9,6 +11,7 @@
 
 using aria::ErrorCode;
 using aria::GC;
+using aria::i64;
 using aria::new_exception;
 using aria::new_string;
 using aria::Object;
@@ -45,6 +48,20 @@ TEST(ObjException, EmptyMessageIsNonNullInterned) {
     auto e = make_exception(gc, ErrorCode::DivisionByZero, "");
     ASSERT_NE(e->message(), nullptr); // 无消息错误:空串 intern 兜底,无合法指针空态
     EXPECT_TRUE(e->message()->view().empty());
+}
+
+TEST(ObjException, NumericCodeCarriedVerbatim) {
+    // 数字码单一存储(i64):用户所给 int 原样携带(numeric_code 视图);ErrorCode 重载取注册
+    // 表序号,两个视图同源(code() = numeric_code() 的枚举 cast,VM 报错路径 cast 保真)。
+    GC   gc;
+    auto e     = new_exception(gc, static_cast<i64>(1001), "boom");
+    auto guard = gc.make_guard(e);
+    EXPECT_EQ(e->numeric_code(), 1001);
+
+    auto typed  = make_exception(gc, ErrorCode::TypeMismatch, "Runtime: TypeMismatch boom");
+    auto tguard = gc.make_guard(typed);
+    EXPECT_EQ(typed->numeric_code(), static_cast<i64>(std::to_underlying(ErrorCode::TypeMismatch)));
+    EXPECT_EQ(typed->code(), ErrorCode::TypeMismatch);
 }
 
 TEST(ObjException, ToStringRendersBakedMessage) {

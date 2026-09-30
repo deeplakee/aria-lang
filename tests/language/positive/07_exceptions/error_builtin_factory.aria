@@ -1,0 +1,49 @@
+# 钉住：Error 内建工厂——直接产出 ObjException（message 为用户原串不烘前缀；code 可选
+# 数字码原样携带，未设 = ErrorCode::Error 的注册表序号 42）；重抛同一对象保码保消息。
+var err = Error("boom");
+assert(type(err) == "Exception");
+assert(err.message() == "boom");
+assert(err.code() == 42);        # ErrorCode::Error
+
+# 抛出后 catch 绑定同一对象（=== 身份），消息原样取回
+try {
+    throw err;
+} catch (e) {
+    assert(e === err);
+    assert(e.message() == "boom");
+}
+
+# re-throw 保码保消息（单寄存器模型：ObjException 载荷原值穿层）
+var kept;
+try {
+    try {
+        throw Error("inner");
+    } catch (e) {
+        throw e;
+    }
+} catch (e) {
+    kept = e;
+}
+assert(kept.message() == "inner");
+assert(kept.code() == 42);
+
+# 空串消息合法（message_ 内容可空）
+var empty = Error("");
+assert(empty.message() == "");
+
+# Error 是一等值：可存可传
+var factory = Error;
+var late = factory("later");
+assert(late.message() == "later");
+
+# 可选数字码参：Error(msg, code) 原样携带任意 int，e.code() 即其值
+var tagged = Error("disk full", 1001);
+assert(tagged.message() == "disk full");
+assert(tagged.code() == 1001);
+assert(type(tagged.code()) == "Int");
+try {
+    throw tagged;
+} catch (e) {
+    assert(e.code() == 1001);
+    assert(e.message() == "disk full");
+}

@@ -1,0 +1,52 @@
+# 钉住：继承 Exception 定义用户异常类型——裸名 Exception 经 builtins_ 可达；链上实例经默认
+# init 恒有 _message/_code 字段（默认 ""/Error 默认码 42），自有 init 须自行落同名字段；
+# face message()/code() 按接收者分派：ObjException 读原生成员，实例 load_field 读同名字段。
+def HttpError : Exception {
+    init(status, msg) {
+        this.status = status;
+        this._code = status;
+        this._message = msg;
+    }
+    describe() {
+        return "http " + str(this.status) + ": " + this._message;
+    }
+}
+
+try {
+    throw HttpError(404, "not found");
+} catch (e) {
+    assert(type(e) == "Instance");
+    assert(e.status == 404);
+    assert(e._message == "not found");      # 实例字段（属性形态）
+    assert(e.message() == "not found");     # face 实例腿：load_field 读 _message
+    assert(e.code() == 404);                # face 实例腿：load_field 读 _code
+    assert(e.describe() == "http 404: not found");
+}
+
+# _message/_code 字段名与 message()/code() 方法名不撞：属性读字段、调用走 face，互不遮蔽
+try {
+    throw HttpError(500, "server error");
+} catch (e) {
+    assert(e._message == "server error");
+    assert(e.message() == "server error");
+}
+
+# 不写 init：沿链继承 Exception 默认 init，落默认 _message=""/_code=42
+def PlainError : Exception {
+}
+
+var plain = PlainError();
+assert(type(plain) == "Instance");
+assert(plain.message() == "");
+assert(plain.code() == 42);
+try {
+    throw plain;
+} catch (e) {
+    assert(e === plain);
+}
+
+# Exception 直接实例化同样落默认字段（带 payload 的数据载体走 Error 工厂）
+var bare = Exception();
+assert(type(bare) == "Instance");
+assert(bare.message() == "");
+assert(bare.code() == 42);

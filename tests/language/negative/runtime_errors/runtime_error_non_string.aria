@@ -1,0 +1,3 @@
+# 钉住：Error 内建的实参类型——message 位仅收 String，非串响亮 TypeMismatch（泛称
+# argument，不带被调名）。
+Error(42);

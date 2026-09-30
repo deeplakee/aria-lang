@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <utility>
 
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
@@ -1110,6 +1112,56 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
     EXPECT_EQ(thrown->view(), "boom");
 
     EXPECT_NE(find_module_by_name(vm.modules(), "boomer"), nullptr);
+}
+
+// Exception bootstrap 类:寄存器格形状(名/super/init+message+code 原生方法)+ builtins_ 裸名可达
+// (superclass 位 LOAD_GLOBAL miss 回退),face 双腿(ObjException 读原生成员/实例 load_field 读
+// _message/_code)与默认 init 在 stress GC 下端到端可用。
+TEST_F(AriaVMStress, ExceptionBootstrapClassFace) {
+
+    const auto klass = vm.exception_class();
+    ASSERT_NE(klass, nullptr);
+    EXPECT_EQ(klass->name()->view(), "Exception");
+    EXPECT_EQ(klass->superclass(), vm.object_class());
+    for (const auto* member: {"init", "message", "code"}) {
+        const auto hit = klass->load_field(vm, new_string(vm.gc(), member));
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_TRUE(aria::Object::is<aria::ObjNativeFn>(hit->as_obj()));
+    }
+
+    // 实例腿:链上实例经默认 init 恒有 _message/_code(默认 ""/Error 默认码);自有 init 落用户
+    // 值后 face 读同名字段。ObjException 腿:VM 报错 = 注册表序号(经 to_underlying 注入,免漂移);
+    // Error 未设码参 = ErrorCode::Error 的序号。
+    const auto src =
+            std::format("def MyError : Exception {{\n"
+                        "    init(msg) {{ this._message = msg; this._code = 7; }}\n"
+                        "}}\n"
+                        "try {{\n"
+                        "    throw MyError(\"boom\");\n"
+                        "}} catch (e) {{\n"
+                        "    assert(e.message() == \"boom\");\n"
+                        "    assert(e.code() == 7);\n"
+                        "    assert(e._message == \"boom\");\n"
+                        "    assert(type(e) == \"Instance\");\n"
+                        "}}\n"
+                        "assert(Exception().message() == \"\");\n"
+                        "assert(Exception().code() == {});\n"
+                        "try {{\n"
+                        "    var x = 1 / 0;\n"
+                        "}} catch (e) {{\n"
+                        "    assert(type(e) == \"Exception\");\n"
+                        "    assert(e.code() == {});\n"
+                        "}}\n"
+                        "var err = Error(\"boom\");\n"
+                        "try {{\n"
+                        "    throw err;\n"
+                        "}} catch (e) {{\n"
+                        "    assert(e.message() == \"boom\");\n"
+                        "    assert(e.code() == {});\n"
+                        "}}\n",
+                        std::to_underlying(aria::ErrorCode::Error), std::to_underlying(aria::ErrorCode::DivisionByZero),
+                        std::to_underlying(aria::ErrorCode::Error));
+    EXPECT_EQ(vm.interpret_from_src(src), aria::InterpretResult::Ok);
 }
 
 // 循环导入:a 导入 b、b 导入 a(均经 IMPORT 入表 -> 命中 Loading 半初始化对象)。两者各 run-once 一次,

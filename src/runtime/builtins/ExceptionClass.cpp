@@ -74,7 +74,7 @@ namespace aria {
                 return vm.arity_error(argc, 0);
             }
             if (const auto ex = try_obj<ObjException>(slots[0])) {
-                slots[0] = Value::from_int(std::to_underlying(ex->code()));
+                slots[0] = Value::from_int(ex->numeric_code());
                 return true;
             }
             if (const auto inst = try_obj<ObjInstance>(slots[0])) {

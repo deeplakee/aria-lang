@@ -1,0 +1,3 @@
+# 钉住：is_a 的实参类型——目标位仅收类值，非类响亮 TypeMismatch（泛称 argument）。
+var e = Error("x");
+e.is_a(42);

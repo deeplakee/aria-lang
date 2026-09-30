@@ -1,0 +1,48 @@
+# 钉住：Object 根类 is_a 方法——类链归属判定：实例自本类沿 super 链、异常自 Exception、
+# 内置容器自各自 bootstrap 类、类接收者自自身。经继承触达，用户异常类型与内建异常同走
+# 一路。（Object 根类裸名不可达，根命中由 Exception 命中传递覆盖。）
+def Base : Exception {
+}
+def Derived : Base {
+}
+def Unrelated {
+}
+
+# 实例接收者：沿自身类链向上命中即 true
+var d = Derived();
+assert(d.is_a(Derived));
+assert(d.is_a(Base));
+assert(d.is_a(Exception));
+var b = Base();
+assert(b.is_a(Base));
+assert(b.is_a(Exception));
+assert(!b.is_a(Derived));        # 父类实例不命中子类
+var u = Unrelated();
+assert(u.is_a(Unrelated));
+assert(!u.is_a(Exception));      # Object 根下与 Exception 平行的分支不串
+assert(!u.is_a(Base));
+
+# 异常接收者：链根 = Exception bootstrap 类
+try {
+    var x = 1 / 0;
+} catch (e) {
+    assert(e.is_a(Exception));
+    assert(!e.is_a(Base));
+    assert(!e.is_a(Derived));
+}
+var err = Error("x");
+assert(err.is_a(Exception));
+assert(!err.is_a(Base));
+
+# 类接收者：链根 = 类自身（「继承自」判定）
+assert(Derived.is_a(Base));
+assert(Base.is_a(Exception));
+assert(Exception.is_a(Exception));
+assert(!Base.is_a(Derived));
+
+# 内置容器/迭代器：解析委托各自 bootstrap 类，沿链走（对 Exception 目标恒 miss）
+assert(![].is_a(Exception));
+assert(!"s".is_a(Base));
+assert(!{}.is_a(Exception));
+assert(!(1..2).is_a(Base));
+assert(![].iter().is_a(Exception));

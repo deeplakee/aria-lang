@@ -1,0 +1,3 @@
+Runtime: TypeMismatch
+argument must be a class, got Int
+at <main> (

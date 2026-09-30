@@ -38,6 +38,16 @@ namespace aria {
             NativeFn   fn;
         };
 
+        // 内建变量条目的初始化函数:收 GC 引用自含构造变量值(纯常量形态;VM bootstrap 单例
+        // 够不着,Exception 等类腿不经此)。
+        using VarInitFn = Value (*)(GC&);
+
+        // 内建变量条目:名 + 初始化函数指针。仅全局内建变量表(kBuiltinVars)用此形态。
+        struct BuiltinVarEntry {
+            StringView name;
+            VarInitFn  fn;
+        };
+
         // 按名把内建方法表逐条注册进**类字段表**,成为该类实例的内建方法面(receiver 恒绑定):
         // name 作字段键,经 new_native_fn 的 StringView 重载 intern,与 CodeGen LOAD_FIELD 发射
         // 的同名常量同指针,查表按指针命中。全局表不经此(只此一处填,循环就地写在定义里)。
@@ -51,6 +61,11 @@ namespace aria {
 
         // 按名把实参函数表逐条注册进**指定 builtins 表**(全局面装载口)。
         void register_functions(GC& gc, AriaHashTable& table, Span<const BuiltinFnEntry> fns);
+
+        // 按名把内建变量逐条注册进**指定表**:键经 new_string 的 StringView 重载 intern(与
+        // CodeGen 发射的同名常量同指),值由 init 现做。与 register_functions 是全局面的
+        // 函数/变量两个装载口。
+        void register_variables(GC& gc, AriaHashTable& table, Span<const BuiltinVarEntry> vars);
 
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次(在建对象经 make_guard
         // 双守卫,见定义)。

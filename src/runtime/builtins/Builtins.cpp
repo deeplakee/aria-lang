@@ -123,6 +123,9 @@ namespace aria::builtins {
                 {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
         };
 
+        // 内建变量表:暂无变量,以空 span 占位(零长数组非 ISO,MSVC 拒);首个变量落地时换数组。
+        constexpr Span<const BuiltinVarEntry> kBuiltinVars{};
+
     } // namespace
 
     // 把实参函数条目按名写入指定 builtins 表。由 register_builtin 于**构造临界区(GC 挂起)内**
@@ -135,7 +138,19 @@ namespace aria::builtins {
         }
     }
 
-    void register_builtin(GC& gc, AriaHashTable& builtins) { register_functions(gc, builtins, kBuiltinFns); }
+    // 变量装载口:GC 纪律同 register_functions(构造临界区内,init 产出即时入表不落中间)。
+    void register_variables(GC& gc, AriaHashTable& table, const Span<const BuiltinVarEntry> vars) {
+        for (const auto& [name, init_fn]: vars) {
+            const auto key   = new_string(gc, name); // intern,与 CodeGen 发射的同名常量同指
+            const auto value = init_fn(gc);
+            table.set(Value::from_obj(key), value);
+        }
+    }
+
+    void register_builtin(GC& gc, AriaHashTable& builtins) {
+        register_functions(gc, builtins, kBuiltinFns);
+        register_variables(gc, builtins, kBuiltinVars);
+    }
 
     void register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {

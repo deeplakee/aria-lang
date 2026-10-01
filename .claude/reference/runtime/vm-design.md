@@ -8,7 +8,7 @@
 
 - 协程/执行上下文实体类名:**`ObjMovement`**(`Object` 子类型,M6 已自纯 C++ 类 `Movement` 升级而来)。
 - **`VMContext` 是 `ObjMovement` 的别名**:`using VMContext = ObjMovement;`。代码中按语义选用--泛指「一段执行的状态」时用 `VMContext`,强调「协程对象」时用 `ObjMovement`。
-- `ObjType::MOVEMENT` 已增补(语言可见名 `Movement`,`type(co)` 报之)。
+- `ObjType::MOVEMENT` 已增补(语言可见名 `Coroutine`,`type(co)` 报之;拼写住 to_string(ObjType))。
 - M1 先以纯 C++ 类 `Movement` 落地(不继承 Object);M6 升级为 `ObjMovement : Object` 仅重命名 + 加 trace,别名的存在使调用方代码零改动。
 
 ## 2. 状态分层

@@ -20,7 +20,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/ObjMovement.hpp`
 
-执行上下文（`ObjMovement : Object` final，`ObjType::MOVEMENT`：主上下文与协程统一为本类型 GC 对象，`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形，五态 suspended/normal/running/done/failed）。trace 自标值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点。
+执行上下文（`ObjMovement : Object` final，`ObjType::MOVEMENT`：主上下文与协程统一为本类型 GC 对象，`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形，五态 suspended/normal/running/done/failed）。trace 自标值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点。
 
 ### 值栈与帧栈
 

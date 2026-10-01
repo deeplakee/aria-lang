@@ -26,7 +26,7 @@ paths:
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`vm.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经 VM 访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
-- `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文对象（`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Movement`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。trace 自标值栈/帧/开链/挂起载荷并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
+- `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文对象（`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。trace 自标值栈/帧/开链/挂起载荷并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
 - `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `debug_repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
 - `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_obj<T>`、`is_callable_value`、`is_method`）。
 

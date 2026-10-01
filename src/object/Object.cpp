@@ -21,60 +21,60 @@ namespace aria {
     }
 
     bool Object::store_field(AriaVM& vm, ObjString* name, const Value value) {
-        return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", aria_type_name());
+        return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name());
     }
 
     Opt<Value> Object::load_index(AriaVM& vm, const Value key) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 
     bool Object::store_index(AriaVM& vm, const Value key, const Value value) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 
     // 算子/调用协议基类默认:未实现该协议直接 fail(报文打钩子名);实现者见 Object.hpp。
     Opt<Value> Object::op_add_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__add__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__add__'", type_name());
     }
 
     Opt<Value> Object::op_sub_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__sub__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__sub__'", type_name());
     }
 
     Opt<Value> Object::op_mul_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mul__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mul__'", type_name());
     }
 
     Opt<Value> Object::op_div_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__div__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__div__'", type_name());
     }
 
     Opt<Value> Object::op_mod_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mod__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__mod__'", type_name());
     }
 
     Opt<Value> Object::op_less_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__lt__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__lt__'", type_name());
     }
 
     Opt<Value> Object::op_less_equal_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__le__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__le__'", type_name());
     }
 
     Opt<Value> Object::op_greater_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__gt__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__gt__'", type_name());
     }
 
     Opt<Value> Object::op_greater_equal_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__ge__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__ge__'", type_name());
     }
 
     Opt<Value> Object::op_negate_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__neg__'", aria_type_name());
+        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support '__neg__'", type_name());
     }
 
     Opt<Value> Object::op_call_impl(AriaVM& vm) {
-        return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", aria_type_name());
+        return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name());
     }
 
 } // namespace aria

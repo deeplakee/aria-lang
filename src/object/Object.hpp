@@ -33,8 +33,8 @@ namespace aria {
         MOVEMENT,
     };
 
-    // ObjType 的静态可读名映射(PascalCase);Object::type_name() 委托本函数,供 C++ 侧日志诊断。
-    // 语言面拼写(type() 内建/用户可见报错/debug_repr 默认)走 aria_type_name,勿混用。
+    // ObjType 的类型名映射(PascalCase,唯一映射源):C++ 侧诊断与语言面(type() 内建/用户可见报错/debug_repr
+    // 默认)统一走本函数;语言概念与实现名分叉处(协程)直接按语言词汇拼写。
     [[nodiscard]]
     constexpr StringView to_string(const ObjType kind) noexcept {
         switch (kind) {
@@ -69,21 +69,9 @@ namespace aria {
             case ObjType::CLOSURE:
                 return "Closure";
             case ObjType::MOVEMENT:
-                return "Movement";
+                return "Coroutine"; // 语言概念是协程;MOVEMENT 只是 C++ 实现词根
             default:
                 UNREACHABLE();
-        }
-    }
-
-    // 语言面类型名(type() 内建与用户可见报错的拼写源):条目按语言词汇拼写,与 to_string 的
-    // C++ 机械名分立;仅在分叉处覆写,其余委托 to_string(新增 ObjType 默认继承机械名)。
-    [[nodiscard]]
-    constexpr StringView aria_type_name(const ObjType kind) noexcept {
-        switch (kind) {
-            case ObjType::MOVEMENT:
-                return "Coroutine"; // 语言概念是协程(coroutine 模块/报错文案/debug_repr 同此拼写)
-            default:
-                return to_string(kind);
         }
     }
 
@@ -128,18 +116,10 @@ namespace aria {
             return type_;
         }
 
-        // 对象类型 C++ 侧可读名(日志诊断用):委托 to_string(ObjType),非虚(纯由 type_ 决定)。
+        // 对象类型可读名:委托 to_string(ObjType),非虚(纯由 type_ 决定)。
         [[nodiscard]]
         constexpr StringView type_name() const noexcept {
             return aria::to_string(type_);
-        }
-
-        // 对象类型语言面拼写(type() 内建/用户可见报错/debug_repr 渲染源):委托自由函数,非虚
-        //(纯由 type_ 决定);与 type_name() 成对分立内外。成员同名隐藏自由函数,经 aria:: 限定
-        //(与上方 type_name() 委托 aria::to_string 同款)。
-        [[nodiscard]]
-        constexpr StringView aria_type_name() const noexcept {
-            return aria::aria_type_name(type_);
         }
 
         [[nodiscard]]
@@ -182,7 +162,7 @@ namespace aria {
         // 另须挂 PrintGuard 防环:元素重遇在印对象即截断 "[...]",否则无限递归栈溢出。
         [[nodiscard]]
         virtual String debug_repr() const {
-            return std::format("<{} at {:p}>", aria_type_name(), util::to_void_ptr(this));
+            return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
         // 可读描述(str 位),基类默认 = debug_repr;显示与调试分叉的子类型两者都 override

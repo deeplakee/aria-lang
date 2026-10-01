@@ -32,6 +32,12 @@ namespace aria {
         return value.is_int() || value.is_f64();
     }
 
+    // is_num 前提下取数值的 f64 视图(Int 升 f64 / F64 原样);非 num 值由 as_int 的 debug ASSERT 拦截。
+    [[nodiscard]]
+    inline f64 as_num(const Value value) noexcept {
+        return value.is_f64() ? value.as_f64() : static_cast<f64>(value.as_int());
+    }
+
     // 真值(Lua 风格):nil 与 false 为假,其余(含 0/"")为真。
     [[nodiscard]]
     inline bool is_truthy(const Value value) noexcept {

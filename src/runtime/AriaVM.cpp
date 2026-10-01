@@ -689,8 +689,7 @@ namespace aria {
             return run_binary_int<Op>(a.as_int(), b.as_int());
         }
         // 任一 F64 升浮点:另一侧按字面值升。
-        return run_binary_f64<Op>(a.is_f64() ? a.as_f64() : static_cast<f64>(a.as_int()),
-                                  b.is_f64() ? b.as_f64() : static_cast<f64>(b.as_int()));
+        return run_binary_f64<Op>(as_num(a), as_num(b));
     }
 
     template<OpCode Op>

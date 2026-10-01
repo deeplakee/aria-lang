@@ -47,11 +47,8 @@ namespace aria {
             return false;
         }
 
-        if ((lhs_type == Value::Type::Int && rhs_type == Value::Type::F64) ||
-            (lhs_type == Value::Type::F64 && rhs_type == Value::Type::Int)) {
-            const auto lhs_f64 = lhs_type == Value::Type::Int ? static_cast<f64>(lhs.as_int()) : lhs.as_f64();
-            const auto rhs_f64 = rhs_type == Value::Type::Int ? static_cast<f64>(rhs.as_int()) : rhs.as_f64();
-            return lhs_f64 == rhs_f64;
+        if (is_num(lhs) && is_num(rhs)) {
+            return as_num(lhs) == as_num(rhs);
         }
 
         return false;
@@ -129,8 +126,8 @@ namespace aria {
             return lhs.as_int() < rhs.as_int();
         }
         if (is_num(lhs) && is_num(rhs)) {
-            const auto x = lhs.is_int() ? static_cast<f64>(lhs.as_int()) : lhs.as_f64();
-            const auto y = rhs.is_int() ? static_cast<f64>(rhs.as_int()) : rhs.as_f64();
+            const auto x = as_num(lhs);
+            const auto y = as_num(rhs);
             if (std::isnan(x) || std::isnan(y)) {
                 return std::isnan(x) && !std::isnan(y);
             }

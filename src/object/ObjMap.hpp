@@ -12,15 +12,15 @@ namespace aria {
     // map 对象(ObjType::MAP):`{...}` 字面量的运行期载体,键值均任意 Value、存 AriaHashTable(Swiss Table;表内键判等 ===,
     // int 1 与 f64 1.0 是不同键;可变对象作键按身份哈希)。下标读写经 load_index/store_index 协议 override;命名成员经
     // load_field 委托 VM 的 Map bootstrap 类方法表恒绑定。
-    //   - 迭代序 unspecified:非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器 v1 不
-    //     承诺(rehash 搬迁槽位),文档明示。
+    //   - 迭代序 unspecified:非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器不
+    //     承诺(rehash 搬迁槽位),guide 07-maps 章明示。
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容:size 相等且逐键在对方命中同键(键按表内语义 ===,find
-    //     即 value_identical 匹配)、值 value_equal(嵌套容器经各自 equals 递归);入口挂 EqualGuard 防环(重遇同对视为相等
-    //     );`===` 恒指针(value_identical,不经本类)。
+    //     即 value_identical 匹配)、值 value_equal(嵌套容器经各自 equals 递归);入口挂 EqualGuard 防环(重遇同对视为
+    //     相等);`===` 恒指针(value_identical,不经本类)。
     //   - trace():委托 table_.trace(遍历占用槽 mark_value key+value)。
     //   - debug_repr():`{"a": 1}` 式,键值走 format_value_debug(嵌套字符串带引号,嵌套容器递归;渲染序随占用槽,同
-    //     unspecified);入口挂 PrintGuard 防环(自引用/互环截断 "{...}",Python 同款);显示同文案(to_string 经基类默认委托
-    //     )。
+    //     unspecified);入口挂 PrintGuard 防环(自引用/互环截断 "{...}",Python 同款);显示同文案(to_string
+    //     经基类默认委托)。
     class ObjMap final : public Object {
     public:
         // 哈希表惰性分配,ctor 只绑分配器(首分配由 set 的扩容路径自理)。
@@ -61,7 +61,7 @@ namespace aria {
         String debug_repr() const override;
 
         // 命名成员读取协议 override:查 Map bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+        //(两步形态权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 

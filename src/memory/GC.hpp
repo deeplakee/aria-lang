@@ -13,12 +13,13 @@
 
 namespace aria {
 
-    // GC:解释器统一内存分配器 + mark-sweep 回收器。回收:roots = 临时根 + VM 根(经 std::function 回调,标 modules_ +
-    // builtins_ + current_ 沿 previous_ 执行链各上下文的值栈/活动帧/挂起错误寄存器 + open upvalue 开链节点)。 **核心不
-    // 变式(承重)**:allocate<T>/reallocate<T> 永不触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。这是与「link-on
-    // -alloc + publish-after」对象模型绑定的定义性约束:new_object 返回的对象白色无根,需发布进某个根才安全,而发布动作
-    // 本身就是一次 buffer 分配;若该分配触发 GC 会扫掉白色无根对象致悬垂。 gray_stack_ / temp_roots_ 是 GC 自身
-    // scratch,不经 GC 分配器、不计入 bytes_allocated_。
+    // GC:解释器统一内存分配器 + mark-sweep 回收器。回收:roots = 临时根 + VM 根(经 std::function 回调,标
+    // 五类:modules_、builtins_、registers_ 逐格、string_constants_ 逐串、current_ 沿 previous_ 执行链各上下文
+    // 的值栈/活动帧/open upvalue 开链/挂起错误寄存器)。**核心不变式(承重)**:allocate<T>/reallocate<T> 永不
+    // 触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。这是与「link-on-alloc + publish-after」对象模型
+    // 绑定的定义性约束:new_object 返回的对象白色无根,需发布进某个根才安全,而发布动作本身就是一次 buffer
+    // 分配;若该分配触发 GC 会扫掉白色无根对象致悬垂。gray_stack_ / temp_roots_ 是 GC 自身 scratch,不经 GC
+    // 分配器、不计入 bytes_allocated_。
     class GC {
     public:
         GC() noexcept;
@@ -57,11 +58,8 @@ namespace aria {
         void mark_value(Value value) noexcept;
         void mark_object(Object* object) noexcept;
 
-        // bytes_allocated_ >= next_gc_(或 stress 开)时 collect()。
         void maybe_collect() noexcept;
 
-        // mark_roots_ -> trace_gray_ -> intern_.remove_white()(摘白表项,须在 sweep 前) -> sweep_
-        // -> 调整 next_gc_。
         void collect();
 
         // C++ 局部变量持有的、尚未入值栈的对象,在分配序列间保护其不被回收。
@@ -145,9 +143,8 @@ namespace aria {
 
         [[nodiscard]] LockGuard make_lock() noexcept { return LockGuard{this}; }
 
-        // Intern 驻留池(weak root,字符串专用),委托给 intern_ 成员(保持 private)。new_string
-        // 经此实现驻留:命中返回已有串,未命中 new_object 后 insert。驻留池不进 mark_roots_,collect 在 sweep 前调
-        // intern_.remove_white() 摘除白色表项防悬垂。
+        // Intern 驻留池(weak root,机制见 InternPool.hpp):new_string 经此实现驻留,命中返回已有串、
+        // 未命中 new_object 后 insert;collect 在 sweep 前调 intern_.remove_white() 摘白防悬垂。
         [[nodiscard]] ObjString* intern_find(StringView str) const noexcept;
 
         void intern_insert(ObjString* str);
@@ -171,20 +168,17 @@ namespace aria {
         static constexpr usize kInitialGcThreshold = 1024 * 4;
         static constexpr usize kGcGrowFactor       = 2;
 
-        // 声明序:基本类型在前,scratch List/InternPool/tracer 在后 -- 析构逆序使 scratch List 先析构
-        // (其 dtor 不碰 bytes_allocated_,无依赖)。
         Object*        objects_head_;
         usize          bytes_allocated_;
-        usize          allocation_count_; // 累计分配次数(单调),基准用确定性读数
+        usize          allocation_count_;
         usize          next_gc_;
         bool           is_stress_;
-        u32            lock_count_; // GC 禁用计数(>0 禁用,支持嵌套 disable/enable)
-        List<Object*>  gray_stack_; // GC scratch,不计入 bytes_allocated_
-        List<Value>    temp_roots_; // GC scratch,不计入 bytes_allocated_
+        u32            lock_count_;
+        List<Object*>  gray_stack_;
+        List<Value>    temp_roots_;
         ShellPool      shell_pool_; // 对象壳池(壳经 new_object/delete_object 进出,span 随析构排空)
         InternPool<GC> intern_;     // 字符串驻留池(weak root,slots_ 计入 bytes_allocated_)
-        // VM 根标记回调(modules_ + builtins_ + current_ 执行链上各上下文值栈/活动帧/
-        // 挂起错误寄存器;AriaVM 注册,可为空)
+        // VM 根标记回调(五类根清单见类头注;AriaVM 注册,可为空)
         std::function<void(GC&)> vm_roots_tracer_;
     };
 

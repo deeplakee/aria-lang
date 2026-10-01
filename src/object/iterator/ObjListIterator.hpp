@@ -9,7 +9,7 @@ namespace aria {
     class ObjList;
 
     // list 迭代器(ObjIterator 引擎缝的 list 消费者):被遍历 list + 下一元素下标,游标
-    // 单调 +1。迭代中变更容器不设防(v1 不承诺):push 的新尾会被遍历到,pop 缩界后越界
+    // 单调 +1。迭代中变更容器不设防:push 的新尾会被遍历到,pop 缩界后越界
     // 由 next 的 fail-fast 拦住;下标式游标不悬垂(元素缓冲扩容搬迁,下标仍有效)。
     class ObjListIterator final : public ObjIterator {
     public:

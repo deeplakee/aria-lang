@@ -64,8 +64,7 @@ namespace aria {
     // 越界预检:读取 need 字节是否会越过末尾(残缺字节码将被截断)。
     bool Disassembler::is_truncated(const u32 need) const noexcept { return offset_ + need > codeunit_->code.size(); }
 
-    // 常量/名字索引的注释渲染(供 LOAD_CONST/CLOSURE 及全部名字索引指令):按 idx 取常量,
-    // 越界退化为 <bad idx>。只读,不推进 offset_。
+    // 越界退化为 <bad idx>(消费面见 Disassembler.hpp 注)。
     String Disassembler::format_constant(const u16 idx) const {
         const auto v = constant_at(codeunit_, idx);
         return v ? format_value_debug(*v) : std::format("<bad idx {}>", idx);
@@ -157,7 +156,7 @@ namespace aria {
     }
 
     // 反汇编单条指令,返回指令文本(不含偏移前缀/换行),推进 offset_ 越过该指令。
-    // 表驱动按格式分发(见 Disassembler.hpp 文档);新增 opcode 本函数零改动。
+    // 表驱动按格式分发(见 Disassembler.hpp 文档)。
     String Disassembler::dis_instruction() {
         const u8 byte = codeunit_->code[offset_++];
 
@@ -197,7 +196,7 @@ namespace aria {
 
     // 详见 Disassembler.hpp 的文档注释(输出结构/小节划分)。
     String Disassembler::disassemble() {
-        offset_    = 0; // 从头解码,对象可复用
+        offset_    = 0;
         String out = std::format("== {} ==\n", name_);
 
         // 常量池小节(非空才列):便于解读常量索引操作数。

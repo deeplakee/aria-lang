@@ -43,7 +43,8 @@ namespace aria {
         }
         // 状态五态穷举,Suspended 是唯一可恢复态:Running = 自我 resume(current_ 只能被自己
         // 的执行体传给 resume)、Normal = 自身也在链中间,与死态各归其码。与 previous_ 链判定
-        // 等价(置链/解链只发生在三处切换点、与状态写点成对),但状态是唯一分派依据,覆盖显式。
+        // 等价(置链只在 resume 两臂经 enter_coroutine、解链只在 yield/RETURN 完成/unwind
+        // 跳链经 leave_coroutine,与状态写点成对),但状态是唯一分派依据,覆盖显式。
         switch (co->state()) {
             case ExecState::Suspended:
                 break;
@@ -126,8 +127,8 @@ namespace aria {
     }
 
     Value CoroutineModule::make_module(GC& gc) {
-        // <coroutine> 合成模块:语言面 coroutine.create/resume/yield/status 的载体(P1:合成
-        // ObjModule 而非新对象类型 -- ObjMap 当不了命名空间,map.foo 查的是 Map 类方法表)。
+        // <coroutine> 合成模块:语言面 coroutine.create/resume/yield/status 的载体。合成
+        // ObjModule 而非新对象类型 -- ObjMap 当不了命名空间,map.foo 查的是 Map 类方法表。
         // dir 空:纯命名空间,无目录锚点。
         const auto module = new_module(gc, "<coroutine>", "");
         register_functions(gc, module);

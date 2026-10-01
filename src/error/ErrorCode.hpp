@@ -18,7 +18,8 @@ namespace aria {
         Resource,
     };
 
-    // 大类可读名表（下标即 std::to_underlying(c)，行序须与枚举声明一致；哨兵断言拦截不同步）。
+    // 大类可读名表（下标即 std::to_underlying(c)，行序须与枚举声明一致；哨兵断言只拦表长漂移，
+    // 行序错位不炸断言，靠增删时自查）。
     inline constexpr StringView kCategoryNames[] = {
             "Ok", "Syntax", "Semantic", "Runtime", "Internal", "Resource",
     };
@@ -41,33 +42,33 @@ namespace aria {
     X(Ok, Ok)                                                                                                       \
     /* ========== SYNTAX ERROR (lexer / parser stage) ========== */                                                 \
     /* --- lexer --- */                                                                                             \
-    X(UnterminatedString, Syntax)           /* string not closed / crosses a line break */                          \
-    X(InvalidEscape, Syntax)                /* unknown escape (no \x; malformed \u{}) */                            \
-    X(InvalidNumber, Syntax)                /* malformed number literal (base prefix, underscores, mantissa) */     \
-    X(InvalidCharacter, Syntax)             /* character that starts no token */                                    \
-                                            /* --- parser --- */                                                    \
-    X(UnexpectedEof, Syntax)                /* source ends early */                                                 \
-    X(ExpectedExpression, Syntax)           /* expression expected, something else found */                         \
-    X(ExpectedIdentifier, Syntax)           /* identifier expected */                                               \
-    X(ExpectedToken, Syntax)                /* expected symbol or keyword (named by the message) */                 \
-    X(InvalidPattern, Syntax)               /* malformed destructuring pattern (rest not last, ..._) */             \
-    X(VarargsNotLast, Syntax)               /* '...' must be the last parameter */                                  \
-    X(DefaultAfterPlain, Syntax)            /* no plain parameter after a defaulted one */                          \
-                                            /* ========== SEMANTIC ERROR (checks the grammar defers) ========== */  \
-    X(InvalidAssignmentTarget, Semantic)    /* lvalue must be identifier / obj.field / obj[index] */                \
-    X(SuperOutsideMethod, Semantic)         /* super outside a method */                                            \
-    X(ThisOutsideClass, Semantic)           /* this outside a class */                                              \
-    X(BreakOutsideLoop, Semantic)           /* break outside a loop */                                              \
-    X(ContinueOutsideLoop, Semantic)        /* continue outside a loop */                                           \
-    X(ReturnValueAtTopLevel, Semantic)      /* return with a value at top level */                                  \
-    X(TryWithoutHandler, Semantic)          /* try without a catch clause */                                        \
-    X(UnreachableArm, Semantic)             /* arm after the '_' arm (dead arm; '_' comes last, at most once) */    \
-    X(DuplicateParam, Semantic)             /* parameter name used twice in one function */                         \
-    X(UndefinedType, Semantic)              /* class name that is not defined */                                    \
-    X(RedefinedVariable, Semantic)          /* variable defined twice in one scope */                               \
-    X(RedefinedClass, Semantic)             /* class defined twice */                                               \
-    X(NumberOutOfRange, Semantic)           /* integer literal beyond i48 (the grammar defers overflow here) */     \
-                                            /* ========== RUNTIME ERROR (execution stage) ========== */             \
+    X(UnterminatedString, Syntax) /* string not closed / crosses a line break */                                    \
+    X(InvalidEscape, Syntax)      /* unknown escape (no \x; malformed \u{}) */                                      \
+    X(InvalidNumber, Syntax)      /* malformed number literal (base prefix, underscores, mantissa) */               \
+    X(InvalidCharacter, Syntax)   /* character that starts no token */                                              \
+    /* --- parser --- */                                                                                            \
+    X(UnexpectedEof, Syntax)      /* source ends early */                                                           \
+    X(ExpectedExpression, Syntax) /* expression expected, something else found */                                   \
+    X(ExpectedIdentifier, Syntax) /* identifier expected */                                                         \
+    X(ExpectedToken, Syntax)      /* expected symbol or keyword (named by the message) */                           \
+    X(InvalidPattern, Syntax)     /* malformed destructuring pattern (rest not last, ..._) */                       \
+    X(VarargsNotLast, Syntax)     /* '...' must be the last parameter */                                            \
+    X(DefaultAfterPlain, Syntax)  /* no plain parameter after a defaulted one */                                    \
+    /* ========== SEMANTIC ERROR (checks the grammar defers) ========== */                                          \
+    X(InvalidAssignmentTarget, Semantic) /* lvalue must be identifier / obj.field / obj[index] */                   \
+    X(SuperOutsideMethod, Semantic)      /* super outside a method */                                               \
+    X(ThisOutsideClass, Semantic)        /* this outside a class */                                                 \
+    X(BreakOutsideLoop, Semantic)        /* break outside a loop */                                                 \
+    X(ContinueOutsideLoop, Semantic)     /* continue outside a loop */                                              \
+    X(ReturnValueAtTopLevel, Semantic)   /* return with a value at top level */                                     \
+    X(TryWithoutHandler, Semantic)       /* try without a catch clause */                                           \
+    X(UnreachableArm, Semantic)          /* arm after the '_' arm (dead arm; '_' comes last, at most once) */       \
+    X(DuplicateParam, Semantic)          /* parameter name used twice in one function */                            \
+    X(UndefinedType, Semantic)           /* class name that is not defined */                                       \
+    X(RedefinedVariable, Semantic)       /* variable defined twice in one scope */                                  \
+    X(RedefinedClass, Semantic)          /* class defined twice */                                                  \
+    X(NumberOutOfRange, Semantic)        /* integer literal beyond i48 (the grammar defers overflow here) */        \
+    /* ========== RUNTIME ERROR (execution stage) ========== */                                                     \
     X(TypeMismatch, Runtime)                /* operand type mismatch (number + non-number) */                       \
     X(InvalidOperand, Runtime)              /* bad unary operand (negating a non-number) */                         \
     X(IndexOutOfBounds, Runtime)            /* index or slice out of bounds (list, string, substring, empty pop) */ \
@@ -91,23 +92,23 @@ namespace aria {
     X(YieldOutsideCoroutine, Runtime)       /* yield in the main context */                                         \
     X(StackOverflow, Runtime)               /* recursion too deep */                                                \
     X(CircularImport, Runtime)              /* import cycle */                                                      \
-                                            /* ========== INTERNAL ERROR (interpreter invariants) ========== */     \
-    X(Unreachable, Internal)                /* code that should be unreachable ran */                               \
-    X(AssertionFailed, Internal)            /* internal assertion failed */                                         \
-    X(InvalidBytecode, Internal)            /* corrupt code unit or invalid opcode */                               \
-    X(StackUnderflow, Internal)             /* VM stack imbalance (popped more than pushed) */                      \
-    X(InvalidState, Internal)               /* VM in an invalid internal state */                                   \
-                                            /* ========== RESOURCE ERROR (resources / environment) ========== */    \
-    X(OutOfMemory, Resource)                /* allocation failed */                                                 \
-    X(FileReadFailed, Resource)             /* entry source file unreadable; import reads report ModuleNotFound */  \
-    X(ModuleNotFound, Resource)             /* imported module not found */                                         \
-    X(CodeUnitTooLarge, Resource)           /* too many constants or instructions */                                \
-    X(TooManyLocals, Resource)              /* too many locals */                                                   \
-    X(TooManyArguments, Resource)           /* too many arguments (CALL operand is u8) */                           \
-    X(TooManyParameters, Resource)          /* too many parameters (arity is u8) */                                 \
-    X(TooManyUpvalues, Resource)            /* too many upvalues */                                                 \
-    X(TooManyElements, Resource)            /* too many elements (MAKE_LIST/MAKE_MAP operand is u16) */             \
-    X(SourceTooLarge, Resource)             /* single source file too large */
+    /* ========== INTERNAL ERROR (interpreter invariants) ========== */                                             \
+    X(Unreachable, Internal)     /* code that should be unreachable ran */                                          \
+    X(AssertionFailed, Internal) /* internal assertion failed */                                                    \
+    X(InvalidBytecode, Internal) /* corrupt code unit or invalid opcode */                                          \
+    X(StackUnderflow, Internal)  /* VM stack imbalance (popped more than pushed) */                                 \
+    X(InvalidState, Internal)    /* VM in an invalid internal state */                                              \
+    /* ========== RESOURCE ERROR (resources / environment) ========== */                                            \
+    X(OutOfMemory, Resource)       /* allocation failed */                                                          \
+    X(FileReadFailed, Resource)    /* entry source file unreadable; import reads report ModuleNotFound */           \
+    X(ModuleNotFound, Resource)    /* imported module not found */                                                  \
+    X(CodeUnitTooLarge, Resource)  /* too many constants or instructions */                                         \
+    X(TooManyLocals, Resource)     /* too many locals */                                                            \
+    X(TooManyArguments, Resource)  /* too many arguments (CALL operand is u8) */                                    \
+    X(TooManyParameters, Resource) /* too many parameters (arity is u8) */                                          \
+    X(TooManyUpvalues, Resource)   /* too many upvalues */                                                          \
+    X(TooManyElements, Resource)   /* too many elements (MAKE_LIST/MAKE_MAP operand is u16) */                      \
+    X(SourceTooLarge, Resource)    /* single source file too large */
 
 #define ARIA_ERROR_ENUM(name, category) name,
     enum class ErrorCode : u8 { ARIA_ERROR_LIST(ARIA_ERROR_ENUM) };

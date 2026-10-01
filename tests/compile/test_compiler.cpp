@@ -61,8 +61,8 @@ namespace {
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
-    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象——入口
-    // 的 RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
+    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象，入口的
+    // RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
     // __probe__ 的 ObjFunction 直接 run：探针是普通函数，RETURN 通用写回 callee 槽，其返回值
     // 即 run() 返回值（fn 经 run() 内 make_guard 根化）。仅取值/错误码站点走此入口；钉模块
     // 顶层语义的站点走 run_source（不包）。
@@ -249,7 +249,7 @@ TEST(Compiler, ListRemoveAtFails) {
     EXPECT_NE(bad.error().message().find("remove_at index must be an integer"), std::string::npos);
 }
 
-// remove(x)：移除**全部** == 命中元素，命中 true / 未命中 false（不报错，miss 走返回值与 find/contains 同族）；
+// remove(x)：移除全部 == 命中元素，命中 true / 未命中 false（不报错，miss 走返回值与 find/contains 同族）；
 // nil/嵌套容器按内容可移除；只要移一处用 find + remove_at 组合。
 TEST(Compiler, ListRemove) {
     EXPECT_EQ(run_int("var xs = [1, 2, 3]; if (xs.remove(2) && xs.size() == 2) { return xs[0] + xs[1]; } return -1;"),
@@ -695,7 +695,7 @@ TEST(Compiler, VarargsUnderStressGc) {
               630);
 }
 
-// ---- string 方法面（字节下标/码点迭代/11 方法；下标域 = 字节） ----
+// ---- string 方法面（字节下标/码点迭代/17 方法；下标域 = 字节） ----
 
 // upper/lower:ASCII 逐字节转换,非字母字节原样。
 TEST(Compiler, StringUpperLowerAscii) {
@@ -770,7 +770,7 @@ TEST(Compiler, StringSubstringRangeChecked) {
     EXPECT_EQ(negative.error().code(), ErrorCode::IndexOutOfBounds);
 }
 
-// substring 非整数参数:报错须报**违规的那个**参数(两参形态下首个参数违规时报的是它,不是
+// substring 非整数参数:报错须报违规的那个参数(两参形态下首个参数违规时报的是它,不是
 // 合法的第二个)。
 TEST(Compiler, StringSubstringReportsOffendingArgument) {
     auto first_bad = run_value(R"(return "hello".substring("x", 1);)");
@@ -834,7 +834,7 @@ TEST(Compiler, StringImmutableStoreFails) {
     EXPECT_NE(out.error().message().find("type String does not support subscript assignment"), std::string::npos);
 }
 
-// forIn string:逐码点产出 1-char string(文法「string->字符」,D5)。产出验证用赋值 + 比较。
+// forIn string:逐码点产出 1-char string(文法「string->字符」)。产出验证用赋值 + 比较。
 TEST(Compiler, ForInStringYieldsCharStrings) {
     EXPECT_EQ(run_int(R"(var first = ""; var n = 0; for (ch in "abc") { if (n == 0) { first = ch; } n = n + 1; } )"
                       R"(if (first == "a" && n == 3) { return 1; } return 0;)"),

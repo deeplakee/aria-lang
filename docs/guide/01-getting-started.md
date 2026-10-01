@@ -17,15 +17,15 @@ aria 是一门动态类型脚本语言，解释器从零用 C++23 实现：单�
 
 ## 获取与构建
 
-aria 目前以源码分发。构建需要 CMake >= 3.20 与支持 C++23 的编译器；构建过程会经 FetchContent
-联网拉取 Google Test（仅测试需要，不联网时跳过测试构建即可）。
+aria 目前以源码分发。构建需要 CMake >= 3.20 与支持 C++23 的编译器；第三方依赖（Google Test 等）
+已随仓库 vendored，configure 零网络依赖（测试依赖 Google Test，构建即含）。
 
 ```sh
 # Linux / macOS
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
-# Windows（MinGW Makefiles + clang）
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+# Windows（Ninja + clang；clang++ 为 MSVC target 时链接器走本机 Visual Studio）
+cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
 
 cmake --build build --target aria -j
 ```
@@ -97,7 +97,9 @@ REPL 适合跟着教程随手敲例子；本章末的练习也建议在 REPL 里
 
 ## 报错长什么样
 
-aria 的报错分两大类，读懂它们是后续章节调试例子的基础。
+aria 的报错按「错误在哪一阶段被发现」分层，读懂它们是后续章节调试例子的基础。本章会遇到
+编译期与运行期两大类；`Internal:`（解释器自身断言失败）与 `Resource:`（模块加载等资源受限）
+两类见第 14、17 章。
 
 **编译期错误**（词法 / 语法 / 语义检查，程序不执行），带 `文件:行:列` 位置与
 `Syntax:` / `Semantic:` 前缀：
@@ -141,7 +143,7 @@ Runtime: DivisionByZero integer division by zero
 - 三种运行形态：脚本文件、`-e` 一行求值、REPL（顶层 `var` 跨行保留）。
 - `println` 是输出口；`//` 与 `#` 是行注释；语句以 `;` 结尾。
 - 编译期错误带 `文件:行:列` 与 `Syntax:`/`Semantic:` 前缀；运行期错误带 `Runtime:`
-  前缀与逐帧堆栈跟踪。
+  前缀与逐帧堆栈跟踪；`Internal:`/`Resource:` 两类见第 14、17 章。
 
 ## 练习
 

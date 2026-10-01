@@ -1,5 +1,4 @@
-// aria 解释器入口：分发逻辑收敛在 interpreter.cpp 的 cli_dispatch（声明于 interpreter.hpp，
-// 供测试驱动），本文件仅负责 isocline 行读取器与 argc/argv 透传。
+// aria 解释器进程入口：isocline 行读取器 + argc/argv 透传；分发契约见 interpreter.hpp。
 #include "interpreter.hpp"
 
 #include "aria.hpp"

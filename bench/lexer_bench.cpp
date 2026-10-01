@@ -12,22 +12,22 @@
 //
 // 端到端编译（Lexer -> Parser -> CodeGen）另量一遍：位置派生的收益要整条链路一起看。
 // 位置派生原语（locate / line_at 的行表缓存）单列一节：它们是「位置只存偏移」这一取舍的依据。
-// utf8 解码微基准供将来的解码重构对照（lexer-notes §5）--Lexer 是 decode_one 的唯一消费者。
+// utf8 解码微基准供将来的解码重构对照（lexer-notes §5）--decode_one 的消费者含 Lexer、
+// 行表构建与字符串码点遍历等多族,Lexer 只是其一。
 //
 // 计时纪律（两条都是踩过的坑，见 lexer-notes §1）：
-//   - 进程内 best-of-N 取最小，不要单发进程计时：曾因紧跟多文件编译量出 40–49 ms 的假读数
-//     （真实 20 ms 量级）。
+//   - 进程内 best-of-N 取最小，不要单发进程计时（单发易吃相邻工作的干扰,实测数字见 lexer-notes）。
 //   - 每节的计时循环写死在原地，不抽公共的「best-of-N 模板 + lambda」外壳：同一二进制内对照，
-//     外壳本身让同一段词法慢 5–8%（写死 17.6–18.0 ms vs 模板 + lambda 18.8–19.1 ms），
-//     足以掩盖要量的差异。同理，跨二进制比绝对值要先确认代码布局变了多少。
+//     外壳本身就会让同一段词法变慢（实测幅度见 lexer-notes），足以掩盖要量的差异。
+//     同理，跨二进制比绝对值要先确认代码布局变了多少。
 //
 // 复现 lexer-notes 的数字须用优化构建（文档各表统一在 -O2 -DNDEBUG、无 LTO 下测得）：
 //   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
 //   cmake --build build/rel --target lexer_bench -j
 //   ./build/rel/bench/lexer_bench
 // 两处都有量级：Debug 构建（build/ 默认）下 ASSERT 全开、无内联，数字成倍偏离，只可用于对拍行为；
-// Release 默认开 LTO，跨 TU 内联让词法再快约 15%（同一命令去掉 -DARIA_ENABLE_LTO=OFF：normal
-// 19.6 → 16.3 ms、numeric 9.1 → 8.0 ms、cjk 11.4 → 10.3 ms），故文档各表统一以无 LTO 为基线。
+// Release 默认开 LTO，跨 TU 内联让词法再快约 15%（同一命令去掉 -DARIA_ENABLE_LTO=OFF 即可对照,
+// 各形态实测幅度见 lexer-notes），故文档各表统一以无 LTO 为基线。
 
 #include <algorithm>
 #include <chrono>

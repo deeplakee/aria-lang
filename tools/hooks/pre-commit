@@ -5,7 +5,7 @@
 #     git config core.hooksPath tools/hooks
 # 绕过(确实需要时):git commit --no-verify
 #
-# 钩子只做机械检查(ASCII-only / 报错入口格式串的句尾标点与首字母);语义判断
+# 钩子只调检查器做机械检查(规则清单以 tools/check_error_messages.py 为准);语义判断
 # (句式家族是否用对、措辞是否漂移)仍走 .claude/reference/error-message-style.md。
 set -e
 

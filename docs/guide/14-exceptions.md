@@ -123,7 +123,7 @@ try {
 Runtime: DivisionByZero integer division by zero
 ```
 
-自己要抛一个「像样的异常」时，不必先定义类——内建 `Error(message)` 直接造一个异常
+自己要抛一个「像样的异常」时，不必先定义类--内建 `Error(message)` 直接造一个异常
 对象，`message` 是什么 `message()` 就还回什么；第二个可选实参设置错误码，收一个
 **整数**（原样携带，`code()` 即其值），不设则 `code()` 返回 `Error` 码的序号：
 
@@ -210,11 +210,11 @@ not found
 ```
 
 `message()`/`code()` 对子类实例读同名 `_` 字段，对内建异常对象（VM 报错与
-`Error(...)` 的产物）读原生载荷——两个世界同一个 face。不写 `init` 就沿链继承
+`Error(...)` 的产物）读原生载荷--两个世界同一个 face。不写 `init` 就沿链继承
 默认构造，实例不带载荷（`message()` 是空串、`code()` 是缺省码）；自有 `init`
 两个都没落就调 face，会得到 `UndefinedProperty`（成员读取的常规措辞）。
 
-分类之后用根类方法 `is_a(类型)` 判归属——它沿继承链判定，子类命中以父类型提出的
+分类之后用根类方法 `is_a(类型)` 判归属--它沿继承链判定，子类命中以父类型提出的
 询问（内建异常对 `Exception` 也命中）：
 
 ```aria
@@ -340,7 +340,8 @@ Internal: AssertionFailed custom message
 
 | 码 | 典型触发 |
 | :--- | :--- |
-| `DivisionByZero` | 整数除零 / 模零 |
+| `DivisionByZero` | 整数除零 |
+| `ModuloByZero` | 整数模零（`%` 右操作数为 0） |
 | `IndexOutOfBounds` | 列表 / 字符串下标越界、空表 `pop`、切片端点越界 |
 | `KeyError` | map 下标读 miss |
 | `TypeMismatch` | 算子两域不符（数值 / 字符串 / 钩子签名） |

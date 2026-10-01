@@ -9,8 +9,8 @@
   2. 报错入口格式串 -- 出现在报错入口调用上的首个字面量,不得以句号结尾、不得大写起首。
   3. ASSERT 文案 -- 不得以「封闭实体身份」前缀起首(宏已打 [file:line] 与 %s() 函数名)。
 
-入口白名单(这些调用的字面量是用户可见文案):
-    fail( / raise( / fatal_error( / Error::from_detail( / Error::make_message( /
+报错入口(这些调用的字面量是用户可见文案):
+    fail( / raise( / error( / fatal_error( / Error::from_detail( / Error::make_message( /
     io::println(stderr, / io::print(stderr,
 
 语义判断(句式家族是否用对、措辞是否漂移)脚本判不出,仍靠人读规范。有违规打印

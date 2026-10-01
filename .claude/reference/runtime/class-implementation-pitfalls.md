@@ -8,11 +8,7 @@
 
 **取消后仍成立的两条纪律**：① `fields_` 命中优先 -- 纯字段遮蔽类链，语义不变；② `LOAD_SUPER_FIELD` 不写 fields -- 「super 站点的解析结果不得驻留成实例成员」由它走独立的 `ObjClass::load_field` 实现保证，与实例表无关。
 
-**等价语义**：类上赋值改写方法槽后**新解析一律见新值**（每次访问现场解析，实例上不留陈旧状态）；仍「沿用旧行为」的只有**已经取出的那个绑定值本身**--它是普通值拷贝，与后续改写无关（`MethodRewriteViaClassAssignmentSnapshot` 钉的就是这一条，不是实例级快照）。
-
-**测试**：`StaticCallableReadsRawOnInstance` / `SuperCallDoesNotPolluteCache` / `InstanceFieldShadowsStatic` / `MethodRewriteViaClassAssignmentSnapshot` / `ClassGraphSurvivesExplicitCollect`（类图跨显式 collect 存活）。GC 侧零额外负担：绑定值本体经实例/类表的 trace 级联保命，无独立缓存表要标。
-
-**取消后的等价语义**：类上赋值改写方法槽后，**新解析一律见新值**（每次访问现场解析，实例上不留任何陈旧状态）；仍「沿用旧行为」的只有**已经取出的那个绑定值本身**--它是普通值拷贝，与后续改写无关（`MethodRewriteViaClassAssignmentSnapshot` 钉的就是这一条，不是实例级快照）。
+**等价语义**：类上赋值改写方法槽后**新解析一律见新值**（每次访问现场解析，实例上不留任何陈旧状态）；仍「沿用旧行为」的只有**已经取出的那个绑定值本身**--它是普通值拷贝，与后续改写无关（`MethodRewriteViaClassAssignmentSnapshot` 钉的就是这一条，不是实例级快照）。
 
 **测试**：`StaticCallableReadsRawOnInstance`（静态槽读原值不绑定）；`SuperCallDoesNotPolluteCache`（super 调用后两次 `obj.m` 均仍走子类实现）；`InstanceFieldShadowsStatic`（实例字段遮蔽类链）；`MethodRewriteViaClassAssignmentSnapshot`；`ClassGraphSurvivesExplicitCollect`（类图跨显式 collect 存活）。GC 侧零额外负担：绑定值本体经实例/类表的 trace 级联保命，无独立缓存表要标。
 
@@ -22,7 +18,7 @@
 
 - `MAKE_CLASS`：**peek super 不先弹** -- super（可能刚经 `LOAD_GLOBAL` 解出）跨 `new_class` 分配必须在栈；新建类写回原槽，top 不变。
 - `MAKE_METHOD`/`MAKE_STATIC`：`[class, v] -> [class]`，两值均 peek 不弹（`set_field` 落表走 trivial 分配不触 GC，戳 defining class 是裸写），弹值留 class；编译器路径栈形 ASSERT 钉。
-- `LOAD_FIELD`：obj = peek(0) **不先弹**（绑定分配跨 GC 须保 obj 在栈）；命中方法闭包时 `new_bound_method` 返回白色 bound，**先写回原槽根化、再回填 fields 表** -- 落表是 trivial 分配不触 GC（GC 核心不变式），发布后 bound 获栈 + 实例内引用双根。
+- `LOAD_FIELD`：obj = peek(0) **不先弹**（绑定分配跨 GC 须保 obj 在栈）；命中方法闭包时 `new_bound_method` 返回白色 bound，写回原槽即根化（缓存已取消，bound **不回填 fields 表**、无第二根）。
 - `call_class`：`new_instance` 是唯一 GC 点（klass 经值栈根化），instance 建成即写 callee 槽（**槽 0 原位换实例** = 新帧 this），余下交 `call_value` 通用分发。
 
 **反向坑（守卫过度）**：早期曾按「表 upsert 的 rehash 分配跨 GC 须守卫」写三处多余守卫 -- 认知错误，`HashTable` set/upsert 走 trivial 分配**永不触发 GC**（GC 核心不变式），review 后整删（其中 `MAKE_CLASS` 的 name 实为常量池可达，连 weak root 都不是）。守卫纪律按「真 GC 点」划，不按「看起来像分配」划。

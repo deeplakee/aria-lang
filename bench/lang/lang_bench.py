@@ -15,9 +15,9 @@ MicroPython run-perfbench 都用平均;CLBG / Ruby benchmark-driver 默认用最
     进程总耗时 = 进程启动 + 词法/编译 + VM bootstrap + 负载(即"直接跑这个文件"的耗时)
 
 两者之差是该脚本的启动+编译开销。**跨语言对照一律看负载段**:总耗时把各运行时的启动成本混了进来
-(JVM 启动 60-100 ms、Node 与 CPython 也各有几十毫秒),只有负载段是同一份负载的读数。
+(各运行时启动成本量级见 .claude/reference/bench/lang-bench-notes.md §1),只有负载段是同一份负载的读数。
 
-输出:测量期间进度打 stderr,测完在 stdout 打整份报告——速览(每门对照语言领先/落后多少行)、aria
+输出:测量期间进度打 stderr,测完在 stdout 打整份报告--速览(每门对照语言领先/落后多少行)、aria
 自身的绝对值表、跨语言对照表(每门语言的绝对耗时 + 相对 aria 的倍数)、值一致性门禁,末尾是固定列宽
 的 `[summary]` 原始数字块(含 sd 与 min,`diff` 两次构建即 A/B)。故 `> 文件` 存下来的是一份没有进度
 噪音的报告。报告默认 text 格式(终端定宽表),`--format=md` 出 markdown 表(贴进文档 / PR 用),
@@ -25,11 +25,11 @@ MicroPython run-perfbench 都用平均;CLBG / Ruby benchmark-driver 默认用最
 
 对照语言按 PATH 探测(缺谁不出哪一列):CPython(当前解释器)、Node、Lua、Java(需 javac,编译产物
 落在 build/bench-java/,每次运行编译一次)。**值一致性门禁**:每个脚本(含各语言端口)都要打印
-`value <键>: <数>` 行,驱动逐语言比对,任一键的读数不同即判该行失败——这是"同算法同规模"的机械保证。
+`value <键>: <数>` 行,驱动逐语言比对,任一键的读数不同即判该行失败--这是"同算法同规模"的机械保证。
 
 数字只在实际发布的那份二进制上有意义:按常规 `-DCMAKE_BUILD_TYPE=Release` 构建即可(LTO 默认开、
-`-O3 -DNDEBUG`),别为跑基准关掉优化开关——对照语言也都在各自的发行配置下跑。同二进制重复运行抖动
-约 ±1%(进程级另受调度影响,标准差会略大);跨构建 ±5~10%。任一行失败(编译/运行/断言/值不一致)
+`-O3 -DNDEBUG`),别为跑基准关掉优化开关--对照语言也都在各自的发行配置下跑。重复运行/跨构建的抖动
+量级见 lang-bench-notes.md §1。任一行失败(编译/运行/断言/值不一致)
 则本程序非零退出。
 """
 
@@ -297,7 +297,7 @@ def report_meta(aria, stamp, cases, args, lang_names):
 
 
 def report_verdict(groups, lang_names):
-    """速览:先给结论——每门对照语言在两组语料上分别领先/落后多少行,中位倍数多少。"""
+    """速览:先给结论--每门对照语言在两组语料上分别领先/落后多少行,中位倍数多少。"""
     headers = ["对照语言"] + [label for label, _entries in groups]
     rows = {name: [name] for name in lang_names}
     for _label, entries in groups:

@@ -105,7 +105,7 @@ namespace {
 
     [[nodiscard]] Program make_program(const StringView name, String content) {
         // 顶层已禁带值 return（入口返回值恒为模块对象）：场景源码包进探针函数（不调用）编译，
-        // 再从入口常量池取 __probe__ 直接 run——探针是普通函数，RETURN 通用写回 callee 槽，
+        // 再从入口常量池取 __probe__ 直接 run。探针是普通函数，RETURN 通用写回 callee 槽，
         // 其返回值（各场景尾部的 acc）即 run() 返回值。
         auto   vm = std::make_unique<AriaVM>();
         auto&  gc = vm->gc();
@@ -317,7 +317,8 @@ namespace {
         src += "  step() { return 1; }\n";
         src += "}\n";
         src += "var c = Counter();\n";
-        src += "var f = c.step;\n"; // 循环外先读一次:让首轮分配落在计时区间之外的同态上
+        // 循环外先读一次:与预绑定形态结构同态,循环体内「每迭代恰一次 bound 分配」从第 1 轮即成立。
+        src += "var f = c.step;\n";
         src += "var acc = 0;\n";
         src += std::format("for (r in 0...{}) {{\n", kRounds);
         src += std::format("  var i = 0;\n  while (i < {}) {{ f = c.step; acc = acc + 1; i += 1; }}\n", kSize);

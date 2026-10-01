@@ -8,9 +8,7 @@ namespace aria {
 
     FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
         enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
-        // 槽 0：实例方法族 = 具名局部 this（caller 压 receiver 占此槽）；其余 = 哑元
-        // callee（空名，词法不可达，用户代码不可引用）。this 为关键字不会与用户标识符撞名
-        // （kThisName 注），可安全参与局部查名与捕获。
+        // 槽 0 语义见 ctor 头注与 kThisName 注；非方法族的哑元 callee 空名、词法不可达、不可引用。
         auto name  = is_method(kind) ? String{kThisName} : String{};
         auto slot0 = Local{.name = std::move(name), .depth = 0, .is_captured = false};
         locals_.push_back(std::move(slot0));
@@ -23,8 +21,6 @@ namespace aria {
     }
 
     u16 FunctionCtx::add_constant(const Value value) {
-        // 按值去重(=== 判等,见 value_identical):同值常量复用已有索引,池内无同值重复项,故池上限由
-        // 互异常量数而非出现次数决定。
         if (const auto entry = constant_index_.find(value); entry != constant_index_.end()) {
             return entry->second;
         }
@@ -37,7 +33,7 @@ namespace aria {
     bool FunctionCtx::is_defined_in_scope(const StringView name) const {
         for (const auto& local: std::views::reverse(locals_)) {
             if (local.depth < scope_depth_) {
-                return false; // 外层同名允许 shadow
+                return false;
             }
             if (local.name == name) {
                 return true;
@@ -71,8 +67,6 @@ namespace aria {
     }
 
     Opt<u8> FunctionCtx::add_upvalue(const UpvalueDesc desc) {
-        // 同 (is_local,index) 已登记 -> 复用其下标（同一局部被多处引用只占一个 upvalue，
-        // 多引用点经同一 upvalue 索引读写同一槽）。
         for (usize i = 0; i < upvalues_.size(); ++i) {
             if (upvalues_[i] == desc) {
                 return static_cast<u8>(i);

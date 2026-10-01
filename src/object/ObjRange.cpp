@@ -26,7 +26,7 @@ namespace aria {
 
     ObjRange::ObjRange(const i64 from) :
         Object{content_hash(from, Opt<i64>{}, false), ObjType::RANGE}, from_{from}, to_{std::nullopt},
-        is_exclusive_{false} {} // 含否上界无意义,归一 false(5.. 与 5... 是同一个值)
+        is_exclusive_{false} {}
 
     bool ObjRange::equals(const Object* other) const noexcept {
         if (this == other) {
@@ -45,10 +45,9 @@ namespace aria {
     }
 
     Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.range_class()->load_field(vm, name);
         if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
+            return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }

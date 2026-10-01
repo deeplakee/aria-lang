@@ -31,7 +31,6 @@ namespace aria {
         // 类作用域内 to_string 查到成员自身即停，须限定到命名空间作用域的自由函数（同 Object::type_name）。
         String lexeme_info = lexeme_.empty() ? std::format("{:<13}", aria::to_string(type_))
                                              : std::format("{:<13} '{}'", aria::to_string(type_), lexeme_);
-        // 字面量附带解析值，便于调试
         switch (type_) {
             case TokenType::Integer:
                 return std::format("{} = {}", lexeme_info, int_value());

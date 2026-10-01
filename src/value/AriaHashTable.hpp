@@ -19,8 +19,7 @@ namespace aria {
     };
 
     struct ValueEq {
-        // 哈希表键用 ===(value_identical,理由见 Value.hpp):int 1 与 f64 1.0 是不同键,
-        // 不用 value_equal(== 内容相等)。
+        // 哈希表键用 ===(value_identical),不用 value_equal(==);理由与例证见 Value.hpp 头注。
         [[nodiscard]]
         bool operator()(const Value lhs, const Value rhs) const noexcept {
             return value_identical(lhs, rhs);
@@ -30,7 +29,7 @@ namespace aria {
     // 绑定 Value 的 aria 哈希表:继承 HashTable<Value,Value,ValueHash,ValueEq> 的 Swiss Table
     //        实现与接口(set/find/begin/end/size...),加 trace(GC&)(遍历占用槽 mark_value
     //        key+value)。ObjMap 持其作成员、trace 委托 ht.trace(gc)。
-    //        继承而非组合:基类 dtor 非虚但本子类不作多态基,故安全。不可拷贝/不可移动。
+    //        继承而非组合(理由同 AriaArray 注:基类 dtor 非虚但本子类不作多态基);不可拷贝/不可移动。
     class AriaHashTable : public HashTable<Value, Value, ValueHash, ValueEq> {
     public:
         using HashTable<Value, Value, ValueHash, ValueEq>::HashTable; // 继承 explicit HashTable(GC*) ctor

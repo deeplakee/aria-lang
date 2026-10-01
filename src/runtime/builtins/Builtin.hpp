@@ -19,19 +19,18 @@ namespace aria {
     // **Builtin 类 = 全局内建面宿主 + 两装载底座**(type/str/println/assert/clock/Error 六原生、两张表
     // kBuiltinFns/kBuiltinVars 与全局面两个装载口 register_functions/register_variables 私有于同名 .cpp;
     // 公有面 = 类表/模块表装载底座 register_class_methods/register_module_functions 加编排口
-    // register_builtins,见类注释);**XXXClass = XXX 类型的内建方法面**
-    // (List/Map/Iterator/String/Range/Exception/Object,恒经 bootstrap 类表
-    // 分派、恒绑定 receiver;构造口 = 宿主类公有静态方法 XxxClass::make_class(建类加装载),
-    // 方法体与表仍住各 .cpp 匿名命名空间;
-    // String 另有算子实现缓存清单 kOperatorFns(钩子名 -> 寄存器格),bootstrap 期据此拷实现进
-    // 寄存器格);**XXXModule = 内建模块的方法面** (CoroutineModule,经模块 globals
-    // 触达,构造与方法面自持于友元宿主类 XXXModule -- 原语与表私有、唯一公有口 make_module,resume 须访问切换私有面故为
-    // AriaVM 友元,见该文件头)。前缀即机制区分;条目形态两式(BuiltinFnEntry/BuiltinVarEntry)亦住本文件
-    // --本文件即目录伞文件。
+    // register_builtins,见类注释);**`<Name>Class` = `<name>` 类型的内建方法面**
+    // (List/Map/Iterator/String/Range/Exception/Object,恒经 bootstrap 类表分派、恒绑定 receiver;
+    // 构造口 = 宿主类公有静态方法 XxxClass::make_class(建类加装载),方法体与表仍住各 .cpp 匿名命名
+    // 空间;String/List 各有算子实现缓存清单 kOperatorFns(钩子名 -> 寄存器格),契约见
+    // runtime/value_register.hpp 表头);**`<Name>Module` = 内建模块的方法面**(CoroutineModule,经模块
+    // globals 触达,构造与方法面自持于友元宿主类 CoroutineModule -- 原语与表私有、唯一公有口
+    // make_module,resume 须访问切换私有面故为 AriaVM 友元,见该文件头)。前缀即机制区分;条目形态两式
+    // (BuiltinFnEntry/BuiltinVarEntry)亦住本文件--本文件即目录伞文件。
 
     // 内建表条目:名 + 原生函数指针。全局自由函数表(kBuiltinFns)、各类型方法表
-    // (kListBuiltins / kStringBuiltins / kMapBuiltins / kRangeBuiltins / kIteratorBuiltins)
-    // 与模块方法表(CoroutineModule::kModuleFunctions)同此一形态。
+    // (kObjectBuiltins / kExceptionBuiltins / kListBuiltins / kStringBuiltins / kMapBuiltins /
+    // kRangeBuiltins / kIteratorBuiltins)与模块方法表(CoroutineModule::kModuleFunctions)同此一形态。
     struct BuiltinFnEntry {
         StringView name;
         NativeFn   fn;

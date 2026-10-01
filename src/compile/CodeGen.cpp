@@ -31,8 +31,6 @@ namespace aria {
         constexpr u32 kMaxMapEntries   = kU16OperandMax;
         constexpr u32 kMaxLocals       = kU16OperandMax;
 
-        // 整数字面量 i48 值域(事实源 aria.hpp Value::from_int);超出 -> NumberOutOfRange。
-
         // 二元 op -> 发射 OpCode（visitBinaryExprNode 与复合赋值共用单源）。Or/And 走短路分支
         // （JUMP_*_OR_POP）不经此，OpCode 亦无单条逻辑码 -> UNREACHABLE。
         OpCode binary_opcode(const Op::Binary op) noexcept {
@@ -171,8 +169,7 @@ namespace aria {
 
     u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc loc) const {
         // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge（CodeUnit::add_constant 内部
-        // ASSERT 兜底，本预检保证永不触达）。同值常量复用池内已有索引：去重收口在 FunctionCtx 的去重
-        // 索引（编译期草稿），池本体只追加。
+        // ASSERT 兜底，本预检保证永不触达）。去重语义单源见 FunctionCtx::add_constant。
         if (cur_cu()->constants.size() > kMaxConstants) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "too many constants (max {})", kMaxConstants);
         }
@@ -212,8 +209,6 @@ namespace aria {
     }
 
     u16 CodeGen::define_local_or_fail(const StringView name, const SourceLoc loc) const {
-        // 同作用域重名 -> RedefinedVariable（外层同名允许 shadow）；溢出 -> TooManyLocals。
-        // 仅登记不发指令（值填槽：调用方保证值已压栈、登记槽位即值位置，登记即初始化）。
         if (cur_fn_ctx()->is_defined_in_scope(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "redefined local variable '{}'", name);
         }
@@ -449,9 +444,8 @@ namespace aria {
     }
 
     void CodeGen::bind_function_value(const FnKind kind, const StringView name, const SourceLoc loc) const {
-        // 具名 fun（Function）绑定到全局（顶层）或局部（嵌套,值填槽）;Lambda 留栈作表达式值不绑定;
-        // 方法三态留栈不绑定、就地注册--fun 静态 MAKE_STATIC 不戳 defining class（静态槽读恒原值）,
-        // 实例方法族 MAKE_METHOD 戳（VM 侧方法性标记 + super 来源）。
+        // kind 分派与绑定形态见 CodeGen.hpp 注；戳语义差异：fun 静态 MAKE_STATIC 不戳 defining
+        // class（静态槽读恒原值），实例方法族 MAKE_METHOD 戳（VM 侧方法性标记 + super 来源）。
         const u32 line = loc.line();
         switch (kind) {
             case FnKind::Function:
@@ -503,11 +497,10 @@ namespace aria {
     }
 
     void CodeGen::compile_params(const List<Param>& params, const SourceLoc loc) {
-        // 参数登记与缺省序言单循环交错、按声明序：先编缺省表达式、后登记本参数名 -- 轮到本槽时前序
-        // 参数必已登记可引用，自身/后序参数名对解析结构性不可见、按常规链落外层/全局（同 Python/C++
-        // 语义）。
-        // 缺省序言（印章方案）：call_closure 已把未传槽 [argc+1..n] 垫充缺省印章（寄存器 DefaultMark），
-        // 逐缺省槽 LOAD_LOCAL 与印章 EQUAL 判等，命中（未传）才求值默认值 STORE_LOCAL 换入；序言后栈空。
+        // 交错时序与印章方案契约见 CodeGen.hpp 注。差异细节：未传槽由 VM call_closure 预先垫充
+        // 缺省印章（寄存器 DefaultMark），本侧逐缺省槽 LOAD_LOCAL 与印章 EQUAL 判等，命中（未传）
+        // 才求值默认值 STORE_LOCAL 换入；缺省表达式解析不到的名字按常规链落外层/全局（同
+        // Python/C++ 语义）；序言后栈空。
         const u32 line = loc.line();
         for (usize i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
@@ -532,8 +525,8 @@ namespace aria {
         const u32 line = loc.line();
         switch (cur_fn_ctx()->kind_) {
             case FnKind::ModuleEntry: {
-                // 入口(主脚本与导入模块同规)返回值恒为模块对象:IMPORT 命中/未命中两路栈效应的
-                // 统一靠它兑现--体跑完 RETURN 通用写回 callee 槽(即 IMPORT 预留结果槽)。
+                // ModuleEntry 语义单源见 FnKind.hpp 注；此处机制：体跑完 RETURN 通用写回 callee
+                // 槽(即 IMPORT 预留结果槽)。
                 const auto module_idx = add_constant_or_fail(Value::from_obj(mod_ctx_->module_), loc);
                 cur_cu()->emit_op(OpCode::LOAD_CONST, line);
                 cur_cu()->emit_word(module_idx, line);
@@ -760,8 +753,8 @@ namespace aria {
     }
 
     void CodeGen::visitReturnStmtNode(ReturnStmtNode& node) {
-        // 入口上下文(主脚本与导入模块同规,见 ModuleCtx 构造):返回值恒为模块对象--带值 return
-        // 编译期拒绝,裸 return 即模块体提前退出(压模块对象常量后 RETURN,与隐式收尾同序)。
+        // ModuleEntry 语义单源见 FnKind.hpp 注：带值 return 编译期拒绝，裸 return 即模块体提前
+        // 退出(压模块对象常量后 RETURN,与隐式收尾同序)。
         if (cur_fn_ctx()->kind_ == FnKind::ModuleEntry) {
             if (node.value != nullptr) {
                 fail(ErrorCode::ReturnValueAtTopLevel, node.loc(), "'return' at top level must not carry a value");
@@ -949,6 +942,7 @@ namespace aria {
     }
 
     void CodeGen::validate_int_literal(const i64 value, const SourceLoc loc) const {
+        // 整数字面量 i48 值域的唯一闸门(事实源 aria.hpp kIntMin/kIntMax);越界 -> NumberOutOfRange。
         if (value < kIntMin || value > kIntMax) {
             fail(ErrorCode::NumberOutOfRange, loc, "integer literal {} out of range", value);
         }
@@ -1051,7 +1045,7 @@ namespace aria {
     void CodeGen::visitSuperExprNode(SuperExprNode& node) {
         // super.成员（文法单形，Load rvalue 读）：语境检查（仅直接方法帧可承载）后发 LOAD_SUPER_FIELD，
         // 方法闭包由 VM 绑 this 成 bound method、静态槽原值直读。super.m(args) 经 visitCallNode 通用
-        // 路径复用本 visit，无特判分支；写形态非左值（validate_lvalue_target 拒绝）。
+        // 路径复用本 visit，无特判分支（写形态契约见 SuperExprNode 注）。
         if (!is_in_method()) {
             fail(ErrorCode::SuperOutsideMethod, node.loc(), "'super' outside method");
         }
@@ -1202,8 +1196,7 @@ namespace aria {
     }
 
     void CodeGen::visitFieldAccessNode(FieldAccessNode& node) {
-        // 四模式（take 入口取）：Load = 读；Prepare = 只发接收者（普通 = 首腿）；Store = 只发 store
-        // 指令（值由调用方压在栈顶）；Locate = 复合赋值/前置自增定位腿。super.成员 不经此。
+        // 四模式语义见 LvalueMode 注；差异：Store 的值由调用方压在栈顶；super.成员 不经此。
         const auto mode = take_lvalue_mode();
         const u32  line = node.line();
         if (try_emit_this_field(node, mode, line)) {

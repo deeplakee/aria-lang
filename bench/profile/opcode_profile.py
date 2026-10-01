@@ -85,7 +85,6 @@ def run_dynamic(aria, scripts):
         data = parse_dynamic(proc.stderr)
         if data["total"] == 0:
             sys.exit(f"[fail] {script}: no [opprofile] block (probe build?)")
-        # 值一致性:stdout 的 value 行有就校验与重跑一致(确定性负载),顺带透出
         result[name] = {"script": script, **data}
         print(f"[run] {name}: {data['total']:,} instr", file=sys.stderr)
     return result

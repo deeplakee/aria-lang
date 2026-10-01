@@ -1,6 +1,6 @@
 ---
 name: aria-compile
-description: aria 解释器 compile 层模块参考：Token/Lexer/ast/Parser/AstVisitor/FunctionCtx/ModuleCtx/CodeGen（单遍合一字节码编译器）/Compiler 编排器。读写 src/compile/** 或改文法（docs/grammar.txt）、词法/语法/语义检查、字节码发射时使用。
+description: aria 解释器 compile 层模块参考：Token/Lexer/ast/Parser/AstVisitor/FnKind/FunctionCtx/ModuleCtx/CodeGen（单遍合一字节码编译器）/Compiler 编排器。读写 src/compile/** 或改文法（docs/grammar.txt）、词法/语法/语义检查、字节码发射时使用。
 paths:
   - "src/compile/**"
 ---
@@ -11,7 +11,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 ## `compile/TokenType.hpp`
 
-- `TokenType`（覆盖文法全部终结符，含 23 关键字）+ 可读名表 `kTokenNames` + 拼写表 `kTokenLexemes`（表项 `Pair<StringView, bool>`：固定拼写 + 是否关键字；关键字/运算符/标点/下划线为字面拼写，字面量与 EOF 记空串）+ `lookup_keyword`（顺序扫关键字行，大小写敏感）。枚举/名字表/拼写表由 `ARIA_TOKEN_LIST(X)` 全量注册表（X-Macro 单一事实源，条目 `X(名字, 拼写, 是否关键字)` 三列）同源展开，新增类型加一行即收口、名字串经 `#` 派生；风格对齐 `code.hpp` 的 `ARIA_OPCODE_LIST` 先例（注册表宏顶格、条目宏在展开点前 define/随行 undef，逐值注释用块注释因行注释会吞续行符）。
+- `TokenType`（覆盖文法全部终结符；关键字以 `ARIA_TOKEN_LIST` 第三列 `true` 行当次实测为准，当前 22 个）+ 可读名表 `kTokenNames` + 拼写表 `kTokenLexemes`（表项 `Pair<StringView, bool>`：固定拼写 + 是否关键字；关键字/运算符/标点/下划线为字面拼写，字面量与 EOF 记空串）+ `lookup_keyword`（顺序扫关键字行，大小写敏感）。枚举/名字表/拼写表由 `ARIA_TOKEN_LIST(X)` 全量注册表（X-Macro 单一事实源，条目 `X(名字, 拼写, 是否关键字)` 三列）同源展开，新增类型加一行即收口、名字串经 `#` 派生；风格对齐 `code.hpp` 的 `ARIA_OPCODE_LIST` 先例（注册表宏顶格、条目宏在展开点前 define/随行 undef，逐值注释用块注释因行注释会吞续行符）。
 
 ## `compile/Token.hpp`
 
@@ -37,6 +37,10 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 AST 访问者接口，作为代码生成阶段「字节码编译器」等遍历类的抽象父类：每个具体节点一个 `visitXxxNode(XxxNode&)` 纯虚（子类须逐一 override，编译器据此强制覆盖全部节点类型，避免漏处理），双分派由节点的 `accept(AstVisitor&)` 完成。本头只前置声明各节点类型（与 `ast.hpp` 解耦），子类需自行 include `ast.hpp`；参数用非 const 引用。具体子类：`CodeGen`。
 
+## `compile/FnKind.hpp`
+
+函数种类独立小头（AST 侧与编译执行侧共用）：`FnKind`（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry）+ `is_method`（实例方法族判据）。各 kind 的绑定形态/隐式返回尾/槽 0 语义差异的权威表述见该头注册表注；ModuleEntry = 模块入口体（主脚本与导入模块同规，`ModuleCtx` 构造直接烙定，不经 `compile_function`，故 `bind_function_value` 对其 UNREACHABLE）：返回尾恒压模块对象常量、体顶层带值 return 编译期拒绝（`ReturnValueAtTopLevel`，裸 `return;` = 提前退出与隐式收尾同形）。
+
 ## `compile/FunctionCtx.hpp` / `.cpp`
 
 单函数编译上下文，收口每函数可变状态：**本类只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池索引），「发射」仍由 CodeGen 负责。
@@ -44,7 +48,7 @@ AST 访问者接口，作为代码生成阶段「字节码编译器」等遍历�
 - **单构造 `explicit FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, FnKind kind)`**（kind 无默认值；enclosing 空 = 入口，否则嵌套指向外层）。**所有权**：入口 fn 上下文由 `ModuleCtx` ctor `new`、dtor 沿 `enclosing_` 链 `delete`；子上下文由 `compile_function` `new`（成功路径 delete、出错交 `~ModuleCtx` 走链）。父编译期长于子，故 `enclosing_` 裸指针在子生命期内稳定。
 - **字段与方法**：`locals_`（clox 风格局部栈，`locals_[0]` = 哑元 slot 0 = callee，1..A = 形参，A+1.. = 体局部）、`scope_depth_`、`loop_stack_`、`upvalues_`（捕获描述表，体编译期经 `add_upvalue` 登记、成功路径由 `compile_function` 尾部整表 flush 进 `fn->upvalue_descs()`）、`kind_`、`constant_index_`（**常量池去重索引** `HashMap<Value,u16>`，键相等用 `===`，走值层 std 特化）；`add_local`（压 `Local{name, scope_depth_, is_captured=false}` 返 slot，**纯登记**不发射/不查重）、`add_constant`（同值复用池内已有索引、未命中追加并登记，返池索引；池溢出不在本层判）、`add_upvalue`（同 `(is_local,index)` 去重复用；追加将越出 u8 索引域 (`size > kMaxUpvalues`) 返 `nullopt` 交 CodeGen `fail TooManyUpvalues`）、`is_defined_in_scope`/`find_local`、`begin_scope`/`end_scope`（退出块作用域时 `--scope_depth_` 后弹出原 scope 局部并真正移除登记；break/continue 不得走此--跳转后的语句仍在作用域内可引用这些局部，须保留登记）。
 - **常量池去重索引为什么在这**：索引是**编译期草稿**（每个函数一份、随本上下文销毁；池本体 `fn_->unit().constants` 才是产物），故不放进 `CodeUnit`--否则每个函数对象常驻 40 字节壳与索引堆。不参与 GC（std 分配器）、不是 GC 根：键在池内都有同值副本保活。**每函数一份是硬约束**：共用一张表漏清一次就会从上一个函数的池里拿到索引，那是静默发射错常量。
-- `FnKind`（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry，含 `is_method`；ModuleEntry = 模块入口体（主脚本与导入模块同规，`ModuleCtx` 构造直接烙定，不经 `compile_function`，故 `bind_function_value` 对其 UNREACHABLE）：返回尾恒压模块对象常量、体顶层带值 return 编译期拒绝（`ReturnValueAtTopLevel`，裸 `return;` = 提前退出与隐式收尾同形）；`kThisName = "this"`，this 是关键字不可能与用户标识符撞名）：this 解析「沿 ctx 链找最近实例方法」与 super 判据「当前帧为实例方法族」两判据消费。`LoopCtx` 字段语义与三种循环 + break/continue 的占位回填用法详见 `.claude/reference/compile/loopctx.md`。**循环上下文随函数走**：进新函数即得空 `loop_stack_`，break/continue 不会跨函数绑定外层循环。
+- `FnKind` 见上 `compile/FnKind.hpp` 一节（this 解析「沿 ctx 链找最近实例方法」与 super 判据「当前帧为实例方法族」两判据消费 kind）；`kThisName = "this"`（this 是关键字不可能与用户标识符撞名，可安全作局部登记名）定义于本头。`LoopCtx` 字段语义与三种循环 + break/continue 的占位回填用法详见 `.claude/reference/compile/loopctx.md`。**循环上下文随函数走**：进新函数即得空 `loop_stack_`，break/continue 不会跨函数绑定外层循环。
 
 ## `compile/ModuleCtx.hpp` / `.cpp`
 

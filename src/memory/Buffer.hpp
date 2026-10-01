@@ -6,13 +6,14 @@
 
 namespace aria {
 
-    // 基于 Trivial 分配器(默认 GC)的 trivial 内存块底座:仅持 {Alloc* alloc_, T* data_, usize cap_}, 收口「分配 / 重分
-    // 配 / 释放」三件事(Array 与 ObjMovement 值栈在其上构建)。扩容策略不内置: 调用方按自己的需要算好 new_cap 后调
-    // reserve 。reserve 走分配器 reallocate(后端原生 realloc,可能原地扩展也可能搬迁), 不返回基址差(见 reserve 注释)。T
-    // 须 trivially-copyable:按内容 重定位的容器(HashTable / InternPool rehash
-    // 要按新容量重算元素位置)不走本类,直接用分配器的 allocate / deallocate 自管 bucket 数组。分配器经 TrivialAllocator
-    // concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,实例化点 (调用方 TU) 须令 GC
-    // 完整可见。不可拷贝/不可移动:持分配器堆分配裸指针(data_),浅 move 会 double-free。
+    // 基于 Trivial 分配器(默认 GC)的 trivial 内存块底座:仅持 {Alloc* alloc_, T* data_, usize cap_},收口
+    // 「分配 / 重分配 / 释放」三件事(Array 与 ObjMovement 值栈在其上构建)。扩容策略不内置:调用方按自己的
+    // 需要算好 new_cap 后调 reserve。reserve 走分配器 reallocate(后端原生 realloc,可能原地扩展也可能搬迁),
+    // 不返回基址差(见 reserve 注释)。T 须 trivially-copyable:按内容重定位的容器(HashTable / InternPool
+    // rehash 要按新容量重算元素位置)不走本类,直接用分配器的 allocate / deallocate 自管 bucket 数组。
+    // 分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,实例化点(调用方 TU)须令
+    // GC 完整可见。不可拷贝/不可移动:持分配器堆分配裸指针(data_),浅 move 会 double-free;资源仅经析构
+    // 释放,转移所有权用指针/就地构造(如 ObjList 持 AriaArray 成员)。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Buffer {
         T*     data_;

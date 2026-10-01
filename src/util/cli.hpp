@@ -1,14 +1,16 @@
 #ifndef ARIA_UTIL_CLI_HPP
 #define ARIA_UTIL_CLI_HPP
 
-// 命令行参数解析器 Cli：链式注册 flag / option / positional 后 parse(argv)，返回 ParseResult（has / get / extra_args）
-// ；help() 渲染帮助文本。定义与结果分离：Cli 仅持注册项（const 可重复 parse、互不污染），每次 parse 产出 ParseResult（
-// 持结果数组 + 非拥有 const Cli*，调用方须保证 Cli 使用期间存活）。单一事实源：注册查重与解析定位全走 defs_ 线性扫描（
-// register_name 复用 find_long/find_short），无平行索引。统一枚举 Slot 贯穿两侧：定义侧 Def.kind_ 永非 Empty（ASSERT
-// 把关）；结果侧 SlotEntry.state 用 Empty 表未提供、种类值表已提供（与 defs_ 同序、单数组）。flag/option/positional 共
-// 唯一长名空间；--name/-x 只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽。内置 help flag（--help / -h）首个注册
-// ：命中置位短路视为成功（经 result.has("help") 取）。parse 首错即终止：返回 unexpected(首个错误消息)。值语义，纯解
-// 析工具，不打印、不退出。
+// 命令行参数解析器 Cli：链式注册 flag / option / positional 后 parse(argv)，返回 ParseResult
+// （has / get / extra_args）；help() 渲染帮助文本。
+//
+// 定义与结果分离：Cli 仅持注册项（const 可重复 parse、互不污染），每次 parse 产出 ParseResult。
+// 单一事实源：注册查重与解析定位全走 defs_ 线性扫描（register_name 复用 find_long/find_short），
+// 无平行索引。统一枚举 Slot 贯穿定义/结果两侧：定义侧 Def.kind_ 永非 Empty（ASSERT 把关），结果
+// 侧 SlotEntry.state 用 Empty 表未提供、种类值表已提供。flag/option/positional 共唯一长名空间；
+// --name/-x 只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽。内置 help flag（--help / -h）
+// 构造期首个注册，parse 命中即短路成功（仍置位，经 result.has("help") 取）。首错即止。值语义，
+// 纯解析工具，不打印、不退出。
 
 #include <algorithm>
 #include <format>
@@ -25,8 +27,8 @@ namespace aria::util {
             Positional,
         };
 
-        // 解析结果：定义/结果分离后的结果侧。持结果数组 + 非拥有 const Cli*；第 n 位 SlotEntry
-        // 对应 defs_ 第 n 位定义，调用方须保证 Cli 在使用期间存活。
+        // 解析结果：定义/结果分离后的结果侧。slots_ 与 defs_ 同序（第 n 位 SlotEntry 对应第 n 位
+        // 定义）；持非拥有 const Cli*，调用方须保证 Cli 在结果用完前存活。
         class ParseResult {
         public:
             [[nodiscard]]
@@ -61,19 +63,16 @@ namespace aria::util {
         private:
             friend class Cli;
 
-            // 结果侧每槽记录（语义见文件头）：state + value（flag 槽 value 未用）。
+            // 结果侧每槽记录：state + value（flag 槽 value 未用）。
             struct SlotEntry {
                 Slot   state{Slot::Empty};
                 String value;
             };
 
-            explicit ParseResult(const Cli& cli) : cli_{&cli} {
-                // slots_ 与 defs_ 同序、按其尺寸预置
-                slots_.resize(cli.defs_.size());
-            }
+            explicit ParseResult(const Cli& cli) : cli_{&cli} { slots_.resize(cli.defs_.size()); }
 
             const Cli*      cli_;
-            List<SlotEntry> slots_; // 与 defs_ 同序：每槽 state + value
+            List<SlotEntry> slots_;
             List<String>    extra_args_;
         };
 
@@ -89,7 +88,7 @@ namespace aria::util {
             return *this;
         }
 
-        // default_value 仅用于 help() 展示，get() 未提供时返回 nullopt（调用方以 value_or 提供 fallback）。
+        // default_value 仅用于 help() 展示，不参与 get() 的取值。
         Cli& add_option(const StringView long_name, const StringView description, const StringView default_value = "",
                         const char short_name = '\0') {
             register_name(long_name, short_name);
@@ -301,7 +300,7 @@ namespace aria::util {
         };
 
         // 长选项 --name / --name=value：flag 不取值（--flag=x 的 x 忽略），option 取内联值或下一参数。
-        // 命中 --help 返回 ShortCircuit。positional 不参与（find_long_without_positional 过滤）。
+        // positional 不参与（find_long_without_positional 过滤）。
         [[nodiscard]] Result<Step, String> parse_long(ParseResult& result, const StringView arg,
                                                       const Span<const StringView> args, usize& i) const {
             const auto opt      = arg.substr(2);
@@ -332,7 +331,7 @@ namespace aria::util {
             return Step::Continue;
         }
 
-        // 短选项组 -abc（flag 簇）；遇取值选项 -oFILE / -o FILE 后结束本组。命中 -h 返回 ShortCircuit。
+        // 短选项组 -abc（flag 簇）；遇取值选项 -oFILE / -o FILE 后结束本组。
         [[nodiscard]] Result<Step, String> parse_short(ParseResult& result, const StringView arg,
                                                        const Span<const StringView> args, usize& i) const {
             for (usize j = 1; j < arg.size(); ++j) {
@@ -403,8 +402,7 @@ namespace aria::util {
             ASSERT(!find_short(short_name), std::format("short name -{} registered twice", short_name).c_str());
         }
 
-        // 注册内置 help flag 为 defs_[0]（恒居 help() 渲染首位，parse 命中即短路）；后续用户注册
-        // help/-h 撞重名 ASSERT。
+        // 注册内置 help flag 为 defs_[0]（恒居 help() 渲染首位）；后续用户注册 help/-h 撞重名 ASSERT。
         void register_builtin_help() {
             register_name(kHelpLongName, kHelpShortName);
             defs_.emplace_back(kHelpLongName, kHelpShortName, kHelpDescription, "", false, Slot::Flag);

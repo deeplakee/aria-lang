@@ -10,14 +10,13 @@
 namespace aria {
 
     // 递归下降语法分析器：把 Lexer 产出的 Token 流构造为 AST（ProgramNode）。文法来源：docs/grammar.txt。各解析函数与
-    // 非终结符一一对应，命名一致（program/declaration/statement/expression/assignment/logic_or/.../primary/pattern 等
-    // ）。错误处理（与 Lexer 风格一致，见 AGENTS.md「四条错误通道」之 1 与 3）：
-    //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--error()/expect() 抛出，沿 C++ 调用栈上抛
-    //     。
+    // 非终结符一一对应，命名一致（program/declaration/statement/expression/assignment/logic_or/.../primary/pattern
+    // 等）。错误处理（与 Lexer 风格一致，见 AGENTS.md「四条错误通道」之 1 与 3）：
+    //   - 内部用 AriaCompileException（C++ 异常）在递归下降深处传播语法错误--error()/expect() 抛出，沿 C++ 调用栈上抛。
     //   - 在 declaration() 层捕获：记入 errors_、做 panic-mode 同步（synchronize）后继续解析下一条声明/语句，从而像
     //     Lexer 一样收集多个错误。
-    //   - 边界 parse() 返回 Result<UPtr<ProgramNode>, List<Error>>：有任何错误 -> 返回错误集合（丢弃部分 AST）；无错 -
-    //     > 返回完整程序。生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc（含 SourceFile*）
+    //   - 边界 parse() 返回 Result<UPtr<ProgramNode>, List<Error>>：有任何错误 -> 返回错误集合（丢弃部分 AST）；无错
+    //     -> 返回完整程序。生命周期：Parser 不持有 SourceFile；源文件位置由各 Token 携带的 SourceLoc（含 SourceFile*）
     //     提供，故调用方须保证 SourceFile 在解析期间存活（同 Lexer 的生命周期约束）。
     class Parser {
     public:

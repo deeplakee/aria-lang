@@ -25,10 +25,10 @@ namespace aria::str_table {
     // 第三类成员是 Exception face 的字段键 _message/_code:默认 init 落字段与 face 实例腿读据都按名取用;字段键
     // 只活在实例 fields,无任何类表键锚定,weak root 下无实例存活即被摘除重铸,故入表保命。
     inline constexpr StringView kConstants[] = {
-            "__add__",   // binary +(十一个钩子名与 Object::op_*_impl 虚函数族一一对应)
+            "__add__",   // binary +
             "__sub__",   // binary -
             "__mul__",   // binary *
-            "__div__",   // binary /(aria 唯一的除法算子,无 // 形态)
+            "__div__",   // binary /
             "__mod__",   // binary %
             "__lt__",    // comparison <
             "__le__",    // comparison <=

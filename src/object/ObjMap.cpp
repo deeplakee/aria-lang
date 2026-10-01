@@ -48,7 +48,7 @@ namespace aria {
             return "{...}";
         }
         const PrintGuard guard{this};
-        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同属 D4)。
+        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同级不承诺)。
         const auto entry_repr = [](const AriaHashTable::Entry& entry) {
             return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
         };
@@ -56,10 +56,9 @@ namespace aria {
     }
 
     Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.map_class()->load_field(vm, name);
         if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
+            return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }

@@ -13,7 +13,7 @@ namespace aria {
     //   - location_:open 指入值栈(grow_stack_ 搬迁后经 set_location 重绑),closed 恒指 &closed_;两态统一经 value_slot()
     //     取读写槽,LOAD/STORE_UPVALUE 不分支。
     //   - next_open_:open upvalue 按槽址降序的侵入式开链(VM 持链头 open_upvalues_);同槽捕获经链查复用同一对象,close 摘
-    //     链。不叫 next_--撞基类 Object::next_(GC 对象链字段)遮蔽。地址哈希型、final、非拷贝/非移动(按身份共享,浅拷贝
+    //     链。地址哈希型、final、非拷贝/非移动(按身份共享,浅拷贝
     //     破坏开链不变式)。trace 标 *value_slot()(open 标栈槽内值 / closed 标 closed_;槽内 Value 可装箱任意对象)。
     class ObjUpvalue final : public Object {
     public:

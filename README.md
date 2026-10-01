@@ -77,13 +77,14 @@ println("42".to_int() + 1);                                    # 43
   `substring`/`to_int` 等。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（别名必写）。模块顶层绑定即模块成员，
   `U.f()` 直调，成员只读。
-- **内置函数**：`type` / `str` / `assert` / `println` / `clock`（都可当一等值传递；`println` 是唯一的
-  输出口，`clock` 返单调时钟秒数、只可相减）。
+- **内置函数**：`type` / `str` / `assert` / `println` / `clock` / `Error`（都可当一等值传递；`println` 是唯一的
+  输出口，`clock` 返单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建模块变量
+  `coroutine`（合成 `<coroutine>` 模块，协程原语载体，第 16 章）。
 
 ## 构建与运行
 
 需要 CMake ≥ 3.20 与支持 C++23 的编译器（`clang++` / `clang-format` / `clangd` 建议在 PATH 中）。
-构建时经 `FetchContent` 联网拉 Google Test v1.14.0。
+第三方依赖（Google Test v1.14.0 / isocline / mimalloc）均 vendored 于 `external/`，configure 零网络依赖。
 
 ```sh
 # Linux / macOS
@@ -123,7 +124,7 @@ ctest --test-dir build --output-on-failure
 
 `bench/` 下有独立的性能基准。进程内微项有三个可执行（`lexer_bench` / `hashtable_bench` /
 `vm_bench`，量单条路径的单次成本），另有**源文件级**基准 `bench/lang/`：里面的 `.aria` 都是能直接
-运行的完整程序（40 个语言功能细项 + 8 个真实负载，负载与多数功能项带 CPython / Node / Lua / Java
+运行的完整程序（39 个语言功能细项 + 16 个真实负载，负载与多数功能项带 CPython / Node / Lua / Java
 对照端口），同目录的 `lang_bench.py` 逐个起进程计时，报多轮**平均值 ± 标准差**，并逐语言比对脚本自报
 的校验量：
 
@@ -168,17 +169,17 @@ src/
   runtime/   FrameStack / ObjMovement / AriaVM / value_register；builtins/ 内建函数与各类型方法面
 tests/       C++ GTest（tests/<module>/）与 aria 脚本语料（tests/language/）
 bench/       性能基准（lexer/vm/hashtable 三个进程内可执行 + lang/ 源文件级基准与对照端口）
-external/    isocline（REPL 行编辑）
-  docs/        grammar.txt（语言文法）与 guide/（语言教程）
+external/    isocline（REPL）+ googletest v1.14.0 + mimalloc（GC 分配器），均 vendored、configure 零网络
+docs/        grammar.txt（语言文法）与 guide/（语言教程）
 tools/       check_commit_msg.py 等开发脚本
 ```
 
 ## 进一步阅读
 
 - `docs/guide/` -- 语言教程（面向有编程经验读者，17 章入门到全景，含内建速查附录）。
-- `docs/grammar.txt` -- 语言文法规范，语言语义的单一事实源。
+- `docs/grammar.txt` -- 语言文法规范（语法面单一事实源；语义设计见 `.claude/reference/`）。
 - `AGENTS.md` -- 项目规则与进度，以及构建 / 命名 / 类型 / 错误处理等通用约定。
 - `.claude/rules/` -- 按源码目录拆分的模块参考（带 `paths:` frontmatter，读对应源码时自动加载）。
-- `.claude/reference/` -- 深度设计文档（VM 设计、指令集、GC、import、lowering 等，按需阅读）。
+- `.claude/reference/` -- 深度设计文档（VM 设计、指令集、import、lowering 与各模块踩坑归档等，按需阅读）。
 - `CPP_Naming_Convention.md` -- C++ 命名与参数传递规范。
 - `.zcode/skills/aria-commit/SKILL.md` -- commit 说明规范与落笔流程。

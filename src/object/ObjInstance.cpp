@@ -37,7 +37,7 @@ namespace aria {
         //    经调用方根化:LOAD_FIELD peek 在栈 / LOAD_THIS_FIELD 帧槽 0 在栈)。
         const auto hit = class_->load_field(vm, name);
         if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
+            return std::nullopt;
         }
         // 3) 命中值解包 member:方法命中(经 is_method(Value) 一步判)现场绑定 this=本实例;其余
         //    (静态 fun/lambda/原生/静态值)原值直读。**不写回 fields**:读路径每次访问产出一个新
@@ -92,9 +92,6 @@ namespace aria {
 
     Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__call__">()); }
 
-    ObjInstance* new_instance(GC& gc, ObjClass* klass) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 klass;建成即写栈(值栈根)。
-        return gc.new_object<ObjInstance>(gc, klass);
-    }
+    ObjInstance* new_instance(GC& gc, ObjClass* klass) { return gc.new_object<ObjInstance>(gc, klass); }
 
 } // namespace aria

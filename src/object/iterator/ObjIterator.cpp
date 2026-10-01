@@ -15,10 +15,9 @@ namespace aria {
     }
 
     Opt<Value> ObjIterator::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态与 GC 走查见 Object.hpp;命中自持 new_bound_method 恒绑 this。
         const auto hit = vm.iterator_class()->load_field(vm, name);
         if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
+            return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }

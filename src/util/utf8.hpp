@@ -119,8 +119,8 @@ namespace aria::utf8 {
     // 遇到非法字节时返回 {kReplacementChar, 1}（只吞掉一个坏字节，便于继续扫描）。
     // offset 超出范围（>= str.size()）时返回 {kReplacementChar, 0}，不进行任何读取；
     // 正常使用时调用方应保证 offset < str.size()，此时返回的字节数 >= 1。
-    // ASCII 快路径就地内联，多字节交 detail::decode_multibyte（ARIA_NOINLINE）--源码主体是 ASCII，
-    // 于是每个调用点只多出几条指令，而不必携带整套多字节解码代码。
+    // ASCII 快路径就地内联，多字节交 detail::decode_multibyte（冷/热路径分离的理由见其头注）--
+    // 源码主体是 ASCII，每个调用点只多出几条指令，而不必携带整套多字节解码代码。
     [[nodiscard]]
     constexpr Pair<codepoint, u8> decode_one(const StringView str, const usize offset = 0) noexcept {
         if (offset >= str.size()) {
@@ -199,7 +199,7 @@ namespace aria::utf8 {
         if (cp < 0x80) {
             return (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
         }
-        // 近似：常见字母分配区间（拉丁扩展、希腊、西里尔、CJK 表意、假名等）
+        // 近似：常见字母分配区间（拉丁扩展、希腊、西里尔、CJK 表意、韩文音节等）
         return (cp >= 0x00C0 && cp <= 0x024F)     // 拉丁扩展
                || (cp >= 0x0370 && cp <= 0x03FF)  // 希腊
                || (cp >= 0x0400 && cp <= 0x04FF)  // 西里尔

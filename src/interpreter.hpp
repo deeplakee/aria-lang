@@ -18,7 +18,7 @@ namespace aria {
     using LineReader = std::function<bool(String&)>;
 
     // CLI 分发核心：解析 argc/argv -> 派发到 eval / file / REPL。返回退出码（0 成功 / 1 错误）。
-    // 经 Cli::parse(argc, argv) 重载（零拷贝、跳过 argv[0]）解析。repl_reader 供 REPL 模式逐行读入。
+    // repl_reader 供 REPL 模式逐行读入。
     [[nodiscard]]
     int cli_dispatch(i32 argc, char* argv[], const LineReader& repl_reader);
 

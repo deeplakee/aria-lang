@@ -337,7 +337,7 @@ namespace aria {
 
     ObjClass* ListClass::make_class(GC& gc, ObjClass* super) {
         // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
-        // 触达;不入 builtins/模块 globals(用户不可直接取到类对象)。类名与 type() 的类型名一致。
+        // 触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "List", super);
         Builtin::register_class_methods(gc, klass, kListBuiltins);
         return klass;

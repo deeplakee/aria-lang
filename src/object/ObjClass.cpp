@@ -63,10 +63,7 @@ namespace aria {
         return std::nullopt;
     }
 
-    ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 name 与 super。init_ 由构造函数自 super 派生。
-        return gc.new_object<ObjClass>(gc, name, super);
-    }
+    ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super) { return gc.new_object<ObjClass>(gc, name, super); }
 
     ObjClass* new_class(GC& gc, const StringView name, ObjClass* super) {
         // name_str 由本函数内部 intern 并自守跨下方 new_object;super 根化约定同显式名重载。

@@ -11,20 +11,18 @@ namespace aria {
 
 namespace aria::nanboxing {
 
-    // NaN-boxed value for the aria interpreter (C++23). Every value fits in one 64-bit IEEE-754 double. Real doubles
-    // are stored verbatim; all other types hide inside the unused bit patterns of a quiet NaN. We claim the NaN subset
-    // whose top two mantissa bits are set (kQNan), dodging the hardware canonical quiet NaN (0x7ff8...), so arithmetic
-    // NaNs stay classified as f64 and never collide with a boxed value. Box layout (when the value is NOT an f64):
-    // sign == 1 -> pointer, payload = low 48 bits (x86-64 / ARM64 user space) sign == 0 -> tag in bits 48..49: 1 = nil
-    // , 2 = bool (truth in bit 0), 3 = int (48-bit two's-complement in bits 0..47) Pointers claim the whole sign==1
-    // half: a 48-bit pointer needs no tag slot, leaving both tag slots free for Nil/Bool/Int.
+    // aria 解释器的 NaN-boxing 值表示(C++23):每个值装进一个 64 位 IEEE-754 double。真 double 原样存储;
+    // 其余类型藏进 quiet NaN 的未用位型。只认领 top-2 mantissa bits 置位的 NaN 子集(kQNan),避开硬件
+    // canonical quiet NaN(0x7ff8...),使算术产生的 NaN 落回 is_f64 判定、绝不与 boxed 值冲突。非 f64 值的
+    // 格布局:sign == 1 -> 指针,载荷 = 低 48 位(x86-64 / ARM64 用户态);sign == 0 -> tag 在 bits 48..49:
+    // 1 = nil、2 = bool(真值在 bit 0)、3 = int(48 位补码,bits 0..47)。指针占满 sign==1 半区:48 位指针
+    // 不需要 tag 槽,两个 tag 槽全让给 Nil/Bool/Int。
     class Value {
         using Obj = Object*;
 
     public:
         enum class Type { Nil, Bool, F64, Int, Obj };
 
-        // bit-pattern constants
         static constexpr u64 kQNan    = 0x7ffc000000000000ull; // sign=0, exp=all-1, mant top 2 bits set
         static constexpr u64 kSign    = 0x8000000000000000ull; // sign=1, else=all-0
         static constexpr u64 kPayload = 0x0000ffffffffffffull; // low 48 bits all-1
@@ -37,7 +35,6 @@ namespace aria::nanboxing {
         static constexpr u64 kFalseBits = kQNan | kTagBool | 0u;
         static constexpr u64 kTrueBits  = kQNan | kTagBool | 1u;
 
-        // construction
         // 默认构造为 trivial（= default）：默认初始化 Value v; 时 bits_ 为不定值；
         // 值初始化 Value{} 零填充（0 即 f64 0.0，并非 nil）。需要 nil 请用 nil_val()。
         // 这样 Value 满足 is_trivial + is_standard_layout（POD），可 memcpy、可入 FrameStack。
@@ -65,8 +62,8 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static constexpr Value from_f64(const f64 value) noexcept {
-            // Canonicalize any NaN to the hardware quiet NaN so it can never be
-            // mistaken for a boxed value on the way back out.
+            // 把任意 NaN 规范化为单一位型(硬件 canonical quiet NaN),回出时绝不会被误判为
+            // boxed 值;与 TagValue 的同款契约互为对齐点(=== 按位比较下 NaN===NaN 的前提)。
             if (value != value) {
                 return Value{0x7ff8000000000000ull};
             }
@@ -75,7 +72,7 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static constexpr Value from_int(int64_t value) noexcept {
-            // Stored as a 48-bit two's-complement integer (range +/- 2^47).
+            // 按 48 位补码整数存储(值域 [-2^47, 2^47),越界 ASSERT)。
             ASSERT(value >= -(static_cast<int64_t>(1) << 47) && value < (static_cast<int64_t>(1) << 47),
                    "integer does not fit in 48-bit NaN-box payload");
             return Value{kQNan | kTagInt | (static_cast<u64>(value) & kPayload)};
@@ -83,7 +80,7 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static constexpr Value from_i32(const i32 value) noexcept {
-            return from_int(value); // i32 always fits in the 48-bit payload
+            return from_int(value); // i32 恒落在 48 位载荷内
         }
 
         [[nodiscard]]
@@ -93,7 +90,6 @@ namespace aria::nanboxing {
             return Value{kSign | kQNan | (bits & kPayload)};
         }
 
-        // type tests
         [[nodiscard]]
         constexpr bool is_nil() const noexcept {
             return bits_ == kNilBits;
@@ -137,7 +133,7 @@ namespace aria::nanboxing {
                 case kTagBool:
                     return Type::Bool;
                 default:
-                    return Type::Int; // kTagInt
+                    return Type::Int;
             }
         }
 
@@ -146,7 +142,7 @@ namespace aria::nanboxing {
             return type_name(type());
         }
 
-        // extraction (assert the matching type in debug builds)
+        // 取值族(debug 下 ASSERT 类型匹配)
         [[nodiscard]]
         bool as_bool() const noexcept {
             ASSERT(is_bool(), "value is not Bool");
@@ -162,8 +158,7 @@ namespace aria::nanboxing {
         [[nodiscard]]
         int64_t as_int() const noexcept {
             ASSERT(is_int(), "value is not Int");
-            // Sign-extend the 48-bit payload: shift bit 47 into the sign position,
-            // then arithmetic-shift back (signed >> is arithmetic in C++20).
+            // 48 位载荷符号扩展:先把 bit 47 左移进符号位,再算术右移回来(signed >> 在 C++20 为算术移位)。
             return static_cast<int64_t>(bits_ << 16) >> 16;
         }
         [[nodiscard]]

@@ -2,8 +2,7 @@
 #define ARIA_OBJ_CLOSURE_HPP
 
 #include "memory/Array.hpp"
-// Array<ObjUpvalue*> 成员以 GC 为分配器,实例化点须 GC 完整
-// (仓库约定:具体类自 include,不经容器传递)
+// GC 分配器 include 理由同 ObjFunction.hpp 注。
 #include "memory/GC.hpp"
 #include "object/Object.hpp"
 

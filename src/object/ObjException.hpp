@@ -13,15 +13,15 @@ namespace aria {
 
     // 异常对象:VM 检测到的运行时错误 / 原生报错的装箱载荷(ObjType::EXCEPTION)。
     //   - message_ 存**完整烘焙消息**(与 Error::message() 同形,含 "Category: Name" 前缀;运行期装箱不含位置前缀 -- 位置
-    //     由未捕获出口的 at 行给出,经 load_module 透传的编译期消息自带 path:line:col: 保留)。烘焙在 raise 侧完成(Error
-    //     ::make_message),本对象原样持有;指针恒非空(intern;ctor ASSERT),内容可空(空串兜底)。Error 工厂产物为例外:
+    //     由未捕获出口的 at 行给出,经 load_module 透传的编译期消息自带 path:line:col: 保留)。烘焙在 raise 侧完成
+    //     (Error::make_message),本对象原样持有;指针恒非空(intern;ctor ASSERT),内容可空(空串兜底)。Error 工厂产物为例外:
     //     用户所给即消息,不烘前缀。
     //   - code_ 是错误码数字(i64 单一存储):VM 报错 = ErrorCode 注册表序号,Error(msg, code) 码参 = 用户所给 int 原样
-    //    (语言层错误码即数字,枚举类型引入后此处升级)。两个视图方法消费之:code() 转 ErrorCode(C++ 消费方);numeric_code()
+    //    (语言层错误码即数字)。两个视图方法消费之:code() 转 ErrorCode(C++ 消费方);numeric_code()
     //     保 i64(语言面 code() 即此值)。
     //   - to_error():经 Error::from_baked **原样**回传(跳过 make_message 重烘,否则双重前缀)。VM 未捕获出口不经本方法,
-    //     在 AriaVM::take_uncaught_error 拆件后 from_baked 物化。地址哈希型、final;注意本类承载**解释器报告的错误
-    //     **,aria 的 throw 抛任意 Value。
+    //     在 AriaVM::take_uncaught_error 拆件后 from_baked 物化。地址哈希型、final;注意本类承载**解释器报告的错误**,
+    //     aria 的 throw 抛任意 Value。
     //   - 成员解析委托 Exception bootstrap 类(vm.exception_class(),沿链达 Object 根),与其他内建对象经 VM 访问器取
     //    自身 bootstrap 类同款(本类不持类指针);message/code 方法面经此触达,用户侧 type(e) 恒 "Exception"。
     class ObjException final : public Object {

@@ -1,6 +1,3 @@
-// 解释器 CLI 入口分发实现。抽到 .cpp 以把 AriaVM / GC / ObjModule / SourceFile 等内部依赖
-// 收口在此，interpreter.hpp 仅暴露公共 API（LineReader + 派发/执行入口）的声明。
-
 #include "interpreter.hpp"
 
 #include "aria.hpp"

@@ -26,8 +26,7 @@ namespace aria {
     //   - value_equal(== 内容相等):Nil/Bool 类型严格按值;Int/F64 **跨类型 IEEE 数值**(1==1.0 true、-0.0==0.0 true、NaN
     //     !=NaN);Obj 调 Object::equals 虚函数(ObjString 比内容,其它默认地址)。不做 JS 全套强制转换。
     //   - value_identical(=== 严格相等):类型严格(1===1.0 false);f64 按位(-0.0!==0.0、NaN 规范化后 NaN===NaN true);Obj
-    //     指针相等。哈希表键用 ===(value_identical):对象按引用做键,字符串靠 intern 等价内容同指针 -> 按内容查到;
-    //     value_hash 已与 === 自洽。
+    //     指针相等。哈希表键用 ===(value_identical):对象按引用做键,字符串靠 intern 等价内容同指针 -> 按内容查到。
     [[nodiscard]]
     inline bool is_num(const Value value) noexcept {
         return value.is_int() || value.is_f64();
@@ -65,17 +64,17 @@ namespace aria {
     bool value_less(Value lhs, Value rhs) noexcept;
 
     // f64 可读化:保证含 `.`/`e`/`E`(整值补 `.0`),与 Int 区分;inf/nan 直出。
-    //   收口于 Value 层供多处复用(输出渲染 / 反汇编常量池小节等),避免逻辑散落重复。
+    //   收口于 Value 层供输出渲染等处复用,避免逻辑散落重复。
     [[nodiscard]]
     String format_f64(f64 value);
 
-    // 值的可读渲染(println/str 与 REPL 回显等用):nil/true/false/整数/浮点/对象描述。Obj 统一走虚函数
+    // 值的可读渲染(println/str 等显示位用):nil/true/false/整数/浮点/对象描述。Obj 统一走虚函数
     //   to_string()(显示位:多数内建类型经基类默认委托 debug_repr;ObjString 返回原文无引号)。
     [[nodiscard]]
     String format_value(Value value);
 
     // 值的**非重入**调试渲染(执行跟踪 / 反汇编常量池等调试上下文用):内置原语与 format_value
-    //   一致,Obj 走虚函数 debug_repr() 而非可重载的 to_string()(后者是未来用户类 __str__ 的
+    //   一致,Obj 走虚函数 debug_repr() 而非可重载的 to_string()(to_string 是用户类 __str__ 的
     //   挂载点,可重载为运行 aria 字节码,调试上下文调用会重入 VM 致无限递归)。
     //   debug_repr 的 override 契约是纯 C++ 惰性渲染(绝不重入 VM / 不触 GC 回收,见 Object.hpp),
     //   语言层无法新增 C++ 子类型,故虚分派绝不触用户重载。

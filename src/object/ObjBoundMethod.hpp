@@ -16,8 +16,8 @@ namespace aria {
     //     经本类型(无 this 不绑)。
     //   - receiver_:Value 而非 ObjInstance*(为内建类型方法留泛化;当前只产 ObjInstance 接收者)。闭包方法解包作方法帧槽
     //     0 的 this,原生方法调用时覆写调用区槽 0(与返回槽同位)。地址哈希型、final;equals 按**内容相等**(receiver 同一
-    //     && method 同一):读路径每次产出新 bound,`obj.m == obj.m` 为真、`===` 为假(与 `==`(value_equal)/`===`(identity
-    //     ) 二分一致)。
+    //     && method 同一):读路径每次产出新 bound,`obj.m == obj.m` 为真、`===` 为假(与 `==`(value_equal)/
+    //     `===`(identity) 二分一致)。
     class ObjBoundMethod final : public Object {
     public:
         ObjBoundMethod(Value method, Value receiver);

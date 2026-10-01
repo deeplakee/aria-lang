@@ -12,9 +12,9 @@ namespace aria {
     // 字符串对象:SSO(短串内联 / 长串独立 buffer)。
     //   - 长度 <= kShortCapacity(15):内联 short_chars_[16](15 字符 + NUL),无额外分配。
     //   - 长度 > kShortCapacity:long_chars_ 指向 gc.allocate<char>(length_+1) 的独立 buffer,~ObjString 时 gc_->
-    //     deallocate<char> 释放。壳本身定长(sizeof(ObjString))。 is_long() 由 length_ > kShortCapacity 派生(不存标志位
-    //     ,省 1 字节 + 填充)。trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。持 GC* gc_ 供 ~
-    //     ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。内容串经 intern 驻留池:new_string 先查 GC 的
+    //     deallocate<char> 释放。壳本身定长(sizeof(ObjString))。is_long() 由 length_ > kShortCapacity 派生(不存标志位,
+    //     省 1 字节 + 填充)。trace() 空(纯字节)。哈希(FNV-1a 32-bit)构造时算出,存 Object::hash_。持 GC* gc_ 供
+    //     ~ObjString 释放 long_chars_(非 Array 子内存的释放统一走虚析构)。内容串经 intern 驻留池:new_string 先查 GC 的
     //     InternPool,命中返回已有串,未命中才 new_object + insert。等价内容的串共享同一 ObjString*。
     class ObjString final : public Object {
     public:
@@ -64,7 +64,7 @@ namespace aria {
         String to_string() const override;
 
         // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+        //(两步形态权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
@@ -72,7 +72,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
 
-        // 下标读取:整数键(字节域,D5),产出单字节 1-char string;负数从尾计数、归一化后
+        // 下标读取:整数键(字节域),产出单字节 1-char string;负数从尾计数、归一化后
         // 越界 IndexOutOfBounds、非整数 TypeMismatch;多字节序列中间字节取该字节自身(字节
         // 契约的自然结果)。Range 键走切片(见 slice)。查读含一次 new_string(intern)分配:
         // receiver 经调用方值栈为根。

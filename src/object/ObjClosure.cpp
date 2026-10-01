@@ -35,9 +35,6 @@ namespace aria {
         return std::format("<fn {}>", function_->name()->view());
     }
 
-    ObjClosure* new_closure(GC& gc, ObjFunction* function) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 function_(通常已入常量池);建成须立即发布进根。
-        return gc.new_object<ObjClosure>(gc, function);
-    }
+    ObjClosure* new_closure(GC& gc, ObjFunction* function) { return gc.new_object<ObjClosure>(gc, function); }
 
 } // namespace aria

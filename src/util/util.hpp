@@ -77,7 +77,7 @@ namespace aria::util {
     }
 
     // 转义字符串字面量内容(不含外层引号):" \ \n \t \r,其余控制字符(<0x20)-> \x{HH},非 ASCII 透传。
-    // 供反汇编器等可读化场景共用。
+    // 供 ObjString 的 debug/repr 渲染做可读化转义。
     [[nodiscard]]
     inline String escape_string(const StringView s) {
         String out;
@@ -188,8 +188,8 @@ namespace aria::util {
                 static_cast<u8>((word >> 24) & 0xFF)};
     }
 
-    // 两下标距离(绝对值差):取大减小,无符号域恒不下溢。命名随 C++26 std::abs_diff(同义,
-    // 标准库就位后可直接替换)。纯换算无分配。
+    // 两下标距离(绝对值差):取大减小,无符号域恒不下溢。命名随 C++26 std::abs_diff(同义)。
+    // 纯换算无分配。
     [[nodiscard]]
     constexpr usize abs_diff(const usize lhs, const usize rhs) noexcept {
         return lhs <= rhs ? rhs - lhs : lhs - rhs;

@@ -42,12 +42,11 @@ namespace aria {
                     // IEEE 数值:-0.0==0.0 true, NaN!=NaN(与 === 的按位不同)。
                     return lhs.as_f64() == rhs.as_f64();
                 case Value::Type::Obj:
-                    return lhs.as_obj()->equals(rhs.as_obj()); // 内容相等虚函数分派
+                    return lhs.as_obj()->equals(rhs.as_obj());
             }
             return false;
         }
 
-        // 跨类型:仅 Int<->F64 数值比较(bool/Obj/Nil 不参与)。
         if ((lhs_type == Value::Type::Int && rhs_type == Value::Type::F64) ||
             (lhs_type == Value::Type::F64 && rhs_type == Value::Type::Int)) {
             const auto lhs_f64 = lhs_type == Value::Type::Int ? static_cast<f64>(lhs.as_int()) : lhs.as_f64();
@@ -55,7 +54,7 @@ namespace aria {
             return lhs_f64 == rhs_f64;
         }
 
-        return false; // 其余跨类型(nil/bool/obj 之间)不相等
+        return false;
     }
 
     String format_f64(const f64 value) {
@@ -90,7 +89,6 @@ namespace aria {
     }
 
     String format_value_debug(const Value value) {
-        // Obj 走 debug_repr() 而非可重载的 to_string():调试上下文不可重入 VM。详见 Value.hpp 注释。
         switch (value.type()) {
             case Value::Type::Nil:
                 return "nil";
@@ -120,14 +118,13 @@ namespace aria {
             case Value::Type::F64:
                 return std::bit_cast<u64>(lhs.as_f64()) == std::bit_cast<u64>(rhs.as_f64());
             case Value::Type::Obj:
-                return lhs.as_obj() == rhs.as_obj(); // 指针相等(intern 后等价内容串同指针)
+                return lhs.as_obj() == rhs.as_obj(); // 指针相等
         }
         return false;
     }
 
     bool value_less(const Value lhs, const Value rhs) noexcept {
-        // 数值域:双 Int 整数路径,混合升 f64(与 value_equal 的跨型数值比较同源);
-        // NaN 排在一切数值之前、双 NaN 等价 --保严格弱序,否则排序形式上 UB。
+        // 数值域:混合升 f64,与 value_equal 的跨型数值比较同源;双 NaN 等价是「NaN 排最前」的推论。
         if (lhs.is_int() && rhs.is_int()) {
             return lhs.as_int() < rhs.as_int();
         }

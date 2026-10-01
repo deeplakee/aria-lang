@@ -4,7 +4,7 @@
 
 namespace aria {
 
-    // 数字字面量解析辅助（匿名命名空间,仅本文件可见;无状态纯函数）
+    // 数字字面量解析辅助(匿名命名空间,仅本文件可见,无状态纯函数)
     namespace {
 
         bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
@@ -187,7 +187,8 @@ namespace aria {
     }
 
     void Lexer::scan_radix_int() {
-        const u32  start = pos_;         // 入口即起点；后续 pos_ 推进，span/lexeme/token 位置用 start
+        // 惯用法：start = 入口即起点，后续 pos_ 推进，span/lexeme/token 位置用 start（各扫描器同此）。
+        const u32  start = pos_;
         const char tag   = peek_byte(1); // b/B/o/O/x/X
         const int  base  = (tag == 'b' || tag == 'B') ? 2 : (tag == 'o' || tag == 'O') ? 8 : 16;
         advance(2); // 消费前缀 0x/0b/0o
@@ -220,7 +221,7 @@ namespace aria {
     void Lexer::scan_decimal_or_float() {
         // 按 整数 -> 小数 -> 指数 顺序线性扫描。has_dot/has_exp 决定最终是 float 还是 int。
         // 调用方（主循环）保证进入时以数字开头，故整数部分至少一位，无需 has_digit 校验。
-        const u32 start   = pos_; // 入口即起点；后续 pos_ 推进，span/lexeme/token 位置用 start
+        const u32 start   = pos_; // 入口即起点（惯用法见 scan_radix_int 注）
         bool      has_dot = false;
         bool      has_exp = false;
 
@@ -252,7 +253,7 @@ namespace aria {
             if (exp_digit) {
                 has_exp = true;
             } else {
-                pos_ = exp_pos; // e 后无数字，回退把 e 留给下个 token
+                pos_ = exp_pos;
             }
         }
 
@@ -329,7 +330,7 @@ namespace aria {
     void Lexer::scan_escape(String& value) {
         advance(); // 消费 '\'
         if (is_eof()) {
-            return; // 串未闭合，交给 scan_string 报错
+            return;
         }
 
         const auto append_simple = [&](const char ch) {

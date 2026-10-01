@@ -19,17 +19,20 @@ namespace aria {
     // 实现格的规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的
     // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::str 取常量串表(runtime/str_table.hpp)
     // 里的钩子名,再按名到实例/类链查表。
+    // 曝光与算子格两族事实的本表收口:七个 bootstrap 类格在 bootstrap_registers 末段统一经 builtins_ 裸名曝光(键写点
+    // AriaVM.cpp,不经 make_class;用户 shadow 全局名不再免疫),DefaultMark/MatchNoArm 不曝光(用户不可达);算子实现格
+    // 的格清单/类表规范家关系见上,各 kOperatorFns 清单(钩子名 -> 本表偏移)住 StringClass.hpp/ListClass.hpp。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                  \
     X(DefaultMark)    /* missing-argument stamp (private ObjClass identity token fills unfilled slots; not           \
                          user-reachable) */                                                                          \
     X(MatchNoArm)     /* fallback exception when no match arm matches (shared ObjException; LOAD_REG + THROW) */     \
     X(ObjectClass)    /* Object root class (base of a def with no super; filled at bootstrap) */                     \
-    X(ExceptionClass) /* Exception bootstrap class (message/code; super is Object; reachable via builtins) */        \
-    X(IteratorClass)  /* Iterator bootstrap class (has_next/next; super is Object; C++ access only) */               \
-    X(ListClass)      /* List bootstrap class (built-in list methods; super is Object; C++ access only) */           \
-    X(MapClass)       /* Map bootstrap class (built-in map methods; super is Object; C++ access only) */             \
-    X(StringClass)    /* String bootstrap class (built-in string methods; super is Object; C++ access only) */       \
-    X(RangeClass)     /* Range bootstrap class (built-in range methods; super is Object; C++ access only) */         \
+    X(ExceptionClass) /* Exception bootstrap class (message/code; super is Object) */                                \
+    X(IteratorClass)  /* Iterator bootstrap class (has_next/next; super is Object) */                                \
+    X(ListClass)      /* List bootstrap class (built-in list methods; super is Object) */                            \
+    X(MapClass)       /* Map bootstrap class (built-in map methods; super is Object) */                              \
+    X(StringClass)    /* String bootstrap class (built-in string methods; super is Object) */                        \
+    X(RangeClass)     /* Range bootstrap class (built-in range methods; super is Object) */                          \
     X(StringLtFn)     /* __lt__ native, copied from the String class table; op_less_impl reads this cell          */ \
     X(StringLeFn)     /* __le__ native, copied from the String class table; op_less_equal_impl reads this cell    */ \
     X(StringGtFn)     /* __gt__ native, copied from the String class table; op_greater_impl reads this cell       */ \

@@ -19,11 +19,12 @@ namespace aria::src {
         u32 col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
     };
 
-    // 源文件信息：保存文件名、路径与内容。内容由 SourceFile 以 String 持有所有权，解析阶段可通过 name()/path()/content
-    // () 取得 StringView 直接引用，避免拷贝。取出的 StringView 不得比所引用的 SourceFile 活得更久；构造完成后不要修改
-    // 内容；若将多个 SourceFile 存入容器（如 List）并已取出 StringView，后续再向容器追加/删除致重分配会移动内部 String
-    // --短串（SSO）会改变字符地址而使 StringView 悬空。加载处理：剥除前导 UTF-8 BOM（EF BB BF）；行尾归一化为 LF（
-    // CRLF/CR -> LF）；校验内容为合法 UTF-8，非法则 from_path 返回 InvalidEncoding。
+    // 源文件信息：保存文件名、路径与内容。内容由 SourceFile 以 String 持有所有权，解析阶段可经
+    // name()/path()/content() 取 StringView 直接引用，避免拷贝。生命期纪律：取出的 StringView 不得
+    // 比所引用的 SourceFile 活得更久；构造完成后不要修改内容；多个 SourceFile 存入容器（如 List）
+    // 且已取出 StringView 时，后续增删致重分配会移动内部 String --短串（SSO）会改变字符地址而使
+    // StringView 悬空。from_path 加载处理：剥除前导 UTF-8 BOM（EF BB BF）；行尾归一化为 LF
+    // （CRLF/CR -> LF）；校验内容为合法 UTF-8，非法则返回 InvalidEncoding。
     class SourceFile {
     public:
         SourceFile() = default;
@@ -91,9 +92,9 @@ namespace aria::src {
             return line;
         }
 
-        // 将字节偏移解析为 1-based 的 (行, 列)。列按码点计数，对中文源码友好；offset 超出范围时钳制到内容末尾。
+        // 将字节偏移解析为 1-based 的 (行, 列)。offset 超出范围时钳制到内容末尾；
         // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1）。
-        // 列须数码点，故本方法是 O(行内码点数) 的冷路径（行号部分走 line_at 的缓存）--只应被错误渲染与测试调用。
+        // 列须数码点，故本方法是 O(行内码点数) 的冷路径（行号部分走 line_at 的缓存）--冷路径调用纪律见 SourceLoc 类注。
         [[nodiscard]]
         LineCol locate(u32 offset) const {
             if (offset > content_.size()) {
@@ -203,13 +204,14 @@ namespace aria::src {
         }
     };
 
-    // 源码位置：源文件指针 + 字节偏移。行列是**派生量**，位置状态只有偏移这一件事--扫描器热路径只推游标、不在推进时维
-    // 护计数，回退/前瞻天然自由，也无「某条推进路径漏记账」的 bug 面。行列代价挪到消费点：line() 走行表二分 + 单条行
-    // 缓存（逐节点调用的热路径）；line_col() / to_string() 列要在行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲
-    // 染与测试调用（不要在逐 token 循环里读列，那会把 O(n²) 放回来）。 src 为非拥有指针，不得比所引 SourceFile 活得更
-    // 久、地址不得变动--本类经 src 查 SourceFile 里的惰性行表与行缓存。非空不变式由显式构造的 ASSERT 保证。默认构造为
-    // 空态（src=nullptr、offset=0），供容器占位--空态即「无位置」：line() 返 0、line_col() 返 {0,0}、to_string() 返空
-    // 串。
+    // 源码位置：源文件指针 + 字节偏移。行列是**派生量**，位置状态只有偏移这一件事--扫描器热路径只推
+    // 游标、不在推进时维护计数，回退/前瞻天然自由，也无「某条推进路径漏记账」的 bug 面。行列代价挪到
+    // 消费点：line() 走行表二分 + 单条行缓存（逐节点调用的热路径）；line_col() / to_string() 列要在
+    // 行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲染与测试调用（不要在逐 token 循环里读列，
+    // 那会把 O(n^2) 放回来）。src 为非拥有指针，不得比所引 SourceFile 活得更久、地址不得变动--本类
+    // 经 src 查 SourceFile 里的惰性行表与行缓存。非空不变式由显式构造的 ASSERT 保证。默认构造为空态
+    // （src=nullptr、offset=0），供容器占位--空态即「无位置」：line() 返 0、line_col() 返 {0,0}、
+    // to_string() 返空串。
     class SourceLoc {
     public:
         // 空态：src=nullptr。供容器占位（如 List<Token> 预留槽位）。

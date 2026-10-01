@@ -135,10 +135,11 @@ namespace aria {
         }
 
         // 对象类型语言面拼写(type() 内建/用户可见报错/debug_repr 渲染源):委托自由函数,非虚
-        //(纯由 type_ 决定);与 type_name() 成对分立内外。
+        //(纯由 type_ 决定);与 type_name() 成对分立内外。成员同名隐藏自由函数,经 aria:: 限定
+        //(与上方 type_name() 委托 aria::to_string 同款)。
         [[nodiscard]]
         constexpr StringView aria_type_name() const noexcept {
-            return aria::aria_type_name(type_); // 成员同名隐藏自由函数,经 aria:: 限定(同 to_string 先例)
+            return aria::aria_type_name(type_);
         }
 
         [[nodiscard]]
@@ -156,10 +157,11 @@ namespace aria {
         // 纯字符串等无子节点者空实现。
         virtual void trace(GC& gc) const noexcept = 0;
 
-        // 壳对象的分配字节数(sizeof(壳),不含外挂 buffer),须与 GC::new_object 的
-        // allocate<u8>(sizeof(T)) 配对 -- 虚报外挂字节致分配/释放错配。子内存统一走虚析构
-        //(Array 成员自释放;非 Array 子内存如 ObjString 的 long_chars_ 由子类 ~dtor 经自持
-        // GC* 释放);sweep_ 顺序:obj->~Object() -> deallocate(壳)。
+        // 壳对象的分配字节数(sizeof(壳),不含外挂 buffer),须与壳池配对:new_object 侧
+        // ShellPool::alloc<T>(sizeof 上取整落格)、delete_object 侧 ShellPool::push(size(), obj)
+        // -- 虚报外挂字节致分配/释放错格。子内存统一走虚析构(Array 成员自释放;非 Array 子内存如
+        // ObjString 的 long_chars_ 由子类 ~dtor 经自持 GC* 释放);sweep_ 顺序:obj->~Object() ->
+        // deallocate(壳)。
         [[nodiscard]]
         virtual usize size() const noexcept = 0;
 
@@ -197,11 +199,12 @@ namespace aria {
         // (...);`(FailSignal 按站点返回类型转换)。
         //   - 文案由最知道语境的一方就地烘焙(越界含长度/键错误含键值);组合场景(实例委托类链、super 站点)直接委托
         //     ObjClass::load_field,miss 的类措辞随协议传播。
-        //   - 纪律:①fail 文案渲染值走非重入的 format_value_debug,不用可重载 to_string;②至多 fail 一次、fail 后立即返回
-        //     ;③协议内可分配(绑定/装箱),调用方(VM)保证接收者「栈即根」(peek 不弹)。
+        //   - 纪律:①fail 文案渲染值走非重入的 format_value_debug,不用可重载 to_string;②至多 fail 一次、fail 后
+        //     立即返回;③协议内可分配(绑定/装箱),调用方(VM)保证接收者「栈即根」(peek 不弹)。
 
         // 读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):name 为 intern 串(=== 同指针查表)。基类默认报
-        // UndefinedProperty "X has no member 'y'";override 见 ObjInstance / ObjClass,默认体在 Object.cpp。**内置容器/
+        // UndefinedProperty "X has no member 'y'";override 见 ObjInstance / ObjClass / ObjModule,默认体在 Object.cpp。
+        // **内置容器/
         // 迭代器(string/list/map/range/iterator)的 override 同形两步**(权威说明,各子类不再复述):①委托自身 bootstrap 类
         // 表的 ObjClass::load_field 沿链查表,miss 类措辞 fail 随协议透传;②命中即自持 new_bound_method 恒绑 this --内置
         // 类表条目全为原生函数、恒为方法,判别无须戳(表契约由各 register_*_builtins 唯一写入口维持)。GC 走查:
@@ -228,7 +231,8 @@ namespace aria {
         virtual Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name);
 
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):基类默认报 "type X does
-        // not support field access";ObjClass 落本类自身表恒成功;ObjInstance 动态字段永不失败。
+        // not support field access";ObjClass 落本类自身表恒成功;ObjInstance 动态字段永不失败;
+        // ObjModule 恒拒(模块成员只读)。
         [[nodiscard]]
         virtual bool store_field(AriaVM& vm, ObjString* name, Value value);
 
@@ -245,12 +249,11 @@ namespace aria {
         // 可重载算子协议与调用协议(取实现,不执行):每个算子/调用一个虚函数,回答「**本对象上该算子对应的可调用值**」--
         // 不是算好的结果:调用方(VM 的 run_binary_operator/run_negate/call_value)拿到后按调用形态调它(调用区槽 0 保持
         // receiver),故实现既可是内建原生、也可是用户方法/闭包。名字是语言级事实(拼写注册在 runtime/str_table.hpp;
-        // 调用钩子 `__call__`)。**基类
-        // 默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与 load_field/store_field 等基
-        // 类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 -- 11 个 override 各按名 load_field_unbound(实例
-        // fields 可遮蔽,再类链);②内置 string -- 6 个算子、内置 list -- 2 个(加/乘)直给实现格 String*Fn/List*Fn(免查
-        // 找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")` 读路径不变)。非 const(取实现可能物化绑定,与
-        // load_field/load_field_unbound 同族)。
+        // 调用钩子 `__call__`)。**基类默认直接 fail**(`type X does not support '<钩子名>'`;调用用 CallNonCallable),与
+        // load_field/store_field 等基类默认同款「默认不支持,子类型实现才不 fail」。实现者:①实例 -- 11 个 override
+        // 各按名 load_field_unbound(实例 fields 可遮蔽,再类链);②内置 string -- 6 个算子、内置 list -- 2 个(加/乘)
+        // 直给实现格 String*Fn/List*Fn(免查找);③其余类型不实现即报错(方法仍在类表里,`"a".__add__("b")`
+        // 读路径不变)。非 const(取实现可能物化绑定,与 load_field/load_field_unbound 同族)。
 
         [[nodiscard]]
         virtual Opt<Value> op_add_impl(AriaVM& vm);
@@ -287,7 +290,7 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
-        // is<T>() 目前一律 dynamic_cast;性能敏感后可改 ObjType 查表(子类型均已落地)。
+        // is<T>() 一律 dynamic_cast 谓词(子类型均已落地,类型数个位数量级无需查表形态)。
         template<DerivedFromObj T>
         [[nodiscard]]
         static bool is(const Object* object) noexcept {

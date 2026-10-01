@@ -114,7 +114,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 总则：本文法描述 parse tree 形态，不编码语义约束。下列语义检查推迟到语义分析 /
 # 字节码生成阶段：左值/右值合法性（assignment 左操作数须为 identifier / obj.field /
 # obj[index]）、break/continue 须在循环内、try 须有 catch。
-# return 亦在推迟检查之列：入口体（模块顶层）的 return 仅无值形式合法——入口返回值恒为
+# return 亦在推迟检查之列：入口体（模块顶层）的 return 仅无值形式合法--入口返回值恒为
 # 模块对象，带值 return 由字节码生成阶段报 ReturnValueAtTopLevel；函数体内不受限。
 #
 # 复合赋值求值不变式：E1 op= E2 等价于 E1 = E1 op E2，但左值 E1 只求值一次（C 标准
@@ -330,7 +330,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     UndefinedProperty，可 catch）。
 #
 # 协程（编译期/VM 语义，文法不编码）：coroutine 模块提供 create/resume/yield/status 四件，
-# 非关键字——coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
+# 非关键字--coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
 # 回退 builtins 表，命中合成 <coroutine> 模块）。协程本体即执行上下文对象，type(co) 报
 # "Coroutine"。语义（Lua/Wren 式）：
 #   - create(f) 收闭包建协程（状态 suspended，栈仅 [f]）；resume 首启的载荷即 f 的实参

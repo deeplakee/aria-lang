@@ -11,7 +11,6 @@ namespace aria {
 
     // 限制 HashTable 的 Hash/Eq 模板参数:必须是类/结构体(is_class_v,拒函数指针)、默认可构造
     // (类内多处 Hash{}/Eq{} 调用),且 operator() 为 noexcept 并返回 u32/bool。
-    // Hash:u32 operator()(const K&) const noexcept;Eq:bool operator()(const K&, const K&) const noexcept。
     template<typename T, typename K>
     concept HashFunctor = std::is_class_v<T> && std::default_initializable<T> && requires(const T& fn, const K& key) {
         { fn(key) } noexcept -> std::same_as<u32>;
@@ -23,13 +22,15 @@ namespace aria {
                 { fn(a, b) } noexcept -> std::same_as<bool>;
             };
 
-    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。每槽 1 字节 ctrl 同时编码「占用槽的 7 位部分哈希(h2)」:探测先比 h2
-    // ,不命中即跳过且**不加载 Entry(K+V)**,只在 h2 命中时才加载 Entry 比全键--绝大多数探针只读 1 字节。
-    //   - cap_ 为 2 的幂(或 0),槽索引 = h1(hash) & (cap_-1);三角探测偏移 0,1,3,6,10,...
-    //   - 7/8 负载因子:count_+tombstones_+1 超 cap_*7/8 则扩容(×2),墓碑超 cap_/8 则原容 compact;始终保留 >= 1/8 空槽 -
-    //     > 探针必然在空槽终止。两块独立分配(ctrl_ + entries_),rehash 时一起重分配、逐占用槽重算 hash 重插。持 Alloc*
-    //     alloc_,dtor 自释放。不可拷贝/不可移动(理由同 Buffer)。K/V 必须 trivially-copyable;分配器解耦见
-    //     Allocator.hpp(实例化点须令 GC 完整可见)。
+    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。每槽 1 字节 ctrl 同时编码「占用槽的 7 位部分哈希
+    // (h2)」:探测先比 h2,不命中即跳过且**不加载 Entry(K+V)**,只在 h2 命中时才加载 Entry 比全键--
+    // 绝大多数探针只读 1 字节。
+    //   - cap_ 为 2 的幂(或 0),槽索引 = h1(hash) & (cap_-1);三角探测偏移 0,1,3,6,10,...(本类唯一
+    //     权威表述,各探测行尾注不再重复)。
+    //   - 7/8 负载因子:count_+tombstones_+1 超 cap_*7/8 则扩容(×2),墓碑超 cap_/8 则原容 compact;
+    //     始终保留 >= 1/8 空槽 -> 探针必然在空槽终止。两块独立分配(ctrl_ + entries_),rehash 时一起
+    //     重分配、逐占用槽重算 hash 重插。持 Alloc* alloc_,dtor 自释放。不可拷贝/不可移动(理由同
+    //     Buffer)。K/V 必须 trivially-copyable;分配器解耦见 Allocator.hpp(实例化点须令 GC 完整可见)。
     template<TriviallyCopyable K, TriviallyCopyable V, HashFunctor<K> Hash, EqFunctor<K> Eq,
              TrivialAllocator Alloc = GC>
     class HashTable {
@@ -95,8 +96,7 @@ namespace aria {
             }
         }
 
-        // 禁拷贝/禁移动:持 GC 堆分配裸指针(entries_/ctrl_),浅 move 会 double-free;
-        // 深拷贝要重分配+rehash 且当前无需。资源仅经析构释放,需转移所有权时用指针/就地构造。
+        // 禁拷贝/禁移动:理由见 Buffer 注;深拷贝要重分配 + rehash 且当前无需,故不提供。
         HashTable(const HashTable&)            = delete;
         HashTable& operator=(const HashTable&) = delete;
         HashTable(HashTable&&)                 = delete;
@@ -121,7 +121,7 @@ namespace aria {
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 if (const u8 byte = ctrl_[pos]; byte == target) {
                     if (Eq{}(entries_[pos].key, key)) {
                         return &entries_[pos];
@@ -150,7 +150,7 @@ namespace aria {
             usize tomb = kNpos;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos           = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                pos           = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 const u8 byte = ctrl_[pos];
                 if (ctrl_is_empty(byte)) {
                     const usize insert_pos     = (tomb != kNpos) ? tomb : pos;
@@ -210,9 +210,8 @@ namespace aria {
 
         // 只读槽位迭代器(begin/end 语义,消费场景全只读故不设非 const 版):跳过空槽与
         // 墓碑,operator* 取占用槽 Entry。迭代序 = 槽位序(map 语言面迭代序 unspecified,
-        // 契约见 ObjMapIterator);失效语义同 std::unordered_map 惯例 --erase 使
-        // 被删元素失效,rehash/compact 搬迁槽位使全部迭代器失效,迭代中变更容器不设防。
-        // 对称基线:Array 的 begin/end/cbegin/cend。
+        // 契约见 ObjMapIterator);失效语义同 std::unordered_map 惯例 -- erase 使被删元素
+        // 失效,rehash/compact 搬迁槽位使全部迭代器失效,迭代中变更容器不设防。
         class const_iterator {
         public:
             const Entry& operator*() const {
@@ -301,7 +300,7 @@ namespace aria {
                 usize step = 0;
 
                 do {
-                    pos = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                    pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 } while (ctrl_is_occupied(ctrl_[pos])); // 新表无墓碑,只撞占用槽
                 ctrl_[pos]    = target;
                 entries_[pos] = old_entries[i];

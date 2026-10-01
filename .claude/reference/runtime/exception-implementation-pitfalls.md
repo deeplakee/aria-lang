@@ -64,8 +64,8 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 **对策**：`CallFrame` 新字段**不写默认值**，初始化收敛进 `init_frame_`（Movement.cpp 已有此模式：`f.slots = ...; f.function = ...;` 逐字段赋值）。新增 `f.last_ip = f.ip;`（= code 起始；不用 nullptr -- 与 data() 相减是 UB）即可。保持 `CallFrame` 为纯聚合（无 NSDMI、无用户构造函数）。
 
 ```cpp
-struct CallFrame {
-    ObjFunction* function;
+struct CallFrame {          // M3 时代快照:callable 字段当时为 ObjFunction*,M4 收敛后为 ObjClosure* closure
+    ObjFunction* function;  // (现字段名与类型见 runtime/ObjMovement.hpp);坑本体(NSDMI 禁令)不受影响
     CodeUnit*    unit;
     ObjModule*   module;
     u8*          ip;
@@ -289,7 +289,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 ## 坑 #14：单寄存器 `pending_error_ : Opt<Value>` 的落地分工
 
-**约束**：`Movement` 不持 `GC&`，故**装箱上移** -- `AriaVM::raise(code, detail)` / `fail` 负责构造 `ObjException` 并 `ctx.raise(Value)` 存入，`Movement` 只暴露 `raise(Value)`（存原值、不包）与 `has_error()` / `take_error()` / `clear_error()` 四件套；载荷类型为 `Opt<Value>`（装 ObjException 或用户 throw 原值，见坑 #7），`reset()` 一并清空。
+**约束**：`Movement` 不持 `GC&`，故**装箱上移** -- `AriaVM::raise(code, detail)` / `fail` 负责构造 `ObjException` 并 `ctx.raise(Value)` 存入，`Movement` 只暴露 `raise(Value)`（存原值、不包）与 `has_error()` / `take_error()` / 只读 `pending_error()` 访问器；载荷类型为 `Opt<Value>`（装 ObjException 或用户 throw 原值，见坑 #7），`reset()` 一并清空。
 
 旧形态的两件均已删除：`truncate_stack`（职责并入 `unwind_to_handler`，见坑 #13）与双寄存器 `pending_throw_` 四件套。`pending_error_` 的 GC 标根见坑 #8。
 

@@ -9,10 +9,10 @@ namespace aria {
 
     class Object;
 
-    // 在印路径守卫:递归渲染子值的 debug_repr(list 等容器)入口先 is_cycle 查自引用/互环
-    // (命中即返 "[...]" 截断,防无限递归栈溢出),再挂本守卫把自身入栈。thread_local 栈
-    // 即当前渲染链(每线程独立);RAII 出栈由逆序析构与调用栈严格配对,中途 bad_alloc 亦
-    // 不漏 pop。非递归类型(字符串/函数等)不递归渲染子值,无需挂。
+    // 在印路径守卫:与 EqualGuard 成对(机制论证见其头注:thread_local 朴素栈、RAII 逆序析构
+    // 严格配对、线性扫极小、分配不触 GC)。差异:记录单位是**单对象**而非 (lhs, rhs) 对--
+    // 渲染只需「在印对象重遇」即截断 "[...]"(比较侧同对重遇视为相等才有余归纳闭合问题)。
+    // 非递归类型(字符串/函数等)不递归渲染子值,无需挂。
     class PrintGuard {
     public:
         explicit PrintGuard(const Object* object) { active_path().push_back(object); }
@@ -29,6 +29,7 @@ namespace aria {
         }
 
     private:
+        // 当前渲染链(每线程独立)。
         static List<const Object*>& active_path() {
             static thread_local List<const Object*> path;
             return path;

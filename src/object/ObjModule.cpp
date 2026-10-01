@@ -71,10 +71,7 @@ namespace aria {
         return vm.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", aria_type_name());
     }
 
-    ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 name 与 dir。
-        return gc.new_object<ObjModule>(gc, name, dir);
-    }
+    ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) { return gc.new_object<ObjModule>(gc, name, dir); }
 
     ObjModule* new_module(GC& gc, ObjString* name) {
         // 调用方须根化 name;dir_str 本函数内部新建并自守(工厂守「自己创建的」)。

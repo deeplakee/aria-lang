@@ -6,8 +6,8 @@
 // Result<..., Error> 统一翻译为 Result<ObjFunction*, Error>。
 //   - 吃实际的 SourceFile，不捏造源：只读调用方加载/构造的真实 SourceFile& 的 content() 做词法，不拥有不重建；错误渲染
 //     "path:line:col" 取自实际源文件。
-//   - 生命期：AST 仅 compile() 内部消费、不外返；失败返回的 Error 在构造期已把位置烘进自有 message_、不持 SourceFile*
-//     ，故 source 只须存活到 compile() 返回，其后的 Error / ObjFunction 均不依赖它，调用方可立即释放或 move。
+//   - 生命期：AST 仅 compile() 内部消费、不外返；失败返回的 Error 在构造期已把位置烘进自有 message_、不持 SourceFile*，
+//     故 source 只须存活到 compile() 返回，其后的 Error / ObjFunction 均不依赖它，调用方可立即释放或 move。
 //   - 无状态：Lexer / Parser / CodeGen 与 compile 均为静态入口，无跨 compile() 复用；gc 参数是编译期分配的 ObjFunction
 //     / ObjString 归属（与后续 run() 同源，CodeGen::compile 入口自守 module）。
 

@@ -107,8 +107,7 @@ namespace aria {
     const Token& Parser::peek(const usize ahead) const noexcept {
         const usize size     = tokens_.size();
         const usize peek_pos = pos_ + ahead;
-        // size 至少为 1（末尾 Eof）；越界钳到末尾 Eof，安全。
-        const usize idx = (peek_pos < size) ? peek_pos : size - 1;
+        const usize idx      = (peek_pos < size) ? peek_pos : size - 1;
         return tokens_[idx];
     }
 
@@ -312,8 +311,7 @@ namespace aria {
 
     UPtr<StaticVarMemberNode> Parser::member_var() {
         // memberVar -> "var" identifier ("=" expression)? ";"。类体静态变量成员节点：单标识符绑定；
-        // 语句级 varDecl 的多绑定/解构 pattern 在成员位不收，就地语法错（成员是类对象上的具名槽，
-        // 名字一等，见 grammar.txt member 注）。
+        // 多绑定/解构 pattern 在成员位不收、就地语法错（成员定位语义见 Parser.hpp member_var 注）。
         const SourceLoc loc = peek().loc();
         expect(TokenType::Var, "'var'");
         String         name = expect_identifier();
@@ -446,8 +444,8 @@ namespace aria {
     }
 
     bool Parser::looks_like_for_in() const noexcept {
-        // pos_ 位于 '(' 后首个 token；判定 <pattern> "in"：identifier/"_" 紧跟 in，或
-        // [...]（扫到匹配 ']'）后跟 in。
+        // 判定 <pattern> "in"：identifier/"_" 紧跟 in，或 [...]（扫到匹配 ']'）后跟 in
+        // （位置前提与唯一性论证见 Parser.hpp 注）。
         usize cursor = pos_;
         if (cursor >= tokens_.size()) {
             return false;
@@ -568,8 +566,7 @@ namespace aria {
 
     UPtr<ExprNode> Parser::expression() { return assignment(); }
 
-    // 序列表达式：expression ("," expression)*。单元素透明（直接返回，不产节点，
-    // "(a)" 保持纯分组与既有左值行为）；多元素产 SequenceExprNode。
+    // 序列表达式：expression ("," expression)*。单元素透明（不产节点）；多元素产 SequenceExprNode。
     UPtr<ExprNode> Parser::sequence() {
         const SourceLoc      loc = peek().loc();
         List<UPtr<ExprNode>> expressions;

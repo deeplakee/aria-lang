@@ -53,11 +53,7 @@ namespace {
         return CodeGen::compile(gc, *program, module, aria::kMainEntryName);
     }
 
-    // run_source / compile_only 各自持有一个 AriaVM（进而持其 GC），并随结果一并返回，
-    // 使返回值中引用的 GC 对象（ObjString 常量、Obj 返回值）在调用方检视期间存活--
-    // 否则辅助函数返回即销毁局部 vm -> GC 回收 -> 悬垂引用（use-after-free）。
-    // 转发 has_value/error 并提供 bool/->/* ，调用点按 Result 惯用法访问（CPP_Naming_Convention
-    // 「Optional/Result 用法」：取值 */->，判断隐式 bool，不设 .value()）。
+    // RunResult 惯用法（vm/GC 随结果返回的生存期理由与 Result 转发形态）见 test_compiler.cpp 同名结构注。
     struct RunResult {
         std::unique_ptr<AriaVM> vm;
         Result<Value, Error>    result;
@@ -117,11 +113,8 @@ namespace {
         return RunResult{std::move(vm), std::move(result)};
     }
 
-    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象——入口
-    // 的 RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
-    // __probe__ 的 ObjFunction 直接 run：探针是普通函数，RETURN 通用写回 callee 槽，其返回值
-    // 即 run() 返回值（fn 经 run() 内 make_guard 根化）。仅取值站点走此入口；钉模块顶层语义
-    // （顶层 var 落全局等）的站点走 run_source（不包）。
+    // 带值取数惯用法（探针函数包裹的理由与五要素）见 test_compiler.cpp 的 run_value 注；
+    // 本侧站点：仅取值。钉模块顶层语义（顶层 var 落全局等）的站点走 run_source（不包）。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();

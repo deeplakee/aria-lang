@@ -32,15 +32,15 @@ paths:
 
 ## `util/io.hpp`
 
-`io::print`/`io::println`（`std::print`/`std::println` 的 using 别名）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`）。
+`io::print`/`io::println`（`std::print`/`std::println` 的 using 别名，全库输出统一入口）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`；当前全库零消费者，REPL 行读取走 isocline，见 `main.cpp`）。
 
 ## `util/util.hpp`
 
 `namespace aria::util`（与 fs/utf8 同）。
 
-- **调试/信息**：`print_binary`（高位在前、按位分组打印表示）、`print_compiler_info`、`to_void_ptr`、`escape_string(StringView) -> String`（转义 `"`/`\`/`\n`/`\t`/`\r` 与控制字符为 `\x{HH}`，非 ASCII 透传）。
+- **调试/信息**：`print_binary`（高位在前、按位分组打印表示；当前零消费者）、`print_compiler_info`（当前零消费者）、`to_void_ptr`、`escape_string(StringView) -> String`（转义 `"`/`\`/`\n`/`\t`/`\r` 与控制字符为 `\x{HH}`，非 ASCII 透传；供 `ObjString` debug/repr 渲染）。
 - **哈希**：`hash_num`/`hash_addr`（数值/地址哈希，经 `detail::splitmix64_mix32`（Vigna lowbias32，专为 32 位输出低偏置调优））、`hash_str`（字符串 FNV-1a 32-bit，经 `detail::fnv1a_32`）。
-- **小端编解码**：`make_u16(u8,u8)`/`split_word(u16)`/`split_dword(u32)`。
+- **小端编解码**：`make_u16(u8,u8)`/`split_word(u16)`/`split_dword(u32)`（`split_dword` 当前零消费者）。
 - **栈/Opt 取值**：`pop_top(Stack<T>&) -> T`（取栈顶并弹出，调用方须保证栈非空，`[[nodiscard]]`）；`take(Opt<T>&) -> Opt<T>`（取走并置空，`std::exchange` 习语）。
 - **拼接**：`join(Range, StringView delimiter, Fn&&)`（range 逐元素经 Fn 渲染后 delimiter 连接的共用底座，debug_repr 类拼接消费）。
 - **下标换算**：`abs_diff(usize, usize)`（两下标距离，无符号域不下溢；命名对齐 C++26 `std::abs_diff`）；`resolve_index(i64, usize)`（负下标从尾计数归一化 + 越界判定，`nullopt` 即越界；无上界形态的末元素/空段折算在 `ObjRange::resolve_slice_bounds` 里做）；`resolve_position(i64, usize)`（插入位解析，`resolve_index` 的姊妹函数：同式归一，唯上界放宽到 `== size` 即追加位，`list.insert` 消费）。

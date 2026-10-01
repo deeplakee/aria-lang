@@ -14,8 +14,8 @@ namespace aria {
     // 拷入)。下标读写经 load_index/store_index 协议 override;命名成员(push/pop 等)经 load_field 委托 VM 的 List
     // bootstrap 类方法表恒绑定。
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素 value_equal(嵌套 list 经各自
-    //     equals 递归),value_equal 无分配、GC-pure 契约保持;入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);`=
-    //     ==` 恒指针(value_identical,不经本类)。
+    //     equals 递归),value_equal 无分配、GC-pure 契约保持;入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);
+    //     `===` 恒指针(value_identical,不经本类)。
     //   - trace():委托 elements_.trace(遍历元素 mark_value)。
     //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免 `[1, ab]` 歧义;嵌套 list 递归);
     //     入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,Python 同款);显示同文案(to_string 经基类默认委托)。
@@ -59,7 +59,7 @@ namespace aria {
         String debug_repr() const override;
 
         // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态与 GC 走查见 Object.hpp;store_field 不 override,基类默认即正确行为)。
+        //(两步形态权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 

@@ -9,17 +9,16 @@
 
 namespace aria {
 
-    // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。 T 必须 trivially-copyable(Value /
-    // OpCode / u8 / i32 等 POD,契约见 Allocator.hpp)。持 Buffer<T,Alloc> buf_(收口分配/重分配/释放)+ usize len_(逻辑长
-    // 度,<= cap)。不可拷贝/不可移动 (继承自 Buffer,理由见 Buffer 注)。扩容策略固定:初始 8、2 倍几何增长(见
-    // ensure_capacity); 走 memcpy 搬迁,故不适合按内容重定位的容器(HashTable / InternPool rehash,见 Buffer 注)。分配器
-    // 经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,实例化点 (调用方 TU)须令 GC 完整可见。 T 元素
-    // 类型(POD) Alloc Trivial 分配器(默认 GC)
+    // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。T 必须
+    // trivially-copyable(契约见 Allocator.hpp)。持 Buffer<T,Alloc> buf_ + usize len_(逻辑长度,<= cap)。
+    // 不可拷贝/不可移动(继承自 Buffer,理由见 Buffer 注)。扩容策略固定:初始 8、2 倍几何增长(见
+    // ensure_capacity);走 memcpy 搬迁,故不适合按内容重定位的容器(见 Buffer 注);分配器解耦与 GC
+    // 可见性要求同 Buffer 注。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Array {
         static constexpr usize kInitialCapacity = 8; // 首次分配与几何增长起点
 
-        Buffer<T, Alloc> buf_; // 内存块底座(持 alloc_/data_/cap_,收口分配/重分配/释放)
+        Buffer<T, Alloc> buf_;
         usize            len_; // 逻辑长度(<= buf_.capacity())
 
         // 内部扩容原语:确保容量 >= required_capacity,不足则从当前容量(空态落到
@@ -41,8 +40,7 @@ namespace aria {
 
         ~Array() = default;
 
-        // 禁拷贝/禁移动:buf_ 持 GC 堆分配裸指针,浅 move 会 double-free;资源仅经析构释放,
-        // 需转移所有权时用指针/就地构造(如 ObjList 持 AriaArray 成员)。
+        // 禁拷贝/禁移动:理由见 Buffer 注。
         Array(const Array&)            = delete;
         Array& operator=(const Array&) = delete;
         Array(Array&&)                 = delete;
@@ -98,8 +96,9 @@ namespace aria {
         // 改变(Buffer::reserve 内部 reallocate,故调用方持有的 data() 指针随之失效)。
         void reserve(const usize capacity) { ensure_capacity(capacity); }
 
-        // 改变长度;增长部分用 fill 填充(默认 T{})。注意 Value{} 零填充是 f64 0.0 非 nil,
-        // 需要空槽当 nil 的场合显式传 Value::nil_val()。
+        // 改变长度;增长部分用 fill 填充(默认 T{})。T = Value 时零填充语义随值表示而变(权威表述见
+        // TagValue.hpp 头注):默认 NanBoxing 下 Value{} 是 f64 0.0 非 nil,需要空槽当 nil 的场合显式传
+        // Value::nil_val()。
         void resize(const usize count, T fill = T{}) {
             ensure_capacity(count);
             for (usize i = len_; i < count; ++i) {

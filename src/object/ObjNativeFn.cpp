@@ -24,7 +24,6 @@ namespace aria {
     }
 
     ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
-        // 守卫纪律见 Object.hpp;调用方须自行根化 name(fn 为标量)。
         return gc.new_object<ObjNativeFn>(name, fn);
     }
 

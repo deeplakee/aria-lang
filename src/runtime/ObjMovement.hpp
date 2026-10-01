@@ -318,10 +318,6 @@ namespace aria {
     [[nodiscard]]
     ObjMovement* new_movement(GC& gc);
 
-    // VMContext 是 ObjMovement 的别名(.claude/reference/runtime/vm-design.md §1):泛指「一段执行的状态」用
-    // VMContext,强调「协程对象」用 ObjMovement。
-    using VMContext = ObjMovement;
-
 } // namespace aria
 
 #endif // ARIA_OBJ_MOVEMENT_HPP

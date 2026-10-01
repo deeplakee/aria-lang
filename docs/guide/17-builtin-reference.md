@@ -1,8 +1,8 @@
 # 第 17 章 附录：内建参考
 
 本章是速查手册：全局内建函数、各类型方法面、下标与切片规则、`type()` 返回名、常见错误
-消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语义的完整规范以
-[docs/grammar.txt](../grammar.txt) 为准；本章与它冲突时以文法为准。
+消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语法产生式以
+[docs/grammar.txt](../grammar.txt) 为准；语义设计见 `.claude/reference/`。
 
 ## 全局内建函数（6 个）
 
@@ -130,8 +130,8 @@
 
 ```text
 hello.aria:1:9: Syntax: UnterminatedString unterminated string: line break in literal
-hello.aria:1:9: Syntax: InvalidEscape invalid escape sequence '\q'
-hello.aria:1:9: Syntax: ExpectedExpression expected expression, got '.'
+hello.aria:1:10: Syntax: InvalidEscape invalid escape sequence '\q'
+hello.aria:1:12: Syntax: ExpectedExpression expected expression, got '.'
 hello.aria:1:15: Syntax: DefaultAfterPlain non-default parameter after default parameter
 hello.aria:1:14: Syntax: VarargsNotLast varargs '...' must be the last parameter
 hello.aria:1:9: Semantic: NumberOutOfRange integer literal 140737488355328 out of range
@@ -145,6 +145,7 @@ hello.aria:1:1: Semantic: TryWithoutHandler 'try' requires a catch clause
 
 ```text
 Runtime: DivisionByZero integer division by zero
+Runtime: ModuloByZero integer modulo by zero
 Runtime: IndexOutOfBounds list index 5 out of range
 Runtime: IndexOutOfBounds slice range 1..9 out of range
 Runtime: IndexOutOfBounds pop from empty list
@@ -166,6 +167,7 @@ Runtime: IterationExhausted iterator exhausted
 Runtime: StackOverflow call frame stack overflow
 Runtime: CallNonCallable type Int does not support '__call__'
 Runtime: EmptyPattern split separator must not be empty
+Runtime: EmptyPattern replace pattern must not be empty
 Runtime: ResumeDeadCoroutine cannot resume a dead coroutine
 Runtime: ResumeNonSuspendedCoroutine cannot resume a non-suspended coroutine
 Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
@@ -175,7 +177,7 @@ Resource: ModuleNotFound module not found: 'nope'
 
 ## 去处
 
-- 语义细节与产生式：[docs/grammar.txt](../grammar.txt)（单一事实源）。
+- 语法产生式：[docs/grammar.txt](../grammar.txt)（语法面单一事实源；语义设计见 `.claude/reference/`）。
 - 实现与构建：仓库根 `README.md`。
 - 本章缺的东西（`enumerate` 一类迭代辅助、更多 range 方法）语言层尚未提供，教程不预先
   书写。

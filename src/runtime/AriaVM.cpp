@@ -356,7 +356,7 @@ namespace aria {
             io::println(stderr, "{}", Error::from_detail(ErrorCode::ModuleNotFound, detail).message());
             return InterpretResult::LoadError;
         }
-        auto module = new_module(gc_, name_s, dir_s); // 3 参：显式 dir
+        auto module = new_module(gc_, name_s, dir_s); // 3 参重载:显式 dir
         auto guard  = gc_.make_guard(module);
 
         return interpret_run(source, module);
@@ -578,8 +578,8 @@ namespace aria {
             return nullptr;
         }
 
-        // 5. 入表先于模块体 run-once(体由 IMPORT 分支调起);canonical_path/module 均已根化,
-        //    set rehash 触 GC 安全。
+        // 5. 入表先于模块体 run-once(体由 IMPORT 分支调起);canonical_path/module 均已根化
+        //    (表 set 无 GC 点,根化跨的是上方编译期分配)。
         modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         return module;
     }
@@ -594,7 +594,8 @@ namespace aria {
             return fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
         }
         const auto canonical_path = new_string(gc_, *canonical_path_str);
-        auto       guard          = gc_.make_guard(canonical_path); // 跨 find / load_module 内 set(rehash 触 GC)
+        // guard 跨 load_module 的编译期分配(intern weak root 不保命;表 set 无 GC 点)。
+        auto guard = gc_.make_guard(canonical_path);
         if (const auto module_entry = modules_.find(Value::from_obj(canonical_path)); module_entry != nullptr) {
             current_->push(module_entry->value); // 命中:体执行中即循环导入,复用半初始化对象
             return true;
@@ -1109,8 +1110,8 @@ namespace aria {
                 }
                 case OpCode::DEF_GLOBAL: {
                     // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var -- 唯一
-                    // 创建全局的入口)。根安全:set 插入可能 rehash 触 GC,v 用 peek 不弹 -- 留 v
-                    // 在值栈跨分配(先 pop 则成裸局部被回收),set 返回后才 drop。
+                    // 创建全局的入口)。栈即根:v 用 peek 不弹 -- 留 v 在值栈跨 set(保守惯例),
+                    // set 返回后才 drop。
                     ObjString* name = read_name(frame);
                     frame->module->globals().set(Value::from_obj(name), current_->peek(0));
                     current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
@@ -1255,11 +1256,9 @@ namespace aria {
                         goto unwind_check;
                     }
                     break;
-                // 一元
                 case OpCode::NOT:
                     current_->push(Value::from_bool(!is_truthy(current_->pop())));
                     break;
-                // 一元
                 case OpCode::NEGATE:
                     if (!run_negate()) {
                         goto unwind_check;

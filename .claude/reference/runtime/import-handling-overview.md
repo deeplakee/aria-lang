@@ -83,8 +83,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - **visitor**（`src/compile/AstVisitor.hpp`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
 > `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`
-> 发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽
->。
+> 发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽）。
 
 ## ③ 字节码
 
@@ -171,7 +170,7 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 1. `SourceFile::from_path(canonical_path)` 读文件（已处理 BOM/CRLF/UTF-8）。
 2. `fs::module_name_and_dir(canonical_path)` 派生身份 `{name=stem, dir=dirname}`（同入口约定，
    `abs_path()` 还原 canonical key）-> `new_module` + `make_guard`（guard 跨编译与入表）。
-3. `Compiler{gc_}.compile(source, module, "<module>")` 编译（`set_entry` 由 `CodeGen::init_module`
+3. `Compiler::compile(gc_, source, module, "<module>")` 编译（纯静态入口；`set_entry` 由 `CodeGen::init_module`
    编译期挂入）；编译成功才 `modules_.set` 入表（供循环导入命中体执行中的对象；加载事实源 =
    表成员资格，对象无状态字段；失败一律不留表项，同路径重试重新加载），返回模块（体待 run-once）。
 4. IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧交主循环执行（run-once）；模块体入口

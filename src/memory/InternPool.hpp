@@ -10,12 +10,15 @@
 
 namespace aria {
 
-    // 字符串驻留池(intern pool):字符串专用 set(键即串内容,值即 ObjString* 自身)。特化表示:裸 ObjString** slots_(8B/槽
-    // ,无 ctrl/h2,靠内容比较),低位标签区分槽状态(指针经 ::operator new 对齐,低 4 位全 0):nullptr 空槽 / (ObjString*)
-    // 0x1 墓碑 / 真指针占用。**weak root**:不进 GC::mark_roots_(否则驻留串永生);GC::collect 在 sweep 前调 remove_white
-    // () 摘除指向白色(未标 is_marked)ObjString* 的表项,避免 sweep 后悬垂。 **Alloc 约束的位置**:不放在模板头,而在 ctor
-    // 体内 static_assert--InternPool<GC> 是 GC 的值成员, 类体内实例化时 GC 尚不完整,模板头约束会误判不满足;延到 ctor
-    // 具现化点检查即可。元素类型固定 ObjString*(依赖其 hash()/view()/is_marked(),YAGNI)。
+    // 字符串驻留池(intern pool):字符串专用 set(键即串内容,值即 ObjString* 自身)。特化表示:裸 ObjString** slots_
+    // (8B/槽,无 ctrl/h2,靠内容比较),低位标签区分槽状态(分配器对齐保证低 4 位全 0):nullptr 空槽 /
+    // (ObjString*)0x1 墓碑 / 真指针占用。探测同 HashTable 形态:三角探测偏移 0,1,3,6,10,...与 7/8 负载、
+    // 墓碑 compact 阈值(本文件唯一权威表述,各探测行尾注不再重复)。**weak root**:不进 GC::mark_roots_
+    // (否则驻留串永生);GC::collect 在 sweep 前调 remove_white() 摘除指向白色(未标 is_marked)ObjString*
+    // 的表项,避免 sweep 后悬垂。
+    // **Alloc 约束的位置**:不放在模板头,而在 ctor 体内 static_assert--InternPool<GC> 是 GC 的值成员,类体内
+    // 实例化时 GC 尚不完整,模板头约束会误判不满足;延到 ctor 具现化点检查即可。元素类型固定 ObjString*
+    // (依赖其 hash()/view()/is_marked())。
     template<typename Alloc = GC>
     class InternPool {
         ObjString** slots_;
@@ -68,7 +71,7 @@ namespace aria {
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos          = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                pos          = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 ObjString* s = slots_[pos];
                 if (s == nullptr) {
                     return nullptr; // 空槽,探针终止
@@ -83,8 +86,7 @@ namespace aria {
         // 插入 s(假定其内容未驻留:调用方先 find 查重,未命中才 insert)。可能触发 rehash。
         void insert(ObjString* s) {
             ASSERT(s != nullptr && !is_tombstone(s), "invalid slot for insert");
-            // 确保有空槽(同 HashTable 策略):cap_==0 初始分配;插入后(count+tomb+1)超 7/8 扩容×2;
-            // 墓碑超 cap/8 原容 compact。任一情形都经 grow_and_rehash_。
+            // 确保有空槽(同 HashTable 的 7/8 负载与墓碑阈值,含 cap_==0 初始分配);任一情形都经 grow_and_rehash_。
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);
             } else {
@@ -102,7 +104,7 @@ namespace aria {
             usize tomb = kNpos;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos                  = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                pos                  = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 const ObjString* cur = slots_[pos];
                 if (cur == nullptr) {
                     const usize insert_pos = (tomb != kNpos) ? tomb : pos;
@@ -156,7 +158,7 @@ namespace aria {
                 usize pos  = s->hash();
                 usize step = 0;
                 do {
-                    pos = (pos + (step++)) & mask; // 三角探测:偏移 0,1,3,6,...
+                    pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
                 } while (slots_[pos] != nullptr); // 新表无墓碑,只撞占用槽
                 slots_[pos] = s;
                 ++count_;

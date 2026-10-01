@@ -38,7 +38,7 @@ namespace aria {
 #endif
         mark_roots_();
         trace_gray_();
-        intern_.remove_white(); // weak root 清理:摘除指向白色 ObjString* 的表项,防 sweep 后悬垂
+        intern_.remove_white(); // weak root 摘白(机制见 InternPool.hpp)
         sweep_();
         next_gc_ = bytes_allocated_ * kGcGrowFactor;
 #ifdef DEBUG_LOG_GC
@@ -50,7 +50,7 @@ namespace aria {
         for (const Value& value: temp_roots_) {
             mark_value(value);
         }
-        // VM 根:经回调标 modules_ + 执行链上各上下文的值栈/活动帧/挂起错误寄存器 + open upvalues。
+        // VM 根:五类根清单见 GC.hpp 类头注。
         if (vm_roots_tracer_) {
             vm_roots_tracer_(*this);
         }
@@ -71,7 +71,7 @@ namespace aria {
         // 级联释放子内存(Array / long_chars_)
         obj->~Object();
         bytes_allocated_ -= sz;
-        shell_pool_.push(sz, obj); // 壳归还(池化复用;超池上限尺寸由池内直连后端)
+        shell_pool_.push(sz, obj);
     }
 
     void GC::sweep_() noexcept {

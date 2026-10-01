@@ -63,11 +63,11 @@ namespace {
     }
 
     // 算子的实现是 String 类表里的原生方法(钩子键经 new_string 驻留命中取串,皆注册表条目零分配,
-    // 故本函数无需自守):取槽内裸原生值
-    // (不绑定;与 VM 侧 op_*_impl 读的实现格是同一批值,bootstrap 期拷入并断言一致)按原生契约调用 --slots[0] = receiver
-    // 兼 返回槽、slots[1] = rhs。返回结果 Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责 让两侧存活(receiver 与
-    // rhs 由 make_string 入根)。端到端路径(算子指令 -> 取钩子 -> 调用) 由语料覆盖(13_strings 的拼接/比较各例,语料开
-    // stress GC)。
+    // 故本函数无需自守):取槽内裸原生值(不绑定;与 VM 侧 op_*_impl 读的实现格是同一批值,bootstrap
+    // 期拷入并断言一致)按原生契约调用 -- slots[0] = receiver 兼返回槽、slots[1] = rhs。返回结果
+    // Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责让两侧存活(receiver 与 rhs 由
+    // make_string 入根)。端到端路径(算子指令 -> 取钩子 -> 调用)由语料覆盖(13_strings 的拼接/比较
+    // 各例,语料开 stress GC)。
     Opt<Value> invoke_string_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
         const auto hook = vm.string_class()->load_field(vm, new_string(vm.gc(), hook_key));
         if (!hook) {

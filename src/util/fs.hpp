@@ -31,25 +31,25 @@ namespace aria::fs {
 
         // 路径与名称相关
         InvalidPath   = 100, // 路径格式非法（如空路径、非法字符）
-        PathTooLong   = 101, // 超出系统路径长度限制
-        NotFound      = 102, // 文件或目录不存在
+        PathTooLong   = 101,
+        NotFound      = 102,
         AlreadyExists = 103, // 创建时目标已存在
 
         // 权限与安全
-        PermissionDenied = 200, // 权限不足
-        ReadOnlyFs       = 201, // 只读文件系统
+        PermissionDenied = 200,
+        ReadOnlyFs       = 201,
 
         // I/O 与资源
-        IoError          = 300, // 底层读写I/O失败
-        DiskFull         = 301, // 磁盘空间不足
+        IoError          = 300,
+        DiskFull         = 301,
         TooManyOpenFiles = 302, // 文件描述符耗尽
         IsDirectory      = 303, // 期望文件但遇到了目录
         NotADirectory    = 304, // 期望目录但遇到了文件
         FileInUse        = 305, // 文件被其他进程锁定/占用
 
         // 符号链接相关
-        SymlinkLoop   = 400, // 符号链接循环
-        BrokenSymlink = 401, // 悬空符号链接
+        SymlinkLoop   = 400,
+        BrokenSymlink = 401,
 
         // 操作语义错误
         NotEmpty        = 500, // 删除非空目录

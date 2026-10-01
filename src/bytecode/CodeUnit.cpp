@@ -32,8 +32,7 @@ namespace aria {
     void CodeUnit::emit_pop_n(const u32 count, const u32 line) {
         for (u32 remaining = count; remaining > 0;) {
             const u8 chunk = remaining > kMaxPopChunk ? kMaxPopChunk : static_cast<u8>(remaining);
-            if (chunk == 1) { // 降级 POP(1B,免操作数)
-
+            if (chunk == 1) {
                 emit_op(OpCode::POP, line);
             } else {
                 emit_op(OpCode::POP_N, line);
@@ -51,7 +50,7 @@ namespace aria {
     }
 
     bool CodeUnit::patch_jump(const u32 src_off) {
-        const u32 base_off   = src_off + 2; // 偏移基准: 读完 u16 操作数后的 ip
+        const u32 base_off   = src_off + 2; // 偏移基准(约定见 patch_jump 的头注)
         const u32 target_off = size();
         // 前向偏移:契约是 patch 时目标已发射(target_off >= base_off)。误用于反向时 u32 回绕成
         // 巨大值,恰好被下方 kMaxJumpOffset 上界兜住返 false(等效 emit_jump_back 的显式反向预检)。
@@ -68,7 +67,7 @@ namespace aria {
     bool CodeUnit::emit_jump_back(const u32 target_off, const u32 line) {
         emit_op(OpCode::JUMP_BACK, line);
         const u32 src_off  = size();
-        const u32 base_off = src_off + 2; // 偏移基准: 读完 u16 操作数后的 ip
+        const u32 base_off = src_off + 2; // 偏移基准(同 patch_jump)
         if (base_off < target_off || base_off - target_off > kMaxJumpOffset) {
             emit_word(0, line); // 占位,保持 code 长度一致
             return false;       // 反向或越界
@@ -106,7 +105,7 @@ namespace aria {
 
     u32 CodeUnit::line_for_offset(const u32 offset) const noexcept {
         // RLE 二分: 找最大的 entry.offset <= offset, 返回其 line。
-        // 表按 offset 单调(只追加), 用 upper_bound 取首个 offset > target 的位置, 其前一条即答案。
+        // 表按 offset 单调(只追加), 手写二分取首个 offset > target 的位置, 其前一条即答案。
         if (lines.empty()) {
             return 0;
         }
@@ -127,7 +126,7 @@ namespace aria {
     }
 
     Opt<const TryRecord*> CodeUnit::find_try_handler(const u32 ip) const noexcept {
-        // 记录按 begin 单调; 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
+        // 记录按 begin 非降序(允许相等); 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
         // 前提:try 区间良嵌套(任意两条记录不交叉重叠),交叉时"前溯第一个 end > ip"可能命中
         // 错误 handler;该不变式由编译器 try 的「入口预插占位 + 结尾回填」发射顺序保证。
         if (try_records.empty()) {
@@ -143,7 +142,6 @@ namespace aria {
                 high = mid;
             }
         }
-        // low = 首个 begin > ip 的位置; 从 low-1 向前找第一个 end > ip
         while (low > 0) {
             --low;
             if (try_records[low].end > ip) {

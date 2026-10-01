@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""commit 说明机械检查器(规范见 .zcode/skills/aria-commit/SKILL.md §1/§3/§4)。
+"""commit 说明机械检查器(规范见 .zcode/skills/aria-commit/SKILL.md;检查项清单以本文件常量为准)。
 
 用法:
     python3 tools/check_commit_msg.py <message-file>
 
-只查机器能判的项:ASCII-only、标题格式与列宽、正文长度与形态(散文而非标签
-分段/bullet)、`Tests:` 行位置、禁写关键词。语义判断(正文是否在讲过程、
-subject 是否真的在说改动)仍靠人读(规范 §4 第 5 步)。有硬违规时打印违规
-行与改法并返回 1。
+只查机器能判的项;语义判断(正文是否在讲过程、subject 是否真的在说改动)仍靠人读
+(规范第 5 步)。有硬违规时打印违规行与改法并返回 1。
 """
 
 import re

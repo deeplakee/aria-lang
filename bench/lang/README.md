@@ -28,8 +28,8 @@ python3 bench/lang/lang_bench.py --help                       # 全部参数
 
 ### 跑之前
 
-- **aria 可执行**:默认依次找 `build/rel/aria`、`build/aria`,也可 `--aria=<路径>`;都找不到就退出
-  (退出码 2)。
+- **aria 可执行**:默认依次找 `--aria=<路径>`、`build/rel/aria`、`build/aria`,最后退到 PATH 上的
+  `aria`;全部落空才退出(退出码 2)。
 - **对照端口按 PATH 探测**:CPython(当前解释器)、`node`、`lua`、`javac` / `java`--缺谁不出哪一列,
   不报错;`--langs` 可只挑几门。
 - **Java 端口的产物编译到 `build/bench-java/`**,每次运行编译一次。
@@ -147,7 +147,7 @@ bench/lang/
 整程序,各语言端口齐全。前 8 个规模约 0.4-0.9 s;其中 `mandelbrot` / `binary_trees` / `fannkuch_redux`
 是 Computer Language Benchmarks Game 的经典项(算法与规模与公开版本一致者,数字可与公开结果对照),
 其余是本地定义的等价负载。后 8 个原是 `bench/profile/` 的指令画像语料(2026-09-27 两处语料合并
-为本目录,2026-09-28 补齐端口),规模保持画像原设计的 0.09-0.19 s(重标会破烘死的校验和)——确定性 LCG
+为本目录,2026-09-28 补齐端口),规模保持画像原设计的 0.09-0.19 s(重标会破烘死的校验和)--确定性 LCG
 驱动输入、`assert` 烘死校验和的约定与全组相同,分配器 / 回归类 A/B 照常可用。
 
 | 基准 | 量什么 | 对照端口 |

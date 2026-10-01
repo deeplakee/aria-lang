@@ -18,10 +18,8 @@ namespace aria {
         // 调用点承担。
         static ObjClass* make_class(GC& gc, ObjClass* super);
 
-        // 算子实现缓存清单:两个算子钩子名 -> AriaVM 寄存器实现格,类表装载后据此逐条把实现拷进
-        // ListAddFn/ListMulFn 格(算子派发热路径直读,免每次过类表查找;类表
-        // 仍是规范家,bootstrap 后无写点故两份恒一致,DEBUG 缺格即断言)。键为钩子拼写,bootstrap
-        // 消费端经 new_string 驻留命中取串(皆注册表条目,零分配)。
+        // 算子实现缓存清单(两个算子钩子名 -> List 实现格;契约与消费见 runtime/value_register.hpp
+        // 表头,键为钩子拼写)。
         static constexpr Pair<StringView, u8> kOperatorFns[] = {
                 {"__add__", kListAddFnOffset},
                 {"__mul__", kListMulFnOffset},

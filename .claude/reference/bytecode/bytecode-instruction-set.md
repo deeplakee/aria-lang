@@ -1,14 +1,14 @@
 # 字节码指令集设计
 
-aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，供后续 CodeUnit / 反汇编器 / 字节码编译器 / VM 实现参考。
+aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，作为指令集的规格基准。
 
-> 现状：`OpCode` 已升级为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，78 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。本文标「建议」「待决」者为面向实现的提案，非既成事实。
+> 现状：`OpCode` 为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，77 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。
 
 ## 1. 现状与基准
 
 ### 1.1 枚举现状（以 `code.hpp` 为准）
 
-`OpCode : u8`，共 78 条（含 16 条局部槽 N 短变体），按功能分组：
+`OpCode : u8`，共 77 条（含 16 条局部槽 N 短变体），按功能分组：
 
 | 分组 | 指令 |
 | :--- | :--- |
@@ -30,7 +30,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
 
-`u8` 上限 256，当前 78 条，扩空间充裕。
+`u8` 上限 256，当前 77 条，扩空间充裕。
 
 ### 1.2 已定决策
 
@@ -39,7 +39,7 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 - **跳转 `u16` 方向拆分 + 局部槽 N 短变体**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `slot:u16` 通用形态 + `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8` 零操作数 N 短变体。见 §2.3/§4.3/§4.12。
 - **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::load_field_unbound` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
 
-## 2. 操作数编码约定（建议）
+## 2. 操作数编码约定
 
 ### 2.1 字节流模型
 
@@ -49,13 +49,13 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 - **字节序：小端**（低位在前）。仅影响内存表示与反汇编可读性，不落盘则无跨平台问题。
 - 反汇编器与 VM 遵循同一「opcode -> 操作数格式」解码约定（本节即规格）。**共享表已提取**：`code.hpp` 的 `ARIA_OPCODE_LIST(X)` 双列表（枚举名 + 操作数格式类别）展开生成 `kOpCodeNames`/`kOpCodeFormats`，反汇编器按格式表分发解码；VM 主循环仍自持 switch（热路径操作数读取内联于各 case，不查表）。新增指令的同步点 = X 表加一行 + VM 加 case；反汇编器零改动（仅引入新 `OpFormat` 类别时才同步其分发 switch）。
 
-### 2.2 操作数位宽（建议）
+### 2.2 操作数位宽
 
 下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽通用形态 `u16` -> `U16`（N 短变体零操作数 -> `Simple`）；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
-| 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器 |
+| 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器（已定：不设 `u8` + `LOAD_CONST_L` 式长变体，每条常量引用多 1 字节是接受的代价） |
 | 局部槽号 | N 短变体（零操作数，槽 1..8 内嵌枚举名）/ `u16`（2B）通用 | `LOAD_LOCAL` `STORE_LOCAL`（通用）+ `LOAD_LOCAL_1..8` `STORE_LOCAL_1..8`（N 短变体） | 画像实测槽 1..8 覆盖动态执行 98%+，1 字节指令消掉最热操作数；槽 0 与 >8 走通用 u16（65535 槽无硬上限），发射时已知、无需回填 |
 | Upvalue 索引 | `u8` | `LOAD_UPVALUE` `STORE_UPVALUE` | 256 upvalue 远超实际 |
 | 调用参数数 | `u8` | `CALL` | 255 参数足够 |
@@ -63,9 +63,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `POP_N` 计数 | `u8` | `POP_N` | 块结束清理临时，单次 255 足够 |
 | 列表/映射元素数 | `u16`（2B） | `MAKE_LIST` `MAKE_MAP` | 字面量可能 >255 元素；这俩不热，`u16` 免分批 lowering |
 | 立即整数 | `i8`（1B 有符号，-128..127） | `LOAD_IMM` | 0/1/-1/小下标等高频小整数；大整数走 `LOAD_CONST` |
-| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器格数即 VM 单例数（个位数量级），`u8` 富余 |
-
-> 待决：常量索引是否走「`u8` + 长变体（`LOAD_CONST_L` 等）」clox 风格以省字节。本文建议 `u16` 统一，代价是每条常量引用多 1 字节；若实测代码段体积敏感可改长短双形态。
+| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器格数即 VM 单例数（当前 17 格），`u8` 富余 |
 
 ### 2.3 操作数位宽策略：N 短变体与方向拆分
 
@@ -81,7 +79,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | 后向跳转偏移 | 发射时已知（回边目标先于跳转） | `u16`，`JUMP_BACK` |
 | 前向跳转偏移 | 回填时才知（前向目标后于跳转） | `u16`，方向在 opcode；超 64KB 编译错误 |
 
-> 前向跳转仍需回填（先占位、目标确定后写偏移），但只有一种宽度（`u16`），回填即定值、无短/长选择、无重排 -- 比「`i16` + 长变体 + 分支松弛」简单得多。后向跳转发射时已知，未来若需长变体也无需回填（与局部槽同性质）。代价：单条跳转量程封顶 64KB；超限（超大函数/超大模块顶层）暂报编译错误，留待未来 `JUMP*_L`。
+> 前向跳转仍需回填（先占位、目标确定后写偏移），但只有一种宽度（`u16`），回填即定值、无短/长选择、无重排 -- 比「`i16` + 长变体 + 分支松弛」简单得多。后向跳转发射时已知，未来若需长变体也无需回填（与局部槽同性质）。代价：单条跳转量程封顶 64KB，超限（超大函数/超大模块顶层）报编译错误。
 
 ## 3. 栈效应记号
 
@@ -236,8 +234,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 ### 4.11 输出 / 调试
 
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
+（无专用 opcode：输出走内建 `println`/`str`，调试走 `NOP` 与调试构建开关；本节保留节号以稳住交叉引用。）
 
 ### 4.12 控制流（跳转）
 
@@ -260,7 +257,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNative`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
+| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNativeFn`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
 | `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFunction`，创建 `ObjClosure` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
@@ -310,7 +307,7 @@ def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无�
 | :--- | :--- | :--- | :--- |
 | `RETURN` | 无 | `[v] -> ` | 从当前函数返回 `v`（无返回值时编译器先发 `LOAD_NIL`）。退出当前 `CallFrame`，把 `v` 压入调用者栈顶，`ip` 恢复到 `CALL` 之后 |
 
-`RETURN` 也用于顶层执行结束：入口函数（主入口 `<main>` 与导入模块体 `<module>` 同为 ModuleEntry 形态）的返回值恒为模块对象——编译器在入口收尾发射「压模块对象常量 + RETURN」（裸 `return;` 同形，带值 `return` 编译期拒绝 `ReturnValueAtTopLevel`），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
+`RETURN` 也用于顶层执行结束：入口函数（主入口 `<main>` 与导入模块体 `<module>` 同为 ModuleEntry 形态）的返回值恒为模块对象--编译器在入口收尾发射「压模块对象常量 + RETURN」（裸 `return;` 同形，带值 `return` 编译期拒绝 `ReturnValueAtTopLevel`），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
 
 ## 5. 关键 lowering
 
@@ -585,19 +582,11 @@ L_end:
 
 **解析协议**（`Object::load_field_unbound`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口--槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认体即 `load_field`；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
 
-**实测**（`bench/vm_bench.cpp`，Release/-O2/无 LTO，每行 1,638,400 次循环体）：
+**实测结论**（`bench/vm_bench.cpp` 可复测；具体数字是驱动输出、不留档）：两段式相对 ① 两步物化在各迭代协议/方法调用场景显著更快且消除 bound 物化分配（分配/次归零）；相对 ② 单条融合，以同二进制字节改写对照（同一份字节码只改写编码）测得代价约**每次调用 1 ns**（argc = 0 时下移为空转）。② 的单条融合因「解析晚于实参求值」的次序语义改判被弃（见 §5.6）。
 
-| 场景（每行 1,638,400 次循环体） | ① 两步物化 ns/次 | ③ 两段式（现状） ns/次 | 分配/次 |
-| :--- | ---: | ---: | ---: |
-| `forin_list`（迭代协议，每迭代 2 次调用） | 84.1 | 33.5~33.7 | 2.009 -> 0.000 |
-| `forin_range`（同上） | 79.8 | 33.8~34.2 | 2.001 -> 0.000 |
-| `starts_with`（单方法调用） | 71.6 | 43.0~47.0 | 1.000 -> 0.000 |
+两段式相对 ② 多出的工作是：第二次 dispatch、一次压栈 + 一次弹栈、argc 次 Value 下移、一次 peek。端到端真实程序上：集合/迭代密集型与字符串/map 型负载有小幅回归、类方法密集型接近持平、零派发对照负载几乎无感（对照组用于剔除构建级布局偏移）。两段式保留 ① 消除的物化收益的绝大部分（约 96%），分配列不变。
 
-> ② 单条融合那一代（见 commit 历史）在这些行上是 31.1~31.6 / 31.9~32.4 / 41.9~45.0。①②③ 之间的绝对差含跨构建的代码布局抖动（同批对照里**未受影响的**基线行 `plain_call` 自身就在 37.9~43.9 间摆动），故 ②→③ 的代价以**同二进制字节改写对照**为准：原型期实测（同一份字节码、只把两段改写成融合编码）`forin_list` +1.8~2.5、`forin_range` +1.8~2.1、`starts_with` +0.3~1.4、`instance_call` +1.5~1.8 ns/次迭代 -- 即**每次调用约 1 ns**，argc = 0 时下移为空转。
-
-两段式相对 ② 多出的工作是：第二次 dispatch、一次压栈 + 一次弹栈、argc 次 Value 下移、一次 peek。端到端真实程序（Release 解释器、四个工作负载、随机序 best-of-12）上：集合/迭代密集型 +5.8~5.9%、字符串+map 型 +4.9~5.0%、类方法密集型 +0~3%、**零派发对照负载 +0~0.7%**（对照组用于剔除构建级布局偏移）。两段式保留 ① 消除的物化收益的 ~96%，分配列不变。
-
-**备选形态（都已实现并实测，均不如现状）**：① 目标槽放调用区之**下** + 帧位（`RETURN` 收尾）--少一次下移，但多一次帧深比较 + 帧位写 + `RETURN` 分支，且改动落在 `RETURN` 上（纯函数调用也走那条路，端到端对照行 +2.7~4.5%），实测比现状慢 0.8~2 ns/次迭代；② 目标槽放调用区之下 + 调用点补一条 `POP_UNDER`--无帧状态但每次调用多一整条指令的 dispatch，实测慢 1.1~1.6 ns/次迭代。
+**备选形态（都已实现并实测，均不如现状）**：① 目标槽放调用区之**下** + 帧位（`RETURN` 收尾）--少一次下移，但多一次帧深比较 + 帧位写 + `RETURN` 分支，且改动落在 `RETURN` 上（纯函数调用也走那条路，端到端回归更明显）；② 目标槽放调用区之下 + 调用点补一条 `POP_UNDER`--无帧状态但每次调用多一整条指令的 dispatch。
 
 ### 6.3 `MAKE_RANGE`（已加入）
 
@@ -605,7 +594,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `register_builtin_functions` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂 Exception 类与 `coroutine` 合成模块）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂 Exception 类与 `coroutine` 合成模块）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
 
 ### 6.5 迭代器
@@ -619,7 +608,7 @@ class CodeUnit {
     Array<u8>        code;        // 字节流: opcode + 内联操作数 (小端)
     AriaArray        constants;   // 常量池 (Array<Value> + trace)
     Array<LineEntry> lines;       // RLE 行段表 (offset -> line)
-    Array<TryRecord> try_records; // 异常记录表 (按 begin 单调, 见 §6.1)
+    Array<TryRecord> try_records; // 异常记录表 (按 begin 非降序、允许相等, 见 §6.1)
 };
 ```
 
@@ -668,20 +657,9 @@ code:
 - 解码表驱动：`Disassembler` 查 `code.hpp` X 表生成物（`kOpCodeNames`/`kOpCodeFormats`）按格式分发（§2.1），新增指令零改动；VM 主循环自持 switch（热路径操作数读取内联于各 case，不查表），新增指令需 X 表 + VM case 两处同步。
 - `disassembleInstruction(codeunit, offset)` 复用同一解码路径，供 VM 执行跟踪逐条打印（输出即 code 行的指令段，不含偏移/行号前缀）。
 
-## 9. 待决设计点汇总
+## 9. 已决事项
 
-| # | 议题 | 建议 | 备选 |
-| :--- | :--- | :--- | :--- |
-| 1 | `STORE_*` 留值 vs 弹值 | peek-store（留值） | pop-store + 旋转/临时槽 |
-| 2 | 常量索引位宽 | `u16` 统一（暂不变；真超 65535 再加 `LOAD_CONST_L`） | `u8` + 长变体 |
-| 3 | 跳转 / 局部槽位宽 | 跳转 `u16` + 方向拆分（前向 `JUMP*`/后向 `JUMP_BACK`）、局部槽 N 短变体（槽 1..8 零操作数）+ `u16` 通用（**已定**，§2.3/§4.3/§4.12） | `i16`/`i32` 长变体 / 硬限报错 |
-| 4 | `ADD` 重载 | **已定并落地**：九个算子/比较指令统一经 `op_*_impl` 钩子族（左操作数为对象即取实现再调），数值左值走快路径；String 的 `+` 与四比较是内建钩子，用户类经 dunder 方法重载；list 拼接不做（`list + list` 报错） | -- |
-| 5 | 方法调用派发 | 已落地并**两段化**：`PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，解析经 `Object::load_field_unbound`，内置侧零 bound 物化）；曾以单条 `INVOKE_METHOD` 融合实现，因次序语义改判（见 §6.2） | 目标槽放调用区之下（需帧位/收尾指令，实测更慢）；`LOAD_FIELD` + `CALL` 两步（每次调用物化 bound） |
-| 6 | 异常机制 | CodeUnit 内记录表（已落地; `finally` 不做、后继 defer 为可选后续） | （已弃 `SETUP_EXCEPT`/`END_EXCEPT` 操作码方案） |
-| 7 | `MAKE_RANGE` | 已加入 | -- |
-| 8 | 整除/浮除语义 | **已定**：双 Int 整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE | -- |
-| 9 | 内建注册机制 | **已落地**: VM 级 builtins 表 + `LOAD_GLOBAL` 回退, 无新指令 | -- |
-| 10 | CodeUnit 调试行信息 | 每偏移 `u32` 行号（RLE） | 存全 `LineCol` / 不存 |
+本表的待决事项均已定案并落入正文/实现：`STORE_*` peek-store（§3.1）、常量索引 `u16` 统一（§2.2）、跳转方向拆分与 N 短变体（§2.3）、算子钩子族（§4.4）、两段式方法调用（§6.2）、异常记录表（§5.9/§6.1）、`MAKE_RANGE`（§6.3）、整除/浮除语义（§4.4）、内建经 VM builtins 表回退（§6.4）、行号 RLE（§7）。被否备选随各节正文就近保留。
 
 ## 10. 参考
 

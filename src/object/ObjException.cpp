@@ -32,11 +32,10 @@ namespace aria {
     }
 
     Opt<Value> ObjException::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态同 ObjString(见 Object.hpp):委托 Exception bootstrap 类表(沿链达 Object
-        // 根),命中自持 new_bound_method 恒绑 this(表条目全为原生方法)。
+        // 两步形态权威注见 Object.hpp;委托 Exception bootstrap 类表(沿链达 Object 根)。
         const auto hit = vm.exception_class()->load_field(vm, name);
         if (!hit) {
-            return std::nullopt; // 已 fail(契约透传)
+            return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
     }

@@ -30,7 +30,6 @@ namespace aria {
 
     ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, const u8 arity, const u8 min_arity,
                               const bool is_varargs) {
-        // 守卫纪律见 Object.hpp;module 与 name 皆是 weak root,调用方须自行根化。
         return gc.new_object<ObjFunction>(gc, module, name, arity, min_arity, is_varargs);
     }
 

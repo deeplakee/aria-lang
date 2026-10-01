@@ -9,8 +9,7 @@
 
 namespace aria {
 
-    // 将 SourceLoc 引入 aria 命名空间（见 AGENTS.md：source_file 相关
-    // 类型位于 aria::src 下，引用需分别 using）。
+    // SourceLoc 的引入理由见 Token.hpp 同款 using 注。
     using src::SourceLoc;
 
     // 词法分析器：把 SourceFile 的内容切成 Token 流。静态服务入口 tokenize(SourceFile&)：内部一次性构造（私有构造），
@@ -19,10 +18,10 @@ namespace aria {
     //   - 所有词法错误（串未闭合等）一律作可恢复处理--记入 List<Error> 后推进 pos_ 继续扫描，尽量多收集错误，而非遇首
     //     个错误即终止。
     //   - 为缓解级联错误设错误上限 kMaxErrors，达上限即停。
-    //   - 有任何错误 -> unexpected(List<Error>)；无错 -> 完整 token 流（含末尾 Eof）。扫描基于 utf8::decode_one 按码
-    //     点推进（ASCII 走其内部快路径）；src_ 底层 String 以 '\0' 结尾，可作哨兵。位置模型：token 位置 = 起点字节偏移
-    //     （扫描期间已有的 start），行列由 SourceLoc 在消费点派生（成本契约见 source_file.hpp）--词法期不维护任何行列
-    //     计数，故游标推进就是普通的字节推进，回退/前瞻也不需要还原状态。
+    //   - 有任何错误 -> unexpected(List<Error>)；无错 -> 完整 token 流（含末尾 Eof）。扫描基于 utf8::decode_one
+    //     按码点推进（ASCII 走其内部快路径）；src_ 底层 String 以 '\0' 结尾，可作哨兵。位置模型：token 位置 = 起点字节
+    //     偏移（扫描期间已有的 start），行列由 SourceLoc 在消费点派生（成本契约见 source_file.hpp）--词法期不维护任何
+    //     行列计数，故游标推进就是普通的字节推进，回退/前瞻也不需要还原状态。
     class Lexer {
     public:
         // 对 src 做词法分析，返回 token 流或错误集合。
@@ -43,7 +42,6 @@ namespace aria {
         bool        is_fatal_; // 错误达上限，主循环应终止
 
         // 主循环与分支
-        // 主扫描循环
         void run();
         // 跳过空白 + // / # 注释
         void skip_trivia();

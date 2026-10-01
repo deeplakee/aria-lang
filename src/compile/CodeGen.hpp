@@ -342,9 +342,9 @@ namespace aria {
         // 表达式可引用前序参数、自身/后序参数名对解析结构性不可见。须在子上下文就位后、体编译前调用。
         void compile_params(const List<Param>& params, SourceLoc loc);
 
-        // 函数体尾隐式返回：init 方法返回 this（LOAD_LOCAL 0，实例化不变式 Foo() 得实例）、入口
-        // ModuleEntry 返回模块对象常量（主脚本与导入模块同规，IMPORT 栈效应的兑现），其余返回 nil
-        // （显式 return 后为死代码，无害）。kind 读 cur_fn_ctx()->kind_，须在目标上下文就位后调用。
+        // 函数体尾隐式返回：init 方法返回 this（LOAD_LOCAL 0，实例化不变式 Foo() 得实例）、ModuleEntry
+        // 返回模块对象常量（语义单源见 FnKind.hpp 注册表注），其余返回 nil（显式 return 后为死代码，
+        // 无害）。kind 读 cur_fn_ctx()->kind_，须在目标上下文就位后调用。
         // loc 供模块对象常量的溢出报错定位；行号取 loc.line()。
         void emit_implicit_return(SourceLoc loc) const;
 

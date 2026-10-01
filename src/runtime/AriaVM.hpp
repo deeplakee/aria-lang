@@ -51,9 +51,9 @@ namespace aria {
     // 需要值/错误细节用低层 run()。
     enum class InterpretResult : u8 {
         Ok,           // 编译并执行成功
-        CompileError, // 编译失败（词法 / 语法 / 语义）
+        CompileError, // 编译失败(词法/语法/语义)
         RuntimeError, // 运行期未捕获错误
-        LoadError,    // 源文件加载失败（仅 interpret_from_path：I/O 或 UTF-8 编码）
+        LoadError,    // 源文件加载失败(仅 interpret_from_path:I/O 或 UTF-8 编码)
     };
 
     // 解释器:持解释器级共享状态,驱动 ObjMovement 执行字节码(路线见 vm-design.md §6,切换模型
@@ -108,7 +108,7 @@ namespace aria {
             return gc_;
         }
 
-        // 当前执行上下文(测试用;切换原语落地前恒为主上下文)。
+        // 当前执行上下文(测试/白盒观察用;协程切换期间随之换指,恒等于正在执行字节码的上下文)。
         [[nodiscard]]
         ObjMovement* current_context() noexcept {
             return current_;
@@ -153,48 +153,34 @@ namespace aria {
             return modules_;
         }
 
-        // Object 根类:寄存器 ObjectClass 唯一存放(LOAD_REG 直推);不进 builtins_/任何模块
-        // globals(用户 shadow 全局名免疫)。定义在 .cpp(Object::as 需 ObjClass 完整类型,
-        // 头内只留声明,同 cur_cu 先例)。
+        // 七个 bootstrap 类访问器族(object/exception/iterator/list/map/string/range_class):
+        // 各类寄存器 XxxClass 格唯一存放(曝光与算子格契约见 runtime/value_register.hpp 表头),
+        // 定义在 .cpp(Object::as 需 ObjClass 完整类型,头内只留声明,同 cur_cu 先例);消费面 =
+        // 各 Obj* 的 load_field 委托、ObjectClass.cpp 的 is_a、bootstrap 曝光。
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
-        // Exception bootstrap 类:寄存器 ExceptionClass 唯一存放,方法面宿主类
-        // ExceptionClass(runtime/builtins/);ObjException::load_field 经它取自身类。
-        // 同 object_class 先例。与其余 bootstrap 类不同:经 builtins_ 的 "Exception" 键
-        // 暴露(裸名可达,可被子类化)。
         [[nodiscard]]
         ObjClass* exception_class() const noexcept;
 
-        // Iterator bootstrap 类:寄存器 IteratorClass 唯一存放,方法面宿主类
-        // IteratorClass(runtime/builtins/);ObjIterator::load_field
-        // 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* iterator_class() const noexcept;
 
-        // List bootstrap 类:寄存器 ListClass 唯一存放,方法面宿主类 ListClass
-        // (runtime/builtins/);ObjList::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* list_class() const noexcept;
 
-        // Map bootstrap 类:寄存器 MapClass 唯一存放,方法面宿主类 MapClass
-        // (runtime/builtins/);ObjMap::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* map_class() const noexcept;
 
-        // String bootstrap 类:寄存器 StringClass 唯一存放,方法面宿主类 StringClass
-        // (runtime/builtins/);ObjString::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* string_class() const noexcept;
 
-        // Range bootstrap 类:寄存器 RangeClass 唯一存放,方法面宿主类 RangeClass
-        // (runtime/builtins/);ObjRange::load_field 经它取自身类。同 object_class 先例。
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
 
         // 值寄存器组按格位直读(格位常量 k<名字>Offset 见 runtime/value_register.hpp)。内置类型的
-        // 算子实现格(String*Fn)经它取用:ObjString 的 5 个 op_*_impl override 直读实现格交算子
-        // 派发,免每次过类表查找。
+        // 算子实现格经它取用:ObjString/ObjList 的 op_*_impl override 直读实现格交算子派发,
+        // 免每次过类表查找(格清单与规范家关系见 value_register.hpp 表头)。
         [[nodiscard]]
         Value register_value(const u8 offset) const noexcept {
             return Value::from_obj(registers_[offset]);
@@ -221,14 +207,14 @@ namespace aria {
             return source_roots_;
         }
 
-        // 覆盖配置源根(stdlib/-L/环境变量等):替换 [1..]、保留入口槽 [0](由 run() 按入口
-        // 模块 dir_ 原地替换)。测试/嵌入配置用:置空清掉默认 stdlib(隔离)。
+        // 覆盖配置源根:替换 [1..]、保留入口槽 [0](由 run() 按入口模块 dir_ 原地替换)。
+        // 当前消费者仅测试(隔离 stdlib 或注入测试根);CLI 暂无配置通道,属嵌入预留面。
         void set_source_roots(List<String> roots) noexcept;
 
     private:
-        // 执行本体(无入口装饰):压 callee 经 call_closure 进帧后 dispatch_loop。亦是未来重入
-        // 接缝(原生回调调 aria 函数/嵌入宿主,§4.7):不播源根、不 reset(重入调用者的栈不可
-        // 冲掉)、不断言主上下文;落地升公开时需 dispatch_loop 按基线帧深退出。
+        // 执行本体(无入口装饰):压 callee 经 call_closure 进帧后 dispatch_loop。本函数是唯一
+        // 不做入口装饰的执行口:不播源根、不 reset(重入调用者的栈不可冲掉)、不断言主上下文--
+        // coroutine-pitfalls 坑 #10 的「切换型原生不得在嵌套 run_closure 内可达」红线据此立。
         Result<Value, Error> run_closure(ObjClosure* closure);
 
         // 主循环:驱动 *current_ 直到顶层返回/错误/显式停止。
@@ -245,8 +231,8 @@ namespace aria {
         // -> **编译成功才入表** -> 返回模块对象(已 set_entry)。只加载与编译,不执行模块体 --
         // nullptr ⟺ 载荷已 raise(读盘失败/名字无效经 fail,被导入模块的编译期 Error 原样装配箱
         // 透传)。失败不留表项,同路径重试重新加载。**仅限 dispatch_loop 驱动期调用**(寄存器
-        // 随 *current_ 走,run() 入口 reset 会吞掉)。canonical_path 须调用方已根化
-        // (modules_.set 的 rehash 触 GC,intern weak root 不保命)。
+        // 随 *current_ 走,run() 入口 reset 会吞掉)。canonical_path 须调用方已根化(表操作
+        // 不触 GC,根化跨的是 load_module 编译期分配;intern weak root 不保命)。
         ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
 
         // interpret 共用尾段:编译 + 执行;失败渲染 stderr 并按**失败阶段**分类 -- 编译期 ->

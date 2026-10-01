@@ -37,7 +37,7 @@ namespace aria {
     // lines/try_records)直接 public 裸露,VM/编译器/反汇编器直接操作; 只保留有"不可散落逻辑"的方法(emit_* 按 RLE 记行号
     // 表、跳转编码/回填、分块 POP、局部槽 N/通用变体、 line_for_offset、trace、disassemble)。跳转回填越界(超 64KB)以
     // bool 返回交回调用方翻译为 Error -- 本类不持有 Error 语义。 **行号模型**:emit 一律带 `line`
-    // 参数(无状态、无重载),调用 方自己跟踪当前行号;RLE 去重收口在 record_line_ 内做。本类**不是 Object**,是 ObjFunction
+    // 参数(无状态、无重载),调用方自己跟踪当前行号;RLE 去重收口在 record_line_ 内做。本类**不是 Object**,是 ObjFunction
     // 的值成员(四个 Array 持 GC* 自释放, ~CodeUnit -> ~Array 级联,同 ObjString long_chars_)。非拷贝/非移动。
     class CodeUnit {
     public:
@@ -72,7 +72,7 @@ namespace aria {
         //   越界(>65535)返 false(不写),成功返 true。
         bool patch_jump(u32 src_off);
 
-        // 后向:emit JUMP_BACK + (base_off - target_off)(base_off = 读完 u16 操作数后的 ip);
+        // 后向:emit JUMP_BACK + (base_off - target_off)(偏移基准同 patch_jump);
         //   越界(反向/超 64KB)emit 占位 word 0 后返 false。
         bool emit_jump_back(u32 target_off, u32 line);
 
@@ -89,8 +89,8 @@ namespace aria {
         }
 
         // 常量池
-        // 只追加、不去重--按值去重收口在编译期索引（FunctionCtx::add_constant，同值复用已有索引），故池内
-        // 无同值重复项、池上限由互异常量数而非出现次数决定。索引 u16，超 65535 断言。
+        // 只追加、不去重:按值去重收口在 FunctionCtx::add_constant(同值复用已有索引),池内无同值
+        // 重复项。索引 u16,超 65535 断言。
         u16 add_constant(Value value);
 
         // 行号查询

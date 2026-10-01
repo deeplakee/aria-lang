@@ -27,6 +27,16 @@ namespace aria {
     }
 
     Opt<Value> ObjInstance::load_field(AriaVM& vm, ObjString* name) {
+        // 调用路径的成员解析:**不绑定**,返回字段/类链里的原值,调用区槽 0 由 CALL_METHOD 保持
+        // receiver(方法戳闭包的方法体从槽 0 读 this)。零分配,且每次按当前类链解析(与读路径同
+        // 一份可见性:改类/父类方法立即生效)。
+        if (const auto entry = fields_.find(Value::from_obj(name))) {
+            return entry->value; // 真字段优先(字段里存的可调用值原值直调)
+        }
+        return class_->load_field(vm, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
+    }
+
+    Opt<Value> ObjInstance::load_field_bound(AriaVM& vm, ObjString* name) {
         // 1) fields 命中:真字段优先,遮蔽类链同名成员。
         if (const auto entry = fields_.find(Value::from_obj(name))) {
             return entry->value;
@@ -51,16 +61,6 @@ namespace aria {
         return Value::from_obj(new_bound_method(vm.gc(), member, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjInstance::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 调用路径的成员解析:**不绑定**,返回字段/类链里的原值,调用区槽 0 由 CALL_METHOD 保持
-        // receiver(方法戳闭包的方法体从槽 0 读 this)。零分配,且每次按当前类链解析(与读路径同
-        // 一份可见性:改类/父类方法立即生效)。
-        if (const auto entry = fields_.find(Value::from_obj(name))) {
-            return entry->value; // 真字段优先(字段里存的可调用值原值直调)
-        }
-        return class_->load_field(vm, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
-    }
-
     bool ObjInstance::store_field(AriaVM& vm, ObjString* name, const Value value) {
         // 实例字段动态(无预声明):set 即创建/更新、恒成功;set 走 trivial 分配不触 GC。
         fields_.set(Value::from_obj(name), value);
@@ -70,27 +70,27 @@ namespace aria {
     // 算子/调用协议实现:按名到本实例(实例 fields 优先,可遮蔽类链钩子)再类链取实现 --
     // 「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。名字取自 VM 常量串表(AriaVM::str;
     // 注册表见 runtime/str_table.hpp):表在 bootstrap 期驻留并随 VM 根恒久存活,故每次派发零取串开销、零分配。
-    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__add__">()); }
+    Opt<Value> ObjInstance::op_add_impl(AriaVM& vm) { return load_field(vm, vm.str<"__add__">()); }
 
-    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__sub__">()); }
+    Opt<Value> ObjInstance::op_sub_impl(AriaVM& vm) { return load_field(vm, vm.str<"__sub__">()); }
 
-    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__mul__">()); }
+    Opt<Value> ObjInstance::op_mul_impl(AriaVM& vm) { return load_field(vm, vm.str<"__mul__">()); }
 
-    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__div__">()); }
+    Opt<Value> ObjInstance::op_div_impl(AriaVM& vm) { return load_field(vm, vm.str<"__div__">()); }
 
-    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__mod__">()); }
+    Opt<Value> ObjInstance::op_mod_impl(AriaVM& vm) { return load_field(vm, vm.str<"__mod__">()); }
 
-    Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__lt__">()); }
+    Opt<Value> ObjInstance::op_less_impl(AriaVM& vm) { return load_field(vm, vm.str<"__lt__">()); }
 
-    Opt<Value> ObjInstance::op_less_equal_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__le__">()); }
+    Opt<Value> ObjInstance::op_less_equal_impl(AriaVM& vm) { return load_field(vm, vm.str<"__le__">()); }
 
-    Opt<Value> ObjInstance::op_greater_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__gt__">()); }
+    Opt<Value> ObjInstance::op_greater_impl(AriaVM& vm) { return load_field(vm, vm.str<"__gt__">()); }
 
-    Opt<Value> ObjInstance::op_greater_equal_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__ge__">()); }
+    Opt<Value> ObjInstance::op_greater_equal_impl(AriaVM& vm) { return load_field(vm, vm.str<"__ge__">()); }
 
-    Opt<Value> ObjInstance::op_negate_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__neg__">()); }
+    Opt<Value> ObjInstance::op_negate_impl(AriaVM& vm) { return load_field(vm, vm.str<"__neg__">()); }
 
-    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return load_field_unbound(vm, vm.str<"__call__">()); }
+    Opt<Value> ObjInstance::op_call_impl(AriaVM& vm) { return load_field(vm, vm.str<"__call__">()); }
 
     ObjInstance* new_instance(GC& gc, ObjClass* klass) { return gc.new_object<ObjInstance>(gc, klass); }
 

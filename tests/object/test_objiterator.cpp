@@ -1,4 +1,4 @@
-// ObjIterator 基类(引擎缝 + load_field 绑定)与 ObjListIterator(游标推进/越界 fail/trace)
+// ObjIterator 基类(引擎缝 + load_field_bound 绑定)与 ObjListIterator(游标推进/越界 fail/trace)
 // 的对象层测试;错误白盒取件同 test_objlist 的 take_pending_error 形态。
 #include <gtest/gtest.h>
 
@@ -111,14 +111,14 @@ TEST(ObjIterator, BootstrapClassContract) {
     EXPECT_EQ(iter_class->superclass(), vm.object_class());
 }
 
-// load_field 恒绑定:has_next 绑到本迭代器,method 是 Iterator 类表内的原生。
+// load_field_bound 恒绑定:has_next 绑到本迭代器,method 是 Iterator 类表内的原生。
 TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
     auto   iter  = make_list_iterator(gc, guard, list);
-    auto   bound = iter->load_field(vm, new_string(gc, "has_next"));
+    auto   bound = iter->load_field_bound(vm, new_string(gc, "has_next"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_obj<ObjBoundMethod>(*bound);
@@ -129,14 +129,14 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     EXPECT_EQ(native->name()->view(), "has_next");
 }
 
-// load_field miss:类措辞 fail 随协议透传。
+// load_field_bound miss:类措辞 fail 随协议透传。
 TEST(ObjIterator, LoadFieldMissFailsWithClassWording) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
     auto   iter  = make_list_iterator(gc, guard, list);
-    EXPECT_FALSE(iter->load_field(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(iter->load_field_bound(vm, new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class Iterator> has no member 'nope'");

@@ -14,9 +14,9 @@ namespace aria {
         return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
-    Opt<Value> Object::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 基类默认 = load_field;实例与内置容器/迭代器各自 override(不铸 ObjBoundMethod,契约见
-        // Object.hpp)。
+    Opt<Value> Object::load_field_bound(AriaVM& vm, ObjString* name) {
+        // 基类默认 = 无补丁,直接委托裸查找 load_field(类/模块等读取本就不绑定,照取命中原值);
+        // 会绑定的类型各自 override,分工契约见 Object.hpp。
         return load_field(vm, name);
     }
 

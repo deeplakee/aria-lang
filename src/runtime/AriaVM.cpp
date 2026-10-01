@@ -760,7 +760,7 @@ namespace aria {
         if (!obj.is_obj()) {
             return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
         }
-        if (const auto result = obj.as_obj()->load_field(*this, name)) {
+        if (const auto result = obj.as_obj()->load_field_bound(*this, name)) {
             current_->peek(0) = *result; // 写回原槽:[obj] -> [v]
             return true;
         }
@@ -783,10 +783,10 @@ namespace aria {
 
     bool AriaVM::run_load_this_field(ObjString* name) {
         // 契约见 AriaVM.hpp;this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
-        // load_field 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
+        // load_field_bound 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
         const Value this_value = current_->frames().top().slots[0];
         if (const auto inst = try_obj<ObjInstance>(this_value)) {
-            if (const auto result = inst->load_field(*this, name)) {
+            if (const auto result = inst->load_field_bound(*this, name)) {
                 current_->push(*result); // [] -> [v]
                 return true;
             }
@@ -810,13 +810,13 @@ namespace aria {
 
     bool AriaVM::run_prepare_method(ObjString* name) {
         // 契约见 AriaVM.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
-        // (「栈即根」)-- 基类默认的 load_field 会铸 bound、内置 override 的 miss 会装箱,两者皆是
-        // 分配点。解析先于实参求值。
+        // (「栈即根」)-- 裸查找命中零分配(基类默认 fail;宿主 override 皆纯透传/纯查询),唯一
+        // 分配点是 miss 的 fail 装箱。解析先于实参求值。
         const Value recv = current_->peek(0);
         if (!recv.is_obj()) {
             return fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
         }
-        if (const auto target = recv.as_obj()->load_field_unbound(*this, name)) {
+        if (const auto target = recv.as_obj()->load_field(*this, name)) {
             current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
             return true;
         }

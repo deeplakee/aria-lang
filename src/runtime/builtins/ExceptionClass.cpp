@@ -54,7 +54,7 @@ namespace aria {
             }
             if (const auto inst = try_obj<ObjInstance>(slots[0])) {
                 if (const auto hit = inst->load_field(vm, vm.str<"_message">())) {
-                    slots[0] = *hit; // 建成即写槽:load_field 内绑定分配的新 bound 经此根化
+                    slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;
                 }
                 return false;
@@ -76,7 +76,7 @@ namespace aria {
             }
             if (const auto inst = try_obj<ObjInstance>(slots[0])) {
                 if (const auto hit = inst->load_field(vm, vm.str<"_code">())) {
-                    slots[0] = *hit; // 建成即写槽:load_field 内绑定分配的新 bound 经此根化
+                    slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;
                 }
                 return false;

@@ -29,7 +29,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            // 绑定路径契约:slots[0] 恒本 list(仅经 load_field 绑定触达),DEBUG 下 as 走
+            // 绑定路径契约:slots[0] 恒本 list(仅经 load_field_bound 绑定触达,DEBUG 下 as 走
             // dynamic_cast 校验。
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             list.push(slots[1]); // trivial 分配不触 GC
@@ -336,7 +336,7 @@ namespace aria {
     } // namespace
 
     ObjClass* ListClass::make_class(GC& gc, ObjClass* super) {
-        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field 查表命中后恒绑定
+        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field_bound 查表命中后恒绑定
         // 触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "List", super);
         Builtin::register_class_methods(gc, klass, kListBuiltins);

@@ -569,7 +569,7 @@ TEST(ObjList, StoreIndexNegativeWritesFromTail) {
     EXPECT_EQ(list->elements().size(), 2u);
 }
 
-// ---- 命名成员协议(load_field → VM 的 List bootstrap 类) ----
+// ---- 命名成员协议(load_field_bound → VM 的 List bootstrap 类) ----
 
 // bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根。
 TEST(ObjList, BootstrapClassContract) {
@@ -581,13 +581,13 @@ TEST(ObjList, BootstrapClassContract) {
 }
 
 // 命中恒绑定:bound 的 receiver 是本 list、method 是类表内的原生函数(注册名 intern 同指针,
-// load_field 传入的 new_string("push") 与注册名命中)。
+// load_field_bound 传入的 new_string("push") 与注册名命中)。
 TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    auto   bound = list->load_field(vm, new_string(gc, "push"));
+    auto   bound = list->load_field_bound(vm, new_string(gc, "push"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_obj<ObjBoundMethod>(*bound);
@@ -605,7 +605,7 @@ TEST(ObjList, LoadFieldInitResolvesToObjectRoot) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    auto   bound = list->load_field(vm, new_string(gc, "init"));
+    auto   bound = list->load_field_bound(vm, new_string(gc, "init"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_obj<ObjBoundMethod>(*bound);
@@ -621,7 +621,7 @@ TEST(ObjList, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    EXPECT_FALSE(list->load_field(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(list->load_field_bound(vm, new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class List> has no member 'nope'");
@@ -636,7 +636,7 @@ TEST(ObjList, BootstrapSurvivesStressCollect) {
     auto       list    = make_list(gc, guard);
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = list->load_field(vm, new_string(gc, "pop"));
+    auto bound = list->load_field_bound(vm, new_string(gc, "pop"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_obj<ObjBoundMethod>(*bound);

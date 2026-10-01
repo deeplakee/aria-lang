@@ -1,4 +1,4 @@
-// ObjString 协议面(下标字节语义/不可变写/load_field 绑定/算术与比较算子)的对象层测试;
+// ObjString 协议面(下标字节语义/不可变写/load_field_bound 绑定/算术与比较算子)的对象层测试;
 // 错误白盒取件与 GC 守卫形态同 test_objlist/test_objmap。迭代器(ObjStringIterator)在
 // test_objiterator.cpp。
 #include <gtest/gtest.h>
@@ -280,7 +280,7 @@ TEST(ObjString, StoreIndexAlwaysFails) {
     EXPECT_EQ(message, "Runtime: TypeMismatch type String does not support subscript assignment");
 }
 
-// ---- 命名成员协议(load_field → VM 的 String bootstrap 类) ----
+// ---- 命名成员协议(load_field_bound → VM 的 String bootstrap 类) ----
 
 // bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根。
 TEST(ObjString, BootstrapClassContract) {
@@ -297,7 +297,7 @@ TEST(ObjString, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
-    auto   bound = s->load_field(vm, new_string(gc, "upper"));
+    auto   bound = s->load_field_bound(vm, new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_obj<ObjBoundMethod>(*bound);
@@ -314,7 +314,7 @@ TEST(ObjString, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
-    EXPECT_FALSE(s->load_field(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(s->load_field_bound(vm, new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class String> has no member 'nope'");
@@ -329,7 +329,7 @@ TEST(ObjString, BootstrapSurvivesStressCollect) {
     auto       s       = make_string(gc, guard, "hi");
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = s->load_field(vm, new_string(gc, "upper"));
+    auto bound = s->load_field_bound(vm, new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_obj<ObjBoundMethod>(*bound);

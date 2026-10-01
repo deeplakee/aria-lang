@@ -32,17 +32,17 @@ namespace aria {
     }
 
     Opt<Value> ObjException::load_field(AriaVM& vm, ObjString* name) {
-        // 两步形态权威注见 Object.hpp;委托 Exception bootstrap 类表(沿链达 Object 根)。
-        const auto hit = vm.exception_class()->load_field(vm, name);
+        // 裸查找:委托 Exception bootstrap 类表(沿链达 Object 根),命中原值直出不铸 bound;本体是纯透传。
+        return vm.exception_class()->load_field(vm, name);
+    }
+
+    Opt<Value> ObjException::load_field_bound(AriaVM& vm, ObjString* name) {
+        // 绑定读:同名裸查找命中即无条件绑定 this(表条目全为原生方法;权威注见 Object.hpp)。
+        const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
-    }
-
-    Opt<Value> ObjException::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
-        return vm.exception_class()->load_field(vm, name);
     }
 
     ObjException* new_exception(GC& gc, const ErrorCode code, const StringView message) {

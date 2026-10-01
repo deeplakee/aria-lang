@@ -11,7 +11,7 @@ namespace aria {
 
     // map 对象(ObjType::MAP):`{...}` 字面量的运行期载体,键值均任意 Value、存 AriaHashTable(Swiss Table;表内键判等 ===,
     // int 1 与 f64 1.0 是不同键;可变对象作键按身份哈希)。下标读写经 load_index/store_index 协议 override;命名成员经
-    // load_field 委托 VM 的 Map bootstrap 类方法表恒绑定。
+    // load_field_bound 委托 VM 的 Map bootstrap 类方法表恒绑定。
     //   - 迭代序 unspecified:非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器不
     //     承诺(rehash 搬迁槽位),guide 07-maps 章明示。
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容:size 相等且逐键在对方命中同键(键按表内语义 ===,find
@@ -60,14 +60,13 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override:查 Map bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态权威注见 Object.hpp)。
+        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
         // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
         [[nodiscard]]

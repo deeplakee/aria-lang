@@ -1755,11 +1755,11 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     EXPECT_EQ(inst->klass()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
     // seed = Object 的原生 no-op init(MAKE_CLASS 继承,Value 经 === 判同):
     EXPECT_TRUE(aria::value_identical(inst->klass()->init(), vm.object_class()->init()));
-    // no-op init 留空实例:任一名字 load_field 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
+    // no-op init 留空实例:任一名字 load_field_bound 全链 miss(miss 的 fail 装箱是分配点,实例先入根)。
     guard.push(inst);
     auto nope = new_string(gc, "nope");
     guard.push(nope);
-    EXPECT_FALSE(inst->load_field(vm, nope).has_value());
+    EXPECT_FALSE(inst->load_field_bound(vm, nope).has_value());
 }
 
 // 值寄存器组:LOAD_REG ObjectClass 压 Object 根类(regs_[ObjectClass],bootstrap 填充;
@@ -2561,7 +2561,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->klass()->name()->view(), "Foo");
-    auto tag_v = inst->load_field(vm, new_string(gc, "tag"));
+    auto tag_v = inst->load_field_bound(vm, new_string(gc, "tag"));
     ASSERT_TRUE(tag_v.has_value());
     EXPECT_EQ(tag_v->as_int(), 3);
 }
@@ -2905,7 +2905,7 @@ TEST_F(AriaVMStress, MethodCallBindsInstanceReceiver) {
 }
 
 // 两段式的存在理由:内置类型无 fields 缓存,两步形态每次取方法铸一个 ObjBoundMethod;
-// 两段式经 Object::load_field_unbound 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
+// 两段式经 Object::load_field 直取类表原生值、以 receiver 占槽 0,零分配。分配计数是
 // GC 的确定性读数(不随计时抖动),故本测试直接钉「同一趟 list.push + 取回元素」两侧的分配差 = 1。
 TEST_F(AriaVMStress, MethodCallOnBuiltinSkipsBoundMaterialization) {
 
@@ -2947,7 +2947,7 @@ TEST_F(AriaVMStress, MethodCallOnBuiltinSkipsBoundMaterialization) {
 }
 
 // 两段式的原值直调:命中实例字段里的可调用值时槽 0 填该值本身(不绑 this,与两步形态
-// 留下的栈形一致 -- 字段值不是方法戳闭包,load_field 本就直读)。两形态对照:两侧都不铸
+// 留下的栈形一致 -- 字段值不是方法戳闭包,load_field_bound 本就直读)。两形态对照:两侧都不铸
 // ObjBoundMethod,分配差为 0 -- 两段式不得在此凭空多一次分配。
 TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
 

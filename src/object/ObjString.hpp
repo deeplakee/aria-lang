@@ -63,14 +63,13 @@ namespace aria {
         [[nodiscard]]
         String to_string() const override;
 
-        // 命名成员读取协议 override:查 String bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态权威注见 Object.hpp)。
+        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
         // 下标读取:整数键(字节域),产出单字节 1-char string;负数从尾计数、归一化后
         // 越界 IndexOutOfBounds、非整数 TypeMismatch;多字节序列中间字节取该字节自身(字节

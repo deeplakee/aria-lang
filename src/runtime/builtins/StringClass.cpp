@@ -531,7 +531,7 @@ namespace aria {
     } // namespace
 
     ObjClass* StringClass::make_class(GC& gc, ObjClass* super) {
-        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field 查表命中后
+        // String bootstrap 类:内置 string 的语言方法面载体,经 ObjString::load_field_bound 查表命中后
         // 恒绑定触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "String", super);
         Builtin::register_class_methods(gc, klass, kStringBuiltins);

@@ -55,7 +55,7 @@ namespace aria {
     } // namespace
 
     ObjClass* IteratorClass::make_class(GC& gc, ObjClass* super) {
-        // Iterator bootstrap 类:迭代器的语言方法面载体,经 ObjIterator::load_field 查表命中后恒
+        // Iterator bootstrap 类:迭代器的语言方法面载体,经 ObjIterator::load_field_bound 查表命中后恒
         // 绑定触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Iterator", super);
         Builtin::register_class_methods(gc, klass, kIteratorBuiltins);

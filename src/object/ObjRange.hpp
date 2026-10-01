@@ -10,9 +10,9 @@ namespace aria {
     class ObjString;
 
     // range 对象(ObjType::RANGE):`a..b`(含上界)/ `a...b`(不含上界)/ `a..`(无上界)的运行期载体,壳定长纯值(无外挂 buffer
-    // 、无子对象)。语言方法面只 iter 一个:经 load_field 委托 VM 的 Range bootstrap 类表命中后恒绑定;迭代器不持源对象,
-    // 构造期把端点标量拷走自足(见 ObjRangeIterator)。无上界开区间 to_ 为空(类型即契约),含否上界无意义,ctor 内归一
-    // is_exclusive_ = false(`5..` 与 `5...` 是同一个值)。
+    // 、无子对象)。语言方法面只 iter 一个:经 load_field_bound 委托 VM 的 Range bootstrap
+    // 类表命中后恒绑定;迭代器不持源对象, 构造期把端点标量拷走自足(见 ObjRangeIterator)。无上界开区间 to_
+    // 为空(类型即契约),含否上界无意义,ctor 内归一 is_exclusive_ = false(`5..` 与 `5...` 是同一个值)。
     //   - 内容哈希型不可变对象(Object ctor 注释名单):哈希构造期烘焙(两端点与含否上界折叠过 avalanche);equals 按内容(同
     //     为 range 且三字段全等),`===` 恒指针。无子对象,equals/debug_repr 无环防护义务。
     //   - 不做的面走基类默认:store_field(不可变,基类默认文案即正确行为)、下标与全部 op_* 运算符(无此需求;
@@ -74,14 +74,13 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override:查 Range bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态权威注见 Object.hpp)。
+        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
     private:
         i64      from_;         // 区间起点端点(恒有)

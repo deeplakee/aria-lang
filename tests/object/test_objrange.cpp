@@ -1,4 +1,4 @@
-// ObjRange(纯值表示/内容哈希/equals/load_field 绑定)与 ObjRangeIterator(区间当前值游标,
+// ObjRange(纯值表示/内容哈希/equals/load_field_bound 绑定)与 ObjRangeIterator(区间当前值游标,
 // 无源对象)的对象层测试;错误白盒取件与 GC 守卫形态同 test_objmap/test_objiterator。
 #include <gtest/gtest.h>
 
@@ -166,7 +166,7 @@ TEST(ObjRange, UnboundedEqualsAndHash) {
     EXPECT_NE(a->hash(), to_it->hash());
 }
 
-// ---- 命名成员协议(load_field → VM 的 Range bootstrap 类) ----
+// ---- 命名成员协议(load_field_bound → VM 的 Range bootstrap 类) ----
 
 // bootstrap 契约:类名与 type() 类型名一致、super 挂 Object 根。
 TEST(ObjRange, BootstrapClassContract) {
@@ -183,7 +183,7 @@ TEST(ObjRange, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   range = make_range(gc, guard, 0, 10, false);
-    auto   bound = range->load_field(vm, new_string(gc, "iter"));
+    auto   bound = range->load_field_bound(vm, new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_obj<ObjBoundMethod>(*bound);
@@ -200,7 +200,7 @@ TEST(ObjRange, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   range = make_range(gc, guard, 0, 10, false);
-    EXPECT_FALSE(range->load_field(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(range->load_field_bound(vm, new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class Range> has no member 'nope'");
@@ -215,7 +215,7 @@ TEST(ObjRange, BootstrapSurvivesStressCollect) {
     auto       range   = make_range(gc, guard, 0, 10, false);
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = range->load_field(vm, new_string(gc, "iter"));
+    auto bound = range->load_field_bound(vm, new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_obj<ObjBoundMethod>(*bound);

@@ -35,7 +35,7 @@ namespace aria {
     }
 
     // 类表成员值是否为「方法」:defining class 戳定的方法闭包(MAKE_METHOD 注册时戳;
-    // MAKE_STATIC/类上赋值不戳 ⟹ 静态槽恒非方法)。读路径(ObjInstance::load_field /
+    // MAKE_STATIC/类上赋值不戳 ⟹ 静态槽恒非方法)。读路径(ObjInstance::load_field_bound /
     // LOAD_SUPER_FIELD)的绑定判别谓词:判别不看值类型,一步收「取闭包 + 查戳」两步守卫。
     // **泛化扩展缝**:扩方法承载形态改本谓词即可。
     [[nodiscard]]

@@ -70,12 +70,12 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取:委托 Exception bootstrap 类表(沿链达 Object 根),命中恒绑 this
-        // (表条目全为原生方法)。message/code 方法面即经此触达;miss 的类措辞 fail 随协议透传。
+        // 裸读 override:同趟查找、不铸 ObjBoundMethod,命中原值直出(纯透传)。
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 不绑定形态:同趟查找、不铸 ObjBoundMethod,命中直取类表原生值(纯透传)。
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        // 绑定读 override:委托 Exception bootstrap 类表(沿链达 Object 根),命中恒绑 this(表条目
+        // 全为原生方法)。message/code 方法面即经此触达;miss 的类措辞 fail 随协议透传。
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
     private:
         i64        code_;    // 错误码数字(单一存储:VM 报错 = 注册表序号;Error 码参 = 用户所给 int)

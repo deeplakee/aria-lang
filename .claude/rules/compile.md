@@ -119,7 +119,7 @@ FunDecl/Lambda/类成员方法共用；kind 无默认值、调用处显式写明
 
 - `<iter>` 在 for-in scope（循环全程）：`emit_expr(iterable)` 后经 `emit_method_call0("iter", loc)`（封装 `PREPARE_METHOD name` + `CALL_METHOD 0` 的 0 参方法调用原语，receiver 由调用方先压栈）出值后 `define_local_or_fail("<iter>", loc)` 值填槽（无 `LOAD_NIL`/`STORE_LOCAL`/`POP`）。
 - 每轮开 per-iteration scope：`LOAD_LOCAL <iter>` 后 `emit_method_call0("has_next")` / `JUMP_FALSE L_end`，再 `emit_method_call0("next")` 出值后 `bind_pattern(pattern, Fill)` / 体 / per-iter `end_scope` / `JUMP_BACK`；`L_end` 后 for-in `end_scope` 弹 `<iter>`。
-- iter/has_next/next 经 `PREPARE_METHOD`+`CALL_METHOD` 两段式派发（解析经 `Object::load_field_unbound`，用户定义类与内建 list/map/string/range 同走一路，降糖对来源不可区分）。`visitCallNode` 另对 `recv.name(args)` 形态（含 `this.name(args)`，收口于 `try_emit_method_call`）统一发两段式，`super.m(args)`（`SuperExprNode`）与下标调用 `arr[i](args)` 保持 `LOAD_SUPER_FIELD`/`LOAD_INDEX` + `CALL`。
+- iter/has_next/next 经 `PREPARE_METHOD`+`CALL_METHOD` 两段式派发（解析经 `Object::load_field`，用户定义类与内建 list/map/string/range 同走一路，降糖对来源不可区分）。`visitCallNode` 另对 `recv.name(args)` 形态（含 `this.name(args)`，收口于 `try_emit_method_call`）统一发两段式，`super.m(args)`（`SuperExprNode`）与下标调用 `arr[i](args)` 保持 `LOAD_SUPER_FIELD`/`LOAD_INDEX` + `CALL`。
 
 ### 复合赋值与 lvalue 模式
 

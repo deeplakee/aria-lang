@@ -11,8 +11,8 @@ namespace aria {
     class ObjRange;
 
     // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序存 AriaArray(MAKE_LIST 一次整段
-    // 拷入)。下标读写经 load_index/store_index 协议 override;命名成员(push/pop 等)经 load_field 委托 VM 的 List
-    // bootstrap 类方法表恒绑定。
+    // 拷入)。下标读写经 load_index/store_index 协议 override;命名成员(push/pop 等)经 load_field_bound 委托
+    // VM 的 List bootstrap 类方法表恒绑定。
     //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素 value_equal(嵌套 list 经各自
     //     equals 递归),value_equal 无分配、GC-pure 契约保持;入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);
     //     `===` 恒指针(value_identical,不经本类)。
@@ -58,14 +58,13 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override:查 List bootstrap 类表,命中自持 new_bound_method 恒绑 this
-        //(两步形态权威注见 Object.hpp)。
+        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
         // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range 产
         // 出倒序段、只读;见 slice,切片路径有分配);整数键:负数从尾计数、归一化后越界

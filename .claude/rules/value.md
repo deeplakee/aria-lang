@@ -30,7 +30,7 @@ paths:
 
 - `try_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
 - `is_callable_value(Value)`：类表成员值是否为「可调用」（闭包或原生）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
-- `is_method(Value)`：类表成员值是否为「方法」--defining class 戳定的方法闭包，读路径（`ObjInstance::load_field`/`LOAD_SUPER_FIELD`）的绑定判别谓词；方法承载形态的**泛化扩展缝**。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
+- `is_method(Value)`：类表成员值是否为「方法」--defining class 戳定的方法闭包，读路径（`ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD`）的绑定判别谓词；方法承载形态的**泛化扩展缝**。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
 
 ## `value/Value.hpp` / `.cpp`
 

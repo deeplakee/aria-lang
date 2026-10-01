@@ -45,16 +45,17 @@ namespace aria {
     }
 
     Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) {
-        const auto hit = vm.range_class()->load_field(vm, name);
+        // 裸查找:命中直取 Range bootstrap 类表原生值,不铸 ObjBoundMethod(契约见 Object.hpp);本体是纯透传。
+        return vm.range_class()->load_field(vm, name);
+    }
+
+    Opt<Value> ObjRange::load_field_bound(AriaVM& vm, ObjString* name) {
+        // 绑定读:同名裸查找命中即无条件绑定 this(类表条目全为原生恒为方法;权威注见 Object.hpp)。
+        const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
         }
         return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
-    }
-
-    Opt<Value> ObjRange::load_field_unbound(AriaVM& vm, ObjString* name) {
-        // 不铸 ObjBoundMethod,命中直取类表原生值(契约见 Object.hpp);本体是纯透传。
-        return vm.range_class()->load_field(vm, name);
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

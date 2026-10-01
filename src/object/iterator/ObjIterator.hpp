@@ -13,7 +13,7 @@ namespace aria {
     // 各持自然游标(list 下标 / string 字节偏移 / map 槽位 / range 区间当前值,源码同目录),基类
     // 只钉三件契约:has_next 纯查询、next 越界 fail、trace 标各自的源(纯虚钉住,忘标 = 编译错)。
     // 语言方法面(has_next/next 经 Iterator bootstrap 类表恒绑定)住 runtime/builtins/IteratorClass;
-    // load_field override 基类一次,全子类共享。debug_repr 渲染 "<iterator>";equals 默认地址判等。
+    // load_field / load_field_bound override 基类一次,全子类共享。debug_repr 渲染 "<iterator>";equals 默认地址判等。
     class ObjIterator : public Object {
     public:
         ~ObjIterator() override = default; // 子类成员是 GC 对象/标量,不归本类释放
@@ -34,14 +34,14 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override(基类一次、全子类共享):查 Iterator bootstrap 类表,命中自持
-        // new_bound_method 恒绑 this(两步形态权威注见 Object.hpp)。
+        // 裸读 override(基类一次、全子类共享):同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 方法调用解析 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(见 Object.hpp)。
+        // 绑定读 override:查 Iterator bootstrap 类表,命中自持 new_bound_method 恒绑 this(权威注见
+        // Object.hpp)。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
         // 引擎缝:是否还有下一个元素。纯查询 --无分配、无 fail,故不收 vm。
         [[nodiscard]]

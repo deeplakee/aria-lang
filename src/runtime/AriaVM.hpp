@@ -343,7 +343,7 @@ namespace aria {
         // bool 契约同 call_value:失败载荷已在寄存器(对象协议失败由 override 内 vm.fail 就地
         // 烘焙,非对象守卫由执行体 fail)。peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(「栈即根」)。
 
-        // LOAD_FIELD 执行体(name 已读出):peek obj,经 Object::load_field 协议解析,结果写回
+        // LOAD_FIELD 执行体(name 已读出):peek obj,经 Object::load_field_bound 协议解析,结果写回
         // 原槽([obj] -> [v]);非对象(含 nil)是协议外原语,文案留执行体,对象 miss 文案由协议
         // override 烘焙。
         bool run_load_field(ObjString* name);
@@ -362,7 +362,7 @@ namespace aria {
         bool run_store_this_field(ObjString* name);
 
         // PREPARE_METHOD 执行体(两段式第一段,name 已读出):[recv] -> [recv, target]。接收者在栈顶
-        // (实参尚未求值),经 Object::load_field_unbound 协议解析此刻完成(非对象守卫文案留执行体,
+        // (实参尚未求值),经 Object::load_field 裸查找协议解析此刻完成(非对象守卫文案留执行体,
         // 同 run_load_field);待调值压栈跨指令存活(栈即根),实参随后压其上,由 CALL_METHOD 收口。
         // 解析先于实参求值。
         bool run_prepare_method(ObjString* name);

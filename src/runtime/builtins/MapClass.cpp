@@ -170,7 +170,7 @@ namespace aria {
     } // namespace
 
     ObjClass* MapClass::make_class(GC& gc, ObjClass* super) {
-        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field 查表命中后恒绑定
+        // Map bootstrap 类:内置 map 的语言方法面载体,经 ObjMap::load_field_bound 查表命中后恒绑定
         // 触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Map", super);
         Builtin::register_class_methods(gc, klass, kMapBuiltins);

@@ -15,7 +15,7 @@ namespace aria {
     //   - class_:所属类(字段未命中沿类链查静态表的起点),构造注入、不可变、恒非空(ctor ASSERT)。
     //   - fields_:实例字段表(无字段预声明、动态;惰性分配)。**纯字段** -- 只存真字段,不缓存
     //     方法绑定:缓存会让「类/父类改写方法」对既有实例陈旧、且与新建实例不一致(monkey patch
-    //     半可用且难解释)。故读路径每次访问现场绑定新 bound,调用路径经 `load_field_unbound` 走
+    //     半可用且难解释)。故读路径每次访问现场绑定新 bound,调用路径经裸查找 `load_field` 走
     //     不绑定形态(零分配 + 每次按当前类链解析)。**私有不对外暴露**,读写一律走协议。
     //   地址哈希型、final。trace 标 class_ + fields_(字段里的可调用值经值级联标)。
     class ObjInstance final : public Object {
@@ -47,23 +47,24 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override(方法值**读取**路径):fields 命中优先(真字段遮蔽类链同名
-        // 成员)-> **委托类协议** ObjClass::load_field 沿链读穿透(miss 的类措辞随协议传播)。命中
-        // 方法戳闭包即现场绑 this(每次访问一个新 bound,不缓存),其余原值直读;分配点 GC 安全见 .cpp。
+        // 裸查找 override(PREPARE_METHOD 与算子钩子取实现共用):**不绑定**,返回字段/类链里的
+        // 原值,交 VM 以 receiver 占调用区槽 0 直调(方法体从槽 0 读 this)。零分配,且每次按当前
+        // 类链解析(改类/父类方法立即生效,与读路径同一份可见性)。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 命名成员读取的不绑定形态 override(PREPARE_METHOD 与算子钩子取实现共用):**不绑定**,
-        // 返回字段/类链里的原值,交 VM 以 receiver 占调用区槽 0 直调(方法体从槽 0 读 this)。
-        // 零分配,且每次按当前类链解析(改类/父类方法立即生效,与读路径同一份可见性)。
+        // 绑定读 override(方法值**读取**路径,LOAD_FIELD/LOAD_THIS_FIELD):fields 命中优先(真
+        // 字段遮蔽类链同名成员)-> **委托类协议** ObjClass::load_field 沿链读穿透(miss 的类措辞随
+        // 协议传播)。命中方法戳闭包即现场绑 this(每次访问一个新 bound,不缓存),其余原值直读;
+        // 分配点 GC 安全见 .cpp。
         [[nodiscard]]
-        Opt<Value> load_field_unbound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
         // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
         // 算子与调用协议的 11 个实现(基类默认直接 fail,故参与该协议须显式实现):各自按钩子名(VM 常量串表,
-        // 注册表 runtime/str_table.hpp)经 load_field_unbound 到实例 fields(字段可遮蔽类链钩子)再类链取。
+        // 注册表 runtime/str_table.hpp)经裸查找 load_field 到实例 fields(字段可遮蔽类链钩子)再类链取。
         // 即「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;

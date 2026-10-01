@@ -36,7 +36,7 @@ namespace aria {
     } // namespace
 
     ObjClass* RangeClass::make_class(GC& gc, ObjClass* super) {
-        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field 查表命中后恒
+        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field_bound 查表命中后恒
         // 绑定触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Range", super);
         Builtin::register_class_methods(gc, klass, kRangeBuiltins);

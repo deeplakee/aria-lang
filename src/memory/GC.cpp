@@ -104,7 +104,7 @@ namespace aria {
         temp_roots_.resize(temp_roots_.size() - count);
     }
 
-    ObjString* GC::intern_find(const StringView str) const noexcept { return intern_.find(str); }
+    ObjString* GC::intern_find(const StringView str, const u32 hash) const noexcept { return intern_.find(str, hash); }
 
     void GC::intern_insert(ObjString* str) { intern_.insert(str); }
 

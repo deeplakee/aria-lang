@@ -67,8 +67,7 @@ namespace aria::util {
         return detail::splitmix64_mix32(static_cast<u64>(reinterpret_cast<uintptr_t>(p)));
     }
 
-    // 字符串哈希:FNV-1a 32-bit。ObjString 构造与 InternPool 查询共用同一实现，
-    // 保证同内容同 hash(驻留一致性所系)。
+    // 字符串哈希:FNV-1a 32-bit。
     [[nodiscard]]
     inline u32 hash_str(const StringView s) noexcept {
         return detail::fnv1a_32(reinterpret_cast<const u8*>(s.data()), s.size());

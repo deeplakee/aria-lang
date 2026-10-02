@@ -134,7 +134,7 @@ namespace aria {
         [[nodiscard]] LockGuard make_lock() noexcept { return LockGuard{this}; }
 
         // 驻留池 API:命中返回已有串,未命中 new_object 后 insert。
-        [[nodiscard]] ObjString* intern_find(StringView str) const noexcept;
+        [[nodiscard]] ObjString* intern_find(StringView str, u32 hash) const noexcept;
 
         void intern_insert(ObjString* str);
 

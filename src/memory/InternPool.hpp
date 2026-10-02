@@ -54,14 +54,15 @@ namespace aria {
 
         // 查找内容等于 src 的驻留串。命中返回其 ObjString*,未命中 nullptr。
         [[nodiscard]]
-        ObjString* find(const StringView src) const noexcept {
+        ObjString* find(const StringView src, const u32 hash) const noexcept {
+            ASSERT(hash == util::hash_str(src), "hash must be hash_str(src)");
             if (cap_ == 0) {
                 return nullptr;
             }
 
             const usize mask = cap_ - 1;
 
-            usize pos  = util::hash_str(src);
+            usize pos  = hash;
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {

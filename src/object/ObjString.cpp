@@ -14,8 +14,9 @@
 
 namespace aria {
 
-    ObjString::ObjString(GC& gc, const StringView src) :
-        Object{util::hash_str(src), ObjType::STRING}, gc_{&gc}, length_{src.size()} {
+    ObjString::ObjString(GC& gc, const StringView src, const u32 hash) :
+        Object{hash, ObjType::STRING}, gc_{&gc}, length_{src.size()} {
+        ASSERT(hash == util::hash_str(src), "hash must be hash_str(src)");
         if (is_long()) {
             long_chars_ = gc.allocate<char>(length_ + 1);
             std::memcpy(long_chars_, src.data(), length_);
@@ -105,12 +106,13 @@ namespace aria {
     }
 
     ObjString* new_string(GC& gc, const StringView src) {
-        if (const auto found = gc.intern_find(src)) {
+        const u32 hash = util::hash_str(src); // 单点计算,find 与 ctor 共用,免 miss 路径重复 FNV
+        if (const auto found = gc.intern_find(src, hash)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
         // s 此刻白色无根,但 intern_insert 走 trivial 分配不触发 GC,跨 insert 不会被回收,无需守卫;
         // 唯一 GC 触发点是下方 new_object 顶部的 maybe_collect,发生在 s 诞生前。
-        const auto s = gc.new_object<ObjString>(gc, src);
+        const auto s = gc.new_object<ObjString>(gc, src, hash);
         gc.intern_insert(s);
         return s;
     }

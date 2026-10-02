@@ -14,7 +14,8 @@ namespace aria {
     public:
         static constexpr usize kShortCapacity = 15;
 
-        ObjString(GC& gc, StringView src);
+        ObjString(GC& gc, StringView src, u32 hash);
+
         ~ObjString() override;
 
         // 借出内容视图:非移动 GC 对象地址与缓冲恒定,存活期有效;sweep 回收后即悬垂,勿跨 collect 持有。

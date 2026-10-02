@@ -1,8 +1,13 @@
 #ifndef ARIA_BUILTIN_HPP
 #define ARIA_BUILTIN_HPP
 
+#include <type_traits>
+
 #include "common.hpp"
+#include "error/ErrorCode.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "object/Object.hpp"
+#include "runtime/AriaVM.hpp"
 
 namespace aria {
 
@@ -43,6 +48,24 @@ namespace aria {
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次。
         static void register_builtins(GC& gc, AriaHashTable& builtins);
     };
+
+    // 原生 receiver 提取:slot 须为 T(绑定读路径恒真值;类上裸读后调用的 stray 是语言可达形态,
+    // 守卫拦下)。命中返 T*,miss fail 后返 nullptr,调用方 false 出口;tag 与报错小写限定词取自
+    // obj_tag<T>()(Object.hpp 的 tag 事实表)。
+    template<DerivedFromObj T>
+    [[nodiscard]]
+    T* receiver(AriaVM& vm, const Value slot) {
+        constexpr auto tag = obj_tag<T>(); // 结构化绑定不可 constexpr,case 需常量表达式
+        if (slot.is_obj()) {
+            switch (Object* obj = slot.as_obj(); obj->type()) {
+                case tag.tag:
+                    return Object::as<T>(obj);
+                default:
+                    break;
+            }
+        }
+        return vm.fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(slot));
+    }
 
 } // namespace aria
 

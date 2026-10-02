@@ -38,8 +38,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            String     out{str->view()};
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            String out{self->view()};
             for (char& c: out) {
                 if (c >= 'a' && c <= 'z') {
                     c = static_cast<char>(c - 'a' + 'A');
@@ -55,8 +58,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            String     out{str->view()};
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            String out{self->view()};
             for (char& c: out) {
                 if (c >= 'A' && c <= 'Z') {
                     c = static_cast<char>(c - 'A' + 'a');
@@ -78,7 +84,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            auto trimmed = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            auto trimmed = self->view();
             while (!trimmed.empty() && is_ascii_space(trimmed.front())) {
                 trimmed.remove_prefix(1);
             }
@@ -150,7 +160,11 @@ namespace aria {
             }
             // receiver 全程留槽 0(临时串只有 intern 弱根,覆写即悬垂),src 即其视图;产出 list
             // 白色,下一句写回槽 0 发布,两句间无 GC 点故不再挂守卫;sep 经 slots[1] 恒为根。
-            const auto src  = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto src  = self->view();
             const auto list = sep == nullptr ? split_on_space(vm, src) : split_by_sep(vm, src, sep->view());
             slots[0]        = Value::from_obj(list);
             return true;
@@ -166,8 +180,11 @@ namespace aria {
             if (sub == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "find argument must be a string, got {}", type_name(slots[1]));
             }
-            const auto  str = Object::as<ObjString>(slots[0].as_obj());
-            const usize hit = str->view().find(sub->view());
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const usize hit = self->view().find(sub->view());
             slots[0]        = hit == StringView::npos ? Value::nil_val() : Value::from_int(static_cast<i64>(hit));
             return true;
         }
@@ -183,8 +200,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "contains argument must be a string, got {}",
                                type_name(slots[1]));
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(str->view().contains(sub->view()));
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().contains(sub->view()));
             return true;
         }
 
@@ -204,8 +224,11 @@ namespace aria {
             if (old_str->length() == 0) {
                 return vm.fail(ErrorCode::EmptyPattern, "replace pattern must not be empty");
             }
-            const auto       str   = Object::as<ObjString>(slots[0].as_obj());
-            const StringView src   = str->view();
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const StringView src   = self->view();
             const StringView old_v = old_str->view();
             const StringView new_v = new_str->view();
             String           out;
@@ -239,15 +262,17 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "substring index must be an integer, got {}",
                                type_name(slots[2]));
             }
-            const auto str    = Object::as<ObjString>(slots[0].as_obj());
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
             const i64  begin  = slots[1].as_int();
-            const auto length = static_cast<i64>(str->length());
+            const auto length = static_cast<i64>(self->length());
             const i64  end    = argc == 2 ? slots[2].as_int() : length;
             if (begin < 0 || end < begin || end > length) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "substring range {}..{} out of range", begin, end);
             }
-            slots[0] = Value::from_obj(new_string(
-                    vm.gc(), str->view().substr(static_cast<usize>(begin), static_cast<usize>(end - begin))));
+            slots[0] = Value::from_obj(new_string(vm.gc(), self->view().substr(begin, end - begin)));
             return true;
         }
 
@@ -262,8 +287,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "starts_with argument must be a string, got {}",
                                type_name(slots[1]));
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(str->view().starts_with(prefix->view()));
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().starts_with(prefix->view()));
             return true;
         }
 
@@ -277,8 +305,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "ends_with argument must be a string, got {}",
                                type_name(slots[1]));
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(str->view().ends_with(suffix->view()));
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().ends_with(suffix->view()));
             return true;
         }
 
@@ -288,8 +319,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_int(static_cast<i64>(str->length()));
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_int(static_cast<i64>(self->length()));
             return true;
         }
 
@@ -299,8 +333,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(str->length() == 0);
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->length() == 0);
             return true;
         }
 
@@ -311,7 +348,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto src   = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto src   = self->view();
             const auto list  = new_list(vm.gc());
             const auto guard = vm.gc().make_guard(list);
             for (usize offset = 0; offset < src.size();) {
@@ -335,8 +376,12 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "codepoint index must be an integer, got {}",
                                type_name(slots[1]));
             }
-            const i64  index  = slots[1].as_int();
-            const auto src    = Object::as<ObjString>(slots[0].as_obj())->view();
+            const i64  index = slots[1].as_int();
+            const auto self  = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto src    = self->view();
             usize      offset = 0;
             for (i64 seen = 0; offset < src.size(); ++seen) {
                 const auto [cp, width] = utf8::decode_one(src, offset);
@@ -355,7 +400,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto parsed = util::parse_int_text(Object::as<ObjString>(slots[0].as_obj())->view());
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto parsed = util::parse_int_text(self->view());
             slots[0]          = parsed ? Value::from_int(*parsed) : Value::nil_val();
             return true;
         }
@@ -366,7 +415,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto parsed = util::parse_float_text(Object::as<ObjString>(slots[0].as_obj())->view());
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto parsed = util::parse_float_text(self->view());
             slots[0]          = parsed ? Value::from_f64(*parsed) : Value::nil_val();
             return true;
         }
@@ -377,8 +430,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto str = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_obj(new_string_iterator(vm.gc(), str));
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_obj(new_string_iterator(vm.gc(), self));
             return true;
         }
 
@@ -396,8 +452,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__lt__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) < 0);
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().compare(rhs->view()) < 0);
             return true;
         }
 
@@ -411,8 +470,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__le__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) <= 0);
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().compare(rhs->view()) <= 0);
             return true;
         }
 
@@ -426,8 +488,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__gt__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) > 0);
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().compare(rhs->view()) > 0);
             return true;
         }
 
@@ -441,8 +506,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__ge__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            slots[0]       = Value::from_bool(lhs->view().compare(rhs->view()) >= 0);
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->view().compare(rhs->view()) >= 0);
             return true;
         }
 
@@ -457,8 +525,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
                                type_name(slots[0]), type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjString>(slots[0].as_obj());
-            String     buffer;
+            const auto lhs = receiver<ObjString>(vm, slots[0]);
+            if (lhs == nullptr) {
+                return false;
+            }
+            String buffer;
             buffer.reserve(lhs->length() + rhs->length());
             buffer.append(lhs->view()).append(rhs->view());
             slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
@@ -481,7 +552,11 @@ namespace aria {
             if (count < 0) {
                 return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto src = Object::as<ObjString>(slots[0].as_obj())->view();
+            const auto self = receiver<ObjString>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto src = self->view();
             String     buffer;
             buffer.reserve(src.size() * static_cast<usize>(count));
             for (i64 i = 0; i < count; ++i) {

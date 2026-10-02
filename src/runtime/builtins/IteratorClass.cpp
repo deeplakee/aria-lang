@@ -49,9 +49,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            // 绑定路径契约:slots[0] 恒 ObjIterator 子类实例,DEBUG 下 as 走 dynamic_cast 校验。
-            const auto iter = Object::as<ObjIterator>(slots[0].as_obj());
-            slots[0]        = Value::from_bool(iter->has_next());
+            const auto self = receiver<ObjIterator>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->has_next());
             return true;
         }
 
@@ -61,8 +63,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto iter  = Object::as<ObjIterator>(slots[0].as_obj());
-            const auto value = iter->next(vm);
+            const auto self = receiver<ObjIterator>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto value = self->next(vm);
             if (!value) {
                 return false; // 已 fail(IterationExhausted)
             }

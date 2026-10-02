@@ -75,25 +75,28 @@ namespace aria {
         }
     }
 
-    // Object 自前向声明(concept 延迟求值 is_base_of,须先有名字)。
+    class AriaVM;
+    class GC;
     class Object;
+    class ObjString;
+    class ObjFunction;
+    class ObjNativeFn;
+    class ObjUpvalue;
+    class ObjClosure;
+    class ObjClass;
+    class ObjInstance;
+    class ObjBoundMethod;
+    class ObjList;
+    class ObjMap;
+    class ObjModule;
+    class ObjRange;
+    class ObjException;
+    class ObjIterator;
+    class ObjMovement;
 
     // 供 is<T>/as<T> 与 GC::new_object<T> 约束 T 派生自 Object(is_base_of 延迟到实例化点)。
     template<typename T>
     concept DerivedFromObj = std::is_base_of_v<Object, T>;
-
-    // 前向声明:虚函数签名只需不完整类型,完整定义见各自头。
-    class GC;
-    class ObjString;
-    // AriaVM:基类默认体定义在 Object.cpp(vm.fail 是 AriaVM.hpp 内模板,而 AriaVM.hpp 经
-    // ObjException.hpp 依赖本头、两头互不 include,出定义避环)。
-    class AriaVM;
-
-    // 工厂守卫纪律(**每方只守自己创建的**,全部 new_<type> 工厂通用 -- 各工厂不再复述):
-    // 工厂不替调用方守卫**入参**(入参非本工厂创建);工厂内部新建的对象(便捷重载内 intern 的
-    // 串)自带 make_guard 自守跨 new_object 顶 maybe_collect。故**调用方须在调用前自行根化自己
-    // 传入的对象入参**(name / klass / module / super 等经 intern 或模块表皆为 weak root);工厂
-    // 返回对象白色无根,建成即须发布进根(写回值栈槽 / 链入 VM 开链)。
 
     class Object {
     public:
@@ -243,11 +246,50 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
-        // is<T>() 一律 dynamic_cast 谓词(子类型均已落地,类型数个位数量级无需查表形态)。
+        // 类型判定 = switch 对运行时 tag 分派(读一次 type(),各臂对编译期 T 做类型比对;
+        // 两配置同价零 RTTI)。穷尽无 default:新增 ObjType 时 -Wswitch 逼同步本表。分辨率 =
+        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;null 入参返 false。
         template<DerivedFromObj T>
         [[nodiscard]]
         static bool is(const Object* object) noexcept {
-            return dynamic_cast<const T*>(object) != nullptr;
+            if (object == nullptr) {
+                return false;
+            }
+            switch (object->type()) {
+                case ObjType::BASE:
+                    return false; // 抽象根 tag,无对象携带
+                case ObjType::STRING:
+                    return std::is_same_v<T, ObjString>;
+                case ObjType::FUNCTION:
+                    return std::is_same_v<T, ObjFunction>;
+                case ObjType::NATIVE_FN:
+                    return std::is_same_v<T, ObjNativeFn>;
+                case ObjType::UPVALUE:
+                    return std::is_same_v<T, ObjUpvalue>;
+                case ObjType::CLASS:
+                    return std::is_same_v<T, ObjClass>;
+                case ObjType::INSTANCE:
+                    return std::is_same_v<T, ObjInstance>;
+                case ObjType::BOUND_METHOD:
+                    return std::is_same_v<T, ObjBoundMethod>;
+                case ObjType::LIST:
+                    return std::is_same_v<T, ObjList>;
+                case ObjType::MAP:
+                    return std::is_same_v<T, ObjMap>;
+                case ObjType::MODULE:
+                    return std::is_same_v<T, ObjModule>;
+                case ObjType::RANGE:
+                    return std::is_same_v<T, ObjRange>;
+                case ObjType::ITERATOR:
+                    return std::is_same_v<T, ObjIterator>;
+                case ObjType::EXCEPTION:
+                    return std::is_same_v<T, ObjException>;
+                case ObjType::CLOSURE:
+                    return std::is_same_v<T, ObjClosure>;
+                case ObjType::MOVEMENT:
+                    return std::is_same_v<T, ObjMovement>;
+            }
+            UNREACHABLE();
         }
 
         // 前置条件:调用前已经 is<T>() / switch(type()) 确认动态类型匹配--NDEBUG 下是
@@ -305,6 +347,30 @@ namespace aria {
 
     inline void log_obj_alloc(Object* obj) {
         io::println("{:p} allocate bytes {} (Object {})", util::to_void_ptr(obj), obj->size(), obj->type_name());
+    }
+
+    // 具体子类型的 tag 事实表:ObjType 标识 + 报错用小写限定词(读作「某个 list 下标」,与类型
+    // 名的 PascalCase 分属两域)。消费方 = 类型守卫与按类报错;与 is<T> 的分派表是同一 tag↔类
+    // 关联的两向。表对五内建类封闭,新增守卫类别须在此扩臂。
+    struct ObjTag {
+        ObjType    tag;
+        StringView word;
+    };
+
+    template<DerivedFromObj T>
+    constexpr ObjTag obj_tag() {
+        if constexpr (std::is_same_v<T, ObjList>) {
+            return {ObjType::LIST, "list"};
+        } else if constexpr (std::is_same_v<T, ObjString>) {
+            return {ObjType::STRING, "string"};
+        } else if constexpr (std::is_same_v<T, ObjMap>) {
+            return {ObjType::MAP, "map"};
+        } else if constexpr (std::is_same_v<T, ObjRange>) {
+            return {ObjType::RANGE, "range"};
+        } else if constexpr (std::is_same_v<T, ObjIterator>) {
+            return {ObjType::ITERATOR, "iterator"};
+        }
+        UNREACHABLE();
     }
 
 } // namespace aria

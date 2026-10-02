@@ -33,8 +33,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            slots[0]          = Value::from_int(static_cast<i64>(table.size()));
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_int(static_cast<i64>(self->table().size()));
             return true;
         }
 
@@ -44,8 +47,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            slots[0]          = Value::from_bool(table.empty());
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->table().empty());
             return true;
         }
 
@@ -55,8 +61,12 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            slots[0]          = Value::from_bool(table.find(slots[1]) != nullptr);
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto entry = self->table().find(slots[1]);
+            slots[0]         = Value::from_bool(entry != nullptr);
             return true;
         }
 
@@ -66,9 +76,12 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            const auto  entry = table.find(slots[1]);
-            slots[0]          = entry != nullptr ? entry->value : Value::nil_val();
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto entry = self->table().find(slots[1]);
+            slots[0]         = entry != nullptr ? entry->value : Value::nil_val();
             return true;
         }
 
@@ -78,8 +91,11 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            slots[0]    = Value::from_bool(table.erase(slots[1]));
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->table().erase(slots[1]));
             return true;
         }
 
@@ -89,7 +105,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            Object::as<ObjMap>(slots[0].as_obj())->table().clear();
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            self->table().clear();
             slots[0] = Value::nil_val();
             return true;
         }
@@ -101,9 +121,12 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            const auto  list  = new_list(vm.gc());
-            for (const auto& [key, _]: table) {
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto list = new_list(vm.gc());
+            for (const auto& [key, _]: self->table()) {
                 list->elements().push(key);
             }
             slots[0] = Value::from_obj(list);
@@ -116,9 +139,12 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            const auto  list  = new_list(vm.gc());
-            for (const auto& [_, value]: table) {
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto list = new_list(vm.gc());
+            for (const auto& [_, value]: self->table()) {
                 list->elements().push(value);
             }
             slots[0] = Value::from_obj(list);
@@ -133,10 +159,13 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& table = Object::as<ObjMap>(slots[0].as_obj())->table();
-            const auto  pairs = new_list(vm.gc());
-            const auto  guard = vm.gc().make_guard(pairs);
-            for (const auto& [key, value]: table) {
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto pairs = new_list(vm.gc());
+            const auto guard = vm.gc().make_guard(pairs);
+            for (const auto& [key, value]: self->table()) {
                 const auto pair = new_list(vm.gc());
                 pair->elements().push(key);
                 pair->elements().push(value);
@@ -152,8 +181,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto map = Object::as<ObjMap>(slots[0].as_obj());
-            slots[0]       = Value::from_obj(new_map_iterator(vm.gc(), map));
+            const auto self = receiver<ObjMap>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_obj(new_map_iterator(vm.gc(), self));
             return true;
         }
 

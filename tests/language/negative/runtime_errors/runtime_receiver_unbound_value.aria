@@ -1,0 +1,3 @@
+// 钉住:类上裸读的原生值经一等值中转调用(S2,槽 0 残留被调原生自身)报 TypeMismatch。
+var f = List.push;
+f(1);

@@ -1,0 +1,3 @@
+// 钉住:receiver 守卫文案按接收类型变词(string 类 -> "must be a string"),S1 形态;元数合法
+//(0 元)守卫才触达。
+String.upper();

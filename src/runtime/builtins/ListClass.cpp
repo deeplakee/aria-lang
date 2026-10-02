@@ -34,9 +34,11 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            // 绑定路径契约:slots[0] 恒本 list,DEBUG 下 as 走 dynamic_cast 校验。
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            list.push(slots[1]); // trivial 分配不触 GC
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            self->elements().push(slots[1]); // trivial 分配不触 GC
             slots[0] = Value::nil_val();
             return true;
         }
@@ -47,7 +49,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            auto& list = self->elements();
             if (list.empty()) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "pop from empty list");
             }
@@ -66,12 +72,15 @@ namespace aria {
             if (!slots[1].is_int()) {
                 return vm.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(slots[1]));
             }
-            auto&      list     = Object::as<ObjList>(slots[0].as_obj())->elements();
-            const auto position = util::resolve_position(slots[1].as_int(), list.size());
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto position = util::resolve_position(slots[1].as_int(), self->elements().size());
             if (!position) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", slots[1].as_int());
             }
-            list.insert(*position, slots[2]);
+            self->elements().insert(*position, slots[2]);
             slots[0] = Value::nil_val();
             return true;
         }
@@ -82,8 +91,11 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            slots[0]   = Value::from_bool(list.remove(slots[1]));
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->elements().remove(slots[1]));
             return true;
         }
 
@@ -97,7 +109,11 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
                                type_name(slots[1]));
             }
-            auto&      list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            auto&      list = self->elements();
             const auto slot = util::resolve_index(slots[1].as_int(), list.size());
             if (!slot) {
                 return vm.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", slots[1].as_int());
@@ -113,8 +129,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            list.clear();
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            self->elements().clear();
             slots[0] = Value::nil_val();
             return true;
         }
@@ -144,7 +163,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            auto& list = self->elements();
             if (!list.empty()) {
                 // 首元素定域,两类皆非即报(只含其类型);其余元素逐个须同域,破域(含两类皆非)
                 // 报首元素与破类元素两类类型。
@@ -172,8 +195,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            std::ranges::reverse(list); // trivial 交换,无 GC 点
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            std::ranges::reverse(self->elements()); // trivial 交换,无 GC 点
             slots[0] = Value::nil_val();
             return true;
         }
@@ -184,9 +210,12 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            const auto  hit  = list.find(slots[1]);
-            slots[0]         = hit ? Value::from_int(static_cast<i64>(*hit)) : Value::nil_val();
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto hit = self->elements().find(slots[1]);
+            slots[0]       = hit ? Value::from_int(static_cast<i64>(*hit)) : Value::nil_val();
             return true;
         }
 
@@ -196,8 +225,11 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            slots[0]         = Value::from_bool(list.contains(slots[1]));
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->elements().contains(slots[1]));
             return true;
         }
 
@@ -207,8 +239,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            slots[0]         = Value::from_int(static_cast<i64>(list.size()));
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_int(static_cast<i64>(self->elements().size()));
             return true;
         }
 
@@ -218,8 +253,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            slots[0]         = Value::from_bool(list.empty());
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_bool(self->elements().empty());
             return true;
         }
 
@@ -234,9 +272,12 @@ namespace aria {
             if (sep == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(slots[1]));
             }
-            const auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
-            const auto  str  = util::join(list, sep->view(), format_value);
-            slots[0]         = Value::from_obj(new_string(vm.gc(), str));
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            const auto str = util::join(self->elements(), sep->view(), format_value);
+            slots[0]       = Value::from_obj(new_string(vm.gc(), str));
             return true;
         }
 
@@ -246,8 +287,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto list = Object::as<ObjList>(slots[0].as_obj());
-            slots[0]        = Value::from_obj(new_list_iterator(vm.gc(), list));
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_obj(new_list_iterator(vm.gc(), self));
             return true;
         }
 
@@ -265,7 +309,10 @@ namespace aria {
                 return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
                                type_name(slots[0]), type_name(slots[1]));
             }
-            const auto lhs = Object::as<ObjList>(slots[0].as_obj());
+            const auto lhs = receiver<ObjList>(vm, slots[0]);
+            if (lhs == nullptr) {
+                return false;
+            }
             const auto out = new_list(vm.gc());
             out->elements().reserve(lhs->elements().size() + rhs->elements().size());
             out->elements().copy_from(lhs->elements());
@@ -289,11 +336,14 @@ namespace aria {
             if (count < 0) {
                 return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto lhs = Object::as<ObjList>(slots[0].as_obj());
+            const auto self = receiver<ObjList>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
             const auto out = new_list(vm.gc());
-            out->elements().reserve(lhs->elements().size() * static_cast<usize>(count));
+            out->elements().reserve(self->elements().size() * static_cast<usize>(count));
             for (i64 i = 0; i < count; ++i) {
-                out->elements().copy_from(lhs->elements());
+                out->elements().copy_from(self->elements());
             }
             slots[0] = Value::from_obj(out);
             return true;

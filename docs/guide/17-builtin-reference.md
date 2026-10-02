@@ -160,6 +160,7 @@ Runtime: TypeMismatch __add__ requires two strings, got String and Int
 Runtime: TypeMismatch operator '<' requires numbers, got Int and String
 Runtime: TypeMismatch range bounds must be integers, got F64 and Int
 Runtime: TypeMismatch cannot inherit from built-in class 'List'
+Runtime: TypeMismatch receiver must be a list, got Class
 Runtime: TypeMismatch list index must be an integer, got Range
 Runtime: TypeMismatch type Module does not support field assignment
 Runtime: TypeMismatch sort requires all numbers or all strings, got Int and String

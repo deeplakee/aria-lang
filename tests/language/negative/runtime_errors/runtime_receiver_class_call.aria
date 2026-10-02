@@ -1,0 +1,3 @@
+// 钉住:类上裸读方法后直调(S1 两段式,槽 0 = 类对象)报 TypeMismatch -- receiver 守卫拦截,
+// 不再是 unchecked cast 的 UB。
+List.push(1);

@@ -1,0 +1,2 @@
+Runtime: TypeMismatch receiver must be a string, got Class
+at <main> (

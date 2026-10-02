@@ -44,8 +44,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto range = Object::as<ObjRange>(slots[0].as_obj());
-            slots[0]         = Value::from_obj(new_range_iterator(vm.gc(), range));
+            const auto self = receiver<ObjRange>(vm, slots[0]);
+            if (self == nullptr) {
+                return false;
+            }
+            slots[0] = Value::from_obj(new_range_iterator(vm.gc(), self));
             return true;
         }
 

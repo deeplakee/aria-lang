@@ -1,0 +1,2 @@
+// 钉住：Range 构造器端点须整数，非整数报 TypeMismatch（与 MAKE_RANGE 同族文案）。
+Range("a");

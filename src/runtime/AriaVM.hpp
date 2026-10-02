@@ -345,6 +345,11 @@ namespace aria {
         // maybe_collect(栈即根),铸完 drop 再 push。
         bool run_make_range(u8 flags);
 
+        // MAKE_CLASS 执行体:[super] -> [class] 原地写回。super 须类值、且非内建容器五类
+        //(iterator/list/map/string/range,Exception 与 Object 可作 super),否则 fail TypeMismatch;
+        // super peek 在栈跨 new_class 的 maybe_collect(栈即根),建成原地写回槽发布。
+        bool run_make_class(ObjString* name);
+
         // 取走 *current_ 挂起载荷并拆 (码, 烘焙消息) 两件:ObjException 直取自身码与消息
         //(re-throw 保码),其余载荷兜底 UncaughtException;消费点一律 Error::from_baked 物化 --
         // Error 只在边界成型。

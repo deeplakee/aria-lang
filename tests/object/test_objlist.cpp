@@ -598,9 +598,9 @@ TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     EXPECT_EQ(native->name()->view(), "push");
 }
 
-// init 沿链解析到 Object 根的 no-op init(List 表自身无 init;调用返回 receiver 自身的语义
-// 钉在 Compiler.ListInitResolvesToObjectRootNoOp)。
-TEST(ObjList, LoadFieldInitResolvesToObjectRoot) {
+// init 解析到 List 类自身的工厂原生(类调用 List(...) 即构造,receiver 被忽略;xs.init() 产
+// 全新空表的语义钉在 Compiler.ListInitCallsFactoryNative)。
+TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     AriaVM vm;
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();

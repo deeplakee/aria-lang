@@ -44,12 +44,13 @@
 
 `co` 非协程报 `TypeMismatch`（`create` 对应报 fn 非函数）。
 
-## string 方法面（17 个 + 6 个算子钩子）
+## string 方法面（18 个 + 6 个算子钩子）
 
 字符串不可变，所有变换产新串。除 `codepoint_at`（码点序号）外，下标与长度一律**字节域**。
 
 | 方法 | 行为 |
 | :--- | :--- |
+| `String(v)` 类调用 | 转换构造：任意值经可读渲染转成字符串（与 `str()` 同域）；恰收 1 元 |
 | `upper()` / `lower()` | ASCII 大小写转换 |
 | `trim()` | 去首尾 ASCII 空白 |
 | `split([sep])` | 带 sep：按分隔符切、保留空段；无参：按连续空白切、丢空段 |
@@ -69,12 +70,13 @@
 算子钩子（内建形态，见第 13 章）：`__add__`（两侧皆 String 的 `+`）、`__mul__`（String *
 非负整数 Int 的重复）、`__lt__` / `__le__` / `__gt__` / `__ge__`（无符号字节序比较）。
 
-## list 方法面（14 个 + 2 个算子钩子）
+## list 方法面（15 个 + 2 个算子钩子）
 
 变更方法一律**就地改**；返回值列明。
 
 | 方法 | 行为 |
 | :--- | :--- |
+| `List(...)` 类调用 | 工厂构造：实参即元素（0+ 元），`List()` 空表 |
 | `push(x)` | 追加末尾，返 nil |
 | `pop()` | 移除并返回末元素；空表报 `IndexOutOfBounds` |
 | `insert(i, x)` | 位置 i 前插入；负数从尾计数，`i == size` 合法（即追加） |
@@ -92,12 +94,13 @@
 算子钩子（内建形态，见第 13 章）：`__add__`（两侧皆 List 的 `+`，产浅拷新表）、`__mul__`
 （List * 非负整数 Int 的重复，产新表；乘数校验同 string）。
 
-## map 方法面（10 个）
+## map 方法面（11 个）
 
 键判等一律 `===`（第 7 章）。
 
 | 方法 | 行为 |
 | :--- | :--- |
+| `Map()` 类调用 | 工厂构造空表；只收 0 元，带实参报 `WrongArity` |
 | `size()` / `is_empty()` | 键值对数 / 空表谓词 |
 | `has(key)` | 键存在判定 |
 | `get(key)` | 读值，未命中返 `nil`（与「值为 nil」不可分，分辨用 `has`） |
@@ -110,7 +113,9 @@
 
 | 类型 | 方法 | 行为 |
 | :--- | :--- | :--- |
+| range | `Range(a)` / `Range(a, b)` 类调用 | 工厂构造：等价 `a...`（无上界）/ `a...b`（不含上界），端点须整数 |
 | range | `iter()` | 整数迭代器（方向由端点定）。range 方法面目前仅此一个 |
+| iterator | `Iterator(src)` 类调用 | 工厂构造：按源类型铸迭代器，只收 string / list / map |
 | iterator | `has_next()` | 是否还有值 |
 | iterator | `next()` | 取下一值并推进；耗尽后再调报 `IterationExhausted` |
 
@@ -154,6 +159,7 @@ Runtime: KeyError map key not found: "nope"
 Runtime: TypeMismatch __add__ requires two strings, got String and Int
 Runtime: TypeMismatch operator '<' requires numbers, got Int and String
 Runtime: TypeMismatch range bounds must be integers, got F64 and Int
+Runtime: TypeMismatch cannot inherit from built-in class 'List'
 Runtime: TypeMismatch list index must be an integer, got Range
 Runtime: TypeMismatch type Module does not support field assignment
 Runtime: TypeMismatch sort requires all numbers or all strings, got Int and String

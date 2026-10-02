@@ -1,0 +1,2 @@
+// 钉住：Iterator 构造器只收 string/list/map，其他类型报 TypeMismatch。
+Iterator(5);

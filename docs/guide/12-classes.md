@@ -193,7 +193,9 @@ hi aria
 ## 继承与 super
 
 `def Child : Parent` 单继承，链式查找统一终止于隐式根 `Object`（`def Foo` 等价
-`def Foo : Object`）。方法沿链找最近实现；`super.` 前缀显式调**父类**实现：
+`def Foo : Object`，显式写出亦合法）。内建类中只有 `Exception` 能当父类（第 14 章的
+自定义异常），`List` / `Map` 等其余内建类写进继承位是运行期错误。方法沿链找最近实现；
+`super.` 前缀显式调**父类**实现：
 
 ```aria
 def Animal {
@@ -298,8 +300,8 @@ println(acc);
   变量（`var`）、嵌套类（类体内 `def`，外层类的静态成员，经 `A.B` 全路径引用）。
   读取链：实例字段 → 类链静态。
 - `obj.method` 取绑定方法，一等值。
-- `def Child : Parent` 单继承止于 `Object`；`super.` 调父实现，仅直接实例方法可用；
-  静态成员读穿透、写遮蔽。
+- `def Child : Parent` 单继承止于 `Object`（内建类除 `Exception` 外不可继承）；
+  `super.` 调父实现，仅直接实例方法可用；静态成员读穿透、写遮蔽。
 - 实现 `iter` / `has_next` / `next` 即可被 for-in 遍历。
 
 ## 练习

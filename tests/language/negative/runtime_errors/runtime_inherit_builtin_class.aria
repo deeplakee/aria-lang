@@ -1,0 +1,3 @@
+// 钉住：内建容器五类不可继承（MAKE_CLASS 守卫），def 执行时报 TypeMismatch。
+def Foo : List {
+}

@@ -859,6 +859,23 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_make_class(ObjString* name) {
+        // 契约见 AriaVM.hpp;[super] -> [class] 原地写回,铸类不弹不压。
+        if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
+            // 内建容器五类不可继承(方法面 receiver 恒具体内建对象,实例无从满足);Object 放行:
+            // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
+            if (super == list_class() || super == map_class() || super == string_class() || super == range_class() ||
+                super == iterator_class()) {
+                return fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'", super->name()->view());
+            }
+            const auto klass  = new_class(gc_, name, super);
+            current_->peek(0) = Value::from_obj(klass);
+            return true;
+        }
+        // 非类值是语言可达错误,故 fail 而非 ASSERT。
+        return fail(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
+    }
+
     bool AriaVM::run_load_super_field(ObjString* name) {
         // 契约见 AriaVM.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
         const auto& frame    = current_->frames().top();
@@ -1327,18 +1344,12 @@ namespace aria {
                 }
 
                 // 类与对象
-                case OpCode::MAKE_CLASS: {
-                    // name:u16;[super] -> [class]:peek super 不先弹 -- new_class 顶 maybe_collect
-                    // 须 super 在栈(栈即根);非类值是语言可达错误,故 raise 而非 ASSERT。
-                    if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
-                        const auto klass  = new_class(gc_, read_name(frame), super);
-                        current_->peek(0) = Value::from_obj(klass);
-                        break;
+                case OpCode::MAKE_CLASS:
+                    // name:u16;[super] -> [class]:原地写回;非类值 / 内建类 super 为语言可达错误。
+                    if (!run_make_class(read_name(frame))) {
+                        goto unwind_check;
                     }
-
-                    raise(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(current_->peek(0)));
-                    goto unwind_check;
-                }
+                    break;
                 case OpCode::MAKE_METHOD: {
                     // name:u16;[class, closure] -> [class]:实例方法注册,仅收闭包(方法性 =
                     // defining class 戳),栈形经 ASSERT 校验(值恒来自上一条 CLOSURE,语言写不出

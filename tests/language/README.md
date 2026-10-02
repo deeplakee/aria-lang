@@ -114,6 +114,14 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   `keys()`/`values()`/`pairs()` 各铸新 list 快照（与源 map 解耦，序 unspecified、与 for-in 同，
   用例不得依赖具体序；三者同槽位序，故同一次快照内 `keys()[i]`、`values()[i]` 与 `pairs()[i]`
   三元对齐）；`pairs()` 每元素是 `[k, v]` 二元 list（与 for-in 每轮产出、`iter().next()` 同一形状）。
+- **内建类工厂构造**（12_collections/builtin_class_constructors、13_strings/string_constructor）：
+  类调用即构造（init 为原生工厂，覆盖 call_class 预置的临时 instance 产出真值）--
+  `List(...)` 实参即元素（0+ 元）、`Map()` 只收 0 元、`String(v)` 与 `str()` 同域、
+  `Range(a)` / `Range(a, b)` 等价 `a...` / `a...b`、`Iterator(src)` 恰 1 元只收
+  string/list/map；产物与字面量产物同表示，方法面/下标/is_a 全部可用。
+- **内建类继承守卫**：内建容器五类（iterator/list/map/string/range）不可作 superclass，
+  `def` 执行时报 `TypeMismatch`（MAKE_CLASS 运行期守卫；Exception 可继承、Object 亦可
+  显式写出），负向见 runtime_inherit_builtin_class 与 runtime_ctor_* 三例。
 - **Exception 面**（07_exceptions）：运行期错误装箱对象与 `Error(msg[, code])` 工厂产物有
   `message()`/`code()` 方法（完整烘焙消息 / 错误码数字：VM 报错 = 注册表序号，Error 码参
   收整数原样携带，非整数报 `TypeMismatch`）；裸名 `Exception` 可被子类化（实例是普通

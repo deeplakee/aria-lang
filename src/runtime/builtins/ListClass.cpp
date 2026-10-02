@@ -19,6 +19,15 @@ namespace aria {
 
     namespace {
 
+        // init(...) -> list:工厂构造,实参收进新 list 覆盖槽 0(call_class 预置的临时 instance 被替换)。
+        // GC 走查:实参全程在槽即根,copy_from 走 trivial 分配不触 GC,白色 list 写槽即发布。
+        bool fn_init(AriaVM& vm, Span<Value> slots) {
+            const auto list = new_list(vm.gc());
+            list->elements().copy_from({slots.data() + 1, slots.size() - 1});
+            slots[0] = Value::from_obj(list);
+            return true;
+        }
+
         // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
         bool fn_push(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -292,14 +301,12 @@ namespace aria {
 
         // list 方法表。
         constexpr BuiltinFnEntry kListBuiltins[] = {
-                {"push", fn_push},           {"pop", fn_pop},
-                {"insert", fn_insert},       {"remove", fn_remove},
-                {"remove_at", fn_remove_at}, {"clear", fn_clear},
-                {"sort", fn_sort},           {"reverse", fn_reverse},
-                {"find", fn_find},           {"contains", fn_contains},
-                {"size", fn_size},           {"is_empty", fn_is_empty},
-                {"join", fn_join},           {"iter", fn_iter},
-                {"__add__", fn___add__},     {"__mul__", fn___mul__},
+                {"init", fn_init},         {"push", fn_push},         {"pop", fn_pop},
+                {"insert", fn_insert},     {"remove", fn_remove},     {"remove_at", fn_remove_at},
+                {"clear", fn_clear},       {"sort", fn_sort},         {"reverse", fn_reverse},
+                {"find", fn_find},         {"contains", fn_contains}, {"size", fn_size},
+                {"is_empty", fn_is_empty}, {"join", fn_join},         {"iter", fn_iter},
+                {"__add__", fn___add__},   {"__mul__", fn___mul__},
         };
 
     } // namespace

@@ -17,6 +17,16 @@ namespace aria {
 
         // 键判定一律走表内判等 ===(value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域。
 
+        // init() -> map:工厂构造,空表覆盖槽 0(call_class 预置的临时 instance 被替换);只收 0 元。
+        bool fn_init(AriaVM& vm, Span<Value> slots) {
+            const auto argc = slots.size() - 1;
+            if (argc != 0) {
+                return vm.arity_error(argc, 0);
+            }
+            slots[0] = Value::from_obj(new_map(vm.gc()));
+            return true;
+        }
+
         // size() -> 整数:键值对数。
         bool fn_size(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -149,9 +159,9 @@ namespace aria {
 
         // map 方法表(has_next/next 住 Iterator 表,全子类共享)。
         constexpr BuiltinFnEntry kMapBuiltins[] = {
-                {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},     {"get", fn_get},
-                {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs}, {"remove", fn_remove},
-                {"clear", fn_clear}, {"iter", fn_iter},
+                {"init", fn_init},     {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},
+                {"get", fn_get},       {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs},
+                {"remove", fn_remove}, {"clear", fn_clear}, {"iter", fn_iter},
         };
 
     } // namespace

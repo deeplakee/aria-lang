@@ -37,6 +37,9 @@ range.aria:1:13: Syntax: ExpectedToken expected ';', got '..'
 
 range 是不可变值：`type(1..3)` 是 `"Range"`，打印成 `1..3`。它的方法面目前只有 `iter()`。
 
+`Range` 类也可直接调用构造：`Range(a)` 等价 `a...`（无上界）、`Range(a, b)` 等价
+`a...b`（不含上界），端点同样必须是整数。字面量是首选写法。
+
 ## for-in：遍历区间
 
 ```aria
@@ -198,6 +201,9 @@ it.next();
 Runtime: IterationExhausted iterator exhausted
   at <main> (iter.aria:3)
 ```
+
+`Iterator` 类也可直接调用构造：恰收 1 元、按源类型铸对应迭代器，只收 string / list /
+map（`Iterator([1, 2])` 等价 `[1, 2].iter()`；range 不收，用 `r.iter()`）。
 
 ## 迭代协议
 

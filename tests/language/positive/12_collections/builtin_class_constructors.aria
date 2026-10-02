@@ -1,0 +1,45 @@
+// 钉住：内建类工厂构造 List/Map/Range/Iterator 产出真值（call_class 预置的临时 instance 被
+// init 覆盖槽 0 替换）；产物与字面量产物同表示，方法面/下标/is_a 全部可用。
+// List：实参即元素（0+ 元 varargs）
+var a = List(1, 2, 3);
+assert(a.size() == 3);
+assert(a[0] == 1 && a[2] == 3);
+a.push(4);
+assert(a.size() == 4);
+assert(a.is_a(List));
+assert(List().is_empty());
+assert(List([1], 2).size() == 2); // 元素任意值，list 实参是单个元素不展开
+
+// Map：只收 0 元
+var m = Map();
+assert(m.is_empty());
+m["k"] = 1;
+assert(m["k"] == 1);
+assert(m.size() == 1);
+assert(m.is_a(Map));
+
+// Range：1 元等价 1...（无上界）、2 元等价 1...5（不含上界）
+var sum = 0;
+for (x in Range(1, 5)) {
+    sum += x;
+}
+assert(sum == 10); // 1..4，不含上界
+var rsum = 0;
+for (x in Range(5, 1)) {
+    rsum += x;
+}
+assert(rsum == 14); // 5..2 倒序，递减到 b+1
+var rit = Range(1).iter();
+assert(rit.next() == 1);
+assert(rit.next() == 2); // 无上界，has_next 恒真，边界由消费方自理
+
+// Iterator：恰 1 元，收 string/list/map（按源类型铸对应迭代器）
+var it = Iterator([10, 20]);
+assert(it.next() == 10);
+assert(it.next() == 20);
+assert(it.has_next() == false);
+var sit = Iterator("ab");
+assert(sit.next() == "a");
+var mit = Iterator({"a": 1});
+var kv = mit.next(); // map 迭代产出 [k, v] 二元 list
+assert(kv.size() == 2 && kv[0] == "a" && kv[1] == 1);

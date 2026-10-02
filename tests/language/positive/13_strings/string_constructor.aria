@@ -1,0 +1,9 @@
+// 钉住：String(v) 转换构造——恰 1 元，任意值经 format_value 可读渲染，与内建 str 同域同实现。
+assert(String("hi") == "hi");
+assert(String(42) == "42");
+assert(String(true) == "true");
+assert(String(1.5) == str(1.5)); // 浮点渲染不在此钉死，只钉与 str 同域
+assert(String(nil) == str(nil));
+assert(String([1, 2]) == str([1, 2]));
+var s = String("hi"); // 产物是真 string，方法面可用
+assert(s.size() == 2);

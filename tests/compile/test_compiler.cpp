@@ -215,10 +215,12 @@ TEST(Compiler, ListMemberStoreNotSupported) {
     EXPECT_NE(out.error().message().find("type List does not support field access"), std::string::npos);
 }
 
-// init 沿链解析到 Object 根的 no-op init：不动槽 0（已是 receiver），调用返回 receiver 自身
-// （已知悉接受的小语义毛边，钉住防无声漂移）。
-TEST(Compiler, ListInitResolvesToObjectRootNoOp) {
-    EXPECT_EQ(run_int("var xs = [1]; if (xs.init() === xs) { return 1; } return 0;"), 1);
+// init 是 List 类自身的工厂原生（不读 receiver、覆盖槽 0 产新 list）：xs.init() 等价 List()，
+// 产全新空表、与 receiver 不同一（init 作方法调的形态毛边，钉住防无声漂移）。
+TEST(Compiler, ListInitCallsFactoryNative) {
+    EXPECT_EQ(
+            run_int("var xs = [1]; var fresh = xs.init(); if (fresh.size() == 0 && fresh !== xs) { return 1; } return 0;"),
+            1);
 }
 
 // 循环内反复取方法（每次现场物化 bound 对象）+ stress GC（run_source 默认开）：

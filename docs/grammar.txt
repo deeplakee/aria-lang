@@ -266,6 +266,11 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   （静态/实例方法/foo.x 回退）统一终止于 Object（裸名走模块全局，不在此列）。原始值（nil/bool/数字，非 Obj）
 #   不在 Object 层次内（纳入为 uniform OOP 目标方向，尚未实现）；内置 Obj 类型经 bootstrap 类挂
 #   Object 根（list/map/string/range/iterator 均已挂）。
+#   内建类调用与继承（运行期语义，文法不编码）：七个内建类以内建名直接可达、可作一等值。
+#   类调用即构造（init 为原生工厂，覆盖 call_class 预置的临时 instance）：List(...)/Map()/
+#   String(v)/Range(a[, b])/Iterator(src) 各产出对应内建值（形状与域见各方法面）；内建容器
+#   五类（iterator/list/map/string/range）不可作 superclass（继承位写它们报 TypeMismatch，
+#   Exception 可继承、Object 亦可显式写出）。
 #   作用域模型（编译期/VM 语义，文法不编码，Python/JS 路子）：
 #   - 模块 = 命名空间（非类）：文件是一个模块，顶层 var/fun/class 是模块级绑定（模块全局），
 #     不是某个类的静态；顶层可执行语句编进模块体，导入时跑一次。模块存于 VM 内部模块表。

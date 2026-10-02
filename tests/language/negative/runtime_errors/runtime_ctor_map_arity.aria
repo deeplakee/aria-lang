@@ -1,0 +1,2 @@
+// 钉住：Map 构造器只收 0 元，带实参报 WrongArity。
+Map(1);

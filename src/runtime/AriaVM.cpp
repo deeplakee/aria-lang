@@ -75,46 +75,23 @@ namespace aria {
             return Object::as<ObjString>(frame->unit->constants[idx].as_obj());
         }
 
-        // 把 import 串(specifier)解析为命中文件的绝对规范路径(即模块表键;符号链接经
-        // weakly_canonical 规避双加载)。spec 末尾 ".aria" 可选(剥后缀查找再统一补回,使
-        // lib/math ≡ lib/math.aria);相对 spec(./ ../ . ..)以当前模块目录为单基、caller-local,
-        // **永不逃逸到别的源根**;裸名沿 source_roots 逐个 exists-check(对齐 Python sys.path)。
-        // 当前模块路径为空(合成模块)时相对解析直接返 nullopt。
-        Opt<String> resolve_module(const StringView spec, const StringView current_module_path,
-                                   const List<String>& source_roots) {
-            // 1. 剥末段 ".aria" 后缀(段长 > 扩展名长且以 ".aria" 结尾)。
-            String spec_str{spec};
-            {
-                const auto last_slash = spec_str.find_last_of('/');
-                const auto last_seg   = (last_slash == String::npos) ? StringView{spec_str}
-                                                                     : StringView{spec_str}.substr(last_slash + 1);
-                if (last_seg.size() > kAriaExtension.size() && last_seg.ends_with(kAriaExtension)) {
-                    spec_str.erase(spec_str.size() - kAriaExtension.size());
-                }
+        // specifier 的 stem:剥末段 ".aria" 后缀(import "x.aria" 与 "x" 等价);末段恰为 ".aria" 者不剥。
+        [[nodiscard]]
+        StringView stem_of(const StringView spec) {
+            const auto last_slash = spec.find_last_of('/');
+            const auto last_seg   = (last_slash == StringView::npos) ? spec : spec.substr(last_slash + 1);
+            if (last_seg.size() > kAriaExtension.size() && last_seg.ends_with(kAriaExtension)) {
+                return spec.substr(0, spec.size() - kAriaExtension.size());
             }
+            return spec;
+        }
 
-            // 2. 选基:相对 -> 当前模块目录(单基);裸名 -> source_roots(逐个试)。
-            const bool is_relative = spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..";
-            List<stdfs::path> bases;
-            if (is_relative) {
-                if (current_module_path.empty()) {
-                    return std::nullopt; // 合成模块无绝对路径,无法相对解析
-                }
-                bases.push_back(stdfs::path{String{current_module_path}}.parent_path());
-            } else {
-                for (const auto& root: source_roots) {
-                    if (!root.empty()) {
-                        bases.emplace_back(root);
-                    }
-                }
-            }
-
-            // 3. 逐基:<base>/<spec>.aria -> weakly_canonical -> exists 则为键。
-            auto file_rel = spec_str;
-            file_rel.append(kAriaExtension);
+        // 逐基探测:<base>/<file_name> 规范化(weakly_canonical),存在即返绝对路径;不存在/失败试下一基。
+        [[nodiscard]]
+        Opt<String> probe_bases(const List<stdfs::path>& bases, const StringView file_name) {
             std::error_code ec;
             for (const auto& base: bases) {
-                auto canon = stdfs::weakly_canonical(base / file_rel, ec);
+                const auto canon = stdfs::weakly_canonical(base / file_name, ec);
                 if (ec) {
                     ec.clear();
                     continue;
@@ -125,6 +102,31 @@ namespace aria {
                 ec.clear();
             }
             return std::nullopt;
+        }
+
+        // 把 import 串(specifier)解析为命中文件的绝对规范路径(= 模块表键)。
+        Opt<String> resolve_module(const StringView spec, const StringView current_module_path,
+                                   const List<String>& source_roots) {
+            const auto file_name = util::concat_string(stem_of(spec), kAriaExtension);
+
+            // 相对 specifier:基恒为当前模块自己的目录(合成模块无锚点即失败),永不逃逸到别的源根。
+            if (spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..") {
+                if (current_module_path.empty()) {
+                    return std::nullopt;
+                }
+                List<stdfs::path> bases;
+                bases.push_back(stdfs::path{String{current_module_path}}.parent_path());
+                return probe_bases(bases, file_name);
+            }
+
+            // 裸名:沿 source_roots 逐根试(对齐 Python sys.path);空根跳过。
+            List<stdfs::path> bases;
+            for (const auto& root: source_roots) {
+                if (!root.empty()) {
+                    bases.emplace_back(root);
+                }
+            }
+            return probe_bases(bases, file_name);
         }
 
         // dispatch_loop 各异常站点(unwind 返 Error)统一收口 Result<Value, Error> 的 unexpected 态。

@@ -41,8 +41,10 @@ namespace aria {
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);
 
-        // 分配层唯一触发 GC 的入口:maybe_collect 在分配前完成(新对象尚未诞生,不会被本轮扫到)。返回的对象
-        // 白色、无根,需调用方发布进某根才安全;发布动作自身的容器分配也不触发 GC,否则刚出生的白色对象会被扫掉。
+        // 分配层唯一触发 GC 的入口:maybe_collect 在分配前完成(新对象尚未诞生,不会被本轮扫到)。
+        // 工厂守卫纪律(**每方只守自己创建的**):调用方入参不守、调用前自行根化,工厂内部产物
+        // 经 make_guard 自守;返回对象白色无根,发布进根才安全,发布动作自身也不触发 GC(否则白色
+        // 对象会被扫掉)。
         template<DerivedFromObj T, typename... Args>
         [[nodiscard]]
         T* new_object(Args&&... args);

@@ -108,6 +108,10 @@ namespace aria {
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView src);
 
+    // 调用方已持有 hash_str(src) 之值时用本重载,免重算。
+    [[nodiscard]]
+    ObjString* new_string(GC& gc, StringView src, u32 hash);
+
     // 单字节串便捷重载(下标读产出形态):委托 StringView 版,同样经驻留池。
     [[nodiscard]]
     ObjString* new_string(GC& gc, char ch);

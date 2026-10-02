@@ -38,7 +38,7 @@ paths:
 `namespace aria::util`（与 fs/utf8 同）。
 
 - **调试/信息**：`print_binary`（高位在前、按位分组打印表示；当前零消费者）、`print_compiler_info`（当前零消费者）、`to_void_ptr`、`escape_string(StringView) -> String`（转义 `"`/`\`/`\n`/`\t`/`\r` 与控制字符为 `\x{HH}`，非 ASCII 透传；供 `ObjString` debug/repr 渲染）。
-- **哈希**：`hash_num`/`hash_addr`（数值/地址哈希，经 `detail::splitmix64_mix32`（Vigna lowbias32，专为 32 位输出低偏置调优））、`hash_str`（字符串 FNV-1a 32-bit，经 `detail::fnv1a_32`）。
+- **哈希**：`hash_num`/`hash_addr`（数值/地址哈希，经 `detail::splitmix64_mix32`（Vigna lowbias32，专为 32 位输出低偏置调优））、`hash_str`（字符串 FNV-1a 32-bit，经 `detail::fnv1a_32`；二参重载自前缀终态续算，`hash(a)` 续算 b 即 `hash(a+b)`）。
 - **小端编解码**：`make_u16(u8,u8)`/`split_word(u16)`/`split_dword(u32)`（`split_dword` 当前零消费者）。
 - **栈/Opt 取值**：`pop_top(Stack<T>&) -> T`（取栈顶并弹出，调用方须保证栈非空，`[[nodiscard]]`）；`take(Opt<T>&) -> Opt<T>`（取走并置空，`std::exchange` 习语）。
 - **拼接**：`join(Range, StringView delimiter, Fn&&)`（range 逐元素经 Fn 渲染后 delimiter 连接的共用底座，debug_repr 类拼接消费）。

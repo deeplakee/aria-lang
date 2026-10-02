@@ -106,7 +106,10 @@ namespace aria {
     }
 
     ObjString* new_string(GC& gc, const StringView src) {
-        const u32 hash = util::hash_str(src); // 单点计算,find 与 ctor 共用,免 miss 路径重复 FNV
+        return new_string(gc, src, util::hash_str(src));
+    }
+
+    ObjString* new_string(GC& gc, const StringView src, const u32 hash) {
         if (const auto found = gc.intern_find(src, hash)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }

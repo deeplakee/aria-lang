@@ -42,10 +42,12 @@ namespace aria::util {
             return static_cast<u32>(value);
         }
 
-        // FNV-1a 32-bit 字节哈希核心。
+        // FNV-1a 32-bit 字节哈希核心,自 state 起逐字节处理(空始传 basis,续算传前缀终态)。
+        inline constexpr u32 kFnv1aBasis = 2166136261u; // FNV-1a offset basis
+
         [[nodiscard]]
-        inline u32 fnv1a_32(const u8* data, const usize len) noexcept {
-            u32 h = 2166136261u; // FNV-1a offset basis
+        inline u32 fnv1a_32(const u32 state, const u8* data, const usize len) noexcept {
+            u32 h = state;
             for (usize i = 0; i < len; ++i) {
                 h ^= data[i];
                 h *= 16777619u; // FNV-1a prime
@@ -67,10 +69,16 @@ namespace aria::util {
         return detail::splitmix64_mix32(static_cast<u64>(reinterpret_cast<uintptr_t>(p)));
     }
 
+    // 续算:state 为前缀终态(hash(a) 续算 b 即 hash(a+b))。
+    [[nodiscard]]
+    inline u32 hash_str(const u32 state, const StringView s) noexcept {
+        return detail::fnv1a_32(state, reinterpret_cast<const u8*>(s.data()), s.size());
+    }
+
     // 字符串哈希:FNV-1a 32-bit。
     [[nodiscard]]
     inline u32 hash_str(const StringView s) noexcept {
-        return detail::fnv1a_32(reinterpret_cast<const u8*>(s.data()), s.size());
+        return hash_str(detail::kFnv1aBasis, s);
     }
 
     // 转义为字符串字面量内容形态(不含外层引号);控制字符(<0x20)-> \x{HH},非 ASCII 透传。

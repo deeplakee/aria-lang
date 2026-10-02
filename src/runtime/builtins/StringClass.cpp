@@ -532,7 +532,8 @@ namespace aria {
             String buffer;
             buffer.reserve(lhs->length() + rhs->length());
             buffer.append(lhs->view()).append(rhs->view());
-            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
+            // lhs->hash() 即 FNV 终态:续算 rhs 字节得 hash(lhs+rhs),免重扫整段前缀。
+            slots[0] = Value::from_obj(new_string(vm.gc(), buffer, util::hash_str(lhs->hash(), rhs->view())));
             return true;
         }
 
@@ -556,13 +557,21 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            const auto src = self->view();
-            String     buffer;
-            buffer.reserve(src.size() * static_cast<usize>(count));
-            for (i64 i = 0; i < count; ++i) {
-                buffer.append(src);
+            if (count == 0) {
+                slots[0] = Value::from_obj(new_string(vm.gc(), StringView{})); // basis 全量,驻留空串共享
+            } else if (count == 1) {
+                slots[0] = Value::from_obj(self); // 等内容必命中驻留,即 self 本体
+            } else {
+                const auto src = self->view();
+                String     buffer;
+                buffer.reserve(src.size() * static_cast<usize>(count));
+                for (i64 i = 0; i < count; ++i) {
+                    buffer.append(src);
+                }
+                // 续算:首份拷贝终态即 hash(a),续算其余各份(count >= 2 已由上方分叉保证)。
+                const u32 hash = util::hash_str(self->hash(), StringView{buffer}.substr(src.size()));
+                slots[0]       = Value::from_obj(new_string(vm.gc(), buffer, hash));
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), buffer));
             return true;
         }
 

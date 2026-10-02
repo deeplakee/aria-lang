@@ -1,16 +1,8 @@
 #ifndef ARIA_UTIL_CLI_HPP
 #define ARIA_UTIL_CLI_HPP
 
-// 命令行参数解析器 Cli：链式注册 flag / option / positional 后 parse(argv)，返回 ParseResult
-// （has / get / extra_args）；help() 渲染帮助文本。
-//
-// 定义与结果分离：Cli 仅持注册项（const 可重复 parse、互不污染），每次 parse 产出 ParseResult。
-// 单一事实源：注册查重与解析定位全走 defs_ 线性扫描（register_name 复用 find_long/find_short），
-// 无平行索引。统一枚举 Slot 贯穿定义/结果两侧：定义侧 Def.kind_ 永非 Empty（ASSERT 把关），结果
-// 侧 SlotEntry.state 用 Empty 表未提供、种类值表已提供。flag/option/positional 共唯一长名空间；
-// --name/-x 只匹配 flag/option（按 kind_ 过滤），has/get 查任意槽。内置 help flag（--help / -h）
-// 构造期首个注册，parse 命中即短路成功（仍置位，经 result.has("help") 取）。首错即止。值语义，
-// 纯解析工具，不打印、不退出。
+// 命令行参数解析器 Cli:链式注册 flag/option/positional 后 parse(argv) 得 ParseResult(has/get/extra_args),
+// help() 渲染帮助文本。纯解析工具,不打印、不退出;仅持注册项,const 可重复 parse;内置 --help/-h 命中即短路成功。
 
 #include <algorithm>
 #include <format>
@@ -27,15 +19,14 @@ namespace aria::util {
             Positional,
         };
 
-        // 解析结果：定义/结果分离后的结果侧。slots_ 与 defs_ 同序（第 n 位 SlotEntry 对应第 n 位
-        // 定义）；持非拥有 const Cli*，调用方须保证 Cli 在结果用完前存活。
+        // 解析结果:slots_ 与 defs_ 同序(第 n 位 SlotEntry 对应第 n 位定义);持非拥有 const Cli*,结果用完前 Cli 须存活。
         class ParseResult {
         public:
             [[nodiscard]]
             bool has(const StringView name) const {
                 const auto idx = cli_->find_long(name);
                 if (!idx) {
-                    return false; // 未注册名
+                    return false;
                 }
                 return slots_[*idx].state != Slot::Empty;
             }
@@ -46,7 +37,7 @@ namespace aria::util {
             Opt<String> get(const StringView name) const {
                 const auto idx = cli_->find_long(name);
                 if (!idx || cli_->defs_[*idx].kind_ == Slot::Flag) {
-                    return std::nullopt; // 未注册，或命中的是 flag（无值）
+                    return std::nullopt;
                 }
                 if (const usize index = *idx; slots_[index].state != Slot::Empty) {
                     return slots_[index].value;
@@ -54,7 +45,7 @@ namespace aria::util {
                 return std::nullopt;
             }
 
-            // 超出注册数的位置参数（如转发给脚本的剩余参数）
+            // 超出注册数的位置参数
             [[nodiscard]]
             const List<String>& extra_args() const {
                 return extra_args_;
@@ -63,7 +54,7 @@ namespace aria::util {
         private:
             friend class Cli;
 
-            // 结果侧每槽记录：state + value（flag 槽 value 未用）。
+            // 每槽记录 state + value(flag 槽 value 未用)。
             struct SlotEntry {
                 Slot   state{Slot::Empty};
                 String value;
@@ -80,7 +71,7 @@ namespace aria::util {
             register_builtin_help();
         }
 
-        // 注册布尔开关：--verbose / -v（short_name 传 '\0' 表示无短名）
+        // 注册布尔开关;short_name 传 '\0' 表示无短名。
         Cli& add_flag(const StringView long_name, const StringView description, const char short_name = '\0') {
             // 查重须先于 emplace（扫 defs_，后插自撞）；OOM 由值类型随 defs_ 一起回滚
             register_name(long_name, short_name);
@@ -98,14 +89,12 @@ namespace aria::util {
 
         // 注册位置参数（按出现顺序填充；is_required=false 时可缺省）
         Cli& add_positional(const StringView name, const StringView description, const bool is_required = true) {
-            // positional 长名入唯一名字空间（查重）；--name/-x 解析不匹配 positional（见
-            // find_long_without_positional）
             register_name(name, '\0');
             defs_.emplace_back(name, '\0', description, "", is_required, Slot::Positional);
             return *this;
         }
 
-        // 解析 main 的 argc/argv（零拷贝：argv 各元素以 StringView 借用，跳过 argv[0]）
+        // 解析 main 的 argc/argv:argv 各元素以 StringView 借用,跳过 argv[0]。
         [[nodiscard]]
         Result<ParseResult, String> parse(const i32 argc, char* argv[]) const {
             List<StringView> args;
@@ -128,7 +117,7 @@ namespace aria::util {
             return parse(views);
         }
 
-        // 核心解析。首错即返回 unexpected(消息)（错误不落 Cli 状态，重 parse 从新参数重新开始）。
+        // 首错即返回 unexpected(消息);错误不落 Cli 状态,重 parse 从新参数重新开始。
         [[nodiscard]]
         Result<ParseResult, String> parse(const Span<const StringView> args) const {
             ParseResult result{*this};
@@ -156,7 +145,7 @@ namespace aria::util {
                 }
             }
 
-            // 缺失的必填位置参数 -> 错误（用 state 而非 value 判定，理由见 check_required）
+            // 缺失的必填位置参数 -> 错误
             if (const auto err = check_required(result)) {
                 return std::unexpected(*err);
             }
@@ -275,7 +264,7 @@ namespace aria::util {
             return std::nullopt;
         }
 
-        // 在 defs_ 中按长名找 flag/option 槽（供 --name 解析，排除 positional）。未找到返回 nullopt。
+        // 按长名找 flag/option 槽(排除 positional);未找到返回 nullopt。
         [[nodiscard]] Opt<usize> find_long_without_positional(const StringView long_name) const {
             for (usize k = 0; k < defs_.size(); ++k) {
                 if (defs_[k].kind_ != Slot::Positional && defs_[k].long_name_ == long_name) {
@@ -299,8 +288,7 @@ namespace aria::util {
             ShortCircuit, // 命中内置 help flag，置位后立即成功返回（跳过剩余参数与必填检查）
         };
 
-        // 长选项 --name / --name=value：flag 不取值（--flag=x 的 x 忽略），option 取内联值或下一参数。
-        // positional 不参与（find_long_without_positional 过滤）。
+        // 长选项 --name / --name=value:flag 不取值(--flag=x 的 x 忽略),option 取内联值或下一参数。
         [[nodiscard]] Result<Step, String> parse_long(ParseResult& result, const StringView arg,
                                                       const Span<const StringView> args, usize& i) const {
             const auto opt      = arg.substr(2);
@@ -346,7 +334,7 @@ namespace aria::util {
                 if (defs_[idx].kind_ == Slot::Flag) {
                     result.slots_[idx].state = Slot::Flag;
                     if (c == kHelpShortName) {
-                        return Step::ShortCircuit; // 保留名纪律同 parse_long
+                        return Step::ShortCircuit;
                     }
                     continue;
                 }
@@ -364,8 +352,8 @@ namespace aria::util {
             return Step::Continue;
         }
 
-        // 位置参数：填入 defs_ 中首个「空且种类为 Positional」的槽（Positional 按注册序填、填后不重置，
-        // 故「首个空槽」即「下一个待填槽」，无需另维护填充计数器）；单独 "-" 也走此路；无空槽则收进 extra。
+        // 位置参数:填入 defs_ 中首个空 Positional 槽(槽填后不重置,「首个空槽」即「下一个待填槽」);
+        // 单独 "-" 也走此路;无空槽则收进 extra。
         void parse_positional(ParseResult& result, const StringView arg) const {
             for (usize k = 0; k < defs_.size(); ++k) {
                 if (defs_[k].kind_ == Slot::Positional && result.slots_[k].state == Slot::Empty) {
@@ -374,7 +362,7 @@ namespace aria::util {
                     return;
                 }
             }
-            // 所有 Positional 槽均已填 -> 超额，收进 extra（如转发给脚本的剩余参数）
+            // 所有 Positional 槽均已填 -> 超额收进 extra
             result.extra_args_.emplace_back(arg);
         }
 
@@ -402,7 +390,7 @@ namespace aria::util {
             ASSERT(!find_short(short_name), std::format("short name -{} registered twice", short_name).c_str());
         }
 
-        // 注册内置 help flag 为 defs_[0]（恒居 help() 渲染首位）；后续用户注册 help/-h 撞重名 ASSERT。
+        // 内置 help flag 注册为 defs_[0],恒居 help() 渲染首位。
         void register_builtin_help() {
             register_name(kHelpLongName, kHelpShortName);
             defs_.emplace_back(kHelpLongName, kHelpShortName, kHelpDescription, "", false, Slot::Flag);
@@ -416,7 +404,6 @@ namespace aria::util {
         String program_name_;
         String description_;
 
-        // 统一注册项（flag/option/positional 共表，按 kind_ 分派）；注册查重与解析定位唯一事实源
         List<Def> defs_;
 
         // 不持解析结果：slots_/extra_args_ 随 ParseResult 走（定义/结果分离）

@@ -115,13 +115,13 @@ namespace aria {
             case Value::Type::F64:
                 return std::bit_cast<u64>(lhs.as_f64()) == std::bit_cast<u64>(rhs.as_f64());
             case Value::Type::Obj:
-                return lhs.as_obj() == rhs.as_obj(); // 指针相等
+                return lhs.as_obj() == rhs.as_obj();
         }
         return false;
     }
 
     bool value_less(const Value lhs, const Value rhs) noexcept {
-        // 数值域:混合升 f64,与 value_equal 的跨型数值比较同源;双 NaN 等价是「NaN 排最前」的推论。
+        // 数值域:混合升 f64;NaN 排在一切数值之前(双 NaN 互不小于,弱序下等价)。
         if (lhs.is_int() && rhs.is_int()) {
             return lhs.as_int() < rhs.as_int();
         }
@@ -133,8 +133,7 @@ namespace aria {
             }
             return x < y;
         }
-        // 字符串域:无符号字节序,必须走 string_view::compare(char_traits 的 memcmp 语义;
-        // char 在多数平台有符号,手写逐 char 比较会把 0x80+ 字节排到 ASCII 之前)。
+        // 字符串域:无符号字节序,必须走 string_view::compare(手写逐 char 比较会把 0x80+ 字节排到 ASCII 之前)。
         const auto lhs_str = Object::as<ObjString>(lhs.as_obj());
         return lhs_str->view().compare(Object::as<ObjString>(rhs.as_obj())->view()) < 0;
     }

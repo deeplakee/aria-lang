@@ -20,10 +20,7 @@
 namespace aria {
 
     namespace {
-        // 容量上限(值即操作数/索引位宽上限,事实源见 CodeUnit.hpp 的 kU8/kU16OperandMax;越界统一
-        // 用 > 比较):kMaxArity/kMaxArguments(u8)、kMaxConstants/kMaxListElements/kMaxMapEntries/
-        // kMaxLocals(u16)。语义名集中定义使检查点与报错文案同源;kMaxUpvalues 因登记侧共用而定义于
-        // FunctionCtx.hpp。
+        // 容量上限 = 操作数/索引位宽上限（越界统一以 > 判）；语义名供检查点与报错文案同源。
         constexpr u32 kMaxArity        = kU8OperandMax;
         constexpr u32 kMaxArguments    = kU8OperandMax;
         constexpr u32 kMaxConstants    = kU16OperandMax;
@@ -31,8 +28,7 @@ namespace aria {
         constexpr u32 kMaxMapEntries   = kU16OperandMax;
         constexpr u32 kMaxLocals       = kU16OperandMax;
 
-        // 二元 op -> 发射 OpCode（visitBinaryExprNode 与复合赋值共用单源）。Or/And 走短路分支
-        // （JUMP_*_OR_POP）不经此，OpCode 亦无单条逻辑码 -> UNREACHABLE。
+        // 二元 op -> 发射 OpCode；Or/And 走短路分支（JUMP_*_OR_POP）不经此。
         OpCode binary_opcode(const Op::Binary op) noexcept {
             switch (op) {
                 case Op::Binary::EqualEqual:
@@ -66,7 +62,7 @@ namespace aria {
             }
         }
 
-        // 复合赋值 op -> 对应二元 op（经 binary_opcode）;文法仅算术五种复合;= 不入表（直走 store）。
+        // 复合赋值 op -> 对应二元 op；文法仅算术五种复合，= 不入表（直走 store）。
         Op::Binary compound_op(const Op::Assignment op) noexcept {
             switch (op) {
                 case Op::Assignment::PlusAssign:
@@ -84,8 +80,7 @@ namespace aria {
             }
         }
 
-        // min_arity = 必传参数数 = 首个带默认值参数之前的个数(文法定序 plain -> default -> varargs,
-        // 由 Parser 保证;rest 遇之即止 --varargs 永非必传)。纯读 params,调用方须已过 validate_params。
+        // 必传参数数：首个带默认值参数之前（文法定序 plain -> default -> varargs）；调用方须已过 validate_params。
         u8 min_arity(const List<Param>& params) noexcept {
             u8 count = 0;
             for (const auto& param: params) {
@@ -97,14 +92,12 @@ namespace aria {
             return count;
         }
 
-        // 位置形态 `_`（文法:pattern -> "_" 占位）。解构里 `_` 位置不产生下标访问(访问有失败面:
-        // map 源缺键报 KeyError,而 `_` 不关心该位置);谓词供父层跳过该位置的取元素与递归。
+        // `_` 位置不产生下标访问：该位置无值诉求，不冒访问失败面（如 map 缺键），由父层跳过取元素与递归。
         [[nodiscard]] bool is_wildcard_pattern(const PatternNode& pattern) noexcept {
             return dynamic_cast<const WildcardPatternNode*>(&pattern) != nullptr;
         }
 
-        // 解构访问数 = 会发出下标访问的位置数(非 `_` 元素位 + rest 位),决定 Fill 绑定是否需隐藏
-        // 局部复取源值(0 访问直弹、1 访问源值即消耗品、>=2 访问须复取)。
+        // 会发出下标访问的位置数，决定 Fill 绑定是否需隐藏局部复取源值。
         [[nodiscard]] usize pattern_access_count(const ListPatternNode& pattern) noexcept {
             usize count = 0;
             for (const auto& element: pattern.elements) {
@@ -119,7 +112,7 @@ namespace aria {
         }
     } // namespace
 
-    // 静态服务入口：一次性对象上跑单次编译（契约见 CodeGen.hpp compile 注）。
+    // 静态服务入口：一次性对象上跑单次编译。
     Result<ObjFunction*, Error> CodeGen::compile(GC& gc, const ProgramNode& program, ObjModule* module,
                                                  const StringView entry_name) {
         CodeGen self{gc};
@@ -128,7 +121,7 @@ namespace aria {
 
     Result<ObjFunction*, Error> CodeGen::generate_bytecode(const ProgramNode& program, ObjModule* module,
                                                            const StringView entry_name) {
-        // module 入临时根贯穿全程（根化链与各守卫窗口见类首「GC 安全」注）。
+        // module 入临时根贯穿全程。
         const auto guard = gc_.make_guard(module);
 
         const auto entry = init_module(module, entry_name);
@@ -145,31 +138,28 @@ namespace aria {
         }
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
-        // 打印入口的 CodeUnit 反汇编（游标仍在入口，cur_cu() 即入口 unit）。
+        // 打印入口 CodeUnit 反汇编。
         io::println(stderr, "{}", cur_cu()->disassemble(entry_name));
 #endif
 
-        // mod_ctx_ 随一次性对象析构释放（~ModuleCtx 沿 enclosing_ 链），无需显式 reset。
+        // mod_ctx_ 随析构释放，无需显式 reset。
         return entry;
     }
 
-    // 建模块入口函数 + set_entry + 构造 ModuleCtx（契约见 CodeGen.hpp init_module 注）。
     ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
-        // 入口无参,min_arity = arity、无 varargs
+        // 入口无参
         const auto entry = new_function(gc_, module, entry_name, 0, 0, false);
         module->set_entry(entry);
-        mod_ctx_ = std::make_unique<ModuleCtx>(module); // 创建入口 fn 上下文并就位游标
+        mod_ctx_ = std::make_unique<ModuleCtx>(module);
         return entry;
     }
 
-    // 当前 CodeUnit = 当前函数 fn_->unit()，随游标派生（定义于此：需 ObjFunction 完整类型取 unit()）。
     FunctionCtx* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
 
     CodeUnit* CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
 
     u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc loc) const {
-        // 常量池溢出(>kMaxConstants) -> fail CodeUnitTooLarge（CodeUnit::add_constant 内部
-        // ASSERT 兜底，本预检保证永不触达）。去重语义单源见 FunctionCtx::add_constant。
+        // 溢出预检 fail CodeUnitTooLarge，使 CodeUnit::add_constant 内部 ASSERT 永不触达。
         if (cur_cu()->constants.size() > kMaxConstants) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "too many constants (max {})", kMaxConstants);
         }
@@ -177,9 +167,7 @@ namespace aria {
     }
 
     u16 CodeGen::add_name_or_fail(const StringView name, const SourceLoc loc) const {
-        // intern name 入常量池返回索引；new_string 结果立即入池（trivial 分配不触发 GC，见类首 GC
-        // 安全注），无需守卫--已 intern 的串与池内同值项同指针，去重命中时池里那份本就是它。
-        // 溢出由 add_constant_or_fail fail。
+        // new_string 立即入池（trivial 分配不触 GC），无需守卫：已 intern 的串与池内同值项同指针。
         const auto str = new_string(gc_, name);
         return add_constant_or_fail(Value::from_obj(str), loc);
     }
@@ -219,7 +207,6 @@ namespace aria {
     }
 
     void CodeGen::define_global_or_fail(const StringView name, const SourceLoc loc) const {
-        // 同名全局已登记 -> RedefinedVariable（局部侧对应物 define_local_or_fail）。
         if (!mod_ctx_->declare_global(name)) {
             fail(ErrorCode::RedefinedVariable, loc, "redefined global variable '{}'", name);
         }
@@ -230,7 +217,6 @@ namespace aria {
     }
 
     CodeGen::ResolvedVar CodeGen::resolve_name_or_fail(const StringView name, const SourceLoc loc) {
-        // 解析序「局部 -> upvalue -> 全局」，契约见 CodeGen.hpp resolve_name_or_fail 注。
         if (const auto local_idx = cur_fn_ctx()->find_local(name)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *local_idx};
         }
@@ -242,8 +228,8 @@ namespace aria {
     }
 
     Opt<u8> CodeGen::resolve_upvalue(FunctionCtx* ctx, const StringView name, const SourceLoc loc) {
-        // 算法契约见 CodeGen.hpp。add_upvalue_or_fail 把容量越界翻译为 fail -- nullopt 只表
-        // 「无外层可捕获 -> 落全局」,不外泄越界信号(否则捕获引用静默串台全局)。
+        // nullopt 只表「无外层可捕获 -> 落全局」（容量越界已翻译为 fail，不外泄越界信号，
+        // 否则捕获引用静默串台全局）。
         if (ctx == nullptr || ctx->enclosing_ == nullptr) {
             return std::nullopt;
         }
@@ -258,7 +244,6 @@ namespace aria {
     }
 
     CodeGen::ResolvedVar CodeGen::resolve_this_or_fail(const SourceLoc loc) {
-        // this 专用解析（契约见 CodeGen.hpp 注）：链上找不到实例方法即 fail，永不落全局。
         if (const auto slot = cur_fn_ctx()->find_local(kThisName)) {
             return ResolvedVar{.kind = ResolvedVar::Kind::Local, .index = *slot};
         }
@@ -297,11 +282,10 @@ namespace aria {
     }
 
     void CodeGen::bind_stack_value(const StringView name, const SourceLoc loc) const {
-        // 契约见 CodeGen.hpp bind_stack_value 注。
         if (mod_ctx_->is_global_scope()) {
             define_global_or_fail(name, loc); // 弹值定义全局
         } else {
-            std::ignore = define_local_or_fail(name, loc); // 值填槽：值恰在 locals_.size() 槽位，登记即初始化
+            std::ignore = define_local_or_fail(name, loc); // 值填槽：值恰在槽位，登记即初始化
         }
     }
 
@@ -319,7 +303,6 @@ namespace aria {
     }
 
     void CodeGen::emit_lvalue(ExprNode& node, const LvalueMode mode) {
-        // 验证左值种类后设置模式并分派；清空职责在 take_lvalue_mode（漏 take 由 emit_expr ASSERT 捕获）。
         validate_lvalue_target(node);
         lvalue_mode_ = mode;
         node.accept(*this);
@@ -333,8 +316,7 @@ namespace aria {
     }
 
     void CodeGen::emit_method_call0(const StringView name, const SourceLoc loc) const {
-        // 迭代协议三站点（iter/has_next/next）零实参方法调用：两段式发 PREPARE_METHOD + CALL_METHOD 0
-        // （迭代器在调用区槽 0）。行号从 loc 现场求值（同源不双传）。
+        // 迭代协议三方（iter/has_next/next）的 0 参方法调用；迭代器在调用区槽 0。
         const u32  line     = loc.line();
         const auto name_idx = add_name_or_fail(name, loc);
         emit_prepare_method(name_idx, line);
@@ -345,7 +327,6 @@ namespace aria {
     bool CodeGen::is_in_method() const { return is_method(cur_fn_ctx()->kind_); }
 
     void CodeGen::emit_load_var(const ResolvedVar& var, const u32 line) const {
-        // 契约见 CodeGen.hpp emit_load_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
                 cur_cu()->emit_load_local(slot, line);
@@ -363,7 +344,6 @@ namespace aria {
     }
 
     void CodeGen::emit_store_var(const ResolvedVar& var, const u32 line) const {
-        // 契约见 CodeGen.hpp emit_store_var 注。
         switch (const auto [kind, slot] = var; kind) {
             case ResolvedVar::Kind::Local:
                 cur_cu()->emit_store_local(slot, line);
@@ -381,15 +361,12 @@ namespace aria {
     }
 
     void CodeGen::bind_pattern(PatternNode& node, const PatternBindMode mode) {
-        // 契约见 CodeGen.hpp bind_pattern 注：置模式后交节点自身 visit 发射。模式对整个子树恒定
-        // （递归经 accept 双分派），故不 take、不还原--模式的设置点只有本函数。
         pattern_mode_ = mode;
         node.accept(*this);
     }
 
     template<typename PushSource>
     void CodeGen::emit_list_pattern_accesses(ListPatternNode& node, const u32 line, PushSource&& push_source) {
-        // 契约见 CodeGen.hpp 注：循环体只写一次，调用点只给「本次访问的源值怎么来」。
         for (usize index = 0; index < node.elements.size(); ++index) {
             if (is_wildcard_pattern(*node.elements[index])) {
                 continue; // `_` 不访问该位置
@@ -400,8 +377,7 @@ namespace aria {
             node.elements[index]->accept(*this);         // 递归绑定（模式不变）
         }
         if (node.rest) {
-            // rest 位 = 后缀 [元素数..]：无上界 range 作下标键（走切片，空尾得空 list，见
-            // ObjList::slice）；绑名经 rest 节点自身 visit（与位置位同一路径）。
+            // rest 位 = 无上界 range 作下标键（切片，空尾得空 list）；绑名经 rest 节点自身 visit。
             push_source();
             emit_int_literal(static_cast<i64>(node.elements.size()), line, node.loc());
             cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
@@ -412,7 +388,7 @@ namespace aria {
     }
 
     void CodeGen::emit_expr(ExprNode& node) {
-        // rvalue 上下文恒 Load：emit_lvalue 分派后必恢复为 Load。断言（非预防性赋值）以在开发期捕获漏恢复。
+        // emit_lvalue 分派后必恢复 Load；ASSERT 捕获漏恢复（非预防性赋值）。
         ASSERT(lvalue_mode_ == LvalueMode::Load,
                "lvalue_mode_ must be Load (emit_lvalue did not restore it after dispatch)");
         node.accept(*this);
@@ -429,7 +405,6 @@ namespace aria {
     }
 
     void CodeGen::validate_params(const List<Param>& params, const SourceLoc loc) const {
-        // 契约见 CodeGen.hpp validate_params 注;此处只读 params,不触碰编译器状态。
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "too many parameters (max {})", kMaxArity);
         }
@@ -444,8 +419,7 @@ namespace aria {
     }
 
     void CodeGen::bind_function_value(const FnKind kind, const StringView name, const SourceLoc loc) const {
-        // kind 分派与绑定形态见 CodeGen.hpp 注；戳语义差异：fun 静态 MAKE_STATIC 不戳 defining
-        // class（静态槽读恒原值），实例方法族 MAKE_METHOD 戳（VM 侧方法性标记 + super 来源）。
+        // MAKE_STATIC 不戳 defining class（静态槽读恒原值），MAKE_METHOD 戳（方法性标记 + super 来源）。
         const u32 line = loc.line();
         switch (kind) {
             case FnKind::Function:
@@ -470,18 +444,7 @@ namespace aria {
     }
 
     void CodeGen::bind_class_value(const bool is_member, const StringView name, const SourceLoc loc) const {
-        // 类名绑定先于体编译（三腿分派，对齐 bind_function_value 函数先例；clox classDeclaration
-        // 的 OP_CLASS+OP_DEFINE_GLOBAL 先于类体同形）。
-        //   - 成员腿（嵌套类）：仿全局腿早绑，DUP2 对复制挂表--栈 [enclosing, class] 复制栈顶对
-        //     -> [e, c, e, c]，MAKE_STATIC 以 peek(1)=enclosing 为接收类挂本类、drop 值副本 ->
-        //     [e, c, e]，POP 弃 klass 副本恢复 [e, c]（DUP2 对复制惯用法同 IndexAccess 定位腿）；
-        //     体内自引用经全路径 A.B，裸名不解析（文法：无 enclosing 链、无裸名）。
-        //   - 全局腿：DUP 后 DEF_GLOBAL 提前入全局，原类值驻栈贯穿类体供 MAKE_STATIC/MAKE_METHOD
-        //     peek、尾部 POP 归位（visitDefDeclNode ⑤）；构建窗口内裸名经全局解析到构建中类对象
-        //     （MAKE_CLASS 即完整类对象，成员挂载持续进行），初始化器 throw 后类名保持绑定（残留
-        //     语义，对齐 Ruby；重定义仍由编译期注册表兜底）。
-        //   - 局部腿（块内/函数内）：值填槽预登记，类值恰在 locals_.size() 槽位、登记即初始化，
-        //     异常路径槽与半成品随截栈同弃。
+        // 类名绑定先于类体编译（体内自引用要求名字先存在）；顶层与类体两种绑定须与 visitDefDeclNode 尾部的 POP 配对。
         if (is_member) {
             const auto member_idx = add_name_or_fail(name, loc); // 名字经 MAKE_CLASS 已入池,复用同池项
             cur_cu()->emit_op(OpCode::DUP2, loc.line());         // [e, c, e, c]
@@ -497,10 +460,8 @@ namespace aria {
     }
 
     void CodeGen::compile_params(const List<Param>& params, const SourceLoc loc) {
-        // 交错时序与印章方案契约见 CodeGen.hpp 注。差异细节：未传槽由 VM call_closure 预先垫充
-        // 缺省印章（寄存器 DefaultMark），本侧逐缺省槽 LOAD_LOCAL 与印章 EQUAL 判等，命中（未传）
-        // 才求值默认值 STORE_LOCAL 换入；缺省表达式解析不到的名字按常规链落外层/全局（同
-        // Python/C++ 语义）；序言后栈空。
+        // 未传槽由 VM 预垫缺省印章（寄存器 DefaultMark）：逐缺省槽与印章判等，命中才求值默认值换入；
+        // 缺省表达式解析不到的名字按常规链落外层/全局；序言后栈空。
         const u32 line = loc.line();
         for (usize i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
@@ -516,7 +477,7 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::POP, line);   // STORE_LOCAL 不弹,弹掉求值副本恢复「栈高 == 已填槽数」
                 patch_jump_or_fail(skip, loc);
             }
-            // 形参即函数前 n 个局部变量(slot 1..n,this 后);重名已在 validate_params 检查,直接登记。
+            // 重名已由 validate_params 查，直接登记。
             cur_fn_ctx()->add_local(param.name);
         }
     }
@@ -525,8 +486,7 @@ namespace aria {
         const u32 line = loc.line();
         switch (cur_fn_ctx()->kind_) {
             case FnKind::ModuleEntry: {
-                // ModuleEntry 语义单源见 FnKind.hpp 注；此处机制：体跑完 RETURN 通用写回 callee
-                // 槽(即 IMPORT 预留结果槽)。
+                // RETURN 通用写回 callee 槽，即 IMPORT 预留的结果槽。
                 const auto module_idx = add_constant_or_fail(Value::from_obj(mod_ctx_->module_), loc);
                 cur_cu()->emit_op(OpCode::LOAD_CONST, line);
                 cur_cu()->emit_word(module_idx, line);
@@ -547,54 +507,47 @@ namespace aria {
 
     void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
                                    const SourceLoc decl_loc, const FnKind kind) {
-        // 参数合法性检查先于 new_function 等分配：失败即抛 AriaCompileException，跳过下方所有发射与分配。
+        // 失败即抛 AriaCompileException，先于所有分配与发射。
         validate_params(params, decl_loc);
 
-        // varargs 恒末位(Parser 结构性保证):arity 为固定参数数(rest 槽的值由 call_closure 打包
-        // 多余实参为 list 就位,帧参数槽深 = arity + is_varargs);call_closure 据此只保下界。
+        // varargs 恒末位（Parser 保证）：rest 槽由 call_closure 打包多余实参为 list，帧参数槽深 = arity + is_varargs。
         const bool has_varargs = !params.empty() && params.back().is_varargs;
         const auto fixed_arity = static_cast<u8>(params.size() - (has_varargs ? 1 : 0));
         const auto fn = new_function(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
-        // 入池后即经 module 根链可达（trivial 窗口见类首 GC 安全注）。
+        // 入池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
-        // CLOSURE fn_idx:VM 执行时现场包 ObjClosure,按捕获描述表(下方 flush 进
-        // fn->upvalue_descs_)逐个建/复用 upvalue(表在元数据不进字节码流,CLOSURE 定长 3B)。
+        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjClosure 并建/复用 upvalue。
         cur_cu()->emit_op(OpCode::CLOSURE, decl_loc.line());
         cur_cu()->emit_word(fn_idx, decl_loc.line());
 
-        // 分派须在 CLOSURE 之后、子上下文建立之前：局部绑定先于体编译，体内自引用此名时
-        // 父帧局部须已登记且已初始化（嵌套具名函数递归自捕获）。
         bind_function_value(kind, name, decl_loc);
 
-        // 切到子函数上下文并摆动游标:cu 由游标派生随之自动切到子 unit,无需 save/restore。new 分配
-        // (非 UPtr),enclosing_ 回父(父编译期长于子,裸指针稳定);实例方法族槽 0 = 具名局部 this。
+        // 切到子上下文：cu 随游标自动切到子 unit，无需 save/restore；enclosing_ 回父。
         const auto child          = new FunctionCtx{fn, cur_fn_ctx(), kind};
         mod_ctx_->current_fn_ctx_ = child;
 
-        // 形参登记与缺省序言收口 compile_params（单循环交错,语义见其注）。
         compile_params(params, decl_loc);
 
-        // 编译体（BlockNode 自带 scope）。
-        // emit_stmt 抛异常时 unwind 跳过下方还原,子留在 enclosing_ 链上交 ~ModuleCtx 沿链释放。
+        // BlockNode 自带 scope；emit_stmt 抛异常时子留下交 ~ModuleCtx 沿链释放。
         emit_stmt(body);
         emit_implicit_return(body.loc());
 
-        // 体编译完成,把子上下文登记的捕获描述 flush 进 fn 元数据(发射 CLOSURE 先于 flush 不碍事:
-        // 描述表在 ObjFunction 上、不在字节码流,VM 执行 CLOSURE 时才读)。
+        // 把子上下文的捕获描述 flush 进 fn 元数据（CLOSURE 先发射不碍事：表在 ObjFunction 上，
+        // VM 执行 CLOSURE 时才读）。
         fn->upvalue_descs().copy_from(child->upvalues_);
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
-        // 打印刚编译完成函数的 CodeUnit 反汇编（游标仍在子，cur_cu() 即子 unit；name 为本函数名）。
+        // 打印刚编译完成函数的反汇编。
         io::println(stderr, "{}", cur_cu()->disassemble(name));
 #endif
 
-        // 成功:还原父游标(cu 自动回父 unit)并 delete 子上下文。
+        // 成功：还原父游标并 delete 子上下文。
         mod_ctx_->current_fn_ctx_ = child->enclosing_;
         delete child;
     }
 
     void CodeGen::visitProgramNode(ProgramNode& node) {
-        // 仅编排顶层声明，本节点不直接发射（行号由各子节点自持）。
+        // 仅编排顶层声明，不直接发射。
         for (const auto& decl: node.declarations) {
             emit_stmt(*decl);
         }
@@ -622,8 +575,7 @@ namespace aria {
         emit_stmt(*node.then_branch);
         if (node.else_branch != nullptr) {
             const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
-            // -> else
-            patch_jump_or_fail(jf, node.loc());
+            patch_jump_or_fail(jf, node.loc());                       // -> else
             emit_stmt(*node.else_branch);
             patch_jump_or_fail(jend, node.loc()); // -> end
         } else {
@@ -654,8 +606,7 @@ namespace aria {
         }
         const bool has_cond = node.condition != nullptr;
         const bool has_incr = node.increment != nullptr;
-        // continue: 有 incr -> 前向跳 L_incr（回填）；无 incr -> 后向跳循环头（back_target）。
-        // 循环头 = 条件起点 = L_cond
+        // continue 通道随 has_incr 打开：有 incr 前向跳 L_incr（回填），无 incr 后向跳循环头。
         auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};
         if (has_incr) {
             loop_ctx.continue_fwd_patches.emplace(); // 打开前向 continue 通道
@@ -669,8 +620,8 @@ namespace aria {
         emit_stmt(*node.body);
         loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
 
-        // continue（前向）须回填到 L_incr：此刻 cur_cu()->size() 即递增区起点，且须先于递增发射--
-        // 若等递增与 JUMP_BACK 发完再回填，cur_cu()->size() 已是 L_end，continue 会错跳到 L_end 提前出循环。
+        // continue 回填须先于递增发射：此刻 cur_cu()->size() 即 L_incr；若递增与 JUMP_BACK 发完再回填，
+        // size() 已是 L_end，continue 会错跳提前出循环。
         if (loop_ctx.continue_fwd_patches) {
             for (const u32 patch: *loop_ctx.continue_fwd_patches) {
                 patch_jump_or_fail(patch, node.loc()); // -> L_incr
@@ -686,21 +637,19 @@ namespace aria {
 
     void CodeGen::visitForInStmtNode(ForInStmtNode& node) {
         const u32 line = node.line();
-        // lowering 等价形式（无预占/peek-store，值填槽--下个局部 slot 即当前栈高，见指令集 §4.3）：
-        // 外层 for-in scope 挂隐藏局部 <iter> = iterable.iter()（"<iter>" 含 <> 不可作标识符，不撞用户名）；
-        // 循环头 = has_next() 判断处（continue 跳此，无 increment 步）；每轮 per-iteration scope 里
-        // <pattern> = iter.next()（bind_pattern Fill）后跑体、end_scope 收口（每轮 fresh 绑定）。
-        begin_scope(); // for-in scope（D）：仅 <iter>，循环全程存活
+        // lowering：外层 for-in scope 挂隐藏局部 <iter> = iterable.iter()（"<>" 不可作标识符，不撞名）；
+        // 循环头 = has_next() 判断处（continue 跳此，无增量步）；每轮 per-iteration scope 内
+        // <pattern> = iter.next()（Fill）后跑体、end_scope 收口，每轮 fresh 绑定。
+        begin_scope(); // for-in scope：仅 <iter>，循环全程存活
         const u32 loop_scope = cur_fn_ctx()->scope_depth_;
 
-        // 隐藏局部 <iter>，值填槽：iterable.iter() 出值后 declare，值即 <iter>（无 LOAD_NIL 预占、无
-        // STORE_LOCAL/POP）。
+        // 隐藏局部 <iter> 值填槽：iter() 出值即登记，无预占槽。
         // [iterable]（receiver）
+
         emit_expr(*node.iterable);
         emit_method_call0("iter", node.loc());                                // [iter_obj] 恰在 slot 位置
         const u16 iter_var_slot = define_local_or_fail("<iter>", node.loc()); // 值已在槽位，登记即初始化
 
-        // 循环头 = has_next 判断处
         auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};
         // [iter]（receiver）
         cur_cu()->emit_load_local(iter_var_slot, line);
@@ -710,8 +659,8 @@ namespace aria {
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
 
-        // per-iteration scope：pattern + 体每轮 fresh（值填槽）。体经 emit_stmt 作为不透明子节点，
-        // 若为 block 则自带更深层 scope；break/continue 跳出时由 emit_pop_locals_to(loop_scope) 代弹。
+        // per-iteration scope：pattern + 体每轮 fresh；体为 block 自带更深层 scope，break/continue
+        // 跳出由 emit_pop_locals_to(loop_scope) 代弹。
         begin_scope();
         cur_cu()->emit_load_local(iter_var_slot, line); // [iter]（receiver）
         emit_method_call0("next", node.loc());          // [value] 恰在 slot 位置
@@ -753,8 +702,7 @@ namespace aria {
     }
 
     void CodeGen::visitReturnStmtNode(ReturnStmtNode& node) {
-        // ModuleEntry 语义单源见 FnKind.hpp 注：带值 return 编译期拒绝，裸 return 即模块体提前
-        // 退出(压模块对象常量后 RETURN,与隐式收尾同序)。
+        // 带值 return 编译期拒绝；裸 return 即压模块对象后 RETURN 提前退出，与隐式收尾同序。
         if (cur_fn_ctx()->kind_ == FnKind::ModuleEntry) {
             if (node.value != nullptr) {
                 fail(ErrorCode::ReturnValueAtTopLevel, node.loc(), "'return' at top level must not carry a value");
@@ -769,12 +717,11 @@ namespace aria {
 
     void CodeGen::visitImportStmtNode(ImportStmtNode& node) {
         const u32 line = node.line();
-        // IMPORT path:u16 压模块值于栈顶；绑定与 var/fun 同形：顶层 -> DEF_GLOBAL alias，嵌套 -> 值填槽。
-        // path/alias 经 add_name_or_fail（无需守卫，见类首 GC 安全注）。
+        // IMPORT 压模块值于栈顶；绑定与 var/fun 同形（顶层 DEF_GLOBAL，嵌套值填槽）。
         const auto path_idx = add_name_or_fail(node.path, node.loc());
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line); // [module]
-        // path 已先入池经 module 根链可达，故 alias 的 new_string 不会回收已入池的 path（类首 GC 安全注）。
+        // path 已入池经 module 根链可达，alias 的 new_string 不会回收 path。
         bind_stack_value(node.alias, node.loc()); // [module] -> [] DEF_GLOBAL 弹值 / 值填槽
     }
 
@@ -785,30 +732,27 @@ namespace aria {
             fail(ErrorCode::TryWithoutHandler, node.loc(), "'try' requires a catch clause");
         }
 
-        // lowering：入口预插 try_records 占位（begin 已定、余待结尾回填）-> 编译 try 体（嵌套 try 在此
-        // 各自预插，记录按 begin 升序）-> JUMP 跳过 catch -> L_catch 起 begin_scope + 登记 catch 参数
-        // （e 由 unwind 截栈到 slots+stack_depth 后 push 填槽，恰落该槽，无 STORE_LOCAL）-> 编译 catch
-        // 体 -> 末尾回填 end/handle/stack_depth。栈平衡：两路径 end_scope 都回到 stack_depth，在 L_end
-        // 齐平（走查见 exception-implementation-pitfalls.md 坑 #4/#10）。
+        // lowering：入口预插 try_records 占位（begin 已定，余末尾回填）-> 编译体 -> JUMP 跳过 catch；
+        // catch 参数 e 由 unwind 截栈到 slots + stack_depth 后 push 恰落槽（无 STORE_LOCAL）；
+        // 两路径 end_scope 均回到 stack_depth，栈在 L_end 齐平。
         const auto stack_depth = static_cast<u32>(cur_fn_ctx()->locals_.size()); // try 入口局部数(try scope 开前)
         const u32  begin       = cur_cu()->size();
         const auto rec_idx     = cur_cu()->try_records.size();
-        // 预插占位(begin 已定,余待回填)
         cur_cu()->try_records.push(TryRecord{begin, 0, 0, 0});
-        begin_scope();         // try 体 scope
-        emit_stmt(*node.body); // 嵌套 try 在此编译,各自入口预插占位(begin > 本层)-> 整体升序(坑 #4)
+        begin_scope();
+        emit_stmt(*node.body); // 嵌套 try 在此预插占位，begin > 本层故整体升序
         end_scope(line);
         const u32 end   = cur_cu()->size();
         const u32 jskip = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
         // L_catch
         const u32 handle = cur_cu()->size();
-        begin_scope(); // catch 子句 scope(包 e + catch 体 -- e 须入 scope,两路径栈平衡,坑 #10)
+        begin_scope(); // catch 子句 scope 含 e + 体，两路径栈平衡
         std::ignore =
                 define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end
-        // 回填占位项(嵌套 try 的内层记录已在体编译期间插于本项之后,构造即升序,不排序,坑 #4)。
+        // 回填占位项；内层记录已在体编译期间插于本项之后，构造即升序、不排序。
         cur_cu()->try_records[rec_idx].end         = end;
         cur_cu()->try_records[rec_idx].handle      = handle;
         cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
@@ -816,8 +760,7 @@ namespace aria {
 
     void CodeGen::visitThrowStmtNode(ThrowStmtNode& node) {
         const u32 line = node.line();
-        // 求值抛出表达式后 THROW 弹值入寄存器,运行期由 unwind 查异常记录表派发(语义见
-        // AriaVM dispatch_loop 的 THROW case):原值不包 ObjException,catch 绑原值保类型(坑 #7)。
+        // THROW 弹值入挂起寄存器，由 unwind 查异常记录表派发；原值不包 ObjException，catch 绑原值保类型。
         // [v]
         emit_expr(*node.expr);
         cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
@@ -832,9 +775,8 @@ namespace aria {
         }
     }
 
-    // match 降糖总口(模板定义,MatchStmtNode/MatchExprNode 两实例化点即下方两 visit):纯降糖零新
-    // 指令,subject 求值一次驻留栈上跨臂复用(命中臂入口 POP 消费,全臂未命中由 THROW 的 unwind
-    // 清栈),逐臂展开「DUP + 模式 + EQUAL + 未命中跳下臂」链;语句臂净零值、表达式臂每臂恰一值。
+    // match 降糖总口（模板定义，两 visit 为实例化点）；subject 驻栈跨臂复用，全臂未命中由 THROW
+    // 的 unwind 清栈。
     template<typename Node>
     void CodeGen::emit_match(Node& node) {
         validate_match_arms(node.arms);
@@ -878,17 +820,14 @@ namespace aria {
     void CodeGen::visitMatchStmtNode(MatchStmtNode& node) { emit_match(node); }
 
     void CodeGen::visitFunDeclNode(FunDeclNode& node) {
-        // name 由 compile_function 内部 intern + make_guard，此处只传 StringView；node.loc() 作 decl_loc。
-        // 五种 kind 的绑定/注册分派收口在 compile_function（穷尽 switch，见其注）。
         compile_function(node.name, node.params, *node.body, node.loc(), node.kind);
     }
 
     void CodeGen::visitDefDeclNode(DefDeclNode& node) {
         const u32 line = node.line();
 
-        // ① superclass:有 -> 裸名解析 + 读取(运行期解析 superclass 值,跨模块导入类可用;编译期不查
-        //    全局,未命中沿用运行期 UndefinedVariable);无 -> LOAD_REG ObjectClass(def Foo 等价
-        //    def Foo : Object;根类在值寄存器组,按索引加载不经名字查,用户 shadow 免疫)。
+        // ① superclass：运行期解析读取（编译期不查全局，未命中沿用运行期 UndefinedVariable）；
+        //    无父类则 LOAD_REG ObjectClass（def Foo 等价 def Foo : Object，不经名字查、shadow 免疫）。
         if (node.superclass) {
             const auto resolved = resolve_name_or_fail(*node.superclass, node.loc());
             emit_load_var(resolved, line); // [super]
@@ -902,19 +841,15 @@ namespace aria {
         cur_cu()->emit_op(OpCode::MAKE_CLASS, line);
         cur_cu()->emit_word(name_idx, line); // [class]
 
-        // ③ 类名绑定先于体编译:体内自引用(方法体/静态初始化器)要求绑定先于体,三腿收口
-        //    bind_class_value(成员位 DUP2 对复制挂表 + 全局腿 DUP 早绑 + 局部腿值填槽,见其注)。
+        // ③ 类名绑定先于体编译（体内自引用要求先在），收口在 bind_class_value。
         bind_class_value(node.is_member, node.name, node.loc());
 
-        // ④ 成员按源序发射(静态变量初始化顺序即此序,前一静态可被后续初始化器引用);成员各自经
-        //    accept 分派。成员重名不查重:成员即表写入(与体外 Foo.x = v 同形态),后写遮蔽。
+        // ④ 成员按源序发射（静态变量初始化即此序）；重名不查重，成员即表写入、后写遮蔽。
         for (const auto& member: node.members) {
             member->accept(*this);
         }
 
-        // ⑤ 尾部弹栈:头部绑定留有驻留类值的腿在此归位([class] -> [])--全局腿 DEF_GLOBAL 弹的
-        //    是 DUP 副本,成员腿 MAKE_STATIC 弹的是值副本,驻留原值都在尾部弹;局部腿无尾,类值即
-        //    局部、随作用域收尾弹出。
+        // ⑤ 尾部弹栈：顶层与类体绑定驻留的类值在此归位（与 bind_class_value 配对）；局部绑定无此尾。
         if (node.is_member || mod_ctx_->is_global_scope()) {
             cur_cu()->emit_op(OpCode::POP, line); // [class] -> [] 弹驻留类值
         }
@@ -922,18 +857,15 @@ namespace aria {
 
     void CodeGen::visitVarDeclNode(VarDeclNode& node) {
         for (const auto& [target, initializer]: node.bindings) {
-            // 初始化器先于声明名求值：求值后栈高 == locals_.size()，值恰在待声明槽位（值填槽）；init
-            // 里的同名引用沿 resolve 链落外层（遮蔽场合捕获外层、落全局则运行期 UndefinedVariable）。
-            // target 为 identifier 或解构 pattern，两形态同经 bind_pattern（Fill）。
+            // 初始化器先于声明名求值：求值后栈高 == locals_.size()，值恰在待声明槽位；init 同名引用
+            // 沿 resolve 链落外层（落全局则运行期 UndefinedVariable）。
             emit_expr_or_nil(initializer.get(), target->line());
             bind_pattern(*target, PatternBindMode::Fill);
         }
     }
 
     void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
-        // 静态变量成员（def 体 var）：求值初始化器(无则 nil)+ MAKE_STATIC。初始化器在类定义点、
-        // enclosing 作用域求值(eager);类名自引用两腿均可用(类名绑定先于体:全局腿经头部
-        // DEF_GLOBAL 解析到构建中类对象,局部腿经预登记局部槽)。
+        // 初始化器在类定义点、enclosing 作用域求值（eager）；绑定先于体编译，所以类名自引用在顶层与类体内都可用。
         const u32 line = node.line();
         emit_expr_or_nil(node.initializer.get(), line); // [class, v]
         const auto member_idx = add_name_or_fail(node.name, node.loc());
@@ -942,7 +874,7 @@ namespace aria {
     }
 
     void CodeGen::validate_int_literal(const i64 value, const SourceLoc loc) const {
-        // 整数字面量 i48 值域的唯一闸门(事实源 aria.hpp kIntMin/kIntMax);越界 -> NumberOutOfRange。
+        // 整数字面量 i48 值域唯一闸门；越界 NumberOutOfRange。
         if (value < kIntMin || value > kIntMax) {
             fail(ErrorCode::NumberOutOfRange, loc, "integer literal {} out of range", value);
         }
@@ -952,8 +884,7 @@ namespace aria {
         if (value < std::numeric_limits<i8>::min() || value > std::numeric_limits<i8>::max()) {
             return false;
         }
-        // LOAD_IMM 的 u8 操作数在 VM 侧按 i8 位型重解释做符号扩展（bit_cast<i8>）；此处先经 i8
-        // 保证符号语义、再转 u8 写字节（免窄化告警）。
+        // LOAD_IMM 的 u8 操作数 VM 按 i8 位型重解释，故先经 i8 保符号再转 u8（免窄化告警）。
         cur_cu()->emit_op(OpCode::LOAD_IMM, line);
         cur_cu()->emit_byte(static_cast<u8>(static_cast<i8>(value)), line);
         return true;
@@ -976,9 +907,8 @@ namespace aria {
     }
 
     bool CodeGen::try_emit_negated_literal(ExprNode& operand) const {
-        // -<数值字面量>：负常量本身就是一条加载指令（LOAD_IMM 按 i8 有符号解释，池内常量亦能取负），
-        // 取负并进常量即可，无须另发运行期 NEGATE；只认直接操作数这一层（-(-5) 外层是 UnaryExpr）。
-        // 值域按字面量自身值判（emit_int_literal 那一道闸），越界报文带源码写出的符号。
+        // 负常量本身即一条加载指令，取负并进常量即可，无须运行期 NEGATE；只认直接操作数层
+        // （-(-5) 外层仍是 UnaryExpr）。值域按字面量自身值判，越界报文带源符号。
         if (const auto i_node = dynamic_cast<IntegerLiteralNode*>(&operand)) {
             emit_int_literal(-i_node->value, i_node->line(), i_node->loc());
             return true;
@@ -1016,8 +946,8 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierNode(IdentifierNode& node) {
-        // 入口 take：Prepare = no-op（locator 是槽位/捕获索引/全局名，编译期常量，无接收者可备）；
-        // Locate（复合赋值/前置自增定位腿）与 Load 同形--重解析免费，无副本可留。
+        // Prepare no-op：identifier locator 是编译期常量（槽位/捕获索引/名字），无接收者可备；
+        // Locate 与 Load 同形，重解析免费。
         const auto mode     = take_lvalue_mode();
         const u32  line     = node.line();
         const auto resolved = resolve_name_or_fail(node.name, node.loc());
@@ -1036,16 +966,13 @@ namespace aria {
     }
 
     void CodeGen::visitThisExprNode(ThisExprNode& node) {
-        // this 是关键字非标识符:专用解析(resolve_this_or_fail,沿 ctx 链找最近实例方法、嵌套
-        // 经 upvalue 捕获、永不落全局),发射同普通局部读取(Local 恒槽 0 / Upvalue 捕获索引)。
+        // this 是关键字非标识符，走专用解析；发射同普通局部读取。
         const auto resolved = resolve_this_or_fail(node.loc());
         emit_load_var(resolved, node.line());
     }
 
     void CodeGen::visitSuperExprNode(SuperExprNode& node) {
-        // super.成员（文法单形，Load rvalue 读）：语境检查（仅直接方法帧可承载）后发 LOAD_SUPER_FIELD，
-        // 方法闭包由 VM 绑 this 成 bound method、静态槽原值直读。super.m(args) 经 visitCallNode 通用
-        // 路径复用本 visit，无特判分支（写形态契约见 SuperExprNode 注）。
+        // super.成员（单形，rvalue 读）：语境检查后 LOAD_SUPER_FIELD；方法闭包由 VM 绑 this，静态槽原值直读。
         if (!is_in_method()) {
             fail(ErrorCode::SuperOutsideMethod, node.loc(), "'super' outside method");
         }
@@ -1079,7 +1006,7 @@ namespace aria {
         const u32 line = node.line();
         switch (auto& operand = *node.operand; node.op) {
             case Op::Unary::Minus:
-                // 负字面量形态（详见 try_emit_negated_literal）：命中即一条负常量加载，否则一般路径。
+                // 负字面量形态：命中即一条负常量加载，否则一般路径。
                 if (try_emit_negated_literal(operand)) {
                     return;
                 }
@@ -1092,8 +1019,7 @@ namespace aria {
                 return;
             case Op::Unary::PreInc:
             case Op::Unary::PreDec: {
-                // E += 1 / E -= 1，复合赋值同族（定位腿走 Locate）。统一压 +1、由 ADD/SUBTRACT 决定方向
-                // --若 PreDec 压 -1 再 SUBTRACT 会算成 E - (-1) = E + 1，方向反。
+                // 与复合赋值同族（先 Locate 定位）；统一压 +1 由 ADD/SUBTRACT 定方向（PreDec 压 -1 会算反）。
                 emit_lvalue(operand, LvalueMode::Locate);
                 cur_cu()->emit_op(OpCode::LOAD_IMM, line);
                 cur_cu()->emit_byte(1, line);
@@ -1109,17 +1035,14 @@ namespace aria {
     void CodeGen::visitAssignmentNode(AssignmentNode& node) {
         const u32 line = node.line();
         if (node.op == Op::Assignment::Assign) {
-            // 普通 =：Prepare（接收者准备，编译期常量 locator 目标恒 no-op）-> <e> -> Store。
-            // STORE_FIELD 栈形 [obj, v] -> [v] 要求接收者先于值入栈，发射权在首腿的目标节点；
-            // 与复合赋值只差中间腿（值 vs op）。
+            // 普通 =：Prepare -> <e> -> Store。STORE_FIELD 栈形 [obj, v] 要求接收者先于值入栈，
+            // 发射权在第一步的目标节点；与复合赋值只差中间步骤（直接压值 vs 先 op）。
             emit_lvalue(*node.target, LvalueMode::Prepare);
             emit_expr(*node.value);
             emit_lvalue(*node.target, LvalueMode::Store);
             return;
         }
-        // 复合赋值：Locate -> <e> -> op -> Store。定位腿 emit_lvalue(Locate)：运行时 locator
-        // （FieldAccess）得 <obj> DUP LOAD_FIELD 副本跨腿复用；编译期常量 locator（Identifier/
-        // 帧内 this.x）在目标节点内折叠为 Load 同形，重解析免费。
+        // 复合赋值：Locate -> <e> -> op -> Store；运行时 locator 的副本供写入步复用，定位只求值一次。
         emit_lvalue(*node.target, LvalueMode::Locate);
         emit_expr(*node.value);
         cur_cu()->emit_op(binary_opcode(compound_op(node.op)), line);
@@ -1127,8 +1050,7 @@ namespace aria {
     }
 
     void CodeGen::visitDestructureAssignmentNode(DestructureAssignmentNode& node) {
-        // 目标恒为 listPattern（Parser 只在此形态建本节点）。右值求值一次后 DUP 一份留作本表达式
-        // 的值；Store 模式的 bind_pattern 净消耗栈顶一值，消费的是副本。语句位由 exprStmt 收尾弹值。
+        // 右值求值一次后 DUP 留作表达式值；Store 的 bind_pattern 净耗一值，消费的是副本。
         const u32 line = node.line();
         emit_expr(*node.value);
         cur_cu()->emit_op(OpCode::DUP, line);
@@ -1136,7 +1058,7 @@ namespace aria {
     }
 
     bool CodeGen::try_emit_method_call(const CallNode& node) {
-        // 契约见 CodeGen.hpp；未命中（callee 非成员访问）不发射任何字节。
+        // 未命中（callee 非成员访问）不发射任何字节。
         const auto member = dynamic_cast<FieldAccessNode*>(node.callee.get());
         if (member == nullptr) {
             return false;
@@ -1155,11 +1077,10 @@ namespace aria {
 
     void CodeGen::visitCallNode(CallNode& node) {
         const u32 line = node.line();
-        // 实参上限 kMaxArguments（CALL 操作数 u8）：先检后发，避免 emit 完数百个实参表达式才报错。
+        // 实参上限（CALL 操作数 u8），先检后发。
         if (node.args.size() > kMaxArguments) {
             fail(ErrorCode::TooManyArguments, node.loc(), "too many arguments (max {})", kMaxArguments);
         }
-        // recv.name(args) 两段式发射（见 try_emit_method_call）；未命中交下方一般路径。
         if (try_emit_method_call(node)) {
             return;
         }
@@ -1172,16 +1093,14 @@ namespace aria {
     }
 
     bool CodeGen::try_emit_this_field(const FieldAccessNode& node, const LvalueMode mode, const u32 line) const {
-        // this.x 且 this 为当前帧局部（直接实例方法帧）-> THIS_FIELD 系指令，this 取帧槽 0 不经栈；
-        // 未命中返回 false 交调用方走经栈路径。Prepare = no-op（无接收者可备）；Locate 与 Load 同形
-        // --写腿不经栈取 this（槽 0 编译期常量），定位腿发 DUP 副本反而滞留（无人消费）。
+        // 模式差异：Prepare 不发指令；Locate 与 Load 同形（this 不经值栈，DUP 副本无人消费只会滞留）。
         if (dynamic_cast<ThisExprNode*>(node.object.get()) == nullptr || !is_in_method()) {
             return false;
         }
         const auto name_idx = add_name_or_fail(node.name, node.loc());
         switch (mode) {
             case LvalueMode::Prepare:
-                return true; // 本腿零指令
+                return true; // 本分支零指令
             case LvalueMode::Load:
             case LvalueMode::Locate:
                 cur_cu()->emit_op(OpCode::LOAD_THIS_FIELD, line);
@@ -1196,19 +1115,18 @@ namespace aria {
     }
 
     void CodeGen::visitFieldAccessNode(FieldAccessNode& node) {
-        // 四模式语义见 LvalueMode 注；差异：Store 的值由调用方压在栈顶；super.成员 不经此。
+        // 差异点：Store 的值由调用方压在栈顶；super.成员 不经此。
         const auto mode = take_lvalue_mode();
         const u32  line = node.line();
         if (try_emit_this_field(node, mode, line)) {
             return;
         }
 
-        // 一般对象/嵌套捕获 this，接收者经栈（捕获 this 走 LOAD_UPVALUE，一般对象各自发射）；
-        // 各臂自带完整发射序列。
+        // 一般对象/嵌套捕获 this 走经栈路径。
         const auto name_idx = add_name_or_fail(node.name, node.loc());
         switch (mode) {
             case LvalueMode::Prepare:
-                // 普通 = 首腿：只发接收者（为 Store 腿垫栈），不读值
+                // Prepare：只发接收者（垫在值下方，供 Store 使用），不读值
                 emit_expr(*node.object); // [obj]
                 return;
             case LvalueMode::Load:
@@ -1217,12 +1135,12 @@ namespace aria {
                 cur_cu()->emit_word(name_idx, line); // [obj.x]
                 return;
             case LvalueMode::Store:
-                // 接收者已由 Prepare 腿压在值下，只发 store 指令
+                // 接收者已由 Prepare 压在值下方，只发 store 指令
                 cur_cu()->emit_op(OpCode::STORE_FIELD, line);
                 cur_cu()->emit_word(name_idx, line); // [obj, v] -> [v]
                 return;
             case LvalueMode::Locate:
-                // DUP 副本供本节点 Store 腿复用，locator 单次求值（compound-assignment-lowering.md §4.2）
+                // DUP 副本供写入步复用，定位只求值一次。
                 emit_expr(*node.object);              // [obj]
                 cur_cu()->emit_op(OpCode::DUP, line); // [obj, obj]
                 cur_cu()->emit_op(OpCode::LOAD_FIELD, line);
@@ -1233,9 +1151,7 @@ namespace aria {
     }
 
     void CodeGen::visitIndexAccessNode(IndexAccessNode& node) {
-        // 四模式(take 入口取,visitFieldAccessNode 同款):Load = rvalue 读;Prepare = 普通 = 首腿(只发
-        // obj + idx 备对);Store = 只发 STORE_INDEX(obj/idx 由 Prepare 腿备好);Locate = 定位腿,DUP2
-        // 复制 (obj, idx) 对跨越 load 供 Store 腿复用,locator 单次求值(compound-assignment-lowering.md §4.3)。
+        // Locate 用 DUP2 复制 (obj, idx) 对交写入步复用，定位只求值一次。
         const auto mode = take_lvalue_mode();
         const u32  line = node.line();
         switch (mode) {
@@ -1249,7 +1165,7 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [obj[idx]]
                 return;
             case LvalueMode::Store:
-                // obj/idx 已由 Prepare 腿压在值下,只发 store 指令
+                // obj/idx 已由 Prepare 压在值下方,只发 store 指令
                 cur_cu()->emit_op(OpCode::STORE_INDEX, line); // [obj, idx, v] -> [v]
                 return;
             case LvalueMode::Locate:
@@ -1264,7 +1180,7 @@ namespace aria {
 
     void CodeGen::visitListExprNode(ListExprNode& node) {
         const u32 line = node.line();
-        // 元素数上限 kMaxListElements(MAKE_LIST 操作数 u16):先检后发(visitCallNode 同款)。
+        // 元素数上限（MAKE_LIST 操作数 u16），先检后发。
         if (node.elements.size() > kMaxListElements) {
             fail(ErrorCode::TooManyElements, node.loc(), "too many list elements (max {})", kMaxListElements);
         }
@@ -1277,7 +1193,7 @@ namespace aria {
 
     void CodeGen::visitMapExprNode(MapExprNode& node) {
         const u32 line = node.line();
-        // 条目数上限 kMaxMapEntries(MAKE_MAP 操作数 u16,条目对数):先检后发(visitListExprNode 同款)。
+        // 条目对数上限（MAKE_MAP 操作数 u16），先检后发。
         if (node.entries.size() > kMaxMapEntries) {
             fail(ErrorCode::TooManyElements, node.loc(), "too many map entries (max {})", kMaxMapEntries);
         }
@@ -1293,8 +1209,7 @@ namespace aria {
         const u32 line = node.line();
         emit_expr(*node.lower);
         if (node.upper == nullptr) {
-            // 无上界开区间:压 [from] 单值,编 unbounded 位(含否上界无意义,不编 exclusive 位)。
-            // [from] -> [range]
+            // 无上界：仅编 unbounded 位（含否对无上界无意义）。[from] -> [range]
             cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
             cur_cu()->emit_byte(kRangeFlagUnbounded, line);
             return;
@@ -1318,16 +1233,14 @@ namespace aria {
     }
 
     void CodeGen::visitLambdaExprNode(LambdaExprNode& node) {
-        // 名字恒为 kAnonymousName（`<>` 非法标识符，供 <fn ...> 渲染与堆栈跟踪）；留栈不绑定由
-        // Lambda 态表达。decl_loc 同 visitFunDeclNode。
+        // 名字恒为 kAnonymousName（"<>" 不可作标识符）。
         compile_function(kAnonymousName, node.params, *node.body, node.loc(), FnKind::Lambda);
     }
 
     void CodeGen::visitMatchExprNode(MatchExprNode& node) { emit_match(node); }
 
     void CodeGen::visitSequenceExprNode(SequenceExprNode& node) {
-        // 逐元素求值，非末位求值后 POP 弃（同 ExprStmt 惯用法），末位留栈即序列值。零新指令。
-        // 单元素已由 parser 透明化，size >= 2 是本 visit 的入参不变式。
+        // 非末位求值后 POP 弃，末位留栈即序列值；单元素已由 parser 透明化，size >= 2 是入参不变式。
         ASSERT(node.expressions.size() >= 2, "sequence node requires two or more expressions");
         for (usize index = 0; index + 1 < node.expressions.size(); ++index) {
             emit_expr(*node.expressions[index]);
@@ -1337,9 +1250,8 @@ namespace aria {
     }
 
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode& node) {
-        // 栈顶值即待绑值；identifier 位置与 listPattern 的 rest 位（同为 IdentifierPatternNode）都经此。
-        // Fill：按名绑为当前作用域的新变量（收 bind_stack_value）。Store：写既有名（resolve + STORE_*），
-        // STORE_* 是 peek-store（值留栈），故补 POP 使本模式净消耗栈顶一值。
+        // 栈顶值即待绑值（identifier 位与 listPattern rest 位都经此）。Fill 绑新名；Store 写既有名，
+        // STORE_* 是 peek-store 故补 POP 净耗栈顶一值。
         switch (pattern_mode_) {
             case PatternBindMode::Fill:
                 bind_stack_value(node.name, node.loc());
@@ -1356,22 +1268,18 @@ namespace aria {
     }
 
     void CodeGen::visitWildcardPatternNode(WildcardPatternNode& node) {
-        // `_` 忽略该值：弹掉栈顶（Fill 的到达形态只有根位--for-in 目标 `var`/`for (_ in xs)`；
-        // 列表位置位由父层按 is_wildcard_pattern 跳过，不取元素故不达此处）。
+        // `_` 忽略该值即弹栈；列表位置位由父层按 is_wildcard_pattern 跳过不达此处，Fill 只在根位到达。
         cur_cu()->emit_op(OpCode::POP, node.line());
     }
 
     void CodeGen::visitListPatternNode(ListPatternNode& node) {
-        // 位置绑定 = 逐位置下标访问（文法：listPattern 映射为下标访问，位置 i 取 [i]，多余忽略、
-        // 不足由下标越界报错；rest 位取后缀 [元素数..]）。
+        // 逐位置下标访问（多余忽略、不足越界报错），rest 取后缀。
         const u32 line = node.line();
 
         switch (pattern_mode_) {
             case PatternBindMode::Fill: {
-                // 新名值填槽，三者都不偏离「栈高 == 局部数」不变式（见 pattern_access_count 注）：
-                //   0 次访问：源值即废，弹出（初始化器/next() 的副作用照跑，不取值）。
-                //   1 次访问：源值本身即消耗品，无须隐藏局部--取出的元素恰落在源值那个槽位。
-                //   >=2 次：源值先填成隐藏局部（值填槽），逐位置经它复取。
+                // 都不偏离「栈高 == 局部数」不变式：0 访问源值即废弹出（副作用照跑），1 访问源值即
+                // 消耗品（取出的元素恰落源槽位），>=2 源值填隐藏局部逐位置复取。
                 const usize access_count = pattern_access_count(node);
                 if (access_count == 0) {
                     cur_cu()->emit_op(OpCode::POP, line);
@@ -1381,8 +1289,7 @@ namespace aria {
                     emit_list_pattern_accesses(node, line, [] {});
                     return;
                 }
-                // 隐藏局部名带槽号：同作用域不许重名（define_local_or_fail 查 is_defined_in_scope），
-                // 而同一作用域里两条解构语句必占不同槽（作用域内局部只增不减），故带槽号天然唯一。
+                // 隐藏局部名带槽号：同 scope 局部只增必不同槽，天然唯一。
                 const auto source_name = std::format("<destructure_{}>", cur_fn_ctx()->locals_.size());
                 const u16  source_slot = define_local_or_fail(source_name, node.loc());
                 const auto push_source = [this, source_slot, line] { cur_cu()->emit_load_local(source_slot, line); };
@@ -1390,9 +1297,8 @@ namespace aria {
                 return;
             }
             case PatternBindMode::Store: {
-                // 既有名按名写，源值恒驻栈顶：每次访问前 DUP 供本次取元素（LOAD_INDEX 吃掉源与下标两
-                // 个），取出值交子节点写目标（identifier 子节点自行 POP）；故本层只需收尾弹掉自己的源值
-                // （净消耗栈顶一值；右值的副本由调用点持有）。
+                // 既有名按名写，源值恒驻栈顶：每次访问前 DUP 供取元素，取出值交子节点写目标；
+                // 本层收尾 POP 弹自己的源值即净耗一值（右值副本由调用点持有）。
                 emit_list_pattern_accesses(node, line, [this, line] { cur_cu()->emit_op(OpCode::DUP, line); });
                 cur_cu()->emit_op(OpCode::POP, line); // 弹本层源值
                 return;

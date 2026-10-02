@@ -5,31 +5,20 @@
 
 namespace aria {
 
-    // 操作数格式类别:ARIA_OPCODE_LIST 第二列的取值域,Disassembler 按此分发解码,
-    // 与 instruction-set.md §2.2 位宽表一一对应。新增格式类别须同步 Disassembler
-    // 的格式分发 switch(仅当既有类别容纳不下时才需要)。
     enum class OpFormat : u8 {
-        Simple,   // 无操作数
-        U8,       // 1 字节操作数, 渲染 {:02X}
-        U16,      // 2 字节小端操作数, 渲染 {:04X}
-        ConstU16, // 2 字节常量池索引(名字索引同类), 附常量可读化注释
-        ImmI8,    // 1 字节有符号立即数, hex + 十进制注释
-        JumpFwd,  // 2 字节前向偏移(ip+=off), 渲染 -> target; 条件跳转恒前向(if/while/短路), 见 instruction-set.md §2.3
-        JumpBack, // 2 字节后向偏移(ip-=off), 渲染 <- target; 后向恒无条件(while/for/for-in 回边)
+        Simple,     // 无操作数
+        U8,         // 1 字节操作数, 渲染 {:02X}
+        U16,        // 2 字节小端操作数, 渲染 {:04X}
+        ConstU16,   // 2 字节常量池索引(名字索引同类), 附常量可读化注释
+        ImmI8,      // 1 字节有符号立即数, hex + 十进制注释
+        JumpFwd,    // 2 字节前向偏移(ip+=off), 渲染 -> target; 条件跳转恒前向(if/while/短路)
+        JumpBack,   // 2 字节后向偏移(ip-=off), 渲染 <- target; 后向恒无条件(while/for/for-in 回边)
         RangeFlags, // 1 字节 flags(MAKE_RANGE,位义见 kRangeFlag*), 渲染 flags=0xNN
-        RegU8,      // 1 字节值寄存器索引, 附寄存器可读名注释(注册表 value_register.hpp)
+        RegU8,      // 1 字节值寄存器索引, 附寄存器可读名注释
         Import,     // 2 字节 path 常量索引 + path 注释
     };
 
-    // 指令集单一事实源: 每行 X(枚举名, 操作数格式), 枚举顺序即 opcode 数值(首条 HALT 隐式为 0, 依赖稠密递增)。OpCode /
-    // kOpCodeCount / kOpCodeNames / kOpCodeFormats 均由本表展开生成(生成器宏用完即 #undef)。新增指令流程: 本表加一行
-    // (选既有 OpFormat 类别) -> AriaVM 加对应 case -> 文档 instruction-set.md 同步; Disassembler 与名字/格式表
-    // 零改动。表内不放说明性注释, 语义细节统一见 instruction-set.md §4。易踩点速览:
-    //   - LOAD_IMM: u8 操作数按 i8 位型重解释做符号扩展(发射侧先经 i8 再转 u8)
-    //   - LOAD/STORE_LOCAL_N(1..8): 槽号即枚举名尾号, 零操作数(直线型); 通用 LOAD/STORE_LOCAL
-    //     槽号 u16(槽 0 与 >8 走此形态), N 域与连续性契约见下方 static_assert
-    //   - PREPARE_METHOD/CALL_METHOD: 两段式方法调用(解析先于实参求值, 见 §5.6); 待调值槽由实参整体下移一格补掉, 调用
-    //     区恒为 [recv, a1..aN]。若确需表内注释, 只能用块注释 /* */ -- 多行宏体内 // 会因反斜杠续行吞掉下一行。
+    // 多行宏体内 // 会因反斜杠续行吞掉下一行,表内注释只能用块注释 /* */。
 #define ARIA_OPCODE_LIST(X)                \
     X(HALT, Simple)                        \
     /* ---- data loading & storage ---- */ \
@@ -123,13 +112,10 @@ namespace aria {
     enum class OpCode : u8 { ARIA_OPCODE_LIST(ARIA_OP_ENUM) };
 #undef ARIA_OP_ENUM
 
-    // 指令总数(= X 表行数):opcode 字节越界判定等用,替代对枚举稠密(上界 = 末条枚举值)的依赖。
 #define ARIA_OP_COUNT(name, format) +1
     constexpr usize kOpCodeCount = 0 ARIA_OPCODE_LIST(ARIA_OP_COUNT);
 #undef ARIA_OP_COUNT
 
-    // opcode -> 名字 / 操作数格式查表(数组显式以 kOpCodeCount 定界,表行数与枚举条数不一致即编译错)。
-    // 供 Disassembler 等冷路径消费;VM 热路径不查表(操作数读取内联在各 case)。
 #define ARIA_OP_NAME(name, format) #name,
     inline constexpr StringView kOpCodeNames[kOpCodeCount] = {ARIA_OPCODE_LIST(ARIA_OP_NAME)};
 #undef ARIA_OP_NAME
@@ -140,16 +126,12 @@ namespace aria {
 
 #undef ARIA_OPCODE_LIST
 
-    // N 短变体槽号内嵌枚举序:LOAD/STORE_LOCAL_k 即读/写槽 k(k = 1..8),VM 侧与发射侧均按
-    // 枚举差换算槽号/opcode,表内 8 行连续是换算前提,此处钉死(表行重排即编译错)。
     static_assert(std::to_underlying(OpCode::LOAD_LOCAL_8) == std::to_underlying(OpCode::LOAD_LOCAL_1) + 7,
                   "LOAD_LOCAL_1..8 must stay contiguous");
     static_assert(std::to_underlying(OpCode::STORE_LOCAL_8) == std::to_underlying(OpCode::STORE_LOCAL_1) + 7,
                   "STORE_LOCAL_1..8 must stay contiguous");
 
-    // opcode -> 报错消息里的算子记号(ADD 为 "+" 等):只有二元算术/比较指令对应源码算子,其余取到即
-    // "?" -- 消费方(数值二元的类型守卫)只对本组指令取号,别的 opcode 落在 default 表编程错误,以可见
-    // 记号暴露而非静默空串。
+    // 仅算术/比较指令有源码算子; 落 default 即编程错误, 以 "?" 可见暴露而非静默空串。
     constexpr StringView op_symbol(const OpCode op) noexcept {
         switch (op) {
             case OpCode::ADD:
@@ -175,7 +157,7 @@ namespace aria {
         }
     }
 
-    // MAKE_RANGE flags 位义(编译发射与 VM 解码同源):
+    // MAKE_RANGE flags 位义:
     inline constexpr u8 kRangeFlagInclusive = 0x00; // 含上界(..)
     inline constexpr u8 kRangeFlagExclusive = 0x01; // 不含上界(...)
     inline constexpr u8 kRangeFlagUnbounded = 0x02; // 无上界(端点后省上界表达式, from.. / from... 同义, 含否位不编)

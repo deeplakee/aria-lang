@@ -7,7 +7,7 @@
 
 namespace aria {
 
-    // 清单见 ObjMovement.hpp trace 注释;帧成员 mark_object 的基类转换需完整类型,故住 .cpp。
+    // 帧成员 mark_object 的基类转换需完整类型,故住 .cpp。
     void ObjMovement::trace(GC& gc) const noexcept {
         for (auto p = buf_.data(); p < top_; ++p) {
             gc.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
@@ -32,8 +32,8 @@ namespace aria {
         init_frame_(f, closure, argc);
     }
 
-    // 就位刚 acquire 的栈顶空帧:slots 按不变量设为 top - argc - 1(栈顶 [callee, a1..aN]),
-    // VM 专有字段从 closure 解引用填充。槽 0 语义见 ObjMovement.hpp enter_frame 注释。
+    // 就位刚 acquire 的栈顶空帧:slots = top - argc - 1(栈顶 [callee, a1..aN]),VM 专有字段
+    // 从 closure 解引用填充;槽 0 语义见 ObjMovement.hpp enter_frame 注。
     void ObjMovement::init_frame_(CallFrame& f, ObjClosure* closure, const u8 argc) const {
         const auto fn = closure->function();
         f.slots       = top_ - argc - 1;
@@ -46,8 +46,8 @@ namespace aria {
         f.last_ip = f.ip;
     }
 
-    // 捕获单点:「同一局部只有一份引用」不变式由此收口(链序与自愈说明见 ObjMovement.hpp)。
-    // 建新路径:new_upvalue 返回白色无根,到插链之间无任何分配点,入链后即随本对象 trace 保命。
+    // 「同一局部只有一份引用」不变式由此收口;建新到插链之间无任何分配点,入链后即随本对象
+    // trace 保命。
     ObjUpvalue* ObjMovement::capture_upvalue(GC& gc, Value* slot) noexcept {
         ObjUpvalue* prev = nullptr;
         ObjUpvalue* cur  = open_upvalues_;
@@ -68,9 +68,8 @@ namespace aria {
         return uv;
     }
 
-    // 闭所有指向 >= from 槽址的开指:值迁入各自 closed_(close,location_ 转指自持)并整段摘链。
-    // 降序不变式下 >= from 恒为链头连续前缀,遇首个 < from 即停;摘下的节点 next_open_ 清空(close
-    // 后节点已离链,陈旧链指针无意义,防误遍历)。
+    // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_ 并整段摘链,降序不变式下 >= from 为
+    // 链头连续前缀,遇首个 < from 即停;摘下的节点 next_open_ 清空 -- 已离链的陈旧链指针防误遍历。
     void ObjMovement::close_upvalues(const Value* from) noexcept {
         ObjUpvalue* uv = open_upvalues_;
         while (uv != nullptr && uv->value_slot() >= from) {
@@ -82,12 +81,9 @@ namespace aria {
         open_upvalues_ = uv;
     }
 
-    // 值栈 2x 扩容:经 Buffer::reserve -> GC reallocate(后端原生 realloc,可能原地扩展也可能
-    // 搬迁)。旧基址一律失效(原地时不变、搬迁时释放),指入旧块的 top_/活动帧 slots/open upvalue
-    // location_ 三类指针须重绑:调 reserve **前**(old_base 存活)算好相对 old_base 的槽偏移,
-    // 调**后**用「新基址 + 偏移」重建(基址未变则刷新为同值),全程不触碰 dangling 指针(对
-    // dangling 指针做指针减法是 UB,[expr.add] p5;偏移须在扩容前算好,见 Buffer::reserve 注释)。
-    // open upvalue 链偏移按链序平行存取;暂存用 List(与 GC 自身 scratch 容器同款)。
+    // 值栈 2x 扩容:旧基址一律失效,指入旧块的三类指针 top_/活动帧 slots/开指 location_ 须重绑
+    // -- 调 reserve 前算好相对旧基址的槽偏移、调后用「新基址 + 偏移」重建,全程不读 dangling
+    // 指针(对 dangling 指针做指针减法是 UB);暂存用 List(与 GC 自身 scratch 容器同款)。
     void ObjMovement::grow_stack_() noexcept {
         const auto old_base    = buf_.data();
         const auto frame_count = frames_.size();

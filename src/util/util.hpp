@@ -16,9 +16,9 @@ namespace aria::util {
         inline void emit_bytes(const u8* p, const int n, const int group_bits) {
             const int  total_bits = n * 8;
             const bool sep        = group_bits > 0;
-            const int  step       = sep ? group_bits : total_bits; // 不分组时当作一整组
+            const int  step       = sep ? group_bits : total_bits;
 
-            for (int i = total_bits - 1; i >= 0; --i) { // 高位先行
+            for (int i = total_bits - 1; i >= 0; --i) {
                 const u8  b   = p[(i / 8)];
                 const int bit = (b >> (i % 8)) & 1;
                 io::print("{}", static_cast<char>('0' + bit));
@@ -30,9 +30,8 @@ namespace aria::util {
             io::print("\n");
         }
 
-        // splitmix64 mixing step(Vigna lowbias32 变体):64 位值雪崩成 32 位散列。常数/移位
-        // (30/27/31)专为 32 位输出低偏置调优--高位差异充分传播到低 32 位,利于 Swiss Table 取低 7 位作 h2。
-        // 供数值/地址等 64 位标量哈希共用。
+        // splitmix64 mixing step(Vigna lowbias32 变体):64 位雪崩成 32 位散列;常数/移位为其
+        // 32 位输出低偏置调优,高位差异充分传播到低 32 位(Swiss Table 取低位作 h2)。
         [[nodiscard]]
         inline u32 splitmix64_mix32(u64 value) noexcept {
             value ^= value >> 30;
@@ -43,8 +42,7 @@ namespace aria::util {
             return static_cast<u32>(value);
         }
 
-        // FNV-1a 32-bit 字节哈希核心:逐字节 h ^= byte; h *= prime。
-        // 供 hash_str(StringView) 等字节序列哈希共用。
+        // FNV-1a 32-bit 字节哈希核心。
         [[nodiscard]]
         inline u32 fnv1a_32(const u8* data, const usize len) noexcept {
             u32 h = 2166136261u; // FNV-1a offset basis
@@ -63,7 +61,7 @@ namespace aria::util {
         return detail::splitmix64_mix32(bits);
     }
 
-    // 地址哈希:指针经 splitmix64 混合(对象身份哈希用)。
+    // 地址哈希:指针位模式经 splitmix64 混合。
     [[nodiscard]]
     inline u32 hash_addr(const void* p) noexcept {
         return detail::splitmix64_mix32(static_cast<u64>(reinterpret_cast<uintptr_t>(p)));
@@ -76,8 +74,7 @@ namespace aria::util {
         return detail::fnv1a_32(reinterpret_cast<const u8*>(s.data()), s.size());
     }
 
-    // 转义字符串字面量内容(不含外层引号):" \ \n \t \r,其余控制字符(<0x20)-> \x{HH},非 ASCII 透传。
-    // 供 ObjString 的 debug/repr 渲染做可读化转义。
+    // 转义为字符串字面量内容形态(不含外层引号);控制字符(<0x20)-> \x{HH},非 ASCII 透传。
     [[nodiscard]]
     inline String escape_string(const StringView s) {
         String out;
@@ -111,8 +108,7 @@ namespace aria::util {
         return out;
     }
 
-    // 以"高位在前、每 group_bits 位一组、空格分隔"的形式打印 n 个字节。
-    // group_bits 控制多少位为一组用空格分隔，默认 8；传 0 或负数则不分隔。
+    // 按"高位在前、每 group_bits 位一组、空格分隔"打印底层字节;group_bits 传 0 或负数则不分隔。
     template<typename T>
     void print_binary(const T& value, const int group_bits = 8) {
         if constexpr (std::is_pointer_v<T> || std::is_same_v<T, std::nullptr_t>) {
@@ -137,9 +133,7 @@ namespace aria::util {
 #endif
     }
 
-    // 任意对象指针 -> void*:const 感知。对 T* 返回 void*,对 const T* 返回 const void*,
-    // 保留 const 限定(const 成员里 this 为 const Object*,不能 cast 成非 const void*)。
-    // 供 std::format 的 {:p} / 打印对象地址等使用(二者均接受 const void*)。
+    // 任意对象指针 -> void*,const 感知:保留 const 限定(const 成员里 this 为 const Object*,不能 cast 非常量 void*)。
     template<typename T>
         requires std::is_pointer_v<T>
     [[nodiscard]]
@@ -151,7 +145,7 @@ namespace aria::util {
         }
     }
 
-    // 把小端的 low/high 两字节拼成 u16(low 在低位)。与 split_word 互逆。
+    // 把小端的 low/high 两字节拼成 u16。
     [[nodiscard]]
     constexpr u16 make_u16(const u8 low, const u8 high) noexcept {
         return static_cast<u16>(static_cast<u16>(low) | (static_cast<u16>(high) << 8));
@@ -163,8 +157,7 @@ namespace aria::util {
         return {static_cast<u8>(word & 0xFF), static_cast<u8>(word >> 8)};
     }
 
-    // 取栈顶元素并弹出:返回栈顶元素(经 move)后 pop。调用方须保证栈非空。
-    // Stack (std::stack) 只暴露 top(),无"取出并弹"原子原语,故在此收口一处供共用。
+    // 取栈顶元素并弹出(经 move);调用方须保证栈非空。
     template<typename T>
     [[nodiscard]]
     T pop_top(Stack<T>& stack) {
@@ -173,8 +166,7 @@ namespace aria::util {
         return top;
     }
 
-    // 取走 optional 当前值并置空:返回被取走的 Opt<T>(可能为空)。Rust Option::take 同名同义;
-    // std::optional 无对应成员原语,故收口 std::exchange 习语在此供共用。
+    // 取走 optional 当前值并置空:返回被取走的 Opt<T>(可能为空)。
     template<typename T>
     [[nodiscard]]
     Opt<T> take(Opt<T>& opt) {
@@ -188,16 +180,14 @@ namespace aria::util {
                 static_cast<u8>((word >> 24) & 0xFF)};
     }
 
-    // 两下标距离(绝对值差):取大减小,无符号域恒不下溢。命名随 C++26 std::abs_diff(同义)。
-    // 纯换算无分配。
+    // 两下标距离(绝对值差):取大减小,无符号域恒不下溢。
     [[nodiscard]]
     constexpr usize abs_diff(const usize lhs, const usize rhs) noexcept {
         return lhs <= rhs ? rhs - lhs : lhs - rhs;
     }
 
-    // 下标负索引解析(从尾计数约定,list/string 下标与切片共用):-1 = 末元素、-size =
-    // 首元素,正数原样;归一化后 < 0 或 >= size 即越界(nullopt)。纯换算无分配无 fail,
-    // 报错文案由调用方就地烘焙(报原始键值)。raw 负支加法不下溢(size <= i64max)。
+    // 下标负索引解析(从尾计数约定):-1 = 末元素、-size = 首元素,正数原样;归一化后 < 0 或 >= size
+    // 即越界(nullopt)。raw 负支加法不下溢(size <= i64max)。
     [[nodiscard]]
     inline Opt<usize> resolve_index(const i64 raw, const usize size) noexcept {
         const auto signed_size = static_cast<i64>(size);
@@ -208,10 +198,8 @@ namespace aria::util {
         return index;
     }
 
-    // 位置解析(插入位语义,resolve_index 的姊妹函数:list.insert 消费):-1 = 末元素之前、
-    // -size = 首元素之前,负数与下标同式从尾计数归一(负支加法不下溢同上),唯上界放宽到
-    // == size --追加位,恰是下标域 [-(size), size) 外多出的一个合法值(负数归一后至多
-    // size-1,追加位只有正拼写)。纯换算无分配无 fail,报错文案由调用方就地烘焙(报原始键值)。
+    // 位置解析(插入位语义,负数从尾计数):-1 = 末元素之前、-size = 首元素之前,正数原样;上界放宽到
+    // == size(追加位,下标域 [-(size), size) 外多出的唯一合法值);越界返 nullopt。
     [[nodiscard]]
     inline Opt<usize> resolve_position(const i64 raw, const usize size) noexcept {
         const auto signed_size = static_cast<i64>(size);
@@ -222,11 +210,8 @@ namespace aria::util {
         return position;
     }
 
-    // 整串十进制整数文本解析(数据文本,不是源码字面量语法):收前导 [+-](from_chars 只认 '-',
-    // 故 '+' 先行剥掉)与 [0-9]+,整串消费且落语言 int(i48)域内才为 somed。不跳空白(要修先
-    // trim)、不收下划线与进制前缀--那是源码字面量语法(Lexer 的 parse_int 一族),不是数据语法。
-    // 域闸设在此而非调用方:越域值经 Value::from_int 会被静默截尾,是调用方不该有忘掉机会的坑。
-    // 纯解析无分配无 fail,报错/兜底文案由调用方就地决定(内建方法处兜 nil)。
+    // 整串十进制整数文本解析(数据语法,非源码字面量):收 [+-][0-9]+,整串消费且落 i48 值域内才 somed。
+    // 不跳空白、不收下划线/进制前缀(那是源码字面量语法);域闸设此:越域值经 Value::from_int 会被静默截尾。
     [[nodiscard]]
     inline Opt<i64> parse_int_text(const StringView text) {
         const auto body  = text.starts_with('+') ? text.substr(1) : text;
@@ -240,9 +225,8 @@ namespace aria::util {
         return value;
     }
 
-    // 整串十进制浮点文本解析:收整数形/小数形/指数形,亦收 inf/nan(与 str(f64) 的输出往返一致);
-    // 整串消费且落 f64 值域内才为 somed--越域(如 1e400)与解析失败同路返 nullopt,不饱和成 inf。
-    // 同 parse_int_text:无空白跳过、无下划线、无进制前缀,兜底交调用方。
+    // 整串十进制浮点文本解析:收整数形/小数形/指数形与 inf/nan;整串消费,越域(如 1e400)与解析失败同返 nullopt。
+    // 数据语法同 parse_int_text:不跳空白、不收下划线/进制前缀。
     [[nodiscard]]
     inline Opt<f64> parse_float_text(const StringView text) {
         const auto body  = text.starts_with('+') ? text.substr(1) : text;
@@ -255,9 +239,7 @@ namespace aria::util {
         return value;
     }
 
-    // 序列化拼接:range 逐元素经 transform 转 String,delimiter 连接(debug_repr 与语言面
-    // 集合方法的共用底座;元素序 = range 迭代序)。transform 接收元素、返回可拼进 String
-    // 的值(通常 String)。
+    // 序列化拼接:range 逐元素经 transform 转 String 后以 delimiter 连接(元素序 = range 迭代序)。
     template<typename Range, typename Fn>
     [[nodiscard]]
     String join(const Range& range, const StringView delimiter, Fn&& transform) {
@@ -273,11 +255,8 @@ namespace aria::util {
         return out;
     }
 
-    // 定长字符串载体,专供字符串字面量作 NTTP(非类型模板参数)用:C++20 类类型 NTTP 须为
-    // 结构化类型(literal class 且数据成员全 public 非 mutable),std::string_view 成员私有
-    // 当不了 NTTP、const char* 又收不了字符串字面量实参,此为社区通行的最小自建载体。capacity
-    // 与存储均含结尾 '\0'(data_ 即合法 C 串);view() 不含 '\0',与无哨兵的 StringView 逐条
-    // 比较才恒可命中。模板实参只接受字符串字面量经 consteval 构造器转换,调用方无需写出类型名。
+    // 定长字符串载体,供字符串字面量作 NTTP:C++20 类类型 NTTP 须为结构化类型(数据成员全 public 非 mutable),
+    // string_view 私有成员当不了、const char* 收不了字面量。存储含 '\0'(data_ 即 C 串),view() 不含,比较才恒命中。
     template<usize capacity>
     class FixedString {
     public:

@@ -9,10 +9,8 @@ namespace aria {
 
     class Object;
 
-    // 在印路径守卫:与 EqualGuard 成对(机制论证见其头注:thread_local 朴素栈、RAII 逆序析构
-    // 严格配对、线性扫极小、分配不触 GC)。差异:记录单位是**单对象**而非 (lhs, rhs) 对--
-    // 渲染只需「在印对象重遇」即截断 "[...]"(比较侧同对重遇视为相等才有余归纳闭合问题)。
-    // 非递归类型(字符串/函数等)不递归渲染子值,无需挂。
+    // 渲染路径守卫,与 EqualGuard 成对(机制同其头注:thread_local 朴素栈、RAII 配对、线性扫、分配不触 GC);
+    // 差异:记录单位是单对象而非 (lhs, rhs) 对 -- 「在印对象重遇」即截断 "[...]"(余归纳底座仅比较侧需要)。
     class PrintGuard {
     public:
         explicit PrintGuard(const Object* object) { active_path().push_back(object); }

@@ -7,11 +7,8 @@
 
 namespace aria {
 
-    // 对象壳池:按槽尺寸类(8 B 一档)的定长空壳仓库,接在 GC 与底层分配原语之间。对象壳只经
-    // new_object 出生、delete_object 死亡,同尺寸死壳就地复用后,后端只见 span 大块与容器缓冲
-    // 流量。槽尺寸 = sizeof 上取整到 8;超过 kMaxPooledSlotBytes 的尺寸不池化、直连后端(正确性
-    // 不变,只是不过池)。分配失败 fatal_error(OutOfMemory),与 GC::allocate 同契约;永不触发 GC
-    // (壳槽获取不调 maybe_collect,GC 触发仍归 new_object 顶部与 VM safe point)。
+    // 对象壳池:按槽尺寸类(8 B 一档)的定长空壳仓库,同尺寸死壳就地复用,后端只见 span 大块流量。
+    // 槽尺寸 = sizeof 上取整到 8,超过 kMaxPooledSlotBytes 不池化、直连后端(正确性不变);永不触发 GC。
     class ShellPool {
     public:
         ShellPool() noexcept : classes_{} {}
@@ -22,8 +19,8 @@ namespace aria {
         ShellPool(ShellPool&&)                 = delete;
         ShellPool& operator=(ShellPool&&)      = delete;
 
-        // 取一个 T 壳的存储(未构造)。sizeof(T) 编译期定格:槽尺寸以模板实参穿透到取槽全程,
-        // 格下标/bump 步长/span 槽容量全编译期折叠,超限分支对池化 T 不实例化;永不返回 null。
+        // 取一个 T 壳的存储(未构造)。sizeof(T) 编译期定格,格下标/bump 步长/span 槽容量全编译期折叠,
+        // 超限分支对池化 T 不实例化;永不返回 null。
         template<typename T>
         [[nodiscard]]
         void* alloc() {
@@ -36,8 +33,7 @@ namespace aria {
             }
         }
 
-        // 归还死壳(析构已跑完,内存按字节复用):按其精确 sizeof(来自 Object::size())落格,
-        // 与 alloc 侧的 sizeof 同源,恒命中同格;超上限尺寸直连后端。
+        // 归还死壳(析构已跑完,内存按字节复用):按精确 sizeof 落格,与 alloc 侧同源恒命中同格;超上限直连后端。
         void push(const usize shell_bytes, void* shell) noexcept {
             const usize slot_bytes = slot_size_for(shell_bytes);
             if (slot_bytes == 0) {
@@ -129,8 +125,7 @@ namespace aria {
             return pointer;
         }
 
-        // 排空:全部 span 逐块还后端,各格状态复位。~GC 的 free_all_ 先把残留壳压回池,再由
-        // ~ShellPool 在这里随成员析构统一归还。
+        // 排空:全部 span 逐块还后端,各格状态复位。
         void drain_() noexcept {
             for (auto& [free_head, spans]: classes_) {
                 auto span = spans;

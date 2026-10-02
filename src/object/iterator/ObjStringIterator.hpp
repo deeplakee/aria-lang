@@ -8,11 +8,7 @@ namespace aria {
 
     class ObjString;
 
-    // string 迭代器(ObjIterator 引擎缝的 string 消费者):被遍历 string + 字节偏移游标,
-    // 按码点步进(decode_one 解码,推进宽度 = 该码点字节宽)。next 每步产出该码点的
-    // 1-char string(与 s[i] 产出形态一致,println 可直读;utf8::encode 编码)。string 不
-    // 可变,不存在迭代中变更问题;游标按字节推进,恒在字符边界(逐码点解码推进,不从
-    // 中间切入)。
+    // string 迭代器:持被遍历 string 与字节偏移游标,按码点步进;next 每步产出一个单字符 string。
     class ObjStringIterator final : public ObjIterator {
     public:
         // str 恒非空(ctor ASSERT);offset 出厂 0。

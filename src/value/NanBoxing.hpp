@@ -11,12 +11,10 @@ namespace aria {
 
 namespace aria::nanboxing {
 
-    // aria 解释器的 NaN-boxing 值表示(C++23):每个值装进一个 64 位 IEEE-754 double。真 double 原样存储;
-    // 其余类型藏进 quiet NaN 的未用位型。只认领 top-2 mantissa bits 置位的 NaN 子集(kQNan),避开硬件
-    // canonical quiet NaN(0x7ff8...),使算术产生的 NaN 落回 is_f64 判定、绝不与 boxed 值冲突。非 f64 值的
-    // 格布局:sign == 1 -> 指针,载荷 = 低 48 位(x86-64 / ARM64 用户态);sign == 0 -> tag 在 bits 48..49:
-    // 1 = nil、2 = bool(真值在 bit 0)、3 = int(48 位补码,bits 0..47)。指针占满 sign==1 半区:48 位指针
-    // 不需要 tag 槽,两个 tag 槽全让给 Nil/Bool/Int。
+    // NaN-boxing 值表示(C++23):真 double 原样存储,其余类型藏进 quiet NaN 未用位型。只认领 top-2 mantissa
+    // bits 置位的 kQNan 子集,避开硬件 canonical quiet NaN(0x7ff8...),使算术产生的 NaN 落回 is_f64 判定、
+    // 绝不与 boxed 值冲突。非 f64 位布局:sign==1 -> 低 48 位为指针(x86-64/ARM64 用户态);sign==0 -> tag 在
+    // bits 48..49:1 = nil、2 = bool(真值在 bit 0)、3 = int(48 位补码,bits 0..47)。
     class Value {
         using Obj = Object*;
 
@@ -35,9 +33,8 @@ namespace aria::nanboxing {
         static constexpr u64 kFalseBits = kQNan | kTagBool | 0u;
         static constexpr u64 kTrueBits  = kQNan | kTagBool | 1u;
 
-        // 默认构造为 trivial（= default）：默认初始化 Value v; 时 bits_ 为不定值；
-        // 值初始化 Value{} 零填充（0 即 f64 0.0，并非 nil）。需要 nil 请用 nil_val()。
-        // 这样 Value 满足 is_trivial + is_standard_layout（POD），可 memcpy、可入 FrameStack。
+        // 默认构造为 trivial(= default,POD 可 memcpy/入 FrameStack):默认初始化 Value v; 的 bits_ 为不定值;
+        // 值初始化 Value{} 是 f64 0.0 而非 nil(与 TagValue 的 Value{} 恰为合法 nil 互为镜像),需要 nil 用 nil_val()。
         constexpr Value() noexcept = default;
 
         [[nodiscard]]
@@ -80,7 +77,7 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static constexpr Value from_i32(const i32 value) noexcept {
-            return from_int(value); // i32 恒落在 48 位载荷内
+            return from_int(value);
         }
 
         [[nodiscard]]

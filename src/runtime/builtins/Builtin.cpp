@@ -13,7 +13,7 @@
 #include "runtime/builtins/CoroutineModule.hpp"
 #include "util/io.hpp"
 #include "value/AriaHashTable.hpp"
-#include "value/ObjBridge.hpp" // try_obj<T>
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -59,8 +59,7 @@ namespace aria {
             return true;
         }
 
-        // assert(x[, msg]) -> nil:x 真值则成功返 nil;否则抛 AssertionFailed(msg 为 string
-        // 时用之,非 string 静默忽略落默认消息)。
+        // assert(x[, msg]) -> nil:真值返 nil,否则抛 AssertionFailed(msg 非 string 静默忽略落默认消息)。
         bool fn_assert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
@@ -79,10 +78,8 @@ namespace aria {
             return vm.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
-        // clock() -> f64:单调时钟当前读数(秒)。起点未定(非 Unix 纪元),只有两次读数**相减**才有
-        // 意义;同进程内跨调用单调不减,不受系统调时影响。返 f64 秒而非微秒整数:自开机起的微秒
-        // 计数会超出 i48 值域(2^47 微秒约 4.5 年),而秒制下 f64 精度仍在微秒级。基准脚本靠它把
-        // 启动/编译成本从进程总耗时里剥出来(aria 脚本无 argv,耗时只能语言内自测)。
+        // clock() -> f64:单调时钟当前读数(秒)。起点未定(非 Unix 纪元),只有两次读数相减才有意义;
+        // 同进程内跨调用单调不减,不受系统调时影响。
         bool fn_clock(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -93,11 +90,8 @@ namespace aria {
             return true;
         }
 
-        // Error(message[, code]) -> ObjException:用户异常工厂,直接产出 VM 同款异常对象(与
-        // 继承 Exception 的子类实例相对,免用户自定义类型)。code 可选:错误码数字(int,原样
-        // 携带,e.code() 即其值;未设 = ErrorCode::Error 的注册表序号)。message 收 String 原样
-        // 入 message_(不烘 "Category: Name" 前缀 -- 用户异常的消息即用户所给,catch 侧
-        // e.message() 原文取回)。
+        // Error(message[, code]) -> ObjException:用户异常工厂,直接产出 VM 同款异常对象;code 可选
+        // int 原样携带(未设 = 默认 Error 码)。message 原样入库不烘 "Category: Name" 前缀,catch 侧原文取回。
         bool fn_Error(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1 && argc != 2) {
@@ -118,7 +112,7 @@ namespace aria {
             return true;
         }
 
-        // 内置表:按名注册进 VM 级 builtins 表。
+        // 内置全局函数表。
         constexpr BuiltinFnEntry kBuiltinFns[] = {
                 {"type", fn_type},     {"str", fn_str},     {"println", fn_println},
                 {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
@@ -129,10 +123,8 @@ namespace aria {
                 {"coroutine", CoroutineModule::make_module}, // <coroutine> 合成模块
         };
 
-        // 全局面函数装载口:把实参函数条目按名写入指定 builtins 表。由 register_builtins 于
-        // **构造临界区(GC 挂起)内**调用:new_native_fn 的白色对象免逐个守卫,建成即入表、入表
-        // 条目经 vm_roots tracer 标根;StringView 重载经 intern 池建名,保证 name 指针与 CodeGen
-        // 发射 LOAD_GLOBAL 所用同名常量同指。
+        // 全局面函数装载口:按名写入给定 builtins 表;须在构造临界区(GC 挂起)内调用 -- 白色对象
+        // 免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根。
         void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
             for (const auto& [name, fn]: fns) {
                 const auto fn_obj = new_native_fn(gc, name, fn);
@@ -143,7 +135,7 @@ namespace aria {
         // 全局面变量装载口:GC 纪律同 register_functions(构造临界区内,init 产出即时入表不落中间)。
         void register_variables(GC& gc, AriaHashTable& table, const Span<const BuiltinVarEntry> vars) {
             for (const auto& [name, init_fn]: vars) {
-                const auto key   = new_string(gc, name); // intern,与 CodeGen 发射的同名常量同指
+                const auto key   = new_string(gc, name);
                 const auto value = init_fn(gc);
                 table.set(Value::from_obj(key), value);
             }

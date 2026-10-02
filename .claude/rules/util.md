@@ -11,13 +11,12 @@ paths:
 
 - **路径/读盘原语**：`read_file`/`current_dir`/`program_dir`/`absolute`/`resolve`（`weakly_canonical`）。
 - **`module_name_and_dir(StringView path) -> Pair<String,String>{name,dir}`**：把文件路径拆为入口模块身份--`name` = basename 去最后一个扩展名（`path::stem()`）、`dir` = `dirname(absolute(path))`（`absolute` 失败退化为原路径）。纯路径工具，不读盘、不校验存在性；`name` 可能为空，调用方据空 `name` 判加载错误。
-- **错误码**：`FsErrCode`；`detail::to_fserr(std::error_code)` 做映射（经 `default_error_condition()`）；`detail::errno_to_fserr(int e)` 与无参重载（读当前线程 errno）。
-- `detail::executable_path()` 平台分流取当前可执行文件路径（`program_dir` 基础）。
+- **错误码**：`FsErrCode`；`detail::to_fserr(std::error_code)` 做映射（经 `default_error_condition()`）；`detail::errno_to_fserr(int e)` 与无参重载（读当前线程 errno）；`detail::executable_path()` 四平台分流取当前可执行文件路径（`program_dir` 基础）。
 
 ## `util/utf8.hpp`
 
 - `using codepoint = u32`；常量 `kReplacementChar`。
-- `decode_one(str, offset=0)` -> `{codepoint, 字节数}`：合法序列返真实码点与字节数；非法序列与 `offset >= size()` 越界的返回值见头注释。
+- `decode_one(str, offset=0)` -> `{codepoint, 字节数}`：合法序列返真实码点与字节数；非法序列返 `{kReplacementChar, 1}`（只吞一个坏字节）；`offset >= size()` 越界返 `{kReplacementChar, 0}` 不读取。
 - **ASCII 快路径就地内联、多字节交 `detail::decode_multibyte`（`ARIA_NOINLINE`）**：调用点绝大多数走 ASCII，多字节那套长度表/续接校验/组装/双重校验不随调用点展开（实测词法各形态快 3-12%，数字与探针见 `.claude/reference/compile/lexer-notes.md` §5）。
 - `encode`/`is_valid`；`is_ascii(ch|u8)`（该字节是否 ASCII--源码字节经 char 或 u8 两种来路取，两个重载把窄化收进来，ASCII 边界只写一处）。
 - `is_id_start`/`is_id_continue`/`is_whitespace`/`is_digit`/`is_alpha` 等 tokenizer 辅助（码点分类用区间近似，非完整 UCD）。
@@ -53,18 +52,18 @@ paths:
 **定义/结果分离**
 
 - `Cli` 仅持统一注册项（`parse` 为 `const`、可重复 parse），每次 `parse` 产出一个独立 `Cli::ParseResult`（public 嵌套类，`friend class Cli`；持结果数组 + 非拥有 `const Cli*`，故调用方须保证 `Cli` 存活到结果用完）。
-- **单一事实源**：注册查重与解析定位（`parse`/`has`/`get`/`help`）全部依赖 `defs_` 线性扫描，无平行索引结构；**无 `clear()`**（`defs_` 不可变，builder 天然可复用）。
+- **单一事实源**：注册查重与解析定位（`parse`/`has`/`get`/`help`）全部依赖 `defs_` 线性扫描，无平行索引结构；`defs_` 注册后不可变（无 `clear()`），builder 天然可复用。
 
 **统一枚举建模**
 
 - public 嵌套 `enum class Slot : u8 { Empty, Flag, Option, Positional }` 贯穿定义/结果两侧。
 - 私有嵌套 `Def` 统一承载 flag/option/positional 三类（无继承、无虚函数，按 `kind_` 区分哪些字段生效；`kind_` 构造 ASSERT 永非 `Empty`），经 `List<Def> defs_` 单表值存储--无 raw 指针，默认析构/拷贝/移动均正确。
-- 结果侧 `ParseResult` 持**单个** `List<SlotEntry>`（私有 `SlotEntry{Slot state; String value;}`，与 `defs_` 同序；`state` = `Empty` 表未提供）+ `extra_args_`（单数组同时承载 state 与 value，避免平行数组与 `vector<bool>` 特化坑）。
+- 结果侧 `ParseResult` 持单个 `List<SlotEntry>`（私有 `SlotEntry{Slot state; String value;}`，与 `defs_` 同序；`state` = `Empty` 表未提供）+ 独立的 `extra_args_`（`List<String>`，超额位置参数）--state 与 value 同装单数组，避免平行数组与 `vector<bool>` 特化坑。
 
 **positional 与名字空间**
 
 - `add_positional` 的长名与 flag/option 共一个长名空间（无短名）。解析侧定位按 `kind_` 区分：`--name`/`-x` 经 `find_long_without_positional`/`find_short` 只匹配 flag/option；`has`/`get` 经 `find_long` 查任意槽。
-- 位置参数填充靠扫描 `slots_` 找**首个「空且 `kind_ == Positional`」的槽**（以 `slots_` 填充状态为唯一事实源，无需计数器）；必填检查与 `help` 的 Arguments 分节按 `kind_ == Positional` 过滤。**无 `positional_slots_` 派生成员**（线性扫描 O(N)，启动一次可忽略）。
+- 位置参数填充靠扫描 `slots_` 找**首个「空且 `kind_ == Positional`」的槽**（以 `slots_` 填充状态为唯一事实源，无需计数器）；必填检查与 `help` 的 Arguments 分节按 `kind_ == Positional` 过滤。
 
 **链式构建器与查重**
 
@@ -80,4 +79,4 @@ paths:
 **访问与 help**
 
 - `has`/`get(name) -> Opt<String>`（option/positional 已提供返值（含显式空串）、未提供或命中的是 flag 返 `nullopt`）/`extra_args()`。
-- `help()`（在 `Cli` 上）：Usage 行（`[OPTIONS]` 恒展示）+ Arguments 分节（按注册序遍历 positional）+ Options 分节按**注册序**遍历 named 参数（内置 help 恒居首位），描述统一对齐到各前缀最大宽度 + 2 列（option 前缀含 `kOptValueSuffix = " <VALUE>"`），option 行尾追加 `[default: ...]`。
+- `help()`（在 `Cli` 上）：Usage 行（`[OPTIONS]` 恒展示）+ Arguments 分节（按注册序遍历 positional）+ Options 分节按**注册序**遍历 named 参数（内置 help 恒居首位），描述统一对齐到各前缀最大宽度 + 2 列，option 行尾追加 `[default: ...]`。

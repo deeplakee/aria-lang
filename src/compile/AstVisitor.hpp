@@ -1,15 +1,11 @@
 #ifndef ARIA_ASTVISITOR_HPP
 #define ARIA_ASTVISITOR_HPP
 
-// AST 访问者（Visitor）接口：代码生成器（AST -> CodeUnit 的字节码编译器）等遍历类的父类。
-// 前置声明所有具体 AST 节点类型（完整定义见 compile/ast.hpp），只用到引用，与 ast.hpp 解耦；
-// 子类需自行 include ast.hpp 访问节点成员。每个节点对应一个 visitXxxNode(XxxNode&) 纯虚方法，
-// 子类须逐一实现（编译器据此强制覆盖全部节点类型）；双分派由节点的 accept(AstVisitor&) 完成。
-// 参数统一用非 const 引用（子类可读写节点）；节点生命周期由 AST 的 UPtr 树持有者保证。
+// AST 访问者接口：visitXxxNode(XxxNode&) 纯虚方法与节点一一对应，双分派经节点的 accept 完成。
+// 前置声明全部节点类型，子类自行 include 访问节点成员。
 
 namespace aria {
 
-    // 根节点
     struct ProgramNode;
 
     // 语句节点（StmtNode 派生）
@@ -64,7 +60,6 @@ namespace aria {
     public:
         virtual ~AstVisitor() = default;
 
-        // 根节点
         virtual void visitProgramNode(ProgramNode& node) = 0;
 
         // 语句节点

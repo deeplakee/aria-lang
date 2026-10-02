@@ -9,9 +9,8 @@ namespace aria {
 
     namespace {
 
-        // 内容哈希:from 乘黄金比搅拌后与终点端点折叠,过 hash_num avalanche。终点折叠带
-        // 标记位(有界 = 值<<2 | 含否<<1 | 1,无界 = 0),区分无界 from.. 与有界 from..0/
-        // from...0;两端点交换或含否上界翻转必须可区分(from..to != to..from != from...to)。
+        // from 乘黄金比搅拌后与终点端点折叠过 avalanche;终点带标记位(有界 = 值<<2|含否<<1|1,无界 = 0)区分
+        // 无界 from.. 与有界 from..0/from...0 -- 端点交换或含否翻转必须可区分。
         u32 content_hash(const i64 from, const Opt<i64>& to, const bool is_exclusive) {
             const u64 high  = to ? static_cast<u64>(*to) << 2 | (is_exclusive ? 2u : 0u) | 1u : 0u;
             const u64 mixed = static_cast<u64>(from) * 0x9E3779B97F4A7C15ull ^ high;
@@ -44,13 +43,9 @@ namespace aria {
         return std::format("{}{}{}", from_, is_exclusive_ ? "..." : "..", *to_);
     }
 
-    Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) {
-        // 裸查找:命中直取 Range bootstrap 类表原生值,不铸 ObjBoundMethod(契约见 Object.hpp);本体是纯透传。
-        return vm.range_class()->load_field(vm, name);
-    }
+    Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) { return vm.range_class()->load_field(vm, name); }
 
     Opt<Value> ObjRange::load_field_bound(AriaVM& vm, ObjString* name) {
-        // 绑定读:同名裸查找命中即无条件绑定 this(类表条目全为原生恒为方法;权威注见 Object.hpp)。
         const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
@@ -59,7 +54,6 @@ namespace aria {
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {
-        // 工厂无入参对象可守(见头注释)。
         return gc.new_object<ObjRange>(from, to, is_exclusive);
     }
 
@@ -69,8 +63,7 @@ namespace aria {
         const i64  raw_from     = range->from();
         const bool is_unbounded = !range->has_upper();
 
-        // 起点归一化(从尾计数 + 越界判定)两形态共用;无上界形态另放行「末尾之后一位」= 空段
-        //(「从末尾之后取剩余」即空,解构 rest 的空尾据此成立),先短路它。
+        // 无上界形态另放行「末尾之后一位」= 空段(解构 rest 的空尾据此成立),先短路它。
         if (is_unbounded && raw_from == static_cast<i64>(size)) {
             return SliceSegment{.start = size, .count = 0, .is_reversed = false};
         }
@@ -82,8 +75,7 @@ namespace aria {
         if (is_unbounded) {
             return SliceSegment{.start = *from, .count = size - *from, .is_reversed = false};
         }
-        // 有上界:上界同须落在实元素位置(空容器切片自然落 nullopt)。方向由归一化端点的大小关系
-        // 定(原始端点可因从尾计数翻转);不含上界少走末元素,两端相等即空段;倒序的升序源段自低端 to 起。
+        // 有上界:上界同须落实元素位置(空容器自然 nullopt);方向由归一化端点大小关系定,不含上界少走末元素。
         const auto to = util::resolve_index(*range->to(), size);
         if (!to) {
             return std::nullopt;

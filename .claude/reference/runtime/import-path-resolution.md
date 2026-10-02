@@ -121,11 +121,11 @@ IMPORT 以绝对键查 `modules_`：
   - 正在 run-once = 循环导入命中的「半初始化对象」--按文法「允许循环导入，命中正在初始化的
     模块返回半初始化对象」直接用，不报错。
 - **未命中**（文件解析命中但模块未入表）：调 `load_module(key, path)` 得模块(已编译 `set_entry`，体待 run-once)，
-  IMPORT 未命中分支以其 `entry` 作**普通 0 参函数调用**进帧(`call_value`)后 break。模块体 run-once 即执行
+  IMPORT 未命中分支以其 `entry` 现场包空闭包经 `call_closure` 进帧后 break。模块体 run-once 即执行
   一个函数,由主循环照常驱动;模块体入口的返回值恒为模块对象(编译器在入口收尾发射「压模块对象
   常量 + RETURN」,见 compile.md `FnKind::ModuleEntry`),RETURN 通用写回 callee 槽,故命中/未命中栈效应
   统一 `[..., module]`。**无递归 `dispatch_loop()`**。被导入模块的
-  编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_value 族:返 `ObjModule*`,失败
+  编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_closure 族:返 `ObjModule*`,失败
   `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `unwind()` 派发/物化);
   读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
   `import-handling-overview.md`「加载层接入位置」。

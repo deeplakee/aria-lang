@@ -1,7 +1,7 @@
 #include "object/ObjClosure.hpp"
 
 #include "memory/GC.hpp"
-#include "object/ObjClass.hpp" // mark_object(defining_class_) 须完整类型(派生自 Object 的转换)
+#include "object/ObjClass.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjUpvalue.hpp"
 
@@ -24,7 +24,7 @@ namespace aria {
 
     void ObjClosure::trace(GC& gc) const noexcept {
         gc.mark_object(function_);
-        for (ObjUpvalue* uv: upvalues_) { // const Array<T*> 遍历出的元素是 T*(指针本身 const,不传染 pointee)
+        for (ObjUpvalue* uv: upvalues_) {
             gc.mark_object(uv);
         }
         gc.mark_object(defining_class_); // 非方法闭包为 nullptr,容 nullptr;方法闭包经此级联标所属类

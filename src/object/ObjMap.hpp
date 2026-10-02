@@ -9,18 +9,7 @@ namespace aria {
 
     class GC;
 
-    // map 对象(ObjType::MAP):`{...}` 字面量的运行期载体,键值均任意 Value、存 AriaHashTable(Swiss Table;表内键判等 ===,
-    // int 1 与 f64 1.0 是不同键;可变对象作键按身份哈希)。下标读写经 load_index/store_index 协议 override;命名成员经
-    // load_field_bound 委托 VM 的 Map bootstrap 类方法表恒绑定。
-    //   - 迭代序 unspecified:非定序哈希表,用户不应依赖;map 迭代器产出 [k, v] 二元 list。迭代中变更容器不
-    //     承诺(rehash 搬迁槽位),guide 07-maps 章明示。
-    //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容:size 相等且逐键在对方命中同键(键按表内语义 ===,find
-    //     即 value_identical 匹配)、值 value_equal(嵌套容器经各自 equals 递归);入口挂 EqualGuard 防环(重遇同对视为
-    //     相等);`===` 恒指针(value_identical,不经本类)。
-    //   - trace():委托 table_.trace(遍历占用槽 mark_value key+value)。
-    //   - debug_repr():`{"a": 1}` 式,键值走 format_value_debug(嵌套字符串带引号,嵌套容器递归;渲染序随占用槽,同
-    //     unspecified);入口挂 PrintGuard 防环(自引用/互环截断 "{...}",Python 同款);显示同文案(to_string
-    //     经基类默认委托)。
+    // map 对象:键值均为任意 Value 的哈希表;键判等用 ===,可变对象按对象身份;迭代序 unspecified。
     class ObjMap final : public Object {
     public:
         // 哈希表惰性分配,ctor 只绑分配器(首分配由 set 的扩容路径自理)。
@@ -60,11 +49,11 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
+        // 裸读 override:委托 Map bootstrap 类表直取原生值。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
+        // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
@@ -72,8 +61,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 
-        // 下标写入:恒成功,命中覆写、未命中新增键(set 的两条路径均无报错;键值在调用方
-        // 值栈为根,set/rehash 走 GC 分配器不触 GC)。
+        // 下标写入:恒成功,命中覆写、未命中新增;键值经调用方值栈为根(set/rehash 不触 GC)。
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 

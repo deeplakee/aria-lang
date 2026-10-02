@@ -8,26 +8,20 @@
 
 namespace aria {
 
-    // 绑定 Value 的 aria 数组:继承 Array<Value> 的存储与接口(push/[]/data/begin/end/size...),
-    //        加 trace(GC&)(遍历元素 mark_value)与值相等原语 find/contains/remove(value_equal,
-    //        嵌套容器按内容递归、数值跨型相等 int 1 == f64 1.0)。ObjList 持其作成员、trace 委托
-    //        arr.trace(gc);语言面 list 的 find/contains/remove 方法体即这三件的薄壳。
-    //        继承而非组合:直接复用全部公开接口;基类 dtor 非虚但本子类不作多态基,故安全。
-    //        不可拷贝/不可移动(继承自 Array)。
+    // 绑定 Value 的 aria 数组:继承 Array<Value> 全部存储与接口,加 trace(GC&)(遍历元素 mark_value)与
+    // find/contains/remove(按 value_equal,嵌套容器按内容递归)。基类 dtor 非虚但本子类不作多态基,故安全;不可拷贝/移动。
     class AriaArray : public Array<Value> {
     public:
         using Array<Value>::Array; // 继承 explicit Array(GC*) ctor
 
-        // 由 owner(ObjList) 在 collect 的 trace 阶段调用;trace 期无 push 不扩容,range-for
-        // 迭代器恒有效。nil/int/f64 无对象子节点,mark_value 对其为空操作。
+        // trace 期无 push 不扩容,range-for 迭代器恒有效。
         void trace(GC& gc) const noexcept {
             for (const Value& v: *this) {
                 gc.mark_value(v);
             }
         }
 
-        // 首个 value_equal 命中元素的下标,未命中 nullopt。value_equal 无分配,GC-pure;
-        // 元素访问走 data()[i](与 Array 自有方法同风格,循环域结构性保证下标)。
+        // 首个 value_equal 命中元素的下标,未命中 nullopt。value_equal 无分配,GC-pure。
         [[nodiscard]]
         Opt<usize> find(const Value& target) const noexcept {
             for (usize index = 0; index < size(); ++index) {
@@ -43,8 +37,7 @@ namespace aria {
             return find(target).has_value();
         }
 
-        // 移除**全部** value_equal 命中元素(保序),返回是否命中(留存数与原元素数之差即判);
-        // 未命中零操作。较反复单点移除一趟 O(n),不受命中次数放大。
+        // 移除全部 value_equal 命中元素(保序,一趟 O(n));未命中零操作,返回是否命中。
         bool remove(const Value& target) noexcept {
             const usize old_size = size();
             usize       kept     = 0;

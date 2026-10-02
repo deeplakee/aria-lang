@@ -970,9 +970,7 @@ TEST(Compiler, StringSplitOnWhitespace) {
     EXPECT_EQ(run_int(R"(if ("a,,b".split(",").size() == 3) { return 1; } return 0;)"), 1); // 1 参保留空段
 }
 
-// ============================================================
-// 解构（var 声明 / for-in 目标 / 解构赋值）
-// ============================================================
+// ---- 解构（var 声明 / for-in 目标 / 解构赋值） ----
 
 // var 解构：按位置绑名（复用下标语义）；单元素形态；初始化器只求值一次（副作用单测）。
 TEST(Compiler, VarDestructureBindsByPosition) {

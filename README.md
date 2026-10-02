@@ -124,7 +124,7 @@ ctest --test-dir build --output-on-failure
 
 `bench/` 下有独立的性能基准。进程内微项有三个可执行（`lexer_bench` / `hashtable_bench` /
 `vm_bench`，量单条路径的单次成本），另有**源文件级**基准 `bench/lang/`：里面的 `.aria` 都是能直接
-运行的完整程序（39 个语言功能细项 + 16 个真实负载，负载与多数功能项带 CPython / Node / Lua / Java
+运行的完整程序（40 个语言功能细项 + 16 个真实负载，负载与多数功能项带 CPython / Node / Lua / Java
 对照端口），同目录的 `lang_bench.py` 逐个起进程计时，报多轮**平均值 ± 标准差**，并逐语言比对脚本自报
 的校验量：
 

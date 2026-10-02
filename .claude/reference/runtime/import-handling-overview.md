@@ -50,7 +50,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp` 的 `import_instruction` |
 | ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（匿名命名空间） |
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp` `run_import` |
-| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 成功才入表 -> `entry` 经 `call_value` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
+| ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 成功才入表 -> `entry` 现场包空闭包经 `call_closure` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp`（`source_roots()`/`set_source_roots`）、`AriaVM.cpp` 构造与 `run()` |
 | `ObjModule` 对象 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 指针恒非空、内容可空，`new_module` 默认 cwd；无加载状态字段，事实源 = 模块表成员资格） | `src/object/ObjModule.hpp`、`.cpp` |
 | VM 模块表 `modules_` + GC 根 tracer | 已实现 | `src/runtime/AriaVM.hpp`（成员声明）、`AriaVM.cpp` 构造注册 tracer |
@@ -177,7 +177,7 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
    的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」），RETURN 通用写回
    callee 槽即完成栈效应；**无递归 `dispatch_loop()`**。
 
-**错误契约同 call_value 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 raise 入 `*current_`
+**错误契约同 call_closure 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 raise 入 `*current_`
 寄存器，调用方 `unwind()` 派发/物化；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT
 站点位置，与 resolve_module 失败形态统一），编译期 Error 就地 `new_exception` 原样装配箱透传
 （含被导入文件位置，不重烘）。

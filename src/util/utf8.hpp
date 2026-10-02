@@ -7,12 +7,10 @@ namespace aria::utf8 {
     // Unicode 码点
     using codepoint = u32;
 
-    // 替换码点 U+FFFD，用于替换非法的 UTF-8 序列
+    // 替换码点 U+FFFD。
     inline constexpr codepoint kReplacementChar = 0xFFFD;
 
-    // 该字节是否为 ASCII（0xxxxxxx，即单字节码点的首字节）。字节有两种来路--`StringView` 按 char 取、
-    // 解码内部按 u8 取--两个重载把这层窄化收进来，字节级 ASCII 边界就只写这一次（char 可能带符号，
-    // 故先窄化再比）。码点域的分类判定（`is_alpha` 等）比的是码点，不走这里。
+    // 该字节是否为 ASCII(0xxxxxxx);char 重载先窄化为 u8(char 可能带符号)。
     [[nodiscard]]
     constexpr bool is_ascii(const u8 byte) noexcept {
         return byte < 0x80;
@@ -27,7 +25,6 @@ namespace aria::utf8 {
         // 该字节是否为 UTF-8 序列的起始字节（ASCII 或多字节首字节）
         [[nodiscard]]
         constexpr bool is_lead_byte(const u8 byte) noexcept {
-            // 10xxxxxx 的续接字节返回 false，其余都是起始字节
             return (byte & 0xC0) != 0x80;
         }
 
@@ -41,28 +38,25 @@ namespace aria::utf8 {
         [[nodiscard]]
         constexpr u8 seq_len_from_lead(const u8 byte) noexcept {
             if (byte < 0x80)
-                return 1; // 0xxxxxxx
+                return 1;
             if (byte < 0xC0)
-                return 0; // 10xxxxxx 不能作为起始字节
+                return 0;
             if (byte < 0xE0)
-                return 2; // 110xxxxx
+                return 2;
             if (byte < 0xF0)
-                return 3; // 1110xxxx
+                return 3;
             if (byte < 0xF8)
-                return 4; // 11110xxx
-            return 0;     // 11111xxx 非法
+                return 4;
+            return 0;
         }
 
-        // 续接字节的低 6 位
         [[nodiscard]]
         constexpr u8 cont_bits(const u8 byte) noexcept {
             return static_cast<u8>(byte & 0x3F);
         }
 
-        // 非 ASCII 慢路径：解码 str[offset] 处的多字节序列（lead = 该字节，已由 decode_one 判定 >= 0x80）。
-        // ARIA_NOINLINE 的理由：decode_one 在每个调用点都会被内联展开，而调用点绝大多数走 ASCII 快路径，
-        // 长度表/续接校验/组装/双重校验这套只贡献代码体积 -- 移出内联即把冷路径的展开从热路径里拿掉。
-        // 放 detail 不放公开面：调用方只需 decode_one，本函数是它的实现分片。
+        // 非 ASCII 慢路径:解码 str[offset] 处的多字节序列(lead 为首字节,已由 decode_one 判定 >= 0x80)。
+        // ARIA_NOINLINE:调用点绝大多数走 ASCII 快路径,组装+双重校验是冷路径,移出内联控制热路径体积。
         [[nodiscard]] ARIA_NOINLINE constexpr Pair<codepoint, u8>
         decode_multibyte(const StringView str, const usize offset, const u8 lead) noexcept {
             const u8 need = seq_len_from_lead(lead);
@@ -114,13 +108,8 @@ namespace aria::utf8 {
     } // namespace detail
 
 
-    // 解码位于 str[offset] 处的一个 UTF-8 序列。
-    // 返回 {码点, 消费的字节数}（字节数 0..4，u8 即够）：合法序列返回真实码点与字节数；
-    // 遇到非法字节时返回 {kReplacementChar, 1}（只吞掉一个坏字节，便于继续扫描）。
-    // offset 超出范围（>= str.size()）时返回 {kReplacementChar, 0}，不进行任何读取；
-    // 正常使用时调用方应保证 offset < str.size()，此时返回的字节数 >= 1。
-    // ASCII 快路径就地内联，多字节交 detail::decode_multibyte（冷/热路径分离的理由见其头注）--
-    // 源码主体是 ASCII，每个调用点只多出几条指令，而不必携带整套多字节解码代码。
+    // 解码 str[offset] 处的一个 UTF-8 序列,返回 {码点, 消费字节数};非法字节返回 {kReplacementChar, 1}
+    // (只吞一个坏字节,便于继续扫描);offset >= str.size() 返回 {kReplacementChar, 0},不进行任何读取。
     [[nodiscard]]
     constexpr Pair<codepoint, u8> decode_one(const StringView str, const usize offset = 0) noexcept {
         if (offset >= str.size()) {
@@ -151,8 +140,7 @@ namespace aria::utf8 {
                     return false;
                 }
             }
-            // 复用 decode_one 的码点校验：非法时它会返回 kReplacementChar 且长度 1，
-            // 而真实长度为 need，二者不等即可判定非法。
+            // 复用 decode_one 的码点校验:非法时它返回 {kReplacementChar, 1},长度与 need 不等即判非法。
             const auto [cp, n] = decode_one(str, i);
             if (n != need) {
                 return false;
@@ -190,16 +178,14 @@ namespace aria::utf8 {
     }
 
 
-    // 码点分类工具，供 tokenizer 判定字符类别时使用
+    // 码点分类工具
 
-    // 是否 Unicode 字母（Lu/Ll/Lt/Lm/Lo）。ASCII 范围内精确判定，
-    // 其余通过 Unicode 分配区间近似，避免引入庞大的 Unicode 数据表。
+    // 是否 Unicode 字母(Lu/Ll/Lt/Lm/Lo);ASCII 精确判定,其余为分配区间近似(不引 Unicode 数据表)。
     [[nodiscard]]
     constexpr bool is_alpha(const codepoint cp) noexcept {
         if (cp < 0x80) {
             return (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
         }
-        // 近似：常见字母分配区间（拉丁扩展、希腊、西里尔、CJK 表意、韩文音节等）
         return (cp >= 0x00C0 && cp <= 0x024F)     // 拉丁扩展
                || (cp >= 0x0370 && cp <= 0x03FF)  // 希腊
                || (cp >= 0x0400 && cp <= 0x04FF)  // 西里尔
@@ -207,7 +193,7 @@ namespace aria::utf8 {
                || (cp >= 0xAC00 && cp <= 0xD7A3); // 韩文音节
     }
 
-    // 是否 Unicode 十进制数字（Nd）。ASCII 范围内精确判定，其余近似为常见数字区间。
+    // 是否 Unicode 十进制数字(Nd);ASCII 精确,其余近似。
     [[nodiscard]]
     constexpr bool is_digit(const codepoint cp) noexcept {
         if (cp < 0x80) {
@@ -217,8 +203,7 @@ namespace aria::utf8 {
                || (cp >= 0xFF10 && cp <= 0xFF19); // 全角数字
     }
 
-    // 是否可用于标识符起始：下划线，或 Unicode 字母（Lu/Ll/Lt/Lm/Lo）。
-    // ASCII 范围内做精确判定，其余通过 is_alpha 的区间近似。
+    // 是否可用于标识符起始:下划线或 Unicode 字母。
     [[nodiscard]]
     constexpr bool is_id_start(const codepoint cp) noexcept {
         if (cp == '_')
@@ -247,7 +232,6 @@ namespace aria::utf8 {
             default:
                 break;
         }
-        // Unicode 空白/分隔符区间（近似，不含全角空格 U+3000 之外的特殊情况）
         return (cp >= 0x1680 && cp <= 0x200A) || cp == 0x202F || cp == 0x205F || cp == 0x3000;
     }
 } // namespace aria::utf8

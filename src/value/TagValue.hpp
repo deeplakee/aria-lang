@@ -18,11 +18,9 @@ namespace aria::tagvalue {
     public:
         enum class Type : u8 { Nil, Bool, F64, Int, Obj };
 
-        // 默认构造为 trivial（= default）：默认初始化 Value v; 时为不定值；值初始化 Value{}
-        // 零填充 -> tag_=0=Type::Nil（首枚举值 0）、union 零位置为 nullptr_t，故零初始化
-        // 恰为合法 nil。注意与 NanBoxing 的语义差：后者 Value{} 零填充是 f64 0.0 非 nil，
-        // 零填充值栈时不可跨两表示做统一语义假设。POD，可 memcpy、可入 FrameStack；
-        // Type 枚举顺序变动需同步 nil_val()。
+        // 默认构造为 trivial(= default,POD 可 memcpy/入 FrameStack):默认初始化为不定值,值初始化 Value{} 零填充
+        // 恰为合法 nil(tag_=0=Type::Nil 首枚举、union 零位 nullptr_t)。与 NanBoxing 互为镜像:那边 Value{} = f64 0.0 非
+        // nil。
         constexpr Value() noexcept = default;
 
         [[nodiscard]]
@@ -151,8 +149,7 @@ namespace aria::tagvalue {
         }
 
     private:
-        // 底层构造仅供工厂方法（nil_val/true_val/false_val/from_*）内部使用，
-        // 外部创建 Value 统一走工厂，与 NanBoxing 的 private 构造收口一致。
+        // 底层构造仅供工厂方法内部使用,外部创建 Value 统一走工厂(private 收口与 NanBoxing 一致)。
         explicit Value(const bool val) : tag_{Type::Bool} { bool_val_ = val; }
 
         explicit Value(const f64 val) : tag_{Type::F64} { f64_val_ = val; }
@@ -163,8 +160,7 @@ namespace aria::tagvalue {
 
         Type tag_;
         union {
-            // 首成员占位：保证「零填充 = Nil 的位型」良定义（tag_=0 与零填充 union 配对），
-            // 使 Value{} 的平凡零初始化恰为合法 nil；读取恒经 tag_ 分派到对应成员，本成员不可读。
+            // 首成员占位:与 tag_=0 配对,保证零填充(Value{})恰为合法 nil 位型;读取恒经 tag_ 分派,本成员不可读。
             nullptr_t nil_val_;
             bool      bool_val_;
             f64       f64_val_;

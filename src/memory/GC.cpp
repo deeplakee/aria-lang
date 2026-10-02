@@ -38,7 +38,7 @@ namespace aria {
 #endif
         mark_roots_();
         trace_gray_();
-        intern_.remove_white(); // weak root 摘白(机制见 InternPool.hpp)
+        intern_.remove_white(); // weak root 摘白
         sweep_();
         next_gc_ = bytes_allocated_ * kGcGrowFactor;
 #ifdef DEBUG_LOG_GC
@@ -50,7 +50,6 @@ namespace aria {
         for (const Value& value: temp_roots_) {
             mark_value(value);
         }
-        // VM 根:五类根清单见 GC.hpp 类头注。
         if (vm_roots_tracer_) {
             vm_roots_tracer_(*this);
         }
@@ -68,7 +67,7 @@ namespace aria {
         ASSERT(obj != nullptr, "null object");
         // 虚调用,必须在 ~Object 前
         const usize sz = obj->size();
-        // 级联释放子内存(Array / long_chars_)
+        // 级联释放子内存
         obj->~Object();
         bytes_allocated_ -= sz;
         shell_pool_.push(sz, obj);

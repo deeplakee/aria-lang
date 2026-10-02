@@ -8,8 +8,7 @@
 namespace aria {
 
     namespace {
-        // TokenType -> Op 映射。parser 负责 token->op 映射（Op 与 TokenType 解耦，见 ast.hpp）。
-        // 调用方须先 match 对应 token，故入参必为合法运算符 token；非运算符 token 触发 UNREACHABLE。
+        // TokenType -> Op 映射；调用方须先 match 对应 token，非法 token 触发 UNREACHABLE。
         Op::Assignment assignment_op(const TokenType t) noexcept {
             switch (t) {
                 case TokenType::Equal:
@@ -83,7 +82,6 @@ namespace aria {
 
     } // namespace
 
-    // 一次性实例：构造即注入 token 流（契约见 Parser.hpp 构造注）。
     Parser::Parser(List<Token> tokens) noexcept : tokens_{std::move(tokens)}, pos_{0}, errors_{} {}
 
     Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token> tokens) {
@@ -141,8 +139,7 @@ namespace aria {
         if (check(t)) {
             return advance();
         }
-        // 违规片段取 peek 的 lexeme(源码原片段)而非 to_string(TokenType):后者是调试用的
-        // CamelCase 类型名,用户看不到 '}' 这类实际写法。
+        // 违规片段取 peek 的 lexeme（源码原片段）；to_string 的 CamelCase 类型名不面向用户。
         if (is_at_end()) {
             error(ErrorCode::UnexpectedEof, "expected {}, got end of file", what);
         }
@@ -166,12 +163,11 @@ namespace aria {
             advance();
         }
         while (!is_at_end()) {
-            // 恰在消费 ';' 之后判定（previous 而非 peek）： ';' 本身被丢弃，从下一 token 续扫。
+            // previous 判 ';'：分号本身被丢弃，从下一 token 续扫。
             if (pos_ > 0 && previous().is(TokenType::Semicolon)) {
                 return;
             }
-            // 同步点集合 = declaration() 的分派集（statement 分派集再加 Fun/Def/Var 三个
-            // 声明起首关键字）：漏一个即少一个恢复点。
+            // 同步点集合 = statement 分派集 + Fun/Def/Var 三个声明起首关键字，与 declaration() 分派对应。
             switch (peek().type()) {
                 case TokenType::Fun:
                 case TokenType::Def:
@@ -274,14 +270,8 @@ namespace aria {
         String      name       = expect_identifier();
         Opt<String> superclass = match(TokenType::Colon) ? Opt{expect_identifier()} : std::nullopt;
         expect(TokenType::LeftBrace, "'{'");
-        // def 体：(memberVar | funDecl | function | defDecl)*。按首 token 分派成员种类：
-        //   - var 声明 -> 静态变量（StaticVar，窄形态 memberVar，见 member_var 注）；
-        //   - fun 声明 -> 静态方法（StaticMethod，无 this）；
-        //   - 裸 identifier（identifier params block）-> 实例方法（有 this；名为 init 烙
-        //     InitMethod 构造角色）；
-        //   - def 声明 -> 嵌套类成员（递归 def_decl 烙 is_member；绑定经外层类静态表，见
-        //     grammar.txt 嵌套类注）。
-        // 其余 token 走 else 报错。
+        // def 体成员按首 token 分派：var -> 静态变量，fun -> 静态方法（无 this），裸 identifier ->
+        // 实例方法（名为 init 烙 InitMethod 构造角色），def -> 嵌套类（递归烙 is_member）。其余报错。
         List<UPtr<StmtNode>> members;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
             if (check(TokenType::Var)) {
@@ -295,8 +285,7 @@ namespace aria {
                 String          mname = expect_identifier();
                 List<Param>     mps   = params();
                 UPtr<BlockNode> mbody = block();
-                // init 是语言级构造角色:裸方法名为 kInitName -> InitMethod(返回尾返回 this),其余实例方法。
-                const auto kind = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
+                const auto      kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
                 members.push_back(
                         std::make_unique<FunDeclNode>(mloc, std::move(mname), std::move(mps), std::move(mbody), kind));
             } else {
@@ -310,8 +299,6 @@ namespace aria {
     }
 
     UPtr<StaticVarMemberNode> Parser::member_var() {
-        // memberVar -> "var" identifier ("=" expression)? ";"。类体静态变量成员节点：单标识符绑定；
-        // 多绑定/解构 pattern 在成员位不收、就地语法错（成员定位语义见 Parser.hpp member_var 注）。
         const SourceLoc loc = peek().loc();
         expect(TokenType::Var, "'var'");
         String         name = expect_identifier();
@@ -332,7 +319,7 @@ namespace aria {
     }
 
     VarBinding Parser::var_binding() {
-        // varTarget -> identifier | pattern（identifier ⊂ pattern，统一按 pattern 解析）。
+        // varTarget 统一按 pattern 解析（identifier ⊂ pattern）。
         UPtr<PatternNode> target = pattern();
         UPtr<ExprNode>    init   = match(TokenType::Equal) ? expression() : nullptr;
         return VarBinding{.target = std::move(target), .initializer = std::move(init)};
@@ -400,21 +387,18 @@ namespace aria {
         expect(TokenType::For, "'for'");
         expect(TokenType::LeftParen, "'('");
 
-        // forStmt 空 init：'(' 后即 ';'。
         if (check(TokenType::Semicolon)) {
             advance();
             return finish_for_stmt(loc, nullptr);
         }
-        // forStmt varDecl init：'var ... ;'。
         if (check(TokenType::Var)) {
-            UPtr<StmtNode> init = var_decl(); // var_decl 消费末尾 ';'
+            UPtr<StmtNode> init = var_decl();
             return finish_for_stmt(loc, std::move(init));
         }
-        // forIn：<pattern> "in" 消歧（判据见 looks_like_for_in 注与 Parser.hpp）；否则按 forStmt。
+        // forIn 消歧；否则按 forStmt。
         if (looks_like_for_in()) {
             return finish_for_in_stmt(loc);
         }
-        // forStmt exprStmt init：复用 expression_stmt()。
         return finish_for_stmt(loc, expression_stmt());
     }
 
@@ -426,7 +410,7 @@ namespace aria {
         expect(TokenType::Semicolon, "';'");
         UPtr<ExprNode> increment = nullptr;
         if (!check(TokenType::RightParen) && !is_at_end()) {
-            increment = sequence(); // 增量位收序列层：++i, --j（经典 C 式双计数器）
+            increment = sequence(); // 增量位收序列层（++i, --j）
         }
         expect(TokenType::RightParen, "')'");
         UPtr<StmtNode> body = statement();
@@ -444,8 +428,6 @@ namespace aria {
     }
 
     bool Parser::looks_like_for_in() const noexcept {
-        // 判定 <pattern> "in"：identifier/"_" 紧跟 in，或 [...]（扫到匹配 ']'）后跟 in
-        // （位置前提与唯一性论证见 Parser.hpp 注）。
         usize cursor = pos_;
         if (cursor >= tokens_.size()) {
             return false;
@@ -566,7 +548,6 @@ namespace aria {
 
     UPtr<ExprNode> Parser::expression() { return assignment(); }
 
-    // 序列表达式：expression ("," expression)*。单元素透明（不产节点）；多元素产 SequenceExprNode。
     UPtr<ExprNode> Parser::sequence() {
         const SourceLoc      loc = peek().loc();
         List<UPtr<ExprNode>> expressions;
@@ -583,9 +564,8 @@ namespace aria {
     UPtr<ExprNode> Parser::assignment() {
         const SourceLoc loc = peek().loc();
 
-        // 解构赋值候选：listPattern "=" assignment。listPattern 与 listExpr 均以 '[' 起头，
-        // 故见 '[' 时投机地先按 listPattern 解析；若其后非 '='（或 listPattern 解析失败）
-        // 则回退 pos_，按表达式（listExpr）重解析。
+        // '[' 歧义（listPattern 与 listExpr 同以 '[' 起头）：投机先按 listPattern 解析，其后非 '='
+        // 或解析失败则回退 pos_ 按表达式重解析。
         if (check(TokenType::LeftBracket)) {
             const usize save = pos_;
             try {
@@ -595,11 +575,11 @@ namespace aria {
                     return std::make_unique<DestructureAssignmentNode>(loc, std::move(pat), std::move(rhs));
                 }
             } catch (const AriaCompileException&) {
-                // 吞掉异常统一回退按表达式重解析。注意 match(Equal) 之后 rhs 的 assignment()
-                // 抛错也会进此 catch--正确性依赖回退 pos_ = save 后按 listExpr 重解析会在
-                // 同一位置复现同一错误（错误仅由源内容决定，与解析路径无关）。
+                // 吞掉异常统一回退按表达式重解析。rhs 的 assignment() 抛错也会进此 catch，正确性
+                // 依赖回退 pos_ = save 后按 listExpr 重解析会在同一位置复现同一错误（错误仅由源内容
+                // 决定，与解析路径无关）。
             }
-            pos_ = save; // 非解构赋值或 listPattern 失败，回退 pos_
+            pos_ = save;
         }
 
         UPtr<ExprNode> lhs = logic_or();
@@ -659,18 +639,16 @@ namespace aria {
         return expr;
     }
 
-    // 区间：a..b（含上界）/ a...b（不含上界）。非结合（单层），rhs 调 term 不调 range。
-    // ... 与 rest/varargs 前缀复用 DotDotDot，按位置消歧（表达式中缀 vs 模式/参数前缀）。
-    // 无上界：.. / ... 后不跟表达式即省 upper（a.. / a...，两者语义同义）。
+    // 区间：a..b（含上界）/ a...b（不含上界）。非结合，rhs 调 term 不调 range；
+    // DotDotDot 与 rest/varargs 前缀复用，按位置消歧；无上界时 .. 与 ... 语义同义。
     UPtr<ExprNode> Parser::range() {
         const SourceLoc loc   = peek().loc();
         UPtr<ExprNode>  lower = term();
         if (match(TokenType::DotDot) || match(TokenType::DotDotDot)) {
             const bool is_exclusive = previous().is(TokenType::DotDotDot);
-            // 无上界走试探:term() 能解析则收 upper;失败即 .. / ... 后不跟表达式,回滚
-            // 游标判无上界。error() 是 const [[noreturn]] 纯抛出(errors_ 记账只在
-            // declaration() 恢复点),试探期零副作用,回滚仅需游标;试探吞错语义:upper 位
-            // 表达式本身残缺(如 0..(1+) 也落此路,报错移到外层语法错,仍显性。
+            // 无上界走试探：term() 能解析则收 upper，失败即 .. / ... 后不跟表达式，回滚游标判无上界。
+            // 试探期零副作用（error() 是纯抛出，errors_ 记账只在 declaration() 恢复点），回滚仅需游标；
+            // upper 位表达式残缺也落此路，报错移到外层语法错，仍显性。
             const usize save = pos_;
             try {
                 UPtr<ExprNode> upper = term();
@@ -722,7 +700,6 @@ namespace aria {
         UPtr<ExprNode>  expr = primary();
         while (true) {
             if (check(TokenType::LeftParen)) {
-                // '(' 由 args() 自行消费，此处用 check 而非 match。
                 List<UPtr<ExprNode>> call_args = args();
                 expr                           = std::make_unique<CallNode>(loc, std::move(expr), std::move(call_args));
             } else if (match(TokenType::Dot)) {
@@ -784,14 +761,12 @@ namespace aria {
                 return std::make_unique<ThisExprNode>(loc);
             case TokenType::Super: {
                 advance();
-                // superExpr 单形（super "." identifier，见 grammar.txt）：裸 super 文法不收，
-                // expect(Dot) 报 ExpectedToken；成员名经 expect_identifier。
                 expect(TokenType::Dot, "'.'");
                 return std::make_unique<SuperExprNode>(loc, expect_identifier());
             }
             case TokenType::LeftParen: {
                 advance();
-                UPtr<ExprNode> e = sequence(); // 逗号序列层：单元素=纯分组（透明），多元素=SequenceExprNode
+                UPtr<ExprNode> e = sequence();
                 expect(TokenType::RightParen, "')'");
                 return e;
             }
@@ -917,7 +892,6 @@ namespace aria {
         if (match(TokenType::Underscore)) {
             return std::make_unique<WildcardPatternNode>(loc);
         }
-        // '[' 由 list_pattern() 自行消费，此处用 check。
         if (check(TokenType::LeftBracket)) {
             return list_pattern();
         }
@@ -940,7 +914,6 @@ namespace aria {
                 }
                 elements.push_back(pattern());
             } while (match(TokenType::Comma));
-            // rest 之后必须紧跟 ']'，否则报 InvalidPattern。
             if (rest && !check(TokenType::RightBracket)) {
                 error(ErrorCode::InvalidPattern, "rest pattern '...' must be last");
             }
@@ -955,7 +928,6 @@ namespace aria {
             // ..._ 与不写 rest 等价，冗余非法。
             error(ErrorCode::InvalidPattern, "rest pattern cannot bind '_'");
         }
-        // 绑名即 pattern 位（Position i 之后的剩余绑到该名），故按 IdentifierPatternNode 出生。
         const SourceLoc loc = peek().loc();
         return std::make_unique<IdentifierPatternNode>(loc, expect_identifier());
     }

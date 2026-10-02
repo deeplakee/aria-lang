@@ -6,14 +6,8 @@
 
 namespace aria {
 
-    // 基于 Trivial 分配器(默认 GC)的 trivial 内存块底座:仅持 {Alloc* alloc_, T* data_, usize cap_},收口
-    // 「分配 / 重分配 / 释放」三件事(Array 与 ObjMovement 值栈在其上构建)。扩容策略不内置:调用方按自己的
-    // 需要算好 new_cap 后调 reserve。reserve 走分配器 reallocate(后端原生 realloc,可能原地扩展也可能搬迁),
-    // 不返回基址差(见 reserve 注释)。T 须 trivially-copyable:按内容重定位的容器(HashTable / InternPool
-    // rehash 要按新容量重算元素位置)不走本类,直接用分配器的 allocate / deallocate 自管 bucket 数组。
-    // 分配器经 TrivialAllocator concept 解耦(见 Allocator.hpp);Alloc 默认为 GC,实例化点(调用方 TU)须令
-    // GC 完整可见。不可拷贝/不可移动:持分配器堆分配裸指针(data_),浅 move 会 double-free;资源仅经析构
-    // 释放,转移所有权用指针/就地构造(如 ObjList 持 AriaArray 成员)。
+    // Trivial 内存块底座:仅持 {Alloc* alloc_, T* data_, usize cap_},收口「分配 / 重分配 / 释放」,扩容策略不内置
+    // (调用方算好 new_cap 调 reserve)。不可拷贝/不可移动:持堆分配裸指针(data_),浅 move 会 double-free。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Buffer {
         T*     data_;
@@ -21,10 +15,10 @@ namespace aria {
         Alloc* alloc_;
 
     public:
-        // 空态:不分配,延迟到首次 reserve 才分配(Array 用此重载)。
+        // 空态:不分配,延迟到首次 reserve 才分配。
         explicit Buffer(Alloc* alloc) noexcept : data_{nullptr}, cap_{0}, alloc_{alloc} {}
 
-        // 分配 initial_cap 个 T(initial_cap > 0;ObjMovement 值栈用此重载,初始定容)。
+        // 分配 initial_cap 个 T(initial_cap > 0)。
         Buffer(Alloc* alloc, const usize initial_cap) noexcept :
             data_{alloc->template allocate<T>(initial_cap)}, cap_{initial_cap}, alloc_{alloc} {}
 
@@ -39,12 +33,8 @@ namespace aria {
         Buffer(Buffer&&)                 = delete;
         Buffer& operator=(Buffer&&)      = delete;
 
-        // 扩容到 new_cap:仅当 new_cap > 当前 cap 才真正 reallocate(后端原生 realloc,可能原地扩
-        // 展也可能搬迁)。本方法**不返回新旧基址差**:旧基址在 reserve 返回后一律失效(原地扩展时
-        // 基址不变,搬迁时旧块已释放),调用方不得继续使用此前取出的 data() 指针;需要重定位派生
-        // 裸指针的调用方(如 ObjMovement 值栈)须自行以整数维护偏移:在调本方法**前**把派生指针到旧
-        // 基址(data())的偏移算成整数(此时旧基址存活,指针减法有定义),调**后**用新基址(data())+
-        // 偏移重建(基址未变则等于刷新,搬迁则重建到新块,均安全)。详见 ObjMovement::grow_stack_。
+        // 扩容到 new_cap(仅 new_cap > cap 才 reallocate,可能原地扩展也可能搬迁)。旧基址在返回后一律失效、不
+        // 返回基址差;持派生裸指针的调用方须调前把到旧基址的偏移记成整数、调后以新基址加偏移重建(原址即刷新)。
         void reserve(const usize new_cap) noexcept {
             if (new_cap <= cap_) {
                 return;

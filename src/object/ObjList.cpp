@@ -43,8 +43,7 @@ namespace aria {
     }
 
     String ObjList::debug_repr() const {
-        // 环防护:自引用/互环时本 list 已在渲染路径上,截断 "[...]"(先查后挂,顺序反了
-        // 自身即命中);不截断则元素重遇无限递归栈溢出。
+        // 环防护先查后挂:已在渲染路径上截断 "[...]",不截断则元素重遇无限递归。
         if (PrintGuard::is_cycle(this)) {
             return "[...]";
         }
@@ -53,13 +52,9 @@ namespace aria {
         return "[" + util::join(elements_, ", ", format_value_debug) + "]";
     }
 
-    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) {
-        // 裸查找:命中直取 List bootstrap 类表原生值,不铸 ObjBoundMethod(契约见 Object.hpp);本体是纯透传。
-        return vm.list_class()->load_field(vm, name);
-    }
+    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) { return vm.list_class()->load_field(vm, name); }
 
     Opt<Value> ObjList::load_field_bound(AriaVM& vm, ObjString* name) {
-        // 绑定读:同名裸查找命中即无条件绑定 this(类表条目全为原生恒为方法;权威注见 Object.hpp)。
         const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
@@ -68,12 +63,9 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
-        // Range 键 = 切片(流程见 slice)。
         if (const auto range = try_obj<ObjRange>(key)) {
             return slice(vm, range);
         }
-        // 整数键:非整数 TypeMismatch;负下标从尾计数、归一化后越界 IndexOutOfBounds
-        //(文案报原始键值)。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
@@ -85,7 +77,6 @@ namespace aria {
     }
 
     bool ObjList::store_index(AriaVM& vm, const Value key, const Value value) {
-        // 键检查同读;不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
@@ -102,15 +93,13 @@ namespace aria {
     Opt<Value> ObjList::op_mul_impl(AriaVM& vm) { return vm.register_value(kListMulFnOffset); }
 
     Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
-        // 切片段解析(有上界与无上界两形态统一)收口 resolve_slice_bounds:nullopt = 无法形成合法
-        // 区间,唯一失败报错就地烘焙。长度与方向的折算全在解析口。
+        // 段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间,唯一失败点报错就地烘焙。
         const auto segment = resolve_slice_bounds(range, elements_.size());
         if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
-        // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 的越界断言不容它(段空不 deref)。
-        // GC 走查:receiver 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由
-        // run_load_index 写回原槽根化。
+        // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 越界断言不容它。GC 走查:receiver
+        // 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由 run_load_index 写回原槽根化。
         const auto list   = new_list(vm.gc());
         const auto source = Span<const Value>{elements_.data() + segment->start, segment->count};
         if (segment->is_reversed) {
@@ -121,9 +110,6 @@ namespace aria {
         return Value::from_obj(list);
     }
 
-    ObjList* new_list(GC& gc) {
-        // 工厂无入参对象可守;调用方建成即发布进根(见头注释)。
-        return gc.new_object<ObjList>(gc);
-    }
+    ObjList* new_list(GC& gc) { return gc.new_object<ObjList>(gc); }
 
 } // namespace aria

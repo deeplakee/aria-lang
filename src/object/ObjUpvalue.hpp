@@ -2,19 +2,13 @@
 #define ARIA_OBJ_UPVALUE_HPP
 
 #include "object/Object.hpp"
-#include "value/Value.hpp" // Value(成员 closed_ 与 location_ 指向的栈槽元素)
+#include "value/Value.hpp"
 
 namespace aria {
 
     class GC;
 
-    // Upvalue 对象:闭包对外层局部的「捕获即引用」载体(ObjType::UPVALUE)。open 态持指向值栈某槽的指针(外层后续修改对内
-    // 层可见);帧退出时 close() 把值迁进 closed_ 自持。
-    //   - location_:open 指入值栈(grow_stack_ 搬迁后经 set_location 重绑),closed 恒指 &closed_;两态统一经 value_slot()
-    //     取读写槽,LOAD/STORE_UPVALUE 不分支。
-    //   - next_open_:open upvalue 按槽址降序的侵入式开链(VM 持链头 open_upvalues_);同槽捕获经链查复用同一对象,close 摘
-    //     链。地址哈希型、final、非拷贝/非移动(按身份共享,浅拷贝
-    //     破坏开链不变式)。trace 标 *value_slot()(open 标栈槽内值 / closed 标 closed_;槽内 Value 可装箱任意对象)。
+    // Upvalue 对象:闭包对外层局部变量的引用载体。open 状态指向值栈槽;帧退出后 close 把值搬进自持。
     class ObjUpvalue final : public Object {
     public:
         // slot = 被捕获的值栈槽地址(open 起点;恒非空,栈槽必存在)。
@@ -59,7 +53,7 @@ namespace aria {
             location_ = slot;
         }
 
-        // 开链访问器(链头在执行上下文,按槽址降序;遍历/插链/摘链由 ObjMovement 管)。
+        // 开链访问器(链头在执行上下文,按槽址降序)。
         [[nodiscard]]
         ObjUpvalue* next_open() const noexcept {
             return next_open_;

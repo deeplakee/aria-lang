@@ -1373,7 +1373,7 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
 
 TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
     // 裸名赋值 `str = 5`（无 var 声明）：模块 globals 未命中 -> UndefinedVariable，不回退 builtins
-    // 写（STORE_GLOBAL 不回退，与 grammar §205-206「赋值不隐式创建、必须先 var 声明」一致）。
+    // 写（STORE_GLOBAL 不回退，与 grammar.txt 说明区「作用域模型」条的赋值不隐式创建一致）。
     auto out = run_value("str = 5; return str;");
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);

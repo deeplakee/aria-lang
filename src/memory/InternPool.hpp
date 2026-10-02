@@ -10,15 +10,8 @@
 
 namespace aria {
 
-    // 字符串驻留池(intern pool):字符串专用 set(键即串内容,值即 ObjString* 自身)。特化表示:裸 ObjString** slots_
-    // (8B/槽,无 ctrl/h2,靠内容比较),低位标签区分槽状态(分配器对齐保证低 4 位全 0):nullptr 空槽 /
-    // (ObjString*)0x1 墓碑 / 真指针占用。探测同 HashTable 形态:三角探测偏移 0,1,3,6,10,...与 7/8 负载、
-    // 墓碑 compact 阈值(本文件唯一权威表述,各探测行尾注不再重复)。**weak root**:不进 GC::mark_roots_
-    // (否则驻留串永生);GC::collect 在 sweep 前调 remove_white() 摘除指向白色(未标 is_marked)ObjString*
-    // 的表项,避免 sweep 后悬垂。
-    // **Alloc 约束的位置**:不放在模板头,而在 ctor 体内 static_assert--InternPool<GC> 是 GC 的值成员,类体内
-    // 实例化时 GC 尚不完整,模板头约束会误判不满足;延到 ctor 具现化点检查即可。元素类型固定 ObjString*
-    // (依赖其 hash()/view()/is_marked())。
+    // 字符串驻留池：字符串专用集合，键即串内容（等价内容共享同一 ObjString*）。
+    // weak root：表项不保证保命，GC 在 sweep 前经 remove_white() 摘除指向白色串的表项。
     template<typename Alloc = GC>
     class InternPool {
         ObjString** slots_;
@@ -43,7 +36,8 @@ namespace aria {
     public:
         explicit InternPool(Alloc* alloc) noexcept :
             slots_{nullptr}, alloc_{alloc}, cap_{0}, count_{0}, tombstones_{0} {
-            // 延迟到 ctor 具现化点检查(见类注释「Alloc 约束的位置」):此时 Alloc(GC)已完整。
+            // static_assert 不在模板头而在 ctor:类体实例化(InternPool<GC> 为 GC 的值成员)时 GC 尚不完整,
+            // 模板头约束会误判不满足;ctor 具现化点 Alloc 已完整。
             static_assert(TrivialAllocator<Alloc>, "InternPool: Alloc must satisfy TrivialAllocator");
         }
 
@@ -86,7 +80,7 @@ namespace aria {
         // 插入 s(假定其内容未驻留:调用方先 find 查重,未命中才 insert)。可能触发 rehash。
         void insert(ObjString* s) {
             ASSERT(s != nullptr && !is_tombstone(s), "invalid slot for insert");
-            // 确保有空槽(同 HashTable 的 7/8 负载与墓碑阈值,含 cap_==0 初始分配);任一情形都经 grow_and_rehash_。
+            // 确保有空槽(阈值见类头注,含 cap_==0 初始分配)。
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);
             } else {
@@ -122,8 +116,7 @@ namespace aria {
             ASSERT(false, "probe exhausted (invariant violated)");
         }
 
-        // weak root 清理:遍历 slots_,把指向白色(未标 is_marked)ObjString* 的占用槽置墓碑。
-        // 在 GC::collect 的 trace 后、sweep 前调用,防 sweep 释放后 slots_ 悬垂。
+        // weak root 清理:把指向白色(未标 is_marked)串的占用槽置墓碑;在 trace 后、sweep 前调用,防 slots_ 悬垂。
         void remove_white() noexcept {
             for (usize i = 0; i < cap_; ++i) {
                 const ObjString* s = slots_[i];

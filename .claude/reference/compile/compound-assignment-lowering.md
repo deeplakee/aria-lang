@@ -70,8 +70,6 @@ LOAD_INDEX       ; [obj, idx, obj[idx]]  消耗顶层一对,留下复制对
 STORE_INDEX      ; [newval]    消耗留下的 (obj,idx) 与新值,留新值(peek-store 同族)
 ```
 
-> `LOAD_INDEX`/`STORE_INDEX` 的栈操作数顺序以 VM 实现为准;上表假设两者都从栈顶取 `(obj, idx)` 对、`STORE_INDEX` 额外取其下方的值。实现时若顺序不同,`DUP2` 后的栈布局相应调整,但"locator 只求值一次"不变。
-
 ## 5. 前置自增自减 (`++`/`--`)
 
 `++E` / `--E` 与复合赋值同属 lvalue-once 操作:C 标准明文 `++E` 等价于 `E += 1`、`--E` 等价于 `E -= 1`(C11 §6.5.3.1p2/p3),故继承同一条"左值只求值一次"不变式。`++obj[f()]` 的 `f()` 只调一次,`++getObj().field` 的 `getObj()` 只调一次--与 `obj[f()] += 1` 完全相同。

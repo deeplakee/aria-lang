@@ -9,12 +9,10 @@ namespace aria {
 
     ModuleCtx::ModuleCtx(ObjModule* module) : module_{module} {
         ASSERT(module->entry() != nullptr, "module entry must be set before construction");
-        // ModuleEntry 语义单源在 FnKind.hpp 注册表注。
         current_fn_ctx_ = new FunctionCtx(module->entry(), nullptr, FnKind::ModuleEntry);
     }
 
-    // 沿 enclosing_ 链逐个 delete（成功 / 出错两路径的游标位置分析见头注）；先存 next 再 delete
-    // （delete 后不可再读 ctx）。
+    // 沿 enclosing_ 链逐个 delete；先存 next 再 delete（delete 后不可再读 ctx）。
     ModuleCtx::~ModuleCtx() {
         auto ctx = current_fn_ctx_;
         while (ctx != nullptr) {

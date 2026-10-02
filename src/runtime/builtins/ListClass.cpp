@@ -19,26 +19,20 @@ namespace aria {
 
     namespace {
 
-        // list 方法实现(NativeFn 方法调用形态见 Builtin.hpp)惯例:receiver 解开后直取
-        // elements() 绑为 list(仅 iter 需要 ObjList* 本体传给迭代器);段搬移类变更(insert/
-        // remove_at)收口 Array 原语,方法体只余域检查与调用。
-
         // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
         bool fn_push(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            // 绑定路径契约:slots[0] 恒本 list(仅经 load_field_bound 绑定触达,DEBUG 下 as 走
-            // dynamic_cast 校验。
+            // 绑定路径契约:slots[0] 恒本 list,DEBUG 下 as 走 dynamic_cast 校验。
             auto& list = Object::as<ObjList>(slots[0].as_obj())->elements();
             list.push(slots[1]); // trivial 分配不触 GC
             slots[0] = Value::nil_val();
             return true;
         }
 
-        // pop() -> 末元素:移除并返回末元素(任意 Value);空表报 IndexOutOfBounds(fail-fast,
-        // nil 哨兵不可行 --list 可合法存 nil)。
+        // pop() -> 末元素;空表报 IndexOutOfBounds(fail-fast,nil 哨兵不可行 -- 元素可合法存 nil)。
         bool fn_pop(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -53,9 +47,8 @@ namespace aria {
             return true;
         }
 
-        // insert(i, x) -> nil:在位置 i 之前插入 x(任意 Value)。负数从尾计数、指「该下标元素
-        // 之前」,合法域 [-(size), size] 收口 util::resolve_position(上界放宽到追加位)。段右移
-        // 腾位收口 Array::insert。
+        // insert(i, x) -> nil:i 前插入;负数从尾计数指「该下标元素之前」,合法域 [-(size), size]
+        //(上界放宽到追加位)。
         bool fn_insert(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
@@ -74,8 +67,7 @@ namespace aria {
             return true;
         }
 
-        // remove(x) -> Bool:移除**全部** == 命中元素;命中 true、未命中 false 不报错 --miss 走
-        // 返回值,与 find 返 -1 / contains 返 false 同族。收口 AriaArray::remove(一趟稳定压缩)。
+        // remove(x) -> Bool:移除全部 == 命中元素;miss 返 false 不报错。
         bool fn_remove(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -86,8 +78,7 @@ namespace aria {
             return true;
         }
 
-        // remove_at(i) -> i 处元素:按位置移除并返回(负数从尾计数、与下标读写同语义,越界报
-        // 原始键值)。段左移补位收口 Array::remove_at。
+        // remove_at(i) -> i 处元素:负数从尾计数,越界报原始键值。
         bool fn_remove_at(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -107,8 +98,7 @@ namespace aria {
             return true;
         }
 
-        // clear() -> nil:清空(长度归零,容量保留)。重绑 xs = [] 换新表别名仍见旧内容,本方法
-        // 供共享可变状态原地清空。
+        // clear() -> nil:清空(长度归零,容量保留)。
         bool fn_clear(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -137,10 +127,9 @@ namespace aria {
             return SortDomain::NotComparable;
         }
 
-        // sort() -> nil:就地升序(变更方法返 nil)。域 = 全数值或全字符串,先整体域检再排序 --
-        // 比较器免「不可比」分支,排序中途无失败路径;升序判定收口 value_less(value 层自然序)。
-        // GC 走查:域检与比较均无 GC 分配;stable_sort 临时缓冲走 std 内存(非 GC 堆),receiver 在
-        // slots[0] 未覆写。稳定序:等值元素(如 int 1 与 f64 1.0)保输入相对序。
+        // sort() -> nil:就地升序。域 = 全数值或全字符串,先整体域检再排序,排序中途无失败路径;
+        // stable_sort 临时缓冲走 std 内存,receiver 在 slots[0];稳定序:等值元素(如 int 1 与
+        // f64 1.0)保输入相对序。
         bool fn_sort(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -180,8 +169,7 @@ namespace aria {
             return true;
         }
 
-        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil(下标永不为 nil 故无歧义,miss 时
-        // xs[find(x)] 会静默取末元素)。判定收口 AriaArray::find,value_equal 无分配。
+        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil。
         bool fn_find(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -193,8 +181,7 @@ namespace aria {
             return true;
         }
 
-        // contains(x) -> Bool:成员判定收口 AriaArray::contains(list 无 in 表达式算子,本方法即
-        // 成员测试口)。
+        // contains(x) -> Bool:成员判定(list 无 in 算子,此即成员测试口)。
         bool fn_contains(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -227,9 +214,8 @@ namespace aria {
             return true;
         }
 
-        // join(sep) -> string:元素经 format_value 转字符串后以 sep 连接(任意元素;空 list 返空串;
-        // sep 可为空串)。底座 util::join。GC 走查:util::join 遍历 format_value 均无 GC 分配,唯一
-        // 分配点 new_string 时 receiver 在 slots[0] 未覆写、sep 在 slots[1] 经栈根。
+        // join(sep) -> string:元素经 format_value 转串后以 sep 连接(空 list 返空串,sep 可为空串)。
+        // GC 走查:format_value 无 GC 分配,唯一分配点 new_string 时 receiver/sep 均在槽 0/1。
         bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -245,8 +231,7 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器:list 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:list 在
-        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点。
+        // iter() -> 迭代器。GC 约束:list 在 slots[0] 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -257,16 +242,10 @@ namespace aria {
             return true;
         }
 
-        // 运算符重载方法(函数名与 runtime/str_table.hpp 的注册表拼写一一对应,经 AriaVM::run_binary_operator
-        // 取用;也是"算子 = 方法"的唯一实现处)。名字与失败文案都是**就地字面量**(与方法名同形):
-        // 文案打方法名,与注册键同处一文件、golden 钉住拼写。list 只有 `+` 与 `*`(乘数严格 int,
-        // f64 一律拒 -- 同下标访问口径;负数报错不静默得空,与负数下标报错约定一致);乘除模、
-        // 比较不重载(判等与下标本就不参与重载)。
+        // 运算符重载方法:list 只重载 `+` 与 `*`。
 
-        // __add__ -> 新 list:两表拼接。浅拷:元素 Value 逐位复制,嵌套容器两表共享同一对象
-        //(与下标读同口径,深拷需逐元素另建)。GC 走查:new_list 顶部 maybe_collect 时两侧实参
-        // 经调用区槽在栈(receiver 占 slots[0],「栈即根」);此后 reserve/copy_from 全程 trivial
-        // 无 GC 点,建成即写回槽 0 发布。
+        // __add__ -> 新 list:两表拼接;浅拷(嵌套容器共享同一对象)。
+        // GC 走查:唯一分配点 new_list,两侧实参经调用区槽在栈,reserve/copy_from trivial,建成即写回槽 0。
         bool fn___add__(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -286,8 +265,8 @@ namespace aria {
             return true;
         }
 
-        // __mul__ -> 新 list:整次重复(count 次接尾追加自身元素,0 次得空表;浅拷同 __add__)。
-        // GC 走查同 __add__:唯一分配点 new_list,其后 reserve + 逐轮 copy_from 全程 trivial。
+        // __mul__ -> 新 list:整次重复(0 次得空表,浅拷同 __add__);乘数严格 int,负数报错不静默得空。
+        // GC 走查同 __add__:唯一分配点 new_list,其后 reserve 加逐轮 copy_from 全程 trivial。
         bool fn___mul__(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -311,33 +290,22 @@ namespace aria {
             return true;
         }
 
-        // list 方法表:注册进 List bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
+        // list 方法表。
         constexpr BuiltinFnEntry kListBuiltins[] = {
-                {"push", fn_push},
-                {"pop", fn_pop},
-                {"insert", fn_insert},
-                {"remove", fn_remove},
-                {"remove_at", fn_remove_at},
-                {"clear", fn_clear},
-                {"sort", fn_sort},
-                {"reverse", fn_reverse},
-                {"find", fn_find},
-                {"contains", fn_contains},
-                {"size", fn_size},
-                {"is_empty", fn_is_empty},
-                {"join", fn_join},
-                {"iter", fn_iter},
-                // 运算符重载方法(list 只有 `+` 与 `*`;键与函数名对应的钩子名同形,漏改其一时
-                // ListClass::kOperatorFns 清单按名查不到、bootstrap 断言即报)
-                {"__add__", fn___add__},
-                {"__mul__", fn___mul__},
+                {"push", fn_push},           {"pop", fn_pop},
+                {"insert", fn_insert},       {"remove", fn_remove},
+                {"remove_at", fn_remove_at}, {"clear", fn_clear},
+                {"sort", fn_sort},           {"reverse", fn_reverse},
+                {"find", fn_find},           {"contains", fn_contains},
+                {"size", fn_size},           {"is_empty", fn_is_empty},
+                {"join", fn_join},           {"iter", fn_iter},
+                {"__add__", fn___add__},     {"__mul__", fn___mul__},
         };
 
     } // namespace
 
     ObjClass* ListClass::make_class(GC& gc, ObjClass* super) {
-        // List bootstrap 类:内置 list 的语言方法面载体,经 ObjList::load_field_bound 查表命中后恒绑定
-        // 触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
+        // List bootstrap 类:内置 list 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "List", super);
         Builtin::register_class_methods(gc, klass, kListBuiltins);
         return klass;

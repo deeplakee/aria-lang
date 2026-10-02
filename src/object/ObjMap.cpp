@@ -31,9 +31,8 @@ namespace aria {
             return false;
         }
         const EqualGuard guard{this, other};
-        // 逐键 range-for(首个 miss 即 return 退出):键命中按表内语义 ===(find 即
-        // value_identical 匹配),值 value_equal(嵌套容器经各自 equals 递归);find/value_equal
-        // 均无 GC 分配,GC-pure 契约保持。
+        // 键命中按表内语义 ===(find 即 value_identical 匹配),值 value_equal(嵌套经各自 equals 递归);
+        // find/value_equal 均无 GC 分配,GC-pure 契约保持。
         for (const auto& [key, value]: table_) {
             if (const auto entry = map->table_.find(key); entry == nullptr || !value_equal(value, entry->value)) {
                 return false;
@@ -55,13 +54,9 @@ namespace aria {
         return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
 
-    Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) {
-        // 裸查找:命中直取 Map bootstrap 类表原生值,不铸 ObjBoundMethod(契约见 Object.hpp);本体是纯透传。
-        return vm.map_class()->load_field(vm, name);
-    }
+    Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) { return vm.map_class()->load_field(vm, name); }
 
     Opt<Value> ObjMap::load_field_bound(AriaVM& vm, ObjString* name) {
-        // 绑定读:同名裸查找命中即无条件绑定 this(类表条目全为原生恒为方法;权威注见 Object.hpp)。
         const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
@@ -70,7 +65,6 @@ namespace aria {
     }
 
     Opt<Value> ObjMap::load_index(AriaVM& vm, const Value key) {
-        // 任意键;miss KeyError,键走 debug 形入文案(嵌套字符串带引号;环防护由 debug_repr 自理)。
         if (const auto entry = table_.find(key)) {
             return entry->value;
         }
@@ -78,14 +72,10 @@ namespace aria {
     }
 
     bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {
-        // 恒成功,命中覆写、未命中新增键(set 两条路径均无报错);set/rehash 走 GC 分配器不触 GC。
         table_.set(key, value);
         return true;
     }
 
-    ObjMap* new_map(GC& gc) {
-        // 工厂无入参对象可守;调用方建成即发布进根(见头注释)。
-        return gc.new_object<ObjMap>(gc);
-    }
+    ObjMap* new_map(GC& gc) { return gc.new_object<ObjMap>(gc); }
 
 } // namespace aria

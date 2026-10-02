@@ -48,6 +48,7 @@ paths:
 - **语言值域**：`kIntMin`/`kIntMax`（i48 = `Value::from_int` 的 48 位尾部；字面量闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text` 同界）。
 - **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
 - **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（主入口名）、`kModuleEntryName = "<module>"`（模块体入口名；两者入口体同为 ModuleEntry 形态，返回值恒为模块对象）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用；lambda 留栈不绑定由 LambdaExprNode/FnKind 判定，名字仅作显示）。
+- **构造角色名**：`kInitName = "init"`（实例方法构造角色；"init" 本身是普通标识符，角色由 def 体裸方法位与名字共同判定 -- parser 据名烙 `FnKind::InitMethod`（隐式返回尾返 this），runtime 据名维护类 `init_` 槽（`ObjClass::set_field` 同步））。
 - **运算符与调用重载方法名**（十一个 dunder，如 `__add__`/`__call__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（纯拼写表）与「恒久存活」的根见 `runtime/str_table.hpp`（见 `runtime.md`「共享状态」的常量串表）。
 - **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
 - **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。
@@ -64,5 +65,5 @@ paths:
 - **`.cpp` 匿名命名空间 helper**：`build_cli`（建 `util::Cli`：`--repl`、`--eval`/`-e`、`--version`/`-v`、可选位置参数 `<file>`，外加内置 `--help`/`-h`）、`run_repl`/`run_src`/`run_file`（均不对外暴露）。
 - **`cli_dispatch(i32 argc, char* argv[], const LineReader&)`** 按优先级 `--help > --version > --eval > --repl > <file> > 默认 REPL`（无参即进 REPL）派发，返回退出码 0/1；解析失败打错误 + help 并返 1。`--version` 打印 `aria 0.1.0`（kProductName + 版本分量 format 拼接）后短路。
 - **执行路径**：`--eval` 走 `run_src(StringView)`、`<file>` 走 `run_file(StringView)`（各自自建 `AriaVM` 调 `interpret_from_src`/`interpret_from_path`，错误内部渲染 stderr）。
-- **REPL**：`run_repl` 复用单个 `<repl>` 模块逐行 `run(SourceFile&, ObjModule*)`（第二参是 `ObjModule*`）编译执行；模块经 `gc.make_guard` 跨行保活，使顶层 `var` 经 `DEF_GLOBAL` 落 `globals_` 跨行持久；逐行错误渲染 stderr 后循环不中断（容错继续）。
+- **REPL**：`run_repl` 复用单个 `<repl>` 模块逐行 `run(SourceFile&, ObjModule*)`（第二参是 `ObjModule*`）编译执行；模块不入模块表（合成名），故经 `gc.make_guard` 跨行保活，使顶层 `var` 经 `DEF_GLOBAL` 落 `globals_` 跨行持久；逐行错误渲染 stderr 后循环不中断（容错继续）。
 - **`LineReader = std::function<bool(String&)>`**：main 用 isocline 实现，测试注入流读取器 lambda（见 `tests/runtime/test_interpreter.cpp`）。

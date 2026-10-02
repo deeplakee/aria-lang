@@ -666,7 +666,7 @@ TEST_F(AriaVMStress, StoreGlobalUpdatesExisting) {
     EXPECT_EQ(out->as_int(), 2);
 }
 
-// 赋值不隐式创建(grammar.txt §445):STORE_GLOBAL 未定义全局 -> UndefinedVariable。
+// 赋值不隐式创建(grammar.txt 说明区「作用域模型」条):STORE_GLOBAL 未定义全局 -> UndefinedVariable。
 TEST_F(AriaVMStress, StoreGlobalUndefinedErrors) {
 
     auto&     gc    = vm.gc();

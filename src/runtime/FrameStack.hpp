@@ -7,10 +7,8 @@
 
 namespace aria {
 
-    // 面向 trivial 帧(CallFrame)的栈式槽位池。零开销:acquire = 返回槽引用 + count++,pop = count--,
-    // truncate = count = n。T 为 trivially-copyable/destructible -> 无构造/析构;一次分配永不扩容 ->
-    // 指针绝对稳定。模板参数:T = 帧类型(纯 POD:聚合或 = default,无用户构造函数),Capacity = 最大帧数
-    //(编译期常量)。
+    // 面向 trivial 帧(CallFrame)的栈式槽位池:一次分配永不扩容,指针绝对稳定;acquire/pop/
+    // truncate 纯计数零开销。模板参数:T = trivially-copyable 帧类型,Capacity = 最大帧数。
     template<typename T, usize Capacity>
     class FrameStack {
         static_assert(Capacity > 0, "FrameStack capacity must be > 0");

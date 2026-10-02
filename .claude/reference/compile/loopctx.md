@@ -36,149 +36,12 @@ struct LoopCtx {
 
 ## 3. 在代码中的实际使用
 
-`LoopCtx` 不被直接构造后长期持有，而是由 `CodeGen` 的循环 visit 函数**入栈 -> 编译循环体 -> 出栈并回填**的标准三段式使用。
+`LoopCtx` 由 CodeGen 的循环 visit 按「入栈 -> 编译循环体 -> 出栈并回填」三段式使用：以指定初始化构造 `LoopCtx{.loop_scope_depth, .back_target}`（仅 for 带 incr 再 `emplace()` 打开前向通道）-> 循环头条件假跳占位登记进 `exit_fwd_patches` -> push 进 `loop_stack_` -> 编译体（体内 break/continue 恒取栈顶 LoopCtx，天然绑定最内层循环）-> `pop_top` 出栈取回 ->（仅 for 有 incr）回填 `continue_fwd_patches` -> `emit_loop_backedge_and_exits` 回边 + exit 统一回填。
 
-### 3.1 统一使用模式
-
-所有循环 visit 都遵循这个骨架：
-
-```cpp
-const u32 loop_scope = cur_fn_ctx()->scope_depth_;  // 记录循环体所在 scope 深度
-auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};  // 循环头
-if (<has_incr>) { loop_ctx.continue_fwd_patches.emplace(); }  // 仅 for 带 incr 打开前向通道
-// ... 发射循环头（条件 + JUMP_FALSE 占位，占位登记进 loop_ctx.exit_fwd_patches）...
-cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
-emit_stmt(node->body.get());                        // 编译循环体（体里的 break/continue 会读栈顶 LoopCtx）
-loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);  // 循环结束，出栈取回（复用构造时的同名变量）
-// ...（仅 for 有 incr）回填 continue_fwd_patches -> L_incr、发射递增（时序见 §3.3）...
-emit_loop_backedge_and_exits(loop_ctx, node->loc());  // 回边（自取 back_target）+ exit 统一回填
-```
-
-`break`/`continue` 在循环体内被访问时，总是取 `loop_stack_.top()`（**当前最内层**循环的 `LoopCtx`），往它的 `exit_fwd_patches` / `continue_fwd_patches` 里追加占位偏移，或用 `back_target` 直接回跳。这天然实现了「break/continue 绑定到最内层循环」。
-
-### 3.2 `while` 循环（`visitWhileStmtNode`）
-
-```cpp
-auto loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
-                        .back_target = cur_cu()->size()};  // 循环头 = 条件起点 = continue 后向目标
-emit_expr(node->condition.get());
-const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // 条件假 -> L_end 占位
-loop_ctx.exit_fwd_patches.push_back(patch);
-cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
-emit_stmt(node->body.get());
-loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
-
-emit_loop_backedge_and_exits(loop_ctx, node->loc());  // 回边 + exit 统一回填
-```
-
-- `back_target = 条件起点`（continue 后向回到此处直接回跳，回边亦跳此）。
-- `continue_fwd_patches` 恒 nullopt（未打开前向通道）。
-- `exit_fwd_patches` 收两条腿：循环头条件假跳占位（此处登记）+ 各 break 占位（体编译期间登记），收尾统一回填到 `L_end`。
-
-字节码布局：
-```
-L_start: <cond> JUMP_FALSE -> L_end
-         <body>（break -> JUMP 占位，记入 exit_fwd_patches）
-         JUMP_BACK -> L_start
-L_end:   <exit_fwd_patches（条件假跳 + break 们）回填到这里>
-```
-
-### 3.3 `for` 循环（`visitForStmtNode`）
-
-这是最复杂的，因为 continue 的目标取决于**有没有 increment**：
-
-```cpp
-begin_scope();
-// ... init ...
-const bool has_cond = node->condition != nullptr;
-const bool has_incr = node->increment != nullptr;
-auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope,
-                        .back_target = cur_cu()->size()};  // 循环头 = L_cond = 回边目标
-if (has_incr) {
-    loop_ctx.continue_fwd_patches.emplace();        // 打开前向 continue 通道
-}
-if (has_cond) {
-    emit_expr(node->condition.get());
-    const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // 条件假 -> L_end 占位
-    loop_ctx.exit_fwd_patches.push_back(patch);
-} // 无 cond: exit 列表空，收尾只有回边 + break 回填
-cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
-emit_stmt(node->body.get());
-loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
-
-// *** 关键：前向 continue 必须在「递增发射前」回填（此刻 size() 即 L_incr）***
-if (loop_ctx.continue_fwd_patches) {
-    for (const auto cp: *loop_ctx.continue_fwd_patches)
-        patch_jump_or_fail(cp, node->loc());   // -> L_incr
-}
-// ... emit increment; POP ...
-emit_loop_backedge_and_exits(loop_ctx, node->loc());
-// 回边 -> back_target（L_cond）；exit 列表（条件假跳 + break 们）统一回填 -> L_end
-end_scope(line);
-```
-
-**两个要点**：
-
-1. **前向通道按 `has_incr` 打开**：有 `increment` 时入栈前 `emplace()` 打开 `continue_fwd_patches`（continue 跳 `L_incr`），无 `increment` 恒 nullopt（走后向回跳循环头 `back_target`）。
-2. **前向 continue 回填时机**：`continue_fwd_patches` 必须在 `cur_cu()->size() == L_incr` 即**递增区发射之前**回填。若等递增和 `JUMP_BACK` 都发完再回填，`size()` 已经是 `L_end`，continue 会错跳到 `L_end` 提前退出循环。（依据见 §6.2 时间线。）
-
-字节码布局（有 incr）：
-```
-        <init>
-L_cond: <cond> JUMP_FALSE -> L_end
-        <body>（continue -> JUMP 占位入 continue_fwd_patches；break -> JUMP 占位入 exit_fwd_patches）
-L_incr: <incr> POP          <- continue_fwd_patches 回填到这里
-        JUMP_BACK -> L_cond
-L_end:  <- exit_fwd_patches（条件假跳 + break 们）回填到这里
-```
-
-### 3.4 `for-in` 循环（`visitForInStmtNode`）
-
-与 `while` 同型：continue 后向跳回循环头（每轮重新调 `has_next` 判断）。
-
-```cpp
-auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope,
-                        .back_target = cur_cu()->size()};  // 循环头 = has_next 判断处
-// ... LOAD iter; has_next; CALL ...
-const auto patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // 条件假 -> L_end 占位
-loop_ctx.exit_fwd_patches.push_back(patch);
-cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
-// ... next; bind_pattern; body ...
-loop_ctx = util::pop_top(cur_fn_ctx()->loop_stack_);
-emit_loop_backedge_and_exits(loop_ctx, node->loc());  // 回边 + exit 统一回填
-```
-
-`back_target = has_next 判断处`，`continue_fwd_patches` 恒 nullopt（未打开），exit 列表与 `while` 完全一致。
-
-### 3.5 `break`（`visitBreakStmtNode`）
-
-```cpp
-if (cur_fn_ctx()->loop_stack_.empty())
-    fail(ErrorCode::BreakOutsideLoop, node->loc(), "'break' outside loop");
-auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();   // 最内层循环
-emit_pop_locals_to(loop_ctx.loop_scope_depth, line);          // 弹循环体内局部
-const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_end（待回填）
-loop_ctx.exit_fwd_patches.push_back(patch);                 // 发占位 JUMP，记偏移
-```
-
-三步：① 查非空（否则 `BreakOutsideLoop`）；② 用 `loop_scope_depth` 弹局部；③ 发占位 `JUMP` 并把偏移追加到 `exit_fwd_patches`。break 永远前向，所以与 `back_target` 无关（它的 dst 恒为体后的 `L_end`）。
-
-### 3.6 `continue`（`visitContinueStmtNode`）
-
-```cpp
-if (cur_fn_ctx()->loop_stack_.empty())
-    fail(ErrorCode::ContinueOutsideLoop, node->loc(), "'continue' outside loop");
-auto& loop_ctx = cur_fn_ctx()->loop_stack_.top();
-emit_pop_locals_to(loop_ctx.loop_scope_depth, line);          // 弹循环体内局部
-if (loop_ctx.continue_fwd_patches) {                    // 前向：通道已打开（for 带 incr），占位待回填
-    const auto patch = cur_cu()->emit_jump(OpCode::JUMP, line); // -> L_incr（待回填）
-    loop_ctx.continue_fwd_patches->push_back(patch);
-} else {                                            // 后向：直接跳循环头
-    emit_jump_back_or_fail(loop_ctx.back_target, node->loc());
-}
-```
-
-这里即 §2 所述二选一分支的落点：通道未打开（nullopt）就直接 `emit_jump_back(back_target)`；已打开就发占位 `JUMP` 入 `continue_fwd_patches`，交给 `for` 循环出体时回填。
+- **`while` / `for-in`**：`back_target` = 条件 / has_next 判断处，continue 后向直跳回循环头。布局：`L_start: <cond> JUMP_FALSE -> L_end; <body>（break 占位）; JUMP_BACK -> L_start`。
+- **`for`（有 incr）**：`back_target` = `L_cond`；前向 continue 发占位入 `continue_fwd_patches`，**必须在递增区发射之前回填**（此刻 `size()` 即 `L_incr`；若等递增与回边发完再回填，`size()` 已是 `L_end`，continue 会错跳 L_end 提前退出循环）。布局：`<init>; L_cond: <cond> JUMP_FALSE -> L_end; <body>; L_incr: <incr> POP <- continue 回填处; JUMP_BACK -> L_cond`。无 incr 与 while 同型（continue 后向回 `L_cond`）。
+- **`break`**：查栈非空（否则 `BreakOutsideLoop`）-> `emit_pop_locals_to(loop_scope_depth)` 弹体内局部 -> 发占位 `JUMP` 入 `exit_fwd_patches`（break 永远前向，dst 恒为体后 `L_end`）。
+- **`continue`**：查栈非空（否则 `ContinueOutsideLoop`）-> 弹局部 -> 前向通道已打开则发占位入 `continue_fwd_patches` 待回填，否则 `emit_jump_back(back_target)`（§2 二选一的落点）。
 
 ## 4. 几个关键性质
 
@@ -261,6 +124,6 @@ emit_loop_backedge_and_exits：回边 -> L_cond；patch 全部 exit_fwd_patches�
 end_scope()                           // 弹 init 局部（depth = loop_scope）
 ```
 
-continue 的 dst 必须是递增区起点 `L_incr`（C 风格 for 的 continue 语义：跳过本轮剩余体，但仍要执行递增再判断），而 `L_incr` 在循环体之后才发射，continue 编译时还不知道 -- 占位 + 回填，这是 `for` 带 increment 独有前向 continue 的全部根因。回填时机约束（「`L_incr = size()` -> 立刻回填 -> 再发 incr」）见 §3.3 要点 2。
+continue 的 dst 必须是递增区起点 `L_incr`（C 风格 for 的 continue 语义：跳过本轮剩余体，但仍要执行递增再判断），而 `L_incr` 在循环体之后才发射，continue 编译时还不知道 -- 占位 + 回填，这是 `for` 带 increment 独有前向 continue 的全部根因。回填时机约束（「`L_incr = size()` -> 立刻回填 -> 再发 incr」）见 §3 for 条目。
 
 一句话总结：`back_target` 存 dst（单值，因 dst 唯一且先知），`continue_fwd_patches` / `exit_fwd_patches` 存 src 们（列表，因 dst 后知、要把多个 src 攒到 dst 处回填）。`for` 带 increment 是唯一让 continue 的 dst 落在体后的循环。

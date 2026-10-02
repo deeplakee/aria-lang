@@ -13,7 +13,7 @@ namespace aria {
 
     namespace {
 
-        // aria CLI 定义：注册顺序决定 help() 渲染次序与解析优先级（见 cli.hpp）。
+        // aria CLI 定义：注册顺序决定 help() 渲染次序与解析优先级。
         util::Cli build_cli() {
             util::Cli cli{kProductName};
             cli.set_description("aria script interpreter");
@@ -24,13 +24,11 @@ namespace aria {
             return cli;
         }
 
-        // REPL 行状态跨行持久：复用单个 <repl> 模块逐行 run(SourceFile&, ObjModule*) 编译执行，
-        // 顶层 var 声明经 DEF_GLOBAL 落入该模块 globals_，跨行保留（对齐 Python 交互式 globals 复用）。
-        // 模块经 GC 临时根（make_guard）跨行保活，否则 run() 间 GC 会回收未入模块表的孤立模块。
+        // REPL：复用单个 <repl> 模块逐行编译执行，顶层 var 跨行持久。
         void run_repl(const LineReader& reader) {
             AriaVM vm;
             auto&  gc     = vm.gc();
-            auto   module = new_module(gc, kReplModuleName); // dir 缺省 = cwd（不可用时空串兜底）
+            auto   module = new_module(gc, kReplModuleName);
             auto   guard  = gc.make_guard(module);
 
             String line;
@@ -38,9 +36,8 @@ namespace aria {
                 if (line.empty()) {
                     continue;
                 }
-                // path 给 <repl> 而非空串，避免 SourceLoc::to_string 渲染出 ":行:列:" 这种
-                // 开头冒号的畸形前缀；逐行独立 SourceFile，存活到 run 返回（编译期 Error
-                // 的 SourceLoc 指向它）。
+                // path 给 <repl> 而非空串，避免 SourceLoc::to_string 渲染出开头冒号的畸形前缀；
+                // 逐行独立 SourceFile 存活到 run 返回（编译期 Error 的 SourceLoc 指向它）。
                 SourceFile source{String{kReplModuleName}, String{kReplModuleName}, line};
                 if (auto result = vm.run(source, module); !result) {
                     io::println(stderr, "{}", result.error().message());

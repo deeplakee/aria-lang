@@ -45,20 +45,13 @@ namespace aria {
         return view() == as<ObjString>(other)->view();
     }
 
-    String ObjString::debug_repr() const {
-        // 字面量形式:转义 + 双引号包裹。
-        return std::format("\"{}\"", util::escape_string(view()));
-    }
+    String ObjString::debug_repr() const { return std::format("\"{}\"", util::escape_string(view())); }
 
     String ObjString::to_string() const { return std::format("{}", view()); }
 
-    Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) {
-        // 裸查找:命中直取 String bootstrap 类表原生值,不铸 ObjBoundMethod(契约见 Object.hpp);本体是纯透传。
-        return vm.string_class()->load_field(vm, name);
-    }
+    Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) { return vm.string_class()->load_field(vm, name); }
 
     Opt<Value> ObjString::load_field_bound(AriaVM& vm, ObjString* name) {
-        // 绑定读:同名裸查找命中即无条件绑定 this(类表条目全为原生恒为方法;权威注见 Object.hpp)。
         const auto hit = load_field(vm, name);
         if (!hit) {
             return std::nullopt;
@@ -67,13 +60,10 @@ namespace aria {
     }
 
     Opt<Value> ObjString::load_index(AriaVM& vm, const Value key) {
-        // Range 键 = 切片(流程见 slice,与 list 同口径)。
         if (const auto range = try_obj<ObjRange>(key)) {
             return slice(vm, range);
         }
-        // 整数键 = 字节域(与 len 同域):产出单字节 1-char string;多字节序列
-        // 中间字节取该字节自身(字节契约的自然结果,非完整字符)。非整数 TypeMismatch;
-        // 负下标从尾计数、归一化后越界 IndexOutOfBounds(文案报原始键值,同 list)。
+        // 整数键 = 字节域,负下标从尾计数归一化;多字节序列中间字节取该字节自身。
         if (!key.is_int()) {
             return vm.fail(ErrorCode::TypeMismatch, "string index must be an integer, got {}", aria::type_name(key));
         }
@@ -85,7 +75,6 @@ namespace aria {
     }
 
     bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
-        // string 不可变:下标写恒报错(协议族文案;键值检查无意义,先拒操作本身)。
         return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
     }
 
@@ -102,9 +91,8 @@ namespace aria {
     Opt<Value> ObjString::op_greater_equal_impl(AriaVM& vm) { return vm.register_value(kStringGeFnOffset); }
 
     Opt<Value> ObjString::slice(AriaVM& vm, const ObjRange* range) const {
-        // 切片段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间(文案与 list 切片同串)。
-        // 段内容先拷进非 GC 的 C++ String 再铸串:receiver 与 range 经调用方值栈为根,new_string
-        // 顶部 maybe_collect 时安全;倒序段在拷贝上按字节反转(字节域,多字节输入下产出非法 UTF-8)。
+        // 段内容先拷进非 GC 的 C++ String 再铸串:receiver 与 range 经调用方值栈为根,new_string 顶部
+        // maybe_collect 时安全;倒序段在拷贝上按字节反转(字节域)。段解析收口 resolve_slice_bounds。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
@@ -120,9 +108,9 @@ namespace aria {
         if (const auto found = gc.intern_find(src)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
-        // s 此刻白色无根,但 intern_insert -> InternPool::insert -> allocate<ObjString*> 走 trivial
-        // 分配(不触发 GC,见 GC.hpp 核心不变式),故 s 跨 insert 不会被回收,无需守卫。
-        const auto s = gc.new_object<ObjString>(gc, src); // 顶部 maybe_collect 在 s 诞生前完成
+        // s 此刻白色无根,但 intern_insert 走 trivial 分配不触发 GC,跨 insert 不会被回收,无需守卫;
+        // 唯一 GC 触发点是下方 new_object 顶部的 maybe_collect,发生在 s 诞生前。
+        const auto s = gc.new_object<ObjString>(gc, src);
         gc.intern_insert(s);
         return s;
     }

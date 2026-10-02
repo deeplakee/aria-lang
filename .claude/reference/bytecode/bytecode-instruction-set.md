@@ -69,7 +69,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 局部槽与跳转这两类高频/可能溢出的操作数，分别用不同策略保范围又省字节。
 
-**局部槽 -- N 短变体 + `u16` 通用**：`LOAD_LOCAL`/`STORE_LOCAL` 为通用形态（`slot:u16`，3B）；槽 1..8 编译器直接发零操作数短变体 `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8`（1B，槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射/VM 均按枚举差换算）。槽号在编译器分配槽时就确定，**发射时即定形态、无需回填**；槽 0（哑元/this）与 >8 走通用形态，`u16` = 65535 槽无硬上限。
+**局部槽 -- N 短变体 + `u16` 通用**：`LOAD_LOCAL`/`STORE_LOCAL` 为通用形态（`slot:u16`，3B）；槽 1..8 编译器直接发零操作数短变体 `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8`（1B，槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射侧按枚举差换算 opcode、VM 侧逐 case 写死槽号常量）。槽号在编译器分配槽时就确定，**发射时即定形态、无需回填**；槽 0（哑元/this）与 >8 走通用形态，`u16` = 65535 槽无硬上限。
 
 **跳转 -- `u16` + 方向拆分（无长变体）**：偏移 `u16` 无符号，方向编码于 opcode：前向（`ip += off`）`JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`，后向（`ip -= off`）`JUMP_BACK`（仅此一条、且无条件）。依据：aria 只有 `while`/`for`/`for-in` 三种循环（文法无 `do-while`/`repeat-until`），回边恒为「循环体末尾无条件跳回条件判断处」-- 后向跳转天然恒无条件；条件跳转（`if`/`while` 条件、`&&`/`||` 短路、`match`）恒前向。故前向/后向各分得完整 `u16` 量程（64KB，约 26K 指令），无需有符号 `i16` 的 ±32KB，也无需 `_L` 长变体与分支松弛。
 
@@ -142,7 +142,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_LOCAL_1..8` | 无 | `[] -> [v]` | 压入 `slots_[k]`，槽号 k 内嵌枚举名尾号（1B，画像实测槽 1..8 覆盖动态执行 98%+） |
 | `STORE_LOCAL_1..8` | 无 | `[v] -> [v]` | peek-store 到 `slots_[k]`（1B） |
 
-N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射选择收口在 `CodeUnit::emit_load_local`/`emit_store_local`（slot 1..8 发 N 短变体，否则通用 + u16），VM 侧按枚举差换算槽号（表内 8 行连续由 `code.hpp` static_assert 钉住）。
+N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射选择收口在 `CodeUnit::emit_load_local`/`emit_store_local`（slot 1..8 发 N 短变体，否则通用 + u16），发射侧按枚举差换算 opcode、VM 侧逐 case 写死槽号常量（表内 8 行连续由 `code.hpp` static_assert 钉住，为发射侧换算前提）。
 
 局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
 
@@ -653,13 +653,13 @@ code:
 - code 行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `   |` 占位）+ opcode 名（左对齐 16 列）+ 操作数段（存在才追加，前置两空格）+ `;` 解析注释。
 - 操作数段按格式渲染：`U8`/`U16` 裸 hex；`ConstU16`/`Import` 为 `hex  ; <常量渲染>`；`ImmI8` 为 `hex  ; <有符号十进制>`；`RangeFlags` 为 `hex  ; flags=0xNN`；前向跳转为 **`偏移 -> 目标`**（如 `0003 -> 0009`）、后向（`JUMP_BACK`）为 **`偏移 <- 目标`**，偏移与目标都列出。
 - 注释为**解析注释**（把操作数解释成人可读形式），不含栈效应标注；栈效应见 §4 各表。
-- 残缺字节码容错：操作数缺失渲染 `<truncated>` 并停解码；opcode 字节越界（`>= kOpCodeCount`）渲染 `<bad opcode 0xNN>` 并停解码。
+- 残缺字节码容错：操作数缺失渲染 `<truncated>` 并停解码；opcode 字节越界（`>= kOpCodeCount`）渲染 `<bad opcode 0xNN>` 并停解码；常量索引越界渲染 `<bad idx N>`；寄存器索引越界（`>= kValueRegisterCount`）渲染 `<bad reg N>`。
 - 解码表驱动：`Disassembler` 查 `code.hpp` X 表生成物（`kOpCodeNames`/`kOpCodeFormats`）按格式分发（§2.1），新增指令零改动；VM 主循环自持 switch（热路径操作数读取内联于各 case，不查表），新增指令需 X 表 + VM case 两处同步。
 - `disassembleInstruction(codeunit, offset)` 复用同一解码路径，供 VM 执行跟踪逐条打印（输出即 code 行的指令段，不含偏移/行号前缀）。
 
 ## 9. 已决事项
 
-本表的待决事项均已定案并落入正文/实现：`STORE_*` peek-store（§3.1）、常量索引 `u16` 统一（§2.2）、跳转方向拆分与 N 短变体（§2.3）、算子钩子族（§4.4）、两段式方法调用（§6.2）、异常记录表（§5.9/§6.1）、`MAKE_RANGE`（§6.3）、整除/浮除语义（§4.4）、内建经 VM builtins 表回退（§6.4）、行号 RLE（§7）。被否备选随各节正文就近保留。
+本表的待决事项均已定案并落入正文/实现：`STORE_*` peek-store（§3.1）、常量索引 `u16` 统一（§2.2）、跳转方向拆分与 N 短变体（§2.3）、算子钩子族（§4.9）、两段式方法调用（§6.2）、异常记录表（§5.9/§6.1）、`MAKE_RANGE`（§6.3）、整除/浮除语义（§4.9）、内建经 VM builtins 表回退（§6.4）、行号 RLE（§7）。被否备选随各节正文就近保留。
 
 ## 10. 参考
 

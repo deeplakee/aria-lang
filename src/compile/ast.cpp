@@ -9,11 +9,7 @@ namespace aria {
 
     using detail::ast::dump_node;
 
-    // ASTNode
-
     void ASTNode::display() const { io::print("{}", dump(0)); }
-
-    // 运算符可读名：switch 不加 default（新增枚举值时 -Wswitch 提示遗漏），UNREACHABLE() 收尾。
 
     namespace Op {
         StringView to_string(const Binary op) noexcept {
@@ -85,17 +81,12 @@ namespace aria {
         }
     } // namespace Op
 
-    // 共享辅助类型的 dump：统一经 dump_node 收口（写头行后逐子项渲染，UPtr 空安全 / 值 / 列表自动
-    // 分派，子项缩进 +1），条件拼 header 在调用点拼好后传入（基础设施见 ast.hpp）。
-
     String Param::dump(const usize indent) const {
         String header = std::format("Param name={}", name);
         header        = is_varargs ? header + " (varargs)" : header;
         return dump_node(indent, header, default_value);
     }
 
-    // "_" 通配（value=nullptr）渲染为无子项的专用头行；null 子项经 dump_child 落空串，两种
-    // 形态同行收口。
     String MatchPattern::dump(const usize indent) const {
         return dump_node(indent, value ? "MatchPattern" : "MatchPattern _ (wildcard)", value);
     }
@@ -108,13 +99,9 @@ namespace aria {
 
     String MapEntry::dump(const usize indent) const { return dump_node(indent, "MapEntry", key, value); }
 
-    // ProgramNode dump
-
     String ProgramNode::dump(const usize indent) const {
         return dump_node(indent, std::format("Program decls={}", declarations.size()), declarations);
     }
-
-    // 语句节点 dump
 
     String BlockNode::dump(const usize indent) const {
         return dump_node(indent, std::format("Block stmts={}", statements.size()), statements);
@@ -147,8 +134,6 @@ namespace aria {
         return dump_node(indent, std::format("ImportStmt path={} as={}", path, alias));
     }
 
-    // catch 子树是「Catch param=... 标签行 + 体」的标准 dump_node 形态（标签行在 +1、体在
-    // +2）；catch_body 判空由 dump_child 的 UPtr 空安全承担，catch_param 缺省时无 catch 子树。
     String TryStmtNode::dump(const usize indent) const {
         String out = dump_node(indent, "TryStmt", body);
         if (catch_param) {
@@ -162,8 +147,6 @@ namespace aria {
     String MatchStmtNode::dump(const usize indent) const {
         return dump_node(indent, std::format("MatchStmt arms={}", arms.size()), subject, arms);
     }
-
-    // 声明节点 dump
 
     String FunDeclNode::dump(const usize indent) const {
         return dump_node(indent, std::format("FunDecl name={} params={} kind={}", name, params.size(), to_string(kind)),
@@ -188,8 +171,6 @@ namespace aria {
     String StaticVarMemberNode::dump(const usize indent) const {
         return dump_node(indent, std::format("StaticVarMember name={}", name), initializer);
     }
-
-    // 表达式节点 dump
 
     String IntegerLiteralNode::dump(const usize indent) const {
         return dump_node(indent, std::format("IntegerLiteral {}", value));
@@ -273,8 +254,6 @@ namespace aria {
         return dump_node(indent, std::format("SequenceExpr expressions={}", expressions.size()), expressions);
     }
 
-    // 解构模式节点 dump
-
     String IdentifierPatternNode::dump(const usize indent) const {
         return dump_node(indent, std::format("IdentifierPattern name={}", name));
     }
@@ -288,9 +267,6 @@ namespace aria {
         }
         return dump_node(indent, header, elements);
     }
-
-    // accept 分发（访问者模式）
-    // 双分派机制见 compile/AstVisitor.hpp 头注与 ast.hpp accept 注。
 
     void ProgramNode::accept(AstVisitor& visitor) { visitor.visitProgramNode(*this); }
 

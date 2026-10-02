@@ -1,6 +1,6 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> M3 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.claude/rules/runtime.md`「VM 异常通道」，发射侧见 `.claude/rules/compile.md` 的 try/catch/throw lowering 节。坑 #1-#16 属 M3、#17-#20 属 M4 闭包的 upvalue 关闭与截栈/弹帧交互（见下「M4 补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下 M3b 节）。
+> M3 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.claude/rules/runtime.md`「VM 异常通道」，发射侧见 `.claude/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属 M3、#17-#20 属 M4 闭包的 upvalue 关闭与截栈/弹帧交互（见下「M4 补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下 M3b 节）。
 
 ---
 
@@ -141,7 +141,7 @@ visitTryStmtNode:
 
 **动机**：抛出的实体有两个侧面--catch 侧面要绑 aria 值保留类型（`throw 42` → e=Int 42）；run() 侧面未捕获要回结构化 `Error`（保 `ErrorCode` + 位置串，供 `test_ariavm` 9 处 `error().code()` 断言）。单一 `Opt<Error>` 会丢类型（throw 时刻值就压成串）；单一 `Opt<Value>` 会丢码（未捕获恒 `UncaughtException`）。解法：单寄存器 `Opt<Value>`，**运行时错误包成 `ObjException`（携码）**、**用户 throw 存原值（携类型）**，两种载荷同住一个 Value 寄存器。
 
-**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留）：
+**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留；M3 时代快照--现行 `code_` 已为 i64 单一存储并加 `numeric_code()` 双视图与 `Error` i64 重载，渲染经基类 `to_string` -> `debug_repr`（消息原文），成员解析已委托 Exception bootstrap 类；坑本体 = 单寄存器模型，不受影响）：
 ```cpp
 class ObjException final : Object {
     ErrorCode  code_;     // 错误码
@@ -172,7 +172,7 @@ public:
 - 双寄存器：catch 绑懒合成消息串 → `throw e` 存串 → 未捕获回 `UncaughtException`（**丢 DivisionByZero**）。
 - 单寄存器：catch 绑 ObjException → `throw e` 存同一 ObjException → 未捕获 `from_baked` 回 `DivisionByZero` ✅。
 
-**catch 绑 ObjException 的 M3 可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
+**catch 绑 ObjException 的 M3 可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地（现已落地：ExceptionClass face 的 init/message/code）。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
 **站点改动**：`call_*` 失败 / `call_native` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaVM::raise`/`fail`）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
 
@@ -193,7 +193,7 @@ for (Movement* m = current_; m != nullptr; m = m->previous()) {
 }
 ```
 
-`mark_value` 对 ObjException 会进一步 `ObjException::trace` 标其 `message_` ObjString。**不可遗漏**，否则 stress GC 下 try/catch 路径 use-after-free。
+`mark_value` 对 ObjException 会进一步 `ObjException::trace` 标其 `message_` ObjString。**不可遗漏**，否则 stress GC 下 try/catch 路径 use-after-free。（M6 对象化后上方循环已退役：VM 根 tracer 只标 `current_` 一点，`pending_error_` 改经 `ObjMovement::trace` 对象图级联标根，效果等价。）
 
 **构造期守卫（已由工厂自守化解）**：`raise` 内 `new_exception(gc, code, message)` 的 message 参数是 C++ 侧 `String`（`Error::make_message` 产物，非 GC 对象），工厂内部 `new_string` 驻留并自行守卫跨下方 `new_object`（工厂守「自己创建的」，见 ObjException.hpp）；返回对象白色无根，但 `raise` 收尾即入 `pending_error_`（之间无分配），入寄存器后经 tracer 根化，无需调用方 `make_guard`。
 
@@ -205,7 +205,7 @@ for (Movement* m = current_; m != nullptr; m = m->previous()) {
 
 **现象（化简前旧设计）**：旧 lowering 在 `TryRecord` 存 `catch_slot` 字段、handler 首条发 `STORE_LOCAL catch_slot`。但推一遍栈位发现两者皆冗余。
 
-**根因**：项目的「值填槽」不变式（compile.md：`下个局部 slot = 当前栈高`，初始化值 push 后恰好落在该槽）在异常路径上同样成立：
+**根因**：项目的「值填槽」不变式（`CodeGen.hpp` 类头注：`下个局部 slot = 当前栈高`，初始化值 push 后恰好落在该槽）在异常路径上同样成立：
 - `stack_depth` = try 入口（try 体 `begin_scope` **之前**）局部数 = `cur_fn_ctx()->locals_.size()` 快照。try 体局部在 try scope 内声明，unwind 时丢弃（截到 `frame.slots + stack_depth`）。
 - catch 参数在 try 体 `end_scope` **之后**声明 -- try 体局部已弹，下一个可用槽即 `stack_depth`，故 `catch_slot == stack_depth`，恒等。存进 `TryRecord` 是冗余字段。
 - unwind 截到 `frame.slots + stack_depth`（top = `slots + stack_depth`）后 `push(thrown_value)` -- 值落在 `slots + stack_depth` = **slot `stack_depth` = catch 参数槽**。`e` 已被绑定。

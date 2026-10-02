@@ -13,8 +13,6 @@ static_assert(sizeof(void*) == 8, "This program requires a 64-bit system.");
 namespace aria {
 
 // 值表示选择：默认 NaN-boxing（8B）；定义 ARIA_USE_TAGVALUE 改用 TagValue（tag+union，16B）。
-// 宏由根 CMakeLists.txt 的 option(ARIA_USE_TAGVALUE) 注入，亦可编译命令行手工 -D；
-// 两实现 API 一致（见 value/Value.hpp 的 #ifdef 分派），仅 sizeof 与 Value{} 零填充语义不同。
 #if !defined(ARIA_USE_TAGVALUE)
     #define USING_NANBOXING
 #endif
@@ -42,8 +40,7 @@ namespace aria {
         } while (false)
 #endif
 
-// 禁止内联：用于热/冷路径分离--把冷路径移出热函数的内联展开，控制热路径代码体积（典型场景见
-// utf8::decode_one 的多字节慢路径）。MSVC（含 clang-cl）走 __declspec，GCC/Clang 走 attribute。
+// 禁止内联：热/冷路径分离--把冷路径移出热函数的内联展开，控制热路径代码体积。
 #if defined(_MSC_VER)
     #define ARIA_NOINLINE __declspec(noinline)
 #else

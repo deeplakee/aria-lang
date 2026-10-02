@@ -6,8 +6,6 @@
 namespace aria {
 
     namespace {
-        // 编码侧上限常量:分块 POP 的块大小、N 短变体槽域上界(槽 1..8),以及跳转偏移与常量池索引(u16 域)。
-        // 值即各操作数位宽上限(事实源 CodeUnit.hpp 的 kU16OperandMax),越界判定与上限直接比较。
         constexpr u32 kMaxPopChunk      = kU8OperandMax;
         constexpr u32 kMaxNLocalSlot    = 8;
         constexpr u32 kMaxJumpOffset    = kU16OperandMax;
@@ -44,19 +42,19 @@ namespace aria {
 
     u32 CodeUnit::emit_jump(const OpCode op, const u32 line) {
         emit_op(op, line);
-        const u32 src_off = size(); // 跳转源: 占位偏移, 供 patch_jump 回填
-        emit_word(0, line);         // 占位
+        const u32 src_off = size();
+        emit_word(0, line); // 占位
         return src_off;
     }
 
     bool CodeUnit::patch_jump(const u32 src_off) {
-        const u32 base_off   = src_off + 2; // 偏移基准(约定见 patch_jump 的头注)
+        const u32 base_off   = src_off + 2;
         const u32 target_off = size();
-        // 前向偏移:契约是 patch 时目标已发射(target_off >= base_off)。误用于反向时 u32 回绕成
-        // 巨大值,恰好被下方 kMaxJumpOffset 上界兜住返 false(等效 emit_jump_back 的显式反向预检)。
+        // patch 时目标必已发射(target_off >= base_off); 误用于反向时 u32 回绕成巨值,
+        // 恰被下方 kMaxJumpOffset 上界兜住返 false。
         const u32 offset = target_off - base_off;
         if (offset > kMaxJumpOffset) {
-            return false; // 越界,交调用方翻译为 Error
+            return false;
         }
         const auto bytes  = util::split_word(static_cast<u16>(offset)); // 小端: [低字节, 高字节]
         code[src_off]     = bytes[0];
@@ -67,19 +65,18 @@ namespace aria {
     bool CodeUnit::emit_jump_back(const u32 target_off, const u32 line) {
         emit_op(OpCode::JUMP_BACK, line);
         const u32 src_off  = size();
-        const u32 base_off = src_off + 2; // 偏移基准(同 patch_jump)
+        const u32 base_off = src_off + 2;
         if (base_off < target_off || base_off - target_off > kMaxJumpOffset) {
             emit_word(0, line); // 占位,保持 code 长度一致
-            return false;       // 反向或越界
+            return false;
         }
-        const u32 offset = base_off - target_off; // 后向偏移
+        const u32 offset = base_off - target_off;
         emit_word(static_cast<u16>(offset), line);
         return true;
     }
 
     void CodeUnit::emit_load_local(const u16 slot, const u32 line) {
         if (slot >= 1 && slot <= kMaxNLocalSlot) {
-            // N 短变体:槽号即枚举名尾号,按枚举差换算(连续性由 code.hpp static_assert 钉住)。
             emit_op(static_cast<OpCode>(static_cast<u8>(OpCode::LOAD_LOCAL_1) + (slot - 1)), line);
         } else {
             emit_op(OpCode::LOAD_LOCAL, line);
@@ -104,8 +101,7 @@ namespace aria {
     }
 
     u32 CodeUnit::line_for_offset(const u32 offset) const noexcept {
-        // RLE 二分: 找最大的 entry.offset <= offset, 返回其 line。
-        // 表按 offset 单调(只追加), 手写二分取首个 offset > target 的位置, 其前一条即答案。
+        // 表按 offset 单调(只追加); 取首个 entry.offset > offset 的位置, 其前一条即答案。
         if (lines.empty()) {
             return 0;
         }
@@ -120,15 +116,15 @@ namespace aria {
             }
         }
         if (low == 0) {
-            return 0; // offset 在首条之前(不应发生: 首次 emit 在 offset 0 记一条)
+            return 0; // 先于首条 entry; 正常不可达(首次 emit 即在 offset 0 记一条)
         }
         return lines[low - 1].line;
     }
 
     Opt<const TryRecord*> CodeUnit::find_try_handler(const u32 ip) const noexcept {
-        // 记录按 begin 非降序(允许相等); 二分找最后一个 begin <= ip, 向前找第一个 end > ip(最内层覆盖)。
-        // 前提:try 区间良嵌套(任意两条记录不交叉重叠),交叉时"前溯第一个 end > ip"可能命中
-        // 错误 handler;该不变式由编译器 try 的「入口预插占位 + 结尾回填」发射顺序保证。
+        // 二分找最后一个 begin <= ip, 再前溯找第一个 end > ip(最内层覆盖)。
+        // 前提: try 区间良嵌套(不交叉重叠); 交叉时前溯可能命中错误 handler。
+        // 良嵌套由编译器 try 的发射顺序(入口预插占位 + 结尾回填)保证。
         if (try_records.empty()) {
             return std::nullopt;
         }
@@ -155,7 +151,7 @@ namespace aria {
 
     void CodeUnit::record_line_(const u32 line) noexcept {
         if (!lines.empty() && lines.top().line == line) {
-            return; // 同行: RLE 覆盖, 不追加
+            return;
         }
         lines.push({.offset = size(), .line = line});
     }

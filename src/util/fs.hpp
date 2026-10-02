@@ -6,7 +6,7 @@
 #include <fstream>
 #include <system_error>
 #include "common.hpp"
-#include "sys.hpp" // SYS_* 平台宏（本头直接使用，勿依赖 common.hpp 传递）
+#include "sys.hpp"
 
 #if defined(SYS_WINDOWS)
     #include <windows.h>
@@ -27,13 +27,13 @@ namespace aria::fs {
 
     enum class FsErrCode : i32 {
         // 通用/未分类错误
-        Unknown = 0, // 未知错误（兜底）
+        Unknown = 0,
 
         // 路径与名称相关
-        InvalidPath   = 100, // 路径格式非法（如空路径、非法字符）
+        InvalidPath   = 100,
         PathTooLong   = 101,
         NotFound      = 102,
-        AlreadyExists = 103, // 创建时目标已存在
+        AlreadyExists = 103,
 
         // 权限与安全
         PermissionDenied = 200,
@@ -42,10 +42,10 @@ namespace aria::fs {
         // I/O 与资源
         IoError          = 300,
         DiskFull         = 301,
-        TooManyOpenFiles = 302, // 文件描述符耗尽
+        TooManyOpenFiles = 302,
         IsDirectory      = 303, // 期望文件但遇到了目录
         NotADirectory    = 304, // 期望目录但遇到了文件
-        FileInUse        = 305, // 文件被其他进程锁定/占用
+        FileInUse        = 305,
 
         // 符号链接相关
         SymlinkLoop   = 400,
@@ -101,8 +101,7 @@ namespace aria::fs {
             return errno_to_fserr(errno);
         }
 
-        // 将 std::error_code 映射到 FsErrCode：经 default_error_condition() 把平台相关错误码
-        // （如 Windows 错误码）归一化为可移植的 POSIX 条件值后再映射
+        // std::error_code -> FsErrCode:先经 default_error_condition() 把平台错误码归一化为可移植 POSIX 条件值。
         [[nodiscard]]
         inline FsErrCode to_fserr(const std::error_code& ec) noexcept {
             return errno_to_fserr(ec.default_error_condition().value());
@@ -124,7 +123,6 @@ namespace aria::fs {
                 buf.resize(buf.size() * 2);
             }
 #elif defined(SYS_LINUX)
-            // /proc/self/exe 是指向可执行文件的符号链接，readlink 读取其指向
             char          buf[4096];
             const ssize_t len = ::readlink("/proc/self/exe", buf, sizeof(buf));
             if (len < 0)
@@ -135,7 +133,6 @@ namespace aria::fs {
             u32  len = sizeof(buf);
             if (_NSGetExecutablePath(buf, &len) != 0)
                 return std::unexpected(FsErrCode::PathTooLong);
-            // 解析路径中可能的符号链接与 "."
             char real[PATH_MAX];
             if (!::realpath(buf, real))
                 return std::unexpected(errno_to_fserr());
@@ -226,17 +223,15 @@ namespace aria::fs {
         return p.string();
     }
 
-    // 把文件路径拆为入口模块身份 {name, dir}：name = basename 去 .aria 后缀（stem 剥最后扩展名）；
-    // dir = dirname(absolute(path))，使 dir + "/" + name + ".aria" 还原原文件、相对导入以同级目录为基
-    // （absolute 失败退化为原路径，best effort）。name 可能为空（目录/空/无文件名），调用方据此判定加载错误。
-    // 纯路径工具，不读盘、不校验存在性--配合 SourceFile::from_path 的 I/O 结果使用。
+    // 拆文件路径为入口模块身份 {name, dir}:name = stem(剥最后扩展名),dir = dirname(absolute(path));
+    // absolute 失败退化为原路径(best effort),name 可能为空(目录/空/无文件名),据此判定加载错误;不读盘不校验存在性。
     [[nodiscard]]
     inline Pair<String, String> module_name_and_dir(const StringView path) {
         stdfs::path abs_p{String{path}};
         if (const auto abs = absolute(path)) {
             abs_p = stdfs::path{*abs};
         }
-        String name = abs_p.filename().stem().string(); // 剥最后一个扩展名（.aria -> 模块名）
+        String name = abs_p.filename().stem().string();
         String dir  = abs_p.parent_path().string();
         return {std::move(name), std::move(dir)};
     }

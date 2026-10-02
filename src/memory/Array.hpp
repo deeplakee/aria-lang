@@ -9,11 +9,8 @@
 
 namespace aria {
 
-    // 基于 Trivial 分配器(默认 GC)的可扩容 trivial 数组,在 Buffer 底座上加逻辑长度。T 必须
-    // trivially-copyable(契约见 Allocator.hpp)。持 Buffer<T,Alloc> buf_ + usize len_(逻辑长度,<= cap)。
-    // 不可拷贝/不可移动(继承自 Buffer,理由见 Buffer 注)。扩容策略固定:初始 8、2 倍几何增长(见
-    // ensure_capacity);走 memcpy 搬迁,故不适合按内容重定位的容器(见 Buffer 注);分配器解耦与 GC
-    // 可见性要求同 Buffer 注。
+    // 基于 Buffer 的可扩容 trivial 数组:Buffer 加逻辑长度(len_ <= cap),2 倍几何增长,memcpy 搬迁;
+    // 不可拷贝/不可移动。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Array {
         static constexpr usize kInitialCapacity = 8; // 首次分配与几何增长起点
@@ -21,9 +18,8 @@ namespace aria {
         Buffer<T, Alloc> buf_;
         usize            len_; // 逻辑长度(<= buf_.capacity())
 
-        // 内部扩容原语:确保容量 >= required_capacity,不足则从当前容量(空态落到
-        // kInitialCapacity=8)起 2 倍几何增长,一次 reallocate 到位(不触发 GC)。
-        // 供内部路径(push/resize)与公开 reserve 共用此实现,使内部不反向依赖公开接口。
+        // 内部扩容原语:确保容量 >= required_capacity,不足则从当前容量(空态落到 kInitialCapacity=8)起 2 倍
+        // 几何增长,一次 reallocate 到位(永不触发 GC)。push/resize 与公开 reserve 共用,内部不反向依赖公开接口。
         void ensure_capacity(const usize required_capacity) noexcept {
             if (required_capacity <= buf_.capacity()) {
                 return;
@@ -40,14 +36,12 @@ namespace aria {
 
         ~Array() = default;
 
-        // 禁拷贝/禁移动:理由见 Buffer 注。
         Array(const Array&)            = delete;
         Array& operator=(const Array&) = delete;
         Array(Array&&)                 = delete;
         Array& operator=(Array&&)      = delete;
 
-        // 追加一个元素;满时经 ensure_capacity 长一档。Array 不持指向缓冲的派生裸指针,
-        // 扩容后无需重定位调用方指针。
+        // 追加一个元素;满时经 ensure_capacity 长一档。
         void push(const T& value) {
             if (len_ == buf_.capacity()) {
                 ensure_capacity(buf_.capacity() + 1);
@@ -55,9 +49,8 @@ namespace aria {
             buf_.data()[len_++] = value;
         }
 
-        // 整段追加(append 语义,接在 len_ 之后,不改写已有元素):一次扩容 + 单次 memcpy,
-        // 替代逐元素 push 循环。参数收 Span<const T> 泛化源:List(std::vector)/裸数组
-        // 皆可隐式转换。空 src 直接返回(size 0 的 memcpy 传 nullptr 属无效参数)。
+        // 整段追加(接在 len_ 之后,不改写已有元素):一次扩容 + 单次 memcpy。空 src 直接返回
+        // (size 0 的 memcpy 传 nullptr 属无效参数)。
         void copy_from(Span<const T> src) {
             if (src.empty()) {
                 return;
@@ -67,9 +60,8 @@ namespace aria {
             len_ += src.size();
         }
 
-        // 整段倒序追加(append 语义,接在 len_ 之后,不改写已有元素):源段按逆序落位,即把
-        // src 反转后接尾,与 copy_from 同族(源段仍以升序 Span 给出,只是消费序相反),一次
-        // 扩容 + 逐元素拷(逆序无法 memcpy)。空 src 直接返回。
+        // 整段倒序追加(接在 len_ 之后,不改写已有元素):源段按升序给出,消费时逆序落位,逐元素拷
+        // (逆序无法 memcpy)。空 src 直接返回。
         void copy_reversed_from(Span<const T> src) {
             if (src.empty()) {
                 return;
@@ -80,8 +72,7 @@ namespace aria {
             }
         }
 
-        // 位置插入:在 index 之前插入 value(合法域 [0, size()],== size() 即追加,同 push 语义)。
-        // 撑长一格后自尾段右移腾位:一次扩容(可能) + 至多 size()-index 次平凡拷贝。
+        // 位置插入:在 index 之前插入 value(合法域 [0, size()],== size() 即追加)。
         void insert(const usize index, const T& value) {
             ASSERT(index <= len_, "index out of range");
             ensure_capacity(len_ + 1);
@@ -92,13 +83,11 @@ namespace aria {
             buf_.data()[index] = value;
         }
 
-        // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);已分配指针可能
-        // 改变(Buffer::reserve 内部 reallocate,故调用方持有的 data() 指针随之失效)。
+        // 公开预分配提示:确保容量 >= capacity(对标 std::vector::reserve);data() 指针可能随 reallocate 失效。
         void reserve(const usize capacity) { ensure_capacity(capacity); }
 
-        // 改变长度;增长部分用 fill 填充(默认 T{})。T = Value 时零填充语义随值表示而变(权威表述见
-        // TagValue.hpp 头注):默认 NanBoxing 下 Value{} 是 f64 0.0 非 nil,需要空槽当 nil 的场合显式传
-        // Value::nil_val()。
+        // 改变长度;增长部分用 fill 填充(默认 T{})。T = Value 时零填充语义随值表示而变:默认 NanBoxing 下
+        // Value{} 是 f64 0.0 非 nil,需要空槽当 nil 的场合显式传 Value::nil_val()。
         void resize(const usize count, T fill = T{}) {
             ensure_capacity(count);
             for (usize i = len_; i < count; ++i) {
@@ -120,8 +109,7 @@ namespace aria {
             --len_;
         }
 
-        // 位置移除:移除 index 处元素(合法域 [0, size())),自 index+1 起段左移补位、长度减一;
-        // 至多 size()-index-1 次平凡拷贝,容量不变。
+        // 位置移除:移除 index 处元素(合法域 [0, size())),段左移补位,容量不变。
         void remove_at(const usize index) noexcept {
             ASSERT(index < len_, "index out of range");
             for (usize i = index + 1; i < len_; ++i) {
@@ -164,10 +152,8 @@ namespace aria {
             return buf_.data();
         }
 
-        // 迭代器:存储连续,直接以裸指针为迭代器(兼容 range-for 与 <algorithm>)。
-        // 扩容即失效:push/resize/reserve 可能触发 reallocate 搬迁,届时全部迭代器失位
-        // (与 std::vector 同语义);此外 mark-sweep GC 不搬迁块且 allocate/reallocate
-        // 永不触发 GC(见 GC 核心不变式),故迭代期间发生对象分配/GC 不影响本缓冲。
+        // 迭代器:存储连续,直接以裸指针为迭代器。扩容即失效(push/resize/reserve 可能触发 reallocate 搬迁,
+        // 同 std::vector);mark-sweep GC 不搬迁块且 allocate/reallocate 永不触发 GC,迭代期间的分配/GC 不影响本缓冲。
         [[nodiscard]]
         T* begin() noexcept {
             return buf_.data();

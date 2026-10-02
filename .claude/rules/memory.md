@@ -15,7 +15,7 @@ paths:
 
 ## `memory/Array.hpp`
 
-- `Array<T, Alloc = GC>`：可扩容 trivial 数组（Buffer 底座 + 逻辑长度 `len_`）；扩容策略固定内联--初始 `kInitialCapacity = 8`、2x 几何增长，无 GrowPolicy 模板参数。
+- `Array<T, Alloc = GC>`：可扩容 trivial 数组（Buffer 底座 + 逻辑长度 `len_`）；扩容策略固定内联--初始 `kInitialCapacity = 8`、2x 几何增长。
 - **迭代器**为裸指针（存储连续，兼容 range-for 与 `<algorithm>`），push/resize/reserve 扩容搬迁即失效（std::vector 同语义）；mark-sweep 不搬块且 allocate/reallocate 永不触发 GC，迭代期间发生对象分配/GC 不影响缓冲。
 - 用途：顺序增长用（ObjList 元素 / CodeUnit 字节码）；HashTable 不走它（rehash 不能 memcpy）。非拷贝/非移动。
 
@@ -36,12 +36,12 @@ paths:
 
 header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**weak root**，字符串专用 set--不进 `mark_roots_`，`collect` 在 sweep 前调 `remove_white()` 摘除指向白色串的表项防 sweep 后悬垂）。
 
-- 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用），8B/槽（`kInitialCap = 8`），无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。
+- 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。
 - 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破（同 `Object.hpp` 对 GC 的处理）。
 
 ## `memory/RawAlloc.hpp`
 
-`aria::mem::alloc/realloc/free` 三原语（自 GC.hpp 抽出，原 `raw_*` 前缀在命名空间隔离下已冗余）：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口。
+`aria::mem::alloc/realloc/free` 三原语：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口。
 
 ## `memory/ShellPool.hpp`
 

@@ -13,10 +13,6 @@ namespace aria {
 
     namespace {
 
-        // 迭代器方法实现(NativeFn 方法调用形态见 Builtin.hpp)
-        // 两原生都是 ObjIterator 引擎缝的薄壳:虚分派到各源子类(list/string/map/range),
-        // 本文件不认识任何具体源。
-
         // has_next() -> bool:是否还有下一个元素。
         bool fn_has_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -29,8 +25,7 @@ namespace aria {
             return true;
         }
 
-        // next() -> 下一元素:取下一值并推进游标;越界抛 IterationExhausted(fail-fast,
-        // 可 catch)。
+        // next() -> 下一元素并推进游标;越界抛 IterationExhausted(fail-fast,可 catch)。
         bool fn_next(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -45,8 +40,7 @@ namespace aria {
             return true;
         }
 
-        // 迭代器方法表:注册进 Iterator bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp;
-        // 注册名与 CodeGen forIn 降糖 emit_method_call0 发射的同名常量同指针,查表按指针命中)。
+        // 迭代器方法表(注册名须与 for-in 降糖发射的同名常量同拼写)。
         constexpr BuiltinFnEntry kIteratorBuiltins[] = {
                 {"has_next", fn_has_next},
                 {"next", fn_next},
@@ -55,8 +49,7 @@ namespace aria {
     } // namespace
 
     ObjClass* IteratorClass::make_class(GC& gc, ObjClass* super) {
-        // Iterator bootstrap 类:迭代器的语言方法面载体,经 ObjIterator::load_field_bound 查表命中后恒
-        // 绑定触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
+        // Iterator bootstrap 类:迭代器语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Iterator", super);
         Builtin::register_class_methods(gc, klass, kIteratorBuiltins);
         return klass;

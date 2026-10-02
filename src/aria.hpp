@@ -5,65 +5,37 @@
 
 namespace aria {
 
-    // 项目级定义头:收拢语言/产品层的固有命名事实,作为单一事实源防各层字面量漂移。
-    // 分工:基础设施配置归 common.hpp(宏/NaN-boxing 开关),通用辅助工具归 util/,
-    // 领域对象模型归各模块头(如 object/ObjModule.hpp);跨层共享的项目级命名落本头。
+    // 项目级定义头:收拢语言/产品层的固有命名,防止各层字面量漂移。
     // 仅依赖 common.hpp,任何层(含 util)均可无分层顾虑引用。
 
     // 语言值域
 
-    // 整数(i48)值域:NaN-boxing 的 48 位尾部即语言 int 域,故字面量闸门(CodeGen::validate_int_literal)
-    // 与运行期文本解析(util::parse_int_text)同界;越域一律判「给不出这个值」,不静默截断。
+    // 整数(i48)值域:NaN-boxing 的 48 位尾部即语言 int 域;越域报错不静默截断。
     constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
     constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
 
-    // 模块源文件扩展名:「一个源文件 = 一个模块」(见 ObjModule)。
-    // AriaVM resolve_module 剥 import spec 末段可选后缀、查找时统一补回;
-    // ObjModule::abs_path 以之合成模块表键(dir_ + "/" + name_ + 本后缀)。
+    // 模块源文件扩展名:一个源文件 = 一个模块。
     constexpr StringView kAriaExtension = ".aria";
 
-    // VM 合成实体保留名(尖括号家族):「<」/「>」不是合法标识符字符,用户代码无法产生含它们的
-    // 函数名/模块名,故尖括号名可安全标记 VM 合成实体。家族:kModuleEntryName(模块体入口函数)、
-    // kMainEntryName(主入口函数)、kScriptModuleName(求值串合成模块)、kReplModuleName(REPL 合成
-    // 模块)、kAnonymousName(匿名函数)。
+    // VM 合成实体保留名:「<」/「>」非标识符字符,用户代码拼不出,故可安全标记 VM 合成实体。
 
-    // 模块体入口函数名:IMPORT 加载的模块体 ObjFunction 之名。runtime 经 Compiler 以此名
-    // 编译模块体(入口 ctx 烙 FnKind::ModuleEntry,返回尾恒压模块对象常量,IMPORT 栈效应由
-    // 此兑现)。
-    constexpr StringView kModuleEntryName = "<module>";
-
-    // 主入口函数名:源文件/求值串顶层代码编进的 ObjFunction 之名;同为 ModuleEntry 形态,
-    // 顶层帧 RETURN 写回的是主模块对象。
-    constexpr StringView kMainEntryName = "<main>";
-
-    // 求值串合成模块名(--eval / interpret_from_src):无文件身份的源,模块与 SourceFile 名共用。
-    constexpr StringView kScriptModuleName = "<script>";
-
-    // REPL 合成模块名:逐行复用单模块使顶层 var 跨行持久;SourceFile 名同步用之。
-    constexpr StringView kReplModuleName = "<repl>";
-
-    // 匿名函数名:lambda(ObjFunction)与匿名原生函数(ObjNativeFn)共用,供 `<fn ...>` 渲染与
-    // 堆栈跟踪;具名/留栈的分岔判定已由 FnKind::Lambda 承担,名字仅作显示。
-    constexpr StringView kAnonymousName = "<anonymous>";
-
-    // 实例方法构造角色名:parser 据裸方法名烙 FnKind::InitMethod(隐式返回尾返 this),runtime
-    // 据名维护类 init_ 槽(ObjClass::set_field 内聚同步)。"init" 本身是普通标识符,构造角色
-    // 由出现位置(def 体裸方法位)与名字共同判定。
-    constexpr StringView kInitName = "init";
+    constexpr StringView kModuleEntryName  = "<module>";    // 模块体入口函数名。
+    constexpr StringView kMainEntryName    = "<main>";      // 主入口函数名(源文件/求值串顶层代码)。
+    constexpr StringView kScriptModuleName = "<script>";    // 求值串合成模块名。
+    constexpr StringView kReplModuleName   = "<repl>";      // REPL 模块名(复用单模块,顶层 var 跨行持久)。
+    constexpr StringView kAnonymousName    = "<anonymous>"; // 匿名函数名(lambda 与匿名原生函数共用)。
+    constexpr StringView kInitName         = "init";        // 实例方法构造角色名(烙 FnKind::InitMethod)。
 
     // 产品标识与部署约定
 
-    // 产品名:CLI 程序名(util::Cli)与 REPL 提示符句柄(isocline)共用。
-    constexpr StringView kProductName = "aria";
+    constexpr StringView kProductName = "aria"; // 产品名(CLI 程序名与 REPL 提示符)。
 
-    // 语义化版本分量:版本的单一事实源,**不设字符串常量副本**(派生串在 --version 消费点
-    // 就地 format,字符串与分量两处维护必漂移);代码内版本判定直接比较分量。
+    // 语义化版本分量:不设字符串常量副本(两处维护必漂移,消费点就地 format)。
     constexpr i32 kVersionMajor = 0;
     constexpr i32 kVersionMinor = 1;
     constexpr i32 kVersionPatch = 0;
 
-    // 内建 stdlib 源根的安装约定:相对可执行文件目录的路径(<exe_dir>/../share/aria/lib),
-    // 运行时经 fs::program_dir 推导、weakly_canonical 规范化后播种 source_roots_[1]。
+    // 内建 stdlib 源根:相对可执行文件目录的安装约定。
     constexpr StringView kStdlibRelPath = "../share/aria/lib";
 
 } // namespace aria

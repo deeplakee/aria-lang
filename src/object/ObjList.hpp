@@ -10,15 +10,7 @@ namespace aria {
     class GC;
     class ObjRange;
 
-    // list 对象(ObjType::LIST):`[...]` 字面量的运行期载体,元素为任意 Value、按下标顺序存 AriaArray(MAKE_LIST 一次整段
-    // 拷入)。下标读写经 load_index/store_index 协议 override;命名成员(push/pop 等)经 load_field_bound 委托
-    // VM 的 List bootstrap 类方法表恒绑定。
-    //   - 地址哈希型可变对象(可变故作 map 键按身份);equals 按内容递归:长度相等且逐元素 value_equal(嵌套 list 经各自
-    //     equals 递归),value_equal 无分配、GC-pure 契约保持;入口挂 EqualGuard 防环(重遇同对视为相等,正则树同构判等);
-    //     `===` 恒指针(value_identical,不经本类)。
-    //   - trace():委托 elements_.trace(遍历元素 mark_value)。
-    //   - debug_repr():`[1, "ab"]` 式,元素走 format_value_debug(嵌套字符串带引号,避免 `[1, ab]` 歧义;嵌套 list 递归);
-    //     入口挂 PrintGuard 防环(自引用/互环截断 `[...]`,Python 同款);显示同文案(to_string 经基类默认委托)。
+    // list 对象:元素任意 Value 的顺序容器;地址哈希型(map 键按对象身份)。
     class ObjList final : public Object {
     public:
         // 元素表惰性增长,ctor 只绑分配器(首字节预留由 copy_from/push 的扩容路径自理)。
@@ -58,28 +50,25 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 裸读 override:同一趟类表查找但不铸 ObjBoundMethod,直取类表原生值(权威注见 Object.hpp)。
+        // 裸读 override:委托 List bootstrap 类表直取原生值。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 绑定读 override:同一趟类表查找,命中自持 new_bound_method 恒绑 this(权威注见 Object.hpp)。
+        // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
 
-        // 下标读取:Range 键 = 切片(产出新 list,端点从尾计数、越界 fail-fast、倒序 range 产
-        // 出倒序段、只读;见 slice,切片路径有分配);整数键:负数从尾计数、归一化后越界
-        // IndexOutOfBounds、非整数键 TypeMismatch(越界值就地拼进文案);整数键查读无分配。
+        // 整数键:负数从尾计数、归一化后越界即报(越界值就地拼进文案),非整数键 TypeMismatch,查读无分配。
+        // Range 键 = 切片:产出新 list、只读(路径有分配),段解析收口 resolve_slice_bounds。
         [[nodiscard]]
         Opt<Value> load_index(AriaVM& vm, Value key) override;
 
-        // 下标写入:键检查同读,不自动增长(越界即报,追加走 push 方法);写已存槽恒成功。
-        // Range 键不特殊对待,落整数键检查的统一文案(切片写只读)。
+        // 下标写入:键检查同读,不自动增长(追加走 push 方法),写已存槽恒成功;Range 键落统一文案(切片写只读)。
         [[nodiscard]]
         bool store_index(AriaVM& vm, Value key, Value value) override;
 
-        // 算子协议 override(内建实现直给,**不经成员查找**):返回 List 类表里对应钩子的原生
-        // 函数值(`__add__`/`__mul__` 在 bootstrap 期注册进类表并同时拷进实现格 kList*Fn,这里
-        // 读格即得;类表仍是规范家)。其余算子不 override -> 基类默认报「本类型不支持该算子」。
+        // 算子协议 override(内建直给,不经成员查找):读 bootstrap 期注册进类表并拷进实现格的钩子原生值
+        //(类表仍是规范家);其余算子不 override -> 基类默认报「本类型不支持该算子」。
         [[nodiscard]]
         Opt<Value> op_add_impl(AriaVM& vm) override;
 
@@ -87,9 +76,8 @@ namespace aria {
         Opt<Value> op_mul_impl(AriaVM& vm) override;
 
     private:
-        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(有上界与无上界两形态
-        // 皆在内;从尾计数,无上界给后缀、空后缀以两端相等+不含上界表示),本函数只管按方向折算
-        // count 与铸新 list 段拷。
+        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、无上界给后缀、
+        // 空段以两端相等+不含上界表示),本函数只按方向折算 count、铸新 list 段拷。
         [[nodiscard]]
         Opt<Value> slice(AriaVM& vm, const ObjRange* range);
 

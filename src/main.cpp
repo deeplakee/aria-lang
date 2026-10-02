@@ -1,4 +1,4 @@
-// aria 解释器进程入口：isocline 行读取器 + argc/argv 透传；分发契约见 interpreter.hpp。
+// aria 解释器进程入口：isocline 行读取器 + argc/argv 透传。
 #include "interpreter.hpp"
 
 #include "aria.hpp"
@@ -8,8 +8,8 @@ using namespace aria;
 
 namespace {
 
-    // isocline 行读取器：提供行编辑 / 历史。读到 EOF（ic_readline 返 nullptr）或
-    // exit/quit 指令时返回 false 结束 REPL；行（含空行）原样写入 out，空行过滤在 run_repl。
+    // isocline 行读取器：提供行编辑 / 历史。EOF 或 exit/quit 指令时返回 false 结束 REPL；
+    // 行（含空行）原样写入 out。
     bool isocline_reader(String& out) {
         char* input = ic_readline(kProductName.data()); // 常量字面量后备保证 '\0' 结尾;isocline 自动在提示符后追加 '>'
         if (input == nullptr) {

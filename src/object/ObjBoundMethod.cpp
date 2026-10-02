@@ -31,8 +31,7 @@ namespace aria {
     }
 
     bool ObjBoundMethod::equals(const Object* other) const noexcept {
-        // 先比指针,再比「同一方法值 + 同一 receiver」-- 绑定语义即「同一实现 + 同一接收者」。
-        // 两者皆按身份(value_identical)比较,无 GC 分配,GC-pure 契约保持。
+        // 绑定语义即「同一实现 + 同一接收者」,皆按身份(value_identical)比较,无 GC 分配,GC-pure 契约保持。
         if (this == other) {
             return true;
         }
@@ -42,10 +41,7 @@ namespace aria {
         return false;
     }
 
-    String ObjBoundMethod::debug_repr() const {
-        // 渲染方法名(经非虚 name() 取名)。
-        return std::format("<bound method {}>", name()->view());
-    }
+    String ObjBoundMethod::debug_repr() const { return std::format("<bound method {}>", name()->view()); }
 
     ObjBoundMethod* new_bound_method(GC& gc, const Value method, const Value receiver) {
         return gc.new_object<ObjBoundMethod>(method, receiver);

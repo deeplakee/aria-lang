@@ -10,61 +10,39 @@
 
 namespace aria {
 
-    // 将 source_file 相关类型引入 aria 命名空间（见 AGENTS.md：这些类型位于
-    // aria::src 下，引用需分别 using）。
+    // source_file 相关类型位于 aria::src 下，引入需逐条 using。
     using src::SourceFile;
     using src::SourceLoc;
 
-    // 错误值对象：聚合 ErrorCode + 完整可读消息，作为编译期各阶段的统一错误载体与运行期未捕获出口
-    // 的边界物化形态--运行期在途错误实体是 ObjException（存挂起错误寄存器，见 .claude/rules/runtime.md
-    // 「VM 异常通道落地状态」），Error 仅在 dispatch_loop 返回时经反提拆件（AriaVM::take_uncaught_error）
-    // + from_baked 物化，不参与其内部传播。只两个字段：code_ + message_。message_ 在构造期一次性烘焙
-    // 成型，构造完成后 Error 完全自有、**不持任何 SourceFile* 裸指针**，可任意拷贝/移动/跨流程传递，
-    // 无悬空风险；不保留结构化位置（LineCol/SourceLoc）字段--需要位置时直接读 message_ 串。注意：本类
-    // 只承载「解释器报告的错误」。aria 语言自身的 throw/catch 抛的是 Value，由 VM 用 THROW 操作码 +
-    // CodeUnit 内异常记录表实现（见 AGENTS.md「错误处理」），与 C++ 异常无关，不经过本类。
+    // 错误值对象:ErrorCode + 构造期一次性烘焙的完整消息,不存结构化位置、不持 SourceFile*、可任意拷移;
+    // 编译期统一错误载体与运行期未捕获出口的物化形态(在途错误是 ObjException);语言 throw 走 VM 通道不经本类。
     class Error {
     public:
         // 构造工厂(唯一公开构造面;语义在工厂名上自文档化,构造点无法拼写错语义)
 
-        // 细节语义(无位置):码 + 细节,供内部/资源错误或不关心位置的场景使用。
-        // detail 是「只读组件」(被 make_message 烘进 message_,本身不存储):取 StringView,
-        // 字面量/格式化临时零额外构造直传。detail **不设默认值**:它是错误的唯一上下文载体,
-        // 有意为空须显式传 {} / "",强制每个报错点说出发生了什么。烘为 "Category: Name[ detail]"。
+        // 码 + 细节、无位置;供内部/资源错误或不关心位置的场景。detail 为只读组件(取 StringView、烘进
+        // message_ 不存储);**不设默认值** --为空须显式传 {},强制每个报错点说出发生了什么。
         [[nodiscard]]
         static Error from_detail(const ErrorCode code, const StringView detail) {
             return Error{code, make_message(code, detail)};
         }
 
-        // 细节语义(带位置):与上一重载共名,以 loc 参数区分,供词法/语法/语义阶段使用。
-        // 构造期就地烘位置前缀(SourceFile 此刻存活,安全),此后不持 SourceLoc/SourceFile*。
-        // 空态 loc 无须特判:渲染空串、make_message 对空位置串天然无前缀(空态合法存在,如
-        // CodeGen::fail 取 node->loc() 即可能为空态)。detail 同上一重载(StringView,无默认值)。
-        // 烘为 "path:line:col: Category: Name[ detail]"。
+        // 带位置版,供词法/语法/语义阶段:构造期就地烘位置前缀(SourceFile 此刻存活),此后不持位置;
+        // 空态 loc 无须特判 --空位置串天然无前缀(如 CodeGen::fail 取 node->loc() 即可能为空态)。
         [[nodiscard]]
         static Error from_detail(const ErrorCode code, const SourceLoc loc, const StringView detail) {
             return Error{code, make_message(code, loc.to_string(), detail)};
         }
 
-        // 成品语义:以**已烘焙完整消息串**原样构造,不经 make_message(否则 "Category: Name"
-        // 前缀再烘一遍成双重前缀)。合法调用方均为 VM 侧错误物化点:ObjException::to_error()、
-        // AriaVM::unwind 未捕获出口与 AriaVM::run_closure 进帧失败分支。禁止传组件串(裸
-        // detail)-- 会得到缺前缀的消息,渲染不一致。
-        // 设计见 .claude/reference/runtime/exception-implementation-pitfalls.md 坑 #7。
+        // 成品语义:原样收已烘焙完整消息串,不经 make_message(否则双重前缀);禁传裸 detail(缺前缀)。
         [[nodiscard]]
         static Error from_baked(const ErrorCode code, const StringView message) {
             return Error{code, String{message}};
         }
 
-        // 烘焙单点(公开,一对共名重载,以位置参数区分,与 from_detail 两重载同构镜像):
-        // 完整消息 = [location + ": "] + "Category: Name"[ + " " + detail]。
-        // detail 为**原始细节串**(不含 "Category:" 前缀 -- 防双烘),位置串由调用方格式化好传入。
-        // from_detail 经此合成;装箱点 AriaVM::raise 亦直接使用(烘齐后 new_exception 装箱)。
-        // 报错点的格式化细节在调用处自行 std::format 后走 from_detail;运行期一律经本组烘齐
-        // (raise 装箱与 take_uncaught_error 兜底,位置由 unwind 逐帧跟踪行给出)。
+        // 烘焙单点(一对共名重载,与 from_detail 同构):完整消息 = [location + ": "] + "Category: Name"
+        //[ + " " + detail];detail 为原始细节串(不含 "Category:" 前缀,防双烘),位置串由调用方格式化好传入。
 
-        // 无位置版:消息 = "Category: Name"[ + " " + detail]。供无位置语义的报错点直接使用
-        // (from_detail 无 loc 重载 / take_uncaught_error 非 ObjException 兜底)。
         static String make_message(const ErrorCode code, const StringView detail) {
             String s = std::format("{}: {}", to_string(category_of(code)), to_string(code));
             if (!detail.empty()) {
@@ -74,7 +52,6 @@ namespace aria {
         }
 
         // 带位置版:非空位置串前缀 "location: ";空位置串退化为无位置版(空态 loc 自然合流)。
-        // 当前消费方为编译期 from_detail 带 loc 重载;运行期装箱走无位置版(位置由 unwind 跟踪行给出)。
         static String make_message(const ErrorCode code, const StringView location, const StringView detail) {
             if (location.empty()) {
                 return make_message(code, detail);
@@ -88,33 +65,30 @@ namespace aria {
             return code_;
         }
 
-        // 完整可读消息(构造期烘焙成型,含位置前缀 + 分类名 + 码名 + 细节)。自存、不依赖任何外部对象。
+        // 完整可读消息(构造期烘焙成型,自存不依赖外部对象)。
         [[nodiscard]]
         const String& message() const noexcept {
             return message_;
         }
 
     private:
-        // 原始构造(唯一默认形态):直接收 code + **最终消息串**,不经 make_message、不做任何加工。
-        // 公开构造面一律走上方静态工厂(组件构造经 make_message,成品串经 from_baked)。
+        // 原始构造:直收最终消息串不做加工;公开构造面一律走静态工厂(组件经 make_message、成品串经 from_baked)。
         Error(const ErrorCode code, String message) : code_{code}, message_{std::move(message)} {}
 
         ErrorCode code_;
         String    message_;
     };
 
-    // 不可恢复错误：打印错误到 stderr 后以退出码 1 终止进程。适用于解释器自身不变式被破坏
-    // （Internal 类）或资源耗尽（Resource 类）--这类「无法继续执行」的错误不靠返回值层层传播；
-    // 不抛、不做栈展开。可恢复或可跨栈传播的错误用 Result<T, Error> / AriaException。
+    // 不可恢复错误：打印到 stderr 后以退出码 1 终止进程，不抛、不做栈展开。适用于 Internal 类
+    // 不变式被破坏或 Resource 类资源耗尽 --这类「无法继续执行」的错误不靠返回值层层传播。
     [[noreturn]]
     inline void fatal_error(const Error& error) {
         io::println(stderr, "aria: fatal: {}", error.message());
         std::exit(1);
     }
 
-    // 便捷重载：码 + 格式化细节（格式串须为编译期常量，经 std::format_string 静态校验）。
-    // 不设成品串重载：动态串经 "{}" 实参传入 -- fatal_error(code, "{}", str)，
-    // 或先经 Error::from_detail 构造 Error 再走上一重载。
+    // 便捷重载：码 + 格式化细节（格式串须为编译期常量，经 std::format_string 静态校验）。不设成品串
+    // 重载：动态串经 "{}" 实参传入，或先经 Error::from_detail 构造 Error 再走上一重载。
     template<typename... Args>
     [[noreturn]]
     void fatal_error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {

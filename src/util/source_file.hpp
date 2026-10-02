@@ -13,18 +13,14 @@ namespace aria::src {
 
     namespace stdfs = std::filesystem;
 
-    // 行/列位置（1-based，符合大多数编辑器与编译器习惯）。
+    // 行/列位置(1-based)。
     struct LineCol {
-        u32 line = 1; // 行号，从 1 开始
-        u32 col  = 1; // 列号，从 1 开始；按码点计数，对中文源码友好
+        u32 line = 1;
+        u32 col  = 1; // 列按码点计数
     };
 
-    // 源文件信息：保存文件名、路径与内容。内容由 SourceFile 以 String 持有所有权，解析阶段可经
-    // name()/path()/content() 取 StringView 直接引用，避免拷贝。生命期纪律：取出的 StringView 不得
-    // 比所引用的 SourceFile 活得更久；构造完成后不要修改内容；多个 SourceFile 存入容器（如 List）
-    // 且已取出 StringView 时，后续增删致重分配会移动内部 String --短串（SSO）会改变字符地址而使
-    // StringView 悬空。from_path 加载处理：剥除前导 UTF-8 BOM（EF BB BF）；行尾归一化为 LF
-    // （CRLF/CR -> LF）；校验内容为合法 UTF-8，非法则返回 InvalidEncoding。
+    // 源文件载体:name/path/content 各以 String 持有。生命期纪律:借出的 StringView 不得活得比对象久;
+    // 对象入容器增删致 String 重分配时,SSO 短串 move 会改字符地址使既借 StringView 悬空;构造后勿改内容。
     class SourceFile {
     public:
         SourceFile() = default;
@@ -42,15 +38,13 @@ namespace aria::src {
             return path_;
         }
 
-        // 文件内容。底层 String 以 '\0' 结尾，便于需要哨兵的扫描逻辑。
-        // 本类不做归一化：经 from_path 构造时已剥 BOM 并归一化 LF；直接三参构造时为调用方所给原文。
+        // 底层 String 以 '\0' 结尾,哨兵扫描可用;BOM 剥除/行尾归 LF 仅 from_path 做,三参构造存原文。
         [[nodiscard]]
         StringView content() const noexcept {
             return content_;
         }
 
-        // 行数。与 wc -l 在"内容以 LF 结尾"时一致；最后一行即便没有结尾 LF 也算一行；
-        // 末尾的 LF 不产生额外的空行。空内容返回 0。
+        // 与 wc -l 同语义:无尾 LF 的末行也算一行,尾 LF 不额外计空行;空内容为 0。
         [[nodiscard]]
         u32 line_count() const {
             ensure_line_starts();
@@ -73,9 +67,8 @@ namespace aria::src {
             return StringView{content_.data() + begin, end - begin};
         }
 
-        // 将字节偏移解析为 1-based 行号（行表二分 + 单条行缓存 LineCache；offset 超出范围时钳制到内容末尾）。
-        // offset == content.size()（EOF）返回 line_count() + 1（对齐 locate 的「EOF 落在下一行第 1 列」）。
-        // AST 遍历按源序逐节点求行号、缓存命中率极高，故这条热路径只需一次区间比较。
+        // 字节偏移 -> 1-based 行号(行表二分 + 单条行缓存,逐节点求行号的热路径)。
+        // offset 超界或 EOF(== content.size())返回 line_count() + 1,即「EOF 落在下一行第 1 列」。
         [[nodiscard]]
         u32 line_at(const u32 offset) const {
             if (offset >= content_.size()) {
@@ -92,9 +85,8 @@ namespace aria::src {
             return line;
         }
 
-        // 将字节偏移解析为 1-based 的 (行, 列)。offset 超出范围时钳制到内容末尾；
-        // offset == content.size()（EOF）返回下一行第 1 列（line_count()+1, 1）。
-        // 列须数码点，故本方法是 O(行内码点数) 的冷路径（行号部分走 line_at 的缓存）--冷路径调用纪律见 SourceLoc 类注。
+        // 字节偏移 -> 1-based (行, 列);EOF(== content.size())返回下一行第 1 列(line_count()+1, 1)。
+        // 列须数码点,是 O(行内码点数) 的冷路径(行号部分走 line_at 的缓存)。
         [[nodiscard]]
         LineCol locate(u32 offset) const {
             if (offset > content_.size()) {
@@ -108,8 +100,7 @@ namespace aria::src {
             return {line, count_codepoints(content_, begin, offset) + 1};
         }
 
-        // 从磁盘读取并构造：fs::read_file 读原始字节，剥 BOM、CRLF/CR 归一化为 LF，校验 UTF-8
-        // （非法返回 InvalidEncoding）。name 取路径 basename；读取失败原样返回 fs 错误码。
+        // 磁盘读取并构造:剥 BOM、行尾归 LF、校验 UTF-8(非法返 InvalidEncoding);name 取 basename,读失败原样返回错误码。
         [[nodiscard]]
         static Result<SourceFile, fs::FsErrCode> from_path(const StringView path) {
             auto content = fs::read_file(path);
@@ -130,14 +121,12 @@ namespace aria::src {
         String path_;
         String content_;
 
-        // 懒构建：line_starts_[i] 是第 i+1 行在 content_ 中的起始字节偏移。语义遵循主流惯例：
-        // 一个"行"要么以 LF 结尾，要么是到 EOF 的一段内容（"a\nb" -> [0, 2]）；末尾的 LF 不产生
-        // 额外的空行起点（"a\n" -> [0]），空内容则行表为空（"" -> []）。
+        // 懒构建行表:line_starts_[i] 为第 i+1 行在 content_ 中的起始字节偏移;「行」以 LF 结尾或到 EOF,
+        // 尾 LF 不产生额外空行起点,空内容行表为空。
         mutable List<u32> line_starts_;
         mutable bool      is_line_starts_built_ = false;
 
-        // line_at 的单条行缓存：最近一次解析出的行区间 [begin, end) 与该行行号；三字段皆 0 即「无缓存」。
-        // 内容构造后不变、编译单线程，故缓存无需失效。
+        // line_at 的单条行缓存:最近解析的行区间 [begin, end) 与行号,全 0 即「无缓存」;内容构造后不变+单线程,无需失效。
         struct LineCache {
             u32 begin = 0;
             u32 end   = 0;
@@ -175,8 +164,7 @@ namespace aria::src {
             return n;
         }
 
-        // 剥除前导 BOM、CRLF/CR -> LF，并校验 UTF-8 合法性。
-        // 非法 UTF-8 返回空（调用方据此返回 InvalidEncoding）。
+        // 剥前导 BOM、CRLF/CR -> LF,校验 UTF-8;非法返回空(调用方据此返回 InvalidEncoding)。
         [[nodiscard]]
         static Opt<String> normalize(const StringView raw) {
             StringView s = raw;
@@ -204,20 +192,14 @@ namespace aria::src {
         }
     };
 
-    // 源码位置：源文件指针 + 字节偏移。行列是**派生量**，位置状态只有偏移这一件事--扫描器热路径只推
-    // 游标、不在推进时维护计数，回退/前瞻天然自由，也无「某条推进路径漏记账」的 bug 面。行列代价挪到
-    // 消费点：line() 走行表二分 + 单条行缓存（逐节点调用的热路径）；line_col() / to_string() 列要在
-    // 行内数码点，是 O(行内码点数) 的冷路径，只应被错误渲染与测试调用（不要在逐 token 循环里读列，
-    // 那会把 O(n^2) 放回来）。src 为非拥有指针，不得比所引 SourceFile 活得更久、地址不得变动--本类
-    // 经 src 查 SourceFile 里的惰性行表与行缓存。非空不变式由显式构造的 ASSERT 保证。默认构造为空态
-    // （src=nullptr、offset=0），供容器占位--空态即「无位置」：line() 返 0、line_col() 返 {0,0}、
-    // to_string() 返空串。
+    // 源码位置:SourceFile* + 字节偏移,行列是派生量。src 非拥有,不得比所引 SourceFile 活得久、地址不得变。
+    // line_col()/to_string() 是 O(行内码点数) 的冷路径,勿在逐 token 循环里读列;空态(src=nullptr)即「无位置」。
     class SourceLoc {
     public:
-        // 空态：src=nullptr。供容器占位（如 List<Token> 预留槽位）。
+        // 空态:src=nullptr。
         SourceLoc() noexcept : src_{nullptr}, offset_{0} {}
 
-        // 真实位置构造：src 必须非空（断言保证），offset 为 token/节点起点的字节偏移。
+        // 真实位置构造:src 必须非空(断言保证)。
         SourceLoc(SourceFile* src, const u32 offset) noexcept : src_{src}, offset_{offset} {
             ASSERT(src != nullptr, "src must not be null");
         }
@@ -227,26 +209,24 @@ namespace aria::src {
             return src_;
         }
 
-        // 字节偏移（空态为 0）。
         [[nodiscard]]
         u32 offset() const noexcept {
             return offset_;
         }
 
-        // 行号（1-based，派生自行表；空态为 0）。热路径（逐节点求行号）成本见类注。
+        // 行号(1-based;空态为 0)。
         [[nodiscard]]
         u32 line() const noexcept {
             return src_ == nullptr ? 0 : src_->line_at(offset_);
         }
 
-        // 行/列（1-based，列按码点计；空态为 {0,0}）。成本见类注：冷路径，O(行内码点数)。
+        // 行/列(1-based,列按码点计;空态为 {0,0})。
         [[nodiscard]]
         LineCol line_col() const noexcept {
             return src_ == nullptr ? LineCol{0, 0} : src_->locate(offset_);
         }
 
-        // 渲染 "path:line:col"（1-based）。空态（src 为空）返回空串--空态即「无位置」，空串可与
-        // 消费方的「空位置串 = 无前缀」约定直接组合（如 Error::make_message）。成本同 line_col()。
+        // 渲染 "path:line:col";空态返回空串,可与「空位置串 = 无前缀」直接组合;成本同 line_col()。
         [[nodiscard]]
         String to_string() const {
             if (src_ == nullptr) {

@@ -7,8 +7,7 @@
 
 namespace aria {
 
-    // 错误大类：普通 enum class。
-    // 转字符串用 to_string(ErrorCategory)；由 ErrorCode 经 category_of() 映射而来。
+    // 错误大类（enum class）；转字符串用 to_string(ErrorCategory)，由 ErrorCode 经 category_of() 映射而来。
     enum class ErrorCategory : u8 {
         Ok,
         Syntax,
@@ -18,26 +17,20 @@ namespace aria {
         Resource,
     };
 
-    // 大类可读名表（下标即 std::to_underlying(c)，行序须与枚举声明一致；哨兵断言只拦表长漂移，
-    // 行序错位不炸断言，靠增删时自查）。
+    // 大类可读名表（下标即 std::to_underlying(c)，行序须与枚举一致；哨兵断言只拦表长漂移，行序错位靠增删自查）。
     inline constexpr StringView kCategoryNames[] = {
             "Ok", "Syntax", "Semantic", "Runtime", "Internal", "Resource",
     };
 
-    // 「名字/大类」两个查表函数共用此表；表体与枚举同源生成（见 ARIA_ERROR_LIST 注），
-    // 无不同步风险。非法值（u8 强转越界）由查表函数的 ASSERT 拦截。
+    // 「名字/大类」两个查表函数共用此表；表体与枚举同源展开、无不同步风险，非法值由查表函数的 ASSERT 拦截。
     struct CodeInfo {
         StringView    name; // 可读标识名（如 "UnterminatedString"）
         ErrorCategory cat;  // 所属大类
     };
 
-// 解释器内部统一错误码。分层按「错误在哪一阶段被发现」：Syntax（词法/语法，结构本身不合法）、
-// Semantic（结构合法但违反类型/作用域/形态规则）、Runtime（执行期间才暴露的语义错误）、
-// Internal（解释器自身不变式被破坏，属实现 bug）、Resource（资源/环境受限）。
-// 错误码全量注册表（单一事实源，同 code.hpp 的 ARIA_OPCODE_LIST / TokenType.hpp 的
-// ARIA_TOKEN_LIST 风格）：枚举声明与信息表 kCodeTable 都由 ARIA_ERROR_LIST(X) 展开，
-// 新增错误码加一行 X(名字, 大类) 即收口，名字串经 # 派生，无第二处手写。隐式连续编号，
-// 下标即 std::to_underlying(code)。逐值注释用块注释（行注释会吞续行符）。
+// 解释器内部统一错误码，按「错误在哪一阶段被发现」分五大类（各类界定见宏内分节横幅）。枚举与
+// 信息表 kCodeTable 经 X-Macro 同源展开，名字串经 # 派生；隐式连续编号、下标即 std::to_underlying(code)。
+// 逐值注释用块注释（行注释会吞续行符）。
 #define ARIA_ERROR_LIST(X)                                                                                          \
     X(Ok, Ok)                                                                                                       \
     /* ========== SYNTAX ERROR (lexer / parser stage) ========== */                                                 \

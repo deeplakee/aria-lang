@@ -7,21 +7,7 @@
 
 namespace aria {
 
-    // 值寄存器组:VM 单例对象统一存放表(AriaVM::registers_,bootstrap 填充、set_vm_roots 一趟循环标根),LOAD_REG n:u8
-    // 按索引把格内对象压栈。寄存器只读(无 STORE_REG):编译代码不可写,写点全在 VM bootstrap。存储面:VM 单例出生即登记一
-    // 格(本表加一行 + bootstrap 填充一行);发射面:LOAD_REG 按需发射,有字节码消费者的格才被编译侧引用,其余纯 C++ 存取。
-    // 单一事实源(同 ARIA_ERROR_LIST / ARIA_OPCODE_LIST 风格):枚举声明、可读名表 kValueRegisterNames 与偏移常量 k<名字>
-    // Offset 同源展开,新增寄存器加一行 X(名字) 即收口,名字串经 # 派生。表长 kValueRegisterCount = 名表长度,两表同源无
-    // 不同步风险。逐值注释用块注释(行注释会吞续行符)。偏移常量 k<名字>Offset(如 kObjectClassOffset,值 = 枚举值,即寄存
-    // 器组内格位):scoped enum 不隐式转整型,C++ 侧下标与 LOAD_REG 操作数发射统一走常量,免逐点 std::to_underlying。
-    // 末组 = 内置类型的算子实现缓存八格(String 的 `__add__`/`__lt__`/`__le__`/`__gt__`/`__ge__`/`__mul__` 与 List 的
-    // `__add__`/`__mul__` 原生函数值):内置类型取实现走 Object::op_*_impl 的 override,直读实现格免每次过类表查找。
-    // 实现格的规范家仍是类表(方法读路径 `"a".__add__` 就查它),bootstrap 注册后即从类表拷入并 ASSERT 一致。实例侧的
-    // 按名取实现不走寄存器:ObjInstance 的 override 经 AriaVM::str 取常量串表(runtime/str_table.hpp)
-    // 里的钩子名,再按名到实例/类链查表。
-    // 曝光与算子格两族事实的本表收口:七个 bootstrap 类格在 bootstrap_registers 末段统一经 builtins_ 裸名曝光(键写点
-    // AriaVM.cpp,不经 make_class;用户 shadow 全局名不再免疫),DefaultMark/MatchNoArm 不曝光(用户不可达);算子实现格
-    // 的格清单/类表规范家关系见上,各 kOperatorFns 清单(钩子名 -> 本表偏移)住 StringClass.hpp/ListClass.hpp。
+    // 值寄存器注册表:枚举、名表与偏移常量三表同源展开,新增寄存器加一行即收口(寄存器只读,写点全在 VM bootstrap)。
 #define ARIA_VALUE_REGISTER_LIST(X)                                                                                  \
     X(DefaultMark)    /* missing-argument stamp (private ObjClass identity token fills unfilled slots; not           \
                          user-reachable) */                                                                          \

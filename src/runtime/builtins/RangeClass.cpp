@@ -14,9 +14,8 @@ namespace aria {
 
     namespace {
 
-        // iter() -> 迭代器:range 与其迭代器成对(铸造口按类型解开 receiver)。GC 约束:range 在
-        // slots[0] 于栈根,迭代器白色建成**先写回槽发布再返回**,中间无 GC 点;此后源 range
-        // 不可达可回收,迭代器标量自足(不持源指针,见 ObjRangeIterator 头注释)。
+        // iter() -> 迭代器。GC 约束:range 在 slots[0] 于栈根,迭代器白色建成先写回槽发布再返回,
+        // 中间无 GC 点;迭代器标量自足不持源指针,源 range 彼后可回收。
         bool fn_iter(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -27,8 +26,7 @@ namespace aria {
             return true;
         }
 
-        // range 方法表:注册进 Range bootstrap 类(注册机制见 runtime/builtins/Builtin.hpp)。
-        // has_next/next 不在此表 --它们住 Iterator bootstrap 类表,全子类共享(每源只加迭代器子类)。
+        // range 方法表(has_next/next 住 Iterator 表,全子类共享)。
         constexpr BuiltinFnEntry kRangeBuiltins[] = {
                 {"iter", fn_iter},
         };
@@ -36,8 +34,7 @@ namespace aria {
     } // namespace
 
     ObjClass* RangeClass::make_class(GC& gc, ObjClass* super) {
-        // Range bootstrap 类:内置 range 的语言方法面载体,经 ObjRange::load_field_bound 查表命中后恒
-        // 绑定触达(曝光契约见 runtime/value_register.hpp 表头)。类名与 type() 的类型名一致。
+        // Range bootstrap 类:内置 range 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Range", super);
         Builtin::register_class_methods(gc, klass, kRangeBuiltins);
         return klass;

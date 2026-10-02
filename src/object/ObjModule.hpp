@@ -11,15 +11,7 @@ namespace aria {
     class ObjString;
     class ObjFunction;
 
-    // 模块对象:aria 的「模块 = 命名空间」(非类),一个源文件 = 一个模块。绝对路径(VM 模块表查重键)= dir_ + "/" + name_ +
-    // ".aria",切分收口于 fs::module_name_and_dir。
-    //   - name_:模块名(stem,intern),**指针恒非空**(内容可空 -- 合成顶层 <script> 等)。
-    //   - dir_:目录(intern),相对导入基 + 播种 source_roots_[0];**指针恒非空**(缺省取 cwd,cwd 不可用以空串兜底 -- 空串
-    //     让 resolve_module 跳空根,比拿 "." 碰运气诚实)。
-    //   - entry_:模块体(run-once;保留不释放 -- 半初始化时常量池经 entry_ 仍可达,避免回收正在用的字面量)。可为 nullptr(
-    //     目录包占位)。globals_:模块级绑定表(惰性分配)。
-    //   - 加载事实源 = VM 模块表成员资格(对象无状态字段):编译成功才入表,循环导入命中表内体执行中的对象即复用。地址哈希
-    //     型、final。trace 标 name_ + dir_ + entry_ + globals_。
+    // 模块对象:aria 语言里的模块(一个源文件对应一个模块,充当命名空间与全局绑定域)。
     class ObjModule final : public Object {
     public:
         // name = 模块文件名去 .aria 后缀(stem);dir = 所在目录(指针恒非空,构造期 ASSERT)。
@@ -42,15 +34,12 @@ namespace aria {
             return dir_;
         }
 
-        // 绝对路径(= 模块表键形式)= dir_ + "/" + name_ + kAriaExtension,即时合成不驻留。
-        // name_ 空串(合成顶层)仅返 dir_;dir_ 空串则返空串(供 resolve_module 判空拒绝)。
+        // 绝对路径(= 模块表键形式),即时合成不驻留;name_ 空串仅返 dir_,dir_ 空串返空串(resolve_module 判空拒绝)。
         [[nodiscard]]
         String abs_path() const;
 
-        // 模块位置串 "<loc>:<line>"(未捕获堆栈跟踪的 at 行用):文件模块取 abs_path();合成模块
-        // (名以 '<' 开头 -- aria.hpp 约定尖括号名标记 VM 合成实体,其 abs_path 会拼出伪路径)与无
-        // 目录锚点(abs_path 空)退化为 name_。位置串规则单一事实源;纯 std::format 拼接,不分配
-        // GC 对象(调用点在 AriaVM::unwind 的物化路径,该处声明「无 GC 分配点」)。
+        // 模块位置串 "<loc>:<line>"(未捕获堆栈 at 行用):文件模块取 abs_path;尖括号合成模块(abs_path 拼伪路径)
+        // 与无目录锚点退化为 name_。纯拼接无 GC 分配(调用点在 unwind 物化路径)。
         [[nodiscard]]
         String format_location(u32 line) const;
 
@@ -81,14 +70,12 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取协议 override:模块成员 = 模块全局绑定,查 globals_ 直读原值(纯查询,
-        // GC-pure)。函数值为闭包、恒非方法,故不绑定 this(调用经 CALL_METHOD 时槽 0 留模块值,
-        // 闭包不读之);nil 值绑定与「无此成员」由 find 的空态区分。miss 文案同基类默认形。
+        // 命名成员读取 override:模块成员 = 模块全局绑定,查 globals_ 直读原值;函数值为闭包恒非方法
+        // 不绑定 this,nil 绑定与「无此成员」由 find 空态区分。miss 文案同基类默认形。
         [[nodiscard]]
         Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
 
-        // 命名成员写入:模块成员只读(定向文案)。越模块写会隐式创建未声明全局,违「赋值
-        // 不隐式创建」;暴露可变状态走模块自己的函数。
+        // 命名成员写入:模块成员只读 -- 越模块写会隐式创建未声明全局,违「赋值不隐式创建」。
         [[nodiscard]]
         bool store_field(AriaVM& vm, ObjString* name, Value value) override;
 
@@ -99,7 +86,7 @@ namespace aria {
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 
-    // 工厂:分配 ObjModule。守卫纪律见 Object.hpp,**调用方须自行根化 name 与 dir**;dir 指针须非空。
+    // 工厂:分配 ObjModule;调用方须自行根化 name 与 dir,dir 指针须非空。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir);
 
@@ -111,8 +98,7 @@ namespace aria {
     [[nodiscard]]
     ObjModule* new_module(GC& gc, StringView name);
 
-    // 工厂重载(StringView name, dir):两者均工厂内部驻留自守。dir 原样 intern(空串即空串锚点,
-    // 不做 cwd 退化,需退化用 2 参 StringView 重载)。
+    // 工厂重载(StringView name, dir):两者均工厂内部驻留自守;dir 原样 intern(空串锚点),需 cwd 退化用 2 参重载。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, StringView name, StringView dir);
 

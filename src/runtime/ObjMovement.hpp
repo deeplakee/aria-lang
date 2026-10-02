@@ -19,9 +19,9 @@ namespace aria {
     class ObjModule;
     class ObjUpvalue;
 
-    // 调用帧(trivially-copyable 聚合,满足 FrameStack 约束,同 LineEntry 风格不带尾下划线)。
-    // ip/last_ip 仅作读取游标/锚点,运行期从不经其写字节;last_ip 反推 offset 前提:帧存活期间
-    // code 缓冲恒定 -- 非移动 GC + 执行期零 emit。
+    // 调用帧(trivially-copyable 聚合,满足 FrameStack 约束);ip/last_ip 仅作读取游标/锚点,
+    // 运行期从不经其写字节,last_ip 反推 offset 的前提 = 帧存活期间 code 缓冲恒定(非移动 GC +
+    // 执行期零 emit)。
     struct CallFrame {
         ObjClosure* closure; // 持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 function() 取
         CodeUnit*   unit;    // 缓存 closure->function()->unit(),省每条指令一跳
@@ -31,9 +31,8 @@ namespace aria {
         u8*         last_ip; // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)
     };
 
-    // 执行状态(协程生命周期五态,切换模型见 vm-design.md §4.9)。主上下文同样参与换位
-    //(resume 置 Normal、yield/完成切回时置 Running),但其 state_ 不参与任何判定、语言面不可达
-    //(用户拿不到主上下文的引用:ObjMovement 值唯一暴露口是 create 的返回值)。
+    // 执行状态(协程生命周期五态)。主上下文同样参与换位(resume 置 Normal、切回时置 Running),
+    // 但其 state_ 不参与任何判定、语言面不可达(用户拿不到主上下文的引用)。
     enum class ExecState : u8 {
         Suspended, // 已创建未首启,或 yield 挂起(可 resume)
         Normal,    // 自己 resume 了别人,自身在链中间挂起(Lua 的 normal)
@@ -61,15 +60,9 @@ namespace aria {
         }
     }
 
-    // 执行上下文:一段执行的完整状态(Object 子类 + 可增长值栈 + 帧栈)。设计见 .claude/reference/runtime/vm-design.md。
-    //   - Object 子类(ObjType::MOVEMENT):主上下文与协程统一为本类型 GC 对象。trace 自标值栈已用
-    //     区间/活动帧/open upvalue 开链/挂起错误寄存器,并经 mark_object(previous_) 沿 resume 链
-    //     级联;VM 根 tracer 只标 current_ 一点 -- 链遍历删去后,previous_ 是挂起中 resumer 的
-    //     唯一可达边,不标即悬垂。
-    //   - 值栈走 Buffer<Value> 底座(GC 分配),push 溢出 2x 增长;top_/活动帧 slots/open upvalue
-    //     location_ 三类指入值栈的指针在增长时按「搬运前记槽偏移、搬运后新基址重建」重绑。
-    //   - 帧栈走 FrameStack 模板(槽位语义,truncate 供异常 unwind 跨帧);UPtr 底座走 std 分配器,
-    //     不进 GC 字节账。
+    // 执行上下文(Object 子类):一段执行的完整状态 -- 可增长值栈 + 帧栈 + resume 链;三类指针
+    //(top_/活动帧 slots/开指 location_)在栈增长时按「搬运前记槽偏移、搬运后新基址重建」重绑,
+    // trace 沿 previous_ 级联(链上挂起成员的唯一可达边)。帧数组走 std 分配器,不进 GC 字节账。
     class ObjMovement final : public Object {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
@@ -87,10 +80,8 @@ namespace aria {
         ObjMovement(ObjMovement&&)                 = delete;
         ObjMovement& operator=(ObjMovement&&)      = delete;
 
-        // 清空值栈与帧栈与挂起错误(容量保留,不缩回初始)。先关全部开指再清场:HALT 收场不弹帧,
-        // 若无此安全网,链上残留的开指会跨 run 复用同一栈区继续指入(槽值被下一轮覆写),再经闭包
-        // 读出脏值。不碰 state_ / previous_:那是执行状态不是栈状态,由切换点(resume/yield/
-        // RETURN 完成)显式处置。
+        // 清空值栈/帧栈/挂起错误(容量保留)。先关全部开指再清场 -- 否则链上残留开指跨 run 复用
+        // 同一栈区继续指入,经闭包读出脏值。不碰 state_ / previous_:那是执行状态,归切换点处置。
         void reset() noexcept {
             close_upvalues(buf_.data());
             top_ = buf_.data();
@@ -120,9 +111,8 @@ namespace aria {
             return buf_.capacity();
         }
 
-        // 压栈:先写值、再按需 2x 增长 -- 使 value 先入活跃区随值栈根存活,与「栈即根」纪律一致
-        // (当前 grow 永不触 GC,此序为前瞻防御)。进 push 时必有空槽(top_ < base + cap 为
-        // 不变式,见构造/reset/grow 的维持),先写不越界。
+        // 压栈:先写值、再按需 2x 增长 -- value 先入活跃区随值栈根存活(与「栈即根」一致;当前
+        // grow 永不触 GC,此序为前瞻防御)。
         void push(const Value value) noexcept {
             *top_++ = value;
             if (top_ == buf_.data() + buf_.capacity()) {
@@ -148,11 +138,10 @@ namespace aria {
             return *(top_ - 1 - n);
         }
 
-        // 异常派发:回退到第 n 帧(含)并把该帧转入 record 的 catch handler。frames_.truncate
-        // 一步弃内层帧(此时栈顶未动,被弃槽区全存活);close_upvalues(catch 槽) 按槽址一关到底
-        // -- >= catch 槽的开指一并迁移关闭,catch 槽本身尚无开指、可捕获性保留;值栈顶再截到
-        // catch 参数槽,置 ip 跳 record.handle,寄存器载荷 push 落槽(取走后至 push 无分配,不失根)。
-        // 全帧未命中不走本函数,交 reset()。
+        // 异常派发:回退到第 n 帧(含)并转入 record 的 catch handler;全帧未命中不走本函数
+        //(交 reset())。truncate 一步弃内层帧(栈顶未动,被弃槽区全存活);close_upvalues
+        //(catch 槽) 关掉其上开指后,值栈顶截到 catch 参数槽、置 ip 跳 record.handle,寄存器
+        // 载荷 push 落槽(取走后至 push 无分配,不失根)。
         void unwind_to_handler(const usize n, const TryRecord& record) noexcept {
             ASSERT(n < frames_.size(), "frame index out of range");
             frames_.truncate(n + 1);
@@ -176,27 +165,22 @@ namespace aria {
             return frames_.size() >= kFrameMax;
         }
 
-        // 进帧:为对 closure 的调用 acquire 一个空帧并就位全部字段,与 exit_frame 成对,锁住
-        // 「栈顶帧 slots 即值栈本帧槽 0」不变量。slots 按不变量设为 top - argc - 1(栈顶须形如
-        // [callee, a1..aN]);槽 0 语义由调用方在进帧前写定:普通帧 = 闭包自身,方法帧 = this
-        // (闭包经 frame.closure 携带不上栈,两态共用本入口)。定义在 .cpp(需 ObjClosure 完整类型)。
+        // 进帧:为对 closure 的调用 acquire 一个空帧并就位字段,与 exit_frame 成对,锁「栈顶帧
+        // slots 即值栈本帧槽 0」不变量;slots = top - argc - 1(栈顶须形如 [callee, a1..aN]),
+        // 槽 0 语义由调用方进帧前写定(普通帧 = 闭包自身 / 方法帧 = this)。定义在 .cpp。
         void enter_frame(ObjClosure* closure, u8 argc);
 
-        // open upvalue 开链
-        // 链头 open_upvalues_:本上下文全部 open 态 upvalue,按槽址降序(head 最高);局部所在
-        // 区间被关闭时(RETURN/unwind/显式 CLOSE_UPVALUE)摘链迁值。链上节点经本类 trace 标根
-        // -- 防「闭包已死而 upvalue 仍在链」悬垂。「同一局部只有一份引用」不变式由 capture_upvalue
-        // 单点收口(命中复用或建新插链,无旁路)。
+        // open upvalue 开链:链头按槽址降序,所在区间被关闭时(RETURN/unwind/CLOSE_UPVALUE)
+        // 摘链迁值;链上节点经本类 trace 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂。
+        // 「同一局部只有一份引用」不变式由 capture_upvalue 单点收口。
 
-        // 捕获:沿降序链一趟完成查等值与插链点定位,等值即复用(内外层共享同一 ObjUpvalue)、更小/
-        // 链尾则建新并在该处插链;即使链上出现同槽双节点(不变式被破)也命中复用(自愈)。建新到插链
-        // 之间无分配点(白色窗口不被 sweep),入链后即随本对象 trace 根化。定义在 .cpp(需 ObjUpvalue 完整类型)。
+        // 捕获:沿降序链一趟完成查等值与插链点定位,等值即复用(同槽双节点也复用,自愈)。
+        // 建新到插链之间无分配点(白色窗口不被 sweep),入链后即随本对象 trace 根化;定义在 .cpp。
         [[nodiscard]]
         ObjUpvalue* capture_upvalue(GC& gc, Value* slot) noexcept;
 
-        // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_(close),并整段摘链。挂点:exit_frame
-        // 内置(本帧区间;RETURN 经此)/显式 CLOSE_UPVALUE(top - 1)/unwind_to_handler(catch 槽)/
-        // reset(全链)。降序不变式下 >= from 恒为链头连续前缀。
+        // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_ 并整段摘链;降序不变式下 >= from
+        // 恒为链头连续前缀。
         void close_upvalues(const Value* from) noexcept;
 
         // 只读链头(trace 遍历标根用;节点 next 经 ObjUpvalue::next_open)。返非 const 指针:
@@ -206,9 +190,9 @@ namespace aria {
             return open_upvalues_;
         }
 
-        // 出帧:关本帧区间开指 + 弹当前帧 + 值栈顶复位到该帧 slots 基址,与 enter_frame 成对。
-        // close_upvalues(frame.slots) 内置于此:本帧被捕获局部随帧销毁,值须在槽区仍存活时迁入
-        // 各自 upvalue 自持。先取 slots 再 close/pop:frames_.top() 引用 pop 后悬垂,不可先 pop 再读。
+        // 出帧:关本帧区间开指(被捕获局部随帧销毁,值须在槽区存活时迁入 upvalue 自持)+ 弹帧
+        // + 值栈顶复位到本帧 slots,与 enter_frame 成对;须先取 slots 再操作 -- frames_.top()
+        // 引用在 pop 后悬垂。
         void exit_frame() noexcept {
             Value* slots = frames_.top().slots;
             close_upvalues(slots); // 关本帧区间开指(值迁入自持;槽区此刻仍存活,迁值读安全)
@@ -216,12 +200,10 @@ namespace aria {
             set_stack_top_(slots);
         }
 
-        // 挂起错误寄存器(侧信道)
-        // 原生函数等冷路径错误不走返回类型,经 raise 写入本寄存器;VM 在 CALL 等安全点检查
-        // has_error() 后用 take_error() 取出传播。寄存器随上下文走。载荷为 Value:VM/原生错误
-        // 装箱 ObjException 后写入,aria throw 原值入寄存器(catch 绑原值保类型);置入后随本对象
-        // trace 标根,取出前跨安全点分配不回收。raise 断言当前无挂起(防嵌套 raise 未取走就再
-        // raise);reset() 一并清空。
+        // 挂起错误寄存器(侧信道):冷路径错误经 raise 写入,VM 在安全点 has_error() 后
+        // take_error() 传播,寄存器随上下文走。载荷为 Value -- VM/原生错误装 ObjException、
+        // aria throw 原值入(catch 绑原值保类型);置入后随本对象 trace 标根,取出前跨安全点
+        // 分配不回收。
 
         void raise(const Value err) noexcept {
             ASSERT(!pending_error_.has_value(), "pending error already set (take/clear before re-raise)");
@@ -245,12 +227,9 @@ namespace aria {
             return pending_error_;
         }
 
-        // 协程状态与 resume 链
-        // previous_ = 「谁恢复了我」:A resume B 即 B->previous_ 置 A、VM 的 current_ 换指 B;
-        // 自 current_ 沿 previous_ 回走即 resume 链,链尾恒为主上下文。切换收口在 AriaVM
-        // (current_),ObjMovement 不自切。挂起态 previous_ 恒 nullptr(resume 先置链、yield/
-        // RETURN 完成两处切换点一律解链;主上下文恒为链尾)。标根经 trace 尾部的
-        // mark_object(previous_) 级联。
+        // 协程状态与 resume 链:previous_ = 「谁恢复了我」,自 current_ 沿链回走,链尾恒为主
+        // 上下文;切换收口在 AriaVM,本类不自切。resume 先置链、yield / RETURN 完成一律解链,
+        // 挂起态 previous_ 恒 nullptr。
         [[nodiscard]]
         ObjMovement* previous() const noexcept {
             return previous_;
@@ -269,10 +248,8 @@ namespace aria {
 
         // Object 协议(声明序随 Object.hpp)。
 
-        // GC 标记:值栈已用区间、各活动帧 closure/module、open upvalue 开链(「闭包已死而
-        // upvalue 仍在链」的悬垂防线)、挂起错误寄存器;尾部 mark_object(previous_) 沿 resume 链
-        // 级联(mark_object 容 nullptr 且幂等)。定义在 .cpp(帧成员 mark_object 的基类转换需
-        // ObjClosure/ObjModule 完整类型)。
+        // GC 标记:值栈已用区间/活动帧/开指链/挂起错误 + 尾部 previous_ 级联;开指链是
+        // 「闭包已死而 upvalue 仍在链」的悬垂防线。定义在 .cpp(基类转换需完整类型)。
         void trace(GC& gc) const noexcept override;
 
         // 壳字节数(不含值栈/帧数组等子内存:值栈由 ~ObjMovement 经自持 GC* 释放,帧数组由 UPtr 自释放)。
@@ -281,20 +258,18 @@ namespace aria {
             return sizeof(ObjMovement);
         }
 
-        // 调试渲染(惰性契约见 Object::debug_repr):<coroutine 状态拼写>。(基类有同名无参成员
-        // to_string,此处经 aria:: 限定取自由函数重载。)
+        // 调试渲染:<coroutine 状态拼写>;aria:: 限定取自由函数重载(基类成员 to_string 会遮蔽)。
         [[nodiscard]]
         String debug_repr() const override {
             return std::format("<coroutine {}>", aria::to_string(state_));
         }
 
     private:
-        // 就位一帧:slots 指向槽 0,VM 专有字段(closure/unit/module/ip)从 closure 解引用填充。
-        // 与 enter_frame 分工:enter_frame 管 acquire,此函数管填字段;槽 0 语义见 enter_frame 注释。
+        // 就位一帧:slots 指向槽 0,VM 专有字段(closure/unit/module/ip)从 closure 解引用填充;
+        // 与 enter_frame 分工:本函数管填字段。槽 0 语义见 enter_frame。
         void init_frame_(CallFrame& f, ObjClosure* closure, u8 argc) const;
 
-        // 截断栈顶到 t(t 须在 [base, top] 内)。值栈顶复位由 ObjMovement 内部独占(exit_frame /
-        // unwind_to_handler / reset),不对外暴露,收紧「值栈顶只由 ObjMovement 自身改」的边界。
+        // 截断栈顶到 t(t 须在 [base, top] 内);值栈顶复位由本类内部独占,不对外暴露。
         void set_stack_top_(Value* t) noexcept {
             ASSERT(t >= buf_.data() && t <= top_, "stack top out of range");
             top_ = t;
@@ -313,8 +288,7 @@ namespace aria {
         ExecState                        state_;         // 执行状态(五态;主上下文亦参与换位但无人读)
     };
 
-    // 工厂:分配执行上下文。守卫纪律见 Object.hpp,返回对象白色无根,调用方须自行根化
-    //(主上下文经 current_、协程经 create 原语的返回槽发布)。
+    // 工厂:分配执行上下文。返回对象白色无根,调用方须自行根化(主上下文经 current_、协程经 create 原语发布)。
     [[nodiscard]]
     ObjMovement* new_movement(GC& gc);
 

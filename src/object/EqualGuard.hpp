@@ -9,12 +9,8 @@ namespace aria {
 
     class Object;
 
-    // 在比路径守卫:递归比较子值的 equals(list 等容器)入口先 is_cycle 查自引用/互环
-    // (命中即返 true,余归纳闭合:同对重遇视为相等,正则树同构判等),再挂本守卫把
-    // (lhs, rhs) 对入栈。thread_local 栈即当前比较链(每线程独立),RAII 出栈由逆序析构
-    // 与调用栈严格配对。分配走 std::allocator,不触发 GC collect,GC-pure 契约守得住
-    //(EQUAL 弹栈后操作数无根,风险仅在比较中途发生 collect)。非递归类型(字符串/函数
-    // 等)不递归比较子值,无需挂。
+    // 比较链守卫:is_cycle 查自引用/互环(重遇同对视为相等,余归纳),再挂守卫入栈;
+    // thread_local 朴素栈,RAII 配对;分配不触 GC -- EQUAL 弹栈后操作数无根,风险仅比较中途。
     class EqualGuard {
     public:
         EqualGuard(const Object* lhs, const Object* rhs) { active_pairs().emplace_back(lhs, rhs); }

@@ -9,7 +9,6 @@
 
 namespace aria {
 
-    // 端到端：tokenize -> parse -> CodeGen::compile，各阶段首错即止（契约见 Compiler.hpp compile 注）。
     Result<ObjFunction*, Error> Compiler::compile(GC& gc, SourceFile& source, ObjModule* module,
                                                   const StringView entry_name) {
         auto tokens = Lexer::tokenize(source);

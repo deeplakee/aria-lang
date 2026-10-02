@@ -12,9 +12,8 @@ namespace aria {
     usize ObjRangeIterator::size() const noexcept { return sizeof(ObjRangeIterator); }
 
     bool ObjRangeIterator::has_next() const noexcept {
-        // 无上界:has_next 恒真(无限序列,消费方自理边界)。正向:含上界 current<=to /
-        // 不含 current<to;倒向(from>to):含上界 current>=to / 不含 current>to。空区间只剩
-        // from==to 且不含上界(5...5),两向首问即 false,零迭代。
+        // 五态方向矩阵:无上界恒真(无限序列,消费方自理边界);正/倒向与含/不含上界四种比较见 return;
+        // 空区间仅剩 from==to 且不含上界(5...5),首问即 false、零迭代。
         if (!to_) {
             return true;
         }
@@ -23,13 +22,12 @@ namespace aria {
     }
 
     Opt<Value> ObjRangeIterator::next(AriaVM& vm) {
-        // 耗尽 fail-fast:forIn 靠 has_next 把关,仅绕过协议的手写滥用触此(同 ObjMapIterator)。
+        // 耗尽 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
         if (!has_next()) {
             return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         const auto value = Value::from_int(current_);
-        // 整数域 i48(NaN-boxing payload + 字面量编译期上限)兜底,推进永不溢出;TagValue
-        // 配置下算术回绕推满端点的理论边不设防(与 map 迭代中变更同级不承诺)。
+        // 推进永不溢出:i48 整数域(NaN-boxing payload + 字面量编译期上限)兜底;TagValue 下回绕推满端点不设防(不承诺)。
         if (forward_) {
             ++current_;
         } else {
@@ -39,7 +37,6 @@ namespace aria {
     }
 
     ObjRangeIterator* new_range_iterator(GC& gc, const ObjRange* range) {
-        // 工厂只读源的三标量,不持有(见头注释)。
         return gc.new_object<ObjRangeIterator>(range->from(), range->to(), range->is_exclusive());
     }
 

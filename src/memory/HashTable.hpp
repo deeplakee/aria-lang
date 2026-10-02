@@ -22,30 +22,21 @@ namespace aria {
                 { fn(a, b) } noexcept -> std::same_as<bool>;
             };
 
-    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。每槽 1 字节 ctrl 同时编码「占用槽的 7 位部分哈希
-    // (h2)」:探测先比 h2,不命中即跳过且**不加载 Entry(K+V)**,只在 h2 命中时才加载 Entry 比全键--
-    // 绝大多数探针只读 1 字节。
-    //   - cap_ 为 2 的幂(或 0),槽索引 = h1(hash) & (cap_-1);三角探测偏移 0,1,3,6,10,...(本类唯一
-    //     权威表述,各探测行尾注不再重复)。
-    //   - 7/8 负载因子:count_+tombstones_+1 超 cap_*7/8 则扩容(×2),墓碑超 cap_/8 则原容 compact;
-    //     始终保留 >= 1/8 空槽 -> 探针必然在空槽终止。两块独立分配(ctrl_ + entries_),rehash 时一起
-    //     重分配、逐占用槽重算 hash 重插。持 Alloc* alloc_,dtor 自释放。不可拷贝/不可移动(理由同
-    //     Buffer)。K/V 必须 trivially-copyable;分配器解耦见 Allocator.hpp(实例化点须令 GC 完整可见)。
+    // 通用 Swiss Table 哈希表(值无关,不依赖 Value)。
     template<TriviallyCopyable K, TriviallyCopyable V, HashFunctor<K> Hash, EqFunctor<K> Eq,
              TrivialAllocator Alloc = GC>
     class HashTable {
 
     public:
-        // 键值对条目(16B 当 K=V=Value)。find 返回指向它的指针。
+        // 键值对条目(16B 当 K=V=Value)。
         struct Entry {
             K key;
             V value;
         };
 
     private:
-        // ctrl 字节编码: 0xFF = 空槽(探针终止) 0xFE = 墓碑(已删除) 0x00..0x7F = 占用,低 7 位 = h2(部分哈希) 高位 1 =
-        // 特殊(空/墓碑),高位 0 = 占用。target = ctrl_from_hash(hash)(高位 0),故 byte == target 只会命中占用槽,不会误中
-        // kCtrlEmpty/kCtrlDeleted(它们高位 1)。
+        // ctrl 字节:0xFF = 空槽(探针终止),0xFE = 墓碑(已删除),0x00..0x7F = 占用、低 7 位 = h2。target =
+        // ctrl_from_hash(hash)(高位 0),故 byte == target 只命中占用槽,不误中高位 1 的空/墓碑字节。
         static constexpr u8 kCtrlEmpty   = 0xFF;
         static constexpr u8 kCtrlDeleted = 0xFE;
 
@@ -62,8 +53,8 @@ namespace aria {
 
         [[nodiscard]] static constexpr u32 ht_h2(const u32 hash) noexcept { return hash & 0x7F; }
 
-        Entry* entries_; // alloc_->allocate<Entry>(cap_)
-        u8*    ctrl_;    // alloc_->allocate<u8>(cap_),每槽 1 字节
+        Entry* entries_; // 与 ctrl_ 同长 cap_
+        u8*    ctrl_;    // 与 entries_ 同长 cap_
         Alloc* alloc_;
         usize  cap_;        // 2 的幂(或 0)
         usize  count_;      // 占用数
@@ -72,8 +63,7 @@ namespace aria {
         static constexpr usize kInitialCap = 8;
         static constexpr usize kNpos       = static_cast<usize>(-1);
 
-        // 从 from 起(含)找下一占用槽的槽位索引,无则 cap_(与 end 哨兵同值,迭代器推进
-        // 单点共用:begin 首扫与 const_iterator::operator++)。只看 ctrl 不加载非占用
+        // 从 from 起(含)找下一占用槽的槽位索引,无则 cap_(与 end 哨兵同值)。只看 ctrl 不加载
         // Entry,空/墓碑槽里是垃圾也安全。
         [[nodiscard]]
         usize next_occupied_from_(const usize from) const noexcept {
@@ -96,7 +86,7 @@ namespace aria {
             }
         }
 
-        // 禁拷贝/禁移动:理由见 Buffer 注;深拷贝要重分配 + rehash 且当前无需,故不提供。
+        // 禁拷贝/禁移动:深拷贝要重分配 + rehash 且当前无需,故不提供。
         HashTable(const HashTable&)            = delete;
         HashTable& operator=(const HashTable&) = delete;
         HashTable(HashTable&&)                 = delete;
@@ -121,7 +111,7 @@ namespace aria {
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                pos = (pos + (step++)) & mask; // 三角探测
                 if (const u8 byte = ctrl_[pos]; byte == target) {
                     if (Eq{}(entries_[pos].key, key)) {
                         return &entries_[pos];
@@ -133,8 +123,7 @@ namespace aria {
             return nullptr; // 安全上限耗尽(不变式下不会到达)
         }
 
-        // 写入:命中覆写 value(原槽更新,find 路径零分配);未命中插入 (key, value)
-        // (可能触发 rehash 扩容或 compact,rehash 后 entries_/ctrl_ 指针改变)。
+        // 写入:命中覆写 value(零分配);未命中插入(可能触发 rehash/compact,届时 entries_/ctrl_ 指针改变)。
         void set(const K& key, const V& value) {
             if (Entry* entry = find(key)) {
                 entry->value = value; // 命中:原槽覆写,无分配
@@ -150,7 +139,7 @@ namespace aria {
             usize tomb = kNpos;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos           = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                pos           = (pos + (step++)) & mask; // 三角探测
                 const u8 byte = ctrl_[pos];
                 if (ctrl_is_empty(byte)) {
                     const usize insert_pos     = (tomb != kNpos) ? tomb : pos;
@@ -170,7 +159,7 @@ namespace aria {
             ASSERT(false, "probe exhausted (invariant violated)");
         }
 
-        // 擦除命中槽(置墓碑)。返回是否确实擦除。无需 nil-out entries_,trace 按 ctrl 跳过非占用槽。
+        // 擦除命中槽(置墓碑)。返回是否确实擦除。entries_ 无需清理:占用判定只看 ctrl。
         bool erase(const K& key) noexcept {
             Entry* entry = find(key);
             if (entry == nullptr) {
@@ -208,10 +197,9 @@ namespace aria {
             return count_ == 0;
         }
 
-        // 只读槽位迭代器(begin/end 语义,消费场景全只读故不设非 const 版):跳过空槽与
-        // 墓碑,operator* 取占用槽 Entry。迭代序 = 槽位序(map 语言面迭代序 unspecified,
-        // 契约见 ObjMapIterator);失效语义同 std::unordered_map 惯例 -- erase 使被删元素
-        // 失效,rehash/compact 搬迁槽位使全部迭代器失效,迭代中变更容器不设防。
+        // 只读槽位迭代器(begin/end 语义,仅 const 版):跳过空槽与墓碑,迭代序 = 槽位序(map
+        // 语言面迭代序 unspecified)。失效同 std::unordered_map 惯例:erase 使被删元素失效,rehash/
+        // compact 使全部失效,迭代中变更容器不设防。
         class const_iterator {
         public:
             const Entry& operator*() const {
@@ -236,8 +224,7 @@ namespace aria {
                 return slot_ != rhs.slot_;
             }
 
-            // 仅 HashTable 的 begin/end 构造;slot 语义不对外承诺(越界/非占用槽行为由
-            // ASSERT 钉住)。
+            // 仅 HashTable 的 begin/end 构造;slot 语义不对外承诺。
             explicit const_iterator(const HashTable* ht, const usize slot) noexcept : ht_{ht}, slot_{slot} {}
 
         private:
@@ -256,8 +243,7 @@ namespace aria {
         }
 
     private:
-        // 插入前确保有空槽(阈值见类注释):cap_==0 初始分配;过满扩容×2;墓碑过多原容 compact。
-        // 任一情形都经 grow_and_rehash_。
+        // 插入前确保有空槽(阈值见类头注):cap_==0 初始分配、过满扩容 ×2、墓碑过多原容 compact。
         void maybe_rehash_for_insert_() {
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);
@@ -273,8 +259,7 @@ namespace aria {
             }
         }
 
-        // 重分配 ctrl_(全 kEmpty)+ entries_,逐个占用槽重算 hash 重插,释放旧两块。
-        // 墓碑丢弃。new_cap 为 2 的幂。
+        // 重分配 ctrl_(全 kEmpty)+ entries_,逐占用槽重算 hash 重插,墓碑丢弃。
         void grow_and_rehash_(const usize new_cap) {
             Entry*      old_entries = entries_;
             u8*         old_ctrl    = ctrl_;
@@ -300,7 +285,7 @@ namespace aria {
                 usize step = 0;
 
                 do {
-                    pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                    pos = (pos + (step++)) & mask; // 三角探测
                 } while (ctrl_is_occupied(ctrl_[pos])); // 新表无墓碑,只撞占用槽
                 ctrl_[pos]    = target;
                 entries_[pos] = old_entries[i];

@@ -2,6 +2,7 @@
 #define ARIA_UTIL_HPP
 
 #include <charconv>
+#include <cstring>
 #include <format>
 #include <system_error>
 #include <type_traits>
@@ -112,6 +113,28 @@ namespace aria::util {
                     break;
             }
         }
+        return out;
+    }
+
+    // 两段拼接成新串:一次定容,两段 append。
+    [[nodiscard]]
+    inline String concat_string(const StringView lhs, const StringView rhs) {
+        String out;
+        out.reserve(lhs.size() + rhs.size());
+        out.append(lhs).append(rhs);
+        return out;
+    }
+
+    // 把 src 原样重复 count 份:resize_and_overwrite 单次定容、免零填充,lambda 内逐段 memcpy。
+    [[nodiscard]]
+    inline String repeat_string(const StringView src, const i64 count) {
+        String out;
+        out.resize_and_overwrite(src.size() * static_cast<usize>(count), [&](char* dst, const usize size) {
+            for (usize offset = 0; offset < size; offset += src.size()) {
+                std::memcpy(dst + offset, src.data(), src.size());
+            }
+            return size;
+        });
         return out;
     }
 

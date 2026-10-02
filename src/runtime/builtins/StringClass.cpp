@@ -529,11 +529,9 @@ namespace aria {
             if (lhs == nullptr) {
                 return false;
             }
-            String buffer;
-            buffer.reserve(lhs->length() + rhs->length());
-            buffer.append(lhs->view()).append(rhs->view());
+            const auto out = util::concat_string(lhs->view(), rhs->view());
             // lhs->hash() 即 FNV 终态:续算 rhs 字节得 hash(lhs+rhs),免重扫整段前缀。
-            slots[0] = Value::from_obj(new_string(vm.gc(), buffer, util::hash_str(lhs->hash(), rhs->view())));
+            slots[0] = Value::from_obj(new_string(vm.gc(), out, util::hash_str(lhs->hash(), rhs->view())));
             return true;
         }
 
@@ -563,14 +561,10 @@ namespace aria {
                 slots[0] = Value::from_obj(self); // 等内容必命中驻留,即 self 本体
             } else {
                 const auto src = self->view();
-                String     buffer;
-                buffer.reserve(src.size() * static_cast<usize>(count));
-                for (i64 i = 0; i < count; ++i) {
-                    buffer.append(src);
-                }
+                const auto out = util::repeat_string(src, count);
                 // 续算:首份拷贝终态即 hash(a),续算其余各份(count >= 2 已由上方分叉保证)。
-                const u32 hash = util::hash_str(self->hash(), StringView{buffer}.substr(src.size()));
-                slots[0]       = Value::from_obj(new_string(vm.gc(), buffer, hash));
+                const u32 hash = util::hash_str(self->hash(), StringView{out}.substr(src.size()));
+                slots[0]       = Value::from_obj(new_string(vm.gc(), out, hash));
             }
             return true;
         }

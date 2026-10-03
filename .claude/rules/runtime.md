@@ -97,7 +97,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 指令 case 与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 case 语义见 `AriaVM.cpp` dispatch_loop（case 注释即契约）。本层只需记住的跨文件约定：
 
 - **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert/clock/Error 与 Exception 类经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
-- **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`，非对象左值委托 `run_binary_numeric<Op>`，对象左值经 tag 判定取本对象的 `Object::op_*_impl` 再 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`）；取不到的措辞随宿主。`+` 与四个比较算子的域 = 数值 ∪ 侧为 String（String 6 个 override 直给实现格，拼接经驻留池、比较按无符号字节序，见 object.md ②；List 加/乘 2 个同机制）。
+- **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`，两侧均为 String 的 `+` 与四个字序比较在其入口经 `try_string_fast_dispatch<Op>` 门走 `run_string_binary<Op>` 就地完成（不进原生调用链，`__mul__` 留钩子链）；其余非对象左值委托 `run_binary_numeric<Op>`，对象左值经 tag 判定取本对象的 `Object::op_*_impl` 再 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`）；取不到的措辞随宿主。`+` 与四个比较算子的域 = 数值 ∪ 侧为 String（String 6 个 override 直给实现格，拼接经驻留池、比较按无符号字节序，见 object.md ②；List 加/乘 2 个同机制）。
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：callable 收敛为闭包（`ObjFunction` 退为常量池内部物），`call_value` 编排后按 callee 类型分发到 `call_closure`/`call_native`/`call_class`/`call_bound_method`，其余对象类型按调用钩子 `__call__` 取实现后递归分发。
 - 三个 `call_*` 均不收 ctx 参数、作用于 `*current_`（直接读 `current_`，与 dispatch_loop/raise 语义统一），返 `bool` 成败：失败时错误载荷已 `raise` 进 `*current_` 挂起寄存器，调用方据 bool 调 `unwind()`。

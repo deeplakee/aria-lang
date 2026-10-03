@@ -587,16 +587,67 @@ namespace aria {
 
     template<OpCode Op>
     bool AriaVM::run_binary_operator() {
-        // 对象左值取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],槽 0 保持 receiver),
-        // 非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),取到的实现必可达
-        //(类表值 / 实例字段值 / 内建实现格),故无白色在途窗口、不挂守卫。
+        // 对象左值先试 string 快路径门,再取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],
+        // 槽 0 保持 receiver);非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),
+        // 取到的实现必可达(类表值 / 实例字段值 / 内建实现格),故无白色在途窗口、不挂守卫。
         if (const auto lhs = current_->peek(1); lhs.is_obj()) {
-            if (const auto target = get_obj_binary_op_impl<Op>(*lhs.as_obj())) {
+            const auto obj = lhs.as_obj();
+            if (try_string_fast_dispatch<Op>(obj)) {
+                return true;
+            }
+            if (const auto target = get_obj_binary_op_impl<Op>(obj)) {
                 return call_value(*target, 1);
             }
             return false;
         }
         return run_binary_numeric<Op>();
+    }
+
+    template<OpCode Op>
+    bool AriaVM::try_string_fast_dispatch(Object* lhs) {
+        // string 快路径(lhs 非空,调用方已判 is_obj):两侧 tag 均 STRING 时就地拼接/字序比较,
+        // 免整条原生调用链;白名单仅 ADD 与四个字序比较实例化,其余算子恒 false。返回 true = 已
+        // 派发完成,false = 不适用落原路(非失败,两侧皆 string 的臂全无 fail 路径)。门体用 is/as
+        // 两段式守卫:热路径 flags-only(与平铺比较链同指令选择),免 try_obj/try_as 返 T* 的
+        // 指针物化分支(实测见 local-string-perf 报告 §7/§12)。
+        if constexpr (Op == OpCode::ADD || Op == OpCode::LESS || Op == OpCode::LESS_EQUAL || Op == OpCode::GREATER ||
+                      Op == OpCode::GREATER_EQUAL) {
+            if (Object::is<ObjString>(lhs)) {
+                const Value rhs = current_->peek(0);
+                if (rhs.is_obj() && Object::is<ObjString>(rhs.as_obj())) {
+                    return run_string_binary<Op>(Object::as<ObjString>(lhs), Object::as<ObjString>(rhs.as_obj()));
+                }
+            }
+        }
+        return false;
+    }
+
+    template<OpCode Op>
+    bool AriaVM::run_string_binary(ObjString* lhs, ObjString* rhs) {
+        // [lhs, rhs] -> [r]:拼接经驻留池(哈希自 lhs 终态续算 rhs),比较按无符号字节序;语义与
+        // StringClass 对应钩子逐位一致。GC 走查:唯一 GC 点是 new_string 顶部 maybe_collect,
+        // 两操作数 peek 未弹在栈(栈即根),out 为非 GC 的 C++ String;铸后 drop+push 无 GC 点。
+        if constexpr (Op == OpCode::ADD) {
+            const auto out    = util::concat_string(lhs->view(), rhs->view());
+            const auto joined = new_string(gc_, out, util::hash_str(lhs->hash(), rhs->view()));
+            current_->drop(2);
+            current_->push(Value::from_obj(joined));
+        } else if constexpr (Op == OpCode::LESS) {
+            current_->drop(2);
+            current_->push(Value::from_bool(lhs->view().compare(rhs->view()) < 0));
+        } else if constexpr (Op == OpCode::LESS_EQUAL) {
+            current_->drop(2);
+            current_->push(Value::from_bool(lhs->view().compare(rhs->view()) <= 0));
+        } else if constexpr (Op == OpCode::GREATER) {
+            current_->drop(2);
+            current_->push(Value::from_bool(lhs->view().compare(rhs->view()) > 0));
+        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+            current_->drop(2);
+            current_->push(Value::from_bool(lhs->view().compare(rhs->view()) >= 0));
+        } else {
+            UNREACHABLE(); // 白名单收在 try_string_fast_dispatch,可达 Op 恒为上列五个之一
+        }
+        return true;
     }
 
     bool AriaVM::run_negate() {
@@ -621,26 +672,26 @@ namespace aria {
     }
 
     template<OpCode Op>
-    Opt<Value> AriaVM::get_obj_binary_op_impl(Object& obj) {
+    Opt<Value> AriaVM::get_obj_binary_op_impl(Object* obj) {
         // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举)。
         if constexpr (Op == OpCode::ADD) {
-            return obj.op_add_impl(*this);
+            return obj->op_add_impl(*this);
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj.op_sub_impl(*this);
+            return obj->op_sub_impl(*this);
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj.op_mul_impl(*this);
+            return obj->op_mul_impl(*this);
         } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj.op_div_impl(*this);
+            return obj->op_div_impl(*this);
         } else if constexpr (Op == OpCode::MOD) {
-            return obj.op_mod_impl(*this);
+            return obj->op_mod_impl(*this);
         } else if constexpr (Op == OpCode::GREATER) {
-            return obj.op_greater_impl(*this);
+            return obj->op_greater_impl(*this);
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj.op_greater_equal_impl(*this);
+            return obj->op_greater_equal_impl(*this);
         } else if constexpr (Op == OpCode::LESS) {
-            return obj.op_less_impl(*this);
+            return obj->op_less_impl(*this);
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj.op_less_equal_impl(*this);
+            return obj->op_less_equal_impl(*this);
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }

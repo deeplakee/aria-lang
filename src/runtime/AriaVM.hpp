@@ -266,7 +266,7 @@ namespace aria {
         // 按 Op 取本对象的算子实现(编译期分发到 Object::op_*_impl,Op 由调用点穷举);nullopt ⟺
         // 已 fail(措辞随宿主)。模板成员定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
-        Opt<Value> get_obj_binary_op_impl(Object& obj);
+        Opt<Value> get_obj_binary_op_impl(Object* obj);
 
         // 弹 2 算 1 的二元数值运算入口(9 个算术/比较指令共用,Op 由调用点穷举实例化):类型守卫后
         // 按域分流,双 Int 走 run_binary_int、任一 F64 升浮点走 run_binary_f64(两域失败语义不同);
@@ -284,11 +284,22 @@ namespace aria {
         [[nodiscard]]
         bool run_binary_f64(f64 lhs, f64 rhs) const;
 
-        // 九个二元算子的执行体(算术/比较 block 唯一入口):非对象左值委托 run_binary_numeric,
-        // 对象左值取算子实现后交 call_value(调用区 [lhs, rhs] 即 [this, arg1],槽 0 保持 receiver)。
-        // peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配与 miss fail。
+        // 九个二元算子的执行体(算术/比较 block 唯一入口):两侧均 String 走 run_string_binary 就地
+        // 完成;其余非对象左值委托 run_binary_numeric,对象左值取算子实现后交 call_value(调用区
+        // [lhs, rhs] 即 [this, arg1])。peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配。
         template<OpCode Op>
         bool run_binary_operator();
+
+        // string 快路径派发门(lhs 非空,调用方已判 is_obj;白名单收在本方法:ADD 与四个字序比较,
+        // 其余算子恒 false):两侧均 String 交 run_string_binary 就地完成;返回 true = 已派发,
+        // false = 不适用落原路(非失败)。定义在 .cpp(实例化点全在本 TU)。
+        template<OpCode Op>
+        bool try_string_fast_dispatch(Object* lhs);
+
+        // string 算子快路径(白名单收在 try_string_fast_dispatch):[lhs, rhs] -> [r],就地拼接/按
+        // 无符号字节序比较,语义与 StringClass 对应钩子逐位一致;定义在 .cpp(实例化点全在本 TU)。
+        template<OpCode Op>
+        bool run_string_binary(ObjString* lhs, ObjString* rhs);
 
         // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负,对象左值取 __neg__ 实现后调用(一元恒零
         // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。

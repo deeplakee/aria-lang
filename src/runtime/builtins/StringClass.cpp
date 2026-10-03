@@ -2,6 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "memory/StringBuilder.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjString.hpp"
@@ -42,13 +43,14 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            String out{self->view()};
+            // builder 累积全程零 GC 点,唯一 GC 点在 take_string(此刻 receiver 留槽 0 为根)。
+            auto out = StringBuilder{vm.gc(), self->view()};
             for (char& c: out) {
                 if (c >= 'a' && c <= 'z') {
                     c = static_cast<char>(c - 'a' + 'A');
                 }
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), out));
+            slots[0] = Value::from_obj(out.take_string());
             return true;
         }
 
@@ -62,13 +64,14 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            String out{self->view()};
+            // builder 累积全程零 GC 点,唯一 GC 点在 take_string(此刻 receiver 留槽 0 为根)。
+            auto out = StringBuilder{vm.gc(), self->view()};
             for (char& c: out) {
                 if (c >= 'A' && c <= 'Z') {
                     c = static_cast<char>(c - 'A' + 'a');
                 }
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), out));
+            slots[0] = Value::from_obj(out.take_string());
             return true;
         }
 
@@ -209,41 +212,43 @@ namespace aria {
         }
 
         // replace(old, new) -> 新串:全部替换;匹配串为空报 EmptyPattern。
-        // 拼接在非 GC 的 C++ String,唯一分配点末尾一次铸造(此刻所有实参仍在槽位)。
         bool fn_replace(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
                 return vm.arity_error(argc, 2);
             }
-            const auto old_str = try_as_obj<ObjString>(slots[1]);
-            const auto new_str = try_as_obj<ObjString>(slots[2]);
-            if (old_str == nullptr || new_str == nullptr) {
+            const auto pattern     = try_as_obj<ObjString>(slots[1]);
+            const auto replacement = try_as_obj<ObjString>(slots[2]);
+            if (pattern == nullptr || replacement == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "replace arguments must be strings, got {} and {}",
                                type_name(slots[1]), type_name(slots[2]));
             }
-            if (old_str->length() == 0) {
+            if (pattern->length() == 0) {
                 return vm.fail(ErrorCode::EmptyPattern, "replace pattern must not be empty");
             }
             const auto self = receiver<ObjString>(vm, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            const StringView src   = self->view();
-            const StringView old_v = old_str->view();
-            const StringView new_v = new_str->view();
-            String           out;
-            usize            begin = 0;
-            while (true) {
-                const usize hit = src.find(old_v, begin);
-                if (hit == StringView::npos) {
-                    out += src.substr(begin);
-                    break;
-                }
-                out += src.substr(begin, hit - begin);
-                out += new_v;
-                begin = hit + old_v.size();
+            // 两遍式(与 join 预扫同口):先 find 数命中定精确输出长(命中不重叠,匹配串占位恒不超
+            // 原长,差值式无下溢),再填充。拼接在 GC 记账 builder,唯一 GC 点在 take_string(此刻
+            // 所有实参仍在槽位)。
+            const StringView src     = self->view();
+            const StringView pat     = pattern->view();
+            const StringView rep     = replacement->view();
+            usize            matches = 0;
+            for (usize hit = 0; (hit = src.find(pat, hit)) != StringView::npos; hit += pat.size()) {
+                ++matches;
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), out));
+            auto out = StringBuilder{vm.gc()};
+            out.reserve(src.size() - matches * pat.size() + matches * rep.size());
+            usize begin = 0;
+            for (usize hit = 0; (hit = src.find(pat, begin)) != StringView::npos; begin = hit + pat.size()) {
+                out.append(src.substr(begin, hit - begin));
+                out.append(rep);
+            }
+            out.append(src.substr(begin));
+            slots[0] = Value::from_obj(out.take_string());
             return true;
         }
 
@@ -551,8 +556,8 @@ namespace aria {
         }
 
         // __mul__ -> 新串:整次重复(字节域整段复制,多字节序列原样成倍,0 次得空串);乘数严格 int,
-        // 负数报错不静默得空。结果经 new_string 驻留(同内容必同指针);累积进非 GC 的 C++ String,
-        // 唯一分配点在末尾铸造(receiver 占 slots[0])。
+        // 负数报错不静默得空。结果经 new_string 驻留(同内容必同指针);重复在 GC 记账 builder 累积,
+        // take_string 零拷贝接管(唯一 GC 点在其内部,receiver 占 slots[0])。
         bool fn___mul__(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -575,11 +580,16 @@ namespace aria {
             } else if (count == 1) {
                 slots[0] = Value::from_obj(self); // 等内容必命中驻留,即 self 本体
             } else {
-                const auto src = self->view();
-                const auto out = util::repeat_string(src, count);
-                // 续算:首份拷贝终态即 hash(a),续算其余各份(count >= 2 已由上方分叉保证)。
-                const u32 hash = util::hash_str(self->hash(), StringView{out}.substr(src.size()));
-                slots[0]       = Value::from_obj(new_string(vm.gc(), out, hash));
+                const auto src    = self->view();
+                const auto copies = static_cast<usize>(count);
+                auto       out    = StringBuilder{vm.gc()};
+                out.reserve(src.size() * copies);
+                for (usize i = 0; i < copies; ++i) {
+                    out.append(src);
+                }
+                // 续算:首份拷贝终态即 hash(a),续算其余各份得整串终态。
+                const auto rest = out.view().substr(src.size());
+                slots[0]        = Value::from_obj(out.take_string(util::hash_str(self->hash(), rest)));
             }
             return true;
         }

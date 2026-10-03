@@ -5,6 +5,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "memory/StringBuilder.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
@@ -111,17 +112,17 @@ namespace aria {
     Opt<Value> ObjString::op_greater_equal_impl(AriaVM& vm) { return vm.register_value(kStringGeFnOffset); }
 
     Opt<Value> ObjString::slice(AriaVM& vm, const ObjRange* range) const {
-        // 段内容先拷进非 GC 的 C++ String 再铸串:receiver 与 range 经调用方值栈为根,new_string 顶部
-        // maybe_collect 时安全;倒序段在拷贝上按字节反转(字节域)。段解析收口 resolve_slice_bounds。
+        // 段内容拷进 GC 记账 builder(带种串构造单发定容),倒序段在 builder 上按字节反转(字节域);
+        // receiver 与 range 经调用方值栈为根,唯一 GC 点在 take_string。段解析收口 resolve_slice_bounds。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
             return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
-        String buffer{view().substr(segment->start, segment->count)};
+        auto buffer = StringBuilder{vm.gc(), view().substr(segment->start, segment->count)};
         if (segment->is_reversed) {
             std::ranges::reverse(buffer);
         }
-        return Value::from_obj(new_string(vm.gc(), buffer));
+        return Value::from_obj(buffer.take_string());
     }
 
     ObjString* new_string(GC& gc, const StringView src) { return new_string(gc, src, util::hash_str(src)); }

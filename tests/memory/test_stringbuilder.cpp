@@ -15,16 +15,17 @@ using aria::StringBuilder;
 using aria::StringView;
 using aria::util::hash_str;
 
-TEST(StringBuilder, AppendGrowsAcrossDoubling) {
+TEST(StringBuilder, AppendGrowsExactWithoutReserve) {
     GC            gc;
     StringBuilder sb{gc};
-    const String  piece(100, 'x'); // 跨 64/128/... 多次倍增边界
+    const String  piece(100, 'x'); // 未 reserve 逐片追加:扩容精确按需
     const String  expected(1000, 'x');
     for (int i = 0; i < 10; ++i) {
         sb.append(piece);
     }
     EXPECT_EQ(sb.view().size(), 1000);
     EXPECT_EQ(sb.view(), StringView{expected});
+    EXPECT_EQ(gc.bytes_allocated(), 1001); // 无空余:终态账 = 内容 + 终态 '\0' 位
 }
 
 TEST(StringBuilder, TakeStringLongHandsOffBuffer) {
@@ -73,7 +74,7 @@ TEST(StringBuilder, TakeThenReuse) {
     auto* first = sb.take_string();
     EXPECT_EQ(first->view(), "first round content");
     sb.append("second round");
-    sb.append('!');
+    sb.append("!");
     auto* second = sb.take_string();
     EXPECT_EQ(second->view(), "second round!");
     EXPECT_EQ(second->hash(), hash_str("second round!"));
@@ -112,4 +113,41 @@ TEST(StringBuilder, TakeUnderStressGc) {
     auto  guard = gc.make_guard(s);
     std::ignore = new_string(gc, "trigger");
     EXPECT_EQ(s->view(), StringView{content});
+}
+
+TEST(StringBuilder, MutableIterationRewritesInPlace) {
+    GC            gc;
+    StringBuilder sb{gc};
+    sb.append("hello");
+    for (char& c: sb) {
+        if (c >= 'a' && c <= 'z') {
+            c = static_cast<char>(c - 'a' + 'A');
+        }
+    }
+    EXPECT_EQ(sb.size(), 5);
+    EXPECT_EQ(sb.view(), StringView{"HELLO"});
+    EXPECT_EQ(sb.take_string()->view(), "HELLO"); // 就地改写不涉哈希失效:take 按当时内容重算
+}
+
+TEST(StringBuilder, TakeStringWithKnownHash) {
+    GC            gc;
+    const String  content(1000, 'y');
+    StringBuilder sb{gc};
+    sb.reserve(content.size()); // 精确 reserve:分配口径含终态位,take 长臂为同尺寸 realloc
+    sb.append(content);
+    auto* s = sb.take_string(hash_str(StringView{content})); // 调用方已持内容终态哈希
+    EXPECT_EQ(s->hash(), hash_str(StringView{content}));
+    EXPECT_EQ(new_string(gc, content), s); // 与免重算的整算版驻留同指针
+}
+
+TEST(StringBuilder, SeedConstructorAppendsContent) {
+    GC            gc;
+    StringBuilder empty{gc, StringView{}}; // 空种串 = 空态
+    EXPECT_EQ(empty.size(), 0);
+    StringBuilder sb{gc, "seed"};
+    EXPECT_EQ(sb.size(), 4);
+    EXPECT_EQ(sb.view(), StringView{"seed"});
+    sb.append("-more"); // 种后可续 append
+    EXPECT_EQ(sb.view(), StringView{"seed-more"});
+    EXPECT_EQ(sb.take_string()->view(), "seed-more");
 }

@@ -264,9 +264,9 @@ namespace aria {
 
         // join 的负载:Value 元素序列 -> 单串。量长走元素自有数据(串元素读长度字段零字节触碰,
         // 非串元素渲染后取长 -- 扁平类型实测与渲染一次加存一份平价,嵌套容器才现双渲差价);分隔
-        // 贡献循环外一次算清(n 个元素恰 n-1 个间隔);reserve(+1 为终态 '\0' 位)后填充,串元素
-        // 直写 view 免临时串。GC 走查:builder 为 raw buffer 零 GC 点,唯一 GC 点在 take_string 的
-        // new_object 顶部,list/sep 由调用方经值栈保活。
+        // 贡献循环外一次算清(n 个元素恰 n-1 个间隔);reserve 精确定容(终态 '\0' 位由 builder 分配
+        // 口径自带)后填充,串元素直写 view 免临时串。GC 走查:builder 为 raw buffer 零 GC 点,唯一
+        // GC 点在 take_string 的 new_object 顶部,list/sep 由调用方经值栈保活。
         ObjString* join_string_value(GC& gc, const AriaArray& list, const StringView sep) {
             usize total = 0;
             for (const auto& element: list) {
@@ -281,7 +281,7 @@ namespace aria {
             }
 
             auto builder = StringBuilder{gc};
-            builder.reserve(total + 1);
+            builder.reserve(total);
             bool first = true;
             for (const auto& element: list) {
                 if (!first) {

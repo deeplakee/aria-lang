@@ -125,19 +125,6 @@ namespace aria::util {
         return out;
     }
 
-    // 把 src 原样重复 count 份:resize_and_overwrite 单次定容、免零填充,lambda 内逐段 memcpy。
-    [[nodiscard]]
-    inline String repeat_string(const StringView src, const i64 count) {
-        String out;
-        out.resize_and_overwrite(src.size() * static_cast<usize>(count), [&](char* dst, const usize size) {
-            for (usize offset = 0; offset < size; offset += src.size()) {
-                std::memcpy(dst + offset, src.data(), src.size());
-            }
-            return size;
-        });
-        return out;
-    }
-
     // 按"高位在前、每 group_bits 位一组、空格分隔"打印底层字节;group_bits 传 0 或负数则不分隔。
     template<typename T>
     void print_binary(const T& value, const int group_bits = 8) {

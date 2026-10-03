@@ -1,0 +1,20 @@
+// 钉 __lt__ 返回非 bool 时 if 条件的真值性判定:比较结果按 is_truthy 分派,
+// 与全语言口径一致 -- 仅 nil 与 false 为假,Int 0 为真。
+def Gauge {
+    init(v) { this.v = v; }
+    __lt__(other) { return this.v - other.v; } // 差值 int:负/零/正三态都进条件判定
+}
+
+var hits = 0;
+var a = Gauge(1);
+var b = Gauge(2);
+if (a < b) {
+    hits += 1; // -1 -> 真
+}
+if (b < a) {
+    hits += 10; // 1 -> 真
+}
+if (Gauge(5) < Gauge(5)) {
+    hits += 100; // 0 -> 真(钉「仅 nil/false 为假」,非「零为假」)
+}
+assert(hits == 111);

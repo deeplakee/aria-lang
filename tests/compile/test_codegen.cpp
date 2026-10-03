@@ -1091,8 +1091,7 @@ TEST(CodeGen, DefaultParamPrologueDisassembly) {
     EXPECT_NE(text.find("LOAD_LOCAL_2"), aria::String::npos); // 缺省槽 2 经 N 短变体读印章
     EXPECT_NE(text.find("LOAD_REG"), aria::String::npos);
     EXPECT_NE(text.find("DefaultMark"), aria::String::npos); // 寄存器可读名入反汇编注释
-    EXPECT_NE(text.find("EQUAL"), aria::String::npos);
-    EXPECT_NE(text.find("JUMP_FALSE"), aria::String::npos);
+    EXPECT_NE(text.find("JUMP_NE"), aria::String::npos); // 印章判等融合(原 EQUAL + JUMP_FALSE)
     EXPECT_NE(text.find("STORE_LOCAL_2"), aria::String::npos);
 }
 
@@ -1236,15 +1235,14 @@ TEST(CodeGen, MatchDisassembly) {
     )");
     ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
     const auto text = compiled->unit().disassemble("<test>");
-    // 逐臂链形态:每臂 DUP -> EQUAL -> JUMP_FALSE(未命中) -> POP(丢弃 subject) -> 臂体;
-    // 兜底 LOAD_REG MatchNoArm -> THROW 相邻。
-    EXPECT_TRUE(lines_adjacent(text, "EQUAL", "JUMP_FALSE"));
-    EXPECT_TRUE(lines_adjacent(text, "JUMP_FALSE", "POP"));
+    // 逐臂链形态:每臂 DUP -> 字面 -> JUMP_NE(未命中跳下一臂,判等融合) -> POP(丢弃
+    // subject) -> 臂体;兜底 LOAD_REG MatchNoArm -> THROW 相邻。
+    EXPECT_TRUE(lines_adjacent(text, "JUMP_NE", "POP"));
     EXPECT_TRUE(lines_adjacent(text, "LOAD_REG", "THROW"));
     EXPECT_NE(text.find("MatchNoArm"), aria::String::npos);
     // 链先于兜底,兜底先于 L_end 汇合。
     EXPECT_LT(text.find("DUP"), text.find("LOAD_REG"));
-    EXPECT_LT(text.find("JUMP_FALSE"), text.find("LOAD_REG"));
+    EXPECT_LT(text.find("JUMP_NE"), text.find("LOAD_REG"));
 }
 
 // ============================================================
@@ -2297,6 +2295,55 @@ TEST(CodeGen, DestructureFillZeroAccessPopsSource) {
     auto wild = compile_only("var [_, _] = [1];");
     ASSERT_TRUE(wild.has_value());
     EXPECT_EQ(wild->unit().disassemble("<test>").find("LOAD_INDEX"), aria::String::npos);
+}
+
+// ============================================================
+// 条件跳转融合(JUMP_NE)
+// ============================================================
+
+// 条件恰为 `==` 二元:直发融合指令(判等,不等则跳),不再有独立 EQUAL 与 JUMP_FALSE。
+TEST(CodeGen, CondJumpFusesPlainEquality) {
+    auto compiled = compile_only("var a = 1; var b = 2; if (a == b) { a = 1; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "JUMP_NE"), 1);
+    EXPECT_EQ(count_occurrences(text, "JUMP_FALSE"), 0); // 融合后无独立 JUMP_FALSE 残留
+    EXPECT_EQ(count_occurrences(text, "EQUAL"), 0);
+}
+
+// `||` 链里的 `==` 不是本次跳转的直接条件(值是链的中间结果):不得融合 -- 按尾字节误融合
+// 会双弹操作数、还覆盖 || 已回填的链尾补丁地址(brainfuck 负载实测踩中)。
+TEST(CodeGen, CondJumpNotFusedInsideOrChain) {
+    auto compiled = compile_only("var a = 1; if (a == 1 || a == 2) { a = 1; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "JUMP_NE"), 0);
+    EXPECT_EQ(count_occurrences(text, "EQUAL"), 2); // 链内判等保持原样
+    EXPECT_GE(count_occurrences(text, "JUMP_TRUE_OR_POP"), 1);
+    EXPECT_GE(count_occurrences(text, "JUMP_FALSE"), 1); // if 语句吃链尾 bool 的假跳
+}
+
+// LESS 尾不融合(设计边界:对象 __lt__ 钩子路径久帧,单指令无法跨帧完成跳转判定),
+// 保持两指令序列。
+TEST(CodeGen, CondJumpNotFusedOnLess) {
+    auto compiled = compile_only("var a = 1; var b = 2; if (a < b) { a = 1; }");
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "JUMP_NE"), 0);
+    EXPECT_EQ(count_occurrences(text, "LESS"), 1);
+    EXPECT_EQ(count_occurrences(text, "JUMP_FALSE"), 1);
+}
+
+// 融合臂与两指令序列逐语义等价:真走 then、假走 else;match 臂判等与缺省参数印章判等
+// 也按构造直发融合形,一并钉行为。
+TEST(CodeGen, CondJumpFusedSemantics) {
+    EXPECT_EQ(run_int("if (1 == 1) { return 7; } return 8;"), 7);
+    EXPECT_EQ(run_int("if (1 == 2) { return 7; } return 8;"), 8);
+    EXPECT_EQ(run_int("var x = 3; if (x == 1 || x == 3) { return 9; } return 8;"), 9);
+    EXPECT_EQ(run_int("fun f(a = 5) { return a; } return f();"), 5);
+    EXPECT_EQ(run_int("fun f(a = 5) { return a; } return f(3);"), 3);
+    EXPECT_EQ(run_int("return match (2) { 1 => 10, 2 => 20, _ => 30 };"), 20);
+    EXPECT_EQ(run_int("return match (9) { 1 => 10, 2 => 20, _ => 30 };"), 30);
 }
 
 // Store（解构赋值）：源值恒驻栈顶，每次访问前 DUP 一份（LOAD_INDEX 会吃掉源与下标两值）；

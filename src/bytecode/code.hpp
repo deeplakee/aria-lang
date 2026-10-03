@@ -88,6 +88,8 @@ namespace aria {
     X(JUMP_FALSE, JumpFwd)                 \
     X(JUMP_FALSE_OR_POP, JumpFwd)          \
     X(JUMP_BACK, JumpBack)                 \
+    /* fused compare-jump forms */         \
+    X(JUMP_NE, JumpFwd)                    \
     /* ---- functions & closures ---- */   \
     X(CALL, U8)                            \
     X(CLOSURE, ConstU16)                   \

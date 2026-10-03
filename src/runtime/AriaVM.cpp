@@ -886,7 +886,7 @@ namespace aria {
             const auto list = target->as<ObjList>();
             if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
                 list->elements()[*slot] = value;
-                current_->peek(2) = value;
+                current_->peek(2)       = value;
                 current_->drop(2);
                 return true;
             }
@@ -1411,6 +1411,18 @@ namespace aria {
                     frame->ip -= off;
                     // safe point:循环回边触发回收;maybe_collect 不移动值栈/帧,frame 指针跨调用有效。
                     gc_.maybe_collect();
+                    break;
+                }
+                case OpCode::JUMP_NE: {
+                    // 融合形(EQUAL;JUMP_FALSE):[a, b] -> [];判等与 EQUAL 同走 value_equal,
+                    // 假则前跳。仅 EQUAL 入融合:比较面里只有它纯结构判等、永不久帧(LESS 可经
+                    // 对象 __lt__ 钩子把控制流转移进被调帧,单指令内无法跨帧边界完成跳转判定)。
+                    const u16   off = read_u16(frame);
+                    const Value b   = current_->pop();
+                    const Value a   = current_->pop();
+                    if (!value_equal(a, b)) {
+                        frame->ip += off;
+                    }
                     break;
                 }
 

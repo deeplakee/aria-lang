@@ -266,6 +266,22 @@ namespace aria {
         }
     }
 
+    u32 CodeGen::emit_cond_jump(ExprNode& cond, const u32 line) {
+        // 条件跳转发射收口:条件恰为 `==` 二元时直发融合指令 JUMP_NE(与
+        // [cond][JUMP_FALSE] 逐语义等价,省一次派发往返);其余形态原样 [cond][JUMP_FALSE]。
+        // 融合判定必须在 AST 形状上做 -- 发射期「尾字节恰为 EQUAL」不等于「该 EQUAL 的值即
+        // 本次条件」(|| 链 rhs 的 EQUAL 与外层跳转之间隔着值消费关系,按尾字节误融合会双弹
+        // 操作数、还覆盖 || 已回填的链尾补丁地址)。
+        if (const auto* eq = dynamic_cast<const BinaryExprNode*>(&cond);
+            eq != nullptr && eq->op == Op::Binary::EqualEqual) {
+            emit_expr(*eq->lhs);
+            emit_expr(*eq->rhs);
+            return cur_cu()->emit_jump(OpCode::JUMP_NE, line);
+        }
+        emit_expr(cond);
+        return cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+    }
+
     void CodeGen::emit_jump_back_or_fail(const u32 target_off, const SourceLoc loc) const {
         if (!cur_cu()->emit_jump_back(target_off, loc.line())) {
             fail(ErrorCode::CodeUnitTooLarge, loc, "function too large: backward jump offset exceeds {}",
@@ -470,8 +486,7 @@ namespace aria {
                 cur_cu()->emit_load_local(slot, line);
                 cur_cu()->emit_op(OpCode::LOAD_REG, line);
                 cur_cu()->emit_byte(kDefaultMarkOffset, line);
-                cur_cu()->emit_op(OpCode::EQUAL, line);
-                const u32 skip = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+                const u32 skip = cur_cu()->emit_jump(OpCode::JUMP_NE, line);
                 emit_expr(*param.default_value);
                 cur_cu()->emit_store_local(slot, line); // peek-store 换入参数槽
                 cur_cu()->emit_op(OpCode::POP, line);   // STORE_LOCAL 不弹,弹掉求值副本恢复「栈高 == 已填槽数」
@@ -570,8 +585,7 @@ namespace aria {
 
     void CodeGen::visitIfStmtNode(IfStmtNode& node) {
         const u32 line = node.line();
-        emit_expr(*node.condition);
-        const u32 jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else / end
+        const u32 jf   = emit_cond_jump(*node.condition, line); // -> else / end
         emit_stmt(*node.then_branch);
         if (node.else_branch != nullptr) {
             const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
@@ -587,8 +601,7 @@ namespace aria {
         const u32 line     = node.line();
         auto      loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
                                      .back_target      = cur_cu()->size()}; // 循环头 = 条件起点 = continue 后向目标
-        emit_expr(*node.condition);
-        const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+        const u32 patch    = emit_cond_jump(*node.condition, line);         // -> L_end 占位
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
@@ -612,8 +625,7 @@ namespace aria {
             loop_ctx.continue_fwd_patches.emplace(); // 打开前向 continue 通道
         }
         if (has_cond) {
-            emit_expr(*node.condition);
-            const u32 patch = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> L_end 占位
+            const u32 patch = emit_cond_jump(*node.condition, line); // -> L_end 占位
             loop_ctx.exit_fwd_patches.push_back(patch);
         } // 无 cond: exit 列表空，收尾只有回边 + break 回填
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
@@ -789,12 +801,10 @@ namespace aria {
             if (const auto taken = util::take(miss_jump)) {
                 patch_jump_or_fail(*taken, node.loc()); // 上臂未命中 -> 本臂
             }
-            if (pattern.value != nullptr) {             // "_" 通配:不比较直入
-                cur_cu()->emit_op(OpCode::DUP, line);   // [s, s] 副本供比较,subject 本尊保留
-                emit_expr(*pattern.value);              // [s, s, p]
-                cur_cu()->emit_op(OpCode::EQUAL, line); // [s, bool]
-                // 未命中 -> 下臂
-                miss_jump = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line);
+            if (pattern.value != nullptr) {           // "_" 通配:不比较直入
+                cur_cu()->emit_op(OpCode::DUP, line); // [s, s] 副本供比较,subject 本尊保留
+                emit_expr(*pattern.value);            // [s, s, p]
+                miss_jump = cur_cu()->emit_jump(OpCode::JUMP_NE, line);
             }
             cur_cu()->emit_op(OpCode::POP, line); // 命中:[s] -> [] 丢弃 subject 进臂体
             emit_arm_body(*body);
@@ -1222,8 +1232,7 @@ namespace aria {
 
     void CodeGen::visitIfExprNode(IfExprNode& node) {
         const u32 line = node.line();
-        emit_expr(*node.condition);
-        const u32 jf = cur_cu()->emit_jump(OpCode::JUMP_FALSE, line); // -> else
+        const u32 jf   = emit_cond_jump(*node.condition, line); // -> else
         emit_expr(*node.then_branch);
         const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
         // -> else

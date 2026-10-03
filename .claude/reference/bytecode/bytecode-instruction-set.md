@@ -23,14 +23,14 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 算术/比较/逻辑 | `EQUAL` `NOT_EQUAL` `STRICT_EQUAL` `STRICT_NOT_EQUAL` `GREATER` `GREATER_EQUAL` `LESS` `LESS_EQUAL` `ADD` `SUBTRACT` `MULTIPLY` `DIVIDE` `MOD` `NOT` `NEGATE` |
 | 栈操作 | `POP` `POP_N` `DUP` `DUP2` |
 | 调试 | `NOP` |
-| 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` |
+| 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` `JUMP_NE` |
 | 函数/闭包 | `CALL` `CLOSURE` |
 | 类/对象 | `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `PREPARE_METHOD` `CALL_METHOD` `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` |
 | 模块导入 | `IMPORT` |
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
 
-`u8` 上限 256，当前 77 条，扩空间充裕。
+`u8` 上限 256，当前 78 条，扩空间充裕。
 
 ### 1.2 已定决策
 
@@ -71,7 +71,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 **局部槽 -- N 短变体 + `u16` 通用**：`LOAD_LOCAL`/`STORE_LOCAL` 为通用形态（`slot:u16`，3B）；槽 1..8 编译器直接发零操作数短变体 `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8`（1B，槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射侧按枚举差换算 opcode、VM 侧逐 case 写死槽号常量）。槽号在编译器分配槽时就确定，**发射时即定形态、无需回填**；槽 0（哑元/this）与 >8 走通用形态，`u16` = 65535 槽无硬上限。
 
-**跳转 -- `u16` + 方向拆分（无长变体）**：偏移 `u16` 无符号，方向编码于 opcode：前向（`ip += off`）`JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`，后向（`ip -= off`）`JUMP_BACK`（仅此一条、且无条件）。依据：aria 只有 `while`/`for`/`for-in` 三种循环（文法无 `do-while`/`repeat-until`），回边恒为「循环体末尾无条件跳回条件判断处」-- 后向跳转天然恒无条件；条件跳转（`if`/`while` 条件、`&&`/`||` 短路、`match`）恒前向。故前向/后向各分得完整 `u16` 量程（64KB，约 26K 指令），无需有符号 `i16` 的 ±32KB，也无需 `_L` 长变体与分支松弛。
+**跳转 -- `u16` + 方向拆分（无长变体）**：偏移 `u16` 无符号，方向编码于 opcode：前向（`ip += off`）`JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`/`JUMP_NE`，后向（`ip -= off`）`JUMP_BACK`（仅此一条、且无条件）。依据：aria 只有 `while`/`for`/`for-in` 三种循环（文法无 `do-while`/`repeat-until`），回边恒为「循环体末尾无条件跳回条件判断处」-- 后向跳转天然恒无条件；条件跳转（`if`/`while` 条件、`&&`/`||` 短路、`match`）恒前向。故前向/后向各分得完整 `u16` 量程（64KB，约 26K 指令），无需有符号 `i16` 的 ±32KB，也无需 `_L` 长变体与分支松弛。
 
 | 操作数 | 何时可知 | 策略 |
 | :--- | :--- | :--- |
@@ -248,8 +248,15 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `JUMP_TRUE_OR_POP` | `off:u16` | `[v] -> [v]`（真，跳）/ `[v] -> []`（假，落空） | 真则**跳且留值**（结果即 `v`），假则弹落空。用于 `||` 短路 |
 | `JUMP_FALSE_OR_POP` | `off:u16` | `[v] -> [v]`（假，跳）/ `[v] -> []`（真，落空） | 假则**跳且留值**（结果即 `v`），真则弹落空。用于 `&&` 短路 |
 | `JUMP_BACK` | `off:u16` | `... -> ...` | 后向无条件跳 `ip -= off`；while/for/for-in 回边、`continue` |
+| `JUMP_NE` | `off:u16` | `[a, b] -> []` | `EQUAL;JUMP_FALSE` 融合形：`value_equal` 判等，假则前向跳 |
 
 `_OR_POP` 变体（"命中跳，否则弹"）保证短路时被测值本身成为表达式结果（`a && b` 当 `a` 假时结果为 `a`，无需重压）；落空分支弹掉被测值，使跳/落空两路在汇合点栈深一致。`if`/`while` 等条件判断用弹出版 `JUMP_TRUE`/`JUMP_FALSE`。
+
+**比较跳转融合形（仅 EQUAL）**：`JUMP_NE` 是 `EQUAL;JUMP_FALSE` 相邻对的等价单指令化，省一次派发往返，吸收三类站点：条件表达式恰为 `==` 二元的条件跳转站（`if`/`while`/`for` 条件、三元 `if` 表达式，经 `CodeGen::emit_cond_jump` 收口）、`match` 臂判等与缺省参数印章判等（两处自产 EQUAL，按构造直发融合形）；`for-in` 的 `has_next` 等调用结果条件不融合。
+
+融合判定必须在 **AST 形状**上做，不能看发射期尾字节：「流末字节恰为 EQUAL」不等于「该 EQUAL 的值即本次跳转条件」-- `||` 链 rhs 的 `==` 以 EQUAL 结尾，紧接着外层条件跳转发射，但那个 EQUAL 的值是链的中间结果而非跳转条件；按尾字节改写会双弹操作数、还把跳转占位覆写到 `||` 已回填的链尾补丁地址上（brainfuck 负载实测踩中）。故非 `==` 直连的条件一律保持 `[cond][JUMP_FALSE]` 两指令序列。VM 侧与两指令序列逐项等价：`value_equal` 判等、假则前跳。
+
+**`LESS;JUMP_FALSE` 有意不融合**（设计边界，勿再立项）：`LESS` 的对象臂可经 `__lt__` 钩子把控制流转移进被调帧（`call_value` 进帧即返，被调体在下一轮 dispatch 循环才执行），「比较 + 按结果跳转」无法在单条指令的一个 case 执行内跨帧边界完成；数值与 string 快路径虽可就地完成，但发射期无从预知接收者类型，故 `LESS` 尾一律保持两指令序列。
 
 各 `JUMP*` 前向、`JUMP_BACK` 后向（方向在 opcode，偏移恒 `u16` 无符号，各 64KB 量程）。后向跳转恒无条件：aria 只有 `while`/`for`/`for-in`（无 `do-while`），回边即循环体末尾跳回条件判断处，天然无条件；条件跳转恒前向（§2.3）。
 

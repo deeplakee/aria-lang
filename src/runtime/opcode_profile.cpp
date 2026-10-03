@@ -166,6 +166,11 @@ namespace aria {
                     ++pairs_[index][start[3]];
                 }
                 break;
+            // 融合条件跳转(JUMP_NE):u16 操作数,但条件要等判等执行后才在栈上
+            // 形成,取指点无从按极性判走向 -- 不记命中率与出边对(该指令的存在本身即吸收了
+            // EQUAL;JUMP_FALSE 对),指令量照常入 counts_。
+            case OpCode::JUMP_NE:
+                break;
             // 无账指令:无操作数,且出边由目的地记账(帧切换)或不存在(运算/栈操作/运行终点)。
             case OpCode::HALT:
             case OpCode::LOAD_NIL:

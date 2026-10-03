@@ -170,6 +170,13 @@ namespace aria {
         // 越界 fail CodeUnitTooLarge。
         void patch_jump_or_fail(u32 src_off, SourceLoc loc) const;
 
+        // 条件跳转发射收口:条件恰为 `==` 二元时直发融合指令 JUMP_NE(与
+        // [cond][JUMP_FALSE] 逐语义等价,省一次派发往返);其余形态原样 [cond][JUMP_FALSE]。
+        // 融合判定必须在 AST 形状上做 -- 发射期「尾字节恰为 EQUAL」不等于「该 EQUAL 的值即
+        // 本次条件」(|| 链 rhs 的 EQUAL 与外层跳转之间隔着值消费关系,按尾字节误融合会双弹
+        // 操作数、还覆盖 || 已回填的链尾补丁地址)。返回占位偏移,契约同 emit_jump。
+        u32 emit_cond_jump(ExprNode& cond, u32 line);
+
         void emit_jump_back_or_fail(u32 target_off, SourceLoc loc) const;
 
         // 循环收尾：先发 JUMP_BACK 回边（目标 back_target），再回填 exit -> L_end。for 的 continue

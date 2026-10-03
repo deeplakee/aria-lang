@@ -341,8 +341,10 @@ namespace aria {
             return true;
         }
 
-        // chars() -> list<string>:逐码点 1-char string 快照(码点域访问口,码点数即 chars().size());
-        // 非法字节产出替换码点串(只吞一个坏字节)。GC 约束:receiver 留 slots[0],新 list 挂临时根,循环结束写回槽发布。
+        // chars() -> list<string>:逐码点 1-char string 快照(码点域访问口,码点数即 chars().size())。
+        // 内容零重生:decode 只为拿宽度,合法字符直接切 src 原字节(免 decode->encode 往返的临时串);
+        // 非法字节(宽度 1 却非 ASCII)走 encode(U+FFFD) 保替换码点串语义(冷路径)。GC 约束:receiver
+        // 留 slots[0],新 list 挂临时根,循环结束写回槽发布。
         bool fn_chars(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
@@ -356,10 +358,17 @@ namespace aria {
             const auto list  = new_list(vm.gc());
             const auto guard = vm.gc().make_guard(list);
             for (usize offset = 0; offset < src.size();) {
+                const usize start      = offset;
                 const auto [cp, width] = utf8::decode_one(src, offset);
                 offset += width;
-                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。
-                list->elements().push(Value::from_obj(new_string(vm.gc(), utf8::encode(cp))));
+                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。合法宽 1 序列必为 ASCII
+                //(cp == lead < 0x80),故 cp >= 0x80 且宽 1 即坏字节;合法 U+FFFD 宽 3,原字节与
+                // encode 产物逐位相同。
+                if (width == 1 && cp >= 0x80) {
+                    list->elements().push(Value::from_obj(new_string(vm.gc(), utf8::encode(cp))));
+                } else {
+                    list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(start, width))));
+                }
             }
             slots[0] = Value::from_obj(list);
             return true;

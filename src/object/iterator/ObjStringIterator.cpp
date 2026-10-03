@@ -27,11 +27,17 @@ namespace aria {
             return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         // decode_one 恒返宽度 >= 1(offset < length 下,非法序列返 replacement 且宽 1),游标必进、不死循环。
+        // 内容零重生:合法字符直接切 str 原字节(同 fn_chars,decode 只为拿宽度);非法字节(宽度 1
+        // 却非 ASCII)走 encode(U+FFFD) 保替换码点串语义(冷路径),与 chars() 同一口径。
+        const usize start      = offset_;
         const auto [cp, width] = utf8::decode_one(str_->view(), offset_);
         offset_ += width;
         // GC 时序:迭代器于调用方 slots[0] 栈根、str 经其 trace 可达;new_string 的 maybe_collect 在
         // 新串诞生前完成,新串随返回值写回槽发布,窗口内无失根对象。
-        return Value::from_obj(new_string(vm.gc(), utf8::encode(cp)));
+        if (width == 1 && cp >= 0x80) {
+            return Value::from_obj(new_string(vm.gc(), utf8::encode(cp)));
+        }
+        return Value::from_obj(new_string(vm.gc(), str_->view().substr(start, width)));
     }
 
     ObjStringIterator* new_string_iterator(GC& gc, ObjString* str) { return gc.new_object<ObjStringIterator>(str); }

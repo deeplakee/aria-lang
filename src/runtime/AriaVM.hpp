@@ -52,6 +52,15 @@ namespace aria {
         LoadError,    // 源文件加载失败(仅 interpret_from_path:I/O 或 UTF-8 编码)
     };
 
+    // 值序列渲染拼串(join 与 BUILD_STRING 的公共底座):量长 reserve + 直写 + take_string 单次
+    // 分配,单元素处理(rendered_size/append_rendered)两形态共享。ObjString 元素直写 view 零渲染,
+    // 其余按 format_value 渲染两次(量长与填充各一,扁平类型平价、嵌套容器才现双渲差价)。
+    // GC:builder 零 GC 点,唯一 GC 点在 take_string 的 new_object 顶部,元素由调用方保活。
+    ObjString* concat_values(GC& gc, Span<const Value> values, StringView sep);
+
+    // 无分隔符形态(插值串收拢):元素直连,无 sep 相关路径与开销。
+    ObjString* concat_values(GC& gc, Span<const Value> values);
+
     // 解释器:驱动 ObjMovement 执行字节码,循环状态全取自 *current_;GC 根经 tracer 注册进自有
     // gc_(gc_ 声明居首,析构逆序下 tracer 与成员同生共死)。运行时错误统一 raise 入寄存器、
     // 经 unwind 查 CodeUnit 异常记录表派发。

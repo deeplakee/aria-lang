@@ -304,6 +304,33 @@ TEST_F(AriaVMStress, F64ConstantAndPromotion) {
     EXPECT_DOUBLE_EQ(out->as_f64(), 3.0);
 }
 
+TEST_F(AriaVMStress, BuildStringRendersSegments) {
+    // n:u8;[v1..vn] -> [str]:段序收拢,串段零渲染直写,非串段按 str() 同源渲染(int 与容器各一)。
+    auto&      gc    = vm.gc();
+    auto       fn    = new_function(gc, "<main>", 0);
+    auto       guard = gc.make_guard(fn);
+    auto&      cu    = fn->unit();
+    const auto lit_n = cu.add_constant(Value::from_obj(new_string(gc, "n=")));
+    const auto lit_l = cu.add_constant(Value::from_obj(new_string(gc, " list=")));
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(lit_n, 1); // "n="
+    emit_imm(cu, 3);        // int 段
+    cu.emit_op(OpCode::LOAD_CONST, 1);
+    cu.emit_word(lit_l, 1);           // " list="
+    emit_imm(cu, 1);                  // [.., 1]
+    emit_imm(cu, 2);                  // [.., 1, 2]
+    cu.emit_op(OpCode::MAKE_LIST, 1); // 容器段
+    cu.emit_word(2, 1);
+    cu.emit_op(OpCode::BUILD_STRING, 1);
+    cu.emit_byte(4, 1);
+    cu.emit_op(OpCode::RETURN, 1);
+
+    const auto out = vm.run(fn);
+    ASSERT_TRUE(out.has_value()) << out.error().message();
+    const auto s = out->as_obj()->as<ObjString>();
+    EXPECT_EQ(s->view(), "n=3 list=[1, 2]");
+}
+
 TEST_F(AriaVMStress, WhileLoopWithJumps) {
     // slot1 = i(3 递减), slot2 = acc;while i > 0 { acc += i; i -= 1 } 返回 acc = 3+2+1 = 6
     // 序言的两次 LOAD_NIL 预留局部区(slots[1..3)):槽 0 是 callee,临时值在保留区之上压栈不覆写局部。

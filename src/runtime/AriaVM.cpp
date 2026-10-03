@@ -12,6 +12,7 @@
 #include "bytecode/code.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
+#include "memory/StringBuilder.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
@@ -178,7 +179,60 @@ namespace aria {
             return std::format("{} arguments", count);
         }
 
+        // 单元素渲染长度:串元素读长度字段零字节触碰,其余渲染后取长(双渲取舍见 concat_values 头注)。
+        usize rendered_size(const Value element) {
+            if (const auto str = try_as_obj<ObjString>(element)) {
+                return str->view().size();
+            }
+            return format_value(element).size();
+        }
+
+        // 单元素直写:串元素直写 view 零渲染,其余渲染后追加。
+        void append_rendered(StringBuilder& builder, const Value element) {
+            if (const auto str = try_as_obj<ObjString>(element)) {
+                builder.append(str->view());
+            } else {
+                builder.append(format_value(element));
+            }
+        }
+
     } // namespace
+
+    ObjString* concat_values(GC& gc, const Span<const Value> values, const StringView sep) {
+        usize total = 0;
+        for (const auto& element: values) {
+            total += rendered_size(element);
+        }
+        if (!values.empty()) {
+            total += (values.size() - 1) * sep.size();
+        }
+
+        auto builder = StringBuilder{gc};
+        builder.reserve(total);
+        bool first = true;
+        for (const auto& element: values) {
+            if (!first) {
+                builder.append(sep);
+            }
+            first = false;
+            append_rendered(builder, element);
+        }
+        return builder.take_string();
+    }
+
+    ObjString* concat_values(GC& gc, const Span<const Value> values) {
+        usize total = 0;
+        for (const auto& element: values) {
+            total += rendered_size(element);
+        }
+
+        auto builder = StringBuilder{gc};
+        builder.reserve(total);
+        for (const auto& element: values) {
+            append_rendered(builder, element);
+        }
+        return builder.take_string();
+    }
 
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
@@ -1535,6 +1589,17 @@ namespace aria {
                         goto unwind_check;
                     }
                     break;
+                case OpCode::BUILD_STRING: {
+                    // n:u8;[v1..vn] -> [str]:插值串收拢,段值 peek 在栈(「栈即根」),拼接负载
+                    // 在 concat_values(渲染与 str()/println 同源),铸完 drop n 再 push(窗口内
+                    // 无 GC 点)。
+                    const u8   count  = read_u8(frame);
+                    const auto base   = current_->stack_top() - count;
+                    const auto result = concat_values(gc_, {base, count}, {});
+                    current_->drop(count);
+                    current_->push(Value::from_obj(result));
+                    break;
+                }
 
                 // 模块导入
                 case OpCode::IMPORT:

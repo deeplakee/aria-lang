@@ -100,7 +100,7 @@ namespace aria {
     X(TooManyArguments, Resource)  /* too many arguments (CALL operand is u8) */                                    \
     X(TooManyParameters, Resource) /* too many parameters (arity is u8) */                                          \
     X(TooManyUpvalues, Resource)   /* too many upvalues */                                                          \
-    X(TooManyElements, Resource)   /* too many elements (MAKE_LIST/MAKE_MAP operand is u16) */                      \
+    X(TooManyElements, Resource)   /* too many elements (MAKE_LIST/MAKE_MAP u16, BUILD_STRING u8) */                \
     X(SourceTooLarge, Resource)    /* single source file too large */
 
 #define ARIA_ERROR_ENUM(name, category) name,

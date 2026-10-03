@@ -4,7 +4,6 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
-#include "memory/StringBuilder.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjString.hpp"
@@ -262,42 +261,7 @@ namespace aria {
             return true;
         }
 
-        // join 的负载:Value 元素序列 -> 单串。量长走元素自有数据(串元素读长度字段零字节触碰,
-        // 非串元素渲染后取长 -- 扁平类型实测与渲染一次加存一份平价,嵌套容器才现双渲差价);分隔
-        // 贡献循环外一次算清(n 个元素恰 n-1 个间隔);reserve 精确定容(终态 '\0' 位由 builder 分配
-        // 口径自带)后填充,串元素直写 view 免临时串。GC 走查:builder 为 raw buffer 零 GC 点,唯一
-        // GC 点在 take_string 的 new_object 顶部,list/sep 由调用方经值栈保活。
-        ObjString* join_string_value(GC& gc, const AriaArray& list, const StringView sep) {
-            usize total = 0;
-            for (const auto& element: list) {
-                if (const auto str = try_as_obj<ObjString>(element)) {
-                    total += str->view().size();
-                } else {
-                    total += format_value(element).size();
-                }
-            }
-            if (!list.empty()) {
-                total += (list.size() - 1) * sep.size();
-            }
-
-            auto builder = StringBuilder{gc};
-            builder.reserve(total);
-            bool first = true;
-            for (const auto& element: list) {
-                if (!first) {
-                    builder.append(sep);
-                }
-                first = false;
-                if (const auto str = try_as_obj<ObjString>(element)) {
-                    builder.append(str->view());
-                } else {
-                    builder.append(format_value(element));
-                }
-            }
-            return builder.take_string();
-        }
-
-        // join(sep) -> string:负载在 join_string_value(预扫 reserve + 直写 + take_string 移交),
+        // join(sep) -> string:负载在 concat_values(量长 reserve + 直写 + take_string 移交),
         // 空 list 走同一路径得空串(sep 可为空串)。
         bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
@@ -312,7 +276,7 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(join_string_value(vm.gc(), self->elements(), sep->view()));
+            slots[0] = Value::from_obj(concat_values(vm.gc(), self->elements(), sep->view()));
             return true;
         }
 

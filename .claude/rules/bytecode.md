@@ -11,7 +11,7 @@ paths:
 
 ## `bytecode/code.hpp`
 
-**指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（当前 77 条，实测以注册表为准；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0；`kOpCodeCount == 77` 有测试哨兵）。
+**指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（当前 79 条，实测以注册表为准；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0；`kOpCodeCount == 79` 有测试哨兵）。
 
 - 表展开生成 `OpCode` 枚举 / `kOpCodeCount`（越界判定用，替代依赖枚举稠密）/ `kOpCodeNames` / `kOpCodeFormats`（`inline constexpr` 查表，供 Disassembler 等冷路径消费；VM 热路径不查表）；`OpFormat` 是独立的操作数格式类别枚举（`Simple`/`U8`/`U16`/`ConstU16`/`ImmI8`/`JumpFwd`/`JumpBack`/`RangeFlags`/`RegU8`/`Import`）。
 - **新增指令流程**：X 表加一行（选既有 OpFormat）-> AriaVM 加对应 case -> 文档同步；Disassembler 与名字/格式表零改动（仅引入新格式类别时才同步其分发 switch）。

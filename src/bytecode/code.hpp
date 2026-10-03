@@ -103,6 +103,7 @@ namespace aria {
     X(MAKE_LIST, U16)                      \
     X(MAKE_MAP, U16)                       \
     X(MAKE_RANGE, RangeFlags)              \
+    X(BUILD_STRING, U8)                    \
     /* ---- module import ---- */          \
     X(IMPORT, Import)                      \
     /* ---- exceptions ---- */             \

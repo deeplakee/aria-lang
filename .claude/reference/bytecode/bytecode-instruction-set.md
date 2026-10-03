@@ -2,13 +2,13 @@
 
 aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，作为指令集的规格基准。
 
-> 现状：`OpCode` 为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，77 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。
+> 现状：`OpCode` 为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，79 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。
 
 ## 1. 现状与基准
 
 ### 1.1 枚举现状（以 `code.hpp` 为准）
 
-`OpCode : u8`，共 77 条（含 16 条局部槽 N 短变体），按功能分组：
+`OpCode : u8`，共 79 条（含 16 条局部槽 N 短变体），按功能分组：
 
 | 分组 | 指令 |
 | :--- | :--- |
@@ -25,17 +25,18 @@ aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定�
 | 调试 | `NOP` |
 | 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` `JUMP_NE` |
 | 函数/闭包 | `CALL` `CLOSURE` |
-| 类/对象 | `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `PREPARE_METHOD` `CALL_METHOD` `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` |
+| 类/对象 | `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `PREPARE_METHOD` `CALL_METHOD` `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` `BUILD_STRING` |
 | 模块导入 | `IMPORT` |
 | 异常 | `THROW` |
 | 返回 | `RETURN` |
 
-`u8` 上限 256，当前 78 条，扩空间充裕。
+`u8` 上限 256，当前 79 条，扩空间充裕。
 
 ### 1.2 已定决策
 
 - **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
 - **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
+- **`BUILD_STRING`** 已加入（插值串收拢，见 §4.14；段数 `u8`、渲染与 `str()` 同源）。
 - **跳转 `u16` 方向拆分 + 局部槽 N 短变体**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `slot:u16` 通用形态 + `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8` 零操作数 N 短变体。见 §2.3/§4.3/§4.12。
 - **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::load_field` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
 
@@ -51,7 +52,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 ### 2.2 操作数位宽
 
-下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽通用形态 `u16` -> `U16`（N 短变体零操作数 -> `Simple`）；Upvalue 与参数数与 `POP_N` -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
+下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽通用形态 `u16` -> `U16`（N 短变体零操作数 -> `Simple`）；Upvalue 与参数数与 `POP_N` 与插值段数 -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
@@ -62,6 +63,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | 跳转偏移 | `u16`（2B 无符号） | `JUMP*`（前向 `ip+=off`）/ `JUMP_BACK`（后向 `ip-=off`） | 方向编码于 opcode，各得 64KB 量程；后向恒无条件（while/for/for-in 回边），条件跳转恒前向（§2.3/§4.12） |
 | `POP_N` 计数 | `u8` | `POP_N` | 块结束清理临时，单次 255 足够 |
 | 列表/映射元素数 | `u16`（2B） | `MAKE_LIST` `MAKE_MAP` | 字面量可能 >255 元素；这俩不热，`u16` 免分批 lowering |
+| 插值段数 | `u8`（1B） | `BUILD_STRING` | 单串 255 段（127 档）足够，超限编译期拒绝 |
 | 立即整数 | `i8`（1B 有符号，-128..127） | `LOAD_IMM` | 0/1/-1/小下标等高频小整数；大整数走 `LOAD_CONST` |
 | 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器格数即 VM 单例数（当前 17 格），`u8` 富余 |
 
@@ -289,6 +291,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
 | `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 取栈顶 `from, to`（或 unbounded 时单值 `from`）创建 `ObjRange`（字段同名）；`flags` 位义见 `code.hpp`（`..` 含、`...` 不含、无上界不编含否位）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
+| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（`$"..."` 插值串收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`format_value`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
 
 def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_REG`（寄存器 `ObjectClass`）装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
 

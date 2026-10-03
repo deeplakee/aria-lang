@@ -247,42 +247,43 @@ namespace aria {
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
         // 类型判定 = if constexpr 按 T 编译期选 tag,运行期单比较(两配置同价零 RTTI)。前置条件:
-        // object 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =
+        // this 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =
         // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;新增 ObjType 须在此扩臂,漏臂由
-        // 末尾 UNREACHABLE 兜底。
+        // 末尾 UNREACHABLE 兜底。子类型禁定义 is/as/try_as 同名成员--成员调用从派生类作用域起
+        // 查找,同名即遮蔽本三件套。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static bool is(const Object* object) noexcept {
+        bool is() const noexcept {
             if constexpr (std::is_same_v<T, ObjString>) {
-                return object->type() == ObjType::STRING;
+                return type() == ObjType::STRING;
             } else if constexpr (std::is_same_v<T, ObjFunction>) {
-                return object->type() == ObjType::FUNCTION;
+                return type() == ObjType::FUNCTION;
             } else if constexpr (std::is_same_v<T, ObjNativeFn>) {
-                return object->type() == ObjType::NATIVE_FN;
+                return type() == ObjType::NATIVE_FN;
             } else if constexpr (std::is_same_v<T, ObjUpvalue>) {
-                return object->type() == ObjType::UPVALUE;
+                return type() == ObjType::UPVALUE;
             } else if constexpr (std::is_same_v<T, ObjClass>) {
-                return object->type() == ObjType::CLASS;
+                return type() == ObjType::CLASS;
             } else if constexpr (std::is_same_v<T, ObjInstance>) {
-                return object->type() == ObjType::INSTANCE;
+                return type() == ObjType::INSTANCE;
             } else if constexpr (std::is_same_v<T, ObjBoundMethod>) {
-                return object->type() == ObjType::BOUND_METHOD;
+                return type() == ObjType::BOUND_METHOD;
             } else if constexpr (std::is_same_v<T, ObjList>) {
-                return object->type() == ObjType::LIST;
+                return type() == ObjType::LIST;
             } else if constexpr (std::is_same_v<T, ObjMap>) {
-                return object->type() == ObjType::MAP;
+                return type() == ObjType::MAP;
             } else if constexpr (std::is_same_v<T, ObjModule>) {
-                return object->type() == ObjType::MODULE;
+                return type() == ObjType::MODULE;
             } else if constexpr (std::is_same_v<T, ObjRange>) {
-                return object->type() == ObjType::RANGE;
+                return type() == ObjType::RANGE;
             } else if constexpr (std::is_same_v<T, ObjIterator>) {
-                return object->type() == ObjType::ITERATOR;
+                return type() == ObjType::ITERATOR;
             } else if constexpr (std::is_same_v<T, ObjException>) {
-                return object->type() == ObjType::EXCEPTION;
+                return type() == ObjType::EXCEPTION;
             } else if constexpr (std::is_same_v<T, ObjClosure>) {
-                return object->type() == ObjType::CLOSURE;
+                return type() == ObjType::CLOSURE;
             } else if constexpr (std::is_same_v<T, ObjMovement>) {
-                return object->type() == ObjType::MOVEMENT;
+                return type() == ObjType::MOVEMENT;
             } else {
                 UNREACHABLE();
             }
@@ -292,39 +293,39 @@ namespace aria {
         // 裸 static_cast,不校验;DEBUG 下 dynamic_cast 兜底(不匹配返 nullptr 可暴露)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static T* as(Object* object) noexcept {
+        T* as() noexcept {
 #ifdef NDEBUG
-            return static_cast<T*>(object);
+            return static_cast<T*>(this);
 #else
-            return dynamic_cast<T*>(object);
+            return dynamic_cast<T*>(this);
 #endif
         }
 
-        // const 重载:const Object* -> const T*(DEBUG 下 dynamic_cast 校验,与 as(Object*) 对称)。
+        // const 重载:const this -> const T*(DEBUG 下 dynamic_cast 校验,与 as() 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static const T* as(const Object* object) noexcept {
+        const T* as() const noexcept {
 #ifdef NDEBUG
-            return static_cast<const T*>(object);
+            return static_cast<const T*>(this);
 #else
-            return dynamic_cast<const T*>(object);
+            return dynamic_cast<const T*>(this);
 #endif
         }
 
         // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr。「守卫后使用」
         // 场景类型只写一次,消除 is<>/as<> 双类型参数漂移;纯谓词用 is<T>,switch(type()) 臂内等
-        // 静态已知场合用 as<T>。前置条件同 is<T>(object 非空)。
+        // 静态已知场合用 as<T>。前置条件同 is<T>()(this 非空)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static T* try_as(Object* object) noexcept {
-            return is<T>(object) ? as<T>(object) : nullptr;
+        T* try_as() noexcept {
+            return is<T>() ? as<T>() : nullptr;
         }
 
-        // const 重载:const Object* -> const T*(与 as(const Object*) 对称)。
+        // const 重载:const this -> const T*(与 as() const 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
-        static const T* try_as(const Object* object) noexcept {
-            return is<T>(object) ? as<T>(object) : nullptr;
+        const T* try_as() const noexcept {
+            return is<T>() ? as<T>() : nullptr;
         }
 
     private:

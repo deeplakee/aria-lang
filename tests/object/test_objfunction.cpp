@@ -64,7 +64,7 @@ TEST(ObjFunction, Basics) {
     GC   gc;
     auto name = new_string(gc, "add");
     auto fn   = new_function(gc, name->view(), 2);
-    EXPECT_TRUE(aria::Object::is<ObjFunction>(fn));
+    EXPECT_TRUE(fn->is<ObjFunction>());
     EXPECT_EQ(fn->type(), aria::ObjType::FUNCTION);
     EXPECT_EQ(fn->name(), name); // 同名 intern 同指针
     EXPECT_EQ(fn->arity(), 2);

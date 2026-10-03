@@ -31,7 +31,7 @@ namespace aria {
             ObjClass* chain = nullptr;
             switch (slots[0].as_obj()->type()) {
                 case ObjType::INSTANCE:
-                    chain = Object::as<ObjInstance>(slots[0].as_obj())->klass();
+                    chain = slots[0].as_obj()->as<ObjInstance>()->klass();
                     break;
                 case ObjType::EXCEPTION:
                     chain = vm.exception_class();
@@ -52,7 +52,7 @@ namespace aria {
                     chain = vm.iterator_class();
                     break;
                 case ObjType::CLASS:
-                    chain = Object::as<ObjClass>(slots[0].as_obj());
+                    chain = slots[0].as_obj()->as<ObjClass>();
                     break;
                 default:
                     // 唯一可达 stray:类静态槽读出 is_a 后裸调(receiver 槽残留被调原生自身),响亮拒绝。

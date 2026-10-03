@@ -134,8 +134,9 @@ namespace aria {
             return x < y;
         }
         // 字符串域:无符号字节序,必须走 string_view::compare(手写逐 char 比较会把 0x80+ 字节排到 ASCII 之前)。
-        const auto lhs_str = Object::as<ObjString>(lhs.as_obj());
-        return lhs_str->view().compare(Object::as<ObjString>(rhs.as_obj())->view()) < 0;
+        const auto lhs_str = lhs.as_obj()->as<ObjString>()->view();
+        const auto rhs_str = rhs.as_obj()->as<ObjString>()->view();
+        return lhs_str.compare(rhs_str) < 0;
     }
 
 } // namespace aria

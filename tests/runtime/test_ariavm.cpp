@@ -210,7 +210,7 @@ namespace {
     // 加载层测试经 interpret_from_path 跑完后,用此白盒检视被导入模块的 state / globals。
     ObjModule* find_module_by_name(aria::AriaHashTable& modules, const StringView name) {
         for (const auto& entry: modules) {
-            auto m = aria::Object::as<ObjModule>(entry.value.as_obj());
+            auto m = entry.value.as_obj()->as<ObjModule>();
             if (m->name() != nullptr && m->name()->view() == name) {
                 return m;
             }
@@ -737,7 +737,7 @@ TEST_F(AriaVMStress, ImportBindsPreRegisteredModule) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 取回的是预注册模块对象
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), m); // 取回的是预注册模块对象
 }
 
 // IMPORT 解析失败(无源根命中 nope/missing.aria)且无嵌入层加载 -> ModuleNotFound。
@@ -793,7 +793,7 @@ TEST_F(AriaVMStress, ImportNormalizesAbsolutePath) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 折 "." 后命中同一模块
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), m); // 折 "." 后命中同一模块
 }
 
 // IMPORT 相对路径解析:导入函数所属模块 dir_ = base、name_ = lib/main,"./helper" 相对当前
@@ -831,7 +831,7 @@ TEST_F(AriaVMStress, ImportNormalizesRelativePath) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), helper); // 相对解析后命中 base/lib/helper
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), helper); // 相对解析后命中 base/lib/helper
 }
 
 // IMPORT 裸名沿 source_roots 逐根搜索(对齐 Python sys.path 顺序搜索):入口根无
@@ -873,7 +873,7 @@ TEST_F(AriaVMStress, ImportBareSearchesSourceRoots) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), target); // 入口根未命中,落 stdlib 命中
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), target); // 入口根未命中,落 stdlib 命中
 }
 
 // IMPORT 末尾 ".aria" 后缀可选:"lib/math" 与 "lib/math.aria" 归一为同一文件。
@@ -908,7 +908,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffix) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), m); // 剥 .aria 后命中同一文件键
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), m); // 剥 .aria 后命中同一文件键
 }
 
 // IMPORT 相对路径 + .aria 后缀组合:导入方 dir_ = base、name_ = lib/main,"./math.aria"
@@ -945,7 +945,7 @@ TEST_F(AriaVMStress, ImportStripsAriaSuffixOnRelative) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value());
     ASSERT_TRUE(out->is_obj());
-    EXPECT_EQ(aria::Object::as<ObjModule>(out->as_obj()), target); // 相对 + 剥 .aria -> base/lib/math
+    EXPECT_EQ(out->as_obj()->as<ObjModule>(), target); // 相对 + 剥 .aria -> base/lib/math
 }
 
 // 源根列表在 run() 时按 [入口模块 dir_, stdlib 目录] 播种:入口模块 dir_ = base、name_ = main
@@ -1106,7 +1106,7 @@ TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
     const auto caught = module->globals().find(Value::from_obj(new_string(vm.gc(), "caught")));
     ASSERT_NE(caught, nullptr);
     ASSERT_TRUE(caught->value.is_obj());
-    const auto thrown = aria::Object::as<ObjString>(caught->value.as_obj());
+    const auto thrown = caught->value.as_obj()->as<ObjString>();
     ASSERT_NE(thrown, nullptr);
     EXPECT_EQ(thrown->view(), "boom");
 
@@ -1125,7 +1125,7 @@ TEST_F(AriaVMStress, ExceptionBootstrapClassFace) {
     for (const auto* member: {"init", "message", "code"}) {
         const auto hit = klass->load_field(vm, new_string(vm.gc(), member));
         ASSERT_TRUE(hit.has_value());
-        EXPECT_TRUE(aria::Object::is<aria::ObjNativeFn>(hit->as_obj()));
+        EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>());
     }
 
     // 实例腿:链上实例经默认 init 恒有 _message/_code(默认 ""/Error 默认码);自有 init 落用户
@@ -1187,7 +1187,7 @@ TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
     EXPECT_EQ(ax->value.as_int(), 1);
     auto a_b = a->globals().find(Value::from_obj(new_string(vm.gc(), "B")));
     ASSERT_NE(a_b, nullptr);
-    EXPECT_EQ(aria::Object::as<ObjModule>(a_b->value.as_obj()), b);
+    EXPECT_EQ(a_b->value.as_obj()->as<ObjModule>(), b);
 
     // b.globals: y=2, A=a
     auto by = b->globals().find(Value::from_obj(new_string(vm.gc(), "y")));
@@ -1195,7 +1195,7 @@ TEST_F(AriaVMStress, CircularImportCompletesBothLoaded) {
     EXPECT_EQ(by->value.as_int(), 2);
     auto b_a = b->globals().find(Value::from_obj(new_string(vm.gc(), "A")));
     ASSERT_NE(b_a, nullptr);
-    EXPECT_EQ(aria::Object::as<ObjModule>(b_a->value.as_obj()), a);
+    EXPECT_EQ(b_a->value.as_obj()->as<ObjModule>(), a);
 }
 
 // 重复导入同一模块:第二次 IMPORT 命中 Loaded 模块(表查重复用),不重跑模块体。检视 modules 中
@@ -1452,8 +1452,8 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
     auto c2_entry = m->globals().find(Value::from_obj(new_string(gc, "c2")));
     ASSERT_NE(c1_entry, nullptr);
     ASSERT_NE(c2_entry, nullptr);
-    auto c1 = aria::Object::as<ObjClosure>(c1_entry->value.as_obj());
-    auto c2 = aria::Object::as<ObjClosure>(c2_entry->value.as_obj());
+    auto c1 = c1_entry->value.as_obj()->as<ObjClosure>();
+    auto c2 = c2_entry->value.as_obj()->as<ObjClosure>();
     ASSERT_EQ(c1->upvalues().size(), usize{1});
     ASSERT_EQ(c2->upvalues().size(), usize{1});
     EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
@@ -1749,7 +1749,7 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     const auto out = vm.run(fn);
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out->is_obj());
-    auto inst = aria::Object::as<ObjInstance>(out->as_obj());
+    auto inst = out->as_obj()->as<ObjInstance>();
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->klass()->name()->view(), "Foo");
     EXPECT_EQ(inst->klass()->superclass(), vm.object_class()); // 无显式父类 -> Object 根
@@ -1960,10 +1960,10 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
     EXPECT_EQ(out->as_int(), 11);
 
     // 结构:Sub 的父链确指 Base(经共享 globals 取回类值)。
-    auto base_cls = aria::Object::as<ObjClass>(
-            fn->module()->globals().find(Value::from_obj(new_string(gc, "Base")))->value.as_obj());
-    auto sub_cls = aria::Object::as<ObjClass>(
-            fn->module()->globals().find(Value::from_obj(new_string(gc, "Sub")))->value.as_obj());
+    auto base_cls = fn->module()->globals().find(Value::from_obj(new_string(gc, "Base")))
+                            ->value.as_obj()->as<ObjClass>();
+    auto sub_cls = fn->module()->globals().find(Value::from_obj(new_string(gc, "Sub")))
+                           ->value.as_obj()->as<ObjClass>();
     EXPECT_EQ(sub_cls->superclass(), base_cls);
 }
 
@@ -2143,7 +2143,7 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
     const auto b2_v = fetch("b2");
     // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
     EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);
-    EXPECT_EQ(aria::Object::as<ObjClosure>(b2_v.as_obj())->function(), new_m); // === new_m 闭包本体
+    EXPECT_EQ(b2_v.as_obj()->as<ObjClosure>()->function(), new_m); // === new_m 闭包本体
     // b2 自由调用仍执行新闭包(返回 2)
     EXPECT_EQ(fetch("r2").as_int(), 2);
 }
@@ -2545,7 +2545,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     // run() 清场后经共享模块 globals 白盒取回绑定,验证类图根链完整。
     auto b_entry = m->globals().find(Value::from_obj(new_string(gc, "init")));
     ASSERT_NE(b_entry, nullptr);
-    auto b = aria::Object::as<ObjBoundMethod>(b_entry->value.as_obj());
+    auto b = b_entry->value.as_obj()->as<ObjBoundMethod>();
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->name()->view(), "init"); // 非虚取名:闭包方法取 fn 名
 
@@ -2558,7 +2558,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 
     // collect 后对象图仍完好:方法闭包经类表可达,字段值经协议读回一致
     //(命中路径纯查询无分配,读安全)。
-    auto inst = aria::Object::as<ObjInstance>(b->receiver().as_obj());
+    auto inst = b->receiver().as_obj()->as<ObjInstance>();
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->klass()->name()->view(), "Foo");
     auto tag_v = inst->load_field_bound(vm, new_string(gc, "tag"));

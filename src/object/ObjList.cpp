@@ -31,7 +31,7 @@ namespace aria {
         if (EqualGuard::is_cycle(this, other)) {
             return true;
         }
-        const auto list = try_as<ObjList>(other);
+        const auto list = other->try_as<ObjList>();
         if (list == nullptr || elements_.size() != list->elements_.size()) {
             return false;
         }

@@ -55,7 +55,7 @@ TEST(ObjClosure, WrapsFunction) {
     GC   gc;
     auto fn = new_function(gc, "add", 2);
     auto c  = new_closure(gc, fn);
-    EXPECT_TRUE(aria::Object::is<ObjClosure>(c));
+    EXPECT_TRUE(c->is<ObjClosure>());
     EXPECT_EQ(c->type(), aria::ObjType::CLOSURE);
     EXPECT_EQ(c->type_name(), "Closure");
     EXPECT_EQ(c->function(), fn);

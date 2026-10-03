@@ -133,8 +133,8 @@ paths:
 
 ### 类型判断 / 转换约定（强制）
 
-- 纯谓词（断言 / fail-fast / 不需要指针）用 `Object::is<T>(obj)`。
-- 「守卫后使用」成对场景优先一步 `Object::try_as<T>(obj)`（类型只写一次，DEBUG 单次 dynamic_cast 优于成对的两次）。
-- `switch (obj->type())` 臂内等静态已知场合用 `Object::as<T>(obj)`（NDEBUG 裸 cast 不校验）；多分支枚举分派（如 `AriaVM::call_value`）天然合理，保留枚举写法。
-- **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。
-- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `Object::is/as<X>(v.as_obj())`。
+- 纯谓词（断言 / fail-fast / 不需要指针）用 `obj->is<T>()`。
+- 「守卫后使用」成对场景优先一步 `obj->try_as<T>()`（类型只写一次，DEBUG 单次 dynamic_cast 优于成对的两次）。
+- `switch (obj->type())` 臂内等静态已知场合用 `obj->as<T>()`（NDEBUG 裸 cast 不校验）；多分支枚举分派（如 `AriaVM::call_value`）天然合理，保留枚举写法。
+- **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。三件套是 Object 的成员模板，子类型禁定义同名成员（成员调用从派生类作用域起查找，同名即遮蔽）。
+- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `v.as_obj()->is/as<X>()`。

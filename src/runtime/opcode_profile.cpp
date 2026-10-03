@@ -62,7 +62,7 @@ namespace aria {
 
         // 旁路读 ConstU16 操作数指向的驻留名(不推进 ip,消费仍归各 case 的 read_name;良构前提)。
         ObjString* peek_const_name(const CallFrame* frame) noexcept {
-            return Object::as<ObjString>(frame->unit->constants[peek_u16(frame)].as_obj());
+            return frame->unit->constants[peek_u16(frame)].as_obj()->as<ObjString>();
         }
 
     } // namespace
@@ -247,7 +247,7 @@ namespace aria {
         const auto kind = callee->type();
         ++call_kinds_[std::to_underlying(kind)];
         if (kind == ObjType::NATIVE_FN) {
-            ++find_or_add(native_calls_, Object::as<ObjNativeFn>(callee)->name(), kind).count;
+            ++find_or_add(native_calls_, callee->as<ObjNativeFn>()->name(), kind).count;
         }
     }
 

@@ -66,7 +66,7 @@ TEST(ObjModule, Basics) {
     auto name  = new_string(gc, "lib/utils");
     auto guard = gc.make_guard(name); // 工厂不守卫入参:name 裸持跨 new_module 的 new_string(cwd)
     auto m     = new_module(gc, name);
-    EXPECT_TRUE(aria::Object::is<ObjModule>(m));
+    EXPECT_TRUE(m->is<ObjModule>());
     EXPECT_EQ(m->type(), aria::ObjType::MODULE);
     EXPECT_EQ(m->name(), name);     // intern 同指针
     EXPECT_EQ(m->entry(), nullptr); // 构造时无体

@@ -20,9 +20,9 @@ namespace aria {
         // 非虚读取:闭包取 fn 名、原生取 name_(两者皆 intern 驻留恒非空,指针随宿主对象保命)。
         const auto m = method_.as_obj();
         if (m->type() == ObjType::CLOSURE) {
-            return as<ObjClosure>(m)->name();
+            return m->as<ObjClosure>()->name();
         }
-        return as<ObjNativeFn>(m)->name();
+        return m->as<ObjNativeFn>()->name();
     }
 
     void ObjBoundMethod::trace(GC& gc) const noexcept {
@@ -38,7 +38,7 @@ namespace aria {
         if (other == nullptr) {
             return false; // null 恒不等(null 不是任何类型实例)
         }
-        if (const auto rhs = try_as<ObjBoundMethod>(other)) {
+        if (const auto rhs = other->try_as<ObjBoundMethod>()) {
             return value_identical(method_, rhs->method_) && value_identical(receiver_, rhs->receiver_);
         }
         return false;

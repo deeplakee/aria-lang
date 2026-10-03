@@ -137,7 +137,7 @@ namespace aria {
             return modules_;
         }
 
-        // 七个 bootstrap 类访问器:各类格唯一存于寄存器组,定义在 .cpp(Object::as 需 ObjClass 完整类型)。
+        // 七个 bootstrap 类访问器:各类格唯一存于寄存器组。
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 

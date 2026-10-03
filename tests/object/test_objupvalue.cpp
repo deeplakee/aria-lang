@@ -21,7 +21,7 @@ TEST(ObjUpvalue, OpenPointsToSlot) {
     GC          gc;
     Value       v  = Value::from_i32(42);
     ObjUpvalue* uv = new_upvalue(gc, &v);
-    EXPECT_TRUE(aria::Object::is<ObjUpvalue>(uv));
+    EXPECT_TRUE(uv->is<ObjUpvalue>());
     EXPECT_EQ(uv->type(), aria::ObjType::UPVALUE);
     EXPECT_EQ(uv->type_name(), "Upvalue");
     EXPECT_TRUE(uv->is_open());
@@ -111,7 +111,7 @@ TEST(ObjUpvalue, TraceMarksClosedValue) {
     std::ignore = new_string(gc, "trigger"); // stress collect:closed 值经 uv->trace 存活
     EXPECT_FALSE(uv->is_open());
     EXPECT_NE(uv->value_slot(), nullptr);
-    EXPECT_EQ(aria::Object::as<ObjString>(uv->value_slot()->as_obj())->view(),
+    EXPECT_EQ(uv->value_slot()->as_obj()->as<ObjString>()->view(),
               "closed payload long string beyond sso pad");
 }
 

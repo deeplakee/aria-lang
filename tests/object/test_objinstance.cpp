@@ -87,7 +87,7 @@ TEST(ObjInstance, Basics) {
     auto klass = make_class(gc, "Foo");
     auto guard = gc.make_guard(klass);
     auto obj   = new_instance(gc, klass);
-    EXPECT_TRUE(aria::Object::is<ObjInstance>(obj));
+    EXPECT_TRUE(obj->is<ObjInstance>());
     EXPECT_EQ(obj->type(), aria::ObjType::INSTANCE);
     EXPECT_EQ(obj->klass(), klass);
 }
@@ -147,7 +147,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
             EXPECT_FALSE(value_identical(*bound_read, *bound_again));
             EXPECT_TRUE(aria::value_equal(*bound_read, *bound_again));
         }
-        bound = aria::Object::try_as<ObjBoundMethod>(bound_read->as_obj());
+        bound = bound_read->as_obj()->try_as<ObjBoundMethod>();
         ASSERT_NE(bound, nullptr);
         fkey = new_string(gc, "x");
         guard.push(fkey);
@@ -173,7 +173,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
     EXPECT_EQ(method->name()->view(), "m");
     auto after_collect = obj->load_field_bound(vm, bkey);
     ASSERT_TRUE(after_collect.has_value());
-    const auto* rebound = aria::Object::try_as<ObjBoundMethod>(after_collect->as_obj());
+    const auto* rebound = after_collect->as_obj()->try_as<ObjBoundMethod>();
     ASSERT_NE(rebound, nullptr);
     EXPECT_TRUE(value_identical(rebound->receiver(), Value::from_obj(obj)));
     EXPECT_TRUE(value_identical(rebound->method(), Value::from_obj(method))); // 实现在类表,全链随活
@@ -231,7 +231,7 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     klass->set_field(mkey, Value::from_obj(method));
     auto method_read = inst->load_field_bound(vm, mkey);
     ASSERT_TRUE(method_read.has_value());
-    auto bound = aria::Object::try_as<ObjBoundMethod>(method_read->as_obj());
+    auto bound = method_read->as_obj()->try_as<ObjBoundMethod>();
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst))); // this=本实例
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));

@@ -80,7 +80,7 @@ TEST(ObjClass, Basics) {
     auto name  = new_string(gc, "Foo");
     auto guard = gc.make_guard(name); // 工厂不守卫入参:name 裸持跨 new_class
     auto klass = new_class(gc, name, nullptr);
-    EXPECT_TRUE(aria::Object::is<ObjClass>(klass));
+    EXPECT_TRUE(klass->is<ObjClass>());
     EXPECT_EQ(klass->type(), aria::ObjType::CLASS);
     EXPECT_EQ(klass->name(), name); // intern 同指针
     EXPECT_EQ(klass->superclass(), nullptr);

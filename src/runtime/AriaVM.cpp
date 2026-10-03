@@ -72,7 +72,7 @@ namespace aria {
         // 出错属 bug 非运行期可恢复错。
         ObjString* read_name(CallFrame* frame) noexcept {
             const auto idx = read_u16(frame);
-            return Object::as<ObjString>(frame->unit->constants[idx].as_obj());
+            return frame->unit->constants[idx].as_obj()->as<ObjString>();
         }
 
         // specifier 的 stem:剥末段 ".aria" 后缀(import "x.aria" 与 "x" 等价);末段恰为 ".aria" 者不剥。
@@ -257,21 +257,19 @@ namespace aria {
         });
     }
 
-    ObjClass* AriaVM::object_class() const noexcept { return Object::as<ObjClass>(registers_[kObjectClassOffset]); }
+    ObjClass* AriaVM::object_class() const noexcept { return registers_[kObjectClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::exception_class() const noexcept {
-        return Object::as<ObjClass>(registers_[kExceptionClassOffset]);
-    }
+    ObjClass* AriaVM::exception_class() const noexcept { return registers_[kExceptionClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::iterator_class() const noexcept { return Object::as<ObjClass>(registers_[kIteratorClassOffset]); }
+    ObjClass* AriaVM::iterator_class() const noexcept { return registers_[kIteratorClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::list_class() const noexcept { return Object::as<ObjClass>(registers_[kListClassOffset]); }
+    ObjClass* AriaVM::list_class() const noexcept { return registers_[kListClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::map_class() const noexcept { return Object::as<ObjClass>(registers_[kMapClassOffset]); }
+    ObjClass* AriaVM::map_class() const noexcept { return registers_[kMapClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::string_class() const noexcept { return Object::as<ObjClass>(registers_[kStringClassOffset]); }
+    ObjClass* AriaVM::string_class() const noexcept { return registers_[kStringClassOffset]->as<ObjClass>(); }
 
-    ObjClass* AriaVM::range_class() const noexcept { return Object::as<ObjClass>(registers_[kRangeClassOffset]); }
+    ObjClass* AriaVM::range_class() const noexcept { return registers_[kRangeClassOffset]->as<ObjClass>(); }
 
     void AriaVM::init_source_roots() {
         // 入口槽 [0] 占位 cwd;cwd 不可用时空串兜底(resolve_module 裸名分支跳过空根)。
@@ -389,13 +387,13 @@ namespace aria {
 
         switch (Object* obj = callee.as_obj(); obj->type()) {
             case ObjType::CLOSURE:
-                return call_closure(Object::as<ObjClosure>(obj), argc);
+                return call_closure(obj->as<ObjClosure>(), argc);
             case ObjType::NATIVE_FN:
-                return call_native(Object::as<ObjNativeFn>(obj), argc);
+                return call_native(obj->as<ObjNativeFn>(), argc);
             case ObjType::CLASS:
-                return call_class(Object::as<ObjClass>(obj), argc);
+                return call_class(obj->as<ObjClass>(), argc);
             case ObjType::BOUND_METHOD:
-                return call_bound_method(Object::as<ObjBoundMethod>(obj), argc);
+                return call_bound_method(obj->as<ObjBoundMethod>(), argc);
             default: {
                 // 其余对象类型:取调用钩子 `__call__` 实现后调;调用区就地复用 [callee, a1..aN]
                 // 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
@@ -612,10 +610,11 @@ namespace aria {
         // 指针物化分支(实测见 local-string-perf 报告 §7/§12)。
         if constexpr (Op == OpCode::ADD || Op == OpCode::LESS || Op == OpCode::LESS_EQUAL || Op == OpCode::GREATER ||
                       Op == OpCode::GREATER_EQUAL) {
-            if (Object::is<ObjString>(lhs)) {
-                const Value rhs = current_->peek(0);
-                if (rhs.is_obj() && Object::is<ObjString>(rhs.as_obj())) {
-                    return run_string_binary<Op>(Object::as<ObjString>(lhs), Object::as<ObjString>(rhs.as_obj()));
+            if (lhs->is<ObjString>()) {
+                if (const Value rhs = current_->peek(0); rhs.is_obj()) {
+                    if (const auto right = rhs.as_obj(); right->is<ObjString>()) {
+                        return run_string_binary<Op>(lhs->as<ObjString>(), right->as<ObjString>());
+                    }
                 }
             }
         }
@@ -1383,7 +1382,7 @@ namespace aria {
                     // 否则复制外围闭包的对应 upvalue(共享同一份引用)。根安全(栈即根):闭包建成
                     // 立即压栈,desc 循环内 new_upvalue 免守卫。
                     const auto idx     = read_u16(frame);
-                    const auto fn      = Object::as<ObjFunction>(frame->unit->constants[idx].as_obj());
+                    const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFunction>();
                     auto       closure = new_closure(gc_, fn);
                     current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {

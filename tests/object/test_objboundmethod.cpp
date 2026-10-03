@@ -80,7 +80,7 @@ TEST(ObjBoundMethod, Basics) {
     guard.push(inst);
 
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时(非 stress)无 collect
-    EXPECT_TRUE(aria::Object::is<ObjBoundMethod>(bound));
+    EXPECT_TRUE(bound->is<ObjBoundMethod>());
     EXPECT_EQ(bound->type(), aria::ObjType::BOUND_METHOD);
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));

@@ -33,7 +33,7 @@ TEST(ObjException, Basics) {
     GC   gc;
     auto e     = make_exception(gc, ErrorCode::TypeMismatch, "Runtime: TypeMismatch boom");
     auto guard = gc.make_guard(e); // 下方 new_string(intern 比较用)可能 collect,先入根
-    EXPECT_TRUE(Object::is<ObjException>(e));
+    EXPECT_TRUE(e->is<ObjException>());
     EXPECT_EQ(e->type(), aria::ObjType::EXCEPTION);
     EXPECT_EQ(e->code(), ErrorCode::TypeMismatch);
     ASSERT_NE(e->message(), nullptr); // 指针恒非空

@@ -81,10 +81,10 @@ namespace {
         }
         ObjFunction* probe = nullptr;
         for (const auto& constant: (*compiled)->unit().constants) {
-            if (!constant.is_obj() || !aria::Object::is<ObjFunction>(constant.as_obj())) {
+            if (!constant.is_obj() || !constant.as_obj()->is<ObjFunction>()) {
                 continue;
             }
-            auto* fn = aria::Object::as<ObjFunction>(constant.as_obj());
+            auto* fn = constant.as_obj()->as<ObjFunction>();
             if (fn->name()->view() == "__probe__") {
                 probe = fn;
             }

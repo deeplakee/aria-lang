@@ -79,10 +79,10 @@ namespace {
     // 共用;调用方保证 entry 存活期间使用返回值,对象经常量池根链可达）。
     ObjFunction* find_entry_nested(ObjFunction& entry, const std::string_view name) {
         for (const auto& constant: entry.unit().constants) {
-            if (!constant.is_obj() || !aria::Object::is<ObjFunction>(constant.as_obj())) {
+            if (!constant.is_obj() || !constant.as_obj()->is<ObjFunction>()) {
                 continue;
             }
-            auto* fn = aria::Object::as<ObjFunction>(constant.as_obj());
+            auto* fn = constant.as_obj()->as<ObjFunction>();
             if (fn->name()->view() == name) {
                 return fn;
             }
@@ -1415,7 +1415,7 @@ TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
     auto out = run_value("try { return 1 / 0; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     ASSERT_TRUE(out->is_obj());
-    const auto ex = aria::Object::as<aria::ObjException>(out->as_obj());
+    const auto ex = out->as_obj()->as<aria::ObjException>();
     ASSERT_NE(ex, nullptr);
     EXPECT_EQ(ex->code(), ErrorCode::DivisionByZero);
     EXPECT_EQ(ex->to_string(), "Runtime: DivisionByZero integer division by zero");

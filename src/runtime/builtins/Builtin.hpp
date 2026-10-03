@@ -59,7 +59,7 @@ namespace aria {
         if (slot.is_obj()) {
             switch (Object* obj = slot.as_obj(); obj->type()) {
                 case tag.tag:
-                    return Object::as<T>(obj);
+                    return obj->as<T>();
                 default:
                     break;
             }

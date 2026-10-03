@@ -10,11 +10,11 @@ namespace aria {
     // Value<->Object 桥接辅助(需两方完整类型的模板函数)的收口处;独立成头是为了让
     // Object.hpp 依赖不进入被编译层(常量池)广泛 include 的 Value.hpp,需要者显式 include。
 
-    // 从 Value 一步取对象子类型(= is_obj + Object::try_as 合一):持对象且动态类型为 T 返回 T*,否则 nullptr。
+    // 从 Value 一步取对象子类型(= is_obj + try_as 合一):持对象且动态类型为 T 返回 T*,否则 nullptr。
     template<DerivedFromObj T>
     [[nodiscard]]
     T* try_as_obj(const Value value) noexcept {
-        return value.is_obj() ? Object::try_as<T>(value.as_obj()) : nullptr;
+        return value.is_obj() ? value.as_obj()->try_as<T>() : nullptr;
     }
 
     // 类表成员值是否为「可调用」:闭包(字节码方法)或原生函数(内建方法)。

@@ -96,7 +96,7 @@ namespace {
             return std::nullopt;
         }
         Value      slots[]{lhs, rhs};
-        const auto fn = aria::Object::as<ObjNativeFn>(hook->as_obj());
+        const auto fn = hook->as_obj()->as<ObjNativeFn>();
         if (!fn->fn()(vm, aria::Span<Value>{slots, 2})) {
             return std::nullopt;
         }
@@ -120,7 +120,7 @@ TEST(ObjList, Basics) {
     GC   gc;
     auto guard = gc.make_guard();
     auto list  = make_list(gc, guard);
-    EXPECT_TRUE(aria::Object::is<ObjList>(list));
+    EXPECT_TRUE(list->is<ObjList>());
     EXPECT_EQ(list->type(), aria::ObjType::LIST);
     EXPECT_EQ(list->type_name(), aria::StringView{"List"});
     EXPECT_EQ(list->elements().size(), 0u);
@@ -302,7 +302,7 @@ TEST(ObjList, TraceStressKeepsElements) {
     EXPECT_EQ(gc.bytes_allocated(), before);
     ASSERT_EQ(list->elements().size(), 2u);
     EXPECT_EQ(list->elements()[1].as_int(), 42);
-    const auto survived = aria::Object::try_as<ObjString>(list->elements()[0].as_obj());
+    const auto survived = list->elements()[0].as_obj()->try_as<ObjString>();
     ASSERT_NE(survived, nullptr);
     EXPECT_EQ(survived->view(), "a long list element string!!!");
 }
@@ -593,7 +593,7 @@ TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(list)));
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "push");
 }
@@ -610,7 +610,7 @@ TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "init");
 }

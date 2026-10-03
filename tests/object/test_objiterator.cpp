@@ -124,7 +124,7 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(iter)));
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "has_next");
 }
@@ -218,7 +218,7 @@ TEST(ObjListIterator, TraceStressKeepsSource) {
     EXPECT_EQ(first->as_int(), 42);
     const auto second = iter->next(vm);
     ASSERT_TRUE(second.has_value());
-    const auto survived = aria::Object::try_as<ObjString>(second->as_obj());
+    const auto survived = second->as_obj()->try_as<ObjString>();
     ASSERT_NE(survived, nullptr);
     EXPECT_EQ(survived->view(), "element string");
 }
@@ -247,7 +247,7 @@ TEST(ObjStringIterator, CursorYieldsCharStrings) {
         ASSERT_TRUE(iter->has_next());
         const auto item = iter->next(vm);
         ASSERT_TRUE(item.has_value());
-        const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+        const auto ch = item->as_obj()->try_as<ObjString>();
         ASSERT_NE(ch, nullptr);
         EXPECT_EQ(ch->view(), expected);
     }
@@ -268,7 +268,7 @@ TEST(ObjStringIterator, MultibyteCodepointStepping) {
         ASSERT_TRUE(iter->has_next());
         const auto item = iter->next(vm);
         ASSERT_TRUE(item.has_value());
-        const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+        const auto ch = item->as_obj()->try_as<ObjString>();
         ASSERT_NE(ch, nullptr);
         EXPECT_EQ(ch->view(), want);
     }
@@ -319,7 +319,7 @@ TEST(ObjStringIterator, TraceStressKeepsSource) {
     guard.push(trigger);
     const auto item = iter->next(vm);
     ASSERT_TRUE(item.has_value());
-    const auto ch = aria::Object::try_as<ObjString>(item->as_obj());
+    const auto ch = item->as_obj()->try_as<ObjString>();
     ASSERT_NE(ch, nullptr);
     EXPECT_EQ(ch->view(), "s");
 }

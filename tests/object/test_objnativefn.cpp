@@ -29,7 +29,7 @@ TEST(ObjNativeFn, NamedRendersFnName) {
     auto         name  = new_string(gc, "sample");
     auto         guard = gc.make_guard(name); // name 是 weak root,跨 new_object 顶 maybe_collect 先保
     ObjNativeFn* nf    = new_native_fn(gc, name, noop_fn);
-    EXPECT_TRUE(aria::Object::is<ObjNativeFn>(nf));
+    EXPECT_TRUE(nf->is<ObjNativeFn>());
     EXPECT_EQ(nf->type(), aria::ObjType::NATIVE_FN);
     EXPECT_EQ(nf->name(), name); // intern 同指针
     EXPECT_EQ(nf->fn(), noop_fn);

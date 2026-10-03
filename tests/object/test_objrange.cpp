@@ -86,7 +86,7 @@ TEST(ObjRange, Basics) {
     GC   gc;
     auto guard = gc.make_guard();
     auto range = make_range(gc, guard, 0, 10, false);
-    EXPECT_TRUE(aria::Object::is<ObjRange>(range));
+    EXPECT_TRUE(range->is<ObjRange>());
     EXPECT_EQ(range->type(), aria::ObjType::RANGE);
     EXPECT_EQ(range->type_name(), aria::StringView{"Range"});
     EXPECT_EQ(range->from(), 0);
@@ -189,7 +189,7 @@ TEST(ObjRange, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(range)));
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "iter");
 }

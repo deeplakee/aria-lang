@@ -74,7 +74,7 @@ namespace {
             return std::nullopt;
         }
         Value      slots[]{lhs, rhs};
-        const auto fn = aria::Object::as<ObjNativeFn>(hook->as_obj());
+        const auto fn = hook->as_obj()->as<ObjNativeFn>();
         if (!fn->fn()(vm, aria::Span<Value>{slots, 2})) {
             return std::nullopt;
         }
@@ -85,7 +85,7 @@ namespace {
     void expect_slice(AriaVM& vm, ObjString* s, aria::ObjRange* range, const StringView expected) {
         const auto result = s->load_index(vm, Value::from_obj(range));
         ASSERT_TRUE(result.has_value());
-        const auto out = aria::Object::try_as<ObjString>(result->as_obj());
+        const auto out = result->as_obj()->try_as<ObjString>();
         ASSERT_NE(out, nullptr);
         EXPECT_EQ(out->view(), expected);
     }
@@ -103,13 +103,13 @@ TEST(ObjString, LoadIndexYieldsSingleByteString) {
 
     auto first = s->load_index(vm, Value::from_int(0));
     ASSERT_TRUE(first.has_value());
-    const auto h = aria::Object::try_as<ObjString>(first->as_obj());
+    const auto h = first->as_obj()->try_as<ObjString>();
     ASSERT_NE(h, nullptr);
     EXPECT_EQ(h->view(), "h");
 
     auto last = s->load_index(vm, Value::from_int(4));
     ASSERT_TRUE(last.has_value());
-    const auto o = aria::Object::try_as<ObjString>(last->as_obj());
+    const auto o = last->as_obj()->try_as<ObjString>();
     ASSERT_NE(o, nullptr);
     EXPECT_EQ(o->view(), "o");
 }
@@ -124,7 +124,7 @@ TEST(ObjString, LoadIndexMidSequenceByteYieldsItself) {
 
     auto b1 = s->load_index(vm, Value::from_int(1));
     ASSERT_TRUE(b1.has_value());
-    const auto first_byte = aria::Object::try_as<ObjString>(b1->as_obj());
+    const auto first_byte = b1->as_obj()->try_as<ObjString>();
     ASSERT_NE(first_byte, nullptr);
     const StringView mid_byte{"\xC3", 1}; // é 的首字节(花括号内逗号会劈 EXPECT_EQ 宏,先落局部)
     EXPECT_EQ(first_byte->view(), mid_byte);
@@ -166,12 +166,12 @@ TEST(ObjString, LoadIndexNegativeReadsFromTail) {
     auto   s     = make_string(gc, guard, "hello");
     auto   last  = s->load_index(vm, Value::from_int(-1));
     ASSERT_TRUE(last.has_value());
-    const auto tail = aria::Object::try_as<ObjString>(last->as_obj());
+    const auto tail = last->as_obj()->try_as<ObjString>();
     ASSERT_NE(tail, nullptr);
     EXPECT_EQ(tail->view(), "o");
     auto first = s->load_index(vm, Value::from_int(-5));
     ASSERT_TRUE(first.has_value());
-    const auto head = aria::Object::try_as<ObjString>(first->as_obj());
+    const auto head = first->as_obj()->try_as<ObjString>();
     ASSERT_NE(head, nullptr);
     EXPECT_EQ(head->view(), "h");
     EXPECT_FALSE(s->load_index(vm, Value::from_int(-6)).has_value());
@@ -303,7 +303,7 @@ TEST(ObjString, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(s)));
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "upper");
 }

@@ -29,7 +29,7 @@ namespace aria {
         if (EqualGuard::is_cycle(this, other)) {
             return true;
         }
-        const auto map = try_as<ObjMap>(other);
+        const auto map = other->try_as<ObjMap>();
         if (map == nullptr || table_.size() != map->table_.size()) {
             return false;
         }

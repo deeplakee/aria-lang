@@ -39,19 +39,19 @@ namespace {
 
 } // namespace
 
-// try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr。前置条件:入参非空
-//(is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底),null 入参无测试形态。
+// try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr。前置条件:this 非空
+//(is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底),null 无测试形态。
 
 TEST(ObjectTryAs, MatchReturnsPointer) {
     GC   gc;
     auto s = new_string(gc, "hello");
-    EXPECT_EQ(aria::Object::try_as<ObjString>(s), s);
+    EXPECT_EQ(s->try_as<ObjString>(), s);
 }
 
 TEST(ObjectTryAs, MismatchReturnsNull) {
     GC   gc;
     auto s = new_string(gc, "hello");
-    EXPECT_EQ(aria::Object::try_as<ObjFunction>(s), nullptr);
+    EXPECT_EQ(s->try_as<ObjFunction>(), nullptr);
 }
 
 // const 重载:const Object* -> const T*。
@@ -59,8 +59,8 @@ TEST(ObjectTryAs, ConstOverload) {
     GC                  gc;
     auto                s = new_string(gc, "hello");
     const aria::Object* o = s;
-    EXPECT_EQ(aria::Object::try_as<ObjString>(o), s);
-    EXPECT_EQ(aria::Object::try_as<ObjFunction>(o), nullptr);
+    EXPECT_EQ(o->try_as<ObjString>(), s);
+    EXPECT_EQ(o->try_as<ObjFunction>(), nullptr);
 }
 
 // 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入

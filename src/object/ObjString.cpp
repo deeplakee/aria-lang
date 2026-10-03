@@ -43,9 +43,9 @@ namespace aria {
             return true; // intern 命中:同指针同内容
         if (other == nullptr)
             return false; // null 恒不等(null 不是任何类型实例)
-        if (!is<ObjString>(other))
+        if (!other->is<ObjString>())
             return false;
-        return view() == as<ObjString>(other)->view();
+        return view() == other->as<ObjString>()->view();
     }
 
     String ObjString::debug_repr() const { return std::format("\"{}\"", util::escape_string(view())); }

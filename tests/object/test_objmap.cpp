@@ -106,7 +106,7 @@ TEST(ObjMap, Basics) {
     GC   gc;
     auto guard = gc.make_guard();
     auto map   = make_map(gc, guard);
-    EXPECT_TRUE(aria::Object::is<ObjMap>(map));
+    EXPECT_TRUE(map->is<ObjMap>());
     EXPECT_EQ(map->type(), aria::ObjType::MAP);
     EXPECT_EQ(map->type_name(), aria::StringView{"Map"});
     EXPECT_EQ(map->table().size(), 0u);
@@ -320,7 +320,7 @@ TEST(ObjMap, TraceStressKeepsEntries) {
     ASSERT_EQ(map->table().size(), 1u);
     auto value = map->load_index(vm, Value::from_obj(key));
     ASSERT_TRUE(value.has_value());
-    const auto survived = aria::Object::try_as<ObjString>(value->as_obj());
+    const auto survived = value->as_obj()->try_as<ObjString>();
     ASSERT_NE(survived, nullptr);
     EXPECT_EQ(survived->view(), "a long map value string!!!");
 }
@@ -361,7 +361,7 @@ TEST(ObjMap, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(map)));
-    const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
+    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "iter");
 }
@@ -494,8 +494,8 @@ TEST(ObjMapIterator, TraceStressKeepsSource) {
     guard.push(trigger);
     ASSERT_TRUE(iter->has_next());
     const auto [k, v] = take_pair(vm, guard, iter);
-    const auto key    = aria::Object::try_as<ObjString>(k.as_obj());
-    const auto value  = aria::Object::try_as<ObjString>(v.as_obj());
+    const auto key    = k.as_obj()->try_as<ObjString>();
+    const auto value  = v.as_obj()->try_as<ObjString>();
     ASSERT_NE(key, nullptr);
     ASSERT_NE(value, nullptr);
     EXPECT_EQ(key->view(), "stress key string");

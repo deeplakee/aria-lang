@@ -118,9 +118,9 @@ namespace {
         BENCH_CHECK(compiled.has_value(), "compile failed");
         ObjFunction* probe = nullptr;
         for (const auto& constant: (*compiled)->unit().constants) {
-            if (constant.is_obj() && aria::Object::is<ObjFunction>(constant.as_obj()) &&
-                aria::Object::as<ObjFunction>(constant.as_obj())->name()->view() == "__probe__") {
-                probe = aria::Object::as<ObjFunction>(constant.as_obj());
+            if (constant.is_obj() && constant.as_obj()->is<ObjFunction>() &&
+                constant.as_obj()->as<ObjFunction>()->name()->view() == "__probe__") {
+                probe = constant.as_obj()->as<ObjFunction>();
             }
         }
         BENCH_CHECK(probe != nullptr, "probe fn missing from entry constants");

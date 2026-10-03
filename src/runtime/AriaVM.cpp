@@ -182,7 +182,7 @@ namespace aria {
 
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
-        string_constants_{str_table::kCount} {
+        string_constants_{str_table::kCount}, char_cache_{kCharCacheSlots} {
         current_ = new_movement(gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
@@ -191,6 +191,7 @@ namespace aria {
             // 进 tracer 可达的家**(registers_ / string_constants_ / builtins_,主上下文经 current_)。
             const auto lock = gc_.make_lock();
             bootstrap_string_constants();
+            bootstrap_char_cache();
             bootstrap_registers();
             Builtin::register_builtins(gc_, builtins_);
         }
@@ -203,6 +204,16 @@ namespace aria {
             string_constants_[index] = new_string(gc_, str_table::kConstants[index]);
         }
         assert_slots_filled(string_constants_, "string_constants_: unfilled slot after bootstrap");
+    }
+
+    void AriaVM::bootstrap_char_cache() {
+        // 字节域全值域一次铸满(char 重载工厂内 &ch 同步用,无悬垂窗口);经驻留池铸造,与一切
+        // 铸造路径恒同对象。须在 ctor 构造临界区内调用(GC 挂起,创建免守卫),填入即经
+        // char_cache_ 可达,解锁前发布完毕;填完逐槽收口。
+        for (usize byte = 0; byte < kCharCacheSlots; ++byte) {
+            char_cache_[byte] = new_string(gc_, static_cast<char>(byte));
+        }
+        assert_slots_filled(char_cache_, "char_cache_: unfilled slot after bootstrap");
     }
 
     void AriaVM::bootstrap_registers() {
@@ -253,6 +264,9 @@ namespace aria {
             }
             for (const auto string: string_constants_) {
                 g.mark_object(string);
+            }
+            for (const auto entry: char_cache_) {
+                g.mark_object(entry); // 单字符常量:恒驻留(tracer 标根,池表项同保不摘白)
             }
         });
     }

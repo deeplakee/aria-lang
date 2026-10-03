@@ -175,6 +175,14 @@ namespace aria {
             return string_constants_[*found];
         }
 
+        // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表):1 字节串全值域恒定,
+        // s[i]/chars()/iterator 的逐字符产出经它取用,免逐铸一次哈希+池探测+memcmp。
+        [[nodiscard]]
+        ObjString* char_string(const u8 byte) const noexcept {
+            ASSERT(char_cache_[byte] != nullptr, "single char cache slot unfilled");
+            return char_cache_[byte];
+        }
+
         // 裸名导入搜索根(语义对齐 Python sys.path):解析器按 <源根>/<spec>.aria 首个存在者命中;
         // 模块表键为命中文件绝对规范路径,源根不进键。List<String> 路径元数据,不参与 GC 追踪。
         [[nodiscard]]
@@ -187,6 +195,9 @@ namespace aria {
         void set_source_roots(List<String> roots) noexcept;
 
     private:
+        // 单字符常量表槽数(字节域全值域容量:值域 0-255,容量 = 上限 + 1)。
+        static constexpr usize kCharCacheSlots = 256;
+
         // 执行本体(无入口装饰):压 callee 进帧后 dispatch_loop;唯一不 reset、不播源根、不断言
         // 主上下文的执行口(重入路径调用者的栈不可冲掉),「切换型原生不得在嵌套 run_closure 内
         // 可达」红线据此立。
@@ -254,6 +265,10 @@ namespace aria {
         // 常量串表 bootstrap(ctor 一次调用):按注册表逐条驻留填入 string_constants_;须先于
         // bootstrap_registers -- String 类钩子缓存按名取串读的就是本表。
         void bootstrap_string_constants();
+
+        // 单字符常量表 bootstrap(ctor 一次调用):字节域全值域 256 槽一次铸满与 string_constants_
+        // 同地位(运行期恒驻留常量,tracer 标根);须在 ctor 构造临界区内调用。
+        void bootstrap_char_cache();
 
         // VM 根 tracer 挂接(ctor 一次调用):只标 current_ 一点,各上下文内部与 previous_ resume
         // 链经 ObjMovement::trace 级联。
@@ -388,6 +403,10 @@ namespace aria {
 
         // 常量串表:VM 运行期按名取用的字符串常量(tracer 标根保命 -- 驻留池是 weak root)。
         List<ObjString*> string_constants_;
+
+        // 单字符常量表:字节域全值域(direct-mapped,byte 值即下标,kCharCacheSlots 槽),bootstrap
+        // 一次铸满、运行期恒驻留常量(tracer 标根);逐字符产串(s[i]/chars()/iterator)的直查表。
+        List<ObjString*> char_cache_;
 
 #ifdef ARIA_OPCODE_PROFILE
         // 指令频度探针(仅探针构建):计数状态自持,析构时按 ARIA_OPCODE_STATS 环境变量门控 dump。

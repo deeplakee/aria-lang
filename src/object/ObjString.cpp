@@ -89,7 +89,7 @@ namespace aria {
         }
         const i64 raw = key.as_int();
         if (const auto slot = util::resolve_index(raw, length_)) {
-            return Value::from_obj(new_string(vm.gc(), view()[*slot]));
+            return Value::from_obj(vm.char_string(static_cast<u8>(view()[*slot])));
         }
         return vm.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", raw);
     }

@@ -1960,10 +1960,9 @@ TEST_F(AriaVMStress, InheritanceOverrideAndSuperCall) {
     EXPECT_EQ(out->as_int(), 11);
 
     // 结构:Sub 的父链确指 Base(经共享 globals 取回类值)。
-    auto base_cls = fn->module()->globals().find(Value::from_obj(new_string(gc, "Base")))
-                            ->value.as_obj()->as<ObjClass>();
-    auto sub_cls = fn->module()->globals().find(Value::from_obj(new_string(gc, "Sub")))
-                           ->value.as_obj()->as<ObjClass>();
+    auto base_cls =
+            fn->module()->globals().find(Value::from_obj(new_string(gc, "Base")))->value.as_obj()->as<ObjClass>();
+    auto sub_cls = fn->module()->globals().find(Value::from_obj(new_string(gc, "Sub")))->value.as_obj()->as<ObjClass>();
     EXPECT_EQ(sub_cls->superclass(), base_cls);
 }
 
@@ -3031,4 +3030,34 @@ TEST(AriaVM, StringConstantsOutliveCollect) {
         EXPECT_EQ(relooked, original);             // 同指针 = 仍在池中且仍是同一对象
         EXPECT_EQ(relooked->view(), key);          // 正面证明串活着(取内容不悬垂)
     }
+}
+
+TEST(SingleCharCache, AllBytesResolveToDistinctStableObjects) {
+    AriaVM vm;
+    for (usize byte = 0; byte < 256; ++byte) {
+        const auto* s = vm.char_string(static_cast<u8>(byte));
+        ASSERT_EQ(s->length(), static_cast<usize>(1));
+        EXPECT_EQ(s->view()[0], static_cast<char>(byte));
+        EXPECT_EQ(vm.char_string(static_cast<u8>(byte)), s); // 同字节恒同对象
+    }
+}
+
+TEST(SingleCharCache, FactoryPathsAgreeOnInternedObject) {
+    AriaVM vm;
+    for (usize byte = 0; byte < 256; ++byte) {
+        const char c = static_cast<char>(byte);
+        // 常量表与铸造工厂(经驻留池)必同对象:look-aside 只回驻留串
+        EXPECT_EQ(vm.char_string(static_cast<u8>(byte)), new_string(vm.gc(), StringView{&c, 1}));
+    }
+}
+
+TEST_F(AriaVMStress, SingleCharConstantsSurviveCollections) {
+    auto& gc = vm.gc();
+    // stress:每次分配即 collect;单字符常量经 tracer 标根,恒存活、恒同指针
+    const auto* before = vm.char_string('x');
+    for (int round = 0; round < 20; ++round) {
+        EXPECT_EQ(new_string(gc, "churn trigger!"), new_string(gc, "churn trigger!"));
+        EXPECT_EQ(vm.char_string('x'), before);
+    }
+    EXPECT_EQ(before->view(), "x");
 }

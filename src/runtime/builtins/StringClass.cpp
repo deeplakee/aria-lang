@@ -361,11 +361,15 @@ namespace aria {
                 const usize start      = offset;
                 const auto [cp, width] = utf8::decode_one(src, offset);
                 offset += width;
-                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。合法宽 1 序列必为 ASCII
-                //(cp == lead < 0x80),故 cp >= 0x80 且宽 1 即坏字节;合法 U+FFFD 宽 3,原字节与
-                // encode 产物逐位相同。
-                if (width == 1 && cp >= 0x80) {
-                    list->elements().push(Value::from_obj(new_string(vm.gc(), utf8::encode(cp))));
+                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。宽 1 外判、码点内判:
+                // 非 ASCII 即坏字节走 encode(U+FFFD) 冷臂保替换码点语义;宽 1 ASCII 走单字符常量
+                // 表直读;多字节切 src 原字节(合法 U+FFFD 宽 3,原字节与 encode 产物逐位相同)。
+                if (width == 1) {
+                    if (cp >= 0x80) {
+                        list->elements().push(Value::from_obj(new_string(vm.gc(), utf8::encode(cp))));
+                    } else {
+                        list->elements().push(Value::from_obj(vm.char_string(static_cast<u8>(cp))));
+                    }
                 } else {
                     list->elements().push(Value::from_obj(new_string(vm.gc(), src.substr(start, width))));
                 }

@@ -29,7 +29,7 @@ using aria::ObjString;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::u8;
 using aria::usize;
 using aria::Value;
@@ -68,7 +68,7 @@ namespace {
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value()); // fail 契约:失败信号 ⟺ 寄存器必有载荷
-        const auto ex = try_obj<ObjException>(*payload);
+        const auto ex = try_as_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
     }

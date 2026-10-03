@@ -63,7 +63,7 @@ namespace aria {
     }
 
     Opt<Value> ObjString::load_index(AriaVM& vm, const Value key) {
-        if (const auto range = try_obj<ObjRange>(key)) {
+        if (const auto range = try_as_obj<ObjRange>(key)) {
             return slice(vm, range);
         }
         // 整数键 = 字节域,负下标从尾计数归一化;多字节序列中间字节取该字节自身。

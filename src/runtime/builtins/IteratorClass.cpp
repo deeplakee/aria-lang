@@ -27,15 +27,15 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            if (const auto list = try_obj<ObjList>(slots[1])) {
+            if (const auto list = try_as_obj<ObjList>(slots[1])) {
                 slots[0] = Value::from_obj(new_list_iterator(vm.gc(), list));
                 return true;
             }
-            if (const auto str = try_obj<ObjString>(slots[1])) {
+            if (const auto str = try_as_obj<ObjString>(slots[1])) {
                 slots[0] = Value::from_obj(new_string_iterator(vm.gc(), str));
                 return true;
             }
-            if (const auto map = try_obj<ObjMap>(slots[1])) {
+            if (const auto map = try_as_obj<ObjMap>(slots[1])) {
                 slots[0] = Value::from_obj(new_map_iterator(vm.gc(), map));
                 return true;
             }

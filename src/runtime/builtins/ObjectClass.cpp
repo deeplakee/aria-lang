@@ -24,7 +24,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto target = try_obj<ObjClass>(slots[1]);
+            const auto target = try_as_obj<ObjClass>(slots[1]);
             if (target == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "argument must be a class, got {}", type_name(slots[1]));
             }

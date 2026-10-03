@@ -71,7 +71,7 @@ namespace aria {
             }
             StringView msg = "assertion failed";
             if (argc == 2) {
-                if (const auto s = try_obj<ObjString>(slots[2])) {
+                if (const auto s = try_as_obj<ObjString>(slots[2])) {
                     msg = s->view();
                 }
             }
@@ -97,7 +97,7 @@ namespace aria {
             if (argc != 1 && argc != 2) {
                 return vm.arity_error_range(argc, 1, 2);
             }
-            const auto msg = try_obj<ObjString>(slots[1]);
+            const auto msg = try_as_obj<ObjString>(slots[1]);
             if (msg == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "argument must be a string, got {}", type_name(slots[1]));
             }

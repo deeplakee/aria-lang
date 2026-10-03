@@ -32,7 +32,7 @@ using aria::Opt;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::usize;
 using aria::Value;
 using aria::value_identical;
@@ -51,7 +51,7 @@ namespace {
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
-        const auto ex = try_obj<ObjException>(*payload);
+        const auto ex = try_as_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
     }
@@ -300,7 +300,7 @@ TEST(ObjString, LoadFieldBindsNativeToReceiver) {
     auto   bound = s->load_field_bound(vm, new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(s)));
     const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
@@ -332,7 +332,7 @@ TEST(ObjString, BootstrapSurvivesStressCollect) {
     auto bound = s->load_field_bound(vm, new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_EQ(method->name()->view(), "upper"); // name() 经 bound 的原生取名,存活即链完好
 }
@@ -349,7 +349,7 @@ TEST(ObjString, OpAddConcatenates) {
     auto   sum   = invoke_string_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     guard.push(sum->as_obj());
-    const auto sum_str = try_obj<ObjString>(*sum);
+    const auto sum_str = try_as_obj<ObjString>(*sum);
     ASSERT_NE(sum_str, nullptr);
     EXPECT_EQ(sum_str->debug_repr(), "\"0123456789abcdefghijKLM\"");
     EXPECT_EQ(sum_str->length(), 23u);
@@ -378,13 +378,13 @@ TEST(ObjString, OpAddHandlesEmptyOperands) {
     auto   both  = invoke_string_hook(vm, "__add__", Value::from_obj(empty), Value::from_obj(empty));
     ASSERT_TRUE(both.has_value());
     guard.push(both->as_obj());
-    const auto both_str = try_obj<ObjString>(*both);
+    const auto both_str = try_as_obj<ObjString>(*both);
     ASSERT_NE(both_str, nullptr);
     EXPECT_EQ(both_str->length(), 0u);
     auto one = invoke_string_hook(vm, "__add__", Value::from_obj(text), Value::from_obj(empty));
     ASSERT_TRUE(one.has_value());
     guard.push(one->as_obj());
-    const auto one_str = try_obj<ObjString>(*one);
+    const auto one_str = try_as_obj<ObjString>(*one);
     ASSERT_NE(one_str, nullptr);
     EXPECT_EQ(one_str->debug_repr(), "\"x\"");
 }
@@ -434,7 +434,7 @@ TEST(ObjString, OpMulRepeats) {
     auto   twice = invoke_string_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(2));
     ASSERT_TRUE(twice.has_value());
     guard.push(twice->as_obj());
-    const auto twice_str = try_obj<ObjString>(*twice);
+    const auto twice_str = try_as_obj<ObjString>(*twice);
     ASSERT_NE(twice_str, nullptr);
     EXPECT_EQ(twice_str->debug_repr(), "\"0123456789abcdefghij0123456789abcdefghij\"");
     EXPECT_EQ(twice_str->length(), 40u);
@@ -443,13 +443,13 @@ TEST(ObjString, OpMulRepeats) {
     auto one = invoke_string_hook(vm, "__mul__", Value::from_obj(ab), Value::from_int(1));
     ASSERT_TRUE(one.has_value());
     guard.push(one->as_obj());
-    const auto one_str = try_obj<ObjString>(*one);
+    const auto one_str = try_as_obj<ObjString>(*one);
     ASSERT_NE(one_str, nullptr);
     EXPECT_EQ(one_str->view(), "h\xC3\xA9");
     auto zero = invoke_string_hook(vm, "__mul__", Value::from_obj(ab), Value::from_int(0));
     ASSERT_TRUE(zero.has_value());
     guard.push(zero->as_obj());
-    const auto zero_str = try_obj<ObjString>(*zero);
+    const auto zero_str = try_as_obj<ObjString>(*zero);
     ASSERT_NE(zero_str, nullptr);
     EXPECT_EQ(zero_str->length(), 0u);
 }
@@ -474,7 +474,7 @@ TEST(ObjString, OpMulEmptySourceYieldsEmpty) {
     auto   empty = make_string(gc, guard, "");
     auto   rep   = invoke_string_hook(vm, "__mul__", Value::from_obj(empty), Value::from_int(3));
     ASSERT_TRUE(rep.has_value());
-    const auto rep_str = try_obj<ObjString>(*rep);
+    const auto rep_str = try_as_obj<ObjString>(*rep);
     ASSERT_NE(rep_str, nullptr);
     EXPECT_EQ(rep_str->length(), 0u);
 }

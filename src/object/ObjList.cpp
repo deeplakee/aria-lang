@@ -66,7 +66,7 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
-        if (const auto range = try_obj<ObjRange>(key)) {
+        if (const auto range = try_as_obj<ObjRange>(key)) {
             return slice(vm, range);
         }
         if (!key.is_int()) {

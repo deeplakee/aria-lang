@@ -39,7 +39,7 @@ using aria::ObjString;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::usize;
 using aria::Value;
 using aria::value_equal;
@@ -80,7 +80,7 @@ namespace {
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
-        const auto ex = try_obj<ObjException>(*payload);
+        const auto ex = try_as_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
     }
@@ -90,7 +90,7 @@ namespace {
         auto item = iter->next(vm);
         EXPECT_TRUE(item.has_value());
         guard.push(item->as_obj());
-        const auto list = try_obj<ObjList>(*item);
+        const auto list = try_as_obj<ObjList>(*item);
         EXPECT_NE(list, nullptr);
         if (list == nullptr || list->elements().size() != 2) {
             return {Value::nil_val(), Value::nil_val()};
@@ -358,7 +358,7 @@ TEST(ObjMap, LoadFieldBindsNativeToReceiver) {
     auto   bound = map->load_field_bound(vm, new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(map)));
     const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
@@ -390,7 +390,7 @@ TEST(ObjMap, BootstrapSurvivesStressCollect) {
     auto bound = map->load_field_bound(vm, new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_EQ(method->name()->view(), "iter"); // name() 经 bound 的原生取名,存活即链完好
 }

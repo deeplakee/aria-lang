@@ -18,7 +18,7 @@ namespace aria {
         if (argc != 1) {
             return vm.arity_error(argc, 1);
         }
-        const auto closure = try_obj<ObjClosure>(slots[1]);
+        const auto closure = try_as_obj<ObjClosure>(slots[1]);
         if (closure == nullptr) {
             return vm.fail(ErrorCode::TypeMismatch, "argument must be a function, got {}", type_name(slots[1]));
         }
@@ -34,7 +34,7 @@ namespace aria {
         if (argc == 0) {
             return vm.arity_error_at_least(argc, 1);
         }
-        const auto co = try_obj<ObjMovement>(slots[1]);
+        const auto co = try_as_obj<ObjMovement>(slots[1]);
         if (co == nullptr) {
             return vm.fail(ErrorCode::TypeMismatch, "argument must be a coroutine, got {}", type_name(slots[1]));
         }
@@ -54,7 +54,7 @@ namespace aria {
         const auto payload = static_cast<u8>(argc - 1);
         if (co->frames().empty()) {
             // 首启:载荷即被调函数实参(上界交 check_arity 报被调者元数,默认参数/varargs 照常)。
-            const auto closure = try_obj<ObjClosure>(co->peek(0));
+            const auto closure = try_as_obj<ObjClosure>(co->peek(0));
             ASSERT(closure != nullptr, "coroutine slot-0 is not a closure (create invariant)");
             const auto fn = closure->function();
             if (!vm.check_arity(fn, payload)) {
@@ -103,7 +103,7 @@ namespace aria {
         if (argc != 1) {
             return vm.arity_error(argc, 1);
         }
-        const auto co = try_obj<ObjMovement>(slots[1]);
+        const auto co = try_as_obj<ObjMovement>(slots[1]);
         if (co == nullptr) {
             return vm.fail(ErrorCode::TypeMismatch, "argument must be a coroutine, got {}", type_name(slots[1]));
         }

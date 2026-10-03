@@ -13,7 +13,7 @@ namespace aria {
     // 从 Value 一步取对象子类型(= is_obj + Object::try_as 合一):持对象且动态类型为 T 返回 T*,否则 nullptr。
     template<DerivedFromObj T>
     [[nodiscard]]
-    T* try_obj(const Value value) noexcept {
+    T* try_as_obj(const Value value) noexcept {
         return value.is_obj() ? Object::try_as<T>(value.as_obj()) : nullptr;
     }
 
@@ -31,7 +31,7 @@ namespace aria {
     // MAKE_STATIC/类上赋值不戳,故静态槽恒非方法)。
     [[nodiscard]]
     inline bool is_method(const Value value) noexcept {
-        const auto closure = try_obj<ObjClosure>(value);
+        const auto closure = try_as_obj<ObjClosure>(value);
         return closure != nullptr && closure->is_method();
     }
 

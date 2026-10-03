@@ -27,7 +27,7 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            const auto inst = try_obj<ObjInstance>(slots[0]);
+            const auto inst = try_as_obj<ObjInstance>(slots[0]);
             if (inst == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "init requires an instance receiver, got {}",
                                type_name(slots[0]));
@@ -44,11 +44,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            if (const auto ex = try_obj<ObjException>(slots[0])) {
+            if (const auto ex = try_as_obj<ObjException>(slots[0])) {
                 slots[0] = Value::from_obj(ex->message());
                 return true;
             }
-            if (const auto inst = try_obj<ObjInstance>(slots[0])) {
+            if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
                 if (const auto hit = inst->load_field(vm, vm.str<"_message">())) {
                     slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;
@@ -65,11 +65,11 @@ namespace aria {
             if (argc != 0) {
                 return vm.arity_error(argc, 0);
             }
-            if (const auto ex = try_obj<ObjException>(slots[0])) {
+            if (const auto ex = try_as_obj<ObjException>(slots[0])) {
                 slots[0] = Value::from_int(ex->numeric_code());
                 return true;
             }
-            if (const auto inst = try_obj<ObjInstance>(slots[0])) {
+            if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
                 if (const auto hit = inst->load_field(vm, vm.str<"_code">())) {
                     slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;

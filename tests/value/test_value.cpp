@@ -17,7 +17,7 @@ using aria::new_module;
 using aria::new_string;
 using aria::ObjModule;
 using aria::ObjString;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::Value;
 using aria::value_equal;
 using aria::value_identical;
@@ -171,24 +171,24 @@ TEST(HashTableKey, StringKeyByContentViaIntern) {
     EXPECT_EQ(found->value.as_int(), 42);
 }
 
-// ===== try_obj (Value -> 对象子类型一步守卫) =====
+// ===== try_as_obj (Value -> 对象子类型一步守卫) =====
 
 TEST(ValueTryObj, ObjMatchReturnsPointer) {
     GC   gc;
     auto s = new_string(gc, "hello");
-    EXPECT_EQ(try_obj<ObjString>(Value::from_obj(s)), s);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::from_obj(s)), s);
 }
 
 TEST(ValueTryObj, NonObjValueReturnsNull) {
-    EXPECT_EQ(try_obj<ObjString>(Value::nil_val()), nullptr);
-    EXPECT_EQ(try_obj<ObjString>(Value::from_bool(true)), nullptr);
-    EXPECT_EQ(try_obj<ObjString>(Value::from_i32(1)), nullptr);
-    EXPECT_EQ(try_obj<ObjString>(Value::from_f64(2.5)), nullptr);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::nil_val()), nullptr);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::from_bool(true)), nullptr);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::from_i32(1)), nullptr);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::from_f64(2.5)), nullptr);
 }
 
 TEST(ValueTryObj, ObjMismatchReturnsNull) {
     GC   gc;
     auto m = new_module(gc, "m"); // StringView 重载自守 name,本测试无 stress 无 GC 风险
-    EXPECT_EQ(try_obj<ObjString>(Value::from_obj(m)), nullptr);
-    EXPECT_EQ(try_obj<ObjModule>(Value::from_obj(m)), m);
+    EXPECT_EQ(try_as_obj<ObjString>(Value::from_obj(m)), nullptr);
+    EXPECT_EQ(try_as_obj<ObjModule>(Value::from_obj(m)), m);
 }

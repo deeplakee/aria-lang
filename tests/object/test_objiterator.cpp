@@ -36,7 +36,7 @@ using aria::ObjStringIterator;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::Value;
 using aria::value_identical;
 
@@ -68,7 +68,7 @@ namespace {
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
-        const auto ex = try_obj<ObjException>(*payload);
+        const auto ex = try_as_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
     }
@@ -121,7 +121,7 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     auto   bound = iter->load_field_bound(vm, new_string(gc, "has_next"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(iter)));
     const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());

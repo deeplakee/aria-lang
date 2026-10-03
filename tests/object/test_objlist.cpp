@@ -32,7 +32,7 @@ using aria::Opt;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
-using aria::try_obj;
+using aria::try_as_obj;
 using aria::usize;
 using aria::Value;
 using aria::value_equal;
@@ -67,7 +67,7 @@ namespace {
     void expect_slice(AriaVM& vm, ObjList* list, aria::ObjRange* range, const aria::List<i64>& expected) {
         const auto result = list->load_index(vm, Value::from_obj(range));
         ASSERT_TRUE(result.has_value());
-        const auto sliced = try_obj<ObjList>(*result);
+        const auto sliced = try_as_obj<ObjList>(*result);
         ASSERT_NE(sliced, nullptr);
         ASSERT_EQ(sliced->elements().size(), expected.size());
         for (usize index = 0; index < expected.size(); ++index) {
@@ -80,7 +80,7 @@ namespace {
     Pair<ErrorCode, String> take_pending_error(AriaVM& vm) {
         auto payload = vm.current_context()->take_error();
         EXPECT_TRUE(payload.has_value());
-        const auto ex = try_obj<ObjException>(*payload);
+        const auto ex = try_as_obj<ObjException>(*payload);
         EXPECT_NE(ex, nullptr);
         return {ex->code(), String{ex->message()->view()}};
     }
@@ -106,7 +106,7 @@ namespace {
     // 拼接/重复取件:产出新 list 的元素逐个比对(调用方保证成功)。
     void expect_elements(const Opt<Value>& result, const aria::List<i64>& expected) {
         ASSERT_TRUE(result.has_value());
-        const auto out = try_obj<ObjList>(*result);
+        const auto out = try_as_obj<ObjList>(*result);
         ASSERT_NE(out, nullptr);
         ASSERT_EQ(out->elements().size(), expected.size());
         for (usize index = 0; index < expected.size(); ++index) {
@@ -590,7 +590,7 @@ TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     auto   bound = list->load_field_bound(vm, new_string(gc, "push"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(list)));
     const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
@@ -608,7 +608,7 @@ TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     auto   bound = list->load_field_bound(vm, new_string(gc, "init"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     const auto native = aria::Object::try_as<ObjNativeFn>(method->method().as_obj());
     ASSERT_NE(native, nullptr);
@@ -639,7 +639,7 @@ TEST(ObjList, BootstrapSurvivesStressCollect) {
     auto bound = list->load_field_bound(vm, new_string(gc, "pop"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
-    const auto method = try_obj<ObjBoundMethod>(*bound);
+    const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_EQ(method->name()->view(), "pop"); // name() 经 bound 的原生取名,存活即链完好
 }
@@ -658,7 +658,7 @@ TEST(ObjList, OpAddConcatenates) {
     rhs->elements().push(Value::from_int(3));
     auto out = invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     expect_elements(out, {1, 2, 3});
-    const auto merged = try_obj<ObjList>(*out);
+    const auto merged = try_as_obj<ObjList>(*out);
     ASSERT_NE(merged, nullptr);
     merged->elements()[0] = Value::from_int(9); // 侵入改结果,源表不得被波及
     EXPECT_EQ(lhs->elements()[0].as_int(), 1);
@@ -679,7 +679,7 @@ TEST(ObjList, OpAddSharesNestedElements) {
     auto out = invoke_list_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(out.has_value());
     EXPECT_FALSE(value_identical(*out, Value::from_obj(lhs))); // 新表,非源表本身
-    const auto merged = try_obj<ObjList>(*out);
+    const auto merged = try_as_obj<ObjList>(*out);
     ASSERT_NE(merged, nullptr);
     ASSERT_EQ(merged->elements().size(), 1u);
     EXPECT_TRUE(value_identical(merged->elements()[0], Value::from_obj(inner)));
@@ -746,7 +746,7 @@ TEST(ObjList, OpMulSharesNestedElements) {
     lhs->elements().push(Value::from_obj(inner));
     auto out = invoke_list_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(2));
     ASSERT_TRUE(out.has_value());
-    const auto repeated = try_obj<ObjList>(*out);
+    const auto repeated = try_as_obj<ObjList>(*out);
     ASSERT_NE(repeated, nullptr);
     ASSERT_EQ(repeated->elements().size(), 2u);
     EXPECT_TRUE(value_identical(repeated->elements()[0], Value::from_obj(inner)));

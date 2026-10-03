@@ -149,7 +149,7 @@ namespace aria {
             if (is_num(value)) {
                 return SortDomain::Number;
             }
-            if (try_obj<ObjString>(value) != nullptr) {
+            if (try_as_obj<ObjString>(value) != nullptr) {
                 return SortDomain::String;
             }
             return SortDomain::NotComparable;
@@ -268,7 +268,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto sep = try_obj<ObjString>(slots[1]);
+            const auto sep = try_as_obj<ObjString>(slots[1]);
             if (sep == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(slots[1]));
             }
@@ -304,7 +304,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjList>(slots[1]);
+            const auto rhs = try_as_obj<ObjList>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
                                type_name(slots[0]), type_name(slots[1]));

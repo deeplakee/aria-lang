@@ -149,7 +149,7 @@ namespace aria {
             }
             ObjString* sep = nullptr;
             if (argc == 1) {
-                sep = try_obj<ObjString>(slots[1]);
+                sep = try_as_obj<ObjString>(slots[1]);
                 if (sep == nullptr) {
                     return vm.fail(ErrorCode::TypeMismatch, "split separator must be a string, got {}",
                                    type_name(slots[1]));
@@ -176,7 +176,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto sub = try_obj<ObjString>(slots[1]);
+            const auto sub = try_as_obj<ObjString>(slots[1]);
             if (sub == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "find argument must be a string, got {}", type_name(slots[1]));
             }
@@ -195,7 +195,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto sub = try_obj<ObjString>(slots[1]);
+            const auto sub = try_as_obj<ObjString>(slots[1]);
             if (sub == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "contains argument must be a string, got {}",
                                type_name(slots[1]));
@@ -215,8 +215,8 @@ namespace aria {
             if (argc != 2) {
                 return vm.arity_error(argc, 2);
             }
-            const auto old_str = try_obj<ObjString>(slots[1]);
-            const auto new_str = try_obj<ObjString>(slots[2]);
+            const auto old_str = try_as_obj<ObjString>(slots[1]);
+            const auto new_str = try_as_obj<ObjString>(slots[2]);
             if (old_str == nullptr || new_str == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "replace arguments must be strings, got {} and {}",
                                type_name(slots[1]), type_name(slots[2]));
@@ -282,7 +282,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto prefix = try_obj<ObjString>(slots[1]);
+            const auto prefix = try_as_obj<ObjString>(slots[1]);
             if (prefix == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "starts_with argument must be a string, got {}",
                                type_name(slots[1]));
@@ -300,7 +300,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto suffix = try_obj<ObjString>(slots[1]);
+            const auto suffix = try_as_obj<ObjString>(slots[1]);
             if (suffix == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "ends_with argument must be a string, got {}",
                                type_name(slots[1]));
@@ -447,7 +447,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjString>(slots[1]);
+            const auto rhs = try_as_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__lt__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
@@ -465,7 +465,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjString>(slots[1]);
+            const auto rhs = try_as_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__le__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
@@ -483,7 +483,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjString>(slots[1]);
+            const auto rhs = try_as_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__gt__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
@@ -501,7 +501,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjString>(slots[1]);
+            const auto rhs = try_as_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__ge__ requires two strings, got {} and {}",
                                type_name(slots[0]), aria::type_name(slots[1]));
@@ -520,7 +520,7 @@ namespace aria {
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto rhs = try_obj<ObjString>(slots[1]);
+            const auto rhs = try_as_obj<ObjString>(slots[1]);
             if (rhs == nullptr) {
                 return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
                                type_name(slots[0]), type_name(slots[1]));

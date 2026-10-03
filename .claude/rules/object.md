@@ -28,7 +28,7 @@ paths:
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
 - `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文对象（`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。trace 自标值栈/帧/开链/挂起载荷并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
 - `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `debug_repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
-- `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_obj<T>`、`is_callable_value`、`is_method`）。
+- `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_as_obj<T>`、`is_callable_value`、`is_method`）。
 
 ## 协议虚函数族
 
@@ -137,4 +137,4 @@ paths:
 - 「守卫后使用」成对场景优先一步 `Object::try_as<T>(obj)`（类型只写一次，DEBUG 单次 dynamic_cast 优于成对的两次）。
 - `switch (obj->type())` 臂内等静态已知场合用 `Object::as<T>(obj)`（NDEBUG 裸 cast 不校验）；多分支枚举分派（如 `AriaVM::call_value`）天然合理，保留枚举写法。
 - **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。
-- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `Object::is/as<X>(v.as_obj())`。
+- 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `Object::is/as<X>(v.as_obj())`。

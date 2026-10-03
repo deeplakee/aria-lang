@@ -608,7 +608,7 @@ namespace aria {
         // string 快路径(lhs 非空,调用方已判 is_obj):两侧 tag 均 STRING 时就地拼接/字序比较,
         // 免整条原生调用链;白名单仅 ADD 与四个字序比较实例化,其余算子恒 false。返回 true = 已
         // 派发完成,false = 不适用落原路(非失败,两侧皆 string 的臂全无 fail 路径)。门体用 is/as
-        // 两段式守卫:热路径 flags-only(与平铺比较链同指令选择),免 try_obj/try_as 返 T* 的
+        // 两段式守卫:热路径 flags-only(与平铺比较链同指令选择),免 try_as_obj/try_as 返 T* 的
         // 指针物化分支(实测见 local-string-perf 报告 §7/§12)。
         if constexpr (Op == OpCode::ADD || Op == OpCode::LESS || Op == OpCode::LESS_EQUAL || Op == OpCode::GREATER ||
                       Op == OpCode::GREATER_EQUAL) {
@@ -805,7 +805,7 @@ namespace aria {
         // 契约见 AriaVM.hpp;this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
         // load_field_bound 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
         const Value this_value = current_->frames().top().slots[0];
-        if (const auto inst = try_obj<ObjInstance>(this_value)) {
+        if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
             if (const auto result = inst->load_field_bound(*this, name)) {
                 current_->push(*result); // [] -> [v]
                 return true;
@@ -819,7 +819,7 @@ namespace aria {
         // 契约见 AriaVM.hpp;写入:[v] -> [v](peek-store,值留栈,this 不经值栈)。store_field
         // 恒成功(实例字段动态),false 分支为契约透传防御形态。非实例兜底同读取执行体。
         const Value this_value = current_->frames().top().slots[0];
-        if (const auto inst = try_obj<ObjInstance>(this_value)) {
+        if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
             if (inst->store_field(*this, name, current_->peek(0))) { // false ⟺ 已 fail(契约)
                 return true;                                         // 值留栈(peek-store)
             }
@@ -914,7 +914,7 @@ namespace aria {
 
     bool AriaVM::run_make_class(ObjString* name) {
         // 契约见 AriaVM.hpp;[super] -> [class] 原地写回,铸类不弹不压。
-        if (const auto super = try_obj<ObjClass>(current_->peek(0))) {
+        if (const auto super = try_as_obj<ObjClass>(current_->peek(0))) {
             // 内建容器五类不可继承(方法面 receiver 恒具体内建对象,实例无从满足);Object 放行:
             // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
             if (super == list_class() || super == map_class() || super == string_class() || super == range_class() ||
@@ -951,7 +951,7 @@ namespace aria {
 
     Pair<ErrorCode, String> AriaVM::take_uncaught_error() const {
         const auto payload = *current_->take_error();
-        if (const auto ex = try_obj<ObjException>(payload)) {
+        if (const auto ex = try_as_obj<ObjException>(payload)) {
             return {ex->code(), String{ex->message()->view()}};
         }
         const auto msg = std::format("uncaught exception: {}", format_value(payload));
@@ -1408,12 +1408,12 @@ namespace aria {
                     // defining class 戳),栈形经 ASSERT 校验(值恒来自上一条 CLOSURE,语言写不出
                     // 违例)。set_field 命中 "init" 同步 init_ + 播戳 -- 一职双任(super 来源 +
                     // 方法性标记,读路径据非空判绑)。
-                    const auto klass  = try_obj<ObjClass>(current_->peek(1));
+                    const auto klass  = try_as_obj<ObjClass>(current_->peek(1));
                     const auto method = current_->peek(0);
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), method);
 
-                    const auto closure = try_obj<ObjClosure>(method);
+                    const auto closure = try_as_obj<ObjClosure>(method);
                     ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
                     closure->set_defining_class(klass);
                     current_->drop(1);
@@ -1422,7 +1422,7 @@ namespace aria {
                 case OpCode::MAKE_STATIC: {
                     // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
                     // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形经 ASSERT 校验。
-                    const auto klass = try_obj<ObjClass>(current_->peek(1));
+                    const auto klass = try_as_obj<ObjClass>(current_->peek(1));
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), current_->peek(0));
                     current_->drop(1); // 弹 value 留 class:[class, value] -> [class]

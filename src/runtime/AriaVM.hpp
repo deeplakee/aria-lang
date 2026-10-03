@@ -356,6 +356,15 @@ namespace aria {
 
         // 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族
 
+        // list 下标快路径派发门(target 非空,调用方已判 is_obj):接收者 tag 为 LIST 且键为整数时
+        // 免 load_index 虚派发直取,键解析与虚路径同走 resolve_index;返回 true = 已完成,false =
+        // 不适用落原路(非失败),报错文案单一事实源留 ObjList::load_index。无分配无 GC 点。
+        bool try_list_load_fast_dispatch(Object* target, Value idx) const;
+
+        // list 下标写快路径派发门:契约同 try_list_load_fast_dispatch,界内写槽后值下移两格
+        // ([obj, idx, v] -> [v]);报错文案单一事实源留 ObjList::store_index。
+        bool try_list_store_fast_dispatch(Object* target, Value idx, Value value) const;
+
         // LOAD_INDEX 执行体:[obj, idx] -> [v],经 load_index 协议写回 obj 槽再弹 idx;非对象守卫
         // 文案留执行体,对象侧越界/键类型文案由 override 就地烘焙。
         bool run_load_index();

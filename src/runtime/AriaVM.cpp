@@ -867,6 +867,33 @@ namespace aria {
         return call_value(target, argc);
     }
 
+    bool AriaVM::try_list_load_fast_dispatch(Object* target, const Value idx) const {
+        // 契约见 AriaVM.hpp;命中臂写回 obj 槽再弹 idx,与虚路径同栈效应。
+        if (target->is<ObjList>() && idx.is_int()) {
+            const auto list = target->as<ObjList>();
+            if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
+                current_->peek(1) = list->elements()[*slot];
+                current_->drop(1);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool AriaVM::try_list_store_fast_dispatch(Object* target, const Value idx, const Value value) const {
+        // 契约见 AriaVM.hpp。
+        if (target->is<ObjList>() && idx.is_int()) {
+            const auto list = target->as<ObjList>();
+            if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
+                list->elements()[*slot] = value;
+                current_->peek(2) = value;
+                current_->drop(2);
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool AriaVM::run_load_index() {
         // 契约见 AriaVM.hpp;非对象守卫同 run_load_field(文案与协议基类默认同串)。
         const Value idx = current_->peek(0);
@@ -874,7 +901,11 @@ namespace aria {
         if (!obj.is_obj()) {
             return fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
         }
-        if (const auto result = obj.as_obj()->load_index(*this, idx)) {
+        const auto target = obj.as_obj();
+        if (try_list_load_fast_dispatch(target, idx)) {
+            return true;
+        }
+        if (const auto result = target->load_index(*this, idx)) {
             current_->peek(1) = *result; // 写回 obj 槽再弹 idx:[obj, idx] -> [v]
             current_->drop(1);
             return true;
@@ -890,7 +921,11 @@ namespace aria {
         if (!obj.is_obj()) {
             return fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
         }
-        if (!obj.as_obj()->store_index(*this, idx, value)) {
+        const auto target = obj.as_obj();
+        if (try_list_store_fast_dispatch(target, idx, value)) {
+            return true;
+        }
+        if (!target->store_index(*this, idx, value)) {
             return false; // 载荷已在寄存器
         }
         current_->peek(2) = value; // 值下移两格:弹 obj、idx 留 v,[obj, idx, v] -> [v]

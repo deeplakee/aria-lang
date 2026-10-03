@@ -515,11 +515,10 @@ namespace aria {
     }
 
     void AriaVM::leave_coroutine(const ExecState departing_state) {
-        const auto resumer = current_->previous();
+        const auto resumer = current_->take_previous();
         ASSERT(resumer != nullptr, "leaving context is not on the resume chain");
         resumer->set_state(ExecState::Running);
         current_->set_state(departing_state);
-        current_->set_previous(nullptr);
         current_ = resumer;
     }
 

@@ -203,6 +203,30 @@ namespace aria::util {
         return std::exchange(opt, std::nullopt);
     }
 
+    // 取走指针当前值并置空:返回被取走的指针(可能为空)。
+    template<typename T>
+    [[nodiscard]]
+    T* take(T*& ptr) {
+        return std::exchange(ptr, nullptr);
+    }
+
+    // 无符号整数(排除 bool:bool 的归零语义是置 false,自成下方具名重载,不吃归零形态)。
+    template<typename T>
+    concept UnsignedInteger = std::is_unsigned_v<T> && !std::is_same_v<T, bool>;
+
+    // 取走无符号整数当前值并归零:返回被取走的值。
+    template<UnsignedInteger T>
+    [[nodiscard]]
+    T take(T& value) {
+        return std::exchange(value, T{0});
+    }
+
+    // 取走 bool 当前值并置 false:与非模板重载分立,精确匹配优先。
+    [[nodiscard]]
+    inline bool take(bool& flag) {
+        return std::exchange(flag, false);
+    }
+
     // 把 u32 按"低位在前"(小端序)拆成 4 字节:索引 0 为最低字节。
     [[nodiscard]]
     inline Vector<u8, 4> split_dword(const u32 word) noexcept {

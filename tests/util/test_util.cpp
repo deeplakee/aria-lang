@@ -11,6 +11,13 @@ using util::parse_float_text;
 using util::parse_int_text;
 using util::resolve_index;
 using util::resolve_position;
+using util::take;
+using util::UnsignedInteger;
+
+static_assert(!UnsignedInteger<bool>); // bool 走具名重载,不入归零形态
+static_assert(UnsignedInteger<usize>);
+static_assert(UnsignedInteger<u32>);
+static_assert(!UnsignedInteger<i64>);
 
 // ---------------------------------------------------------------------------
 // resolve_index：负下标从尾计数 + 越界判定（list/string 下标与切片端点共用）
@@ -129,4 +136,37 @@ TEST(ParseFloatText, RejectsAnythingButWholeDecimalFloat) {
     EXPECT_EQ(parse_float_text("1_000.5"), std::nullopt);
     EXPECT_EQ(parse_float_text("0x10"), std::nullopt);
     EXPECT_EQ(parse_float_text("1e400"), std::nullopt); // 越 f64 域：不饱和成 inf，与解析失败同路
+}
+
+TEST(Take, PointerReturnsAndNullsOut) {
+    auto*      owned = new int(42);
+    int*       p     = owned;
+    const int* taken = take(p);
+    EXPECT_EQ(taken, owned);
+    EXPECT_EQ(p, nullptr);
+    delete taken; // const 指针可直接 delete
+}
+
+TEST(Take, UnsignedReturnsAndZeroes) {
+    usize remaining = 7;
+    EXPECT_EQ(take(remaining), static_cast<usize>(7));
+    EXPECT_EQ(remaining, static_cast<usize>(0));
+    u32 hash = 0xDEADBEEF;
+    EXPECT_EQ(take(hash), static_cast<u32>(0xDEADBEEF));
+    EXPECT_EQ(hash, static_cast<u32>(0));
+}
+
+TEST(Take, BoolReturnsAndSetsFalse) {
+    bool dirty = true;
+    EXPECT_TRUE(take(dirty));
+    EXPECT_FALSE(dirty);
+    bool clean = false;
+    EXPECT_FALSE(take(clean));
+    EXPECT_FALSE(clean);
+}
+
+TEST(Take, OptionalOverloadUnaffected) {
+    Opt<int> opt{5};
+    EXPECT_EQ(take(opt), Opt<int>{5});
+    EXPECT_FALSE(opt.has_value());
 }

@@ -238,6 +238,13 @@ namespace aria {
         // 链接/重链(resume 方向:置恢复者)。
         void set_previous(ObjMovement* prev) noexcept { previous_ = prev; }
 
+        // 取走恢复者并断链(yield / RETURN 完成解链的唯一出口,维持挂起态 previous_ 恒 nullptr;
+        // 与 take_error 同族 -- 挂起状态的取走并置空收口)。
+        [[nodiscard]]
+        ObjMovement* take_previous() noexcept {
+            return util::take(previous_);
+        }
+
         // 执行状态(status 直接投影,不做谓词派生)。主上下文的 state_ 无人读(见 ExecState 注)。
         [[nodiscard]]
         ExecState state() const noexcept {

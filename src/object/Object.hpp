@@ -149,10 +149,11 @@ namespace aria {
         virtual usize size() const noexcept = 0;
 
         // 内容相等(== 语义),默认地址相等;ObjString 等按内容 override。=== 对 Obj 一律
-        // 指针相等不走本函数。**契约:须 GC-pure** -- EQUAL/NOT_EQUAL 在弹出的 off-stack
-        // 裸局部上经 value_equal 调用本函数,若触发 collect 会回收操作数成悬垂。递归比较
-        // 子值者(容器)入口另须挂 EqualGuard 防环:比较链重遇同对即视为相等(正则树同构),
-        // 守卫分配走 std::allocator 不触 GC,比较中途不致 collect。
+        // 指针相等不走本函数。前置条件: other 非空 -- 恒经 value_equal 的 Obj 臂 as_obj()
+        // 传入(from_obj 的 DEBUG 断言兜底),override 入口 ASSERT 布防。**契约:须 GC-pure** --
+        // EQUAL/NOT_EQUAL 在弹出的 off-stack 裸局部上经 value_equal 调用本函数,若触发 collect
+        // 会回收操作数成悬垂。递归比较子值者(容器)入口另须挂 EqualGuard 防环:比较链重遇同对
+        // 即视为相等(正则树同构),守卫分配走 std::allocator 不触 GC,比较中途不致 collect。
         [[nodiscard]]
         virtual bool equals(const Object* other) const noexcept {
             return this == other;

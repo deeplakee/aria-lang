@@ -19,11 +19,9 @@ namespace aria {
     }
 
     bool ObjMap::equals(const Object* other) const noexcept {
+        ASSERT(other != nullptr, "null object pointer");
         if (this == other) {
             return true;
-        }
-        if (other == nullptr) {
-            return false; // null 恒不等(null 不是任何类型实例)
         }
         // 环闭合:同对重遇已在比较链上,视为相等(余归纳,正则树同构);互环否则无限互递归。
         if (EqualGuard::is_cycle(this, other)) {

@@ -122,7 +122,6 @@ TEST(ObjRange, EqualsIsContent) {
     EXPECT_FALSE(a->equals(exclusive)); // 含否上界不同
     EXPECT_FALSE(a->equals(shifted));   // 下界不同
     EXPECT_FALSE(a->equals(narrowed));  // 上界不同
-    EXPECT_FALSE(a->equals(nullptr));
 }
 
 TEST(ObjRange, DebugReprMatchesSourceSpelling) {

@@ -32,11 +32,9 @@ namespace aria {
 
     bool ObjBoundMethod::equals(const Object* other) const noexcept {
         // 绑定语义即「同一实现 + 同一接收者」,皆按身份(value_identical)比较,无 GC 分配,GC-pure 契约保持。
+        ASSERT(other != nullptr, "null object pointer");
         if (this == other) {
             return true;
-        }
-        if (other == nullptr) {
-            return false; // null 恒不等(null 不是任何类型实例)
         }
         if (const auto rhs = other->try_as<ObjBoundMethod>()) {
             return value_identical(method_, rhs->method_) && value_identical(receiver_, rhs->receiver_);

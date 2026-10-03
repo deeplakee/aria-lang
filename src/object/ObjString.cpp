@@ -39,10 +39,9 @@ namespace aria {
     }
 
     bool ObjString::equals(const Object* other) const noexcept {
+        ASSERT(other != nullptr, "null object pointer");
         if (this == other)
             return true; // intern 命中:同指针同内容
-        if (other == nullptr)
-            return false; // null 恒不等(null 不是任何类型实例)
         if (!other->is<ObjString>())
             return false;
         return view() == other->as<ObjString>()->view();

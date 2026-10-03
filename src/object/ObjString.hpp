@@ -20,6 +20,10 @@ namespace aria {
         // 短串拷入 SSO 槽)由本构造分流,buffer 归本对象处置。
         ObjString(GC& gc, char* data, usize size, usize cap, u32 hash);
 
+        // 两段直铸构造(仅 new_string 两段重载未命中臂调进):两段各拷一次进本对象存储,不经临时串;
+        // hash 契约同拷贝版,须为 hash_str(hash_str(lhs), rhs) 续算终态。
+        ObjString(GC& gc, StringView lhs, StringView rhs, u32 hash);
+
         ~ObjString() override;
 
         // 借出内容视图:非移动 GC 对象地址与缓冲恒定,存活期有效;sweep 回收后即悬垂,勿跨 collect 持有。
@@ -117,7 +121,7 @@ namespace aria {
     ObjString* new_string(GC& gc, StringView src, u32 hash);
 
     // 两段拼接铸造:内容等于 lhs+rhs,hash 须为 hash_str(hash_str(lhs), rhs) 续算终态。先查驻留
-    //(命中零拷贝返回,免拼出整段),未命中才拼接铸造;lhs/rhs 的宿主串跨分配须保活(经栈即根)。
+    //(命中零拷贝返回),未命中才两段直铸(不经临时串);lhs/rhs 的宿主串跨分配须保活(经栈即根)。
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView lhs, StringView rhs, u32 hash);
 

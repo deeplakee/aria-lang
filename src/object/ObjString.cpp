@@ -46,6 +46,21 @@ namespace aria {
         }
     }
 
+    ObjString::ObjString(GC& gc, const StringView lhs, const StringView rhs, const u32 hash) :
+        Object{hash, ObjType::STRING}, gc_{&gc}, length_{lhs.size() + rhs.size()} {
+        ASSERT(hash == util::hash_str(util::hash_str(lhs), rhs), "hash must be hash_str(hash_str(lhs), rhs)");
+        if (is_long()) {
+            long_chars_ = gc.allocate<char>(length_ + 1);
+            std::memcpy(long_chars_, lhs.data(), lhs.size());
+            std::memcpy(long_chars_ + lhs.size(), rhs.data(), rhs.size());
+            long_chars_[length_] = '\0';
+        } else {
+            std::memcpy(short_chars_, lhs.data(), lhs.size());
+            std::memcpy(short_chars_ + lhs.size(), rhs.data(), rhs.size());
+            short_chars_[length_] = '\0';
+        }
+    }
+
     ObjString::~ObjString() {
         if (is_long()) {
             gc_->deallocate<char>(long_chars_, length_ + 1);
@@ -139,14 +154,13 @@ namespace aria {
     }
 
     ObjString* new_string(GC& gc, const StringView lhs, const StringView rhs, const u32 hash) {
-        // 先查后拼:命中驻留池零拷贝返回;未命中才把两段拼进非 GC 的 C++ String 再铸造。
+        // 先查后拼:命中驻留池零拷贝返回;未命中两段直铸,每字节恰拷一次、不经临时串。
         if (const auto found = gc.intern_find(lhs, rhs, hash)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
-        const auto out = util::concat_string(lhs, rhs);
-        // GC 走查同上:唯一 GC 点是 new_object 顶部 maybe_collect,发生在 s 诞生前;out 非 GC 对象,
+        // GC 走查同上:唯一 GC 点是 new_object 顶部 maybe_collect,发生在 s 诞生前;
         // lhs/rhs 宿主串由调用方保活(调用点两侧均栈根)。
-        const auto s = gc.new_object<ObjString>(gc, out, hash);
+        const auto s = gc.new_object<ObjString>(gc, lhs, rhs, hash);
         gc.intern_insert(s);
         return s;
     }

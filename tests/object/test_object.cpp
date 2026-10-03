@@ -39,7 +39,8 @@ namespace {
 
 } // namespace
 
-// try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含 null 入参)。
+// try_as<T>(is+as 合一):动态类型匹配返回转型指针,否则 nullptr。前置条件:入参非空
+//(is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底),null 入参无测试形态。
 
 TEST(ObjectTryAs, MatchReturnsPointer) {
     GC   gc;
@@ -51,10 +52,6 @@ TEST(ObjectTryAs, MismatchReturnsNull) {
     GC   gc;
     auto s = new_string(gc, "hello");
     EXPECT_EQ(aria::Object::try_as<ObjFunction>(s), nullptr);
-}
-
-TEST(ObjectTryAs, NullObjectReturnsNull) {
-    EXPECT_EQ(aria::Object::try_as<ObjString>(static_cast<aria::Object*>(nullptr)), nullptr);
 }
 
 // const 重载:const Object* -> const T*。

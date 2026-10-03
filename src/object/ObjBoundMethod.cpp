@@ -35,6 +35,9 @@ namespace aria {
         if (this == other) {
             return true;
         }
+        if (other == nullptr) {
+            return false; // null 恒不等(null 不是任何类型实例)
+        }
         if (const auto rhs = try_as<ObjBoundMethod>(other)) {
             return value_identical(method_, rhs->method_) && value_identical(receiver_, rhs->receiver_);
         }

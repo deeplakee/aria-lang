@@ -58,6 +58,7 @@ namespace aria {
 
         // 保护 C++ 局部变量持有的、尚未入值栈的对象跨分配序列:构造 push、析构 pop,底层 push/pop 私有。
         // 生存期须严格嵌套(temp_roots_ 是朴素栈,无归属校验):A push 后 B push、A 先析构会弹掉 B 的根,无断言可拦。
+        // 前置条件:object 非空 -- null 无可守,调用方自行判空跳过挂守卫(from_obj 的 DEBUG 断言兜底)。
         class Guard {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}

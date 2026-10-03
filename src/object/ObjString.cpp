@@ -41,6 +41,8 @@ namespace aria {
     bool ObjString::equals(const Object* other) const noexcept {
         if (this == other)
             return true; // intern 命中:同指针同内容
+        if (other == nullptr)
+            return false; // null 恒不等(null 不是任何类型实例)
         if (!is<ObjString>(other))
             return false;
         return view() == as<ObjString>(other)->view();
@@ -105,9 +107,7 @@ namespace aria {
         return Value::from_obj(new_string(vm.gc(), buffer));
     }
 
-    ObjString* new_string(GC& gc, const StringView src) {
-        return new_string(gc, src, util::hash_str(src));
-    }
+    ObjString* new_string(GC& gc, const StringView src) { return new_string(gc, src, util::hash_str(src)); }
 
     ObjString* new_string(GC& gc, const StringView src, const u32 hash) {
         if (const auto found = gc.intern_find(src, hash)) {

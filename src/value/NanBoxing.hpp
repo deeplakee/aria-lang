@@ -82,6 +82,7 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static Value from_obj(Obj object) noexcept {
+            ASSERT(object != nullptr, "null object pointer");
             u64 bits = ptr_to_u64(object);
             ASSERT((bits & ~kPayload) == 0, "pointer exceeds 48-bit payload");
             return Value{kSign | kQNan | (bits & kPayload)};

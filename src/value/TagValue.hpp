@@ -65,6 +65,7 @@ namespace aria::tagvalue {
 
         [[nodiscard]]
         static Value from_obj(Obj object) noexcept {
+            ASSERT(object != nullptr, "null object pointer");
             return Value{object};
         }
 

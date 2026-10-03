@@ -44,9 +44,13 @@ using aria::value_identical;
 namespace {
 
     // name 经工厂 StringView 重载 intern 并自守;super 守卫承重(调用方传上一轮
-    // make_class 返回的未根指针;super 可空,make_guard 容空)。返回的 klass 未根。
+    // make_class 返回的未根指针;可空,空则不守 -- 对齐生产形态,null 不进临时根)。
+    // 返回的 klass 未根。
     ObjClass* make_class(GC& gc, const StringView name, ObjClass* super = nullptr) {
-        auto guard = gc.make_guard(super);
+        auto guard = gc.make_guard();
+        if (super != nullptr) {
+            guard.push(super);
+        }
         return new_class(gc, name, super);
     }
 

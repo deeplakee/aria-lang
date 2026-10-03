@@ -246,50 +246,46 @@ namespace aria {
         [[nodiscard]]
         virtual Opt<Value> op_call_impl(AriaVM& vm);
 
-        // 类型判定 = switch 对运行时 tag 分派(读一次 type(),各臂对编译期 T 做类型比对;
-        // 两配置同价零 RTTI)。穷尽无 default:新增 ObjType 时 -Wswitch 逼同步本表。分辨率 =
-        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;null 入参返 false。
+        // 类型判定 = if constexpr 按 T 编译期选 tag,运行期单比较(两配置同价零 RTTI)。前置条件:
+        // object 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =
+        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;新增 ObjType 须在此扩臂,漏臂由
+        // 末尾 UNREACHABLE 兜底。
         template<DerivedFromObj T>
         [[nodiscard]]
         static bool is(const Object* object) noexcept {
-            if (object == nullptr) {
-                return false;
+            if constexpr (std::is_same_v<T, ObjString>) {
+                return object->type() == ObjType::STRING;
+            } else if constexpr (std::is_same_v<T, ObjFunction>) {
+                return object->type() == ObjType::FUNCTION;
+            } else if constexpr (std::is_same_v<T, ObjNativeFn>) {
+                return object->type() == ObjType::NATIVE_FN;
+            } else if constexpr (std::is_same_v<T, ObjUpvalue>) {
+                return object->type() == ObjType::UPVALUE;
+            } else if constexpr (std::is_same_v<T, ObjClass>) {
+                return object->type() == ObjType::CLASS;
+            } else if constexpr (std::is_same_v<T, ObjInstance>) {
+                return object->type() == ObjType::INSTANCE;
+            } else if constexpr (std::is_same_v<T, ObjBoundMethod>) {
+                return object->type() == ObjType::BOUND_METHOD;
+            } else if constexpr (std::is_same_v<T, ObjList>) {
+                return object->type() == ObjType::LIST;
+            } else if constexpr (std::is_same_v<T, ObjMap>) {
+                return object->type() == ObjType::MAP;
+            } else if constexpr (std::is_same_v<T, ObjModule>) {
+                return object->type() == ObjType::MODULE;
+            } else if constexpr (std::is_same_v<T, ObjRange>) {
+                return object->type() == ObjType::RANGE;
+            } else if constexpr (std::is_same_v<T, ObjIterator>) {
+                return object->type() == ObjType::ITERATOR;
+            } else if constexpr (std::is_same_v<T, ObjException>) {
+                return object->type() == ObjType::EXCEPTION;
+            } else if constexpr (std::is_same_v<T, ObjClosure>) {
+                return object->type() == ObjType::CLOSURE;
+            } else if constexpr (std::is_same_v<T, ObjMovement>) {
+                return object->type() == ObjType::MOVEMENT;
+            } else {
+                UNREACHABLE();
             }
-            switch (object->type()) {
-                case ObjType::BASE:
-                    return false; // 抽象根 tag,无对象携带
-                case ObjType::STRING:
-                    return std::is_same_v<T, ObjString>;
-                case ObjType::FUNCTION:
-                    return std::is_same_v<T, ObjFunction>;
-                case ObjType::NATIVE_FN:
-                    return std::is_same_v<T, ObjNativeFn>;
-                case ObjType::UPVALUE:
-                    return std::is_same_v<T, ObjUpvalue>;
-                case ObjType::CLASS:
-                    return std::is_same_v<T, ObjClass>;
-                case ObjType::INSTANCE:
-                    return std::is_same_v<T, ObjInstance>;
-                case ObjType::BOUND_METHOD:
-                    return std::is_same_v<T, ObjBoundMethod>;
-                case ObjType::LIST:
-                    return std::is_same_v<T, ObjList>;
-                case ObjType::MAP:
-                    return std::is_same_v<T, ObjMap>;
-                case ObjType::MODULE:
-                    return std::is_same_v<T, ObjModule>;
-                case ObjType::RANGE:
-                    return std::is_same_v<T, ObjRange>;
-                case ObjType::ITERATOR:
-                    return std::is_same_v<T, ObjIterator>;
-                case ObjType::EXCEPTION:
-                    return std::is_same_v<T, ObjException>;
-                case ObjType::CLOSURE:
-                    return std::is_same_v<T, ObjClosure>;
-                case ObjType::MOVEMENT:
-                    return std::is_same_v<T, ObjMovement>;
-            }
-            UNREACHABLE();
         }
 
         // 前置条件:调用前已经 is<T>() / switch(type()) 确认动态类型匹配--NDEBUG 下是
@@ -315,9 +311,9 @@ namespace aria {
 #endif
         }
 
-        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr(含
-        // object 为 null)。「守卫后使用」场景类型只写一次,消除 is<>/as<> 双类型参数漂移;
-        // 纯谓词用 is<T>,switch(type()) 臂内等静态已知场合用 as<T>。
+        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr。「守卫后使用」
+        // 场景类型只写一次,消除 is<>/as<> 双类型参数漂移;纯谓词用 is<T>,switch(type()) 臂内等
+        // 静态已知场合用 as<T>。前置条件同 is<T>(object 非空)。
         template<DerivedFromObj T>
         [[nodiscard]]
         static T* try_as(Object* object) noexcept {

@@ -31,6 +31,9 @@ namespace aria {
         if (this == other) {
             return true;
         }
+        if (other == nullptr) {
+            return false; // null 恒不等(null 不是任何类型实例)
+        }
         const auto range = try_as<ObjRange>(other);
         return range != nullptr && from_ == range->from_ && to_ == range->to_ && is_exclusive_ == range->is_exclusive_;
     }

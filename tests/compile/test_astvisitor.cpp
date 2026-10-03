@@ -32,6 +32,7 @@ using aria::IfStmtNode;
 using aria::ImportStmtNode;
 using aria::IndexAccessNode;
 using aria::IntegerLiteralNode;
+using aria::InterpolatedStringNode;
 using aria::LambdaExprNode;
 using aria::List;
 using aria::ListExprNode;
@@ -115,6 +116,9 @@ namespace {
         void visitIntegerLiteralNode(IntegerLiteralNode&) override { visited_.push_back("IntegerLiteralNode"); }
         void visitFloatLiteralNode(FloatLiteralNode&) override { visited_.push_back("FloatLiteralNode"); }
         void visitStringLiteralNode(StringLiteralNode&) override { visited_.push_back("StringLiteralNode"); }
+        void visitInterpolatedStringNode(InterpolatedStringNode&) override {
+            visited_.push_back("InterpolatedStringNode");
+        }
         void visitBoolLiteralNode(BoolLiteralNode&) override { visited_.push_back("BoolLiteralNode"); }
         void visitNilLiteralNode(NilLiteralNode&) override { visited_.push_back("NilLiteralNode"); }
         void visitIdentifierNode(IdentifierNode&) override { visited_.push_back("IdentifierNode"); }

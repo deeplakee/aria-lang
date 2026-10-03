@@ -522,6 +522,20 @@ namespace aria {
         String value;
     };
 
+    // 插值串字面量。段 = 表达式节点序列（字面段为 StringLiteralNode，与 ListExprNode 的
+    // 元素列表同构）；空字面段不入列，纯字面（含 \{ 转义形态）在词法层已退化为普通串。
+    struct InterpolatedStringNode : ExprNode {
+        InterpolatedStringNode(const SourceLoc loc, List<UPtr<ExprNode>> parts) :
+            ExprNode{loc}, parts{std::move(parts)} {}
+
+        [[nodiscard]]
+        String dump(usize indent) const override;
+
+        void accept(AstVisitor& visitor) override;
+
+        List<UPtr<ExprNode>> parts;
+    };
+
     // 布尔字面量：true / false。
     struct BoolLiteralNode : ExprNode {
         BoolLiteralNode(const SourceLoc loc, const bool value) noexcept : ExprNode{loc}, value{value} {}

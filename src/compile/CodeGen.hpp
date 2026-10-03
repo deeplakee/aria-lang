@@ -69,6 +69,7 @@ namespace aria {
         void visitIntegerLiteralNode(IntegerLiteralNode& node) override;
         void visitFloatLiteralNode(FloatLiteralNode& node) override;
         void visitStringLiteralNode(StringLiteralNode& node) override;
+        void visitInterpolatedStringNode(InterpolatedStringNode& node) override;
         void visitBoolLiteralNode(BoolLiteralNode& node) override;
         void visitNilLiteralNode(NilLiteralNode& node) override;
         void visitIdentifierNode(IdentifierNode& node) override;

@@ -184,6 +184,10 @@ namespace aria {
         return dump_node(indent, std::format("StringLiteral \"{}\"", value));
     }
 
+    String InterpolatedStringNode::dump(const usize indent) const {
+        return dump_node(indent, std::format("InterpString segments={}", parts.size()), parts);
+    }
+
     String BoolLiteralNode::dump(const usize indent) const {
         return dump_node(indent, std::format("BoolLiteral {}", value ? "true" : "false"));
     }
@@ -291,6 +295,7 @@ namespace aria {
     void IntegerLiteralNode::accept(AstVisitor& visitor) { visitor.visitIntegerLiteralNode(*this); }
     void FloatLiteralNode::accept(AstVisitor& visitor) { visitor.visitFloatLiteralNode(*this); }
     void StringLiteralNode::accept(AstVisitor& visitor) { visitor.visitStringLiteralNode(*this); }
+    void InterpolatedStringNode::accept(AstVisitor& visitor) { visitor.visitInterpolatedStringNode(*this); }
     void BoolLiteralNode::accept(AstVisitor& visitor) { visitor.visitBoolLiteralNode(*this); }
     void NilLiteralNode::accept(AstVisitor& visitor) { visitor.visitNilLiteralNode(*this); }
     void IdentifierNode::accept(AstVisitor& visitor) { visitor.visitIdentifierNode(*this); }

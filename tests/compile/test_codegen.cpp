@@ -2373,3 +2373,53 @@ TEST(CodeGen, DestructureRestTakesSuffixViaUnboundedRange) {
     EXPECT_TRUE(lines_adjacent(only_text, "MAKE_RANGE", "LOAD_INDEX"));
     EXPECT_EQ(only_text.find("LOAD_LOCAL"), aria::String::npos); // 单次访问不建隐藏局部
 }
+
+// ============================================================
+// 插值串（InterpolatedStringNode 手工组 AST，BUILD_STRING 收拢）
+// ============================================================
+
+namespace {
+    // 手工组「表达式语句包裹插值串」的最小程序（绕开词法/语法层，只到 CodeGen）。
+    aria::UPtr<aria::ProgramNode> interp_program(const aria::usize literal_count, const aria::usize expr_count) {
+        const aria::SourceLoc                  kLoc{};
+        aria::List<aria::UPtr<aria::ExprNode>> parts;
+        for (aria::usize i = 0; i < literal_count; ++i) {
+            parts.push_back(std::make_unique<aria::StringLiteralNode>(kLoc, aria::String{"s"}));
+        }
+        for (aria::usize i = 0; i < expr_count; ++i) {
+            parts.push_back(std::make_unique<aria::IdentifierNode>(kLoc, aria::String{"x"}));
+        }
+        auto interp = std::make_unique<aria::InterpolatedStringNode>(kLoc, std::move(parts));
+
+        aria::List<aria::UPtr<aria::StmtNode>> decls;
+        decls.push_back(std::make_unique<aria::ExprStmtNode>(kLoc, std::move(interp)));
+        return std::make_unique<aria::ProgramNode>(kLoc, std::move(decls));
+    }
+} // namespace
+
+TEST(CodeGen, InterpStringEmitsBuildString) {
+    // 段序压栈(字面段 LOAD_CONST / 表达式段全局读)+ BUILD_STRING 收拢
+    auto       vm       = std::make_unique<AriaVM>();
+    auto&      gc       = vm->gc();
+    auto*      module   = new_module(gc, "<test>");
+    const auto program  = interp_program(2, 1);
+    const auto compiled = CodeGen::compile(gc, *program, module, aria::kMainEntryName);
+    ASSERT_TRUE(compiled.has_value());
+    const auto text = (*compiled)->unit().disassemble("<main>");
+    EXPECT_EQ(count_occurrences(text, "BUILD_STRING"), 1);
+    EXPECT_EQ(count_occurrences(text, "LOAD_CONST"), 3); // 2 字面段驻留常量 + 入口尾声模块常量
+}
+
+TEST(CodeGen, InterpStringSegmentLimit) {
+    // 段数上限 = BUILD_STRING 操作数 u8:255 段合法,256 段拒
+    auto  vm     = std::make_unique<AriaVM>();
+    auto& gc     = vm->gc();
+    auto  module = new_module(gc, "<test>");
+
+    const auto ok = CodeGen::compile(gc, *interp_program(255, 0), module, aria::kMainEntryName);
+    EXPECT_TRUE(ok.has_value());
+
+    const auto rejected = CodeGen::compile(gc, *interp_program(256, 0), module, aria::kMainEntryName);
+    ASSERT_FALSE(rejected.has_value());
+    EXPECT_EQ(rejected.error().code(), ErrorCode::TooManyElements);
+}

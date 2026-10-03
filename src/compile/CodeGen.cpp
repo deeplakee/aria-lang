@@ -21,12 +21,13 @@ namespace aria {
 
     namespace {
         // 容量上限 = 操作数/索引位宽上限（越界统一以 > 判）；语义名供检查点与报错文案同源。
-        constexpr u32 kMaxArity        = kU8OperandMax;
-        constexpr u32 kMaxArguments    = kU8OperandMax;
-        constexpr u32 kMaxConstants    = kU16OperandMax;
-        constexpr u32 kMaxListElements = kU16OperandMax;
-        constexpr u32 kMaxMapEntries   = kU16OperandMax;
-        constexpr u32 kMaxLocals       = kU16OperandMax;
+        constexpr u32 kMaxArity          = kU8OperandMax;
+        constexpr u32 kMaxArguments      = kU8OperandMax;
+        constexpr u32 kMaxConstants      = kU16OperandMax;
+        constexpr u32 kMaxListElements   = kU16OperandMax;
+        constexpr u32 kMaxMapEntries     = kU16OperandMax;
+        constexpr u32 kMaxInterpSegments = kU8OperandMax;
+        constexpr u32 kMaxLocals         = kU16OperandMax;
 
         // 二元 op -> 发射 OpCode；Or/And 走短路分支（JUMP_*_OR_POP）不经此。
         OpCode binary_opcode(const Op::Binary op) noexcept {
@@ -943,6 +944,20 @@ namespace aria {
         const auto idx  = add_name_or_fail(node.value, node.loc());
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
+    }
+
+    void CodeGen::visitInterpolatedStringNode(InterpolatedStringNode& node) {
+        const u32 line = node.line();
+        // 段数上限（BUILD_STRING 操作数 u8），先检后发；字面段 = StringLiteralNode 走驻留常量。
+        if (node.parts.size() > kMaxInterpSegments) {
+            fail(ErrorCode::TooManyElements, node.loc(), "too many interpolation segments (max {})",
+                 kMaxInterpSegments);
+        }
+        for (const auto& part: node.parts) {
+            emit_expr(*part);
+        }
+        cur_cu()->emit_op(OpCode::BUILD_STRING, line);
+        cur_cu()->emit_byte(node.parts.size(), line); // [v1..vn] -> [str]
     }
 
     void CodeGen::visitBoolLiteralNode(BoolLiteralNode& node) {

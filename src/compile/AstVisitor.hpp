@@ -31,6 +31,7 @@ namespace aria {
     struct IntegerLiteralNode;
     struct FloatLiteralNode;
     struct StringLiteralNode;
+    struct InterpolatedStringNode;
     struct BoolLiteralNode;
     struct NilLiteralNode;
     struct IdentifierNode;
@@ -85,6 +86,7 @@ namespace aria {
         virtual void visitIntegerLiteralNode(IntegerLiteralNode& node)               = 0;
         virtual void visitFloatLiteralNode(FloatLiteralNode& node)                   = 0;
         virtual void visitStringLiteralNode(StringLiteralNode& node)                 = 0;
+        virtual void visitInterpolatedStringNode(InterpolatedStringNode& node)       = 0;
         virtual void visitBoolLiteralNode(BoolLiteralNode& node)                     = 0;
         virtual void visitNilLiteralNode(NilLiteralNode& node)                       = 0;
         virtual void visitIdentifierNode(IdentifierNode& node)                       = 0;

@@ -106,6 +106,10 @@ namespace aria {
 
     ObjString* GC::intern_find(const StringView str, const u32 hash) const noexcept { return intern_.find(str, hash); }
 
+    ObjString* GC::intern_find(const StringView lhs, const StringView rhs, const u32 hash) const noexcept {
+        return intern_.find(lhs, rhs, hash);
+    }
+
     void GC::intern_insert(ObjString* str) { intern_.insert(str); }
 
 } // namespace aria

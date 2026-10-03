@@ -36,7 +36,7 @@ paths:
 
 header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**weak root**，字符串专用 set--不进 `mark_roots_`，`collect` 在 sweep 前调 `remove_white()` 摘除指向白色串的表项防 sweep 后悬垂）。
 
-- 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。
+- 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。`find` 含两段重载（先比总长，候选切前/后两个子 view 分别与 lhs/rhs 比较）-- 供拼接方先查后拼（`new_string` 两段重载经 `GC::intern_find` 转发使用）。
 - 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破（同 `Object.hpp` 对 GC 的处理）。
 
 ## `memory/RawAlloc.hpp`

@@ -514,7 +514,8 @@ namespace aria {
             return true;
         }
 
-        // __add__ -> 新串:拼接,结果经 new_string 驻留(同内容必同指针);分配点在 intern 未命中,两侧经槽在栈。
+        // __add__ -> 新串:拼接,结果经 new_string 两段重载先查驻留(同内容必同指针),未命中才铸造;
+        // 两侧经槽在栈(跨分配保活)。
         bool fn___add__(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
@@ -529,9 +530,10 @@ namespace aria {
             if (lhs == nullptr) {
                 return false;
             }
-            const auto out = util::concat_string(lhs->view(), rhs->view());
             // lhs->hash() 即 FNV 终态:续算 rhs 字节得 hash(lhs+rhs),免重扫整段前缀。
-            slots[0] = Value::from_obj(new_string(vm.gc(), out, util::hash_str(lhs->hash(), rhs->view())));
+            const auto hash = util::hash_str(lhs->hash(), rhs->view());
+            const auto out  = new_string(vm.gc(), lhs->view(), rhs->view(), hash);
+            slots[0]        = Value::from_obj(out);
             return true;
         }
 

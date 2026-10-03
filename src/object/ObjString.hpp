@@ -112,6 +112,11 @@ namespace aria {
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView src, u32 hash);
 
+    // 两段拼接铸造:内容等于 lhs+rhs,hash 须为 hash_str(hash_str(lhs), rhs) 续算终态。先查驻留
+    //(命中零拷贝返回,免拼出整段),未命中才拼接铸造;lhs/rhs 的宿主串跨分配须保活(经栈即根)。
+    [[nodiscard]]
+    ObjString* new_string(GC& gc, StringView lhs, StringView rhs, u32 hash);
+
     // 单字节串便捷重载(下标读产出形态):委托 StringView 版,同样经驻留池。
     [[nodiscard]]
     ObjString* new_string(GC& gc, char ch);

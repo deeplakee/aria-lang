@@ -6,6 +6,7 @@
 
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
+#include "util/util.hpp"
 
 using aria::GC;
 using aria::new_string;
@@ -13,6 +14,7 @@ using aria::ObjString;
 using aria::String;
 using aria::StringView;
 using aria::usize;
+using aria::util::hash_str;
 
 // InternPool 是 GC 的 private 成员,经 new_string + collect 的可观测行为
 // (指针身份 / 字节数 / 存活)间接测试。
@@ -104,4 +106,43 @@ TEST(InternPool, MixedRootingSelectiveSurvival) {
     const usize before_drop = gc.bytes_allocated();
     std::ignore             = new_string(gc, "dropped-string-content");
     EXPECT_GT(gc.bytes_allocated(), before_drop);
+}
+
+// 两段重载(先查后拼):内容等于 lhs+rhs,哈希经 hash_str(hash_str(lhs), rhs) 续算。
+TEST(InternPool, TwoPartFindHitsExistingFullString) {
+    GC   gc;
+    auto full = new_string(gc, "abcdef"); // 先驻留全串
+    // 两段查命中同一指针:拼接方免先拼出整段即可复用已有串
+    const auto hit = new_string(gc, "abc", "def", hash_str(hash_str("abc"), "def"));
+    EXPECT_EQ(hit, full);
+}
+
+TEST(InternPool, TwoPartFindMissMintsThenSelfInterns) {
+    GC         gc;
+    const auto h = hash_str(hash_str("xy"), "z1");
+    auto       s = new_string(gc, "xy", "z1", h); // 未命中 -> 铸造
+    EXPECT_EQ(s->view(), "xyz1");
+    EXPECT_EQ(s->hash(), hash_str("xyz1"));      // 哈希与单段全算一致
+    EXPECT_EQ(new_string(gc, "xy", "z1", h), s); // 自驻留:同参数再查同指针
+    EXPECT_EQ(new_string(gc, "xyz1"), s);        // 单段查同内容也命中(跨入口一致)
+}
+
+TEST(InternPool, TwoPartFindEmptySegments) {
+    GC   gc;
+    auto abc = new_string(gc, "abc");
+    EXPECT_EQ(new_string(gc, "abc", "", hash_str(hash_str("abc"), "")), abc); // rhs 空
+    EXPECT_EQ(new_string(gc, "", "abc", hash_str(hash_str(""), "abc")), abc); // lhs 空
+}
+
+TEST(InternPool, TwoPartMintUnderStressGc) {
+    GC gc;
+    gc.set_stress(true);
+    // 未命中腿跨 new_object 的 maybe_collect:lhs/rhs 宿主串须保活(真实调用点靠栈根,测试以
+    // guard 等价);stress 下铸造各串之间的分配也触发 GC,故每串诞生即根化。
+    auto a     = new_string(gc, "long-prefix-content!!");
+    auto guard = gc.make_guard(a);
+    auto b     = new_string(gc, "suffix-tail!!");
+    auto gb    = gc.make_guard(b);
+    auto s     = new_string(gc, a->view(), b->view(), hash_str(a->hash(), b->view()));
+    EXPECT_EQ(s->view(), "long-prefix-content!!suffix-tail!!");
 }

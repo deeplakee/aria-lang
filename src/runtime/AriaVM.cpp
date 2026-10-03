@@ -623,12 +623,12 @@ namespace aria {
 
     template<OpCode Op>
     bool AriaVM::run_string_binary(ObjString* lhs, ObjString* rhs) {
-        // [lhs, rhs] -> [r]:拼接经驻留池(哈希自 lhs 终态续算 rhs),比较按无符号字节序;语义与
-        // StringClass 对应钩子逐位一致。GC 走查:唯一 GC 点是 new_string 顶部 maybe_collect,
-        // 两操作数 peek 未弹在栈(栈即根),out 为非 GC 的 C++ String;铸后 drop+push 无 GC 点。
+        // [lhs, rhs] -> [r]:拼接先查驻留(哈希自 lhs 终态续算 rhs,命中零拷贝),比较按无符号字节序;
+        // 语义与 StringClass 对应钩子逐位一致。GC 走查:唯一 GC 点是 new_string 内部 new_object 顶部
+        // maybe_collect,两操作数 peek 未弹在栈(栈即根);命中/铸后 drop+push 无 GC 点。
         if constexpr (Op == OpCode::ADD) {
-            const auto out    = util::concat_string(lhs->view(), rhs->view());
-            const auto joined = new_string(gc_, out, util::hash_str(lhs->hash(), rhs->view()));
+            const auto hash   = util::hash_str(lhs->hash(), rhs->view());
+            const auto joined = new_string(gc_, lhs->view(), rhs->view(), hash);
             current_->drop(2);
             current_->push(Value::from_obj(joined));
         } else if constexpr (Op == OpCode::LESS) {

@@ -78,6 +78,40 @@ namespace aria {
             return nullptr; // 安全上限耗尽(不变式下不会到达)
         }
 
+        // 两段查找:内容等于 lhs+rhs 拼接的驻留串,语义等价于对拼接结果做上式单段 find
+        //(哈希由调用方按 hash_str(lhs 的哈希, rhs) 续算)。先比总长,候选切成两个子 view
+        // 分别与两段比较 -- 拼接方免先拼出整段即可查驻留(命中零拷贝)。
+        [[nodiscard]]
+        ObjString* find(const StringView lhs, const StringView rhs, const u32 hash) const noexcept {
+            ASSERT(hash == util::hash_str(util::hash_str(lhs), rhs), "hash must be hash_str(hash_str(lhs), rhs)");
+            if (cap_ == 0) {
+                return nullptr;
+            }
+
+            const usize mask = cap_ - 1;
+            const usize len  = lhs.size() + rhs.size();
+
+            usize pos  = hash;
+            usize step = 0;
+
+            for (usize probe = 0; probe < cap_; ++probe) {
+                pos          = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                ObjString* s = slots_[pos];
+                if (s == nullptr) {
+                    return nullptr; // 空槽,探针终止
+                }
+                if (is_tombstone(s)) {
+                    continue;
+                }
+                const auto v = s->view();
+                if (v.size() == len && StringView{v.data(), lhs.size()} == lhs &&
+                    StringView{v.data() + lhs.size(), rhs.size()} == rhs) {
+                    return s; // 占用且内容相等
+                }
+            }
+            return nullptr; // 安全上限耗尽(不变式下不会到达)
+        }
+
         // 插入 s(假定其内容未驻留:调用方先 find 查重,未命中才 insert)。可能触发 rehash。
         void insert(ObjString* s) {
             ASSERT(s != nullptr && !is_tombstone(s), "invalid slot for insert");

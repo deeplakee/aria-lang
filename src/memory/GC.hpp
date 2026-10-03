@@ -137,6 +137,9 @@ namespace aria {
         // 驻留池 API:命中返回已有串,未命中 new_object 后 insert。
         [[nodiscard]] ObjString* intern_find(StringView str, u32 hash) const noexcept;
 
+        // 两段查找(内容等于 lhs+rhs 拼接):拼接方免先拼整段即可查驻留。
+        [[nodiscard]] ObjString* intern_find(StringView lhs, StringView rhs, u32 hash) const noexcept;
+
         void intern_insert(ObjString* str);
 
         // VM 根经 std::function 回调接入(组合而非继承,GC 不识 VM 类型;[this] 恰落 std::function SBO,零堆分配)。

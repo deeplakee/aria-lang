@@ -119,6 +119,19 @@ namespace aria {
         return s;
     }
 
+    ObjString* new_string(GC& gc, const StringView lhs, const StringView rhs, const u32 hash) {
+        // 先查后拼:命中驻留池零拷贝返回;未命中才把两段拼进非 GC 的 C++ String 再铸造。
+        if (const auto found = gc.intern_find(lhs, rhs, hash)) {
+            return found; // 命中驻留池:返回已有串,不分配、不 GC
+        }
+        const auto out = util::concat_string(lhs, rhs);
+        // GC 走查同上:唯一 GC 点是 new_object 顶部 maybe_collect,发生在 s 诞生前;out 非 GC 对象,
+        // lhs/rhs 宿主串由调用方保活(调用点两侧均栈根)。
+        const auto s = gc.new_object<ObjString>(gc, out, hash);
+        gc.intern_insert(s);
+        return s;
+    }
+
     ObjString* new_string(GC& gc, const char ch) {
         // 委托 StringView 版(驻留池同一入口);&ch 取局部地址仅同步使用,无悬垂窗口。
         return new_string(gc, StringView{&ch, 1});

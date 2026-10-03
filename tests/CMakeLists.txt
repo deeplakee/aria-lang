@@ -46,6 +46,7 @@ add_executable(aria_tests
         memory/test_hashtable.cpp
         memory/test_internpool.cpp
         memory/test_shell_pool.cpp
+        memory/test_stringbuilder.cpp
         # language（aria 脚本级端到端语料 runner；.aria 脚本本体见 language/ 目录）
         language/test_language_corpus.cpp
 )

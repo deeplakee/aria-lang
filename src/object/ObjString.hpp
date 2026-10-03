@@ -16,6 +16,10 @@ namespace aria {
 
         ObjString(GC& gc, StringView src, u32 hash);
 
+        // 接管构造(仅 new_string 接管重载调进):data 为移交的堆 buffer,表示形态(长串收缩接管/
+        // 短串拷入 SSO 槽)由本构造分流,buffer 归本对象处置。
+        ObjString(GC& gc, char* data, usize size, usize cap, u32 hash);
+
         ~ObjString() override;
 
         // 借出内容视图:非移动 GC 对象地址与缓冲恒定,存活期有效;sweep 回收后即悬垂,勿跨 collect 持有。
@@ -116,6 +120,13 @@ namespace aria {
     //(命中零拷贝返回,免拼出整段),未命中才拼接铸造;lhs/rhs 的宿主串跨分配须保活(经栈即根)。
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView lhs, StringView rhs, u32 hash);
+
+    // 接管铸造:内容等于 data[0..size),释放责任随三臂移交本函数 -- 命中驻留释放 buffer 返已有串;
+    // 未命中长串收缩 buffer 后由 ObjString 接管(零拷贝),未命中短串拷进 SSO 槽后释放 buffer。
+    // data 为空指针且 size 为 0 合法(空串)。唯一 GC 点是 new_object 顶部 maybe_collect,buffer
+    // 为 raw 内存不受影响。
+    [[nodiscard]]
+    ObjString* new_string(GC& gc, char* data, usize size, usize cap, u32 hash);
 
     // 单字节串便捷重载(下标读产出形态):委托 StringView 版,同样经驻留池。
     [[nodiscard]]

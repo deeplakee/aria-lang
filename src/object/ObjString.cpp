@@ -27,6 +27,24 @@ namespace aria {
         }
     }
 
+    ObjString::ObjString(GC& gc, char* data, const usize size, const usize cap, const u32 hash) :
+        Object{hash, ObjType::STRING}, gc_{&gc}, length_{size} {
+        // 接管移交 buffer,表示形态自分流(与拷贝版同构):长串收缩接管,短串拷入 SSO 槽后释放;
+        // data[size] 处的终态 '\0' 由本构造安置。
+        if (is_long()) {
+            // 长串臂的 realloc 是记账对齐(cap 口径 -> ~ObjString 的 length_+1 口径),不是再分配:
+            // reserve 精确路径为同尺寸、倍增兜底路径为收缩,均不超当前块可用尺寸,后端原地返回
+            // 原指针,零拷贝零新分配;buffer 自 reserve 起全程只有那一次 malloc。
+            const auto shrunk = gc.reallocate<char>(data, cap, length_ + 1);
+            shrunk[length_]   = '\0';
+            long_chars_       = shrunk;
+        } else {
+            std::memcpy(short_chars_, data, length_);
+            short_chars_[length_] = '\0';
+            gc.deallocate<char>(data, cap);
+        }
+    }
+
     ObjString::~ObjString() {
         if (is_long()) {
             gc_->deallocate<char>(long_chars_, length_ + 1);
@@ -128,6 +146,20 @@ namespace aria {
         // GC 走查同上:唯一 GC 点是 new_object 顶部 maybe_collect,发生在 s 诞生前;out 非 GC 对象,
         // lhs/rhs 宿主串由调用方保活(调用点两侧均栈根)。
         const auto s = gc.new_object<ObjString>(gc, out, hash);
+        gc.intern_insert(s);
+        return s;
+    }
+
+    ObjString* new_string(GC& gc, char* const data, const usize size, const usize cap, const u32 hash) {
+        ASSERT(hash == util::hash_str(StringView{data, size}), "hash must be hash_str(content)");
+        // 先查驻留:命中免铸造,移交来的 buffer 即刻释放。
+        if (const auto found = gc.intern_find(StringView{data, size}, hash)) {
+            gc.deallocate<char>(data, cap);
+            return found;
+        }
+        // GC 走查:唯一 GC 点是 new_object 顶部 maybe_collect,buffer 为 raw 内存不受影响;
+        // intern_insert 走 trivial 分配不触发 GC。表示形态(SSO/长串)由接管构造自分流。
+        const auto s = gc.new_object<ObjString>(gc, data, size, cap, hash);
         gc.intern_insert(s);
         return s;
     }

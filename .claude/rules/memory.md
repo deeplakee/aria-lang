@@ -39,6 +39,10 @@ header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**
 - 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。`find` 含两段重载（先比总长，候选切前/后两个子 view 分别与 lhs/rhs 比较）-- 供拼接方先查后拼（`new_string` 两段重载经 `GC::intern_find` 转发使用）。
 - 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破（同 `Object.hpp` 对 GC 的处理）。
 
+## `memory/StringBuilder.hpp`
+
+header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。append 直写字节（不持哈希状态）；`reserve` 只扩不缩；`take_string` 把 buffer 零拷贝移交 `ObjString`，内容哈希在铸造口按当时内容一次全算（唯一消费点，增长期就地改写无失效协议）。驻留判定收在五参 `new_string` 接管重载：命中零拷贝返已有串 / 长串收缩接管 / 短串 SSO 化释放 buffer。GC 纪律：allocate/reallocate 永不触发 GC（核心不变式），本类全程零 GC 点、无需守卫，唯一 GC 点在 take 的 `new_object` 顶部；take 后空态可复用。
+
 ## `memory/RawAlloc.hpp`
 
 `aria::mem::alloc/realloc/free` 三原语：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口。

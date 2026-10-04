@@ -59,6 +59,9 @@ namespace aria {
         // 串内转义解析
         void scan_escape(String& value);
 
+        // \u{...} Unicode 转义（入口 pos_ 指向 'u'）
+        void scan_unicode_escape(String& value);
+
         // identifier / keyword / _
         void scan_identifier();
 

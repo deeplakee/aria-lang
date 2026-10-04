@@ -323,39 +323,41 @@ namespace aria {
                 return append_simple('\r');
             case '0':
                 return append_simple('\0');
-            case 'u': {
-                advance(); // 消费 u
-                if (peek_byte(0) != '{') {
-                    error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
-                }
-                advance(); // 消费 {
-
-                // 收集 } 前的字符到 lex；非 hex 字符留给 from_chars 检测。
-                const u32 start = pos_;
-                consume_codepoints([](const utf8::codepoint cp) { return cp != '}'; });
-
-                if (peek_byte(0) != '}') {
-                    error(ErrorCode::InvalidEscape, "expected '}}' to close '\\u{{'");
-                }
-                advance(); // 消费 }
-
-                // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法：'_' 非十六进制数字，整串消费必败）。
-                const auto lex    = StringView{src_.data() + start, pos_ - start - 1};
-                const auto parsed = util::try_parse<i64>(lex, 16);
-                if (!parsed) {
-                    error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
-                }
-
-                const u32 cp = static_cast<u32>(*parsed);
-                if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-                    error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
-                }
-                value += utf8::encode(cp);
-                return;
-            }
+            case 'u':
+                return scan_unicode_escape(value);
             default:
                 error(ErrorCode::InvalidEscape, "invalid escape sequence '\\{}'", c);
         }
+    }
+
+    void Lexer::scan_unicode_escape(String& value) {
+        advance(); // 消费 u
+        if (peek_byte(0) != '{') {
+            error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
+        }
+        advance(); // 消费 {
+
+        // 收集 } 前的字符到 lex；非 hex 字符留给 from_chars 检测。
+        const u32 start = pos_;
+        consume_codepoints([](const utf8::codepoint cp) { return cp != '}'; });
+
+        if (peek_byte(0) != '}') {
+            error(ErrorCode::InvalidEscape, "expected '}}' to close '\\u{{'");
+        }
+        advance(); // 消费 }
+
+        // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法：'_' 非十六进制数字，整串消费必败）。
+        const auto lex    = StringView{src_.data() + start, pos_ - start - 1};
+        const auto parsed = util::try_parse<i64>(lex, 16);
+        if (!parsed) {
+            error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
+        }
+
+        const u32 cp = static_cast<u32>(*parsed);
+        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+            error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
+        }
+        value += utf8::encode(cp);
     }
 
     void Lexer::scan_identifier() {

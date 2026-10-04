@@ -54,7 +54,7 @@ namespace aria {
         void scan_decimal_or_float();
 
         // 字符串字面量（含转义解析）
-        void scan_string();
+        void scan_string(char quote);
 
         // 串内转义解析
         void scan_escape(String& value);
@@ -84,14 +84,14 @@ namespace aria {
         // 含非 ASCII 字符集的序列（标识符续接等）须用 consume_codepoints。
         template<typename Pred>
         void consume_ascii(Pred pred) {
-            consume_u8([pred](const u8 byte) { return utf8::is_ascii(byte) && pred(static_cast<char>(byte)); });
+            consume_byte([pred](const char ch) { return utf8::is_ascii(ch) && pred(ch); });
         }
 
-        // 按裸字节消费（pred 收 u8），不保证停在码点边界--谓词对 >= 0x80 字节为真时游标停进码点中间；
+        // 按裸字节消费（pred 收 char），不保证停在码点边界--谓词对 >= 0x80 字节为真时游标停进码点中间；
         // 只用于停点必为 ASCII 的场景（字符串正文按 ASCII 分隔符切段），需边界保证用 consume_ascii。
         template<typename Pred>
-        void consume_u8(Pred pred) {
-            while (!is_eof() && pred(static_cast<u8>(src_[pos_]))) {
+        void consume_byte(Pred pred) {
+            while (!is_eof() && pred(src_[pos_])) {
                 advance();
             }
         }

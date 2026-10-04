@@ -9,7 +9,7 @@ namespace aria {
         bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
 
         // 引号字符（串字面量的两种定界形态 " 与 '）
-        bool is_quote(const char ch) { return ch == '"' || ch == '\''; }
+        bool is_quote(const utf8::codepoint cp) { return cp == '"' || cp == '\''; }
 
         bool is_radix_digit(const u8 base, const char ch) {
             if (base < 2 || base > 36) {
@@ -124,8 +124,8 @@ namespace aria {
         // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
         if (utf8::is_digit(cp)) {
             scan_number();
-        } else if (is_quote(static_cast<char>(cp))) {
-            scan_string();
+        } else if (is_quote(cp)) {
+            scan_string(static_cast<char>(cp));
         } else if (utf8::is_id_start(cp)) {
             scan_identifier();
         } else {
@@ -261,10 +261,9 @@ namespace aria {
         }
     }
 
-    void Lexer::scan_string() {
-        const u32  start = pos_; // 串 token 跨度构造用（start_ 会被 scan_escape 重指，勿依赖）
-        const char quote = src_[pos_];
-        advance(); // 消费开引号
+    void Lexer::scan_string(const char quote) {
+        const u32 start = pos_; // 串 token 跨度构造用（start_ 会被 scan_escape 重指，勿依赖）
+        advance();              // 消费开引号
 
         String value;
         while (true) {
@@ -287,8 +286,7 @@ namespace aria {
             // 普通字符段（含多字节 UTF-8）：分隔符均为 ASCII（续接字节恒 >= 0x80），按字节消费
             // 不会停在码点中间且无需解码，整段原样追加。
             const u32 run_begin = pos_;
-            const u8  delim     = static_cast<u8>(quote);
-            consume_u8([delim](const u8 byte) { return byte != delim && byte != '\\' && byte != '\n'; });
+            consume_byte([quote](const char byte) { return byte != quote && byte != '\\' && byte != '\n'; });
             value.append(src_.data() + run_begin, pos_ - run_begin);
         }
 

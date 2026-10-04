@@ -80,6 +80,13 @@ namespace aria {
             }
         }
 
+        // Interp 系段 token 的非空段值包成 StringLiteralNode 入列；空字面段对值无贡献，不入列。
+        void maybe_add_string(List<UPtr<ExprNode>>& parts, const Token& token) {
+            if (!token.interp_value().empty()) {
+                parts.push_back(std::make_unique<StringLiteralNode>(token.loc(), String{token.interp_value()}));
+            }
+        }
+
     } // namespace
 
     Parser::Parser(List<Token> tokens) noexcept : tokens_{std::move(tokens)}, pos_{0}, errors_{} {}
@@ -716,6 +723,22 @@ namespace aria {
         return expr;
     }
 
+    UPtr<ExprNode> Parser::interp_string() {
+        const SourceLoc loc = peek().loc();
+
+        List<UPtr<ExprNode>> parts;
+        maybe_add_string(parts, advance()); // InterpStart，段值 = 首字面段
+        while (true) {
+            // 档内完整表达式；空档（"${}"）在此撞 Interp 系 token 走期望表达式错
+            parts.push_back(expression());
+            if (check(TokenType::InterpEnd)) {
+                maybe_add_string(parts, advance()); // 尾字面段
+                return std::make_unique<InterpolatedStringNode>(loc, std::move(parts));
+            }
+            maybe_add_string(parts, expect(TokenType::InterpMiddle, "'}' to close interpolation"));
+        }
+    }
+
     List<UPtr<ExprNode>> Parser::args() {
         expect(TokenType::LeftParen, "'('");
         List<UPtr<ExprNode>> args;
@@ -743,6 +766,8 @@ namespace aria {
                 const Token& t = advance();
                 return std::make_unique<StringLiteralNode>(loc, String{t.string_value()});
             }
+            case TokenType::InterpStart:
+                return interp_string();
             case TokenType::True:
                 advance();
                 return std::make_unique<BoolLiteralNode>(loc, true);

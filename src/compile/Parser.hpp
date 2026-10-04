@@ -177,6 +177,10 @@ namespace aria {
         [[nodiscard]]
         UPtr<ExprNode> primary();
 
+        // 插值串：InterpStart (表达式 InterpMiddle)* 表达式 InterpEnd 组段；空字面段不入列。
+        [[nodiscard]]
+        UPtr<ExprNode> interp_string();
+
         [[nodiscard]]
         List<UPtr<ExprNode>> args();
 

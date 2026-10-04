@@ -37,7 +37,7 @@ namespace aria {
         }
 
         // 插值串字面段三厂：value 为该段已解析转义后的内容，lexeme 保留该段原文
-        // （不含边界 { }，End 含闭引号）。
+        // （不含边界 ${ 与 }，End 含闭引号）。
         [[nodiscard]]
         static Token make_interp_start(String value, const StringView lexeme, const SourceLoc loc) {
             return Token{TokenType::InterpStart, lexeme, loc, std::move(value)};

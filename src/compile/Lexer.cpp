@@ -73,7 +73,8 @@ namespace aria {
         }
     } // namespace
 
-    Lexer::Lexer(SourceFile& src) noexcept : source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{} {}
+    Lexer::Lexer(SourceFile& src) noexcept :
+        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, interp_depth_{0} {}
 
     Result<List<Token>, Error> Lexer::tokenize(SourceFile& src) {
         Lexer lexer{src};
@@ -110,7 +111,7 @@ namespace aria {
         tokens_.push_back(Token{TokenType::Eof, {}, SourceLoc{&source_, eof}});
     }
 
-    // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与后续的插值档内扫描共用。
+    // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与插值档内扫描共用。
     void Lexer::dispatch_one() {
         const auto cp = utf8::decode_one(src_, pos_).first; // 各分支自行解码推进
 
@@ -119,10 +120,10 @@ namespace aria {
             return;
         }
 
-        start_ = pos_; // token 起点 = 错误锚点（span/lexeme/token 位置均用此，各扫描器同）
+        start_ = pos_; // token 起点 = 错误锚点（数字/标识符/算子的 span 亦取此；字符串路径例外，见 scan_string）
 
-        // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
         if (utf8::is_digit(cp)) {
+            // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
             scan_number();
         } else if (is_quote(cp)) {
             scan_string(static_cast<char>(cp));
@@ -261,41 +262,108 @@ namespace aria {
         }
     }
 
+    // 字符串字面量扫描，同时是模板（字符串即模板）：状态机驱动——文本态交 scan_string_text 扫段产
+    // 段 token（${ 开档），档内态交 scan_string_hole 扫花括号配对内的普通 token 流，两态交替至闭串。
+    // 整串无档退化普通 String token（Parser/CodeGen 走纯字面路径）。
     void Lexer::scan_string(const char quote) {
-        const u32 start = pos_; // 串 token 跨度构造用（start_ 会被 scan_escape 重指，勿依赖）
-        advance();              // 消费开引号
+        const u32 string_start = pos_; // 整串起点 = 开引号（无档整串 token 的 span；串级错误 error_at 的锚点）
+        advance();                     // 消费开引号
+        u32  segment_start = pos_;     // 当前字面段原文起点（段 token 的 loc 与 lexeme 区间）
+        bool has_hole      = false;    // 是否已开过档（区分 InterpStart/Middle/End 与 String）
 
+        while (true) {
+            if (scan_string_text(quote, string_start, segment_start, has_hole)) {
+                return;
+            }
+            segment_start = scan_string_hole(string_start);
+            has_hole      = true; // 档运行期间无人读它，此处置位等价于文本态开档时置位
+        }
+    }
+
+    bool Lexer::scan_string_text(const char quote, const u32 string_start, const u32 segment_start,
+                                 const bool has_hole) {
         String value;
         while (true) {
             if (is_eof()) {
-                error(ErrorCode::UnterminatedString, "unterminated string");
+                error_at(string_start, ErrorCode::UnterminatedString, "unterminated string");
             }
             const char c = src_[pos_];
             if (c == '\n') {
-                error(ErrorCode::UnterminatedString, "unterminated string: line break in literal");
+                error_at(string_start, ErrorCode::UnterminatedString, "unterminated string: line break in literal");
             }
             if (c == quote) {
                 advance(); // 消费闭引号
-                break;
+                if (has_hole) {
+                    const auto lex = StringView{src_.data() + segment_start, pos_ - segment_start}; // 含闭引号
+                    tokens_.push_back(
+                            Token::make_interp_end(std::move(value), lex, SourceLoc{&source_, segment_start}));
+                } else {
+                    // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
+                    const auto lex = StringView{src_.data() + string_start, pos_ - string_start};
+                    tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, string_start}));
+                }
+                return true;
+            }
+            if (c == '$') {
+                if (peek_byte(1) != '{') {
+                    // 裸 $ 是普通字符（仅 ${ 开档）；显式消费，下方整段消费的谓词对 $ 恒停
+                    value.push_back('$');
+                    advance();
+                    continue;
+                }
+                // 开档：lexeme 为段原文（不含边界 ${）
+                const auto lex = StringView{src_.data() + segment_start, pos_ - segment_start};
+                const auto loc = SourceLoc{&source_, segment_start};
+                if (has_hole) {
+                    tokens_.push_back(Token::make_interp_middle(std::move(value), lex, loc));
+                } else {
+                    tokens_.push_back(Token::make_interp_start(std::move(value), lex, loc));
+                }
+                advance(2);   // 消费 ${
+                return false; // 档内 token 由 scan_string_hole 产出
             }
             if (c == '\\') {
                 scan_escape(value);
-                start_ = start; // scan_escape 重指过锚点，恢复为串起点
                 continue;
             }
             // 普通字符段（含多字节 UTF-8）：分隔符均为 ASCII（续接字节恒 >= 0x80），按字节消费
             // 不会停在码点中间且无需解码，整段原样追加。
             const u32 run_begin = pos_;
-            consume_byte([quote](const char byte) { return byte != quote && byte != '\\' && byte != '\n'; });
+            consume_byte(
+                    [quote](const char byte) { return byte != quote && byte != '\\' && byte != '\n' && byte != '$'; });
             value.append(src_.data() + run_begin, pos_ - run_begin);
         }
-
-        const auto lex = StringView{src_.data() + start, pos_ - start};
-        tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, start}));
     }
 
-    // 解析转义序列（pos_ 指向 '\\'）；错误即抛出（首错即止），锚点入口重指到 '\'；\ 在串尾不报错，
-    // 由 scan_string 的 is_eof 统一报 "unterminated string"。
+    u32 Lexer::scan_string_hole(const u32 string_start) {
+        if (interp_depth_ >= kMaxInterpDepth) {
+            error_at(string_start, ErrorCode::InterpDepthExceeded, "interpolated string nesting exceeds {} levels",
+                     kMaxInterpDepth);
+        }
+        ++interp_depth_;
+        u32 depth = 0;
+        while (true) {
+            if (is_eof()) {
+                error_at(string_start, ErrorCode::UnterminatedString, "unterminated string");
+            }
+            if (const char c = src_[pos_]; c == '{') {
+                ++depth;
+            } else if (c == '}') {
+                if (depth == 0) {
+                    advance(); // 消费闭档 }
+                    break;
+                }
+                --depth;
+            }
+            dispatch_one();
+        }
+        --interp_depth_;
+        return pos_; // 闭档后即下一段字面原文起点
+    }
+
+    // 解析转义序列（pos_ 指向 '\\'）；错误即抛出（首错即止），锚点入口重指到 '\'，调用方无需恢复
+    // （后续报错点经 error_at 自带位置或由 dispatch_one 重设 start_）；\ 在串尾不报错，由
+    // scan_string_text 的 is_eof 统一报 "unterminated string"。
     void Lexer::scan_escape(String& value) {
         start_ = pos_; // 锚点重指到转义起点
         advance();     // 消费 '\'
@@ -323,6 +391,9 @@ namespace aria {
                 return append_simple('\r');
             case '0':
                 return append_simple('\0');
+            case '$':
+                // 写字面 ${（裸 $ 无需转义，仅 ${ 前有转义需求）
+                return append_simple('$');
             case 'u':
                 return scan_unicode_escape(value);
             default:

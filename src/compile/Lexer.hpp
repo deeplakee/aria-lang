@@ -20,17 +20,21 @@ namespace aria {
         static Result<List<Token>, Error> tokenize(SourceFile& src);
 
     private:
+        // 字符串模板插值嵌套深度上限。
+        static constexpr usize kMaxInterpDepth = 16;
+
         explicit Lexer(SourceFile& src) noexcept;
 
         SourceFile& source_; // 借用，扫描期存活
         StringView  src_;    // = source_.content()，'\0' 结尾可作哨兵
         u32         pos_;    // 字节游标
-        u32         start_;  // 当前扫描单元起点 = 错误锚点（子扫描器可重指，调用方恢复）
+        u32         start_; // 当前扫描单元起点 = 错误锚点（scan_escape 等子扫描器可重指；串级错误经 error_at 显式锚定）
         List<Token> tokens_;
+        u32         interp_depth_; // 当前打开的插值档层数（0 = 无嵌套插值，上限 kMaxInterpDepth）
 
         void run();
 
-        // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与后续的插值档内扫描共用。
+        // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与插值档内扫描共用。
         void dispatch_one();
 
         // 跳过空白 + // / # 注释
@@ -53,8 +57,19 @@ namespace aria {
         // decimal / int 指数 / float（入口 pos_ 即起点）
         void scan_decimal_or_float();
 
-        // 字符串字面量（含转义解析）
+        // 字符串字面量（含转义解析）；字符串即模板：${ 开插值档（嵌套经 dispatch_one 递归，深度上限
+        // kMaxInterpDepth），裸 $ 与 { } 皆普通字符，无档整串退化普通 String token。状态机驱动：
+        // 文本态与档内态交替至闭串。
         void scan_string(char quote);
+
+        // 文本态：扫一段字面（含转义解码）产段 token；返回 true = 闭串，false = ${ 开档
+        // （档内 token 由 scan_string_hole 产出）。段 token 与串级错误分别锚 segment_start / string_start。
+        bool scan_string_text(char quote, u32 string_start, u32 segment_start, bool has_hole);
+
+        // 档内态：花括号配对内的普通 token 流；预检位恒为 token 边界（串内/注释/嵌套模板里的 { } 已被
+        // 整段消费不会到此），{ 加深度、非归零 } 减深度照常产 token（map/lambda 体属表达式），深度归零
+        // 的 } 闭档。返回闭档后的偏移 = 下一段字面原文起点（scan_string 以此推进 segment_start）。
+        u32 scan_string_hole(u32 string_start);
 
         // 串内转义解析
         void scan_escape(String& value);
@@ -68,12 +83,19 @@ namespace aria {
         // 运算符 / 标点（最长匹配）；非 ASCII 码点记 InvalidCharacter
         void scan_operator_or_punct();
 
-        // 记错即抛 AriaCompileException（tokenize 顶层 catch 翻译为 Result）；位置锚 start_。
+        // 记错即抛 AriaCompileException（tokenize 顶层 catch 翻译为 Result）。报错点自陈位置：error 锚
+        // start_，error_at 显式锚任意偏移（串级错误锚串起点），后者免去「重指后由调用方恢复」的隐性契约。
+        template<typename... Args>
+        [[noreturn]]
+        void error_at(const u32 offset, const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
+            throw AriaCompileException{Error::from_detail(code, SourceLoc{&source_, offset},
+                                                          std::format(fmt, std::forward<Args>(args)...))};
+        }
+
         template<typename... Args>
         [[noreturn]]
         void error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
-            throw AriaCompileException{Error::from_detail(code, SourceLoc{&source_, start_},
-                                                          std::format(fmt, std::forward<Args>(args)...))};
+            error_at(start_, code, fmt, std::forward<Args>(args)...);
         }
 
         // 越界返回 '\0' 哨兵。

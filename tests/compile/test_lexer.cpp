@@ -570,3 +570,220 @@ TEST(LexerError, FirstErrorOnly) {
     EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
     EXPECT_NE(err.message().find("U+0040"), String::npos);
 }
+
+// ---------------------------------------------------------------------------
+// 字符串模板（"...${expr}..."，无前缀；裸 $ 与 { } 皆普通字符，仅 ${ 开档）
+// ---------------------------------------------------------------------------
+
+TEST(LexerInterp, BasicSplit) {
+    // "a ${x} b" -> Start("a ") x End(" b")
+    const auto          lexed    = lex_ok("\"a ${x} b\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[0].interp_value(), StringView{"a "});
+    EXPECT_EQ(tokens[2].interp_value(), StringView{" b"});
+}
+
+TEST(LexerInterp, MultipleHoles) {
+    // "a${x}b${y}c" -> Start Middle End 全形态
+    const auto          lexed    = lex_ok("\"a${x}b${y}c\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpMiddle,
+                                    TokType::Identifier,  TokType::InterpEnd,  TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[0].interp_value(), StringView{"a"});
+    EXPECT_EQ(tokens[2].interp_value(), StringView{"b"});
+    EXPECT_EQ(tokens[4].interp_value(), StringView{"c"});
+}
+
+TEST(LexerInterp, EmptyEdgeSegments) {
+    // 首尾档紧贴引号：空字面段照常产出
+    const auto          lexed    = lex_ok("\"${x}\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[0].interp_value(), StringView{""});
+    EXPECT_EQ(tokens[2].interp_value(), StringView{""});
+}
+
+TEST(LexerInterp, ExpressionHoleWithBraces) {
+    // 档内花括号配对：map 字面量与 lambda 体的 { } 产 token 不闭档
+    const auto          lexed    = lex_ok("\"${ {1:2} }\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::LeftBrace,  TokType::Integer,   TokType::Colon,
+                                    TokType::Integer,     TokType::RightBrace, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+
+    const auto          lexed2    = lex_ok("\"${fun(n){ n }(1)}\"");
+    const auto&         tokens2   = lexed2->tokens;
+    const List<TokType> expected2 = {TokType::InterpStart, TokType::Fun,       TokType::LeftParen,  TokType::Identifier,
+                                     TokType::RightParen,  TokType::LeftBrace, TokType::Identifier, TokType::RightBrace,
+                                     TokType::LeftParen,   TokType::Integer,   TokType::RightParen, TokType::InterpEnd,
+                                     TokType::Eof};
+    ASSERT_EQ(tokens2.size(), expected2.size());
+    for (usize i = 0; i < tokens2.size(); ++i) {
+        EXPECT_EQ(tokens2[i].type(), expected2[i]);
+    }
+}
+
+TEST(LexerInterp, Nested) {
+    // 嵌套插值：内层完整产出（Start/Middle/End），外层档深度不受内层 { } 干扰
+    const auto          lexed    = lex_ok("\"${ \"in ${x}\" }\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::InterpStart, TokType::Identifier,
+                                    TokType::InterpEnd,   TokType::InterpEnd,   TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[1].interp_value(), StringView{"in "});
+}
+
+TEST(LexerInterp, PlainStringInHole) {
+    // 档内普通串：完整 String token，串内 { } 与 $ 不参与档深计数
+    const auto          lexed    = lex_ok("\"${ \"a}b\" }\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::String, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[1].string_value(), StringView{"a}b"});
+}
+
+TEST(LexerInterp, SingleQuoteForm) {
+    // '...' 与 "..." 同为模板
+    const auto          lexed    = lex_ok("'a ${x}'");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+}
+
+TEST(LexerInterp, NoHoleStaysPlainString) {
+    // 无 ${ 的串是普通 String token：裸 $（含后随标识符）不开档
+    const auto  lexed  = lex_ok("\"a$x b\"");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 2u);
+    EXPECT_EQ(tokens[0].type(), TokType::String);
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a$x b"});
+
+    const auto  lexed2  = lex_ok("\"$100 and $\"");
+    const auto& tokens2 = lexed2->tokens;
+    ASSERT_EQ(tokens2.size(), 2u);
+    EXPECT_EQ(tokens2[0].type(), TokType::String);
+    EXPECT_EQ(tokens2[0].string_value(), StringView{"$100 and $"});
+}
+
+TEST(LexerInterp, EscapedDollarIsLiteral) {
+    // \$ 转义写字面 ${（裸 $ 无需转义）
+    const auto  lexed  = lex_ok("\"a\\${b}\"");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 2u);
+    EXPECT_EQ(tokens[0].type(), TokType::String);
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a${b}"});
+
+    const auto  lexed2  = lex_ok("\"a\\$b\"");
+    const auto& tokens2 = lexed2->tokens;
+    ASSERT_EQ(tokens2.size(), 2u);
+    EXPECT_EQ(tokens2[0].type(), TokType::String);
+    EXPECT_EQ(tokens2[0].string_value(), StringView{"a$b"});
+}
+
+TEST(LexerInterp, EscapesInSegment) {
+    // 字面段内普通转义照常解析；\$ 转义后段继续，其后 ${ 开档
+    const auto          lexed    = lex_ok("\"a\\n\\${ ${x}\"");
+    const auto&         tokens   = lexed->tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    EXPECT_EQ(tokens[0].interp_value(), StringView{"a\n${ "});
+}
+
+TEST(LexerInterp, BareBracesAreLiteral) {
+    // 串文本里裸 { } 无档语义，普通字符
+    const auto  lexed  = lex_ok("\"a}b{c ${x}\"");
+    const auto& tokens = lexed->tokens;
+    ASSERT_EQ(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].type(), TokType::InterpStart);
+    EXPECT_EQ(tokens[0].interp_value(), StringView{"a}b{c "});
+}
+
+TEST(LexerInterp, EscapedBraceIsInvalid) {
+    // \{ 不再是转义（{ 本就是普通字符）
+    const auto err = lex_err("\"a\\{b\"");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
+}
+
+TEST(LexerInterp, MaxDepthAccepted) {
+    // 16 层嵌套合法
+    String src;
+    for (usize i = 0; i < 16; ++i) {
+        src += "\"${";
+    }
+    src += "x";
+    for (usize i = 0; i < 16; ++i) {
+        src += "}\"";
+    }
+    const auto lexed = lex_ok(src);
+    EXPECT_EQ(lexed->tokens.back().type(), TokType::Eof);
+}
+
+TEST(LexerInterp, DepthExceeded) {
+    // 17 层嵌套：InterpDepthExceeded
+    String src;
+    for (usize i = 0; i < 17; ++i) {
+        src += "\"${";
+    }
+    src += "x";
+    for (usize i = 0; i < 17; ++i) {
+        src += "}\"";
+    }
+    const auto err = lex_err(src);
+    EXPECT_EQ(err.code(), ErrorCode::InterpDepthExceeded);
+}
+
+TEST(LexerInterp, UnterminatedVariants) {
+    // 文本态 EOF
+    const auto err1 = lex_err("\"abc");
+    EXPECT_EQ(err1.code(), ErrorCode::UnterminatedString);
+
+    // 档内 EOF（闭档 } 与闭引号缺失）
+    const auto err2 = lex_err("\"a ${x");
+    EXPECT_EQ(err2.code(), ErrorCode::UnterminatedString);
+
+    // 闭档后 EOF
+    const auto err3 = lex_err("\"a ${x}");
+    EXPECT_EQ(err3.code(), ErrorCode::UnterminatedString);
+
+    // 文本态裸换行（不跨行）
+    const auto err4 = lex_err("\"a${x}\nb\"");
+    EXPECT_EQ(err4.code(), ErrorCode::UnterminatedString);
+
+    // 闭引号被档吞作新串起点（${ 后直撞引号）
+    const auto err5 = lex_err("\"abc${\"");
+    EXPECT_EQ(err5.code(), ErrorCode::UnterminatedString);
+}
+
+TEST(LexerInterp, DollarOutsideStringIsInvalid) {
+    // 字符串外的 $ 无语法地位：InvalidCharacter
+    const auto err1 = lex_err("$x");
+    EXPECT_EQ(err1.code(), ErrorCode::InvalidCharacter);
+
+    const auto err2 = lex_err("$ \"abc\"");
+    EXPECT_EQ(err2.code(), ErrorCode::InvalidCharacter);
+}

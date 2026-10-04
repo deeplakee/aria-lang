@@ -1,9 +1,9 @@
 # 钉住：Error 内建工厂——直接产出 ObjException（message 为用户原串不烘前缀；code 可选
-# 数字码原样携带，未设 = ErrorCode::Error 的注册表序号 42）；重抛同一对象保码保消息。
+# 数字码原样携带，未设 = ErrorCode::Error 的注册表序号 43）；重抛同一对象保码保消息。
 var err = Error("boom");
 assert(type(err) == "Exception");
 assert(err.message() == "boom");
-assert(err.code() == 42);        # ErrorCode::Error
+assert(err.code() == 43);        # ErrorCode::Error
 
 # 抛出后 catch 绑定同一对象（=== 身份），消息原样取回
 try {
@@ -25,7 +25,7 @@ try {
     kept = e;
 }
 assert(kept.message() == "inner");
-assert(kept.code() == 42);
+assert(kept.code() == 43);
 
 # 空串消息合法（message_ 内容可空）
 var empty = Error("");

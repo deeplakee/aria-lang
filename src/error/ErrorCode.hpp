@@ -35,10 +35,11 @@ namespace aria {
     X(Ok, Ok)                                                                                                       \
     /* ========== SYNTAX ERROR (lexer / parser stage) ========== */                                                 \
     /* --- lexer --- */                                                                                             \
-    X(UnterminatedString, Syntax) /* string not closed / crosses a line break */                                    \
-    X(InvalidEscape, Syntax)      /* unknown escape (no \x; malformed \u{}) */                                      \
-    X(InvalidNumber, Syntax)      /* malformed number literal (base prefix, underscores, mantissa) */               \
-    X(InvalidCharacter, Syntax)   /* character that starts no token */                                              \
+    X(UnterminatedString, Syntax)  /* string not closed / crosses a line break */                                   \
+    X(InvalidEscape, Syntax)       /* unknown escape (no \x; malformed \u{}) */                                     \
+    X(InvalidNumber, Syntax)       /* malformed number literal (base prefix, underscores, mantissa) */              \
+    X(InvalidCharacter, Syntax)    /* character that starts no token */                                             \
+    X(InterpDepthExceeded, Syntax) /* interpolated string nested deeper than the limit */                           \
     /* --- parser --- */                                                                                            \
     X(UnexpectedEof, Syntax)      /* source ends early */                                                           \
     X(ExpectedExpression, Syntax) /* expression expected, something else found */                                   \

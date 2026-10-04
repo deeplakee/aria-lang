@@ -1,5 +1,5 @@
 # 钉住：继承 Exception 定义用户异常类型——裸名 Exception 经 builtins_ 可达；链上实例经默认
-# init 恒有 _message/_code 字段（默认 ""/Error 默认码 42），自有 init 须自行落同名字段；
+# init 恒有 _message/_code 字段（默认 ""/Error 默认码 43），自有 init 须自行落同名字段；
 # face message()/code() 按接收者分派：ObjException 读原生成员，实例 load_field 读同名字段。
 def HttpError : Exception {
     init(status, msg) {
@@ -31,14 +31,14 @@ try {
     assert(e.message() == "server error");
 }
 
-# 不写 init：沿链继承 Exception 默认 init，落默认 _message=""/_code=42
+# 不写 init：沿链继承 Exception 默认 init，落默认 _message=""/_code=43
 def PlainError : Exception {
 }
 
 var plain = PlainError();
 assert(type(plain) == "Instance");
 assert(plain.message() == "");
-assert(plain.code() == 42);
+assert(plain.code() == 43);
 try {
     throw plain;
 } catch (e) {
@@ -49,4 +49,4 @@ try {
 var bare = Exception();
 assert(type(bare) == "Instance");
 assert(bare.message() == "");
-assert(bare.code() == 42);
+assert(bare.code() == 43);

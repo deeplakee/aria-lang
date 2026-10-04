@@ -2423,3 +2423,20 @@ TEST(CodeGen, InterpStringSegmentLimit) {
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().code(), ErrorCode::TooManyElements);
 }
+
+TEST(CodeGen, InterpStringFromSource) {
+    // 端到端(词法拆段 -> 语法组节点 -> 发射):首尾空字面段不入列,3 非空字面段 + 2 档
+    const auto compiled = compile_only("var x = 1; \"a ${x}b ${x} c\";");
+    ASSERT_TRUE(compiled.has_value()) << compiled.error().message();
+    const auto text = compiled->unit().disassemble("<test>");
+    EXPECT_EQ(count_occurrences(text, "BUILD_STRING"), 1);
+    EXPECT_EQ(count_occurrences(text, "LOAD_CONST"), 4);  // 3 字面段 + 入口尾声模块常量
+    EXPECT_EQ(count_occurrences(text, "LOAD_GLOBAL"), 2); // 两档读全局 x
+}
+
+TEST(CodeGen, InterpStringEmptyHoleIsCompileError) {
+    // 空档 "${}":档内期望表达式,撞串段 token 报 ExpectedExpression
+    const auto compiled = compile_only("\"${}\";");
+    ASSERT_FALSE(compiled.has_value());
+    EXPECT_EQ(compiled.error().code(), ErrorCode::ExpectedExpression);
+}

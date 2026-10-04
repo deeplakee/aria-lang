@@ -107,8 +107,7 @@ namespace aria {
         }
 
         // EOF token 位置 = 内容末尾偏移；行列由 SourceLoc 派生为「下一行第 1 列」（编辑器约定）。
-        const u32 eof = src_.size();
-        tokens_.push_back(Token{TokenType::Eof, {}, SourceLoc{&source_, eof}});
+        tokens_.emplace_back(TokenType::Eof, StringView{}, loc_at(src_.size()));
     }
 
     // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与插值档内扫描共用。
@@ -192,7 +191,6 @@ namespace aria {
         }
         consume_ascii([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
 
-        const auto lex        = slice(start_, pos_);
         const auto lex_no_tag = slice(start_ + 2, pos_); // 剥掉 2 字节前缀
 
         if (!validate_underscores(lex_no_tag, base)) {
@@ -200,7 +198,7 @@ namespace aria {
         }
 
         if (const auto value = parse_int(lex_no_tag, base)) {
-            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start_}));
+            tokens_.push_back(Token::make_integer(*value, slice(start_, pos_), loc_at(start_)));
         } else {
             error(ErrorCode::InvalidNumber, "integer literal out of range");
         }
@@ -242,6 +240,7 @@ namespace aria {
         }
 
         const auto lex = slice(start_, pos_);
+        const auto loc = loc_at(start_);
 
         if (!validate_underscores(lex, 10)) {
             error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
@@ -249,13 +248,13 @@ namespace aria {
 
         if (has_dot || has_exp) {
             if (const auto value = parse_float(lex)) {
-                tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start_}));
+                tokens_.push_back(Token::make_float(*value, lex, loc));
             } else {
                 error(ErrorCode::InvalidNumber, "float literal out of range");
             }
         } else {
             if (const auto value = parse_int(lex, 10)) {
-                tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start_}));
+                tokens_.push_back(Token::make_integer(*value, lex, loc));
             } else {
                 error(ErrorCode::InvalidNumber, "integer literal out of range");
             }
@@ -295,12 +294,13 @@ namespace aria {
                 advance(); // 消费闭引号
                 if (has_hole) {
                     const auto lex = slice(segment_start, pos_); // 含闭引号
-                    tokens_.push_back(
-                            Token::make_interp_end(std::move(value), lex, SourceLoc{&source_, segment_start}));
+                    const auto loc = loc_at(segment_start);
+                    tokens_.push_back(Token::make_interp_end(std::move(value), lex, loc));
                 } else {
                     // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
                     const auto lex = slice(string_start, pos_);
-                    tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, string_start}));
+                    const auto loc = loc_at(string_start);
+                    tokens_.push_back(Token::make_string(std::move(value), lex, loc));
                 }
                 return true;
             }
@@ -313,7 +313,7 @@ namespace aria {
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
                 const auto lex = slice(segment_start, pos_);
-                const auto loc = SourceLoc{&source_, segment_start};
+                const auto loc = loc_at(segment_start);
                 if (has_hole) {
                     tokens_.push_back(Token::make_interp_middle(std::move(value), lex, loc));
                 } else {
@@ -436,16 +436,17 @@ namespace aria {
         consume_codepoints(utf8::is_id_continue);
 
         const auto lex = slice(start_, pos_);
+        const auto loc = loc_at(start_);
 
         if (lex.size() == 1 && lex[0] == '_') {
-            tokens_.emplace_back(TokenType::Underscore, lex, SourceLoc{&source_, start_});
+            tokens_.emplace_back(TokenType::Underscore, lex, loc);
             return;
         }
         if (const auto kw = lookup_keyword(lex)) {
-            tokens_.emplace_back(*kw, lex, SourceLoc{&source_, start_});
+            tokens_.emplace_back(*kw, lex, loc);
             return;
         }
-        tokens_.emplace_back(TokenType::Identifier, lex, SourceLoc{&source_, start_});
+        tokens_.emplace_back(TokenType::Identifier, lex, loc);
     }
 
     void Lexer::scan_operator_or_punct() {
@@ -457,7 +458,7 @@ namespace aria {
 
         const auto make_token = [&](const TokenType t) {
             const u32 end = pos_;
-            tokens_.emplace_back(t, slice(start_, end), SourceLoc{&source_, start_});
+            tokens_.emplace_back(t, slice(start_, end), loc_at(start_));
         };
 
         switch (static_cast<char>(src_[pos_])) {

@@ -88,8 +88,8 @@ namespace aria {
         template<typename... Args>
         [[noreturn]]
         void error_at(const u32 offset, const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
-            throw AriaCompileException{Error::from_detail(code, SourceLoc{&source_, offset},
-                                                          std::format(fmt, std::forward<Args>(args)...))};
+            throw AriaCompileException{
+                    Error::from_detail(code, loc_at(offset), std::format(fmt, std::forward<Args>(args)...))};
         }
 
         template<typename... Args>
@@ -110,6 +110,12 @@ namespace aria {
         StringView slice(const u32 start, const u32 end) const noexcept {
             ASSERT(start <= end && end <= src_.size(), "invalid slice range");
             return StringView{src_.data() + start, end - start};
+        }
+
+        // offset 处的源位置（SourceLoc 构造收口，词根对齐 error_at）。
+        [[nodiscard]]
+        SourceLoc loc_at(const u32 offset) const noexcept {
+            return SourceLoc{&source_, offset};
         }
 
         // 只消费 ASCII 字节（pred 收 char），遇非 ASCII 必停且停在码点边界（UTF-8 续接字节恒 >= 0x80）；

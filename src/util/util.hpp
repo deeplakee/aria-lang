@@ -6,6 +6,7 @@
 #include <format>
 #include <system_error>
 #include <type_traits>
+#include <utility>
 #include "aria.hpp"
 #include "common.hpp"
 #include "io.hpp"
@@ -251,33 +252,39 @@ namespace aria::util {
         return position;
     }
 
+    // from_chars 全量解析封装:无错误且整串消费完才成功,否则 nullopt;args 透传 base 等参数,
+    // 收什么文本形态(文法)由上层封装判定。
+    template<typename T, typename... Args>
+    [[nodiscard]]
+    Opt<T> try_parse(const StringView text, Args&&... args) {
+        T          value{};
+        const auto first     = text.data();
+        const auto last      = first + text.size();
+        const auto [end, ec] = std::from_chars(first, last, value, std::forward<Args>(args)...);
+        if (ec != std::errc{} || end != last) {
+            return std::nullopt;
+        }
+        return value;
+    }
+
     // 整串十进制整数文本解析(数据语法,非源码字面量):收 [+-][0-9]+,整串消费且落 i48 值域内才 somed。
     // 不跳空白、不收下划线/进制前缀(那是源码字面量语法);域闸设此:越域值经 Value::from_int 会被静默截尾。
     [[nodiscard]]
     inline Opt<i64> parse_int_text(const StringView text) {
-        const auto body  = text.starts_with('+') ? text.substr(1) : text;
-        const auto first = body.data();
-        const auto last  = body.data() + body.size();
-        i64        value = 0;
-        if (const auto [end, ec] = std::from_chars(first, last, value, 10);
-            ec != std::errc{} || end != last || value < kIntMin || value > kIntMax) {
+        const auto body   = text.starts_with('+') ? text.substr(1) : text;
+        const auto parsed = try_parse<i64>(body, 10);
+        if (!parsed || *parsed < kIntMin || *parsed > kIntMax) {
             return std::nullopt;
         }
-        return value;
+        return parsed;
     }
 
     // 整串十进制浮点文本解析:收整数形/小数形/指数形与 inf/nan;整串消费,越域(如 1e400)与解析失败同返 nullopt。
     // 数据语法同 parse_int_text:不跳空白、不收下划线/进制前缀。
     [[nodiscard]]
     inline Opt<f64> parse_float_text(const StringView text) {
-        const auto body  = text.starts_with('+') ? text.substr(1) : text;
-        const auto first = body.data();
-        const auto last  = body.data() + body.size();
-        f64        value = 0.0;
-        if (const auto [end, ec] = std::from_chars(first, last, value); ec != std::errc{} || end != last) {
-            return std::nullopt;
-        }
-        return value;
+        const auto body = text.starts_with('+') ? text.substr(1) : text;
+        return try_parse<f64>(body);
     }
 
     // 序列化拼接:range 逐元素经 transform 转 String 后以 delimiter 连接(元素序 = range 迭代序)。

@@ -43,7 +43,7 @@ paths:
 - **栈/Opt 取值**：`pop_top(Stack<T>&) -> T`（取栈顶并弹出，调用方须保证栈非空，`[[nodiscard]]`）；`take` 重载族（取走并置空，`std::exchange` 习语，`[[nodiscard]]` 返被取值）：`take(Opt<T>&) -> Opt<T>`（置 `nullopt`）、`take(T*&) -> T*`（置 `nullptr`）、`take(UnsignedInteger T&) -> T`（归零；concept `UnsignedInteger = is_unsigned_v && !is_same_v<bool>`，bool 特意排除）、`take(bool&) -> bool`（置 `false`，具名重载两态语义）。
 - **拼接**：`join(Range, StringView delimiter, Fn&&)`（range 逐元素经 Fn 渲染后 delimiter 连接的共用底座，debug_repr 类拼接消费）；`concat_string(StringView, StringView)`（两段拼接成新串，一次定容两段 append；模块加载文件名拼接消费）。
 - **下标换算**：`abs_diff(usize, usize)`（两下标距离，无符号域不下溢；命名对齐 C++26 `std::abs_diff`）；`resolve_index(i64, usize)`（负下标从尾计数归一化 + 越界判定，`nullopt` 即越界；无上界形态的末元素/空段折算在 `ObjRange::resolve_slice_bounds` 里做）；`resolve_position(i64, usize)`（插入位解析，`resolve_index` 的姊妹函数：同式归一，唯上界放宽到 `== size` 即追加位，`list.insert` 消费）。
-- **文本解析**：`parse_int_text(StringView) -> Opt<i64>` / `parse_float_text(StringView) -> Opt<f64>`--整串十进制**数据文本**解析：收前导 `[+-]`、整串须被消费完；不跳空白、不收下划线与进制前缀（那是源码字面量语法，见 `Lexer` 的 `parse_int` 一族，两套文法刻意不同）。`parse_int_text` 另闸语言 int 的 i48 域（越域返 `nullopt`--越域值经 `Value::from_int` 会被静默截尾）；`parse_float_text` 收 `inf`/`nan`、越 f64 域返 `nullopt` 不饱和成 inf。失败一律 `nullopt`，兜底文案交调用方。
+- **文本解析**：`try_parse<T>(StringView, Args&&...) -> Opt<T>`（`std::from_chars` 全量解析机械封装：无错误且整串消费完才 somed，否则 `nullopt`；`Args` 透传 `base` 等参数，收什么文本形态由上层判定）；`parse_int_text(StringView) -> Opt<i64>` / `parse_float_text(StringView) -> Opt<f64>`--整串十进制**数据文本**解析（`try_parse` 之上的文法封装）：收前导 `[+-]`、整串须被消费完；不跳空白、不收下划线与进制前缀（那是源码字面量语法，见 `Lexer` 的 `parse_int` 一族，两套文法刻意不同）。`parse_int_text` 另闸语言 int 的 i48 域（越域返 `nullopt`--越域值经 `Value::from_int` 会被静默截尾）；`parse_float_text` 收 `inf`/`nan`、越 f64 域返 `nullopt` 不饱和成 inf。失败一律 `nullopt`，兜底文案交调用方。
 
 ## `util/cli.hpp`
 

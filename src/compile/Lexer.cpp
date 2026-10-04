@@ -1,6 +1,6 @@
 #include "Lexer.hpp"
-#include <charconv>
 #include "util/utf8.hpp"
+#include "util/util.hpp"
 
 namespace aria {
 
@@ -40,49 +40,36 @@ namespace aria {
             return true;
         }
 
-        bool strip_underscores(const StringView lex, char* out, const usize out_cap) {
+        Opt<usize> strip_underscores(const StringView lex, char* out, const usize out_cap) {
             usize out_size = 0;
             for (const char i: lex) {
                 if (i == '_') {
                     continue;
                 }
-                if (out_size + 1 >= out_cap) { // 留一个给 '\0'
-                    return false;
+                if (out_size >= out_cap) {
+                    return std::nullopt;
                 }
 
                 out[out_size++] = i;
             }
-            out[out_size] = '\0';
-            return true;
+            return out_size;
         }
 
         // 解析整数字面量为 i64（lex 不含进制前缀与指数，含指数的走 float）；溢出返 nullopt。
         Opt<i64> parse_int(const StringView lex, const u8 base) {
             char buf[64];
-            if (!strip_underscores(lex, buf, sizeof(buf))) {
-                return std::nullopt;
+            if (const auto len = strip_underscores(lex, buf, sizeof(buf))) {
+                return util::try_parse<i64>(StringView{buf, *len}, base);
             }
-            i64         value    = 0;
-            const usize len      = std::strlen(buf);
-            const auto [ptr, ec] = std::from_chars(buf, buf + len, value, base);
-            if (ec != std::errc{} || ptr != buf + len) {
-                return std::nullopt;
-            }
-            return value;
+            return std::nullopt;
         }
 
         Opt<f64> parse_float(const StringView lex) {
             char buf[64];
-            if (!strip_underscores(lex, buf, sizeof(buf))) {
-                return std::nullopt;
+            if (const auto len = strip_underscores(lex, buf, sizeof(buf))) {
+                return util::try_parse<f64>(StringView{buf, *len});
             }
-            f64         value    = 0.0;
-            const usize len      = std::strlen(buf);
-            const auto [ptr, ec] = std::from_chars(buf, buf + len, value);
-            if (ec != std::errc{} || ptr != buf + len) {
-                return std::nullopt;
-            }
-            return value;
+            return std::nullopt;
         }
     } // namespace
 
@@ -231,12 +218,11 @@ namespace aria {
             return;
         }
 
-        const auto value = parse_int(lex_no_tag, base);
-        if (!value) {
+        if (const auto value = parse_int(lex_no_tag, base)) {
+            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
+        } else {
             error(ErrorCode::InvalidNumber, "integer literal out of range", start);
-            return;
         }
-        tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
     }
 
     void Lexer::scan_decimal_or_float() {
@@ -283,19 +269,17 @@ namespace aria {
         }
 
         if (has_dot || has_exp) {
-            const auto value = parse_float(lex);
-            if (!value) {
+            if (const auto value = parse_float(lex)) {
+                tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start}));
+            } else {
                 error(ErrorCode::InvalidNumber, "float literal out of range", start);
-                return;
             }
-            tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start}));
         } else {
-            const auto value = parse_int(lex, 10);
-            if (!value) {
+            if (const auto value = parse_int(lex, 10)) {
+                tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
+            } else {
                 error(ErrorCode::InvalidNumber, "integer literal out of range", start);
-                return;
             }
-            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
         }
     }
 
@@ -388,18 +372,16 @@ namespace aria {
                 }
                 advance(); // 消费 }
 
-                // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法）：
-                // from_chars 遇非 hex 字符或 _ 恒停，ptr != last 即报错。
+                // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法：'_' 非十六进制数字，整串消费必败）。
                 const auto lex    = StringView{src_.data() + start, pos_ - start - 1};
-                i64        cp_i64 = 0;
-                if (const auto [ptr, ec] = std::from_chars(lex.data(), lex.data() + lex.size(), cp_i64, 16);
-                    ec != std::errc{} || ptr != lex.data() + lex.size()) {
+                const auto parsed = util::try_parse<i64>(lex, 16);
+                if (!parsed) {
                     error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{...}'", start - 1);
                     value += "\\u";
                     return;
                 }
 
-                const u32 cp = static_cast<u32>(cp_i64);
+                const u32 cp = static_cast<u32>(*parsed);
                 if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
                     error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{...}'", start - 1);
                     value.push_back(static_cast<char>(utf8::kReplacementChar));

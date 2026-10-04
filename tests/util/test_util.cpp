@@ -12,6 +12,7 @@ using util::parse_int_text;
 using util::resolve_index;
 using util::resolve_position;
 using util::take;
+using util::try_parse;
 using util::UnsignedInteger;
 
 static_assert(!UnsignedInteger<bool>); // bool 走具名重载,不入归零形态
@@ -72,6 +73,25 @@ TEST(AbsDiff, LargerMinusSmaller) {
     EXPECT_EQ(abs_diff(3u, 7u), 4u);
     EXPECT_EQ(abs_diff(7u, 3u), 4u);
     EXPECT_EQ(abs_diff(0u, 5u), 5u);
+}
+
+// ---------------------------------------------------------------------------
+// try_parse：from_chars 全量解析封装（无错误且整串消费完才 somed）
+// ---------------------------------------------------------------------------
+
+TEST(TryParse, WholeConsumeSucceeds) {
+    EXPECT_EQ(try_parse<i64>("42"), 42);
+    EXPECT_EQ(try_parse<i64>("-7"), -7);
+    EXPECT_EQ(try_parse<f64>("2.5"), 2.5);
+    EXPECT_EQ(try_parse<i64>("ff", 16), 255); // args 透传 base
+}
+
+TEST(TryParse, RejectsPartialConsumeAndJunk) {
+    EXPECT_EQ(try_parse<i64>("12x"), std::nullopt); // 整串消费不过即败（裸 from_chars 会收 12）
+    EXPECT_EQ(try_parse<i64>(""), std::nullopt);    // 空串
+    EXPECT_EQ(try_parse<i64>("abc"), std::nullopt);
+    EXPECT_EQ(try_parse<i64>("99999999999999999999"), std::nullopt); // i64 溢出（result_out_of_range）
+    EXPECT_EQ(try_parse<i64>("1_2"), std::nullopt);                  // '_' 非数字，停在 _ 处
 }
 
 // ---------------------------------------------------------------------------

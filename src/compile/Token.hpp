@@ -36,6 +36,23 @@ namespace aria {
             return Token{TokenType::String, lexeme, loc, std::move(value)};
         }
 
+        // 插值串字面段三厂：value 为该段已解析转义后的内容，lexeme 保留该段原文
+        // （不含边界 { }，End 含闭引号）。
+        [[nodiscard]]
+        static Token make_interp_start(String value, const StringView lexeme, const SourceLoc loc) {
+            return Token{TokenType::InterpStart, lexeme, loc, std::move(value)};
+        }
+
+        [[nodiscard]]
+        static Token make_interp_middle(String value, const StringView lexeme, const SourceLoc loc) {
+            return Token{TokenType::InterpMiddle, lexeme, loc, std::move(value)};
+        }
+
+        [[nodiscard]]
+        static Token make_interp_end(String value, const StringView lexeme, const SourceLoc loc) {
+            return Token{TokenType::InterpEnd, lexeme, loc, std::move(value)};
+        }
+
         [[nodiscard]]
         TokenType type() const noexcept {
             return type_;
@@ -76,6 +93,10 @@ namespace aria {
         // 仅 String 有效，其余返回空串。
         [[nodiscard]]
         StringView string_value() const noexcept;
+
+        // 仅 InterpStart/InterpMiddle/InterpEnd 有效（段值 = 已解析转义后的字面内容），其余返回空串。
+        [[nodiscard]]
+        StringView interp_value() const noexcept;
 
         // 调试用：形如 `Integer '42'` 的可读表示。
         [[nodiscard]]

@@ -27,6 +27,19 @@ namespace aria {
         return sval_ptr ? StringView{*sval_ptr} : StringView{};
     }
 
+    StringView Token::interp_value() const noexcept {
+        switch (type_) {
+            case TokenType::InterpStart:
+            case TokenType::InterpMiddle:
+            case TokenType::InterpEnd: {
+                const auto sval_ptr = std::get_if<String>(&value_);
+                return sval_ptr ? StringView{*sval_ptr} : StringView{};
+            }
+            default:
+                return {};
+        }
+    }
+
     String Token::to_string() const {
         // 类作用域内 to_string 查到成员自身即停，须限定到命名空间作用域的自由函数。
         String lexeme_info = lexeme_.empty() ? std::format("{:<13}", aria::to_string(type_))

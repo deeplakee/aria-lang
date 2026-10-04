@@ -35,11 +35,6 @@ namespace {
         List<Token> tokens;
     };
 
-    struct LexErrors {
-        SourceFile  sf;
-        List<Error> errors;
-    };
-
     // 辅助：tokenize 并断言成功，返回堆上 {sf, tokens}。
     UPtr<Lexed> lex_ok(const StringView content) {
         auto lexed  = std::make_unique<Lexed>();
@@ -50,14 +45,15 @@ namespace {
         return lexed;
     }
 
-    // 辅助：tokenize 并断言失败，返回堆上 {sf, errors}。
-    UPtr<LexErrors> lex_err(const StringView content) {
-        auto lexed  = std::make_unique<LexErrors>();
-        lexed->sf   = make_src(content);
-        auto result = Lexer::tokenize(lexed->sf);
+    // 辅助：tokenize 并断言失败，返回首错（Error 消息已烘焙，不依赖 sf 存活）。
+    Error lex_err(const StringView content) {
+        SourceFile sf     = make_src(content);
+        auto       result = Lexer::tokenize(sf);
         EXPECT_FALSE(result.has_value()) << "期望 tokenize 失败";
-        lexed->errors = result ? List<Error>{} : std::move(result.error());
-        return lexed;
+        if (result) {
+            return Error::from_detail(ErrorCode::Unreachable, "tokenize unexpectedly succeeded");
+        }
+        return std::move(result.error());
     }
 } // namespace
 
@@ -261,46 +257,34 @@ TEST(LexerInteger, RadixUnderscores) {
 
 TEST(LexerInteger, RadixPrefixOnly) {
     // 仅前缀无数字 -> InvalidNumber（断言首字符须为进制数字）
-    const auto  lexed = lex_err("0x");
-    const auto& errs  = lexed->errors;
-    ASSERT_FALSE(errs.empty());
-    EXPECT_EQ(errs[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0x");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
 }
 
 TEST(LexerInteger, RadixPrefixThenNonDigit) {
     // 前缀后跟非法字符（如 G 不属 hex）-> InvalidNumber
-    const auto  lexed = lex_err("0xG");
-    const auto& errs  = lexed->errors;
-    ASSERT_FALSE(errs.empty());
-    EXPECT_EQ(errs[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0xG");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
 }
 
 TEST(LexerInteger, RadixLeadingUnderscore) {
     // 前缀后紧跟 _（首字符须是数字）-> InvalidNumber
-    const auto  lexed = lex_err("0x_1");
-    const auto& errs  = lexed->errors;
-    ASSERT_FALSE(errs.empty());
-    EXPECT_EQ(errs[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0x_1");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
 }
 
 TEST(LexerInteger, RadixTrailingUnderscore) {
     // 数字以 _ 结尾 -> 下划线位置非法 -> InvalidNumber
-    const auto  lexed = lex_err("0xFF_");
-    const auto& errs  = lexed->errors;
-    ASSERT_FALSE(errs.empty());
-    EXPECT_EQ(errs[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0xFF_");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
 }
 
 TEST(LexerInteger, RadixOutOfRangeDigit) {
     // 超出进制范围的数字：0b2（二进制无 2）、0o9（八进制无 9）-> InvalidNumber
-    const auto  errors = lex_err("0b2");
-    const auto& errs   = errors->errors;
-    ASSERT_FALSE(errs.empty());
-    EXPECT_EQ(errs[0].code(), ErrorCode::InvalidNumber);
-    const auto  lexed2 = lex_err("0o9");
-    const auto& errs2  = lexed2->errors;
-    ASSERT_FALSE(errs2.empty());
-    EXPECT_EQ(errs2[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0b2");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
+    const auto err2 = lex_err("0o9");
+    EXPECT_EQ(err2.code(), ErrorCode::InvalidNumber);
 }
 
 // ---------------------------------------------------------------------------
@@ -398,52 +382,39 @@ TEST(LexerString, UnicodeEscape) {
 TEST(LexerString, UnicodeEscapeErrors) {
     // \u 缺少 { -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u41\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u41\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
+        EXPECT_NE(err.message().find(":1:2:"), String::npos); // 锚点=反斜杠列（非 u 列）
     }
     // \u{} 空 hex -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
     // \u{12g} 含非 hex 字符 -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{12g}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{12g}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
     // \u{110000} 码点超 0x10FFFF -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{110000}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{110000}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
     // \u{d800} 代理区码点 -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{d800}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{d800}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
     // \u{1_2} 含 _（hex+ 不允许 _）-> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{1_2}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{1_2}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
     // \u{G} 纯非 hex 字符 -> InvalidEscape
     {
-        const auto  lexed = lex_err("\"\\u{G}\"");
-        const auto& errs  = lexed->errors;
-        ASSERT_FALSE(errs.empty());
-        EXPECT_EQ(errs[0].code(), ErrorCode::InvalidEscape);
+        const auto err = lex_err("\"\\u{G}\"");
+        EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
     }
 }
 
@@ -565,96 +536,37 @@ TEST(LexerEdge, OnlyTrivia) {
 
 TEST(LexerError, UnterminatedString) {
     // EOF 前未闭合
-    const auto  lexed  = lex_err("\"abc");
-    const auto& errors = lexed->errors;
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::UnterminatedString);
+    const auto err = lex_err("\"abc");
+    EXPECT_EQ(err.code(), ErrorCode::UnterminatedString);
 
     // 裸换行
-    const auto  lexed2  = lex_err("\"abc\ndef\"");
-    const auto& errors2 = lexed2->errors;
-    ASSERT_FALSE(errors2.empty());
-    EXPECT_EQ(errors2[0].code(), ErrorCode::UnterminatedString);
+    const auto err2 = lex_err("\"abc\ndef\"");
+    EXPECT_EQ(err2.code(), ErrorCode::UnterminatedString);
 }
 
 TEST(LexerError, InvalidEscape) {
-    const auto  lexed  = lex_err("\"\\x41\"");
-    const auto& errors = lexed->errors; // 无 \x
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::InvalidEscape);
+    const auto err = lex_err("\"\\x41\""); // 无 \x
+    EXPECT_EQ(err.code(), ErrorCode::InvalidEscape);
 }
 
 TEST(LexerError, InvalidNumber) {
-    const auto  lexed  = lex_err("0x");
-    const auto& errors = lexed->errors;
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::InvalidNumber);
+    const auto err = lex_err("0x");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidNumber);
 }
 
 TEST(LexerError, InvalidCharacter) {
-    const auto  lexed  = lex_err("@");
-    const auto& errors = lexed->errors;
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::InvalidCharacter);
+    const auto err = lex_err("@");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
 }
 
 TEST(LexerError, LoneAmpersand) {
-    const auto  lexed  = lex_err("&");
-    const auto& errors = lexed->errors;
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::InvalidCharacter);
+    const auto err = lex_err("&");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
 }
 
-// ---------------------------------------------------------------------------
-// 错误恢复：可恢复错误后继续扫描
-// ---------------------------------------------------------------------------
-
-TEST(LexerRecovery, ContinueAfterRecoverable) {
-    // @ 是 InvalidCharacter（可恢复），应继续扫到 42
-    SourceFile sf     = make_src("@ 42");
-    auto       result = Lexer::tokenize(sf);
-    ASSERT_FALSE(result.has_value());
-    const auto& errors = result.error();
-    ASSERT_FALSE(errors.empty());
-    EXPECT_EQ(errors[0].code(), ErrorCode::InvalidCharacter);
-}
-
-TEST(LexerRecovery, MultipleErrorsCollected) {
-    // 两个非法字符 @ 和 ?
-    SourceFile sf     = make_src("@ ?");
-    auto       result = Lexer::tokenize(sf);
-    ASSERT_FALSE(result.has_value());
-    EXPECT_GE(result.error().size(), 2u);
-}
-
-TEST(LexerRecovery, UnterminatedStringContinuesScanning) {
-    // 未闭合串遇裸换行：记 UnterminatedString（跨行）后跨过换行继续扫，收集到后续 @ 的 InvalidCharacter。
-    SourceFile sf     = make_src("\"abc\n@");
-    auto       result = Lexer::tokenize(sf);
-    ASSERT_FALSE(result.has_value());
-    const auto& errors = result.error();
-    ASSERT_GE(errors.size(), 2u);
-    EXPECT_EQ(errors[0].code(), ErrorCode::UnterminatedString);
-    bool has_invalid_char = false;
-    for (const auto& e: errors) {
-        if (e.code() == ErrorCode::InvalidCharacter) {
-            has_invalid_char = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(has_invalid_char) << "应在未闭合串后继续扫并收集到 InvalidCharacter";
-}
-
-TEST(LexerRecovery, MaxErrorsCapStopsScan) {
-    // 超过错误上限的输入应停止扫描，错误数 <= 上限（不无限增长）。
-    // 构造大量非法字符；lexer 达 kMaxErrors(32) 即停。
-    String src;
-    for (usize i = 0; i < 100; ++i) {
-        src += "@ ";
-    }
-    SourceFile sf     = make_src(src);
-    auto       result = Lexer::tokenize(sf);
-    ASSERT_FALSE(result.has_value());
-    // 错误数受上限约束（不应到 100）
-    EXPECT_LE(result.error().size(), 64u); // 上限 32，留余量（达上限后不再记账）
+TEST(LexerError, FirstErrorOnly) {
+    // 多个非法字符只报第一个（@ = U+0040；? 在其后，不再报）
+    const auto err = lex_err("@ ?");
+    EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
+    EXPECT_NE(err.message().find("U+0040"), String::npos);
 }

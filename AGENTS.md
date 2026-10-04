@@ -76,7 +76,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
 - **四条错误通道**（设计见 vm-design.md §4.5-§4.8）：
-  1. **`Result<T, Error>` 返回**：编译期可恢复错误的常规通道（`Lexer::tokenize` / `Parser::parse` 恢复式收集、`Compiler::compile` 单错）。VM 侧 `run()` 的 `Result` 仅为未捕获出口的边界返回类型，dispatch_loop 内部不逐站传播。
+  1. **`Result<T, Error>` 返回**：编译期可恢复错误的常规通道（`Parser::parse` 恢复式收集、`Lexer::tokenize` / `Compiler::compile` 首错即止）。VM 侧 `run()` 的 `Result` 仅为未捕获出口的边界返回类型，dispatch_loop 内部不逐站传播。
   2. **VM 自管异常状态（运行期主通道）**：throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，**不含位置**），装箱为 Value 存入当前执行上下文的挂起错误寄存器。故**运行期错误不就地构造 Error**：`Error` 仅在 `unwind()` 全未命中的出口物化，位置由该出口烘焙的逐帧 `at` 堆栈跟踪给出。
   3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。

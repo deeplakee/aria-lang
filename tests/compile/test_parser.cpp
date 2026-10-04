@@ -63,7 +63,9 @@ namespace {
         auto lex = Lexer::tokenize(p->sf);
         if (!lex) {
             // 词法错误直接作为解析失败返回（测试用源码应词法合法）。
-            p->result = std::unexpected(std::move(lex.error()));
+            List<Error> errors;
+            errors.push_back(std::move(lex.error()));
+            p->result = std::unexpected(std::move(errors));
             return p;
         }
         p->result = Parser::parse(std::move(*lex));

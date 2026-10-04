@@ -43,7 +43,7 @@ namespace {
         SourceFile file{"<test>", "<test>", aria::String{src}};
         auto       lex = Lexer::tokenize(file);
         if (!lex) {
-            return std::unexpected(std::move(lex.error()[0]));
+            return std::unexpected(std::move(lex.error()));
         }
         auto parse = Parser::parse(std::move(*lex));
         if (!parse) {
@@ -1091,7 +1091,7 @@ TEST(CodeGen, DefaultParamPrologueDisassembly) {
     EXPECT_NE(text.find("LOAD_LOCAL_2"), aria::String::npos); // 缺省槽 2 经 N 短变体读印章
     EXPECT_NE(text.find("LOAD_REG"), aria::String::npos);
     EXPECT_NE(text.find("DefaultMark"), aria::String::npos); // 寄存器可读名入反汇编注释
-    EXPECT_NE(text.find("JUMP_NE"), aria::String::npos); // 印章判等融合(原 EQUAL + JUMP_FALSE)
+    EXPECT_NE(text.find("JUMP_NE"), aria::String::npos);     // 印章判等融合(原 EQUAL + JUMP_FALSE)
     EXPECT_NE(text.find("STORE_LOCAL_2"), aria::String::npos);
 }
 

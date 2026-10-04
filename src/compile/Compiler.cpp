@@ -13,7 +13,7 @@ namespace aria {
                                                   const StringView entry_name) {
         auto tokens = Lexer::tokenize(source);
         if (!tokens) {
-            return std::unexpected(std::move(tokens.error()[0]));
+            return std::unexpected(std::move(tokens.error()));
         }
 
         auto ast = Parser::parse(std::move(*tokens));

@@ -59,7 +59,7 @@ namespace aria {
         Opt<i64> parse_int(const StringView lex, const u8 base) {
             char buf[64];
             if (const auto len = strip_underscores(lex, buf, sizeof(buf))) {
-                return util::try_parse<i64>(StringView{buf, *len}, base);
+                return util::try_parse<i64>({buf, *len}, base);
             }
             return std::nullopt;
         }
@@ -67,21 +67,20 @@ namespace aria {
         Opt<f64> parse_float(const StringView lex) {
             char buf[64];
             if (const auto len = strip_underscores(lex, buf, sizeof(buf))) {
-                return util::try_parse<f64>(StringView{buf, *len});
+                return util::try_parse<f64>({buf, *len});
             }
             return std::nullopt;
         }
     } // namespace
 
-    Lexer::Lexer(SourceFile& src) noexcept :
-        source_{src}, src_{src.content()}, pos_{0}, tokens_{}, errors_{}, is_fatal_{false} {}
+    Lexer::Lexer(SourceFile& src) noexcept : source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{} {}
 
-    Result<List<Token>, List<Error>> Lexer::tokenize(SourceFile& src) {
+    Result<List<Token>, Error> Lexer::tokenize(SourceFile& src) {
         Lexer lexer{src};
-        lexer.run();
-
-        if (!lexer.errors_.empty()) {
-            return std::unexpected(std::move(lexer.errors_));
+        try {
+            lexer.run();
+        } catch (const AriaCompileException& e) {
+            return std::unexpected(e.error());
         }
         return std::move(lexer.tokens_);
     }
@@ -101,21 +100,11 @@ namespace aria {
 
     bool Lexer::is_eof() const noexcept { return pos_ >= src_.size(); }
 
-    void Lexer::error(const ErrorCode code, const StringView msg, const u32 offset) {
-        errors_.push_back(Error::from_detail(code, SourceLoc{&source_, offset}, msg));
-        if (errors_.size() >= kMaxErrors) {
-            is_fatal_ = true;
-        }
-    }
-
     void Lexer::run() {
-        while (!is_fatal_ && !is_eof()) {
+        while (!is_eof()) {
             dispatch_one();
         }
 
-        if (is_fatal_) {
-            return; // 致命错误，不补 Eof
-        }
         // EOF token 位置 = 内容末尾偏移；行列由 SourceLoc 派生为「下一行第 1 列」（编辑器约定）。
         const u32 eof = src_.size();
         tokens_.push_back(Token{TokenType::Eof, {}, SourceLoc{&source_, eof}});
@@ -130,24 +119,19 @@ namespace aria {
             return;
         }
 
+        start_ = pos_; // token 起点 = 错误锚点（span/lexeme/token 位置均用此，各扫描器同）
+
         // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
         if (utf8::is_digit(cp)) {
             scan_number();
-            return;
-        }
-
-        if (is_quote(static_cast<char>(cp))) {
+        } else if (is_quote(static_cast<char>(cp))) {
             scan_string();
-            return;
-        }
-
-        if (utf8::is_id_start(cp)) {
+        } else if (utf8::is_id_start(cp)) {
             scan_identifier();
-            return;
+        } else {
+            // lone & | 等非法字符的 InvalidCharacter 兜底
+            scan_operator_or_punct();
         }
-
-        // lone & | 等非法字符的 InvalidCharacter 兜底
-        scan_operator_or_punct();
     }
 
     void Lexer::skip_trivia() {
@@ -199,37 +183,32 @@ namespace aria {
     }
 
     void Lexer::scan_radix_int(const u8 base) {
-        // 惯用法：start = 入口 pos_，后续 pos_ 推进，span/lexeme/token 位置均用 start（各扫描器同此）。
-        const u32 start = pos_;
         advance(2); // 消费前缀 0x/0b/0o
 
         // 前缀后必须紧跟一个进制数字（至少一位，首字符不能是 _）。
         if (is_eof() || !is_radix_digit(base, src_[pos_])) {
-            error(ErrorCode::InvalidNumber, "expected a digit after the base prefix", start);
-            return;
+            error(ErrorCode::InvalidNumber, "expected a digit after the base prefix");
         }
         consume_ascii([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
 
-        const auto lex        = StringView{src_.data() + start, pos_ - start};
-        const auto lex_no_tag = StringView{src_.data() + start + 2, pos_ - start - 2}; // 剥掉 2 字节前缀
+        const auto lex        = StringView{src_.data() + start_, pos_ - start_};
+        const auto lex_no_tag = StringView{src_.data() + start_ + 2, pos_ - start_ - 2}; // 剥掉 2 字节前缀
 
         if (!validate_underscores(lex_no_tag, base)) {
-            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal", start);
-            return;
+            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
         }
 
         if (const auto value = parse_int(lex_no_tag, base)) {
-            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
+            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start_}));
         } else {
-            error(ErrorCode::InvalidNumber, "integer literal out of range", start);
+            error(ErrorCode::InvalidNumber, "integer literal out of range");
         }
     }
 
     void Lexer::scan_decimal_or_float() {
         // 调用方保证进入时以数字开头（整数部分至少一位）；has_dot/has_exp 决定最终是 float 还是 int。
-        const u32 start   = pos_; // 入口即起点
-        bool      has_dot = false;
-        bool      has_exp = false;
+        bool has_dot = false;
+        bool has_exp = false;
 
         consume_ascii([](const char ch) { return is_digit(ch) || ch == '_'; });
 
@@ -261,48 +240,40 @@ namespace aria {
             }
         }
 
-        const auto lex = StringView{src_.data() + start, pos_ - start};
+        const auto lex = StringView{src_.data() + start_, pos_ - start_};
 
         if (!validate_underscores(lex, 10)) {
-            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal", start);
-            return;
+            error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
         }
 
         if (has_dot || has_exp) {
             if (const auto value = parse_float(lex)) {
-                tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start}));
+                tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start_}));
             } else {
-                error(ErrorCode::InvalidNumber, "float literal out of range", start);
+                error(ErrorCode::InvalidNumber, "float literal out of range");
             }
         } else {
             if (const auto value = parse_int(lex, 10)) {
-                tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
+                tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start_}));
             } else {
-                error(ErrorCode::InvalidNumber, "integer literal out of range", start);
+                error(ErrorCode::InvalidNumber, "integer literal out of range");
             }
         }
     }
 
     void Lexer::scan_string() {
-        const u32  start = pos_;
+        const u32  start = pos_; // 串 token 跨度构造用（start_ 会被 scan_escape 重指，勿依赖）
         const char quote = src_[pos_];
         advance(); // 消费开引号
 
         String value;
         while (true) {
-            if (is_fatal_) {
-                return;
-            }
             if (is_eof()) {
-                error(ErrorCode::UnterminatedString, "unterminated string", start);
-                return;
+                error(ErrorCode::UnterminatedString, "unterminated string");
             }
             const char c = src_[pos_];
             if (c == '\n') {
-                // 裸换行：记错后推进到换行后，主循环从下一行继续
-                error(ErrorCode::UnterminatedString, "unterminated string: line break in literal", start);
-                advance(); // 跨过换行，让后续能继续扫
-                return;
+                error(ErrorCode::UnterminatedString, "unterminated string: line break in literal");
             }
             if (c == quote) {
                 advance(); // 消费闭引号
@@ -310,6 +281,7 @@ namespace aria {
             }
             if (c == '\\') {
                 scan_escape(value);
+                start_ = start; // scan_escape 重指过锚点，恢复为串起点
                 continue;
             }
             // 普通字符段（含多字节 UTF-8）：分隔符均为 ASCII（续接字节恒 >= 0x80），按字节消费
@@ -324,10 +296,11 @@ namespace aria {
         tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, start}));
     }
 
-    // 解析转义序列（pos_ 指向 '\\'）；可恢复错误记账后追加原样继续；\ 在串尾不报错，
+    // 解析转义序列（pos_ 指向 '\\'）；错误即抛出（首错即止），锚点入口重指到 '\'；\ 在串尾不报错，
     // 由 scan_string 的 is_eof 统一报 "unterminated string"。
     void Lexer::scan_escape(String& value) {
-        advance(); // 消费 '\'
+        start_ = pos_; // 锚点重指到转义起点
+        advance();     // 消费 '\'
         if (is_eof()) {
             return;
         }
@@ -355,9 +328,7 @@ namespace aria {
             case 'u': {
                 advance(); // 消费 u
                 if (peek_byte(0) != '{') {
-                    error(ErrorCode::InvalidEscape, "expected '{' after '\\u'", pos_ - 1);
-                    value += "\\u";
-                    return;
+                    error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
                 }
                 advance(); // 消费 {
 
@@ -366,9 +337,7 @@ namespace aria {
                 consume_codepoints([](const utf8::codepoint cp) { return cp != '}'; });
 
                 if (peek_byte(0) != '}') {
-                    error(ErrorCode::InvalidEscape, "expected '}' to close '\\u{'", start - 1);
-                    value += "\\u";
-                    return;
+                    error(ErrorCode::InvalidEscape, "expected '}}' to close '\\u{{'");
                 }
                 advance(); // 消费 }
 
@@ -376,60 +345,48 @@ namespace aria {
                 const auto lex    = StringView{src_.data() + start, pos_ - start - 1};
                 const auto parsed = util::try_parse<i64>(lex, 16);
                 if (!parsed) {
-                    error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{...}'", start - 1);
-                    value += "\\u";
-                    return;
+                    error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
                 }
 
                 const u32 cp = static_cast<u32>(*parsed);
                 if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-                    error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{...}'", start - 1);
-                    value.push_back(static_cast<char>(utf8::kReplacementChar));
-                    return;
+                    error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
                 }
                 value += utf8::encode(cp);
                 return;
             }
             default:
-                error(ErrorCode::InvalidEscape, std::format("invalid escape sequence '\\{}'", c), pos_ - 1);
-                value.push_back('\\');
-                value.push_back(c);
-                advance(); // 消费该字符
-                return;
+                error(ErrorCode::InvalidEscape, "invalid escape sequence '\\{}'", c);
         }
     }
 
     void Lexer::scan_identifier() {
-        const u32 start = pos_;
         // 主循环已判 is_id_start（is_id_continue 对起始字符恒真），首码点由本循环一并消费
         consume_codepoints(utf8::is_id_continue);
 
-        const auto lex = StringView{src_.data() + start, pos_ - start};
+        const auto lex = StringView{src_.data() + start_, pos_ - start_};
 
         if (lex.size() == 1 && lex[0] == '_') {
-            tokens_.emplace_back(TokenType::Underscore, lex, SourceLoc{&source_, start});
+            tokens_.emplace_back(TokenType::Underscore, lex, SourceLoc{&source_, start_});
             return;
         }
         if (const auto kw = lookup_keyword(lex)) {
-            tokens_.emplace_back(*kw, lex, SourceLoc{&source_, start});
+            tokens_.emplace_back(*kw, lex, SourceLoc{&source_, start_});
             return;
         }
-        tokens_.emplace_back(TokenType::Identifier, lex, SourceLoc{&source_, start});
+        tokens_.emplace_back(TokenType::Identifier, lex, SourceLoc{&source_, start_});
     }
 
     void Lexer::scan_operator_or_punct() {
-        const u32 start = pos_;
         // 非 ASCII 码点记 InvalidCharacter（主循环已判定它不是空白/数字/标识符起始）
         if (!utf8::is_ascii(src_[pos_])) {
-            const auto [cp, len] = utf8::decode_one(src_, pos_);
-            error(ErrorCode::InvalidCharacter, std::format("invalid character U+{:04X}", cp), start);
-            advance(len); // 推进一个码点确保前进
-            return;
+            const auto cp = utf8::decode_one(src_, pos_).first;
+            error(ErrorCode::InvalidCharacter, "invalid character U+{:04X}", cp);
         }
 
         const auto make_token = [&](const TokenType t) {
             const u32 end = pos_;
-            tokens_.emplace_back(t, StringView{src_.data() + start, end - start}, SourceLoc{&source_, start});
+            tokens_.emplace_back(t, StringView{src_.data() + start_, end - start_}, SourceLoc{&source_, start_});
         };
 
         switch (static_cast<char>(src_[pos_])) {
@@ -534,8 +491,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::AndAnd);
                 } else {
-                    advance();
-                    error(ErrorCode::InvalidCharacter, "expected '&&', got '&'", start);
+                    error(ErrorCode::InvalidCharacter, "expected '&&', got '&'");
                 }
                 return;
             case '|':
@@ -543,8 +499,7 @@ namespace aria {
                     advance(2);
                     make_token(TokenType::OrOr);
                 } else {
-                    advance();
-                    error(ErrorCode::InvalidCharacter, "expected '||', got '|'", start);
+                    error(ErrorCode::InvalidCharacter, "expected '||', got '|'");
                 }
                 return;
             case '.':
@@ -598,10 +553,7 @@ namespace aria {
                 make_token(TokenType::Semicolon);
                 return;
             default:
-                advance();
-                error(ErrorCode::InvalidCharacter,
-                      std::format("invalid character U+{:04X}", utf8::decode_one(src_, start).first), start);
-                return;
+                error(ErrorCode::InvalidCharacter, "invalid character U+{:04X}", utf8::decode_one(src_, start_).first);
         }
     }
 

@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "compile/Token.hpp"
+#include "error/AriaException.hpp"
 #include "error/Error.hpp"
 #include "util/source_file.hpp"
 #include "util/utf8.hpp"
@@ -12,24 +13,20 @@ namespace aria {
     using src::SourceLoc;
 
     // 词法分析器：把 SourceFile 内容切成 Token 流。一次性实例（私有构造，扫完即销毁）。
-    // 词法错误一律可恢复收集（达 kMaxErrors 停），非首错即止；token 位置 = 起点字节偏移，
-    // 行列由 SourceLoc 在消费点派生（词法期不维护行列计数，回退/前瞻无需还原状态）。
+    // 词法错误首错即止：error() 抛 AriaCompileException，tokenize 顶层 catch 翻译为 Result；
+    // token 位置 = 起点字节偏移，行列由 SourceLoc 在消费点派生（词法期不维护行列计数，回退/前瞻无需还原状态）。
     class Lexer {
     public:
-        static Result<List<Token>, List<Error>> tokenize(SourceFile& src);
+        static Result<List<Token>, Error> tokenize(SourceFile& src);
 
     private:
-        // 错误上限：errors_ 达此数即置 is_fatal_ 停止扫描，避免级联刷屏。
-        static constexpr usize kMaxErrors = 32;
-
         explicit Lexer(SourceFile& src) noexcept;
 
         SourceFile& source_; // 借用，扫描期存活
         StringView  src_;    // = source_.content()，'\0' 结尾可作哨兵
         u32         pos_;    // 字节游标
+        u32         start_;  // 当前扫描单元起点 = 错误锚点（子扫描器可重指，调用方恢复）
         List<Token> tokens_;
-        List<Error> errors_;
-        bool        is_fatal_; // 错误达上限，主循环应终止
 
         void run();
 
@@ -68,8 +65,13 @@ namespace aria {
         // 运算符 / 标点（最长匹配）；非 ASCII 码点记 InvalidCharacter
         void scan_operator_or_punct();
 
-        // 记入一条错误，offset 解析为 SourceLoc。
-        void error(ErrorCode code, StringView msg, u32 offset);
+        // 记错即抛 AriaCompileException（tokenize 顶层 catch 翻译为 Result）；位置锚 start_。
+        template<typename... Args>
+        [[noreturn]]
+        void error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
+            throw AriaCompileException{Error::from_detail(code, SourceLoc{&source_, start_},
+                                                          std::format(fmt, std::forward<Args>(args)...))};
+        }
 
         // 越界返回 '\0' 哨兵。
         [[nodiscard]]

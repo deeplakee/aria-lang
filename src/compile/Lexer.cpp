@@ -8,7 +8,10 @@ namespace aria {
 
         bool is_digit(const char ch) { return ch >= '0' && ch <= '9'; }
 
-        bool is_radix_digit(const int base, const char ch) {
+        // 引号字符（串字面量的两种定界形态 " 与 '）
+        bool is_quote(const char ch) { return ch == '"' || ch == '\''; }
+
+        bool is_radix_digit(const u8 base, const char ch) {
             if (base < 2 || base > 36) {
                 return false;
             }
@@ -22,7 +25,7 @@ namespace aria {
         }
 
         // _ 必须位于两个进制数字之间（hex 的 a-f/A-F 也算，故用 is_radix_digit）；lex 已剥进制前缀。
-        bool validate_underscores(const StringView lex, const int base) {
+        bool validate_underscores(const StringView lex, const u8 base) {
             const usize n = lex.size();
             for (usize i = 0; i < n; ++i) {
                 if (lex[i] != '_') {
@@ -54,7 +57,7 @@ namespace aria {
         }
 
         // 解析整数字面量为 i64（lex 不含进制前缀与指数，含指数的走 float）；溢出返 false。
-        bool parse_int(const StringView lex, const int base, i64& out) {
+        bool parse_int(const StringView lex, const u8 base, i64& out) {
             char buf[64];
             if (!strip_underscores(lex, buf, sizeof(buf))) {
                 return false;
@@ -112,31 +115,7 @@ namespace aria {
 
     void Lexer::run() {
         while (!is_fatal_ && !is_eof()) {
-            const auto cp = utf8::decode_one(src_, pos_).first; // 各分支自行解码推进
-
-            if (utf8::is_whitespace(cp) || (cp == '/' && peek_byte(1) == '/') || cp == '#') {
-                skip_trivia();
-                continue;
-            }
-
-            // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
-            if (utf8::is_digit(cp)) {
-                scan_number();
-                continue;
-            }
-
-            if (cp == '"' || cp == '\'') {
-                scan_string();
-                continue;
-            }
-
-            if (utf8::is_id_start(cp)) {
-                scan_identifier();
-                continue;
-            }
-
-            // lone & | 等非法字符的 InvalidCharacter 兜底
-            scan_operator_or_punct();
+            dispatch_one();
         }
 
         if (is_fatal_) {
@@ -147,6 +126,35 @@ namespace aria {
         tokens_.push_back(Token{TokenType::Eof, {}, SourceLoc{&source_, eof}});
     }
 
+    // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与后续的插值档内扫描共用。
+    void Lexer::dispatch_one() {
+        const auto cp = utf8::decode_one(src_, pos_).first; // 各分支自行解码推进
+
+        if (utf8::is_whitespace(cp) || is_line_comment_start(cp)) {
+            skip_trivia();
+            return;
+        }
+
+        // 以数字开头才走数字扫描（. 不启动数字--禁 .5 这类不完整浮点，. 留给 Dot token）。
+        if (utf8::is_digit(cp)) {
+            scan_number();
+            return;
+        }
+
+        if (is_quote(static_cast<char>(cp))) {
+            scan_string();
+            return;
+        }
+
+        if (utf8::is_id_start(cp)) {
+            scan_identifier();
+            return;
+        }
+
+        // lone & | 等非法字符的 InvalidCharacter 兜底
+        scan_operator_or_punct();
+    }
+
     void Lexer::skip_trivia() {
         while (!is_eof()) {
             const auto [cp, len] = utf8::decode_one(src_, pos_);
@@ -155,7 +163,7 @@ namespace aria {
                 continue;
             }
             // // 或 # 到行尾（换行留给下一轮按空白跳过）
-            if ((cp == '/' && peek_byte(1) == '/') || cp == '#') {
+            if (is_line_comment_start(cp)) {
                 consume_codepoints([](const utf8::codepoint cp) { return cp != '\n'; });
                 continue;
             }
@@ -163,21 +171,41 @@ namespace aria {
         }
     }
 
+    // 当前位是否行注释起点（// 或 #，均到行尾）。
+    bool Lexer::is_line_comment_start(const utf8::codepoint cp) const noexcept {
+        return (cp == '/' && peek_byte(1) == '/') || cp == '#';
+    }
+
+    // 当前位是否进制前缀（0b/0o/0x，大小写均可）：是则返回进制数（2/8/16），否则 nullopt。
+    Opt<u8> Lexer::radix_prefix_base() const noexcept {
+        if (peek_byte(0) != '0') {
+            return std::nullopt;
+        }
+        switch (peek_byte(1)) {
+            case 'b':
+            case 'B':
+                return 2;
+            case 'o':
+            case 'O':
+                return 8;
+            case 'x':
+            case 'X':
+                return 16;
+            default:
+                return std::nullopt;
+        }
+    }
+
     void Lexer::scan_number() {
-        if (peek_byte(0) == '0') {
-            const char peeked = peek_byte(1);
-            if (peeked == 'b' || peeked == 'B' || peeked == 'o' || peeked == 'O' || peeked == 'x' || peeked == 'X') {
-                return scan_radix_int();
-            }
+        if (const auto base = radix_prefix_base()) {
+            return scan_radix_int(*base);
         }
         return scan_decimal_or_float();
     }
 
-    void Lexer::scan_radix_int() {
+    void Lexer::scan_radix_int(const u8 base) {
         // 惯用法：start = 入口 pos_，后续 pos_ 推进，span/lexeme/token 位置均用 start（各扫描器同此）。
-        const u32  start = pos_;
-        const char tag   = peek_byte(1); // b/B/o/O/x/X
-        const int  base  = (tag == 'b' || tag == 'B') ? 2 : (tag == 'o' || tag == 'O') ? 8 : 16;
+        const u32 start = pos_;
         advance(2); // 消费前缀 0x/0b/0o
 
         // 前缀后必须紧跟一个进制数字（至少一位，首字符不能是 _）。

@@ -32,23 +32,41 @@ namespace aria {
         bool        is_fatal_; // 错误达上限，主循环应终止
 
         void run();
+
+        // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与后续的插值档内扫描共用。
+        void dispatch_one();
+
         // 跳过空白 + // / # 注释
         void skip_trivia();
+
+        // 当前位是否行注释起点（// 或 #，均到行尾）。
+        [[nodiscard]]
+        bool is_line_comment_start(utf8::codepoint cp) const noexcept;
+
         // 数字：分流 radix / decimal-or-float
         void scan_number();
-        // 0b/0o/0x 整数（入口 pos_ 即起点）
-        void scan_radix_int();
+
+        // 当前位是否进制前缀（0b/0o/0x，大小写均可）：是则返回进制数（2/8/16），否则 nullopt。
+        [[nodiscard]]
+        Opt<u8> radix_prefix_base() const noexcept;
+
+        // 0b/0o/0x 整数（入口 pos_ 即起点，base 由 scan_number 经 radix_prefix_base 判定传入）
+        void scan_radix_int(u8 base);
+
         // decimal / int 指数 / float（入口 pos_ 即起点）
         void scan_decimal_or_float();
+
         // 字符串字面量（含转义解析）
         void scan_string();
+
         // 串内转义解析
         void scan_escape(String& value);
+
         // identifier / keyword / _
         void scan_identifier();
+
         // 运算符 / 标点（最长匹配）；非 ASCII 码点记 InvalidCharacter
         void scan_operator_or_punct();
-
 
         // 记入一条错误，offset 解析为 SourceLoc。
         void error(ErrorCode code, StringView msg, u32 offset);

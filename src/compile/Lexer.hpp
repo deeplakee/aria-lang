@@ -105,6 +105,13 @@ namespace aria {
         // 推进游标 n 字节；越界断言（pos_ + n <= src_.size()），多字节推进统一走此。
         void advance(u32 n = 1) noexcept;
 
+        // [start, end) 半开区间截取 src_ 的字节视图，两参均为字节偏移。
+        [[nodiscard]]
+        StringView slice(const u32 start, const u32 end) const noexcept {
+            ASSERT(start <= end && end <= src_.size(), "invalid slice range");
+            return StringView{src_.data() + start, end - start};
+        }
+
         // 只消费 ASCII 字节（pred 收 char），遇非 ASCII 必停且停在码点边界（UTF-8 续接字节恒 >= 0x80）；
         // 含非 ASCII 字符集的序列（标识符续接等）须用 consume_codepoints。
         template<typename Pred>

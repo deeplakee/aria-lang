@@ -192,8 +192,8 @@ namespace aria {
         }
         consume_ascii([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
 
-        const auto lex        = StringView{src_.data() + start_, pos_ - start_};
-        const auto lex_no_tag = StringView{src_.data() + start_ + 2, pos_ - start_ - 2}; // 剥掉 2 字节前缀
+        const auto lex        = slice(start_, pos_);
+        const auto lex_no_tag = slice(start_ + 2, pos_); // 剥掉 2 字节前缀
 
         if (!validate_underscores(lex_no_tag, base)) {
             error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
@@ -241,7 +241,7 @@ namespace aria {
             }
         }
 
-        const auto lex = StringView{src_.data() + start_, pos_ - start_};
+        const auto lex = slice(start_, pos_);
 
         if (!validate_underscores(lex, 10)) {
             error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
@@ -294,12 +294,12 @@ namespace aria {
             if (c == quote) {
                 advance(); // 消费闭引号
                 if (has_hole) {
-                    const auto lex = StringView{src_.data() + segment_start, pos_ - segment_start}; // 含闭引号
+                    const auto lex = slice(segment_start, pos_); // 含闭引号
                     tokens_.push_back(
                             Token::make_interp_end(std::move(value), lex, SourceLoc{&source_, segment_start}));
                 } else {
                     // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
-                    const auto lex = StringView{src_.data() + string_start, pos_ - string_start};
+                    const auto lex = slice(string_start, pos_);
                     tokens_.push_back(Token::make_string(std::move(value), lex, SourceLoc{&source_, string_start}));
                 }
                 return true;
@@ -312,7 +312,7 @@ namespace aria {
                     continue;
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
-                const auto lex = StringView{src_.data() + segment_start, pos_ - segment_start};
+                const auto lex = slice(segment_start, pos_);
                 const auto loc = SourceLoc{&source_, segment_start};
                 if (has_hole) {
                     tokens_.push_back(Token::make_interp_middle(std::move(value), lex, loc));
@@ -418,7 +418,7 @@ namespace aria {
         advance(); // 消费 }
 
         // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法：'_' 非十六进制数字，整串消费必败）。
-        const auto lex    = StringView{src_.data() + start, pos_ - start - 1};
+        const auto lex    = slice(start, pos_ - 1);
         const auto parsed = util::try_parse<i64>(lex, 16);
         if (!parsed) {
             error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
@@ -435,7 +435,7 @@ namespace aria {
         // 主循环已判 is_id_start（is_id_continue 对起始字符恒真），首码点由本循环一并消费
         consume_codepoints(utf8::is_id_continue);
 
-        const auto lex = StringView{src_.data() + start_, pos_ - start_};
+        const auto lex = slice(start_, pos_);
 
         if (lex.size() == 1 && lex[0] == '_') {
             tokens_.emplace_back(TokenType::Underscore, lex, SourceLoc{&source_, start_});
@@ -457,7 +457,7 @@ namespace aria {
 
         const auto make_token = [&](const TokenType t) {
             const u32 end = pos_;
-            tokens_.emplace_back(t, StringView{src_.data() + start_, end - start_}, SourceLoc{&source_, start_});
+            tokens_.emplace_back(t, slice(start_, end), SourceLoc{&source_, start_});
         };
 
         switch (static_cast<char>(src_[pos_])) {

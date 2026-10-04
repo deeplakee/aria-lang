@@ -291,7 +291,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
 | `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 取栈顶 `from, to`（或 unbounded 时单值 `from`）创建 `ObjRange`（字段同名）；`flags` 位义见 `code.hpp`（`..` 含、`...` 不含、无上界不编含否位）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
-| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（`$"..."` 插值串收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`format_value`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
+| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（插值串 `"...${...}..."` 收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`format_value`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
 
 def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_REG`（寄存器 `ObjectClass`）装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
 

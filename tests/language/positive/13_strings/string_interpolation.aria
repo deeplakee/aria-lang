@@ -1,0 +1,41 @@
+# 钉住：字符串即模板 "..." 与 '...'——档 ${表达式} 渲染与 str() 同源（format_value）、段序拼接、
+# \$ 转义与裸 { } 字面、纯字面退化普通串、嵌套插值、档内完整表达式（map/lambda/调用）。
+var name = "aria";
+var n = 3;
+
+# 基本形态与多档；首尾档紧贴引号
+assert("hello ${name}!" == "hello aria!");
+assert("a${n}b${n}c" == "a3b3c");
+assert("${n}" == "3");
+
+# 渲染与 str() 同源：标量与容器同一条 format_value 路径
+assert("n=${n}" == "n=3");
+assert("f=${1.5}" == "f=1.5");
+assert("nil=${nil}" == "nil=nil");
+assert("b=${true}" == "b=true");
+assert("list=${[1, 2]}" == "list=[1, 2]");
+assert("map=${ {1: 2} }" == "map={1: 2}");
+assert("self=${name}" == "self=aria");
+var v = [1, "x", nil];
+assert("${v}" == str(v));
+
+# 转义：\$ 写字面 ${ 的 $；裸 { 与裸 } 无档语义
+assert(("a$" + "{n}b") == "a\${n}b");
+assert("a}b" == "a}b");
+assert("a{b}c" == "a{b}c");
+assert("nl\n${n}" == "nl\n3");
+
+# 纯字面（无档）就是普通串：等值且不引入求值；裸 $ 与 $name 均字面
+assert("plain" == "plain");
+assert("$100 and $" == "$100 and $");
+assert(("a$" + "{ x") == "a\${ x");
+
+# 单引号形态同为模板
+assert('q ${n}' == "q 3");
+
+# 档内完整表达式：调用、lambda、嵌套插值
+fun double(x) { return x * 2; }
+assert("d(${n}) = ${double(n)}" == "d(3) = 6");
+assert("lam: ${fun(a) { return a + 1; }(n)}" == "lam: 4");
+assert("nest ${ "in ${name}" } end" == "nest in aria end");
+assert("idx ${ [10, 20][n - 2] }" == "idx 20");

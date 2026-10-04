@@ -12,11 +12,11 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 ## 文件定位
 
 - **TokenType.hpp**：终结符全量注册表 `ARIA_TOKEN_LIST(X)`（X-Macro 单一事实源，枚举/名字表/拼写表三表同源展开，风格对齐 `ARIA_OPCODE_LIST`；逐值注释用块注释因行注释会吞续行符）。关键字以第三列 `true` 行当次实测为准，当前 22 个。
-- **Token.hpp / Token.cpp**：`Token`（type + lexeme `StringView` + loc + `TokenValue = variant<monostate,i64,f64,String>`），工厂三件与宽松取值。
-- **Lexer.hpp / Lexer.cpp**：`Lexer::tokenize(SourceFile&) -> Result<List<Token>, Error>`，**首错即止**（错误经 `AriaCompileException` 深处抛出、`tokenize` 顶层 catch 翻译为 Result，与 Parser/CodeGen 同族机制；报错点自陈位置：`error()` 同 `Parser::error` 形、位置锚 `start_`--dispatch 分派时=token 起点，`error_at(offset, ...)` 显式锚任意偏移，子扫描器如 `scan_escape` 入口重指 `start_` 换取更准列号且无需恢复）；位置只记起点字节偏移（行列由 SourceLoc 消费点派生，词法期不维护行列计数）。性能基线与已实测否决的优化见 `.claude/reference/compile/lexer-notes.md`（基准入口 `bench/lexer_bench.cpp`，动词法性能前先读）。
+- **Token.hpp / Token.cpp**：`Token`（type + lexeme `StringView` + loc + `TokenValue = variant<monostate,i64,f64,String>`），字面工厂（integer/float/string）+ 插值段三厂（interp_start/middle/end）与宽松取值。
+- **Lexer.hpp / Lexer.cpp**：`Lexer::tokenize(SourceFile&) -> Result<List<Token>, Error>`，**首错即止**（错误经 `AriaCompileException` 深处抛出、`tokenize` 顶层 catch 翻译为 Result，与 Parser/CodeGen 同族机制；报错点自陈位置：`error()` 同 `Parser::error` 形、位置锚 `start_`--dispatch 分派时=token 起点，`error_at(offset, ...)` 显式锚任意偏移，子扫描器如 `scan_escape` 入口重指 `start_` 换取更准列号且无需恢复）；位置只记起点字节偏移（行列由 SourceLoc 消费点派生，词法期不维护行列计数）。字符串即模板（无前缀，`${` 开档、裸 `$` 与 `{ }` 皆普通字符、`\$` 转义）：`scan_string` 驱动文本态/档内态两函数状态机交替，产 InterpStart/Middle/End 段 token，无档整串退化普通 String token；嵌套经 `dispatch_one` 递归（深度上限 `kMaxInterpDepth`=16）。性能基线与已实测否决的优化见 `.claude/reference/compile/lexer-notes.md`（基准入口 `bench/lexer_bench.cpp`，动词法性能前先读）。
 - **ast.hpp / ast.cpp**：AST 节点层次（`ASTNode` 根 -> Stmt/Expr/Pattern 分类基 -> 具体节点，`UPtr` 堆分配）；运算符枚举 `Op::Binary/Unary/Assignment` 与 `TokenType` 解耦（映射收在 Parser.cpp）；dump 渲染经 `detail::ast::dump_node` 变参收口。节点族语义见各节点头注。
 - **Parser.hpp / Parser.cpp**：`Parser::parse(List<Token>) -> Result<UPtr<ProgramNode>, List<Error>>`，递归下降各函数与文法非终结符一一对应；错误经 `AriaCompileException` 在递归深处抛出、`declaration()` 层 catch + panic-mode `synchronize()` 恢复式收集。消歧点（for/for-in 前瞻、fun 声明/lambda、`{` block/mapExpr 按调用上下文、解构赋值投机回退）的论证在各函数注释。
-- **AstVisitor.hpp**：访问者接口，43 个 `visitXxxNode(XxxNode&)` 纯虚（1 根 + 17 语句 + 22 表达式 + 3 模式），编译器强制子类穷尽覆盖；双分派由节点 `accept` 完成。具体子类：`CodeGen`。
+- **AstVisitor.hpp**：访问者接口，44 个 `visitXxxNode(XxxNode&)` 纯虚（1 根 + 17 语句 + 23 表达式 + 3 模式），编译器强制子类穷尽覆盖；双分派由节点 `accept` 完成。具体子类：`CodeGen`。
 - **FnKind.hpp**：函数种类枚举（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry）。各 kind 的绑定形态/隐式返回尾/槽 0 语义的权威表述见该头注册表注。
 - **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见头注。`LoopCtx` 字段语义与三种循环占位回填详见 `.claude/reference/compile/loopctx.md`。
 - **ModuleCtx.hpp / .cpp**：模块编译上下文（模块句柄 + 当前函数上下文游标兼拥有入口 + 顶层全局名注册表），与 FunctionCtx 对齐成「模块 > 函数 > 作用域」三层；单成员兼两职的设计与出错析构走链见头注。

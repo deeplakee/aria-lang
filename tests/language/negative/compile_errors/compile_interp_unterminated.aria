@@ -1,0 +1,2 @@
+// 钉住：插值串档内直撞 EOF（无闭档与闭引号）报 UnterminatedString。
+var s = "a ${x

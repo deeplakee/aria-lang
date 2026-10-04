@@ -1,0 +1,2 @@
+// 钉住：空插值档 "${}" 非法——档内期望表达式，撞串段 token 报 ExpectedExpression。
+var s = "${}";

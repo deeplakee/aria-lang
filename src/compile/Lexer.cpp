@@ -56,25 +56,33 @@ namespace aria {
             return true;
         }
 
-        // 解析整数字面量为 i64（lex 不含进制前缀与指数，含指数的走 float）；溢出返 false。
-        bool parse_int(const StringView lex, const u8 base, i64& out) {
+        // 解析整数字面量为 i64（lex 不含进制前缀与指数，含指数的走 float）；溢出返 nullopt。
+        Opt<i64> parse_int(const StringView lex, const u8 base) {
             char buf[64];
             if (!strip_underscores(lex, buf, sizeof(buf))) {
-                return false;
+                return std::nullopt;
             }
+            i64         value    = 0;
             const usize len      = std::strlen(buf);
-            const auto [ptr, ec] = std::from_chars(buf, buf + len, out, base);
-            return ec == std::errc{} && ptr == buf + len;
+            const auto [ptr, ec] = std::from_chars(buf, buf + len, value, base);
+            if (ec != std::errc{} || ptr != buf + len) {
+                return std::nullopt;
+            }
+            return value;
         }
 
-        bool parse_float(const StringView lex, f64& out) {
+        Opt<f64> parse_float(const StringView lex) {
             char buf[64];
             if (!strip_underscores(lex, buf, sizeof(buf))) {
-                return false;
+                return std::nullopt;
             }
+            f64         value    = 0.0;
             const usize len      = std::strlen(buf);
-            const auto [ptr, ec] = std::from_chars(buf, buf + len, out);
-            return ec == std::errc{} && ptr == buf + len;
+            const auto [ptr, ec] = std::from_chars(buf, buf + len, value);
+            if (ec != std::errc{} || ptr != buf + len) {
+                return std::nullopt;
+            }
+            return value;
         }
     } // namespace
 
@@ -223,12 +231,12 @@ namespace aria {
             return;
         }
 
-        i64 value = 0;
-        if (!parse_int(lex_no_tag, base, value)) {
+        const auto value = parse_int(lex_no_tag, base);
+        if (!value) {
             error(ErrorCode::InvalidNumber, "integer literal out of range", start);
             return;
         }
-        tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
+        tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
     }
 
     void Lexer::scan_decimal_or_float() {
@@ -275,19 +283,19 @@ namespace aria {
         }
 
         if (has_dot || has_exp) {
-            f64 value = 0.0;
-            if (!parse_float(lex, value)) {
+            const auto value = parse_float(lex);
+            if (!value) {
                 error(ErrorCode::InvalidNumber, "float literal out of range", start);
                 return;
             }
-            tokens_.push_back(Token::make_float(value, lex, SourceLoc{&source_, start}));
+            tokens_.push_back(Token::make_float(*value, lex, SourceLoc{&source_, start}));
         } else {
-            i64 value = 0;
-            if (!parse_int(lex, 10, value)) {
+            const auto value = parse_int(lex, 10);
+            if (!value) {
                 error(ErrorCode::InvalidNumber, "integer literal out of range", start);
                 return;
             }
-            tokens_.push_back(Token::make_integer(value, lex, SourceLoc{&source_, start}));
+            tokens_.push_back(Token::make_integer(*value, lex, SourceLoc{&source_, start}));
         }
     }
 

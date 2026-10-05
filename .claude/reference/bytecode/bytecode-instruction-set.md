@@ -165,7 +165,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 set 写入当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
-| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（type/str/println/assert/clock/Error 与 Exception 类、coroutine 模块），再 miss 报 `UndefinedVariable` |
+| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（type/str/println/assert/clock/Error、七个内建类 object/exception/iterator/list/map/string/range、coroutine 模块），再 miss 报 `UndefinedVariable` |
 | `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals 表；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var` 声明），不回退 builtins |
 
 全局表是各 `ObjModule` 持有的 `AriaHashTable`（即 `HashTable<Value, Value, ValueHash, ValueEq>`，键为装箱的 intern `ObjString*`）。`name` 操作数是常量池中的 ObjString 索引。
@@ -604,7 +604,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂 Exception 类与 `coroutine` 合成模块）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂七个内建类 object/exception/iterator/list/map/string/range 与 `coroutine` 合成模块）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
 
 ### 6.5 迭代器

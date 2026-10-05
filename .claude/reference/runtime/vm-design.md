@@ -245,7 +245,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`coroutine.create/resume/yield/status` 原生函数(友元宿主类 + 合成 `<coroutine>` 模块)+ call_native 善后落 `entered_ctx` + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 
-顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,43 个 visit)。
+顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,44 个 visit)。
 
 ### M1 验证状态
 
@@ -259,7 +259,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - `ObjType::MOVEMENT` 已增(语言可见名 `Coroutine`,`type(co)` 报之)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册)。
-- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;变量腿(kBuiltinVars)另挂 `coroutine` 键 -> 合成 `<coroutine>` 模块,构造口 `CoroutineModule::make_module`)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 4 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
+- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;变量腿(kBuiltinVars)另挂 `coroutine` 键 -> 合成 `<coroutine>` 模块,构造口 `CoroutineModule::make_module`)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 6 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

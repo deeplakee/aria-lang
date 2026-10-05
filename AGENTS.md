@@ -4,7 +4,7 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M6（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子）。
+- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M6（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子）、字符串插值。
 - **待落地**：range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
 - 里程碑级细节见 `.claude/reference/runtime/vm-design.md` §6 路线表，各特性语义决策见对应 `.claude/reference/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 

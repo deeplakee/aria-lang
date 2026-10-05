@@ -428,7 +428,7 @@ TEST(LexerString, EmptyAndQuoteEscape) {
 }
 
 TEST(LexerString, PlainFIsIdentifier) {
-    // f 是普通 identifier（无插值字符串：f"..." 不作特殊处理）
+    // f 是普通 identifier（插值无 f 前缀形态：f"..." 不作特殊处理）
     const auto  lexed  = lex_ok("f");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 2u);
@@ -437,7 +437,7 @@ TEST(LexerString, PlainFIsIdentifier) {
 }
 
 TEST(LexerString, FPrefixIsNotInterpolation) {
-    // 无插值字符串：f"..." 切成 Identifier(f) + String("...") 两个 token
+    // 插值无 f 前缀形态：f"..." 切成 Identifier(f) + String("...") 两个 token
     const auto  lexed  = lex_ok("f\"x\"");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 3u); // Identifier String Eof

@@ -21,7 +21,7 @@ paths:
 全量错误码注册表（X-Macro `ARIA_ERROR_LIST` 单一事实源，加一行 `X(名字, 大类)` 即收口）；注册表机制、五层分层与查表函数见该头头注。跨文件事实两条：
 
 - `kCategoryNames` 的哨兵 `static_assert` **只拦表长漂移**：枚举增删而表未跟会炸；行序错位不炸断言，靠增删时自查。
-- 死面登记（grep 实测零引用，2026-10-01）：`ErrorCode::Ok`（仅测试哨兵消费）、`NotIterable`、`CircularImport`。
+- 死面登记（grep 实测零引用，2026-10-05 复测）：`ErrorCode::Ok`（仅测试哨兵消费）、`UndefinedType`、`RedefinedClass`、`NotIterable`、`IteratorProtocol`、`SuperNoBaseClass`、`CircularImport`、`InvalidBytecode`、`StackUnderflow`、`InvalidState`、`SourceTooLarge`。
 
 ## `error/Error.hpp`
 

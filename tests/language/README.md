@@ -24,7 +24,7 @@ tests/language/
     10_integration/          # 多特性组合的综合小程序
     11_classes/              # def 类：init/this/super/继承/静态与实例成员/bound
     12_collections/          # list/map/range 字面量、下标与切片、方法面、迭代协议
-    13_strings/              # string 方法面/字节下标/码点迭代
+    13_strings/              # string 方法面/字节下标/码点迭代/插值
     14_coroutines/           # create/resume/yield/status、嵌套 resume、跨协程错误各族
   negative/
     compile_errors/          # compile_*.aria -> 期待 CompileError

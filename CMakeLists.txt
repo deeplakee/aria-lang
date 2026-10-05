@@ -37,6 +37,7 @@ add_library(aria_core STATIC
         src/util/fs.hpp
         src/util/utf8.hpp
         src/util/source_file.hpp
+        src/util/str.hpp
         src/util/cli.hpp
         src/bytecode/code.hpp
         src/bytecode/CodeUnit.cpp
@@ -54,7 +55,6 @@ add_library(aria_core STATIC
         src/compile/Token.cpp
         src/compile/Token.hpp
         src/compile/TokenType.hpp
-        src/compile/StringArena.hpp
         src/compile/Lexer.cpp
         src/compile/Lexer.hpp
         src/compile/Parser.cpp

@@ -33,6 +33,13 @@ paths:
 
 `io::print`/`io::println`（`std::print`/`std::println` 的 using 别名，全库输出统一入口）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`；当前全库零消费者，REPL 行读取走 isocline，见 `main.cpp`）。
 
+## `util/str.hpp`
+
+`namespace aria::str`（与 fs/utf8 同），header-only 的字符串字面量转义展开工具。
+
+- **`decode_string_content(StringView raw, char* out) -> usize`**：展开字面内层原文中的转义序列直写 `out`（容量由词法期记账的 `decoded_len` 保证），返回写入字节数。全函数无错误路径（词法期已校验全部转义合法），未知转义经 `UNREACHABLE` 拦截（防词法/展开两侧转义集合漂移）。消费方两处：`CodeGen` 的字符串字面驻留口（经 `StringBuilder` 直写 + `resize` 提交终长 + `take_string` 接管铸串）与 `Parser` 的插值空段过滤（`shape().decoded_len` 判空）。
+- **`decode_unicode_escape(StringView raw) -> Result<Pair<String, usize>, UnicodeEscapeError>`**：`\u{hex}` 的唯一解析口，词法期校验与内容展开两侧共用。`raw` 为从 `'u'` 起的余串；成功返回 `{解码字节串（1-4 字节 UTF-8）, 消费原始字节数（含 'u' 与两侧花括号）}`，失败返回 `UnicodeEscapeError` 类别（MissingOpenBrace/MissingCloseBrace/BadHexDigits/CodepointOutOfRange），由调用方按各自通道处置（Lexer 报带锚点的 `InvalidEscape`，展开侧 ASSERT 不可达）。
+
 ## `util/util.hpp`
 
 `namespace aria::util`（与 fs/utf8 同）。

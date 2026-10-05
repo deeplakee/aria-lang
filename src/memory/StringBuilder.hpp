@@ -56,6 +56,15 @@ namespace aria {
             cap_  = needed + 1;
         }
 
+        // 直写后提交终长:reserve(n) 后经 begin() 直写 [begin, begin+n) 的消费方(解码、格式化等
+        // 外部产源)以此收口--置 size_ 并补终态 '\0',不搬运不清零;前置容量须已按目标定容
+        // (cap_ >= size + 1,append 路径勿用,那是 append 自己的账)。
+        void resize(const usize size) noexcept {
+            ASSERT(cap_ >= size + 1, "resize beyond reserved capacity");
+            size_        = size;
+            data_[size_] = '\0';
+        }
+
         [[nodiscard]]
         StringView view() const noexcept {
             return StringView{data_, size_};

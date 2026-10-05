@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <string>
 
 #include "memory/GC.hpp"
@@ -150,4 +151,17 @@ TEST(StringBuilder, SeedConstructorAppendsContent) {
     sb.append("-more"); // 种后可续 append
     EXPECT_EQ(sb.view(), StringView{"seed-more"});
     EXPECT_EQ(sb.take_string()->view(), "seed-more");
+}
+
+TEST(StringBuilder, ResizeCommitsDirectWrites) {
+    GC            gc;
+    StringBuilder sb{gc};
+    sb.reserve(5);
+    std::memcpy(sb.begin(), "hello", 5); // 外部直写不经 append
+    sb.resize(5);
+    EXPECT_EQ(sb.view(), StringView{"hello"});
+    EXPECT_EQ(gc.bytes_allocated(), 6); // 一次定容:内容 + 终态 '\0' 位,直写零追加分配
+    auto* s = sb.take_string();
+    EXPECT_EQ(s->view(), "hello");
+    EXPECT_EQ(s->hash(), hash_str("hello"));
 }

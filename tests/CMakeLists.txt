@@ -6,6 +6,7 @@ add_executable(aria_tests
         util/test_fs.cpp
         util/test_cli.cpp
         util/test_util.cpp
+        util/test_str.cpp
         # value
         value/test_value.cpp
         value/test_aria_containers.cpp

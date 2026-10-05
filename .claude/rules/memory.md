@@ -41,7 +41,7 @@ header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**
 
 ## `memory/StringBuilder.hpp`
 
-header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造（`StringBuilder{gc, src}`，gc 构造+append 一体，单发形态消费方直用）+ `append`（直写字节，不持哈希状态；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒为 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩——超容 append 逐次 realloc 搬迁，碎片化流式追加须先量后填；reserve 的价值=让多发 append 免逐段搬迁，单发 append 自身即精确定容免 reserve）；检视面 = `view`/`size`/`begin`/`end`（已建内容直读直改，就地改写无哈希失效协议）；`take_string` 把 buffer 零拷贝移交 `ObjString`（另具 hash 重载，调用方已持终态哈希免重算），内容哈希在铸造口按当时内容一次全算（唯一消费点）。驻留判定收在五参 `new_string` 接管重载：命中零拷贝返已有串 / 长串收缩接管 / 短串 SSO 化释放 buffer。GC 纪律：allocate/reallocate 永不触发 GC（核心不变式），本类全程零 GC 点、无需守卫，唯一 GC 点在 take 的 `new_object` 顶部；take 后空态可复用。
+header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造（`StringBuilder{gc, src}`，gc 构造+append 一体，单发形态消费方直用）+ `append`（直写字节，不持哈希状态；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒为 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩——超容 append 逐次 realloc 搬迁，碎片化流式追加须先量后填；reserve 的价值=让多发 append 免逐段搬迁，单发 append 自身即精确定容免 reserve）+ `resize`（直写后提交终长：`reserve(n)` 后经 `begin()` 直写 `[begin, begin+n)` 的消费方（解码等外部产源）以此收口，置 `size_` 与终态 `'\0'`、不搬运不清零，前置容量须已定容）；检视面 = `view`/`size`/`begin`/`end`（已建内容直读直改，就地改写无哈希失效协议）；`take_string` 把 buffer 零拷贝移交 `ObjString`（另具 hash 重载，调用方已持终态哈希免重算），内容哈希在铸造口按当时内容一次全算（唯一消费点）。驻留判定收在五参 `new_string` 接管重载：命中零拷贝返已有串 / 长串收缩接管 / 短串 SSO 化释放 buffer。GC 纪律：allocate/reallocate 永不触发 GC（核心不变式），本类全程零 GC 点、无需守卫，唯一 GC 点在 take 的 `new_object` 顶部；take 后空态可复用。
 
 ## `memory/RawAlloc.hpp`
 

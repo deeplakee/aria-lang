@@ -9,10 +9,12 @@
 #include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
 #include "memory/GC.hpp"
+#include "memory/StringBuilder.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/value_register.hpp"
+#include "util/str.hpp"
 #include "util/util.hpp"
 
 #include <format>
@@ -731,9 +733,8 @@ namespace aria {
     void CodeGen::visitImportStmtNode(ImportStmtNode& node) {
         const u32 line = node.line();
         // IMPORT 压模块值于栈顶；绑定与 var/fun 同形（顶层 DEF_GLOBAL，嵌套值填槽）。
-        // path 文法钉死字符串字面量（Parser 保证指向 StringLiteralNode），此处收窄后驻留。
-        const auto& path_node = dynamic_cast<const StringLiteralNode&>(*node.path);
-        const auto  path_idx  = add_name_or_fail(path_node.value, node.loc());
+        // path 文法钉死字符串字面量（Parser 保证指向 StringLiteralNode），与字面量表达式共用驻留口。
+        const auto path_idx = add_string_literal_or_fail(dynamic_cast<StringLiteralNode&>(*node.path));
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line); // [module]
         // path 已入池经 module 根链可达，alias 的 new_string 不会回收 path。
@@ -941,9 +942,22 @@ namespace aria {
         emit_float_literal(node.value, node.line(), node.loc());
     }
 
+    u16 CodeGen::add_string_literal_or_fail(const StringLiteralNode& node) const {
+        if (!node.shape.is_escape) {
+            // 无转义:内层原文视图直驻留,零拷贝。
+            return add_name_or_fail(node.value, node.loc());
+        }
+        // 转义串:定长(词法期记账)一次定容,解码直写后接管铸串(驻留判定在 take_string 内)。
+        StringBuilder builder{gc_};
+        builder.reserve(node.shape.decoded_len);
+        const auto written = str::decode_string_content(node.value, builder.begin());
+        builder.resize(written);
+        return add_constant_or_fail(Value::from_obj(builder.take_string()), node.loc());
+    }
+
     void CodeGen::visitStringLiteralNode(StringLiteralNode& node) {
         const u32  line = node.line();
-        const auto idx  = add_name_or_fail(node.value, node.loc());
+        const auto idx  = add_string_literal_or_fail(node);
         cur_cu()->emit_op(OpCode::LOAD_CONST, line);
         cur_cu()->emit_word(idx, line);
     }

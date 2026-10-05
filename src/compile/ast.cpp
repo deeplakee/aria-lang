@@ -182,6 +182,7 @@ namespace aria {
     }
 
     String StringLiteralNode::dump(const usize indent) const {
+        // 打印字面内层原文（转义未展开的源码形态），非展开后内容
         return dump_node(indent, std::format("StringLiteral \"{}\"", value));
     }
 

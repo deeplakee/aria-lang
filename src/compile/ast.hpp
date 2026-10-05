@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "compile/FnKind.hpp"
+#include "compile/Token.hpp"
 #include "util/source_file.hpp"
 
 namespace aria {
@@ -362,7 +363,7 @@ namespace aria {
     };
 
     // import 语句：import string as identifier ";"。path 文法钉死字符串字面量（Parser 保证指向
-    // StringLiteralNode）；alias 为绑定的本地名。
+    // StringLiteralNode），解码在代码生成端；alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
         ImportStmtNode(const SourceLoc loc, UPtr<ExprNode> path, String alias) :
             StmtNode{loc}, path{std::move(path)}, alias{std::move(alias)} {}
@@ -511,16 +512,19 @@ namespace aria {
         f64 value;
     };
 
-    // 字符串字面量。value 为 lexer 解析转义后的内容（非源码原文）。
+    // 字符串字面量。value 为字面内层原文视图（转义未展开，借自源缓冲，存活至编译结束）；shape
+    // 为字面段消费形态（词法期记账），解码在代码生成端进行。
     struct StringLiteralNode : ExprNode {
-        StringLiteralNode(const SourceLoc loc, String value) : ExprNode{loc}, value{std::move(value)} {}
+        StringLiteralNode(const SourceLoc loc, const StringView value, const StringShape shape) :
+            ExprNode{loc}, value{value}, shape{shape} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String value;
+        StringView  value;
+        StringShape shape;
     };
 
     // 插值串字面量。段 = 表达式节点序列（字面段为 StringLiteralNode，与 ListExprNode 的

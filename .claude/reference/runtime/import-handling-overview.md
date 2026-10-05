@@ -73,19 +73,20 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - **派发**（`src/compile/Parser.cpp`）：`declaration()` 的 `case TokenType::Import: return import_stmt();`。
 - **`import_stmt()`**（`src/compile/Parser.cpp`）：`expect(Import)` → 期望
   `TokenType::String`（否则 `ErrorCode::ExpectedToken`「期望字符串字面量作为模块路径」）
-  → 取 `advance()` 的 String token 经 `make_string_literal` 构造 `StringLiteralNode` 作 path
-  → `expect(As)` → `expect_identifier()` 作 alias → `expect(Semicolon)` →
-  构造 `ImportStmtNode(loc, path, alias)`。
-  **path 文法钉死字符串字面量（Parser 保证指向 StringLiteralNode），此处不做任何路径解析或文件系统检查**。
+  → `advance()` 取 String token，按 `string_value()` + `shape()` 构造 `StringLiteralNode` 作
+  path（解码延至代码生成端）→ `expect(As)` →
+  `expect_identifier()` 作 alias → `expect(Semicolon)` → 构造 `ImportStmtNode(loc, path, alias)`。
+  **path 文法钉死字符串字面量，此处不做任何路径解析或文件系统检查**。
 - **AST 节点**（`src/compile/ast.hpp`）：`struct ImportStmtNode : StmtNode`，字段
-  `UPtr<ExprNode> path;`（Parser 保证指向 `StringLiteralNode`）/ `String alias;`。
-  `dump` 渲染 `ImportStmt as=...`，path 以 `StringLiteral` 子行渲染（`ast.cpp`），
-  `accept` 调 `visitor.visitImportStmtNode(this)`。
+  `UPtr<ExprNode> path;`（Parser 保证指向 `StringLiteralNode`，与字面段同形）/
+  `String alias;`。`dump` 渲染 `ImportStmt as=...`，path 以 `StringLiteral` 子行渲染
+  （`ast.cpp`），`accept` 调 `visitor.visitImportStmtNode(this)`。
 - **visitor**（`src/compile/AstVisitor.hpp`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
 > `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`
-> 将 path（`static_cast` 收窄到 `StringLiteralNode`）的字面内容 intern 得常量索引，发射
-> `IMPORT path:u16` 取模块对象压栈，再按作用域绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽）。
+> 将 path（Parser 保证为 `StringLiteralNode`，`static_cast` 收窄）经 `add_string_literal_or_fail`（与字面量表达式
+> 共用驻留口，含转义解码）得常量索引，发射 `IMPORT path:u16` 取模块对象压栈，再按作用域绑定
+> （顶层 `DEF_GLOBAL alias` / 嵌套值填槽）。
 
 ## ③ 字节码
 

@@ -128,6 +128,11 @@ namespace aria {
         [[nodiscard]]
         u16 add_name_or_fail(StringView name, SourceLoc loc) const;
 
+        // 字符串字面量驻留口（字面量表达式与 import path 共用）：无转义视图直驻留，转义定容解码
+        // 后接管铸串，返回常量索引。
+        [[nodiscard]]
+        u16 add_string_literal_or_fail(const StringLiteralNode& node) const;
+
         // 局部登记：同 scope 重名/溢出 fail（持 loc），返回槽位（= 值所在位置）。
         // 调用方保证值已压栈，登记即初始化。
         [[nodiscard]]

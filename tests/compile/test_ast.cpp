@@ -52,11 +52,13 @@ using aria::SourceLoc;
 using aria::StmtNode;
 using aria::String;
 using aria::StringLiteralNode;
+using aria::StringShape;
 using aria::StringView;
 using aria::SuperExprNode;
 using aria::ThisExprNode;
 using aria::ThrowStmtNode;
 using aria::TryStmtNode;
+using aria::u32;
 using aria::UnaryExprNode;
 using aria::UPtr;
 using aria::usize;
@@ -70,9 +72,11 @@ namespace {
     const SourceLoc kLoc{};
 
     // 便利工厂。
-    UPtr<IntegerLiteralNode>    i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
-    UPtr<IdentifierNode>        ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
-    UPtr<StringLiteralNode>     strlit(String v) { return std::make_unique<StringLiteralNode>(kLoc, std::move(v)); }
+    UPtr<IntegerLiteralNode> i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
+    UPtr<IdentifierNode>     ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
+    UPtr<StringLiteralNode>  strlit(const StringView v) {
+        return std::make_unique<StringLiteralNode>(kLoc, v, StringShape{static_cast<u32>(v.size()), false});
+    }
     UPtr<IdentifierPatternNode> id_pat(String name) {
         return std::make_unique<IdentifierPatternNode>(kLoc, std::move(name));
     }

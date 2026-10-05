@@ -2,7 +2,6 @@
 #define ARIA_LEXER_HPP
 
 #include "common.hpp"
-#include "compile/StringArena.hpp"
 #include "compile/Token.hpp"
 #include "error/AriaException.hpp"
 #include "error/Error.hpp"
@@ -31,7 +30,6 @@ namespace aria {
         u32         pos_;    // 字节游标
         u32         start_; // 当前扫描单元起点 = 错误锚点（scan_escape 等子扫描器可重指；串级错误经 error_at 显式锚定）
         List<Token> tokens_;
-        StringArena strings_; // 字符串字面量解析内容（arena）；段 token 的 value 视图指入其中，稳定性契约见 StringArena
         u32         interp_depth_; // 当前打开的插值档层数（0 = 无嵌套插值，上限 kMaxInterpDepth）
 
         void run();
@@ -59,14 +57,14 @@ namespace aria {
         // decimal / int 指数 / float（入口 pos_ 即起点）
         void scan_decimal_or_float();
 
-        // 字符串字面量（含转义解析）；字符串即模板：${ 开插值档（嵌套经 dispatch_one 递归，深度上限
+        // 字符串字面量（含转义校验）；字符串即模板：${ 开插值档（嵌套经 dispatch_one 递归，深度上限
         // kMaxInterpDepth），裸 $ 与 { } 皆普通字符，无档整串退化普通 String token。状态机驱动：
         // 文本态与档内态交替至闭串。
         void scan_string(char quote);
 
-        // 文本态：扫一段字面（含转义解码）产段 token，解析内容追加 strings_、token 持入其中视图；返回
-        // true = 闭串，false = ${ 开档（档内 token 由 scan_string_hole 产出）。段 token 与串级错误分别
-        // 锚 segment_start / string_start。
+        // 文本态：扫一段字面（含转义校验与展开长度记账）产段 token，段原文只以 lexeme 随 token 走、
+        // 解码延至消费端；返回 true = 闭串，false = ${ 开档（档内 token 由 scan_string_hole 产出）。
+        // 段 token 与串级错误分别锚 segment_start / string_start。
         bool scan_string_text(char quote, u32 string_start, u32 segment_start, bool has_hole);
 
         // 档内态：花括号配对内的普通 token 流；预检位恒为 token 边界（串内/注释/嵌套模板里的 { } 已被
@@ -74,11 +72,13 @@ namespace aria {
         // 的 } 闭档。返回闭档后的偏移 = 下一段字面原文起点（scan_string 以此推进 segment_start）。
         u32 scan_string_hole(u32 string_start);
 
-        // 串内转义解析（解析字节追加 strings_）
-        void scan_escape();
+        // 串内转义校验（入口 pos_ 指向 '\\'）：转义集合与展开形态的校验全在词法期收口（首错即止），
+        // 解码延至消费端（util/str.hpp）；返回该转义展开后的字节数。
+        u32 scan_escape();
 
-        // \u{...} Unicode 转义（入口 pos_ 指向 'u'）
-        void scan_unicode_escape();
+        // \u{...} Unicode 转义（入口 pos_ 指向 'u'）：解析与校验收口 util/str.hpp 的
+        // decode_unicode_escape（唯一解析口），此处只接线失败报错与推进记账，返回展开后字节数。
+        u32 scan_unicode_escape();
 
         // identifier / keyword / _
         void scan_identifier();

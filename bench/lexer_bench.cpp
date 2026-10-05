@@ -9,7 +9,7 @@
 //   numeric  单行 "1,1,1,…"（约每字节一个 token）-- 放大逐 token 的小分派成本；真实代码无此形态
 //   cjk      多字节为主（标识符/字符串/注释）-- 把成本压到 utf8::decode_one
 //   string   长字符串字面量为主（含多字节与转义）-- 压字符串扫描路径
-//   string_huge 同 string 形态、规模超 StringArena 首块上限 -- 压分块冻结（旧块收编 + 开段拷移）路径
+//   string_huge 同 string 形态、规模更大 -- 压超大字面量路径（词法期记账 + 消费端解码直写铸串）
 //
 // 端到端编译（Lexer -> Parser -> CodeGen）另量一遍：位置派生的收益要整条链路一起看。
 // 位置派生原语（locate / line_at 的行表缓存）单列一节：它们是「位置只存偏移」这一取舍的依据。
@@ -67,7 +67,7 @@ namespace {
     constexpr int kNumericTokens    = 400'000; // "1," x n -> 800 KB、800k token
     constexpr int kCjkBlocks        = 20'000;  // 2 行/块 -> 约 2.94 MB、340k token
     constexpr int kStringBlocks     = 2'250;   // 约 2.7 MB
-    constexpr int kStringHugeBlocks = 5'200;   // 约 6.0 MB（超 StringArena 首块上限 4 MB）
+    constexpr int kStringHugeBlocks = 5'200;   // 约 6.0 MB（超大字面量形态）
     constexpr int kCompileBlocks    = 5'000;   // 4 行/块 -> 约 0.94 MB
     constexpr int kPositionBlocks   = 25'000;  // 同形态 -> 约 4.75 MB、100k 行
 

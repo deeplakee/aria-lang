@@ -1,4 +1,5 @@
 #include "Lexer.hpp"
+#include "util/str.hpp"
 #include "util/utf8.hpp"
 #include "util/util.hpp"
 
@@ -74,7 +75,7 @@ namespace aria {
     } // namespace
 
     Lexer::Lexer(SourceFile& src) noexcept :
-        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, strings_{src_.size()}, interp_depth_{0} {
+        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, interp_depth_{0} {
         // 预留 src/2+1：token 数 ≤ 字节数+1（EOF），至多一次倍增、搬移不劣于裸倍增；bytes/token ≥ 2
         // 时零搬移（真实语料全覆盖）。多付的仅虚拟地址（未触碰页无物理成本）。
         tokens_.reserve(src_.size() / 2 + 1);
@@ -87,7 +88,7 @@ namespace aria {
         } catch (const AriaCompileException& e) {
             return std::unexpected(e.error());
         }
-        return TokenStream{std::move(lexer.tokens_), std::move(lexer.strings_)};
+        return TokenStream{std::move(lexer.tokens_)};
     }
 
     char Lexer::peek_byte(const u32 ahead) const noexcept {
@@ -285,7 +286,7 @@ namespace aria {
 
     bool Lexer::scan_string_text(const char quote, const u32 string_start, const u32 segment_start,
                                  const bool has_hole) {
-        strings_.open_segment();
+        StringShape shape; // 本段消费形态（转义按展开后字节记账，展开在消费端进行）
         while (true) {
             if (is_eof()) {
                 error_at(string_start, ErrorCode::UnterminatedString, "unterminated string");
@@ -296,44 +297,43 @@ namespace aria {
             }
             if (c == quote) {
                 advance(); // 消费闭引号
-                const auto value = strings_.close_segment();
                 if (has_hole) {
-                    tokens_.push_back(Token::make_interp_end(value, slice(segment_start, pos_), loc_at(segment_start)));
+                    tokens_.push_back(Token::make_interp_end(slice(segment_start, pos_), loc_at(segment_start), shape));
                 } else {
                     // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
-                    tokens_.push_back(Token::make_string(value, slice(string_start, pos_), loc_at(string_start)));
+                    tokens_.push_back(Token::make_string(slice(string_start, pos_), loc_at(string_start), shape));
                 }
                 return true;
             }
             if (c == '$') {
                 if (peek_byte(1) != '{') {
                     // 裸 $ 是普通字符（仅 ${ 开档）；显式消费，下方整段消费的谓词对 $ 恒停
-                    strings_.append('$');
+                    ++shape.decoded_len;
                     advance();
                     continue;
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
-                const auto value = strings_.close_segment();
-                const auto lex   = slice(segment_start, pos_);
-                const auto loc   = loc_at(segment_start);
+                const auto lex = slice(segment_start, pos_);
+                const auto loc = loc_at(segment_start);
                 if (has_hole) {
-                    tokens_.push_back(Token::make_interp_middle(value, lex, loc));
+                    tokens_.push_back(Token::make_interp_middle(lex, loc, shape));
                 } else {
-                    tokens_.push_back(Token::make_interp_start(value, lex, loc));
+                    tokens_.push_back(Token::make_interp_start(lex, loc, shape));
                 }
                 advance(2);   // 消费 ${
                 return false; // 档内 token 由 scan_string_hole 产出
             }
             if (c == '\\') {
-                scan_escape();
+                shape.decoded_len += scan_escape();
+                shape.is_escape = true;
                 continue;
             }
             // 普通字符段（含多字节 UTF-8）：分隔符均为 ASCII（续接字节恒 >= 0x80），按字节消费
-            // 不会停在码点中间且无需解码，整段原样追加。
+            // 不会停在码点中间；内容随 lexeme 留在源缓冲，此处仅记账展开后长度。
             const u32 run_begin = pos_;
             consume_byte(
                     [quote](const char byte) { return byte != quote && byte != '\\' && byte != '\n' && byte != '$'; });
-            strings_.append(slice(run_begin, pos_));
+            shape.decoded_len += pos_ - run_begin;
         }
     }
 
@@ -363,39 +363,30 @@ namespace aria {
         return pos_; // 闭档后即下一段字面原文起点
     }
 
-    // 解析转义序列（pos_ 指向 '\\'），解析字节追加 strings_；错误即抛出（首错即止），锚点入口重指到
+    // 校验转义序列（pos_ 指向 '\\'），返回展开后字节数；错误即抛出（首错即止），锚点入口重指到
     // '\'，调用方无需恢复（后续报错点经 error_at 自带位置或由 dispatch_one 重设 start_）；\ 在串尾
-    // 不报错，由 scan_string_text 的 is_eof 统一报 "unterminated string"。
-    void Lexer::scan_escape() {
+    // 不报错，由 scan_string_text 的 is_eof 统一报 "unterminated string"。展开集合在此一闸收口，
+    // 字节产出延至消费端（util/str.hpp 的 decode_string_content）。
+    u32 Lexer::scan_escape() {
         start_ = pos_; // 锚点重指到转义起点
         advance();     // 消费 '\'
         if (is_eof()) {
-            return;
+            // 串尾 '\'：不在此报错（长度无从记账），scan_string_text 顶层 is_eof 统一报 unterminated
+            return 0;
         }
 
-        const auto append_simple = [&](const char ch) {
-            strings_.append(ch);
-            advance();
-        };
-
+        // 单字节展开族：校验即集合成员资格，展开形态由消费端解码器持有（两侧由测试钉住）
         switch (const char c = src_[pos_]) {
             case '"':
-                return append_simple('"');
             case '\'':
-                return append_simple('\'');
             case '\\':
-                return append_simple('\\');
             case 'n':
-                return append_simple('\n');
             case 't':
-                return append_simple('\t');
             case 'r':
-                return append_simple('\r');
             case '0':
-                return append_simple('\0');
-            case '$':
-                // 写字面 ${（裸 $ 无需转义，仅 ${ 前有转义需求）
-                return append_simple('$');
+            case '$': // 产出字面 $（裸 $ 无需转义，仅 ${ 前有转义需求）
+                advance();
+                return 1;
             case 'u':
                 return scan_unicode_escape();
             default:
@@ -403,35 +394,24 @@ namespace aria {
         }
     }
 
-    void Lexer::scan_unicode_escape() {
-        advance(); // 消费 u
-        if (peek_byte(0) != '{') {
-            error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
-        }
-        advance(); // 消费 {
-
-        // 收集 } 前的字符到 lex；非 hex 字符留给 from_chars 检测。
-        const u32 start = pos_;
-        consume_codepoints([](const utf8::codepoint cp) { return cp != '}'; });
-
-        if (peek_byte(0) != '}') {
-            error(ErrorCode::InvalidEscape, "expected '}}' to close '\\u{{'");
-        }
-        advance(); // 消费 }
-
-        // 直接解析 hex 为码点，不剥 _（文法 hex+ 不含 _，\u{1_2} 非法：'_' 非十六进制数字，整串消费必败）。
-        const auto lex    = slice(start, pos_ - 1);
-        const auto parsed = util::try_parse<i64>(lex, 16);
+    u32 Lexer::scan_unicode_escape() {
+        // 解析与校验收口 util/str.hpp 的唯一解析口；失败按类别经词法通道报 InvalidEscape
+        // （锚点 = start_ 即 '\' 起点，scan_escape 入口已置）。
+        const auto parsed = str::decode_unicode_escape(src_.substr(pos_));
         if (!parsed) {
-            error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
+            switch (parsed.error()) {
+                case str::UnicodeEscapeError::MissingOpenBrace:
+                    error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
+                case str::UnicodeEscapeError::MissingCloseBrace:
+                    error(ErrorCode::InvalidEscape, "expected '}}' to close '\\u{{'");
+                case str::UnicodeEscapeError::BadHexDigits:
+                    error(ErrorCode::InvalidEscape, "expected hex digits in '\\u{{...}}'");
+                case str::UnicodeEscapeError::CodepointOutOfRange:
+                    error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
+            }
         }
-
-        const u32 cp = static_cast<u32>(*parsed);
-        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-            error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
-        }
-        const auto encoded = utf8::encode(cp);
-        strings_.append(encoded);
+        pos_ += parsed->second;
+        return parsed->first.size();
     }
 
     void Lexer::scan_identifier() {

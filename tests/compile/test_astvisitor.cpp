@@ -56,6 +56,7 @@ using aria::StaticVarMemberNode;
 using aria::StmtNode;
 using aria::String;
 using aria::StringLiteralNode;
+using aria::StringShape;
 using aria::StringView;
 using aria::SuperExprNode;
 using aria::ThisExprNode;
@@ -181,8 +182,9 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     expect_visit(std::make_unique<BreakStmtNode>(kLoc), "BreakStmtNode");
     expect_visit(std::make_unique<ContinueStmtNode>(kLoc), "ContinueStmtNode");
     expect_visit(std::make_unique<ReturnStmtNode>(kLoc, i64lit(1)), "ReturnStmtNode");
-    expect_visit(std::make_unique<ImportStmtNode>(kLoc, std::make_unique<StringLiteralNode>(kLoc, String{"math"}),
-                                                  String{"m"}),
+    expect_visit(std::make_unique<ImportStmtNode>(
+                         kLoc, std::make_unique<StringLiteralNode>(kLoc, StringView{"math"}, StringShape{4, false}),
+                         String{"m"}),
                  "ImportStmtNode");
     expect_visit(std::make_unique<TryStmtNode>(kLoc, empty_block(), Opt<String>{String{"e"}}, empty_block()),
                  "TryStmtNode");
@@ -202,7 +204,8 @@ TEST(AstVisitorDispatch, Expressions) {
     // 字面量与基础表达式
     expect_visit(i64lit(1), "IntegerLiteralNode");
     expect_visit(std::make_unique<FloatLiteralNode>(kLoc, 1.5), "FloatLiteralNode");
-    expect_visit(std::make_unique<StringLiteralNode>(kLoc, String{"s"}), "StringLiteralNode");
+    expect_visit(std::make_unique<StringLiteralNode>(kLoc, StringView{"s"}, StringShape{1, false}),
+                 "StringLiteralNode");
     expect_visit(std::make_unique<BoolLiteralNode>(kLoc, true), "BoolLiteralNode");
     expect_visit(std::make_unique<NilLiteralNode>(kLoc), "NilLiteralNode");
     expect_visit(ident("x"), "IdentifierNode");

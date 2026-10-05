@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 #include "compile/Lexer.hpp"
 #include "util/source_file.hpp"
+#include "util/str.hpp"
 
 // 注意：不使用 `using namespace aria;`--Windows SDK 的 winnt.h 定义了全局
 // `TokenType`，会与 aria::TokenType 在 using-namespace 下产生歧义。故按需
@@ -12,7 +15,6 @@ using aria::Lexer;
 using aria::List;
 using aria::SourceFile;
 using aria::String;
-using aria::StringArena;
 using aria::StringView;
 using aria::Token;
 using aria::TokenStream;
@@ -34,7 +36,7 @@ namespace {
     // sf 不再被 move，lexeme 地址稳定。
     struct Lexed {
         SourceFile  sf;
-        TokenStream stream; // strings 与 tokens 同寿命：token 的字符串值视图指入 stream.strings
+        TokenStream stream; // token 的 lexeme/内层视图借自 sf 的源缓冲，sf 须与流同寿命
     };
 
     // 辅助：tokenize 并断言成功，返回堆上 {sf, stream}。
@@ -56,6 +58,15 @@ namespace {
             return Error::from_detail(ErrorCode::Unreachable, "tokenize unexpectedly succeeded");
         }
         return std::move(result.error());
+    }
+
+    // 按消费端形态展开字面 token：内层原文视图 + 词法期记账长度 + 转义标记，经解码器取回内容串
+    // （与 CodeGen 的转义臂同一管线，替代旧 string_value/interp_value 断言面）。
+    String decoded(const Token& token) {
+        String out;
+        out.resize(token.shape().decoded_len);
+        std::ignore = aria::str::decode_string_content(token.string_value(), out.data());
+        return out;
     }
 } // namespace
 
@@ -360,25 +371,31 @@ TEST(LexerString, Basic) {
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 3u);
     EXPECT_EQ(tokens[0].type(), TokenType::String);
+    EXPECT_EQ(decoded(tokens[0]), "hello");
+    EXPECT_FALSE(tokens[0].shape().is_escape);
+    EXPECT_EQ(tokens[0].shape().decoded_len, 5u);
     EXPECT_EQ(tokens[0].string_value(), StringView{"hello"});
     EXPECT_EQ(tokens[0].lexeme(), StringView{"\"hello\""});
     EXPECT_EQ(tokens[1].type(), TokenType::String);
-    EXPECT_EQ(tokens[1].string_value(), StringView{"world"});
+    EXPECT_EQ(decoded(tokens[1]), "world");
 }
 
 TEST(LexerString, Escapes) {
-    const auto       lexed  = lex_ok("\"a\\nb\\tc\\rd\\\\e\\0\"");
-    const auto&      tokens = lexed->stream.tokens;
-    const StringView expected{"a\nb\tc\rd\\e\0", 10};
+    const auto  lexed  = lex_ok("\"a\\nb\\tc\\rd\\\\e\\0\"");
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
-    EXPECT_EQ(tokens[0].string_value(), expected);
+    EXPECT_TRUE(tokens[0].shape().is_escape);
+    EXPECT_EQ((tokens[0].string_value()), StringView{"a\\nb\\tc\\rd\\\\e\\0"}); // 内层原文,转义未展开
+    EXPECT_EQ(tokens[0].shape().decoded_len, 10u);                              // 展开后 10 字节
+    EXPECT_EQ(decoded(tokens[0]), (String{"a\nb\tc\rd\\e\0", 10}));
 }
 
 TEST(LexerString, UnicodeEscape) {
     const auto  lexed  = lex_ok("\"\\u{4e2d}\"");
     const auto& tokens = lexed->stream.tokens; // 中
     ASSERT_EQ(tokens.size(), 2u);
-    EXPECT_EQ(tokens[0].string_value(), StringView{"\xE4\xB8\xAD"});
+    EXPECT_EQ(tokens[0].shape().decoded_len, 3u); // 3 字节码点
+    EXPECT_EQ(decoded(tokens[0]), "\xE4\xB8\xAD");
 }
 
 TEST(LexerString, UnicodeEscapeErrors) {
@@ -424,9 +441,12 @@ TEST(LexerString, EmptyAndQuoteEscape) {
     const auto  lexed  = lex_ok("\"\" \"a\\\"b\" 'x\\'y'");
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
-    EXPECT_EQ(tokens[0].string_value(), StringView{""});
-    EXPECT_EQ(tokens[1].string_value(), StringView{"a\"b"});
-    EXPECT_EQ(tokens[2].string_value(), StringView{"x'y"});
+    EXPECT_EQ(tokens[0].shape().decoded_len, 0u);
+    EXPECT_FALSE(tokens[0].shape().is_escape);
+    EXPECT_TRUE(tokens[1].shape().is_escape); // \" 转义
+    EXPECT_EQ(decoded(tokens[0]), "");
+    EXPECT_EQ(decoded(tokens[1]), "a\"b");
+    EXPECT_EQ(decoded(tokens[2]), "x'y");
 }
 
 TEST(LexerString, PlainFIsIdentifier) {
@@ -446,7 +466,7 @@ TEST(LexerString, FPrefixIsNotInterpolation) {
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"f"});
     EXPECT_EQ(tokens[1].type(), TokenType::String);
-    EXPECT_EQ(tokens[1].string_value(), StringView{"x"});
+    EXPECT_EQ(decoded(tokens[1]), "x");
 }
 
 // ---------------------------------------------------------------------------
@@ -586,8 +606,8 @@ TEST(LexerInterp, BasicSplit) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a "});
-    EXPECT_EQ(tokens[2].string_value(), StringView{" b"});
+    EXPECT_EQ(decoded(tokens[0]), "a ");
+    EXPECT_EQ(decoded(tokens[2]), " b");
 }
 
 TEST(LexerInterp, MultipleHoles) {
@@ -600,9 +620,9 @@ TEST(LexerInterp, MultipleHoles) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a"});
-    EXPECT_EQ(tokens[2].string_value(), StringView{"b"});
-    EXPECT_EQ(tokens[4].string_value(), StringView{"c"});
+    EXPECT_EQ(decoded(tokens[0]), "a");
+    EXPECT_EQ(decoded(tokens[2]), "b");
+    EXPECT_EQ(decoded(tokens[4]), "c");
 }
 
 TEST(LexerInterp, EmptyEdgeSegments) {
@@ -614,8 +634,8 @@ TEST(LexerInterp, EmptyEdgeSegments) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].string_value(), StringView{""});
-    EXPECT_EQ(tokens[2].string_value(), StringView{""});
+    EXPECT_EQ(tokens[0].shape().decoded_len, 0u); // 空字面段照常产出,展开后零字节
+    EXPECT_EQ(tokens[2].shape().decoded_len, 0u);
 }
 
 TEST(LexerInterp, ExpressionHoleWithBraces) {
@@ -651,7 +671,7 @@ TEST(LexerInterp, Nested) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[1].string_value(), StringView{"in "});
+    EXPECT_EQ(decoded(tokens[1]), "in ");
 }
 
 TEST(LexerInterp, PlainStringInHole) {
@@ -663,7 +683,7 @@ TEST(LexerInterp, PlainStringInHole) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[1].string_value(), StringView{"a}b"});
+    EXPECT_EQ(decoded(tokens[1]), "a}b");
 }
 
 TEST(LexerInterp, SingleQuoteForm) {
@@ -683,28 +703,29 @@ TEST(LexerInterp, NoHoleStaysPlainString) {
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokType::String);
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a$x b"});
+    EXPECT_EQ(decoded(tokens[0]), "a$x b");
 
     const auto  lexed2  = lex_ok("\"$100 and $\"");
     const auto& tokens2 = lexed2->stream.tokens;
     ASSERT_EQ(tokens2.size(), 2u);
     EXPECT_EQ(tokens2[0].type(), TokType::String);
-    EXPECT_EQ(tokens2[0].string_value(), StringView{"$100 and $"});
+    EXPECT_EQ(decoded(tokens2[0]), "$100 and $");
 }
 
 TEST(LexerInterp, EscapedDollarIsLiteral) {
-    // \$ 转义写字面 ${（裸 $ 无需转义）
+    // \$ 转义产出字面 ${（裸 $ 无需转义）
     const auto  lexed  = lex_ok("\"a\\${b}\"");
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokType::String);
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a${b}"});
+    EXPECT_TRUE(tokens[0].shape().is_escape);
+    EXPECT_EQ(decoded(tokens[0]), "a${b}");
 
     const auto  lexed2  = lex_ok("\"a\\$b\"");
     const auto& tokens2 = lexed2->stream.tokens;
     ASSERT_EQ(tokens2.size(), 2u);
     EXPECT_EQ(tokens2[0].type(), TokType::String);
-    EXPECT_EQ(tokens2[0].string_value(), StringView{"a$b"});
+    EXPECT_EQ(decoded(tokens2[0]), "a$b");
 }
 
 TEST(LexerInterp, EscapesInSegment) {
@@ -713,7 +734,7 @@ TEST(LexerInterp, EscapesInSegment) {
     const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a\n${ "});
+    EXPECT_EQ(decoded(tokens[0]), "a\n${ ");
 }
 
 TEST(LexerInterp, BareBracesAreLiteral) {
@@ -722,7 +743,7 @@ TEST(LexerInterp, BareBracesAreLiteral) {
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].type(), TokType::InterpStart);
-    EXPECT_EQ(tokens[0].string_value(), StringView{"a}b{c "});
+    EXPECT_EQ(decoded(tokens[0]), "a}b{c ");
 }
 
 TEST(LexerInterp, EscapedBraceIsInvalid) {
@@ -791,70 +812,11 @@ TEST(LexerInterp, DollarOutsideStringIsInvalid) {
 }
 
 // ---------------------------------------------------------------------------
-// StringArena 分块冻结（内容越过首块上限时旧块冻结、开段拷入新块）
+// 超大字面量端到端钉子（原文只以 lexeme 借自源缓冲,无独立存储层）
 // ---------------------------------------------------------------------------
 
-TEST(StringArena, SegmentBeyondFirstChunkStaysContiguous) {
-    // 单段超首块上限：跨块搬移后整段仍连续、内容逐字节正确
-    StringArena arena{10 * 1024 * 1024};
-    arena.open_segment();
-    auto expected = String{};
-    for (int i = 0; i < 5; ++i) {
-        const auto chunk = String(1024 * 1024, static_cast<char>('a' + i));
-        arena.append(chunk);
-        expected += chunk;
-    }
-    arena.append("tail");
-    expected += "tail";
-    const auto view = arena.close_segment();
-    ASSERT_EQ(view.size(), expected.size());
-    EXPECT_EQ(view, StringView{expected});
-}
-
-TEST(StringArena, FrozenViewsStayStable) {
-    // 已发视图恒稳：后续追加触发冻结后，既发视图的内容与地址均不变
-    StringArena arena{10 * 1024 * 1024};
-    arena.open_segment();
-    const auto first = String(3 * 1024 * 1024, 'x');
-    arena.append(first);
-    const auto v1      = arena.close_segment();
-    const auto v1_data = v1.data();
-
-    arena.open_segment();
-    const auto second = String(3 * 1024 * 1024, 'y');
-    arena.append(second); // 3 MB + 3 MB 越过首块 4 MB，触发冻结
-    const auto v2 = arena.close_segment();
-
-    EXPECT_EQ(v1.data(), v1_data);
-    EXPECT_EQ(v1, StringView{first});
-    EXPECT_EQ(v2, StringView{second});
-}
-
-TEST(StringArena, EmptySegmentReturnsDefaultView) {
-    // 空段返回默认空视图（未触碰缓冲），不与后续段混淆
-    StringArena arena{64};
-    arena.open_segment();
-    EXPECT_EQ(arena.close_segment(), StringView{});
-    arena.open_segment();
-    arena.append('a');
-    EXPECT_EQ(arena.close_segment(), StringView{"a"});
-}
-
-TEST(StringArena, SingleAppendBeyondFirstChunk) {
-    // 单次追加即超首块上限：首块按需求一次落地，不经「先 4 MB 再搬」
-    StringArena arena{10 * 1024 * 1024};
-    arena.open_segment();
-    const auto big = String(5 * 1024 * 1024, 'z');
-    arena.append(big);
-    EXPECT_EQ(arena.close_segment(), StringView{big});
-}
-
-// ---------------------------------------------------------------------------
-// 超首块上限的端到端钉子（Lexer 全链路走分块冻结路径）
-// ---------------------------------------------------------------------------
-
-TEST(LexerString, SourceBeyondFirstChunk) {
-    // 源超 arena 首块上限（4 MB）：字符串值跨分块冻结仍完整正确
+TEST(LexerString, SourceWithHugeLiteral) {
+    // 超大字面量（4 MB+）:值借源缓冲存活,内容完整、记账正确
     String src;
     src.reserve(4 * 1024 * 1024 + 256);
     src += "var s0 = \"";
@@ -868,13 +830,16 @@ TEST(LexerString, SourceBeyondFirstChunk) {
     ASSERT_EQ(tokens.size(), 11u); // Var Id Eq Str ; Var Id Eq Str ; Eof
     EXPECT_EQ(tokens[3].type(), TokenType::String);
     const auto expected = String(4 * 1024 * 1024 + 100, 'a');
-    EXPECT_EQ(tokens[3].string_value(), StringView{expected});
+    EXPECT_EQ(decoded(tokens[3]), expected);
+    EXPECT_EQ(tokens[3].shape().decoded_len, expected.size());
+    EXPECT_FALSE(tokens[3].shape().is_escape);
     EXPECT_EQ(tokens[8].type(), TokenType::String);
-    EXPECT_EQ(tokens[8].string_value(), StringView{tail + "中文转义\n"});
+    EXPECT_TRUE(tokens[8].shape().is_escape);
+    EXPECT_EQ(decoded(tokens[8]), tail + "中文转义\n");
 }
 
-TEST(LexerInterp, SegmentsAcrossChunkBoundary) {
-    // 两段字面合计超首块上限：第二段在冻结搬移中收口，段视图仍连续正确
+TEST(LexerInterp, HugeSegments) {
+    // 两段字面合计超大:段原文借源缓冲各自连续,记账与内容一致
     const auto head = String(2 * 1024 * 1024, 'a');
     const auto tail = String(3 * 1024 * 1024, 'b');
     const auto src  = "\"" + head + "${x}" + tail + "\"";
@@ -886,6 +851,8 @@ TEST(LexerInterp, SegmentsAcrossChunkBoundary) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].string_value(), StringView{head});
-    EXPECT_EQ(tokens[2].string_value(), StringView{tail});
+    EXPECT_EQ(decoded(tokens[0]), head);
+    EXPECT_EQ(tokens[0].shape().decoded_len, head.size());
+    EXPECT_EQ(decoded(tokens[2]), tail);
+    EXPECT_EQ(tokens[2].shape().decoded_len, tail.size());
 }

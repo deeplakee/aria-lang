@@ -8,12 +8,27 @@ namespace aria {
     f64 Token::float_value() const noexcept { return type_ == TokenType::Float ? value_.float_ : 0.0; }
 
     StringView Token::string_value() const noexcept {
+        const StringView lex = lexeme();
+        switch (type_) {
+            case TokenType::String:
+                return lex.substr(1, lex.size() - 2); // 剥两端引号
+            case TokenType::InterpEnd:
+                return lex.substr(0, lex.size() - 1); // 剥闭引号(Start/Middle 的 lexeme 本就不含边界)
+            case TokenType::InterpStart:
+            case TokenType::InterpMiddle:
+                return lex;
+            default:
+                return {};
+        }
+    }
+
+    StringShape Token::shape() const noexcept {
         switch (type_) {
             case TokenType::String:
             case TokenType::InterpStart:
             case TokenType::InterpMiddle:
             case TokenType::InterpEnd:
-                return value_.str_;
+                return value_.shape_;
             default:
                 return {};
         }

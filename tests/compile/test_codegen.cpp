@@ -2384,7 +2384,8 @@ namespace {
         const aria::SourceLoc                  kLoc{};
         aria::List<aria::UPtr<aria::ExprNode>> parts;
         for (aria::usize i = 0; i < literal_count; ++i) {
-            parts.push_back(std::make_unique<aria::StringLiteralNode>(kLoc, aria::String{"s"}));
+            parts.push_back(std::make_unique<aria::StringLiteralNode>(kLoc, aria::StringView{"s"},
+                                                                      aria::StringShape{1, false}));
         }
         for (aria::usize i = 0; i < expr_count; ++i) {
             parts.push_back(std::make_unique<aria::IdentifierNode>(kLoc, aria::String{"x"}));

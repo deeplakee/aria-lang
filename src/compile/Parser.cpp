@@ -80,14 +80,16 @@ namespace aria {
             }
         }
 
-        // 字符串族 token -> 字面节点（解码后的内容），primary / import / 插值字面段三处共用。
+        // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
+        // 插值字面段三处共用。
         UPtr<StringLiteralNode> make_string_literal(const Token& token) {
-            return std::make_unique<StringLiteralNode>(token.loc(), String{token.string_value()});
+            return std::make_unique<StringLiteralNode>(token.loc(), token.string_value(), token.shape());
         }
 
-        // Interp 系段 token 的非空段值包成 StringLiteralNode 入列；空字面段对值无贡献，不入列。
+        // Interp 系段 token 的非空字面段包成 StringLiteralNode 入列；空段（展开后零字节）对值无贡献，
+        // 不入列。
         void maybe_add_string(List<UPtr<ExprNode>>& parts, const Token& token) {
-            if (!token.string_value().empty()) {
+            if (token.shape().decoded_len != 0) {
                 parts.push_back(make_string_literal(token));
             }
         }

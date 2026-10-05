@@ -15,8 +15,9 @@ namespace aria {
     // 转义内容的视图（指向 TokenStream::strings）。平凡可拷贝是 token 表零搬移与读侧单缓存行的前提。
     using TokenValue = std::variant<std::monostate, i64, f64, StringView>;
 
-    // 词法单元：lexer 产出的最小语法单位。lexeme 借用源码文本，字符串值借用 TokenStream::strings，
-    // 均不得越过所引对象的存活期。
+    // 词法单元：lexer 产出的最小语法单位。lexeme 不落指针，只存字节数，读时按 loc 自源缓冲重建
+    // （词法期各 token 的 lexeme 区间恒以 loc 的偏移为起点）；字符串值借用 TokenStream::strings。
+    // 借出的视图均不得越过所引对象的存活期。
     class Token {
     public:
         Token() noexcept : Token{TokenType::Eof, {}, {}, {}} {}
@@ -65,7 +66,10 @@ namespace aria {
 
         [[nodiscard]]
         StringView lexeme() const noexcept {
-            return lexeme_;
+            if (loc_.source() == nullptr) {
+                return {};
+            }
+            return {loc_.source()->content().data() + loc_.offset(), lexeme_len_};
         }
 
         [[nodiscard]]
@@ -109,11 +113,11 @@ namespace aria {
 
     private:
         Token(const TokenType type, const StringView lexeme, const SourceLoc loc, TokenValue value) noexcept :
-            type_{type}, loc_{loc}, lexeme_{lexeme}, value_{value} {}
+            type_{type}, lexeme_len_{static_cast<u32>(lexeme.size())}, loc_{loc}, value_{value} {}
 
         TokenType  type_;
+        u32        lexeme_len_;
         SourceLoc  loc_;
-        StringView lexeme_;
         TokenValue value_;
     };
 

@@ -456,174 +456,118 @@ namespace aria {
             error(ErrorCode::InvalidCharacter, "invalid character U+{:04X}", cp);
         }
 
-        const auto make_token = [&](const TokenType t) {
-            const u32 end = pos_;
-            tokens_.emplace_back(t, slice(start_, end), loc_at(start_));
+        const auto make_token = [&](const TokenType t, const u32 step) {
+            advance(step);
+            tokens_.emplace_back(t, slice(start_, pos_), loc_at(start_));
         };
 
-        switch (static_cast<char>(src_[pos_])) {
-            case '+':
+        switch (src_[pos_]) {
+            case '+': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::PlusEqual);
-                } else if (peek_byte(1) == '+') {
-                    advance(2);
-                    make_token(TokenType::PlusPlus);
-                } else {
-                    advance();
-                    make_token(TokenType::Plus);
+                    return make_token(TokenType::PlusEqual, 2);
                 }
-                return;
-            case '-':
+                if (peek_byte(1) == '+') {
+                    return make_token(TokenType::PlusPlus, 2);
+                }
+                return make_token(TokenType::Plus, 1);
+            }
+            case '-': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::MinusEqual);
-                } else if (peek_byte(1) == '-') {
-                    advance(2);
-                    make_token(TokenType::MinusMinus);
-                } else {
-                    advance();
-                    make_token(TokenType::Minus);
+                    return make_token(TokenType::MinusEqual, 2);
                 }
-                return;
-            case '*':
+                if (peek_byte(1) == '-') {
+                    return make_token(TokenType::MinusMinus, 2);
+                }
+                return make_token(TokenType::Minus, 1);
+            }
+            case '*': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::StarEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Star);
+                    return make_token(TokenType::StarEqual, 2);
                 }
-                return;
-            case '/':
+                return make_token(TokenType::Star, 1);
+            }
+            case '/': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::SlashEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Slash);
+                    return make_token(TokenType::SlashEqual, 2);
                 }
-                return;
-            case '%':
+                return make_token(TokenType::Slash, 1);
+            }
+            case '%': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::PercentEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Percent);
+                    return make_token(TokenType::PercentEqual, 2);
                 }
-                return;
-            case '=':
+                return make_token(TokenType::Percent, 1);
+            }
+            case '=': {
                 if (peek_byte(1) == '=' && peek_byte(2) == '=') {
-                    advance(3);
-                    make_token(TokenType::EqualEqualEqual);
-                } else if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::EqualEqual);
-                } else if (peek_byte(1) == '>') {
-                    advance(2);
-                    make_token(TokenType::FatArrow);
-                } else {
-                    advance();
-                    make_token(TokenType::Equal);
+                    return make_token(TokenType::EqualEqualEqual, 3);
                 }
-                return;
-            case '!':
+                if (peek_byte(1) == '=') {
+                    return make_token(TokenType::EqualEqual, 2);
+                }
+                if (peek_byte(1) == '>') {
+                    return make_token(TokenType::FatArrow, 2);
+                }
+                return make_token(TokenType::Equal, 1);
+            }
+            case '!': {
                 if (peek_byte(1) == '=' && peek_byte(2) == '=') {
-                    advance(3);
-                    make_token(TokenType::BangEqualEqual);
-                } else if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::BangEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Bang);
+                    return make_token(TokenType::BangEqualEqual, 3);
                 }
-                return;
-            case '>':
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::GreaterEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Greater);
+                    return make_token(TokenType::BangEqual, 2);
                 }
-                return;
-            case '<':
+                return make_token(TokenType::Bang, 1);
+            }
+            case '>': {
                 if (peek_byte(1) == '=') {
-                    advance(2);
-                    make_token(TokenType::LessEqual);
-                } else {
-                    advance();
-                    make_token(TokenType::Less);
+                    return make_token(TokenType::GreaterEqual, 2);
                 }
-                return;
+                return make_token(TokenType::Greater, 1);
+            }
+            case '<': {
+                if (peek_byte(1) == '=') {
+                    return make_token(TokenType::LessEqual, 2);
+                }
+                return make_token(TokenType::Less, 1);
+            }
             case '&':
                 if (peek_byte(1) == '&') {
-                    advance(2);
-                    make_token(TokenType::AndAnd);
-                } else {
-                    error(ErrorCode::InvalidCharacter, "expected '&&', got '&'");
+                    return make_token(TokenType::AndAnd, 2);
                 }
-                return;
+                error(ErrorCode::InvalidCharacter, "expected '&&', got '&'");
             case '|':
                 if (peek_byte(1) == '|') {
-                    advance(2);
-                    make_token(TokenType::OrOr);
-                } else {
-                    error(ErrorCode::InvalidCharacter, "expected '||', got '|'");
+                    return make_token(TokenType::OrOr, 2);
                 }
-                return;
-            case '.':
+                error(ErrorCode::InvalidCharacter, "expected '||', got '|'");
+            case '.': {
                 if (peek_byte(1) == '.') {
                     if (peek_byte(2) == '.') {
-                        advance(3);
-                        make_token(TokenType::DotDotDot);
-                    } else {
-                        advance(2);
-                        make_token(TokenType::DotDot);
+                        return make_token(TokenType::DotDotDot, 3);
                     }
-                } else {
-                    advance();
-                    make_token(TokenType::Dot);
+                    return make_token(TokenType::DotDot, 2);
                 }
-                return;
+                return make_token(TokenType::Dot, 1);
+            }
             case '(':
-                advance();
-                make_token(TokenType::LeftParen);
-                return;
+                return make_token(TokenType::LeftParen, 1);
             case ')':
-                advance();
-                make_token(TokenType::RightParen);
-                return;
+                return make_token(TokenType::RightParen, 1);
             case '{':
-                advance();
-                make_token(TokenType::LeftBrace);
-                return;
+                return make_token(TokenType::LeftBrace, 1);
             case '}':
-                advance();
-                make_token(TokenType::RightBrace);
-                return;
+                return make_token(TokenType::RightBrace, 1);
             case '[':
-                advance();
-                make_token(TokenType::LeftBracket);
-                return;
+                return make_token(TokenType::LeftBracket, 1);
             case ']':
-                advance();
-                make_token(TokenType::RightBracket);
-                return;
+                return make_token(TokenType::RightBracket, 1);
             case ',':
-                advance();
-                make_token(TokenType::Comma);
-                return;
+                return make_token(TokenType::Comma, 1);
             case ':':
-                advance();
-                make_token(TokenType::Colon);
-                return;
+                return make_token(TokenType::Colon, 1);
             case ';':
-                advance();
-                make_token(TokenType::Semicolon);
-                return;
+                return make_token(TokenType::Semicolon, 1);
             default:
                 error(ErrorCode::InvalidCharacter, "invalid character U+{:04X}", utf8::decode_one(src_, start_).first);
         }

@@ -118,15 +118,8 @@ namespace aria {
             return SourceLoc{&source_, offset};
         }
 
-        // 只消费 ASCII 字节（pred 收 char），遇非 ASCII 必停且停在码点边界（UTF-8 续接字节恒 >= 0x80）；
-        // 含非 ASCII 字符集的序列（标识符续接等）须用 consume_codepoints。
-        template<typename Pred>
-        void consume_ascii(Pred pred) {
-            consume_byte([pred](const char ch) { return utf8::is_ascii(ch) && pred(ch); });
-        }
-
-        // 按裸字节消费（pred 收 char），不保证停在码点边界--谓词对 >= 0x80 字节为真时游标停进码点中间；
-        // 只用于停点必为 ASCII 的场景（字符串正文按 ASCII 分隔符切段），需边界保证用 consume_ascii。
+        // 按裸字节消费（pred 收 char）。谓词须自证 ASCII（对 >= 0x80 字节为假，如数字、字符串分隔符），
+        // 游标才不停在码点中间；按码点消费（标识符续接等）用 consume_codepoints。
         template<typename Pred>
         void consume_byte(Pred pred) {
             while (!is_eof() && pred(src_[pos_])) {

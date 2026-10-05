@@ -189,7 +189,7 @@ namespace aria {
         if (is_eof() || !is_radix_digit(base, src_[pos_])) {
             error(ErrorCode::InvalidNumber, "expected a digit after the base prefix");
         }
-        consume_ascii([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
+        consume_byte([base](const char ch) { return is_radix_digit(base, ch) || ch == '_'; });
 
         const auto lex_no_tag = slice(start_ + 2, pos_); // 剥掉 2 字节前缀
 
@@ -209,13 +209,13 @@ namespace aria {
         bool has_dot = false;
         bool has_exp = false;
 
-        consume_ascii([](const char ch) { return is_digit(ch) || ch == '_'; });
+        consume_byte([](const char ch) { return is_digit(ch) || ch == '_'; });
 
         // 仅当 . 后紧跟数字才消费（禁 5. 这类不完整浮点；. 后非数字留给字段访问，如 5.foo）。
         if (peek_byte(0) == '.' && is_digit(peek_byte(1))) {
             has_dot = true;
             advance(); // 消费 .
-            consume_ascii([](const char ch) { return is_digit(ch) || ch == '_'; });
+            consume_byte([](const char ch) { return is_digit(ch) || ch == '_'; });
         }
 
         // 指数：含指数一律作 float；e 后须有数字，否则回退把 e 留下。

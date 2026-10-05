@@ -81,14 +81,14 @@ namespace aria {
         tokens_.reserve(src_.size() / 2 + 1);
     }
 
-    Result<TokenStream, Error> Lexer::tokenize(SourceFile& src) {
+    Result<List<Token>, Error> Lexer::tokenize(SourceFile& src) {
         Lexer lexer{src};
         try {
             lexer.run();
         } catch (const AriaCompileException& e) {
             return std::unexpected(e.error());
         }
-        return TokenStream{std::move(lexer.tokens_)};
+        return std::move(lexer.tokens_);
     }
 
     char Lexer::peek_byte(const u32 ahead) const noexcept {

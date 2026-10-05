@@ -17,7 +17,7 @@ namespace aria {
     // token 位置 = 起点字节偏移，行列由 SourceLoc 在消费点派生（词法期不维护行列计数，回退/前瞻无需还原状态）。
     class Lexer {
     public:
-        static Result<TokenStream, Error> tokenize(SourceFile& src);
+        static Result<List<Token>, Error> tokenize(SourceFile& src);
 
     private:
         // 字符串模板插值嵌套深度上限。

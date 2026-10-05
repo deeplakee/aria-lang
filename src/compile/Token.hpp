@@ -138,12 +138,6 @@ namespace aria {
     // 平凡可拷贝是 token 表零搬移与读侧单缓存行的前提。
     static_assert(std::is_trivially_copyable_v<Token>, "Token must be trivially copyable");
 
-    // tokenize 的产物：token 流。字符串解析内容不随流携带——token 只持 lexeme 长度与 StringShape
-    // （消费形态），内层原文视图按需自源缓冲重建（存活期同 SourceFile）。
-    struct TokenStream {
-        List<Token> tokens;
-    };
-
 } // namespace aria
 
 #endif // ARIA_TOKEN_HPP

@@ -361,9 +361,10 @@ namespace aria {
         UPtr<ExprNode> value;
     };
 
-    // import 语句：import string as identifier ";"。path 为字面量解析后的内容。
+    // import 语句：import string as identifier ";"。path 文法钉死字符串字面量（Parser 保证指向
+    // StringLiteralNode）；alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
-        ImportStmtNode(const SourceLoc loc, String path, String alias) :
+        ImportStmtNode(const SourceLoc loc, UPtr<ExprNode> path, String alias) :
             StmtNode{loc}, path{std::move(path)}, alias{std::move(alias)} {}
 
         [[nodiscard]]
@@ -371,8 +372,8 @@ namespace aria {
 
         void accept(AstVisitor& visitor) override;
 
-        String path;
-        String alias;
+        UPtr<ExprNode> path;
+        String         alias;
     };
 
     // try 语句：try block (catch (id) block)?；catch_param/catch_body 成对缺省（parser 保证），

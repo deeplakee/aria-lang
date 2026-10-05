@@ -7,10 +7,9 @@ namespace aria {
 
     f64 Token::float_value() const noexcept { return type_ == TokenType::Float ? value_.float_ : 0.0; }
 
-    StringView Token::string_value() const noexcept { return type_ == TokenType::String ? value_.str_ : StringView{}; }
-
-    StringView Token::interp_value() const noexcept {
+    StringView Token::string_value() const noexcept {
         switch (type_) {
+            case TokenType::String:
             case TokenType::InterpStart:
             case TokenType::InterpMiddle:
             case TokenType::InterpEnd:

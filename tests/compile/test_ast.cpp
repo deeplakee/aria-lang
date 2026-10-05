@@ -300,8 +300,8 @@ TEST(AstDisplay, ReturnStmt) {
 }
 
 TEST(AstDisplay, ImportStmt) {
-    ImportStmtNode node{kLoc, String{"math"}, String{"m"}};
-    EXPECT_EQ(dump_str(node), "ImportStmt path=math as=m\n");
+    ImportStmtNode node{kLoc, strlit("math"), String{"m"}};
+    EXPECT_EQ(dump_str(node), "ImportStmt as=m\n  StringLiteral \"math\"\n");
 }
 
 TEST(AstDisplay, TryStmt) {

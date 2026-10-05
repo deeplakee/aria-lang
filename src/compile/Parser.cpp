@@ -80,10 +80,15 @@ namespace aria {
             }
         }
 
+        // 字符串族 token -> 字面节点（解码后的内容），primary / import / 插值字面段三处共用。
+        UPtr<StringLiteralNode> make_string_literal(const Token& token) {
+            return std::make_unique<StringLiteralNode>(token.loc(), String{token.string_value()});
+        }
+
         // Interp 系段 token 的非空段值包成 StringLiteralNode 入列；空字面段对值无贡献，不入列。
         void maybe_add_string(List<UPtr<ExprNode>>& parts, const Token& token) {
-            if (!token.interp_value().empty()) {
-                parts.push_back(std::make_unique<StringLiteralNode>(token.loc(), String{token.interp_value()}));
+            if (!token.string_value().empty()) {
+                parts.push_back(make_string_literal(token));
             }
         }
 
@@ -494,11 +499,11 @@ namespace aria {
         if (!check(TokenType::String)) {
             error(ErrorCode::ExpectedToken, "expected a string literal as module path, got '{}'", peek().lexeme());
         }
-        const StringView path = advance().string_value();
+        auto path = make_string_literal(advance());
         expect(TokenType::As, "'as'");
         String alias = expect_identifier();
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ImportStmtNode>(loc, String{path}, std::move(alias));
+        return std::make_unique<ImportStmtNode>(loc, std::move(path), std::move(alias));
     }
 
     UPtr<StmtNode> Parser::try_stmt() {
@@ -763,8 +768,7 @@ namespace aria {
                 return std::make_unique<FloatLiteralNode>(loc, t.float_value());
             }
             case TokenType::String: {
-                const Token& t = advance();
-                return std::make_unique<StringLiteralNode>(loc, String{t.string_value()});
+                return make_string_literal(advance());
             }
             case TokenType::InterpStart:
                 return interp_string();

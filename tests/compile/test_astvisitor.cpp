@@ -181,7 +181,9 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     expect_visit(std::make_unique<BreakStmtNode>(kLoc), "BreakStmtNode");
     expect_visit(std::make_unique<ContinueStmtNode>(kLoc), "ContinueStmtNode");
     expect_visit(std::make_unique<ReturnStmtNode>(kLoc, i64lit(1)), "ReturnStmtNode");
-    expect_visit(std::make_unique<ImportStmtNode>(kLoc, String{"math"}, String{"m"}), "ImportStmtNode");
+    expect_visit(std::make_unique<ImportStmtNode>(kLoc, std::make_unique<StringLiteralNode>(kLoc, String{"math"}),
+                                                  String{"m"}),
+                 "ImportStmtNode");
     expect_visit(std::make_unique<TryStmtNode>(kLoc, empty_block(), Opt<String>{String{"e"}}, empty_block()),
                  "TryStmtNode");
     expect_visit(std::make_unique<ThrowStmtNode>(kLoc, i64lit(1)), "ThrowStmtNode");

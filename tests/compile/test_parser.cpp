@@ -602,7 +602,8 @@ TEST(ParserStmt, BreakContinueReturn) {
 
 TEST(ParserStmt, Import) {
     const String out = dump_ok("import \"math\" as m;");
-    EXPECT_NE(out.find("ImportStmt path=math as=m"), String::npos);
+    EXPECT_NE(out.find("ImportStmt as=m"), String::npos);
+    EXPECT_NE(out.find("StringLiteral \"math\""), String::npos);
 }
 
 TEST(ParserStmt, Throw) { expect_has(dump_ok("throw e;"), "ThrowStmt"); }

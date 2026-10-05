@@ -131,7 +131,8 @@ namespace aria {
     String ReturnStmtNode::dump(const usize indent) const { return dump_node(indent, "ReturnStmt", value); }
 
     String ImportStmtNode::dump(const usize indent) const {
-        return dump_node(indent, std::format("ImportStmt path={} as={}", path, alias));
+        // path 以字面量节点本形渲染（子行），不带 path= 前缀复述
+        return dump_node(indent, std::format("ImportStmt as={}", alias), path);
     }
 
     String TryStmtNode::dump(const usize indent) const {

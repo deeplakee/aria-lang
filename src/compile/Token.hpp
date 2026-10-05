@@ -103,13 +103,9 @@ namespace aria {
         [[nodiscard]]
         f64 float_value() const noexcept;
 
-        // 仅 String 有效，其余返回空串。
+        // 仅 String/InterpStart/InterpMiddle/InterpEnd 有效（段值 = 已解析转义后的字面内容），其余返回空串。
         [[nodiscard]]
         StringView string_value() const noexcept;
-
-        // 仅 InterpStart/InterpMiddle/InterpEnd 有效（段值 = 已解析转义后的字面内容），其余返回空串。
-        [[nodiscard]]
-        StringView interp_value() const noexcept;
 
         // 调试用：形如 `Integer '42'` 的可读表示。
         [[nodiscard]]

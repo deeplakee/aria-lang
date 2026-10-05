@@ -586,8 +586,8 @@ TEST(LexerInterp, BasicSplit) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].interp_value(), StringView{"a "});
-    EXPECT_EQ(tokens[2].interp_value(), StringView{" b"});
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a "});
+    EXPECT_EQ(tokens[2].string_value(), StringView{" b"});
 }
 
 TEST(LexerInterp, MultipleHoles) {
@@ -600,9 +600,9 @@ TEST(LexerInterp, MultipleHoles) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].interp_value(), StringView{"a"});
-    EXPECT_EQ(tokens[2].interp_value(), StringView{"b"});
-    EXPECT_EQ(tokens[4].interp_value(), StringView{"c"});
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a"});
+    EXPECT_EQ(tokens[2].string_value(), StringView{"b"});
+    EXPECT_EQ(tokens[4].string_value(), StringView{"c"});
 }
 
 TEST(LexerInterp, EmptyEdgeSegments) {
@@ -614,8 +614,8 @@ TEST(LexerInterp, EmptyEdgeSegments) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].interp_value(), StringView{""});
-    EXPECT_EQ(tokens[2].interp_value(), StringView{""});
+    EXPECT_EQ(tokens[0].string_value(), StringView{""});
+    EXPECT_EQ(tokens[2].string_value(), StringView{""});
 }
 
 TEST(LexerInterp, ExpressionHoleWithBraces) {
@@ -651,7 +651,7 @@ TEST(LexerInterp, Nested) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[1].interp_value(), StringView{"in "});
+    EXPECT_EQ(tokens[1].string_value(), StringView{"in "});
 }
 
 TEST(LexerInterp, PlainStringInHole) {
@@ -713,7 +713,7 @@ TEST(LexerInterp, EscapesInSegment) {
     const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
-    EXPECT_EQ(tokens[0].interp_value(), StringView{"a\n${ "});
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a\n${ "});
 }
 
 TEST(LexerInterp, BareBracesAreLiteral) {
@@ -722,7 +722,7 @@ TEST(LexerInterp, BareBracesAreLiteral) {
     const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].type(), TokType::InterpStart);
-    EXPECT_EQ(tokens[0].interp_value(), StringView{"a}b{c "});
+    EXPECT_EQ(tokens[0].string_value(), StringView{"a}b{c "});
 }
 
 TEST(LexerInterp, EscapedBraceIsInvalid) {
@@ -886,6 +886,6 @@ TEST(LexerInterp, SegmentsAcrossChunkBoundary) {
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
     }
-    EXPECT_EQ(tokens[0].interp_value(), StringView{head});
-    EXPECT_EQ(tokens[2].interp_value(), StringView{tail});
+    EXPECT_EQ(tokens[0].string_value(), StringView{head});
+    EXPECT_EQ(tokens[2].string_value(), StringView{tail});
 }

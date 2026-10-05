@@ -14,6 +14,7 @@ using aria::SourceFile;
 using aria::String;
 using aria::StringView;
 using aria::Token;
+using aria::TokenStream;
 using aria::TokenType;
 using aria::UPtr;
 using aria::usize;
@@ -32,16 +33,16 @@ namespace {
     // sf 不再被 move，lexeme 地址稳定。
     struct Lexed {
         SourceFile  sf;
-        List<Token> tokens;
+        TokenStream stream; // strings 与 tokens 同寿命：token 的字符串值视图指入 stream.strings
     };
 
-    // 辅助：tokenize 并断言成功，返回堆上 {sf, tokens}。
+    // 辅助：tokenize 并断言成功，返回堆上 {sf, stream}。
     UPtr<Lexed> lex_ok(const StringView content) {
         auto lexed  = std::make_unique<Lexed>();
         lexed->sf   = make_src(content); // sf 就位（此后不再 move）
         auto result = Lexer::tokenize(lexed->sf);
         EXPECT_TRUE(result.has_value()) << "期望 tokenize 成功";
-        lexed->tokens = result ? std::move(*result) : List<Token>{};
+        lexed->stream = result ? std::move(*result) : TokenStream{};
         return lexed;
     }
 
@@ -71,7 +72,7 @@ TEST(LexerKeyword, AllKeywords) {
                                     TokType::Throw,  TokType::Nil,    TokType::True, TokType::False, TokType::This,
                                     TokType::Super,  TokType::Match,  TokType::Eof};
     const auto          lexed    = lex_ok(src);
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
@@ -83,7 +84,7 @@ TEST(LexerKeyword, FormerLogicalKeywordsAreIdentifiers) {
     const String        src      = "and or not";
     const List<TokType> expected = {TokType::Identifier, TokType::Identifier, TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
@@ -95,7 +96,7 @@ TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
     const String        src      = "finally";
     const List<TokType> expected = {TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
@@ -116,7 +117,7 @@ TEST(LexerOperator, LongestMatch) {
             TokType::LessEqual,  TokType::AndAnd,       TokType::OrOr,      TokType::DotDot,       TokType::DotDotDot,
             TokType::Dot,        TokType::Eof};
     const auto  lexed  = lex_ok(src);
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]) << "at token " << i;
@@ -129,7 +130,7 @@ TEST(LexerOperator, TripleEqual) {
     const List<TokType> expected = {TokType::Identifier,     TokType::EqualEqualEqual, TokType::Identifier,
                                     TokType::BangEqualEqual, TokType::Identifier,      TokType::Eof};
     const auto          lexed    = lex_ok(src);
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]) << "at token " << i;
@@ -142,7 +143,7 @@ TEST(LexerOperator, RangeTokens) {
     const List<TokType> expected = {TokType::Integer,   TokType::DotDot,     TokType::Integer, TokType::Identifier,
                                     TokType::DotDotDot, TokType::Identifier, TokType::Eof};
     const auto          lexed    = lex_ok(src);
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]);
@@ -155,7 +156,7 @@ TEST(LexerOperator, RangeTokens) {
 
 TEST(LexerPunct, Brackets) {
     const auto          lexed    = lex_ok("( ) { } [ ] , : ; .");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::LeftParen,  TokType::RightParen,  TokType::LeftBrace,
                                     TokType::RightBrace, TokType::LeftBracket, TokType::RightBracket,
                                     TokType::Comma,      TokType::Colon,       TokType::Semicolon,
@@ -172,7 +173,7 @@ TEST(LexerPunct, Brackets) {
 
 TEST(LexerIdentifier, Basic) {
     const auto  lexed  = lex_ok("foo _foo foo123 bar_baz");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 5u);
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"foo"});
@@ -188,7 +189,7 @@ TEST(LexerIdentifier, LoneUnderscore) {
     SourceFile sf{String{"t"}, String{"t"}, String{"_"}};
     auto       result = Lexer::tokenize(sf);
     ASSERT_TRUE(result.has_value());
-    const auto& tokens = *result;
+    const auto& tokens = result->tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokenType::Underscore);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"_"});
@@ -197,7 +198,7 @@ TEST(LexerIdentifier, LoneUnderscore) {
 TEST(LexerIdentifier, Unicode) {
     // 中文标识符「计数」
     const auto  lexed  = lex_ok("\xE8\xAE\xA1\xE6\x95\xB0");
-    const auto& tokens = lexed->tokens; // 计数
+    const auto& tokens = lexed->stream.tokens; // 计数
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"\xE8\xAE\xA1\xE6\x95\xB0"});
@@ -209,7 +210,7 @@ TEST(LexerIdentifier, Unicode) {
 
 TEST(LexerInteger, Decimal) {
     const auto  lexed  = lex_ok("0 42 1_000");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].type(), TokenType::Integer);
     EXPECT_EQ(tokens[0].int_value(), 0);
@@ -220,7 +221,7 @@ TEST(LexerInteger, Decimal) {
 TEST(LexerFloat, ScientificNotation) {
     // 含 e/E 指数一律作 float（科学计数法），不作 int
     const auto  lexed  = lex_ok("1e2 1000e-1 0e-5 1e-1 1.5e2");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 6u);
     EXPECT_EQ(tokens[0].type(), TokenType::Float);
     EXPECT_DOUBLE_EQ(tokens[0].float_value(), 100.0); // 1e2
@@ -236,7 +237,7 @@ TEST(LexerFloat, ScientificNotation) {
 
 TEST(LexerInteger, Radix) {
     const auto  lexed  = lex_ok("0b101 0o17 0xFF 0x1e5");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 5u);
     EXPECT_EQ(tokens[0].int_value(), 5);
     EXPECT_EQ(tokens[1].int_value(), 15);
@@ -247,7 +248,7 @@ TEST(LexerInteger, Radix) {
 TEST(LexerInteger, RadixUnderscores) {
     // 进制数字中允许 _（须在数字之间）
     const auto  lexed  = lex_ok("0b1_0 0o7_7 0xFF_FF 0x1_e5");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 5u);
     EXPECT_EQ(tokens[0].int_value(), 2);     // 0b1_0 = 2
     EXPECT_EQ(tokens[1].int_value(), 63);    // 0o7_7 = 63
@@ -294,7 +295,7 @@ TEST(LexerInteger, RadixOutOfRangeDigit) {
 TEST(LexerFloat, Forms) {
     // 小数点两侧必须各有数字（禁止 .5 / 5. 这类不完整形式）
     const auto  lexed  = lex_ok("1.5 1.5e2 1.5e-3");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u); // 3 个 Float + Eof
     EXPECT_EQ(tokens[0].type(), TokenType::Float);
     EXPECT_DOUBLE_EQ(tokens[0].float_value(), 1.5);
@@ -308,7 +309,7 @@ TEST(LexerFloat, DotNotConsumedForField) {
     // obj.field：identifier 后的 . 不属数字字面量（identifier 走标识符分支），
     // 故 . 留给 Dot token
     const auto  lexed  = lex_ok("obj.field");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u); // Identifier Dot Identifier Eof
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[1].type(), TokenType::Dot);
@@ -319,7 +320,7 @@ TEST(LexerFloat, DigitDotNotConsumed) {
     // 1.foo：. 后非数字，. 不被贪心消费为 float 1.，而是留给 Dot token。
     // 数字作 Int(1)，.foo 的字段访问语义由 parser 决定（lexer 只负责切词）。
     const auto  lexed  = lex_ok("1.foo");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u); // Int Dot Identifier Eof
     EXPECT_EQ(tokens[0].type(), TokenType::Integer);
     EXPECT_EQ(tokens[0].int_value(), 1);
@@ -333,7 +334,7 @@ TEST(LexerFloat, IncompleteFormsRejected) {
     // .5 -> Dot + Int(5)；5. -> Int(5) + Dot（. 留给 Dot，由 parser 拒绝）。
     {
         const auto  lexed  = lex_ok(".5");
-        const auto& tokens = lexed->tokens;
+        const auto& tokens = lexed->stream.tokens;
         ASSERT_EQ(tokens.size(), 3u); // Dot Int Eof
         EXPECT_EQ(tokens[0].type(), TokenType::Dot);
         EXPECT_EQ(tokens[1].type(), TokenType::Integer);
@@ -341,7 +342,7 @@ TEST(LexerFloat, IncompleteFormsRejected) {
     }
     {
         const auto  lexed  = lex_ok("5.");
-        const auto& tokens = lexed->tokens;
+        const auto& tokens = lexed->stream.tokens;
         ASSERT_EQ(tokens.size(), 3u); // Int Dot Eof
         EXPECT_EQ(tokens[0].type(), TokenType::Integer);
         EXPECT_EQ(tokens[0].int_value(), 5);
@@ -355,7 +356,7 @@ TEST(LexerFloat, IncompleteFormsRejected) {
 
 TEST(LexerString, Basic) {
     const auto  lexed  = lex_ok("\"hello\" 'world'");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 3u);
     EXPECT_EQ(tokens[0].type(), TokenType::String);
     EXPECT_EQ(tokens[0].string_value(), StringView{"hello"});
@@ -366,7 +367,7 @@ TEST(LexerString, Basic) {
 
 TEST(LexerString, Escapes) {
     const auto       lexed  = lex_ok("\"a\\nb\\tc\\rd\\\\e\\0\"");
-    const auto&      tokens = lexed->tokens;
+    const auto&      tokens = lexed->stream.tokens;
     const StringView expected{"a\nb\tc\rd\\e\0", 10};
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].string_value(), expected);
@@ -374,7 +375,7 @@ TEST(LexerString, Escapes) {
 
 TEST(LexerString, UnicodeEscape) {
     const auto  lexed  = lex_ok("\"\\u{4e2d}\"");
-    const auto& tokens = lexed->tokens; // 中
+    const auto& tokens = lexed->stream.tokens; // 中
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].string_value(), StringView{"\xE4\xB8\xAD"});
 }
@@ -420,7 +421,7 @@ TEST(LexerString, UnicodeEscapeErrors) {
 
 TEST(LexerString, EmptyAndQuoteEscape) {
     const auto  lexed  = lex_ok("\"\" \"a\\\"b\" 'x\\'y'");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].string_value(), StringView{""});
     EXPECT_EQ(tokens[1].string_value(), StringView{"a\"b"});
@@ -430,7 +431,7 @@ TEST(LexerString, EmptyAndQuoteEscape) {
 TEST(LexerString, PlainFIsIdentifier) {
     // f 是普通 identifier（插值无 f 前缀形态：f"..." 不作特殊处理）
     const auto  lexed  = lex_ok("f");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"f"});
@@ -439,7 +440,7 @@ TEST(LexerString, PlainFIsIdentifier) {
 TEST(LexerString, FPrefixIsNotInterpolation) {
     // 插值无 f 前缀形态：f"..." 切成 Identifier(f) + String("...") 两个 token
     const auto  lexed  = lex_ok("f\"x\"");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 3u); // Identifier String Eof
     EXPECT_EQ(tokens[0].type(), TokenType::Identifier);
     EXPECT_EQ(tokens[0].lexeme(), StringView{"f"});
@@ -453,7 +454,7 @@ TEST(LexerString, FPrefixIsNotInterpolation) {
 
 TEST(LexerTrivia, CommentsAndWhitespace) {
     const auto  lexed  = lex_ok("// line comment\n # hash comment\n  42  \n");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokenType::Integer);
     EXPECT_EQ(tokens[0].int_value(), 42);
@@ -465,7 +466,7 @@ TEST(LexerTrivia, CommentsAndWhitespace) {
 
 TEST(LexerLoc, Precise) {
     const auto  lexed  = lex_ok("ab 12");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 3u);
     // "ab" 起于第 1 行第 1 列；"12" 起于第 1 行第 4 列
     EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
@@ -477,7 +478,7 @@ TEST(LexerLoc, Precise) {
 TEST(LexerLoc, TracksAcrossLinesAndCodepoints) {
     // token 位置由起点偏移派生：换行归位、多字节码点按 1 列计，与 locate 行首计数逐位一致
     const auto  lexed  = lex_ok("ab\n中文 12");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u); // ab / 中文 / 12 / Eof
     EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
     EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
@@ -491,7 +492,7 @@ TEST(LexerLoc, TracksAcrossLinesAndCodepoints) {
 TEST(LexerLoc, RadixFloatAndCommentLines) {
     // 注释体（含多字节）跨过不影响位置派生：行尾换行即归位；进制/浮点 token 位置仍精确
     const auto  lexed  = lex_ok("0x1F // 中文注释\n1.5e2");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 3u); // 0x1F / 1.5e2 / Eof
     EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
     EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
@@ -502,7 +503,7 @@ TEST(LexerLoc, RadixFloatAndCommentLines) {
 TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
     // e 后无数字回退只改游标（位置无其他状态可还原）：后续 token 不串列
     const auto  lexed  = lex_ok("1e 2");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u); // 1 / e / 2 / Eof
     EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
     EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
@@ -518,14 +519,14 @@ TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
 
 TEST(LexerEdge, EmptyFile) {
     const auto  lexed  = lex_ok("");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 1u);
     EXPECT_EQ(tokens[0].type(), TokenType::Eof);
 }
 
 TEST(LexerEdge, OnlyTrivia) {
     const auto  lexed  = lex_ok("  // comment\n  \n");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 1u);
     EXPECT_EQ(tokens[0].type(), TokenType::Eof);
 }
@@ -578,7 +579,7 @@ TEST(LexerError, FirstErrorOnly) {
 TEST(LexerInterp, BasicSplit) {
     // "a ${x} b" -> Start("a ") x End(" b")
     const auto          lexed    = lex_ok("\"a ${x} b\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
@@ -591,7 +592,7 @@ TEST(LexerInterp, BasicSplit) {
 TEST(LexerInterp, MultipleHoles) {
     // "a${x}b${y}c" -> Start Middle End 全形态
     const auto          lexed    = lex_ok("\"a${x}b${y}c\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpMiddle,
                                     TokType::Identifier,  TokType::InterpEnd,  TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
@@ -606,7 +607,7 @@ TEST(LexerInterp, MultipleHoles) {
 TEST(LexerInterp, EmptyEdgeSegments) {
     // 首尾档紧贴引号：空字面段照常产出
     const auto          lexed    = lex_ok("\"${x}\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
@@ -619,7 +620,7 @@ TEST(LexerInterp, EmptyEdgeSegments) {
 TEST(LexerInterp, ExpressionHoleWithBraces) {
     // 档内花括号配对：map 字面量与 lambda 体的 { } 产 token 不闭档
     const auto          lexed    = lex_ok("\"${ {1:2} }\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::LeftBrace,  TokType::Integer,   TokType::Colon,
                                     TokType::Integer,     TokType::RightBrace, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
@@ -628,7 +629,7 @@ TEST(LexerInterp, ExpressionHoleWithBraces) {
     }
 
     const auto          lexed2    = lex_ok("\"${fun(n){ n }(1)}\"");
-    const auto&         tokens2   = lexed2->tokens;
+    const auto&         tokens2   = lexed2->stream.tokens;
     const List<TokType> expected2 = {TokType::InterpStart, TokType::Fun,       TokType::LeftParen,  TokType::Identifier,
                                      TokType::RightParen,  TokType::LeftBrace, TokType::Identifier, TokType::RightBrace,
                                      TokType::LeftParen,   TokType::Integer,   TokType::RightParen, TokType::InterpEnd,
@@ -642,7 +643,7 @@ TEST(LexerInterp, ExpressionHoleWithBraces) {
 TEST(LexerInterp, Nested) {
     // 嵌套插值：内层完整产出（Start/Middle/End），外层档深度不受内层 { } 干扰
     const auto          lexed    = lex_ok("\"${ \"in ${x}\" }\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::InterpStart, TokType::Identifier,
                                     TokType::InterpEnd,   TokType::InterpEnd,   TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
@@ -655,7 +656,7 @@ TEST(LexerInterp, Nested) {
 TEST(LexerInterp, PlainStringInHole) {
     // 档内普通串：完整 String token，串内 { } 与 $ 不参与档深计数
     const auto          lexed    = lex_ok("\"${ \"a}b\" }\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::String, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
@@ -667,7 +668,7 @@ TEST(LexerInterp, PlainStringInHole) {
 TEST(LexerInterp, SingleQuoteForm) {
     // '...' 与 "..." 同为模板
     const auto          lexed    = lex_ok("'a ${x}'");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
@@ -678,13 +679,13 @@ TEST(LexerInterp, SingleQuoteForm) {
 TEST(LexerInterp, NoHoleStaysPlainString) {
     // 无 ${ 的串是普通 String token：裸 $（含后随标识符）不开档
     const auto  lexed  = lex_ok("\"a$x b\"");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokType::String);
     EXPECT_EQ(tokens[0].string_value(), StringView{"a$x b"});
 
     const auto  lexed2  = lex_ok("\"$100 and $\"");
-    const auto& tokens2 = lexed2->tokens;
+    const auto& tokens2 = lexed2->stream.tokens;
     ASSERT_EQ(tokens2.size(), 2u);
     EXPECT_EQ(tokens2[0].type(), TokType::String);
     EXPECT_EQ(tokens2[0].string_value(), StringView{"$100 and $"});
@@ -693,13 +694,13 @@ TEST(LexerInterp, NoHoleStaysPlainString) {
 TEST(LexerInterp, EscapedDollarIsLiteral) {
     // \$ 转义写字面 ${（裸 $ 无需转义）
     const auto  lexed  = lex_ok("\"a\\${b}\"");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 2u);
     EXPECT_EQ(tokens[0].type(), TokType::String);
     EXPECT_EQ(tokens[0].string_value(), StringView{"a${b}"});
 
     const auto  lexed2  = lex_ok("\"a\\$b\"");
-    const auto& tokens2 = lexed2->tokens;
+    const auto& tokens2 = lexed2->stream.tokens;
     ASSERT_EQ(tokens2.size(), 2u);
     EXPECT_EQ(tokens2[0].type(), TokType::String);
     EXPECT_EQ(tokens2[0].string_value(), StringView{"a$b"});
@@ -708,7 +709,7 @@ TEST(LexerInterp, EscapedDollarIsLiteral) {
 TEST(LexerInterp, EscapesInSegment) {
     // 字面段内普通转义照常解析；\$ 转义后段继续，其后 ${ 开档
     const auto          lexed    = lex_ok("\"a\\n\\${ ${x}\"");
-    const auto&         tokens   = lexed->tokens;
+    const auto&         tokens   = lexed->stream.tokens;
     const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
     ASSERT_EQ(tokens.size(), expected.size());
     EXPECT_EQ(tokens[0].interp_value(), StringView{"a\n${ "});
@@ -717,7 +718,7 @@ TEST(LexerInterp, EscapesInSegment) {
 TEST(LexerInterp, BareBracesAreLiteral) {
     // 串文本里裸 { } 无档语义，普通字符
     const auto  lexed  = lex_ok("\"a}b{c ${x}\"");
-    const auto& tokens = lexed->tokens;
+    const auto& tokens = lexed->stream.tokens;
     ASSERT_EQ(tokens.size(), 4u);
     EXPECT_EQ(tokens[0].type(), TokType::InterpStart);
     EXPECT_EQ(tokens[0].interp_value(), StringView{"a}b{c "});
@@ -740,7 +741,7 @@ TEST(LexerInterp, MaxDepthAccepted) {
         src += "}\"";
     }
     const auto lexed = lex_ok(src);
-    EXPECT_EQ(lexed->tokens.back().type(), TokType::Eof);
+    EXPECT_EQ(lexed->stream.tokens.back().type(), TokType::Eof);
 }
 
 TEST(LexerInterp, DepthExceeded) {

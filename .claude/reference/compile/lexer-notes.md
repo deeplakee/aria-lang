@@ -29,13 +29,16 @@
 | 再加消费辅助收口 | 20.1 ms / 139 MB/s | 10.2 ms |
 | 再加 decode 热/冷拆分 + 字符串普通段整段追加 | 18.7-20.3 ms / 138-149 MB/s | 9.0-9.3 ms |
 | 再加关键字纯表换装 + 长度早退 | 14.4 ms / 198 MB/s | 8.5 ms |
-| 再加 token 表按源预留（现态） | 10.6 ms / 270 MB/s | 6.1 ms |
+| 再加 token 表按源预留 | 10.6 ms / 270 MB/s | 6.1 ms |
+| 再加 Token 平凡化 + 字符串 arena（现态） | 10.1 ms / 283 MB/s | 5.1 ms |
 
 末行（现态）由入库 bench 复核；以上各行是入库前的一次性程序所测，对应代码已不在树上。
 
 关键字查找曾是常规源上的隐性大头：`lookup_keyword` 对每个标识符线性扫全部 68 项 token 表（miss 必满扫），约占 normal 形态词法 25%（进程内探针 17.7 ns/次）。2026-10-05 注册表按类拆子表，查找改为「22 项关键字纯表 + 长度区间早退」--关键字长度 2..8，区间外的 lexeme（单字符名、长生成名、全部 CJK 标识符（UTF-8 每字 3 字节））一次比较出局，bench normal 约 60%、cjk 约 100% 的查找走此早退。ABBA 3 轮交叉 min：normal -27.2%（19.8 → 14.4 ms）、cjk -31.9%（10.8 → 7.4 ms）、端到端编译 -9.8%、numeric 平；行为等价由全 token dump 对拍钉住（tests/ 全部 244 个 .aria，27012 行逐字节一致，含负向语料报错行）。留档中间态：纯表无早退 normal 16.0 ms、cjk 8.5 ms，即早退本身值约 10-17%。
 
-`List<Token>` 的倍增增长是同批发现的另一大头：`Token` 72 字节且含 `variant<String>` 非 trivially copyable，倍增走逐元素 move + 弃置中间缓冲，隔离探针 +4.0-4.5 ms、in-situ 实测同量级（探针未高估）。2026-10-05 Lexer 构造按源预留 `reserve(src/2+1)`：token 数 ≤ 字节数+1（EOF），故至多一次倍增、任何形态不劣于裸倍增；bytes/token ≥ 2 时零搬移（真实语料 239 文件全部 ≥ 3.1 bytes/token）。ABBA 3 轮交叉 min：normal -25.7%（14.3 → 10.6 ms）、numeric -27.1%（8.3 → 6.1 ms）、cjk -22.6%（7.1 → 5.5 ms）、端到端编译 -10.1%，bench 进程 RSS 峰值 -121 MB。不带 `+1` 的形态在纯密集源（tokens = bytes+1 恰越 2C 边界）实测 +9.5%，`+1` 是刀口修复不是笔缀。多付的仅虚拟地址（36× 源字节，未触碰页无物理成本），未设封顶--巨型源的 token 流本身即 GB 级，reserve 的膨胀因子仅 1.6×。
+`List<Token>` 的倍增增长是同批发现的另一大头：`Token` 72 字节且含 `variant<String>` 非 trivially copyable，倍增走逐元素 move + 弃置中间缓冲，隔离探针 +4.0-4.5 ms、in-situ 实测同量级（探针未高估）。2026-10-05 Lexer 构造按源预留 `reserve(src/2+1)`：token 数 ≤ 字节数+1（EOF），故至多一次倍增、任何形态不劣于裸倍增；bytes/token ≥ 2 时零搬移（真实语料 239 文件全部 ≥ 3.1 bytes/token）。ABBA 3 轮交叉 min：normal -25.7%（14.3 → 10.6 ms）、numeric -27.1%（8.3 → 6.1 ms）、cjk -22.6%（7.1 → 5.5 ms）、端到端编译 -10.1%，bench 进程 RSS 峰值 -121 MB。不带 `+1` 的形态在纯密集源（tokens = bytes+1 恰越 2C 边界）实测 +9.5%，`+1` 是刀口修复不是笔缀。多付的仅虚拟地址（36× 源字节，未触碰页无物理成本），未设封顶--巨型源的 token 流本身即 GB 级，reserve 的膨胀因子仅 1.6×。已否路径：换容器（Parser 接口涟漪）、自定义分配器复用弃置缓冲（动 MI_OVERRIDE=OFF 边界）；Token 平凡化当时以「收益被 reserve 拿走大半」暂缓，随后经逐 token 构造差价探针翻案落地，见下段。
+
+同日追加 Token 平凡化 + 字符串 arena：`TokenValue` 改 `variant<monostate, i64, f64, StringView>`，Token 72B → 64B 且 trivially copyable（`static_assert` 钉住；variant 的 index+对齐税 8B，16B 的 StringView 载荷成 24B），字符串字面量解析内容不再逐 token 持有 String，改追加 Lexer 的字符串 arena（`StringArena`：mark/view_from/append 四口公开面），token 持入其中视图。reserve 治不了逐 token 的构造+写入差价（非平凡 variant move 的分支 + String 拷贝），隔离探针 880k 入预留表 2.2 → 1.2 ms（-1.05 ms）。ABBA 3 轮交叉 min（base = ef39ad6）：normal -4.6%、numeric -16.8%（仍余一次倍增且 memmove 化）、string -5.9%、端到端编译 -5.1%、cjk -1.1%（噪声带内）。稳定性红线（已写进类型注释）：arena 按「内容上界 = 原文总长」一次预留永不重分配（转义解析永不膨胀输出；首次写入才落地，无字符串的源零分配）、arena 与 token 流同寿命（Parser 消费期读取、拷入 AST 自有 String 后无依赖）。内存（单次 tokenize 足迹，ru_maxrss）：常规源（1.675M token）base 120.7 / arena 107.3 / UPtr·raw 指针形态 95.5 MB，字符串密集源 arena 4.1 MB 对三对照 7.6-7.9 MB（消除逐字符串堆分配与局部 String 增长中间态，近乎减半）。同 base 重实现的两个指针形态对照（UPtr / raw `String*` + 析构释放）实测 normal +2.6% / +0.4%、compile -0.4% / -1.7%——短字符串本可 SSO 零分配，逐 token 堆分配吃掉机械收益，验证 arena 形态。RSS：单次 tokenize 足迹实测 -13.4 MB（1.675M token）；bench 进程峰值 +88 MB 是同一进程连跑 6 种尺寸 tokenize 时分配器大块缓存复用模式差异的假象，非真实占用。arena 形态当晚把裸 `List<char>` 成员换装成 `StringArena` 类封装（调用点 mark/view_from/append 收口），ABBA 复测各形态与换装前同带（会话噪声内），换装性能中性。
 
 另一档**字符串密集源**（2.66 MB / 22.5k token，长串为主、含多字节与转义）专量字符串扫描路径，三个变体按同一 bench 同形对照：普通段逐字符解码 + 逐字节 `push_back` 7.1 ms → 逐码点 `consume_codepoints` 3.3 ms（每个多字节码点解码一次）→ **按字节扫到分隔符整段 `append` 1.9 ms（对前两者 3.7× / 1.7×）**，故保持按字节扫。真实代码短串多，故常规源上看不出差别（上表末两行在噪声内）。
 

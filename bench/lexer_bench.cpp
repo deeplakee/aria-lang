@@ -164,7 +164,7 @@ namespace {
             auto       result = Lexer::tokenize(source);
             const auto end    = Clock::now();
             BENCH_CHECK(result.has_value(), "tokenize failed");
-            tokens = result->size();
+            tokens = result->tokens.size();
             best   = std::min(best, elapsed_ms(begin, end));
         }
         const double mb    = static_cast<double>(bytes) / 1e6;
@@ -206,8 +206,8 @@ namespace {
         {
             auto tokens = Lexer::tokenize(source);
             BENCH_CHECK(tokens.has_value(), "tokenize failed");
-            offsets.reserve(tokens->size());
-            for (const auto& token: *tokens) {
+            offsets.reserve(tokens->tokens.size());
+            for (const auto& token: tokens->tokens) {
                 offsets.push_back(token.lexeme().empty() ? bytes
                                                          : static_cast<u32>(token.lexeme().data() - content.data()));
             }

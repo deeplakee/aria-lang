@@ -2,6 +2,7 @@
 #define ARIA_LEXER_HPP
 
 #include "common.hpp"
+#include "compile/StringArena.hpp"
 #include "compile/Token.hpp"
 #include "error/AriaException.hpp"
 #include "error/Error.hpp"
@@ -17,7 +18,7 @@ namespace aria {
     // token 位置 = 起点字节偏移，行列由 SourceLoc 在消费点派生（词法期不维护行列计数，回退/前瞻无需还原状态）。
     class Lexer {
     public:
-        static Result<List<Token>, Error> tokenize(SourceFile& src);
+        static Result<TokenStream, Error> tokenize(SourceFile& src);
 
     private:
         // 字符串模板插值嵌套深度上限。
@@ -30,6 +31,7 @@ namespace aria {
         u32         pos_;    // 字节游标
         u32         start_; // 当前扫描单元起点 = 错误锚点（scan_escape 等子扫描器可重指；串级错误经 error_at 显式锚定）
         List<Token> tokens_;
+        StringArena strings_; // 字符串字面量解析内容（arena）；段 token 的 value 视图指入其中，稳定性契约见 StringArena
         u32         interp_depth_; // 当前打开的插值档层数（0 = 无嵌套插值，上限 kMaxInterpDepth）
 
         void run();
@@ -62,8 +64,9 @@ namespace aria {
         // 文本态与档内态交替至闭串。
         void scan_string(char quote);
 
-        // 文本态：扫一段字面（含转义解码）产段 token；返回 true = 闭串，false = ${ 开档
-        // （档内 token 由 scan_string_hole 产出）。段 token 与串级错误分别锚 segment_start / string_start。
+        // 文本态：扫一段字面（含转义解码）产段 token，解析内容追加 strings_、token 持入其中视图；返回
+        // true = 闭串，false = ${ 开档（档内 token 由 scan_string_hole 产出）。段 token 与串级错误分别
+        // 锚 segment_start / string_start。
         bool scan_string_text(char quote, u32 string_start, u32 segment_start, bool has_hole);
 
         // 档内态：花括号配对内的普通 token 流；预检位恒为 token 边界（串内/注释/嵌套模板里的 { } 已被
@@ -71,11 +74,11 @@ namespace aria {
         // 的 } 闭档。返回闭档后的偏移 = 下一段字面原文起点（scan_string 以此推进 segment_start）。
         u32 scan_string_hole(u32 string_start);
 
-        // 串内转义解析
-        void scan_escape(String& value);
+        // 串内转义解析（解析字节追加 strings_）
+        void scan_escape();
 
         // \u{...} Unicode 转义（入口 pos_ 指向 'u'）
-        void scan_unicode_escape(String& value);
+        void scan_unicode_escape();
 
         // identifier / keyword / _
         void scan_identifier();

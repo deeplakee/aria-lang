@@ -74,20 +74,20 @@ namespace aria {
     } // namespace
 
     Lexer::Lexer(SourceFile& src) noexcept :
-        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, interp_depth_{0} {
+        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, strings_{src_.size()}, interp_depth_{0} {
         // 预留 src/2+1：token 数 ≤ 字节数+1（EOF），至多一次倍增、搬移不劣于裸倍增；bytes/token ≥ 2
         // 时零搬移（真实语料全覆盖）。多付的仅虚拟地址（未触碰页无物理成本）。
         tokens_.reserve(src_.size() / 2 + 1);
     }
 
-    Result<List<Token>, Error> Lexer::tokenize(SourceFile& src) {
+    Result<TokenStream, Error> Lexer::tokenize(SourceFile& src) {
         Lexer lexer{src};
         try {
             lexer.run();
         } catch (const AriaCompileException& e) {
             return std::unexpected(e.error());
         }
-        return std::move(lexer.tokens_);
+        return TokenStream{std::move(lexer.tokens_), std::move(lexer.strings_)};
     }
 
     char Lexer::peek_byte(const u32 ahead) const noexcept {
@@ -285,7 +285,7 @@ namespace aria {
 
     bool Lexer::scan_string_text(const char quote, const u32 string_start, const u32 segment_start,
                                  const bool has_hole) {
-        String value;
+        const usize value_begin = strings_.mark();
         while (true) {
             if (is_eof()) {
                 error_at(string_start, ErrorCode::UnterminatedString, "unterminated string");
@@ -296,38 +296,36 @@ namespace aria {
             }
             if (c == quote) {
                 advance(); // 消费闭引号
+                const auto value = strings_.view_from(value_begin);
                 if (has_hole) {
-                    const auto lex = slice(segment_start, pos_); // 含闭引号
-                    const auto loc = loc_at(segment_start);
-                    tokens_.push_back(Token::make_interp_end(std::move(value), lex, loc));
+                    tokens_.push_back(Token::make_interp_end(value, slice(segment_start, pos_), loc_at(segment_start)));
                 } else {
                     // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
-                    const auto lex = slice(string_start, pos_);
-                    const auto loc = loc_at(string_start);
-                    tokens_.push_back(Token::make_string(std::move(value), lex, loc));
+                    tokens_.push_back(Token::make_string(value, slice(string_start, pos_), loc_at(string_start)));
                 }
                 return true;
             }
             if (c == '$') {
                 if (peek_byte(1) != '{') {
                     // 裸 $ 是普通字符（仅 ${ 开档）；显式消费，下方整段消费的谓词对 $ 恒停
-                    value.push_back('$');
+                    strings_.append('$');
                     advance();
                     continue;
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
-                const auto lex = slice(segment_start, pos_);
-                const auto loc = loc_at(segment_start);
+                const auto value = strings_.view_from(value_begin);
+                const auto lex   = slice(segment_start, pos_);
+                const auto loc   = loc_at(segment_start);
                 if (has_hole) {
-                    tokens_.push_back(Token::make_interp_middle(std::move(value), lex, loc));
+                    tokens_.push_back(Token::make_interp_middle(value, lex, loc));
                 } else {
-                    tokens_.push_back(Token::make_interp_start(std::move(value), lex, loc));
+                    tokens_.push_back(Token::make_interp_start(value, lex, loc));
                 }
                 advance(2);   // 消费 ${
                 return false; // 档内 token 由 scan_string_hole 产出
             }
             if (c == '\\') {
-                scan_escape(value);
+                scan_escape();
                 continue;
             }
             // 普通字符段（含多字节 UTF-8）：分隔符均为 ASCII（续接字节恒 >= 0x80），按字节消费
@@ -335,7 +333,7 @@ namespace aria {
             const u32 run_begin = pos_;
             consume_byte(
                     [quote](const char byte) { return byte != quote && byte != '\\' && byte != '\n' && byte != '$'; });
-            value.append(src_.data() + run_begin, pos_ - run_begin);
+            strings_.append(slice(run_begin, pos_));
         }
     }
 
@@ -365,10 +363,10 @@ namespace aria {
         return pos_; // 闭档后即下一段字面原文起点
     }
 
-    // 解析转义序列（pos_ 指向 '\\'）；错误即抛出（首错即止），锚点入口重指到 '\'，调用方无需恢复
-    // （后续报错点经 error_at 自带位置或由 dispatch_one 重设 start_）；\ 在串尾不报错，由
-    // scan_string_text 的 is_eof 统一报 "unterminated string"。
-    void Lexer::scan_escape(String& value) {
+    // 解析转义序列（pos_ 指向 '\\'），解析字节追加 strings_；错误即抛出（首错即止），锚点入口重指到
+    // '\'，调用方无需恢复（后续报错点经 error_at 自带位置或由 dispatch_one 重设 start_）；\ 在串尾
+    // 不报错，由 scan_string_text 的 is_eof 统一报 "unterminated string"。
+    void Lexer::scan_escape() {
         start_ = pos_; // 锚点重指到转义起点
         advance();     // 消费 '\'
         if (is_eof()) {
@@ -376,7 +374,7 @@ namespace aria {
         }
 
         const auto append_simple = [&](const char ch) {
-            value.push_back(ch);
+            strings_.append(ch);
             advance();
         };
 
@@ -399,13 +397,13 @@ namespace aria {
                 // 写字面 ${（裸 $ 无需转义，仅 ${ 前有转义需求）
                 return append_simple('$');
             case 'u':
-                return scan_unicode_escape(value);
+                return scan_unicode_escape();
             default:
                 error(ErrorCode::InvalidEscape, "invalid escape sequence '\\{}'", c);
         }
     }
 
-    void Lexer::scan_unicode_escape(String& value) {
+    void Lexer::scan_unicode_escape() {
         advance(); // 消费 u
         if (peek_byte(0) != '{') {
             error(ErrorCode::InvalidEscape, "expected '{{' after '\\u'");
@@ -432,7 +430,8 @@ namespace aria {
         if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
             error(ErrorCode::InvalidEscape, "invalid codepoint in '\\u{{...}}'");
         }
-        value += utf8::encode(cp);
+        const auto encoded = utf8::encode(cp);
+        strings_.append(encoded);
     }
 
     void Lexer::scan_identifier() {

@@ -23,8 +23,8 @@ namespace aria {
         if (type_ != TokenType::String) {
             return {};
         }
-        auto sval_ptr = std::get_if<String>(&value_);
-        return sval_ptr ? StringView{*sval_ptr} : StringView{};
+        const auto sval_ptr = std::get_if<StringView>(&value_);
+        return sval_ptr ? *sval_ptr : StringView{};
     }
 
     StringView Token::interp_value() const noexcept {
@@ -32,8 +32,8 @@ namespace aria {
             case TokenType::InterpStart:
             case TokenType::InterpMiddle:
             case TokenType::InterpEnd: {
-                const auto sval_ptr = std::get_if<String>(&value_);
-                return sval_ptr ? StringView{*sval_ptr} : StringView{};
+                const auto sval_ptr = std::get_if<StringView>(&value_);
+                return sval_ptr ? *sval_ptr : StringView{};
             }
             default:
                 return {};

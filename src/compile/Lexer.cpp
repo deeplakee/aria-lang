@@ -74,7 +74,11 @@ namespace aria {
     } // namespace
 
     Lexer::Lexer(SourceFile& src) noexcept :
-        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, interp_depth_{0} {}
+        source_{src}, src_{src.content()}, pos_{0}, start_{0}, tokens_{}, interp_depth_{0} {
+        // 预留 src/2+1：token 数 ≤ 字节数+1（EOF），至多一次倍增、搬移不劣于裸倍增；bytes/token ≥ 2
+        // 时零搬移（真实语料全覆盖）。多付的仅虚拟地址（未触碰页无物理成本）。
+        tokens_.reserve(src_.size() / 2 + 1);
+    }
 
     Result<List<Token>, Error> Lexer::tokenize(SourceFile& src) {
         Lexer lexer{src};

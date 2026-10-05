@@ -11,7 +11,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 ## 文件定位
 
-- **TokenType.hpp**：终结符全量注册表 `ARIA_TOKEN_LIST(X)`（X-Macro 单一事实源，枚举/名字表/拼写表三表同源展开，风格对齐 `ARIA_OPCODE_LIST`；逐值注释用块注释因行注释会吞续行符）。关键字以第三列 `true` 行当次实测为准，当前 22 个。
+- **TokenType.hpp**：终结符全量注册表，按类拆五段子表（special/literal/keyword/operator/punct），复合表 `ARIA_TOKEN_LIST(X)` 依序拼接（X-Macro 单一事实源，枚举/名字表两表同源展开、以枚举值为下标，风格对齐 `ARIA_OPCODE_LIST`；逐值注释用块注释因行注释会吞续行符）。关键字纯表 `kKeywords` 只由关键字子表展开（子表成员资格即判据，当前 22 个），配自纯表量出的长度区间早退 `kKeywordLenRange`，`lookup_keyword` 是唯一查表口。
 - **Token.hpp / Token.cpp**：`Token`（type + lexeme `StringView` + loc + `TokenValue = variant<monostate,i64,f64,String>`），字面工厂（integer/float/string）+ 插值段三厂（interp_start/middle/end）与宽松取值。
 - **Lexer.hpp / Lexer.cpp**：`Lexer::tokenize(SourceFile&) -> Result<List<Token>, Error>`，**首错即止**（错误经 `AriaCompileException` 深处抛出、`tokenize` 顶层 catch 翻译为 Result，与 Parser/CodeGen 同族机制；报错点自陈位置：`error()` 同 `Parser::error` 形、位置锚 `start_`--dispatch 分派时=token 起点，`error_at(offset, ...)` 显式锚任意偏移，子扫描器如 `scan_escape` 入口重指 `start_` 换取更准列号且无需恢复）；位置只记起点字节偏移（行列由 SourceLoc 消费点派生，词法期不维护行列计数）。字符串即模板（无前缀，`${` 开档、裸 `$` 与 `{ }` 皆普通字符、`\$` 转义）：`scan_string` 驱动文本态/档内态两函数状态机交替，产 InterpStart/Middle/End 段 token，无档整串退化普通 String token；嵌套经 `dispatch_one` 递归（深度上限 `kMaxInterpDepth`=16）。性能基线与已实测否决的优化见 `.claude/reference/compile/lexer-notes.md`（基准入口 `bench/lexer_bench.cpp`，动词法性能前先读）。
 - **ast.hpp / ast.cpp**：AST 节点层次（`ASTNode` 根 -> Stmt/Expr/Pattern 分类基 -> 具体节点，`UPtr` 堆分配）；运算符枚举 `Op::Binary/Unary/Assignment` 与 `TokenType` 解耦（映射收在 Parser.cpp）；dump 渲染经 `detail::ast::dump_node` 变参收口。节点族语义见各节点头注。

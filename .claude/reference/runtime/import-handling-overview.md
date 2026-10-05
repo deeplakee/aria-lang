@@ -42,7 +42,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | 环节 | 状态 | 位置 |
 | :--- | :--- | :--- |
 | ① 文法 `import "str" as id;` | 已定义 | `docs/grammar.txt` 的 `importStmt` 产生式 |
-| ① 词法关键字 `import` / `as` | 已实现 | `src/compile/TokenType.hpp`（`ARIA_TOKEN_LIST` 的 `Import`/`As` 两行） |
+| ① 词法关键字 `import` / `as` | 已实现 | `src/compile/TokenType.hpp`（`ARIA_TOKEN_KEYWORD_LIST` 的 `Import`/`As` 两行） |
 | ② Parser 解析 import 语句 | 已实现 | `src/compile/Parser.cpp` 的 `import_stmt()` 与 `declaration()` 分派 |
 | AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp`（节点）+ `ast.cpp`（`dump`/`accept`） |
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
@@ -62,7 +62,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 - **文法**（`docs/grammar.txt` 的 `importStmt` 产生式）：`importStmt -> "import" string "as" identifier ";"`。
   强制字符串路径 + 强制 `as alias`，不支持裸名导入。
-- **关键字**（`src/compile/TokenType.hpp` 的 `ARIA_TOKEN_LIST`）：`TokenType::Import`、`TokenType::As`。
+- **关键字**（`src/compile/TokenType.hpp` 的 `ARIA_TOKEN_KEYWORD_LIST`）：`TokenType::Import`、`TokenType::As`。
 
 > 导入路径语义（源根列表与裸名/相对两类路径、目录包与源根越界的**未实现**状态、符号链接归一等）
 > 以 `docs/grammar.txt`「说明」区的模块导入条与 [`import-path-resolution.md`](./import-path-resolution.md)

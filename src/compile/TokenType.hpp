@@ -1,105 +1,122 @@
 #ifndef ARIA_TOKENTYPE_HPP
 #define ARIA_TOKENTYPE_HPP
 
+#include <algorithm>
 #include <iterator>
+#include <limits>
+#include <ranges>
 
 #include "common.hpp"
 
 namespace aria {
 
-    // 词法终结符注册表：每行 X(枚举名, 拼写, 是否关键字)，枚举隐式连续编号（下标即
-    // std::to_underlying(type)），名字表与拼写表由本表同源展开。表内只能用块注释
-    // /* */ -- 多行宏体内 // 会因续行吞掉下一行。
-#define ARIA_TOKEN_LIST(X)                                                                      \
-    /* --- special --- */                                                                       \
-    X(Eof, "", false)                                                                           \
-    /* --- literals --- */                                                                      \
-    X(Integer, "", false)                                                                       \
-    X(Float, "", false)                                                                         \
-    X(String, "", false)       /* string literal ("..." / '...'), escapes already resolved */   \
-    X(InterpStart, "", false)  /* interpolated string: literal segment before the first hole */ \
-    X(InterpMiddle, "", false) /* interpolated string: literal segment between two holes */     \
-    X(InterpEnd, "", false)    /* interpolated string: literal segment after the last hole */   \
-    X(Identifier, "", false)                                                                    \
-    X(Underscore, "_", false) /* placeholder / wildcard */                                      \
-    /* --- keywords --- */                                                                      \
-    X(Fun, "fun", true)     /* function declaration / lambda */                                 \
-    X(Def, "def", true)     /* type/class declaration (static members + instance methods) */    \
-    X(Var, "var", true)     /* variable declaration */                                          \
-    X(If, "if", true)       /* if statement / if expression */                                  \
-    X(Else, "else", true)   /* else branch of if */                                             \
-    X(While, "while", true) /* while loop */                                                    \
-    X(For, "for", true)     /* for / for-in loop */                                             \
-    X(In, "in", true)       /* for-in iteration */                                              \
-    X(Break, "break", true)                                                                     \
-    X(Continue, "continue", true)                                                               \
-    X(Return, "return", true)                                                                   \
-    X(Import, "import", true) /* module import */                                               \
-    X(As, "as", true)         /* import alias */                                                \
-    X(Try, "try", true)       /* exception handling */                                          \
-    X(Catch, "catch", true)                                                                     \
-    X(Throw, "throw", true) /* throw an exception */                                            \
-    X(Nil, "nil", true)     /* nil literal */                                                   \
-    X(True, "true", true)   /* boolean true literal */                                          \
-    X(False, "false", true) /* boolean false literal */                                         \
-    X(This, "this", true)   /* current instance */                                              \
-    X(Super, "super", true) /* base class method */                                             \
-    X(Match, "match", true) /* match statement / match expression */                            \
-    /* --- operators --- */                                                                     \
-    X(Plus, "+", false)                                                                         \
-    X(Minus, "-", false)                                                                        \
-    X(Star, "*", false)                                                                         \
-    X(Slash, "/", false)                                                                        \
-    X(Percent, "%", false)                                                                      \
-    X(PlusEqual, "+=", false)                                                                   \
-    X(MinusEqual, "-=", false)                                                                  \
-    X(StarEqual, "*=", false)                                                                   \
-    X(SlashEqual, "/=", false)                                                                  \
-    X(PercentEqual, "%=", false)                                                                \
-    X(Equal, "=", false)                                                                        \
-    X(EqualEqual, "==", false)                                                                  \
-    X(EqualEqualEqual, "===", false)                                                            \
-    X(BangEqual, "!=", false)                                                                   \
-    X(BangEqualEqual, "!==", false)                                                             \
-    X(Bang, "!", false)                                                                         \
-    X(Greater, ">", false)                                                                      \
-    X(GreaterEqual, ">=", false)                                                                \
-    X(Less, "<", false)                                                                         \
-    X(LessEqual, "<=", false)                                                                   \
-    X(AndAnd, "&&", false)                                                                      \
-    X(OrOr, "||", false)                                                                        \
-    X(PlusPlus, "++", false)                                                                    \
-    X(MinusMinus, "--", false)                                                                  \
-    X(FatArrow, "=>", false)                                                                    \
-    X(DotDot, "..", false) /* range (upper bound inclusive, a..b) */                            \
-    /* --- punctuation --- */                                                                   \
-    X(LeftParen, "(", false)                                                                    \
-    X(RightParen, ")", false)                                                                   \
-    X(LeftBrace, "{", false)                                                                    \
-    X(RightBrace, "}", false)                                                                   \
-    X(LeftBracket, "[", false)                                                                  \
-    X(RightBracket, "]", false)                                                                 \
-    X(Comma, ",", false)                                                                        \
-    X(Colon, ":", false)                                                                        \
-    X(Semicolon, ";", false)                                                                    \
-    X(Dot, ".", false)                                                                          \
-    X(DotDotDot, "...", false)
+    // 词法终结符注册表：按类拆五段子表（special / literal / keyword / operator / punct），复合表
+    // ARIA_TOKEN_LIST 依序拼接、段序即枚举编号序；名字表由复合表展开、以枚举值为下标，关键字
+    // 纯表只由关键字子表展开。表内只能用块注释 /* */ -- 多行宏体内 // 会因续行吞掉下一行。
+#define ARIA_TOKEN_SPECIAL_LIST(X) X(Eof, "")
 
-#define ARIA_TOKEN_ENUM(name, lexeme, is_keyword) name,
+#define ARIA_TOKEN_LITERAL_LIST(X)                                                       \
+    X(Integer, "")                                                                       \
+    X(Float, "")                                                                         \
+    X(String, "")       /* string literal ("..." / '...'), escapes already resolved */   \
+    X(InterpStart, "")  /* interpolated string: literal segment before the first hole */ \
+    X(InterpMiddle, "") /* interpolated string: literal segment between two holes */     \
+    X(InterpEnd, "")    /* interpolated string: literal segment after the last hole */   \
+    X(Identifier, "")                                                                    \
+    X(Underscore, "_") /* placeholder / wildcard */
+
+#define ARIA_TOKEN_KEYWORD_LIST(X)                                                     \
+    X(Fun, "fun")     /* function declaration / lambda */                              \
+    X(Def, "def")     /* type/class declaration (static members + instance methods) */ \
+    X(Var, "var")     /* variable declaration */                                       \
+    X(If, "if")       /* if statement / if expression */                               \
+    X(Else, "else")   /* else branch of if */                                          \
+    X(While, "while") /* while loop */                                                 \
+    X(For, "for")     /* for / for-in loop */                                          \
+    X(In, "in")       /* for-in iteration */                                           \
+    X(Break, "break")                                                                  \
+    X(Continue, "continue")                                                            \
+    X(Return, "return")                                                                \
+    X(Import, "import") /* module import */                                            \
+    X(As, "as")         /* import alias */                                             \
+    X(Try, "try")       /* exception handling */                                       \
+    X(Catch, "catch")                                                                  \
+    X(Throw, "throw") /* throw an exception */                                         \
+    X(Nil, "nil")     /* nil literal */                                                \
+    X(True, "true")   /* boolean true literal */                                       \
+    X(False, "false") /* boolean false literal */                                      \
+    X(This, "this")   /* current instance */                                           \
+    X(Super, "super") /* base class method */                                          \
+    X(Match, "match") /* match statement / match expression */
+
+#define ARIA_TOKEN_OPERATOR_LIST(X) \
+    X(Plus, "+")                    \
+    X(Minus, "-")                   \
+    X(Star, "*")                    \
+    X(Slash, "/")                   \
+    X(Percent, "%")                 \
+    X(PlusEqual, "+=")              \
+    X(MinusEqual, "-=")             \
+    X(StarEqual, "*=")              \
+    X(SlashEqual, "/=")             \
+    X(PercentEqual, "%=")           \
+    X(Equal, "=")                   \
+    X(EqualEqual, "==")             \
+    X(EqualEqualEqual, "===")       \
+    X(BangEqual, "!=")              \
+    X(BangEqualEqual, "!==")        \
+    X(Bang, "!")                    \
+    X(Greater, ">")                 \
+    X(GreaterEqual, ">=")           \
+    X(Less, "<")                    \
+    X(LessEqual, "<=")              \
+    X(AndAnd, "&&")                 \
+    X(OrOr, "||")                   \
+    X(PlusPlus, "++")               \
+    X(MinusMinus, "--")             \
+    X(FatArrow, "=>")               \
+    X(DotDot, "..") /* range (upper bound inclusive, a..b) */
+
+#define ARIA_TOKEN_PUNCT_LIST(X) \
+    X(LeftParen, "(")            \
+    X(RightParen, ")")           \
+    X(LeftBrace, "{")            \
+    X(RightBrace, "}")           \
+    X(LeftBracket, "[")          \
+    X(RightBracket, "]")         \
+    X(Comma, ",")                \
+    X(Colon, ":")                \
+    X(Semicolon, ";")            \
+    X(Dot, ".")                  \
+    X(DotDotDot, "...")
+
+#define ARIA_TOKEN_LIST(X)      \
+    ARIA_TOKEN_SPECIAL_LIST(X)  \
+    ARIA_TOKEN_LITERAL_LIST(X)  \
+    ARIA_TOKEN_KEYWORD_LIST(X)  \
+    ARIA_TOKEN_OPERATOR_LIST(X) \
+    ARIA_TOKEN_PUNCT_LIST(X)
+
+#define ARIA_TOKEN_ENUM(name, lexeme) name,
     enum class TokenType : u8 { ARIA_TOKEN_LIST(ARIA_TOKEN_ENUM) };
 #undef ARIA_TOKEN_ENUM
 
-#define ARIA_TOKEN_NAME(name, lexeme, is_keyword) #name,
+#define ARIA_TOKEN_NAME(name, lexeme) #name,
     // 枚举名 -> 可读名表（如 "Integer"）。
     inline constexpr StringView kTokenNames[] = {ARIA_TOKEN_LIST(ARIA_TOKEN_NAME)};
 #undef ARIA_TOKEN_NAME
 
-#define ARIA_TOKEN_LEXEME(name, lexeme, is_keyword) {lexeme, is_keyword},
-    // 拼写表：下标即 std::to_underlying(type)，表项 (固定拼写, 是否关键字)。
-    inline constexpr Pair<StringView, bool> kTokenLexemes[] = {ARIA_TOKEN_LIST(ARIA_TOKEN_LEXEME)};
-#undef ARIA_TOKEN_LEXEME
+    // 关键字纯表：只由关键字子表展开，子表成员资格即关键字判据。
+#define ARIA_TOKEN_KEYWORD_ROW(name, lexeme) {lexeme, TokenType::name},
+    inline constexpr Pair<StringView, TokenType> kKeywords[] = {ARIA_TOKEN_KEYWORD_LIST(ARIA_TOKEN_KEYWORD_ROW)};
+#undef ARIA_TOKEN_KEYWORD_ROW
 
 #undef ARIA_TOKEN_LIST
+#undef ARIA_TOKEN_SPECIAL_LIST
+#undef ARIA_TOKEN_LITERAL_LIST
+#undef ARIA_TOKEN_KEYWORD_LIST
+#undef ARIA_TOKEN_OPERATOR_LIST
+#undef ARIA_TOKEN_PUNCT_LIST
 
     [[nodiscard]]
     constexpr StringView to_string(const TokenType type) noexcept {
@@ -108,13 +125,27 @@ namespace aria {
         return kTokenNames[index];
     }
 
+    // 关键字拼写长度区间（自纯表量出）：区间外 lexeme 不可能命中，查找免遍历早退。
+    inline constexpr Pair<usize, usize> kKeywordLenRange = [] {
+        usize min_len = std::numeric_limits<usize>::max();
+        usize max_len = std::numeric_limits<usize>::min();
+        for (const auto& key: kKeywords | std::views::keys) {
+            const usize len = key.size();
+            min_len         = std::min(min_len, len);
+            max_len         = std::max(max_len, len);
+        }
+        return Pair{min_len, max_len};
+    }();
+
     // 关键字查表：lexeme 为关键字返回其 TokenType，否则 nullopt；调用前 lexer 已切出完整 identifier。
     [[nodiscard]]
     constexpr Opt<TokenType> lookup_keyword(const StringView lexeme) noexcept {
-        for (usize index = 0; index < std::size(kTokenLexemes); ++index) {
-            const auto& [spelling, is_keyword] = kTokenLexemes[index];
-            if (is_keyword && spelling == lexeme) {
-                return static_cast<TokenType>(index);
+        if (lexeme.size() < kKeywordLenRange.first || lexeme.size() > kKeywordLenRange.second) {
+            return std::nullopt;
+        }
+        for (const auto& [spelling, type]: kKeywords) {
+            if (spelling == lexeme) {
+                return type;
             }
         }
         return std::nullopt;

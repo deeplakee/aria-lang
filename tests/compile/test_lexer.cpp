@@ -12,6 +12,7 @@ using aria::Lexer;
 using aria::List;
 using aria::SourceFile;
 using aria::String;
+using aria::StringArena;
 using aria::StringView;
 using aria::Token;
 using aria::TokenStream;
@@ -787,4 +788,104 @@ TEST(LexerInterp, DollarOutsideStringIsInvalid) {
 
     const auto err2 = lex_err("$ \"abc\"");
     EXPECT_EQ(err2.code(), ErrorCode::InvalidCharacter);
+}
+
+// ---------------------------------------------------------------------------
+// StringArena 分块冻结（内容越过首块上限时旧块冻结、开段拷入新块）
+// ---------------------------------------------------------------------------
+
+TEST(StringArena, SegmentBeyondFirstChunkStaysContiguous) {
+    // 单段超首块上限：跨块搬移后整段仍连续、内容逐字节正确
+    StringArena arena{10 * 1024 * 1024};
+    arena.open_segment();
+    auto expected = String{};
+    for (int i = 0; i < 5; ++i) {
+        const auto chunk = String(1024 * 1024, static_cast<char>('a' + i));
+        arena.append(chunk);
+        expected += chunk;
+    }
+    arena.append("tail");
+    expected += "tail";
+    const auto view = arena.close_segment();
+    ASSERT_EQ(view.size(), expected.size());
+    EXPECT_EQ(view, StringView{expected});
+}
+
+TEST(StringArena, FrozenViewsStayStable) {
+    // 已发视图恒稳：后续追加触发冻结后，既发视图的内容与地址均不变
+    StringArena arena{10 * 1024 * 1024};
+    arena.open_segment();
+    const auto first = String(3 * 1024 * 1024, 'x');
+    arena.append(first);
+    const auto v1      = arena.close_segment();
+    const auto v1_data = v1.data();
+
+    arena.open_segment();
+    const auto second = String(3 * 1024 * 1024, 'y');
+    arena.append(second); // 3 MB + 3 MB 越过首块 4 MB，触发冻结
+    const auto v2 = arena.close_segment();
+
+    EXPECT_EQ(v1.data(), v1_data);
+    EXPECT_EQ(v1, StringView{first});
+    EXPECT_EQ(v2, StringView{second});
+}
+
+TEST(StringArena, EmptySegmentReturnsDefaultView) {
+    // 空段返回默认空视图（未触碰缓冲），不与后续段混淆
+    StringArena arena{64};
+    arena.open_segment();
+    EXPECT_EQ(arena.close_segment(), StringView{});
+    arena.open_segment();
+    arena.append('a');
+    EXPECT_EQ(arena.close_segment(), StringView{"a"});
+}
+
+TEST(StringArena, SingleAppendBeyondFirstChunk) {
+    // 单次追加即超首块上限：首块按需求一次落地，不经「先 4 MB 再搬」
+    StringArena arena{10 * 1024 * 1024};
+    arena.open_segment();
+    const auto big = String(5 * 1024 * 1024, 'z');
+    arena.append(big);
+    EXPECT_EQ(arena.close_segment(), StringView{big});
+}
+
+// ---------------------------------------------------------------------------
+// 超首块上限的端到端钉子（Lexer 全链路走分块冻结路径）
+// ---------------------------------------------------------------------------
+
+TEST(LexerString, SourceBeyondFirstChunk) {
+    // 源超 arena 首块上限（4 MB）：字符串值跨分块冻结仍完整正确
+    String src;
+    src.reserve(4 * 1024 * 1024 + 256);
+    src += "var s0 = \"";
+    src.append(4 * 1024 * 1024 + 100, 'a');
+    src += "\";\n";
+    const auto tail = String(64, 'b');
+    src += "var s1 = \"" + tail + "中文转义\\n\";\n";
+
+    const auto  lexed  = lex_ok(src);
+    const auto& tokens = lexed->stream.tokens;
+    ASSERT_EQ(tokens.size(), 11u); // Var Id Eq Str ; Var Id Eq Str ; Eof
+    EXPECT_EQ(tokens[3].type(), TokenType::String);
+    const auto expected = String(4 * 1024 * 1024 + 100, 'a');
+    EXPECT_EQ(tokens[3].string_value(), StringView{expected});
+    EXPECT_EQ(tokens[8].type(), TokenType::String);
+    EXPECT_EQ(tokens[8].string_value(), StringView{tail + "中文转义\n"});
+}
+
+TEST(LexerInterp, SegmentsAcrossChunkBoundary) {
+    // 两段字面合计超首块上限：第二段在冻结搬移中收口，段视图仍连续正确
+    const auto head = String(2 * 1024 * 1024, 'a');
+    const auto tail = String(3 * 1024 * 1024, 'b');
+    const auto src  = "\"" + head + "${x}" + tail + "\"";
+
+    const auto          lexed    = lex_ok(src);
+    const auto&         tokens   = lexed->stream.tokens;
+    const List<TokType> expected = {TokType::InterpStart, TokType::Identifier, TokType::InterpEnd, TokType::Eof};
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (usize i = 0; i < tokens.size(); ++i) {
+        EXPECT_EQ(tokens[i].type(), expected[i]);
+    }
+    EXPECT_EQ(tokens[0].interp_value(), StringView{head});
+    EXPECT_EQ(tokens[2].interp_value(), StringView{tail});
 }

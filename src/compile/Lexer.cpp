@@ -285,7 +285,7 @@ namespace aria {
 
     bool Lexer::scan_string_text(const char quote, const u32 string_start, const u32 segment_start,
                                  const bool has_hole) {
-        const usize value_begin = strings_.mark();
+        strings_.open_segment();
         while (true) {
             if (is_eof()) {
                 error_at(string_start, ErrorCode::UnterminatedString, "unterminated string");
@@ -296,7 +296,7 @@ namespace aria {
             }
             if (c == quote) {
                 advance(); // 消费闭引号
-                const auto value = strings_.view_from(value_begin);
+                const auto value = strings_.close_segment();
                 if (has_hole) {
                     tokens_.push_back(Token::make_interp_end(value, slice(segment_start, pos_), loc_at(segment_start)));
                 } else {
@@ -313,7 +313,7 @@ namespace aria {
                     continue;
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
-                const auto value = strings_.view_from(value_begin);
+                const auto value = strings_.close_segment();
                 const auto lex   = slice(segment_start, pos_);
                 const auto loc   = loc_at(segment_start);
                 if (has_hole) {

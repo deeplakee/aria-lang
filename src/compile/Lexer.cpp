@@ -438,7 +438,7 @@ namespace aria {
         const auto lex = slice(start_, pos_);
         const auto loc = loc_at(start_);
 
-        if (lex.size() == 1 && lex[0] == '_') {
+        if (lex == "_") {
             tokens_.emplace_back(TokenType::Underscore, lex, loc);
             return;
         }

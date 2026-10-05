@@ -2,7 +2,6 @@
 #define ARIA_TOKEN_HPP
 
 #include <type_traits>
-#include <variant>
 #include "common.hpp"
 #include "compile/StringArena.hpp"
 #include "compile/TokenType.hpp"
@@ -11,9 +10,14 @@
 namespace aria {
     using src::SourceLoc;
 
-    // 字面量 token 携带的解析值；Integer 以 i64 容纳（i48 值域，越界在语义阶段拒绝），字符串为已解析
-    // 转义内容的视图（指向 TokenStream::strings）。平凡可拷贝是 token 表零搬移与读侧单缓存行的前提。
-    using TokenValue = std::variant<std::monostate, i64, f64, StringView>;
+    // 字面量 token 携带的解析值；活跃成员由 TokenType 判别（Integer->int_、Float->float_、String
+    // 与三个 Interp 段->str_、其余为空），故 union 不落 tag。Integer 以 i64 容纳（i48 值域，越界在
+    // 语义阶段拒绝），字符串为已解析转义内容的视图（指向 TokenStream::strings）。
+    union TokenValue {
+        i64        int_;
+        f64        float_;
+        StringView str_;
+    };
 
     // 词法单元：lexer 产出的最小语法单位。lexeme 不落指针，只存字节数，读时按 loc 自源缓冲重建
     // （词法期各 token 的 lexeme 区间恒以 loc 的偏移为起点）；字符串值借用 TokenStream::strings。
@@ -27,36 +31,36 @@ namespace aria {
 
         [[nodiscard]]
         static Token make_integer(const i64 value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::Integer, lexeme, loc, value};
+            return Token{TokenType::Integer, lexeme, loc, TokenValue{.int_ = value}};
         }
 
         [[nodiscard]]
         static Token make_float(const f64 value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::Float, lexeme, loc, value};
+            return Token{TokenType::Float, lexeme, loc, TokenValue{.float_ = value}};
         }
 
         // value 为已解析转义后的字符串内容（视图指向 TokenStream::strings，须在其存活期内使用）；
         // lexeme 保留原始源码文本。
         [[nodiscard]]
         static Token make_string(StringView value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::String, lexeme, loc, value};
+            return Token{TokenType::String, lexeme, loc, TokenValue{.str_ = value}};
         }
 
         // 插值串字面段三厂：value 为该段已解析转义后的内容（视图指向 TokenStream::strings），lexeme 保留
         // 该段原文（不含边界 ${ 与 }，End 含闭引号）。
         [[nodiscard]]
         static Token make_interp_start(StringView value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::InterpStart, lexeme, loc, value};
+            return Token{TokenType::InterpStart, lexeme, loc, TokenValue{.str_ = value}};
         }
 
         [[nodiscard]]
         static Token make_interp_middle(StringView value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::InterpMiddle, lexeme, loc, value};
+            return Token{TokenType::InterpMiddle, lexeme, loc, TokenValue{.str_ = value}};
         }
 
         [[nodiscard]]
         static Token make_interp_end(StringView value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::InterpEnd, lexeme, loc, value};
+            return Token{TokenType::InterpEnd, lexeme, loc, TokenValue{.str_ = value}};
         }
 
         [[nodiscard]]
@@ -121,6 +125,7 @@ namespace aria {
         TokenValue value_;
     };
 
+    // 平凡可拷贝是 token 表零搬移与读侧单缓存行的前提。
     static_assert(std::is_trivially_copyable_v<Token>, "Token must be trivially copyable");
 
     // tokenize 的产物：token 流与字符串字面量的解析后存储。strings 里的视图在消费期内恒有效（稳定性

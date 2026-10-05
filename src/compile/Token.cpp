@@ -3,38 +3,18 @@
 
 namespace aria {
 
-    i64 Token::int_value() const noexcept {
-        if (type_ != TokenType::Integer) {
-            return 0;
-        }
-        const auto ival_ptr = std::get_if<i64>(&value_);
-        return ival_ptr ? *ival_ptr : 0;
-    }
+    i64 Token::int_value() const noexcept { return type_ == TokenType::Integer ? value_.int_ : 0; }
 
-    f64 Token::float_value() const noexcept {
-        if (type_ != TokenType::Float) {
-            return 0.0;
-        }
-        const auto fval_ptr = std::get_if<f64>(&value_);
-        return fval_ptr ? *fval_ptr : 0.0;
-    }
+    f64 Token::float_value() const noexcept { return type_ == TokenType::Float ? value_.float_ : 0.0; }
 
-    StringView Token::string_value() const noexcept {
-        if (type_ != TokenType::String) {
-            return {};
-        }
-        const auto sval_ptr = std::get_if<StringView>(&value_);
-        return sval_ptr ? *sval_ptr : StringView{};
-    }
+    StringView Token::string_value() const noexcept { return type_ == TokenType::String ? value_.str_ : StringView{}; }
 
     StringView Token::interp_value() const noexcept {
         switch (type_) {
             case TokenType::InterpStart:
             case TokenType::InterpMiddle:
-            case TokenType::InterpEnd: {
-                const auto sval_ptr = std::get_if<StringView>(&value_);
-                return sval_ptr ? *sval_ptr : StringView{};
-            }
+            case TokenType::InterpEnd:
+                return value_.str_;
             default:
                 return {};
         }

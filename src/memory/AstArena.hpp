@@ -45,18 +45,18 @@ namespace aria {
             return new (allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
         }
 
-        // 取走 source 的元素连续排入 arena 缓冲，返回 Span 视图；空表零分配。
+        // 把 source 的元素连续拷入 arena 缓冲，返回 Span 视图；空表零分配。
         // 节点列表字段的唯一生产口：Span 会自容器隐式转换，局部容器不得直接喂字段（别名悬垂）。
-        // 元素不逐个析构，故须平凡可析构。
+        // 元素只拷入、不逐个析构，故须平凡可拷贝。
         template<typename T>
-        Span<T> make_list(List<T>&& source) {
-            static_assert(std::is_trivially_destructible_v<T>, "make_list elements must be trivially destructible");
+        Span<T> make_list(const List<T>& source) {
+            static_assert(std::is_trivially_copyable_v<T>, "make_list elements must be trivially copyable");
             if (source.empty()) {
                 return Span<T>{};
             }
             const auto elements = static_cast<T*>(allocate(sizeof(T) * source.size(), alignof(T)));
             const auto count    = source.size();
-            std::uninitialized_move(source.begin(), source.end(), elements);
+            std::uninitialized_copy(source.begin(), source.end(), elements);
             return Span<T>{elements, count};
         }
 

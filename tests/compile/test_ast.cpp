@@ -188,7 +188,7 @@ TEST(AstDisplay, DestructureAssignment) {
     List<PatternNode*> elems;
     elems.push_back(id_pat(arena, "a"));
     elems.push_back(id_pat(arena, "b"));
-    auto                      target = arena.make<ListPatternNode>(kLoc, arena.make_list(std::move(elems)), nullptr);
+    auto                      target = arena.make<ListPatternNode>(kLoc, arena.make_list(elems), nullptr);
     DestructureAssignmentNode node{kLoc, target, ident(arena, "lst")};
     const String              out = dump_str(node);
     expect_has(out, "DestructureAssignment");
@@ -205,7 +205,7 @@ TEST(AstDisplay, Call) {
     List<ExprNode*> args;
     args.push_back(i64lit(arena, 1));
     args.push_back(i64lit(arena, 2));
-    CallNode     node{kLoc, ident(arena, "f"), arena.make_list(std::move(args))};
+    CallNode     node{kLoc, ident(arena, "f"), arena.make_list(args)};
     const String out = dump_str(node);
     EXPECT_EQ(out, "Call args=2\n  Identifier f\n  IntegerLiteral 1\n  IntegerLiteral 2\n");
 }
@@ -228,7 +228,7 @@ TEST(AstDisplay, ListExpr) {
     List<ExprNode*> elems;
     elems.push_back(i64lit(arena, 1));
     elems.push_back(i64lit(arena, 2));
-    ListExprNode node{kLoc, arena.make_list(std::move(elems))};
+    ListExprNode node{kLoc, arena.make_list(elems)};
     EXPECT_EQ(dump_str(node), "ListExpr elements=2\n  IntegerLiteral 1\n  IntegerLiteral 2\n");
 }
 
@@ -239,7 +239,7 @@ TEST(AstDisplay, MapExpr) {
     e.key   = ident(arena, "k");
     e.value = i64lit(arena, 1);
     entries.push_back(e);
-    MapExprNode  node{kLoc, arena.make_list(std::move(entries))};
+    MapExprNode  node{kLoc, arena.make_list(entries)};
     const String out = dump_str(node);
     expect_has(out, "MapExpr entries=1");
     expect_has(out, "MapEntry");
@@ -261,9 +261,9 @@ TEST(AstDisplay, LambdaExpr) {
 
     List<StmtNode*> body_stmts;
     body_stmts.push_back(arena.make<ReturnStmtNode>(kLoc, ident(arena, "x")));
-    auto body = arena.make<BlockNode>(kLoc, arena.make_list(std::move(body_stmts)));
+    auto body = arena.make<BlockNode>(kLoc, arena.make_list(body_stmts));
 
-    LambdaExprNode node{kLoc, arena.make_list(std::move(params)), body};
+    LambdaExprNode node{kLoc, arena.make_list(params), body};
     const String   out = dump_str(node);
     expect_has(out, "LambdaExpr params=1");
     expect_has(out, "Param name=x");
@@ -282,7 +282,7 @@ TEST(AstDisplay, MatchExpr) {
     a2.body = i64lit(arena, 99);
     arms.push_back(a2);
 
-    MatchExprNode node{kLoc, ident(arena, "x"), arena.make_list(std::move(arms))};
+    MatchExprNode node{kLoc, ident(arena, "x"), arena.make_list(arms)};
     const String  out = dump_str(node);
     expect_has(out, "MatchExpr arms=2");
     expect_has(out, "MatchPattern");
@@ -297,7 +297,7 @@ TEST(AstDisplay, BlockAndExprStmt) {
     AstArena        arena;
     List<StmtNode*> stmts;
     stmts.push_back(arena.make<ExprStmtNode>(kLoc, i64lit(arena, 1)));
-    BlockNode    block{kLoc, arena.make_list(std::move(stmts))};
+    BlockNode    block{kLoc, arena.make_list(stmts)};
     const String out = dump_str(block);
     EXPECT_EQ(out, "Block stmts=1\n  ExprStmt\n    IntegerLiteral 1\n");
 }
@@ -332,11 +332,11 @@ TEST(AstDisplay, TryStmt) {
     AstArena        arena;
     List<StmtNode*> try_body_stmts;
     try_body_stmts.push_back(arena.make<ExprStmtNode>(kLoc, i64lit(arena, 1)));
-    auto try_body = arena.make<BlockNode>(kLoc, arena.make_list(std::move(try_body_stmts)));
+    auto try_body = arena.make<BlockNode>(kLoc, arena.make_list(try_body_stmts));
 
     List<StmtNode*> catch_body_stmts;
     catch_body_stmts.push_back(arena.make<ExprStmtNode>(kLoc, ident(arena, "e")));
-    auto catch_body = arena.make<BlockNode>(kLoc, arena.make_list(std::move(catch_body_stmts)));
+    auto catch_body = arena.make<BlockNode>(kLoc, arena.make_list(catch_body_stmts));
 
     TryStmtNode  node{kLoc, try_body, StringView{"e"}, catch_body};
     const String out = dump_str(node);
@@ -350,8 +350,8 @@ TEST(AstDisplay, ForInStmt) {
     List<PatternNode*> elems;
     elems.push_back(id_pat(arena, "k"));
     elems.push_back(id_pat(arena, "v"));
-    ForInStmtNode node{kLoc, arena.make<ListPatternNode>(kLoc, arena.make_list(std::move(elems)), nullptr),
-                       ident(arena, "m"), arena.make<BreakStmtNode>(kLoc)};
+    ForInStmtNode node{kLoc, arena.make<ListPatternNode>(kLoc, arena.make_list(elems), nullptr), ident(arena, "m"),
+                       arena.make<BreakStmtNode>(kLoc)};
     const String  out = dump_str(node);
     expect_has(out, "ForInStmt");
     expect_has(out, "ListPattern elements=2");
@@ -375,7 +375,7 @@ TEST(AstDisplay, VarDecl) {
     b.initializer = i64lit(arena, 1);
     bindings.push_back(b);
 
-    VarDeclNode  node{kLoc, arena.make_list(std::move(bindings))};
+    VarDeclNode  node{kLoc, arena.make_list(bindings)};
     const String out = dump_str(node);
     EXPECT_EQ(out, "VarDecl bindings=1\n  VarBinding\n    IdentifierPattern name=x\n    IntegerLiteral 1\n");
 }
@@ -389,9 +389,9 @@ TEST(AstDisplay, FunDecl) {
 
     List<StmtNode*> body_stmts;
     body_stmts.push_back(arena.make<ReturnStmtNode>(kLoc, ident(arena, "x")));
-    auto body = arena.make<BlockNode>(kLoc, arena.make_list(std::move(body_stmts)));
+    auto body = arena.make<BlockNode>(kLoc, arena.make_list(body_stmts));
 
-    FunDeclNode  node{kLoc, StringView{"id"}, arena.make_list(std::move(params)), body, FnKind::Function};
+    FunDeclNode  node{kLoc, StringView{"id"}, arena.make_list(params), body, FnKind::Function};
     const String out = dump_str(node);
     expect_has(out, "FunDecl name=id params=1 kind=Function");
     expect_has(out, "ReturnStmt");
@@ -403,11 +403,11 @@ TEST(AstDisplay, DefDecl) {
     // bark() { println("woof"); }  -- 实例方法（Method）
     List<StmtNode*> bark_body_stmts;
     bark_body_stmts.push_back(arena.make<ExprStmtNode>(kLoc, strlit(arena, "woof")));
-    auto bark_body = arena.make<BlockNode>(kLoc, arena.make_list(std::move(bark_body_stmts)));
+    auto bark_body = arena.make<BlockNode>(kLoc, arena.make_list(bark_body_stmts));
     members.push_back(arena.make<FunDeclNode>(kLoc, StringView{"bark"}, Span<Param>{}, bark_body, FnKind::Method));
 
     DefDeclNode  node{kLoc, StringView{"Dog"}, arena.make<IdentifierNode>(kLoc, StringView{"Animal"}),
-                      arena.make_list(std::move(members)), false};
+                      arena.make_list(members), false};
     const String out = dump_str(node);
     expect_has(out, "DefDecl name=Dog");
     expect_has(out, "Identifier Animal");
@@ -425,11 +425,11 @@ TEST(AstDisplay, Program) {
     b.target      = id_pat(arena, "x");
     b.initializer = i64lit(arena, 1);
     bindings.push_back(b);
-    decls.push_back(arena.make<VarDeclNode>(kLoc, arena.make_list(std::move(bindings))));
+    decls.push_back(arena.make<VarDeclNode>(kLoc, arena.make_list(bindings)));
 
     decls.push_back(arena.make<ExprStmtNode>(kLoc, ident(arena, "x")));
 
-    ProgramNode  prog{kLoc, arena.make_list(std::move(decls))};
+    ProgramNode  prog{kLoc, arena.make_list(decls)};
     const String out = dump_str(prog);
     expect_has(out, "Program decls=2");
     expect_has(out, "VarDecl bindings=1");
@@ -449,7 +449,7 @@ TEST(AstDisplay, Patterns) {
     List<PatternNode*> elems;
     elems.push_back(id_pat(arena, "a"));
     elems.push_back(arena.make<WildcardPatternNode>(kLoc));
-    ListPatternNode lp{kLoc, arena.make_list(std::move(elems)), id_pat(arena, "rest")};
+    ListPatternNode lp{kLoc, arena.make_list(elems), id_pat(arena, "rest")};
     const String    lp_out = dump_str(lp);
     expect_has(lp_out, "ListPattern elements=2 rest=rest");
     expect_has(lp_out, "IdentifierPattern name=a");

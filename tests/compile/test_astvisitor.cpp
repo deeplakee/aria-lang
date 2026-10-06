@@ -223,8 +223,7 @@ TEST(AstVisitorDispatch, Expressions) {
     List<PatternNode*> destructure_elems;
     destructure_elems.push_back(id_pat(arena, "x"));
     expect_visit(arena.make<DestructureAssignmentNode>(
-                         kLoc,
-                         arena.make<ListPatternNode>(kLoc, arena.make_list(std::move(destructure_elems)), nullptr),
+                         kLoc, arena.make<ListPatternNode>(kLoc, arena.make_list(destructure_elems), nullptr),
                          ident(arena, "l")),
                  "DestructureAssignmentNode");
     expect_visit(arena.make<CallNode>(kLoc, ident(arena, "f"), Span<ExprNode*>{}), "CallNode");

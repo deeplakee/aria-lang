@@ -204,7 +204,7 @@ namespace aria {
                 decls.push_back(d);
             }
         }
-        return arena_.make<ProgramNode>(loc, arena_.make_list(std::move(decls)));
+        return arena_.make<ProgramNode>(loc, arena_.make_list(decls));
     }
 
     StmtNode* Parser::declaration() {
@@ -233,7 +233,7 @@ namespace aria {
         const auto  name = expect_identifier();
         List<Param> ps   = params();
         BlockNode*  body = block();
-        return arena_.make<FunDeclNode>(loc, name, arena_.make_list(std::move(ps)), body, kind);
+        return arena_.make<FunDeclNode>(loc, name, arena_.make_list(ps), body, kind);
     }
 
     List<Param> Parser::params() {
@@ -291,14 +291,14 @@ namespace aria {
                 auto       mps   = params();
                 const auto mbody = block();
                 const auto kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
-                members.push_back(arena_.make<FunDeclNode>(mloc, mname, arena_.make_list(std::move(mps)), mbody, kind));
+                members.push_back(arena_.make<FunDeclNode>(mloc, mname, arena_.make_list(mps), mbody, kind));
             } else {
                 error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
                       peek().lexeme());
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return arena_.make<DefDeclNode>(loc, name, superclass, arena_.make_list(std::move(members)), is_member);
+        return arena_.make<DefDeclNode>(loc, name, superclass, arena_.make_list(members), is_member);
     }
 
     StaticVarMemberNode* Parser::member_var() {
@@ -318,7 +318,7 @@ namespace aria {
             bindings.push_back(var_binding());
         } while (match(TokenType::Comma));
         expect(TokenType::Semicolon, "';'");
-        return arena_.make<VarDeclNode>(loc, arena_.make_list(std::move(bindings)));
+        return arena_.make<VarDeclNode>(loc, arena_.make_list(bindings));
     }
 
     VarBinding Parser::var_binding() {
@@ -532,7 +532,7 @@ namespace aria {
             arms.push_back(match_arm());
         }
         expect(TokenType::RightBrace, "'}'");
-        return arena_.make<MatchStmtNode>(loc, subject, arena_.make_list(std::move(arms)));
+        return arena_.make<MatchStmtNode>(loc, subject, arena_.make_list(arms));
     }
 
     BlockNode* Parser::block() {
@@ -545,7 +545,7 @@ namespace aria {
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return arena_.make<BlockNode>(loc, arena_.make_list(std::move(stmts)));
+        return arena_.make<BlockNode>(loc, arena_.make_list(stmts));
     }
 
     ExprNode* Parser::expression() { return assignment(); }
@@ -560,7 +560,7 @@ namespace aria {
         if (expressions.size() == 1) {
             return expressions[0];
         }
-        return arena_.make<SequenceExprNode>(loc, arena_.make_list(std::move(expressions)));
+        return arena_.make<SequenceExprNode>(loc, arena_.make_list(expressions));
     }
 
     ExprNode* Parser::assignment() {
@@ -724,7 +724,7 @@ namespace aria {
             parts.push_back(expression());
             if (check(TokenType::InterpEnd)) {
                 maybe_add_string(advance()); // 尾字面段
-                return arena_.make<InterpolatedStringNode>(loc, arena_.make_list(std::move(parts)));
+                return arena_.make<InterpolatedStringNode>(loc, arena_.make_list(parts));
             }
             maybe_add_string(expect(TokenType::InterpMiddle, "'}' to close interpolation"));
         }
@@ -813,7 +813,7 @@ namespace aria {
             } while (match(TokenType::Comma));
         }
         expect(TokenType::RightBracket, "']'");
-        return arena_.make<ListExprNode>(loc, arena_.make_list(std::move(elements)));
+        return arena_.make<ListExprNode>(loc, arena_.make_list(elements));
     }
 
     ExprNode* Parser::map_expr() {
@@ -826,7 +826,7 @@ namespace aria {
             } while (match(TokenType::Comma));
         }
         expect(TokenType::RightBrace, "'}'");
-        return arena_.make<MapExprNode>(loc, arena_.make_list(std::move(entries)));
+        return arena_.make<MapExprNode>(loc, arena_.make_list(entries));
     }
 
     MapEntry Parser::parse_map_entry() {
@@ -857,7 +857,7 @@ namespace aria {
         expect(TokenType::Fun, "'fun'");
         List<Param> ps   = params();
         BlockNode*  body = block();
-        return arena_.make<LambdaExprNode>(loc, arena_.make_list(std::move(ps)), body);
+        return arena_.make<LambdaExprNode>(loc, arena_.make_list(ps), body);
     }
 
     ExprNode* Parser::match_expr() {
@@ -874,7 +874,7 @@ namespace aria {
             arms.push_back(match_expr_arm());
         }
         expect(TokenType::RightBrace, "'}'");
-        return arena_.make<MatchExprNode>(loc, subject, arena_.make_list(std::move(arms)));
+        return arena_.make<MatchExprNode>(loc, subject, arena_.make_list(arms));
     }
 
     MatchPattern Parser::match_pattern() {
@@ -933,7 +933,7 @@ namespace aria {
             }
         }
         expect(TokenType::RightBracket, "']'");
-        return arena_.make<ListPatternNode>(loc, arena_.make_list(std::move(elements)), rest);
+        return arena_.make<ListPatternNode>(loc, arena_.make_list(elements), rest);
     }
 
     IdentifierPatternNode* Parser::rest_pattern() {

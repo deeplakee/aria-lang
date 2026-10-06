@@ -49,7 +49,7 @@ header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 
 
 ## `memory/AstArena.hpp`
 
-header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按 2 倍翻新块）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(List<T>&&)`（元素一次性搬入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可析构——static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与实测见 `.claude/reference/memory/ast-arena-notes.md`。
+header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按 2 倍翻新块）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(const List<T>&)`（元素一次性拷入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可拷贝——static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与实测见 `.claude/reference/memory/ast-arena-notes.md`。
 
 ## `memory/ShellPool.hpp`
 

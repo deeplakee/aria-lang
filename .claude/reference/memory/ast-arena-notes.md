@@ -13,8 +13,8 @@
   `fatal_error(OutOfMemory)`、全程不抛（先例 `GC::allocate`）。
   成立前提是节点成员全为平凡类型：子节点裸指针互指、名字/字符串借源缓冲、列表为 `AstList`——这些由
   Ast.hpp 节点形态保证，新增节点成员不得引入自持堆资源。
-- 列表视图：`make_list(List<T>&&)` 把解析期局部 vector 一次性搬入 arena，返回 `Span<T>`（std::span，
-  {data, usize size}，16 B）；空表零分配，元素须平凡可析构（static_assert 钉住）。`make_list` 是节点
+- 列表视图：`make_list(const List<T>&)` 把解析期局部 vector 的元素一次性拷入 arena，返回 `Span<T>`（std::span，
+  {data, usize size}，16 B）；空表零分配，元素须平凡可拷贝（static_assert 钉住）。`make_list` 是节点
   列表字段的唯一生产口——std::span 会自 lvalue 容器隐式转换，局部容器直接喂节点字段会静默别名悬垂，
   这是约定纪律而非类型保证。
 - 生命周期：`Compiler::compile` 栈上构造 arena，`Parser::parse(AstArena&, ...)` 返回借用的

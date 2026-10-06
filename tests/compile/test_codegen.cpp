@@ -2394,11 +2394,11 @@ namespace {
         for (aria::usize i = 0; i < expr_count; ++i) {
             parts.push_back(arena.make<aria::IdentifierNode>(kLoc, aria::StringView{"x"}));
         }
-        auto interp = arena.make<aria::InterpolatedStringNode>(kLoc, arena.make_list(std::move(parts)));
+        auto interp = arena.make<aria::InterpolatedStringNode>(kLoc, arena.make_list(parts));
 
         aria::List<aria::StmtNode*> decls;
         decls.push_back(arena.make<aria::ExprStmtNode>(kLoc, interp));
-        return arena.make<aria::ProgramNode>(kLoc, arena.make_list(std::move(decls)));
+        return arena.make<aria::ProgramNode>(kLoc, arena.make_list(decls));
     }
 } // namespace
 

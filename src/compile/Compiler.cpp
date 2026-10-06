@@ -3,6 +3,7 @@
 #include "compile/CodeGen.hpp"
 #include "compile/Lexer.hpp"
 #include "compile/Parser.hpp"
+#include "memory/AstArena.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
@@ -17,8 +18,10 @@ namespace aria {
         }
 
         // token 表存活至 parse 返回：token 的 lexeme/内层视图借自源缓冲，Parser 只在解析期读
-        // （AST 节点持视图，存活至编译结束，仍在 source 的存活期内）。
-        auto ast = Parser::parse(*tokens, source);
+        // （AST 节点持视图，存活至编译结束，仍在 source 的存活期内）。AST 节点与列表缓冲由
+        // arena 统一分配（栈上 RAII），整树存活至 compile 返回，随 arena 析构整批释放。
+        AstArena arena;
+        auto     ast = Parser::parse(arena, *tokens, source);
         if (!ast) {
             return std::unexpected(std::move(ast.error()[0]));
         }

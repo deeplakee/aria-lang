@@ -9,6 +9,7 @@
 #include "compile/Lexer.hpp"
 #include "compile/Parser.hpp"
 #include "error/ErrorCode.hpp"
+#include "memory/AstArena.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
@@ -20,6 +21,7 @@
 #include "value/Value.hpp"
 
 using aria::AriaVM;
+using aria::AstArena;
 using aria::CodeGen;
 using aria::Error;
 using aria::ErrorCode;
@@ -45,12 +47,13 @@ namespace {
         if (!lex) {
             return std::unexpected(std::move(lex.error()));
         }
-        auto parse = Parser::parse(*lex, file);
+        // arena 持有整棵 AST，存活覆盖 CodeGen::compile 调用。
+        AstArena arena;
+        auto     parse = Parser::parse(arena, *lex, file);
         if (!parse) {
             return std::unexpected(std::move(parse.error()[0]));
         }
-        auto program = std::move(*parse);
-        return CodeGen::compile(gc, *program, module, aria::kMainEntryName);
+        return CodeGen::compile(gc, **parse, module, aria::kMainEntryName);
     }
 
     // RunResult 惯用法（vm/GC 随结果返回的生存期理由与 Result 转发形态）见 test_compiler.cpp 同名结构注。
@@ -2380,30 +2383,32 @@ TEST(CodeGen, DestructureRestTakesSuffixViaUnboundedRange) {
 
 namespace {
     // 手工组「表达式语句包裹插值串」的最小程序（绕开词法/语法层，只到 CodeGen）。
-    aria::UPtr<aria::ProgramNode> interp_program(const aria::usize literal_count, const aria::usize expr_count) {
-        const aria::SourceLoc                  kLoc{};
-        aria::List<aria::UPtr<aria::ExprNode>> parts;
+    // 节点分配自调用方 arena，返回裸指针借用（arena 存活须覆盖编译结果的使用期）。
+    aria::ProgramNode* interp_program(AstArena& arena, const aria::usize literal_count, const aria::usize expr_count) {
+        const aria::SourceLoc       kLoc{};
+        aria::List<aria::ExprNode*> parts;
         for (aria::usize i = 0; i < literal_count; ++i) {
-            parts.push_back(std::make_unique<aria::StringLiteralNode>(kLoc, aria::StringView{"s"},
-                                                                      aria::StringShape{1, false}));
+            parts.push_back(
+                    arena.make<aria::StringLiteralNode>(kLoc, aria::StringView{"s"}, aria::StringShape{1, false}));
         }
         for (aria::usize i = 0; i < expr_count; ++i) {
-            parts.push_back(std::make_unique<aria::IdentifierNode>(kLoc, aria::StringView{"x"}));
+            parts.push_back(arena.make<aria::IdentifierNode>(kLoc, aria::StringView{"x"}));
         }
-        auto interp = std::make_unique<aria::InterpolatedStringNode>(kLoc, std::move(parts));
+        auto interp = arena.make<aria::InterpolatedStringNode>(kLoc, arena.make_list(std::move(parts)));
 
-        aria::List<aria::UPtr<aria::StmtNode>> decls;
-        decls.push_back(std::make_unique<aria::ExprStmtNode>(kLoc, std::move(interp)));
-        return std::make_unique<aria::ProgramNode>(kLoc, std::move(decls));
+        aria::List<aria::StmtNode*> decls;
+        decls.push_back(arena.make<aria::ExprStmtNode>(kLoc, interp));
+        return arena.make<aria::ProgramNode>(kLoc, arena.make_list(std::move(decls)));
     }
 } // namespace
 
 TEST(CodeGen, InterpStringEmitsBuildString) {
     // 段序压栈(字面段 LOAD_CONST / 表达式段全局读)+ BUILD_STRING 收拢
-    auto       vm       = std::make_unique<AriaVM>();
-    auto&      gc       = vm->gc();
-    auto*      module   = new_module(gc, "<test>");
-    const auto program  = interp_program(2, 1);
+    auto       vm     = std::make_unique<AriaVM>();
+    auto&      gc     = vm->gc();
+    auto*      module = new_module(gc, "<test>");
+    AstArena   arena;
+    const auto program  = interp_program(arena, 2, 1);
     const auto compiled = CodeGen::compile(gc, *program, module, aria::kMainEntryName);
     ASSERT_TRUE(compiled.has_value());
     const auto text = (*compiled)->unit().disassemble("<main>");
@@ -2413,14 +2418,15 @@ TEST(CodeGen, InterpStringEmitsBuildString) {
 
 TEST(CodeGen, InterpStringSegmentLimit) {
     // 段数上限 = BUILD_STRING 操作数 u8:255 段合法,256 段拒
-    auto  vm     = std::make_unique<AriaVM>();
-    auto& gc     = vm->gc();
-    auto  module = new_module(gc, "<test>");
+    auto     vm     = std::make_unique<AriaVM>();
+    auto&    gc     = vm->gc();
+    auto     module = new_module(gc, "<test>");
+    AstArena arena;
 
-    const auto ok = CodeGen::compile(gc, *interp_program(255, 0), module, aria::kMainEntryName);
+    const auto ok = CodeGen::compile(gc, *interp_program(arena, 255, 0), module, aria::kMainEntryName);
     EXPECT_TRUE(ok.has_value());
 
-    const auto rejected = CodeGen::compile(gc, *interp_program(256, 0), module, aria::kMainEntryName);
+    const auto rejected = CodeGen::compile(gc, *interp_program(arena, 256, 0), module, aria::kMainEntryName);
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().code(), ErrorCode::TooManyElements);
 }

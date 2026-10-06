@@ -43,6 +43,7 @@ add_executable(aria_tests
         object/test_objupvalue.cpp
         # memory
         memory/test_array.cpp
+        memory/test_ast_arena.cpp
         memory/test_gc.cpp
         memory/test_hashtable.cpp
         memory/test_internpool.cpp

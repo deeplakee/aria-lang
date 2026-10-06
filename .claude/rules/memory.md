@@ -45,7 +45,11 @@ header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 
 
 ## `memory/RawAlloc.hpp`
 
-`aria::mem::alloc/realloc/free` 三原语：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口。
+`aria::mem::alloc/realloc/free` 三原语：GC 层全部字节流量的后端缝。后端二选一（`ARIA_USE_MIMALLOC` 走 `mi_malloc` 族 / OFF 退 `std::malloc` 族），三口必须同族（new 的块喂 realloc 是 UB）。GC 容器路径（`GC::allocate` 等）与 `ShellPool` 的 span 获取共用此口；非 GC 的编译期裸分配（`memory/AstArena.hpp` 的块获取/释放）亦经此口，分配失败按先例 `fatal_error(OutOfMemory)` 收口、不抛。
+
+## `memory/AstArena.hpp`
+
+header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按 2 倍翻新块）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(List<T>&&)`（元素一次性搬入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可析构——static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与实测见 `.claude/reference/memory/ast-arena-notes.md`。
 
 ## `memory/ShellPool.hpp`
 

@@ -14,6 +14,8 @@ namespace aria {
     class AstVisitor;
 
     // AST 根基类：所有节点持 SourceLoc（parser 取构造首 token，供语义/代码生成报错定位；空态 = 合成节点）。
+    // 节点全部由 AstArena 分配、裸指针互指（arena 拥有内存，指针仅借用），存活期由所属 arena 覆盖
+    // （整个编译期）；析构函数仅为多态保留，节点从不单独析构。
     struct ASTNode {
         ASTNode() noexcept = default;
         explicit ASTNode(const SourceLoc loc) noexcept : loc_{loc} {}
@@ -110,14 +112,14 @@ namespace aria {
         StringView to_string(Assignment op) noexcept;
     } // namespace Op
 
-    // 共享辅助值类型（非 ASTNode 派生，move-only，提供 dump 供父节点统一渲染）。
+    // 共享辅助值类型（非 ASTNode 派生，提供 dump 供父节点统一渲染；子节点指针借用 arena 内存）。
 
     // 函数参数：plainParams / defaultParam / varargs 统一为 Param；文法保证 is_varargs 与 default_value
     // 互斥（varargs 无默认值）。
     struct Param {
-        StringView     name;
-        UPtr<ExprNode> default_value = nullptr;
-        bool           is_varargs    = false;
+        StringView name;
+        ExprNode*  default_value = nullptr;
+        bool       is_varargs    = false;
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -125,7 +127,7 @@ namespace aria {
 
     // match 分支模式：expression 或 "_" 二选一（value 为 nullptr）；模式是相等比较，不绑定。
     struct MatchPattern {
-        UPtr<ExprNode> value; // nullptr -> "_" 通配
+        ExprNode* value = nullptr; // nullptr -> "_" 通配
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -133,8 +135,8 @@ namespace aria {
 
     // match 语句分支：matchPattern "=>" statement。
     struct MatchArm {
-        MatchPattern   pattern;
-        UPtr<StmtNode> body;
+        MatchPattern pattern;
+        StmtNode*    body = nullptr;
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -142,8 +144,8 @@ namespace aria {
 
     // match 表达式分支：matchPattern "=>" expression。
     struct MatchExprArm {
-        MatchPattern   pattern;
-        UPtr<ExprNode> body; // 结果表达式
+        MatchPattern pattern;
+        ExprNode*    body = nullptr; // 结果表达式
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -151,8 +153,8 @@ namespace aria {
 
     // var 的单绑定：target + 可选初始化器。
     struct VarBinding {
-        UPtr<PatternNode> target;
-        UPtr<ExprNode>    initializer;
+        PatternNode* target      = nullptr;
+        ExprNode*    initializer = nullptr;
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -160,8 +162,8 @@ namespace aria {
 
     // map 字面量的键值对，键为任意 expression（运行时求值）。
     struct MapEntry {
-        UPtr<ExprNode> key;
-        UPtr<ExprNode> value;
+        ExprNode* key   = nullptr;
+        ExprNode* value = nullptr;
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -185,10 +187,10 @@ namespace aria {
         template<typename T>
         concept Dumpable = requires(const T& value, const usize indent) { value.dump(indent); };
 
-        // 子项渲染按形态分派：UPtr 空安全（null 跳过）、值、UPtr 列表逐元素判空、值列表。
+        // 子项渲染按形态分派：裸指针空安全（null 跳过）、值、Span 逐元素分派。
         template<Dumpable T>
-        String dump_child(const usize indent, const UPtr<T>& node) {
-            return node ? node->dump(indent) : "";
+        String dump_child(const usize indent, const T* node) {
+            return node != nullptr ? node->dump(indent) : "";
         }
 
         template<Dumpable T>
@@ -197,10 +199,10 @@ namespace aria {
         }
 
         template<Dumpable T>
-        String dump_child(const usize indent, const List<UPtr<T>>& nodes) {
+        String dump_child(const usize indent, const Span<T*>& nodes) {
             String out;
-            for (const auto& node: nodes) {
-                if (node) {
+            for (const T* node: nodes) {
+                if (node != nullptr) {
                     out += node->dump(indent);
                 }
             }
@@ -208,9 +210,9 @@ namespace aria {
         }
 
         template<Dumpable T>
-        String dump_child(const usize indent, const List<T>& values) {
+        String dump_child(const usize indent, const Span<T>& values) {
             String out;
-            for (const auto& value: values) {
+            for (const T& value: values) {
                 out += value.dump(indent);
             }
             return out;
@@ -229,105 +231,101 @@ namespace aria {
 
     // ProgramNode：program -> declaration*。整个编译单元的根，持顶层声明（StmtNode）列表。
     struct ProgramNode : ASTNode {
-        ProgramNode(const SourceLoc loc, List<UPtr<StmtNode>> declarations) :
-            ASTNode{loc}, declarations{std::move(declarations)} {}
+        ProgramNode(const SourceLoc loc, const Span<StmtNode*> declarations) :
+            ASTNode{loc}, declarations{declarations} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<StmtNode>> declarations;
+        Span<StmtNode*> declarations;
     };
 
     // 语句节点（StmtNode）
 
     // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
-        BlockNode(const SourceLoc loc, List<UPtr<StmtNode>> statements) :
-            StmtNode{loc}, statements{std::move(statements)} {}
+        BlockNode(const SourceLoc loc, const Span<StmtNode*> statements) : StmtNode{loc}, statements{statements} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<StmtNode>> statements;
+        Span<StmtNode*> statements;
     };
 
     // 表达式语句：expression ";"。
     struct ExprStmtNode : StmtNode {
-        ExprStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
+        ExprStmtNode(const SourceLoc loc, ExprNode* expr) : StmtNode{loc}, expr{expr} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> expr;
+        ExprNode* expr;
     };
 
     // if 语句：if (cond) stmt (else stmt)?。
     struct IfStmtNode : StmtNode {
-        IfStmtNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> then_branch, UPtr<StmtNode> else_branch) :
-            StmtNode{loc}, condition{std::move(cond)}, then_branch{std::move(then_branch)},
-            else_branch{std::move(else_branch)} {}
+        IfStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* then_branch, StmtNode* else_branch) :
+            StmtNode{loc}, condition{cond}, then_branch{then_branch}, else_branch{else_branch} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> condition;
-        UPtr<StmtNode> then_branch;
-        UPtr<StmtNode> else_branch;
+        ExprNode* condition;
+        StmtNode* then_branch;
+        StmtNode* else_branch;
     };
 
     // while 语句：while (cond) stmt。
     struct WhileStmtNode : StmtNode {
-        WhileStmtNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<StmtNode> body) :
-            StmtNode{loc}, condition{std::move(cond)}, body{std::move(body)} {}
+        WhileStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* body) :
+            StmtNode{loc}, condition{cond}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> condition;
-        UPtr<StmtNode> body;
+        ExprNode* condition;
+        StmtNode* body;
     };
 
     // for 语句（C 风格）：for (init; cond; incr) stmt，init / condition / increment 均可省。
     struct ForStmtNode : StmtNode {
-        ForStmtNode(const SourceLoc loc, UPtr<StmtNode> init, UPtr<ExprNode> condition, UPtr<ExprNode> increment,
-                    UPtr<StmtNode> body) :
-            StmtNode{loc}, init{std::move(init)}, condition{std::move(condition)}, increment{std::move(increment)},
-            body{std::move(body)} {}
+        ForStmtNode(const SourceLoc loc, StmtNode* init, ExprNode* condition, ExprNode* increment, StmtNode* body) :
+            StmtNode{loc}, init{init}, condition{condition}, increment{increment}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<StmtNode> init;
-        UPtr<ExprNode> condition;
-        UPtr<ExprNode> increment;
-        UPtr<StmtNode> body;
+        StmtNode* init;
+        ExprNode* condition;
+        ExprNode* increment;
+        StmtNode* body;
     };
 
     // for-in 语句：for (pattern in expr) stmt，pattern 绑 next() 的值；listPattern 按位置解构。
     struct ForInStmtNode : StmtNode {
-        ForInStmtNode(const SourceLoc loc, UPtr<PatternNode> pattern, UPtr<ExprNode> iterable, UPtr<StmtNode> body) :
-            StmtNode{loc}, pattern{std::move(pattern)}, iterable{std::move(iterable)}, body{std::move(body)} {}
+        ForInStmtNode(const SourceLoc loc, PatternNode* pattern, ExprNode* iterable, StmtNode* body) :
+            StmtNode{loc}, pattern{pattern}, iterable{iterable}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<PatternNode> pattern;
-        UPtr<ExprNode>    iterable;
-        UPtr<StmtNode>    body;
+        PatternNode* pattern;
+        ExprNode*    iterable;
+        StmtNode*    body;
     };
 
     // break 语句。
@@ -352,80 +350,97 @@ namespace aria {
 
     // return 语句：return expression? ";"。value 缺省表无返回值。
     struct ReturnStmtNode : StmtNode {
-        ReturnStmtNode(const SourceLoc loc, UPtr<ExprNode> value) : StmtNode{loc}, value{std::move(value)} {}
+        ReturnStmtNode(const SourceLoc loc, ExprNode* value) : StmtNode{loc}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> value;
+        ExprNode* value;
     };
 
     // import 语句：import string as identifier ";"。path 文法钉死字符串字面量（Parser 保证指向
     // StringLiteralNode），解码在代码生成端；alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
-        ImportStmtNode(const SourceLoc loc, UPtr<ExprNode> path, const StringView alias) :
-            StmtNode{loc}, path{std::move(path)}, alias{alias} {}
+        ImportStmtNode(const SourceLoc loc, ExprNode* path, const StringView alias) :
+            StmtNode{loc}, path{path}, alias{alias} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> path;
-        StringView     alias;
+        ExprNode*  path;
+        StringView alias;
     };
 
     // try 语句：try block (catch (id) block)?；ename/catch_body 成对缺省（parser 保证；
     // ename 空视图即无 catch，identifier 恒非空），语义阶段强制 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
-        TryStmtNode(const SourceLoc loc, UPtr<BlockNode> body, const StringView ename, UPtr<BlockNode> catch_body) :
-            StmtNode{loc}, body{std::move(body)}, ename{ename}, catch_body{std::move(catch_body)} {}
+        TryStmtNode(const SourceLoc loc, BlockNode* body, const StringView ename, BlockNode* catch_body) :
+            StmtNode{loc}, body{body}, ename{ename}, catch_body{catch_body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<BlockNode> body;
-        StringView      ename;
-        UPtr<BlockNode> catch_body;
+        BlockNode* body;
+        StringView ename;
+        BlockNode* catch_body;
     };
 
     // throw 语句：throw expression ";"。
     struct ThrowStmtNode : StmtNode {
-        ThrowStmtNode(const SourceLoc loc, UPtr<ExprNode> expr) : StmtNode{loc}, expr{std::move(expr)} {}
+        ThrowStmtNode(const SourceLoc loc, ExprNode* expr) : StmtNode{loc}, expr{expr} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> expr;
+        ExprNode* expr;
     };
 
     // match 语句：match (expr) { matchArm+ }。分支为 statement（MatchArm.body）。
     struct MatchStmtNode : StmtNode {
-        MatchStmtNode(const SourceLoc loc, UPtr<ExprNode> subject, List<MatchArm> arms) :
-            StmtNode{loc}, subject{std::move(subject)}, arms{std::move(arms)} {}
+        MatchStmtNode(const SourceLoc loc, ExprNode* subject, const Span<MatchArm> arms) :
+            StmtNode{loc}, subject{subject}, arms{arms} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> subject;
-        List<MatchArm> arms;
+        ExprNode*      subject;
+        Span<MatchArm> arms;
     };
 
     // 声明节点（StmtNode 派生：声明即「可出现在 program/block 顶层的语句」）
 
     // 函数声明：fun identifier params block；kind 由 parser 烙定。
     struct FunDeclNode : StmtNode {
-        FunDeclNode(const SourceLoc loc, const StringView name, List<Param> params, UPtr<BlockNode> body,
-                    const FnKind kind) :
-            StmtNode{loc}, name{name}, params{std::move(params)}, body{std::move(body)}, kind{kind} {}
+        FunDeclNode(const SourceLoc loc, const StringView name, const Span<Param> params, BlockNode* body,
+                    const FnKind kind) : StmtNode{loc}, name{name}, params{params}, body{body}, kind{kind} {}
+
+        [[nodiscard]]
+        String dump(usize indent) const override;
+
+        void accept(AstVisitor& visitor) override;
+
+        StringView  name;
+        Span<Param> params;
+        BlockNode*  body;
+        FnKind      kind;
+    };
+
+    // def 声明："def" identifier (":" identifier)? "{" member* "}"（成员含嵌套 defDecl）。
+    // members 按源序保留，静态变量初始化即此序（前一静态变量可被后续初始化器引用）。
+    struct DefDeclNode : StmtNode {
+        DefDeclNode(const SourceLoc loc, const StringView name, ExprNode* superclass, const Span<StmtNode*> members,
+                    const bool is_member) :
+            StmtNode{loc}, name{name}, super{superclass}, members{members}, is_member{is_member} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -433,54 +448,35 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         StringView      name;
-        List<Param>     params;
-        UPtr<BlockNode> body;
-        FnKind          kind;
-    };
-
-    // def 声明："def" identifier (":" identifier)? "{" member* "}"（成员含嵌套 defDecl）。
-    // members 按源序保留，静态变量初始化即此序（前一静态变量可被后续初始化器引用）。
-    struct DefDeclNode : StmtNode {
-        DefDeclNode(const SourceLoc loc, const StringView name, UPtr<ExprNode> superclass, List<UPtr<StmtNode>> members,
-                    const bool is_member) :
-            StmtNode{loc}, name{name}, super{std::move(superclass)}, members{std::move(members)}, is_member{is_member} {
-        }
-
-        [[nodiscard]]
-        String dump(usize indent) const override;
-
-        void accept(AstVisitor& visitor) override;
-
-        StringView           name;
-        UPtr<ExprNode>       super;
-        List<UPtr<StmtNode>> members;
-        bool                 is_member; // parser 烙定:语句位声明(false)/类体成员位嵌套类(true)
+        ExprNode*       super;
+        Span<StmtNode*> members;
+        bool            is_member; // 语句位声明(false)/类体成员位嵌套类(true)
     };
 
     // var 声明：var varTarget ("=" expr)? ("," ...)* ";"。
     struct VarDeclNode : StmtNode {
-        VarDeclNode(const SourceLoc loc, List<VarBinding> bindings) : StmtNode{loc}, bindings{std::move(bindings)} {}
+        VarDeclNode(const SourceLoc loc, const Span<VarBinding> bindings) : StmtNode{loc}, bindings{bindings} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<VarBinding> bindings;
+        Span<VarBinding> bindings;
     };
 
     // def 体静态变量成员：单 identifier 绑定的窄节点，多绑定/解构 pattern 由文法在成员位拒绝。
     struct StaticVarMemberNode : StmtNode {
-        StaticVarMemberNode(const SourceLoc loc, const StringView name, UPtr<ExprNode> initializer) :
-            StmtNode{loc}, name{name}, initializer{std::move(initializer)} {}
+        StaticVarMemberNode(const SourceLoc loc, const StringView name, ExprNode* initializer) :
+            StmtNode{loc}, name{name}, initializer{initializer} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        StringView     name;
-        UPtr<ExprNode> initializer;
+        StringView name;
+        ExprNode*  initializer;
     };
 
     // 表达式节点（ExprNode）
@@ -530,15 +526,14 @@ namespace aria {
     // 插值串字面量。段 = 表达式节点序列（字面段为 StringLiteralNode，与 ListExprNode 的
     // 元素列表同构）；空字面段不入列，纯字面（含 \$ 转义形态）在词法层已退化为普通串。
     struct InterpolatedStringNode : ExprNode {
-        InterpolatedStringNode(const SourceLoc loc, List<UPtr<ExprNode>> parts) :
-            ExprNode{loc}, parts{std::move(parts)} {}
+        InterpolatedStringNode(const SourceLoc loc, const Span<ExprNode*> parts) : ExprNode{loc}, parts{parts} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<ExprNode>> parts;
+        Span<ExprNode*> parts;
     };
 
     // 布尔字面量：true / false。
@@ -601,37 +596,37 @@ namespace aria {
 
     // 二元运算表达式：各文法层级统一为一个节点，左结合由 parser 构建左倾树。
     struct BinaryExprNode : ExprNode {
-        BinaryExprNode(const SourceLoc loc, const Op::Binary op, UPtr<ExprNode> lhs, UPtr<ExprNode> rhs) :
-            ExprNode{loc}, op{op}, lhs{std::move(lhs)}, rhs{std::move(rhs)} {}
+        BinaryExprNode(const SourceLoc loc, const Op::Binary op, ExprNode* lhs, ExprNode* rhs) :
+            ExprNode{loc}, op{op}, lhs{lhs}, rhs{rhs} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Op::Binary     op;
-        UPtr<ExprNode> lhs;
-        UPtr<ExprNode> rhs;
+        Op::Binary op;
+        ExprNode*  lhs;
+        ExprNode*  rhs;
     };
 
     // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary。
     struct UnaryExprNode : ExprNode {
-        UnaryExprNode(const SourceLoc loc, const Op::Unary op, UPtr<ExprNode> operand) :
-            ExprNode{loc}, op{op}, operand{std::move(operand)} {}
+        UnaryExprNode(const SourceLoc loc, const Op::Unary op, ExprNode* operand) :
+            ExprNode{loc}, op{op}, operand{operand} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Op::Unary      op;
-        UPtr<ExprNode> operand;
+        Op::Unary op;
+        ExprNode* operand;
     };
 
     // 赋值（含复合赋值）：target op= value，target 合法性在语义阶段查。
     struct AssignmentNode : ExprNode {
-        AssignmentNode(const SourceLoc loc, const Op::Assignment op, UPtr<ExprNode> target, UPtr<ExprNode> value) :
-            ExprNode{loc}, op{op}, target{std::move(target)}, value{std::move(value)} {}
+        AssignmentNode(const SourceLoc loc, const Op::Assignment op, ExprNode* target, ExprNode* value) :
+            ExprNode{loc}, op{op}, target{target}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -639,164 +634,162 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         Op::Assignment op;
-        UPtr<ExprNode> target;
-        UPtr<ExprNode> value;
+        ExprNode*      target;
+        ExprNode*      value;
     };
 
     // 解构赋值：listPattern = expression。
     struct DestructureAssignmentNode : ExprNode {
-        DestructureAssignmentNode(const SourceLoc loc, UPtr<PatternNode> target, UPtr<ExprNode> value) :
-            ExprNode{loc}, target{std::move(target)}, value{std::move(value)} {}
+        DestructureAssignmentNode(const SourceLoc loc, PatternNode* target, ExprNode* value) :
+            ExprNode{loc}, target{target}, value{value} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<PatternNode> target;
-        UPtr<ExprNode>    value;
+        PatternNode* target;
+        ExprNode*    value;
     };
 
     // 函数调用：callee(args)。
     struct CallNode : ExprNode {
-        CallNode(const SourceLoc loc, UPtr<ExprNode> callee, List<UPtr<ExprNode>> args) :
-            ExprNode{loc}, callee{std::move(callee)}, args{std::move(args)} {}
+        CallNode(const SourceLoc loc, ExprNode* callee, const Span<ExprNode*> args) :
+            ExprNode{loc}, callee{callee}, args{args} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode>       callee;
-        List<UPtr<ExprNode>> args;
+        ExprNode*       callee;
+        Span<ExprNode*> args;
     };
 
     // 字段访问：object.name。
     struct FieldAccessNode : ExprNode {
-        FieldAccessNode(const SourceLoc loc, UPtr<ExprNode> object, const StringView name) :
-            ExprNode{loc}, object{std::move(object)}, name{name} {}
+        FieldAccessNode(const SourceLoc loc, ExprNode* object, const StringView name) :
+            ExprNode{loc}, object{object}, name{name} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> object;
-        StringView     name;
+        ExprNode*  object;
+        StringView name;
     };
 
     // 下标访问：object[index]。
     struct IndexAccessNode : ExprNode {
-        IndexAccessNode(const SourceLoc loc, UPtr<ExprNode> object, UPtr<ExprNode> index) :
-            ExprNode{loc}, object{std::move(object)}, index{std::move(index)} {}
+        IndexAccessNode(const SourceLoc loc, ExprNode* object, ExprNode* index) :
+            ExprNode{loc}, object{object}, index{index} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> object;
-        UPtr<ExprNode> index;
+        ExprNode* object;
+        ExprNode* index;
     };
 
     // 复合表达式（primary 的复合部分）
 
     // 列表字面量：[e, e, ...]。
     struct ListExprNode : ExprNode {
-        ListExprNode(const SourceLoc loc, List<UPtr<ExprNode>> elements) :
-            ExprNode{loc}, elements{std::move(elements)} {}
+        ListExprNode(const SourceLoc loc, const Span<ExprNode*> elements) : ExprNode{loc}, elements{elements} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<ExprNode>> elements;
+        Span<ExprNode*> elements;
     };
 
     // map 字面量：{ k: v, ... }。键为任意 expression（运行时求值）。
     struct MapExprNode : ExprNode {
-        MapExprNode(const SourceLoc loc, List<MapEntry> entries) : ExprNode{loc}, entries{std::move(entries)} {}
+        MapExprNode(const SourceLoc loc, const Span<MapEntry> entries) : ExprNode{loc}, entries{entries} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<MapEntry> entries;
+        Span<MapEntry> entries;
     };
 
     // 区间表达式：a..b（含上界）/ a...b（不含上界）/ a.. 或 a...（无上界，upper 为空，两者同义）。
     struct RangeExprNode : ExprNode {
-        RangeExprNode(const SourceLoc loc, const bool is_exclusive, UPtr<ExprNode> lower, UPtr<ExprNode> upper) :
-            ExprNode{loc}, is_exclusive{is_exclusive}, lower{std::move(lower)}, upper{std::move(upper)} {}
+        RangeExprNode(const SourceLoc loc, const bool is_exclusive, ExprNode* lower, ExprNode* upper) :
+            ExprNode{loc}, is_exclusive{is_exclusive}, lower{lower}, upper{upper} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        bool           is_exclusive; // true: a...b（不含上界）；false: a..b（含上界）
-        UPtr<ExprNode> lower;
-        UPtr<ExprNode> upper;
+        bool      is_exclusive; // true: a...b（不含上界）；false: a..b（含上界）
+        ExprNode* lower;
+        ExprNode* upper;
     };
 
     // if 表达式：if (cond) { then } else { else }，分支为单表达式块。
     struct IfExprNode : ExprNode {
-        IfExprNode(const SourceLoc loc, UPtr<ExprNode> cond, UPtr<ExprNode> then_branch, UPtr<ExprNode> else_branch) :
-            ExprNode{loc}, condition{std::move(cond)}, then_branch{std::move(then_branch)},
-            else_branch{std::move(else_branch)} {}
+        IfExprNode(const SourceLoc loc, ExprNode* cond, ExprNode* then_branch, ExprNode* else_branch) :
+            ExprNode{loc}, condition{cond}, then_branch{then_branch}, else_branch{else_branch} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode> condition;
-        UPtr<ExprNode> then_branch;
-        UPtr<ExprNode> else_branch;
+        ExprNode* condition;
+        ExprNode* then_branch;
+        ExprNode* else_branch;
     };
 
     // lambda 表达式：fun params block。
     struct LambdaExprNode : ExprNode {
-        LambdaExprNode(const SourceLoc loc, List<Param> params, UPtr<BlockNode> body) :
-            ExprNode{loc}, params{std::move(params)}, body{std::move(body)} {}
+        LambdaExprNode(const SourceLoc loc, const Span<Param> params, BlockNode* body) :
+            ExprNode{loc}, params{params}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<Param>     params;
-        UPtr<BlockNode> body;
+        Span<Param> params;
+        BlockNode*  body;
     };
 
     // match 表达式：match (subject) { pat => expr ... }。
     struct MatchExprNode : ExprNode {
-        MatchExprNode(const SourceLoc loc, UPtr<ExprNode> subject, List<MatchExprArm> arms) :
-            ExprNode{loc}, subject{std::move(subject)}, arms{std::move(arms)} {}
+        MatchExprNode(const SourceLoc loc, ExprNode* subject, const Span<MatchExprArm> arms) :
+            ExprNode{loc}, subject{subject}, arms{arms} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        UPtr<ExprNode>     subject;
-        List<MatchExprArm> arms;
+        ExprNode*          subject;
+        Span<MatchExprArm> arms;
     };
 
     // 序列表达式：e1, e2, ...，逐个求值、值为最后一个、不短路。
     // 单元素由 parser 透明化不产本节点（"(a)" 保持纯分组，"(a) = v" 左值行为不回归）。
     struct SequenceExprNode : ExprNode {
-        SequenceExprNode(const SourceLoc loc, List<UPtr<ExprNode>> expressions) :
-            ExprNode{loc}, expressions{std::move(expressions)} {}
+        SequenceExprNode(const SourceLoc loc, const Span<ExprNode*> expressions) :
+            ExprNode{loc}, expressions{expressions} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<ExprNode>> expressions;
+        Span<ExprNode*> expressions;
     };
 
     // 解构模式节点（PatternNode）：用于 var 声明的 varTarget、for-in 目标与解构赋值左侧目标。
@@ -827,16 +820,16 @@ namespace aria {
     // 列表模式：[p, p, ..., ...rest?]。rest 收集剩余为新 list（只接受绑名，文法禁 "..._"），
     // nullptr 表无 rest 忽略剩余。
     struct ListPatternNode : PatternNode {
-        ListPatternNode(const SourceLoc loc, List<UPtr<PatternNode>> elements, UPtr<IdentifierPatternNode> rest) :
-            PatternNode{loc}, elements{std::move(elements)}, rest{std::move(rest)} {}
+        ListPatternNode(const SourceLoc loc, const Span<PatternNode*> elements, IdentifierPatternNode* rest) :
+            PatternNode{loc}, elements{elements}, rest{rest} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        List<UPtr<PatternNode>>     elements;
-        UPtr<IdentifierPatternNode> rest;
+        Span<PatternNode*>     elements;
+        IdentifierPatternNode* rest;
     };
 
 } // namespace aria

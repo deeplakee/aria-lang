@@ -44,6 +44,7 @@ add_library(aria_core STATIC
         src/bytecode/CodeUnit.hpp
         src/memory/Allocator.hpp
         src/memory/Array.hpp
+        src/memory/AstArena.hpp
         src/memory/Buffer.hpp
         src/memory/GC.cpp
         src/memory/GC.hpp

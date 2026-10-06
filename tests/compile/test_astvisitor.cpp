@@ -2,10 +2,12 @@
 
 #include "compile/AstVisitor.hpp"
 #include "compile/ast.hpp"
+#include "memory/AstArena.hpp"
 
 // 同 test_ast.cpp：不使用 `using namespace aria`（fs.hpp 在 Windows 下可能间接包含
 // windows.h，其全局符号与 aria 命名空间冲突）。按需显式引入。
 using aria::AssignmentNode;
+using aria::AstArena;
 using aria::ASTNode;
 using aria::AstVisitor;
 using aria::BinaryExprNode;
@@ -52,6 +54,7 @@ using aria::RangeExprNode;
 using aria::ReturnStmtNode;
 using aria::SequenceExprNode;
 using aria::SourceLoc;
+using aria::Span;
 using aria::StaticVarMemberNode;
 using aria::StmtNode;
 using aria::String;
@@ -63,7 +66,6 @@ using aria::ThisExprNode;
 using aria::ThrowStmtNode;
 using aria::TryStmtNode;
 using aria::UnaryExprNode;
-using aria::UPtr;
 using aria::VarBinding;
 using aria::VarDeclNode;
 using aria::WhileStmtNode;
@@ -73,11 +75,13 @@ namespace {
     // 空位置：访问者分派不依赖 loc。
     const SourceLoc kLoc{};
 
-    // 便利工厂（同 test_ast.cpp）。
-    UPtr<IntegerLiteralNode>    i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
-    UPtr<IdentifierNode>        ident(StringView name) { return std::make_unique<IdentifierNode>(kLoc, name); }
-    UPtr<IdentifierPatternNode> id_pat(StringView name) { return std::make_unique<IdentifierPatternNode>(kLoc, name); }
-    UPtr<BlockNode>             empty_block() { return std::make_unique<BlockNode>(kLoc, List<UPtr<StmtNode>>{}); }
+    // 便利工厂（同 test_ast.cpp）：节点分配自测试局部 arena，返回裸指针。
+    IntegerLiteralNode* i64lit(AstArena& arena, const i64 v) { return arena.make<IntegerLiteralNode>(kLoc, v); }
+    IdentifierNode*     ident(AstArena& arena, const StringView name) { return arena.make<IdentifierNode>(kLoc, name); }
+    IdentifierPatternNode* id_pat(AstArena& arena, const StringView name) {
+        return arena.make<IdentifierPatternNode>(kLoc, name);
+    }
+    BlockNode* empty_block(AstArena& arena) { return arena.make<BlockNode>(kLoc, Span<StmtNode*>{}); }
 
     // 记录型访问者：每个 visitXxxNode 把节点类型名压入 visited_，供断言分派结果。
     // 若节点 accept 分派到错误的 visitXxxNode，visited_ 内容会不符；若某节点类型未
@@ -152,7 +156,7 @@ namespace {
     };
 
     // 构造单个节点并经 node->accept(v) 分派，断言恰好命中对应 visitXxxNode。
-    void expect_visit(UPtr<ASTNode> node, const StringView tag) {
+    void expect_visit(ASTNode* node, const StringView tag) {
         RecordingVisitor v;
         node->accept(v);
         ASSERT_EQ(v.visited().size(), 1u);
@@ -167,72 +171,74 @@ namespace {
 // visitXxxNode，本测试编译期即报错。
 
 TEST(AstVisitorDispatch, StatementsAndDeclarations) {
+    AstArena arena;
     // 根节点
-    expect_visit(std::make_unique<ProgramNode>(kLoc, List<UPtr<StmtNode>>{}), "ProgramNode");
+    expect_visit(arena.make<ProgramNode>(kLoc, Span<StmtNode*>{}), "ProgramNode");
 
     // 语句
-    expect_visit(empty_block(), "BlockNode");
-    expect_visit(std::make_unique<ExprStmtNode>(kLoc, i64lit(1)), "ExprStmtNode");
-    expect_visit(std::make_unique<IfStmtNode>(kLoc, ident("c"), empty_block(), empty_block()), "IfStmtNode");
-    expect_visit(std::make_unique<WhileStmtNode>(kLoc, ident("c"), empty_block()), "WhileStmtNode");
-    expect_visit(std::make_unique<ForStmtNode>(kLoc, nullptr, ident("c"), nullptr, empty_block()), "ForStmtNode");
-    expect_visit(std::make_unique<ForInStmtNode>(kLoc, id_pat("x"), ident("xs"), empty_block()), "ForInStmtNode");
-    expect_visit(std::make_unique<BreakStmtNode>(kLoc), "BreakStmtNode");
-    expect_visit(std::make_unique<ContinueStmtNode>(kLoc), "ContinueStmtNode");
-    expect_visit(std::make_unique<ReturnStmtNode>(kLoc, i64lit(1)), "ReturnStmtNode");
-    expect_visit(std::make_unique<ImportStmtNode>(
-                         kLoc, std::make_unique<StringLiteralNode>(kLoc, StringView{"math"}, StringShape{4, false}),
+    expect_visit(empty_block(arena), "BlockNode");
+    expect_visit(arena.make<ExprStmtNode>(kLoc, i64lit(arena, 1)), "ExprStmtNode");
+    expect_visit(arena.make<IfStmtNode>(kLoc, ident(arena, "c"), empty_block(arena), empty_block(arena)), "IfStmtNode");
+    expect_visit(arena.make<WhileStmtNode>(kLoc, ident(arena, "c"), empty_block(arena)), "WhileStmtNode");
+    expect_visit(arena.make<ForStmtNode>(kLoc, nullptr, ident(arena, "c"), nullptr, empty_block(arena)), "ForStmtNode");
+    expect_visit(arena.make<ForInStmtNode>(kLoc, id_pat(arena, "x"), ident(arena, "xs"), empty_block(arena)),
+                 "ForInStmtNode");
+    expect_visit(arena.make<BreakStmtNode>(kLoc), "BreakStmtNode");
+    expect_visit(arena.make<ContinueStmtNode>(kLoc), "ContinueStmtNode");
+    expect_visit(arena.make<ReturnStmtNode>(kLoc, i64lit(arena, 1)), "ReturnStmtNode");
+    expect_visit(arena.make<ImportStmtNode>(
+                         kLoc, arena.make<StringLiteralNode>(kLoc, StringView{"math"}, StringShape{4, false}),
                          StringView{"m"}),
                  "ImportStmtNode");
-    expect_visit(std::make_unique<TryStmtNode>(kLoc, empty_block(), StringView{"e"}, empty_block()), "TryStmtNode");
-    expect_visit(std::make_unique<ThrowStmtNode>(kLoc, i64lit(1)), "ThrowStmtNode");
-    expect_visit(std::make_unique<MatchStmtNode>(kLoc, ident("s"), List<MatchArm>{}), "MatchStmtNode");
+    expect_visit(arena.make<TryStmtNode>(kLoc, empty_block(arena), StringView{"e"}, empty_block(arena)), "TryStmtNode");
+    expect_visit(arena.make<ThrowStmtNode>(kLoc, i64lit(arena, 1)), "ThrowStmtNode");
+    expect_visit(arena.make<MatchStmtNode>(kLoc, ident(arena, "s"), Span<MatchArm>{}), "MatchStmtNode");
 
     // 声明
-    expect_visit(std::make_unique<FunDeclNode>(kLoc, StringView{"f"}, List<Param>{}, empty_block(), FnKind::Function),
+    expect_visit(arena.make<FunDeclNode>(kLoc, StringView{"f"}, Span<Param>{}, empty_block(arena), FnKind::Function),
                  "FunDeclNode");
-    expect_visit(std::make_unique<DefDeclNode>(kLoc, StringView{"C"}, nullptr, List<UPtr<StmtNode>>{}, false),
-                 "DefDeclNode");
-    expect_visit(std::make_unique<VarDeclNode>(kLoc, List<VarBinding>{}), "VarDeclNode");
-    expect_visit(std::make_unique<StaticVarMemberNode>(kLoc, StringView{"x"}, i64lit(1)), "StaticVarMemberNode");
+    expect_visit(arena.make<DefDeclNode>(kLoc, StringView{"C"}, nullptr, Span<StmtNode*>{}, false), "DefDeclNode");
+    expect_visit(arena.make<VarDeclNode>(kLoc, Span<VarBinding>{}), "VarDeclNode");
+    expect_visit(arena.make<StaticVarMemberNode>(kLoc, StringView{"x"}, i64lit(arena, 1)), "StaticVarMemberNode");
 }
 
 TEST(AstVisitorDispatch, Expressions) {
+    AstArena arena;
     // 字面量与基础表达式
-    expect_visit(i64lit(1), "IntegerLiteralNode");
-    expect_visit(std::make_unique<FloatLiteralNode>(kLoc, 1.5), "FloatLiteralNode");
-    expect_visit(std::make_unique<StringLiteralNode>(kLoc, StringView{"s"}, StringShape{1, false}),
-                 "StringLiteralNode");
-    expect_visit(std::make_unique<BoolLiteralNode>(kLoc, true), "BoolLiteralNode");
-    expect_visit(std::make_unique<NilLiteralNode>(kLoc), "NilLiteralNode");
-    expect_visit(ident("x"), "IdentifierNode");
-    expect_visit(std::make_unique<ThisExprNode>(kLoc), "ThisExprNode");
-    expect_visit(std::make_unique<SuperExprNode>(kLoc, StringView{"m"}), "SuperExprNode");
+    expect_visit(i64lit(arena, 1), "IntegerLiteralNode");
+    expect_visit(arena.make<FloatLiteralNode>(kLoc, 1.5), "FloatLiteralNode");
+    expect_visit(arena.make<StringLiteralNode>(kLoc, StringView{"s"}, StringShape{1, false}), "StringLiteralNode");
+    expect_visit(arena.make<BoolLiteralNode>(kLoc, true), "BoolLiteralNode");
+    expect_visit(arena.make<NilLiteralNode>(kLoc), "NilLiteralNode");
+    expect_visit(ident(arena, "x"), "IdentifierNode");
+    expect_visit(arena.make<ThisExprNode>(kLoc), "ThisExprNode");
+    expect_visit(arena.make<SuperExprNode>(kLoc, StringView{"m"}), "SuperExprNode");
 
     // 运算符表达式
-    expect_visit(std::make_unique<BinaryExprNode>(kLoc, aria::Op::Binary::Plus, i64lit(1), i64lit(2)),
+    expect_visit(arena.make<BinaryExprNode>(kLoc, aria::Op::Binary::Plus, i64lit(arena, 1), i64lit(arena, 2)),
                  "BinaryExprNode");
-    expect_visit(std::make_unique<UnaryExprNode>(kLoc, aria::Op::Unary::Minus, ident("x")), "UnaryExprNode");
-    expect_visit(std::make_unique<AssignmentNode>(kLoc, aria::Op::Assignment::Assign, ident("x"), i64lit(1)),
+    expect_visit(arena.make<UnaryExprNode>(kLoc, aria::Op::Unary::Minus, ident(arena, "x")), "UnaryExprNode");
+    expect_visit(arena.make<AssignmentNode>(kLoc, aria::Op::Assignment::Assign, ident(arena, "x"), i64lit(arena, 1)),
                  "AssignmentNode");
-    expect_visit(std::make_unique<DestructureAssignmentNode>(kLoc, id_pat("x"), ident("l")),
+    expect_visit(arena.make<DestructureAssignmentNode>(kLoc, id_pat(arena, "x"), ident(arena, "l")),
                  "DestructureAssignmentNode");
-    expect_visit(std::make_unique<CallNode>(kLoc, ident("f"), List<UPtr<ExprNode>>{}), "CallNode");
-    expect_visit(std::make_unique<FieldAccessNode>(kLoc, ident("o"), StringView{"f"}), "FieldAccessNode");
-    expect_visit(std::make_unique<IndexAccessNode>(kLoc, ident("a"), i64lit(0)), "IndexAccessNode");
+    expect_visit(arena.make<CallNode>(kLoc, ident(arena, "f"), Span<ExprNode*>{}), "CallNode");
+    expect_visit(arena.make<FieldAccessNode>(kLoc, ident(arena, "o"), StringView{"f"}), "FieldAccessNode");
+    expect_visit(arena.make<IndexAccessNode>(kLoc, ident(arena, "a"), i64lit(arena, 0)), "IndexAccessNode");
 
     // 复合表达式
-    expect_visit(std::make_unique<ListExprNode>(kLoc, List<UPtr<ExprNode>>{}), "ListExprNode");
-    expect_visit(std::make_unique<MapExprNode>(kLoc, List<MapEntry>{}), "MapExprNode");
-    expect_visit(std::make_unique<RangeExprNode>(kLoc, false, i64lit(1), i64lit(2)), "RangeExprNode");
-    expect_visit(std::make_unique<IfExprNode>(kLoc, i64lit(1), i64lit(2), i64lit(3)), "IfExprNode");
-    expect_visit(std::make_unique<LambdaExprNode>(kLoc, List<Param>{}, empty_block()), "LambdaExprNode");
-    expect_visit(std::make_unique<MatchExprNode>(kLoc, ident("s"), List<MatchExprArm>{}), "MatchExprNode");
-    expect_visit(std::make_unique<SequenceExprNode>(kLoc, List<UPtr<ExprNode>>{}), "SequenceExprNode");
+    expect_visit(arena.make<ListExprNode>(kLoc, Span<ExprNode*>{}), "ListExprNode");
+    expect_visit(arena.make<MapExprNode>(kLoc, Span<MapEntry>{}), "MapExprNode");
+    expect_visit(arena.make<RangeExprNode>(kLoc, false, i64lit(arena, 1), i64lit(arena, 2)), "RangeExprNode");
+    expect_visit(arena.make<IfExprNode>(kLoc, i64lit(arena, 1), i64lit(arena, 2), i64lit(arena, 3)), "IfExprNode");
+    expect_visit(arena.make<LambdaExprNode>(kLoc, Span<Param>{}, empty_block(arena)), "LambdaExprNode");
+    expect_visit(arena.make<MatchExprNode>(kLoc, ident(arena, "s"), Span<MatchExprArm>{}), "MatchExprNode");
+    expect_visit(arena.make<SequenceExprNode>(kLoc, Span<ExprNode*>{}), "SequenceExprNode");
 }
 
 TEST(AstVisitorDispatch, Patterns) {
-    expect_visit(id_pat("x"), "IdentifierPatternNode");
-    expect_visit(std::make_unique<WildcardPatternNode>(kLoc), "WildcardPatternNode");
-    expect_visit(std::make_unique<ListPatternNode>(kLoc, List<UPtr<PatternNode>>{}, nullptr), "ListPatternNode");
+    AstArena arena;
+    expect_visit(id_pat(arena, "x"), "IdentifierPatternNode");
+    expect_visit(arena.make<WildcardPatternNode>(kLoc), "WildcardPatternNode");
+    expect_visit(arena.make<ListPatternNode>(kLoc, Span<PatternNode*>{}, nullptr), "ListPatternNode");
 }

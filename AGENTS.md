@@ -35,6 +35,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、`init_` 写点（ctor 自 super 派生 + `set_field` 同步）、Locate 合流栈泄漏；类相关特性重启前重读）。
 - `runtime/coroutine-implementation-pitfalls.md` -- M6 协程踩坑归档（槽协议、切换根安全、链式 unwind 四步定序、嵌套 run_closure 红线；协程相关特性重启前重读）。
 - `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
+- `memory/ast-arena-notes.md` -- AST bump arena 契约与实测（动 Parser/CodeGen 分配与遍历路径前先读）。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 - `bench/lang-bench-notes.md` -- aria 源文件级性能基准（`bench/lang/` 与它的驱动 `lang_bench.py`）的测量纪律与端口纪律、跨语言覆盖差异的理由、已实测排除项。
 

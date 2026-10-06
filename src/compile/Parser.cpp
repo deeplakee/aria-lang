@@ -82,19 +82,19 @@ namespace aria {
 
     } // namespace
 
-    Parser::Parser(List<Token>& tokens, SourceFile& source) noexcept :
-        tokens_{tokens}, source_{source}, pos_{0}, errors_{} {}
+    Parser::Parser(AstArena& arena, List<Token>& tokens, SourceFile& source) noexcept :
+        arena_{arena}, tokens_{tokens}, source_{source}, pos_{0}, errors_{} {}
 
     // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
     // 插值字面段三处共用。
-    UPtr<StringLiteralNode> Parser::make_string_literal(const Token& token) const {
-        return std::make_unique<StringLiteralNode>(loc_of(token), token.string_value(), token.shape());
+    StringLiteralNode* Parser::make_string_literal(const Token& token) const {
+        return arena_.make<StringLiteralNode>(loc_of(token), token.string_value(), token.shape());
     }
 
-    Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token>& tokens, SourceFile& source) {
-        Parser parser{tokens, source};
+    Result<ProgramNode*, List<Error>> Parser::parse(AstArena& arena, List<Token>& tokens, SourceFile& source) {
+        Parser parser{arena, tokens, source};
 
-        UPtr<ProgramNode> prog;
+        ProgramNode* prog = nullptr;
         try {
             prog = parser.program();
         } catch (const AriaCompileException& e) {
@@ -196,18 +196,18 @@ namespace aria {
         }
     }
 
-    UPtr<ProgramNode> Parser::program() {
-        const SourceLoc      loc = loc_of(peek());
-        List<UPtr<StmtNode>> decls;
+    ProgramNode* Parser::program() {
+        const SourceLoc loc = loc_of(peek());
+        List<StmtNode*> decls;
         while (!is_at_end()) {
-            if (UPtr<StmtNode> d = declaration()) {
-                decls.push_back(std::move(d));
+            if (StmtNode* d = declaration()) {
+                decls.push_back(d);
             }
         }
-        return std::make_unique<ProgramNode>(loc, std::move(decls));
+        return arena_.make<ProgramNode>(loc, arena_.make_list(std::move(decls)));
     }
 
-    UPtr<StmtNode> Parser::declaration() {
+    StmtNode* Parser::declaration() {
         try {
             // fun + 标识符 -> 函数声明；fun + '(' -> lambda 表达式语句（走 statement）。
             if (check(TokenType::Fun) && check_next(TokenType::Identifier)) {
@@ -227,13 +227,13 @@ namespace aria {
         }
     }
 
-    UPtr<FunDeclNode> Parser::fun_decl(const FnKind kind) {
+    FunDeclNode* Parser::fun_decl(const FnKind kind) {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
-        const auto      name = expect_identifier();
-        List<Param>     ps   = params();
-        UPtr<BlockNode> body = block();
-        return std::make_unique<FunDeclNode>(loc, name, std::move(ps), std::move(body), kind);
+        const auto  name = expect_identifier();
+        List<Param> ps   = params();
+        BlockNode*  body = block();
+        return arena_.make<FunDeclNode>(loc, name, arena_.make_list(std::move(ps)), body, kind);
     }
 
     List<Param> Parser::params() {
@@ -249,8 +249,8 @@ namespace aria {
                 }
                 const auto name = expect_identifier();
                 if (match(TokenType::Equal)) {
-                    UPtr<ExprNode> dv = expression();
-                    result.push_back(Param{.name = name, .default_value = std::move(dv)});
+                    ExprNode* dv = expression();
+                    result.push_back(Param{.name = name, .default_value = dv});
                     seen_default = true;
                 } else {
                     if (seen_default) {
@@ -270,19 +270,19 @@ namespace aria {
         return result;
     }
 
-    UPtr<DefDeclNode> Parser::def_decl(const bool is_member) {
+    DefDeclNode* Parser::def_decl(const bool is_member) {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Def, "'def'");
-        const auto     name       = expect_identifier();
-        UPtr<ExprNode> superclass = nullptr;
+        const auto name       = expect_identifier();
+        ExprNode*  superclass = nullptr;
         if (match(TokenType::Colon)) {
             const auto super_loc = loc_of(peek());
-            superclass           = std::make_unique<IdentifierNode>(super_loc, expect_identifier());
+            superclass           = arena_.make<IdentifierNode>(super_loc, expect_identifier());
         }
         expect(TokenType::LeftBrace, "'{'");
         // def 体成员按首 token 分派：var -> 静态变量，fun -> 静态方法（无 this），裸 identifier ->
         // 实例方法（名为 init 烙 InitMethod 构造角色），def -> 嵌套类（递归烙 is_member）。其余报错。
-        List<UPtr<StmtNode>> members;
+        List<StmtNode*> members;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
             if (check(TokenType::Var)) {
                 members.push_back(member_var());
@@ -294,28 +294,28 @@ namespace aria {
                 const SourceLoc mloc  = loc_of(peek());
                 const auto      mname = expect_identifier();
                 List<Param>     mps   = params();
-                UPtr<BlockNode> mbody = block();
+                BlockNode*      mbody = block();
                 const auto      kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
-                members.push_back(std::make_unique<FunDeclNode>(mloc, mname, std::move(mps), std::move(mbody), kind));
+                members.push_back(arena_.make<FunDeclNode>(mloc, mname, arena_.make_list(std::move(mps)), mbody, kind));
             } else {
                 error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
                       peek().lexeme());
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<DefDeclNode>(loc, name, std::move(superclass), std::move(members), is_member);
+        return arena_.make<DefDeclNode>(loc, name, superclass, arena_.make_list(std::move(members)), is_member);
     }
 
-    UPtr<StaticVarMemberNode> Parser::member_var() {
+    StaticVarMemberNode* Parser::member_var() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Var, "'var'");
-        const auto     name = expect_identifier();
-        UPtr<ExprNode> init = match(TokenType::Equal) ? expression() : nullptr;
+        const auto name = expect_identifier();
+        ExprNode*  init = match(TokenType::Equal) ? expression() : nullptr;
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<StaticVarMemberNode>(loc, name, std::move(init));
+        return arena_.make<StaticVarMemberNode>(loc, name, init);
     }
 
-    UPtr<VarDeclNode> Parser::var_decl() {
+    VarDeclNode* Parser::var_decl() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Var, "'var'");
         List<VarBinding> bindings;
@@ -323,17 +323,17 @@ namespace aria {
             bindings.push_back(var_binding());
         } while (match(TokenType::Comma));
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<VarDeclNode>(loc, std::move(bindings));
+        return arena_.make<VarDeclNode>(loc, arena_.make_list(std::move(bindings)));
     }
 
     VarBinding Parser::var_binding() {
         // varTarget 统一按 pattern 解析（identifier ⊂ pattern）。
-        UPtr<PatternNode> target = pattern();
-        UPtr<ExprNode>    init   = match(TokenType::Equal) ? expression() : nullptr;
-        return VarBinding{.target = std::move(target), .initializer = std::move(init)};
+        PatternNode* target = pattern();
+        ExprNode*    init   = match(TokenType::Equal) ? expression() : nullptr;
+        return VarBinding{.target = target, .initializer = init};
     }
 
-    UPtr<StmtNode> Parser::statement() {
+    StmtNode* Parser::statement() {
         switch (peek().type()) {
             case TokenType::If:
                 return if_stmt();
@@ -362,35 +362,35 @@ namespace aria {
         }
     }
 
-    UPtr<StmtNode> Parser::expression_stmt() {
+    StmtNode* Parser::expression_stmt() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = sequence(); // 语句位收序列层：a = 1, b = 2;（for-init 复用本入口）
+        ExprNode*       expr = sequence(); // 语句位收序列层：a = 1, b = 2;（for-init 复用本入口）
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ExprStmtNode>(loc, std::move(expr));
+        return arena_.make<ExprStmtNode>(loc, expr);
     }
 
-    UPtr<StmtNode> Parser::if_stmt() {
+    StmtNode* Parser::if_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = sequence();
+        ExprNode* cond = sequence();
         expect(TokenType::RightParen, "')'");
-        UPtr<StmtNode> then_branch = statement();
-        UPtr<StmtNode> else_branch = match(TokenType::Else) ? statement() : nullptr;
-        return std::make_unique<IfStmtNode>(loc, std::move(cond), std::move(then_branch), std::move(else_branch));
+        StmtNode* then_branch = statement();
+        StmtNode* else_branch = match(TokenType::Else) ? statement() : nullptr;
+        return arena_.make<IfStmtNode>(loc, cond, then_branch, else_branch);
     }
 
-    UPtr<StmtNode> Parser::while_stmt() {
+    StmtNode* Parser::while_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::While, "'while'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = sequence();
+        ExprNode* cond = sequence();
         expect(TokenType::RightParen, "')'");
-        UPtr<StmtNode> body = statement();
-        return std::make_unique<WhileStmtNode>(loc, std::move(cond), std::move(body));
+        StmtNode* body = statement();
+        return arena_.make<WhileStmtNode>(loc, cond, body);
     }
 
-    UPtr<StmtNode> Parser::for_or_for_in_stmt() {
+    StmtNode* Parser::for_or_for_in_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::For, "'for'");
         expect(TokenType::LeftParen, "'('");
@@ -400,8 +400,8 @@ namespace aria {
             return finish_for_stmt(loc, nullptr);
         }
         if (check(TokenType::Var)) {
-            UPtr<StmtNode> init = var_decl();
-            return finish_for_stmt(loc, std::move(init));
+            StmtNode* init = var_decl();
+            return finish_for_stmt(loc, init);
         }
         // forIn 消歧；否则按 forStmt。
         if (looks_like_for_in()) {
@@ -410,29 +410,28 @@ namespace aria {
         return finish_for_stmt(loc, expression_stmt());
     }
 
-    UPtr<StmtNode> Parser::finish_for_stmt(const SourceLoc loc, UPtr<StmtNode> init) {
-        UPtr<ExprNode> condition = nullptr;
+    StmtNode* Parser::finish_for_stmt(const SourceLoc loc, StmtNode* init) {
+        ExprNode* condition = nullptr;
         if (!check(TokenType::Semicolon) && !is_at_end()) {
             condition = sequence();
         }
         expect(TokenType::Semicolon, "';'");
-        UPtr<ExprNode> increment = nullptr;
+        ExprNode* increment = nullptr;
         if (!check(TokenType::RightParen) && !is_at_end()) {
             increment = sequence(); // 增量位收序列层（++i, --j）
         }
         expect(TokenType::RightParen, "')'");
-        UPtr<StmtNode> body = statement();
-        return std::make_unique<ForStmtNode>(loc, std::move(init), std::move(condition), std::move(increment),
-                                             std::move(body));
+        StmtNode* body = statement();
+        return arena_.make<ForStmtNode>(loc, init, condition, increment, body);
     }
 
-    UPtr<StmtNode> Parser::finish_for_in_stmt(const SourceLoc loc) {
-        UPtr<PatternNode> target = pattern(); // forIn 目标为 pattern
+    StmtNode* Parser::finish_for_in_stmt(const SourceLoc loc) {
+        PatternNode* target = pattern(); // forIn 目标为 pattern
         expect(TokenType::In, "'in'");
-        UPtr<ExprNode> iterable = expression();
+        ExprNode* iterable = expression();
         expect(TokenType::RightParen, "')'");
-        UPtr<StmtNode> body = statement();
-        return std::make_unique<ForInStmtNode>(loc, std::move(target), std::move(iterable), std::move(body));
+        StmtNode* body = statement();
+        return arena_.make<ForInStmtNode>(loc, target, iterable, body);
     }
 
     bool Parser::looks_like_for_in() const noexcept {
@@ -464,32 +463,32 @@ namespace aria {
         return false;
     }
 
-    UPtr<StmtNode> Parser::break_stmt() {
+    StmtNode* Parser::break_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Break, "'break'");
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<BreakStmtNode>(loc);
+        return arena_.make<BreakStmtNode>(loc);
     }
 
-    UPtr<StmtNode> Parser::continue_stmt() {
+    StmtNode* Parser::continue_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Continue, "'continue'");
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ContinueStmtNode>(loc);
+        return arena_.make<ContinueStmtNode>(loc);
     }
 
-    UPtr<StmtNode> Parser::return_stmt() {
+    StmtNode* Parser::return_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Return, "'return'");
-        UPtr<ExprNode> value = nullptr;
+        ExprNode* value = nullptr;
         if (!check(TokenType::Semicolon) && !is_at_end()) {
             value = expression();
         }
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ReturnStmtNode>(loc, std::move(value));
+        return arena_.make<ReturnStmtNode>(loc, value);
     }
 
-    UPtr<StmtNode> Parser::import_stmt() {
+    StmtNode* Parser::import_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Import, "'import'");
         if (!check(TokenType::String)) {
@@ -499,37 +498,37 @@ namespace aria {
         expect(TokenType::As, "'as'");
         const auto alias = expect_identifier();
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ImportStmtNode>(loc, std::move(path), alias);
+        return arena_.make<ImportStmtNode>(loc, path, alias);
     }
 
-    UPtr<StmtNode> Parser::try_stmt() {
+    StmtNode* Parser::try_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Try, "'try'");
-        UPtr<BlockNode> body = block();
-        StringView      ename;
-        UPtr<BlockNode> catch_body = nullptr;
+        BlockNode* body = block();
+        StringView ename;
+        BlockNode* catch_body = nullptr;
         if (match(TokenType::Catch)) {
             expect(TokenType::LeftParen, "'('");
             ename = expect_identifier();
             expect(TokenType::RightParen, "')'");
             catch_body = block();
         }
-        return std::make_unique<TryStmtNode>(loc, std::move(body), ename, std::move(catch_body));
+        return arena_.make<TryStmtNode>(loc, body, ename, catch_body);
     }
 
-    UPtr<StmtNode> Parser::throw_stmt() {
+    StmtNode* Parser::throw_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Throw, "'throw'");
-        UPtr<ExprNode> expr = expression();
+        ExprNode* expr = expression();
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ThrowStmtNode>(loc, std::move(expr));
+        return arena_.make<ThrowStmtNode>(loc, expr);
     }
 
-    UPtr<StmtNode> Parser::match_stmt() {
+    StmtNode* Parser::match_stmt() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> subject = sequence();
+        ExprNode* subject = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
         List<MatchArm> arms;
@@ -538,49 +537,49 @@ namespace aria {
             arms.push_back(match_arm());
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<MatchStmtNode>(loc, std::move(subject), std::move(arms));
+        return arena_.make<MatchStmtNode>(loc, subject, arena_.make_list(std::move(arms)));
     }
 
-    UPtr<BlockNode> Parser::block() {
+    BlockNode* Parser::block() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBrace, "'{'");
-        List<UPtr<StmtNode>> stmts;
+        List<StmtNode*> stmts;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
-            if (UPtr<StmtNode> d = declaration()) {
-                stmts.push_back(std::move(d));
+            if (StmtNode* d = declaration()) {
+                stmts.push_back(d);
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<BlockNode>(loc, std::move(stmts));
+        return arena_.make<BlockNode>(loc, arena_.make_list(std::move(stmts)));
     }
 
-    UPtr<ExprNode> Parser::expression() { return assignment(); }
+    ExprNode* Parser::expression() { return assignment(); }
 
-    UPtr<ExprNode> Parser::sequence() {
-        const SourceLoc      loc = loc_of(peek());
-        List<UPtr<ExprNode>> expressions;
+    ExprNode* Parser::sequence() {
+        const SourceLoc loc = loc_of(peek());
+        List<ExprNode*> expressions;
         expressions.push_back(assignment());
         while (match(TokenType::Comma)) {
             expressions.push_back(assignment());
         }
         if (expressions.size() == 1) {
-            return std::move(expressions[0]);
+            return expressions[0];
         }
-        return std::make_unique<SequenceExprNode>(loc, std::move(expressions));
+        return arena_.make<SequenceExprNode>(loc, arena_.make_list(std::move(expressions)));
     }
 
-    UPtr<ExprNode> Parser::assignment() {
+    ExprNode* Parser::assignment() {
         const SourceLoc loc = loc_of(peek());
 
         // '[' 歧义（listPattern 与 listExpr 同以 '[' 起头）：投机先按 listPattern 解析，其后非 '='
-        // 或解析失败则回退 pos_ 按表达式重解析。
+        // 或解析失败则回退 pos_ 按表达式重解析（弃掉的 pattern 节点留 arena 死区，随整批释放）。
         if (check(TokenType::LeftBracket)) {
             const usize save = pos_;
             try {
-                UPtr<PatternNode> pat = list_pattern();
+                PatternNode* pat = list_pattern();
                 if (match(TokenType::Equal)) {
-                    UPtr<ExprNode> rhs = assignment();
-                    return std::make_unique<DestructureAssignmentNode>(loc, std::move(pat), std::move(rhs));
+                    ExprNode* rhs = assignment();
+                    return arena_.make<DestructureAssignmentNode>(loc, pat, rhs);
                 }
             } catch (const AriaCompileException&) {
                 // 吞掉异常统一回退按表达式重解析。rhs 的 assignment() 抛错也会进此 catch，正确性
@@ -590,68 +589,68 @@ namespace aria {
             pos_ = save;
         }
 
-        UPtr<ExprNode> lhs = logic_or();
+        ExprNode* lhs = logic_or();
 
         if (match(TokenType::Equal) || match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
             match(TokenType::StarEqual) || match(TokenType::SlashEqual) || match(TokenType::PercentEqual)) {
             const Op::Assignment op  = assignment_op(previous().type());
-            UPtr<ExprNode>       rhs = assignment();
-            return std::make_unique<AssignmentNode>(loc, op, std::move(lhs), std::move(rhs));
+            ExprNode*            rhs = assignment();
+            return arena_.make<AssignmentNode>(loc, op, lhs, rhs);
         }
         return lhs;
     }
 
-    UPtr<ExprNode> Parser::logic_or() {
+    ExprNode* Parser::logic_or() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = logic_and();
+        ExprNode*       expr = logic_and();
         while (match(TokenType::OrOr)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = logic_and();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = logic_and();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
-    UPtr<ExprNode> Parser::logic_and() {
+    ExprNode* Parser::logic_and() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = equality();
+        ExprNode*       expr = equality();
         while (match(TokenType::AndAnd)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = equality();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = equality();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
-    UPtr<ExprNode> Parser::equality() {
+    ExprNode* Parser::equality() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = comparison();
+        ExprNode*       expr = comparison();
         while (match(TokenType::EqualEqual) || match(TokenType::EqualEqualEqual) || match(TokenType::BangEqual) ||
                match(TokenType::BangEqualEqual)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = comparison();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = comparison();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
-    UPtr<ExprNode> Parser::comparison() {
+    ExprNode* Parser::comparison() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = range();
+        ExprNode*       expr = range();
         while (match(TokenType::Greater) || match(TokenType::GreaterEqual) || match(TokenType::Less) ||
                match(TokenType::LessEqual)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = range();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = range();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
     // 区间：a..b（含上界）/ a...b（不含上界）。非结合，rhs 调 term 不调 range；
     // DotDotDot 与 rest/varargs 前缀复用，按位置消歧；无上界时 .. 与 ... 语义同义。
-    UPtr<ExprNode> Parser::range() {
+    ExprNode* Parser::range() {
         const SourceLoc loc   = loc_of(peek());
-        UPtr<ExprNode>  lower = term();
+        ExprNode*       lower = term();
         if (match(TokenType::DotDot) || match(TokenType::DotDotDot)) {
             const bool is_exclusive = previous().is(TokenType::DotDotDot);
             // 无上界走试探：term() 能解析则收 upper，失败即 .. / ... 后不跟表达式，回滚游标判无上界。
@@ -659,63 +658,62 @@ namespace aria {
             // upper 位表达式残缺也落此路，报错移到外层语法错，仍显性。
             const usize save = pos_;
             try {
-                UPtr<ExprNode> upper = term();
-                return std::make_unique<RangeExprNode>(loc, is_exclusive, std::move(lower), std::move(upper));
+                ExprNode* upper = term();
+                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, upper);
             } catch (const AriaCompileException&) {
                 pos_ = save;
-                return std::make_unique<RangeExprNode>(loc, is_exclusive, std::move(lower), nullptr);
+                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, nullptr);
             }
         }
         return lower;
     }
 
 
-    UPtr<ExprNode> Parser::term() {
+    ExprNode* Parser::term() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = factor();
+        ExprNode*       expr = factor();
         while (match(TokenType::Plus) || match(TokenType::Minus)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = factor();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = factor();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
-    UPtr<ExprNode> Parser::factor() {
+    ExprNode* Parser::factor() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = unary();
+        ExprNode*       expr = unary();
         while (match(TokenType::Slash) || match(TokenType::Star) || match(TokenType::Percent)) {
             const Op::Binary op  = binary_op(previous().type());
-            UPtr<ExprNode>   rhs = unary();
-            expr                 = std::make_unique<BinaryExprNode>(loc, op, std::move(expr), std::move(rhs));
+            ExprNode*        rhs = unary();
+            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
         }
         return expr;
     }
 
-    UPtr<ExprNode> Parser::unary() {
+    ExprNode* Parser::unary() {
         const SourceLoc loc = loc_of(peek());
         if (match(TokenType::Minus) || match(TokenType::Bang) || match(TokenType::PlusPlus) ||
             match(TokenType::MinusMinus)) {
             const Op::Unary op      = unary_op(previous().type());
-            UPtr<ExprNode>  operand = unary(); // 右结合：允许 -- -x
-            return std::make_unique<UnaryExprNode>(loc, op, std::move(operand));
+            ExprNode*       operand = unary(); // 右结合：允许 -- -x
+            return arena_.make<UnaryExprNode>(loc, op, operand);
         }
         return value();
     }
 
-    UPtr<ExprNode> Parser::value() {
+    ExprNode* Parser::value() {
         const SourceLoc loc  = loc_of(peek());
-        UPtr<ExprNode>  expr = primary();
+        ExprNode*       expr = primary();
         while (true) {
             if (check(TokenType::LeftParen)) {
-                List<UPtr<ExprNode>> call_args = args();
-                expr                           = std::make_unique<CallNode>(loc, std::move(expr), std::move(call_args));
+                expr = arena_.make<CallNode>(loc, expr, arena_.make_list(args()));
             } else if (match(TokenType::Dot)) {
-                expr = std::make_unique<FieldAccessNode>(loc, std::move(expr), expect_identifier());
+                expr = arena_.make<FieldAccessNode>(loc, expr, expect_identifier());
             } else if (match(TokenType::LeftBracket)) {
-                UPtr<ExprNode> index = expression();
+                ExprNode* index = expression();
                 expect(TokenType::RightBracket, "']'");
-                expr = std::make_unique<IndexAccessNode>(loc, std::move(expr), std::move(index));
+                expr = arena_.make<IndexAccessNode>(loc, expr, index);
             } else {
                 break;
             }
@@ -723,10 +721,10 @@ namespace aria {
         return expr;
     }
 
-    UPtr<ExprNode> Parser::interp_string() {
+    ExprNode* Parser::interp_string() {
         const SourceLoc loc = loc_of(peek());
 
-        List<UPtr<ExprNode>> parts;
+        List<ExprNode*> parts;
         // Interp 系段 token 的非空字面段包成 StringLiteralNode 入列；空段（展开后零字节）对值无贡献，
         // 不入列。
         const auto maybe_add_string = [this, &parts](const Token& token) {
@@ -740,15 +738,15 @@ namespace aria {
             parts.push_back(expression());
             if (check(TokenType::InterpEnd)) {
                 maybe_add_string(advance()); // 尾字面段
-                return std::make_unique<InterpolatedStringNode>(loc, std::move(parts));
+                return arena_.make<InterpolatedStringNode>(loc, arena_.make_list(std::move(parts)));
             }
             maybe_add_string(expect(TokenType::InterpMiddle, "'}' to close interpolation"));
         }
     }
 
-    List<UPtr<ExprNode>> Parser::args() {
+    List<ExprNode*> Parser::args() {
         expect(TokenType::LeftParen, "'('");
-        List<UPtr<ExprNode>> args;
+        List<ExprNode*> args;
         if (!check(TokenType::RightParen) && !is_at_end()) {
             do {
                 args.push_back(expression());
@@ -758,16 +756,16 @@ namespace aria {
         return args;
     }
 
-    UPtr<ExprNode> Parser::primary() {
+    ExprNode* Parser::primary() {
         const SourceLoc loc = loc_of(peek());
         switch (peek().type()) {
             case TokenType::Integer: {
                 const Token& t = advance();
-                return std::make_unique<IntegerLiteralNode>(loc, t.int_value());
+                return arena_.make<IntegerLiteralNode>(loc, t.int_value());
             }
             case TokenType::Float: {
                 const Token& t = advance();
-                return std::make_unique<FloatLiteralNode>(loc, t.float_value());
+                return arena_.make<FloatLiteralNode>(loc, t.float_value());
             }
             case TokenType::String: {
                 return make_string_literal(advance());
@@ -776,27 +774,27 @@ namespace aria {
                 return interp_string();
             case TokenType::True:
                 advance();
-                return std::make_unique<BoolLiteralNode>(loc, true);
+                return arena_.make<BoolLiteralNode>(loc, true);
             case TokenType::False:
                 advance();
-                return std::make_unique<BoolLiteralNode>(loc, false);
+                return arena_.make<BoolLiteralNode>(loc, false);
             case TokenType::Nil:
                 advance();
-                return std::make_unique<NilLiteralNode>(loc);
+                return arena_.make<NilLiteralNode>(loc);
             case TokenType::Identifier: {
-                return std::make_unique<IdentifierNode>(loc, advance().lexeme());
+                return arena_.make<IdentifierNode>(loc, advance().lexeme());
             }
             case TokenType::This:
                 advance();
-                return std::make_unique<ThisExprNode>(loc);
+                return arena_.make<ThisExprNode>(loc);
             case TokenType::Super: {
                 advance();
                 expect(TokenType::Dot, "'.'");
-                return std::make_unique<SuperExprNode>(loc, expect_identifier());
+                return arena_.make<SuperExprNode>(loc, expect_identifier());
             }
             case TokenType::LeftParen: {
                 advance();
-                UPtr<ExprNode> e = sequence();
+                ExprNode* e = sequence();
                 expect(TokenType::RightParen, "')'");
                 return e;
             }
@@ -819,20 +817,20 @@ namespace aria {
         error(ErrorCode::ExpectedExpression, "expected expression, got '{}'", peek().lexeme());
     }
 
-    UPtr<ExprNode> Parser::list_expr() {
+    ExprNode* Parser::list_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBracket, "'['");
-        List<UPtr<ExprNode>> elements;
+        List<ExprNode*> elements;
         if (!check(TokenType::RightBracket) && !is_at_end()) {
             do {
                 elements.push_back(expression());
             } while (match(TokenType::Comma));
         }
         expect(TokenType::RightBracket, "']'");
-        return std::make_unique<ListExprNode>(loc, std::move(elements));
+        return arena_.make<ListExprNode>(loc, arena_.make_list(std::move(elements)));
     }
 
-    UPtr<ExprNode> Parser::map_expr() {
+    ExprNode* Parser::map_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBrace, "'{'");
         List<MapEntry> entries;
@@ -842,45 +840,45 @@ namespace aria {
             } while (match(TokenType::Comma));
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<MapExprNode>(loc, std::move(entries));
+        return arena_.make<MapExprNode>(loc, arena_.make_list(std::move(entries)));
     }
 
     MapEntry Parser::parse_map_entry() {
-        UPtr<ExprNode> key = expression();
+        ExprNode* key = expression();
         expect(TokenType::Colon, "':'");
-        UPtr<ExprNode> val = expression();
-        return MapEntry{.key = std::move(key), .value = std::move(val)};
+        ExprNode* val = expression();
+        return MapEntry{.key = key, .value = val};
     }
 
-    UPtr<ExprNode> Parser::if_expr() {
+    ExprNode* Parser::if_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> cond = sequence();
+        ExprNode* cond = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
-        UPtr<ExprNode> then_expr = sequence();
+        ExprNode* then_expr = sequence();
         expect(TokenType::RightBrace, "'}'");
         expect(TokenType::Else, "'else'");
         expect(TokenType::LeftBrace, "'{'");
-        UPtr<ExprNode> else_expr = sequence();
+        ExprNode* else_expr = sequence();
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<IfExprNode>(loc, std::move(cond), std::move(then_expr), std::move(else_expr));
+        return arena_.make<IfExprNode>(loc, cond, then_expr, else_expr);
     }
 
-    UPtr<ExprNode> Parser::lambda_expr() {
+    ExprNode* Parser::lambda_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
-        List<Param>     ps   = params();
-        UPtr<BlockNode> body = block();
-        return std::make_unique<LambdaExprNode>(loc, std::move(ps), std::move(body));
+        List<Param> ps   = params();
+        BlockNode*  body = block();
+        return arena_.make<LambdaExprNode>(loc, arena_.make_list(std::move(ps)), body);
     }
 
-    UPtr<ExprNode> Parser::match_expr() {
+    ExprNode* Parser::match_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
-        UPtr<ExprNode> subject = sequence();
+        ExprNode* subject = sequence();
         expect(TokenType::RightParen, "')'");
         expect(TokenType::LeftBrace, "'{'");
         List<MatchExprArm> arms;
@@ -890,7 +888,7 @@ namespace aria {
             arms.push_back(match_expr_arm());
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<MatchExprNode>(loc, std::move(subject), std::move(arms));
+        return arena_.make<MatchExprNode>(loc, subject, arena_.make_list(std::move(arms)));
     }
 
     MatchPattern Parser::match_pattern() {
@@ -903,24 +901,24 @@ namespace aria {
     MatchArm Parser::match_arm() {
         MatchPattern pat = match_pattern();
         expect(TokenType::FatArrow, "'=>'");
-        UPtr<StmtNode> body = statement();
-        return MatchArm{.pattern = std::move(pat), .body = std::move(body)};
+        StmtNode* body = statement();
+        return MatchArm{.pattern = pat, .body = body};
     }
 
     MatchExprArm Parser::match_expr_arm() {
         MatchPattern pat = match_pattern();
         expect(TokenType::FatArrow, "'=>'");
-        UPtr<ExprNode> body = expression();
-        return MatchExprArm{.pattern = std::move(pat), .body = std::move(body)};
+        ExprNode* body = expression();
+        return MatchExprArm{.pattern = pat, .body = body};
     }
 
-    UPtr<PatternNode> Parser::pattern() {
+    PatternNode* Parser::pattern() {
         const SourceLoc loc = loc_of(peek());
         if (match(TokenType::Identifier)) {
-            return std::make_unique<IdentifierPatternNode>(loc, previous().lexeme());
+            return arena_.make<IdentifierPatternNode>(loc, previous().lexeme());
         }
         if (match(TokenType::Underscore)) {
-            return std::make_unique<WildcardPatternNode>(loc);
+            return arena_.make<WildcardPatternNode>(loc);
         }
         if (check(TokenType::LeftBracket)) {
             return list_pattern();
@@ -931,11 +929,11 @@ namespace aria {
         error(ErrorCode::ExpectedIdentifier, "expected identifier or pattern, got '{}'", peek().lexeme());
     }
 
-    UPtr<ListPatternNode> Parser::list_pattern() {
+    ListPatternNode* Parser::list_pattern() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBracket, "'['");
-        List<UPtr<PatternNode>>     elements;
-        UPtr<IdentifierPatternNode> rest;
+        List<PatternNode*>     elements;
+        IdentifierPatternNode* rest = nullptr;
         if (!check(TokenType::RightBracket) && !is_at_end()) {
             do {
                 if (check(TokenType::DotDotDot)) {
@@ -944,22 +942,22 @@ namespace aria {
                 }
                 elements.push_back(pattern());
             } while (match(TokenType::Comma));
-            if (rest && !check(TokenType::RightBracket)) {
+            if (rest != nullptr && !check(TokenType::RightBracket)) {
                 error(ErrorCode::InvalidPattern, "rest pattern '...' must be last");
             }
         }
         expect(TokenType::RightBracket, "']'");
-        return std::make_unique<ListPatternNode>(loc, std::move(elements), std::move(rest));
+        return arena_.make<ListPatternNode>(loc, arena_.make_list(std::move(elements)), rest);
     }
 
-    UPtr<IdentifierPatternNode> Parser::rest_pattern() {
+    IdentifierPatternNode* Parser::rest_pattern() {
         expect(TokenType::DotDotDot, "'...'");
         if (check(TokenType::Underscore)) {
             // ..._ 与不写 rest 等价，冗余非法。
             error(ErrorCode::InvalidPattern, "rest pattern cannot bind '_'");
         }
         const SourceLoc loc = loc_of(peek());
-        return std::make_unique<IdentifierPatternNode>(loc, expect_identifier());
+        return arena_.make<IdentifierPatternNode>(loc, expect_identifier());
     }
 
 } // namespace aria

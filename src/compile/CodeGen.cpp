@@ -84,7 +84,7 @@ namespace aria {
         }
 
         // 必传参数数：首个带默认值参数之前（文法定序 plain -> default -> varargs）；调用方须已过 validate_params。
-        u8 min_arity(const List<Param>& params) noexcept {
+        u8 min_arity(const Span<Param> params) noexcept {
             u8 count = 0;
             for (const auto& param: params) {
                 if (param.default_value != nullptr || param.is_varargs) {
@@ -423,7 +423,7 @@ namespace aria {
         }
     }
 
-    void CodeGen::validate_params(const List<Param>& params, const SourceLoc loc) const {
+    void CodeGen::validate_params(const Span<Param> params, const SourceLoc loc) const {
         if (params.size() > kMaxArity) {
             fail(ErrorCode::TooManyParameters, loc, "too many parameters (max {})", kMaxArity);
         }
@@ -478,7 +478,7 @@ namespace aria {
         }
     }
 
-    void CodeGen::compile_params(const List<Param>& params, const SourceLoc loc) {
+    void CodeGen::compile_params(const Span<Param> params, const SourceLoc loc) {
         // 未传槽由 VM 预垫缺省印章（寄存器 DefaultMark）：逐缺省槽与印章判等，命中才求值默认值换入；
         // 缺省表达式解析不到的名字按常规链落外层/全局；序言后栈空。
         const u32 line = loc.line();
@@ -523,7 +523,7 @@ namespace aria {
         cur_cu()->emit_op(OpCode::RETURN, line);
     }
 
-    void CodeGen::compile_function(const StringView name, const List<Param>& params, BlockNode& body,
+    void CodeGen::compile_function(const StringView name, const Span<Param> params, BlockNode& body,
                                    const SourceLoc decl_loc, const FnKind kind) {
         // 失败即抛 AriaCompileException，先于所有分配与发射。
         validate_params(params, decl_loc);
@@ -734,7 +734,7 @@ namespace aria {
             return;
         }
         const u32 line = node.line();
-        emit_expr_or_nil(node.value.get(), line);
+        emit_expr_or_nil(node.value, line);
         cur_cu()->emit_op(OpCode::RETURN, line);
     }
 
@@ -790,7 +790,7 @@ namespace aria {
     }
 
     template<typename Arm>
-    void CodeGen::validate_match_arms(const List<Arm>& arms) const {
+    void CodeGen::validate_match_arms(const Span<Arm> arms) const {
         for (usize i = 1; i < arms.size(); ++i) {
             if (arms[i - 1].pattern.value == nullptr) {
                 fail(ErrorCode::UnreachableArm, arms[i].body->loc(), "unreachable arm after '_'");
@@ -879,7 +879,7 @@ namespace aria {
         for (const auto& [target, initializer]: node.bindings) {
             // 初始化器先于声明名求值：求值后栈高 == locals_.size()，值恰在待声明槽位；init 同名引用
             // 沿 resolve 链落外层（落全局则运行期 UndefinedVariable）。
-            emit_expr_or_nil(initializer.get(), target->line());
+            emit_expr_or_nil(initializer, target->line());
             bind_pattern(*target, PatternBindMode::Fill);
         }
     }
@@ -887,7 +887,7 @@ namespace aria {
     void CodeGen::visitStaticVarMemberNode(StaticVarMemberNode& node) {
         // 初始化器在类定义点、enclosing 作用域求值（eager）；绑定先于体编译，所以类名自引用在顶层与类体内都可用。
         const u32 line = node.line();
-        emit_expr_or_nil(node.initializer.get(), line); // [class, v]
+        emit_expr_or_nil(node.initializer, line); // [class, v]
         const auto member_idx = add_name_or_fail(node.name, node.loc());
         cur_cu()->emit_op(OpCode::MAKE_STATIC, line);
         cur_cu()->emit_word(member_idx, line); // [class]
@@ -1106,7 +1106,7 @@ namespace aria {
 
     bool CodeGen::try_emit_method_call(const CallNode& node) {
         // 未命中（callee 非成员访问）不发射任何字节。
-        const auto member = dynamic_cast<FieldAccessNode*>(node.callee.get());
+        const auto member = dynamic_cast<FieldAccessNode*>(node.callee);
         if (member == nullptr) {
             return false;
         }
@@ -1141,7 +1141,7 @@ namespace aria {
 
     bool CodeGen::try_emit_this_field(const FieldAccessNode& node, const LvalueMode mode, const u32 line) const {
         // 模式差异：Prepare 不发指令；Locate 与 Load 同形（this 不经值栈，DUP 副本无人消费只会滞留）。
-        if (dynamic_cast<ThisExprNode*>(node.object.get()) == nullptr || !is_in_method()) {
+        if (dynamic_cast<ThisExprNode*>(node.object) == nullptr || !is_in_method()) {
             return false;
         }
         const auto name_idx = add_name_or_fail(node.name, node.loc());

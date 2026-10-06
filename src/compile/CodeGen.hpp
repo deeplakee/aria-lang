@@ -273,11 +273,11 @@ namespace aria {
         void emit_expr_or_nil(ExprNode* expr, u32 line);
 
         // 形参合法性：>kMaxArity / 重名即 fail；只读 params，loc 取声明节点（非 body）。
-        void validate_params(const List<Param>& params, SourceLoc loc) const;
+        void validate_params(Span<Param> params, SourceLoc loc) const;
 
         // match 语义检查：通配臂后不得再有臂（死臂仅掩盖臂序 bug），首个死臂即 fail；只读 arms。
         template<typename Arm>
-        void validate_match_arms(const List<Arm>& arms) const;
+        void validate_match_arms(Span<Arm> arms) const;
 
         // match 降糖总口：subject 求值一次驻栈跨臂，逐臂「DUP + 模式 + EQUAL + 未命中跳下臂」，
         // 兜底抛共享 MatchNoArm；臂体经 emit_arm_body 分派。定义在 .cpp。
@@ -301,7 +301,7 @@ namespace aria {
 
         // 形参登记 + 缺省印章序言，单循环按声明序交错：判等命中未传才求值默认值换入，再登记本参数名；
         // 时序保证缺省表达式可引用前序参数，后序参数名解析结构性不可见。须在子上下文就位后调用。
-        void compile_params(const List<Param>& params, SourceLoc loc);
+        void compile_params(Span<Param> params, SourceLoc loc);
 
         // 隐式返回尾：init 返回 this（实例化不变式 Foo() 得实例），ModuleEntry 返回模块对象，其余 nil。
         // kind 取 cur_fn_ctx()，须在目标上下文就位后调用。
@@ -309,8 +309,7 @@ namespace aria {
 
         // 编译一个函数：CLOSURE + 随 kind 的绑定/注册（收口 bind_function_value）+ 子上下文内编译体，
         // 完成后切回父上下文，函数值留在父栈。
-        void compile_function(StringView name, const List<Param>& params, BlockNode& body, SourceLoc decl_loc,
-                              FnKind kind);
+        void compile_function(StringView name, Span<Param> params, BlockNode& body, SourceLoc decl_loc, FnKind kind);
 
         // 错误（抛 AriaCompileException，compile() 顶层 catch 翻译为 Result；throw 即 unwind，首错即止）。
         template<typename... Args>

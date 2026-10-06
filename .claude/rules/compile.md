@@ -18,7 +18,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 - **Parser.hpp / Parser.cpp**：`Parser::parse(List<Token>&) -> Result<UPtr<ProgramNode>, List<Error>>`（token 表借用不持有，存活须覆盖 parse 调用），递归下降各函数与文法非终结符一一对应；错误经 `AriaCompileException` 在递归深处抛出、`declaration()` 层 catch + panic-mode `synchronize()` 恢复式收集。消歧点（for/for-in 前瞻、fun 声明/lambda、`{` block/mapExpr 按调用上下文、解构赋值投机回退）的论证在各函数注释。
 - **AstVisitor.hpp**：访问者接口，44 个 `visitXxxNode(XxxNode&)` 纯虚（1 根 + 17 语句 + 23 表达式 + 3 模式），编译器强制子类穷尽覆盖；双分派由节点 `accept` 完成。具体子类：`CodeGen`。
 - **FnKind.hpp**：函数种类枚举（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry）。各 kind 的绑定形态/隐式返回尾/槽 0 语义的权威表述见该头注册表注。
-- **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见头注。`LoopCtx` 字段语义与三种循环占位回填详见 `.claude/reference/compile/loopctx.md`。
+- **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责；局部名 `Local.name` 借 `StringView`（AST 名字视图/kThisName/空哑元，存活覆盖编译期）。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见头注。`LoopCtx` 字段语义与三种循环占位回填详见 `.claude/reference/compile/loopctx.md`。
 - **ModuleCtx.hpp / .cpp**：模块编译上下文（模块句柄 + 当前函数上下文游标兼拥有入口 + 顶层全局名注册表），与 FunctionCtx 对齐成「模块 > 函数 > 作用域」三层；全局名注册表 `defined_globals_` 键借 `StringView`（AST 名字视图，存活覆盖编译期）；单成员兼两职的设计与出错析构走链见头注。
 - **Compiler.hpp / Compiler.cpp**：编排器，串联 Lexer -> Parser -> CodeGen，统一翻译为 `Result<ObjFunction*, Error>`（首错即止）。吃实际 `SourceFile&`（不拥有不重建）；AST 不外返、Error 构造期已烘位置，故 source 只须存活到 `compile()` 返回。四入口（Lexer::tokenize / Parser::parse / CodeGen::compile / Compiler::compile）均静态无状态；compile 的 gc 与 VM 同一 GC。
 

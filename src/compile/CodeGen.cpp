@@ -1327,9 +1327,9 @@ namespace aria {
                     emit_list_pattern_accesses(node, line, [] {});
                     return;
                 }
-                // 隐藏局部名带槽号：同 scope 局部只增必不同槽，天然唯一。
-                const auto source_name = std::format("<destructure_{}>", cur_fn_ctx()->locals_.size());
-                const u16  source_slot = define_local_or_fail(source_name, node.loc());
+                // 隐藏局部名自增序号，同 scope 只增必不同、天然唯一；宿主在 hidden_names_，视图
+                // 存活覆盖编译期。
+                const u16  source_slot = define_local_or_fail(hidden_names_.make_next(), node.loc());
                 const auto push_source = [this, source_slot, line] { cur_cu()->emit_load_local(source_slot, line); };
                 emit_list_pattern_accesses(node, line, push_source);
                 return;

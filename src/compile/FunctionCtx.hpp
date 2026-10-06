@@ -18,9 +18,9 @@ namespace aria {
 
     // 局部变量条目（slot 0 = 哑元 callee）。
     struct Local {
-        String name;
-        u32    depth       = 0;
-        bool   is_captured = false;
+        StringView name; // 借自 AST 名字视图/kThisName/空哑元，存活覆盖编译期
+        u32        depth       = 0;
+        bool       is_captured = false;
     };
 
     // 循环上下文（break / continue 回填）。

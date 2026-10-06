@@ -34,6 +34,19 @@ namespace aria {
         // 一值）。由 bind_pattern 设置、整个模式子树经 accept 共用。
         enum class PatternBindMode : u8 { Fill, Store };
 
+        // 隐藏局部名源：<destructure_N> 合成名既非源缓冲视图也非字面量，由本源自备稳定宿主——
+        // std::string 堆对象地址恒定，借出视图存活覆盖编译期；序号只增，名字天然唯一。
+        struct HiddenNameSource {
+            u32                next_index = 0;
+            List<UPtr<String>> names;
+
+            StringView make_next() {
+                names.push_back(std::make_unique<String>(std::format("<destructure_{}>", next_index)));
+                ++next_index;
+                return *names.back();
+            }
+        };
+
     public:
         // 编译 program 为 module 的入口 ObjFunction（arity 0，名 entry_name：主入口 kMainEntryName /
         // 导入模块 kModuleEntryName）。分配归属 gc；成功已 set_entry，失败返回首错 Error。
@@ -99,10 +112,10 @@ namespace aria {
 
         GC& gc_;
 
-        LvalueMode      lvalue_mode_;
-        PatternBindMode pattern_mode_;
-
-        UPtr<ModuleCtx> mod_ctx_;
+        LvalueMode       lvalue_mode_;
+        PatternBindMode  pattern_mode_;
+        HiddenNameSource hidden_names_;
+        UPtr<ModuleCtx>  mod_ctx_;
 
         // compile 的实例侧实现（单遍合一）。
         Result<ObjFunction*, Error> generate_bytecode(const ProgramNode& program, ObjModule* module,

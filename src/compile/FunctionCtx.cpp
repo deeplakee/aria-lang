@@ -9,14 +9,12 @@ namespace aria {
     FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
         enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
         // 非方法族的哑元 callee 空名，词法不可达、不可引用。
-        auto name  = is_method(kind) ? String{kThisName} : String{};
-        auto slot0 = Local{.name = std::move(name), .depth = 0, .is_captured = false};
-        locals_.push_back(std::move(slot0));
+        const auto name = is_method(kind) ? kThisName : StringView{};
+        locals_.push_back(Local{.name = name, .depth = 0, .is_captured = false});
     }
 
     u16 FunctionCtx::add_local(const StringView name) {
-        auto local = Local{.name = String{name}, .depth = scope_depth_, .is_captured = false};
-        locals_.push_back(std::move(local));
+        locals_.push_back(Local{.name = name, .depth = scope_depth_, .is_captured = false});
         return static_cast<u16>(locals_.size() - 1);
     }
 

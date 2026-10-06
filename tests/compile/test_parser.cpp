@@ -72,7 +72,7 @@ namespace {
             p->result = std::unexpected(std::move(errors));
             return p;
         }
-        p->result = Parser::parse(p->arena, *lex, p->sf);
+        p->result = Parser::parse(p->arena, p->sf, *lex);
         return p;
     }
 

@@ -22,15 +22,15 @@ namespace aria {
     // 消费期）；解析失败路径弃掉的节点不单独回收，随 arena 整批释放。
     class Parser {
     public:
-        static Result<ProgramNode*, List<Error>> parse(AstArena& arena, List<Token>& tokens, SourceFile& source);
+        static Result<ProgramNode*, List<Error>> parse(AstArena& arena, SourceFile& source, List<Token>& tokens);
 
     private:
-        explicit Parser(AstArena& arena, List<Token>& tokens, SourceFile& source) noexcept;
+        explicit Parser(AstArena& arena, SourceFile& source, List<Token>& tokens) noexcept;
 
         AstArena&    arena_;
-        List<Token>& tokens_;
         SourceFile&  source_;
         usize        pos_;
+        List<Token>& tokens_;
         List<Error>  errors_;
 
         // token 游标辅助；越界（ahead 超出末尾）返回末尾 Eof token。

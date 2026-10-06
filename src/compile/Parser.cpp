@@ -82,8 +82,8 @@ namespace aria {
 
     } // namespace
 
-    Parser::Parser(AstArena& arena, List<Token>& tokens, SourceFile& source) noexcept :
-        arena_{arena}, tokens_{tokens}, source_{source}, pos_{0}, errors_{} {}
+    Parser::Parser(AstArena& arena, SourceFile& source, List<Token>& tokens) noexcept :
+        arena_{arena}, source_{source}, pos_{0}, tokens_{tokens}, errors_{} {}
 
     // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
     // 插值字面段三处共用。
@@ -91,8 +91,8 @@ namespace aria {
         return arena_.make<StringLiteralNode>(loc_of(token), token.string_value(), token.shape());
     }
 
-    Result<ProgramNode*, List<Error>> Parser::parse(AstArena& arena, List<Token>& tokens, SourceFile& source) {
-        Parser parser{arena, tokens, source};
+    Result<ProgramNode*, List<Error>> Parser::parse(AstArena& arena, SourceFile& source, List<Token>& tokens) {
+        Parser parser{arena, source, tokens};
 
         ProgramNode* prog = nullptr;
         try {

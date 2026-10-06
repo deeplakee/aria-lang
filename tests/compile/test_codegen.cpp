@@ -49,7 +49,7 @@ namespace {
         }
         // arena 持有整棵 AST，存活覆盖 CodeGen::compile 调用。
         AstArena arena;
-        auto     parse = Parser::parse(arena, *lex, file);
+        auto     parse = Parser::parse(arena, file, *lex);
         if (!parse) {
             return std::unexpected(std::move(parse.error()[0]));
         }

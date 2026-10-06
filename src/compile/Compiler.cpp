@@ -21,7 +21,7 @@ namespace aria {
         // （AST 节点持视图，存活至编译结束，仍在 source 的存活期内）。AST 节点与列表缓冲由
         // arena 统一分配（栈上 RAII），整树存活至 compile 返回，随 arena 析构整批释放。
         AstArena arena;
-        auto     ast = Parser::parse(arena, *tokens, source);
+        auto     ast = Parser::parse(arena, source, *tokens);
         if (!ast) {
             return std::unexpected(std::move(ast.error()[0]));
         }

@@ -715,8 +715,7 @@ namespace aria {
                 List<UPtr<ExprNode>> call_args = args();
                 expr                           = std::make_unique<CallNode>(loc, std::move(expr), std::move(call_args));
             } else if (match(TokenType::Dot)) {
-                const auto name = expect_identifier();
-                expr            = std::make_unique<FieldAccessNode>(loc, std::move(expr), String{name});
+                expr = std::make_unique<FieldAccessNode>(loc, std::move(expr), expect_identifier());
             } else if (match(TokenType::LeftBracket)) {
                 UPtr<ExprNode> index = expression();
                 expect(TokenType::RightBracket, "']'");
@@ -790,7 +789,7 @@ namespace aria {
             case TokenType::Super: {
                 advance();
                 expect(TokenType::Dot, "'.'");
-                return std::make_unique<SuperExprNode>(loc, String{expect_identifier()});
+                return std::make_unique<SuperExprNode>(loc, expect_identifier());
             }
             case TokenType::LeftParen: {
                 advance();

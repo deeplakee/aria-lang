@@ -587,14 +587,14 @@ namespace aria {
 
     // super 成员表达式：super "." identifier（文法单形，裸 super 解析期不收）；写形态非左值。
     struct SuperExprNode : ExprNode {
-        SuperExprNode(const SourceLoc loc, String name) : ExprNode{loc}, name{std::move(name)} {}
+        SuperExprNode(const SourceLoc loc, const StringView name) : ExprNode{loc}, name{name} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String name;
+        StringView name;
     };
 
     // 运算符表达式
@@ -673,8 +673,8 @@ namespace aria {
 
     // 字段访问：object.name。
     struct FieldAccessNode : ExprNode {
-        FieldAccessNode(const SourceLoc loc, UPtr<ExprNode> object, String name) :
-            ExprNode{loc}, object{std::move(object)}, name{std::move(name)} {}
+        FieldAccessNode(const SourceLoc loc, UPtr<ExprNode> object, const StringView name) :
+            ExprNode{loc}, object{std::move(object)}, name{name} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -682,7 +682,7 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         UPtr<ExprNode> object;
-        String         name;
+        StringView     name;
     };
 
     // 下标访问：object[index]。

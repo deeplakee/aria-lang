@@ -208,7 +208,7 @@ TEST(AstVisitorDispatch, Expressions) {
     expect_visit(std::make_unique<NilLiteralNode>(kLoc), "NilLiteralNode");
     expect_visit(ident("x"), "IdentifierNode");
     expect_visit(std::make_unique<ThisExprNode>(kLoc), "ThisExprNode");
-    expect_visit(std::make_unique<SuperExprNode>(kLoc, String{"m"}), "SuperExprNode");
+    expect_visit(std::make_unique<SuperExprNode>(kLoc, StringView{"m"}), "SuperExprNode");
 
     // 运算符表达式
     expect_visit(std::make_unique<BinaryExprNode>(kLoc, aria::Op::Binary::Plus, i64lit(1), i64lit(2)),
@@ -219,7 +219,7 @@ TEST(AstVisitorDispatch, Expressions) {
     expect_visit(std::make_unique<DestructureAssignmentNode>(kLoc, id_pat("x"), ident("l")),
                  "DestructureAssignmentNode");
     expect_visit(std::make_unique<CallNode>(kLoc, ident("f"), List<UPtr<ExprNode>>{}), "CallNode");
-    expect_visit(std::make_unique<FieldAccessNode>(kLoc, ident("o"), String{"f"}), "FieldAccessNode");
+    expect_visit(std::make_unique<FieldAccessNode>(kLoc, ident("o"), StringView{"f"}), "FieldAccessNode");
     expect_visit(std::make_unique<IndexAccessNode>(kLoc, ident("a"), i64lit(0)), "IndexAccessNode");
 
     // 复合表达式

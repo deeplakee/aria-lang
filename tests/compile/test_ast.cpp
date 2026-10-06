@@ -117,7 +117,7 @@ TEST(AstDisplay, Literals) {
     EXPECT_EQ(dump_str(NilLiteralNode{kLoc}), "NilLiteral\n");
     EXPECT_EQ(dump_str(*ident("x")), "Identifier x\n");
     EXPECT_EQ(dump_str(ThisExprNode{kLoc}), "ThisExpr\n");
-    EXPECT_EQ(dump_str(SuperExprNode{kLoc, String{"m"}}), "SuperExpr name=m\n");
+    EXPECT_EQ(dump_str(SuperExprNode{kLoc, StringView{"m"}}), "SuperExpr name=m\n");
 }
 
 TEST(AstDisplay, FloatLiteral) {
@@ -199,7 +199,7 @@ TEST(AstDisplay, Call) {
 }
 
 TEST(AstDisplay, FieldAndIndex) {
-    FieldAccessNode fa{kLoc, ident("o"), String{"field"}};
+    FieldAccessNode fa{kLoc, ident("o"), StringView{"field"}};
     EXPECT_EQ(dump_str(fa), "FieldAccess name=field\n  Identifier o\n");
 
     IndexAccessNode ia{kLoc, ident("a"), i64lit(0)};

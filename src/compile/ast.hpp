@@ -365,8 +365,8 @@ namespace aria {
     // import 语句：import string as identifier ";"。path 文法钉死字符串字面量（Parser 保证指向
     // StringLiteralNode），解码在代码生成端；alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
-        ImportStmtNode(const SourceLoc loc, UPtr<ExprNode> path, String alias) :
-            StmtNode{loc}, path{std::move(path)}, alias{std::move(alias)} {}
+        ImportStmtNode(const SourceLoc loc, UPtr<ExprNode> path, const StringView alias) :
+            StmtNode{loc}, path{std::move(path)}, alias{alias} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -374,15 +374,14 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         UPtr<ExprNode> path;
-        String         alias;
+        StringView     alias;
     };
 
-    // try 语句：try block (catch (id) block)?；catch_param/catch_body 成对缺省（parser 保证），
-    // 语义阶段强制 catch 必有（TryWithoutHandler）。
+    // try 语句：try block (catch (id) block)?；ename/catch_body 成对缺省（parser 保证；
+    // ename 空视图即无 catch，identifier 恒非空），语义阶段强制 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
-        TryStmtNode(const SourceLoc loc, UPtr<BlockNode> body, Opt<String> catch_param, UPtr<BlockNode> catch_body) :
-            StmtNode{loc}, body{std::move(body)}, catch_param{std::move(catch_param)},
-            catch_body{std::move(catch_body)} {}
+        TryStmtNode(const SourceLoc loc, UPtr<BlockNode> body, const StringView ename, UPtr<BlockNode> catch_body) :
+            StmtNode{loc}, body{std::move(body)}, ename{ename}, catch_body{std::move(catch_body)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -390,7 +389,7 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         UPtr<BlockNode> body;
-        Opt<String>     catch_param;
+        StringView      ename;
         UPtr<BlockNode> catch_body;
     };
 
@@ -472,15 +471,15 @@ namespace aria {
 
     // def 体静态变量成员：单 identifier 绑定的窄节点，多绑定/解构 pattern 由文法在成员位拒绝。
     struct StaticVarMemberNode : StmtNode {
-        StaticVarMemberNode(const SourceLoc loc, String name, UPtr<ExprNode> initializer) :
-            StmtNode{loc}, name{std::move(name)}, initializer{std::move(initializer)} {}
+        StaticVarMemberNode(const SourceLoc loc, const StringView name, UPtr<ExprNode> initializer) :
+            StmtNode{loc}, name{name}, initializer{std::move(initializer)} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String         name;
+        StringView     name;
         UPtr<ExprNode> initializer;
     };
 

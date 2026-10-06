@@ -302,7 +302,7 @@ TEST(AstDisplay, ReturnStmt) {
 }
 
 TEST(AstDisplay, ImportStmt) {
-    ImportStmtNode node{kLoc, strlit("math"), String{"m"}};
+    ImportStmtNode node{kLoc, strlit("math"), StringView{"m"}};
     EXPECT_EQ(dump_str(node), "ImportStmt as=m\n  StringLiteral \"math\"\n");
 }
 
@@ -315,7 +315,7 @@ TEST(AstDisplay, TryStmt) {
     catch_body_stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, ident("e")));
     auto catch_body = std::make_unique<BlockNode>(kLoc, std::move(catch_body_stmts));
 
-    TryStmtNode  node{kLoc, std::move(try_body), Opt<String>{String{"e"}}, std::move(catch_body)};
+    TryStmtNode  node{kLoc, std::move(try_body), StringView{"e"}, std::move(catch_body)};
     const String out = dump_str(node);
     expect_has(out, "TryStmt");
     expect_has(out, "Catch param=e");

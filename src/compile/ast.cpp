@@ -137,8 +137,8 @@ namespace aria {
 
     String TryStmtNode::dump(const usize indent) const {
         String out = dump_node(indent, "TryStmt", body);
-        if (catch_param) {
-            out += dump_node(indent + 1, std::format("Catch param={}", *catch_param), catch_body);
+        if (!ename.empty()) {
+            out += dump_node(indent + 1, std::format("Catch param={}", ename), catch_body);
         }
         return out;
     }

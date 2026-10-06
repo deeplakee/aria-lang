@@ -762,9 +762,8 @@ namespace aria {
         const u32 jskip = cur_cu()->emit_jump(OpCode::JUMP, line); // 正常路径跳过 catch -> L_end
         // L_catch
         const u32 handle = cur_cu()->size();
-        begin_scope(); // catch 子句 scope 含 e + 体，两路径栈平衡
-        std::ignore =
-                define_local_or_fail(*node.catch_param, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
+        begin_scope();                                              // catch 子句 scope 含 e + 体，两路径栈平衡
+        std::ignore = define_local_or_fail(node.ename, node.loc()); // e 由 unwind 的 push 运行期填槽(== stack_depth)
         emit_stmt(*node.catch_body);
         end_scope(line);
         patch_jump_or_fail(jskip, node.loc()); // -> L_end

@@ -182,10 +182,9 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     expect_visit(std::make_unique<ReturnStmtNode>(kLoc, i64lit(1)), "ReturnStmtNode");
     expect_visit(std::make_unique<ImportStmtNode>(
                          kLoc, std::make_unique<StringLiteralNode>(kLoc, StringView{"math"}, StringShape{4, false}),
-                         String{"m"}),
+                         StringView{"m"}),
                  "ImportStmtNode");
-    expect_visit(std::make_unique<TryStmtNode>(kLoc, empty_block(), Opt<String>{String{"e"}}, empty_block()),
-                 "TryStmtNode");
+    expect_visit(std::make_unique<TryStmtNode>(kLoc, empty_block(), StringView{"e"}, empty_block()), "TryStmtNode");
     expect_visit(std::make_unique<ThrowStmtNode>(kLoc, i64lit(1)), "ThrowStmtNode");
     expect_visit(std::make_unique<MatchStmtNode>(kLoc, ident("s"), List<MatchArm>{}), "MatchStmtNode");
 
@@ -195,7 +194,7 @@ TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     expect_visit(std::make_unique<DefDeclNode>(kLoc, StringView{"C"}, nullptr, List<UPtr<StmtNode>>{}, false),
                  "DefDeclNode");
     expect_visit(std::make_unique<VarDeclNode>(kLoc, List<VarBinding>{}), "VarDeclNode");
-    expect_visit(std::make_unique<StaticVarMemberNode>(kLoc, String{"x"}, i64lit(1)), "StaticVarMemberNode");
+    expect_visit(std::make_unique<StaticVarMemberNode>(kLoc, StringView{"x"}, i64lit(1)), "StaticVarMemberNode");
 }
 
 TEST(AstVisitorDispatch, Expressions) {

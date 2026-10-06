@@ -103,7 +103,7 @@ visitTryStmtNode:
   const usize jskip = cur_cu()->emit_jump(OpCode::JUMP, line);
   const u32 handle = cur_cu()->size();
   begin_scope();
-  const u16 catch_slot = define_local_or_fail(*node->catch_param, node->loc());
+  const u16 catch_slot = define_local_or_fail(node->ename, node->loc());
   emit_stmt(node->catch_body.get());
   end_scope(line);
   patch_jump_or_fail(jskip, node->loc());
@@ -229,7 +229,7 @@ const u32 end = cur_cu()->size();
 const usize jskip = cur_cu()->emit_jump(OpCode::JUMP, line);  // 正常跳过 catch
 const u32 handle = cur_cu()->size();                         // L_catch(unwind 已 push 落 e 槽)
 begin_scope();                       // catch 子句 scope(包 e + catch 体)
-const u16 catch_slot = define_local_or_fail(*node->catch_param, node->loc());
+const u16 catch_slot = define_local_or_fail(node->ename, node->loc());
 emit_stmt(node->catch_body.get());
 end_scope(line);                     // 弹 catch 体局部 + e -> 栈高 stack_depth
 patch_jump_or_fail(jskip, node->loc());      // 正常路径 -> L_end(此处栈高 stack_depth)

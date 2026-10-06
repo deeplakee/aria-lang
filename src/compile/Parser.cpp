@@ -319,7 +319,7 @@ namespace aria {
         const auto     name = expect_identifier();
         UPtr<ExprNode> init = match(TokenType::Equal) ? expression() : nullptr;
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<StaticVarMemberNode>(loc, String{name}, std::move(init));
+        return std::make_unique<StaticVarMemberNode>(loc, name, std::move(init));
     }
 
     UPtr<VarDeclNode> Parser::var_decl() {
@@ -506,22 +506,22 @@ namespace aria {
         expect(TokenType::As, "'as'");
         const auto alias = expect_identifier();
         expect(TokenType::Semicolon, "';'");
-        return std::make_unique<ImportStmtNode>(loc, std::move(path), String{alias});
+        return std::make_unique<ImportStmtNode>(loc, std::move(path), alias);
     }
 
     UPtr<StmtNode> Parser::try_stmt() {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Try, "'try'");
-        UPtr<BlockNode> body        = block();
-        Opt<String>     catch_param = std::nullopt;
-        UPtr<BlockNode> catch_body  = nullptr;
+        UPtr<BlockNode> body = block();
+        StringView      ename;
+        UPtr<BlockNode> catch_body = nullptr;
         if (match(TokenType::Catch)) {
             expect(TokenType::LeftParen, "'('");
-            catch_param = Opt<String>{expect_identifier()};
+            ename = expect_identifier();
             expect(TokenType::RightParen, "')'");
             catch_body = block();
         }
-        return std::make_unique<TryStmtNode>(loc, std::move(body), std::move(catch_param), std::move(catch_body));
+        return std::make_unique<TryStmtNode>(loc, std::move(body), ename, std::move(catch_body));
     }
 
     UPtr<StmtNode> Parser::throw_stmt() {

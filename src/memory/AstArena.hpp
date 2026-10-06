@@ -17,7 +17,7 @@ namespace aria {
 
     // AST 专用 bump 分配器：节点与列表缓冲自大块顺序分配，析构时整批释放、不跑任何析构函数。
     // 后备经 mem::alloc/free 同族三口（随 ARIA_USE_MIMALLOC 开关），分配失败 fatal_error(OutOfMemory)、
-    // 全程不抛（先例 GC::allocate）。前提（ast.hpp 节点形态保证）：节点成员全为平凡类型（名字/字符串
+    // 全程不抛（先例 GC::allocate）。前提（Ast.hpp 节点形态保证）：节点成员全为平凡类型（名字/字符串
     // 借源缓冲的 StringView、子节点为裸指针、列表缓冲为 Span 视图），节点的虚析构仅为多态保留、
     // 从不单独调用；投机解析弃掉的节点不单独回收，留到整批释放统一归还。
     class AstArena {

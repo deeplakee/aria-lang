@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
+#include "compile/Ast.hpp"
 #include "compile/Lexer.hpp"
 #include "compile/Parser.hpp"
-#include "compile/ast.hpp"
 #include "memory/AstArena.hpp"
 #include "util/source_file.hpp"
 

@@ -44,7 +44,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ① 文法 `import "str" as id;` | 已定义 | `docs/grammar.txt` 的 `importStmt` 产生式 |
 | ① 词法关键字 `import` / `as` | 已实现 | `src/compile/TokenType.hpp`（`ARIA_TOKEN_KEYWORD_LIST` 的 `Import`/`As` 两行） |
 | ② Parser 解析 import 语句 | 已实现 | `src/compile/Parser.cpp` 的 `import_stmt()` 与 `declaration()` 分派 |
-| AST `ImportStmtNode` | 已实现 | `src/compile/ast.hpp`（节点）+ `ast.cpp`（`dump`/`accept`） |
+| AST `ImportStmtNode` | 已实现 | `src/compile/Ast.hpp`（节点）+ `Ast.cpp`（`dump`/`accept`） |
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp` 的 `import_instruction` |
@@ -77,10 +77,10 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   path（解码延至代码生成端）→ `expect(As)` →
   `expect_identifier()` 作 alias → `expect(Semicolon)` → 构造 `ImportStmtNode(loc, path, alias)`。
   **path 文法钉死字符串字面量，此处不做任何路径解析或文件系统检查**。
-- **AST 节点**（`src/compile/ast.hpp`）：`struct ImportStmtNode : StmtNode`，字段
+- **AST 节点**（`src/compile/Ast.hpp`）：`struct ImportStmtNode : StmtNode`，字段
   `UPtr<ExprNode> path;`（Parser 保证指向 `StringLiteralNode`，与字面段同形）/
   `String alias;`。`dump` 渲染 `ImportStmt as=...`，path 以 `StringLiteral` 子行渲染
-  （`ast.cpp`），`accept` 调 `visitor.visitImportStmtNode(this)`。
+  （`Ast.cpp`），`accept` 调 `visitor.visitImportStmtNode(this)`。
 - **visitor**（`src/compile/AstVisitor.hpp`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
 > `CodeGen` 是 `AstVisitor` 的具体子类（`src/compile/CodeGen.hpp`），`visitImportStmtNode`

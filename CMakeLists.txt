@@ -60,8 +60,8 @@ add_library(aria_core STATIC
         src/compile/Lexer.hpp
         src/compile/Parser.cpp
         src/compile/Parser.hpp
-        src/compile/ast.hpp
-        src/compile/ast.cpp
+        src/compile/Ast.hpp
+        src/compile/Ast.cpp
         src/compile/AstVisitor.hpp
         src/compile/FnKind.hpp
         src/compile/FunctionCtx.cpp

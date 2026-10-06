@@ -2,8 +2,8 @@
 #define ARIA_PARSER_HPP
 
 #include "common.hpp"
+#include "compile/Ast.hpp"
 #include "compile/Token.hpp"
-#include "compile/ast.hpp"
 #include "error/AriaException.hpp"
 #include "error/Error.hpp"
 #include "memory/AstArena.hpp"

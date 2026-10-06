@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "compile/ast.hpp"
+#include "compile/Ast.hpp"
 #include "memory/AstArena.hpp"
 
 // 不使用 `using namespace aria`：fs.hpp 在 Windows 下可能间接包含 windows.h，

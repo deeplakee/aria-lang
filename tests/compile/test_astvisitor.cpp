@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "compile/Ast.hpp"
 #include "compile/AstVisitor.hpp"
-#include "compile/ast.hpp"
 #include "memory/AstArena.hpp"
 
 // 同 test_ast.cpp：不使用 `using namespace aria`（fs.hpp 在 Windows 下可能间接包含

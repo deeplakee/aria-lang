@@ -1,7 +1,7 @@
 #ifndef ARIA_FNKIND_HPP
 #define ARIA_FNKIND_HPP
 
-// 函数种类独立小头：AST 侧与编译执行侧共用，避免 ast.hpp <-> FunctionCtx.hpp 互相牵连。
+// 函数种类独立小头：AST 侧与编译执行侧共用，避免 Ast.hpp <-> FunctionCtx.hpp 互相牵连。
 #include "common.hpp"
 #include "type.hpp"
 

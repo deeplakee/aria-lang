@@ -230,13 +230,13 @@ namespace aria {
     FunDeclNode* Parser::fun_decl(const FnKind kind) {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
-        const auto  name = expect_identifier();
-        List<Param> ps   = params();
-        BlockNode*  body = block();
-        return arena_.make<FunDeclNode>(loc, name, arena_.make_list(ps), body, kind);
+        const auto name = expect_identifier();
+        const auto ps   = params();
+        BlockNode* body = block();
+        return arena_.make<FunDeclNode>(loc, name, ps, body, kind);
     }
 
-    List<Param> Parser::params() {
+    Span<Param> Parser::params() {
         expect(TokenType::LeftParen, "'('");
         List<Param> result;
         if (!check(TokenType::RightParen) && !is_at_end()) {
@@ -266,7 +266,7 @@ namespace aria {
             }
         }
         expect(TokenType::RightParen, "')'");
-        return result;
+        return arena_.make_list(result);
     }
 
     DefDeclNode* Parser::def_decl(const bool is_member) {
@@ -288,10 +288,10 @@ namespace aria {
             } else if (check(TokenType::Identifier)) {
                 const auto mloc  = loc_of(peek());
                 const auto mname = expect_identifier();
-                auto       mps   = params();
+                const auto mps   = params();
                 const auto mbody = block();
                 const auto kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
-                members.push_back(arena_.make<FunDeclNode>(mloc, mname, arena_.make_list(mps), mbody, kind));
+                members.push_back(arena_.make<FunDeclNode>(mloc, mname, mps, mbody, kind));
             } else {
                 error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
                       peek().lexeme());
@@ -855,9 +855,9 @@ namespace aria {
     ExprNode* Parser::lambda_expr() {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
-        List<Param> ps   = params();
-        BlockNode*  body = block();
-        return arena_.make<LambdaExprNode>(loc, arena_.make_list(ps), body);
+        const auto ps   = params();
+        BlockNode* body = block();
+        return arena_.make<LambdaExprNode>(loc, ps, body);
     }
 
     ExprNode* Parser::match_expr() {

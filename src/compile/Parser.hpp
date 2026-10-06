@@ -101,7 +101,7 @@ namespace aria {
         FunDeclNode* fun_decl(FnKind kind);
 
         [[nodiscard]]
-        List<Param> params();
+        Span<Param> params();
 
         // def 声明或嵌套类成员，is_member 由调用位烙定；成员体再遇 def 同法递归，嵌套深度不限。
         [[nodiscard]]

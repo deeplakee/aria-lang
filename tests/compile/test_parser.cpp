@@ -93,7 +93,7 @@ namespace {
     // 取程序的第一个顶层声明（已断言解析成功且有声明）。
     const StmtNode* first_decl(const UPtr<Parsed>& p) {
         EXPECT_TRUE(p->result.has_value());
-        auto& decls = (*p->result)->declarations;
+        auto& decls = (*p->result)->decls;
         EXPECT_FALSE(decls.empty());
         return decls.empty() ? nullptr : decls[0];
     }
@@ -106,13 +106,13 @@ namespace {
 TEST(ParserBasic, EmptyProgram) {
     auto p = parse_src("");
     ASSERT_TRUE(p->result.has_value());
-    EXPECT_EQ((*p->result)->declarations.size(), 0u);
+    EXPECT_EQ((*p->result)->decls.size(), 0u);
 }
 
 TEST(ParserBasic, EmptyProgramTrivia) {
     auto p = parse_src("// only a comment\n  \n");
     ASSERT_TRUE(p->result.has_value());
-    EXPECT_EQ((*p->result)->declarations.size(), 0u);
+    EXPECT_EQ((*p->result)->decls.size(), 0u);
 }
 
 TEST(ParserBasic, Literals) {
@@ -523,7 +523,7 @@ TEST(ParserStmt, IfNoElse) {
     auto stmt = first_decl(p);
     auto ifn  = dynamic_cast<const IfStmtNode*>(stmt);
     ASSERT_NE(ifn, nullptr);
-    EXPECT_EQ(ifn->else_branch, nullptr);
+    EXPECT_EQ(ifn->else_br, nullptr);
 }
 
 TEST(ParserStmt, While) { expect_has(dump_ok("while (c) println(1);"), "WhileStmt"); }
@@ -534,8 +534,8 @@ TEST(ParserStmt, ForCStyle) {
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
-    EXPECT_NE(forn->condition, nullptr);
-    EXPECT_NE(forn->increment, nullptr);
+    EXPECT_NE(forn->cond, nullptr);
+    EXPECT_NE(forn->incr, nullptr);
 }
 
 TEST(ParserStmt, ForEmpty) {
@@ -544,8 +544,8 @@ TEST(ParserStmt, ForEmpty) {
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_EQ(forn->init, nullptr);
-    EXPECT_EQ(forn->condition, nullptr);
-    EXPECT_EQ(forn->increment, nullptr);
+    EXPECT_EQ(forn->cond, nullptr);
+    EXPECT_EQ(forn->incr, nullptr);
 }
 
 TEST(ParserStmt, ForInSingle) {
@@ -585,8 +585,8 @@ TEST(ParserStmt, ForCStyleExprInit) {
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
-    EXPECT_NE(forn->condition, nullptr);
-    EXPECT_NE(forn->increment, nullptr);
+    EXPECT_NE(forn->cond, nullptr);
+    EXPECT_NE(forn->incr, nullptr);
 }
 
 TEST(ParserStmt, ForCStyleDestructureInit) {
@@ -596,8 +596,8 @@ TEST(ParserStmt, ForCStyleDestructureInit) {
     auto forn = dynamic_cast<const ForStmtNode*>(stmt);
     ASSERT_NE(forn, nullptr);
     EXPECT_NE(forn->init, nullptr);
-    EXPECT_NE(forn->condition, nullptr);
-    EXPECT_NE(forn->increment, nullptr);
+    EXPECT_NE(forn->cond, nullptr);
+    EXPECT_NE(forn->incr, nullptr);
 }
 
 TEST(ParserStmt, BreakContinueReturn) {

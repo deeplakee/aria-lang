@@ -118,12 +118,12 @@ namespace aria {
 
     // 共享辅助值类型（非 ASTNode 派生，提供 dump 供父节点统一渲染；子节点指针借用 arena 内存）。
 
-    // 函数参数：plainParams / defaultParam / varargs 统一为 Param；文法保证 is_varargs 与 default_value
+    // 函数参数：plainParams / defaultParam / varargs 统一为 Param；文法保证 is_varargs 与 default_val
     // 互斥（varargs 无默认值）。
     struct Param {
         StringView name;
-        ExprNode*  default_value = nullptr;
-        bool       is_varargs    = false;
+        ExprNode*  default_val = nullptr;
+        bool       is_varargs  = false;
 
         [[nodiscard]]
         String dump(usize indent) const;
@@ -235,29 +235,28 @@ namespace aria {
 
     // ProgramNode：program -> declaration*。整个编译单元的根，持顶层声明（StmtNode）列表。
     struct ProgramNode : ASTNode {
-        ProgramNode(const SourceLoc loc, const Span<StmtNode*> declarations) :
-            ASTNode{loc}, declarations{declarations} {}
+        ProgramNode(const SourceLoc loc, const Span<StmtNode*> decls) : ASTNode{loc}, decls{decls} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Span<StmtNode*> declarations;
+        Span<StmtNode*> decls;
     };
 
     // 语句节点（StmtNode）
 
     // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
-        BlockNode(const SourceLoc loc, const Span<StmtNode*> statements) : StmtNode{loc}, statements{statements} {}
+        BlockNode(const SourceLoc loc, const Span<StmtNode*> stmts) : StmtNode{loc}, stmts{stmts} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Span<StmtNode*> statements;
+        Span<StmtNode*> stmts;
     };
 
     // 表达式语句：expression ";"。
@@ -274,37 +273,36 @@ namespace aria {
 
     // if 语句：if (cond) stmt (else stmt)?。
     struct IfStmtNode : StmtNode {
-        IfStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* then_branch, StmtNode* else_branch) :
-            StmtNode{loc}, condition{cond}, then_branch{then_branch}, else_branch{else_branch} {}
+        IfStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* then_br, StmtNode* else_br) :
+            StmtNode{loc}, cond{cond}, then_br{then_br}, else_br{else_br} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        ExprNode* condition;
-        StmtNode* then_branch;
-        StmtNode* else_branch;
+        ExprNode* cond;
+        StmtNode* then_br;
+        StmtNode* else_br;
     };
 
     // while 语句：while (cond) stmt。
     struct WhileStmtNode : StmtNode {
-        WhileStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* body) :
-            StmtNode{loc}, condition{cond}, body{body} {}
+        WhileStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* body) : StmtNode{loc}, cond{cond}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        ExprNode* condition;
+        ExprNode* cond;
         StmtNode* body;
     };
 
-    // for 语句（C 风格）：for (init; cond; incr) stmt，init / condition / increment 均可省。
+    // for 语句（C 风格）：for (init; cond; incr) stmt，init / cond / incr 均可省。
     struct ForStmtNode : StmtNode {
-        ForStmtNode(const SourceLoc loc, StmtNode* init, ExprNode* condition, ExprNode* increment, StmtNode* body) :
-            StmtNode{loc}, init{init}, condition{condition}, increment{increment}, body{body} {}
+        ForStmtNode(const SourceLoc loc, StmtNode* init, ExprNode* cond, ExprNode* incr, StmtNode* body) :
+            StmtNode{loc}, init{init}, cond{cond}, incr{incr}, body{body} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
@@ -312,8 +310,8 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
 
         StmtNode* init;
-        ExprNode* condition;
-        ExprNode* increment;
+        ExprNode* cond;
+        ExprNode* incr;
         StmtNode* body;
     };
 
@@ -702,14 +700,14 @@ namespace aria {
 
     // 列表字面量：[e, e, ...]。
     struct ListExprNode : ExprNode {
-        ListExprNode(const SourceLoc loc, const Span<ExprNode*> elements) : ExprNode{loc}, elements{elements} {}
+        ListExprNode(const SourceLoc loc, const Span<ExprNode*> elems) : ExprNode{loc}, elems{elems} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Span<ExprNode*> elements;
+        Span<ExprNode*> elems;
     };
 
     // map 字面量：{ k: v, ... }。键为任意 expression（运行时求值）。
@@ -741,17 +739,17 @@ namespace aria {
 
     // if 表达式：if (cond) { then } else { else }，分支为单表达式块。
     struct IfExprNode : ExprNode {
-        IfExprNode(const SourceLoc loc, ExprNode* cond, ExprNode* then_branch, ExprNode* else_branch) :
-            ExprNode{loc}, condition{cond}, then_branch{then_branch}, else_branch{else_branch} {}
+        IfExprNode(const SourceLoc loc, ExprNode* cond, ExprNode* then_br, ExprNode* else_br) :
+            ExprNode{loc}, cond{cond}, then_br{then_br}, else_br{else_br} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        ExprNode* condition;
-        ExprNode* then_branch;
-        ExprNode* else_branch;
+        ExprNode* cond;
+        ExprNode* then_br;
+        ExprNode* else_br;
     };
 
     // lambda 表达式：fun params block。
@@ -785,15 +783,14 @@ namespace aria {
     // 序列表达式：e1, e2, ...，逐个求值、值为最后一个、不短路。
     // 单元素由 parser 透明化不产本节点（"(a)" 保持纯分组，"(a) = v" 左值行为不回归）。
     struct SequenceExprNode : ExprNode {
-        SequenceExprNode(const SourceLoc loc, const Span<ExprNode*> expressions) :
-            ExprNode{loc}, expressions{expressions} {}
+        SequenceExprNode(const SourceLoc loc, const Span<ExprNode*> exprs) : ExprNode{loc}, exprs{exprs} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Span<ExprNode*> expressions;
+        Span<ExprNode*> exprs;
     };
 
     // 解构模式节点（PatternNode）：用于 var 声明的 varTarget、for-in 目标与解构赋值左侧目标。
@@ -824,15 +821,15 @@ namespace aria {
     // 列表模式：[p, p, ..., ...rest?]。rest 收集剩余为新 list（只接受绑名，文法禁 "..._"），
     // nullptr 表无 rest 忽略剩余。
     struct ListPatternNode : PatternNode {
-        ListPatternNode(const SourceLoc loc, const Span<PatternNode*> elements, IdentifierPatternNode* rest) :
-            PatternNode{loc}, elements{elements}, rest{rest} {}
+        ListPatternNode(const SourceLoc loc, const Span<PatternNode*> elems, IdentifierPatternNode* rest) :
+            PatternNode{loc}, elems{elems}, rest{rest} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        Span<PatternNode*>     elements;
+        Span<PatternNode*>     elems;
         IdentifierPatternNode* rest;
     };
 

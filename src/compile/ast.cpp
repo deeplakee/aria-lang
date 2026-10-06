@@ -84,7 +84,7 @@ namespace aria {
     String Param::dump(const usize indent) const {
         String header = std::format("Param name={}", name);
         header        = is_varargs ? header + " (varargs)" : header;
-        return dump_node(indent, header, default_value);
+        return dump_node(indent, header, default_val);
     }
 
     String MatchPattern::dump(const usize indent) const {
@@ -100,25 +100,21 @@ namespace aria {
     String MapEntry::dump(const usize indent) const { return dump_node(indent, "MapEntry", key, value); }
 
     String ProgramNode::dump(const usize indent) const {
-        return dump_node(indent, std::format("Program decls={}", declarations.size()), declarations);
+        return dump_node(indent, std::format("Program decls={}", decls.size()), decls);
     }
 
     String BlockNode::dump(const usize indent) const {
-        return dump_node(indent, std::format("Block stmts={}", statements.size()), statements);
+        return dump_node(indent, std::format("Block stmts={}", stmts.size()), stmts);
     }
 
     String ExprStmtNode::dump(const usize indent) const { return dump_node(indent, "ExprStmt", expr); }
 
 
-    String IfStmtNode::dump(const usize indent) const {
-        return dump_node(indent, "IfStmt", condition, then_branch, else_branch);
-    }
+    String IfStmtNode::dump(const usize indent) const { return dump_node(indent, "IfStmt", cond, then_br, else_br); }
 
-    String WhileStmtNode::dump(const usize indent) const { return dump_node(indent, "WhileStmt", condition, body); }
+    String WhileStmtNode::dump(const usize indent) const { return dump_node(indent, "WhileStmt", cond, body); }
 
-    String ForStmtNode::dump(const usize indent) const {
-        return dump_node(indent, "ForStmt", init, condition, increment, body);
-    }
+    String ForStmtNode::dump(const usize indent) const { return dump_node(indent, "ForStmt", init, cond, incr, body); }
 
     String ForInStmtNode::dump(const usize indent) const {
         return dump_node(indent, "ForInStmt", pattern, iterable, body);
@@ -233,7 +229,7 @@ namespace aria {
     String IndexAccessNode::dump(const usize indent) const { return dump_node(indent, "IndexAccess", object, index); }
 
     String ListExprNode::dump(const usize indent) const {
-        return dump_node(indent, std::format("ListExpr elements={}", elements.size()), elements);
+        return dump_node(indent, std::format("ListExpr elements={}", elems.size()), elems);
     }
 
     String MapExprNode::dump(const usize indent) const {
@@ -244,9 +240,7 @@ namespace aria {
         return dump_node(indent, std::format("RangeExpr {}", is_exclusive ? "exclusive" : "inclusive"), lower, upper);
     }
 
-    String IfExprNode::dump(const usize indent) const {
-        return dump_node(indent, "IfExpr", condition, then_branch, else_branch);
-    }
+    String IfExprNode::dump(const usize indent) const { return dump_node(indent, "IfExpr", cond, then_br, else_br); }
 
     String LambdaExprNode::dump(const usize indent) const {
         return dump_node(indent, std::format("LambdaExpr params={}", params.size()), params, body);
@@ -257,7 +251,7 @@ namespace aria {
     }
 
     String SequenceExprNode::dump(const usize indent) const {
-        return dump_node(indent, std::format("SequenceExpr expressions={}", expressions.size()), expressions);
+        return dump_node(indent, std::format("SequenceExpr expressions={}", exprs.size()), exprs);
     }
 
     String IdentifierPatternNode::dump(const usize indent) const {
@@ -267,11 +261,11 @@ namespace aria {
     String WildcardPatternNode::dump(const usize indent) const { return dump_node(indent, "WildcardPattern _"); }
 
     String ListPatternNode::dump(const usize indent) const {
-        String header = std::format("ListPattern elements={}", elements.size());
+        String header = std::format("ListPattern elements={}", elems.size());
         if (rest) {
             header += std::format(" rest={}", rest->name);
         }
-        return dump_node(indent, header, elements);
+        return dump_node(indent, header, elems);
     }
 
     void ProgramNode::accept(AstVisitor& visitor) { visitor.visitProgramNode(*this); }

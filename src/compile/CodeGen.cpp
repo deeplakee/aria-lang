@@ -87,7 +87,7 @@ namespace aria {
         u8 min_arity(const Span<Param> params) noexcept {
             u8 count = 0;
             for (const auto& param: params) {
-                if (param.default_value != nullptr || param.is_varargs) {
+                if (param.default_val != nullptr || param.is_varargs) {
                     break;
                 }
                 ++count;
@@ -103,7 +103,7 @@ namespace aria {
         // 会发出下标访问的位置数，决定 Fill 绑定是否需隐藏局部复取源值。
         [[nodiscard]] usize pattern_access_count(const ListPatternNode& pattern) noexcept {
             usize count = 0;
-            for (const auto& element: pattern.elements) {
+            for (const auto& element: pattern.elems) {
                 if (!is_wildcard_pattern(*element)) {
                     ++count;
                 }
@@ -131,7 +131,7 @@ namespace aria {
 
         try {
             // 遍历顶层声明（顶层 var/fun/import -> 模块全局；嵌套块内 var -> 局部）。
-            for (const auto& decl: program.declarations) {
+            for (const auto& decl: program.decls) {
                 emit_stmt(*decl);
             }
             emit_implicit_return(program.loc());
@@ -386,19 +386,19 @@ namespace aria {
 
     template<typename PushSource>
     void CodeGen::emit_list_pattern_accesses(ListPatternNode& node, const u32 line, PushSource&& push_source) {
-        for (usize index = 0; index < node.elements.size(); ++index) {
-            if (is_wildcard_pattern(*node.elements[index])) {
+        for (usize index = 0; index < node.elems.size(); ++index) {
+            if (is_wildcard_pattern(*node.elems[index])) {
                 continue; // `_` 不访问该位置
             }
             push_source();
             emit_int_literal(static_cast<i64>(index), line, node.loc());
             cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [src, idx] -> [element]
-            node.elements[index]->accept(*this);         // 递归绑定（模式不变）
+            node.elems[index]->accept(*this);            // 递归绑定（模式不变）
         }
         if (node.rest) {
             // rest 位 = 无上界 range 作下标键（切片，空尾得空 list）；绑名经 rest 节点自身 visit。
             push_source();
-            emit_int_literal(static_cast<i64>(node.elements.size()), line, node.loc());
+            emit_int_literal(static_cast<i64>(node.elems.size()), line, node.loc());
             cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
             cur_cu()->emit_byte(kRangeFlagUnbounded, line); // [src, range]
             cur_cu()->emit_op(OpCode::LOAD_INDEX, line);    // [suffix]
@@ -484,13 +484,13 @@ namespace aria {
         const u32 line = loc.line();
         for (usize i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
-            if (param.default_value != nullptr) {
+            if (param.default_val != nullptr) {
                 const u16 slot = i + 1; // 参数槽 1..n(槽 0 = this/哑元)
                 cur_cu()->emit_load_local(slot, line);
                 cur_cu()->emit_op(OpCode::LOAD_REG, line);
                 cur_cu()->emit_byte(kDefaultMarkOffset, line);
                 const u32 skip = cur_cu()->emit_jump(OpCode::JUMP_NE, line);
-                emit_expr(*param.default_value);
+                emit_expr(*param.default_val);
                 cur_cu()->emit_store_local(slot, line); // peek-store 换入参数槽
                 cur_cu()->emit_op(OpCode::POP, line);   // STORE_LOCAL 不弹,弹掉求值副本恢复「栈高 == 已填槽数」
                 patch_jump_or_fail(skip, loc);
@@ -566,7 +566,7 @@ namespace aria {
 
     void CodeGen::visitProgramNode(ProgramNode& node) {
         // 仅编排顶层声明，不直接发射。
-        for (const auto& decl: node.declarations) {
+        for (const auto& decl: node.decls) {
             emit_stmt(*decl);
         }
     }
@@ -574,7 +574,7 @@ namespace aria {
     void CodeGen::visitBlockNode(BlockNode& node) {
         const u32 line = node.line();
         begin_scope();
-        for (const auto& stmt: node.statements) {
+        for (const auto& stmt: node.stmts) {
             emit_stmt(*stmt);
         }
         end_scope(line);
@@ -588,12 +588,12 @@ namespace aria {
 
     void CodeGen::visitIfStmtNode(IfStmtNode& node) {
         const u32 line = node.line();
-        const u32 jf   = emit_cond_jump(*node.condition, line); // -> else / end
-        emit_stmt(*node.then_branch);
-        if (node.else_branch != nullptr) {
+        const u32 jf   = emit_cond_jump(*node.cond, line); // -> else / end
+        emit_stmt(*node.then_br);
+        if (node.else_br != nullptr) {
             const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
             patch_jump_or_fail(jf, node.loc());                       // -> else
-            emit_stmt(*node.else_branch);
+            emit_stmt(*node.else_br);
             patch_jump_or_fail(jend, node.loc()); // -> end
         } else {
             patch_jump_or_fail(jf, node.loc()); // -> end
@@ -604,7 +604,7 @@ namespace aria {
         const u32 line     = node.line();
         auto      loop_ctx = LoopCtx{.loop_scope_depth = cur_fn_ctx()->scope_depth_,
                                      .back_target      = cur_cu()->size()}; // 循环头 = 条件起点 = continue 后向目标
-        const u32 patch    = emit_cond_jump(*node.condition, line);         // -> L_end 占位
+        const u32 patch    = emit_cond_jump(*node.cond, line);              // -> L_end 占位
         loop_ctx.exit_fwd_patches.push_back(patch);
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
         emit_stmt(*node.body);
@@ -620,15 +620,15 @@ namespace aria {
         if (node.init != nullptr) {
             emit_stmt(*node.init);
         }
-        const bool has_cond = node.condition != nullptr;
-        const bool has_incr = node.increment != nullptr;
+        const bool has_cond = node.cond != nullptr;
+        const bool has_incr = node.incr != nullptr;
         // continue 通道随 has_incr 打开：有 incr 前向跳 L_incr（回填），无 incr 后向跳循环头。
         auto loop_ctx = LoopCtx{.loop_scope_depth = loop_scope, .back_target = cur_cu()->size()};
         if (has_incr) {
             loop_ctx.continue_fwd_patches.emplace(); // 打开前向 continue 通道
         }
         if (has_cond) {
-            const u32 patch = emit_cond_jump(*node.condition, line); // -> L_end 占位
+            const u32 patch = emit_cond_jump(*node.cond, line); // -> L_end 占位
             loop_ctx.exit_fwd_patches.push_back(patch);
         } // 无 cond: exit 列表空，收尾只有回边 + break 回填
         cur_fn_ctx()->loop_stack_.push(std::move(loop_ctx));
@@ -643,7 +643,7 @@ namespace aria {
             }
         }
         if (has_incr) {
-            emit_expr(*node.increment);
+            emit_expr(*node.incr);
             cur_cu()->emit_op(OpCode::POP, line);
         }
         emit_loop_backedge_and_exits(loop_ctx, node.loc());
@@ -1228,14 +1228,14 @@ namespace aria {
     void CodeGen::visitListExprNode(ListExprNode& node) {
         const u32 line = node.line();
         // 元素数上限（MAKE_LIST 操作数 u16），先检后发。
-        if (node.elements.size() > kMaxListElements) {
+        if (node.elems.size() > kMaxListElements) {
             fail(ErrorCode::TooManyElements, node.loc(), "too many list elements (max {})", kMaxListElements);
         }
-        for (const auto& element: node.elements) {
+        for (const auto& element: node.elems) {
             emit_expr(*element);
         }
         cur_cu()->emit_op(OpCode::MAKE_LIST, line);
-        cur_cu()->emit_word(node.elements.size(), line); // [v1..vn] -> [list]
+        cur_cu()->emit_word(node.elems.size(), line); // [v1..vn] -> [list]
     }
 
     void CodeGen::visitMapExprNode(MapExprNode& node) {
@@ -1269,12 +1269,12 @@ namespace aria {
 
     void CodeGen::visitIfExprNode(IfExprNode& node) {
         const u32 line = node.line();
-        const u32 jf   = emit_cond_jump(*node.condition, line); // -> else
-        emit_expr(*node.then_branch);
+        const u32 jf   = emit_cond_jump(*node.cond, line); // -> else
+        emit_expr(*node.then_br);
         const u32 jend = cur_cu()->emit_jump(OpCode::JUMP, line); // -> end
         // -> else
         patch_jump_or_fail(jf, node.loc());
-        emit_expr(*node.else_branch);
+        emit_expr(*node.else_br);
         patch_jump_or_fail(jend, node.loc()); // -> end
     }
 
@@ -1287,12 +1287,12 @@ namespace aria {
 
     void CodeGen::visitSequenceExprNode(SequenceExprNode& node) {
         // 非末位求值后 POP 弃，末位留栈即序列值；单元素已由 parser 透明化，size >= 2 是入参不变式。
-        ASSERT(node.expressions.size() >= 2, "sequence node requires two or more expressions");
-        for (usize index = 0; index + 1 < node.expressions.size(); ++index) {
-            emit_expr(*node.expressions[index]);
-            cur_cu()->emit_op(OpCode::POP, node.expressions[index]->line());
+        ASSERT(node.exprs.size() >= 2, "sequence node requires two or more expressions");
+        for (usize index = 0; index + 1 < node.exprs.size(); ++index) {
+            emit_expr(*node.exprs[index]);
+            cur_cu()->emit_op(OpCode::POP, node.exprs[index]->line());
         }
-        emit_expr(*node.expressions.back());
+        emit_expr(*node.exprs.back());
     }
 
     void CodeGen::visitIdentifierPatternNode(IdentifierPatternNode& node) {

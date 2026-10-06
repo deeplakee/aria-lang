@@ -250,7 +250,7 @@ namespace aria {
                 const auto name = expect_identifier();
                 if (match(TokenType::Equal)) {
                     ExprNode* dv = expression();
-                    result.push_back(Param{.name = name, .default_value = dv});
+                    result.push_back(Param{.name = name, .default_val = dv});
                     seen_default = true;
                 } else {
                     if (seen_default) {

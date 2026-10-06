@@ -693,7 +693,7 @@ namespace aria {
         ExprNode*       expr = primary();
         while (true) {
             if (check(TokenType::LeftParen)) {
-                expr = arena_.make<CallNode>(loc, expr, arena_.make_list(args()));
+                expr = arena_.make<CallNode>(loc, expr, args());
             } else if (match(TokenType::Dot)) {
                 expr = arena_.make<FieldAccessNode>(loc, expr, expect_identifier());
             } else if (match(TokenType::LeftBracket)) {
@@ -730,7 +730,7 @@ namespace aria {
         }
     }
 
-    List<ExprNode*> Parser::args() {
+    Span<ExprNode*> Parser::args() {
         expect(TokenType::LeftParen, "'('");
         List<ExprNode*> args;
         if (!check(TokenType::RightParen) && !is_at_end()) {
@@ -739,7 +739,7 @@ namespace aria {
             } while (match(TokenType::Comma));
         }
         expect(TokenType::RightParen, "')'");
-        return args;
+        return arena_.make_list(args);
     }
 
     ExprNode* Parser::primary() {

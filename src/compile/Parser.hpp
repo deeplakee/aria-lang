@@ -206,7 +206,7 @@ namespace aria {
         ExprNode* interp_string();
 
         [[nodiscard]]
-        List<ExprNode*> args();
+        Span<ExprNode*> args();
 
         [[nodiscard]]
         ExprNode* list_expr();

@@ -652,9 +652,17 @@ namespace aria {
 
     void CodeGen::visitForInStmtNode(ForInStmtNode& node) {
         const u32 line = node.line();
-        // lowering：外层 for-in scope 挂隐藏局部 <iter> = iterable.iter()（"<>" 不可作标识符，不撞名）；
-        // 循环头 = has_next() 判断处（continue 跳此，无增量步）；每轮 per-iteration scope 内
-        // <pattern> = iter.next()（Fill）后跑体、end_scope 收口，每轮 fresh 绑定。
+        // 等价形式（lowering 蓝图）：
+        //   {                                     // for-in scope（整循环存活）
+        //     var <iter> = <iterable>.iter();       // <iter> 隐藏局部（"<iter>" 含 <> 不可作标识符，不撞用户名）
+        //     while (<iter>.has_next()) {          // L_start = has_next 判断处
+        //       {                                  // per-iteration scope（每轮 fresh）
+        //         var <pattern> = <iter>.next();   // bind_pattern：declare + 值填槽（_ -> POP 丢弃）
+        //         <body>
+        //       }
+        //     }
+        //   }
+        // continue 跳回 L_start（has_next），无 increment 步；下一轮值在每轮体首调 next() 取。
         begin_scope(); // for-in scope：仅 <iter>，循环全程存活
         const u32 loop_scope = cur_fn_ctx()->scope_depth_;
 

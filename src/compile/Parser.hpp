@@ -11,17 +11,18 @@ namespace aria {
 
     // 递归下降语法分析器：Token 流 -> AST（ProgramNode），解析函数与非终结符一一对应。
     // 语法错误在递归深处经 error()/expect() 抛 AriaCompileException，declaration() 捕获记账后
-    // synchronize 继续，多错收集；SourceFile 不持有，存活须覆盖解析期（SourceLoc 内嵌于 Token）。
+    // synchronize 继续，多错收集；token 表借用不持有（存活须覆盖 parse 调用），SourceFile 同样
+    // 不持有、存活须覆盖解析期（SourceLoc 内嵌于 Token）。
     class Parser {
     public:
-        static Result<UPtr<ProgramNode>, List<Error>> parse(List<Token> tokens);
+        static Result<UPtr<ProgramNode>, List<Error>> parse(List<Token>& tokens);
 
     private:
-        explicit Parser(List<Token> tokens) noexcept;
+        explicit Parser(List<Token>& tokens) noexcept;
 
-        List<Token> tokens_;
-        usize       pos_;
-        List<Error> errors_;
+        List<Token>& tokens_;
+        usize        pos_;
+        List<Error>  errors_;
 
         // token 游标辅助；越界（ahead 超出末尾）返回末尾 Eof token。
         [[nodiscard]]

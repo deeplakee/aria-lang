@@ -96,10 +96,10 @@ namespace aria {
 
     } // namespace
 
-    Parser::Parser(List<Token> tokens) noexcept : tokens_{std::move(tokens)}, pos_{0}, errors_{} {}
+    Parser::Parser(List<Token>& tokens) noexcept : tokens_{tokens}, pos_{0}, errors_{} {}
 
-    Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token> tokens) {
-        Parser parser{std::move(tokens)};
+    Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token>& tokens) {
+        Parser parser{tokens};
 
         UPtr<ProgramNode> prog;
         try {

@@ -45,7 +45,7 @@ namespace {
         if (!lex) {
             return std::unexpected(std::move(lex.error()));
         }
-        auto parse = Parser::parse(std::move(*lex));
+        auto parse = Parser::parse(*lex);
         if (!parse) {
             return std::unexpected(std::move(parse.error()[0]));
         }

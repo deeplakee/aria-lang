@@ -137,8 +137,9 @@ in
 Class
 ```
 
-同名嵌套类按成员表后写遮蔽；`def C : Parent` 的 `Parent` 位只收裸名，所以嵌套类
-（`A.B` 形态）不能作 superclass。
+同名嵌套类按成员表后写遮蔽。继承位收完整表达式（见「继承与 super」），嵌套兄弟类
+经全路径作 superclass 即可：`def InnerDerived : Outer.InnerBase { }`（求值时 `Outer`
+与 `InnerBase` 均已绑定）。
 
 **字段 / 成员的读取链**：`obj.x` 先查实例字段，未命中沿类链查静态成员；实例字段可以
 遮蔽同名静态：
@@ -192,10 +193,11 @@ hi aria
 
 ## 继承与 super
 
-`def Child : Parent` 单继承，链式查找统一终止于隐式根 `Object`（`def Foo` 等价
-`def Foo : Object`，显式写出亦合法）。内建类中只有 `Exception` 能当父类（第 14 章的
-自定义异常），`List` / `Map` 等其余内建类写进继承位是运行期错误。方法沿链找最近实现；
-`super.` 前缀显式调**父类**实现：
+`def Child : Parent` 单继承，`Parent` 位收**任意表达式**，在类定义执行时求值（先于本
+类名绑定，表达式里引用本类名按未声明名报错）；链式查找统一终止于隐式根 `Object`
+（`def Foo` 等价 `def Foo : Object`，显式写出亦合法）。内建类中只有 `Exception` 能当
+父类（第 14 章的自定义异常），`List` / `Map` 等其余内建类写进继承位是运行期错误。
+方法沿链找最近实现；`super.` 前缀显式调**父类**实现：
 
 ```aria
 def Animal {
@@ -242,6 +244,32 @@ def S { fun sm() { return super.x; } }
 
 ```text
 super.aria:1:27: Semantic: SuperOutsideMethod 'super' outside method
+```
+
+继承位是表达式，所以基类可以经容器成员、函数调用或括号包裹取得：
+
+```aria
+def Animal {
+    describe() { return "animal"; }
+}
+fun pick() { return Animal; }
+var chosen = {"base": Animal};
+
+def ViaField : chosen["base"] { }
+def ViaCall  : pick() { }
+def ViaParen : (Animal) { }
+
+println(ViaField().describe());
+println(ViaCall().describe());
+println(ViaParen().describe());
+```
+
+输出：
+
+```text
+animal
+animal
+animal
 ```
 
 静态成员的继承是**读穿透、写遮蔽**：读 `Sub.tag` 沿链找，写 `Sub.tag = v` 落在子类自身：

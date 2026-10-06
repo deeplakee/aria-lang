@@ -274,11 +274,7 @@ namespace aria {
         const SourceLoc loc = loc_of(peek());
         expect(TokenType::Def, "'def'");
         const auto name       = expect_identifier();
-        ExprNode*  superclass = nullptr;
-        if (match(TokenType::Colon)) {
-            const auto super_loc = loc_of(peek());
-            superclass           = arena_.make<IdentifierNode>(super_loc, expect_identifier());
-        }
+        const auto superclass = match(TokenType::Colon) ? expression() : nullptr;
         expect(TokenType::LeftBrace, "'{'");
         // def 体成员按首 token 分派：var -> 静态变量，fun -> 静态方法（无 this），裸 identifier ->
         // 实例方法（名为 init 烙 InitMethod 构造角色），def -> 嵌套类（递归烙 is_member）。其余报错。

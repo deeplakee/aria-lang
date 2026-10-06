@@ -439,7 +439,7 @@ namespace aria {
         FnKind      kind;
     };
 
-    // def 声明："def" identifier (":" identifier)? "{" member* "}"（成员含嵌套 defDecl）。
+    // def 声明："def" identifier (":" expression)? "{" member* "}"（成员含嵌套 defDecl）。
     // members 按源序保留，静态变量初始化即此序（前一静态变量可被后续初始化器引用）。
     struct DefDeclNode : StmtNode {
         DefDeclNode(const SourceLoc loc, const StringView name, ExprNode* superclass, const Span<StmtNode*> members,

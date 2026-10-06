@@ -1,0 +1,43 @@
+// 钉住：superclass 位收完整表达式--经 map 成员/调用/if 表达式/parenExpr 取基类，
+// 嵌套兄弟类经全路径作基类；表达式在类名绑定前求值、成员沿所得链解析。
+def A2 {
+    hi() { return 1; }
+}
+
+// 经 map 成员取基类（下标访问）
+var bases = {"a": A2};
+def FromMap : bases["a"] {
+    hi() { return 20 + super.hi(); }
+}
+assert(FromMap().hi() == 21);
+
+// 经调用取基类（运行期求值）
+fun pick() { return A2; }
+def FromCall : pick() {
+    hi() { return 30 + super.hi(); }
+}
+assert(FromCall().hi() == 31);
+
+// parenExpr 包裹（括号透明）
+def FromParen : (A2) {
+    hi() { return 40 + super.hi(); }
+}
+assert(FromParen().hi() == 41);
+
+// if 表达式取基类
+var flag = true;
+def FromIf : if (flag) { A2 } else { A2 } {
+    hi() { return 50 + super.hi(); }
+}
+assert(FromIf().hi() == 51);
+
+// 嵌套兄弟类经全路径作基类（求值时 Outer 与 InnerBase 均已绑定）
+def Outer {
+    def InnerBase {
+        tag() { return 7; }
+    }
+    def InnerDerived : Outer.InnerBase {
+        tag() { return 70 + super.tag(); }
+    }
+}
+assert(Outer.InnerDerived().tag() == 77);

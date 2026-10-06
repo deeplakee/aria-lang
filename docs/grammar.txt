@@ -20,7 +20,7 @@ defaultParams  -> defaultParam ( "," defaultParam )*
 defaultParam   -> identifier "=" expression
 varargs        -> "..." identifier
 
-defDecl        -> "def" identifier ( ":" identifier )? "{" member* "}"
+defDecl        -> "def" identifier ( ":" expression )? "{" member* "}"
 member         -> memberVar | funDecl | function | defDecl
 memberVar      -> "var" identifier ( "=" expression )? ";"
 
@@ -254,7 +254,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   - function（name() {...}，无 fun 关键字）-> 实例方法，有 this 绑定（原 class 体方法形式）。
 #   体内裸名解析顺序：局部变量 -> upvalue -> 模块全局（类静态不在裸名作用域，经 ClassName.x）。
 #   Foo(args) 实例化；实例方法经
-#   superclass（":" identifier）链继承，super.m(...) 仍可用。外部访问：Foo.x 取/设静态成员；
+#   superclass（":" expression，运行期求值）链继承，super.m(...) 仍可用。外部访问：Foo.x 取/设静态成员；
 #   foo.x 先查实例自身属性，未命中再回退静态成员（实例属性遮蔽同名静态成员）。静态/实例方法
 #   区分、访问顺序与遮蔽语义属编译期/VM 范畴，文法不编码（仅约束 member 的三种起首写法）。
 #   静态成员继承（编译期/VM 语义，文法不编码）：静态变量与静态方法经 superclass 链继承，
@@ -292,7 +292,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     enclosing 链、无裸名。模块顶层类是模块全局，裸名可访；嵌套类须全路径。绑定先于 B 的
 #     体（def 头部 DUP2 对复制 + MAKE_STATIC 挂进 A 的静态表、POP 弃接收类副本，体尾 POP，
 #     对齐顶层腿早绑）--B 的静态初始化器经 A.B 自引用可用；同名嵌套走成员表后写遮蔽；
-#     superclass 位是裸 identifier（无点路径），嵌套兄弟类不作 superclass（非裸名）。
+#     superclass 位收完整 expression，嵌套兄弟类经全路径可达
+#     （def Inner2 : A.Inner1，求值时 A 与 Inner1 均已绑定）。
 #   - 方法闭包（ObjClosure）持 defining class：一职双任--super 来源（LOAD_SUPER_FIELD）+
 #     方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经
 #     MAKE_STATIC 不戳）。无 enclosing 走链。

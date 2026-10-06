@@ -474,6 +474,13 @@ TEST(ParserDecl, DefWithSuper) {
     expect_has(out, "StringLiteral \"woof\"");
 }
 
+TEST(ParserDecl, DefSuperExpression) {
+    // superclass 位收完整 expression：字段链、调用；parenExpr 透明（AST 保留内层）。
+    expect_has(dump_ok("def X : bases.base { }"), "FieldAccess name=base");
+    expect_has(dump_ok("def X : pick() { }"), "Call args=0");
+    expect_has(dump_ok("def X : (Base) { }"), "Identifier Base");
+}
+
 TEST(ParserDecl, DefNoSuper) {
     const String out = dump_ok("def Empty { }");
     expect_has(out, "DefDecl name=Empty");

@@ -847,7 +847,7 @@ namespace aria {
     void CodeGen::visitDefDeclNode(DefDeclNode& node) {
         const u32 line = node.line();
 
-        // ① superclass：运行期解析读取（编译期不查全局，未命中沿用运行期 UndefinedVariable）；
+        // ① superclass：表达式位，运行期求值（未命中名字沿用运行期 UndefinedVariable）；
         //    无父类则 LOAD_REG ObjectClass（def Foo 等价 def Foo : Object，不经名字查、shadow 免疫）。
         if (node.super != nullptr) {
             emit_expr(*node.super); // [super]

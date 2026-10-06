@@ -200,7 +200,7 @@ namespace aria {
         const SourceLoc loc = loc_of(peek());
         List<StmtNode*> decls;
         while (!is_at_end()) {
-            if (StmtNode* d = declaration()) {
+            if (const auto d = declaration()) {
                 decls.push_back(d);
             }
         }
@@ -249,8 +249,7 @@ namespace aria {
                 }
                 const auto name = expect_identifier();
                 if (match(TokenType::Equal)) {
-                    ExprNode* dv = expression();
-                    result.push_back(Param{.name = name, .default_val = dv});
+                    result.push_back(Param{.name = name, .default_val = expression()});
                     seen_default = true;
                 } else {
                     if (seen_default) {
@@ -287,11 +286,11 @@ namespace aria {
             } else if (check(TokenType::Def)) {
                 members.push_back(def_decl(true));
             } else if (check(TokenType::Identifier)) {
-                const SourceLoc mloc  = loc_of(peek());
-                const auto      mname = expect_identifier();
-                List<Param>     mps   = params();
-                BlockNode*      mbody = block();
-                const auto      kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
+                const auto mloc  = loc_of(peek());
+                const auto mname = expect_identifier();
+                auto       mps   = params();
+                const auto mbody = block();
+                const auto kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
                 members.push_back(arena_.make<FunDeclNode>(mloc, mname, arena_.make_list(std::move(mps)), mbody, kind));
             } else {
                 error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
@@ -589,9 +588,8 @@ namespace aria {
 
         if (match(TokenType::Equal) || match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
             match(TokenType::StarEqual) || match(TokenType::SlashEqual) || match(TokenType::PercentEqual)) {
-            const Op::Assignment op  = assignment_op(previous().type());
-            ExprNode*            rhs = assignment();
-            return arena_.make<AssignmentNode>(loc, op, lhs, rhs);
+            const auto op = assignment_op(previous().type());
+            return arena_.make<AssignmentNode>(loc, op, lhs, assignment());
         }
         return lhs;
     }
@@ -600,9 +598,8 @@ namespace aria {
         const SourceLoc loc  = loc_of(peek());
         ExprNode*       expr = logic_and();
         while (match(TokenType::OrOr)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = logic_and();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, logic_and());
         }
         return expr;
     }
@@ -611,9 +608,8 @@ namespace aria {
         const SourceLoc loc  = loc_of(peek());
         ExprNode*       expr = equality();
         while (match(TokenType::AndAnd)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = equality();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, equality());
         }
         return expr;
     }
@@ -623,9 +619,8 @@ namespace aria {
         ExprNode*       expr = comparison();
         while (match(TokenType::EqualEqual) || match(TokenType::EqualEqualEqual) || match(TokenType::BangEqual) ||
                match(TokenType::BangEqualEqual)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = comparison();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, comparison());
         }
         return expr;
     }
@@ -635,9 +630,8 @@ namespace aria {
         ExprNode*       expr = range();
         while (match(TokenType::Greater) || match(TokenType::GreaterEqual) || match(TokenType::Less) ||
                match(TokenType::LessEqual)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = range();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, range());
         }
         return expr;
     }
@@ -654,8 +648,7 @@ namespace aria {
             // upper 位表达式残缺也落此路，报错移到外层语法错，仍显性。
             const usize save = pos_;
             try {
-                ExprNode* upper = term();
-                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, upper);
+                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, term());
             } catch (const AriaCompileException&) {
                 pos_ = save;
                 return arena_.make<RangeExprNode>(loc, is_exclusive, lower, nullptr);
@@ -669,9 +662,8 @@ namespace aria {
         const SourceLoc loc  = loc_of(peek());
         ExprNode*       expr = factor();
         while (match(TokenType::Plus) || match(TokenType::Minus)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = factor();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, factor());
         }
         return expr;
     }
@@ -680,9 +672,8 @@ namespace aria {
         const SourceLoc loc  = loc_of(peek());
         ExprNode*       expr = unary();
         while (match(TokenType::Slash) || match(TokenType::Star) || match(TokenType::Percent)) {
-            const Op::Binary op  = binary_op(previous().type());
-            ExprNode*        rhs = unary();
-            expr                 = arena_.make<BinaryExprNode>(loc, op, expr, rhs);
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, unary());
         }
         return expr;
     }
@@ -691,9 +682,8 @@ namespace aria {
         const SourceLoc loc = loc_of(peek());
         if (match(TokenType::Minus) || match(TokenType::Bang) || match(TokenType::PlusPlus) ||
             match(TokenType::MinusMinus)) {
-            const Op::Unary op      = unary_op(previous().type());
-            ExprNode*       operand = unary(); // 右结合：允许 -- -x
-            return arena_.make<UnaryExprNode>(loc, op, operand);
+            const auto op = unary_op(previous().type());
+            return arena_.make<UnaryExprNode>(loc, op, unary()); // 右结合：允许 -- -x
         }
         return value();
     }
@@ -895,14 +885,14 @@ namespace aria {
     }
 
     MatchArm Parser::match_arm() {
-        MatchPattern pat = match_pattern();
+        const MatchPattern pat = match_pattern();
         expect(TokenType::FatArrow, "'=>'");
         StmtNode* body = statement();
         return MatchArm{.pattern = pat, .body = body};
     }
 
     MatchExprArm Parser::match_expr_arm() {
-        MatchPattern pat = match_pattern();
+        const MatchPattern pat = match_pattern();
         expect(TokenType::FatArrow, "'=>'");
         ExprNode* body = expression();
         return MatchExprArm{.pattern = pat, .body = body};

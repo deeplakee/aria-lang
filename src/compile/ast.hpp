@@ -13,6 +13,10 @@ namespace aria {
     // 前置声明 AstVisitor：节点经 accept 参与双分派，这里只需声明不需完整类型。
     class AstVisitor;
 
+    // 窄指针成员引用的后段节点：指针仅借地址，前置声明即可，定义仍按段序展开。
+    struct StringLiteralNode;
+    struct ListPatternNode;
+
     // AST 根基类：所有节点持 SourceLoc（parser 取构造首 token，供语义/代码生成报错定位；空态 = 合成节点）。
     // 节点全部由 AstArena 分配、裸指针互指（arena 拥有内存，指针仅借用），存活期由所属 arena 覆盖
     // （整个编译期）；析构函数仅为多态保留，节点从不单独析构。
@@ -51,7 +55,7 @@ namespace aria {
 
     // 分类基类（仅作分类标记、无额外数据，继承 ASTNode 构造）：StmtNode 语句（声明 fun/def/var 亦属之）、
     // ExprNode 表达式、PatternNode 解构模式（var 目标 / for-in 目标 / 解构赋值左侧）。
-    // 节点段序即依赖序，无需任何前置声明。
+    // 节点段序即依赖序，文件头的前置声明仅供窄指针成员引用后段节点。
     struct StmtNode : ASTNode {
         using ASTNode::ASTNode;
     };
@@ -360,10 +364,10 @@ namespace aria {
         ExprNode* value;
     };
 
-    // import 语句：import string as identifier ";"。path 文法钉死字符串字面量（Parser 保证指向
-    // StringLiteralNode），解码在代码生成端；alias 为绑定的本地名。
+    // import 语句：import string as identifier ";"。path 文法钉死字符串字面量，解码在代码生成端；
+    // alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
-        ImportStmtNode(const SourceLoc loc, ExprNode* path, const StringView alias) :
+        ImportStmtNode(const SourceLoc loc, StringLiteralNode* path, const StringView alias) :
             StmtNode{loc}, path{path}, alias{alias} {}
 
         [[nodiscard]]
@@ -371,8 +375,8 @@ namespace aria {
 
         void accept(AstVisitor& visitor) override;
 
-        ExprNode*  path;
-        StringView alias;
+        StringLiteralNode* path;
+        StringView         alias;
     };
 
     // try 语句：try block (catch (id) block)?；ename/catch_body 成对缺省（parser 保证；
@@ -640,7 +644,7 @@ namespace aria {
 
     // 解构赋值：listPattern = expression。
     struct DestructureAssignmentNode : ExprNode {
-        DestructureAssignmentNode(const SourceLoc loc, PatternNode* target, ExprNode* value) :
+        DestructureAssignmentNode(const SourceLoc loc, ListPatternNode* target, ExprNode* value) :
             ExprNode{loc}, target{target}, value{value} {}
 
         [[nodiscard]]
@@ -648,8 +652,8 @@ namespace aria {
 
         void accept(AstVisitor& visitor) override;
 
-        PatternNode* target;
-        ExprNode*    value;
+        ListPatternNode* target;
+        ExprNode*        value;
     };
 
     // 函数调用：callee(args)。

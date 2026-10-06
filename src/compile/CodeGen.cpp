@@ -741,8 +741,8 @@ namespace aria {
     void CodeGen::visitImportStmtNode(ImportStmtNode& node) {
         const u32 line = node.line();
         // IMPORT 压模块值于栈顶；绑定与 var/fun 同形（顶层 DEF_GLOBAL，嵌套值填槽）。
-        // path 文法钉死字符串字面量（Parser 保证指向 StringLiteralNode），与字面量表达式共用驻留口。
-        const auto path_idx = add_string_literal_or_fail(dynamic_cast<StringLiteralNode&>(*node.path));
+        // path 与字面量表达式共用驻留口。
+        const auto path_idx = add_string_literal_or_fail(*node.path);
         cur_cu()->emit_op(OpCode::IMPORT, line);
         cur_cu()->emit_word(path_idx, line); // [module]
         // path 已入池经 module 根链可达，alias 的 new_string 不会回收 path。

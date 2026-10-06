@@ -576,7 +576,7 @@ namespace aria {
         if (check(TokenType::LeftBracket)) {
             const usize save = pos_;
             try {
-                PatternNode* pat = list_pattern();
+                auto pat = list_pattern();
                 if (match(TokenType::Equal)) {
                     ExprNode* rhs = assignment();
                     return arena_.make<DestructureAssignmentNode>(loc, pat, rhs);

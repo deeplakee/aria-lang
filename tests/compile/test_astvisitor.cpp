@@ -220,7 +220,12 @@ TEST(AstVisitorDispatch, Expressions) {
     expect_visit(arena.make<UnaryExprNode>(kLoc, aria::Op::Unary::Minus, ident(arena, "x")), "UnaryExprNode");
     expect_visit(arena.make<AssignmentNode>(kLoc, aria::Op::Assignment::Assign, ident(arena, "x"), i64lit(arena, 1)),
                  "AssignmentNode");
-    expect_visit(arena.make<DestructureAssignmentNode>(kLoc, id_pat(arena, "x"), ident(arena, "l")),
+    List<PatternNode*> destructure_elems;
+    destructure_elems.push_back(id_pat(arena, "x"));
+    expect_visit(arena.make<DestructureAssignmentNode>(
+                         kLoc,
+                         arena.make<ListPatternNode>(kLoc, arena.make_list(std::move(destructure_elems)), nullptr),
+                         ident(arena, "l")),
                  "DestructureAssignmentNode");
     expect_visit(arena.make<CallNode>(kLoc, ident(arena, "f"), Span<ExprNode*>{}), "CallNode");
     expect_visit(arena.make<FieldAccessNode>(kLoc, ident(arena, "o"), StringView{"f"}), "FieldAccessNode");

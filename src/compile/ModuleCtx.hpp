@@ -28,7 +28,7 @@ namespace aria {
         ModuleCtx& operator=(ModuleCtx&&)      = delete;
 
         // 登记顶层全局名：true = 新登记，false = 已存在。
-        bool declare_global(const StringView name) { return defined_globals_.insert(String{name}).second; }
+        bool declare_global(const StringView name) { return defined_globals_.insert(name).second; }
 
         // 当前是否模块顶层作用域；定义于 .cpp（需 FunctionCtx 完整类型）。
         [[nodiscard]]
@@ -40,7 +40,7 @@ namespace aria {
         FunctionCtx* current_fn_ctx_;
 
     private:
-        HashSet<String> defined_globals_; // 已登记顶层全局名
+        HashSet<StringView> defined_globals_; // 已登记顶层全局名（键借视图，存活覆盖编译期）
     };
 
 } // namespace aria

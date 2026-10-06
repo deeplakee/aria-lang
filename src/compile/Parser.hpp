@@ -6,21 +6,26 @@
 #include "compile/ast.hpp"
 #include "error/AriaException.hpp"
 #include "error/Error.hpp"
+#include "util/source_file.hpp"
 
 namespace aria {
+
+    using src::SourceFile;
+    using src::SourceLoc;
 
     // 递归下降语法分析器：Token 流 -> AST（ProgramNode），解析函数与非终结符一一对应。
     // 语法错误在递归深处经 error()/expect() 抛 AriaCompileException，declaration() 捕获记账后
     // synchronize 继续，多错收集；token 表借用不持有（存活须覆盖 parse 调用），SourceFile 同样
-    // 不持有、存活须覆盖解析期（SourceLoc 内嵌于 Token）。
+    // 不持有、存活须覆盖解析期（token 不携带位置，SourceLoc 由 lexeme 指针对源缓冲的偏移派生）。
     class Parser {
     public:
-        static Result<UPtr<ProgramNode>, List<Error>> parse(List<Token>& tokens);
+        static Result<UPtr<ProgramNode>, List<Error>> parse(List<Token>& tokens, SourceFile& source);
 
     private:
-        explicit Parser(List<Token>& tokens) noexcept;
+        explicit Parser(List<Token>& tokens, SourceFile& source) noexcept;
 
         List<Token>& tokens_;
+        SourceFile&  source_;
         usize        pos_;
         List<Error>  errors_;
 
@@ -46,12 +51,21 @@ namespace aria {
         [[nodiscard]]
         const Token& previous() const noexcept;
 
+        // token 位置：lexeme 指针对源缓冲起点的偏移（EOF 锚在末尾哨兵位，偏移 = size()）。
+        [[nodiscard]]
+        SourceLoc loc_of(const Token& token) const noexcept {
+            const auto base = source_.content().data();
+            const auto data = token.lexeme().data();
+            ASSERT(data >= base && data <= base + source_.content().size(), "lexeme not within source buffer");
+            return SourceLoc{&source_, static_cast<u32>(data - base)};
+        }
+
         // 以当前 token 位置报错并抛 AriaCompileException（声明层捕获）；EOF 改报 UnexpectedEof。
         template<typename... Args>
         [[noreturn]]
         void error(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) const {
             throw AriaCompileException{
-                    Error::from_detail(code, peek().loc(), std::format(fmt, std::forward<Args>(args)...))};
+                    Error::from_detail(code, loc_of(peek()), std::format(fmt, std::forward<Args>(args)...))};
         }
 
         // 期待特定 token：匹配则消费并返回；否则报 ExpectedToken/UnexpectedEof 抛出。
@@ -63,6 +77,11 @@ namespace aria {
 
         // panic-mode 同步：跳过当前 token 后推进到下一条语句/声明边界。
         void synchronize();
+
+        // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
+        // 插值字面段三处共用。
+        [[nodiscard]]
+        UPtr<StringLiteralNode> make_string_literal(const Token& token) const;
 
         // 顶层与声明
         [[nodiscard]]

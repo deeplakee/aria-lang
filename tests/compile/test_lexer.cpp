@@ -18,6 +18,7 @@ using aria::String;
 using aria::StringView;
 using aria::Token;
 using aria::TokenType;
+using aria::u32;
 using aria::UPtr;
 using aria::usize;
 
@@ -27,6 +28,11 @@ using TokType = aria::TokenType;
 namespace {
     // 辅助：从源码内容构造一个名为 "t" 的 SourceFile（免文件 IO）。
     SourceFile make_src(const StringView content) { return SourceFile{String{"t"}, String{"t"}, String{content}}; }
+
+    // token 位置按 lexeme 指针对源缓冲的偏移派生（与 Parser::loc_of 同法，EOF 锚在末尾哨兵位）。
+    aria::src::LineCol loc_of(const SourceFile& src, const Token& token) {
+        return src.locate(static_cast<u32>(token.lexeme().data() - src.content().data()));
+    }
 
     // tokenize 结果：需持有 SourceFile，因为 Token::lexeme 是指向其 content 的
     // StringView（生命周期约束：lexeme 不得比 SourceFile 活得久，且 SSO 短串
@@ -489,10 +495,10 @@ TEST(LexerLoc, Precise) {
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 3u);
     // "ab" 起于第 1 行第 1 列；"12" 起于第 1 行第 4 列
-    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
-    EXPECT_EQ(tokens[1].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[1].loc().line_col().col, 4u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).col, 4u);
 }
 
 TEST(LexerLoc, TracksAcrossLinesAndCodepoints) {
@@ -500,12 +506,12 @@ TEST(LexerLoc, TracksAcrossLinesAndCodepoints) {
     const auto  lexed  = lex_ok("ab\n中文 12");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 4u); // ab / 中文 / 12 / Eof
-    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
-    EXPECT_EQ(tokens[1].loc().line_col().line, 2u); // 中文起于 2 行 1 列
-    EXPECT_EQ(tokens[1].loc().line_col().col, 1u);
-    EXPECT_EQ(tokens[2].loc().line_col().line, 2u); // 空格后 12 在 2 行 4 列
-    EXPECT_EQ(tokens[2].loc().line_col().col, 4u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).line, 2u); // 中文起于 2 行 1 列
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[2]).line, 2u); // 空格后 12 在 2 行 4 列
+    EXPECT_EQ(loc_of(lexed->sf, tokens[2]).col, 4u);
     EXPECT_EQ(tokens[3].type(), TokenType::Eof);
 }
 
@@ -514,10 +520,10 @@ TEST(LexerLoc, RadixFloatAndCommentLines) {
     const auto  lexed  = lex_ok("0x1F // 中文注释\n1.5e2");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 3u); // 0x1F / 1.5e2 / Eof
-    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
-    EXPECT_EQ(tokens[1].loc().line_col().line, 2u);
-    EXPECT_EQ(tokens[1].loc().line_col().col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).line, 2u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).col, 1u);
 }
 
 TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
@@ -525,12 +531,12 @@ TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
     const auto  lexed  = lex_ok("1e 2");
     const auto& tokens = lexed->tokens;
     ASSERT_EQ(tokens.size(), 4u); // 1 / e / 2 / Eof
-    EXPECT_EQ(tokens[0].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[0].loc().line_col().col, 1u);
-    EXPECT_EQ(tokens[1].loc().line_col().line, 1u); // 回退后 e 起于 1 行 2 列
-    EXPECT_EQ(tokens[1].loc().line_col().col, 2u);
-    EXPECT_EQ(tokens[2].loc().line_col().line, 1u);
-    EXPECT_EQ(tokens[2].loc().line_col().col, 4u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[0]).col, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).line, 1u); // 回退后 e 起于 1 行 2 列
+    EXPECT_EQ(loc_of(lexed->sf, tokens[1]).col, 2u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[2]).line, 1u);
+    EXPECT_EQ(loc_of(lexed->sf, tokens[2]).col, 4u);
 }
 
 // ---------------------------------------------------------------------------

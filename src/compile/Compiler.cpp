@@ -18,7 +18,7 @@ namespace aria {
 
         // token 表存活至 parse 返回：token 的 lexeme/内层视图借自源缓冲，Parser 只在解析期读
         // （AST 节点持视图，存活至编译结束，仍在 source 的存活期内）。
-        auto ast = Parser::parse(*tokens);
+        auto ast = Parser::parse(*tokens, source);
         if (!ast) {
             return std::unexpected(std::move(ast.error()[0]));
         }

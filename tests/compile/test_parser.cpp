@@ -68,7 +68,7 @@ namespace {
             p->result = std::unexpected(std::move(errors));
             return p;
         }
-        p->result = Parser::parse(*lex);
+        p->result = Parser::parse(*lex, p->sf);
         return p;
     }
 

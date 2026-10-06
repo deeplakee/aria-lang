@@ -111,8 +111,9 @@ namespace aria {
             dispatch_one();
         }
 
-        // EOF token 位置 = 内容末尾偏移；行列由 SourceLoc 派生为「下一行第 1 列」（编辑器约定）。
-        tokens_.emplace_back(TokenType::Eof, StringView{}, loc_at(src_.size()));
+        // EOF lexeme 锚在内容末尾 '\0' 哨兵位：Parser 按指针差恢复的偏移 = size()，行列派生为
+        // 「下一行第 1 列」（编辑器约定）。
+        tokens_.emplace_back(TokenType::Eof, StringView{src_.data() + src_.size(), 0});
     }
 
     // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与插值档内扫描共用。
@@ -203,7 +204,7 @@ namespace aria {
         }
 
         if (const auto value = parse_int(lex_no_tag, base)) {
-            tokens_.push_back(Token::make_integer(*value, slice(start_, pos_), loc_at(start_)));
+            tokens_.push_back(Token::make_integer(*value, slice(start_, pos_)));
         } else {
             error(ErrorCode::InvalidNumber, "integer literal out of range");
         }
@@ -245,7 +246,6 @@ namespace aria {
         }
 
         const auto lex = slice(start_, pos_);
-        const auto loc = loc_at(start_);
 
         if (!validate_underscores(lex, 10)) {
             error(ErrorCode::InvalidNumber, "invalid underscore placement in number literal");
@@ -253,13 +253,13 @@ namespace aria {
 
         if (has_dot || has_exp) {
             if (const auto value = parse_float(lex)) {
-                tokens_.push_back(Token::make_float(*value, lex, loc));
+                tokens_.push_back(Token::make_float(*value, lex));
             } else {
                 error(ErrorCode::InvalidNumber, "float literal out of range");
             }
         } else {
             if (const auto value = parse_int(lex, 10)) {
-                tokens_.push_back(Token::make_integer(*value, lex, loc));
+                tokens_.push_back(Token::make_integer(*value, lex));
             } else {
                 error(ErrorCode::InvalidNumber, "integer literal out of range");
             }
@@ -298,10 +298,10 @@ namespace aria {
             if (c == quote) {
                 advance(); // 消费闭引号
                 if (has_hole) {
-                    tokens_.push_back(Token::make_interp_end(slice(segment_start, pos_), loc_at(segment_start), shape));
+                    tokens_.push_back(Token::make_interp_end(slice(segment_start, pos_), shape));
                 } else {
                     // 整串未开过档：纯字面（裸 $ 与 { } 皆普通字符），lexeme 覆盖整个 "..."
-                    tokens_.push_back(Token::make_string(slice(string_start, pos_), loc_at(string_start), shape));
+                    tokens_.push_back(Token::make_string(slice(string_start, pos_), shape));
                 }
                 return true;
             }
@@ -314,11 +314,10 @@ namespace aria {
                 }
                 // 开档：lexeme 为段原文（不含边界 ${）
                 const auto lex = slice(segment_start, pos_);
-                const auto loc = loc_at(segment_start);
                 if (has_hole) {
-                    tokens_.push_back(Token::make_interp_middle(lex, loc, shape));
+                    tokens_.push_back(Token::make_interp_middle(lex, shape));
                 } else {
-                    tokens_.push_back(Token::make_interp_start(lex, loc, shape));
+                    tokens_.push_back(Token::make_interp_start(lex, shape));
                 }
                 advance(2);   // 消费 ${
                 return false; // 档内 token 由 scan_string_hole 产出
@@ -419,17 +418,16 @@ namespace aria {
         consume_codepoints(utf8::is_id_continue);
 
         const auto lex = slice(start_, pos_);
-        const auto loc = loc_at(start_);
 
         if (lex == "_") {
-            tokens_.emplace_back(TokenType::Underscore, lex, loc);
+            tokens_.emplace_back(TokenType::Underscore, lex);
             return;
         }
         if (const auto kw = lookup_keyword(lex)) {
-            tokens_.emplace_back(*kw, lex, loc);
+            tokens_.emplace_back(*kw, lex);
             return;
         }
-        tokens_.emplace_back(TokenType::Identifier, lex, loc);
+        tokens_.emplace_back(TokenType::Identifier, lex);
     }
 
     void Lexer::scan_operator_or_punct() {
@@ -441,7 +439,7 @@ namespace aria {
 
         const auto make_token = [&](const TokenType t, const u32 step) {
             advance(step);
-            tokens_.emplace_back(t, slice(start_, pos_), loc_at(start_));
+            tokens_.emplace_back(t, slice(start_, pos_));
         };
 
         switch (src_[pos_]) {

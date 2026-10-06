@@ -80,26 +80,19 @@ namespace aria {
             }
         }
 
-        // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
-        // 插值字面段三处共用。
-        UPtr<StringLiteralNode> make_string_literal(const Token& token) {
-            return std::make_unique<StringLiteralNode>(token.loc(), token.string_value(), token.shape());
-        }
-
-        // Interp 系段 token 的非空字面段包成 StringLiteralNode 入列；空段（展开后零字节）对值无贡献，
-        // 不入列。
-        void maybe_add_string(List<UPtr<ExprNode>>& parts, const Token& token) {
-            if (token.shape().decoded_len != 0) {
-                parts.push_back(make_string_literal(token));
-            }
-        }
-
     } // namespace
 
-    Parser::Parser(List<Token>& tokens) noexcept : tokens_{tokens}, pos_{0}, errors_{} {}
+    Parser::Parser(List<Token>& tokens, SourceFile& source) noexcept :
+        tokens_{tokens}, source_{source}, pos_{0}, errors_{} {}
 
-    Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token>& tokens) {
-        Parser parser{tokens};
+    // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
+    // 插值字面段三处共用。
+    UPtr<StringLiteralNode> Parser::make_string_literal(const Token& token) const {
+        return std::make_unique<StringLiteralNode>(loc_of(token), token.string_value(), token.shape());
+    }
+
+    Result<UPtr<ProgramNode>, List<Error>> Parser::parse(List<Token>& tokens, SourceFile& source) {
+        Parser parser{tokens, source};
 
         UPtr<ProgramNode> prog;
         try {
@@ -204,7 +197,7 @@ namespace aria {
     }
 
     UPtr<ProgramNode> Parser::program() {
-        const SourceLoc      loc = peek().loc();
+        const SourceLoc      loc = loc_of(peek());
         List<UPtr<StmtNode>> decls;
         while (!is_at_end()) {
             if (UPtr<StmtNode> d = declaration()) {
@@ -235,7 +228,7 @@ namespace aria {
     }
 
     UPtr<FunDeclNode> Parser::fun_decl(const FnKind kind) {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
         const auto      name = expect_identifier();
         List<Param>     ps   = params();
@@ -278,12 +271,12 @@ namespace aria {
     }
 
     UPtr<DefDeclNode> Parser::def_decl(const bool is_member) {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Def, "'def'");
         const auto     name       = expect_identifier();
         UPtr<ExprNode> superclass = nullptr;
         if (match(TokenType::Colon)) {
-            const auto super_loc = peek().loc();
+            const auto super_loc = loc_of(peek());
             superclass           = std::make_unique<IdentifierNode>(super_loc, expect_identifier());
         }
         expect(TokenType::LeftBrace, "'{'");
@@ -298,7 +291,7 @@ namespace aria {
             } else if (check(TokenType::Def)) {
                 members.push_back(def_decl(true));
             } else if (check(TokenType::Identifier)) {
-                const SourceLoc mloc  = peek().loc();
+                const SourceLoc mloc  = loc_of(peek());
                 const auto      mname = expect_identifier();
                 List<Param>     mps   = params();
                 UPtr<BlockNode> mbody = block();
@@ -314,7 +307,7 @@ namespace aria {
     }
 
     UPtr<StaticVarMemberNode> Parser::member_var() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Var, "'var'");
         const auto     name = expect_identifier();
         UPtr<ExprNode> init = match(TokenType::Equal) ? expression() : nullptr;
@@ -323,7 +316,7 @@ namespace aria {
     }
 
     UPtr<VarDeclNode> Parser::var_decl() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Var, "'var'");
         List<VarBinding> bindings;
         do {
@@ -370,14 +363,14 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::expression_stmt() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = sequence(); // 语句位收序列层：a = 1, b = 2;（for-init 复用本入口）
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ExprStmtNode>(loc, std::move(expr));
     }
 
     UPtr<StmtNode> Parser::if_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = sequence();
@@ -388,7 +381,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::while_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::While, "'while'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = sequence();
@@ -398,7 +391,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::for_or_for_in_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::For, "'for'");
         expect(TokenType::LeftParen, "'('");
 
@@ -472,21 +465,21 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::break_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Break, "'break'");
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<BreakStmtNode>(loc);
     }
 
     UPtr<StmtNode> Parser::continue_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Continue, "'continue'");
         expect(TokenType::Semicolon, "';'");
         return std::make_unique<ContinueStmtNode>(loc);
     }
 
     UPtr<StmtNode> Parser::return_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Return, "'return'");
         UPtr<ExprNode> value = nullptr;
         if (!check(TokenType::Semicolon) && !is_at_end()) {
@@ -497,7 +490,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::import_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Import, "'import'");
         if (!check(TokenType::String)) {
             error(ErrorCode::ExpectedToken, "expected a string literal as module path, got '{}'", peek().lexeme());
@@ -510,7 +503,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::try_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Try, "'try'");
         UPtr<BlockNode> body = block();
         StringView      ename;
@@ -525,7 +518,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::throw_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Throw, "'throw'");
         UPtr<ExprNode> expr = expression();
         expect(TokenType::Semicolon, "';'");
@@ -533,7 +526,7 @@ namespace aria {
     }
 
     UPtr<StmtNode> Parser::match_stmt() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> subject = sequence();
@@ -549,7 +542,7 @@ namespace aria {
     }
 
     UPtr<BlockNode> Parser::block() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBrace, "'{'");
         List<UPtr<StmtNode>> stmts;
         while (!check(TokenType::RightBrace) && !is_at_end()) {
@@ -564,7 +557,7 @@ namespace aria {
     UPtr<ExprNode> Parser::expression() { return assignment(); }
 
     UPtr<ExprNode> Parser::sequence() {
-        const SourceLoc      loc = peek().loc();
+        const SourceLoc      loc = loc_of(peek());
         List<UPtr<ExprNode>> expressions;
         expressions.push_back(assignment());
         while (match(TokenType::Comma)) {
@@ -577,7 +570,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::assignment() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
 
         // '[' 歧义（listPattern 与 listExpr 同以 '[' 起头）：投机先按 listPattern 解析，其后非 '='
         // 或解析失败则回退 pos_ 按表达式重解析。
@@ -609,7 +602,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::logic_or() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = logic_and();
         while (match(TokenType::OrOr)) {
             const Op::Binary op  = binary_op(previous().type());
@@ -620,7 +613,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::logic_and() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = equality();
         while (match(TokenType::AndAnd)) {
             const Op::Binary op  = binary_op(previous().type());
@@ -631,7 +624,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::equality() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = comparison();
         while (match(TokenType::EqualEqual) || match(TokenType::EqualEqualEqual) || match(TokenType::BangEqual) ||
                match(TokenType::BangEqualEqual)) {
@@ -643,7 +636,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::comparison() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = range();
         while (match(TokenType::Greater) || match(TokenType::GreaterEqual) || match(TokenType::Less) ||
                match(TokenType::LessEqual)) {
@@ -657,7 +650,7 @@ namespace aria {
     // 区间：a..b（含上界）/ a...b（不含上界）。非结合，rhs 调 term 不调 range；
     // DotDotDot 与 rest/varargs 前缀复用，按位置消歧；无上界时 .. 与 ... 语义同义。
     UPtr<ExprNode> Parser::range() {
-        const SourceLoc loc   = peek().loc();
+        const SourceLoc loc   = loc_of(peek());
         UPtr<ExprNode>  lower = term();
         if (match(TokenType::DotDot) || match(TokenType::DotDotDot)) {
             const bool is_exclusive = previous().is(TokenType::DotDotDot);
@@ -678,7 +671,7 @@ namespace aria {
 
 
     UPtr<ExprNode> Parser::term() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = factor();
         while (match(TokenType::Plus) || match(TokenType::Minus)) {
             const Op::Binary op  = binary_op(previous().type());
@@ -689,7 +682,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::factor() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = unary();
         while (match(TokenType::Slash) || match(TokenType::Star) || match(TokenType::Percent)) {
             const Op::Binary op  = binary_op(previous().type());
@@ -700,7 +693,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::unary() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         if (match(TokenType::Minus) || match(TokenType::Bang) || match(TokenType::PlusPlus) ||
             match(TokenType::MinusMinus)) {
             const Op::Unary op      = unary_op(previous().type());
@@ -711,7 +704,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::value() {
-        const SourceLoc loc  = peek().loc();
+        const SourceLoc loc  = loc_of(peek());
         UPtr<ExprNode>  expr = primary();
         while (true) {
             if (check(TokenType::LeftParen)) {
@@ -731,18 +724,25 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::interp_string() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
 
         List<UPtr<ExprNode>> parts;
-        maybe_add_string(parts, advance()); // InterpStart，段值 = 首字面段
+        // Interp 系段 token 的非空字面段包成 StringLiteralNode 入列；空段（展开后零字节）对值无贡献，
+        // 不入列。
+        const auto maybe_add_string = [this, &parts](const Token& token) {
+            if (token.shape().decoded_len != 0) {
+                parts.push_back(make_string_literal(token));
+            }
+        };
+        maybe_add_string(advance()); // InterpStart，段值 = 首字面段
         while (true) {
             // 档内完整表达式；空档（"${}"）在此撞 Interp 系 token 走期望表达式错
             parts.push_back(expression());
             if (check(TokenType::InterpEnd)) {
-                maybe_add_string(parts, advance()); // 尾字面段
+                maybe_add_string(advance()); // 尾字面段
                 return std::make_unique<InterpolatedStringNode>(loc, std::move(parts));
             }
-            maybe_add_string(parts, expect(TokenType::InterpMiddle, "'}' to close interpolation"));
+            maybe_add_string(expect(TokenType::InterpMiddle, "'}' to close interpolation"));
         }
     }
 
@@ -759,7 +759,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::primary() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         switch (peek().type()) {
             case TokenType::Integer: {
                 const Token& t = advance();
@@ -820,7 +820,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::list_expr() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBracket, "'['");
         List<UPtr<ExprNode>> elements;
         if (!check(TokenType::RightBracket) && !is_at_end()) {
@@ -833,7 +833,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::map_expr() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBrace, "'{'");
         List<MapEntry> entries;
         if (!check(TokenType::RightBrace) && !is_at_end()) {
@@ -853,7 +853,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::if_expr() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::If, "'if'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> cond = sequence();
@@ -869,7 +869,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::lambda_expr() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Fun, "'fun'");
         List<Param>     ps   = params();
         UPtr<BlockNode> body = block();
@@ -877,7 +877,7 @@ namespace aria {
     }
 
     UPtr<ExprNode> Parser::match_expr() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::Match, "'match'");
         expect(TokenType::LeftParen, "'('");
         UPtr<ExprNode> subject = sequence();
@@ -915,7 +915,7 @@ namespace aria {
     }
 
     UPtr<PatternNode> Parser::pattern() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         if (match(TokenType::Identifier)) {
             return std::make_unique<IdentifierPatternNode>(loc, previous().lexeme());
         }
@@ -932,7 +932,7 @@ namespace aria {
     }
 
     UPtr<ListPatternNode> Parser::list_pattern() {
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         expect(TokenType::LeftBracket, "'['");
         List<UPtr<PatternNode>>     elements;
         UPtr<IdentifierPatternNode> rest;
@@ -958,7 +958,7 @@ namespace aria {
             // ..._ 与不写 rest 等价，冗余非法。
             error(ErrorCode::InvalidPattern, "rest pattern cannot bind '_'");
         }
-        const SourceLoc loc = peek().loc();
+        const SourceLoc loc = loc_of(peek());
         return std::make_unique<IdentifierPatternNode>(loc, expect_identifier());
     }
 

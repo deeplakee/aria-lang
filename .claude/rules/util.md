@@ -27,7 +27,7 @@ paths:
 - **位置类型 `LineCol`/`SourceLoc`（offsets-only）**：`SourceFile*` + 字节偏移；行列是**派生量**。`line()` 走 `SourceFile::line_at`（行表二分 + 单条行缓存），逐发射节点的热路径；`line_col()`/`to_string()` 走 `locate`（列须数码点，O(行内码点数) 的**冷路径**，只应被错误渲染与测试调用，勿在逐 token 循环里读列）。
 - `to_string()` 渲染 `path:line:col`；空态（src=nullptr）返 0 偏移/0 行/空串（空态即「无位置」非「未知位置」，可与「空位置串 = 无前缀」的消费方直接组合）。
 - `line(n)`/`line_at(offset)`/`locate(offset)`：EOF（offset == 内容末尾）与越界钳制一律返「下一行第 1 列」（编辑器光标停末尾语义）。行表懒构建 + 行解析单条缓存（内容构造后不变 + 单线程编译，故缓存无需失效）。
-- **生命期陷阱（跨模块，调用方必读）**：`SourceFile` 以引用/指针传入（`Lexer::tokenize(SourceFile&)`），`Token::loc_` 内的 `SourceLoc::src_`（经它查行表与缓存，故 `SourceFile` 亦须可就地读、地址稳定）与 `content()`/`name()`/`path()` 借出的 view 须在 `SourceFile` 存活且地址不变期间使用；`SourceFile` 含 `String content_`，**SSO 短串 move 后 data 地址会变**（SSO buffer 跟随对象）--实践：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象；多个 `SourceFile` 存容器并已取 view 后勿再增删致重分配。`Error` 不在此列（构造期把 `SourceLoc` 烘进自有 `message_` 串，与 `SourceFile` 生命周期解耦）。
+- **生命期陷阱（跨模块，调用方必读）**：`SourceFile` 以引用/指针传入（`Lexer::tokenize(SourceFile&)`），AST 节点烙入的 `SourceLoc::src_`（经它查行表与缓存，故 `SourceFile` 亦须可就地读、地址稳定）与 `Token::lexeme`/`content()`/`name()`/`path()` 借出的 view 须在 `SourceFile` 存活且地址不变期间使用；`SourceFile` 含 `String content_`，**SSO 短串 move 后 data 地址会变**（SSO buffer 跟随对象）--实践：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象；多个 `SourceFile` 存容器并已取 view 后勿再增删致重分配。`Error` 不在此列（构造期把 `SourceLoc` 烘进自有 `message_` 串，与 `SourceFile` 生命周期解耦）。
 
 ## `util/io.hpp`
 

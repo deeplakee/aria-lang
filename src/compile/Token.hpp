@@ -5,10 +5,8 @@
 
 #include "common.hpp"
 #include "compile/TokenType.hpp"
-#include "util/source_file.hpp"
 
 namespace aria {
-    using src::SourceLoc;
 
     // 字符串字面量段的消费形态：转义展开后内容长度 + 是否含转义。Lexer 扫描时记账，随 token 与
     // 字面节点一路走到代码生成端（解码口据此分支与定容）。
@@ -27,49 +25,47 @@ namespace aria {
         StringShape shape_;
     };
 
-    // 词法单元：lexer 产出的最小语法单位。lexeme 不落指针，只存字节数，读时按 loc 自源缓冲重建
-    // （词法期各 token 的 lexeme 区间恒以 loc 的偏移为起点）；字符串族另持转义标记与展开后长度，
-    // 内层原文视图经 string_value() 剥边界取得，同样借自源缓冲。借出的视图均不得越过所引对象的
-    // 存活期。
+    // 词法单元：lexer 产出的最小语法单位。lexeme 以指针 + 长度直存，恒为源缓冲的子区间（EOF 锚在
+    // 末尾 '\0' 哨兵位）；位置不随 token 携带——单次编译恒单源文件，Parser 持 SourceFile& 以
+    // lexeme 指针对源缓冲起点的偏移派生 SourceLoc。字符串族另持转义标记与展开后长度，内层原文视图
+    // 经 string_value() 剥边界取得，同样借自源缓冲。借出的视图均不得越过所引对象的存活期。
     class Token {
     public:
-        Token() noexcept : Token{TokenType::Eof, {}, {}, {}} {}
+        Token() noexcept : Token{TokenType::Eof, StringView{}, {}} {}
 
-        Token(const TokenType type, const StringView lexeme, const SourceLoc loc) noexcept :
-            Token{type, lexeme, loc, {}} {}
+        Token(const TokenType type, const StringView lexeme) noexcept : Token{type, lexeme, {}} {}
 
         [[nodiscard]]
-        static Token make_integer(const i64 value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::Integer, lexeme, loc, TokenValue{.int_ = value}};
+        static Token make_integer(const i64 value, const StringView lexeme) noexcept {
+            return Token{TokenType::Integer, lexeme, TokenValue{.int_ = value}};
         }
 
         [[nodiscard]]
-        static Token make_float(const f64 value, const StringView lexeme, const SourceLoc loc) noexcept {
-            return Token{TokenType::Float, lexeme, loc, TokenValue{.float_ = value}};
+        static Token make_float(const f64 value, const StringView lexeme) noexcept {
+            return Token{TokenType::Float, lexeme, TokenValue{.float_ = value}};
         }
 
         // 字符串字面量：lexeme 为含两端引号的原文，shape 为字面段消费形态（词法期记账）。
         [[nodiscard]]
-        static Token make_string(const StringView lexeme, const SourceLoc loc, const StringShape shape) noexcept {
-            return Token{TokenType::String, lexeme, loc, TokenValue{.shape_ = shape}};
+        static Token make_string(const StringView lexeme, const StringShape shape) noexcept {
+            return Token{TokenType::String, lexeme, TokenValue{.shape_ = shape}};
         }
 
         // 插值串字面段三厂：lexeme 为该段原文（Start/Middle 不含边界，End 含闭引号），shape 语义
         // 同 make_string。
         [[nodiscard]]
-        static Token make_interp_start(const StringView lexeme, const SourceLoc loc, const StringShape shape) noexcept {
-            return Token{TokenType::InterpStart, lexeme, loc, TokenValue{.shape_ = shape}};
+        static Token make_interp_start(const StringView lexeme, const StringShape shape) noexcept {
+            return Token{TokenType::InterpStart, lexeme, TokenValue{.shape_ = shape}};
         }
 
         [[nodiscard]]
-        static Token make_interp_middle(const StringView lexeme, const SourceLoc loc,
-                                        const StringShape shape) noexcept {
-            return Token{TokenType::InterpMiddle, lexeme, loc, TokenValue{.shape_ = shape}};
+        static Token make_interp_middle(const StringView lexeme, const StringShape shape) noexcept {
+            return Token{TokenType::InterpMiddle, lexeme, TokenValue{.shape_ = shape}};
         }
 
         [[nodiscard]]
-        static Token make_interp_end(const StringView lexeme, const SourceLoc loc, const StringShape shape) noexcept {
-            return Token{TokenType::InterpEnd, lexeme, loc, TokenValue{.shape_ = shape}};
+        static Token make_interp_end(const StringView lexeme, const StringShape shape) noexcept {
+            return Token{TokenType::InterpEnd, lexeme, TokenValue{.shape_ = shape}};
         }
 
         [[nodiscard]]
@@ -79,15 +75,7 @@ namespace aria {
 
         [[nodiscard]]
         StringView lexeme() const noexcept {
-            if (loc_.source() == nullptr) {
-                return {};
-            }
-            return {loc_.source()->content().data() + loc_.offset(), lexeme_len_};
-        }
-
-        [[nodiscard]]
-        const SourceLoc& loc() const noexcept {
-            return loc_;
+            return {data_, len_};
         }
 
         [[nodiscard]]
@@ -126,13 +114,13 @@ namespace aria {
         String to_string() const;
 
     private:
-        Token(const TokenType type, const StringView lexeme, const SourceLoc loc, TokenValue value) noexcept :
-            type_{type}, lexeme_len_{static_cast<u32>(lexeme.size())}, loc_{loc}, value_{value} {}
+        Token(const TokenType type, const StringView lexeme, TokenValue value) noexcept :
+            type_{type}, len_{static_cast<u32>(lexeme.size())}, data_{lexeme.data()}, value_{value} {}
 
-        TokenType  type_;
-        u32        lexeme_len_;
-        SourceLoc  loc_;
-        TokenValue value_;
+        TokenType   type_;
+        u32         len_;
+        const char* data_;
+        TokenValue  value_;
     };
 
     // 平凡可拷贝是 token 表零搬移与读侧单缓存行的前提。

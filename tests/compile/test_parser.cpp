@@ -464,7 +464,8 @@ TEST(ParserDecl, FunVarargsOnly) {
 
 TEST(ParserDecl, DefWithSuper) {
     const String out = dump_ok("def Dog : Animal { bark() { println(\"woof\"); } }");
-    expect_has(out, "DefDecl name=Dog super=Animal");
+    expect_has(out, "DefDecl name=Dog");
+    expect_has(out, "Identifier Animal");
     expect_has(out, "FunDecl name=bark params=0 kind=Method");
     expect_has(out, "StringLiteral \"woof\"");
 }

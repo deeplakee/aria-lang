@@ -115,7 +115,7 @@ namespace aria {
     // 函数参数：plainParams / defaultParam / varargs 统一为 Param；文法保证 is_varargs 与 default_value
     // 互斥（varargs 无默认值）。
     struct Param {
-        String         name;
+        StringView     name;
         UPtr<ExprNode> default_value = nullptr;
         bool           is_varargs    = false;
 
@@ -424,15 +424,16 @@ namespace aria {
 
     // 函数声明：fun identifier params block；kind 由 parser 烙定。
     struct FunDeclNode : StmtNode {
-        FunDeclNode(const SourceLoc loc, String name, List<Param> params, UPtr<BlockNode> body, const FnKind kind) :
-            StmtNode{loc}, name{std::move(name)}, params{std::move(params)}, body{std::move(body)}, kind{kind} {}
+        FunDeclNode(const SourceLoc loc, const StringView name, List<Param> params, UPtr<BlockNode> body,
+                    const FnKind kind) :
+            StmtNode{loc}, name{name}, params{std::move(params)}, body{std::move(body)}, kind{kind} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String          name;
+        StringView      name;
         List<Param>     params;
         UPtr<BlockNode> body;
         FnKind          kind;
@@ -441,18 +442,18 @@ namespace aria {
     // def 声明："def" identifier (":" identifier)? "{" member* "}"（成员含嵌套 defDecl）。
     // members 按源序保留，静态变量初始化即此序（前一静态变量可被后续初始化器引用）。
     struct DefDeclNode : StmtNode {
-        DefDeclNode(const SourceLoc loc, String name, Opt<String> superclass, List<UPtr<StmtNode>> members,
-                    bool is_member) :
-            StmtNode{loc}, name{std::move(name)}, superclass{std::move(superclass)}, members{std::move(members)},
-            is_member{is_member} {}
+        DefDeclNode(const SourceLoc loc, const StringView name, UPtr<ExprNode> superclass, List<UPtr<StmtNode>> members,
+                    const bool is_member) :
+            StmtNode{loc}, name{name}, super{std::move(superclass)}, members{std::move(members)}, is_member{is_member} {
+        }
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String               name;
-        Opt<String>          superclass;
+        StringView           name;
+        UPtr<ExprNode>       super;
         List<UPtr<StmtNode>> members;
         bool                 is_member; // parser 烙定:语句位声明(false)/类体成员位嵌套类(true)
     };

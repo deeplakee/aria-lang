@@ -240,7 +240,7 @@ namespace aria {
         const auto      name = expect_identifier();
         List<Param>     ps   = params();
         UPtr<BlockNode> body = block();
-        return std::make_unique<FunDeclNode>(loc, String{name}, std::move(ps), std::move(body), kind);
+        return std::make_unique<FunDeclNode>(loc, name, std::move(ps), std::move(body), kind);
     }
 
     List<Param> Parser::params() {
@@ -251,19 +251,19 @@ namespace aria {
             while (true) {
                 if (match(TokenType::DotDotDot)) {
                     const auto name = expect_identifier();
-                    result.push_back(Param{.name = String{name}, .is_varargs = true});
+                    result.push_back(Param{.name = name, .is_varargs = true});
                     break;
                 }
                 const auto name = expect_identifier();
                 if (match(TokenType::Equal)) {
                     UPtr<ExprNode> dv = expression();
-                    result.push_back(Param{.name = String{name}, .default_value = std::move(dv)});
+                    result.push_back(Param{.name = name, .default_value = std::move(dv)});
                     seen_default = true;
                 } else {
                     if (seen_default) {
                         error(ErrorCode::DefaultAfterPlain, "non-default parameter after default parameter");
                     }
-                    result.push_back(Param{.name = String{name}});
+                    result.push_back(Param{.name = name});
                 }
                 if (!match(TokenType::Comma)) {
                     break;
@@ -280,8 +280,12 @@ namespace aria {
     UPtr<DefDeclNode> Parser::def_decl(const bool is_member) {
         const SourceLoc loc = peek().loc();
         expect(TokenType::Def, "'def'");
-        const auto  name       = expect_identifier();
-        Opt<String> superclass = match(TokenType::Colon) ? Opt<String>{expect_identifier()} : std::nullopt;
+        const auto     name       = expect_identifier();
+        UPtr<ExprNode> superclass = nullptr;
+        if (match(TokenType::Colon)) {
+            const auto super_loc = peek().loc();
+            superclass           = std::make_unique<IdentifierNode>(super_loc, expect_identifier());
+        }
         expect(TokenType::LeftBrace, "'{'");
         // def 体成员按首 token 分派：var -> 静态变量，fun -> 静态方法（无 this），裸 identifier ->
         // 实例方法（名为 init 烙 InitMethod 构造角色），def -> 嵌套类（递归烙 is_member）。其余报错。
@@ -299,15 +303,14 @@ namespace aria {
                 List<Param>     mps   = params();
                 UPtr<BlockNode> mbody = block();
                 const auto      kind  = mname == kInitName ? FnKind::InitMethod : FnKind::Method;
-                members.push_back(
-                        std::make_unique<FunDeclNode>(mloc, String{mname}, std::move(mps), std::move(mbody), kind));
+                members.push_back(std::make_unique<FunDeclNode>(mloc, mname, std::move(mps), std::move(mbody), kind));
             } else {
                 error(ErrorCode::ExpectedToken, "expected 'var', 'fun', 'def' or a method name in def body, got '{}'",
                       peek().lexeme());
             }
         }
         expect(TokenType::RightBrace, "'}'");
-        return std::make_unique<DefDeclNode>(loc, String{name}, std::move(superclass), std::move(members), is_member);
+        return std::make_unique<DefDeclNode>(loc, name, std::move(superclass), std::move(members), is_member);
     }
 
     UPtr<StaticVarMemberNode> Parser::member_var() {

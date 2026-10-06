@@ -156,11 +156,11 @@ namespace aria {
 
     String DefDeclNode::dump(const usize indent) const {
         String header = std::format("DefDecl name={}", name);
-        if (superclass) {
-            header += std::format(" super={}", *superclass);
-        }
         if (is_member) {
             header += " member";
+        }
+        if (super != nullptr) {
+            return dump_node(indent, header, super, members);
         }
         return dump_node(indent, header, members);
     }

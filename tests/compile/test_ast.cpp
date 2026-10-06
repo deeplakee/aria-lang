@@ -365,7 +365,7 @@ TEST(AstDisplay, FunDecl) {
     body_stmts.push_back(std::make_unique<ReturnStmtNode>(kLoc, ident("x")));
     auto body = std::make_unique<BlockNode>(kLoc, std::move(body_stmts));
 
-    FunDeclNode  node{kLoc, String{"id"}, std::move(params), std::move(body), FnKind::Function};
+    FunDeclNode  node{kLoc, StringView{"id"}, std::move(params), std::move(body), FnKind::Function};
     const String out = dump_str(node);
     expect_has(out, "FunDecl name=id params=1 kind=Function");
     expect_has(out, "ReturnStmt");
@@ -377,12 +377,14 @@ TEST(AstDisplay, DefDecl) {
     List<UPtr<StmtNode>> bark_body_stmts;
     bark_body_stmts.push_back(std::make_unique<ExprStmtNode>(kLoc, strlit("woof")));
     auto bark_body = std::make_unique<BlockNode>(kLoc, std::move(bark_body_stmts));
-    members.push_back(
-            std::make_unique<FunDeclNode>(kLoc, String{"bark"}, List<Param>{}, std::move(bark_body), FnKind::Method));
+    members.push_back(std::make_unique<FunDeclNode>(kLoc, StringView{"bark"}, List<Param>{}, std::move(bark_body),
+                                                    FnKind::Method));
 
-    DefDeclNode  node{kLoc, String{"Dog"}, Opt<String>{String{"Animal"}}, std::move(members), false};
+    DefDeclNode  node{kLoc, StringView{"Dog"}, std::make_unique<IdentifierNode>(kLoc, StringView{"Animal"}),
+                      std::move(members), false};
     const String out = dump_str(node);
-    expect_has(out, "DefDecl name=Dog super=Animal");
+    expect_has(out, "DefDecl name=Dog");
+    expect_has(out, "Identifier Animal");
     expect_has(out, "FunDecl name=bark params=0 kind=Method");
     expect_has(out, "StringLiteral \"woof\"");
 }

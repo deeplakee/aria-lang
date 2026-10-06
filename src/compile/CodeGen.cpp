@@ -842,9 +842,8 @@ namespace aria {
 
         // ① superclass：运行期解析读取（编译期不查全局，未命中沿用运行期 UndefinedVariable）；
         //    无父类则 LOAD_REG ObjectClass（def Foo 等价 def Foo : Object，不经名字查、shadow 免疫）。
-        if (node.superclass) {
-            const auto resolved = resolve_name_or_fail(*node.superclass, node.loc());
-            emit_load_var(resolved, line); // [super]
+        if (node.super != nullptr) {
+            emit_expr(*node.super); // [super]
         } else {
             cur_cu()->emit_op(OpCode::LOAD_REG, line); // [Object]
             cur_cu()->emit_byte(kObjectClassOffset, line);

@@ -57,9 +57,9 @@ namespace aria {
         // 期待特定 token：匹配则消费并返回；否则报 ExpectedToken/UnexpectedEof 抛出。
         const Token& expect(TokenType t, StringView what);
 
-        // 期待标识符：返回其 lexeme 文本；否则报 ExpectedIdentifier/UnexpectedEof 抛出。
+        // 期待标识符：返回其 lexeme 视图（借自源缓冲）；否则报 ExpectedIdentifier/UnexpectedEof 抛出。
         [[nodiscard]]
-        String expect_identifier();
+        StringView expect_identifier();
 
         // panic-mode 同步：跳过当前 token 后推进到下一条语句/声明边界。
         void synchronize();

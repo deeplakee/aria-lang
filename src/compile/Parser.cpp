@@ -782,8 +782,7 @@ namespace aria {
                 advance();
                 return std::make_unique<NilLiteralNode>(loc);
             case TokenType::Identifier: {
-                const Token& t = advance();
-                return std::make_unique<IdentifierNode>(loc, String{t.lexeme()});
+                return std::make_unique<IdentifierNode>(loc, advance().lexeme());
             }
             case TokenType::This:
                 advance();
@@ -916,7 +915,7 @@ namespace aria {
     UPtr<PatternNode> Parser::pattern() {
         const SourceLoc loc = peek().loc();
         if (match(TokenType::Identifier)) {
-            return std::make_unique<IdentifierPatternNode>(loc, String{previous().lexeme()});
+            return std::make_unique<IdentifierPatternNode>(loc, previous().lexeme());
         }
         if (match(TokenType::Underscore)) {
             return std::make_unique<WildcardPatternNode>(loc);
@@ -958,7 +957,7 @@ namespace aria {
             error(ErrorCode::InvalidPattern, "rest pattern cannot bind '_'");
         }
         const SourceLoc loc = peek().loc();
-        return std::make_unique<IdentifierPatternNode>(loc, String{expect_identifier()});
+        return std::make_unique<IdentifierPatternNode>(loc, expect_identifier());
     }
 
 } // namespace aria

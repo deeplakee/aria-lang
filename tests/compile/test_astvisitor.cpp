@@ -75,11 +75,9 @@ namespace {
 
     // 便利工厂（同 test_ast.cpp）。
     UPtr<IntegerLiteralNode>    i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
-    UPtr<IdentifierNode>        ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
-    UPtr<IdentifierPatternNode> id_pat(String name) {
-        return std::make_unique<IdentifierPatternNode>(kLoc, std::move(name));
-    }
-    UPtr<BlockNode> empty_block() { return std::make_unique<BlockNode>(kLoc, List<UPtr<StmtNode>>{}); }
+    UPtr<IdentifierNode>        ident(StringView name) { return std::make_unique<IdentifierNode>(kLoc, name); }
+    UPtr<IdentifierPatternNode> id_pat(StringView name) { return std::make_unique<IdentifierPatternNode>(kLoc, name); }
+    UPtr<BlockNode>             empty_block() { return std::make_unique<BlockNode>(kLoc, List<UPtr<StmtNode>>{}); }
 
     // 记录型访问者：每个 visitXxxNode 把节点类型名压入 visited_，供断言分派结果。
     // 若节点 accept 分派到错误的 visitXxxNode，visited_ 内容会不符；若某节点类型未

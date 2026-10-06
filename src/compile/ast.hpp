@@ -565,14 +565,14 @@ namespace aria {
 
     // 标识符引用。name 为源码 identifier 文本。
     struct IdentifierNode : ExprNode {
-        IdentifierNode(const SourceLoc loc, String name) : ExprNode{loc}, name{std::move(name)} {}
+        IdentifierNode(const SourceLoc loc, const StringView name) : ExprNode{loc}, name{name} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String name;
+        StringView name;
     };
 
     // this 表达式。
@@ -804,14 +804,14 @@ namespace aria {
 
     // 标识符模式：绑定该名字。
     struct IdentifierPatternNode : PatternNode {
-        IdentifierPatternNode(const SourceLoc loc, String name) : PatternNode{loc}, name{std::move(name)} {}
+        IdentifierPatternNode(const SourceLoc loc, const StringView name) : PatternNode{loc}, name{name} {}
 
         [[nodiscard]]
         String dump(usize indent) const override;
 
         void accept(AstVisitor& visitor) override;
 
-        String name;
+        StringView name;
     };
 
     // 通配符模式 "_"：匹配/忽略该位置不绑定（用于跳过不关心的元素）。

@@ -2388,7 +2388,7 @@ namespace {
                                                                       aria::StringShape{1, false}));
         }
         for (aria::usize i = 0; i < expr_count; ++i) {
-            parts.push_back(std::make_unique<aria::IdentifierNode>(kLoc, aria::String{"x"}));
+            parts.push_back(std::make_unique<aria::IdentifierNode>(kLoc, aria::StringView{"x"}));
         }
         auto interp = std::make_unique<aria::InterpolatedStringNode>(kLoc, std::move(parts));
 

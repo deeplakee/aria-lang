@@ -73,13 +73,11 @@ namespace {
 
     // 便利工厂。
     UPtr<IntegerLiteralNode> i64lit(const i64 v) { return std::make_unique<IntegerLiteralNode>(kLoc, v); }
-    UPtr<IdentifierNode>     ident(String name) { return std::make_unique<IdentifierNode>(kLoc, std::move(name)); }
+    UPtr<IdentifierNode>     ident(StringView name) { return std::make_unique<IdentifierNode>(kLoc, name); }
     UPtr<StringLiteralNode>  strlit(const StringView v) {
         return std::make_unique<StringLiteralNode>(kLoc, v, StringShape{static_cast<u32>(v.size()), false});
     }
-    UPtr<IdentifierPatternNode> id_pat(String name) {
-        return std::make_unique<IdentifierPatternNode>(kLoc, std::move(name));
-    }
+    UPtr<IdentifierPatternNode> id_pat(StringView name) { return std::make_unique<IdentifierPatternNode>(kLoc, name); }
 
     // 子串断言：避免引入 gmock（HasSubstr），用 String::find 手工检查。
     void expect_has(const String& haystack, const StringView needle) {

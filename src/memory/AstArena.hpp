@@ -5,15 +5,20 @@
 #include "error/Error.hpp"
 #include "memory/RawAlloc.hpp"
 
-#include <algorithm>
 #include <memory>
 #include <new>
 #include <utility>
 
 namespace aria {
 
-    // 首块容量:常规源整棵 AST 落前几个块内,后续按需翻倍。
+    // 首块容量：常规源整棵 AST 落前几个块内。
     inline constexpr usize kAstArenaFirstBlockBytes = 256 * 1024;
+
+    // 扩块量子（2 的幂）：放不下时新块 = 请求字节数取整到量子；新块首分配必落 offset 0，无对齐垫。
+    // bump 扩块无搬移成本可摊销，几何倍增只剩尾块闲置；量子不取小值，小块在分配器 large 类下有逐块常驻开销。
+    inline constexpr usize kAstArenaBlockQuantum = 1024 * 1024;
+
+    static_assert((kAstArenaBlockQuantum & (kAstArenaBlockQuantum - 1)) == 0, "block quantum must be a power of two");
 
     // AST 专用 bump 分配器：节点与列表缓冲自大块顺序分配，析构时整批释放、不跑任何析构函数。
     // 后备经 mem::alloc/free 同族三口（随 ARIA_USE_MIMALLOC 开关），分配失败 fatal_error(OutOfMemory)、
@@ -91,7 +96,7 @@ namespace aria {
             const auto align_up = [alignment](const usize value) { return (value + alignment - 1) & ~(alignment - 1); };
             usize      offset   = align_up(head_->used);
             if (offset + bytes > head_->capacity) {
-                append_block(std::max(head_->capacity * 2, bytes + alignment));
+                append_block((bytes + kAstArenaBlockQuantum - 1) & ~(kAstArenaBlockQuantum - 1));
                 offset = align_up(head_->used);
             }
             head_->used = offset + bytes;

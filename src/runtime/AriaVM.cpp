@@ -438,14 +438,19 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run_closure(ObjClosure* closure) {
+        // 出口协议:成功 = 返回值在栈顶(写回调用区槽 0),就地收取;失败 = 载荷在寄存器、帧栈活着,
+        // 善后见 rebake_uncaught_error。
         current_->push(Value::from_obj(closure)); // 入栈即根
         if (!call_closure(closure, 0)) {
-            // 进帧失败(重入路径帧满为真实分支):载荷直转 Result 不经 unwind -- 帧栈叠着调用者
+            // 进帧失败(帧满为真实分支):载荷直转 Result 不经 unwind -- 帧栈叠着调用者
             // 的帧弹不得,一帧未进亦无跟踪可烘。
             const auto [code, msg] = take_uncaught_error();
             return runtime_err(Error::from_baked(code, msg));
         }
-        return dispatch_loop();
+        if (!dispatch_loop()) {
+            return runtime_err(rebake_uncaught_error());
+        }
+        return current_->pop(); // 顶层返回值(主模块对象 / HALT 停机值)
     }
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {
@@ -1050,6 +1055,26 @@ namespace aria {
         return true;
     }
 
+    bool AriaVM::run_return() {
+        // 取返回值 -> 弹帧 -> 按弹后帧深分流(出口边界 = current_->ret_frame())。
+        const Value ret = current_->pop(); // 先取:exit_frame 将丢弃其下方栈区
+        current_->exit_frame();
+        if (current_->frames().size() != current_->ret_frame()) {
+            current_->push(ret); // 帧间返回:写回 callee 槽
+            return false;
+        }
+        const auto resumer = current_->previous();
+        if (resumer == nullptr) {
+            current_->push(ret); // 主顶层返回:值留栈顶(主模块对象)
+            return true;
+        }
+        // 协程完成:值写 resumer 预留槽 -> reset 清场 -> 换指置 Done。
+        resumer->peek(0) = ret;
+        current_->reset();
+        leave_coroutine(ExecState::Done);
+        return false;
+    }
+
     Pair<ErrorCode, String> AriaVM::take_uncaught_error() const {
         const auto payload = *current_->take_error();
         if (const auto ex = try_as_obj<ObjException>(payload)) {
@@ -1059,38 +1084,63 @@ namespace aria {
         return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
     }
 
-    Opt<Error> AriaVM::unwind() {
-        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发,全未命中
-        // 交 reset 清场。链式多跳:本上下文全帧未命中且在 resume 链上 -> 协程置 Failed 死去、载荷
-        // 转投 caller 继续搜,逐跳向链根推进(中间层无 handler 即连死,其 Running 瞬态被 Failed
-        // 覆盖合法);链终止 = 主上下文,未捕获物化。
+    Error AriaVM::rebake_uncaught_error() const {
+        // 自顶帧向下收集 (fn, mod, last_ip) 烘跟踪行(跨协程死帧已随 reset 退场)-> take 载荷 ->
+        // reset 清场 -> 烘焙成自足 Error。物化路径仅 string 拼接无 GC 分配点。
         struct TraceEntry {
             ObjFunction* fn;     // 帧函数(名字渲染)
             ObjModule*   mod;    // 帧模块(位置串渲染,ObjModule::format_location)
             u32          ip_off; // 行号经 fn->unit().line_for_offset 查
         };
+        List<TraceEntry> trace;
 
+        auto& frames = current_->frames();
+        for (usize i = frames.size(); i > 0; --i) {
+            auto& [frame_closure, unit, module, ip, slots, last_ip] = frames[i - 1];
+            trace.emplace_back(frame_closure->function(), module, static_cast<u32>(last_ip - unit->code.data()));
+        }
+        auto [code, msg] = take_uncaught_error();
+        current_->reset();
+        for (const auto& [fn, mod, ip_off]: trace) {
+            const u32 line = fn->unit().line_for_offset(ip_off);
+            msg += std::format("\n  at {} ({})", fn->name()->view(), mod->format_location(line));
+        }
+        return Error::from_baked(code, msg);
+    }
+
+    bool AriaVM::unwind() {
+        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发。搜索
+        // 边界 = current_->ret_frame()(随上下文走,逐跳重读)。返回 true = 已派发(落回循环顶重取帧);
+        // false = 边界之上全帧未命中,载荷留寄存器:边界非零(嵌套执行)即本次调用无法处理,交
+        // 外层循环续搜;边界为零则链上有恢复者已转投(协程置 Failed 死去,载荷 raise 进恢复者,
+        // 由其循环续搜),链根仍无 handler -> 调用方善后(收跟踪物化)。命中可能在多跳之后,
+        // current_ 已非进入时的上下文。
         ASSERT(current_->has_error(), "no pending payload");
 
         while (true) {
-            List<TraceEntry> trace; // 收集序即物化序:内 -> 外,最内帧紧贴错误消息行(主流 traceback
-                                    // 惯例)。每跳重新收集:死在边界的协程帧不并入物化侧的跟踪
-            // 自最内(栈顶)向外搜索 try 记录;命中帧保留 -- handler 偏移与栈基址都属于它。
+            // 自最内(栈顶)向基线搜索 try 记录;命中帧保留 -- handler 偏移与栈基址都属于它。
             auto& frames = current_->frames();
-            for (usize i = frames.size() - 1; i < frames.size(); --i) { // 无符号反向:下溢即终止
+            // 无符号下溢即终止
+            for (usize i = frames.size() - 1; i >= current_->ret_frame() && i < frames.size(); --i) {
                 auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
                 const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
-                if (const auto rec = unit->find_try_handler(ip_off)) {
+                if (const auto record = unit->find_try_handler(ip_off)) {
                     // 命中:回退到命中帧并转入 record 的 catch handler(统一在 ObjMovement::unwind_to_handler)。
                     // 命中可能在多跳之后 -- current_ 已非进入 unwind 时的上下文,调用方一律经循环顶
                     // 自 current_ 重取帧,无需特判。
-                    current_->unwind_to_handler(i, **rec);
-                    return std::nullopt;
+                    current_->unwind_to_handler(i, **record);
+                    return true;
                 }
-                trace.emplace_back(closure->function(), module, ip_off);
             }
 
-            // 本上下文全帧未命中:在链上转投一跳,链终止(主上下文)才物化。
+            // 嵌套执行(ret_frame_ 非零):边界之上全帧未命中,本次调用无法处理,载荷留寄存器
+            // 直接失败出口 -- 不转投不清场,两者都会越过边界扰动外层循环的帧链(转投换指/
+            // 清场弹帧);嵌套落地前恒零,此臂不触发。
+            if (current_->ret_frame() != 0) {
+                return false;
+            }
+
+            // 边界为零仍全帧未命中:在链上转投一跳,链终止(主上下文)交调用方善后。
             if (const auto caller = current_->previous()) {
                 // 四步定序承重:take 先于 reset(reset 一并清寄存器,且先关开指、死协程不留栈,
                 // 向外泄漏的捕获闭包取值安全);caller 寄存器此刻必空(call_native 进场断言锁,
@@ -1101,28 +1151,23 @@ namespace aria {
                 leave_coroutine(ExecState::Failed);
                 caller->raise(*payload);
             } else {
-                // 未捕获出口:reset 一次清场,拆 (码, 消息) 逐帧烘焙跟踪行物化。物化路径仅
-                // string 拼接无 GC 分配点,fn/mod 裸指针不悬垂;trace 恒非空(每跳帧栈非空不变式)。
-                auto [code, msg] = take_uncaught_error();
-                current_->reset();
-                for (const auto& [fn, mod, ip_off]: trace) {
-                    const u32 line = fn->unit().line_for_offset(ip_off);
-                    msg += std::format("\n  at {} ({})", fn->name()->view(), mod->format_location(line));
-                }
-                return Error::from_baked(code, msg);
+                return false; // 全链未命中:载荷在寄存器、帧栈活着,善后归调用方
             }
         }
     }
 
-    Result<Value, Error> AriaVM::dispatch_loop() {
+    bool AriaVM::dispatch_loop() {
         // 栈/帧/寄存器一律经 current_ 访问;「正在执行的字节码所在上下文恒等于 current_」且切换点
-        // 唯一显式,本循环永不重入。
+        // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器、
+        // 帧栈活着,善后归调用方(错误不走返回值通道)。出口边界 = current_->ret_frame()(住
+        // ObjMovement 随上下文走;嵌套重入落地前恒零,弹空帧栈即本循环驱动的最外帧弹尽;协程
+        // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。
 
         while (true) {
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return)。last_ip 在取指前写入:
             // 行号/unwind 查表的共同锚点(顶帧 = 故障指令,外层帧 = CALL 站点)。
-            auto frame     = &current_->frames().top();
-            frame->last_ip = frame->ip;
+            const auto frame = &current_->frames().top();
+            frame->last_ip   = frame->ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
             trace_execution(current_);
@@ -1130,12 +1175,13 @@ namespace aria {
             // 各 case 按 code.hpp 枚举序排列;错误站点(raise / run_* 返 false)一律 goto
             // unwind_check,成功路径一律 break 回循环顶。**switch 之后不得新增引用 frame 的代码**
             //(unwind 派发后帧引用已废,unwind_check 标签体同守)。
-            switch (auto op = ARIA_FETCH_OPCODE(frame)) {
+            switch (ARIA_FETCH_OPCODE(frame)) {
                 case OpCode::HALT:
                     // 真实程序不产 HALT(仅手写字节码用):运行态空 previous 即主上下文,协程内
                     // 落 HALT 会打破 run() 出口断言,提前在此拦截。
                     ASSERT(current_->previous() == nullptr, "HALT reached inside a coroutine");
-                    return Value::nil_val();
+                    current_->push(Value::nil_val()); // 停机值留栈顶(形态与 RETURN 顶层出口一致)
+                    return true;
 
                 // 数据加载与存储
                 case OpCode::LOAD_CONST: {
@@ -1600,54 +1646,32 @@ namespace aria {
                     current_->push(Value::from_obj(result));
                     break;
                 }
-
-                // 模块导入
                 case OpCode::IMPORT:
                     // path:u16;[..., module]
                     if (!run_import(read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
-
-                // 异常
                 case OpCode::THROW: {
                     // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
                     // unwind。
                     current_->raise(current_->pop());
                     goto unwind_check;
                 }
-
-                // 返回(exit_frame 后 frame 失效,故先取返回值)
-                case OpCode::RETURN: {
-                    const Value ret = current_->pop(); // 取返回值(exit_frame 将丢弃其下方栈区)
-                    current_->exit_frame(); // 弹帧 + 关本帧区间开指(值迁入各自 upvalue 自持)+ 值栈顶复位,一体
-                    if (current_->frames().empty()) {
-                        const auto resumer = current_->previous();
-                        if (resumer == nullptr) {
-                            return ret; // 顶层(主入口 <main>)返回:写回值即主模块对象(入口收尾所压)
-                        }
-                        // 协程最外帧(闭包体)返回即完成:值写 resumer 预留槽 -> reset 清场
-                        //(先关开指,泄漏捕获闭包取值安全;ret 已弹入局部不被殃及)->
-                        // leave_coroutine 置 Done、解链、resumer 置 Running 并换指。返回值不往
-                        // 协程自己栈上 push。
-                        resumer->peek(0) = ret;
-                        current_->reset();
-                        leave_coroutine(ExecState::Done);
-                        break;
+                case OpCode::RETURN:
+                    if (run_return()) {
+                        return true;
                     }
-                    current_->push(ret); // 通用写回 callee 槽:IMPORT 的模块值 = 模块体自己的返回值
                     break;
-                }
-
                 default:
                     UNREACHABLE();
             }
             continue; // 正常路径:break 出 switch 后回循环顶,不落 unwind_check
-        // unwind 收口:未捕获 -> 物化 Error 终止循环;已派发 handler -> 落回循环顶重取帧
-        //(标签体不引用 frame 的防御同 switch 头注)。
+        // unwind 收口:true = 已派发 handler 落回循环顶重取帧;false = 全链未捕获,载荷留寄存器
+        // 本循环即返,善后归调用方。(标签体不引用 frame 的防御同 switch 头注)。
         unwind_check:
-            if (auto u = unwind()) {
-                return runtime_err(std::move(*u));
+            if (!unwind()) {
+                return false;
             }
         }
     }

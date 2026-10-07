@@ -108,7 +108,7 @@ namespace aria {
 
         // 当前执行上下文(测试/白盒观察用;协程切换期间随之换指,恒等于正在执行字节码的上下文)。
         [[nodiscard]]
-        ObjMovement* current_context() noexcept {
+        ObjMovement* current_context() const noexcept {
             return current_;
         }
 
@@ -212,8 +212,9 @@ namespace aria {
         // 可达」红线据此立。
         Result<Value, Error> run_closure(ObjClosure* closure);
 
-        // 主循环:驱动 *current_ 直到顶层返回/错误/显式停止。
-        Result<Value, Error> dispatch_loop();
+        // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
+        // 槽 0 即栈顶;失败 = 载荷留寄存器、帧栈活着,善后归调用方)。
+        bool dispatch_loop();
 
         // IMPORT 执行体:resolve_module -> intern 后 guard 根化查 modules_(命中复用即循环导入),
         // 未命中 load_module 后包闭包进帧 run-once;两分支栈效应统一 [..., module]。bool 契约同
@@ -358,6 +359,11 @@ namespace aria {
         // 纯调用,不再解析。
         bool run_call_method(u8 argc);
 
+        // RETURN 执行体:[..., ret] -> 取返回值后弹帧(关本帧区间开指,值迁入各自 upvalue 自持),
+        // 按弹后帧深分流(出口边界 = current_->ret_frame())。返回 true = 本循环结束(顶层返回,
+        // 值落调用区槽 0 即栈顶);false = 循环继续(帧间返回写回 callee 槽 / 协程完成切换)。
+        bool run_return();
+
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(编译器不变式,ASSERT 把关),
         // 自父类沿链读穿透、不含 defining 自身;命中方法闭包则绑 this=帧槽 0 压栈,其余原值直读。
         // 全链 miss 为语言可达错误,经协议 fail。
@@ -397,12 +403,19 @@ namespace aria {
         // 取走 *current_ 挂起载荷并拆 (码, 烘焙消息) 两件:ObjException 直取自身码与消息
         //(re-throw 保码),其余载荷兜底 UncaughtException;消费点一律 Error::from_baked 物化 --
         // Error 只在边界成型。
+        [[nodiscard]]
         Pair<ErrorCode, String> take_uncaught_error() const;
 
-        // 异常派发与未捕获物化:自最内帧向外按 last_ip 遍查本上下文各帧 CodeUnit 异常记录表,
-        // 命中回退派发(不动帧栈/值栈),全未命中沿 resume 链逐跳转投(死协程置 Failed 连死),
-        // 链根 = 主上下文未捕获物化;命中可能在多跳之后,current_ 已非进入时的上下文。
-        Opt<Error> unwind();
+        // 未捕获物化:自顶帧向下收集 (fn, mod, last_ip) 烘跟踪行 -> take_uncaught_error -> reset
+        // 清场,烘焙成自足 Error。仅限 dispatch_loop 失败出口后调用(帧链活着,载荷在寄存器)。
+        [[nodiscard]]
+        Error rebake_uncaught_error() const;
+
+        // 异常派发:自最内帧向下按 last_ip 遍查本上下文各帧 CodeUnit 异常记录表,命中回退派发
+        //(不动帧栈/值栈)。搜索边界 = current_->ret_frame()(随上下文走)。返回 true = 已派发;
+        // false = 边界之上全帧未命中,载荷留寄存器(嵌套边界交外层续搜 / 链上已转投恢复者 /
+        // 链根未捕获善后归调用方)。命中可能在多跳之后,current_ 已非进入时的上下文。
+        bool unwind();
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 

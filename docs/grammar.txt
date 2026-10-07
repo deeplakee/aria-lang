@@ -201,6 +201,10 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     裸 identifier -> 实例方法（identifier params block）；"def" -> 嵌套类（递归 defDecl，
 #     烙成员身份，深度不限）。"fun" 后非标识符（lambda）不得作成员，报错。
 #   - "{" 两用：block（statement 位置）、mapExpr（expression 位置）。按调用上下文区分。
+#   - "[" 两用（assignment 位）：listPattern 解构赋值目标 vs listExpr。token 预扫消歧：
+#     自 "[" 起 '[' 深度计数扫到配对 "]"，其后为 "=" -> listPattern 分支，否则按
+#     listExpr 解析。合法 token 流内括号跨类 LIFO 配对，唯 "["/"]" 跨本对边界嵌套，
+#     故只计 '[' 深度即得配对位。
 #
 # 解构：pattern 出现在 var 声明的 varTarget 与 forIn 的目标；解构赋值以 listPattern
 # 为左侧目标（assignment 的第二分支）。listPattern 与 listExpr 均以 "[" 起头。

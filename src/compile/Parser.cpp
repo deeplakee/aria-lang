@@ -563,29 +563,39 @@ namespace aria {
         return arena_.make<SequenceExprNode>(loc, arena_.make_list(expressions));
     }
 
+    // '[' 预扫：自 pos_（停在 '['）计 '[' 深度，返回配对 ']' 之后是否紧跟 '='。合法 token 流内
+    // 括号跨类 LIFO 配对，配对 ']' 之前打开的 '('/'{' 均已闭合，故只计 '[' 深度即得配对位；
+    // 未闭合遇到 Eof 返回 false（落表达式路径报错）。只读，不推进游标。
+    bool Parser::bracket_pair_followed_by_equal() const noexcept {
+        usize depth = 0;
+        usize index = pos_;
+        while (true) {
+            const TokenType type = tokens_[index++].type();
+            if (type == TokenType::Eof) {
+                return false;
+            }
+            if (type == TokenType::LeftBracket) {
+                ++depth;
+            } else if (type == TokenType::RightBracket) {
+                if (--depth == 0) {
+                    return tokens_[index].type() == TokenType::Equal;
+                }
+            }
+        }
+    }
+
     ExprNode* Parser::assignment() {
         const SourceLoc loc = loc_of(peek());
 
-        // '[' 歧义（listPattern 与 listExpr 同以 '[' 起头）：投机先按 listPattern 解析，其后非 '='
-        // 或解析失败则回退 pos_ 按表达式重解析（弃掉的 pattern 节点留 arena 死区，随整批释放）。
-        if (check(TokenType::LeftBracket)) {
-            const usize save = pos_;
-            try {
-                auto pat = list_pattern();
-                if (match(TokenType::Equal)) {
-                    ExprNode* rhs = assignment();
-                    return arena_.make<DestructureAssignmentNode>(loc, pat, rhs);
-                }
-            } catch (const AriaCompileException&) {
-                // 吞掉异常统一回退按表达式重解析。rhs 的 assignment() 抛错也会进此 catch，正确性
-                // 依赖回退 pos_ = save 后按 listExpr 重解析会在同一位置复现同一错误（错误仅由源内容
-                // 决定，与解析路径无关）。
-            }
-            pos_ = save;
+        // '[' 歧义（listPattern 与 listExpr 同以 '[' 起头）按 token 预扫消歧：配对 ']' 之后为 '='
+        // 才按 listPattern 解析（解构赋值），否则直接按表达式解析。
+        if (check(TokenType::LeftBracket) && bracket_pair_followed_by_equal()) {
+            auto pat = list_pattern();
+            expect(TokenType::Equal, "'='");
+            return arena_.make<DestructureAssignmentNode>(loc, pat, assignment());
         }
 
         ExprNode* lhs = logic_or();
-
         if (match(TokenType::Equal) || match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
             match(TokenType::StarEqual) || match(TokenType::SlashEqual) || match(TokenType::PercentEqual)) {
             const auto op = assignment_op(previous().type());

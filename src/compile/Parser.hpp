@@ -170,6 +170,10 @@ namespace aria {
         [[nodiscard]]
         ExprNode* assignment();
 
+        // '[' 预扫：pos_ 停在 '[' 时判配对 ']' 之后是否紧跟 '='（解构赋值路由提示），只读不推进游标。
+        [[nodiscard]]
+        bool bracket_pair_followed_by_equal() const noexcept;
+
         [[nodiscard]]
         ExprNode* logic_or();
 

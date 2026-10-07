@@ -84,6 +84,7 @@ namespace aria {
     X(ResumeDeadCoroutine, Runtime)         /* resume on a Done/Failed coroutine */                                 \
     X(ResumeNonSuspendedCoroutine, Runtime) /* resume on a coroutine still on the resume chain */                   \
     X(YieldOutsideCoroutine, Runtime)       /* yield in the main context */                                         \
+    X(YieldInNestedExecution, Runtime)      /* yield inside a nested execution */                                   \
     X(StackOverflow, Runtime)               /* recursion too deep */                                                \
     X(CircularImport, Runtime)              /* import cycle */                                                      \
     /* ========== INTERNAL ERROR (interpreter invariants) ========== */                                             \

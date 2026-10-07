@@ -81,6 +81,11 @@ namespace aria {
     }
 
     bool CoroutineModule::yield(AriaVM& vm, Span<Value> slots) {
+        // 嵌套执行内禁止 yield:ret_frame_ 非零即处于嵌套执行,嵌套循环等的是同步结果,挂起即穿界
+        //(resume 无此禁:被恢复的协程带零边界,完成/让位都自动切回)。
+        if (vm.current_->ret_frame() != 0) {
+            return vm.fail(ErrorCode::YieldInNestedExecution, "cannot yield inside a nested execution");
+        }
         const auto argc = slots.size() - 1;
         if (argc > 1) {
             return vm.arity_error_range(argc, 0, 1);

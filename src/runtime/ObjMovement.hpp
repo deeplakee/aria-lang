@@ -67,11 +67,11 @@ namespace aria {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
-        static constexpr u32   kMaxReentryDepth = 32; // 嵌套重入上限(判定直接比上限,详 drive_dispatch)
+        static constexpr u32   kMaxRecursionDepth = 32; // 嵌套执行上限(判定直接比上限,详 execute_closure)
 
         explicit ObjMovement(GC* gc) noexcept :
             Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},
-            pending_error_{}, previous_{nullptr}, state_{ExecState::Suspended}, ret_frame_{0}, reentry_depth_{0} {}
+            pending_error_{}, previous_{nullptr}, state_{ExecState::Suspended}, ret_frame_{0}, recursion_depth_{0} {}
 
         ~ObjMovement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
                                            // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
@@ -201,6 +201,19 @@ namespace aria {
             set_stack_top_(slots);
         }
 
+        // 一步退到 depth:一链扫关 depth 之上全部开指 + 裸截帧栈 + 值栈顶复位,等价于逐帧
+        // exit_frame 但只扫一次链。execute_closure 失败善后用(清嵌套残留帧);depth == 帧数时
+        // 为无操作(如进帧失败路径)。
+        void truncate_frames_to(const usize depth) noexcept {
+            if (depth >= frames_.size()) {
+                return;
+            }
+            Value* slots = frames_[depth].slots;
+            close_upvalues(slots); // 边界 = 首个被弃帧的槽 0:之上全弃,之下(保留帧)不受扰
+            frames_.truncate(depth);
+            set_stack_top_(slots);
+        }
+
         // 挂起错误寄存器(侧信道):冷路径错误经 raise 写入,VM 在安全点 has_error() 后
         // take_error() 传播,寄存器随上下文走。载荷为 Value -- VM/原生错误装 ObjException、
         // aria throw 原值入(catch 绑原值保类型);置入后随本对象 trace 标根,取出前跨安全点
@@ -254,20 +267,34 @@ namespace aria {
 
         void set_state(const ExecState state) noexcept { state_ = state; }
 
-        // 返回边界与重入计数(写入/维护归 drive_dispatch)。
+        // 返回边界与递归深度(写入/维护归 execute_closure)。
         [[nodiscard]]
         u32 ret_frame() const noexcept {
             return ret_frame_;
         }
 
-        void set_ret_frame(const u32 new_ret) noexcept { ret_frame_ = new_ret; }
-
         [[nodiscard]]
-        u32 reentry_depth() const noexcept {
-            return reentry_depth_;
+        u32 recursion_depth() const noexcept {
+            return recursion_depth_;
         }
 
-        void set_reentry_depth(const u32 depth) noexcept { reentry_depth_ = depth; }
+        // 递归进场:换防本循环返回边界并取走外层值,递归深度 +1。须在 push 占位 callee 之后、
+        // call_closure 进帧之前调用(此刻 frames_.size() 即重入点边界)。
+        [[nodiscard]]
+        u32 enter_recursion() noexcept {
+            const u32 old_ret = ret_frame_;
+            ret_frame_        = frames_.size();
+            ASSERT(ret_frame_ != 0, "recursion entry with zero boundary (outermost execution does not recurse)");
+            ++recursion_depth_;
+            return old_ret;
+        }
+
+        // 递归退场:归还外层返回边界,递归深度 -1(与 enter_recursion 配对)。
+        void leave_recursion(const u32 saved_ret) noexcept {
+            ret_frame_ = saved_ret;
+            ASSERT(saved_ret != 0, "recursion leave with zero boundary");
+            --recursion_depth_;
+        }
 
         // Object 协议(声明序随 Object.hpp)。
 
@@ -304,15 +331,15 @@ namespace aria {
 
         using CallFrameStack = FrameStack<CallFrame, kFrameMax>;
 
-        Buffer<Value>  buf_;           // 值栈缓冲底座(GC 分配,可增长)
-        Value*         top_;           // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
-        CallFrameStack frames_;        // 调用帧栈(一次分配定容,指针绝对稳定)
-        ObjUpvalue*    open_upvalues_; // open upvalue 开链头(按槽址降序;nullptr 空链)
-        Opt<Value>     pending_error_; // 挂起错误寄存器(置入后随本对象 trace 标根)
-        ObjMovement*   previous_;      // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
-        ExecState      state_;         // 执行状态(五态;主上下文亦参与换位但无人读)
-        u32            ret_frame_;     // 返回边界:驱动循环出口帧深(0 = 最外执行)
-        u32            reentry_depth_; // 嵌套重入深度,达 kMaxReentryDepth 即拒
+        Buffer<Value>  buf_;             // 值栈缓冲底座(GC 分配,可增长)
+        Value*         top_;             // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
+        CallFrameStack frames_;          // 调用帧栈(一次分配定容,指针绝对稳定)
+        ObjUpvalue*    open_upvalues_;   // open upvalue 开链头(按槽址降序;nullptr 空链)
+        Opt<Value>     pending_error_;   // 挂起错误寄存器(置入后随本对象 trace 标根)
+        ObjMovement*   previous_;        // resume 链:恢复者上下文(主上下文恒 nullptr 链尾)
+        ExecState      state_;           // 执行状态(五态;主上下文亦参与换位但无人读)
+        u32            ret_frame_;       // 返回边界:驱动循环出口帧深(0 = 最外执行)
+        u32            recursion_depth_; // 嵌套重入深度,达 kMaxRecursionDepth 即拒
     };
 
     // 工厂:分配执行上下文。返回对象白色无根,调用方须自行根化(主上下文经 current_、协程经 create 原语发布)。

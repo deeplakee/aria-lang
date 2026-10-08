@@ -85,9 +85,9 @@ namespace aria {
         friend class OpcodeProfiler;
 #endif
 
-        // 入口执行:锚定入口上下文(出口断言 current_ 回锚点,漏切换交接当场炸) + 源根入口槽
-        // [0] 播种 + 前后 reset 清场,入口 fn 包空闭包后 run_closure;CodeUnit 假定良构,失败为
-        // 未捕获运行时错误。
+        // 唯一的首次执行入口:锚定入口上下文(出口断言 current_ 回锚点,漏切换交接当场炸) +
+        // 源根入口槽 [0] 播种 + 前后 reset 清场,入口 fn 包空闭包后内联首次进入本体(出口边界
+        // 恒零,弹空帧栈即出口);CodeUnit 假定良构,失败为未捕获运行时错误。
         Result<Value, Error> run(ObjFunction* fn);
 
         // 编译 source 到 module 的入口 ObjFunction 并执行;source 须存活到返回(编译期 Error 的
@@ -207,11 +207,6 @@ namespace aria {
         // 单字符常量表槽数(字节域全值域容量:值域 0-255,容量 = 上限 + 1)。
         static constexpr usize kCharCacheSlots = 256;
 
-        // 执行本体(无入口装饰):压 callee 进帧后 dispatch_loop;唯一不 reset、不播源根、不断言
-        // 主上下文的执行口(重入路径调用者的栈不可冲掉),「切换型原生不得在嵌套 run_closure 内
-        // 可达」红线据此立。
-        Result<Value, Error> run_closure(ObjClosure* closure);
-
         // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
         // 槽 0 即栈顶;失败 = 载荷留寄存器、帧栈活着,善后归调用方)。
         bool dispatch_loop();
@@ -236,7 +231,7 @@ namespace aria {
         // false/nullptr ⟺ 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 传播。
         bool call_value(Value callee, u8 argc);
 
-        // 闭包调用进帧单点(call_value 与 run_closure 共用):元数检查 -> 帧余量检查 -> 实参整形
+        // 闭包调用进帧单点(call_value 与 run 共用):元数检查 -> 帧余量检查 -> 实参整形
         // 后进帧。失败 WrongArity/StackOverflow。
         bool call_closure(ObjClosure* obj, u8 argc);
 

@@ -426,31 +426,19 @@ namespace aria {
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
         current_->reset();
 
-        // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底;建成传入
-        // run_closure 即压栈(入栈即根化)。
-        auto       guard   = gc_.make_guard(fn);
+        // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底。
+        const auto guard   = gc_.make_guard(fn);
         const auto closure = new_closure(gc_, fn);
-        auto       result  = run_closure(closure); // 值拷贝,下方清场不影响返回值;持对象由调用方根化
+
+        // 首次进入(最外执行):出口边界恒零,弹空帧栈即出口。
+        current_->push(Value::from_obj(closure)); // 入栈即根
+        call_closure(closure, 0);
+        Result<Value, Error> result = dispatch_loop() ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
-        // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口,run_closure 重入时不自清。
+
+        // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口。
         current_->reset();
         return result;
-    }
-
-    Result<Value, Error> AriaVM::run_closure(ObjClosure* closure) {
-        // 出口协议:成功 = 返回值在栈顶(写回调用区槽 0),就地收取;失败 = 载荷在寄存器、帧栈活着,
-        // 善后见 rebake_uncaught_error。
-        current_->push(Value::from_obj(closure)); // 入栈即根
-        if (!call_closure(closure, 0)) {
-            // 进帧失败(帧满为真实分支):载荷直转 Result 不经 unwind -- 帧栈叠着调用者
-            // 的帧弹不得,一帧未进亦无跟踪可烘。
-            const auto [code, msg] = take_uncaught_error();
-            return runtime_err(Error::from_baked(code, msg));
-        }
-        if (!dispatch_loop()) {
-            return runtime_err(rebake_uncaught_error());
-        }
-        return current_->pop(); // 顶层返回值(主模块对象 / HALT 停机值)
     }
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {
@@ -1135,7 +1123,7 @@ namespace aria {
 
             // 嵌套执行(ret_frame_ 非零):边界之上全帧未命中,本次调用无法处理,载荷留寄存器
             // 直接失败出口 -- 不转投不清场,两者都会越过边界扰动外层循环的帧链(转投换指/
-            // 清场弹帧);嵌套落地前恒零,此臂不触发。
+            // 清场弹帧)。
             if (current_->ret_frame() != 0) {
                 return false;
             }
@@ -1160,7 +1148,8 @@ namespace aria {
         // 栈/帧/寄存器一律经 current_ 访问;「正在执行的字节码所在上下文恒等于 current_」且切换点
         // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器、
         // 帧栈活着,善后归调用方(错误不走返回值通道)。出口边界 = current_->ret_frame()(住
-        // ObjMovement 随上下文走;嵌套重入落地前恒零,弹空帧栈即本循环驱动的最外帧弹尽;协程
+        // ObjMovement 随上下文走,由 execute_closure 写入/归还;最外执行恒零,弹空帧栈即本循环
+        // 驱动的最外帧弹尽;协程
         // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。
 
         while (true) {
@@ -1543,7 +1532,7 @@ namespace aria {
                     // 立即压栈,desc 循环内 new_upvalue 免守卫。
                     const auto idx     = read_u16(frame);
                     const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFunction>();
-                    auto       closure = new_closure(gc_, fn);
+                    const auto closure = new_closure(gc_, fn);
                     current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {
                         if (is_local) {

@@ -4,7 +4,8 @@
 > `vm-design.md` §4.9，机制现状见 `.claude/rules/runtime.md`「协程」节，异常侧背景（寄存器
 > 模型/unwind/跟踪行）见 `exception-implementation-pitfalls.md`（坑编号 #1-#20，本文沿用
 > 其「坑 #N」编号空间之外的独立编号）。落地批次：B1 对象化（96aa55e/bc93d79/d0ac244/12bee08）、
-> B2 状态机与四原语（8adae5c/5b3151a/e1508fc）、B3 跨协程错误（310a20c）。
+> B2 状态机与四原语（8adae5c/5b3151a/e1508fc）、B3 跨协程错误（310a20c）；重入口批（2026-10，
+> 坑 #10 改判：0261a2b/04cdb9f/d8f8781/946b7d5/7db3331/4e41dce）。
 
 ---
 
@@ -63,11 +64,9 @@ resume 的「`state_` 五态穷举 switch」与「`previous_ != nullptr` 判链�
 一并丢弃--不要试图在错误路径补写槽 0，「失败 resume 返回错误值」的形态已被否决（消费时机
 不存在，见 vm-design.md §4.9「错误跨协程」的被否记录）。
 
-## 坑 #6：跟踪截断（P4）-- trace 每跳重新收集，截断在协程边界
+## 坑 #6：跟踪截断（P4）-- 物化只含物化时刻存活的帧链，截断在协程边界
 
-**约束**：unwind 的 `trace` 是跳链循环的逐跳局部，死在边界的协程帧不并入物化侧的跟踪--
-物化只含最终命中/物化那一层的帧链，最内层 at 行 = resume 调用点（原生不进帧，与
-exception-pitfalls 坑 #16「原生报错即 caller 帧」同源）。**语料 `.err` 是子串判定，钉不了
+**约束**：死协程的帧在跳链序列随 `reset()` 退场，不并入物化侧的跟踪--物化只含物化时刻存活的帧链（收集与烘焙收口在物化点 `rebake_uncaught_error()`，2026-10 重入口批起），最内层 at 行 = resume 调用点（原生不进帧，与 exception-pitfalls 坑 #16「原生报错即 caller 帧」同源）。**语料 `.err` 是子串判定，钉不了
 「协程内帧缺席」**，截断用 C++ 消息精确等值断言钉（`UncaughtInCoroutineTraceTruncatedAtBoundary`）。
 将来若要跨边界拼接跟踪（每跳保留各自 trace 再串），须重新评估物化路径「无 GC 分配点」的
 前提（fn/mod 裸指针跨 reset 存活正靠它）。
@@ -94,14 +93,14 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 不变式）再到 `slots[0]` 发布，窗口内无 GC 点，免 make_guard；发布即随调用者栈根化。
 一般化：守卫判据看「窗口内有无 GC 点」，不是「有没有分配对象」。
 
-## 坑 #10：嵌套 run_closure 红线 -- 切换型原生不得在嵌套 run_closure 内可达（成文不变式）
+## 坑 #10：嵌套执行的切换红线 -- yield 穿界被运行期拒绝，resume 多路复用安全
 
-**约束**：`run_closure` 是 AriaVM 成文的「未来重入接缝」。当前零原生回调用户闭包
-（run_closure 仅 run() 一个调用方，IMPORT 走同循环不嵌套），yield 不可能落进嵌套循环；
-**将来任何原生若同步调用用户闭包（getter 一类），必须保证切换型原生（coroutine.resume/
-yield）在该嵌套执行内不可达** -- yield 在嵌套 dispatch_loop 内切换会让复活上下文被错误的
-C++ 循环帧驱动（外层循环持着旧的 frame/current_ 局部）。同族防线是 dispatch_loop 的
-「switch 之后不得新增引用 frame 的代码」纪律。重启 getter/回调类特性时先对照此条。
+**现状**：重入口已落地（vm-design.md §4.11；私有 `execute_closure`/`execute_method`），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
+
+- **resume 放行**：dispatch_loop 每指令自 `current_` 重取帧，嵌套循环驱动被恢复协程安全；被恢复协程出口边界恒零，完成/让位自动按链切回，嵌套循环随后在自己边界收束（白盒钉子 `ResumeInsideNestedMultiplexes`）。
+- **yield 拒绝**：`ret_frame_` 非零即处于嵌套执行，yield 校验段首检即报 `YieldInNestedExecution`。嵌套循环等的是同步结果，挂起即穿界--切走 `current_` 后嵌套循环会转去驱动切回方上下文，被挂起上下文的嵌套帧悬在栈上，出口边界语义全部失效。
+
+旧形态「成文不变式：切换型原生不得在嵌套 run_closure 内可达（担心外层循环持旧 `frame`/`current_` 局部驱动复活上下文）」随重入落地整体作废--红线从文档纪律迁入运行期检查，只剩 yield 一侧；「switch 之后不得新增引用 frame 的代码」同族纪律不受影响。
 
 ---
 
@@ -113,4 +112,6 @@ C++ 循环帧驱动（外层循环持着旧的 frame/current_ 局部）。同族
   （在链上，只能发生在协程内）、`runtime_resume_failed_coroutine`（Failed 与 Done 同码同文案）。
 - C++：`UncaughtInCoroutineTraceTruncatedAtBoundary`（截断精确等值断言）、
   `SuspendedCoroutineValuesSurviveStressGc` / `InterleavedCoroutinesSurviveStressGc`
-  （stress GC 悬挂压力）。
+  （stress GC 悬挂压力）；重入口（坑 #10）：`tests/runtime/test_execute.cpp` 的 `NestedExecStress`
+  （统一友元 `TestProbe` 驱动私有 `execute_closure`/`execute_method`：返回值 / this 绑定 /
+  未捕获截断 / 外层 try 接获 / 深度上限 / 嵌套 yield 拒绝 / 嵌套 resume 多路复用，stress GC 全程开）。

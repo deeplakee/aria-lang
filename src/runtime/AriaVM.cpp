@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <system_error>
 #include <utility>
 
@@ -439,6 +440,33 @@ namespace aria {
         // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口。
         current_->reset();
         return result;
+    }
+
+    Opt<Value> AriaVM::execute_closure(ObjClosure* closure, const Span<const Value> args) {
+        // VM 重入口:在既有驱动中同步执行一个闭包。成功 = 栈顶收取闭包返回值;失败 = nullopt
+        // 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
+        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
+        // 重寻址(重入期间值栈可能搬迁)。
+        if (current_->recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
+            return fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
+        }
+        if (args.size() > std::numeric_limits<u8>::max()) {
+            return fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
+        }
+        ASSERT(args.data() >= current_->stack_top() || args.data() + args.size() <= current_->stack_base() ||
+                       current_->stack_size() + 1 + args.size() <= current_->stack_capacity(),
+               "args alias the value stack without room to push");
+        current_->push(Value::from_obj(closure)); // 入栈即根(槽 0 = 本调用返回槽)
+        for (const auto& arg: args) {
+            current_->push(arg);
+        }
+        const auto saved_ret = current_->enter_recursion(); // 换防本循环出口边界,取走外层值
+        if (call_closure(closure, args.size()) && dispatch_loop()) {
+            current_->leave_recursion(saved_ret);
+            return current_->pop(); // 闭包返回值
+        }
+        current_->leave_recursion(saved_ret);
+        return std::nullopt; // 错误值在寄存器
     }
 
     bool AriaVM::call_value(const Value callee, const u8 argc) {
@@ -1099,10 +1127,10 @@ namespace aria {
     bool AriaVM::unwind() {
         // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发。搜索
         // 边界 = current_->ret_frame()(随上下文走,逐跳重读)。返回 true = 已派发(落回循环顶重取帧);
-        // false = 边界之上全帧未命中,载荷留寄存器:边界非零(嵌套执行)即本次调用无法处理,交
-        // 外层循环续搜;边界为零则链上有恢复者已转投(协程置 Failed 死去,载荷 raise 进恢复者,
-        // 由其循环续搜),链根仍无 handler -> 调用方善后(收跟踪物化)。命中可能在多跳之后,
-        // current_ 已非进入时的上下文。
+        // false = 边界之上全帧未命中,载荷留寄存器:边界非零(嵌套执行)即本次调用无法处理,截到
+        // 边界清残帧后交外层循环续搜;边界为零则链上有恢复者已转投(协程置 Failed 死去,载荷 raise
+        // 进恢复者,由其循环续搜),链根仍无 handler -> 调用方善后(收跟踪物化)。命中可能在多跳
+        // 之后,current_ 已非进入时的上下文。
         ASSERT(current_->has_error(), "no pending payload");
 
         while (true) {
@@ -1121,10 +1149,11 @@ namespace aria {
                 }
             }
 
-            // 嵌套执行(ret_frame_ 非零):边界之上全帧未命中,本次调用无法处理,载荷留寄存器
-            // 直接失败出口 -- 不转投不清场,两者都会越过边界扰动外层循环的帧链(转投换指/
-            // 清场弹帧)。
+            // 嵌套执行(ret_frame_ 非零):边界之上全帧未命中,本次调用无法处理。截到本循环边
+            // 界清嵌套残帧(只弃边界之上,不越界:外层帧链与后续搜索不受扰),载荷留寄存器交
+            // 外层循环续搜。
             if (current_->ret_frame() != 0) {
+                current_->truncate_frames_to(current_->ret_frame());
                 return false;
             }
 
@@ -1146,8 +1175,9 @@ namespace aria {
 
     bool AriaVM::dispatch_loop() {
         // 栈/帧/寄存器一律经 current_ 访问;「正在执行的字节码所在上下文恒等于 current_」且切换点
-        // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器、
-        // 帧栈活着,善后归调用方(错误不走返回值通道)。出口边界 = current_->ret_frame()(住
+        // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,
+        // 失败出口均就地善后(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通
+        // 道)。出口边界 = current_->ret_frame()(住
         // ObjMovement 随上下文走,由 execute_closure 写入/归还;最外执行恒零,弹空帧栈即本循环
         // 驱动的最外帧弹尽;协程
         // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。

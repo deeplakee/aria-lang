@@ -202,8 +202,7 @@ namespace aria {
         }
 
         // 一步退到 depth:一链扫关 depth 之上全部开指 + 裸截帧栈 + 值栈顶复位,等价于逐帧
-        // exit_frame 但只扫一次链。execute_closure 失败善后用(清嵌套残留帧);depth == 帧数时
-        // 为无操作(如进帧失败路径)。
+        // exit_frame 但只扫一次链;depth >= 帧数时为无操作。
         void truncate_frames_to(const usize depth) noexcept {
             if (depth >= frames_.size()) {
                 return;
@@ -267,7 +266,7 @@ namespace aria {
 
         void set_state(const ExecState state) noexcept { state_ = state; }
 
-        // 返回边界与递归深度(写入/维护归 execute_closure)。
+        // 驱动循环出口边界与递归深度。
         [[nodiscard]]
         u32 ret_frame() const noexcept {
             return ret_frame_;

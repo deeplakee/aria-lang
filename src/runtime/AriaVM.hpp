@@ -94,13 +94,13 @@ namespace aria {
         // SourceLoc 指着它),module 无需调用方守(编译期已 make_guard 根化)。失败为首错 Error 透传。
         Result<Value, Error> run(SourceFile& source, ObjModule* module);
 
-        // VM 重入口:在既有驱动中同步执行一个闭包;closure 自身落调用区槽 0(兼返回槽),args
-        // 按声明序压其上(argc = 声明参数数,不含槽 0)。成功返回闭包返回值;失败 nullopt 且载荷
-        // 留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜;递归深度达
-        // kMaxRecursionDepth 报 StackOverflow。args 不得指进 current_ 值栈;若传栈上段,压档余
-        // 量须足(扩容会搬迁旧块使视角悬垂,断言复核之);返回后写返回槽恒经 peek 重寻址(重入
-        // 期间值栈可能搬迁)。
+        // VM 重入口(闭包形态):closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上;
+        // 契约与失败合同同 execute_call。
         Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
+
+        // VM 重入口(方法形态):receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 =
+        // 声明参数数,args 按声明序压其上;契约与失败合同同 execute_call。
+        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
 
         // 编译并执行源码字符串:合成 <script> 入口模块(dir_=cwd);错误渲染 stderr,返 InterpretResult。
         InterpretResult interpret_from_src(StringView src);
@@ -218,6 +218,14 @@ namespace aria {
         // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
         // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。
         bool dispatch_loop();
+
+        // 重入执行体(闭包/方法两口共用):压 slot0 与 args(栈形 [slot0, a1..aN],argc = 声明参数
+        // 数,不含槽 0)后同步驱动至结算。成功 = 栈顶收取闭包返回值;失败 nullopt 且载荷留寄存
+        // 器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜;递归深度达
+        // kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报 WrongArity。args 不得指进
+        // current_ 值栈;若传栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之);重入
+        // 返回后写返回槽恒经 peek 重寻址(重入期间值栈可能搬迁)。
+        Opt<Value> execute_call(Value slot0, ObjClosure* closure, Span<const Value> args);
 
         // IMPORT 执行体:resolve_module -> intern 后 guard 根化查 modules_(命中复用即循环导入),
         // 未命中 load_module 后包闭包进帧 run-once;两分支栈效应统一 [..., module]。bool 契约同

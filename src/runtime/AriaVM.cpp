@@ -443,8 +443,16 @@ namespace aria {
     }
 
     Opt<Value> AriaVM::execute_closure(ObjClosure* closure, const Span<const Value> args) {
-        // VM 重入口:在既有驱动中同步执行一个闭包。成功 = 栈顶收取闭包返回值;失败 = nullopt
-        // 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
+        return execute_call(Value::from_obj(closure), closure, args);
+    }
+
+    Opt<Value> AriaVM::execute_method(const Value receiver, ObjClosure* method, const Span<const Value> args) {
+        return execute_call(receiver, method, args);
+    }
+
+    Opt<Value> AriaVM::execute_call(const Value slot0, ObjClosure* closure, const Span<const Value> args) {
+        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
+        // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
         // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
         // 重寻址(重入期间值栈可能搬迁)。
         if (current_->recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
@@ -456,7 +464,7 @@ namespace aria {
         ASSERT(args.data() >= current_->stack_top() || args.data() + args.size() <= current_->stack_base() ||
                        current_->stack_size() + 1 + args.size() <= current_->stack_capacity(),
                "args alias the value stack without room to push");
-        current_->push(Value::from_obj(closure)); // 入栈即根(槽 0 = 本调用返回槽)
+        current_->push(slot0); // 入栈即根(槽 0 = 本调用返回槽)
         for (const auto& arg: args) {
             current_->push(arg);
         }
@@ -1177,9 +1185,8 @@ namespace aria {
         // 栈/帧/寄存器一律经 current_ 访问;「正在执行的字节码所在上下文恒等于 current_」且切换点
         // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,
         // 失败出口均就地善后(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通
-        // 道)。出口边界 = current_->ret_frame()(住
-        // ObjMovement 随上下文走,由 execute_closure 写入/归还;最外执行恒零,弹空帧栈即本循环
-        // 驱动的最外帧弹尽;协程
+        // 道)。出口边界 = current_->ret_frame()(住 ObjMovement 随上下文走,重入场写入/退场归
+        // 还;最外执行恒零,弹空帧栈即本循环驱动的最外帧弹尽;协程
         // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。
 
         while (true) {

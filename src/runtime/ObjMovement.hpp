@@ -67,7 +67,7 @@ namespace aria {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
-        static constexpr u32   kMaxRecursionDepth = 32; // 嵌套执行上限(判定直接比上限,详 execute_closure)
+        static constexpr u32   kMaxRecursionDepth = 32; // 嵌套执行上限(判定直接比上限)
 
         explicit ObjMovement(GC* gc) noexcept :
             Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},

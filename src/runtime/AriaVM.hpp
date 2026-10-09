@@ -85,6 +85,10 @@ namespace aria {
         friend class OpcodeProfiler;
 #endif
 
+        // 白盒测试统一探针宿主:src 不给出定义,成员(测试驱动原生/助手)由测试文件寄入;
+        // 所有测试私有访问走此一处。
+        friend struct TestProbe;
+
         // 唯一的首次执行入口:锚定入口上下文(出口断言 current_ 回锚点,漏切换交接当场炸) +
         // 源根入口槽 [0] 播种 + 前后 reset 清场,入口 fn 包空闭包后内联首次进入本体(出口边界
         // 恒零,弹空帧栈即出口);CodeUnit 假定良构,失败为未捕获运行时错误。
@@ -93,14 +97,6 @@ namespace aria {
         // 编译 source 到 module 的入口 ObjFunction 并执行;source 须存活到返回(编译期 Error 的
         // SourceLoc 指着它),module 无需调用方守(编译期已 make_guard 根化)。失败为首错 Error 透传。
         Result<Value, Error> run(SourceFile& source, ObjModule* module);
-
-        // VM 重入口(闭包形态):closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上;
-        // 契约与失败合同同 execute_call。
-        Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
-
-        // VM 重入口(方法形态):receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 =
-        // 声明参数数,args 按声明序压其上;契约与失败合同同 execute_call。
-        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
 
         // 编译并执行源码字符串:合成 <script> 入口模块(dir_=cwd);错误渲染 stderr,返 InterpretResult。
         InterpretResult interpret_from_src(StringView src);
@@ -218,6 +214,14 @@ namespace aria {
         // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
         // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。
         bool dispatch_loop();
+
+        // VM 重入口(闭包形态):closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上;
+        // 契约与失败合同同 execute_call。重入专用:仅可在执行中的驱动内调(零帧调用 debug 断言炸)。
+        Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
+
+        // VM 重入口(方法形态):receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 =
+        // 声明参数数,args 按声明序压其上;契约与失败合同同 execute_call。
+        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
 
         // 重入执行体(闭包/方法两口共用):压 slot0 与 args(栈形 [slot0, a1..aN],argc = 声明参数
         // 数,不含槽 0)后同步驱动至结算。成功 = 栈顶收取闭包返回值;失败 nullopt 且载荷留寄存
@@ -371,8 +375,9 @@ namespace aria {
         bool run_call_method(u8 argc);
 
         // RETURN 执行体:[..., ret] -> 取返回值后弹帧(关本帧区间开指,值迁入各自 upvalue 自持),
-        // 按弹后帧深分流(出口边界 = current_->ret_frame())。返回 true = 本循环结束(顶层返回,
-        // 值落调用区槽 0 即栈顶);false = 循环继续(帧间返回写回 callee 槽 / 协程完成切换)。
+        // 按弹后帧深分流(出口边界 = current_->ret_frame())。返回 true = 本循环结束(递归出口值
+        // 落调用区槽 0 / 主顶层返回值留栈顶);false = 循环继续(帧间返回写回 callee 槽 / 协程
+        // 完成切换)。
         bool run_return();
 
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(编译器不变式,ASSERT 把关),

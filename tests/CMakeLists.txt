@@ -23,6 +23,7 @@ add_executable(aria_tests
         bytecode/test_disassembler.cpp
         # runtime
         runtime/test_ariavm.cpp
+        runtime/test_execute.cpp
         runtime/test_interpret.cpp
         runtime/test_interpreter.cpp
         # object

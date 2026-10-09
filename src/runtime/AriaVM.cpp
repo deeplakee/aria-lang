@@ -1080,23 +1080,27 @@ namespace aria {
     }
 
     bool AriaVM::run_return() {
-        // 取返回值 -> 弹帧 -> 按弹后帧深分流(出口边界 = current_->ret_frame())。
-        const Value ret = current_->pop(); // 先取:exit_frame 将丢弃其下方栈区
-        current_->exit_frame();
+        // 取返回值 -> 弹帧 -> 按弹后帧深分流(出口边界 = current_->ret_frame()):递归边界(非零)
+        // 弹尽 = 本循环出口,值落调用区槽 0;根边界(零)弹尽再分主顶层/协程完成。
+        const Value ret = current_->pop(); // 保存返回值
+        current_->exit_frame();            // 清除调用栈帧
         if (current_->frames().size() != current_->ret_frame()) {
             current_->push(ret); // 帧间返回:写回 callee 槽
             return false;
         }
-        const auto resumer = current_->previous();
-        if (resumer == nullptr) {
-            current_->push(ret); // 主顶层返回:值留栈顶(主模块对象)
+        if (current_->ret_frame() != 0) {
+            current_->push(ret); // VM 重入出口:返回值留在栈顶
             return true;
         }
-        // 协程完成:值写 resumer 预留槽 -> reset 清场 -> 换指置 Done。
-        resumer->peek(0) = ret;
-        current_->reset();
-        leave_coroutine(ExecState::Done);
-        return false;
+        if (const auto resumer = current_->previous()) {
+            // 协程完成:值写 resumer 预留槽 -> reset 清场 -> 换指置 Done。
+            resumer->peek(0) = ret;
+            current_->reset();
+            leave_coroutine(ExecState::Done);
+            return false;
+        }
+        current_->push(ret); // 主顶层返回:返回值留在栈顶(主模块对象)
+        return true;
     }
 
     Pair<ErrorCode, String> AriaVM::take_uncaught_error() const {

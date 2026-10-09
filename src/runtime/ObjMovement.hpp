@@ -288,10 +288,10 @@ namespace aria {
             return old_ret;
         }
 
-        // 递归退场:归还外层返回边界,递归深度 -1(与 enter_recursion 配对)。
+        // 递归退场:归还外层返回边界,递归深度 -1(与 enter_recursion 配对)。外层边界零值
+        // 合法:嵌套挂在最外执行(主上下文)下时 saved 即为 0。
         void leave_recursion(const u32 saved_ret) noexcept {
             ret_frame_ = saved_ret;
-            ASSERT(saved_ret != 0, "recursion leave with zero boundary");
             --recursion_depth_;
         }
 

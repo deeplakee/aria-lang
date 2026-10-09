@@ -494,11 +494,10 @@ namespace aria {
             default: {
                 // 其余对象类型:取调用钩子 `__call__` 实现后调;调用区就地复用 [callee, a1..aN]
                 // 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
-                const auto target = obj->op_call_impl(*this);
-                if (!target) {
-                    return false; // 载荷已在挂起错误寄存器
+                if (const auto target = obj->op_call_impl(*this)) {
+                    return call_value(*target, argc);
                 }
-                return call_value(*target, argc);
+                return false; // 载荷已在挂起错误寄存器
             }
         }
     }

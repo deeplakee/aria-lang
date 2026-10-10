@@ -27,7 +27,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 可增长值栈：GC 分配的 `Buffer<Value>` 底座 + `top_` 裸指针，初始 `kStackInit = 1024`，push 溢出 2x 增长并重定位活动帧 slots 与 open upvalue 链 location_。
 - 值栈 API `push`/`pop`/`drop`/`peek`/`stack_size`/`stack_capacity`/`stack_base`/`stack_top`；帧栈 `frames()`/`frames_full`。
 - `FrameStack<CallFrame, kFrameMax = 256>`；私有 `set_stack_top_` 收口「值栈顶只由 ObjMovement 自身改」。
-- 进/出帧 `enter_frame(closure, argc)`/`exit_frame()` 收口「栈顶帧 slots 即值栈本帧槽 0」；`exit_frame` 内置 `close_upvalues(frame.slots)`（弹帧 + 关本帧区间开指 + 复位）；`enter_frame` 定义在 `.cpp`（需 `ObjClosure` 完整类型）。
+- 进/出帧 `enter_frame(closure, argc)`/`exit_frame()` 收口「栈顶帧 slots 即值栈本帧槽 0」；`exit_frame` 内置 `close_upvalues(frame.slots)`（弹帧 + 关本帧区间开指 + 复位）；`enter_frame` 定义在 `.cpp`（体即 `CallFrame::init(frames_.acquire(), closure, top_, argc)`）。
 - **方法帧共用本入口**：调用方进帧前把槽 0 原位写为 this--普通帧槽 0 = 闭包自身、方法帧槽 0 = this，闭包经 `frame.closure` 携带不上栈（对齐 clox 方法语义；无专用方法进帧）。
 - **`unwind_to_handler(n, record)` 异常派发**：`truncate(n+1)` 一步弃内层帧 -> `close_upvalues(catch 槽)` 按槽址一关到底（此时栈顶未动、槽区全存活）-> 栈顶截到 catch 参数槽 -> 置 ip 跳 handler -> 寄存器载荷 push 落槽。
 - `reset()`：先关全部开指再清场--HALT 收场不弹帧的安全网，防开链跨 run 复用同一栈区读脏值。
@@ -69,11 +69,11 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 重入口两口 = 公共面 `execute_closure(closure, args)`（闭包形态，槽 0 = closure 自身）/ `execute_method(receiver, method, args)`（方法形态，槽 0 = receiver 即 this），共同委托 eval 层 `Eval::execute_call`：压调用区 `[slot0, a1..aN]` + `call_closure` 进帧 + 同步驱动 `dispatch_loop` 至本调用结算（出口边界 = 上行挂的 `ret_frame_`）。仅可在执行中的驱动内调（入场断言钉边界非零）。消费方免友元（当前唯一消费方 = 测试探针 `TestProbe`，经 `vm.current_context()->execute_closure(...)` 走公共面，见 `tests/runtime/test_execute.cpp`）。
 - 参数契约与失败合同（`Eval::execute_call` 声明处同款）：`args` 按声明序、不含槽 0；不得指进 `current_` 值栈--要传栈上段，压档余量须足（扩容搬迁令旧指针悬垂），debug 断言复核。失败返 `nullopt` 且载荷留挂起寄存器、嵌套残帧已被 unwind 截净，调用方按 bool 契约 `return false` 交外层循环续搜；深度达 `kMaxRecursionDepth` 报 `StackOverflow`，实参超 u8 域报 `WrongArity`。
 
-### `CallFrame`（trivially-copyable 聚合，同文件）
+### `runtime/CallFrame.hpp`（`CallFrame`，trivially-copyable 聚合）
 
 - `closure`（callable 收敛为闭包，顶层入口也闭包）、`unit`（缓存 `closure->function()->unit()`，省每条指令一跳）、`module`（缓存供 `LOAD/STORE/DEF_GLOBAL` 定位模块 globals）。
 - `ip`（裸指针）；`slots`（局部基址，callee 在槽 0、参数从槽 1 起）。
-- `last_ip`（本帧最近取指指令起始指针，主循环取指前写/`init_frame_` 置 code 起始）：运行期报错定位行号与 unwind 查表共用锚点，按 `last_ip - unit->code.data()` 反推 offset（前提：帧存活期间 code 缓冲恒定--非移动 GC + 执行期零 emit），无 NSDMI 保 trivial 聚合。
+- `last_ip`（本帧最近取指指令起始指针，主循环取指前写/`CallFrame::init` 置 code 起始）：运行期报错定位行号与 unwind 查表共用锚点，按 `last_ip - unit->code.data()` 反推 offset（前提：帧存活期间 code 缓冲恒定--非移动 GC + 执行期零 emit），无 NSDMI 保 trivial 聚合。
 - 模块体 run-once 帧与普通帧同构：模块值由模块体入口自己的返回值带回（入口收尾压模块对象常量，见 compile.md `FnKind::ModuleEntry`）。
 
 ### `grow_stack_` 三类指针重绑

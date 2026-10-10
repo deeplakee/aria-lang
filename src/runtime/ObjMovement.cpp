@@ -45,24 +45,8 @@ namespace aria {
         gc.mark_object(previous_); // resume 链链上成员经灰栈级联,容 nullptr
     }
 
-    // 定义在 .cpp:init_frame_ 解引用 closure 需 ObjClosure 完整类型,头文件仅前向声明即可。
     void ObjMovement::enter_frame(ObjClosure* closure, const u8 argc) {
-        CallFrame& f = frames_.acquire();
-        init_frame_(f, closure, argc);
-    }
-
-    // 就位刚 acquire 的栈顶空帧:slots = top - argc - 1(栈顶 [callee, a1..aN]),VM 专有字段
-    // 从 closure 解引用填充;槽 0 语义见 ObjMovement.hpp enter_frame 注。
-    void ObjMovement::init_frame_(CallFrame& f, ObjClosure* closure, const u8 argc) const {
-        const auto fn = closure->function();
-        f.slots       = top_ - argc - 1;
-        f.closure     = closure;
-        f.unit        = &fn->unit();
-        f.module      = fn->module();
-        f.ip          = fn->unit().code.data();
-        // 位置锚点占位(= code 起始,等价 offset 0),主循环取指前即覆写。不用 nullptr:
-        // 与 data() 相减是 UB。(无 NSDMI,保 trivial 聚合。)
-        f.last_ip = f.ip;
+        CallFrame::init(frames_.acquire(), closure, top_, argc);
     }
 
     // 「同一局部只有一份引用」不变式由此收口;建新到插链之间无任何分配点,入链后即随本对象

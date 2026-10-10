@@ -82,6 +82,8 @@ add_library(aria_core STATIC
         src/runtime/builtins/CoroutineModule.hpp
         src/runtime/builtins/ExceptionClass.cpp
         src/runtime/builtins/ExceptionClass.hpp
+        src/runtime/CallFrame.cpp
+        src/runtime/CallFrame.hpp
         src/runtime/FrameStack.hpp
         src/runtime/builtins/IteratorClass.cpp
         src/runtime/builtins/IteratorClass.hpp

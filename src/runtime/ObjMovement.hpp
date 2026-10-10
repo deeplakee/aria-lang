@@ -10,6 +10,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "object/Object.hpp"
+#include "runtime/CallFrame.hpp"
 #include "runtime/FrameStack.hpp"
 #include "runtime/str_table.hpp"
 #include "util/util.hpp"
@@ -36,18 +37,6 @@ namespace aria {
         operator Opt<T>() const noexcept {
             return std::nullopt;
         }
-    };
-
-    // 调用帧(trivially-copyable 聚合,满足 FrameStack 约束);ip/last_ip 仅作读取游标/锚点,
-    // 运行期从不经其写字节,last_ip 反推 offset 的前提 = 帧存活期间 code 缓冲恒定(非移动 GC +
-    // 执行期零 emit)。
-    struct CallFrame {
-        ObjClosure* closure; // 持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 function() 取
-        CodeUnit*   unit;    // 缓存 closure->function()->unit(),省每条指令一跳
-        ObjModule*  module;  // 缓存 closure->function()->module(),供 *_GLOBAL 定位模块 globals
-        u8*         ip;      // 指令指针(冷路径按需反推 offset)
-        Value*      slots;   // 本帧局部基址(callee 槽 0,参数槽 1..)
-        u8*         last_ip; // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)
     };
 
     // 执行状态(协程生命周期五态)。主上下文同样参与换位(resume 置 Normal、切回时置 Running),
@@ -447,8 +436,6 @@ namespace aria {
     private:
         // 就位一帧:slots 指向槽 0,VM 专有字段(closure/unit/module/ip)从 closure 解引用填充;
         // 与 enter_frame 分工:本函数管填字段。槽 0 语义见 enter_frame。
-        void init_frame_(CallFrame& f, ObjClosure* closure, u8 argc) const;
-
         // 截断栈顶到 t(t 须在 [base, top] 内);值栈顶复位由本类内部独占,不对外暴露。
         void set_stack_top_(Value* t) noexcept {
             ASSERT(t >= buf_.data() && t <= top_, "stack top out of range");

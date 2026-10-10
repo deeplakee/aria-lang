@@ -141,7 +141,7 @@ using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
 bool str_native(AriaVM& vm, Span<Value> slots) {
     const auto argc = slots.size() - 1;
     if (argc != 1) { return vm.arity_error(argc, 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
-    slots[0] = Value::from_obj(new_string(vm.gc(), format_value(slots[1])));  // 就地返回
+    slots[0] = Value::from_obj(new_string(vm.gc(), stringify(slots[1])));  // 就地返回
     return true;
 }
 ```

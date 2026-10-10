@@ -48,9 +48,9 @@ namespace aria {
             return "{...}";
         }
         const PrintGuard guard{this};
-        // {"a": 1} 式:键值均走 format_value_debug;渲染序随占用槽(unspecified,与迭代序同级不承诺)。
+        // {"a": 1} 式:键值均走 repr;渲染序随占用槽(unspecified,与迭代序同级不承诺)。
         const auto entry_repr = [](const AriaHashTable::Entry& entry) {
-            return format_value_debug(entry.key) + ": " + format_value_debug(entry.value);
+            return repr(entry.key) + ": " + repr(entry.value);
         };
         return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
@@ -69,7 +69,7 @@ namespace aria {
         if (const auto entry = table_.find(key)) {
             return entry->value;
         }
-        return vm.fail(ErrorCode::KeyError, "map key not found: {}", format_value_debug(key));
+        return vm.fail(ErrorCode::KeyError, "map key not found: {}", repr(key));
     }
 
     bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {

@@ -1,4 +1,4 @@
-# 钉住：字符串即模板 "..." 与 '...'——档 ${表达式} 渲染与 str() 同源（format_value）、段序拼接、
+# 钉住：字符串即模板 "..." 与 '...'——档 ${表达式} 渲染与 str() 同源（stringify）、段序拼接、
 # \$ 转义与裸 { } 字面、纯字面退化普通串、嵌套插值、档内完整表达式（map/lambda/调用）。
 var name = "aria";
 var n = 3;
@@ -8,7 +8,7 @@ assert("hello ${name}!" == "hello aria!");
 assert("a${n}b${n}c" == "a3b3c");
 assert("${n}" == "3");
 
-# 渲染与 str() 同源：标量与容器同一条 format_value 路径
+# 渲染与 str() 同源：标量与容器同一条 stringify 路径
 assert("n=${n}" == "n=3");
 assert("f=${1.5}" == "f=1.5");
 assert("nil=${nil}" == "nil=nil");

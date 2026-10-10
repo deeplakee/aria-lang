@@ -33,18 +33,18 @@ namespace aria {
             return true;
         }
 
-        // str(x) -> 字符串:值的可读渲染(复用 format_value)。
+        // str(x) -> 字符串:值的可读渲染(复用 stringify)。
         bool fn_str(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            const auto s = new_string(vm.gc(), format_value(slots[1])); // format_value 返 String,临时 view 跨调用有效
+            const auto s = new_string(vm.gc(), stringify(slots[1])); // stringify 返 String,临时 view 跨调用有效
             slots[0]     = Value::from_obj(s);
             return true;
         }
 
-        // println([x]) -> nil:值的可读渲染加换行(format_value + io::println),省参只输出换行;可作一等值传参。
+        // println([x]) -> nil:值的可读渲染加换行(stringify + io::println),省参只输出换行;可作一等值传参。
         bool fn_println(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc > 1) {
@@ -53,7 +53,7 @@ namespace aria {
             if (argc == 0) {
                 io::println();
             } else {
-                io::println("{}", format_value(slots[1]));
+                io::println("{}", stringify(slots[1]));
             }
             slots[0] = Value::nil_val();
             return true;

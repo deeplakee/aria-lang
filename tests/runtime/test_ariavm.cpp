@@ -616,7 +616,7 @@ TEST_F(AriaVMStress, UncaughtInCoroutineTraceTruncatedAtBoundary) {
     auto             out    = vm.run(source, module);
     ASSERT_FALSE(out.has_value()) << out.error().message();
     EXPECT_EQ(out.error().code(), ErrorCode::UncaughtException);
-    EXPECT_EQ(out.error().message(), "Runtime: UncaughtException uncaught exception: boom\n"
+    EXPECT_EQ(out.error().message(), "Runtime: UncaughtException uncaught exception: \"boom\"\n"
                                      "  at <main> (<script>:6)");
 }
 

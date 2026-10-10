@@ -133,7 +133,7 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(native)));
     EXPECT_EQ(bound->name()->view(), "echo");
     EXPECT_EQ(bound->to_string(), "<bound method echo>");
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method echo>"); // 调试渲染同文案
+    EXPECT_EQ(aria::repr(Value::from_obj(bound)), "<bound method echo>"); // 调试渲染同文案
 }
 
 TEST(ObjBoundMethod, DebugRender) {
@@ -145,7 +145,7 @@ TEST(ObjBoundMethod, DebugRender) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
+    EXPECT_EQ(aria::repr(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
 }
 
 // stress GC:bound 为唯一根,method 闭包(经 method_,fn 持常量池长串)与 receiver 实例

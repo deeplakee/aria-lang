@@ -68,12 +68,12 @@ namespace aria {
 
     // 可读渲染(println/str 等显示位);Obj 经 to_string() 虚函数(用户可重挂 __str__)。
     [[nodiscard]]
-    String format_value(Value value);
+    String stringify(Value value);
 
-    // 非重入调试渲染(执行跟踪/反汇编常量池等调试上下文):Obj 走 debug_repr() 而非 to_string()--
+    // 非重入渲染(执行跟踪/反汇编常量池/未捕获兜底等上下文):Obj 走 debug_repr() 而非 to_string()--
     // to_string 是用户 __str__ 的挂载点,可重载为运行 aria 字节码,调试上下文调用会重入 VM 致无限递归。
     [[nodiscard]]
-    String format_value_debug(Value value);
+    String repr(Value value);
 
 } // namespace aria
 

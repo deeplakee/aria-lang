@@ -51,7 +51,7 @@
 - 容器与写法按**各语言自然形态**取,不追求逐 op 同构:`sieve` 用 Python `bytearray` / JS `Uint8Array` /
   Java `boolean[]` / Lua 表 / aria `list`;排序用各语言的原地排序。下标按各语言的基址换算(Lua 1-based
   的位置换算、0-based 语言上界 +1),但断言出来的**读数必须相同**。
-- 校验和一律取**整数**:浮点结果的十进制渲染各语言不同(aria `format_value` / Python `repr` /
+- 校验和一律取**整数**:浮点结果的十进制渲染各语言不同(aria `stringify` / Python `repr` /
   JS `Number` / Lua `%.14g` / Java `Double`),整数才逐位可比。浮点负载(`mandelbrot`)因此把校验和定义
   为「迭代数滚动取模」,另钉内部点个数。
 - **校验量不得吃 map 迭代序**:aria 的 map 迭代序是开放寻址的槽位序且语言面 unspecified

@@ -291,7 +291,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
 | `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
 | `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 取栈顶 `from, to`（或 unbounded 时单值 `from`）创建 `ObjRange`（字段同名）；`flags` 位义见 `code.hpp`（`..` 含、`...` 不含、无上界不编含否位）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
-| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（插值串 `"...${...}..."` 收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`format_value`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
+| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（插值串 `"...${...}..."` 收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`stringify`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
 
 def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_REG`（寄存器 `ObjectClass`）装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
 
@@ -658,7 +658,7 @@ code:
 == end ==
 ```
 
-- 常量池行：`  索引(4 hex): <format_value_debug 渲染>`（字符串带引号转义）；越界索引渲染 `<bad idx N>`。
+- 常量池行：`  索引(4 hex): <repr 渲染>`（字符串带引号转义）；越界索引渲染 `<bad idx N>`。
 - 异常记录表行：`  索引(4 hex): [begin, end) handle=H stack_depth=D`（`TryRecord` 四字段，见 §6.1），与 code 段偏移对照阅读。
 - code 行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `   |` 占位）+ opcode 名（左对齐 16 列）+ 操作数段（存在才追加，前置两空格）+ `;` 解析注释。
 - 操作数段按格式渲染：`U8`/`U16` 裸 hex；`ConstU16`/`Import` 为 `hex  ; <常量渲染>`；`ImmI8` 为 `hex  ; <有符号十进制>`；`RangeFlags` 为 `hex  ; flags=0xNN`；前向跳转为 **`偏移 -> 目标`**（如 `0003 -> 0009`）、后向（`JUMP_BACK`）为 **`偏移 <- 目标`**，偏移与目标都列出。

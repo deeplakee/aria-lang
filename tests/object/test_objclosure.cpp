@@ -85,8 +85,8 @@ TEST(ObjClosure, DebugReprSameAsFunction) {
     auto fn = new_function(gc, "add", 0);
     auto c  = new_closure(gc, fn);
     EXPECT_EQ(c->to_string(), "<fn add>");
-    // 调试渲染同文案(format_value_debug 经 debug_repr 虚分派)。
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(c)), "<fn add>");
+    // 调试渲染同文案(repr 经 debug_repr 虚分派)。
+    EXPECT_EQ(aria::repr(Value::from_obj(c)), "<fn add>");
 }
 
 // 身份语义:同一 fn 的两次捕获是不同闭包;equals/=== 均按地址。

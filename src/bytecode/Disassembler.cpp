@@ -61,7 +61,7 @@ namespace aria {
 
     String Disassembler::format_constant(const u16 idx) const {
         const auto v = constant_at(codeunit_, idx);
-        return v ? format_value_debug(*v) : std::format("<bad idx {}>", idx);
+        return v ? repr(*v) : std::format("<bad idx {}>", idx);
     }
 
     String Disassembler::load_imm(const StringView op_name) {
@@ -187,7 +187,7 @@ namespace aria {
         if (!codeunit_->constants.empty()) {
             out += "\nconstants:\n";
             for (usize i = 0; i < codeunit_->constants.size(); ++i) {
-                out += std::format("  {:04X}: {}\n", static_cast<u32>(i), format_value_debug(codeunit_->constants[i]));
+                out += std::format("  {:04X}: {}\n", static_cast<u32>(i), repr(codeunit_->constants[i]));
             }
         }
 

@@ -218,9 +218,9 @@ TEST(Compiler, ListMemberStoreNotSupported) {
 // init 是 List 类自身的工厂原生（不读 receiver、覆盖槽 0 产新 list）：xs.init() 等价 List()，
 // 产全新空表、与 receiver 不同一（init 作方法调的形态毛边，钉住防无声漂移）。
 TEST(Compiler, ListInitCallsFactoryNative) {
-    EXPECT_EQ(
-            run_int("var xs = [1]; var fresh = xs.init(); if (fresh.size() == 0 && fresh !== xs) { return 1; } return 0;"),
-            1);
+    EXPECT_EQ(run_int("var xs = [1]; var fresh = xs.init(); if (fresh.size() == 0 && fresh !== xs) { return 1; } "
+                      "return 0;"),
+              1);
 }
 
 // 循环内反复取方法（每次现场物化 bound 对象）+ stress GC（run_source 默认开）：
@@ -849,7 +849,7 @@ TEST(Compiler, ForInStringYieldsCharStrings) {
             1);
 }
 
-// join:list 方法,元素宽松经 format_value 转 string;空 list 返空串;空 sep 粘合。
+// join:list 方法,元素宽松经 stringify 转 string;空 list 返空串;空 sep 粘合。
 TEST(Compiler, StringJoinOnListReceiver) {
     EXPECT_EQ(run_int(R"(if (["a", "b", "c"].join("-") == "a-b-c") { return 1; } return 0;)"), 1);
     EXPECT_EQ(run_int(R"(if (["a", "b"].join("") == "ab") { return 1; } return 0;)"), 1);

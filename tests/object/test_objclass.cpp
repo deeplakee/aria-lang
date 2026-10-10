@@ -200,7 +200,7 @@ TEST(ObjClass, ToString) {
 TEST(ObjClass, DebugRender) {
     GC   gc;
     auto klass = make_class(gc, "Foo");
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(klass)), "<class Foo>"); // 调试渲染同文案
+    EXPECT_EQ(aria::repr(Value::from_obj(klass)), "<class Foo>"); // 调试渲染同文案
 }
 
 // stress GC:sub 为唯一根,superclass 链(经 superclass_)、静态值(长串)/方法闭包(defining

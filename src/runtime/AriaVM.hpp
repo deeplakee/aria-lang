@@ -54,7 +54,7 @@ namespace aria {
 
     // 值序列渲染拼串(join 与 BUILD_STRING 的公共底座):量长 reserve + 直写 + take_string 单次
     // 分配,单元素处理(rendered_size/append_rendered)两形态共享。ObjString 元素直写 view 零渲染,
-    // 其余按 format_value 渲染两次(量长与填充各一,扁平类型平价、嵌套容器才现双渲差价)。
+    // 其余按 stringify 渲染两次(量长与填充各一,扁平类型平价、嵌套容器才现双渲差价)。
     // GC:builder 零 GC 点,唯一 GC 点在 take_string 的 new_object 顶部,元素由调用方保活。
     ObjString* concat_values(GC& gc, Span<const Value> values, StringView sep);
 

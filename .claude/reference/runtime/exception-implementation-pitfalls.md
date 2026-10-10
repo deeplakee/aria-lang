@@ -159,7 +159,7 @@ public:
 
 | 路径 | 写入 pending_error_ | catch 绑定 | 未捕获 run() 回传 |
 |---|---|---|---|
-| 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, format_value(V))` |
+| 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, repr(V))` |
 | 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`println(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码 + 原消息） |
 
 **Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.claude/rules/error.md`）。

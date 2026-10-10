@@ -49,8 +49,8 @@ namespace aria {
             return "[...]";
         }
         const PrintGuard guard{this};
-        // [1, "ab"] 式:元素走 format_value_debug(嵌套字符串带引号;嵌套 list 递归)。
-        return "[" + util::join(elements_, ", ", format_value_debug) + "]";
+        // [1, "ab"] 式:元素走 repr(嵌套字符串带引号;嵌套 list 递归)。
+        return "[" + util::join(elements_, ", ", repr) + "]";
     }
 
     Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) { return vm.list_class()->load_field(vm, name); }

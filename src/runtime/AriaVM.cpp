@@ -136,7 +136,7 @@ namespace aria {
 
         // 执行跟踪:每条指令执行前打印字节码/栈/帧(stderr,调试用)。常态编译,宏只守 dispatch_loop
         // 内调用点,关闭时零开销;frame.ip 此时指向待执行指令,据此解码(仅读不推进 VM 的 ip)。
-        // 栈渲染用 format_value_debug 不用 format_value:后者 Obj 走可重载虚 to_string,在
+        // 栈渲染用 repr 不用 stringify:后者 Obj 走可重载虚 to_string,在
         // dispatch_loop 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。
         [[maybe_unused]] void trace_execution(ObjMovement* ctx) {
             auto&       frames = ctx->frames();
@@ -153,7 +153,7 @@ namespace aria {
             usize        col    = prefix.size();
             String       stack_str;
             for (Value* p = ctx->stack_base(); p < ctx->stack_top(); ++p) {
-                const auto s = std::format("[ {} ]", format_value_debug(*p));
+                const auto s = std::format("[ {} ]", repr(*p));
                 if (p < frame.slots) {
                     col += s.size();
                 }
@@ -185,7 +185,7 @@ namespace aria {
             if (const auto str = try_as_obj<ObjString>(element)) {
                 return str->view().size();
             }
-            return format_value(element).size();
+            return stringify(element).size();
         }
 
         // 单元素直写:串元素直写 view 零渲染,其余渲染后追加。
@@ -193,7 +193,7 @@ namespace aria {
             if (const auto str = try_as_obj<ObjString>(element)) {
                 builder.append(str->view());
             } else {
-                builder.append(format_value(element));
+                builder.append(stringify(element));
             }
         }
 
@@ -1107,7 +1107,7 @@ namespace aria {
         if (const auto ex = try_as_obj<ObjException>(payload)) {
             return {ex->code(), String{ex->message()->view()}};
         }
-        const auto msg = std::format("uncaught exception: {}", format_value(payload));
+        const auto msg = std::format("uncaught exception: {}", repr(payload));
         return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
     }
 

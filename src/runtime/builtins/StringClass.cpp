@@ -22,14 +22,14 @@ namespace aria {
         // 下标域约定:除 codepoint_at(码点序号)外全部字节域(与 len/s[i] 同域);string 不可变,
         // 方法全部产出新串。
 
-        // init(v) -> string:转换构造,任意值经 format_value 可读渲染(与内建 str 同域同实现),
+        // init(v) -> string:转换构造,任意值经 stringify 可读渲染(与内建 str 同域同实现),
         // 覆盖槽 0(call_class 预置的临时 instance 被替换)。
         bool fn_init(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
                 return vm.arity_error(argc, 1);
             }
-            slots[0] = Value::from_obj(new_string(vm.gc(), format_value(slots[1])));
+            slots[0] = Value::from_obj(new_string(vm.gc(), stringify(slots[1])));
             return true;
         }
 

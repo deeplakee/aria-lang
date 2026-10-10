@@ -1,4 +1,4 @@
-// 钉住：println--渲染走 format_value 加换行、0/1 参、返 nil、可作一等值传参。
+// 钉住：println--渲染走 stringify 加换行、0/1 参、返 nil、可作一等值传参。
 println(42);
 println(-7);
 println(0);
@@ -7,7 +7,7 @@ println(nil);
 println(true);
 println(false);
 println(1.5);
-println(3.0);            # 渲染经 format_value：保 .0
+println(3.0);            # 渲染经 stringify：保 .0
 println([1, "two", nil]);
 println({"k": 1});
 

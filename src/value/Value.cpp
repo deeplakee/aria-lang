@@ -69,7 +69,7 @@ namespace aria {
         return value.type_name();
     }
 
-    String format_value(const Value value) {
+    String stringify(const Value value) {
         switch (value.type()) {
             case Value::Type::Nil:
                 return "nil";
@@ -85,7 +85,7 @@ namespace aria {
         UNREACHABLE();
     }
 
-    String format_value_debug(const Value value) {
+    String repr(const Value value) {
         switch (value.type()) {
             case Value::Type::Nil:
                 return "nil";

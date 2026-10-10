@@ -45,7 +45,7 @@ paths:
   - load 族 `Opt<Value>`：nullopt ⟺ 已 fail；somed 才是命中，命中 nil 亦 somed。
   - store 族 `bool`：false ⟺ 已 fail；失败出口经 `FailSignal` 哨兵一行化--override 一律 `return vm.fail(...)`，哨兵按站点返回类型转 nullopt / false / nullptr。
 - 该模型与 native fn 的 bool 契约、`call_value` 族同构，对齐 CPython PyErr 模型。
-- **消息文案由最知道语境的一方就地烘焙**（同 CPython listobject.c）：各 override 用自身细节拼（渲染值走非重入 `format_value_debug`，不用可重载 `to_string`，防未来语言级 `__str__` 重入）。
+- **消息文案由最知道语境的一方就地烘焙**（同 CPython listobject.c）：各 override 用自身细节拼（渲染值走非重入 `repr`，不用可重载 `to_string`，防未来语言级 `__str__` 重入）。
 - 组合场景（实例委托类链、super 站点）直接**委托协议** `ObjClass::load_field`--命中值原样回传，miss 的类措辞 fail 随协议传播（成员表在类链上，文案随宿主，组合方不重复烘焙）。
 - 契约纪律：至多 fail 一次、fail 后立即返回；调用方（VM）保证接收者「栈即根」（peek 不弹）跨协议内 GC 点。
 - 基类默认体一律「本类型不支持」，fail 后返失败信号。

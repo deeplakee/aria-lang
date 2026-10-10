@@ -251,7 +251,7 @@ TEST(CodeGen, Literals) {
     auto s = run_value("return \"hello\";");
     ASSERT_TRUE(s.has_value());
     ASSERT_TRUE(s->is_obj());
-    EXPECT_EQ(aria::format_value(*s), "hello");
+    EXPECT_EQ(aria::stringify(*s), "hello");
 }
 
 TEST(CodeGen, UnaryMinusAndNot) {
@@ -1275,23 +1275,23 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 
 TEST(CodeGen, BuiltinType) {
     // type(x) -> 值的精确类型名（PascalCase）。Int/Bool/Nil/String 各一。
-    EXPECT_EQ(aria::format_value((*run_value("return type(42);"))), "Int");
-    EXPECT_EQ(aria::format_value((*run_value("return type(true);"))), "Bool");
-    EXPECT_EQ(aria::format_value((*run_value("return type(nil);"))), "Nil");
-    EXPECT_EQ(aria::format_value((*run_value("return type(\"x\");"))), "String");
+    EXPECT_EQ(aria::stringify((*run_value("return type(42);"))), "Int");
+    EXPECT_EQ(aria::stringify((*run_value("return type(true);"))), "Bool");
+    EXPECT_EQ(aria::stringify((*run_value("return type(nil);"))), "Nil");
+    EXPECT_EQ(aria::stringify((*run_value("return type(\"x\");"))), "String");
 }
 
 TEST(CodeGen, BuiltinStr) {
-    // str(x) -> 可读渲染（复用 format_value）。
-    EXPECT_EQ(aria::format_value((*run_value("return str(nil);"))), "nil");
-    EXPECT_EQ(aria::format_value((*run_value("return str(42);"))), "42");
-    EXPECT_EQ(aria::format_value((*run_value("return str(true);"))), "true");
+    // str(x) -> 可读渲染（复用 stringify）。
+    EXPECT_EQ(aria::stringify((*run_value("return str(nil);"))), "nil");
+    EXPECT_EQ(aria::stringify((*run_value("return str(42);"))), "42");
+    EXPECT_EQ(aria::stringify((*run_value("return str(true);"))), "true");
 }
 
 TEST(CodeGen, BuiltinPrintln) {
     // println 是内建函数，可作一等值传参；输出渲染钉在语料 08_builtins/println_builtin
     // （配 .out 逐字节比对），此处只钉可取值与身份。
-    EXPECT_EQ(aria::format_value((*run_value("return type(println);"))), "NativeFn");
+    EXPECT_EQ(aria::stringify((*run_value("return type(println);"))), "NativeFn");
 }
 
 TEST(CodeGen, BuiltinPrintlnArityCheck) {
@@ -1397,7 +1397,7 @@ TEST(CodeGen, ThrowStringCaughtBindsValue) {
     auto out = run_value("try { throw \"boom\"; } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
     // 渲染即串内容，证绑的是 ObjString 原值（非消息串）。
-    EXPECT_EQ(aria::format_value(*out), "boom");
+    EXPECT_EQ(aria::stringify(*out), "boom");
 }
 
 TEST(CodeGen, UncaughtUserThrowIsUncaughtException) {
@@ -1438,7 +1438,7 @@ TEST(CodeGen, NativeFailCaughtByTry) {
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_value("try { return type(); } catch (e) { return str(e); }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: WrongArity function expects 1 argument, got 0");
+    EXPECT_EQ(aria::stringify(*out), "Runtime: WrongArity function expects 1 argument, got 0");
 }
 
 TEST(CodeGen, NestedTryInnerCatches) {
@@ -1460,7 +1460,7 @@ TEST(CodeGen, CrossFrameCatch) {
     // 截值栈到 frame.slots + stack_depth，异常值 push 落 catch 参数槽。
     auto out = run_value("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "cross");
+    EXPECT_EQ(aria::stringify(*out), "cross");
 }
 
 TEST(CodeGen, DeepCallChainUnwind) {
@@ -2112,8 +2112,8 @@ return n;
 
 // 空字面量与嵌套:嵌套字符串走 debug 形(带引号),嵌套 list 递归渲染。
 TEST(CodeGen, ListLiteralEmptyAndNested) {
-    EXPECT_EQ(aria::format_value(*run_value("return [];")), "[]");
-    EXPECT_EQ(aria::format_value(*run_value(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
+    EXPECT_EQ(aria::stringify(*run_value("return [];")), "[]");
+    EXPECT_EQ(aria::stringify(*run_value(R"(return [1, [2, "ab"], nil];)")), "[1, [2, \"ab\"], nil]");
 }
 
 // == 按内容递归;=== 恒指针;自比较 == 快速路径。
@@ -2130,7 +2130,7 @@ TEST(CodeGen, ListEqualityContentVsIdentity) {
 // list 作一等值:实参传递、经变量返回、跨 GC 点存活(run_source 开 stress GC,
 // 元素串经 MAKE_LIST「栈即根」+ ObjList::trace 级联保命)。
 TEST(CodeGen, ListPassingAndGcStress) {
-    EXPECT_EQ(aria::format_value(*run_value(R"(
+    EXPECT_EQ(aria::stringify(*run_value(R"(
 fun echo(xs) { return xs; }
 var kept = ["aaa", ["bbb", "ccc"]];
 return echo(kept);
@@ -2237,7 +2237,7 @@ TEST(CodeGen, ErrIndexKeyTypeMismatch) {
 TEST(CodeGen, IndexErrorCaughtByTry) {
     auto out = run_value(R"(try { return [1][9]; } catch (e) { return str(e); })");
     ASSERT_TRUE(out.has_value()) << out.error().message();
-    EXPECT_EQ(aria::format_value(*out), "Runtime: IndexOutOfBounds list index 9 out of range");
+    EXPECT_EQ(aria::stringify(*out), "Runtime: IndexOutOfBounds list index 9 out of range");
 }
 
 // 互环 == 判等(余归纳:同对重遇视为相等,两环展开同一棵无限树);EQUAL 弹栈后操作数
@@ -2250,12 +2250,12 @@ a[0] = b;
 b[0] = a;
 return a == b;
 )");
-    EXPECT_EQ(aria::format_value(*out), "true");
+    EXPECT_EQ(aria::stringify(*out), "true");
 }
 
 // 写入新鲜对象跨 GC 点(run_source 开 stress GC,元素 list 经值栈/对象图级联保命)。
 TEST(CodeGen, IndexWriteGcStress) {
-    EXPECT_EQ(aria::format_value(*run_value(R"(
+    EXPECT_EQ(aria::stringify(*run_value(R"(
 var xs = [[1], [2]];
 xs[0] = ["aa", xs[1]];
 return xs;

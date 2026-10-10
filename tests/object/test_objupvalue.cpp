@@ -111,8 +111,7 @@ TEST(ObjUpvalue, TraceMarksClosedValue) {
     std::ignore = new_string(gc, "trigger"); // stress collect:closed 值经 uv->trace 存活
     EXPECT_FALSE(uv->is_open());
     EXPECT_NE(uv->value_slot(), nullptr);
-    EXPECT_EQ(uv->value_slot()->as_obj()->as<ObjString>()->view(),
-              "closed payload long string beyond sso pad");
+    EXPECT_EQ(uv->value_slot()->as_obj()->as<ObjString>()->view(), "closed payload long string beyond sso pad");
 }
 
 // 无根 upvalue 被 sweep(壳回收)。
@@ -130,5 +129,5 @@ TEST(ObjUpvalue, DebugRenderIsStableText) {
     GC    gc;
     Value v  = Value::nil_val();
     auto  uv = new_upvalue(gc, &v);
-    EXPECT_EQ(aria::format_value_debug(Value::from_obj(uv)), "<upvalue>");
+    EXPECT_EQ(aria::repr(Value::from_obj(uv)), "<upvalue>");
 }

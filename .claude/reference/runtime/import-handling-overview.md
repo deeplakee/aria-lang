@@ -48,8 +48,8 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp` 的 `import_instruction` |
-| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（匿名命名空间） |
-| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/AriaVM.cpp` `run_import` |
+| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/Eval.cpp`（匿名命名空间） |
+| ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/Eval.cpp` `Eval::run_import` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 成功才入表 -> `entry` 现场包空闭包经 `call_closure` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp`（`source_roots()`/`set_source_roots`）、`AriaVM.cpp` 构造与 `run()` |
 | `ObjModule` 对象 + `dir_`/`name_`/`abs_path()` | 已实现（`dir_` 指针恒非空、内容可空，`new_module` 默认 cwd；无加载状态字段，事实源 = 模块表成员资格） | `src/object/ObjModule.hpp`、`.cpp` |
@@ -117,13 +117,13 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ### IMPORT 操作码执行
 
-`src/runtime/AriaVM.cpp` 主循环 `case OpCode::IMPORT` 收口于私有成员
-`run_import(const ObjString* path)`
+`src/runtime/Eval.cpp` 主循环 `case OpCode::IMPORT` 收口于私有成员
+`Eval::run_import(AriaVM& vm, const ObjString* path)`
 （bool 契约同 call_* 族：false ⟺ 载荷已 raise，unwind 留 dispatch_loop 调用点），步骤：
 
 1. case 站点 `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path` 传入（良构前提是常量
    必为 intern 的 `ObjString*`）。
-2. 以导入方帧模块 `abs_path()`（`run_import` 内经 `current_->frames().top()` 自取）为当前模块
+2. 以导入方帧模块 `abs_path()`（`Eval::run_import` 内经 `vm.current_->frames().top()` 自取）为当前模块
    绝对路径，传 `resolve_module` 解析：
    - **失败**（`nullopt`，无源根命中）：经 `fail` 报 `ModuleNotFound`
      （`"module not found: '<path>'"`，带 IMPORT 站点位置）。
@@ -185,8 +185,8 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 站点位置，与 resolve_module 失败形态统一），编译期 Error 就地 `new_exception` 原样装配箱透传
 （含被导入文件位置，不重烘）。
 
-**根安全**：path 经常量池根；`canonical_path`(intern weak root) 经 `run_import` 的
-`gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 new_* 分配根化；`modules_.set` 等 rehash
+**根安全**：path 经常量池根；`canonical_path`(intern weak root) 经 `Eval::run_import` 的
+`vm.gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 new_* 分配根化；`modules_.set` 等 rehash
 走 trivial 分配不触 GC（GC 核心不变式），不是守卫承重点；`module`/`entry` 经 `modules_`+`module->entry_` 根可达。
 
 **后续缺口**：目录包 `index.aria` 查找、相对导入越出源根的检测（`weakly_canonical` 折叠 `..`

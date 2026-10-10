@@ -2,16 +2,16 @@
 #define ARIA_OPCODE_PROFILE_HPP
 
 // dispatch_loop 取指行的唯一接入点(常态构建展开式与原取指表达式逐字一致;探针构建展开为
-// 成员 opcode_profiler_.fetch(*this, frame),AriaVM.cpp 除该行外零探针代码)。
+// vm.opcode_profiler_.fetch(vm, frame),Eval.cpp 除该行外零探针代码)。
 #ifndef ARIA_OPCODE_PROFILE
 
     #define ARIA_FETCH_OPCODE(frame) static_cast<OpCode>(read_u8(frame))
 
 #else
 
-    // 探针构建取指:仅可在 AriaVM 成员函数内展开(依赖成员 opcode_profiler_);fetch 按 read_u8
-    // 同款语义取走 opcode 字节并返回,操作数消费仍归各 case。
-    #define ARIA_FETCH_OPCODE(frame) opcode_profiler_.fetch(*this, frame)
+    // 探针构建取指:仅可在以 vm 为参数的 Eval 驱动函数内展开(经宿主友元取探针成员);fetch 按
+    // read_u8 同款语义取走 opcode 字节并返回,操作数消费仍归各 case。
+    #define ARIA_FETCH_OPCODE(frame) vm.opcode_profiler_.fetch(vm, frame)
 
     #include "bytecode/code.hpp"
     #include "common.hpp"

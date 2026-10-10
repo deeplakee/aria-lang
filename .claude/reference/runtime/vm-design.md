@@ -21,6 +21,8 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
+**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 单友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,以 `AriaVM& vm` 为参数、上下文一律自 `vm.current_` 取;AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
+
 ## 3. 结构草图
 
 ```cpp

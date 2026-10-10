@@ -25,9 +25,6 @@ namespace aria {
     class ObjNativeFn;
     class ObjString;
 
-    // 前置声明(run_binary_numeric<Op> 模板形参用):免头文件拖入 bytecode 树,定义处 .cpp 已含。
-    enum class OpCode : u8;
-
     // fail 的返回哨兵,失败出口惯用法一行 `return vm.fail(...);`。**Opt<T> 转换只对「不可由 bool
     // 构造」的 T 成立**--标量经 operator bool() 会构造出已初始化的 0/false 把 fail 吞成成功,
     // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写 slots[0])。
@@ -56,9 +53,10 @@ namespace aria {
     // 单趟拼接,产出单次分配移交。GC:扫描与拼接零 GC 点,唯一 GC 点在产出分配,元素由调用方保活。
     ObjString* concat_values(GC& gc, Span<const Value> values, StringView sep);
 
-    // 解释器:驱动 ObjMovement 执行字节码,循环状态全取自 *current_;GC 根经 tracer 注册进自有
-    // gc_(gc_ 声明居首,析构逆序下 tracer 与成员同生共死)。运行时错误统一 raise 入寄存器、
-    // 经 unwind 查 CodeUnit 异常记录表派发。
+    // 解释器宿主:持 GC、服务表(模块表/builtins/寄存器组/常量串表)、当前执行上下文与执行入口;
+    // 字节码驱动住 eval 层(Eval),经友元缝取宿主内部。GC 根经 tracer 注册进自有 gc_(gc_ 声明
+    // 居首,析构逆序下 tracer 与成员同生共死)。运行时错误统一 raise 入寄存器、经 unwind 查
+    // CodeUnit 异常记录表派发。
     class AriaVM {
     public:
         AriaVM();
@@ -70,6 +68,10 @@ namespace aria {
         // tracer 捕 [this]),move 后不重绑即悬垂;就地构造或以 unique_ptr 持有。
         AriaVM(AriaVM&&)            = delete;
         AriaVM& operator=(AriaVM&&) = delete;
+
+        // eval 层驱动引擎:主循环/指令执行体/调用机器/异常派发经友元访问宿主内部
+        //(current_ 与各服务表)。
+        friend class Eval;
 
         // 协程模块方法面宿主:四原语经友元访问 check_arity/prepare_call_args/current_ 私有面。
         friend class CoroutineModule;
@@ -206,10 +208,6 @@ namespace aria {
         // 单字符常量表槽数(字节域全值域容量:值域 0-255,容量 = 上限 + 1)。
         static constexpr usize kCharCacheSlots = 256;
 
-        // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
-        // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。
-        bool dispatch_loop();
-
         // VM 重入口(闭包形态):closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上;
         // 契约与失败合同同 execute_call。重入专用:仅可在执行中的驱动内调(零帧调用 debug 断言炸)。
         Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
@@ -226,11 +224,6 @@ namespace aria {
         // 返回后写返回槽恒经 peek 重寻址(重入期间值栈可能搬迁)。
         Opt<Value> execute_call(Value slot0, ObjClosure* closure, Span<const Value> args);
 
-        // IMPORT 执行体:resolve_module -> intern 后 guard 根化查 modules_(命中复用即循环导入),
-        // 未命中 load_module 后包闭包进帧 run-once;两分支栈效应统一 [..., module]。bool 契约同
-        // call_* 族(false ⟺ 载荷已 raise:解析/加载/进帧),仅限 dispatch_loop 驱动期调用。
-        bool run_import(const ObjString* path);
-
         // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译 -> **编译成功才入表**,
         // 返已 set_entry 的模块,不执行模块体。nullptr ⟺ 载荷已 raise;失败不留表项,同路径重试
         // 重加载。仅限 dispatch_loop 驱动期调用,canonical_path 须调用方已根化(根化跨的是本层
@@ -240,15 +233,6 @@ namespace aria {
         // interpret 共用尾段:编译 + 执行,失败渲染 stderr 并按失败阶段分类(编译期 -> CompileError,
         // run 期 -> RuntimeError -- 被导入模块编译错经异常通道传播、可被 try/catch 捕获,故非 CompileError)。
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
-
-        // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用
-        // 钩子 __call__ 取实现后递归分发,非对象直接报 CallNonCallable。**call_* 族统一契约:
-        // false/nullptr ⟺ 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 传播。
-        bool call_value(Value callee, u8 argc);
-
-        // 闭包调用进帧单点(call_value 与 run 共用):元数检查 -> 帧余量检查 -> 实参整形
-        // 后进帧。失败 WrongArity/StackOverflow。
-        bool call_closure(ObjClosure* obj, u8 argc);
 
         // call_closure 辅助:元数检查(纯读无分配)。普通函数区间 [min_arity, arity](差额为带
         // 默认值参数),有缺省报区间文案、无缺省报单数;varargs 只保下界,多余实参由
@@ -261,22 +245,11 @@ namespace aria {
         // 无多余实参铸空表 -- rest 恒为 list 非 nil)。
         u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
-        // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
-        bool call_native(const ObjNativeFn* obj, u8 argc);
-
         // 协程切换原语对(切换序列唯一实现处,状态/链/换指不再由调用方手拼):leave_coroutine 收敛
         // yield / RETURN 完成 / 未捕获跳链三个回切方向;让位方的 reset/载荷善后归调用方。
         void enter_coroutine(ObjMovement* coroutine);
 
         void leave_coroutine(ExecState departing_state);
-
-        // 类实例化:new_instance 为唯一 GC 点,建成即槽 0 原位换实例(即新帧 this),余下交
-        // call_value 通用分发。
-        bool call_class(ObjClass* obj, u8 argc);
-
-        // 绑定方法调用:槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动),余下交
-        // call_value 分发。方法值无需守卫:覆写后经类表槽/缓存可达。
-        bool call_bound_method(const ObjBoundMethod* obj, u8 argc);
 
         // 值寄存器组 bootstrap 编排(ctor 一次调用):逐格初始化全部 VM 单例对象;须在 ctor 构造
         // 临界区(GC 挂起)内调用,创建免守卫。
@@ -298,119 +271,6 @@ namespace aria {
         // stdlib 源根。
         void init_source_roots();
 
-        // 按 Op 取本对象的算子实现(编译期分发到 Object::op_*_impl,Op 由调用点穷举);nullopt ⟺
-        // 已 fail(措辞随宿主)。模板成员定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        Opt<Value> get_obj_binary_op_impl(Object* obj);
-
-        // 弹 2 算 1 的二元数值运算入口(9 个算术/比较指令共用,Op 由调用点穷举实例化):类型守卫后
-        // 按域分流,双 Int 走 run_binary_int、任一 F64 升浮点走 run_binary_f64(两域失败语义不同);
-        // 定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        bool run_binary_numeric();
-
-        // 整数域九算子(结果压栈):除/模零是域特有失败,就地 fail;% 为 C++ 语义。
-        template<OpCode Op>
-        [[nodiscard]]
-        bool run_binary_int(i64 lhs, i64 rhs);
-
-        // 浮点域九算子(结果压栈):按 IEEE,除零得 inf/nan、% 走 fmod,无失败路径。
-        template<OpCode Op>
-        [[nodiscard]]
-        bool run_binary_f64(f64 lhs, f64 rhs) const;
-
-        // 九个二元算子的执行体(算术/比较 block 唯一入口):两侧均 String 走 run_string_binary 就地
-        // 完成;其余非对象左值委托 run_binary_numeric,对象左值取算子实现后交 call_value(调用区
-        // [lhs, rhs] 即 [this, arg1])。peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配。
-        template<OpCode Op>
-        bool run_binary_operator();
-
-        // string 快路径派发门(lhs 非空,调用方已判 is_obj;白名单收在本方法:ADD 与四个字序比较,
-        // 其余算子恒 false):两侧均 String 交 run_string_binary 就地完成;返回 true = 已派发,
-        // false = 不适用落原路(非失败)。定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        bool try_string_fast_dispatch(Object* lhs);
-
-        // string 算子快路径(白名单收在 try_string_fast_dispatch):[lhs, rhs] -> [r],就地拼接/按
-        // 无符号字节序比较,语义与 StringClass 对应钩子逐位一致;定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        bool run_string_binary(ObjString* lhs, ObjString* rhs);
-
-        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负,对象左值取 __neg__ 实现后调用(一元恒零
-        // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
-        bool run_negate();
-
-        // field 族指令执行体;bool 契约同 call_value(对象协议失败由 override 内 vm.fail 就地烘焙,
-        // 非对象守卫由执行体 fail),peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(栈即根)。
-
-        // LOAD_FIELD 执行体:[obj] -> [v],经 load_field_bound 协议解析写回原槽;非对象守卫文案
-        // 留执行体,对象 miss 文案由协议 override 烘焙。
-        bool run_load_field(ObjString* name);
-
-        // STORE_FIELD 执行体:[obj, v] -> [v](完成时单槽下移留 v -- 赋值表达式约定)。经
-        // Object::store_field 协议。
-        bool run_store_field(ObjString* name);
-
-        // THIS 对执行体:this 取顶帧槽 0,this 不经值栈与 obj.m 同走 field 协议。槽 0 非实例 = this
-        // 被自由调用/类直调掏空(经 call_closure 的写法不可达),响亮 TypeMismatch 兜底(帧形
-        // 不变式只对 call_closure 成立)。
-        bool run_load_this_field(ObjString* name);
-
-        // 写入执行体:[v] -> [v](peek-store 经 this 的 store_field,实例字段动态即创建)。非实例
-        // 兜底报错同读取执行体,文案用 field assignment 形态。
-        bool run_store_this_field(ObjString* name);
-
-        // PREPARE_METHOD 执行体(两段式第一段):[recv] -> [recv, target]。接收者在栈顶、解析
-        // 先于实参求值;待调值压栈跨指令存活(栈即根),由 CALL_METHOD 收口。
-        bool run_prepare_method(ObjString* name);
-
-        // CALL_METHOD 执行体(两段式第二段):[recv, target, a1..aN] -> [r],实参整体下移一格补掉
-        // 待调值占的那格得调用区 [recv, a1..aN](槽 0 = receiver),交 call_value 统一分发;
-        // 纯调用,不再解析。
-        bool run_call_method(u8 argc);
-
-        // RETURN 执行体:[..., ret] -> 取返回值后弹帧(关本帧区间开指,值迁入各自 upvalue 自持),
-        // 按弹后帧深分流(出口边界 = current_->ret_frame())。返回 true = 本循环结束(递归出口值
-        // 落调用区槽 0 / 主顶层返回值留栈顶);false = 循环继续(帧间返回写回 callee 槽 / 协程
-        // 完成切换)。
-        bool run_return();
-
-        // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(编译器不变式,ASSERT 把关),
-        // 自父类沿链读穿透、不含 defining 自身;命中方法闭包则绑 this=帧槽 0 压栈,其余原值直读。
-        // 全链 miss 为语言可达错误,经协议 fail。
-        bool run_load_super_field(ObjString* name);
-
-        // 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族
-
-        // list 下标快路径派发门(target 非空,调用方已判 is_obj):接收者 tag 为 LIST 且键为整数时
-        // 免 load_index 虚派发直取,键解析与虚路径同走 resolve_index;返回 true = 已完成,false =
-        // 不适用落原路(非失败),报错文案单一事实源留 ObjList::load_index。无分配无 GC 点。
-        bool try_list_load_fast_dispatch(Object* target, Value idx) const;
-
-        // list 下标写快路径派发门:契约同 try_list_load_fast_dispatch,界内写槽后值下移两格
-        // ([obj, idx, v] -> [v]);报错文案单一事实源留 ObjList::store_index。
-        bool try_list_store_fast_dispatch(Object* target, Value idx, Value value) const;
-
-        // LOAD_INDEX 执行体:[obj, idx] -> [v],经 load_index 协议写回 obj 槽再弹 idx;非对象守卫
-        // 文案留执行体,对象侧越界/键类型文案由 override 就地烘焙。
-        bool run_load_index();
-
-        // STORE_INDEX 执行体:[obj, idx, v] -> [v](值下移两格留 v,peek-store --赋值表达式约定),
-        // 经 store_index 协议。
-        bool run_store_index();
-
-        // range 构造指令执行体(MAKE_RANGE):契约同 field 族
-
-        // MAKE_RANGE 执行体:有界 [from, to] -> [range]、无上界 [from] -> [range]。端点须为整数,
-        // 非整数 fail TypeMismatch(静态文案不插端点值);端点 peek 在栈跨 new_range 的
-        // maybe_collect(栈即根),铸完 drop 再 push。
-        bool run_make_range(u8 flags);
-
-        // MAKE_CLASS 执行体:[super] -> [class] 原地写回。super 须类值、且非内建容器五类
-        //(iterator/list/map/string/range,Exception 与 Object 可作 super),否则 fail TypeMismatch;
-        // super peek 在栈跨 new_class 的 maybe_collect(栈即根),建成原地写回槽发布。
-        bool run_make_class(ObjString* name);
-
         // 取走 *current_ 挂起载荷并拆 (码, 烘焙消息) 两件:ObjException 直取自身码与消息
         //(re-throw 保码),其余载荷兜底 UncaughtException;消费点一律 Error::from_baked 物化 --
         // Error 只在边界成型。
@@ -421,12 +281,6 @@ namespace aria {
         // 清场,烘焙成自足 Error。仅限 dispatch_loop 失败出口后调用(帧链活着,载荷在寄存器)。
         [[nodiscard]]
         Error rebake_uncaught_error() const;
-
-        // 异常派发:自最内帧向下按 last_ip 遍查本上下文各帧 CodeUnit 异常记录表,命中回退派发
-        //(不动帧栈/值栈)。搜索边界 = current_->ret_frame()(随上下文走)。返回 true = 已派发;
-        // false = 边界之上全帧未命中,载荷留寄存器(嵌套边界交外层续搜 / 链上已转投恢复者 /
-        // 链根未捕获善后归调用方)。命中可能在多跳之后,current_ 已非进入时的上下文。
-        bool unwind();
 
         GC gc_; // 自有分配器(VM 持有,每个 VM 一个 GC)
 

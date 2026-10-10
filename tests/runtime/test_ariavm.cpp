@@ -1298,7 +1298,7 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
     EXPECT_EQ(out->as_int(), 42);
 }
 
-// 原生函数侧信道报错:vm.fail 写寄存器,run() 取出作未捕获 Error 返回。
+// 原生函数侧信道报错:ctx.fail 写寄存器,run() 取出作未捕获 Error 返回。
 TEST_F(AriaVMStress, NativeFnSideChannelError) {
 
     auto&      gc     = vm.gc();
@@ -1321,7 +1321,7 @@ TEST_F(AriaVMStress, NativeFnSideChannelError) {
                              "  at <main> (<script>:1)");
 }
 
-// 原生函数元数自查:double 收 0 参时经 vm.fail 报 WrongArity。
+// 原生函数元数自查:double 收 0 参时经 ctx.fail 报 WrongArity。
 TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
 
     auto&      gc     = vm.gc();

@@ -28,7 +28,7 @@ namespace aria {
 
         // 闭包调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
         // 整形后进帧。失败 WrongArity/StackOverflow。
-        static bool call_closure(AriaVM& vm, ObjClosure* obj, u8 argc);
+        static bool call_closure(AriaExeContext& ctx, ObjClosure* obj, u8 argc);
 
         // 重入执行体(ObjMovement 重入口 execute_closure/execute_method 的共用体):压 slot0 与
         // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
@@ -43,18 +43,18 @@ namespace aria {
         // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用
         // 钩子 __call__ 取实现后递归分发,非对象直接报 CallNonCallable。**call_* 族统一契约:
         // false/nullptr ⟺ 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 传播。
-        static bool call_value(AriaVM& vm, Value callee, u8 argc);
+        static bool call_value(AriaExeContext& ctx, Value callee, u8 argc);
 
         // 类实例化:new_instance 为唯一 GC 点,建成即槽 0 原位换实例(即新帧 this),余下交
         // call_value 通用分发。
-        static bool call_class(AriaVM& vm, ObjClass* obj, u8 argc);
+        static bool call_class(AriaExeContext& ctx, ObjClass* obj, u8 argc);
 
         // 绑定方法调用:槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动),余下交
         // call_value 分发。方法值无需守卫:覆写后经类表槽/缓存可达。
-        static bool call_bound_method(AriaVM& vm, const ObjBoundMethod* obj, u8 argc);
+        static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, u8 argc);
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
-        static bool call_native(AriaVM& vm, const ObjNativeFn* obj, u8 argc);
+        static bool call_native(AriaExeContext& ctx, const ObjNativeFn* obj, u8 argc);
 
         // 按 Op 取本对象的算子实现(编译期分发到 Object::op_*_impl,Op 由调用点穷举);nullopt ⟺
         // 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
@@ -98,7 +98,7 @@ namespace aria {
         // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
         static bool run_negate(AriaVM& vm);
 
-        // field 族指令执行体;bool 契约同 call_value(对象协议失败由 override 内 vm.fail 就地烘焙,
+        // field 族指令执行体;bool 契约同 call_value(对象协议失败由 override 内 ctx.fail 就地烘焙,
         // 非对象守卫由执行体 fail),peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(栈即根)。
 
         // LOAD_FIELD 执行体:[obj] -> [v],经 load_field_bound 协议解析写回原槽;非对象守卫文案

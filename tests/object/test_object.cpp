@@ -63,7 +63,7 @@ TEST(ObjectTryAs, ConstOverload) {
     EXPECT_EQ(o->try_as<ObjFunction>(), nullptr);
 }
 
-// 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 vm.fail 入
+// 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 ctx.fail 入
 // 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
 // 防将来基类签名漂移。探针取当下仍未 override 的类型:string 探 store_field(ObjString 无
 // store_field override)、Module 探下标(Module override 了 load/store_field)。算子与可调用
@@ -71,7 +71,7 @@ TEST(ObjectTryAs, ConstOverload) {
 // Object::op_call_impl,由 call_value 的 switch default 臂消费),故各自的基类默认不在此钉。
 
 TEST(ObjectProtocolDefaults, MemberIndexDefaults) {
-    AriaVM vm; // 报错经 vm.fail 入挂起寄存器
+    AriaVM vm; // 报错经 ctx.fail 入挂起寄存器
     auto&  gc    = vm.gc();
     auto   s     = new_string(gc, "hello");
     auto   guard = gc.make_guard(s);

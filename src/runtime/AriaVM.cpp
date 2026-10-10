@@ -254,7 +254,7 @@ namespace aria {
 
         // 首次进入(最外执行):出口边界恒零,弹空帧栈即出口。
         current_->push(Value::from_obj(closure)); // 入栈即根
-        Eval::call_closure(*this, closure, 0);
+        Eval::call_closure(*current_, closure, 0);
         Result<Value, Error> result =
                 Eval::dispatch_loop(*this) ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
@@ -262,18 +262,6 @@ namespace aria {
         // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口。
         current_->reset();
         return result;
-    }
-
-    FailSignal AriaVM::arity_error(const usize argc, const usize expected) {
-        return current_->arity_error(argc, expected);
-    }
-
-    FailSignal AriaVM::arity_error_range(const usize argc, const usize low, const usize high) {
-        return current_->arity_error_range(argc, low, high);
-    }
-
-    FailSignal AriaVM::arity_error_at_least(const usize argc, const usize low) {
-        return current_->arity_error_at_least(argc, low);
     }
 
     void AriaVM::enter_coroutine(ObjMovement* coroutine) {
@@ -300,14 +288,15 @@ namespace aria {
         // 1. 读盘(resolve_module 已 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src) {
-            return fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error", import_specifier);
+            return current_->fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",
+                                  import_specifier);
         }
         SourceFile source = std::move(*loaded_src);
 
         // 2. 派生模块身份(name/dir):abs_path() 还原 canonical key。
         const auto [name_str, dir_str] = fs::module_name_and_dir(canonical_path->view());
         if (name_str.empty()) {
-            return fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
+            return current_->fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
         // 3. 建模块(工厂内部 intern name/dir)+ 自守跨编译/入表。

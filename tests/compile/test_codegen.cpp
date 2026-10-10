@@ -1433,7 +1433,7 @@ TEST(CodeGen, RethrowPreservesCode) {
 }
 
 TEST(CodeGen, NativeFailCaughtByTry) {
-    // 原生报错（type 收到错元数）同走异常通道：vm.fail 装箱 ObjException 入寄存器，CALL 失败
+    // 原生报错（type 收到错元数）同走异常通道：ctx.fail 装箱 ObjException 入寄存器，CALL 失败
     // 经 unwind 被捕获；str(e) 渲染完整消息（无位置前缀，位置只在未捕获跟踪行给出；
     // 原生不进帧时即 CALL 站点行，坑 #15）。
     auto out = run_value("try { return type(); } catch (e) { return str(e); }");

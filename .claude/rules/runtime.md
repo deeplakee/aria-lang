@@ -168,7 +168,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：String 类 bootstrap 末段的算子钩子缓存按名取串，读的就是本表）。
 - **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_object`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 一点（其 trace 经 `mark_object(previous_)` 沿 resume 链级联 -- 挂起协程的值栈/帧/寄存器皆根）。
 - 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单住 `ObjMovement::trace`（`Object` override；VM 根 tracer 只标 `current_` 一点，`previous_` 经 `mark_object` 入灰栈级联）。
-- **报错族转发**：`raise`/`fail`/`arity_error`×3 的真身住 ObjMovement 的 ctx 服务面（写当前上下文自己的寄存器），本类成员转发到 `*current_`（惯用法 `return vm.fail(...);` 不变）。公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
+- **报错口不在本类**：`raise`/`fail`/`arity_error`×3 真身住 ObjMovement 的 ctx 服务面（写当前上下文自己的寄存器），驱动与宿主内部站点一律 `vm.current_->fail(...)` / `current_->fail(...)` 拼写直达；本类留公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
 
 ## VM 异常通道（throw/catch）
 

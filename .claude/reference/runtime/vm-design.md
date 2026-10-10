@@ -148,7 +148,7 @@ bool str_native(AriaExeContext& ctx, Span<Value> slots) {
 }
 ```
 
-**落地**:类型 `src/object/ObjNativeFn.{hpp,cpp}`;寄存器 `Movement::pending_error_` + `raise/has_error/take_error/pending_error`;`AriaVM::raise`(void)转发到当前上下文、`fail` 返 `FailSignal` 哨兵(false/nullptr/nullopt 按调用点转换);`call_value` 加 `ObjNativeFn` 分支(bool 成败信号 + 槽 0 返回 + 寄存器载荷)。`tests/runtime/test_ariavm.cpp` 4 例(槽 0 返回 / 零元 / 侧信道错误 / 元数自查)。内置函数注册机制见 §7。
+**落地**:类型 `src/object/ObjNativeFn.{hpp,cpp}`;寄存器 `Movement::pending_error_` + `raise/has_error/take_error/pending_error`;报错族(`raise`/`fail`/`arity_error`×3)真身住 `Movement` 的 ctx 服务面(写当前上下文寄存器,`fail` 返 `FailSignal` 哨兵,false/nullptr/nullopt 按调用点转换);`call_value` 加 `ObjNativeFn` 分支(bool 成败信号 + 槽 0 返回 + 寄存器载荷)。`tests/runtime/test_ariavm.cpp` 4 例(槽 0 返回 / 零元 / 侧信道错误 / 元数自查)。内置函数注册机制见 §7。
 
 ### 4.8 运行时位置标注与未捕获堆栈跟踪
 

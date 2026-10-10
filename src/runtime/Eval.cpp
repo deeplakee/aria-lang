@@ -58,21 +58,21 @@ namespace aria {
         // 内调用点,关闭时零开销;frame.ip 此时指向待执行指令,据此解码(仅读不推进 VM 的 ip)。
         // 栈渲染用 repr 不用 stringify:后者 Obj 走可重载虚 to_string,在
         // dispatch_loop 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。
-        [[maybe_unused]] void trace_execution(ObjMovement* ctx) {
-            auto&       frames = ctx->frames();
+        [[maybe_unused]] void trace_execution(AriaExeContext& ctx) {
+            const auto& frames = ctx.frames();
             const auto& frame  = frames.top();
             const auto  ip_off = static_cast<u32>(frame.ip - frame.unit->code.data());
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
-            io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(ctx),
+            io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(&ctx),
                       frame.module->to_string(), frame.closure->function()->to_string(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。
-            const String prefix = std::format("        stack[{}]: ", ctx->stack_size());
+            const String prefix = std::format("        stack[{}]: ", ctx.stack_size());
             usize        col    = prefix.size();
             String       stack_str;
-            for (Value* p = ctx->stack_base(); p < ctx->stack_top(); ++p) {
+            for (auto p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
                 const auto s = std::format("[ {} ]", repr(*p));
                 if (p < frame.slots) {
                     col += s.size();
@@ -145,52 +145,52 @@ namespace aria {
 
     } // namespace
 
-    bool Eval::call_value(AriaVM& vm, const Value callee, const u8 argc) {
+    bool Eval::call_value(AriaExeContext& ctx, const Value callee, const u8 argc) {
         if (!callee.is_obj()) {
-            return vm.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name(callee));
+            return ctx.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name(callee));
         }
 
         switch (Object* obj = callee.as_obj(); obj->type()) {
             case ObjType::CLOSURE:
-                return call_closure(vm, obj->as<ObjClosure>(), argc);
+                return call_closure(ctx, obj->as<ObjClosure>(), argc);
             case ObjType::NATIVE_FN:
-                return call_native(vm, obj->as<ObjNativeFn>(), argc);
+                return call_native(ctx, obj->as<ObjNativeFn>(), argc);
             case ObjType::CLASS:
-                return call_class(vm, obj->as<ObjClass>(), argc);
+                return call_class(ctx, obj->as<ObjClass>(), argc);
             case ObjType::BOUND_METHOD:
-                return call_bound_method(vm, obj->as<ObjBoundMethod>(), argc);
+                return call_bound_method(ctx, obj->as<ObjBoundMethod>(), argc);
             default: {
                 // 其余对象类型:取调用钩子 `__call__` 实现后调;调用区就地复用 [callee, a1..aN]
                 // 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
-                if (const auto target = obj->op_call_impl(*vm.current_)) {
-                    return call_value(vm, *target, argc);
+                if (const auto target = obj->op_call_impl(ctx)) {
+                    return call_value(ctx, *target, argc);
                 }
                 return false; // 载荷已在挂起错误寄存器
             }
         }
     }
 
-    bool Eval::call_class(AriaVM& vm, ObjClass* obj, const u8 argc) {
+    bool Eval::call_class(AriaExeContext& ctx, ObjClass* obj, const u8 argc) {
         // GC 点仅 new_instance,建成即原生写槽;init 按契约恒有值(非可调值由 call_value 报错)。
-        const auto instance     = new_instance(vm.gc_, obj);
-        vm.current_->peek(argc) = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
-        return call_value(vm, obj->init(), argc);
+        const auto instance = new_instance(ctx.gc(), obj);
+        ctx.peek(argc)      = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
+        return call_value(ctx, obj->init(), argc);
     }
 
-    bool Eval::call_bound_method(AriaVM& vm, const ObjBoundMethod* obj, const u8 argc) {
-        vm.current_->peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
-        return call_value(vm, obj->method(), argc);
+    bool Eval::call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, const u8 argc) {
+        ctx.peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
+        return call_value(ctx, obj->method(), argc);
     }
 
-    bool Eval::call_closure(AriaVM& vm, ObjClosure* obj, const u8 argc) {
+    bool Eval::call_closure(AriaExeContext& ctx, ObjClosure* obj, const u8 argc) {
         const auto fn = obj->function();
-        if (!vm.current_->check_arity(fn, argc)) {
+        if (!ctx.check_arity(fn, argc)) {
             return false;
         }
-        if (vm.current_->frames_full()) {
-            return vm.fail(ErrorCode::StackOverflow, "call frame stack overflow");
+        if (ctx.frames_full()) {
+            return ctx.fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
-        vm.current_->enter_frame(obj, vm.current_->prepare_call_args(fn, argc));
+        ctx.enter_frame(obj, ctx.prepare_call_args(fn, argc));
         return true;
     }
 
@@ -216,7 +216,7 @@ namespace aria {
             ctx.push(arg);
         }
         const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (call_closure(vm, closure, args.size()) && dispatch_loop(vm)) {
+        if (call_closure(ctx, closure, args.size()) && dispatch_loop(vm)) {
             ctx.leave_recursion(saved_ret);
             return ctx.pop(); // 闭包返回值
         }
@@ -224,21 +224,21 @@ namespace aria {
         return std::nullopt; // 错误值在寄存器
     }
 
-    bool Eval::call_native(AriaVM& vm, const ObjNativeFn* obj, const u8 argc) {
+    bool Eval::call_native(AriaExeContext& ctx, const ObjNativeFn* obj, const u8 argc) {
         // 同步调用不进帧。entered_ctx 是全部事后簿记(drop/寄存器断言)的锚点:切换型原生成功后
         // vm.current_ 已被换至对侧,drop 恒落 entered_ctx 使栈顶停在该调用的槽 0(切换模型下的
         // 预留结果槽)。「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。
         // 实参留栈到 drop:切换型原生执行全程实参皆调用者栈根。
-        const auto entered_ctx = vm.current_;
-        const auto slots       = Span<Value>{&vm.current_->peek(argc), static_cast<usize>(argc + 1)};
+        const auto entered_ctx = &ctx;
+        const auto slots       = Span<Value>{&ctx.peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
-        ASSERT(!vm.current_->has_error(), "pending error not cleared before native call");
+        ASSERT(!ctx.has_error(), "pending error not cleared before native call");
         if (obj->fn()(*entered_ctx, slots)) {
             ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
             entered_ctx->drop(argc);
             return true;
         }
-        ASSERT(vm.current_ == entered_ctx, "native fn returned false after switching vm.current_");
+        ASSERT(ctx.host().current_ == entered_ctx, "native fn returned false after switching vm.current_");
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
         ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
         return false;
@@ -255,7 +255,7 @@ namespace aria {
                 return true;
             }
             if (const auto target = get_obj_binary_op_impl<Op>(vm, obj)) {
-                return call_value(vm, *target, 1);
+                return call_value(*vm.current_, *target, 1);
             }
             return false;
         }
@@ -324,11 +324,11 @@ namespace aria {
         }
         if (operand.is_obj()) {
             if (const auto target = operand.as_obj()->op_negate_impl(*vm.current_)) {
-                return call_value(vm, *target, 0);
+                return call_value(*vm.current_, *target, 0);
             }
             return false;
         }
-        return vm.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
+        return vm.current_->fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
     }
 
     template<OpCode Op>
@@ -363,8 +363,8 @@ namespace aria {
         const Value b = vm.current_->pop();
         const Value a = vm.current_->pop();
         if (!(is_num(a) && is_num(b))) {
-            return vm.fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", op_symbol(Op),
-                           type_name(a), type_name(b));
+            return vm.current_->fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
+                                     op_symbol(Op), type_name(a), type_name(b));
         }
         if (a.is_int() && b.is_int()) {
             return run_binary_int<Op>(vm, a.as_int(), b.as_int());
@@ -384,12 +384,12 @@ namespace aria {
             vm.current_->push(Value::from_int(lhs * rhs));
         } else if constexpr (Op == OpCode::DIVIDE) {
             if (rhs == 0) {
-                return vm.fail(ErrorCode::DivisionByZero, "integer division by zero");
+                return vm.current_->fail(ErrorCode::DivisionByZero, "integer division by zero");
             }
             vm.current_->push(Value::from_int(lhs / rhs));
         } else if constexpr (Op == OpCode::MOD) {
             if (rhs == 0) {
-                return vm.fail(ErrorCode::ModuloByZero, "integer modulo by zero");
+                return vm.current_->fail(ErrorCode::ModuloByZero, "integer modulo by zero");
             }
             vm.current_->push(Value::from_int(lhs % rhs));
         } else if constexpr (Op == OpCode::GREATER) {
@@ -438,7 +438,8 @@ namespace aria {
         // 对象 miss 的文案由协议 override 烘焙。
         const Value obj = vm.current_->peek(0);
         if (!obj.is_obj()) {
-            return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
+            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
+                                     type_name(obj));
         }
         if (const auto result = obj.as_obj()->load_field_bound(*vm.current_, name)) {
             vm.current_->peek(0) = *result; // 写回原槽:[obj] -> [v]
@@ -451,7 +452,8 @@ namespace aria {
         // 契约见 Eval.hpp;非对象守卫同 run_load_field。
         const Value obj = vm.current_->peek(1);
         if (!obj.is_obj()) {
-            return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
+            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
+                                     type_name(obj));
         }
         if (!obj.as_obj()->store_field(*vm.current_, name, vm.current_->peek(0))) {
             return false; // 载荷已在寄存器
@@ -472,7 +474,8 @@ namespace aria {
             }
             return false;
         }
-        return vm.fail(ErrorCode::TypeMismatch, "field access requires an instance, got {}", type_name(this_value));
+        return vm.current_->fail(ErrorCode::TypeMismatch, "field access requires an instance, got {}",
+                                 type_name(this_value));
     }
 
     bool Eval::run_store_this_field(AriaVM& vm, ObjString* name) {
@@ -485,7 +488,8 @@ namespace aria {
             }
             return false;
         }
-        return vm.fail(ErrorCode::TypeMismatch, "field assignment requires an instance, got {}", type_name(this_value));
+        return vm.current_->fail(ErrorCode::TypeMismatch, "field assignment requires an instance, got {}",
+                                 type_name(this_value));
     }
 
     bool Eval::run_prepare_method(AriaVM& vm, ObjString* name) {
@@ -494,7 +498,8 @@ namespace aria {
         // 分配点是 miss 的 fail 装箱。解析先于实参求值。
         const Value recv = vm.current_->peek(0);
         if (!recv.is_obj()) {
-            return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
+            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
+                                     type_name(recv));
         }
         if (const auto target = recv.as_obj()->load_field(*vm.current_, name)) {
             vm.current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
@@ -512,7 +517,7 @@ namespace aria {
             vm.current_->peek(i) = vm.current_->peek(i - 1);
         }
         vm.current_->drop(1);
-        return call_value(vm, target, argc);
+        return call_value(*vm.current_, target, argc);
     }
 
     bool Eval::try_list_load_fast_dispatch(const AriaVM& vm, Object* target, const Value idx) {
@@ -547,7 +552,8 @@ namespace aria {
         const Value idx = vm.current_->peek(0);
         const Value obj = vm.current_->peek(1);
         if (!obj.is_obj()) {
-            return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
+            return vm.current_->fail(ErrorCode::TypeMismatch, "type {} does not support subscript access",
+                                     type_name(obj));
         }
         const auto target = obj.as_obj();
         if (try_list_load_fast_dispatch(vm, target, idx)) {
@@ -567,7 +573,8 @@ namespace aria {
         const Value idx   = vm.current_->peek(1);
         const Value obj   = vm.current_->peek(2);
         if (!obj.is_obj()) {
-            return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
+            return vm.current_->fail(ErrorCode::TypeMismatch, "type {} does not support subscript access",
+                                     type_name(obj));
         }
         const auto target = obj.as_obj();
         if (try_list_store_fast_dispatch(vm, target, idx, value)) {
@@ -587,7 +594,8 @@ namespace aria {
         if ((flags & kRangeFlagUnbounded) != 0) {
             const Value from = vm.current_->peek(0);
             if (!from.is_int()) {
-                return vm.fail(ErrorCode::TypeMismatch, "range bound must be an integer, got {}", type_name(from));
+                return vm.current_->fail(ErrorCode::TypeMismatch, "range bound must be an integer, got {}",
+                                         type_name(from));
             }
             const auto range = new_range(vm.gc_, from.as_int());
             vm.current_->drop(1);
@@ -598,8 +606,8 @@ namespace aria {
         const Value to        = vm.current_->peek(0);
         const Value from      = vm.current_->peek(1);
         if (!from.is_int() || !to.is_int()) {
-            return vm.fail(ErrorCode::TypeMismatch, "range bounds must be integers, got {} and {}", type_name(from),
-                           type_name(to));
+            return vm.current_->fail(ErrorCode::TypeMismatch, "range bounds must be integers, got {} and {}",
+                                     type_name(from), type_name(to));
         }
         const auto range = new_range(vm.gc_, from.as_int(), to.as_int(), exclusive);
         vm.current_->drop(2);
@@ -614,15 +622,16 @@ namespace aria {
             // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
             if (super == vm.list_class() || super == vm.map_class() || super == vm.string_class() ||
                 super == vm.range_class() || super == vm.iterator_class()) {
-                return vm.fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'",
-                               super->name()->view());
+                return vm.current_->fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'",
+                                         super->name()->view());
             }
             const auto klass     = new_class(vm.gc_, name, super);
             vm.current_->peek(0) = Value::from_obj(klass);
             return true;
         }
         // 非类值是语言可达错误,故 fail 而非 ASSERT。
-        return vm.fail(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(vm.current_->peek(0)));
+        return vm.current_->fail(ErrorCode::TypeMismatch, "superclass must be a class, got {}",
+                                 type_name(vm.current_->peek(0)));
     }
 
     bool Eval::run_load_super_field(AriaVM& vm, ObjString* name) {
@@ -724,7 +733,7 @@ namespace aria {
         // 相对分支取当前模块 dirname 作基;dir_ 可空时 abs_path 返空串,相对分支拒绝。
         const auto canonical_path_str = resolve_module(path->view(), frame.module->abs_path(), vm.source_roots_);
         if (!canonical_path_str) {
-            return vm.fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
+            return vm.current_->fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
         }
         const auto canonical_path = new_string(vm.gc_, *canonical_path_str);
         // guard 跨 load_module 的编译期分配(intern weak root 不保命;表 set 无 GC 点)。
@@ -743,7 +752,7 @@ namespace aria {
         const auto closure = new_closure(vm.gc_, entry);
         vm.current_->push(Value::from_obj(closure));
         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
-        return call_closure(vm, closure, 0);
+        return call_closure(*vm.current_, closure, 0);
     }
 
     bool Eval::dispatch_loop(AriaVM& vm) {
@@ -895,7 +904,7 @@ namespace aria {
                     if (entry == nullptr) {
                         entry = vm.builtins_.find(key); // 回退 vm.builtins_
                         if (entry == nullptr) {
-                            vm.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            vm.current_->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                             goto unwind_check;
                         }
                     }
@@ -909,7 +918,7 @@ namespace aria {
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
-                        vm.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        vm.current_->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                         goto unwind_check;
                     }
                     entry->value = vm.current_->peek(0);
@@ -1122,7 +1131,7 @@ namespace aria {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
                     ASSERT(vm.current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
-                    if (const Value callee = vm.current_->peek(argc); !call_value(vm, callee, argc)) {
+                    if (const Value callee = vm.current_->peek(argc); !call_value(*vm.current_, callee, argc)) {
                         goto unwind_check;
                     }
                     break;

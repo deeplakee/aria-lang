@@ -90,30 +90,6 @@ namespace aria {
             return current_;
         }
 
-        // 挂起错误侧信道:报错族真身住 ObjMovement(写本上下文自己的寄存器),本类成员转发到
-        // *current_。消息烘焙不含位置前缀(位置由 unwind 未捕获出口的逐帧 at 行给出);fail =
-        // raise + 恒返失败信号,[[nodiscard]] 强制 `return vm.fail(...);`。
-        template<typename... Args>
-        void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            current_->raise(code, fmt, std::forward<Args>(args)...);
-        }
-
-        template<typename... Args>
-        [[nodiscard]]
-        FailSignal fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            return current_->fail(code, fmt, std::forward<Args>(args)...);
-        }
-
-        // 元数报错唯一口(措辞家族见 ObjMovement):转发当前上下文。
-        [[nodiscard]]
-        FailSignal arity_error(usize argc, usize expected);
-
-        [[nodiscard]]
-        FailSignal arity_error_range(usize argc, usize low, usize high);
-
-        [[nodiscard]]
-        FailSignal arity_error_at_least(usize argc, usize low);
-
         // 模块表:键 = 规范路径 ObjString*(intern),值 = ObjModule*(均装箱为 Value)。
         [[nodiscard]]
         AriaHashTable& modules() noexcept {

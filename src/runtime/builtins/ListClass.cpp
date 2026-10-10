@@ -261,8 +261,7 @@ namespace aria {
             return true;
         }
 
-        // join(sep) -> string:负载在 concat_values(量长 reserve + 直写 + take_string 移交),
-        // 空 list 走同一路径得空串(sep 可为空串)。
+        // join(sep) -> string:以 sep 粘合各元素的字符串渲染;空 list 得空串,sep 可为空串。
         bool fn_join(AriaVM& vm, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {

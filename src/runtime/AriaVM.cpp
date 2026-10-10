@@ -180,29 +180,20 @@ namespace aria {
             return std::format("{} arguments", count);
         }
 
-        // 单元素渲染长度:串元素读长度字段零字节触碰,其余渲染后取长(双渲取舍见 concat_values 头注)。
-        usize rendered_size(const Value element) {
-            if (const auto str = try_as_obj<ObjString>(element)) {
-                return str->view().size();
-            }
-            return stringify(element).size();
-        }
-
-        // 单元素直写:串元素直写 view 零渲染,其余渲染后追加。
-        void append_rendered(StringBuilder& builder, const Value element) {
-            if (const auto str = try_as_obj<ObjString>(element)) {
-                builder.append(str->view());
-            } else {
-                builder.append(stringify(element));
-            }
-        }
-
     } // namespace
 
     ObjString* concat_values(GC& gc, const Span<const Value> values, const StringView sep) {
+        // 一遍渲染扫描:串元素只量长(填充时直写 view 零拷贝),其余渲染一次收进 parts(填充时按序取走)。
         usize total = 0;
+        auto  parts = List<String>{};
         for (const auto& element: values) {
-            total += rendered_size(element);
+            if (const auto str = try_as_obj<ObjString>(element)) {
+                total += str->view().size();
+            } else {
+                auto rendered = stringify(element);
+                total += rendered.size();
+                parts.push_back(std::move(rendered));
+            }
         }
         if (!values.empty()) {
             total += (values.size() - 1) * sep.size();
@@ -210,27 +201,16 @@ namespace aria {
 
         auto builder = StringBuilder{gc};
         builder.reserve(total);
-        bool first = true;
-        for (const auto& element: values) {
-            if (!first) {
+        usize part_index = 0;
+        for (usize index = 0; index < values.size(); ++index) {
+            if (index > 0) {
                 builder.append(sep);
             }
-            first = false;
-            append_rendered(builder, element);
-        }
-        return builder.take_string();
-    }
-
-    ObjString* concat_values(GC& gc, const Span<const Value> values) {
-        usize total = 0;
-        for (const auto& element: values) {
-            total += rendered_size(element);
-        }
-
-        auto builder = StringBuilder{gc};
-        builder.reserve(total);
-        for (const auto& element: values) {
-            append_rendered(builder, element);
+            if (const auto str = try_as_obj<ObjString>(values[index])) {
+                builder.append(str->view());
+            } else {
+                builder.append(parts[part_index++]);
+            }
         }
         return builder.take_string();
     }

@@ -7,7 +7,7 @@
 #include "object/ObjMap.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjMapIterator.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "value/Value.hpp"
 
@@ -18,22 +18,22 @@ namespace aria {
         // 键判定一律走表内判等 ===(value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域。
 
         // init() -> map:工厂构造,空表覆盖槽 0(call_class 预置的临时 instance 被替换);只收 0 元。
-        bool fn_init(AriaVM& vm, Span<Value> slots) {
+        bool fn_init(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            slots[0] = Value::from_obj(new_map(vm.gc()));
+            slots[0] = Value::from_obj(new_map(ctx.gc()));
             return true;
         }
 
         // size() -> 整数:键值对数。
-        bool fn_size(AriaVM& vm, Span<Value> slots) {
+        bool fn_size(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -42,12 +42,12 @@ namespace aria {
         }
 
         // is_empty() -> Bool:无键值对判定(与 list 同名的空表谓词)。
-        bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
+        bool fn_is_empty(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -56,12 +56,12 @@ namespace aria {
         }
 
         // has(key) -> Bool:键存在判定(miss 返 false 不报错)。
-        bool fn_has(AriaVM& vm, Span<Value> slots) {
+        bool fn_has(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -71,12 +71,12 @@ namespace aria {
         }
 
         // get(key) -> 值或 nil:miss 取 nil(与「值为 nil」不可分,分清用 has);下标读 miss 仍报 KeyError。
-        bool fn_get(AriaVM& vm, Span<Value> slots) {
+        bool fn_get(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -86,12 +86,12 @@ namespace aria {
         }
 
         // remove(key) -> Bool:移除命中键(命中 true、miss false 不报错)。
-        bool fn_remove(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -100,12 +100,12 @@ namespace aria {
         }
 
         // clear() -> nil:清空(对数归零,容量保留)。
-        bool fn_clear(AriaVM& vm, Span<Value> slots) {
+        bool fn_clear(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -116,16 +116,16 @@ namespace aria {
 
         // keys() -> list:全部键的快照(序随占用槽,unspecified)。GC 约束:map 在 slots[0] 于栈根,
         // new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push trivial 不触 GC,建成写回槽发布。
-        bool fn_keys(AriaVM& vm, Span<Value> slots) {
+        bool fn_keys(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            const auto list = new_list(vm.gc());
+            const auto list = new_list(ctx.gc());
             for (const auto& [key, _]: self->table()) {
                 list->elements().push(key);
             }
@@ -134,16 +134,16 @@ namespace aria {
         }
 
         // values() -> list:全部值的快照;与 keys 同槽位序,keys()[i]/values()[i] 同源同对(序 unspecified)。
-        bool fn_values(AriaVM& vm, Span<Value> slots) {
+        bool fn_values(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            const auto list = new_list(vm.gc());
+            const auto list = new_list(ctx.gc());
             for (const auto& [_, value]: self->table()) {
                 list->elements().push(value);
             }
@@ -154,19 +154,19 @@ namespace aria {
         // pairs() -> list:全部 [k, v] 对的快照,与 keys()/values() 同槽位序(pairs()[i] 对齐)。
         // GC 约束:本表唯一「元素本身也是新对象」的方法 -- 外层必挂守卫(循环内每铸内层 list 都
         // 过 maybe_collect,而 receiver 之外无根);内层铸后仅 push 即入外层,窗口内无 GC 点。
-        bool fn_pairs(AriaVM& vm, Span<Value> slots) {
+        bool fn_pairs(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            const auto pairs = new_list(vm.gc());
-            const auto guard = vm.gc().make_guard(pairs);
+            const auto pairs = new_list(ctx.gc());
+            const auto guard = ctx.gc().make_guard(pairs);
             for (const auto& [key, value]: self->table()) {
-                const auto pair = new_list(vm.gc());
+                const auto pair = new_list(ctx.gc());
                 pair->elements().push(key);
                 pair->elements().push(value);
                 pairs->elements().push(Value::from_obj(pair));
@@ -176,16 +176,16 @@ namespace aria {
         }
 
         // iter() -> 迭代器。GC 约束:map 在 slots[0] 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
-        bool fn_iter(AriaVM& vm, Span<Value> slots) {
+        bool fn_iter(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(vm, slots[0]);
+            const auto self = receiver<ObjMap>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(new_map_iterator(vm.gc(), self));
+            slots[0] = Value::from_obj(new_map_iterator(ctx.gc(), self));
             return true;
         }
 

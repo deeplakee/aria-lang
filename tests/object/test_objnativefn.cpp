@@ -16,7 +16,7 @@ using aria::Value;
 namespace {
 
     // 叶子原生函数桩:不操作值栈,仅把 nil 写到返回槽 0,满足 NativeFn 契约。
-    bool noop_fn(aria::AriaVM& /*vm*/, aria::Span<Value> slots) {
+    bool noop_fn(aria::AriaExeContext& /*ctx*/, aria::Span<Value> slots) {
         slots[0] = aria::Value::nil_val();
         return true;
     }

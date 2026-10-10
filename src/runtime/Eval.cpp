@@ -194,7 +194,7 @@ namespace aria {
         return true;
     }
 
-    Opt<Value> Eval::execute_call(ExecutionContext& ctx, const Value slot0, ObjClosure* closure,
+    Opt<Value> Eval::execute_call(AriaExeContext& ctx, const Value slot0, ObjClosure* closure,
                                   const Span<const Value> args) {
         // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
         // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
@@ -233,7 +233,7 @@ namespace aria {
         const auto slots       = Span<Value>{&vm.current_->peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!vm.current_->has_error(), "pending error not cleared before native call");
-        if (obj->fn()(vm, slots)) {
+        if (obj->fn()(*entered_ctx, slots)) {
             ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
             entered_ctx->drop(argc);
             return true;

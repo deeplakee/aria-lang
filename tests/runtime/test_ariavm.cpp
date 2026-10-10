@@ -6,6 +6,7 @@
 #include <tuple>
 #include <utility>
 
+#include "aria.hpp"
 #include "bytecode/CodeUnit.hpp"
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
@@ -26,6 +27,7 @@
 using aria::AriaVM;
 using aria::CodeUnit;
 using aria::ErrorCode;
+using aria::AriaExeContext;
 using aria::GC;
 using aria::i8;
 using aria::kObjectClassOffset;
@@ -233,18 +235,18 @@ namespace {
     // ---- 原生函数测试辅助 ----
 
     // double(x):把 x*2 写入槽 0(就地返回),元数自查。
-    bool double_native(AriaVM& vm, Span<Value> slots) {
+    bool double_native(AriaExeContext& ctx, Span<Value> slots) {
         const auto argc = slots.size() - 1;
         if (argc != 1) {
-            return vm.arity_error(argc, 1);
+            return ctx.arity_error(argc, 1);
         }
         slots[0] = Value::from_int(slots[1].as_int() * 2);
         return true;
     }
 
     // fail_always():恒报错,验证侧信道错误从 run() 出栈为未捕获 Error。
-    bool fail_always_native(AriaVM& vm, Span<Value> /*slots*/) {
-        return vm.fail(ErrorCode::TypeMismatch, "fail_always always fails");
+    bool fail_always_native(AriaExeContext& ctx, Span<Value> /*slots*/) {
+        return ctx.fail(ErrorCode::TypeMismatch, "fail_always always fails");
     }
 
     // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。name 经
@@ -1279,7 +1281,7 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     // 复用 double_native 但传 0 参:它会因 argc != 1 报错 -- 故另造一个无参内建。
-    static auto answer_native = +[](AriaVM& /*vm*/, Span<Value> slots) -> bool {
+    static auto answer_native = +[](AriaExeContext& /*ctx*/, Span<Value> slots) -> bool {
         slots[0] = Value::from_int(42); // 无参,直接写槽 0
         return true;
     };
@@ -2604,12 +2606,12 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 // echo_this():验证原生的调用约定 -- 绑定调用(call_bound_method)时 VM 把调用区槽 0
 // (bound 对象)覆写为 receiver 后调用:原生读 slots[0] 即 this(校验为 ObjInstance)、
 // 返回值写 slots[0] 原地,实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
-bool echo_this_native(AriaVM& vm, Span<Value> slots) {
+bool echo_this_native(AriaExeContext& ctx, Span<Value> slots) {
     if (slots.size() - 1 != 0) {
-        return vm.arity_error(slots.size() - 1, 0);
+        return ctx.arity_error(slots.size() - 1, 0);
     }
     if (!slots[0].is_obj() || slots[0].as_obj()->type() != aria::ObjType::INSTANCE) {
-        return vm.fail(ErrorCode::TypeMismatch, "echo_this receiver is not an instance");
+        return ctx.fail(ErrorCode::TypeMismatch, "echo_this receiver is not an instance");
     }
     slots[0] = Value::from_int(1); // 返回 1:覆写 this 槽(返回槽即原 this 位)
     return true;

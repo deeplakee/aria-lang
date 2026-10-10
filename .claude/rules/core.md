@@ -51,7 +51,7 @@ paths:
 - **构造角色名**：`kInitName = "init"`（实例方法构造角色；"init" 本身是普通标识符，角色由 def 体裸方法位与名字共同判定 -- parser 据名烙 `FnKind::InitMethod`（隐式返回尾返 this），runtime 据名维护类 `init_` 槽（`ObjClass::set_field` 同步））。
 - **运算符与调用重载方法名**（十一个 dunder，如 `__add__`/`__call__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（纯拼写表）与「恒久存活」的根见 `runtime/str_table.hpp`（见 `runtime.md`「共享状态」的常量串表）。
 - **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
-- **执行上下文对外别名**：`using ExecutionContext = ObjMovement`（配 `class ObjMovement;` 前向声明；住本头 = 任何层（含 object）可拼写且不拖 runtime 头，批 5 NativeFn 翻转的可见性前提）。
+- **执行上下文对外别名**：`using AriaExeContext = ObjMovement`（配 `class ObjMovement;` 前向声明；住本头 = 任何层（含 object）可拼写且不拖 runtime 头，批 5 NativeFn 翻转的可见性前提）。
 - **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。
 
 ## `main.cpp`

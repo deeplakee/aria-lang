@@ -7,7 +7,7 @@
 #include "error/ErrorCode.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/Object.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 
 namespace aria {
 
@@ -54,17 +54,12 @@ namespace aria {
     // obj_tag<T>()(Object.hpp 的 tag 事实表)。
     template<DerivedFromObj T>
     [[nodiscard]]
-    T* receiver(AriaVM& vm, const Value slot) {
-        constexpr auto tag = obj_tag<T>(); // 结构化绑定不可 constexpr,case 需常量表达式
-        if (slot.is_obj()) {
-            switch (Object* obj = slot.as_obj(); obj->type()) {
-                case tag.tag:
-                    return obj->as<T>();
-                default:
-                    break;
-            }
+    T* receiver(AriaExeContext& ctx, const Value slot) {
+        constexpr auto tag = obj_tag<T>();
+        if (slot.is_obj() && slot.as_obj()->type() == tag.tag) {
+            return slot.as_obj()->as<T>();
         }
-        return vm.fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(slot));
+        return ctx.fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(slot));
     }
 
 } // namespace aria

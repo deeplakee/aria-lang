@@ -9,7 +9,7 @@
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjListIterator.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -21,20 +21,20 @@ namespace aria {
 
         // init(...) -> list:工厂构造,实参收进新 list 覆盖槽 0(call_class 预置的临时 instance 被替换)。
         // GC 走查:实参全程在槽即根,copy_from 走 trivial 分配不触 GC,白色 list 写槽即发布。
-        bool fn_init(AriaVM& vm, Span<Value> slots) {
-            const auto list = new_list(vm.gc());
+        bool fn_init(AriaExeContext& ctx, Span<Value> slots) {
+            const auto list = new_list(ctx.gc());
             list->elements().copy_from({slots.data() + 1, slots.size() - 1});
             slots[0] = Value::from_obj(list);
             return true;
         }
 
         // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
-        bool fn_push(AriaVM& vm, Span<Value> slots) {
+        bool fn_push(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -44,18 +44,18 @@ namespace aria {
         }
 
         // pop() -> 末元素;空表报 IndexOutOfBounds(fail-fast,nil 哨兵不可行 -- 元素可合法存 nil)。
-        bool fn_pop(AriaVM& vm, Span<Value> slots) {
+        bool fn_pop(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
             auto& list = self->elements();
             if (list.empty()) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "pop from empty list");
+                return ctx.fail(ErrorCode::IndexOutOfBounds, "pop from empty list");
             }
             slots[0] = list[list.size() - 1];
             list.pop(); // 搬移时 receiver 已离 slots[0],trivial 无 GC 点
@@ -64,21 +64,22 @@ namespace aria {
 
         // insert(i, x) -> nil:i 前插入;负数从尾计数指「该下标元素之前」,合法域 [-(size), size]
         //(上界放宽到追加位)。
-        bool fn_insert(AriaVM& vm, Span<Value> slots) {
+        bool fn_insert(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 2) {
-                return vm.arity_error(argc, 2);
+                return ctx.arity_error(argc, 2);
             }
             if (!slots[1].is_int()) {
-                return vm.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}",
+                                type_name(slots[1]));
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
             const auto position = util::resolve_position(slots[1].as_int(), self->elements().size());
             if (!position) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", slots[1].as_int());
+                return ctx.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", slots[1].as_int());
             }
             self->elements().insert(*position, slots[2]);
             slots[0] = Value::nil_val();
@@ -86,12 +87,12 @@ namespace aria {
         }
 
         // remove(x) -> Bool:移除全部 == 命中元素;miss 返 false 不报错。
-        bool fn_remove(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -100,23 +101,23 @@ namespace aria {
         }
 
         // remove_at(i) -> i 处元素:负数从尾计数,越界报原始键值。
-        bool fn_remove_at(AriaVM& vm, Span<Value> slots) {
+        bool fn_remove_at(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
             if (!slots[1].is_int()) {
-                return vm.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
-                               type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
+                                type_name(slots[1]));
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
             auto&      list = self->elements();
             const auto slot = util::resolve_index(slots[1].as_int(), list.size());
             if (!slot) {
-                return vm.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", slots[1].as_int());
+                return ctx.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", slots[1].as_int());
             }
             slots[0] = list[*slot];
             list.remove_at(*slot);
@@ -124,12 +125,12 @@ namespace aria {
         }
 
         // clear() -> nil:清空(长度归零,容量保留)。
-        bool fn_clear(AriaVM& vm, Span<Value> slots) {
+        bool fn_clear(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -158,12 +159,12 @@ namespace aria {
         // sort() -> nil:就地升序。域 = 全数值或全字符串,先整体域检再排序,排序中途无失败路径;
         // stable_sort 临时缓冲走 std 内存,receiver 在 slots[0];稳定序:等值元素(如 int 1 与
         // f64 1.0)保输入相对序。
-        bool fn_sort(AriaVM& vm, Span<Value> slots) {
+        bool fn_sort(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -173,14 +174,14 @@ namespace aria {
                 // 报首元素与破类元素两类类型。
                 const auto domain = sort_domain(list[0]);
                 if (domain == SortDomain::NotComparable) {
-                    return vm.fail(ErrorCode::TypeMismatch, "sort requires all numbers or all strings, got {}",
-                                   type_name(list[0]));
+                    return ctx.fail(ErrorCode::TypeMismatch, "sort requires all numbers or all strings, got {}",
+                                    type_name(list[0]));
                 }
                 for (usize index = 1; index < list.size(); ++index) {
                     if (sort_domain(list[index]) != domain) {
-                        return vm.fail(ErrorCode::TypeMismatch,
-                                       "sort requires all numbers or all strings, got {} and {}", type_name(list[0]),
-                                       type_name(list[index]));
+                        return ctx.fail(ErrorCode::TypeMismatch,
+                                        "sort requires all numbers or all strings, got {} and {}", type_name(list[0]),
+                                        type_name(list[index]));
                     }
                 }
             }
@@ -190,12 +191,12 @@ namespace aria {
         }
 
         // reverse() -> nil:就地整段反转。
-        bool fn_reverse(AriaVM& vm, Span<Value> slots) {
+        bool fn_reverse(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -205,12 +206,12 @@ namespace aria {
         }
 
         // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil。
-        bool fn_find(AriaVM& vm, Span<Value> slots) {
+        bool fn_find(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -220,12 +221,12 @@ namespace aria {
         }
 
         // contains(x) -> Bool:成员判定(list 无 in 算子,此即成员测试口)。
-        bool fn_contains(AriaVM& vm, Span<Value> slots) {
+        bool fn_contains(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -234,12 +235,12 @@ namespace aria {
         }
 
         // size() -> 整数:元素数。
-        bool fn_size(AriaVM& vm, Span<Value> slots) {
+        bool fn_size(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -248,12 +249,12 @@ namespace aria {
         }
 
         // is_empty() -> Bool:空表判定(len == 0 的谓词形)。
-        bool fn_is_empty(AriaVM& vm, Span<Value> slots) {
+        bool fn_is_empty(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
@@ -262,34 +263,35 @@ namespace aria {
         }
 
         // join(sep) -> string:以 sep 粘合各元素的字符串渲染;空 list 得空串,sep 可为空串。
-        bool fn_join(AriaVM& vm, Span<Value> slots) {
+        bool fn_join(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
             const auto sep = try_as_obj<ObjString>(slots[1]);
             if (sep == nullptr) {
-                return vm.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}",
+                                type_name(slots[1]));
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(concat_values(vm.gc(), self->elements(), sep->view()));
+            slots[0] = Value::from_obj(concat_values(ctx.gc(), self->elements(), sep->view()));
             return true;
         }
 
         // iter() -> 迭代器。GC 约束:list 在 slots[0] 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
-        bool fn_iter(AriaVM& vm, Span<Value> slots) {
+        bool fn_iter(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 0) {
-                return vm.arity_error(argc, 0);
+                return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(new_list_iterator(vm.gc(), self));
+            slots[0] = Value::from_obj(new_list_iterator(ctx.gc(), self));
             return true;
         }
 
@@ -297,21 +299,21 @@ namespace aria {
 
         // __add__ -> 新 list:两表拼接;浅拷(嵌套容器共享同一对象)。
         // GC 走查:唯一分配点 new_list,两侧实参经调用区槽在栈,reserve/copy_from trivial,建成即写回槽 0。
-        bool fn___add__(AriaVM& vm, Span<Value> slots) {
+        bool fn___add__(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
             const auto rhs = try_as_obj<ObjList>(slots[1]);
             if (rhs == nullptr) {
-                return vm.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
-                               type_name(slots[0]), type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
+                                type_name(slots[0]), type_name(slots[1]));
             }
-            const auto lhs = receiver<ObjList>(vm, slots[0]);
+            const auto lhs = receiver<ObjList>(ctx, slots[0]);
             if (lhs == nullptr) {
                 return false;
             }
-            const auto out = new_list(vm.gc());
+            const auto out = new_list(ctx.gc());
             out->elements().reserve(lhs->elements().size() + rhs->elements().size());
             out->elements().copy_from(lhs->elements());
             out->elements().copy_from(rhs->elements());
@@ -321,24 +323,24 @@ namespace aria {
 
         // __mul__ -> 新 list:整次重复(0 次得空表,浅拷同 __add__);乘数严格 int,负数报错不静默得空。
         // GC 走查同 __add__:唯一分配点 new_list,其后 reserve 加逐轮 copy_from 全程 trivial。
-        bool fn___mul__(AriaVM& vm, Span<Value> slots) {
+        bool fn___mul__(AriaExeContext& ctx, Span<Value> slots) {
             const auto argc = slots.size() - 1;
             if (argc != 1) {
-                return vm.arity_error(argc, 1);
+                return ctx.arity_error(argc, 1);
             }
             if (!slots[1].is_int()) {
-                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a list and an integer, got {} and {}",
-                               type_name(slots[0]), type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a list and an integer, got {} and {}",
+                                type_name(slots[0]), type_name(slots[1]));
             }
             const i64 count = slots[1].as_int();
             if (count < 0) {
-                return vm.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
+                return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto self = receiver<ObjList>(vm, slots[0]);
+            const auto self = receiver<ObjList>(ctx, slots[0]);
             if (self == nullptr) {
                 return false;
             }
-            const auto out = new_list(vm.gc());
+            const auto out = new_list(ctx.gc());
             out->elements().reserve(self->elements().size() * static_cast<usize>(count));
             for (i64 i = 0; i < count; ++i) {
                 out->elements().copy_from(self->elements());

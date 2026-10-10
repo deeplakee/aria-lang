@@ -56,39 +56,6 @@ namespace aria {
 
     } // namespace
 
-    ObjString* concat_values(GC& gc, const Span<const Value> values, const StringView sep) {
-        // 一遍渲染扫描:串元素只量长(填充时直写 view 零拷贝),其余渲染一次收进 parts(填充时按序取走)。
-        usize total = 0;
-        auto  parts = List<String>{};
-        for (const auto& element: values) {
-            if (const auto str = try_as_obj<ObjString>(element)) {
-                total += str->view().size();
-            } else {
-                auto rendered = stringify(element);
-                total += rendered.size();
-                parts.push_back(std::move(rendered));
-            }
-        }
-        if (!values.empty()) {
-            total += (values.size() - 1) * sep.size();
-        }
-
-        auto builder = StringBuilder{gc};
-        builder.reserve(total);
-        usize part_index = 0;
-        for (usize index = 0; index < values.size(); ++index) {
-            if (index > 0) {
-                builder.append(sep);
-            }
-            if (const auto str = try_as_obj<ObjString>(values[index])) {
-                builder.append(str->view());
-            } else {
-                builder.append(parts[part_index++]);
-            }
-        }
-        return builder.take_string();
-    }
-
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
         string_constants_{str_table::kCount}, char_cache_{kCharCacheSlots} {

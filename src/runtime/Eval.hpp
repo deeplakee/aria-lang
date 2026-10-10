@@ -37,7 +37,7 @@ namespace aria {
         // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
         // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
         [[nodiscard]]
-        static Opt<Value> execute_call(ExecutionContext& ctx, Value slot0, ObjClosure* closure, Span<const Value> args);
+        static Opt<Value> execute_call(AriaExeContext& ctx, Value slot0, ObjClosure* closure, Span<const Value> args);
 
     private:
         // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用

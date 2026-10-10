@@ -40,7 +40,7 @@ namespace aria {
 
     // 执行上下文的对外全词拼写(ObjMovement 别名):住本头使任何层可拼写且不拖 runtime 头。
     class ObjMovement;
-    using ExecutionContext = ObjMovement;
+    using AriaExeContext = ObjMovement;
 
 } // namespace aria
 

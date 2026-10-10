@@ -75,7 +75,7 @@ namespace {
         }
         Value      slots[]{lhs, rhs};
         const auto fn = hook->as_obj()->as<ObjNativeFn>();
-        if (!fn->fn()(vm, aria::Span<Value>{slots, 2})) {
+        if (!fn->fn()(*vm.current_context(), aria::Span<Value>{slots, 2})) {
             return std::nullopt;
         }
         return slots[0];

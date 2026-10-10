@@ -136,6 +136,11 @@ namespace aria {
     [[nodiscard]]
     ObjString* new_string(GC& gc, char ch);
 
+    // 值序列渲染拼串:一遍渲染扫描(串元素只量长、其余渲染一次收进 List 中间结果),量长定容
+    // 单趟拼接,产出单次分配移交。GC:扫描与拼接零 GC 点,唯一 GC 点在产出分配,元素由调用方保活。
+    [[nodiscard]]
+    ObjString* concat_values(GC& gc, Span<const Value> values, StringView sep);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_STRING_HPP

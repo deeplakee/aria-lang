@@ -34,10 +34,6 @@ namespace aria {
         LoadError,    // 源文件加载失败(仅 interpret_from_path:I/O 或 UTF-8 编码)
     };
 
-    // 值序列渲染拼串:一遍渲染扫描(串元素只量长、其余渲染一次收进 List 中间结果),量长定容
-    // 单趟拼接,产出单次分配移交。GC:扫描与拼接零 GC 点,唯一 GC 点在产出分配,元素由调用方保活。
-    ObjString* concat_values(GC& gc, Span<const Value> values, StringView sep);
-
     // 解释器宿主:持 GC、服务表(模块表/builtins/寄存器组/常量串表)、当前执行上下文与执行入口;
     // 字节码驱动住 eval 层(Eval),经友元缝取宿主内部。GC 根经 tracer 注册进自有 gc_(gc_ 声明
     // 居首,析构逆序下 tracer 与成员同生共死)。运行时错误统一 raise 入寄存器、经 unwind 查

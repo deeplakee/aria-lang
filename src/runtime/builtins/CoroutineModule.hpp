@@ -12,15 +12,16 @@ namespace aria {
     class ObjModule;
 
     // <coroutine> 内建模块自持单元:模块构造与四原语方法面全收私有,唯一公有口是收尾的
-    // make_module;四原语为 NativeFn 签名静态方法,resume 须访问 AriaVM 私有面故为友元。
+    // make_module;四原语为 NativeFn 签名静态方法,报错族与调用机器面经 ctx,切换对经
+    // ctx.host() 直调宿主私有面故为友元。
     class CoroutineModule {
-        static bool create(AriaVM& vm, Span<Value> slots);
+        static bool create(AriaExeContext& ctx, Span<Value> slots);
 
-        static bool resume(AriaVM& vm, Span<Value> slots);
+        static bool resume(AriaExeContext& ctx, Span<Value> slots);
 
-        static bool yield(AriaVM& vm, Span<Value> slots);
+        static bool yield(AriaExeContext& ctx, Span<Value> slots);
 
-        static bool status(AriaVM& vm, Span<Value> slots);
+        static bool status(AriaExeContext& ctx, Span<Value> slots);
 
         // 方法表;slots = [<coroutine> 模块(接收者兼返回槽), co, payload..]。create/status 普通
         // 原生;resume/yield 切换型:返 true 时 current_ 已切至对侧且不写 slots[0](对侧预留结果槽,

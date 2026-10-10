@@ -40,7 +40,7 @@ paths:
 
 ### 错误与文案契约
 
-- **错误通道 = native fn 契约模型**：签名一律收 `AriaVM&` 单一句柄（分配经 `vm.gc()`、报错一行 `vm.fail(code, fmt, ...)`）。
+- **错误通道 = native fn 契约模型**：签名一律收 `AriaExeContext&` 单一句柄（分配经 `ctx.gc()`、报错一行 `ctx.fail(code, fmt, ...)`）。
 - 协议失败时**自己 fail**--载荷直接入 `*current_` 挂起错误寄存器（构造即入寄存器即被 VM 根 tracer 标根，无「返回值在途」的白色无根窗口），**返回值只留信号**：
   - load 族 `Opt<Value>`：nullopt ⟺ 已 fail；somed 才是命中，命中 nil 亦 somed。
   - store 族 `bool`：false ⟺ 已 fail；失败出口经 `FailSignal` 哨兵一行化--override 一律 `return vm.fail(...)`，哨兵按站点返回类型转 nullopt / false / nullptr。

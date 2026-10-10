@@ -10,12 +10,11 @@ namespace aria {
 
     class GC;
     class ObjString;
-    class AriaVM;
 
     // 原生函数的 C++ 调用约定:VM 同步直调、不经字节码帧,slots = [callee, a1..aN],slots[0] 兼返回槽
     //(方法形态下 VM 预先写入接收者)。返回 false 表示已报错(失败载荷留在挂起错误寄存器)。调用期间不得
     // 操作 VM 值栈,新造的对象须先入临时根守卫;切换型原生(resume/yield)不写 slots[0]。
-    using NativeFn = bool (*)(AriaVM& vm, Span<Value> slots);
+    using NativeFn = bool (*)(AriaExeContext& ctx, Span<Value> slots);
 
     // 原生函数对象:把一个 C++ 函数包装成可在 aria 里调用的值;匿名函数名用 kAnonymousName。
     class ObjNativeFn final : public Object {

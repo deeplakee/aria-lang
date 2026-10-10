@@ -103,17 +103,16 @@ namespace aria {
     struct TestProbe {
         // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_closure 形态),fn 须闭包值;失败
         // 载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
-        static bool exec_closure_native(AriaVM& vm, Span<Value> slots) {
+        static bool exec_closure_native(AriaExeContext& ctx, Span<Value> slots) {
             if (slots.size() < 2) {
-                return vm.arity_error(slots.size() - 1, 1);
+                return ctx.arity_error(slots.size() - 1, 1);
             }
             if (!slots[1].is_obj() || !slots[1].as_obj()->is<ObjClosure>()) {
-                return vm.fail(ErrorCode::TypeMismatch, "exec_closure expects a closure as its first argument");
+                return ctx.fail(ErrorCode::TypeMismatch, "exec_closure expects a closure as its first argument");
             }
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
-            const auto ctx    = vm.current_context();
-            const auto result = ctx->execute_closure(slots[1].as_obj()->as<ObjClosure>(), {args, argc});
+            const auto result = ctx.execute_closure(slots[1].as_obj()->as<ObjClosure>(), {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }
@@ -123,19 +122,18 @@ namespace aria {
 
         // exec_method(m, a1..aN):同步执行绑定方法 m(execute_method 形态,receiver 作 this),m 须
         // 绑定方法值(脚本 obj.name 的值即此形态)。余同 exec_closure。
-        static bool exec_method_native(AriaVM& vm, Span<Value> slots) {
+        static bool exec_method_native(AriaExeContext& ctx, Span<Value> slots) {
             if (slots.size() < 2) {
-                return vm.arity_error(slots.size() - 1, 1);
+                return ctx.arity_error(slots.size() - 1, 1);
             }
             if (!slots[1].is_obj() || !slots[1].as_obj()->is<ObjBoundMethod>()) {
-                return vm.fail(ErrorCode::TypeMismatch, "exec_method expects a bound method as its first argument");
+                return ctx.fail(ErrorCode::TypeMismatch, "exec_method expects a bound method as its first argument");
             }
             const auto bound = slots[1].as_obj()->as<ObjBoundMethod>();
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
             const auto method = bound->method().as_obj()->as<ObjClosure>();
-            const auto ctx    = vm.current_context();
-            const auto result = ctx->execute_method(bound->receiver(), method, {args, argc});
+            const auto result = ctx.execute_method(bound->receiver(), method, {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }

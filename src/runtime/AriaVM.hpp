@@ -25,21 +25,6 @@ namespace aria {
     class ObjNativeFn;
     class ObjString;
 
-    // fail 的返回哨兵,失败出口惯用法一行 `return vm.fail(...);`。**Opt<T> 转换只对「不可由 bool
-    // 构造」的 T 成立**--标量经 operator bool() 会构造出已初始化的 0/false 把 fail 吞成成功,
-    // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写 slots[0])。
-    struct FailSignal {
-        operator bool() const noexcept { return false; }
-        template<typename T>
-        operator T*() const noexcept {
-            return nullptr;
-        }
-        template<typename T>
-        operator Opt<T>() const noexcept {
-            return std::nullopt;
-        }
-    };
-
     // interpret 结果:错误已渲染到 stderr,只回成败类别(turnkey 场景只要类别),
     // 需要值/错误细节用低层 run()。
     enum class InterpretResult : u8 {
@@ -113,25 +98,21 @@ namespace aria {
             return current_;
         }
 
-        // 挂起错误侧信道:寄存器在 ObjMovement::pending_error_,经 *current_ 落进调用者上下文;
-        // 消息烘焙不含位置前缀(位置由 unwind 未捕获出口的逐帧 at 行给出)。raise 内 new_exception
-        // 分配可能触 GC,载荷构造后立即入寄存器(tracer 已标根);fail = raise + 恒返失败信号,
-        // [[nodiscard]] 强制 `return vm.fail(...);`。
+        // 挂起错误侧信道:报错族真身住 ObjMovement(写本上下文自己的寄存器),本类成员转发到
+        // *current_。消息烘焙不含位置前缀(位置由 unwind 未捕获出口的逐帧 at 行给出);fail =
+        // raise + 恒返失败信号,[[nodiscard]] 强制 `return vm.fail(...);`。
         template<typename... Args>
         void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            const auto msg = Error::make_message(code, std::format(fmt, std::forward<Args>(args)...));
-            current_->raise(Value::from_obj(new_exception(gc_, code, msg)));
+            current_->raise(code, fmt, std::forward<Args>(args)...);
         }
+
         template<typename... Args>
         [[nodiscard]]
         FailSignal fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
-            raise(code, fmt, std::forward<Args>(args)...);
-            return FailSignal{};
+            return current_->fail(code, fmt, std::forward<Args>(args)...);
         }
 
-        // 元数报错唯一口(「function expects <spec>, got <n>」措辞家族):三形态三名各对应一种
-        // 措辞;比较留在各调用点,仅失败路径进本口。被调者报泛称 function 不收名字 -- 真名在
-        // 一等公民下不可靠(匿名无区分力、被取出后真名不出现在调用点),at 行已交待调用点。
+        // 元数报错唯一口(措辞家族见 ObjMovement):转发当前上下文。
         [[nodiscard]]
         FailSignal arity_error(usize argc, usize expected);
 
@@ -175,14 +156,20 @@ namespace aria {
             return Value::from_obj(registers_[offset]);
         }
 
-        // 常量串表按键直读(本类唯一访问口):键经 NTTP 编译期定下标、static_assert 拒表外键,
-        // 生成物是基址 + 常量下标的一次加载;实例侧算子派发取钩子名,免每次从驻留池换串。
+        // 常量串表按键直读:键经 NTTP 编译期定下标、static_assert 拒表外键,生成物是基址 +
+        // 常量下标的一次加载;实例侧算子派发取钩子名,免每次从驻留池换串。
         template<util::FixedString key>
         [[nodiscard]]
         ObjString* str() const noexcept {
             constexpr auto found = str_table::index_of(key.view());
             static_assert(found.has_value(), "constant string key is not in the registry");
             return string_constants_[*found];
+        }
+
+        // 常量串按下标直读(movement 的 str<key> 经此取用;键 -> 下标的解析在 movement 侧完成)。
+        [[nodiscard]]
+        ObjString* string_constant(const usize index) const noexcept {
+            return string_constants_[index];
         }
 
         // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表):1 字节串全值域恒定,

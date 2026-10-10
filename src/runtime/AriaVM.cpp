@@ -54,17 +54,6 @@ namespace aria {
         // dispatch_loop 各异常站点(unwind 返 Error)统一收口 Result<Value, Error> 的 unexpected 态。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // 元数规格措辞:0 -> "no arguments"、1 -> "1 argument"、N -> "N arguments"(单数只在恰好 1)。
-        String arity_phrase(const usize count) {
-            if (count == 0) {
-                return "no arguments";
-            }
-            if (count == 1) {
-                return "1 argument";
-            }
-            return std::format("{} arguments", count);
-        }
-
     } // namespace
 
     ObjString* concat_values(GC& gc, const Span<const Value> values, const StringView sep) {
@@ -103,7 +92,7 @@ namespace aria {
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
         string_constants_{str_table::kCount}, char_cache_{kCharCacheSlots} {
-        current_ = new_movement(gc_); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
+        current_ = new_movement(gc_, *this); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
         {
@@ -363,16 +352,15 @@ namespace aria {
     }
 
     FailSignal AriaVM::arity_error(const usize argc, const usize expected) {
-        return fail(ErrorCode::WrongArity, "function expects {}, got {}", arity_phrase(expected), argc);
+        return current_->arity_error(argc, expected);
     }
 
     FailSignal AriaVM::arity_error_range(const usize argc, const usize low, const usize high) {
-        // 区间恒复数(n or m arguments):"0 or 1 argument" 这类读起来像单数,不成句。
-        return fail(ErrorCode::WrongArity, "function expects {} or {} arguments, got {}", low, high, argc);
+        return current_->arity_error_range(argc, low, high);
     }
 
     FailSignal AriaVM::arity_error_at_least(const usize argc, const usize low) {
-        return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
+        return current_->arity_error_at_least(argc, low);
     }
 
     u8 AriaVM::prepare_call_args(const ObjFunction* fn, const u8 argc) {

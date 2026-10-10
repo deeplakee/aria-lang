@@ -5,19 +5,38 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
+#include "error/Error.hpp"
 #include "memory/Buffer.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjException.hpp"
 #include "object/Object.hpp"
 #include "runtime/FrameStack.hpp"
+#include "runtime/str_table.hpp"
 #include "util/util.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
 
+    class AriaVM;
     class ObjClosure;
     class ObjFunction;
     class ObjModule;
     class ObjUpvalue;
+
+    // fail 的返回哨兵,失败出口惯用法一行 `return fail(...);`。**Opt<T> 转换只对「不可由 bool
+    // 构造」的 T 成立**--标量经 operator bool() 会构造出已初始化的 0/false 把 fail 吞成成功,
+    // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写 slots[0])。
+    struct FailSignal {
+        operator bool() const noexcept { return false; }
+        template<typename T>
+        operator T*() const noexcept {
+            return nullptr;
+        }
+        template<typename T>
+        operator Opt<T>() const noexcept {
+            return std::nullopt;
+        }
+    };
 
     // 调用帧(trivially-copyable 聚合,满足 FrameStack 约束);ip/last_ip 仅作读取游标/锚点,
     // 运行期从不经其写字节,last_ip 反推 offset 的前提 = 帧存活期间 code 缓冲恒定(非移动 GC +
@@ -63,15 +82,17 @@ namespace aria {
     // 执行上下文(Object 子类):一段执行的完整状态 -- 可增长值栈 + 帧栈 + resume 链;三类指针
     //(top_/活动帧 slots/开指 location_)在栈增长时按「搬运前记槽偏移、搬运后新基址重建」重绑,
     // trace 沿 previous_ 级联(链上挂起成员的唯一可达边)。帧数组走 std 分配器,不进 GC 字节账。
+    // ctx 服务面(报错族/分配/常量串/寄存器组/类访问器)经私有 host_ 回指针委托宿主,回指针不外泄。
     class ObjMovement final : public Object {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
         static constexpr usize kFrameMax  = 256;  // 调用帧容量
         static constexpr u32   kMaxRecursionDepth = 32; // 嵌套执行上限(判定直接比上限)
 
-        explicit ObjMovement(GC* gc) noexcept :
-            Object{ObjType::MOVEMENT}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{}, open_upvalues_{nullptr},
-            pending_error_{}, previous_{nullptr}, state_{ExecState::Suspended}, ret_frame_{0}, recursion_depth_{0} {}
+        explicit ObjMovement(GC* gc, AriaVM* host) noexcept :
+            Object{ObjType::MOVEMENT}, host_{host}, buf_{gc, kStackInit}, top_{buf_.data()}, frames_{},
+            open_upvalues_{nullptr}, pending_error_{}, previous_{nullptr}, state_{ExecState::Suspended}, ret_frame_{0},
+            recursion_depth_{0} {}
 
         ~ObjMovement() override = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_ UPtr
                                            // 自释放;open upvalue 节点是 GC 对象,归 GC 管。
@@ -240,6 +261,85 @@ namespace aria {
             return pending_error_;
         }
 
+        // ctx 服务面:原生函数与 Object 协议经此取宿主服务,host_ 回指针本身不外泄。报错族写的
+        // 是本上下文自己的寄存器(执行中的 ctx 恒 == current_,写点即调用方上下文)。
+
+        // 报错族:从零构造消息一步烘齐(Error::make_message 无位置版 + new_exception),消息
+        // **不含位置前缀**(位置由 unwind 未捕获出口的逐帧 at 行给出);装箱分配可能触 GC,载荷
+        // 构造后立即入寄存器(tracer 已标根)。fail = raise + 恒返失败信号,[[nodiscard]] 强制
+        // `return ctx.fail(...);`。
+        template<typename... Args>
+        void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            const auto msg = Error::make_message(code, std::format(fmt, std::forward<Args>(args)...));
+            raise(Value::from_obj(new_exception(gc(), code, msg)));
+        }
+
+        template<typename... Args>
+        [[nodiscard]]
+        FailSignal fail(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
+            raise(code, fmt, std::forward<Args>(args)...);
+            return FailSignal{};
+        }
+
+        // 元数报错的唯一口(「function expects <spec>, got <n>」措辞家族):三形态三名各对应一种
+        // 措辞;比较留在各调用点,仅失败路径进本口。被调者报泛称 function 不收名字 -- 真名在
+        // 一等公民下不可靠(匿名无区分力、被取出后真名不出现在调用点),at 行已交待调用点。
+        [[nodiscard]]
+        FailSignal arity_error(usize argc, usize expected);
+
+        [[nodiscard]]
+        FailSignal arity_error_range(usize argc, usize low, usize high);
+
+        [[nodiscard]]
+        FailSignal arity_error_at_least(usize argc, usize low);
+
+        // 常量串按注册表键直读:键 -> 下标的解析在编译期完成(注册表住 runtime/str_table.hpp),
+        // 下标经 string_constant 取表。本访问口不依赖宿主完整类型,使用方无须 include AriaVM.hpp。
+        template<util::FixedString key>
+        [[nodiscard]]
+        ObjString* str() const noexcept {
+            constexpr auto found = str_table::index_of(key.view());
+            static_assert(found.has_value(), "constant string key is not in the registry");
+            return string_constant(*found);
+        }
+
+        // 常量串按下标直读(体在 .cpp,委托宿主表)。
+        [[nodiscard]]
+        ObjString* string_constant(usize index) const noexcept;
+
+        // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表)。
+        [[nodiscard]]
+        ObjString* char_string(u8 byte) const noexcept;
+
+        // 值寄存器按格位直读与七个 bootstrap 类访问器:格唯一存于宿主寄存器组。
+        [[nodiscard]]
+        Value register_value(u8 offset) const noexcept;
+
+        [[nodiscard]]
+        ObjClass* object_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* exception_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* iterator_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* list_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* map_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* string_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* range_class() const noexcept;
+
+        // 宿主分配器。
+        [[nodiscard]]
+        GC& gc() noexcept;
+
         // 协程状态与 resume 链:previous_ = 「谁恢复了我」,自 current_ 沿链回走,链尾恒为主
         // 上下文;切换收口在 AriaVM,本类不自切。resume 先置链、yield / RETURN 完成一律解链,
         // 挂起态 previous_ 恒 nullptr。
@@ -330,6 +430,9 @@ namespace aria {
 
         using CallFrameStack = FrameStack<CallFrame, kFrameMax>;
 
+        // 宿主回指针(借用,不 trace 不标根):ctx 服务面经它委托宿主公有面;生命周期 = 宿主,
+        // 恒晚于本对象(GC 对象随 ~GC 释放)销毁。不得对外暴露。
+        AriaVM*        host_;
         Buffer<Value>  buf_;             // 值栈缓冲底座(GC 分配,可增长)
         Value*         top_;             // 栈顶(下一空闲槽;增长后由 grow_stack_ 重定位)
         CallFrameStack frames_;          // 调用帧栈(一次分配定容,指针绝对稳定)
@@ -344,9 +447,11 @@ namespace aria {
     // 执行上下文的对外全词拼写。
     using ExecutionContext = ObjMovement;
 
-    // 工厂:分配执行上下文。返回对象白色无根,调用方须自行根化(主上下文经 current_、协程经 create 原语发布)。
+    // 工厂:分配执行上下文并绑定宿主回指针。返回对象白色无根,调用方须自行根化(主上下文经
+    // current_、协程经 create 原语发布)。构造临界区内(宿主 bootstrap 期)宿主服务面尚未就位,
+    // 期间只建对象、不走 ctx 服务面。
     [[nodiscard]]
-    ObjMovement* new_movement(GC& gc);
+    ObjMovement* new_movement(GC& gc, AriaVM& host);
 
 } // namespace aria
 

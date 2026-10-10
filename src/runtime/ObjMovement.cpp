@@ -1,11 +1,28 @@
 #include "runtime/ObjMovement.hpp"
 
+#include <format>
+
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjUpvalue.hpp"
+#include "runtime/AriaVM.hpp"
 
 namespace aria {
+    namespace {
+
+        // 元数规格措辞:0 -> "no arguments"、1 -> "1 argument"、N -> "N arguments"(单数只在恰好 1)。
+        String arity_phrase(const usize count) {
+            if (count == 0) {
+                return "no arguments";
+            }
+            if (count == 1) {
+                return "1 argument";
+            }
+            return std::format("{} arguments", count);
+        }
+
+    } // namespace
 
     // 帧成员 mark_object 的基类转换需完整类型,故住 .cpp。
     void ObjMovement::trace(GC& gc) const noexcept {
@@ -121,6 +138,43 @@ namespace aria {
         }
     }
 
-    ObjMovement* new_movement(GC& gc) { return gc.new_object<ObjMovement>(&gc); }
+    ObjMovement* new_movement(GC& gc, AriaVM& host) { return gc.new_object<ObjMovement>(&gc, &host); }
+
+    // ctx 服务面:报错族真身在此(写本上下文自己的寄存器),其余委托宿主公有面。
+
+    FailSignal ObjMovement::arity_error(const usize argc, const usize expected) {
+        return fail(ErrorCode::WrongArity, "function expects {}, got {}", arity_phrase(expected), argc);
+    }
+
+    FailSignal ObjMovement::arity_error_range(const usize argc, const usize low, const usize high) {
+        // 区间恒复数(n or m arguments):"0 or 1 argument" 这类读起来像单数,不成句。
+        return fail(ErrorCode::WrongArity, "function expects {} or {} arguments, got {}", low, high, argc);
+    }
+
+    FailSignal ObjMovement::arity_error_at_least(const usize argc, const usize low) {
+        return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
+    }
+
+    ObjString* ObjMovement::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }
+
+    ObjString* ObjMovement::string_constant(const usize index) const noexcept { return host_->string_constant(index); }
+
+    Value ObjMovement::register_value(const u8 offset) const noexcept { return host_->register_value(offset); }
+
+    ObjClass* ObjMovement::object_class() const noexcept { return host_->object_class(); }
+
+    ObjClass* ObjMovement::exception_class() const noexcept { return host_->exception_class(); }
+
+    ObjClass* ObjMovement::iterator_class() const noexcept { return host_->iterator_class(); }
+
+    ObjClass* ObjMovement::list_class() const noexcept { return host_->list_class(); }
+
+    ObjClass* ObjMovement::map_class() const noexcept { return host_->map_class(); }
+
+    ObjClass* ObjMovement::string_class() const noexcept { return host_->string_class(); }
+
+    ObjClass* ObjMovement::range_class() const noexcept { return host_->range_class(); }
+
+    GC& ObjMovement::gc() noexcept { return host_->gc(); }
 
 } // namespace aria

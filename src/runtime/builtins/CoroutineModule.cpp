@@ -22,7 +22,7 @@ namespace aria {
         if (closure == nullptr) {
             return vm.fail(ErrorCode::TypeMismatch, "argument must be a function, got {}", type_name(slots[1]));
         }
-        const auto co = new_movement(vm.gc());
+        const auto co = new_movement(vm.gc(), vm);
         co->push(Value::from_obj(closure)); // 槽 0:被调闭包(首启进帧的 callee 槽;push 扩容不触 GC)
         slots[0] = Value::from_obj(co);     // 返回槽发布,建成即根化;自分配点至此无 GC 点,免守卫
         return true;

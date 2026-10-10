@@ -53,6 +53,14 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - `raise(Value)` 收已构造好的载荷，构造（需分配）在持 GC 的调用方完成；`raise` 断言当前无挂起（防嵌套）。
 - 只读访问器 `pending_error()` 供本类 trace 标根（置入到 take 之间跨安全点分配不回收）。
 
+### ctx 服务面（宿主回指针委托）
+
+原生函数与 Object 协议面向本类（对外名 `ExecutionContext`）。报错族/分配/常量串/值寄存器/类访问器在此；宿主回指针 `host_` 为私有成员（借用、不 trace，无访问器不外泄），各委托体住 `.cpp` 读宿主公有面。
+
+- **报错族（真身在此）**：`raise(code, fmt, args...)` 从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`）后装箱写**本上下文寄存器**；`fail` = raise + 恒返 `FailSignal`（`[[nodiscard]]` 强制 `return ctx.fail(...);`）；`arity_error`×3 为措辞家族唯一口。`FailSignal`（fail 的返回哨兵）定义同住本头。
+- **委托面**：`gc()` / `str<key>()` / `char_string()` / `string_constant()` / `register_value()` 与七个 bootstrap 类访问器。`str<key>` 是**宿主无关**的内联成员模板：键 -> 下标的解析在编译期用同层注册表（`runtime/str_table.hpp`）完成，下标经 `string_constant` 取宿主表——使用方只 include 本头即可实例化，无须拖入 AriaVM.hpp。
+- 构造临界区（宿主 bootstrap 期）宿主服务面尚未就位，期间只建对象、不走本面（工厂注释钉）。
+
 ### 嵌套执行边界（重入口）
 
 - `ret_frame_`（u32，0 = 最外执行）+ `recursion_depth_`（上限 `kMaxRecursionDepth` = 32）--驱动循环的出口边界与重入深度随上下文走，消费方一律从 `current_` 读取（无 VM 级基线成员）。入口挂界 `enter_recursion()`（边界 = 入场帧深，断言钉边界非零--零帧 = 无驱动，最外执行只走 `run()`）、退场 `leave_recursion()` 归还外层边界。
@@ -163,7 +171,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：String 类 bootstrap 末段的算子钩子缓存按名取串，读的就是本表）。
 - **collect 时标五类根**：① `modules_`（进而 trace 各模块 `name_`/`dir_`/`entry_`/`globals_`）；② `builtins_`；③ `registers_`（一趟循环逐格 `mark_object`）；④ `string_constants_`（一趟循环 `mark_object`）；⑤ `current_` 一点（其 trace 经 `mark_object(previous_)` 沿 resume 链级联 -- 挂起协程的值栈/帧/寄存器皆根）。
 - 逐上下文标：值栈 `[base, top)` 全部 Value（run() 期局部/实参/临时值只活在栈上，最关键的根）；各活动帧 `closure`/`module`；挂起错误寄存器；open upvalue 开链（「闭包已死而 upvalue 仍在链」的悬垂防线）。清单住 `ObjMovement::trace`（`Object` override；VM 根 tracer 只标 `current_` 一点，`previous_` 经 `mark_object` 入灰栈级联）。
-- **`raise(code, fmt, args...)`/`fail`**：从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`），消息**不含位置前缀**（位置由 unwind 未捕获出口的逐帧 at 行给出）；`fail` = raise + `FailSignal`（`[[nodiscard]]` 强制 `return vm.fail(...);`）。公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
+- **报错族转发**：`raise`/`fail`/`arity_error`×3 的真身住 ObjMovement 的 ctx 服务面（写当前上下文自己的寄存器），本类成员转发到 `*current_`（惯用法 `return vm.fail(...);` 不变）。公共访问器 `gc()`/`current_context()`/`modules()`/`source_roots()` 供原生函数与测试用。
 
 ## VM 异常通道（throw/catch）
 

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <tuple>
 #include <utility>
 
 #include "bytecode/CodeUnit.hpp"
@@ -11,6 +12,7 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
@@ -34,6 +36,7 @@ using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjClass;
 using aria::ObjClosure;
+using aria::ObjException;
 using aria::ObjFunction;
 using aria::ObjInstance;
 using aria::ObjModule;
@@ -3087,4 +3090,37 @@ TEST_F(AriaVMStress, SingleCharConstantsSurviveCollections) {
         EXPECT_EQ(vm.char_string('x'), before);
     }
     EXPECT_EQ(before->view(), "x");
+}
+
+// ---- ctx 服务面:movement 经宿主回指针委托(常量串/单字符/寄存器/类访问器/分配器同实体) ----
+
+TEST(MovementServices, LookupFacesDelegateToHost) {
+    AriaVM vm;
+    auto*  ctx = vm.current_context();
+
+    EXPECT_EQ(ctx->str<"__add__">(), vm.str<"__add__">());
+    EXPECT_EQ(ctx->char_string('x'), vm.char_string('x'));
+    EXPECT_EQ(ctx->register_value(kObjectClassOffset).as_obj(), vm.register_value(kObjectClassOffset).as_obj());
+    EXPECT_EQ(ctx->object_class(), vm.object_class());
+    EXPECT_EQ(ctx->string_class(), vm.string_class());
+    EXPECT_EQ(&ctx->gc(), &vm.gc());
+}
+
+TEST(MovementServices, FailWritesOwnRegister) {
+    AriaVM vm;
+    auto*  ctx = vm.current_context();
+
+    // 报错族写本上下文寄存器:烘焙消息 + 装箱 ObjException,寄存器即 take 点。
+    std::ignore = ctx->fail(ErrorCode::TypeMismatch, "ctx fail {}", 42);
+    ASSERT_TRUE(ctx->has_error());
+    const auto payload = *ctx->take_error();
+    const auto ex      = payload.as_obj()->as<ObjException>();
+    EXPECT_EQ(ex->code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(ex->message()->view().find("ctx fail 42"), StringView::npos);
+    EXPECT_FALSE(ctx->has_error());
+
+    // 元数族同址(措辞家族唯一口)。
+    std::ignore    = ctx->arity_error(3, 2);
+    const auto ex2 = (*ctx->take_error()).as_obj()->as<ObjException>();
+    EXPECT_EQ(ex2->code(), ErrorCode::WrongArity);
 }

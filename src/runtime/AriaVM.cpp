@@ -297,41 +297,6 @@ namespace aria {
         return result;
     }
 
-    Opt<Value> AriaVM::execute_closure(ObjClosure* closure, const Span<const Value> args) {
-        return execute_call(Value::from_obj(closure), closure, args);
-    }
-
-    Opt<Value> AriaVM::execute_method(const Value receiver, ObjClosure* method, const Span<const Value> args) {
-        return execute_call(receiver, method, args);
-    }
-
-    Opt<Value> AriaVM::execute_call(const Value slot0, ObjClosure* closure, const Span<const Value> args) {
-        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
-        // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
-        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
-        // 重寻址(重入期间值栈可能搬迁)。
-        if (current_->recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
-            return fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
-        }
-        if (args.size() > std::numeric_limits<u8>::max()) {
-            return fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
-        }
-        ASSERT(args.data() >= current_->stack_top() || args.data() + args.size() <= current_->stack_base() ||
-                       current_->stack_size() + 1 + args.size() <= current_->stack_capacity(),
-               "args alias the value stack without room to push");
-        current_->push(slot0); // 入栈即根(槽 0 = 本调用返回槽)
-        for (const auto& arg: args) {
-            current_->push(arg);
-        }
-        const auto saved_ret = current_->enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (Eval::call_closure(*this, closure, args.size()) && Eval::dispatch_loop(*this)) {
-            current_->leave_recursion(saved_ret);
-            return current_->pop(); // 闭包返回值
-        }
-        current_->leave_recursion(saved_ret);
-        return std::nullopt; // 错误值在寄存器
-    }
-
     FailSignal AriaVM::arity_error(const usize argc, const usize expected) {
         return current_->arity_error(argc, expected);
     }

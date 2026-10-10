@@ -55,7 +55,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### ctx 服务面（宿主回指针委托）
 
-原生函数与 Object 协议面向本类（对外名 `ExecutionContext`）。报错族、调用机器面、分配、常量串、值寄存器与类访问器在此；宿主回指针 `host_` 为私有成员（借用、不 trace，无访问器不外泄），各委托体住 `.cpp` 读宿主公有面。
+原生函数与 Object 协议面向本类（对外名 `ExecutionContext`）。报错族、调用机器面、分配、常量串、值寄存器与类访问器在此；宿主回指针 `host_` 为私有成员（借用、不 trace），公有访问口 `host()` 供 eval 驱动层取宿主面，其余委托体住 `.cpp` 读宿主公有面。
 
 - **报错族（真身在此）**：`raise(code, fmt, args...)` 从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`）后装箱写**本上下文寄存器**；`fail` = raise + 恒返 `FailSignal`（`[[nodiscard]]` 强制 `return ctx.fail(...);`）；`arity_error`×3 为措辞家族唯一口。`FailSignal`（fail 的返回哨兵）定义同住本头。
 - **调用机器面（真身在此）**：`check_arity`（元数检查，纯读无分配）与 `prepare_call_args`（实参整形：缺省印章经 `register_value`、varargs 打包经 `gc()`）。call_closure 与 `coroutine.resume` 首启共用。
@@ -66,6 +66,8 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 - `ret_frame_`（u32，0 = 最外执行）+ `recursion_depth_`（上限 `kMaxRecursionDepth` = 32）--驱动循环的出口边界与重入深度随上下文走，消费方一律从 `current_` 读取（无 VM 级基线成员）。入口挂界 `enter_recursion()`（边界 = 入场帧深，断言钉边界非零--零帧 = 无驱动，最外执行只走 `run()`）、退场 `leave_recursion()` 归还外层边界。
 - `truncate_frames_to(depth)`：一步退到 depth 的截帧原语，unwind 的嵌套未命中臂借此截净残留帧（depth >= 帧数时无操作）。
+- 重入口两口 = 公共面 `execute_closure(closure, args)`（闭包形态，槽 0 = closure 自身）/ `execute_method(receiver, method, args)`（方法形态，槽 0 = receiver 即 this），共同委托 eval 层 `Eval::execute_call`：压调用区 `[slot0, a1..aN]` + `call_closure` 进帧 + 同步驱动 `dispatch_loop` 至本调用结算（出口边界 = 上行挂的 `ret_frame_`）。仅可在执行中的驱动内调（入场断言钉边界非零）。消费方免友元（当前唯一消费方 = 测试探针 `TestProbe`，经 `vm.current_context()->execute_closure(...)` 走公共面，见 `tests/runtime/test_execute.cpp`）。
+- 参数契约与失败合同（`Eval::execute_call` 声明处同款）：`args` 按声明序、不含槽 0；不得指进 `current_` 值栈--要传栈上段，压档余量须足（扩容搬迁令旧指针悬垂），debug 断言复核。失败返 `nullopt` 且载荷留挂起寄存器、嵌套残帧已被 unwind 截净，调用方按 bool 契约 `return false` 交外层循环续搜；深度达 `kMaxRecursionDepth` 报 `StackOverflow`，实参超 u8 域报 `WrongArity`。
 
 ### `CallFrame`（trivially-copyable 聚合，同文件）
 
@@ -83,7 +85,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/Eval.hpp` / `.cpp`
 
-eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型）：`class Eval` 全静态方法宿主，以 `AriaVM& vm` 为参数、宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达，循环状态全部取自 `*current_`。公共驱动面两口 = `dispatch_loop`（宿主 run/重入执行体的驱动口）与 `call_closure`（闭包进帧单点）；`run_*` 指令执行体、算子模板族、call 机器、`unwind` 皆私有，模板定义与实例化点全在本 TU。
+eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型）：`class Eval` 全静态方法宿主，以 `AriaVM& vm` 为参数、宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达，循环状态全部取自 `*current_`。公共驱动面三口 = `dispatch_loop`（宿主 run/重入执行体的驱动口）、`call_closure`（闭包进帧单点）与 `execute_call`（重入执行体，签名即 `ExecutionContext& ctx`，ObjMovement 重入口两口的共用体）；`run_*` 指令执行体、算子模板族、call 机器、`unwind` 皆私有，模板定义与实例化点全在本 TU。
 
 ### 指令子集
 
@@ -115,7 +117,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ## `runtime/AriaVM.hpp` / `.cpp`
 
-解释器宿主（M1-M6 机制已落地）：持 GC、模块表、builtins 表、值寄存器组、常量串表、单字符表、源根与执行入口；字节码驱动住 eval 层（Eval，友元缝），本类留守宿主服务（IMPORT 加载、未捕获物化、协程切换原语、重入执行体）。
+解释器宿主（M1-M6 机制已落地）：持 GC、模块表、builtins 表、值寄存器组、常量串表、单字符表、源根与执行入口；字节码驱动住 eval 层（Eval，友元缝），本类留守宿主服务（IMPORT 加载、未捕获物化、协程切换原语）。
 
 ### 执行入口
 
@@ -125,15 +127,9 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ### `run(ObjFunction*)`：程序入口仪式（唯一最外执行口）
 
-- 入口锚 + 出口断言：入口 `entry_ctx = current_` 锚定本轮入口上下文（即主上下文），出口 `ASSERT(current_ == entry_ctx)` 钉住切换交接完整（dispatch_loop 的最外出口都发生在 resume 链链根 = 入口上下文；漏交接当场炸，不等下一轮入口）。永久不变式--`run()` 是唯一最外执行入口，重入嵌套只走下方私有重入口、不经此仪式。
+- 入口锚 + 出口断言：入口 `entry_ctx = current_` 锚定本轮入口上下文（即主上下文），出口 `ASSERT(current_ == entry_ctx)` 钉住切换交接完整（dispatch_loop 的最外出口都发生在 resume 链链根 = 入口上下文；漏交接当场炸，不等下一轮入口）。永久不变式--`run()` 是唯一最外执行入口，重入嵌套只走重入口（ObjMovement `execute_closure`/`execute_method`，见 ObjMovement 节）、不经此仪式。
 - 源根入口槽 `[0]` 原地替换为入口模块 `dir_` + 前后各一次 `reset()` 清场（前：HALT 收场的上一轮不弹帧，不先清场会把新帧叠在陈旧帧上；后：避免 `run()` 外 GC 经 tracer 标到陈旧栈值）。
 - 入口 fn 包空闭包（顶层也闭包，M4；fn 跨 `new_closure` 的 GC 点 `make_guard` 兜底），入口动作内联在函数体：压 callee + `Eval::call_closure` 进帧（返回 bool 有意忽略，承重不变式两条：入口闭包 arity 0/下限 0 恒过元数检查、`reset()` 后帧栈空不会帧满）-> `Eval::dispatch_loop(*this)` 主循环作用于 `*current_`；false 出口经私有 `rebake_uncaught_error()` 物化未捕获 `Error`（见「VM 异常通道」节）。
-
-### `execute_closure` / `execute_method`：私有重入口
-
-- 指令执行中同步执行一个闭包的重入口（vm-design.md §4.11），各自委托私有执行体 `execute_call`：压调用区 `[slot0, a1..aN]`（闭包形态槽 0 = closure 自身、方法形态槽 0 = receiver 即 this）+ `call_closure` 进帧 + 同步驱动 `dispatch_loop` 至本调用结算（出口边界 = 重入期挂到上下文的 `ret_frame_`）。仅可在执行中的驱动内调（入场断言钉边界非零，零帧 = 最外执行只走 `run()`）。私有口，当前唯一消费方是统一测试探针 `TestProbe`（`friend struct TestProbe;` 声明即授权，定义全由测试文件寄入，白盒驱动见 `tests/runtime/test_execute.cpp`）。
-- 参数契约：`args` 按声明序、不含槽 0；不得指进 `current_` 值栈--要传栈上段，压档余量须足（扩容搬迁令旧指针悬垂），debug 断言复核。
-- 失败合同：返 `nullopt` 且载荷留挂起寄存器、嵌套残帧已被 unwind 截净，调用方按 bool 契约 `return false` 交外层循环续搜；深度达 `kMaxRecursionDepth` 报 `StackOverflow`，实参超 u8 域报 `WrongArity`。
 
 ### GC 已启用
 
@@ -164,7 +160,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ### 共享状态
 
-- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`ObjMovement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `ObjMovement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、循环重入只走私有重入口（`execute_closure`/`execute_method`），任何时刻取指执行字节码的循环唯一、正在执行的字节码所在上下文恒等于 `current_`）。
+- 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`ObjMovement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `ObjMovement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、循环重入只走重入口（ctx `execute_closure`/`execute_method`），任何时刻取指执行字节码的循环唯一、正在执行的字节码所在上下文恒等于 `current_`）。
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
 - VM 级只读 builtins 表 `builtins_`（构造期由 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂七个 bootstrap 类裸名（object/exception/iterator/list/map/string/range -> 各自 bootstrap 类，exception 即用户异常基类 Exception、可被子类化）与 `coroutine` 键 -> 合成 `<coroutine>` 模块，全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib；`set_source_roots` 可整体替换 [1..]，当前消费者仅测试--隔离 stdlib 或注入测试根，CLI 暂无配置通道）与值寄存器组 `registers_`（`List<Object*>`，VM 单例对象的统一存放表，构造期按表长预置格、bootstrap 按 `k<名字>Offset` 具名格位填、填完经 `assert_slots_filled` 收口，注册表见 `runtime/value_register.hpp`，寄存器只读）。

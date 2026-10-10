@@ -1,6 +1,7 @@
 #ifndef ARIA_EVAL_HPP
 #define ARIA_EVAL_HPP
 
+#include "aria.hpp"
 #include "common.hpp"
 #include "value/Value.hpp"
 
@@ -28,6 +29,15 @@ namespace aria {
         // 闭包调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
         // 整形后进帧。失败 WrongArity/StackOverflow。
         static bool call_closure(AriaVM& vm, ObjClosure* obj, u8 argc);
+
+        // 重入执行体(ObjMovement 重入口 execute_closure/execute_method 的共用体):压 slot0 与
+        // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
+        // 收取闭包返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
+        // false 交外层续搜;递归深度达 kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报
+        // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
+        // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
+        [[nodiscard]]
+        static Opt<Value> execute_call(ExecutionContext& ctx, Value slot0, ObjClosure* closure, Span<const Value> args);
 
     private:
         // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用

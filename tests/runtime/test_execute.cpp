@@ -98,7 +98,8 @@ namespace {
 
 namespace aria {
 
-    // 白盒测试统一探针宿主(AriaVM 的唯一测试友元,src 只有声明;定义全收于此)。
+    // 重入口驱动探针宿主(全走公共面:ctx 服务面与重入口 execute_closure/execute_method;定义
+    // 全收于此)。
     struct TestProbe {
         // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_closure 形态),fn 须闭包值;失败
         // 载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
@@ -111,7 +112,8 @@ namespace aria {
             }
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
-            const auto result = vm.execute_closure(slots[1].as_obj()->as<ObjClosure>(), {args, argc});
+            const auto ctx    = vm.current_context();
+            const auto result = ctx->execute_closure(slots[1].as_obj()->as<ObjClosure>(), {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }
@@ -132,7 +134,8 @@ namespace aria {
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
             const auto method = bound->method().as_obj()->as<ObjClosure>();
-            const auto result = vm.execute_method(bound->receiver(), method, {args, argc});
+            const auto ctx    = vm.current_context();
+            const auto result = ctx->execute_method(bound->receiver(), method, {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }

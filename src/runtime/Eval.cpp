@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <system_error>
 
 #include "aria.hpp"
@@ -191,6 +192,36 @@ namespace aria {
         }
         vm.current_->enter_frame(obj, vm.current_->prepare_call_args(fn, argc));
         return true;
+    }
+
+    Opt<Value> Eval::execute_call(ExecutionContext& ctx, const Value slot0, ObjClosure* closure,
+                                  const Span<const Value> args) {
+        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
+        // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
+        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
+        // 重寻址(重入期间值栈可能搬迁)。
+        auto& vm = ctx.host();
+        ASSERT(&ctx == vm.current_, "reentry must target the executing context");
+        if (ctx.recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
+            return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
+        }
+        if (args.size() > std::numeric_limits<u8>::max()) {
+            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
+        }
+        ASSERT(args.data() >= ctx.stack_top() || args.data() + args.size() <= ctx.stack_base() ||
+                       ctx.stack_size() + 1 + args.size() <= ctx.stack_capacity(),
+               "args alias the value stack without room to push");
+        ctx.push(slot0); // 入栈即根(槽 0 = 本调用返回槽)
+        for (const auto& arg: args) {
+            ctx.push(arg);
+        }
+        const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
+        if (call_closure(vm, closure, args.size()) && dispatch_loop(vm)) {
+            ctx.leave_recursion(saved_ret);
+            return ctx.pop(); // 闭包返回值
+        }
+        ctx.leave_recursion(saved_ret);
+        return std::nullopt; // 错误值在寄存器
     }
 
     bool Eval::call_native(AriaVM& vm, const ObjNativeFn* obj, const u8 argc) {

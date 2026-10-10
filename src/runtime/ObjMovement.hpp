@@ -307,6 +307,17 @@ namespace aria {
         [[nodiscard]]
         u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
+        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_call;失败载荷留本上下文
+        // 寄存器、残帧截净,调用方按 bool 契约交外层续搜;仅可在执行中的驱动内调)。
+
+        // 闭包形态:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
+        [[nodiscard]]
+        Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
+
+        // 方法形态:receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 = 声明参数数。
+        [[nodiscard]]
+        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
+
         // 常量串按注册表键直读:键 -> 下标的解析在编译期完成(注册表住 runtime/str_table.hpp),
         // 下标经 string_constant 取表。本访问口不依赖宿主完整类型,使用方无须 include AriaVM.hpp。
         template<util::FixedString key>
@@ -353,6 +364,12 @@ namespace aria {
         // 宿主分配器。
         [[nodiscard]]
         GC& gc() noexcept;
+
+        // 宿主访问口:驱动循环与切换原语的 AriaVM 面经此取用(eval 层消费)。
+        [[nodiscard]]
+        AriaVM& host() const noexcept {
+            return *host_;
+        }
 
         // 协程状态与 resume 链:previous_ = 「谁恢复了我」,自 current_ 沿链回走,链尾恒为主
         // 上下文;切换收口在 AriaVM,本类不自切。resume 先置链、yield / RETURN 完成一律解链,
@@ -457,9 +474,6 @@ namespace aria {
         u32            ret_frame_;       // 返回边界:驱动循环出口帧深(0 = 最外执行)
         u32            recursion_depth_; // 嵌套重入深度,达 kMaxRecursionDepth 即拒
     };
-
-    // 执行上下文的对外全词拼写。
-    using ExecutionContext = ObjMovement;
 
     // 工厂:分配执行上下文并绑定宿主回指针。返回对象白色无根,调用方须自行根化(主上下文经
     // current_、协程经 create 原语发布)。构造临界区内(宿主 bootstrap 期)宿主服务面尚未就位,

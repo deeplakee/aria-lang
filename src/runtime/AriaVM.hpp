@@ -67,10 +67,6 @@ namespace aria {
         friend class OpcodeProfiler;
 #endif
 
-        // 白盒测试统一探针宿主:src 不给出定义,成员(测试驱动原生/助手)由测试文件寄入;
-        // 所有测试私有访问走此一处。
-        friend struct TestProbe;
-
         // 唯一的首次执行入口:锚定入口上下文(出口断言 current_ 回锚点,漏切换交接当场炸) +
         // 源根入口槽 [0] 播种 + 前后 reset 清场,入口 fn 包空闭包后内联首次进入本体(出口边界
         // 恒零,弹空帧栈即出口);CodeUnit 假定良构,失败为未捕获运行时错误。
@@ -194,22 +190,6 @@ namespace aria {
     private:
         // 单字符常量表槽数(字节域全值域容量:值域 0-255,容量 = 上限 + 1)。
         static constexpr usize kCharCacheSlots = 256;
-
-        // VM 重入口(闭包形态):closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上;
-        // 契约与失败合同同 execute_call。重入专用:仅可在执行中的驱动内调(零帧调用 debug 断言炸)。
-        Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
-
-        // VM 重入口(方法形态):receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 =
-        // 声明参数数,args 按声明序压其上;契约与失败合同同 execute_call。
-        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
-
-        // 重入执行体(闭包/方法两口共用):压 slot0 与 args(栈形 [slot0, a1..aN],argc = 声明参数
-        // 数,不含槽 0)后同步驱动至结算。成功 = 栈顶收取闭包返回值;失败 nullopt 且载荷留寄存
-        // 器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜;递归深度达
-        // kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报 WrongArity。args 不得指进
-        // current_ 值栈;若传栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之);重入
-        // 返回后写返回槽恒经 peek 重寻址(重入期间值栈可能搬迁)。
-        Opt<Value> execute_call(Value slot0, ObjClosure* closure, Span<const Value> args);
 
         // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译 -> **编译成功才入表**,
         // 返已 set_entry 的模块,不执行模块体。nullptr ⟺ 载荷已 raise;失败不留表项,同路径重试

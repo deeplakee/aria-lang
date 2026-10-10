@@ -8,6 +8,7 @@
 #include "object/ObjModule.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/Eval.hpp"
 
 namespace aria {
     namespace {
@@ -196,6 +197,14 @@ namespace aria {
             return static_cast<u8>(arity + 1);
         }
         return arity;
+    }
+
+    Opt<Value> ObjMovement::execute_closure(ObjClosure* closure, const Span<const Value> args) {
+        return Eval::execute_call(*this, Value::from_obj(closure), closure, args);
+    }
+
+    Opt<Value> ObjMovement::execute_method(const Value receiver, ObjClosure* method, const Span<const Value> args) {
+        return Eval::execute_call(*this, receiver, method, args);
     }
 
     ObjString* ObjMovement::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }

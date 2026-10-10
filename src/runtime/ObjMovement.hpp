@@ -341,6 +341,9 @@ namespace aria {
         u32            recursion_depth_; // 嵌套重入深度,达 kMaxRecursionDepth 即拒
     };
 
+    // 执行上下文的对外全词拼写。
+    using ExecutionContext = ObjMovement;
+
     // 工厂:分配执行上下文。返回对象白色无根,调用方须自行根化(主上下文经 current_、协程经 create 原语发布)。
     [[nodiscard]]
     ObjMovement* new_movement(GC& gc);

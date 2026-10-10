@@ -21,7 +21,7 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
-**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 单友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,以 `AriaVM& vm` 为参数、上下文一律自 `vm.current_` 取;AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
+**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,以 `AriaVM& vm` 为参数、上下文一律自 `vm.current_` 取;AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
 
 ## 3. 结构草图
 
@@ -166,7 +166,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 **机制四件套**(Wren 源码索引见 §8):
 
-1. **create/resume/yield/status 是原生函数,不是操作码**(对标 Wren `Fiber.call/transfer/try`(共用 `runFiber`)与 `Fiber.yield`:全部原语,无 YIELD 操作码)。四原语住友元宿主类 `CoroutineModule`(AriaVM 的私有静态方法 + 方法表全收私有,唯一公有口 `make_module`;AriaVM 友元以访问 `check_arity`/`prepare_call_args`/`current_` 等私有面);语言面载体是 ctor 临界区经 `Builtin::register_builtins` 变量腿建的合成 `<coroutine>` 模块(方法表装进其 globals,模块经 `builtins_["coroutine"]` 可达、永不入 `modules_`)。resume 职责:校验(元数 → 类型 → `state_` 五态穷举 switch:Suspended 唯一可恢复,Done/Failed 报死态、Normal/Running 报在链上)→ 完成对**对侧**上下文的准备与写值(契约见下方「切换协议」;调用者侧栈一律留给 call_native 统一收敛)→ 经切换原语对换指 → 返回。
+1. **create/resume/yield/status 是原生函数,不是操作码**(对标 Wren `Fiber.call/transfer/try`(共用 `runFiber`)与 `Fiber.yield`:全部原语,无 YIELD 操作码)。四原语住友元宿主类 `CoroutineModule`(AriaVM 的私有静态方法 + 方法表全收私有,唯一公有口 `make_module`;AriaVM 友元以直调切换原语对与 `current_` 等私有面,元数检查与实参整形经 ctx 调用机器面);语言面载体是 ctor 临界区经 `Builtin::register_builtins` 变量腿建的合成 `<coroutine>` 模块(方法表装进其 globals,模块经 `builtins_["coroutine"]` 可达、永不入 `modules_`)。resume 职责:校验(元数 → 类型 → `state_` 五态穷举 switch:Suspended 唯一可恢复,Done/Failed 报死态、Normal/Running 报在链上)→ 完成对**对侧**上下文的准备与写值(契约见下方「切换协议」;调用者侧栈一律留给 call_native 统一收敛)→ 经切换原语对换指 → 返回。
 2. **切换对 `call_native` 透明,CALL case 零改动**:`call_native` 以 `entered_ctx`(调用发生时的上下文,事后簿记的真实锚点)为统一锚点--成功路径的 `drop(argc)` 与寄存器断言一律落在其上:未切换时它即 `current_`,已切换时它恰为刚被挂起的旧上下文,`drop` 恰好完成调用者侧栈归一,**无需分支、无需探测比较**(协议见下)。CALL case 更无需感知:成功路径本就只剩 `break`,循环顶自新 `current_` 取指。**aria 的切换同步成本为零**:解释器状态全堆驻留(`ip` 在 `CallFrame`、栈顶在 `Movement::top_`、每指令重取帧引用),没有可陈旧的循环级局部副本--相对 Wren 的简化(Wren 因 frame/ip/stackTop 缓存于 C 局部寄存器变量,切换前后须 `STORE_FRAME`/`LOAD_FRAME` 一对宏同步,aria 无此负担)。
 3. **RETURN 完成路径**(执行体收口 `run_return`,出口边界分流全景见 §4.11):协程最外帧弹尽且有 `previous_` → 完成值写恢复者预留槽(`resumer->peek(0)`)、`reset()`(死协程不留栈,先关开指)、`leave_coroutine(Done)` 置 Done 解链换指(对标 Wren RETURN:numFrames==0 且有 caller 则切回并写返回值);无 `previous_`(主上下文顶层)→ 收到主模块对象(入口收尾 ModuleEntry 所压,返回值留栈顶)。HALT case 另断言协程内不可达(手写字节码逃生口的防线)。
 4. **`run()` 两态与链根锚**:主上下文里 yield 即运行期错误(`YieldOutsideCoroutine`)--挂起只发生在协程内,run() 出口恒顶层 RETURN / 未捕获物化、必发生在 resume 链链根。resume/yield 的深处切换不产生 run 返回,切换不重入 `dispatch_loop()`;循环的可重入通道唯一 = 私有重入口(§4.11),且 `yield` 在嵌套执行内被运行期拒绝(§4.11)。`run()` 入口锚 `entry_ctx = current_` + 出口断言 `current_ == entry_ctx` 为永久不变式(run() 是唯一最外执行入口,漏交接当场炸)。

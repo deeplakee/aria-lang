@@ -293,6 +293,20 @@ namespace aria {
         [[nodiscard]]
         FailSignal arity_error_at_least(usize argc, usize low);
 
+        // 调用机器面(call_closure 与 coroutine.resume 首启共用;体在本类,失败写本上下文寄存器)。
+
+        // 元数检查:普通函数区间 [min_arity, arity](差额为带默认值参数),有缺省报区间文案、无缺省
+        // 报单数;varargs 只保下界,多余实参由 prepare_call_args 打包。
+        [[nodiscard]]
+        bool check_arity(const ObjFunction* fn, u8 argc);
+
+        // 实参整形:把本上下文栈顶从实参深度整形成帧参数槽深并返回槽深。①缺省垫充:未传的固定
+        // 参数槽压缺省印章(体局部槽号按满参编,参数槽 1..n、体局部自 n+1 起);②varargs 打包:
+        // 多余实参整段收集为新 list 压 rest 槽(帧槽深 = arity + 1,无多余实参铸空表 -- rest 恒为
+        // list 非 nil)。
+        [[nodiscard]]
+        u8 prepare_call_args(const ObjFunction* fn, u8 argc);
+
         // 常量串按注册表键直读:键 -> 下标的解析在编译期完成(注册表住 runtime/str_table.hpp),
         // 下标经 string_constant 取表。本访问口不依赖宿主完整类型,使用方无须 include AriaVM.hpp。
         template<util::FixedString key>

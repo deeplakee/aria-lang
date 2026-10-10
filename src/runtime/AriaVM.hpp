@@ -58,7 +58,7 @@ namespace aria {
         //(current_ 与各服务表)。
         friend class Eval;
 
-        // 协程模块方法面宿主:四原语经友元访问 check_arity/prepare_call_args/current_ 私有面。
+        // 协程模块方法面宿主:四原语经友元直调切换原语对与 current_ 等私有面。
         friend class CoroutineModule;
 
 #ifdef ARIA_OPCODE_PROFILE
@@ -221,19 +221,7 @@ namespace aria {
         // run 期 -> RuntimeError -- 被导入模块编译错经异常通道传播、可被 try/catch 捕获,故非 CompileError)。
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 
-        // call_closure 辅助:元数检查(纯读无分配)。普通函数区间 [min_arity, arity](差额为带
-        // 默认值参数),有缺省报区间文案、无缺省报单数;varargs 只保下界,多余实参由
-        // prepare_call_args 打包。at 行只到调用者帧(被调帧未进)。
-        bool check_arity(const ObjFunction* fn, u8 argc);
-
-        // call_closure 辅助:实参整形,把调用区栈顶从实参深度整形成帧参数槽深并返回槽深。
-        // ①缺省垫充:未传的固定参数槽压缺省印章(体局部槽号按满参编,参数槽 1..n、体局部自
-        // n+1 起);②varargs 打包:多余实参整段收集为新 list 压 rest 槽(帧槽深 = arity + 1,
-        // 无多余实参铸空表 -- rest 恒为 list 非 nil)。
-        u8 prepare_call_args(const ObjFunction* fn, u8 argc);
-
-        // 协程切换原语对(切换序列唯一实现处,状态/链/换指不再由调用方手拼):leave_coroutine 收敛
-        // yield / RETURN 完成 / 未捕获跳链三个回切方向;让位方的 reset/载荷善后归调用方。
+        // 协程切换原语对
         void enter_coroutine(ObjMovement* coroutine);
 
         void leave_coroutine(ExecState departing_state);

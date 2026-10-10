@@ -183,13 +183,13 @@ namespace aria {
 
     bool Eval::call_closure(AriaVM& vm, ObjClosure* obj, const u8 argc) {
         const auto fn = obj->function();
-        if (!vm.check_arity(fn, argc)) {
+        if (!vm.current_->check_arity(fn, argc)) {
             return false;
         }
         if (vm.current_->frames_full()) {
             return vm.fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
-        vm.current_->enter_frame(obj, vm.prepare_call_args(fn, argc));
+        vm.current_->enter_frame(obj, vm.current_->prepare_call_args(fn, argc));
         return true;
     }
 

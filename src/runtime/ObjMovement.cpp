@@ -4,6 +4,7 @@
 
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
+#include "object/ObjList.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
@@ -153,6 +154,48 @@ namespace aria {
 
     FailSignal ObjMovement::arity_error_at_least(const usize argc, const usize low) {
         return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
+    }
+
+    bool ObjMovement::check_arity(const ObjFunction* fn, const u8 argc) {
+        // 契约见 ObjMovement.hpp;检查纯读,无分配。
+        const auto arity     = fn->arity();
+        const auto min_arity = fn->min_arity();
+        if (fn->is_varargs()) {
+            if (argc < min_arity) {
+                return arity_error_at_least(argc, min_arity);
+            }
+            return true;
+        }
+        if (argc < min_arity || argc > arity) {
+            if (min_arity == arity) {
+                return arity_error(argc, arity);
+            }
+            return arity_error_range(argc, min_arity, arity);
+        }
+        return true;
+    }
+
+    u8 ObjMovement::prepare_call_args(const ObjFunction* fn, const u8 argc) {
+        // GC 走查:new_list 为唯一分配点 -- 额外实参 peek 在栈(栈即根),copy_from 走 trivial
+        // 分配不触 GC,白色 list 随即 drop+push 入值栈根,窗口内无 GC 点;垫充压寄存器单例无分配。
+        const auto arity = fn->arity();
+
+        // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
+        const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
+        for (u8 i = 0; i < missing; ++i) {
+            push(register_value(kDefaultMarkOffset));
+        }
+
+        // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
+        if (fn->is_varargs()) {
+            const auto extras = argc > arity ? static_cast<u8>(argc - arity) : u8{0};
+            const auto rest   = new_list(gc());
+            rest->elements().copy_from({stack_top() - extras, extras});
+            drop(extras);
+            push(Value::from_obj(rest));
+            return static_cast<u8>(arity + 1);
+        }
+        return arity;
     }
 
     ObjString* ObjMovement::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }

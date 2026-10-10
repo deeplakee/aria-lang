@@ -57,7 +57,7 @@ namespace aria {
             const auto closure = try_as_obj<ObjClosure>(co->peek(0));
             ASSERT(closure != nullptr, "coroutine slot-0 is not a closure (create invariant)");
             const auto fn = closure->function();
-            if (!vm.check_arity(fn, payload)) {
+            if (!vm.current_->check_arity(fn, payload)) {
                 return false;
             }
             vm.enter_coroutine(co);
@@ -66,7 +66,7 @@ namespace aria {
             }
             // 元数已预检、协程帧栈必空,直取 call_closure 的整形加进帧尾段;varargs 打包顶
             // maybe_collect 时恢复者经 previous_ 边可达。
-            co->enter_frame(closure, vm.prepare_call_args(fn, payload));
+            co->enter_frame(closure, co->prepare_call_args(fn, payload));
         } else {
             // 已挂起:yield 是单值表达式,只收 0 或 1 个载荷。
             if (payload > 1) {

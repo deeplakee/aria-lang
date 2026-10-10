@@ -613,8 +613,9 @@ namespace aria {
         if (const auto super = try_as_obj<ObjClass>(ctx.peek(0))) {
             // 内建容器五类不可继承(方法面 receiver 恒具体内建对象,实例无从满足);Object 放行:
             // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
-            if (super == ctx.list_class() || super == ctx.map_class() || super == ctx.string_class() ||
-                super == ctx.range_class() || super == ctx.iterator_class()) {
+            if (super == ctx.host().list_class() || super == ctx.host().map_class() ||
+                super == ctx.host().string_class() || super == ctx.host().range_class() ||
+                super == ctx.host().iterator_class()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'",
                                 super->name()->view());
             }

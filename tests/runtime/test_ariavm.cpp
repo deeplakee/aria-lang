@@ -3103,8 +3103,8 @@ TEST(MovementServices, LookupFacesDelegateToHost) {
     EXPECT_EQ(ctx->str<"__add__">(), vm.str<"__add__">());
     EXPECT_EQ(ctx->char_string('x'), vm.char_string('x'));
     EXPECT_EQ(ctx->register_value(kObjectClassOffset).as_obj(), vm.register_value(kObjectClassOffset).as_obj());
-    EXPECT_EQ(ctx->object_class(), vm.object_class());
-    EXPECT_EQ(ctx->string_class(), vm.string_class());
+    EXPECT_EQ(ctx->host().object_class(), vm.object_class());
+    EXPECT_EQ(ctx->host().string_class(), vm.string_class());
     EXPECT_EQ(&ctx->gc(), &vm.gc());
 }
 

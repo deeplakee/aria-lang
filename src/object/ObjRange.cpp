@@ -2,6 +2,7 @@
 
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
+#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
 
@@ -45,7 +46,7 @@ namespace aria {
     }
 
     Opt<Value> ObjRange::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.range_class()->load_field(ctx, name);
+        return ctx.host().range_class()->load_field(ctx, name);
     }
 
     Opt<Value> ObjRange::load_field_bound(AriaExeContext& ctx, ObjString* name) {

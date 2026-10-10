@@ -55,11 +55,11 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ### ctx 服务面（宿主回指针委托）
 
-原生函数与 Object 协议面向本类（对外名 `AriaExeContext`）。报错族、调用机器面、分配、常量串、值寄存器与类访问器在此；宿主回指针 `host_` 为私有成员（借用、不 trace），公有访问口 `host()` 供 eval 驱动层取宿主面，其余委托体住 `.cpp` 读宿主公有面。
+原生函数与 Object 协议面向本类（对外名 `AriaExeContext`）。报错族、调用机器面、分配、常量串与值寄存器在此；宿主回指针 `host_` 为私有成员（借用、不 trace），公有访问口 `host()` 供原生/协议/驱动层直调宿主面（含七个 bootstrap 类访问器 `host().X_class()`），其余委托体住 `.cpp` 读宿主公有面。
 
 - **报错族（真身在此）**：`raise(code, fmt, args...)` 从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`）后装箱写**本上下文寄存器**；`fail` = raise + 恒返 `FailSignal`（`[[nodiscard]]` 强制 `return ctx.fail(...);`）；`arity_error`×3 为措辞家族唯一口。`FailSignal`（fail 的返回哨兵）定义同住本头。
 - **调用机器面（真身在此）**：`check_arity`（元数检查，纯读无分配）与 `prepare_call_args`（实参整形：缺省印章经 `register_value`、varargs 打包经 `gc()`）。call_closure 与 `coroutine.resume` 首启共用。
-- **委托面**：`gc()` / `str<key>()` / `char_string()` / `string_constant()` / `register_value()` 与七个 bootstrap 类访问器。`str<key>` 是**宿主无关**的内联成员模板：键 -> 下标的解析在编译期用同层注册表（`runtime/str_table.hpp`）完成，下标经 `string_constant` 取宿主表——使用方只 include 本头即可实例化，无须拖入 AriaVM.hpp。
+- **委托面**：`gc()` / `str<key>()` / `char_string()` / `string_constant()` / `register_value()`（bootstrap 类访问器不上 ctx，消费方经 `host().X_class()` 直调宿主）。`str<key>` 是**宿主无关**的内联成员模板：键 -> 下标的解析在编译期用同层注册表（`runtime/str_table.hpp`）完成，下标经 `string_constant` 取宿主表——使用方只 include 本头即可实例化，无须拖入 AriaVM.hpp。
 - 构造临界区（宿主 bootstrap 期）宿主服务面尚未就位，期间只建对象、不走本面（工厂注释钉）。
 
 ### 嵌套执行边界（重入口）

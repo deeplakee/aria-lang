@@ -325,34 +325,13 @@ namespace aria {
         [[nodiscard]]
         ObjString* char_string(u8 byte) const noexcept;
 
-        // 值寄存器按格位直读与七个 bootstrap 类访问器:格唯一存于宿主寄存器组。
+        // 值寄存器按格位直读:格唯一存于宿主寄存器组。
         [[nodiscard]]
         Value register_value(u8 offset) const noexcept;
 
-        [[nodiscard]]
-        ObjClass* object_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* exception_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* iterator_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* list_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* map_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* string_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* range_class() const noexcept;
-
         // 宿主分配器。
         [[nodiscard]]
-        GC& gc() noexcept;
+        GC& gc() const noexcept;
 
         // 宿主访问口:驱动循环与切换原语的 AriaVM 面经此取用(eval 层消费)。
         [[nodiscard]]

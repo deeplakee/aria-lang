@@ -108,12 +108,12 @@ namespace aria {
         registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
 
         for (const auto& [name, offset]: ListClass::kOperatorFns) {
-            const auto hit = list_class()->load_field(*this, new_string(gc_, name));
+            const auto hit = list_class()->load_field(*current_, new_string(gc_, name));
             ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
             registers_[offset] = hit->as_obj();
         }
         for (const auto& [name, offset]: StringClass::kOperatorFns) {
-            const auto hit = string_class()->load_field(*this, new_string(gc_, name));
+            const auto hit = string_class()->load_field(*current_, new_string(gc_, name));
             ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
             registers_[offset] = hit->as_obj();
         }

@@ -63,7 +63,7 @@ namespace {
 
     // next 取件:耗尽即失败(调用方保证未越界)。
     i64 take_next(AriaVM& vm, ObjRangeIterator* iter) {
-        const auto value = iter->next(vm);
+        const auto value = iter->next(*vm.current_context());
         EXPECT_TRUE(value.has_value());
         return value ? value->as_int() : -1;
     }
@@ -182,7 +182,7 @@ TEST(ObjRange, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   range = make_range(gc, guard, 0, 10, false);
-    auto   bound = range->load_field_bound(vm, new_string(gc, "iter"));
+    auto   bound = range->load_field_bound(*vm.current_context(), new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -199,7 +199,7 @@ TEST(ObjRange, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   range = make_range(gc, guard, 0, 10, false);
-    EXPECT_FALSE(range->load_field_bound(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(range->load_field_bound(*vm.current_context(), new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class Range> has no member 'nope'");
@@ -214,7 +214,7 @@ TEST(ObjRange, BootstrapSurvivesStressCollect) {
     auto       range   = make_range(gc, guard, 0, 10, false);
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = range->load_field_bound(vm, new_string(gc, "iter"));
+    auto bound = range->load_field_bound(*vm.current_context(), new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -312,7 +312,7 @@ TEST(ObjRangeIterator, NextPastEndFailsFast) {
     take_next(vm, iter);
     take_next(vm, iter);
     take_next(vm, iter);
-    const auto value = iter->next(vm);
+    const auto value = iter->next(*vm.current_context());
     EXPECT_FALSE(value.has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IterationExhausted);

@@ -30,7 +30,7 @@ namespace aria {
         bool has_next() const noexcept override;
 
         [[nodiscard]]
-        Opt<Value> next(AriaVM& vm) override;
+        Opt<Value> next(AriaExeContext& ctx) override;
 
     private:
         i64      current_;      // 下一个产出值(自 from 起步,按方向推进)

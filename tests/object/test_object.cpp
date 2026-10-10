@@ -83,23 +83,23 @@ TEST(ObjectProtocolDefaults, MemberIndexDefaults) {
     // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
     // store = "type X does not support field access"。Module 已 override 两协议(load = 成员查
     // globals_、store = 只读拒),故写默认体用 string 探(ObjString 不 override store_field)。
-    EXPECT_FALSE(m->load_field(vm, k).has_value());
+    EXPECT_FALSE(m->load_field(*vm.current_context(), k).has_value());
     auto [code, msg] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("has no member 'len'"));
 
-    EXPECT_FALSE(s->store_field(vm, k, Value::from_int(1)));
+    EXPECT_FALSE(s->store_field(*vm.current_context(), k, Value::from_int(1)));
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_TRUE(msg.contains("type String does not support field access"));
 
     // 下标协议默认(备置):"type X does not support subscript access"。
-    EXPECT_FALSE(m->load_index(vm, Value::from_int(0)).has_value());
+    EXPECT_FALSE(m->load_index(*vm.current_context(), Value::from_int(0)).has_value());
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_TRUE(msg.contains("type Module does not support subscript access"));
 
-    EXPECT_FALSE(m->store_index(vm, Value::from_int(0), Value::from_int(1)));
+    EXPECT_FALSE(m->store_index(*vm.current_context(), Value::from_int(0), Value::from_int(1)));
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_TRUE(msg.contains("type Module does not support subscript access"));

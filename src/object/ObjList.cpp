@@ -7,7 +7,8 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
 #include "object/PrintGuard.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
+#include "runtime/value_register.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
@@ -53,55 +54,57 @@ namespace aria {
         return "[" + util::join(elements_, ", ", repr) + "]";
     }
 
-    Opt<Value> ObjList::load_field(AriaVM& vm, ObjString* name) { return vm.list_class()->load_field(vm, name); }
+    Opt<Value> ObjList::load_field(AriaExeContext& ctx, ObjString* name) {
+        return ctx.list_class()->load_field(ctx, name);
+    }
 
-    Opt<Value> ObjList::load_field_bound(AriaVM& vm, ObjString* name) {
-        const auto hit = load_field(vm, name);
+    Opt<Value> ObjList::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjList::load_index(AriaVM& vm, const Value key) {
+    Opt<Value> ObjList::load_index(AriaExeContext& ctx, const Value key) {
         if (const auto range = try_as_obj<ObjRange>(key)) {
-            return slice(vm, range);
+            return slice(ctx, range);
         }
         if (!key.is_int()) {
-            return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
+            return ctx.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
         const i64 raw = key.as_int();
         if (const auto slot = util::resolve_index(raw, elements_.size())) {
             return elements_[*slot];
         }
-        return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
+        return ctx.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
-    bool ObjList::store_index(AriaVM& vm, const Value key, const Value value) {
+    bool ObjList::store_index(AriaExeContext& ctx, const Value key, const Value value) {
         if (!key.is_int()) {
-            return vm.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
+            return ctx.fail(ErrorCode::TypeMismatch, "list index must be an integer, got {}", aria::type_name(key));
         }
         const i64 raw = key.as_int();
         if (const auto slot = util::resolve_index(raw, elements_.size())) {
             elements_[*slot] = value;
             return true;
         }
-        return vm.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
+        return ctx.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
-    Opt<Value> ObjList::op_add_impl(AriaVM& vm) { return vm.register_value(kListAddFnOffset); }
+    Opt<Value> ObjList::op_add_impl(AriaExeContext& ctx) { return ctx.register_value(kListAddFnOffset); }
 
-    Opt<Value> ObjList::op_mul_impl(AriaVM& vm) { return vm.register_value(kListMulFnOffset); }
+    Opt<Value> ObjList::op_mul_impl(AriaExeContext& ctx) { return ctx.register_value(kListMulFnOffset); }
 
-    Opt<Value> ObjList::slice(AriaVM& vm, const ObjRange* range) {
+    Opt<Value> ObjList::slice(AriaExeContext& ctx, const ObjRange* range) {
         // 段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间,唯一失败点报错就地烘焙。
         const auto segment = resolve_slice_bounds(range, elements_.size());
         if (!segment) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
+            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
         // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 越界断言不容它。GC 走查:receiver
         // 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由 run_load_index 写回原槽根化。
-        const auto list   = new_list(vm.gc());
+        const auto list   = new_list(ctx.gc());
         const auto source = Span<const Value>{elements_.data() + segment->start, segment->count};
         if (segment->is_reversed) {
             list->elements().copy_reversed_from(source); // 升序源段,由 Array 反转追加

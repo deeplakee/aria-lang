@@ -9,7 +9,6 @@ namespace aria {
     class GC;
     class ObjString;
     class Error;
-    class AriaVM;
 
     // 异常对象:VM 检测到的运行时错误与原生报错的装箱载荷;message_ 存完整烘焙消息,运行期不含位置前缀。
     class ObjException final : public Object {
@@ -58,10 +57,10 @@ namespace aria {
         String debug_repr() const override;
 
         // 裸读 override:委托 Exception bootstrap 类表直取原生值。
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override:同一查找命中恒绑 this。
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
     private:
         i64        code_;    // 错误码数字(单一存储:VM 报错 = 注册表序号;Error 码参 = 用户所给 int)

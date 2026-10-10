@@ -6,7 +6,7 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/PrintGuard.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
 #include "value/Value.hpp"
 
@@ -55,24 +55,26 @@ namespace aria {
         return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
 
-    Opt<Value> ObjMap::load_field(AriaVM& vm, ObjString* name) { return vm.map_class()->load_field(vm, name); }
+    Opt<Value> ObjMap::load_field(AriaExeContext& ctx, ObjString* name) {
+        return ctx.map_class()->load_field(ctx, name);
+    }
 
-    Opt<Value> ObjMap::load_field_bound(AriaVM& vm, ObjString* name) {
-        const auto hit = load_field(vm, name);
+    Opt<Value> ObjMap::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjMap::load_index(AriaVM& vm, const Value key) {
+    Opt<Value> ObjMap::load_index(AriaExeContext& ctx, const Value key) {
         if (const auto entry = table_.find(key)) {
             return entry->value;
         }
-        return vm.fail(ErrorCode::KeyError, "map key not found: {}", repr(key));
+        return ctx.fail(ErrorCode::KeyError, "map key not found: {}", repr(key));
     }
 
-    bool ObjMap::store_index(AriaVM& vm, const Value key, const Value value) {
+    bool ObjMap::store_index(AriaExeContext& ctx, const Value key, const Value value) {
         table_.set(key, value);
         return true;
     }

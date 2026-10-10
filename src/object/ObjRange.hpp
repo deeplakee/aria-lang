@@ -6,7 +6,6 @@
 
 namespace aria {
 
-    class AriaVM;
     class ObjString;
 
     // range 对象:a..b(含上界)/a...b(不含上界)/a..(无上界)的纯值载体;from > to 表示倒序区间,方向由迭代器推断。
@@ -65,11 +64,11 @@ namespace aria {
 
         // 裸读 override:委托 Range bootstrap 类表直取原生值。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
     private:
         i64      from_;         // 区间起点端点(恒有)

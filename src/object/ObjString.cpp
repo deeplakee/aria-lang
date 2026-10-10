@@ -9,7 +9,8 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
+#include "runtime/value_register.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
 
@@ -85,55 +86,57 @@ namespace aria {
 
     String ObjString::to_string() const { return std::format("{}", view()); }
 
-    Opt<Value> ObjString::load_field(AriaVM& vm, ObjString* name) { return vm.string_class()->load_field(vm, name); }
+    Opt<Value> ObjString::load_field(AriaExeContext& ctx, ObjString* name) {
+        return ctx.string_class()->load_field(ctx, name);
+    }
 
-    Opt<Value> ObjString::load_field_bound(AriaVM& vm, ObjString* name) {
-        const auto hit = load_field(vm, name);
+    Opt<Value> ObjString::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
     }
 
-    Opt<Value> ObjString::load_index(AriaVM& vm, const Value key) {
+    Opt<Value> ObjString::load_index(AriaExeContext& ctx, const Value key) {
         if (const auto range = try_as_obj<ObjRange>(key)) {
-            return slice(vm, range);
+            return slice(ctx, range);
         }
         // 整数键 = 字节域,负下标从尾计数归一化;多字节序列中间字节取该字节自身。
         if (!key.is_int()) {
-            return vm.fail(ErrorCode::TypeMismatch, "string index must be an integer, got {}", aria::type_name(key));
+            return ctx.fail(ErrorCode::TypeMismatch, "string index must be an integer, got {}", aria::type_name(key));
         }
         const i64 raw = key.as_int();
         if (const auto slot = util::resolve_index(raw, length_)) {
-            return Value::from_obj(vm.char_string(static_cast<u8>(view()[*slot])));
+            return Value::from_obj(ctx.char_string(static_cast<u8>(view()[*slot])));
         }
-        return vm.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", raw);
+        return ctx.fail(ErrorCode::IndexOutOfBounds, "string index {} out of range", raw);
     }
 
-    bool ObjString::store_index(AriaVM& vm, const Value key, const Value value) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
+    bool ObjString::store_index(AriaExeContext& ctx, const Value key, const Value value) {
+        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
     }
 
-    Opt<Value> ObjString::op_add_impl(AriaVM& vm) { return vm.register_value(kStringAddFnOffset); }
+    Opt<Value> ObjString::op_add_impl(AriaExeContext& ctx) { return ctx.register_value(kStringAddFnOffset); }
 
-    Opt<Value> ObjString::op_mul_impl(AriaVM& vm) { return vm.register_value(kStringMulFnOffset); }
+    Opt<Value> ObjString::op_mul_impl(AriaExeContext& ctx) { return ctx.register_value(kStringMulFnOffset); }
 
-    Opt<Value> ObjString::op_less_impl(AriaVM& vm) { return vm.register_value(kStringLtFnOffset); }
+    Opt<Value> ObjString::op_less_impl(AriaExeContext& ctx) { return ctx.register_value(kStringLtFnOffset); }
 
-    Opt<Value> ObjString::op_less_equal_impl(AriaVM& vm) { return vm.register_value(kStringLeFnOffset); }
+    Opt<Value> ObjString::op_less_equal_impl(AriaExeContext& ctx) { return ctx.register_value(kStringLeFnOffset); }
 
-    Opt<Value> ObjString::op_greater_impl(AriaVM& vm) { return vm.register_value(kStringGtFnOffset); }
+    Opt<Value> ObjString::op_greater_impl(AriaExeContext& ctx) { return ctx.register_value(kStringGtFnOffset); }
 
-    Opt<Value> ObjString::op_greater_equal_impl(AriaVM& vm) { return vm.register_value(kStringGeFnOffset); }
+    Opt<Value> ObjString::op_greater_equal_impl(AriaExeContext& ctx) { return ctx.register_value(kStringGeFnOffset); }
 
-    Opt<Value> ObjString::slice(AriaVM& vm, const ObjRange* range) const {
+    Opt<Value> ObjString::slice(AriaExeContext& ctx, const ObjRange* range) const {
         // 段内容拷进 GC 记账 builder(带种串构造单发定容),倒序段在 builder 上按字节反转(字节域);
         // receiver 与 range 经调用方值栈为根,唯一 GC 点在 take_string。段解析收口 resolve_slice_bounds。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
-            return vm.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
+            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
         }
-        auto buffer = StringBuilder{vm.gc(), view().substr(segment->start, segment->count)};
+        auto buffer = StringBuilder{ctx.gc(), view().substr(segment->start, segment->count)};
         if (segment->is_reversed) {
             std::ranges::reverse(buffer);
         }

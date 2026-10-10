@@ -67,7 +67,7 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            const auto value = self->next(ctx.host());
+            const auto value = self->next(ctx);
             if (!value) {
                 return false; // 已 fail(IterationExhausted)
             }

@@ -73,11 +73,11 @@ namespace aria {
         // 命名成员读取 override:模块成员 = 模块全局绑定,查 globals_ 直读原值;函数值为闭包恒非方法
         // 不绑定 this,nil 绑定与「无此成员」由 find 空态区分。miss 文案同基类默认形。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 命名成员写入:模块成员只读 -- 越模块写会隐式创建未声明全局,违「赋值不隐式创建」。
         [[nodiscard]]
-        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+        bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
     private:
         ObjString*    name_;    // 模块名(stem,intern;指针恒非空,内容可空)

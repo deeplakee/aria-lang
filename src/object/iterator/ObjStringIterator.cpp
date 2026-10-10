@@ -3,7 +3,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "util/utf8.hpp"
 #include "value/Value.hpp"
 
@@ -21,10 +21,10 @@ namespace aria {
 
     bool ObjStringIterator::has_next() const noexcept { return offset_ < str_->length(); }
 
-    Opt<Value> ObjStringIterator::next(AriaVM& vm) {
+    Opt<Value> ObjStringIterator::next(AriaExeContext& ctx) {
         // 越界 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
         if (offset_ >= str_->length()) {
-            return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
+            return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         // decode_one 恒返宽度 >= 1(offset < length 下,非法序列返 replacement 且宽 1),游标必进、不死循环。
         // 内容零重生(同 fn_chars):坏字节(宽 1 却非 ASCII)走 encode(U+FFFD) 冷臂;宽 1 必 ASCII
@@ -37,11 +37,11 @@ namespace aria {
         // 常量表直读、非 ASCII 即坏字节走 encode(U+FFFD) 冷臂。
         if (width == 1) {
             if (cp >= 0x80) {
-                return Value::from_obj(new_string(vm.gc(), utf8::encode(cp)));
+                return Value::from_obj(new_string(ctx.gc(), utf8::encode(cp)));
             }
-            return Value::from_obj(vm.char_string(static_cast<u8>(cp)));
+            return Value::from_obj(ctx.char_string(static_cast<u8>(cp)));
         }
-        return Value::from_obj(new_string(vm.gc(), str_->view().substr(start, width)));
+        return Value::from_obj(new_string(ctx.gc(), str_->view().substr(start, width)));
     }
 
     ObjStringIterator* new_string_iterator(GC& gc, ObjString* str) { return gc.new_object<ObjStringIterator>(str); }

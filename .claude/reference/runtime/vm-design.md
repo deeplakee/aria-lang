@@ -59,7 +59,7 @@ class AriaVM {
     // (M6 定稿:无需 contexts_ 调度列表 -- 协程即 Object,经用户持有的协程值 + current_ 单根可达,§4.9)
 
     Result<Value, Error> run();  // 驱动至顶层 RETURN / 未捕获物化(两态即终态,见下注)
-    void        raise(ErrorCode, StringView detail); // 装箱入挂起寄存器,一步烘齐(§4.8);失败信号惯用法由 fail 承载(哨兵按调用点返回类型转 false/nullptr/nullopt,`return vm.fail(...)` 一行)
+    void        raise(ErrorCode, StringView detail); // 装箱入挂起寄存器,一步烘齐(§4.8);失败信号惯用法由 fail 承载(哨兵按调用点返回类型转 false/nullptr/nullopt,`return ctx.fail(...)` 一行)
     bool        call_value(Value callee, u8 argc); // CALL 与嵌入 API 共用;callee 分发闭包/原生/ObjClass(实例化)/ObjBoundMethod(M5);bool 成败信号,失败载荷在挂起寄存器(§4.7)
 };
 
@@ -140,10 +140,10 @@ using NativeFn = bool (*)(AriaExeContext& ctx, Span<Value> slots);
 **内建作者体感**(从 `Result<Value, Error>` 的啰嗦降到一行):
 
 ```cpp
-bool str_native(AriaVM& vm, Span<Value> slots) {
+bool str_native(AriaExeContext& ctx, Span<Value> slots) {
     const auto argc = slots.size() - 1;
-    if (argc != 1) { return vm.arity_error(argc, 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
-    slots[0] = Value::from_obj(new_string(vm.gc(), stringify(slots[1])));  // 就地返回
+    if (argc != 1) { return ctx.arity_error(argc, 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
+    slots[0] = Value::from_obj(new_string(ctx.gc(), stringify(slots[1])));  // 就地返回
     return true;
 }
 ```
@@ -154,7 +154,7 @@ bool str_native(AriaVM& vm, Span<Value> slots) {
 
 **行级粒度** -- 字节码只有 RLE 行号表(`CodeUnit::line_for_offset`,二分查行),无列号 -> 运行期位置上限为行(对标 Lua);列号须扩行号表,暂不做。消息形态:运行期为 `"Category: Name detail"`(**不含位置前缀**;编译期为 `path:line:col: Category: Name detail` -- 编译错误无堆栈,位置是唯一锚点故保留)。运行期位置仅出现在未捕获跟踪行,位置串由 `ObjModule::format_location(line)` 渲染(文件模块 = `abs_path():line`;合成模块(名以 `<` 开头,如 `<script>`)与无目录锚点无文件身份 -- `abs_path()` 会拼出伪路径 -- 退化为 `"<模块名>:<line>"`)。
 
-**位置由未捕获跟踪行统一给出** -- 三类报错站点(VM 检测错误如算术/LOAD_GLOBAL、`call_*` 失败的 WrongArity/StackOverflow/CallNonCallable、原生函数 `vm.fail`)的细节串皆无位置,装箱也不烘位置:消息 = `Error::make_message(code, detail)`(无位置版)。错误位置的取得依赖物化点(`rebake_uncaught_error`)的帧遍历:未捕获物化时逐帧收集 `(function, module, last_ip)` 三元组,顶帧 = 故障帧、`call_*` 失败即 caller 帧(被调帧未进)、原生报错即 caller 帧(原生不进帧),其 `last_ip`(主循环取指前写)恰为故障指令/CALL 站点,无需 take 点补标、无双重标注。(码, 烘焙消息) 拼好跟踪后 `from_baked` 一次物化,同源同串。帧栈空(run 外直调)无位置。位置串是 C++ 侧 String 拼接,不添 GC 约束(`new_exception` 自守不变,坑点文档 #8)。
+**位置由未捕获跟踪行统一给出** -- 三类报错站点(VM 检测错误如算术/LOAD_GLOBAL、`call_*` 失败的 WrongArity/StackOverflow/CallNonCallable、原生函数 `ctx.fail`)的细节串皆无位置,装箱也不烘位置:消息 = `Error::make_message(code, detail)`(无位置版)。错误位置的取得依赖物化点(`rebake_uncaught_error`)的帧遍历:未捕获物化时逐帧收集 `(function, module, last_ip)` 三元组,顶帧 = 故障帧、`call_*` 失败即 caller 帧(被调帧未进)、原生报错即 caller 帧(原生不进帧),其 `last_ip`(主循环取指前写)恰为故障指令/CALL 站点,无需 take 点补标、无双重标注。(码, 烘焙消息) 拼好跟踪后 `from_baked` 一次物化,同源同串。帧栈空(run 外直调)无位置。位置串是 C++ 侧 String 拼接,不添 GC 约束(`new_exception` 自守不变,坑点文档 #8)。
 
 **透传错误不标注、无跟踪** -- 被导入模块的编译期 Error 位置已烘为**被导入文件**的 `path:line:col:`,经 IMPORT 原样透传(现有语义),二次标注会得双重位置且类别语义混乱。实现上与「运行期错误当场构造」分路:后者经 raise 装箱(无位置),前者直传原 Error(不经 unwind,亦无堆栈跟踪)。
 
@@ -197,7 +197,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 切换型原生函数(`coroutine.resume`/`co.yield`)三条契约:
 
-1. **成败分流,只碰对侧上下文**:切换成功 → 首启压载荷 + `prepare_call_args` 整形 + `enter_frame` 进帧(协程栈无预留槽的唯一不对称处)/ 已挂起把载荷写进对侧预留槽(`co->peek(0)`,即 yield 表达式的值),换指经切换原语对 `enter_coroutine`(resume 侧)与 `leave_coroutine(departing_state)`(yield 置 Suspended、完成置 Done、未捕获跳链置 Failed 三方向共用);任何校验失败 → **不切换**,`vm.fail` 进调用者寄存器后返回 false。错误通道与切换通道彻底分流,bool 契约保持二值,非切换型原生函数零影响。**调用者侧的栈不动**--`[callee, a1..aN]` 原样留给 call_native 统一 drop;这同时是 GC 红利:实参(含协程对象自身)在原生函数执行全程都躺在调用者值栈上为根。
+1. **成败分流,只碰对侧上下文**:切换成功 → 首启压载荷 + `prepare_call_args` 整形 + `enter_frame` 进帧(协程栈无预留槽的唯一不对称处)/ 已挂起把载荷写进对侧预留槽(`co->peek(0)`,即 yield 表达式的值),换指经切换原语对 `enter_coroutine`(resume 侧)与 `leave_coroutine(departing_state)`(yield 置 Suspended、完成置 Done、未捕获跳链置 Failed 三方向共用);任何校验失败 → **不切换**,`ctx.fail` 进调用者寄存器后返回 false。错误通道与切换通道彻底分流,bool 契约保持二值,非切换型原生函数零影响。**调用者侧的栈不动**--`[callee, a1..aN]` 原样留给 call_native 统一 drop;这同时是 GC 红利:实参(含协程对象自身)在原生函数执行全程都躺在调用者值栈上为根。
 2. **调用者侧栈效应由 call_native 统一在 `entered_ctx` 上收敛(时点:切换后、切回前),不得推迟到切回方**:已切换时 `entered_ctx->drop(argc)` 弹实参、留槽 0 为预留结果槽;yield 值/完成值/resume 载荷由对侧原语直接写对侧预留槽(`peek(0) = 值`)。不能留给切回方(yield/RETURN)清理--**切回方对本上下文当年那次 CALL 的 argc 一无所知**,且残槽会跨挂起期滞留值栈;归一后跨挂起期两侧栈形状恒定,任何一侧都不依赖另一侧的局部信息(Wren 的对应做法是切换型原语在 `runFiber`/`fiber_yield` 里两侧手工挪 `stackTop`,aria 把调用者侧收进 call_native 统一执行,切换型原生函数的契约面更小)。对侧死于未捕获错误时载荷走恢复者寄存器(链式 unwind,§4.5),该槽随调用区被 unwind_to_handler 截栈一并丢弃、无人补写。
 3. **顺序不变式(住 `enter_coroutine` 注释)**:置链先于换指--换指后 resumer 只经 `co->previous_` 这一条边可达(GC 根只标 `current_`),首启切换后 `prepare_call_args` 的垫充/varargs 打包经 `new_object` 顶 `maybe_collect`,恢复者与其实参以此边存活(实参留栈到 drop 是契约 1 的红利)。
 

@@ -162,7 +162,7 @@ namespace aria {
             default: {
                 // 其余对象类型:取调用钩子 `__call__` 实现后调;调用区就地复用 [callee, a1..aN]
                 // 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
-                if (const auto target = obj->op_call_impl(vm)) {
+                if (const auto target = obj->op_call_impl(*vm.current_)) {
                     return call_value(vm, *target, argc);
                 }
                 return false; // 载荷已在挂起错误寄存器
@@ -323,7 +323,7 @@ namespace aria {
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->op_negate_impl(vm)) {
+            if (const auto target = operand.as_obj()->op_negate_impl(*vm.current_)) {
                 return call_value(vm, *target, 0);
             }
             return false;
@@ -335,23 +335,23 @@ namespace aria {
     Opt<Value> Eval::get_obj_binary_op_impl(AriaVM& vm, Object* obj) {
         // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举)。
         if constexpr (Op == OpCode::ADD) {
-            return obj->op_add_impl(vm);
+            return obj->op_add_impl(*vm.current_);
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj->op_sub_impl(vm);
+            return obj->op_sub_impl(*vm.current_);
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj->op_mul_impl(vm);
+            return obj->op_mul_impl(*vm.current_);
         } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj->op_div_impl(vm);
+            return obj->op_div_impl(*vm.current_);
         } else if constexpr (Op == OpCode::MOD) {
-            return obj->op_mod_impl(vm);
+            return obj->op_mod_impl(*vm.current_);
         } else if constexpr (Op == OpCode::GREATER) {
-            return obj->op_greater_impl(vm);
+            return obj->op_greater_impl(*vm.current_);
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj->op_greater_equal_impl(vm);
+            return obj->op_greater_equal_impl(*vm.current_);
         } else if constexpr (Op == OpCode::LESS) {
-            return obj->op_less_impl(vm);
+            return obj->op_less_impl(*vm.current_);
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj->op_less_equal_impl(vm);
+            return obj->op_less_equal_impl(*vm.current_);
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }
@@ -440,7 +440,7 @@ namespace aria {
         if (!obj.is_obj()) {
             return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
         }
-        if (const auto result = obj.as_obj()->load_field_bound(vm, name)) {
+        if (const auto result = obj.as_obj()->load_field_bound(*vm.current_, name)) {
             vm.current_->peek(0) = *result; // 写回原槽:[obj] -> [v]
             return true;
         }
@@ -453,7 +453,7 @@ namespace aria {
         if (!obj.is_obj()) {
             return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
         }
-        if (!obj.as_obj()->store_field(vm, name, vm.current_->peek(0))) {
+        if (!obj.as_obj()->store_field(*vm.current_, name, vm.current_->peek(0))) {
             return false; // 载荷已在寄存器
         }
         vm.current_->peek(1) = vm.current_->peek(0); // 单槽下移:弹 obj 留 v,[obj, v] -> [v]
@@ -466,7 +466,7 @@ namespace aria {
         // load_field_bound 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
         const Value this_value = vm.current_->frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
-            if (const auto result = inst->load_field_bound(vm, name)) {
+            if (const auto result = inst->load_field_bound(*vm.current_, name)) {
                 vm.current_->push(*result); // [] -> [v]
                 return true;
             }
@@ -480,8 +480,8 @@ namespace aria {
         // 恒成功(实例字段动态),false 分支为契约透传防御形态。非实例兜底同读取执行体。
         const Value this_value = vm.current_->frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
-            if (inst->store_field(vm, name, vm.current_->peek(0))) { // false ⟺ 已 fail(契约)
-                return true;                                         // 值留栈(peek-store)
+            if (inst->store_field(*vm.current_, name, vm.current_->peek(0))) { // false ⟺ 已 fail(契约)
+                return true;                                                   // 值留栈(peek-store)
             }
             return false;
         }
@@ -496,7 +496,7 @@ namespace aria {
         if (!recv.is_obj()) {
             return vm.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
         }
-        if (const auto target = recv.as_obj()->load_field(vm, name)) {
+        if (const auto target = recv.as_obj()->load_field(*vm.current_, name)) {
             vm.current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
             return true;
         }
@@ -553,7 +553,7 @@ namespace aria {
         if (try_list_load_fast_dispatch(vm, target, idx)) {
             return true;
         }
-        if (const auto result = target->load_index(vm, idx)) {
+        if (const auto result = target->load_index(*vm.current_, idx)) {
             vm.current_->peek(1) = *result; // 写回 obj 槽再弹 idx:[obj, idx] -> [v]
             vm.current_->drop(1);
             return true;
@@ -573,7 +573,7 @@ namespace aria {
         if (try_list_store_fast_dispatch(vm, target, idx, value)) {
             return true;
         }
-        if (!target->store_index(vm, idx, value)) {
+        if (!target->store_index(*vm.current_, idx, value)) {
             return false; // 载荷已在寄存器
         }
         vm.current_->peek(2) = value; // 值下移两格:弹 obj、idx 留 v,[obj, idx, v] -> [v]
@@ -632,7 +632,7 @@ namespace aria {
         ASSERT(defining != nullptr, "closure has no defining class (compiler invariant)");
         const auto super = defining->superclass();
         ASSERT(super != nullptr, "method class has no superclass (compiler invariant)");
-        const auto hit = super->load_field(vm, name); // 从父类起读穿透(类协议)
+        const auto hit = super->load_field(*vm.current_, name); // 从父类起读穿透(类协议)
         if (!hit) {
             return false;
         }

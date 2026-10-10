@@ -4,7 +4,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjMap.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
 
@@ -22,16 +22,16 @@ namespace aria {
 
     bool ObjMapIterator::has_next() const noexcept { return cursor_ != map_->table().end(); }
 
-    Opt<Value> ObjMapIterator::next(AriaVM& vm) {
+    Opt<Value> ObjMapIterator::next(AriaExeContext& ctx) {
         // 耗尽 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
         if (!has_next()) {
-            return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
+            return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         const auto& [key, value] = *cursor_;
         ++cursor_;
         // GC 时序:迭代器于调用方 slots[0] 栈根、map 经其 trace 可达(键值随之);new_list 顶部 maybe_collect
         // 时 list 未诞生,push 两元素(trivial 不触 GC)后随返回值写回槽发布,窗口内无 GC 点。
-        const auto list = new_list(vm.gc());
+        const auto list = new_list(ctx.gc());
         list->elements().push(key);
         list->elements().push(value);
         return Value::from_obj(list);

@@ -69,7 +69,7 @@ namespace {
     // make_string 入根)。端到端路径(算子指令 -> 取钩子 -> 调用)由语料覆盖(13_strings 的拼接/比较
     // 各例,语料开 stress GC)。
     Opt<Value> invoke_string_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
-        const auto hook = vm.string_class()->load_field(vm, new_string(vm.gc(), hook_key));
+        const auto hook = vm.string_class()->load_field(*vm.current_context(), new_string(vm.gc(), hook_key));
         if (!hook) {
             return std::nullopt;
         }
@@ -83,7 +83,7 @@ namespace {
 
     // 取切片结果并逐字符比对(切片恒产出 string;比较就在本函数内完成,结果串不需要额外根)。
     void expect_slice(AriaVM& vm, ObjString* s, aria::ObjRange* range, const StringView expected) {
-        const auto result = s->load_index(vm, Value::from_obj(range));
+        const auto result = s->load_index(*vm.current_context(), Value::from_obj(range));
         ASSERT_TRUE(result.has_value());
         const auto out = result->as_obj()->try_as<ObjString>();
         ASSERT_NE(out, nullptr);
@@ -101,13 +101,13 @@ TEST(ObjString, LoadIndexYieldsSingleByteString) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hello");
 
-    auto first = s->load_index(vm, Value::from_int(0));
+    auto first = s->load_index(*vm.current_context(), Value::from_int(0));
     ASSERT_TRUE(first.has_value());
     const auto h = first->as_obj()->try_as<ObjString>();
     ASSERT_NE(h, nullptr);
     EXPECT_EQ(h->view(), "h");
 
-    auto last = s->load_index(vm, Value::from_int(4));
+    auto last = s->load_index(*vm.current_context(), Value::from_int(4));
     ASSERT_TRUE(last.has_value());
     const auto o = last->as_obj()->try_as<ObjString>();
     ASSERT_NE(o, nullptr);
@@ -122,7 +122,7 @@ TEST(ObjString, LoadIndexMidSequenceByteYieldsItself) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "h\xC3\xA9llo");
 
-    auto b1 = s->load_index(vm, Value::from_int(1));
+    auto b1 = s->load_index(*vm.current_context(), Value::from_int(1));
     ASSERT_TRUE(b1.has_value());
     const auto first_byte = b1->as_obj()->try_as<ObjString>();
     ASSERT_NE(first_byte, nullptr);
@@ -137,7 +137,7 @@ TEST(ObjString, LoadIndexNonIntKeyFails) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
     for (const Value key: {Value::from_f64(0.5), Value::nil_val(), Value::from_bool(true)}) {
-        EXPECT_FALSE(s->load_index(vm, key).has_value());
+        EXPECT_FALSE(s->load_index(*vm.current_context(), key).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::TypeMismatch);
         EXPECT_EQ(message,
@@ -151,7 +151,7 @@ TEST(ObjString, LoadIndexOutOfBoundsFails) {
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi"); // 长度 2
     for (const i64 index: {2, -3}) {
-        EXPECT_FALSE(s->load_index(vm, Value::from_int(index)).has_value());
+        EXPECT_FALSE(s->load_index(*vm.current_context(), Value::from_int(index)).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
         EXPECT_EQ(message, aria::String{std::format("Runtime: IndexOutOfBounds string index {} out of range", index)});
@@ -164,17 +164,17 @@ TEST(ObjString, LoadIndexNegativeReadsFromTail) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hello");
-    auto   last  = s->load_index(vm, Value::from_int(-1));
+    auto   last  = s->load_index(*vm.current_context(), Value::from_int(-1));
     ASSERT_TRUE(last.has_value());
     const auto tail = last->as_obj()->try_as<ObjString>();
     ASSERT_NE(tail, nullptr);
     EXPECT_EQ(tail->view(), "o");
-    auto first = s->load_index(vm, Value::from_int(-5));
+    auto first = s->load_index(*vm.current_context(), Value::from_int(-5));
     ASSERT_TRUE(first.has_value());
     const auto head = first->as_obj()->try_as<ObjString>();
     ASSERT_NE(head, nullptr);
     EXPECT_EQ(head->view(), "h");
-    EXPECT_FALSE(s->load_index(vm, Value::from_int(-6)).has_value());
+    EXPECT_FALSE(s->load_index(*vm.current_context(), Value::from_int(-6)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
@@ -248,20 +248,20 @@ TEST(ObjString, SliceOutOfBoundsFails) {
     auto   s     = make_string(gc, guard, "hi"); // 长度 2
     auto   r1    = new_range(gc, 0, 9, false);
     guard.push(r1);
-    EXPECT_FALSE(s->load_index(vm, Value::from_obj(r1)).has_value());
+    EXPECT_FALSE(s->load_index(*vm.current_context(), Value::from_obj(r1)).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(message, "Runtime: IndexOutOfBounds slice range 0..9 out of range");
     auto r2 = new_range(gc, -3);
     guard.push(r2);
-    EXPECT_FALSE(s->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_FALSE(s->load_index(*vm.current_context(), Value::from_obj(r2)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 
     // 空串:有上界形态任何端点都解析不出;无上界 0.. 得空段(空容器单下标同样报错,口径一致)。
     auto empty = make_string(gc, guard, "");
     auto r3    = new_range(gc, 0, 1, false);
     guard.push(r3);
-    EXPECT_FALSE(empty->load_index(vm, Value::from_obj(r3)).has_value());
+    EXPECT_FALSE(empty->load_index(*vm.current_context(), Value::from_obj(r3)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     auto r4 = new_range(gc, 0);
     guard.push(r4);
@@ -274,7 +274,7 @@ TEST(ObjString, StoreIndexAlwaysFails) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
-    EXPECT_FALSE(s->store_index(vm, Value::from_int(0), Value::from_obj(s)));
+    EXPECT_FALSE(s->store_index(*vm.current_context(), Value::from_int(0), Value::from_obj(s)));
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch type String does not support subscript assignment");
@@ -297,7 +297,7 @@ TEST(ObjString, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
-    auto   bound = s->load_field_bound(vm, new_string(gc, "upper"));
+    auto   bound = s->load_field_bound(*vm.current_context(), new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -314,7 +314,7 @@ TEST(ObjString, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   s     = make_string(gc, guard, "hi");
-    EXPECT_FALSE(s->load_field_bound(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(s->load_field_bound(*vm.current_context(), new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class String> has no member 'nope'");
@@ -329,7 +329,7 @@ TEST(ObjString, BootstrapSurvivesStressCollect) {
     auto       s       = make_string(gc, guard, "hi");
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = s->load_field_bound(vm, new_string(gc, "upper"));
+    auto bound = s->load_field_bound(*vm.current_context(), new_string(gc, "upper"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);

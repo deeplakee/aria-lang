@@ -3,7 +3,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjList.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -20,10 +20,10 @@ namespace aria {
 
     bool ObjListIterator::has_next() const noexcept { return cursor_ < list_->elements().size(); }
 
-    Opt<Value> ObjListIterator::next(AriaVM& vm) {
+    Opt<Value> ObjListIterator::next(AriaExeContext& ctx) {
         // 越界 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此(nil 哨兵与合法 nil 元素不可区分)。
         if (cursor_ >= list_->elements().size()) {
-            return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
+            return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         return list_->elements()[cursor_++];
     }

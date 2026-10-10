@@ -52,34 +52,34 @@ namespace aria {
 
         // 裸读 override:委托 List bootstrap 类表直取原生值。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
         // 整数键:负数从尾计数、归一化后越界即报(越界值就地拼进文案),非整数键 TypeMismatch,查读无分配。
         // Range 键 = 切片:产出新 list、只读(路径有分配),段解析收口 resolve_slice_bounds。
         [[nodiscard]]
-        Opt<Value> load_index(AriaVM& vm, Value key) override;
+        Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
         // 下标写入:键检查同读,不自动增长(追加走 push 方法),写已存槽恒成功;Range 键落统一文案(切片写只读)。
         [[nodiscard]]
-        bool store_index(AriaVM& vm, Value key, Value value) override;
+        bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
         // 算子协议 override(内建直给,不经成员查找):读 bootstrap 期注册进类表并拷进实现格的钩子原生值
         //(类表仍是规范家);其余算子不 override -> 基类默认报「本类型不支持该算子」。
         [[nodiscard]]
-        Opt<Value> op_add_impl(AriaVM& vm) override;
+        Opt<Value> op_add_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_mul_impl(AriaVM& vm) override;
+        Opt<Value> op_mul_impl(AriaExeContext& ctx) override;
 
     private:
         // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、无上界给后缀、
         // 空段以两端相等+不含上界表示),本函数只按方向折算 count、铸新 list 段拷。
         [[nodiscard]]
-        Opt<Value> slice(AriaVM& vm, const ObjRange* range);
+        Opt<Value> slice(AriaExeContext& ctx, const ObjRange* range);
 
         AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
     };

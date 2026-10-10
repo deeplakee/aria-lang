@@ -206,7 +206,7 @@ TEST(ObjModule, LoadFieldReadsGlobalBinding) {
     guard.push(fn);
     m->globals().set(Value::from_obj(key), Value::from_obj(fn));
 
-    const auto hit = m->load_field(vm, key);
+    const auto hit = m->load_field(*vm.current_context(), key);
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->as_obj(), fn); // 原值直读:同指针,无 bound/包裹
     EXPECT_FALSE(vm.current_context()->has_error());
@@ -224,7 +224,7 @@ TEST(ObjModule, LoadFieldNilBindingIsHit) {
     guard.push(key);
     m->globals().set(Value::from_obj(key), Value::nil_val());
 
-    const auto hit = m->load_field(vm, key);
+    const auto hit = m->load_field(*vm.current_context(), key);
     ASSERT_TRUE(hit.has_value());
     EXPECT_TRUE(hit->is_nil());
     EXPECT_FALSE(vm.current_context()->has_error());
@@ -240,7 +240,7 @@ TEST(ObjModule, LoadFieldMissFails) {
     auto key = new_string(gc, "nope");
     guard.push(key);
 
-    EXPECT_FALSE(m->load_field(vm, key).has_value());
+    EXPECT_FALSE(m->load_field(*vm.current_context(), key).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <module helper> has no member 'nope'");
@@ -256,7 +256,7 @@ TEST(ObjModule, StoreFieldRejectedAsReadOnly) {
     auto key = new_string(gc, "count");
     guard.push(key);
 
-    EXPECT_FALSE(m->store_field(vm, key, Value::from_int(1)));
+    EXPECT_FALSE(m->store_field(*vm.current_context(), key, Value::from_int(1)));
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch type Module does not support field assignment");

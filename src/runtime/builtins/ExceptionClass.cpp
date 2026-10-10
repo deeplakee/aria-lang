@@ -33,8 +33,8 @@ namespace aria {
                                 type_name(slots[0]));
             }
             // GC 走查:receiver 经槽 0 栈根,键串零分配,_message 建成即存,窗口内零 GC 点免守卫。
-            inst->store_field(ctx.host(), ctx.str<"_code">(), Value::from_int(std::to_underlying(ErrorCode::Error)));
-            inst->store_field(ctx.host(), ctx.str<"_message">(), Value::from_obj(new_string(ctx.gc(), "")));
+            inst->store_field(ctx, ctx.str<"_code">(), Value::from_int(std::to_underlying(ErrorCode::Error)));
+            inst->store_field(ctx, ctx.str<"_message">(), Value::from_obj(new_string(ctx.gc(), "")));
             return true;
         }
 
@@ -49,7 +49,7 @@ namespace aria {
                 return true;
             }
             if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
-                if (const auto hit = inst->load_field(ctx.host(), ctx.str<"_message">())) {
+                if (const auto hit = inst->load_field(ctx, ctx.str<"_message">())) {
                     slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;
                 }
@@ -70,7 +70,7 @@ namespace aria {
                 return true;
             }
             if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
-                if (const auto hit = inst->load_field(ctx.host(), ctx.str<"_code">())) {
+                if (const auto hit = inst->load_field(ctx, ctx.str<"_code">())) {
                     slots[0] = *hit; // 建成即写槽:命中值经此根化
                     return true;
                 }

@@ -65,7 +65,7 @@ namespace {
 
     // 切片取件:产出新 list 的元素逐个比对(调用方保证成功)。
     void expect_slice(AriaVM& vm, ObjList* list, aria::ObjRange* range, const aria::List<i64>& expected) {
-        const auto result = list->load_index(vm, Value::from_obj(range));
+        const auto result = list->load_index(*vm.current_context(), Value::from_obj(range));
         ASSERT_TRUE(result.has_value());
         const auto sliced = try_as_obj<ObjList>(*result);
         ASSERT_NE(sliced, nullptr);
@@ -91,7 +91,7 @@ namespace {
     // rhs。返回结果 Value;失败返 nullopt(载荷已在挂起寄存器)。调用方负责让两侧存活(两侧经
     // make_list 入根)。端到端路径(算子指令 -> 取钩子 -> 调用)由语料覆盖(12_collections 拼接/重复各例)。
     Opt<Value> invoke_list_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
-        const auto hook = vm.list_class()->load_field(vm, new_string(vm.gc(), hook_key));
+        const auto hook = vm.list_class()->load_field(*vm.current_context(), new_string(vm.gc(), hook_key));
         if (!hook) {
             return std::nullopt;
         }
@@ -329,10 +329,10 @@ TEST(ObjList, LoadIndexReads) {
     auto        list  = make_list(gc, guard);
     const Value src[] = {Value::from_int(10), Value::from_int(20)};
     list->elements().copy_from(src);
-    auto first = list->load_index(vm, Value::from_int(0));
+    auto first = list->load_index(*vm.current_context(), Value::from_int(0));
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(first->as_int(), 10);
-    auto second = list->load_index(vm, Value::from_int(1));
+    auto second = list->load_index(*vm.current_context(), Value::from_int(1));
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(second->as_int(), 20);
 }
@@ -344,7 +344,7 @@ TEST(ObjList, LoadIndexNonIntKeyFails) {
     auto   list  = make_list(gc, guard);
     list->elements().push(Value::from_int(1));
     for (const Value key: {Value::from_f64(1.5), Value::nil_val(), Value::from_bool(true)}) {
-        EXPECT_FALSE(list->load_index(vm, key).has_value());
+        EXPECT_FALSE(list->load_index(*vm.current_context(), key).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::TypeMismatch);
         EXPECT_EQ(message, "Runtime: TypeMismatch list index must be an integer, got " + String{aria::type_name(key)});
@@ -359,7 +359,7 @@ TEST(ObjList, LoadIndexOutOfBoundsFails) {
     list->elements().push(Value::from_int(1));
     list->elements().push(Value::from_int(2));
     for (const i64 index: {2, -3}) {
-        EXPECT_FALSE(list->load_index(vm, Value::from_int(index)).has_value());
+        EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_int(index)).has_value());
         const auto [code, message] = take_pending_error(vm);
         EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
         EXPECT_EQ(message, aria::String{std::format("Runtime: IndexOutOfBounds list index {} out of range", index)});
@@ -374,13 +374,13 @@ TEST(ObjList, LoadIndexNegativeReadsFromTail) {
     auto        list  = make_list(gc, guard);
     const Value src[] = {Value::from_int(10), Value::from_int(20), Value::from_int(30)};
     list->elements().copy_from(src);
-    auto last = list->load_index(vm, Value::from_int(-1));
+    auto last = list->load_index(*vm.current_context(), Value::from_int(-1));
     ASSERT_TRUE(last.has_value());
     EXPECT_EQ(last->as_int(), 30);
-    auto first = list->load_index(vm, Value::from_int(-3));
+    auto first = list->load_index(*vm.current_context(), Value::from_int(-3));
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(first->as_int(), 10);
-    EXPECT_FALSE(list->load_index(vm, Value::from_int(-4)).has_value());
+    EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_int(-4)).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(message, "Runtime: IndexOutOfBounds list index -4 out of range");
@@ -392,13 +392,13 @@ TEST(ObjList, StoreIndexWritesAndChecks) {
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
     list->elements().push(Value::from_int(1));
-    EXPECT_TRUE(list->store_index(vm, Value::from_int(0), Value::from_int(9)));
+    EXPECT_TRUE(list->store_index(*vm.current_context(), Value::from_int(0), Value::from_int(9)));
     EXPECT_EQ(list->elements()[0].as_int(), 9);
 
     // 键检查同读:非整数 TypeMismatch、越界 IndexOutOfBounds,失败不写不动长度(不自动增长)。
-    EXPECT_FALSE(list->store_index(vm, Value::from_f64(0.5), Value::from_int(0)));
+    EXPECT_FALSE(list->store_index(*vm.current_context(), Value::from_f64(0.5), Value::from_int(0)));
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::TypeMismatch);
-    EXPECT_FALSE(list->store_index(vm, Value::from_int(1), Value::from_int(0)));
+    EXPECT_FALSE(list->store_index(*vm.current_context(), Value::from_int(1), Value::from_int(0)));
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(list->elements().size(), 1u);
     EXPECT_EQ(list->elements()[0].as_int(), 9);
@@ -494,11 +494,11 @@ TEST(ObjList, SliceOutOfBoundsFails) {
     auto   list  = make_five(gc, guard);
     auto   r1    = new_range(gc, 0, 10, false);
     guard.push(r1);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
+    EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_obj(r1)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     auto r2 = new_range(gc, -6);
     guard.push(r2);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_obj(r2)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
@@ -530,11 +530,11 @@ TEST(ObjList, SliceOnEmptyListFails) {
     // 有上界形态无端点可取(空容器无实元素位置):越界失败;无上界形态走后缀语义给空段(见上一例)。
     auto r1 = new_range(gc, 2, 2, true);
     guard.push(r1);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r1)).has_value());
+    EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_obj(r1)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     auto r2 = new_range(gc, 1, 0, false);
     guard.push(r2);
-    EXPECT_FALSE(list->load_index(vm, Value::from_obj(r2)).has_value());
+    EXPECT_FALSE(list->load_index(*vm.current_context(), Value::from_obj(r2)).has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
 }
 
@@ -546,7 +546,7 @@ TEST(ObjList, StoreSliceFails) {
     auto   range = new_range(gc, 0, 2, false);
     guard.push(range);
     // Range 键写不特殊对待:落整数键检查的统一文案(切片写不设定向错)。
-    EXPECT_FALSE(list->store_index(vm, Value::from_obj(range), Value::from_int(9)));
+    EXPECT_FALSE(list->store_index(*vm.current_context(), Value::from_obj(range), Value::from_int(9)));
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch list index must be an integer, got Range");
@@ -560,11 +560,11 @@ TEST(ObjList, StoreIndexNegativeWritesFromTail) {
     auto        list  = make_list(gc, guard);
     const Value src[] = {Value::from_int(1), Value::from_int(2)};
     list->elements().copy_from(src);
-    EXPECT_TRUE(list->store_index(vm, Value::from_int(-1), Value::from_int(9)));
+    EXPECT_TRUE(list->store_index(*vm.current_context(), Value::from_int(-1), Value::from_int(9)));
     EXPECT_EQ(list->elements()[1].as_int(), 9);
-    EXPECT_TRUE(list->store_index(vm, Value::from_int(-2), Value::from_int(8)));
+    EXPECT_TRUE(list->store_index(*vm.current_context(), Value::from_int(-2), Value::from_int(8)));
     EXPECT_EQ(list->elements()[0].as_int(), 8);
-    EXPECT_FALSE(list->store_index(vm, Value::from_int(-3), Value::from_int(0)));
+    EXPECT_FALSE(list->store_index(*vm.current_context(), Value::from_int(-3), Value::from_int(0)));
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::IndexOutOfBounds);
     EXPECT_EQ(list->elements().size(), 2u);
 }
@@ -587,7 +587,7 @@ TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    auto   bound = list->load_field_bound(vm, new_string(gc, "push"));
+    auto   bound = list->load_field_bound(*vm.current_context(), new_string(gc, "push"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -605,7 +605,7 @@ TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    auto   bound = list->load_field_bound(vm, new_string(gc, "init"));
+    auto   bound = list->load_field_bound(*vm.current_context(), new_string(gc, "init"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -621,7 +621,7 @@ TEST(ObjList, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
-    EXPECT_FALSE(list->load_field_bound(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(list->load_field_bound(*vm.current_context(), new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class List> has no member 'nope'");
@@ -636,7 +636,7 @@ TEST(ObjList, BootstrapSurvivesStressCollect) {
     auto       list    = make_list(gc, guard);
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = list->load_field_bound(vm, new_string(gc, "pop"));
+    auto bound = list->load_field_bound(*vm.current_context(), new_string(gc, "pop"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);

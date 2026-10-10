@@ -118,7 +118,7 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
     auto   iter  = make_list_iterator(gc, guard, list);
-    auto   bound = iter->load_field_bound(vm, new_string(gc, "has_next"));
+    auto   bound = iter->load_field_bound(*vm.current_context(), new_string(gc, "has_next"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -136,7 +136,7 @@ TEST(ObjIterator, LoadFieldMissFailsWithClassWording) {
     auto   guard = gc.make_guard();
     auto   list  = make_list(gc, guard);
     auto   iter  = make_list_iterator(gc, guard, list);
-    EXPECT_FALSE(iter->load_field_bound(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(iter->load_field_bound(*vm.current_context(), new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class Iterator> has no member 'nope'");
@@ -152,11 +152,11 @@ TEST(ObjListIterator, CursorAdvancesToExhaustion) {
     list->elements().push(Value::from_int(20));
     auto iter = make_list_iterator(gc, guard, list);
     EXPECT_TRUE(iter->has_next());
-    auto first = iter->next(vm);
+    auto first = iter->next(*vm.current_context());
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(first->as_int(), 10);
     EXPECT_TRUE(iter->has_next());
-    auto second = iter->next(vm);
+    auto second = iter->next(*vm.current_context());
     ASSERT_TRUE(second.has_value());
     EXPECT_EQ(second->as_int(), 20);
     EXPECT_FALSE(iter->has_next());
@@ -170,7 +170,7 @@ TEST(ObjListIterator, NextPastEndFailsFast) {
     auto   list  = make_list(gc, guard);
     auto   iter  = make_list_iterator(gc, guard, list);
     EXPECT_FALSE(iter->has_next());
-    EXPECT_FALSE(iter->next(vm).has_value());
+    EXPECT_FALSE(iter->next(*vm.current_context()).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IterationExhausted);
     EXPECT_EQ(message, "Runtime: IterationExhausted iterator exhausted");
@@ -187,11 +187,11 @@ TEST(ObjListIterator, TwoIteratorsCursorsIndependent) {
     list->elements().push(Value::from_int(2));
     auto first  = make_list_iterator(gc, guard, list);
     auto second = make_list_iterator(gc, guard, list);
-    ASSERT_TRUE(first->next(vm).has_value());
-    ASSERT_TRUE(first->next(vm).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
     EXPECT_FALSE(first->has_next()); // first 取尽
     EXPECT_TRUE(second->has_next()); // second 不受影响
-    auto value = second->next(vm);
+    auto value = second->next(*vm.current_context());
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(value->as_int(), 1);
 }
@@ -213,10 +213,10 @@ TEST(ObjListIterator, TraceStressKeepsSource) {
     auto       guard   = gc.make_guard(iter);       // 只根迭代器:list 仅经 iter->trace 可达
     const auto trigger = new_string(gc, "trigger"); // stress collect
     guard.push(trigger);
-    const auto first = iter->next(vm);
+    const auto first = iter->next(*vm.current_context());
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(first->as_int(), 42);
-    const auto second = iter->next(vm);
+    const auto second = iter->next(*vm.current_context());
     ASSERT_TRUE(second.has_value());
     const auto survived = second->as_obj()->try_as<ObjString>();
     ASSERT_NE(survived, nullptr);
@@ -245,7 +245,7 @@ TEST(ObjStringIterator, CursorYieldsCharStrings) {
     auto   iter  = make_string_iterator(gc, guard, str);
     for (const StringView expected: {"a", "b", "c"}) {
         ASSERT_TRUE(iter->has_next());
-        const auto item = iter->next(vm);
+        const auto item = iter->next(*vm.current_context());
         ASSERT_TRUE(item.has_value());
         const auto ch = item->as_obj()->try_as<ObjString>();
         ASSERT_NE(ch, nullptr);
@@ -266,7 +266,7 @@ TEST(ObjStringIterator, MultibyteCodepointStepping) {
     const StringView expected[] = {"h", "\xC3\xA9", "l", "l", "o"};
     for (const StringView want: expected) {
         ASSERT_TRUE(iter->has_next());
-        const auto item = iter->next(vm);
+        const auto item = iter->next(*vm.current_context());
         ASSERT_TRUE(item.has_value());
         const auto ch = item->as_obj()->try_as<ObjString>();
         ASSERT_NE(ch, nullptr);
@@ -283,7 +283,7 @@ TEST(ObjStringIterator, NextPastEndFailsFast) {
     auto   str   = make_string(gc, guard, "");
     auto   iter  = make_string_iterator(gc, guard, str);
     EXPECT_FALSE(iter->has_next());
-    EXPECT_FALSE(iter->next(vm).has_value());
+    EXPECT_FALSE(iter->next(*vm.current_context()).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IterationExhausted);
     EXPECT_EQ(message, "Runtime: IterationExhausted iterator exhausted");
@@ -297,8 +297,8 @@ TEST(ObjStringIterator, TwoIteratorsCursorsIndependent) {
     auto   str    = make_string(gc, guard, "ab");
     auto   first  = make_string_iterator(gc, guard, str);
     auto   second = make_string_iterator(gc, guard, str);
-    ASSERT_TRUE(first->next(vm).has_value());
-    ASSERT_TRUE(first->next(vm).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
     EXPECT_FALSE(first->has_next()); // first 取尽
     EXPECT_TRUE(second->has_next()); // second 不受影响
 }
@@ -317,7 +317,7 @@ TEST(ObjStringIterator, TraceStressKeepsSource) {
     auto       guard   = gc.make_guard(iter);       // 只根迭代器:str 仅经 iter->trace 可达
     const auto trigger = new_string(gc, "trigger"); // stress collect
     guard.push(trigger);
-    const auto item = iter->next(vm);
+    const auto item = iter->next(*vm.current_context());
     ASSERT_TRUE(item.has_value());
     const auto ch = item->as_obj()->try_as<ObjString>();
     ASSERT_NE(ch, nullptr);

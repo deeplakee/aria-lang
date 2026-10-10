@@ -45,50 +45,50 @@ namespace aria {
         // 裸查找 override(调用路径与算子钩子取实现共用):不绑定,返回字段/类链里的原值交 VM 直调
         // (方法体从槽 0 读 this)。零分配,每次按当前类链解析。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override(方法值读取路径):fields 命中优先(真字段遮蔽类链),否则委托类协议沿链
         // 读穿透;命中方法戳闭包现场绑 this(每次新 bound,不缓存),其余原值直读。
         [[nodiscard]]
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
         // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
-        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+        bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
         // 算子/调用协议 11 实现:按钩子名(VM 常量串表)经裸查找 load_field 取,实例 fields 可遮蔽类链钩子
         // --「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
         [[nodiscard]]
-        Opt<Value> op_add_impl(AriaVM& vm) override;
+        Opt<Value> op_add_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_sub_impl(AriaVM& vm) override;
+        Opt<Value> op_sub_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_mul_impl(AriaVM& vm) override;
+        Opt<Value> op_mul_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_div_impl(AriaVM& vm) override;
+        Opt<Value> op_div_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_mod_impl(AriaVM& vm) override;
+        Opt<Value> op_mod_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_less_impl(AriaVM& vm) override;
+        Opt<Value> op_less_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_less_equal_impl(AriaVM& vm) override;
+        Opt<Value> op_less_equal_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater_impl(AriaVM& vm) override;
+        Opt<Value> op_greater_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
+        Opt<Value> op_greater_equal_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_negate_impl(AriaVM& vm) override;
+        Opt<Value> op_negate_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_call_impl(AriaVM& vm) override;
+        Opt<Value> op_call_impl(AriaExeContext& ctx) override;
 
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)

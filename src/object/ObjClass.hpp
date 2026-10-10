@@ -60,10 +60,10 @@ namespace aria {
         // 命名成员读取 override:沿链读穿透直读,不绑定不缓存(类路径无 this);全链 miss 以类措辞
         // fail,该 fail 装箱是唯一分配点。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 命名成员写入 override:类上赋值落本类自身表恒成功(动态新增允许);本 override 无 fail 路径。
-        bool store_field(AriaVM& vm, ObjString* name, Value value) override;
+        bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
     private:
         // 沿 super 链查,链上首个命中拷出;纯查询无分配不 fail(私有,组合方一律走 load_field 协议)。

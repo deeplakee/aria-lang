@@ -2,7 +2,7 @@
 
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
 
 namespace aria {
@@ -44,14 +44,16 @@ namespace aria {
         return std::format("{}{}{}", from_, is_exclusive_ ? "..." : "..", *to_);
     }
 
-    Opt<Value> ObjRange::load_field(AriaVM& vm, ObjString* name) { return vm.range_class()->load_field(vm, name); }
+    Opt<Value> ObjRange::load_field(AriaExeContext& ctx, ObjString* name) {
+        return ctx.range_class()->load_field(ctx, name);
+    }
 
-    Opt<Value> ObjRange::load_field_bound(AriaVM& vm, ObjString* name) {
-        const auto hit = load_field(vm, name);
+    Opt<Value> ObjRange::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

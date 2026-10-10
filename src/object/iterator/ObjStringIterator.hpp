@@ -30,7 +30,7 @@ namespace aria {
         bool has_next() const noexcept override;
 
         [[nodiscard]]
-        Opt<Value> next(AriaVM& vm) override;
+        Opt<Value> next(AriaExeContext& ctx) override;
 
     private:
         ObjString* str_;    // 被遍历者(恒非空;经 trace 标根)

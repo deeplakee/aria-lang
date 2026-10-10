@@ -2,7 +2,7 @@
 
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -14,16 +14,16 @@ namespace aria {
         return "<iterator>";
     }
 
-    Opt<Value> ObjIterator::load_field(AriaVM& vm, ObjString* name) {
-        return vm.iterator_class()->load_field(vm, name);
+    Opt<Value> ObjIterator::load_field(AriaExeContext& ctx, ObjString* name) {
+        return ctx.iterator_class()->load_field(ctx, name);
     }
 
-    Opt<Value> ObjIterator::load_field_bound(AriaVM& vm, ObjString* name) {
-        const auto hit = load_field(vm, name);
+    Opt<Value> ObjIterator::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(vm.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
     }
 
 } // namespace aria

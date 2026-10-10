@@ -51,19 +51,19 @@ namespace aria {
 
         // 裸读 override:委托 Map bootstrap 类表直取原生值。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
         // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
         [[nodiscard]]
-        Opt<Value> load_index(AriaVM& vm, Value key) override;
+        Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
         // 下标写入:恒成功,命中覆写、未命中新增;键值经调用方值栈为根(set/rehash 不触 GC)。
         [[nodiscard]]
-        bool store_index(AriaVM& vm, Value key, Value value) override;
+        bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
     private:
         AriaHashTable table_; // 键值表(GC 分配器绑定;set 惰性首分配,trivial 分配不触 GC)

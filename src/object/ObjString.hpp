@@ -63,46 +63,46 @@ namespace aria {
 
         // 裸读 override:委托 String bootstrap 类表直取原生值。
         [[nodiscard]]
-        Opt<Value> load_field(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 绑定读 override:同一查找命中恒绑 this。
         [[nodiscard]]
-        Opt<Value> load_field_bound(AriaVM& vm, ObjString* name) override;
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
         // 整数键 = 字节域(与 len 同域):产出单字节 1-char string,负数从尾计数、归一化后越界即报;
         // 多字节序列中间字节取该字节自身。Range 键走切片。查读含一次 intern 分配:receiver 经值栈为根。
         [[nodiscard]]
-        Opt<Value> load_index(AriaVM& vm, Value key) override;
+        Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
         // 下标写入:string 不可变,恒 TypeMismatch 定向文案。
         [[nodiscard]]
-        bool store_index(AriaVM& vm, Value key, Value value) override;
+        bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
         // 算子协议 override(内建直给,不经成员查找):读 bootstrap 期注册进类表并拷进实现格的钩子原生值
         //(类表仍是规范家);其余算子不 override -> 基类默认报「本类型不支持该算子」。
         [[nodiscard]]
-        Opt<Value> op_add_impl(AriaVM& vm) override;
+        Opt<Value> op_add_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_mul_impl(AriaVM& vm) override;
+        Opt<Value> op_mul_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_less_impl(AriaVM& vm) override;
+        Opt<Value> op_less_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_less_equal_impl(AriaVM& vm) override;
+        Opt<Value> op_less_equal_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater_impl(AriaVM& vm) override;
+        Opt<Value> op_greater_impl(AriaExeContext& ctx) override;
 
         [[nodiscard]]
-        Opt<Value> op_greater_equal_impl(AriaVM& vm) override;
+        Opt<Value> op_greater_equal_impl(AriaExeContext& ctx) override;
 
     private:
         // 切片(Range 键):段解析收口 resolve_slice_bounds(报错文案与 list 切片同串)。域是字节(与 s[i]/len
         // 同域):倒序段产出字节逆序串,多字节输入下不是合法 UTF-8 -- 与 s[i] 取续接字节同属字节域契约。
         [[nodiscard]]
-        Opt<Value> slice(AriaVM& vm, const ObjRange* range) const;
+        Opt<Value> slice(AriaExeContext& ctx, const ObjRange* range) const;
 
         GC* gc_; // 供 ~ObjString 释放 long_chars_(仅长串用到)
         union {

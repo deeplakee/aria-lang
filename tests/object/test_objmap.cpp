@@ -87,7 +87,7 @@ namespace {
 
     // 迭代器 next 产出的 [k, v] pair 拆值(元素恒二元 list;pair list 白色,入临时根再检视)。
     Pair<Value, Value> take_pair(AriaVM& vm, GC::Guard& guard, ObjMapIterator* iter) {
-        auto item = iter->next(vm);
+        auto item = iter->next(*vm.current_context());
         EXPECT_TRUE(item.has_value());
         guard.push(item->as_obj());
         const auto list = try_as_obj<ObjList>(*item);
@@ -124,18 +124,18 @@ TEST(ObjMap, LoadIndexArbitraryKeys) {
     map->table().set(Value::from_obj(s), Value::from_int(20));
     map->table().set(Value::nil_val(), Value::from_int(30));
 
-    auto by_int = map->load_index(vm, Value::from_int(1));
+    auto by_int = map->load_index(*vm.current_context(), Value::from_int(1));
     ASSERT_TRUE(by_int.has_value());
     EXPECT_EQ(by_int->as_int(), 10);
-    auto by_str = map->load_index(vm, Value::from_obj(s));
+    auto by_str = map->load_index(*vm.current_context(), Value::from_obj(s));
     ASSERT_TRUE(by_str.has_value());
     EXPECT_EQ(by_str->as_int(), 20);
-    auto by_nil = map->load_index(vm, Value::nil_val());
+    auto by_nil = map->load_index(*vm.current_context(), Value::nil_val());
     ASSERT_TRUE(by_nil.has_value());
     EXPECT_EQ(by_nil->as_int(), 30);
 
     // int 1 与 f64 1.0 是不同键(=== 表内语义):互不命中。
-    auto as_f64 = map->load_index(vm, Value::from_f64(1.0));
+    auto as_f64 = map->load_index(*vm.current_context(), Value::from_f64(1.0));
     EXPECT_FALSE(as_f64.has_value());
     EXPECT_EQ(take_pending_error(vm).first, ErrorCode::KeyError);
 }
@@ -149,7 +149,7 @@ TEST(ObjMap, RangeKeyHitsByIdentity) {
     guard.push(r);
     // range 值是合法 map 键(内容哈希入表);=== 按对象身份判等,同一对象命中。
     map->table().set(Value::from_obj(r), Value::from_int(10));
-    auto hit = map->load_index(vm, Value::from_obj(r));
+    auto hit = map->load_index(*vm.current_context(), Value::from_obj(r));
     ASSERT_TRUE(hit.has_value());
     EXPECT_EQ(hit->as_int(), 10);
     // 不同内容的 range 是不同对象,互为独立键。
@@ -157,7 +157,7 @@ TEST(ObjMap, RangeKeyHitsByIdentity) {
     guard.push(other);
     map->table().set(Value::from_obj(other), Value::from_int(20));
     EXPECT_EQ(map->table().size(), 2);
-    auto miss = map->load_index(vm, Value::from_obj(other));
+    auto miss = map->load_index(*vm.current_context(), Value::from_obj(other));
     ASSERT_TRUE(miss.has_value());
     EXPECT_EQ(miss->as_int(), 20);
 }
@@ -170,13 +170,13 @@ TEST(ObjMap, LoadIndexMissFailsWithKeyInMessage) {
     auto   map   = make_map(gc, guard);
     map->table().set(Value::from_int(1), Value::from_int(10));
 
-    EXPECT_FALSE(map->load_index(vm, Value::from_int(99)).has_value());
+    EXPECT_FALSE(map->load_index(*vm.current_context(), Value::from_int(99)).has_value());
     auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::KeyError);
     EXPECT_EQ(message, "Runtime: KeyError map key not found: 99");
 
     const auto nope = make_string(gc, guard, "nope");
-    EXPECT_FALSE(map->load_index(vm, Value::from_obj(nope)).has_value());
+    EXPECT_FALSE(map->load_index(*vm.current_context(), Value::from_obj(nope)).has_value());
     std::tie(code, message) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::KeyError);
     EXPECT_EQ(message, "Runtime: KeyError map key not found: \"nope\"");
@@ -188,15 +188,15 @@ TEST(ObjMap, StoreIndexAlwaysSucceeds) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   map   = make_map(gc, guard);
-    EXPECT_TRUE(map->store_index(vm, Value::from_int(1), Value::from_int(10)));
+    EXPECT_TRUE(map->store_index(*vm.current_context(), Value::from_int(1), Value::from_int(10)));
     EXPECT_EQ(map->table().size(), 1u);
-    auto read = map->load_index(vm, Value::from_int(1));
+    auto read = map->load_index(*vm.current_context(), Value::from_int(1));
     ASSERT_TRUE(read.has_value());
     EXPECT_EQ(read->as_int(), 10);
 
-    EXPECT_TRUE(map->store_index(vm, Value::from_int(1), Value::from_int(99))); // 覆写
+    EXPECT_TRUE(map->store_index(*vm.current_context(), Value::from_int(1), Value::from_int(99))); // 覆写
     EXPECT_EQ(map->table().size(), 1u);
-    read = map->load_index(vm, Value::from_int(1));
+    read = map->load_index(*vm.current_context(), Value::from_int(1));
     ASSERT_TRUE(read.has_value());
     EXPECT_EQ(read->as_int(), 99);
 }
@@ -318,7 +318,7 @@ TEST(ObjMap, TraceStressKeepsEntries) {
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
     ASSERT_EQ(map->table().size(), 1u);
-    auto value = map->load_index(vm, Value::from_obj(key));
+    auto value = map->load_index(*vm.current_context(), Value::from_obj(key));
     ASSERT_TRUE(value.has_value());
     const auto survived = value->as_obj()->try_as<ObjString>();
     ASSERT_NE(survived, nullptr);
@@ -355,7 +355,7 @@ TEST(ObjMap, LoadFieldBindsNativeToReceiver) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   map   = make_map(gc, guard);
-    auto   bound = map->load_field_bound(vm, new_string(gc, "iter"));
+    auto   bound = map->load_field_bound(*vm.current_context(), new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj()); // bound 白色,入临时根再检视
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -372,7 +372,7 @@ TEST(ObjMap, LoadFieldMissFailsWithClassWording) {
     auto&  gc    = vm.gc();
     auto   guard = gc.make_guard();
     auto   map   = make_map(gc, guard);
-    EXPECT_FALSE(map->load_field_bound(vm, new_string(gc, "nope")).has_value());
+    EXPECT_FALSE(map->load_field_bound(*vm.current_context(), new_string(gc, "nope")).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::UndefinedProperty);
     EXPECT_EQ(message, "Runtime: UndefinedProperty <class Map> has no member 'nope'");
@@ -387,7 +387,7 @@ TEST(ObjMap, BootstrapSurvivesStressCollect) {
     auto       map     = make_map(gc, guard);
     const auto trigger = new_string(gc, "trigger"); // stress:分配即 collect
     guard.push(trigger);
-    auto bound = map->load_field_bound(vm, new_string(gc, "iter"));
+    auto bound = map->load_field_bound(*vm.current_context(), new_string(gc, "iter"));
     ASSERT_TRUE(bound.has_value());
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
@@ -430,7 +430,7 @@ TEST(ObjMapIterator, NextPastEndFailsFast) {
     auto   map   = make_map(gc, guard);
     auto   iter  = make_map_iterator(gc, guard, map);
     EXPECT_FALSE(iter->has_next());
-    EXPECT_FALSE(iter->next(vm).has_value());
+    EXPECT_FALSE(iter->next(*vm.current_context()).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::IterationExhausted);
     EXPECT_EQ(message, "Runtime: IterationExhausted iterator exhausted");
@@ -469,8 +469,8 @@ TEST(ObjMapIterator, TwoIteratorsCursorsIndependent) {
     map->table().set(Value::from_int(2), Value::from_int(20));
     auto first  = make_map_iterator(gc, guard, map);
     auto second = make_map_iterator(gc, guard, map);
-    ASSERT_TRUE(first->next(vm).has_value());
-    ASSERT_TRUE(first->next(vm).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
+    ASSERT_TRUE(first->next(*vm.current_context()).has_value());
     EXPECT_FALSE(first->has_next()); // first 取尽
     EXPECT_TRUE(second->has_next()); // second 不受影响
 }

@@ -24,10 +24,10 @@
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
 
+using aria::AriaExeContext;
 using aria::AriaVM;
 using aria::CodeUnit;
 using aria::ErrorCode;
-using aria::AriaExeContext;
 using aria::GC;
 using aria::i8;
 using aria::kObjectClassOffset;
@@ -1155,7 +1155,7 @@ TEST_F(AriaVMStress, ExceptionBootstrapClassFace) {
     EXPECT_EQ(klass->name()->view(), "Exception");
     EXPECT_EQ(klass->superclass(), vm.object_class());
     for (const auto* member: {"init", "message", "code"}) {
-        const auto hit = klass->load_field(vm, new_string(vm.gc(), member));
+        const auto hit = klass->load_field(*vm.current_context(), new_string(vm.gc(), member));
         ASSERT_TRUE(hit.has_value());
         EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>());
     }
@@ -1791,7 +1791,7 @@ TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
     guard.push(inst);
     auto nope = new_string(gc, "nope");
     guard.push(nope);
-    EXPECT_FALSE(inst->load_field_bound(vm, nope).has_value());
+    EXPECT_FALSE(inst->load_field_bound(*vm.current_context(), nope).has_value());
 }
 
 // 值寄存器组:LOAD_REG ObjectClass 压 Object 根类(regs_[ObjectClass],bootstrap 填充;
@@ -2592,7 +2592,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     auto inst = b->receiver().as_obj()->as<ObjInstance>();
     ASSERT_NE(inst, nullptr);
     EXPECT_EQ(inst->klass()->name()->view(), "Foo");
-    auto tag_v = inst->load_field_bound(vm, new_string(gc, "tag"));
+    auto tag_v = inst->load_field_bound(*vm.current_context(), new_string(gc, "tag"));
     ASSERT_TRUE(tag_v.has_value());
     EXPECT_EQ(tag_v->as_int(), 3);
 }

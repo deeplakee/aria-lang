@@ -5,7 +5,7 @@
 #include "aria.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -37,15 +37,15 @@ namespace aria {
         return std::format("<class {}>", name_->view());
     }
 
-    Opt<Value> ObjClass::load_field(AriaVM& vm, ObjString* name) {
+    Opt<Value> ObjClass::load_field(AriaExeContext& ctx, ObjString* name) {
         // 读穿透直读不绑定不缓存;miss 的 fail 装箱是唯一分配点 -- 本类与 name 皆经调用方根化(peek 在栈)。
         if (const auto v = find_field(name)) {
             return v;
         }
-        return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
-    bool ObjClass::store_field(AriaVM& vm, ObjString* name, const Value value) {
+    bool ObjClass::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {
         set_field(name, value); // 继承名/新名新建键、本类已有原槽更新、父表不动;"init" 同步内聚于此
         return true;
     }

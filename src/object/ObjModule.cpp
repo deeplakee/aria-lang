@@ -7,7 +7,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "util/fs.hpp"
 
 namespace aria {
@@ -47,15 +47,15 @@ namespace aria {
 
     String ObjModule::debug_repr() const { return std::format("<module {}>", name_->view()); }
 
-    Opt<Value> ObjModule::load_field(AriaVM& vm, ObjString* name) {
+    Opt<Value> ObjModule::load_field(AriaExeContext& ctx, ObjString* name) {
         if (const auto entry = globals_.find(Value::from_obj(name))) {
             return entry->value;
         }
-        return vm.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
     }
 
-    bool ObjModule::store_field(AriaVM& vm, ObjString* name, const Value value) {
-        return vm.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", type_name());
+    bool ObjModule::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {
+        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", type_name());
     }
 
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir) { return gc.new_object<ObjModule>(gc, name, dir); }

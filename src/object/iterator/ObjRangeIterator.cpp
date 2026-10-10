@@ -2,7 +2,7 @@
 
 #include "error/ErrorCode.hpp"
 #include "object/ObjRange.hpp"
-#include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 
 namespace aria {
 
@@ -21,10 +21,10 @@ namespace aria {
                         : (is_exclusive_ ? current_ > *to_ : current_ >= *to_);
     }
 
-    Opt<Value> ObjRangeIterator::next(AriaVM& vm) {
+    Opt<Value> ObjRangeIterator::next(AriaExeContext& ctx) {
         // 耗尽 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
         if (!has_next()) {
-            return vm.fail(ErrorCode::IterationExhausted, "iterator exhausted");
+            return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         const auto value = Value::from_int(current_);
         // 推进永不溢出:i48 整数域(NaN-boxing payload + 字面量编译期上限)兜底;TagValue 下回绕推满端点不设防(不承诺)。

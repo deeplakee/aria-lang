@@ -85,7 +85,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/Eval.hpp` / `.cpp`
 
-eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型）：`class Eval` 全静态方法宿主，以 `AriaVM& vm` 为参数、宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达，循环状态全部取自 `*current_`。公共驱动面三口 = `dispatch_loop`（宿主 run/重入执行体的驱动口）、`call_closure`（闭包进帧单点）与 `execute_call`（重入执行体，签名即 `AriaExeContext& ctx`，ObjMovement 重入口两口的共用体）；`run_*` 指令执行体、算子模板族、call 机器、`unwind` 皆私有，模板定义与实例化点全在本 TU。
+eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型）：`class Eval` 全静态方法宿主，宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达。签名分两族：**跨切换跟随 `current_` 的恒持 `AriaVM& vm`**（`dispatch_loop`/`unwind`，循环状态全部取自 `*current_`），其余方法签名即 `AriaExeContext& ctx`（ctx 耦合机器随上下文走，宿主服务经 `ctx.host()`）。公共驱动面三口 = `dispatch_loop`（宿主 run/重入执行体的驱动口）、`call_closure`（闭包进帧单点，签名即 ctx）与 `execute_call`（重入执行体，签名即 `AriaExeContext& ctx`，ObjMovement 重入口两口的共用体）；`run_*` 指令执行体、算子模板族、call 机器、`unwind` 皆私有，模板定义与实例化点全在本 TU。
 
 ### 指令子集
 

@@ -245,25 +245,25 @@ namespace aria {
     }
 
     template<OpCode Op>
-    bool Eval::run_binary_operator(AriaVM& vm) {
+    bool Eval::run_binary_operator(AriaExeContext& ctx) {
         // 对象左值先试 string 快路径门,再取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],
         // 槽 0 保持 receiver);非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),
         // 取到的实现必可达(类表值 / 实例字段值 / 内建实现格),故无白色在途窗口、不挂守卫。
-        if (const auto lhs = vm.current_->peek(1); lhs.is_obj()) {
+        if (const auto lhs = ctx.peek(1); lhs.is_obj()) {
             const auto obj = lhs.as_obj();
-            if (try_string_fast_dispatch<Op>(vm, obj)) {
+            if (try_string_fast_dispatch<Op>(ctx, obj)) {
                 return true;
             }
-            if (const auto target = get_obj_binary_op_impl<Op>(vm, obj)) {
-                return call_value(*vm.current_, *target, 1);
+            if (const auto target = get_obj_binary_op_impl<Op>(ctx, obj)) {
+                return call_value(ctx, *target, 1);
             }
             return false;
         }
-        return run_binary_numeric<Op>(vm);
+        return run_binary_numeric<Op>(ctx);
     }
 
     template<OpCode Op>
-    bool Eval::try_string_fast_dispatch(AriaVM& vm, Object* lhs) {
+    bool Eval::try_string_fast_dispatch(AriaExeContext& ctx, Object* lhs) {
         // string 快路径(lhs 非空,调用方已判 is_obj):两侧 tag 均 STRING 时就地拼接/字序比较,
         // 免整条原生调用链;白名单仅 ADD 与四个字序比较实例化,其余算子恒 false。返回 true = 已
         // 派发完成,false = 不适用落原路(非失败,两侧皆 string 的臂全无 fail 路径)。门体用 is/as
@@ -272,9 +272,9 @@ namespace aria {
         if constexpr (Op == OpCode::ADD || Op == OpCode::LESS || Op == OpCode::LESS_EQUAL || Op == OpCode::GREATER ||
                       Op == OpCode::GREATER_EQUAL) {
             if (lhs->is<ObjString>()) {
-                if (const Value rhs = vm.current_->peek(0); rhs.is_obj()) {
+                if (const Value rhs = ctx.peek(0); rhs.is_obj()) {
                     if (const auto right = rhs.as_obj(); right->is<ObjString>()) {
-                        return run_string_binary<Op>(vm, lhs->as<ObjString>(), right->as<ObjString>());
+                        return run_string_binary<Op>(ctx, lhs->as<ObjString>(), right->as<ObjString>());
                     }
                 }
             }
@@ -283,123 +283,123 @@ namespace aria {
     }
 
     template<OpCode Op>
-    bool Eval::run_string_binary(AriaVM& vm, ObjString* lhs, ObjString* rhs) {
+    bool Eval::run_string_binary(AriaExeContext& ctx, ObjString* lhs, ObjString* rhs) {
         // [lhs, rhs] -> [r]:拼接先查驻留(哈希自 lhs 终态续算 rhs,命中零拷贝),比较按无符号字节序;
         // 语义与 StringClass 对应钩子逐位一致。GC 走查:唯一 GC 点是 new_string 内部 new_object 顶部
         // maybe_collect,两操作数 peek 未弹在栈(栈即根);命中/铸后 drop+push 无 GC 点。
         if constexpr (Op == OpCode::ADD) {
             const auto hash   = util::hash_str(lhs->hash(), rhs->view());
-            const auto joined = new_string(vm.gc_, lhs->view(), rhs->view(), hash);
-            vm.current_->drop(2);
-            vm.current_->push(Value::from_obj(joined));
+            const auto joined = new_string(ctx.gc(), lhs->view(), rhs->view(), hash);
+            ctx.drop(2);
+            ctx.push(Value::from_obj(joined));
         } else if constexpr (Op == OpCode::LESS) {
-            vm.current_->drop(2);
-            vm.current_->push(Value::from_bool(lhs->view().compare(rhs->view()) < 0));
+            ctx.drop(2);
+            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) < 0));
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            vm.current_->drop(2);
-            vm.current_->push(Value::from_bool(lhs->view().compare(rhs->view()) <= 0));
+            ctx.drop(2);
+            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) <= 0));
         } else if constexpr (Op == OpCode::GREATER) {
-            vm.current_->drop(2);
-            vm.current_->push(Value::from_bool(lhs->view().compare(rhs->view()) > 0));
+            ctx.drop(2);
+            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) > 0));
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            vm.current_->drop(2);
-            vm.current_->push(Value::from_bool(lhs->view().compare(rhs->view()) >= 0));
+            ctx.drop(2);
+            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) >= 0));
         } else {
             UNREACHABLE(); // 白名单收在 try_string_fast_dispatch,可达 Op 恒为上列五个之一
         }
         return true;
     }
 
-    bool Eval::run_negate(AriaVM& vm) {
+    bool Eval::run_negate(AriaExeContext& ctx) {
         // [v] -> [r]:整数/浮点就地取负;对象左值取 __neg__ 实现后调用(一元恒零实参,调用区
         // [v] 即 [this]);其余类型报 InvalidOperand。GC 走查同 run_binary_operator。
-        const Value operand = vm.current_->peek(0);
+        const Value operand = ctx.peek(0);
         if (operand.is_int()) {
-            vm.current_->peek(0) = Value::from_int(-operand.as_int());
+            ctx.peek(0) = Value::from_int(-operand.as_int());
             return true;
         }
         if (operand.is_f64()) {
-            vm.current_->peek(0) = Value::from_f64(-operand.as_f64());
+            ctx.peek(0) = Value::from_f64(-operand.as_f64());
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->op_negate_impl(*vm.current_)) {
-                return call_value(*vm.current_, *target, 0);
+            if (const auto target = operand.as_obj()->op_negate_impl(ctx)) {
+                return call_value(ctx, *target, 0);
             }
             return false;
         }
-        return vm.current_->fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
+        return ctx.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
     }
 
     template<OpCode Op>
-    Opt<Value> Eval::get_obj_binary_op_impl(AriaVM& vm, Object* obj) {
+    Opt<Value> Eval::get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj) {
         // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举)。
         if constexpr (Op == OpCode::ADD) {
-            return obj->op_add_impl(*vm.current_);
+            return obj->op_add_impl(ctx);
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj->op_sub_impl(*vm.current_);
+            return obj->op_sub_impl(ctx);
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj->op_mul_impl(*vm.current_);
+            return obj->op_mul_impl(ctx);
         } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj->op_div_impl(*vm.current_);
+            return obj->op_div_impl(ctx);
         } else if constexpr (Op == OpCode::MOD) {
-            return obj->op_mod_impl(*vm.current_);
+            return obj->op_mod_impl(ctx);
         } else if constexpr (Op == OpCode::GREATER) {
-            return obj->op_greater_impl(*vm.current_);
+            return obj->op_greater_impl(ctx);
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj->op_greater_equal_impl(*vm.current_);
+            return obj->op_greater_equal_impl(ctx);
         } else if constexpr (Op == OpCode::LESS) {
-            return obj->op_less_impl(*vm.current_);
+            return obj->op_less_impl(ctx);
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj->op_less_equal_impl(*vm.current_);
+            return obj->op_less_equal_impl(ctx);
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }
     }
 
     template<OpCode Op>
-    bool Eval::run_binary_numeric(AriaVM& vm) {
+    bool Eval::run_binary_numeric(AriaExeContext& ctx) {
         // 数值二元的入口:弹 2、类型守卫、按域分流(两个域语义不同,实现各住自己的辅助方法)。
-        const Value b = vm.current_->pop();
-        const Value a = vm.current_->pop();
+        const Value b = ctx.pop();
+        const Value a = ctx.pop();
         if (!(is_num(a) && is_num(b))) {
-            return vm.current_->fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}",
-                                     op_symbol(Op), type_name(a), type_name(b));
+            return ctx.fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", op_symbol(Op),
+                            type_name(a), type_name(b));
         }
         if (a.is_int() && b.is_int()) {
-            return run_binary_int<Op>(vm, a.as_int(), b.as_int());
+            return run_binary_int<Op>(ctx, a.as_int(), b.as_int());
         }
         // 任一 F64 升浮点:另一侧按字面值升。
-        return run_binary_f64<Op>(vm, as_num(a), as_num(b));
+        return run_binary_f64<Op>(ctx, as_num(a), as_num(b));
     }
 
     template<OpCode Op>
-    bool Eval::run_binary_int(AriaVM& vm, const i64 lhs, const i64 rhs) {
+    bool Eval::run_binary_int(AriaExeContext& ctx, const i64 lhs, const i64 rhs) {
         // 整数域九算子:结果压栈。除/模零是域特有失败(整数无 inf/nan),就地 fail;% 为 C++ 语义。
         if constexpr (Op == OpCode::ADD) {
-            vm.current_->push(Value::from_int(lhs + rhs));
+            ctx.push(Value::from_int(lhs + rhs));
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            vm.current_->push(Value::from_int(lhs - rhs));
+            ctx.push(Value::from_int(lhs - rhs));
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            vm.current_->push(Value::from_int(lhs * rhs));
+            ctx.push(Value::from_int(lhs * rhs));
         } else if constexpr (Op == OpCode::DIVIDE) {
             if (rhs == 0) {
-                return vm.current_->fail(ErrorCode::DivisionByZero, "integer division by zero");
+                return ctx.fail(ErrorCode::DivisionByZero, "integer division by zero");
             }
-            vm.current_->push(Value::from_int(lhs / rhs));
+            ctx.push(Value::from_int(lhs / rhs));
         } else if constexpr (Op == OpCode::MOD) {
             if (rhs == 0) {
-                return vm.current_->fail(ErrorCode::ModuloByZero, "integer modulo by zero");
+                return ctx.fail(ErrorCode::ModuloByZero, "integer modulo by zero");
             }
-            vm.current_->push(Value::from_int(lhs % rhs));
+            ctx.push(Value::from_int(lhs % rhs));
         } else if constexpr (Op == OpCode::GREATER) {
-            vm.current_->push(Value::from_bool(lhs > rhs));
+            ctx.push(Value::from_bool(lhs > rhs));
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            vm.current_->push(Value::from_bool(lhs >= rhs));
+            ctx.push(Value::from_bool(lhs >= rhs));
         } else if constexpr (Op == OpCode::LESS) {
-            vm.current_->push(Value::from_bool(lhs < rhs));
+            ctx.push(Value::from_bool(lhs < rhs));
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            vm.current_->push(Value::from_bool(lhs <= rhs));
+            ctx.push(Value::from_bool(lhs <= rhs));
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }
@@ -407,274 +407,296 @@ namespace aria {
     }
 
     template<OpCode Op>
-    bool Eval::run_binary_f64(const AriaVM& vm, const f64 lhs, const f64 rhs) {
+    bool Eval::run_binary_f64(AriaExeContext& ctx, const f64 lhs, const f64 rhs) {
         // 浮点域九算子:结果压栈。按 IEEE(除零得 inf/nan、% 走 fmod,无失败路径),故无 fail 分支。
         if constexpr (Op == OpCode::ADD) {
-            vm.current_->push(Value::from_f64(lhs + rhs));
+            ctx.push(Value::from_f64(lhs + rhs));
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            vm.current_->push(Value::from_f64(lhs - rhs));
+            ctx.push(Value::from_f64(lhs - rhs));
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            vm.current_->push(Value::from_f64(lhs * rhs));
+            ctx.push(Value::from_f64(lhs * rhs));
         } else if constexpr (Op == OpCode::DIVIDE) {
-            vm.current_->push(Value::from_f64(lhs / rhs));
+            ctx.push(Value::from_f64(lhs / rhs));
         } else if constexpr (Op == OpCode::MOD) {
-            vm.current_->push(Value::from_f64(std::fmod(lhs, rhs)));
+            ctx.push(Value::from_f64(std::fmod(lhs, rhs)));
         } else if constexpr (Op == OpCode::GREATER) {
-            vm.current_->push(Value::from_bool(lhs > rhs));
+            ctx.push(Value::from_bool(lhs > rhs));
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            vm.current_->push(Value::from_bool(lhs >= rhs));
+            ctx.push(Value::from_bool(lhs >= rhs));
         } else if constexpr (Op == OpCode::LESS) {
-            vm.current_->push(Value::from_bool(lhs < rhs));
+            ctx.push(Value::from_bool(lhs < rhs));
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            vm.current_->push(Value::from_bool(lhs <= rhs));
+            ctx.push(Value::from_bool(lhs <= rhs));
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }
         return true;
     }
 
-    bool Eval::run_load_field(AriaVM& vm, ObjString* name) {
+    bool Eval::run_load_field(AriaExeContext& ctx, ObjString* name) {
         // 非对象(含 nil)统一「does not support field access」文案(协议分派需 Object*);
         // 对象 miss 的文案由协议 override 烘焙。
-        const Value obj = vm.current_->peek(0);
+        const Value obj = ctx.peek(0);
         if (!obj.is_obj()) {
-            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
-                                     type_name(obj));
+            return ctx.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
         }
-        if (const auto result = obj.as_obj()->load_field_bound(*vm.current_, name)) {
-            vm.current_->peek(0) = *result; // 写回原槽:[obj] -> [v]
+        if (const auto result = obj.as_obj()->load_field_bound(ctx, name)) {
+            ctx.peek(0) = *result; // 写回原槽:[obj] -> [v]
             return true;
         }
         return false; // 载荷已在寄存器
     }
 
-    bool Eval::run_store_field(AriaVM& vm, ObjString* name) {
+    bool Eval::run_store_field(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;非对象守卫同 run_load_field。
-        const Value obj = vm.current_->peek(1);
+        const Value obj = ctx.peek(1);
         if (!obj.is_obj()) {
-            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
-                                     type_name(obj));
+            return ctx.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
         }
-        if (!obj.as_obj()->store_field(*vm.current_, name, vm.current_->peek(0))) {
+        if (!obj.as_obj()->store_field(ctx, name, ctx.peek(0))) {
             return false; // 载荷已在寄存器
         }
-        vm.current_->peek(1) = vm.current_->peek(0); // 单槽下移:弹 obj 留 v,[obj, v] -> [v]
-        vm.current_->drop(1);
+        ctx.peek(1) = ctx.peek(0); // 单槽下移:弹 obj 留 v,[obj, v] -> [v]
+        ctx.drop(1);
         return true;
     }
 
-    bool Eval::run_load_this_field(AriaVM& vm, ObjString* name) {
+    bool Eval::run_load_this_field(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
         // load_field_bound 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
-        const Value this_value = vm.current_->frames().top().slots[0];
+        const Value this_value = ctx.frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
-            if (const auto result = inst->load_field_bound(*vm.current_, name)) {
-                vm.current_->push(*result); // [] -> [v]
+            if (const auto result = inst->load_field_bound(ctx, name)) {
+                ctx.push(*result); // [] -> [v]
                 return true;
             }
             return false;
         }
-        return vm.current_->fail(ErrorCode::TypeMismatch, "field access requires an instance, got {}",
-                                 type_name(this_value));
+        return ctx.fail(ErrorCode::TypeMismatch, "field access requires an instance, got {}", type_name(this_value));
     }
 
-    bool Eval::run_store_this_field(AriaVM& vm, ObjString* name) {
+    bool Eval::run_store_this_field(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;写入:[v] -> [v](peek-store,值留栈,this 不经值栈)。store_field
         // 恒成功(实例字段动态),false 分支为契约透传防御形态。非实例兜底同读取执行体。
-        const Value this_value = vm.current_->frames().top().slots[0];
+        const Value this_value = ctx.frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
-            if (inst->store_field(*vm.current_, name, vm.current_->peek(0))) { // false ⟺ 已 fail(契约)
-                return true;                                                   // 值留栈(peek-store)
+            if (inst->store_field(ctx, name, ctx.peek(0))) { // false ⟺ 已 fail(契约)
+                return true;                                 // 值留栈(peek-store)
             }
             return false;
         }
-        return vm.current_->fail(ErrorCode::TypeMismatch, "field assignment requires an instance, got {}",
-                                 type_name(this_value));
+        return ctx.fail(ErrorCode::TypeMismatch, "field assignment requires an instance, got {}",
+                        type_name(this_value));
     }
 
-    bool Eval::run_prepare_method(AriaVM& vm, ObjString* name) {
+    bool Eval::run_prepare_method(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
         // (「栈即根」)-- 裸查找命中零分配(基类默认 fail;宿主 override 皆纯透传/纯查询),唯一
         // 分配点是 miss 的 fail 装箱。解析先于实参求值。
-        const Value recv = vm.current_->peek(0);
+        const Value recv = ctx.peek(0);
         if (!recv.is_obj()) {
-            return vm.current_->fail(ErrorCode::UndefinedProperty, "type {} does not support field access",
-                                     type_name(recv));
+            return ctx.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(recv));
         }
-        if (const auto target = recv.as_obj()->load_field(*vm.current_, name)) {
-            vm.current_->push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
+        if (const auto target = recv.as_obj()->load_field(ctx, name)) {
+            ctx.push(*target); // 待调值压栈:跨指令存活,GC 根由值栈承担(「栈即根」)
             return true;
         }
         return false;
     }
 
-    bool Eval::run_call_method(AriaVM& vm, const u8 argc) {
+    bool Eval::run_call_method(AriaExeContext& ctx, const u8 argc) {
         // 契约见 Eval.hpp。纯调用,不再解析:[recv, target, a1..aN] 里实参整体下移一格补掉待调值
         // 占的那格 -> [recv, a1..aN](槽 0 = receiver = this);待调值交 call_value 统一分发
         // (argc == 0 时下移为空转)。
-        const Value target = vm.current_->peek(argc);
+        const Value target = ctx.peek(argc);
         for (u8 i = argc; i >= 1; --i) {
-            vm.current_->peek(i) = vm.current_->peek(i - 1);
+            ctx.peek(i) = ctx.peek(i - 1);
         }
-        vm.current_->drop(1);
-        return call_value(*vm.current_, target, argc);
+        ctx.drop(1);
+        return call_value(ctx, target, argc);
     }
 
-    bool Eval::try_list_load_fast_dispatch(const AriaVM& vm, Object* target, const Value idx) {
+    bool Eval::try_list_load_fast_dispatch(AriaExeContext& ctx, Object* target, const Value idx) {
         // 契约见 Eval.hpp;命中臂写回 obj 槽再弹 idx,与虚路径同栈效应。
         if (target->is<ObjList>() && idx.is_int()) {
             const auto list = target->as<ObjList>();
             if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
-                vm.current_->peek(1) = list->elements()[*slot];
-                vm.current_->drop(1);
+                ctx.peek(1) = list->elements()[*slot];
+                ctx.drop(1);
                 return true;
             }
         }
         return false;
     }
 
-    bool Eval::try_list_store_fast_dispatch(const AriaVM& vm, Object* target, const Value idx, const Value value) {
+    bool Eval::try_list_store_fast_dispatch(AriaExeContext& ctx, Object* target, const Value idx, const Value value) {
         // 契约见 Eval.hpp。
         if (target->is<ObjList>() && idx.is_int()) {
             const auto list = target->as<ObjList>();
             if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
                 list->elements()[*slot] = value;
-                vm.current_->peek(2)    = value;
-                vm.current_->drop(2);
+                ctx.peek(2)             = value;
+                ctx.drop(2);
                 return true;
             }
         }
         return false;
     }
 
-    bool Eval::run_load_index(AriaVM& vm) {
+    bool Eval::run_load_index(AriaExeContext& ctx) {
         // 契约见 Eval.hpp;非对象守卫同 run_load_field(文案与协议基类默认同串)。
-        const Value idx = vm.current_->peek(0);
-        const Value obj = vm.current_->peek(1);
+        const Value idx = ctx.peek(0);
+        const Value obj = ctx.peek(1);
         if (!obj.is_obj()) {
-            return vm.current_->fail(ErrorCode::TypeMismatch, "type {} does not support subscript access",
-                                     type_name(obj));
+            return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
         }
         const auto target = obj.as_obj();
-        if (try_list_load_fast_dispatch(vm, target, idx)) {
+        if (try_list_load_fast_dispatch(ctx, target, idx)) {
             return true;
         }
-        if (const auto result = target->load_index(*vm.current_, idx)) {
-            vm.current_->peek(1) = *result; // 写回 obj 槽再弹 idx:[obj, idx] -> [v]
-            vm.current_->drop(1);
+        if (const auto result = target->load_index(ctx, idx)) {
+            ctx.peek(1) = *result; // 写回 obj 槽再弹 idx:[obj, idx] -> [v]
+            ctx.drop(1);
             return true;
         }
         return false; // 载荷已在寄存器
     }
 
-    bool Eval::run_store_index(AriaVM& vm) {
+    bool Eval::run_store_index(AriaExeContext& ctx) {
         // 契约见 Eval.hpp;非对象守卫同 run_load_index。
-        const Value value = vm.current_->peek(0);
-        const Value idx   = vm.current_->peek(1);
-        const Value obj   = vm.current_->peek(2);
+        const Value value = ctx.peek(0);
+        const Value idx   = ctx.peek(1);
+        const Value obj   = ctx.peek(2);
         if (!obj.is_obj()) {
-            return vm.current_->fail(ErrorCode::TypeMismatch, "type {} does not support subscript access",
-                                     type_name(obj));
+            return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name(obj));
         }
         const auto target = obj.as_obj();
-        if (try_list_store_fast_dispatch(vm, target, idx, value)) {
+        if (try_list_store_fast_dispatch(ctx, target, idx, value)) {
             return true;
         }
-        if (!target->store_index(*vm.current_, idx, value)) {
+        if (!target->store_index(ctx, idx, value)) {
             return false; // 载荷已在寄存器
         }
-        vm.current_->peek(2) = value; // 值下移两格:弹 obj、idx 留 v,[obj, idx, v] -> [v]
-        vm.current_->drop(2);
+        ctx.peek(2) = value; // 值下移两格:弹 obj、idx 留 v,[obj, idx, v] -> [v]
+        ctx.drop(2);
         return true;
     }
 
-    bool Eval::run_make_range(AriaVM& vm, const u8 flags) {
+    bool Eval::run_make_range(AriaExeContext& ctx, const u8 flags) {
         // 契约见 Eval.hpp。端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」,端点为标量
         // 整数非对象);铸完 drop 再 push(窗口内无 GC 点)。非整数端点 TypeMismatch,文案报端点类型。
         if ((flags & kRangeFlagUnbounded) != 0) {
-            const Value from = vm.current_->peek(0);
+            const Value from = ctx.peek(0);
             if (!from.is_int()) {
-                return vm.current_->fail(ErrorCode::TypeMismatch, "range bound must be an integer, got {}",
-                                         type_name(from));
+                return ctx.fail(ErrorCode::TypeMismatch, "range bound must be an integer, got {}", type_name(from));
             }
-            const auto range = new_range(vm.gc_, from.as_int());
-            vm.current_->drop(1);
-            vm.current_->push(Value::from_obj(range));
+            const auto range = new_range(ctx.gc(), from.as_int());
+            ctx.drop(1);
+            ctx.push(Value::from_obj(range));
             return true;
         }
         const bool  exclusive = (flags & kRangeFlagExclusive) != 0;
-        const Value to        = vm.current_->peek(0);
-        const Value from      = vm.current_->peek(1);
+        const Value to        = ctx.peek(0);
+        const Value from      = ctx.peek(1);
         if (!from.is_int() || !to.is_int()) {
-            return vm.current_->fail(ErrorCode::TypeMismatch, "range bounds must be integers, got {} and {}",
-                                     type_name(from), type_name(to));
+            return ctx.fail(ErrorCode::TypeMismatch, "range bounds must be integers, got {} and {}", type_name(from),
+                            type_name(to));
         }
-        const auto range = new_range(vm.gc_, from.as_int(), to.as_int(), exclusive);
-        vm.current_->drop(2);
-        vm.current_->push(Value::from_obj(range));
+        const auto range = new_range(ctx.gc(), from.as_int(), to.as_int(), exclusive);
+        ctx.drop(2);
+        ctx.push(Value::from_obj(range));
         return true;
     }
 
-    bool Eval::run_make_class(AriaVM& vm, ObjString* name) {
+    bool Eval::run_make_class(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;[super] -> [class] 原地写回,铸类不弹不压。
-        if (const auto super = try_as_obj<ObjClass>(vm.current_->peek(0))) {
+        if (const auto super = try_as_obj<ObjClass>(ctx.peek(0))) {
             // 内建容器五类不可继承(方法面 receiver 恒具体内建对象,实例无从满足);Object 放行:
             // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
-            if (super == vm.list_class() || super == vm.map_class() || super == vm.string_class() ||
-                super == vm.range_class() || super == vm.iterator_class()) {
-                return vm.current_->fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'",
-                                         super->name()->view());
+            if (super == ctx.list_class() || super == ctx.map_class() || super == ctx.string_class() ||
+                super == ctx.range_class() || super == ctx.iterator_class()) {
+                return ctx.fail(ErrorCode::TypeMismatch, "cannot inherit from built-in class '{}'",
+                                super->name()->view());
             }
-            const auto klass     = new_class(vm.gc_, name, super);
-            vm.current_->peek(0) = Value::from_obj(klass);
+            const auto klass = new_class(ctx.gc(), name, super);
+            ctx.peek(0)      = Value::from_obj(klass);
             return true;
         }
         // 非类值是语言可达错误,故 fail 而非 ASSERT。
-        return vm.current_->fail(ErrorCode::TypeMismatch, "superclass must be a class, got {}",
-                                 type_name(vm.current_->peek(0)));
+        return ctx.fail(ErrorCode::TypeMismatch, "superclass must be a class, got {}", type_name(ctx.peek(0)));
     }
 
-    bool Eval::run_load_super_field(AriaVM& vm, ObjString* name) {
+    bool Eval::run_load_super_field(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
-        const auto& frame    = vm.current_->frames().top();
+        const auto& frame    = ctx.frames().top();
         const auto  defining = frame.closure->defining_class();
         ASSERT(defining != nullptr, "closure has no defining class (compiler invariant)");
         const auto super = defining->superclass();
         ASSERT(super != nullptr, "method class has no superclass (compiler invariant)");
-        const auto hit = super->load_field(*vm.current_, name); // 从父类起读穿透(类协议)
+        const auto hit = super->load_field(ctx, name); // 从父类起读穿透(类协议)
         if (!hit) {
             return false;
         }
         if (const auto member = *hit; is_method(member)) {
             // 方法命中:建成立即压栈,this 经帧槽根化;方法对象经 super 链根可达
-            vm.current_->push(Value::from_obj(new_bound_method(vm.gc_, member, frame.slots[0])));
+            ctx.push(Value::from_obj(new_bound_method(ctx.gc(), member, frame.slots[0])));
         } else {
-            vm.current_->push(member); // 静态槽原值直读,不绑定不缓存
+            ctx.push(member); // 静态槽原值直读,不绑定不缓存
         }
         return true;
     }
 
-    bool Eval::run_return(AriaVM& vm) {
-        // 取返回值 -> 弹帧 -> 按弹后帧深分流(出口边界 = vm.current_->ret_frame()):递归边界(非零)
-        // 弹尽 = 本循环出口,值落调用区槽 0;根边界(零)弹尽再分主顶层/协程完成。
-        const Value ret = vm.current_->pop(); // 保存返回值
-        vm.current_->exit_frame();            // 清除调用栈帧
-        if (vm.current_->frames().size() != vm.current_->ret_frame()) {
-            vm.current_->push(ret); // 帧间返回:写回 callee 槽
-            return false;
+    bool Eval::run_import(AriaExeContext& ctx, const ObjString* path) {
+        // 三类失败点(解析/加载/进帧)一律 return false(载荷已 raise),unwind 留 dispatch_loop 调用点。
+        const auto& frame = ctx.frames().top(); // 导入方帧:abs_path 作相对解析基;进帧后不再引用
+        // 相对分支取当前模块 dirname 作基;dir_ 可空时 abs_path 返空串,相对分支拒绝。
+        const auto canonical_path_str =
+                resolve_module(path->view(), frame.module->abs_path(), ctx.host().source_roots());
+        if (!canonical_path_str) {
+            return ctx.fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
         }
-        if (vm.current_->ret_frame() != 0) {
-            vm.current_->push(ret); // VM 重入出口:返回值留在栈顶
+        const auto canonical_path = new_string(ctx.gc(), *canonical_path_str);
+        // guard 跨 load_module 的编译期分配(intern weak root 不保命;表 set 无 GC 点)。
+        auto guard = ctx.gc().make_guard(canonical_path);
+        if (const auto module_entry = ctx.host().modules().find(Value::from_obj(canonical_path));
+            module_entry != nullptr) {
+            ctx.push(module_entry->value); // 命中:体执行中即循环导入,复用半初始化对象
             return true;
         }
-        if (const auto resumer = vm.current_->previous()) {
-            // 协程完成:值写 resumer 预留槽 -> reset 清场 -> 换指置 Done。
-            resumer->peek(0) = ret;
-            vm.current_->reset();
-            vm.leave_coroutine(ExecState::Done);
+        const auto module = ctx.host().load_module(canonical_path, path->view());
+        if (module == nullptr) {
+            return false; // 载荷已在寄存器
+        }
+        // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
+        const auto entry = module->entry();
+        ASSERT(entry != nullptr, "load_module returned a module whose entry is not set");
+        const auto closure = new_closure(ctx.gc(), entry);
+        ctx.push(Value::from_obj(closure));
+        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
+        return call_closure(ctx, closure, 0);
+    }
+
+    bool Eval::run_return(AriaExeContext& ctx) {
+        // 取返回值 -> 弹帧 -> 按弹后帧深分流(出口边界 = ctx.ret_frame()):递归边界(非零)
+        // 弹尽 = 本循环出口,值落调用区槽 0;根边界(零)弹尽再分主顶层/协程完成。
+        const Value ret = ctx.pop(); // 保存返回值
+        ctx.exit_frame();            // 清除调用栈帧
+        if (ctx.frames().size() != ctx.ret_frame()) {
+            ctx.push(ret); // 帧间返回:写回 callee 槽
             return false;
         }
-        vm.current_->push(ret); // 主顶层返回:返回值留在栈顶(主模块对象)
+        if (ctx.ret_frame() != 0) {
+            ctx.push(ret); // VM 重入出口:返回值留在栈顶
+            return true;
+        }
+        if (const auto resumer = ctx.previous()) {
+            // 协程完成:值写 resumer 预留槽 -> reset 清场 -> 换指置 Done。
+            resumer->peek(0) = ret;
+            ctx.reset();
+            ctx.host().leave_coroutine(ExecState::Done);
+            return false;
+        }
+        ctx.push(ret); // 主顶层返回:返回值留在栈顶(主模块对象)
         return true;
     }
 
@@ -727,50 +749,25 @@ namespace aria {
         }
     }
 
-    bool Eval::run_import(AriaVM& vm, const ObjString* path) {
-        // 三类失败点(解析/加载/进帧)一律 return false(载荷已 raise),unwind 留 dispatch_loop 调用点。
-        const auto& frame = vm.current_->frames().top(); // 导入方帧:abs_path 作相对解析基;进帧后不再引用
-        // 相对分支取当前模块 dirname 作基;dir_ 可空时 abs_path 返空串,相对分支拒绝。
-        const auto canonical_path_str = resolve_module(path->view(), frame.module->abs_path(), vm.source_roots_);
-        if (!canonical_path_str) {
-            return vm.current_->fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
-        }
-        const auto canonical_path = new_string(vm.gc_, *canonical_path_str);
-        // guard 跨 load_module 的编译期分配(intern weak root 不保命;表 set 无 GC 点)。
-        auto guard = vm.gc_.make_guard(canonical_path);
-        if (const auto module_entry = vm.modules_.find(Value::from_obj(canonical_path)); module_entry != nullptr) {
-            vm.current_->push(module_entry->value); // 命中:体执行中即循环导入,复用半初始化对象
-            return true;
-        }
-        const auto module = vm.load_module(canonical_path, path->view());
-        if (module == nullptr) {
-            return false; // 载荷已在寄存器
-        }
-        // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
-        const auto entry = module->entry();
-        ASSERT(entry != nullptr, "load_module returned a module whose entry is not set");
-        const auto closure = new_closure(vm.gc_, entry);
-        vm.current_->push(Value::from_obj(closure));
-        // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
-        return call_closure(*vm.current_, closure, 0);
-    }
-
     bool Eval::dispatch_loop(AriaVM& vm) {
-        // 栈/帧/寄存器一律经 vm.current_ 访问;「正在执行的字节码所在上下文恒等于 vm.current_」且切换点
-        // 唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,
+        // 栈/帧/寄存器一律经循环顶重绑的本轮 ctx 访问(切换必经 call_native 尾位置或 unwind 跳链,
+        // 两者出循环体即回循环顶,引用随轮更新,体内无过期引用);「正在执行的字节码所在上下文恒等于
+        // vm.current_」且切换点唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,
         // 失败出口均就地善后(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通
         // 道)。出口边界 = vm.current_->ret_frame()(住 ObjMovement 随上下文走,重入场写入/退场归
         // 还;最外执行恒零,弹空帧栈即本循环驱动的最外帧弹尽;协程
         // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。
 
         while (true) {
+            // 本轮执行的上下文(= vm.current_ 的快照引用):仅本轮有效,见函数头注释。
+            AriaExeContext& ctx = *vm.current_;
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return)。last_ip 在取指前写入:
             // 行号/unwind 查表的共同锚点(顶帧 = 故障指令,外层帧 = CALL 站点)。
-            const auto frame = &vm.current_->frames().top();
+            const auto frame = &ctx.frames().top();
             frame->last_ip   = frame->ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
-            trace_execution(vm.current_);
+            trace_execution(ctx);
 #endif
             // 各 case 按 code.hpp 枚举序排列;错误站点(raise / run_* 返 false)一律 goto
             // unwind_check,成功路径一律 break 回循环顶。**switch 之后不得新增引用 frame 的代码**
@@ -779,120 +776,120 @@ namespace aria {
                 case OpCode::HALT:
                     // 真实程序不产 HALT(仅手写字节码用):运行态空 previous 即主上下文,协程内
                     // 落 HALT 会打破 run() 出口断言,提前在此拦截。
-                    ASSERT(vm.current_->previous() == nullptr, "HALT reached inside a coroutine");
-                    vm.current_->push(Value::nil_val()); // 停机值留栈顶(形态与 RETURN 顶层出口一致)
+                    ASSERT(ctx.previous() == nullptr, "HALT reached inside a coroutine");
+                    ctx.push(Value::nil_val()); // 停机值留栈顶(形态与 RETURN 顶层出口一致)
                     return true;
 
                 // 数据加载与存储
                 case OpCode::LOAD_CONST: {
                     const auto idx = read_u16(frame);
-                    vm.current_->push(frame->unit->constants[idx]);
+                    ctx.push(frame->unit->constants[idx]);
                     break;
                 }
                 case OpCode::LOAD_NIL:
-                    vm.current_->push(Value::nil_val());
+                    ctx.push(Value::nil_val());
                     break;
                 case OpCode::LOAD_TRUE:
-                    vm.current_->push(Value::true_val());
+                    ctx.push(Value::true_val());
                     break;
                 case OpCode::LOAD_FALSE:
-                    vm.current_->push(Value::false_val());
+                    ctx.push(Value::false_val());
                     break;
                 case OpCode::LOAD_IMM: {
                     const u8 raw = read_u8(frame);
                     // u8 操作数按 i8 位型重解释做符号扩展(发射侧同型转 u8)。
-                    vm.current_->push(Value::from_i32(std::bit_cast<i8>(raw)));
+                    ctx.push(Value::from_i32(std::bit_cast<i8>(raw)));
                     break;
                 }
                 case OpCode::LOAD_REG: {
                     // [] -> [regs[n]]:压 VM 单例寄存器;下标即注册表枚举值,编译器只发合法下标,
                     // 同 LOAD_LOCAL 槽访问不设防。
-                    vm.current_->push(Value::from_obj(vm.registers_[read_u8(frame)]));
+                    ctx.push(Value::from_obj(vm.registers_[read_u8(frame)]));
                     break;
                 }
                 case OpCode::LOAD_LOCAL: {
                     const auto slot = read_u16(frame);
-                    vm.current_->push(frame->slots[slot]);
+                    ctx.push(frame->slots[slot]);
                     break;
                 }
                 // N 短变体:槽号即枚举名尾号,零操作数;逐条独立 case 写死槽号常量,免运行期换算。
                 case OpCode::LOAD_LOCAL_1:
-                    vm.current_->push(frame->slots[1]);
+                    ctx.push(frame->slots[1]);
                     break;
                 case OpCode::LOAD_LOCAL_2:
-                    vm.current_->push(frame->slots[2]);
+                    ctx.push(frame->slots[2]);
                     break;
                 case OpCode::LOAD_LOCAL_3:
-                    vm.current_->push(frame->slots[3]);
+                    ctx.push(frame->slots[3]);
                     break;
                 case OpCode::LOAD_LOCAL_4:
-                    vm.current_->push(frame->slots[4]);
+                    ctx.push(frame->slots[4]);
                     break;
                 case OpCode::LOAD_LOCAL_5:
-                    vm.current_->push(frame->slots[5]);
+                    ctx.push(frame->slots[5]);
                     break;
                 case OpCode::LOAD_LOCAL_6:
-                    vm.current_->push(frame->slots[6]);
+                    ctx.push(frame->slots[6]);
                     break;
                 case OpCode::LOAD_LOCAL_7:
-                    vm.current_->push(frame->slots[7]);
+                    ctx.push(frame->slots[7]);
                     break;
                 case OpCode::LOAD_LOCAL_8:
-                    vm.current_->push(frame->slots[8]);
+                    ctx.push(frame->slots[8]);
                     break;
                 case OpCode::STORE_LOCAL: {
                     const auto slot    = read_u16(frame);
-                    frame->slots[slot] = vm.current_->peek(0);
+                    frame->slots[slot] = ctx.peek(0);
                     break;
                 }
                 case OpCode::STORE_LOCAL_1:
-                    frame->slots[1] = vm.current_->peek(0);
+                    frame->slots[1] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_2:
-                    frame->slots[2] = vm.current_->peek(0);
+                    frame->slots[2] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_3:
-                    frame->slots[3] = vm.current_->peek(0);
+                    frame->slots[3] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_4:
-                    frame->slots[4] = vm.current_->peek(0);
+                    frame->slots[4] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_5:
-                    frame->slots[5] = vm.current_->peek(0);
+                    frame->slots[5] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_6:
-                    frame->slots[6] = vm.current_->peek(0);
+                    frame->slots[6] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_7:
-                    frame->slots[7] = vm.current_->peek(0);
+                    frame->slots[7] = ctx.peek(0);
                     break;
                 case OpCode::STORE_LOCAL_8:
-                    frame->slots[8] = vm.current_->peek(0);
+                    frame->slots[8] = ctx.peek(0);
                     break;
                 case OpCode::LOAD_UPVALUE: {
                     // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
                     const u8 idx = read_u8(frame);
-                    vm.current_->push(*frame->closure->upvalues()[idx]->value_slot());
+                    ctx.push(*frame->closure->upvalues()[idx]->value_slot());
                     break;
                 }
                 case OpCode::STORE_UPVALUE: {
                     // peek-store 到该 upvalue:open 态写穿到栈槽,closed 态写自持。
                     const u8 idx                                   = read_u8(frame);
-                    *frame->closure->upvalues()[idx]->value_slot() = vm.current_->peek(0);
+                    *frame->closure->upvalues()[idx]->value_slot() = ctx.peek(0);
                     break;
                 }
                 case OpCode::CLOSE_UPVALUE: {
                     // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担
                     //(弹区槽已位于 top 之上,不 push 不覆写即安全)。
-                    vm.current_->close_upvalues(vm.current_->stack_top());
+                    ctx.close_upvalues(ctx.stack_top());
                     break;
                 }
                 case OpCode::DEF_GLOBAL: {
                     // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var 唯一
                     // 创建全局的入口)。栈即根:peek 留 v 跨 set,写完才 drop。
                     ObjString* name = read_name(frame);
-                    frame->module->globals().set(Value::from_obj(name), vm.current_->peek(0));
-                    vm.current_->drop(1); // 写完才弹,栈效应仍为 [v] -> []
+                    frame->module->globals().set(Value::from_obj(name), ctx.peek(0));
+                    ctx.drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
@@ -904,11 +901,11 @@ namespace aria {
                     if (entry == nullptr) {
                         entry = vm.builtins_.find(key); // 回退 vm.builtins_
                         if (entry == nullptr) {
-                            vm.current_->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            ctx.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                             goto unwind_check;
                         }
                     }
-                    vm.current_->push(entry->value);
+                    ctx.push(entry->value);
                     break;
                 }
                 case OpCode::STORE_GLOBAL: {
@@ -918,45 +915,45 @@ namespace aria {
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
-                        vm.current_->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        ctx.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                         goto unwind_check;
                     }
-                    entry->value = vm.current_->peek(0);
+                    entry->value = ctx.peek(0);
                     break;
                 }
                 case OpCode::LOAD_FIELD:
                     // name:u16;[obj] -> [v]
-                    if (!run_load_field(vm, read_name(frame))) {
+                    if (!run_load_field(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_FIELD:
                     // name:u16;[obj, v] -> [v](单槽下移留 v)
-                    if (!run_store_field(vm, read_name(frame))) {
+                    if (!run_store_field(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_INDEX:
                     // [obj, idx] -> [v]
-                    if (!run_load_index(vm)) {
+                    if (!run_load_index(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_INDEX:
                     // [obj, idx, v] -> [v](peek-store,值下移两格)
-                    if (!run_store_index(vm)) {
+                    if (!run_store_index(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_THIS_FIELD:
                     // name:u16;[] -> [v]
-                    if (!run_load_this_field(vm, read_name(frame))) {
+                    if (!run_load_this_field(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_THIS_FIELD:
                     // name:u16;[v] -> [v](peek-store)
-                    if (!run_store_this_field(vm, read_name(frame))) {
+                    if (!run_store_this_field(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -964,102 +961,102 @@ namespace aria {
                 // 算术与逻辑
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
                 case OpCode::EQUAL: {
-                    const Value b = vm.current_->pop();
-                    const Value a = vm.current_->pop();
-                    vm.current_->push(Value::from_bool(value_equal(a, b)));
+                    const Value b = ctx.pop();
+                    const Value a = ctx.pop();
+                    ctx.push(Value::from_bool(value_equal(a, b)));
                     break;
                 }
                 case OpCode::NOT_EQUAL: {
-                    const Value b = vm.current_->pop();
-                    const Value a = vm.current_->pop();
-                    vm.current_->push(Value::from_bool(!value_equal(a, b)));
+                    const Value b = ctx.pop();
+                    const Value a = ctx.pop();
+                    ctx.push(Value::from_bool(!value_equal(a, b)));
                     break;
                 }
                 case OpCode::STRICT_EQUAL: {
-                    const Value b = vm.current_->pop();
-                    const Value a = vm.current_->pop();
-                    vm.current_->push(Value::from_bool(value_identical(a, b)));
+                    const Value b = ctx.pop();
+                    const Value a = ctx.pop();
+                    ctx.push(Value::from_bool(value_identical(a, b)));
                     break;
                 }
                 case OpCode::STRICT_NOT_EQUAL: {
-                    const Value b = vm.current_->pop();
-                    const Value a = vm.current_->pop();
-                    vm.current_->push(Value::from_bool(!value_identical(a, b)));
+                    const Value b = ctx.pop();
+                    const Value a = ctx.pop();
+                    ctx.push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
                 // 比较
                 case OpCode::GREATER:
-                    if (!run_binary_operator<OpCode::GREATER>(vm)) {
+                    if (!run_binary_operator<OpCode::GREATER>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::GREATER_EQUAL:
-                    if (!run_binary_operator<OpCode::GREATER_EQUAL>(vm)) {
+                    if (!run_binary_operator<OpCode::GREATER_EQUAL>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LESS:
-                    if (!run_binary_operator<OpCode::LESS>(vm)) {
+                    if (!run_binary_operator<OpCode::LESS>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LESS_EQUAL:
-                    if (!run_binary_operator<OpCode::LESS_EQUAL>(vm)) {
+                    if (!run_binary_operator<OpCode::LESS_EQUAL>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 // 算术(五算子共用执行体 run_binary_operator)
                 case OpCode::ADD:
-                    if (!run_binary_operator<OpCode::ADD>(vm)) {
+                    if (!run_binary_operator<OpCode::ADD>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::SUBTRACT:
-                    if (!run_binary_operator<OpCode::SUBTRACT>(vm)) {
+                    if (!run_binary_operator<OpCode::SUBTRACT>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::MULTIPLY:
-                    if (!run_binary_operator<OpCode::MULTIPLY>(vm)) {
+                    if (!run_binary_operator<OpCode::MULTIPLY>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::DIVIDE:
-                    if (!run_binary_operator<OpCode::DIVIDE>(vm)) {
+                    if (!run_binary_operator<OpCode::DIVIDE>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::MOD:
-                    if (!run_binary_operator<OpCode::MOD>(vm)) {
+                    if (!run_binary_operator<OpCode::MOD>(ctx)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::NOT:
-                    vm.current_->push(Value::from_bool(!is_truthy(vm.current_->pop())));
+                    ctx.push(Value::from_bool(!is_truthy(ctx.pop())));
                     break;
                 case OpCode::NEGATE:
-                    if (!run_negate(vm)) {
+                    if (!run_negate(ctx)) {
                         goto unwind_check;
                     }
                     break;
 
                 // 栈操作
                 case OpCode::POP:
-                    vm.current_->drop(1);
+                    ctx.drop(1);
                     break;
                 case OpCode::POP_N: {
                     const u8 n = read_u8(frame);
-                    vm.current_->drop(n);
+                    ctx.drop(n);
                     break;
                 }
                 case OpCode::DUP:
-                    vm.current_->push(vm.current_->peek(0));
+                    ctx.push(ctx.peek(0));
                     break;
                 case OpCode::DUP2: {
-                    const Value b = vm.current_->peek(0);
-                    const Value a = vm.current_->peek(1);
-                    vm.current_->push(a);
-                    vm.current_->push(b);
+                    const Value b = ctx.peek(0);
+                    const Value a = ctx.peek(1);
+                    ctx.push(a);
+                    ctx.push(b);
                     break;
                 }
 
@@ -1076,33 +1073,33 @@ namespace aria {
                 }
                 case OpCode::JUMP_TRUE: {
                     const u16 off = read_u16(frame);
-                    if (is_truthy(vm.current_->pop())) {
+                    if (is_truthy(ctx.pop())) {
                         frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_TRUE_OR_POP: {
                     const u16 off = read_u16(frame);
-                    if (is_truthy(vm.current_->peek(0))) {
+                    if (is_truthy(ctx.peek(0))) {
                         frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        vm.current_->drop(1); // 落空:弹掉
+                        ctx.drop(1); // 落空:弹掉
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE: {
                     const u16 off = read_u16(frame);
-                    if (!is_truthy(vm.current_->pop())) {
+                    if (!is_truthy(ctx.pop())) {
                         frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE_OR_POP: {
                     const u16 off = read_u16(frame);
-                    if (!is_truthy(vm.current_->peek(0))) {
+                    if (!is_truthy(ctx.peek(0))) {
                         frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        vm.current_->drop(1); // 落空:弹掉
+                        ctx.drop(1); // 落空:弹掉
                     }
                     break;
                 }
@@ -1118,8 +1115,8 @@ namespace aria {
                     // 假则前跳。仅 EQUAL 入融合:比较面里只有它纯结构判等、永不久帧(LESS 可经
                     // 对象 __lt__ 钩子把控制流转移进被调帧,单指令内无法跨帧边界完成跳转判定)。
                     const u16   off = read_u16(frame);
-                    const Value b   = vm.current_->pop();
-                    const Value a   = vm.current_->pop();
+                    const Value b   = ctx.pop();
+                    const Value a   = ctx.pop();
                     if (!value_equal(a, b)) {
                         frame->ip += off;
                     }
@@ -1130,8 +1127,8 @@ namespace aria {
                 case OpCode::CALL: {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
-                    ASSERT(vm.current_->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
-                    if (const Value callee = vm.current_->peek(argc); !call_value(*vm.current_, callee, argc)) {
+                    ASSERT(ctx.stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
+                    if (const Value callee = ctx.peek(argc); !call_value(ctx, callee, argc)) {
                         goto unwind_check;
                     }
                     break;
@@ -1144,10 +1141,10 @@ namespace aria {
                     const auto idx     = read_u16(frame);
                     const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFunction>();
                     const auto closure = new_closure(vm.gc_, fn);
-                    vm.current_->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
+                    ctx.push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {
                         if (is_local) {
-                            closure->add_upvalue(vm.current_->capture_upvalue(vm.gc_, frame->slots + index));
+                            closure->add_upvalue(ctx.capture_upvalue(vm.gc_, frame->slots + index));
                         } else {
                             closure->add_upvalue(frame->closure->upvalues()[index]);
                         }
@@ -1158,7 +1155,7 @@ namespace aria {
                 // 类与对象
                 case OpCode::MAKE_CLASS:
                     // name:u16;[super] -> [class]:原地写回;非类值 / 内建类 super 为语言可达错误。
-                    if (!run_make_class(vm, read_name(frame))) {
+                    if (!run_make_class(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -1167,41 +1164,41 @@ namespace aria {
                     // defining class 戳),栈形经 ASSERT 校验(值恒来自上一条 CLOSURE,语言写不出
                     // 违例)。set_field 命中 "init" 同步 init_ + 播戳 -- 一职双任(super 来源 +
                     // 方法性标记,读路径据非空判绑)。
-                    const auto klass  = try_as_obj<ObjClass>(vm.current_->peek(1));
-                    const auto method = vm.current_->peek(0);
+                    const auto klass  = try_as_obj<ObjClass>(ctx.peek(1));
+                    const auto method = ctx.peek(0);
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), method);
 
                     const auto closure = try_as_obj<ObjClosure>(method);
                     ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
                     closure->set_defining_class(klass);
-                    vm.current_->drop(1);
+                    ctx.drop(1);
                     break;
                 }
                 case OpCode::MAKE_STATIC: {
                     // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
                     // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形经 ASSERT 校验。
-                    const auto klass = try_as_obj<ObjClass>(vm.current_->peek(1));
+                    const auto klass = try_as_obj<ObjClass>(ctx.peek(1));
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
-                    klass->set_field(read_name(frame), vm.current_->peek(0));
-                    vm.current_->drop(1); // 弹 value 留 class:[class, value] -> [class]
+                    klass->set_field(read_name(frame), ctx.peek(0));
+                    ctx.drop(1); // 弹 value 留 class:[class, value] -> [class]
                     break;
                 }
                 case OpCode::LOAD_SUPER_FIELD:
                     // name:u16;[] -> [v]
-                    if (!run_load_super_field(vm, read_name(frame))) {
+                    if (!run_load_super_field(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::PREPARE_METHOD:
                     // name:u16;[recv] -> [recv, target]
-                    if (!run_prepare_method(vm, read_name(frame))) {
+                    if (!run_prepare_method(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::CALL_METHOD:
                     // argc:u8;[recv, target, a1..aN] -> [r]
-                    if (!run_call_method(vm, read_u8(frame))) {
+                    if (!run_call_method(ctx, read_u8(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -1210,9 +1207,9 @@ namespace aria {
                     // 根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内无 GC 点)。
                     const u16  count = read_u16(frame);
                     const auto list  = new_list(vm.gc_);
-                    list->elements().copy_from({vm.current_->stack_top() - count, count});
-                    vm.current_->drop(count);
-                    vm.current_->push(Value::from_obj(list));
+                    list->elements().copy_from({ctx.stack_top() - count, count});
+                    ctx.drop(count);
+                    ctx.push(Value::from_obj(list));
                     break;
                 }
                 case OpCode::MAKE_MAP: {
@@ -1221,17 +1218,17 @@ namespace aria {
                     // 重复键后键胜(set 命中原槽覆写)。
                     const u16  count = read_u16(frame);
                     const auto map   = new_map(vm.gc_);
-                    const auto base  = vm.current_->stack_top() - count * 2;
+                    const auto base  = ctx.stack_top() - count * 2;
                     for (usize i = 0; i < count; ++i) {
                         map->table().set(base[i * 2], base[i * 2 + 1]);
                     }
-                    vm.current_->drop(count * 2);
-                    vm.current_->push(Value::from_obj(map));
+                    ctx.drop(count * 2);
+                    ctx.push(Value::from_obj(map));
                     break;
                 }
                 case OpCode::MAKE_RANGE:
                     // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
-                    if (!run_make_range(vm, read_u8(frame))) {
+                    if (!run_make_range(ctx, read_u8(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -1240,26 +1237,26 @@ namespace aria {
                     // 在 concat_values(渲染与 str()/println 同源),铸完 drop n 再 push(窗口内
                     // 无 GC 点)。
                     const u8   count  = read_u8(frame);
-                    const auto base   = vm.current_->stack_top() - count;
+                    const auto base   = ctx.stack_top() - count;
                     const auto result = concat_values(vm.gc_, {base, count}, {});
-                    vm.current_->drop(count);
-                    vm.current_->push(Value::from_obj(result));
+                    ctx.drop(count);
+                    ctx.push(Value::from_obj(result));
                     break;
                 }
                 case OpCode::IMPORT:
                     // path:u16;[..., module]
-                    if (!run_import(vm, read_name(frame))) {
+                    if (!run_import(ctx, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::THROW: {
                     // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
                     // unwind。
-                    vm.current_->raise(vm.current_->pop());
+                    ctx.raise(ctx.pop());
                     goto unwind_check;
                 }
                 case OpCode::RETURN:
-                    if (run_return(vm)) {
+                    if (run_return(ctx)) {
                         return true;
                     }
                     break;

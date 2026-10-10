@@ -47,7 +47,7 @@ namespace aria {
         if (!is_method(member)) {
             return member;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     bool ObjInstance::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {

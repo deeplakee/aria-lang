@@ -86,6 +86,21 @@ TEST(ObjBoundMethod, Basics) {
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
 }
 
+// receiver 为对象指针的便捷重载:装箱后 method/receiver 与 Value 版同构。
+TEST(ObjBoundMethod, ObjectReceiverOverload) {
+    GC   gc;
+    auto method = make_closure(gc, "m", 1);
+    auto guard  = gc.make_guard(method);
+    auto klass  = make_class(gc, "Foo");
+    guard.push(klass);
+    auto inst = make_instance(gc, klass);
+    guard.push(inst);
+
+    auto bound = new_bound_method(gc, Value::from_obj(method), inst);
+    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+    EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
+}
+
 // 绑定按身份判等:同一方法绑不同实例是不同对象(equals 默认地址相等)。
 TEST(ObjBoundMethod, IdentitySemantics) {
     GC   gc;

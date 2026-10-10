@@ -54,7 +54,7 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, Value::from_obj(this)));
+        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

@@ -48,4 +48,8 @@ namespace aria {
         return gc.new_object<ObjBoundMethod>(method, receiver);
     }
 
+    ObjBoundMethod* new_bound_method(GC& gc, const Value method, Object* receiver) {
+        return new_bound_method(gc, method, Value::from_obj(receiver));
+    }
+
 } // namespace aria

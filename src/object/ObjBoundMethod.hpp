@@ -60,6 +60,10 @@ namespace aria {
     [[nodiscard]]
     ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver);
 
+    // receiver 为对象指针的便捷重载:装箱后委托 Value 版;receiver 须非空。
+    [[nodiscard]]
+    ObjBoundMethod* new_bound_method(GC& gc, Value method, Object* receiver);
+
 } // namespace aria
 
 #endif // ARIA_OBJ_BOUND_METHOD_HPP

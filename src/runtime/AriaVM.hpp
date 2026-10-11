@@ -10,7 +10,6 @@
 #include "runtime/opcode_profile.hpp"
 #include "runtime/str_table.hpp"
 #include "runtime/value_register.hpp"
-#include "util/util.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/Value.hpp"
 
@@ -101,16 +100,6 @@ namespace aria {
         ARIA_VALUE_REGISTER_SINGLETON_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DECL)
         ARIA_VALUE_REGISTER_CLASS_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DECL)
 #undef ARIA_VALUE_REGISTER_ACCESSOR_DECL
-
-        // 常量串表按键直读:键经 NTTP 编译期定下标、static_assert 拒表外键,生成物是基址 +
-        // 常量下标的一次加载;实例侧算子派发取钩子名,免每次从驻留池换串。
-        template<util::FixedString key>
-        [[nodiscard]]
-        ObjString* str() const noexcept {
-            constexpr auto found = str_table::index_of(key.view());
-            static_assert(found.has_value(), "constant string key is not in the registry");
-            return str_table_[*found];
-        }
 
         // 常量串按下标直读(str<key> 的运行期下标形态;键 -> 下标的解析在调用侧完成)。
         [[nodiscard]]

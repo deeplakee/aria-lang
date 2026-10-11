@@ -3100,7 +3100,7 @@ TEST(MovementServices, LookupFacesDelegateToHost) {
     AriaVM vm;
     auto*  ctx = vm.current_context();
 
-    EXPECT_EQ(ctx->str<"__add__">(), vm.str<"__add__">());
+    EXPECT_EQ(ctx->str<"__add__">(), new_string(vm.gc(), "__add__"));
     EXPECT_EQ(ctx->char_string('x'), vm.char_string('x'));
     EXPECT_EQ(ctx->object_class(), vm.object_class());
     EXPECT_EQ(ctx->string_class(), vm.string_class());

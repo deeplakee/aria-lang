@@ -13,7 +13,7 @@ namespace aria {
     namespace {
 
         // 元数规格措辞:0 -> "no arguments"、1 -> "1 argument"、N -> "N arguments"(单数只在恰好 1)。
-        String arity_phrase(const usize count) {
+        String arity_phrase(const u32 count) {
             if (count == 0) {
                 return "no arguments";
             }
@@ -27,16 +27,16 @@ namespace aria {
 
     // 报错族真身在此(写本上下文自己的寄存器),委托面读宿主公有面。
 
-    FailSignal AriaExeContext::arity_error(const usize argc, const usize expected) {
+    FailSignal AriaExeContext::arity_error(const u32 argc, const u32 expected) {
         return fail(ErrorCode::WrongArity, "function expects {}, got {}", arity_phrase(expected), argc);
     }
 
-    FailSignal AriaExeContext::arity_error_range(const usize argc, const usize low, const usize high) {
+    FailSignal AriaExeContext::arity_error_range(const u32 argc, const u32 low, const u32 high) {
         // 区间恒复数(n or m arguments):"0 or 1 argument" 这类读起来像单数,不成句。
         return fail(ErrorCode::WrongArity, "function expects {} or {} arguments, got {}", low, high, argc);
     }
 
-    FailSignal AriaExeContext::arity_error_at_least(const usize argc, const usize low) {
+    FailSignal AriaExeContext::arity_error_at_least(const u32 argc, const u32 low) {
         return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
     }
 

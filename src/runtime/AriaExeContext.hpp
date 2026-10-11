@@ -235,13 +235,13 @@ namespace aria {
         // 措辞;比较留在各调用点,仅失败路径进本口。被调者报泛称 function 不收名字 -- 真名在
         // 一等公民下不可靠(匿名无区分力、被取出后真名不出现在调用点),at 行已交待调用点。
         [[nodiscard]]
-        FailSignal arity_error(usize argc, usize expected);
+        FailSignal arity_error(u32 argc, u32 expected);
 
         [[nodiscard]]
-        FailSignal arity_error_range(usize argc, usize low, usize high);
+        FailSignal arity_error_range(u32 argc, u32 low, u32 high);
 
         [[nodiscard]]
-        FailSignal arity_error_at_least(usize argc, usize low);
+        FailSignal arity_error_at_least(u32 argc, u32 low);
 
         // 调用整形面(call_closure 与 coroutine.resume 首启共用;体在本类,失败写本上下文寄存器)。
 

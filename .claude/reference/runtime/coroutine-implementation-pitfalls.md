@@ -11,7 +11,7 @@
 
 ## 坑 #1：槽协议 -- 预留结果槽住 call_native 的 drop，不在原语里写调用者栈
 
-**机制**：切换型原语返 true 后，`call_native` 事后 `entered_ctx->drop(argc)` 使该上下文栈顶
+**机制**：切换型原语返 true 后，`call_native` 事后 `ctx.drop(argc)` 使该上下文栈顶
 停在「那次调用的槽 0」-- 这就是预留结果槽，对侧一律写 `对侧->peek(0)`。两侧完全对称，切回方
 无需知道对方局部信息。**首启是唯一不对称处**：协程栈只有 create 压的 `[closure]`，无预留槽，
 故首次 resume 走「压实参 + `prepare_call_args` 整形 + `enter_frame` 进帧」。

@@ -225,22 +225,21 @@ namespace aria {
     }
 
     bool Eval::call_native(AriaExeContext& ctx, const ObjNativeFn* obj, const u8 argc) {
-        // 同步调用不进帧。entered_ctx 是全部事后簿记(drop/寄存器断言)的锚点:切换型原生成功后
-        // vm.current_ 已被换至对侧,drop 恒落 entered_ctx 使栈顶停在该调用的槽 0(切换模型下的
-        // 预留结果槽)。「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。
-        // 实参留栈到 drop:切换型原生执行全程实参皆调用者栈根。
-        const auto entered_ctx = &ctx;
-        const auto slots       = Span<Value>{&ctx.peek(argc), static_cast<usize>(argc + 1)};
+        // 同步调用不进帧。切换型原生成功后 vm.current_ 已被换至对侧,事后簿记(drop/寄存器断言)
+        // 一律落 ctx(进场上下文,引用不可重绑)使栈顶停在该调用的槽 0(切换模型下的预留结果槽)。
+        // 「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。实参留栈到 drop:
+        // 切换型原生执行全程实参皆调用者栈根。
+        const auto slots = Span<Value>{&ctx.peek(argc), static_cast<usize>(argc + 1)};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!ctx.has_error(), "pending error not cleared before native call");
-        if (obj->fn()(*entered_ctx, slots)) {
-            ASSERT(!entered_ctx->has_error(), "native fn returned true but raised error");
-            entered_ctx->drop(argc);
+        if (obj->fn()(ctx, slots)) {
+            ASSERT(!ctx.has_error(), "native fn returned true but raised error");
+            ctx.drop(argc);
             return true;
         }
-        ASSERT(ctx.host().current_ == entered_ctx, "native fn returned false after switching vm.current_");
+        ASSERT(ctx.host().current_ == &ctx, "native fn returned false after switching vm.current_");
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
-        ASSERT(entered_ctx->has_error(), "native fn returned false but raised no error");
+        ASSERT(ctx.has_error(), "native fn returned false but raised no error");
         return false;
     }
 

@@ -26,6 +26,7 @@ add_executable(aria_tests
         runtime/test_execute.cpp
         runtime/test_interpret.cpp
         runtime/test_interpreter.cpp
+        runtime/test_nativecallinfo.cpp
         # object
         object/test_object.cpp
         object/test_objboundmethod.cpp

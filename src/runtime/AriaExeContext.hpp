@@ -10,6 +10,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "runtime/CallFrame.hpp"
+#include "runtime/ExecState.hpp"
 #include "runtime/FrameStack.hpp"
 #include "runtime/str_table.hpp"
 #include "util/util.hpp"
@@ -39,35 +40,6 @@ namespace aria {
             return std::nullopt;
         }
     };
-
-    // 执行状态(协程生命周期五态)。主上下文同样参与换位(resume 置 Normal、切回时置 Running),
-    // 但其 state_ 不参与任何判定、语言面不可达(用户拿不到主上下文的引用)。
-    enum class ExecState : u8 {
-        Suspended, // 已创建未首启,或 yield 挂起(可 resume)
-        Normal,    // 自己 resume 了别人,自身在链中间挂起(Lua 的 normal)
-        Running,   // 正在执行(== VM 的 current_)
-        Done,      // 协程体正常返回(死态)
-        Failed,    // 未捕获错误死亡(死态)
-    };
-
-    // 状态拼写小写(status 返回值与 debug_repr 渲染同源)。
-    [[nodiscard]]
-    constexpr StringView to_string(const ExecState state) noexcept {
-        switch (state) {
-            case ExecState::Suspended:
-                return "suspended";
-            case ExecState::Normal:
-                return "normal";
-            case ExecState::Running:
-                return "running";
-            case ExecState::Done:
-                return "done";
-            case ExecState::Failed:
-                return "failed";
-            default:
-                UNREACHABLE();
-        }
-    }
 
     // 执行上下文本体:一段执行的完整状态 -- 可增长值栈 + 帧栈 + open upvalue 链 + 挂起错误
     // 寄存器 + resume 链 + 执行状态 + 嵌套执行边界;三类指针(top_/活动帧 slots/开指 location_)

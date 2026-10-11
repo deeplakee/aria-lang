@@ -78,6 +78,7 @@ add_library(aria_core STATIC
         src/runtime/AriaVM.hpp
         src/runtime/Eval.cpp
         src/runtime/Eval.hpp
+        src/runtime/ExecState.hpp
         src/runtime/builtins/Builtin.cpp
         src/runtime/builtins/Builtin.hpp
         src/runtime/builtins/CoroutineModule.cpp

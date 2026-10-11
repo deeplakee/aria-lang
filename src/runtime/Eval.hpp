@@ -31,7 +31,7 @@ namespace aria {
         // 整形后进帧。失败 WrongArity/StackOverflow。
         static bool call_closure(AriaExeContext& ctx, ObjClosure* obj, u8 argc);
 
-        // 重入执行体(ObjMovement 重入口 execute_closure/execute_method 的共用体):压 slot0 与
+        // 重入执行体(AriaExeContext 重入口 execute_closure/execute_method 的共用体):压 slot0 与
         // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
         // 收取闭包返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
         // false 交外层续搜;递归深度达 kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报

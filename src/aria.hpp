@@ -38,9 +38,9 @@ namespace aria {
     // 内建 stdlib 源根:相对可执行文件目录的安装约定。
     constexpr StringView kStdlibRelPath = "../share/aria/lib";
 
-    // 执行上下文的对外全词拼写(ObjMovement 别名):住本头使任何层可拼写且不拖 runtime 头。
-    class ObjMovement;
-    using AriaExeContext = ObjMovement;
+    // 执行上下文本体(执行状态与服务面;协程对象壳住派生类 ObjMovement,均定义在 runtime 层):
+    // 住本头使任何层可拼写且不拖 runtime 头。
+    class AriaExeContext;
 
 } // namespace aria
 

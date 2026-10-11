@@ -72,6 +72,8 @@ add_library(aria_core STATIC
         src/compile/CodeGen.hpp
         src/compile/Compiler.cpp
         src/compile/Compiler.hpp
+        src/runtime/AriaExeContext.cpp
+        src/runtime/AriaExeContext.hpp
         src/runtime/AriaVM.cpp
         src/runtime/AriaVM.hpp
         src/runtime/Eval.cpp

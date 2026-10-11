@@ -4,8 +4,6 @@
 #include "common.hpp"
 #include "error/Error.hpp"
 #include "memory/GC.hpp"
-// raise 模板头内内联装箱需 ObjException 完整类型(其依赖已经 GC.hpp 传递拉入)。
-#include "object/ObjException.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/opcode_profile.hpp"
 #include "runtime/str_table.hpp"

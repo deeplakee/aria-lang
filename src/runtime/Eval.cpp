@@ -12,6 +12,7 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjList.hpp"
@@ -143,7 +144,7 @@ namespace aria {
         // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
         // 重寻址(重入期间值栈可能搬迁)。
         ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
-        if (ctx.recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
+        if (ctx.recursion_depth() >= AriaExeContext::kMaxRecursionDepth) {
             return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
         }
         if (args.size() > std::numeric_limits<u8>::max()) {
@@ -656,7 +657,7 @@ namespace aria {
                 auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
                 const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
                 if (const auto record = unit->find_try_handler(ip_off)) {
-                    // 命中:回退到命中帧并转入 record 的 catch handler(统一在 ObjMovement::unwind_to_handler)。
+                    // 命中:回退到命中帧并转入 record 的 catch handler(统一在 AriaExeContext::unwind_to_handler)。
                     // 命中可能在多跳之后 -- vm.current_ 已非进入 unwind 时的上下文,调用方一律经循环顶
                     // 自 vm.current_ 重取帧,无需特判。
                     vm.current_->unwind_to_handler(i, **record);
@@ -698,7 +699,7 @@ namespace aria {
         // 不随切换变),宿主面一律经它;unwind 恒持 vm(跨协程跳链逐跳重读 current_)。出口协议
         //(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,失败出口均就地善后
         //(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通道)。出口边界 =
-        // current->ret_frame()(住 ObjMovement 随上下文走,重入场写入/退场归还;最外执行恒零,弹空
+        // current->ret_frame()(住 AriaExeContext 随上下文走,重入场写入/退场归还;最外执行恒零,弹空
         // 帧栈即本循环驱动的最外帧弹尽;协程各链独立计帧,链内弹尽即跨到完成/顶层出口)。
         auto& vm      = ctx.host();
         auto  current = &ctx;

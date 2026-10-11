@@ -19,12 +19,13 @@ namespace aria {
     enum class OpCode : u8;
 
     // eval 层驱动引擎:主循环、指令执行体、调用机器与异常派发。全静态方法宿主,宿主内部
-    //(current_ 与各服务表)经 AriaVM 友元到达,循环状态一律自 vm.current_ 取(单循环切换模型)。
+    //(current_ 与各服务表)经 AriaVM 友元到达;主循环以进场上下文为参数,换指点后自宿主重取。
     class Eval {
     public:
-        // 主循环:驱动 *current_ 至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
-        // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。
-        static bool dispatch_loop(AriaVM& vm);
+        // 主循环:驱动当前上下文至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
+        // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。参数 = 进场上下文,本轮
+        // 上下文在可能换指的调用点之后经内部指针重取(见 Eval.cpp 函数头注释)。
+        static bool dispatch_loop(AriaExeContext& ctx);
 
         // 闭包调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
         // 整形后进帧。失败 WrongArity/StackOverflow。

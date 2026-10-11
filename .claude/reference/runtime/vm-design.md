@@ -21,7 +21,7 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
-**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,以 `AriaVM& vm` 为参数、上下文一律自 `vm.current_` 取;AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
+**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,签名即上下文(dispatch_loop 体内经本轮指针在换指点后重取;unwind 恒持 vm 跨协程跳链);AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
 
 ## 3. 结构草图
 
@@ -68,7 +68,7 @@ class AriaVM {
 // 无第三态可报(设计初稿的 ExecOutcome 三态退役)。
 ```
 
-协程采用**单循环切换模型**(M6 定稿并落地,详见 §4.9):`resume`/`yield` 是原生函数,换走 `current_` 后返回,CALL 分支善后点发现切换、回到循环顶,循环自然开始驱动新上下文--切换不重入 `dispatch_loop()`(重入通道只有 §4.11 的重入口),任一时刻整个 VM 只有一个循环在取指执行字节码。主上下文里 yield 即运行期错误,挂起只发生在协程内,`run()` 的出口恒为顶层 RETURN / 未捕获物化、且必发生在 resume 链链根(run() 入口锚 + 出口断言钉住切换交接的完整)。
+协程采用**单循环切换模型**(M6 定稿并落地,详见 §4.9):`resume`/`yield` 是原生函数,换走 `current_` 后返回,CALL 分支善后点重取 ctx 后回到循环顶,循环自然开始驱动新上下文--切换不重入 `dispatch_loop()`(重入通道只有 §4.11 的重入口),任一时刻整个 VM 只有一个循环在取指执行字节码。主上下文里 yield 即运行期错误,挂起只发生在协程内,`run()` 的出口恒为顶层 RETURN / 未捕获物化、且必发生在 resume 链链根(run() 入口锚 + 出口断言钉住切换交接的完整)。
 
 ## 4. 关键决策
 
@@ -93,7 +93,7 @@ class AriaVM {
 - **内部传播统一走寄存器 + unwind**：op 处理局部失败不再直接 `return runtime_err(...)` 短路出 dispatch_loop,而是就地 `raise`(一步烘消息装成 ObjException,不含位置前缀 -- 位置归未捕获跟踪行,见 §4.8)-> 存当前上下文挂起寄存器后调 `unwind` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点两步(raise / run_* 返 false 后显式 `goto`)、与 CALL 失败善后同形,检查(返 Error 即 return / 返 nullopt 即回循环顶)收口在循环尾单一标签 `unwind_check`;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。
 - `unwind()` 在本循环出口边界内自最内帧向外遍历帧链(搜索下界 = `current_->ret_frame()`,边界随上下文走;逐跳只查当前上下文的帧链,全帧未命中且在 resume 链上则跳链续搜,见下「跨 Movement 模型」),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;**搜索阶段不动帧栈/值栈、不物化、不做跟踪收集**(收集归物化点,见 §4.8)-> 命中 -> `Movement::unwind_to_handler(命中帧索引, record)` 一体完成:弃内层帧 + 按槽址关闭开 upvalue + 值栈截到 catch 参数槽 + `ip = handle` + 载荷 push 落槽(恰落 catch 参数槽,见坑点文档 #10)+ 清寄存器;全帧未命中返 false 分三分--边界非零(嵌套执行)`truncate_frames_to(边界)` 截净残帧交外层驱动循环续搜 / 边界零在链上转投一跳 / 链根仍未命中返回 false,善后归调用方(见下条)。
 - **未命中到链根 = 本次 run 以未捕获收场,是正常结局而非 fatal**:`dispatch_loop` 返 `bool`,错误不走返回值;物化收口在 `run()` 失败出口的 `rebake_uncaught_error()`--自寄存器反提 (码, 烘焙消息)(ObjException 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),经 `Error::from_baked` 一次物化成自足 `Error`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置;重入口 `execute_call` 的失败合同 = `nullopt` + 载荷留在寄存器,由重入调用方按 bool 契约续报(§4.11)。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`run()` 维持两态 `Result<Value, Error>`**:主上下文里 yield 即运行期错误(§4.9),挂起不进返回值,两态即终态;「Error 经返回类型」只住在 run() 边界,循环与重入口不经返回类型传错误。
-- **跨 Movement 模型(M6 链式多跳)**:unwind 的搜索以上下文为单位、以 resume 链为通道--本上下文全帧未命中且 `previous_` 非空时转投一跳:让位方先 `take_error()`(先于 reset,寄存器在 reset 内一并清空)再 `reset()`、`leave_coroutine(Failed)`(置 Failed 解链、恢复者置 Running 换指)、caller `raise` 载荷续搜(caller 寄存器必空:call_native 进场断言锁「进场前寄存器空」+ 切换型原生返 true 不写载荷 + 挂起期间无人可写非执行上下文的寄存器;take 到 raise 之间无 GC 点,载荷局部持有不丢根)。中间层无 handler 即连死(其 Running 瞬态被 Failed 覆盖),载荷逐跳向链根推进;链终止 = 主上下文才物化。调用点(dispatch_loop 循环尾 `unwind_check` 标签)一字不改、不收链参数,命中可能在多跳之后,调用方经循环顶自 `current_` 重取帧(坑点文档 #11 的既有纪律正好覆盖)。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 是 dispatch_loop/call_value 族/raise 的统一作用对象。
+- **跨 Movement 模型(M6 链式多跳)**:unwind 的搜索以上下文为单位、以 resume 链为通道--本上下文全帧未命中且 `previous_` 非空时转投一跳:让位方先 `take_error()`(先于 reset,寄存器在 reset 内一并清空)再 `reset()`、`leave_coroutine(Failed)`(置 Failed 解链、恢复者置 Running 换指)、caller `raise` 载荷续搜(caller 寄存器必空:call_native 进场断言锁「进场前寄存器空」+ 切换型原生返 true 不写载荷 + 挂起期间无人可写非执行上下文的寄存器;take 到 raise 之间无 GC 点,载荷局部持有不丢根)。中间层无 handler 即连死(其 Running 瞬态被 Failed 覆盖),载荷逐跳向链根推进;链终止 = 主上下文才物化。调用点(dispatch_loop 循环尾 `unwind_check` 标签)一字不改、不收链参数,命中可能在多跳之后,调用方在 unwind 返回点重取本轮上下文后回循环顶重取帧(坑点文档 #11 的既有纪律正好覆盖)。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 是 dispatch_loop/call_value 族/raise 的统一作用对象。
 - **TryRecord 定稿字段**:`{begin, end, handle, stack_depth}`--不存 `frame_depth`(运行时量,编译期不可定)、不存 `catch_slot`(恒等于 `stack_depth`),见坑点文档 #5/#10。
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)

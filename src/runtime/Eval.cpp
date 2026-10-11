@@ -200,8 +200,7 @@ namespace aria {
         // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
         // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
         // 重寻址(重入期间值栈可能搬迁)。
-        auto& vm = ctx.host();
-        ASSERT(&ctx == vm.current_, "reentry must target the executing context");
+        ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
         if (ctx.recursion_depth() >= ObjMovement::kMaxRecursionDepth) {
             return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
         }
@@ -216,7 +215,7 @@ namespace aria {
             ctx.push(arg);
         }
         const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (call_closure(ctx, closure, args.size()) && dispatch_loop(vm)) {
+        if (call_closure(ctx, closure, args.size()) && dispatch_loop(ctx)) {
             ctx.leave_recursion(saved_ret);
             return ctx.pop(); // 闭包返回值
         }
@@ -749,163 +748,168 @@ namespace aria {
         }
     }
 
-    bool Eval::dispatch_loop(AriaVM& vm) {
-        // 栈/帧/寄存器一律经循环顶重绑的本轮 ctx 访问(切换必经 call_native 尾位置或 unwind 跳链,
-        // 两者出循环体即回循环顶,引用随轮更新,体内无过期引用);「正在执行的字节码所在上下文恒等于
-        // vm.current_」且切换点唯一显式。出口协议(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,
-        // 失败出口均就地善后(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通
-        // 道)。出口边界 = vm.current_->ret_frame()(住 ObjMovement 随上下文走,重入场写入/退场归
-        // 还;最外执行恒零,弹空帧栈即本循环驱动的最外帧弹尽;协程
-        // 各链独立计帧,链内弹尽即跨到完成/顶层出口)。
+    bool Eval::dispatch_loop(AriaExeContext& ctx) {
+        // 主循环:驱动当前上下文至顶层返回/未捕获。current 为本轮上下文指针:可能换指的调用点
+        //(CALL 族经 call_native 的切换型原生 / RETURN 协程完成切回 / unwind 跳链)之后经
+        // vm.current_ 重指,其余指令路径 current_ 恒不变(进场上下文换指后仍存活,挂起经 previous_
+        // 链根可达);frame 为栈顶帧指针,与 current 一并重取。使快照失效的变更点(进帧/弹帧/换指:
+        // CALL 族、算子与取负的钩子、RETURN、IMPORT、unwind)一律 goto sync_now 善后 -- 与错误
+        // 善后标签 unwind_check 对称的单一出口,循环顶 ASSERT 复核防漏。vm 为宿主引用缓存(恒定,
+        // 不随切换变),宿主面一律经它;unwind 恒持 vm(跨协程跳链逐跳重读 current_)。出口协议
+        //(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,失败出口均就地善后
+        //(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通道)。出口边界 =
+        // current->ret_frame()(住 ObjMovement 随上下文走,重入场写入/退场归还;最外执行恒零,弹空
+        // 帧栈即本循环驱动的最外帧弹尽;协程各链独立计帧,链内弹尽即跨到完成/顶层出口)。
+        auto& vm      = ctx.host();
+        auto  current = &ctx;
+        auto  frame   = &current->frames().top();
 
         while (true) {
-            // 本轮执行的上下文(= vm.current_ 的快照引用):仅本轮有效,见函数头注释。
-            AriaExeContext& ctx = *vm.current_;
             // 不变式:此处帧栈恒非空(唯一弹空帧的顶层 RETURN 立即 return)。last_ip 在取指前写入:
-            // 行号/unwind 查表的共同锚点(顶帧 = 故障指令,外层帧 = CALL 站点)。
-            const auto frame = &ctx.frames().top();
-            frame->last_ip   = frame->ip;
+            // 行号/unwind 查表的共同锚点(顶帧 = 故障指令,外层帧 = CALL 站点)。变更点漏 goto 当场炸:
+            ASSERT(frame == &current->frames().top(), "stale frame after a frame-changing call");
+            frame->last_ip = frame->ip;
 #ifdef DEBUG_TRACE_EXECUTION
             // 取 opcode 前打印执行状态(见 trace_execution)。
-            trace_execution(ctx);
+            trace_execution(*current);
 #endif
             // 各 case 按 code.hpp 枚举序排列;错误站点(raise / run_* 返 false)一律 goto
             // unwind_check,成功路径一律 break 回循环顶。**switch 之后不得新增引用 frame 的代码**
             //(unwind 派发后帧引用已废,unwind_check 标签体同守)。
-            switch (ARIA_FETCH_OPCODE(frame)) {
+            switch (ARIA_FETCH_OPCODE(current, frame)) {
                 case OpCode::HALT:
                     // 真实程序不产 HALT(仅手写字节码用):运行态空 previous 即主上下文,协程内
                     // 落 HALT 会打破 run() 出口断言,提前在此拦截。
-                    ASSERT(ctx.previous() == nullptr, "HALT reached inside a coroutine");
-                    ctx.push(Value::nil_val()); // 停机值留栈顶(形态与 RETURN 顶层出口一致)
+                    ASSERT(current->previous() == nullptr, "HALT reached inside a coroutine");
+                    current->push(Value::nil_val()); // 停机值留栈顶(形态与 RETURN 顶层出口一致)
                     return true;
 
                 // 数据加载与存储
                 case OpCode::LOAD_CONST: {
                     const auto idx = read_u16(frame);
-                    ctx.push(frame->unit->constants[idx]);
+                    current->push(frame->unit->constants[idx]);
                     break;
                 }
                 case OpCode::LOAD_NIL:
-                    ctx.push(Value::nil_val());
+                    current->push(Value::nil_val());
                     break;
                 case OpCode::LOAD_TRUE:
-                    ctx.push(Value::true_val());
+                    current->push(Value::true_val());
                     break;
                 case OpCode::LOAD_FALSE:
-                    ctx.push(Value::false_val());
+                    current->push(Value::false_val());
                     break;
                 case OpCode::LOAD_IMM: {
                     const u8 raw = read_u8(frame);
                     // u8 操作数按 i8 位型重解释做符号扩展(发射侧同型转 u8)。
-                    ctx.push(Value::from_i32(std::bit_cast<i8>(raw)));
+                    current->push(Value::from_i32(std::bit_cast<i8>(raw)));
                     break;
                 }
                 case OpCode::LOAD_REG: {
                     // [] -> [regs[n]]:压 VM 单例寄存器;下标即注册表枚举值,编译器只发合法下标,
                     // 同 LOAD_LOCAL 槽访问不设防。
-                    ctx.push(Value::from_obj(vm.registers_[read_u8(frame)]));
+                    current->push(Value::from_obj(vm.registers_[read_u8(frame)]));
                     break;
                 }
                 case OpCode::LOAD_LOCAL: {
                     const auto slot = read_u16(frame);
-                    ctx.push(frame->slots[slot]);
+                    current->push(frame->slots[slot]);
                     break;
                 }
                 // N 短变体:槽号即枚举名尾号,零操作数;逐条独立 case 写死槽号常量,免运行期换算。
                 case OpCode::LOAD_LOCAL_1:
-                    ctx.push(frame->slots[1]);
+                    current->push(frame->slots[1]);
                     break;
                 case OpCode::LOAD_LOCAL_2:
-                    ctx.push(frame->slots[2]);
+                    current->push(frame->slots[2]);
                     break;
                 case OpCode::LOAD_LOCAL_3:
-                    ctx.push(frame->slots[3]);
+                    current->push(frame->slots[3]);
                     break;
                 case OpCode::LOAD_LOCAL_4:
-                    ctx.push(frame->slots[4]);
+                    current->push(frame->slots[4]);
                     break;
                 case OpCode::LOAD_LOCAL_5:
-                    ctx.push(frame->slots[5]);
+                    current->push(frame->slots[5]);
                     break;
                 case OpCode::LOAD_LOCAL_6:
-                    ctx.push(frame->slots[6]);
+                    current->push(frame->slots[6]);
                     break;
                 case OpCode::LOAD_LOCAL_7:
-                    ctx.push(frame->slots[7]);
+                    current->push(frame->slots[7]);
                     break;
                 case OpCode::LOAD_LOCAL_8:
-                    ctx.push(frame->slots[8]);
+                    current->push(frame->slots[8]);
                     break;
                 case OpCode::STORE_LOCAL: {
                     const auto slot    = read_u16(frame);
-                    frame->slots[slot] = ctx.peek(0);
+                    frame->slots[slot] = current->peek(0);
                     break;
                 }
                 case OpCode::STORE_LOCAL_1:
-                    frame->slots[1] = ctx.peek(0);
+                    frame->slots[1] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_2:
-                    frame->slots[2] = ctx.peek(0);
+                    frame->slots[2] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_3:
-                    frame->slots[3] = ctx.peek(0);
+                    frame->slots[3] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_4:
-                    frame->slots[4] = ctx.peek(0);
+                    frame->slots[4] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_5:
-                    frame->slots[5] = ctx.peek(0);
+                    frame->slots[5] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_6:
-                    frame->slots[6] = ctx.peek(0);
+                    frame->slots[6] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_7:
-                    frame->slots[7] = ctx.peek(0);
+                    frame->slots[7] = current->peek(0);
                     break;
                 case OpCode::STORE_LOCAL_8:
-                    frame->slots[8] = ctx.peek(0);
+                    frame->slots[8] = current->peek(0);
                     break;
                 case OpCode::LOAD_UPVALUE: {
                     // 压本闭包第 idx 个 upvalue 的当前值(开/闭两态统一经 value_slot() 取址)。
                     const u8 idx = read_u8(frame);
-                    ctx.push(*frame->closure->upvalues()[idx]->value_slot());
+                    current->push(*frame->closure->upvalues()[idx]->value_slot());
                     break;
                 }
                 case OpCode::STORE_UPVALUE: {
                     // peek-store 到该 upvalue:open 态写穿到栈槽,closed 态写自持。
                     const u8 idx                                   = read_u8(frame);
-                    *frame->closure->upvalues()[idx]->value_slot() = ctx.peek(0);
+                    *frame->closure->upvalues()[idx]->value_slot() = current->peek(0);
                     break;
                 }
                 case OpCode::CLOSE_UPVALUE: {
                     // 关闭所有槽址 >= 当前栈顶的开 upvalue,无弹栈 -- 弹栈由前置 POP_N 承担
                     //(弹区槽已位于 top 之上,不 push 不覆写即安全)。
-                    ctx.close_upvalues(ctx.stack_top());
+                    current->close_upvalues(current->stack_top());
                     break;
                 }
                 case OpCode::DEF_GLOBAL: {
                     // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var 唯一
                     // 创建全局的入口)。栈即根:peek 留 v 跨 set,写完才 drop。
                     ObjString* name = read_name(frame);
-                    frame->module->globals().set(Value::from_obj(name), ctx.peek(0));
-                    ctx.drop(1); // 写完才弹,栈效应仍为 [v] -> []
+                    frame->module->globals().set(Value::from_obj(name), current->peek(0));
+                    current->drop(1); // 写完才弹,栈效应仍为 [v] -> []
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
-                    // [] -> [v]:按名查当前模块 globals,miss 回退 vm.builtins_,皆未命中 ->
+                    // [] -> [v]:按名查当前模块 globals,miss 回退宿主 builtins 表,皆未命中 ->
                     // UndefinedVariable。push 先写栈再 grow,载荷已入栈根后方可能 collect。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
                     auto        entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
-                        entry = vm.builtins_.find(key); // 回退 vm.builtins_
+                        entry = vm.builtins_.find(key); // 回退宿主 builtins 表
                         if (entry == nullptr) {
-                            ctx.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                            current->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                             goto unwind_check;
                         }
                     }
-                    ctx.push(entry->value);
+                    current->push(entry->value);
                     break;
                 }
                 case OpCode::STORE_GLOBAL: {
@@ -915,45 +919,45 @@ namespace aria {
                     const Value key   = Value::from_obj(name);
                     const auto  entry = frame->module->globals().find(key);
                     if (entry == nullptr) {
-                        ctx.raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
+                        current->raise(ErrorCode::UndefinedVariable, "undefined global '{}'", name->view());
                         goto unwind_check;
                     }
-                    entry->value = ctx.peek(0);
+                    entry->value = current->peek(0);
                     break;
                 }
                 case OpCode::LOAD_FIELD:
                     // name:u16;[obj] -> [v]
-                    if (!run_load_field(ctx, read_name(frame))) {
+                    if (!run_load_field(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_FIELD:
                     // name:u16;[obj, v] -> [v](单槽下移留 v)
-                    if (!run_store_field(ctx, read_name(frame))) {
+                    if (!run_store_field(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_INDEX:
                     // [obj, idx] -> [v]
-                    if (!run_load_index(ctx)) {
+                    if (!run_load_index(*current)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_INDEX:
                     // [obj, idx, v] -> [v](peek-store,值下移两格)
-                    if (!run_store_index(ctx)) {
+                    if (!run_store_index(*current)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::LOAD_THIS_FIELD:
                     // name:u16;[] -> [v]
-                    if (!run_load_this_field(ctx, read_name(frame))) {
+                    if (!run_load_this_field(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_THIS_FIELD:
                     // name:u16;[v] -> [v](peek-store)
-                    if (!run_store_this_field(ctx, read_name(frame))) {
+                    if (!run_store_this_field(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -961,102 +965,102 @@ namespace aria {
                 // 算术与逻辑
                 // 相等性(EQUAL 走 == 内容相等;STRICT 走 === 严格相等)
                 case OpCode::EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(value_equal(a, b)));
+                    const Value b = current->pop();
+                    const Value a = current->pop();
+                    current->push(Value::from_bool(value_equal(a, b)));
                     break;
                 }
                 case OpCode::NOT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(!value_equal(a, b)));
+                    const Value b = current->pop();
+                    const Value a = current->pop();
+                    current->push(Value::from_bool(!value_equal(a, b)));
                     break;
                 }
                 case OpCode::STRICT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(value_identical(a, b)));
+                    const Value b = current->pop();
+                    const Value a = current->pop();
+                    current->push(Value::from_bool(value_identical(a, b)));
                     break;
                 }
                 case OpCode::STRICT_NOT_EQUAL: {
-                    const Value b = ctx.pop();
-                    const Value a = ctx.pop();
-                    ctx.push(Value::from_bool(!value_identical(a, b)));
+                    const Value b = current->pop();
+                    const Value a = current->pop();
+                    current->push(Value::from_bool(!value_identical(a, b)));
                     break;
                 }
                 // 比较
                 case OpCode::GREATER:
-                    if (!run_binary_operator<OpCode::GREATER>(ctx)) {
+                    if (!run_binary_operator<OpCode::GREATER>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::GREATER_EQUAL:
-                    if (!run_binary_operator<OpCode::GREATER_EQUAL>(ctx)) {
+                    if (!run_binary_operator<OpCode::GREATER_EQUAL>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::LESS:
-                    if (!run_binary_operator<OpCode::LESS>(ctx)) {
+                    if (!run_binary_operator<OpCode::LESS>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::LESS_EQUAL:
-                    if (!run_binary_operator<OpCode::LESS_EQUAL>(ctx)) {
+                    if (!run_binary_operator<OpCode::LESS_EQUAL>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 // 算术(五算子共用执行体 run_binary_operator)
                 case OpCode::ADD:
-                    if (!run_binary_operator<OpCode::ADD>(ctx)) {
+                    if (!run_binary_operator<OpCode::ADD>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::SUBTRACT:
-                    if (!run_binary_operator<OpCode::SUBTRACT>(ctx)) {
+                    if (!run_binary_operator<OpCode::SUBTRACT>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::MULTIPLY:
-                    if (!run_binary_operator<OpCode::MULTIPLY>(ctx)) {
+                    if (!run_binary_operator<OpCode::MULTIPLY>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::DIVIDE:
-                    if (!run_binary_operator<OpCode::DIVIDE>(ctx)) {
+                    if (!run_binary_operator<OpCode::DIVIDE>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::MOD:
-                    if (!run_binary_operator<OpCode::MOD>(ctx)) {
+                    if (!run_binary_operator<OpCode::MOD>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::NOT:
-                    ctx.push(Value::from_bool(!is_truthy(ctx.pop())));
+                    current->push(Value::from_bool(!is_truthy(current->pop())));
                     break;
                 case OpCode::NEGATE:
-                    if (!run_negate(ctx)) {
+                    if (!run_negate(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
 
                 // 栈操作
                 case OpCode::POP:
-                    ctx.drop(1);
+                    current->drop(1);
                     break;
                 case OpCode::POP_N: {
                     const u8 n = read_u8(frame);
-                    ctx.drop(n);
+                    current->drop(n);
                     break;
                 }
                 case OpCode::DUP:
-                    ctx.push(ctx.peek(0));
+                    current->push(current->peek(0));
                     break;
                 case OpCode::DUP2: {
-                    const Value b = ctx.peek(0);
-                    const Value a = ctx.peek(1);
-                    ctx.push(a);
-                    ctx.push(b);
+                    const Value b = current->peek(0);
+                    const Value a = current->peek(1);
+                    current->push(a);
+                    current->push(b);
                     break;
                 }
 
@@ -1073,33 +1077,33 @@ namespace aria {
                 }
                 case OpCode::JUMP_TRUE: {
                     const u16 off = read_u16(frame);
-                    if (is_truthy(ctx.pop())) {
+                    if (is_truthy(current->pop())) {
                         frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_TRUE_OR_POP: {
                     const u16 off = read_u16(frame);
-                    if (is_truthy(ctx.peek(0))) {
+                    if (is_truthy(current->peek(0))) {
                         frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        ctx.drop(1); // 落空:弹掉
+                        current->drop(1); // 落空:弹掉
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE: {
                     const u16 off = read_u16(frame);
-                    if (!is_truthy(ctx.pop())) {
+                    if (!is_truthy(current->pop())) {
                         frame->ip += off;
                     }
                     break;
                 }
                 case OpCode::JUMP_FALSE_OR_POP: {
                     const u16 off = read_u16(frame);
-                    if (!is_truthy(ctx.peek(0))) {
+                    if (!is_truthy(current->peek(0))) {
                         frame->ip += off; // 命中:不弹,被测值即结果
                     } else {
-                        ctx.drop(1); // 落空:弹掉
+                        current->drop(1); // 落空:弹掉
                     }
                     break;
                 }
@@ -1115,8 +1119,8 @@ namespace aria {
                     // 假则前跳。仅 EQUAL 入融合:比较面里只有它纯结构判等、永不久帧(LESS 可经
                     // 对象 __lt__ 钩子把控制流转移进被调帧,单指令内无法跨帧边界完成跳转判定)。
                     const u16   off = read_u16(frame);
-                    const Value b   = ctx.pop();
-                    const Value a   = ctx.pop();
+                    const Value b   = current->pop();
+                    const Value a   = current->pop();
                     if (!value_equal(a, b)) {
                         frame->ip += off;
                     }
@@ -1127,11 +1131,11 @@ namespace aria {
                 case OpCode::CALL: {
                     const u8 argc = read_u8(frame);
                     // 良构不变式:栈上必有 callee + argc 个实参。
-                    ASSERT(ctx.stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
-                    if (const Value callee = ctx.peek(argc); !call_value(ctx, callee, argc)) {
+                    ASSERT(current->stack_size() >= static_cast<usize>(argc) + 1, "malformed stack");
+                    if (const Value callee = current->peek(argc); !call_value(*current, callee, argc)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 }
                 case OpCode::CLOSURE: {
                     // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获描述
@@ -1141,10 +1145,10 @@ namespace aria {
                     const auto idx     = read_u16(frame);
                     const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFunction>();
                     const auto closure = new_closure(vm.gc_, fn);
-                    ctx.push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
+                    current->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {
                         if (is_local) {
-                            closure->add_upvalue(ctx.capture_upvalue(frame->slots + index));
+                            closure->add_upvalue(current->capture_upvalue(frame->slots + index));
                         } else {
                             closure->add_upvalue(frame->closure->upvalues()[index]);
                         }
@@ -1155,7 +1159,7 @@ namespace aria {
                 // 类与对象
                 case OpCode::MAKE_CLASS:
                     // name:u16;[super] -> [class]:原地写回;非类值 / 内建类 super 为语言可达错误。
-                    if (!run_make_class(ctx, read_name(frame))) {
+                    if (!run_make_class(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -1164,52 +1168,52 @@ namespace aria {
                     // defining class 戳),栈形经 ASSERT 校验(值恒来自上一条 CLOSURE,语言写不出
                     // 违例)。set_field 命中 "init" 同步 init_ + 播戳 -- 一职双任(super 来源 +
                     // 方法性标记,读路径据非空判绑)。
-                    const auto klass  = try_as_obj<ObjClass>(ctx.peek(1));
-                    const auto method = ctx.peek(0);
+                    const auto klass  = try_as_obj<ObjClass>(current->peek(1));
+                    const auto method = current->peek(0);
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
                     klass->set_field(read_name(frame), method);
 
                     const auto closure = try_as_obj<ObjClosure>(method);
                     ASSERT(closure != nullptr, "slot-0 is not a closure (method registration is closure-only)");
                     closure->set_defining_class(klass);
-                    ctx.drop(1);
+                    current->drop(1);
                     break;
                 }
                 case OpCode::MAKE_STATIC: {
                     // name:u16;[class, value] -> [class]:静态成员注册(var 声明与 fun 静态方法同经此;
                     // 不戳 defining class ⟹ 读恒原值)。与 MAKE_METHOD 同形,栈形经 ASSERT 校验。
-                    const auto klass = try_as_obj<ObjClass>(ctx.peek(1));
+                    const auto klass = try_as_obj<ObjClass>(current->peek(1));
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
-                    klass->set_field(read_name(frame), ctx.peek(0));
-                    ctx.drop(1); // 弹 value 留 class:[class, value] -> [class]
+                    klass->set_field(read_name(frame), current->peek(0));
+                    current->drop(1); // 弹 value 留 class:[class, value] -> [class]
                     break;
                 }
                 case OpCode::LOAD_SUPER_FIELD:
                     // name:u16;[] -> [v]
-                    if (!run_load_super_field(ctx, read_name(frame))) {
+                    if (!run_load_super_field(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::PREPARE_METHOD:
                     // name:u16;[recv] -> [recv, target]
-                    if (!run_prepare_method(ctx, read_name(frame))) {
+                    if (!run_prepare_method(*current, read_name(frame))) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::CALL_METHOD:
                     // argc:u8;[recv, target, a1..aN] -> [r]
-                    if (!run_call_method(ctx, read_u8(frame))) {
+                    if (!run_call_method(*current, read_u8(frame))) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::MAKE_LIST: {
                     // n:u16;[v1..vn] -> [list]:元素 peek 在栈跨 new_list 顶部 maybe_collect(「栈即
                     // 根」),整段拷入走 trivial 分配不触 GC,拷完 drop n 再 push(窗口内无 GC 点)。
                     const u16  count = read_u16(frame);
                     const auto list  = new_list(vm.gc_);
-                    list->elements().copy_from({ctx.stack_top() - count, count});
-                    ctx.drop(count);
-                    ctx.push(Value::from_obj(list));
+                    list->elements().copy_from({current->stack_top() - count, count});
+                    current->drop(count);
+                    current->push(Value::from_obj(list));
                     break;
                 }
                 case OpCode::MAKE_MAP: {
@@ -1218,17 +1222,17 @@ namespace aria {
                     // 重复键后键胜(set 命中原槽覆写)。
                     const u16  count = read_u16(frame);
                     const auto map   = new_map(vm.gc_);
-                    const auto base  = ctx.stack_top() - count * 2;
+                    const auto base  = current->stack_top() - count * 2;
                     for (usize i = 0; i < count; ++i) {
                         map->table().set(base[i * 2], base[i * 2 + 1]);
                     }
-                    ctx.drop(count * 2);
-                    ctx.push(Value::from_obj(map));
+                    current->drop(count * 2);
+                    current->push(Value::from_obj(map));
                     break;
                 }
                 case OpCode::MAKE_RANGE:
                     // flags:u8;[from, to] -> [range](无上界 [from] -> [range])
-                    if (!run_make_range(ctx, read_u8(frame))) {
+                    if (!run_make_range(*current, read_u8(frame))) {
                         goto unwind_check;
                     }
                     break;
@@ -1237,39 +1241,44 @@ namespace aria {
                     // 在 concat_values(渲染与 str()/println 同源),铸完 drop n 再 push(窗口内
                     // 无 GC 点)。
                     const u8   count  = read_u8(frame);
-                    const auto base   = ctx.stack_top() - count;
+                    const auto base   = current->stack_top() - count;
                     const auto result = concat_values(vm.gc_, {base, count}, {});
-                    ctx.drop(count);
-                    ctx.push(Value::from_obj(result));
+                    current->drop(count);
+                    current->push(Value::from_obj(result));
                     break;
                 }
                 case OpCode::IMPORT:
                     // path:u16;[..., module]
-                    if (!run_import(ctx, read_name(frame))) {
+                    if (!run_import(*current, read_name(frame))) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::THROW: {
                     // 用户 throw:弹抛出值,原值入寄存器(不包 ObjException -- catch 绑原值保类型)后
                     // unwind。
-                    ctx.raise(ctx.pop());
+                    current->raise(current->pop());
                     goto unwind_check;
                 }
                 case OpCode::RETURN:
-                    if (run_return(ctx)) {
+                    if (run_return(*current)) {
                         return true;
                     }
-                    break;
+                    goto sync_now;
                 default:
                     UNREACHABLE();
             }
-            continue; // 正常路径:break 出 switch 后回循环顶,不落 unwind_check
-        // unwind 收口:true = 已派发 handler 落回循环顶重取帧;false = 全链未捕获,载荷留寄存器
-        // 本循环即返,善后归调用方。(标签体不引用 frame 的防御同 switch 头注)。
+            continue; // 状态未变的正常路径:break 出 switch 后回循环顶,不落善后标签
+        // unwind 收口:true = 已派发 handler,落入 sync_now 善后;false = 全链未捕获,载荷留
+        // 寄存器本循环即返,善后归调用方。(重取前不引用 frame 的防御同 switch 头注)。
         unwind_check:
             if (!unwind(vm)) {
                 return false;
             }
+        // 变更善后唯一出口(与 unwind_check 对称):对齐本轮上下文与栈顶帧到 VM 当前状态。
+        // 变更点漏 goto 由循环顶 ASSERT 当场钉住。
+        sync_now:
+            current = vm.current_;
+            frame   = &current->frames().top();
         }
     }
 

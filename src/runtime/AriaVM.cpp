@@ -241,7 +241,7 @@ namespace aria {
         current_->push(Value::from_obj(closure)); // 入栈即根
         Eval::call_closure(*current_, closure, 0);
         Result<Value, Error> result =
-                Eval::dispatch_loop(*this) ? current_->pop() : runtime_err(rebake_uncaught_error());
+                Eval::dispatch_loop(*current_) ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
 
         // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口。

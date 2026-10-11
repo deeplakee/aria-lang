@@ -34,7 +34,7 @@ paths:
 
 声明在 `Object.hpp`，基类默认体在 `Object.cpp`（出声明因 `ctx.fail` 是 ObjMovement.hpp 内模板、本头不可反向 include 它）。
 
-**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / deleted 拷贝移动）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`debug_repr`、`to_string`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`、11 个 `op_*_impl`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
+**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / deleted 拷贝移动）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`debug_repr`、`to_string`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
 
 **仅类型内部消费的辅助留 private**（`ObjString::slice`、`ObjList::slice`、`ObjClass::find_field`），不按「可能有用」外放；const 重载的容器访问器按实际消费面取舍（无 const 消费者的不加）。`Object` 的四个字段（GC 侵入式链的 `next_` + `hash_` / `type_` / `is_marked_`）同样收在收尾 private 段，GC 取字段级访问经 `friend class GC`（sweep / free_all 直接取 `&next_` 摘链，链头 `objects_head_` 住 GC；其余三字段对外只经访问器）。
 
@@ -52,13 +52,11 @@ paths:
 
 ### 四条缝
 
-- **① `load_field` / `store_field`**：命名成员的裸查找与写入协议（`load_field` = 裸查找原语：返回命中原值、永不铸 `ObjBoundMethod`、命中零分配；LOAD/STORE_FIELD 族指令统一分派点，VM 不按子类型 switch 分型）。`load_field` 消费方两类：`run_prepare_method`（`PREPARE_METHOD` 的成员解析缝，解析先于实参求值）与实例 11 个 `op_*_impl`（按钩子名取 `__add__`/`__call__` 等）。override：`ObjInstance` / `ObjClass` / `ObjModule` / `ObjException` 与内置集合 / 迭代器（见下）。
+- **① `load_field` / `store_field`**：命名成员的裸查找与写入协议（`load_field` = 裸查找原语：返回命中原值、永不铸 `ObjBoundMethod`、命中零分配；LOAD/STORE_FIELD 族指令统一分派点，VM 不按子类型 switch 分型）。`load_field` 消费方两类：`run_prepare_method`（`PREPARE_METHOD` 的成员解析缝，解析先于实参求值）与 VM 侧算子/调用派发（按编译期选定的钩子名取 `__add__`/`__neg__`/`__call__` 等，见 ②）。override：`ObjInstance` / `ObjClass` / `ObjModule` / `ObjException` 与内置集合 / 迭代器（见下）。
 - **①′ `load_field_bound`**：命名成员读取的**绑定形态**（同一趟裸查找命中后按宿主决定绑定：实例 fields 命中原样直读、类链命中经 `is_method` 现场绑；内置容器/迭代器/异常无条件绑）。消费方 = `run_load_field`/`run_load_this_field`（LOAD_FIELD/LOAD_THIS_FIELD 的统一执行体）。**基类默认 = 直接委托 `load_field`**（类/模块等读取本就不绑定，照取命中原值，未 override 类型读行为即裸查找）。
 - **①' `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `ctx.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。
-- **② 算子与调用协议 `op_*_impl(AriaExeContext&) -> Opt<Value>`**（算术五 + 比较四 + 一元负 + `op_call_impl`，共 11 个）：**取实现，不执行**--回答「本对象上该算子对应的可调用值」（不是算好的结果），VM 的 `run_binary_operator<Op>` / `run_negate` / `call_value` 取到后按调用形态调它（调用区槽 0 保持 receiver）。非 const（取实现可能物化绑定）。
-- ②的基类默认直接 fail（`type X does not support '<钩子名>'`，码 TypeMismatch；调用同形但码 CallNonCallable）。实现者：①**实例**（11 个 override，各自按钩子名（VM 常量串表，见 `runtime.md`）裸查找 `load_field`--实例 fields 可遮蔽，再类链取）；②**内置 string**（6 个算子直读实现格 `String*Fn`）与**内置 list**（加/乘 2 个 `List*Fn`）--bootstrap 期从类表按名拷入并 ASSERT 一致，免每次过类表查找；③其余类型不实现即报错。
-- 钩子名是**语言级事实**（拼写注册表 `runtime/str_table.hpp`，调用钩子 `__call__`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
-- `op_call_impl` 的消费点 = `Eval::call_value` 的 switch `default` 臂：取到后用**同一调用区**递归分发（`[callee, a1..aN]` 恰是 `[this, args]`）；非对象 callee 同码同款文案（`type X does not support '__call__'`，码 CallNonCallable）。
+- **② 算子与调用派发**：VM 侧按**编译期选定的钩子名**（`runtime/str_table.hpp` 注册表拼写）经成员协议 `load_field` 裸查找取实现，取到后按调用形态调（调用区槽 0 保持 receiver）。三个站点：`run_binary_operator<Op>` 的 `get_obj_binary_op_impl<Op>`（九个二元算子，Op -> `__add__` 等的映射是 if-constexpr 编译期链）、`run_negate`（`__neg__`）与 `call_value` switch `default` 臂（`__call__`，取到后用**同一调用区**递归分发，`[callee, a1..aN]` 恰是 `[this, args]`）。与成员访问同一协议缝：实例 fields 可遮蔽类链（「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」）、内置容器查自身类表、无 override 类型落基类措辞（`UndefinedProperty`；非对象 callee 仍报 `CallNonCallable`）。取实现恒走裸读零分配（与 `PREPARE_METHOD` 同形），绑定形态只属 `load_field_bound` 的值读取路径。
+- 钩子名是**语言级事实**（拼写注册表 `runtime/str_table.hpp`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
 - **钩子自指/成环不兜底**（拍板）：`d.__call__ = d` 或 `a.__call__ = b; b.__call__ = a` 会无穷重入 `call_value` 直到 C++ 栈溢出（SIGSEGV，无错误消息）。按「手写死循环同类」处理、后果由使用者承担--不加自指检测、不加重入深度上限、不改查找路径。
 
 ### 内置类型的成员面
@@ -94,7 +92,7 @@ paths:
 - **类成员读写取 Python/JS 式读穿透、写遮蔽**：读沿 super 链 fall-through；写落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新、沿链全 miss 的新名字亦落接收类，动态新增允许），父表不动。
 - **绑定方法不缓存**：`ObjInstance::load_field_bound` 命中方法戳闭包即**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
 - 缓存会让「类 / 父类改写方法」对已取过方法的实例陈旧、monkey patch 半可用且难解释；不缓存换来改写对既有实例立即生效（monkey patch 完整）与 `fields_` 回归纯字段。
-- 方法值是一等值省不掉；**调用路径**（`PREPARE_METHOD` + 实例 `op_*_impl`）经裸查找 `load_field` 走零分配、不绑定形态。
+- 方法值是一等值省不掉；**调用路径**（`PREPARE_METHOD` 与算子/调用派发）经裸查找 `load_field` 走零分配、不绑定形态。
 
 ### 迭代器族契约
 

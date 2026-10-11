@@ -178,7 +178,7 @@ namespace aria {
         // 新增承载类型零 VM 改动;失败**自己 fail**、返回值只留信号(load 族 nullopt / store 族 false ⟺ 已 fail,
         // 失败出口 `return ctx.fail(...);`);fail 文案渲染值走非重入渲染;调用方保证接收者「栈即根」。
 
-        // 裸查找命名成员(PREPARE_METHOD 与实例 op_*_impl 统一入口):name 为 intern 串(=== 同指针查表)。
+        // 裸查找命名成员(PREPARE_METHOD 与算子/调用派发统一入口):name 为 intern 串(=== 同指针查表)。
         // 返回查到的**原值**、永不铸 ObjBoundMethod、命中零分配:实例 fields 优先、miss 沿类链/表链取原值,
         // 故每次解析按当前类链即时生效。**槽 0 在消费时序里恒为接收者**(非方法成员被调用时它不是成员值)。
         // 错误契约:nullopt ⟺ 已 fail,miss 文案随宿主 override 就地烘焙;基类默认报 UndefinedProperty。
@@ -205,45 +205,6 @@ namespace aria {
         // 写入下标成员(STORE_INDEX 统一入口):契约同 store_field;其余类型落基类默认报错。
         [[nodiscard]]
         virtual bool store_index(AriaExeContext& ctx, Value key, Value value);
-
-        // 可重载算子/调用协议(取实现,不执行):回答「本对象上该算子对应的可调用值」,调用方取得后按调用形态调它。
-        // 名字是语言级事实(拼写注册在 runtime/str_table.hpp)。基类默认直接 fail -- 默认不支持,子类型实现才不 fail。
-        // 非 const(取实现可能物化绑定,同 load_field 族)。
-
-        [[nodiscard]]
-        virtual Opt<Value> op_add_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_sub_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_mul_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_div_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_mod_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_less_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_less_equal_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_greater_impl(AriaExeContext& ctx);
-
-        [[nodiscard]]
-        virtual Opt<Value> op_greater_equal_impl(AriaExeContext& ctx);
-
-        // 一元取负(-x)。
-        [[nodiscard]]
-        virtual Opt<Value> op_negate_impl(AriaExeContext& ctx);
-
-        // 函数调用
-        [[nodiscard]]
-        virtual Opt<Value> op_call_impl(AriaExeContext& ctx);
 
         // 类型判定 = if constexpr 按 T 编译期选 tag,运行期单比较(两配置同价零 RTTI)。前置条件:
         // this 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =

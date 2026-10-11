@@ -92,11 +92,6 @@ namespace aria {
         return ctx.fail(ErrorCode::IndexOutOfBounds, "list index {} out of range", raw);
     }
 
-    // 算子协议:按钩子名查 List 类表(与 ObjString/ObjInstance 的钩子链同形,名字取自 VM 常量串表)。
-    Opt<Value> ObjList::op_add_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__add__">()); }
-
-    Opt<Value> ObjList::op_mul_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__mul__">()); }
-
     Opt<Value> ObjList::slice(AriaExeContext& ctx, const ObjRange* range) {
         // 段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间,唯一失败点报错就地烘焙。
         const auto segment = resolve_slice_bounds(range, elements_.size());

@@ -55,41 +55,6 @@ namespace aria {
         // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
-        // 算子/调用协议 11 实现:按钩子名(VM 常量串表)经裸查找 load_field 取,实例 fields 可遮蔽类链钩子
-        // --「实例上一个叫 `__add__` 的字段/方法就是它的 `+`」。
-        [[nodiscard]]
-        Opt<Value> op_add_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_sub_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_mul_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_div_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_mod_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_less_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_less_equal_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_greater_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_greater_equal_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_negate_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_call_impl(AriaExeContext& ctx) override;
-
     private:
         ObjClass*     class_;  // 所属类(恒非空,ctor ASSERT;构造注入不可变)
         AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,方法绑定不缓存)

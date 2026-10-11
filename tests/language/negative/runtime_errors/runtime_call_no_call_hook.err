@@ -1,2 +1,2 @@
-Runtime: CallNonCallable type List does not support '__call__'
+Runtime: UndefinedProperty <class List> has no member '__call__'
 at <main> (

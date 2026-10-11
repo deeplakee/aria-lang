@@ -86,11 +86,11 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 ### 可正常写用例的语言特性
 
 - **运算符重载**：用户类按 dunder 方法名定义（`+ - * / %`、四个比较、一元 `-`，拼写注册于
-  `src/runtime/str_table.hpp`），实例参与运算时按名从实例 fields（可遮蔽）再类链取实现；实例取不到钩子即成员
-  缺席（`<class Box> has no member '__add__'`），内置类型没实现该算子报「本类型不支持」
-  （`type Map does not support '__add__'`），两者都不是数值路径的旧文案。**调用重载同款**：
-  `obj(args)` 按 `__call__` 取实现（与算子同一个「取实现再调用」协议）；非对象值同码报
-  `type Int does not support '__call__'`，类本身仍走实例化。
+  `src/runtime/str_table.hpp`），运算时按钩子名走成员查找取实现再调用：实例从 fields（可遮蔽）再类链取，
+  内置容器查自身类表；取不到钩子一律报成员缺席（`<class Box> has no member '__add__'`、
+  `<class Map> has no member '__add__'`），与成员访问同一措辞族。**调用重载同款**：`obj(args)` 按
+  `__call__` 取实现（同一个「按名取实现再调用」路径）；非对象值报
+  `CallNonCallable type Int does not support '__call__'`，类本身仍走实例化。
 - **字符串 `+`/`*` 与四个比较算子**（`<`/`<=`/`>`/`>=`）：`+` 与比较要求两侧皆 `String`、不做
   隐式转换（显式转换走 `str()`），比较按**无符号字节序**（与 `size`/`s[i]` 同字节域，大小写敏感、
   无 collation）；`*` 按整数次数重复出新串，乘数严格 Int（F64 一律拒）、负数报 `TypeMismatch`

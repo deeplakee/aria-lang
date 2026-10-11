@@ -1,2 +1,2 @@
-Runtime: TypeMismatch type String does not support '__sub__'
+Runtime: UndefinedProperty <class String> has no member '__sub__'
 at <main> (

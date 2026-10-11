@@ -56,8 +56,8 @@ namespace aria {
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
         static bool call_native(AriaExeContext& ctx, const ObjNativeFn* obj, u8 argc);
 
-        // 按 Op 取本对象的算子实现(编译期分发到 Object::op_*_impl,Op 由调用点穷举);nullopt ⟺
-        // 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
+        // 按 Op 编译期选定算子钩子名,经成员协议裸查找取本对象上的实现(Op 由调用点穷举);nullopt
+        // ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
         static Opt<Value> get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj);
 

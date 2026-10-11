@@ -1,2 +1,2 @@
-Runtime: TypeMismatch type String does not support '__neg__'
+Runtime: UndefinedProperty <class String> has no member '__neg__'
 at <main> (

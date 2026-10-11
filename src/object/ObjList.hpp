@@ -67,14 +67,6 @@ namespace aria {
         [[nodiscard]]
         bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
-        // 算子协议 override(内建直给,不经成员查找):读 bootstrap 期注册进类表并拷进实现格的钩子原生值
-        //(类表仍是规范家);其余算子不 override -> 基类默认报「本类型不支持该算子」。
-        [[nodiscard]]
-        Opt<Value> op_add_impl(AriaExeContext& ctx) override;
-
-        [[nodiscard]]
-        Opt<Value> op_mul_impl(AriaExeContext& ctx) override;
-
     private:
         // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、无上界给后缀、
         // 空段以两端相等+不含上界表示),本函数只按方向折算 count、铸新 list 段拷。

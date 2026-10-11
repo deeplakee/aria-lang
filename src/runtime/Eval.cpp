@@ -160,9 +160,9 @@ namespace aria {
             case ObjType::BOUND_METHOD:
                 return call_bound_method(ctx, obj->as<ObjBoundMethod>(), argc);
             default: {
-                // 其余对象类型:取调用钩子 `__call__` 实现后调;调用区就地复用 [callee, a1..aN]
-                // 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
-                if (const auto target = obj->op_call_impl(ctx)) {
+                // 其余对象类型:按 `__call__` 钩子名经成员协议取实现后调;调用区就地复用
+                // [callee, a1..aN] 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
+                if (const auto target = obj->load_field(ctx, ctx.str<"__call__">())) {
                     return call_value(ctx, *target, argc);
                 }
                 return false; // 载荷已在挂起错误寄存器
@@ -248,7 +248,7 @@ namespace aria {
     bool Eval::run_binary_operator(AriaExeContext& ctx) {
         // 对象左值先试 string 快路径门,再取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],
         // 槽 0 保持 receiver);非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),
-        // 取到的实现必可达(类表值 / 实例字段值 / 内建实现格),故无白色在途窗口、不挂守卫。
+        // 取到的实现必可达(类表值 / 实例字段值),故无白色在途窗口、不挂守卫。
         if (const auto lhs = ctx.peek(1); lhs.is_obj()) {
             const auto obj = lhs.as_obj();
             if (try_string_fast_dispatch<Op>(ctx, obj)) {
@@ -323,7 +323,7 @@ namespace aria {
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->op_negate_impl(ctx)) {
+            if (const auto target = operand.as_obj()->load_field(ctx, ctx.str<"__neg__">())) {
                 return call_value(ctx, *target, 0);
             }
             return false;
@@ -333,25 +333,26 @@ namespace aria {
 
     template<OpCode Op>
     Opt<Value> Eval::get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj) {
-        // 指令 -> 算子实现槽的编译期映射(Op 由调用点穷举)。
+        // 指令 -> 算子钩子名的编译期映射(Op 由调用点穷举);经成员协议裸查找取实现,与成员访问
+        // 同一协议缝(fields 遮蔽/类表/miss 措辞都由各类型 load_field 承担)。
         if constexpr (Op == OpCode::ADD) {
-            return obj->op_add_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__add__">());
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj->op_sub_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__sub__">());
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj->op_mul_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__mul__">());
         } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj->op_div_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__div__">());
         } else if constexpr (Op == OpCode::MOD) {
-            return obj->op_mod_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__mod__">());
         } else if constexpr (Op == OpCode::GREATER) {
-            return obj->op_greater_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__gt__">());
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj->op_greater_equal_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__ge__">());
         } else if constexpr (Op == OpCode::LESS) {
-            return obj->op_less_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__lt__">());
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj->op_less_equal_impl(ctx);
+            return obj->load_field(ctx, ctx.str<"__le__">());
         } else {
             UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
         }

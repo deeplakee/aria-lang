@@ -28,49 +28,4 @@ namespace aria {
         return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support subscript access", type_name());
     }
 
-    // 算子/调用协议基类默认:未实现该协议直接 fail(报文打钩子名)。
-    Opt<Value> Object::op_add_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__add__'", type_name());
-    }
-
-    Opt<Value> Object::op_sub_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__sub__'", type_name());
-    }
-
-    Opt<Value> Object::op_mul_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__mul__'", type_name());
-    }
-
-    Opt<Value> Object::op_div_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__div__'", type_name());
-    }
-
-    Opt<Value> Object::op_mod_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__mod__'", type_name());
-    }
-
-    Opt<Value> Object::op_less_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__lt__'", type_name());
-    }
-
-    Opt<Value> Object::op_less_equal_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__le__'", type_name());
-    }
-
-    Opt<Value> Object::op_greater_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__gt__'", type_name());
-    }
-
-    Opt<Value> Object::op_greater_equal_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__ge__'", type_name());
-    }
-
-    Opt<Value> Object::op_negate_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__neg__'", type_name());
-    }
-
-    Opt<Value> Object::op_call_impl(AriaExeContext& ctx) {
-        return ctx.fail(ErrorCode::CallNonCallable, "type {} does not support '__call__'", type_name());
-    }
-
 } // namespace aria

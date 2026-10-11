@@ -56,30 +56,6 @@ namespace aria {
         return true;
     }
 
-    // 算子/调用协议实现:按钩子名在本实例裸查找(实例 fields 可遮蔽类链钩子)再类链取;名字来自
-    // bootstrap 期驻留的 VM 常量串表(随 VM 根恒久存活),每次派发零取串开销、零分配。
-    Opt<Value> ObjInstance::op_add_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__add__">()); }
-
-    Opt<Value> ObjInstance::op_sub_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__sub__">()); }
-
-    Opt<Value> ObjInstance::op_mul_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__mul__">()); }
-
-    Opt<Value> ObjInstance::op_div_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__div__">()); }
-
-    Opt<Value> ObjInstance::op_mod_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__mod__">()); }
-
-    Opt<Value> ObjInstance::op_less_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__lt__">()); }
-
-    Opt<Value> ObjInstance::op_less_equal_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__le__">()); }
-
-    Opt<Value> ObjInstance::op_greater_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__gt__">()); }
-
-    Opt<Value> ObjInstance::op_greater_equal_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__ge__">()); }
-
-    Opt<Value> ObjInstance::op_negate_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__neg__">()); }
-
-    Opt<Value> ObjInstance::op_call_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__call__">()); }
-
     ObjInstance* new_instance(GC& gc, ObjClass* klass) { return gc.new_object<ObjInstance>(gc, klass); }
 
 } // namespace aria

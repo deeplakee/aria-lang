@@ -1,8 +1,6 @@
 #ifndef ARIA_BUILTIN_HPP
 #define ARIA_BUILTIN_HPP
 
-#include <type_traits>
-
 #include "common.hpp"
 #include "error/ErrorCode.hpp"
 #include "object/ObjNativeFn.hpp"

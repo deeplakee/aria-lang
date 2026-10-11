@@ -189,7 +189,7 @@ namespace aria {
         // 捕获:沿降序链一趟完成查等值与插链点定位,等值即复用(同槽双节点也复用,自愈)。
         // 建新到插链之间无分配点(白色窗口不被 sweep),入链后即随本对象 trace 根化;定义在 .cpp。
         [[nodiscard]]
-        ObjUpvalue* capture_upvalue(GC& gc, Value* slot) noexcept;
+        ObjUpvalue* capture_upvalue(Value* slot) noexcept;
 
         // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_ 并整段摘链;降序不变式下 >= from
         // 恒为链头连续前缀。

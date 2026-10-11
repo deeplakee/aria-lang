@@ -51,7 +51,7 @@ namespace aria {
 
     // 「同一局部只有一份引用」不变式由此收口;建新到插链之间无任何分配点,入链后即随本对象
     // trace 保命。
-    ObjUpvalue* ObjMovement::capture_upvalue(GC& gc, Value* slot) noexcept {
+    ObjUpvalue* ObjMovement::capture_upvalue(Value* slot) noexcept {
         ObjUpvalue* prev = nullptr;
         ObjUpvalue* cur  = open_upvalues_;
         while (cur != nullptr && cur->value_slot() > slot) {
@@ -61,7 +61,7 @@ namespace aria {
         if (cur != nullptr && cur->value_slot() == slot) {
             return cur; // 同槽已捕获:复用(内外层共享同一份引用)
         }
-        ObjUpvalue* uv = new_upvalue(gc, slot);
+        ObjUpvalue* uv = new_upvalue(gc(), slot);
         uv->set_next_open(cur);
         if (prev == nullptr) {
             open_upvalues_ = uv;

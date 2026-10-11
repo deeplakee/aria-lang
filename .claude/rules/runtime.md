@@ -36,7 +36,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 链头 `open_upvalues_`：按槽址降序的侵入式单链，链上节点经本类 trace 标根。
 
-- **`capture_upvalue(slot)` 捕获单点**：单趟同时完成复用判定与降序插链--等值即复用（同槽同局部一份引用，「捕获即引用」内外层共享同一 `ObjUpvalue`），更小/链尾则经调用方传入的 GC `new_upvalue` 建新插链（ObjMovement 不自持分配器创建对象）；建新到插链间无分配点，入链即随本类 trace 根化；同槽双节点也命中复用而非再插（自愈）。
+- **`capture_upvalue(slot)` 捕获单点**：单趟同时完成复用判定与降序插链--等值即复用（同槽同局部一份引用，「捕获即引用」内外层共享同一 `ObjUpvalue`），更小/链尾则经 `gc()` 委托 `new_upvalue` 建新插链；建新到插链间无分配点，入链即随本类 trace 根化；同槽双节点也命中复用而非再插（自愈）。
 - **`close_upvalues(from)`**：闭所有 `location >= from`（迁值 close + 整段摘链，降序不变式下恒为链头前缀）。
 - 只读链头 `open_upvalues()` 供 trace 遍历标根。
 - **关闭挂点**：`exit_frame`（本帧区间，RETURN 经此）/ `CLOSE_UPVALUE`（`stack_top()`）/ `unwind_to_handler`（catch 槽）/ `reset()`（全链）。

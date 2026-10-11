@@ -1144,7 +1144,7 @@ namespace aria {
                     ctx.push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {
                         if (is_local) {
-                            closure->add_upvalue(ctx.capture_upvalue(vm.gc_, frame->slots + index));
+                            closure->add_upvalue(ctx.capture_upvalue(frame->slots + index));
                         } else {
                             closure->add_upvalue(frame->closure->upvalues()[index]);
                         }

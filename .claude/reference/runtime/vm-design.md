@@ -9,6 +9,7 @@
 - 协程/执行上下文实体类名:**`ObjMovement`**(`Object` 子类型,M6 已自纯 C++ 类 `Movement` 升级而来)。
 - `ObjType::MOVEMENT` 已增补(语言可见名 `Coroutine`,`type(co)` 报之;拼写住 to_string(ObjType))。
 - M1 先以纯 C++ 类 `Movement` 落地(不继承 Object);M6 升级为 `ObjMovement : Object` 仅重命名 + 加 trace(早期曾以 `using VMContext = ObjMovement;` 别名保调用方零改动,别名已删)。
+- 2026-10 执行上下文拆出真基类 **`AriaExeContext`**(原 `using AriaExeContext = ObjMovement` 别名转真类):上下文本体(全量执行状态/机器/服务面)住基类,`ObjMovement final : Object, AriaExeContext` 缩为 GC 对象壳(唯一派生:构造私有 + 友元钉死;析构 protected 非虚,删除唯一出口 = GC 经 `Object` 首基类虚析构)。
 
 ## 2. 状态分层
 
@@ -17,7 +18,7 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 | 层 | 状态 | 特征 |
 | :--- | :--- | :--- |
 | **解释器级(AriaVM,共享)** | GC、模块表(每模块自己的 globals)、内置函数注册、Object 根类 bootstrap、`current_`(正在运行的上下文,唯一 VM 级协程根;其余协程经对象图可达,§4.9) | 整个进程一份,所有协程共享 |
-| **执行级(ObjMovement,每协程一份)** | 值栈、`FrameStack<CallFrame> frames_`、open upvalue 链头、执行状态机、挂起错误寄存器(侧信道,见 §4.7)、嵌套执行边界与重入深度(§4.11)、(协程期)resume 链 `previous_` | 协程的实体就是这堆状态 |
+| **执行级(AriaExeContext,每协程一份,GC 壳 `ObjMovement` 包裹)** | 值栈、`FrameStack<CallFrame> frames_`、open upvalue 链头、执行状态机、挂起错误寄存器(侧信道,见 §4.7)、嵌套执行边界与重入深度(§4.11)、(协程期)resume 链 `previous_` | 协程的实体就是这堆状态 |
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
@@ -27,16 +28,19 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 ```cpp
 // ---- 执行级 ----
-class ObjMovement /* final : public Object, M6 起继承 */ {
+class AriaExeContext { // 上下文本体:全部执行状态与机器(值栈/帧/开指链/寄存器/嵌套边界/服务面)
     // 值栈:初始定容、push 溢出时 2x 增长(搬迁时重定位 top_ 与活动帧 slots,见 §4.1)
-    Value*        stack_;       // GC 分配,初始 kStackInit 个 Value,可增长
-    Value*        top_;         // 栈顶指针,热路径裸指针操作
+    Buffer<Value> buf_;   // GC 分配,初始 kStackInit 个 Value,可增长
+    Value*        top_;   // 栈顶指针,热路径裸指针操作
     FrameStack<CallFrame, kFrameMax> frames_;
-    ObjUpvalue*   open_upvalues_;           // 开指 upvalue 链(M4 已落地)
-    ExecState     state_;                   // M6:五态 Suspended/Normal/Running/Done/Failed(§4.9)
-    ObjMovement*  previous_;                // M6:resume 链(挂起态恒空;运行链指向恢复者)
-    // M6 协程期字段即上两行;初始化收敛进 ctor(复杂类纪律,无 NSDMI)
+    ObjUpvalue*   open_upvalues_;     // 开指 upvalue 链(M4 已落地)
+    ExecState     state_;             // M6:五态 Suspended/Normal/Running/Done/Failed(§4.9)
+    ObjMovement*  previous_;          // M6:resume 链(挂起态恒空;运行链指向恢复者)
+    // 初始化收敛进 ctor(复杂类纪律,无 NSDMI)
 };
+
+// GC 对象壳:仅 Object 协议 override(trace/size/debug_repr)与工厂,零自有成员
+class ObjMovement final : public Object, public AriaExeContext {};
 
 // 帧是纯 POD(FrameStack 要求 trivially-copyable;只持指针,满足约束)
 struct CallFrame {
@@ -228,9 +232,9 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 ### 4.11 嵌套执行(重入口,已落地)
 
-指令执行中同步执行一个闭包的重入机制:在字节码执行程内经 `vm` 直接发起一次闭包/方法调用并驱动至结算。两口住 AriaExeContext(ObjMovement)公共面,消费方免友元(当前唯一消费方是统一测试探针 `TestProbe`,经 `vm.current_context()->execute_closure(...)` 走公共面,白盒契约钉在 `tests/runtime/test_execute.cpp`)。
+指令执行中同步执行一个闭包的重入机制:在字节码执行程内经 `vm` 直接发起一次闭包/方法调用并驱动至结算。两口住 AriaExeContext 公共面,消费方免友元(当前唯一消费方是统一测试探针 `TestProbe`,经 `vm.current_context()->execute_closure(...)` 走公共面,白盒契约钉在 `tests/runtime/test_execute.cpp`)。
 
-**出口边界**:`ObjMovement::ret_frame_`(u32,0 = 最外执行)+ `recursion_depth_`(上限 `kMaxRecursionDepth` = 32)住上下文,消费方(`run_return`/`unwind`/`dispatch_loop`)一律自 `current_` 读取--无 VM 级基线成员。重入口经 `enter_recursion()` 挂界(边界 = 入场帧深,断言钉边界非零:零帧 = 无驱动,最外执行是 `run()` 职责、不经重入口)、`leave_recursion()` 归还外层边界。
+**出口边界**:`AriaExeContext::ret_frame_`(u32,0 = 最外执行)+ `recursion_depth_`(上限 `kMaxRecursionDepth` = 32)住上下文,消费方(`run_return`/`unwind`/`dispatch_loop`)一律自 `current_` 读取--无 VM 级基线成员。重入口经 `enter_recursion()` 挂界(边界 = 入场帧深,断言钉边界非零:零帧 = 无驱动,最外执行是 `run()` 职责、不经重入口)、`leave_recursion()` 归还外层边界。
 
 **两口一执行体**:`execute_closure(ObjClosure*, Span<const Value>)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjClosure*, Span<const Value>)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_call`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_closure` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
 

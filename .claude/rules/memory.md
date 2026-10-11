@@ -10,8 +10,8 @@ paths:
 ## `memory/Buffer.hpp`
 
 - `Buffer<T, Alloc = GC>`（`TriviallyCopyable`/`TrivialAllocator` 约束）：只持 `{alloc, data, cap}` 的最小可增长缓冲底座，集中 `allocate`/`reallocate`/`deallocate`，**无逻辑长度**。
-- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，**不返回基址差**（算 delta 是 UB）--有派生裸指针的调用方（ObjMovement 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `ObjMovement::grow_stack_`）。
-- 非拷贝/非移动。`Array` 与 `ObjMovement` 值栈均建于其上；不适用于内容需重定位的容器（HashTable rehash / InternPool rehash 直接用分配器）。
+- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，**不返回基址差**（算 delta 是 UB）--有派生裸指针的调用方（AriaExeContext 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `AriaExeContext::grow_stack_`）。
+- 非拷贝/非移动。`Array` 与 `AriaExeContext` 值栈均建于其上；不适用于内容需重定位的容器（HashTable rehash / InternPool rehash 直接用分配器）。
 
 ## `memory/Array.hpp`
 
@@ -22,7 +22,7 @@ paths:
 ## `memory/Allocator.hpp`
 
 - `TriviallyCopyable` / `TrivialAllocator` concept（后者以 `u8` 为代表类型校验 `allocate<T>`/`reallocate<T>`/`deallocate<T>`）+ `class GC;` 前向声明。
-- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`，使用 GC 作分配器的具体类（`AriaArray`/`AriaHashTable`/`CodeUnit`/`ObjMovement`/`InternPool`）自行 include（`InternPool` 经 ctor 函数体内 `static_assert(TrivialAllocator<Alloc>)` 约束--GC 为其值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
+- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`，使用 GC 作分配器的具体类（`AriaArray`/`AriaHashTable`/`CodeUnit`/`AriaExeContext`/`InternPool`）自行 include（`InternPool` 经 ctor 函数体内 `static_assert(TrivialAllocator<Alloc>)` 约束--GC 为其值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
 
 ## `memory/HashTable.hpp`
 

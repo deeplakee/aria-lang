@@ -195,6 +195,20 @@ namespace aria {
 
     ObjString* ObjMovement::str(const usize index) const noexcept { return host_->str(index); }
 
+    ObjClass* ObjMovement::object_class() const noexcept { return host_->object_class(); }
+
+    ObjClass* ObjMovement::exception_class() const noexcept { return host_->exception_class(); }
+
+    ObjClass* ObjMovement::iterator_class() const noexcept { return host_->iterator_class(); }
+
+    ObjClass* ObjMovement::list_class() const noexcept { return host_->list_class(); }
+
+    ObjClass* ObjMovement::map_class() const noexcept { return host_->map_class(); }
+
+    ObjClass* ObjMovement::string_class() const noexcept { return host_->string_class(); }
+
+    ObjClass* ObjMovement::range_class() const noexcept { return host_->range_class(); }
+
     GC& ObjMovement::gc() const noexcept { return host_->gc(); }
 
 } // namespace aria

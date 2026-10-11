@@ -5,7 +5,6 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjString.hpp"
-#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 
 namespace aria {
@@ -29,7 +28,7 @@ namespace aria {
     String ObjException::debug_repr() const { return String{message_->view()}; }
 
     Opt<Value> ObjException::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.host().exception_class()->load_field(ctx, name);
+        return ctx.exception_class()->load_field(ctx, name);
     }
 
     Opt<Value> ObjException::load_field_bound(AriaExeContext& ctx, ObjString* name) {

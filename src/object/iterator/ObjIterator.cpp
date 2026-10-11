@@ -2,7 +2,6 @@
 
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "value/Value.hpp"
 
@@ -16,7 +15,7 @@ namespace aria {
     }
 
     Opt<Value> ObjIterator::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.host().iterator_class()->load_field(ctx, name);
+        return ctx.iterator_class()->load_field(ctx, name);
     }
 
     Opt<Value> ObjIterator::load_field_bound(AriaExeContext& ctx, ObjString* name) {

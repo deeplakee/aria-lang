@@ -9,7 +9,6 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
-#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -87,7 +86,7 @@ namespace aria {
     String ObjString::to_string() const { return std::format("{}", view()); }
 
     Opt<Value> ObjString::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.host().string_class()->load_field(ctx, name);
+        return ctx.string_class()->load_field(ctx, name);
     }
 
     Opt<Value> ObjString::load_field_bound(AriaExeContext& ctx, ObjString* name) {

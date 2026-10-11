@@ -23,7 +23,7 @@ paths:
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
 - `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用）。
 - `ObjModule`（`ObjModule.hpp`）：模块 = 命名空间（一个源文件一个模块），非类。
-- `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.host().exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经 `ctx.host()` 取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
+- `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经上下文访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
 - `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文对象（`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。trace 自标值栈/帧/开链/挂起载荷并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
@@ -61,7 +61,7 @@ paths:
 
 ### 内置类型的成员面
 
-- **内置容器 / 迭代器（string/list/map/range/iterator）与异常（exception）的 `load_field` / `load_field_bound` 共享同一趟裸查找**（权威说明，各子类头不复述）：两缝同委托自身 bootstrap 类表（`ctx.host().string_class()` / `ctx.host().list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field` 裸读命中直取类表原生值；`load_field_bound` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）。
+- **内置容器 / 迭代器（string/list/map/range/iterator）与异常（exception）的 `load_field` / `load_field_bound` 共享同一趟裸查找**（权威说明，各子类头不复述）：两缝同委托自身 bootstrap 类表（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field` 裸读命中直取类表原生值；`load_field_bound` 命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
 - 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
 

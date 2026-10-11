@@ -7,7 +7,6 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
 #include "object/PrintGuard.hpp"
-#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
@@ -55,7 +54,7 @@ namespace aria {
     }
 
     Opt<Value> ObjList::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.host().list_class()->load_field(ctx, name);
+        return ctx.list_class()->load_field(ctx, name);
     }
 
     Opt<Value> ObjList::load_field_bound(AriaExeContext& ctx, ObjString* name) {

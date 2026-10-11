@@ -5,7 +5,6 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/Object.hpp"
-#include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "value/ObjBridge.hpp"
@@ -35,22 +34,22 @@ namespace aria {
                     chain = slots[0].as_obj()->as<ObjInstance>()->klass();
                     break;
                 case ObjType::EXCEPTION:
-                    chain = ctx.host().exception_class();
+                    chain = ctx.exception_class();
                     break;
                 case ObjType::LIST:
-                    chain = ctx.host().list_class();
+                    chain = ctx.list_class();
                     break;
                 case ObjType::MAP:
-                    chain = ctx.host().map_class();
+                    chain = ctx.map_class();
                     break;
                 case ObjType::STRING:
-                    chain = ctx.host().string_class();
+                    chain = ctx.string_class();
                     break;
                 case ObjType::RANGE:
-                    chain = ctx.host().range_class();
+                    chain = ctx.range_class();
                     break;
                 case ObjType::ITERATOR:
-                    chain = ctx.host().iterator_class();
+                    chain = ctx.iterator_class();
                     break;
                 case ObjType::CLASS:
                     chain = slots[0].as_obj()->as<ObjClass>();

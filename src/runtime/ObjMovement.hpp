@@ -19,6 +19,7 @@
 namespace aria {
 
     class AriaVM;
+    class ObjClass;
     class ObjClosure;
     class ObjFunction;
     class ObjModule;
@@ -324,6 +325,28 @@ namespace aria {
         // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表)。
         [[nodiscard]]
         ObjString* char_string(u8 byte) const noexcept;
+
+        // 七个 bootstrap 类的委托读取(体在 .cpp)。
+        [[nodiscard]]
+        ObjClass* object_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* exception_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* iterator_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* list_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* map_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* string_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* range_class() const noexcept;
 
         // 宿主分配器。
         [[nodiscard]]

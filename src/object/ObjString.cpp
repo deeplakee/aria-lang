@@ -11,7 +11,6 @@
 #include "object/ObjRange.hpp"
 #include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
-#include "runtime/value_register.hpp"
 #include "util/util.hpp"
 #include "value/ObjBridge.hpp"
 
@@ -118,17 +117,19 @@ namespace aria {
         return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support subscript assignment", type_name());
     }
 
-    Opt<Value> ObjString::op_add_impl(AriaExeContext& ctx) { return ctx.register_value(kStringAddFnOffset); }
+    // 算子协议:按钩子名查 String 类表(与 ObjInstance 钩子链同形,名字取自 VM 常量串表);双
+    // String 的 + 与字序比较已被 eval 层 fast dispatch 就地完成,本链只剩混型错误路径触达。
+    Opt<Value> ObjString::op_add_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__add__">()); }
 
-    Opt<Value> ObjString::op_mul_impl(AriaExeContext& ctx) { return ctx.register_value(kStringMulFnOffset); }
+    Opt<Value> ObjString::op_mul_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__mul__">()); }
 
-    Opt<Value> ObjString::op_less_impl(AriaExeContext& ctx) { return ctx.register_value(kStringLtFnOffset); }
+    Opt<Value> ObjString::op_less_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__lt__">()); }
 
-    Opt<Value> ObjString::op_less_equal_impl(AriaExeContext& ctx) { return ctx.register_value(kStringLeFnOffset); }
+    Opt<Value> ObjString::op_less_equal_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__le__">()); }
 
-    Opt<Value> ObjString::op_greater_impl(AriaExeContext& ctx) { return ctx.register_value(kStringGtFnOffset); }
+    Opt<Value> ObjString::op_greater_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__gt__">()); }
 
-    Opt<Value> ObjString::op_greater_equal_impl(AriaExeContext& ctx) { return ctx.register_value(kStringGeFnOffset); }
+    Opt<Value> ObjString::op_greater_equal_impl(AriaExeContext& ctx) { return load_field(ctx, ctx.str<"__ge__">()); }
 
     Opt<Value> ObjString::slice(AriaExeContext& ctx, const ObjRange* range) const {
         // 段内容拷进 GC 记账 builder(带种串构造单发定容),倒序段在 builder 上按字节反转(字节域);

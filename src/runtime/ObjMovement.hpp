@@ -325,10 +325,6 @@ namespace aria {
         [[nodiscard]]
         ObjString* char_string(u8 byte) const noexcept;
 
-        // 值寄存器按格位直读:格唯一存于宿主寄存器组。
-        [[nodiscard]]
-        Value register_value(u8 offset) const noexcept;
-
         // 宿主分配器。
         [[nodiscard]]
         GC& gc() const noexcept;

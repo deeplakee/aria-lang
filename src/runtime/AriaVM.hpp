@@ -22,7 +22,6 @@ namespace aria {
     class ObjFunction;
     class ObjInstance;
     class ObjModule;
-    class ObjNativeFn;
     class ObjString;
 
     // interpret 结果:错误已渲染到 stderr,只回成败类别(turnkey 场景只要类别),
@@ -96,33 +95,12 @@ namespace aria {
             return modules_;
         }
 
-        // 七个 bootstrap 类访问器:各类格唯一存于寄存器组。
-        [[nodiscard]]
-        ObjClass* object_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* exception_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* iterator_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* list_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* map_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* string_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* range_class() const noexcept;
-
-        // 寄存器组按格位直读(k<名字>Offset 格位常量):内置类型算子实现格经它取用,免每次类表查找。
-        [[nodiscard]]
-        Value register_value(const u8 offset) const noexcept {
-            return Value::from_obj(registers_[offset]);
-        }
+        // 寄存器格访问器:声明自注册表两段子表生成(X 行 = 枚举名/访问器名/格类型;定义同源住 .cpp,
+        // 类格经 as<ObjClass> 收窄、单例格直返)。
+#define ARIA_VALUE_REGISTER_ACCESSOR_DECL(name, accessor, type) [[nodiscard]] type* accessor() const noexcept;
+        ARIA_VALUE_REGISTER_SINGLETON_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DECL)
+        ARIA_VALUE_REGISTER_CLASS_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DECL)
+#undef ARIA_VALUE_REGISTER_ACCESSOR_DECL
 
         // 常量串表按键直读:键经 NTTP 编译期定下标、static_assert 拒表外键,生成物是基址 +
         // 常量下标的一次加载;实例侧算子派发取钩子名,免每次从驻留池换串。
@@ -183,7 +161,7 @@ namespace aria {
         void bootstrap_registers();
 
         // 常量串表 bootstrap(ctor 一次调用):按注册表逐条驻留填入 string_constants_;须先于
-        // bootstrap_registers -- String 类钩子缓存按名取串读的就是本表。
+        // bootstrap_registers -- bootstrap 期按名铸造钩子/方法名,靠本表锚保驻留命中。
         void bootstrap_string_constants();
 
         // 单字符常量表 bootstrap(ctor 一次调用):字节域全值域 256 槽一次铸满与 string_constants_

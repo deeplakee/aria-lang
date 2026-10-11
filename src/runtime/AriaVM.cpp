@@ -93,8 +93,7 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 编排顺序即依赖序:Object 根类先建(其余内建类以它作 super),算子实现格缓存待类表全填,
-        // builtins_ 曝光最后。
+        // 编排顺序即依赖序:Object 根类先建(其余内建类以它作 super),builtins_ 曝光最后。
         registers_[kObjectClassOffset]    = ObjectClass::make_class(gc_);
         registers_[kExceptionClassOffset] = ExceptionClass::make_class(gc_, object_class());
         registers_[kIteratorClassOffset]  = IteratorClass::make_class(gc_, object_class());
@@ -106,17 +105,6 @@ namespace aria {
         registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
         // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
-
-        for (const auto& [name, offset]: ListClass::kOperatorFns) {
-            const auto hit = list_class()->load_field(*current_, new_string(gc_, name));
-            ASSERT(hit.has_value(), "List class table is missing an operator hook (table and impl cells drifted)");
-            registers_[offset] = hit->as_obj();
-        }
-        for (const auto& [name, offset]: StringClass::kOperatorFns) {
-            const auto hit = string_class()->load_field(*current_, new_string(gc_, name));
-            ASSERT(hit.has_value(), "String class table is missing an operator hook (table and impl cells drifted)");
-            registers_[offset] = hit->as_obj();
-        }
 
         // 类裸名曝光:is_a 链判定与类值触达。
         builtins_.set(Value::from_obj(object_class()->name()), Value::from_obj(object_class()));
@@ -141,25 +129,22 @@ namespace aria {
             for (const auto string: string_constants_) {
                 g.mark_object(string);
             }
-            for (const auto entry: char_cache_) {
-                g.mark_object(entry); // 单字符常量:恒驻留(tracer 标根,池表项同保不摘白)
+            for (const auto ch: char_cache_) {
+                g.mark_object(ch); // 单字符常量:恒驻留(tracer 标根,池表项同保不摘白)
             }
         });
     }
 
-    ObjClass* AriaVM::object_class() const noexcept { return registers_[kObjectClassOffset]->as<ObjClass>(); }
+    // 寄存器格访问器定义:类格经 as<ObjClass> 收窄,单例格直返;自注册表两段子表生成(声明在 AriaVM.hpp)。
+#define ARIA_VALUE_REGISTER_ACCESSOR_DEF_CLASS(name, accessor, type) \
+    type* AriaVM::accessor() const noexcept { return registers_[k##name##Offset]->as<type>(); }
+    ARIA_VALUE_REGISTER_CLASS_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DEF_CLASS)
+#undef ARIA_VALUE_REGISTER_ACCESSOR_DEF_CLASS
 
-    ObjClass* AriaVM::exception_class() const noexcept { return registers_[kExceptionClassOffset]->as<ObjClass>(); }
-
-    ObjClass* AriaVM::iterator_class() const noexcept { return registers_[kIteratorClassOffset]->as<ObjClass>(); }
-
-    ObjClass* AriaVM::list_class() const noexcept { return registers_[kListClassOffset]->as<ObjClass>(); }
-
-    ObjClass* AriaVM::map_class() const noexcept { return registers_[kMapClassOffset]->as<ObjClass>(); }
-
-    ObjClass* AriaVM::string_class() const noexcept { return registers_[kStringClassOffset]->as<ObjClass>(); }
-
-    ObjClass* AriaVM::range_class() const noexcept { return registers_[kRangeClassOffset]->as<ObjClass>(); }
+#define ARIA_VALUE_REGISTER_ACCESSOR_DEF_SINGLETON(name, accessor, type) \
+    type* AriaVM::accessor() const noexcept { return registers_[k##name##Offset]; }
+    ARIA_VALUE_REGISTER_SINGLETON_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DEF_SINGLETON)
+#undef ARIA_VALUE_REGISTER_ACCESSOR_DEF_SINGLETON
 
     void AriaVM::init_source_roots() {
         // 入口槽 [0] 占位 cwd;cwd 不可用时空串兜底(resolve_module 裸名分支跳过空根)。

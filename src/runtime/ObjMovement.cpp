@@ -168,7 +168,7 @@ namespace aria {
         // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
         const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
         for (u8 i = 0; i < missing; ++i) {
-            push(register_value(kDefaultMarkOffset));
+            push(Value::from_obj(host_->default_mark()));
         }
 
         // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
@@ -194,8 +194,6 @@ namespace aria {
     ObjString* ObjMovement::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }
 
     ObjString* ObjMovement::string_constant(const usize index) const noexcept { return host_->string_constant(index); }
-
-    Value ObjMovement::register_value(const u8 offset) const noexcept { return host_->register_value(offset); }
 
     GC& ObjMovement::gc() const noexcept { return host_->gc(); }
 

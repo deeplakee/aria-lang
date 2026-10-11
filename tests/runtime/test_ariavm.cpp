@@ -3048,7 +3048,7 @@ TEST_F(AriaVMStress, MethodCallOnFieldHoldingCallable) {
     EXPECT_EQ(two_step_allocs, invoke_allocs); // 字段直读两侧都不物化
 }
 
-// 常量串表的根契约:注册表里的名字随 string_constants_ 恒久存活 -- collect 之后按名仍取回**同一**串。
+// 常量串表的根契约:注册表里的名字恒久存活 -- collect 之后按名仍取回**同一**串。
 // 判据取同指针:名字若不在根里,驻留池的该项会在 collect 的 remove_white 处变墓碑、sweep 释放其对象,
 // 随后 new_string 会重铸一个内容相同的新串(指针不同)。这条从 aria 源码侧面观察不到,只能在 C++ 侧钉。
 TEST(AriaVM, StringConstantsOutliveCollect) {

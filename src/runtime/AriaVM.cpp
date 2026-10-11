@@ -42,7 +42,7 @@ namespace aria {
 
     namespace {
 
-        // 单例表收口:两张预置表长格的 VM 单例表(registers_ / string_constants_)填完后不许留空格。
+        // 单例表收口:两张预置表长格的 VM 单例表(registers_ / str_table_)填完后不许留空格。
         // 未填格(nullptr)装箱后是非法值、按名取到空指针,存活到消费点只崩不报错,故在填点炸出。
         template<typename T>
         void assert_slots_filled(const List<T*>& slots, const char* what) noexcept {
@@ -58,28 +58,28 @@ namespace aria {
 
     AriaVM::AriaVM() :
         gc_{}, current_{nullptr}, modules_{&gc_}, builtins_{&gc_}, source_roots_{}, registers_{kValueRegisterCount},
-        string_constants_{str_table::kCount}, char_cache_{kCharCacheSlots} {
+        str_table_{str_table::kCount}, char_cache_{kCharCacheSlots} {
         current_ = new_movement(gc_, *this); // 首笔分配:gc_ 尚无对象,顶部 maybe_collect 无可回收
         hook_vm_roots();
         init_source_roots();
         {
             // 构造临界区:GC 挂起,窗口内回收不可达,创建的白对象免逐个守卫;**解锁前须全部发布
-            // 进 tracer 可达的家**(registers_ / string_constants_ / builtins_,主上下文经 current_)。
+            // 进 tracer 可达的家**(registers_ / str_table_ / builtins_,主上下文经 current_)。
             const auto lock = gc_.make_lock();
-            bootstrap_string_constants();
+            bootstrap_str_table();
             bootstrap_char_cache();
             bootstrap_registers();
             Builtin::register_builtins(gc_, builtins_);
         }
     }
 
-    void AriaVM::bootstrap_string_constants() {
+    void AriaVM::bootstrap_str_table() {
         // 按下标(= 表序)逐格驻留填入;须在 ctor 构造临界区内调用(GC 挂起,创建免守卫),
-        // 填入即经 string_constants_ 可达,解锁前发布完毕。
+        // 填入即经 str_table_ 可达,解锁前发布完毕。
         for (usize index = 0; index < str_table::kCount; ++index) {
-            string_constants_[index] = new_string(gc_, str_table::kConstants[index]);
+            str_table_[index] = new_string(gc_, str_table::kConstants[index]);
         }
-        assert_slots_filled(string_constants_, "string_constants_: unfilled slot after bootstrap");
+        assert_slots_filled(str_table_, "str_table_: unfilled slot after bootstrap");
     }
 
     void AriaVM::bootstrap_char_cache() {
@@ -126,7 +126,7 @@ namespace aria {
             for (const auto reg: registers_) {
                 g.mark_object(reg);
             }
-            for (const auto string: string_constants_) {
+            for (const auto string: str_table_) {
                 g.mark_object(string);
             }
             for (const auto ch: char_cache_) {

@@ -193,7 +193,7 @@ namespace aria {
 
     ObjString* ObjMovement::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }
 
-    ObjString* ObjMovement::string_constant(const usize index) const noexcept { return host_->string_constant(index); }
+    ObjString* ObjMovement::str(const usize index) const noexcept { return host_->str(index); }
 
     GC& ObjMovement::gc() const noexcept { return host_->gc(); }
 

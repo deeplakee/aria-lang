@@ -27,7 +27,7 @@ namespace aria::str_table {
             "failed",    // coroutine status 串
     };
 
-    // 表长:常量串表条数(供 VM 预置 string_constants_ 格位,同 kValueRegisterCount)。
+    // 表长:常量串表条数(VM 构造期按它预置格位)。
     inline constexpr usize kCount = std::size(kConstants);
 
     // 按键查表下标(consteval 逐条比对;查不到返 nullopt,消费者 static_assert 拒表外键)。

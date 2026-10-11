@@ -308,18 +308,18 @@ namespace aria {
         Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
 
         // 常量串按注册表键直读:键 -> 下标的解析在编译期完成(注册表住 runtime/str_table.hpp),
-        // 下标经 string_constant 取表。本访问口不依赖宿主完整类型,使用方无须 include AriaVM.hpp。
+        // 下标经 str(index) 取表。本访问口不依赖宿主完整类型,使用方无须 include AriaVM.hpp。
         template<util::FixedString key>
         [[nodiscard]]
         ObjString* str() const noexcept {
             constexpr auto found = str_table::index_of(key.view());
             static_assert(found.has_value(), "constant string key is not in the registry");
-            return string_constant(*found);
+            return str(*found);
         }
 
-        // 常量串按下标直读(体在 .cpp,委托宿主表)。
+        // 常量串按下标直读(体在 .cpp,委托宿主表;str<key> 的运行期下标形态)。
         [[nodiscard]]
-        ObjString* string_constant(usize index) const noexcept;
+        ObjString* str(usize index) const noexcept;
 
         // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表)。
         [[nodiscard]]

@@ -109,13 +109,13 @@ namespace aria {
         ObjString* str() const noexcept {
             constexpr auto found = str_table::index_of(key.view());
             static_assert(found.has_value(), "constant string key is not in the registry");
-            return string_constants_[*found];
+            return str_table_[*found];
         }
 
-        // 常量串按下标直读(movement 的 str<key> 经此取用;键 -> 下标的解析在 movement 侧完成)。
+        // 常量串按下标直读(str<key> 的运行期下标形态;键 -> 下标的解析在调用侧完成)。
         [[nodiscard]]
-        ObjString* string_constant(const usize index) const noexcept {
-            return string_constants_[index];
+        ObjString* str(const usize index) const noexcept {
+            return str_table_[index];
         }
 
         // 单字符常量串直读(byte -> 字节值即下标,启动期 bootstrap 满表):1 字节串全值域恒定,
@@ -160,11 +160,11 @@ namespace aria {
         // 临界区(GC 挂起)内调用,创建免守卫。
         void bootstrap_registers();
 
-        // 常量串表 bootstrap(ctor 一次调用):按注册表逐条驻留填入 string_constants_;须先于
+        // 常量串表 bootstrap(ctor 一次调用):按注册表逐条驻留填入 str_table_;须先于
         // bootstrap_registers -- bootstrap 期按名铸造钩子/方法名,靠本表锚保驻留命中。
-        void bootstrap_string_constants();
+        void bootstrap_str_table();
 
-        // 单字符常量表 bootstrap(ctor 一次调用):字节域全值域 256 槽一次铸满与 string_constants_
+        // 单字符常量表 bootstrap(ctor 一次调用):字节域全值域 256 槽一次铸满与 str_table_
         // 同地位(运行期恒驻留常量,tracer 标根);须在 ctor 构造临界区内调用。
         void bootstrap_char_cache();
 
@@ -203,7 +203,7 @@ namespace aria {
         List<Object*> registers_;
 
         // 常量串表:VM 运行期按名取用的字符串常量(tracer 标根保命 -- 驻留池是 weak root)。
-        List<ObjString*> string_constants_;
+        List<ObjString*> str_table_;
 
         // 单字符常量表:字节域全值域(direct-mapped,byte 值即下标,kCharCacheSlots 槽),bootstrap
         // 一次铸满、运行期恒驻留常量(tracer 标根);逐字符产串(s[i]/chars()/iterator)的直查表。

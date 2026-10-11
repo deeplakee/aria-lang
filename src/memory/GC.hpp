@@ -13,8 +13,8 @@
 
 namespace aria {
 
-    // GC:解释器统一内存分配器 + mark-sweep 回收器。roots = 临时根 + VM 根(经 std::function 回调标五类:modules_、
-    // builtins_、registers_、string_constants_、current_ 执行链的值栈/活动帧/open upvalue 链/挂起错误寄存器)。
+    // GC:解释器统一内存分配器 + mark-sweep 回收器。roots = 临时根 + VM 根(宿主经 std::function 回调注册,
+    // 标什么由宿主定)。
     // **核心不变式**:allocate/reallocate 永不触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。
     class GC {
     public:

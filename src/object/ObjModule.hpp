@@ -34,7 +34,7 @@ namespace aria {
             return dir_;
         }
 
-        // 绝对路径(= 模块表键形式),即时合成不驻留;name_ 空串仅返 dir_,dir_ 空串返空串(resolve_module 判空拒绝)。
+        // 绝对路径(= 模块表键形式),即时合成不驻留;name_ 空串仅返 dir_,dir_ 空串返空串。
         [[nodiscard]]
         String abs_path() const;
 

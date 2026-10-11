@@ -8,7 +8,7 @@
 
 `import "PATH" as ALIAS` 经三步落地（`src/runtime/AriaVM.cpp`）：
 
-1. **解析为绝对规范键**：把 import 串 `PATH` 经 `resolve_module`（匿名命名空间）解析为
+1. **解析为绝对规范键**：把 import 串 `PATH` 经 `resolve_module`（AriaVM 私有成员）解析为
    **命中文件的绝对规范路径**（`std::filesystem::weakly_canonical`：解析符号链接、折叠
    `.`/`..`、去冗余分隔符）。相对 / 裸名是同一原语，仅基目录列表不同（见下）。
 2. **intern 驻留**：经 `new_string(gc_, key_str)` 把绝对键驻留为 `ObjString*`。同内容共享
@@ -33,8 +33,8 @@
 
 ## 统一解析原语
 
-`resolve_module(spec, current_module_path, source_roots) -> Opt<String>`，相对与裸名是同一原语，
-仅基目录列表不同：
+`resolve_module(spec, current_module_path) -> Opt<String>`（AriaVM 私有成员，源根取自身
+`source_roots_`），相对与裸名是同一原语，仅基目录列表不同：
 
 - **相对导入**（以 `./` / `../` 开头，或正是 `.` / `..`）：基 = `dirname(current_module_path)`
   （单一基，caller-local，**不碰 `source_roots`**），故相对导入永不逃逸到别的源根。

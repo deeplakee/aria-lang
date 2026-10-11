@@ -48,7 +48,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 | ③ AST→CodeUnit 编译器（发射 IMPORT） | 已实现 | `CodeGen : AstVisitor`，`visitImportStmtNode` 发 `IMPORT`+`DEF_GLOBAL`/值填槽 |
 | `OpCode::IMPORT` 定义 | 已定义 | `src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST` |
 | IMPORT 反汇编 | 已实现 | `src/bytecode/Disassembler.cpp` 的 `import_instruction` |
-| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/Eval.cpp`（匿名命名空间） |
+| ④ 路径解析 `resolve_module`（磁盘 + 绝对键） | 已实现 | `src/runtime/AriaVM.cpp`（私有成员） |
 | ④ IMPORT 命中分支（查表 + 压栈） | 已实现 | `src/runtime/Eval.cpp` `Eval::run_import` |
 | ⑤ IMPORT 未命中分支（加载 + 编译 + run-once） | **已实现**（`load_module`：读盘 -> 编译 -> 成功才入表 -> `entry` 现场包空闭包经 `call_closure` 进帧交主循环 run-once） | `src/runtime/AriaVM.cpp` `load_module` |
 | 源根列表 `source_roots_`（入口目录 + stdlib） | 已实现，run() 播种，**被 IMPORT 消费** | `src/runtime/AriaVM.hpp`（`source_roots()`/`set_source_roots`）、`AriaVM.cpp` 构造与 `run()` |
@@ -100,8 +100,8 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 
 ### 路径解析（磁盘 + 绝对键）
 
-`resolve_module(StringView spec, StringView current_module_path, const List<String>& source_roots)`
-定义于 `src/runtime/AriaVM.cpp`（匿名命名空间），返回 `Opt<String>`（命中文件的绝对
+`resolve_module(StringView spec, StringView current_module_path)` 定义于 `src/runtime/AriaVM.cpp`
+（AriaVM 私有成员，源根取自身 `source_roots_`），返回 `Opt<String>`（命中文件的绝对
 规范路径），由调用方经 `new_string` intern 驻留。要点：
 
 - `.aria` 后缀剥离（spec 末段以 `.aria` 结尾时剥去，查找时统一补回，`lib/math` ≡ `lib/math.aria`）。

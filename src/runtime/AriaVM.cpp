@@ -54,6 +54,35 @@ namespace aria {
         // dispatch_loop 各异常站点(unwind 返 Error)统一收口 Result<Value, Error> 的 unexpected 态。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
+        // specifier 的 stem:剥末段 ".aria" 后缀(import "x.aria" 与 "x" 等价);末段恰为 ".aria" 者不剥。
+        [[nodiscard]]
+        StringView stem_of(const StringView spec) {
+            const auto last_slash = spec.find_last_of('/');
+            const auto last_seg   = (last_slash == StringView::npos) ? spec : spec.substr(last_slash + 1);
+            if (last_seg.size() > kAriaExtension.size() && last_seg.ends_with(kAriaExtension)) {
+                return spec.substr(0, spec.size() - kAriaExtension.size());
+            }
+            return spec;
+        }
+
+        // 逐基探测:<base>/<file_name> 规范化(weakly_canonical),存在即返绝对路径;不存在/失败试下一基。
+        [[nodiscard]]
+        Opt<String> probe_bases(const List<stdfs::path>& bases, const StringView file_name) {
+            std::error_code ec;
+            for (const auto& base: bases) {
+                const auto canon = stdfs::weakly_canonical(base / file_name, ec);
+                if (ec) {
+                    ec.clear();
+                    continue;
+                }
+                if (stdfs::exists(canon, ec) && !ec) {
+                    return canon.string();
+                }
+                ec.clear();
+            }
+            return std::nullopt;
+        }
+
     } // namespace
 
     AriaVM::AriaVM() :
@@ -147,7 +176,7 @@ namespace aria {
 #undef ARIA_VALUE_REGISTER_ACCESSOR_DEF_SINGLETON
 
     void AriaVM::init_source_roots() {
-        // 入口槽 [0] 占位 cwd;cwd 不可用时空串兜底(resolve_module 裸名分支跳过空根)。
+        // 入口槽 [0] 占位 cwd;cwd 不可用时空串兜底。
         source_roots_.push_back(fs::current_dir().value_or(""));
         // 配置根 [1..] = 编译器相对 stdlib 源根,weakly_canonical 规范化、推导失败跳过;
         // 可经 set_source_roots 覆盖。
@@ -227,7 +256,7 @@ namespace aria {
         // 入口锚 = 本轮入口上下文(即主上下文):dispatch_loop 出口(顶层 RETURN / 未捕获物化)均
         // 发生在链根,出口断言据此保证切换交接完整(漏交接当场炸,不等下一轮入口)。
         const auto entry_ctx = current_;
-        // 入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0]);dir_ 可空,由 resolve_module 跳空根。
+        // 入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0]);dir_ 可空。
         source_roots_[0] = fn->module()->dir()->view();
 
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
@@ -266,11 +295,34 @@ namespace aria {
         current_ = resumer;
     }
 
+    Opt<String> AriaVM::resolve_module(const StringView spec, const StringView current_module_path) const {
+        const auto file_name = util::concat_string(stem_of(spec), kAriaExtension);
+
+        // 相对 specifier:基恒为当前模块自己的目录(合成模块无锚点即失败),永不逃逸到别的源根。
+        if (spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..") {
+            if (current_module_path.empty()) {
+                return std::nullopt;
+            }
+            List<stdfs::path> bases;
+            bases.push_back(stdfs::path{String{current_module_path}}.parent_path());
+            return probe_bases(bases, file_name);
+        }
+
+        // 裸名:沿 source_roots_ 逐根试(对齐 Python sys.path);空根跳过。
+        List<stdfs::path> bases;
+        for (const auto& root: source_roots_) {
+            if (!root.empty()) {
+                bases.emplace_back(root);
+            }
+        }
+        return probe_bases(bases, file_name);
+    }
+
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
         // 契约见 AriaVM.hpp;canonical_path 已由调用方根化。加载事实源 = modules_ 表成员资格
         //(编译成功才入表,失败不留表项)。
 
-        // 1. 读盘(resolve_module 已 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
+        // 1. 读盘(路径解析已过 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src) {
             return current_->fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",

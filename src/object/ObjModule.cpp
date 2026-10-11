@@ -19,7 +19,7 @@ namespace aria {
     }
 
     String ObjModule::abs_path() const {
-        // 内容空串表「无目录锚点」:resolve_module 判空拒绝,不拿 "." 碰运气锚到错目录。
+        // 内容空串表「无目录锚点」:不拿 "." 碰运气锚到错目录。
         if (dir_->view().empty()) {
             return {};
         }

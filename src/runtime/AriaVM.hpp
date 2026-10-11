@@ -130,6 +130,12 @@ namespace aria {
         // 单字符常量表槽数(字节域全值域容量:值域 0-255,容量 = 上限 + 1)。
         static constexpr usize kCharCacheSlots = 256;
 
+        // IMPORT 解析层:把 specifier 解析为命中文件的绝对规范路径(= 模块表键)。相对 specifier
+        //(./、../、.、..)的基恒为当前模块自己的目录,永不逃逸到别的源根;裸名沿 source_roots_
+        // 逐基探测(weakly_canonical + exists-check,对齐 Python sys.path);均未命中返 nullopt。
+        [[nodiscard]]
+        Opt<String> resolve_module(StringView spec, StringView current_module_path) const;
+
         // IMPORT 未命中分支的加载层:读盘 -> 派生身份 -> new_module -> 编译 -> **编译成功才入表**,
         // 返已 set_entry 的模块,不执行模块体。nullptr ⟺ 载荷已 raise;失败不留表项,同路径重试
         // 重加载。仅限 dispatch_loop 驱动期调用,canonical_path 须调用方已根化(根化跨的是本层

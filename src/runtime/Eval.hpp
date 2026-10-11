@@ -164,9 +164,9 @@ namespace aria {
         // super peek 在栈跨 new_class 的 maybe_collect(栈即根),建成原地写回槽发布。
         static bool run_make_class(AriaExeContext& ctx, ObjString* name);
 
-        // IMPORT 执行体:resolve_module -> intern 后 guard 根化查 modules_(命中复用即循环导入),
-        // 未命中 vm.load_module 后包闭包进帧 run-once;两分支栈效应统一 [..., module]。bool 契约同
-        // call_* 族(false ⟺ 载荷已 raise:解析/加载/进帧)。私有性即「仅限驱动期调用」的强制。
+        // IMPORT 执行体:解析 specifier 为绝对规范路径 -> intern 后 guard 根化查 modules_(命中复用即
+        // 循环导入),未命中加载并编译模块、包空闭包进帧 run-once;两分支栈效应统一 [..., module]。
+        // bool 契约同 call_* 族(false ⟺ 载荷已 raise:解析/加载/进帧)。私有性即「仅限驱动期调用」的强制。
         static bool run_import(AriaExeContext& ctx, const ObjString* path);
 
         // RETURN 执行体:[..., ret] -> 取返回值后弹帧(关本帧区间开指,值迁入各自 upvalue 自持),

@@ -105,7 +105,7 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 
 ### `IMPORT` 执行体
 
-- **`IMPORT`**（`Eval` 私有执行体，bool 契约同 `call_*` 族，unwind 留 dispatch_loop 调用点）：`resolve_module` 解析 specifier 为绝对规范路径（模块表键）-> intern -> `modules_` 查表：命中（体待 run-once / 循环导入跑中 / 已跑完）复用并压栈；未命中 `vm.load_module` 得模块，以其 `entry` 现场包空闭包经 `call_closure` 进帧后 break--**模块体 run-once 即执行一个函数**，由主循环照常驱动；模块体入口的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」，见 compile.md `FnKind::ModuleEntry`），RETURN 通用写回 callee 槽即完成栈效应，故命中/未命中栈效应统一 `[..., module]`，**无递归 `dispatch_loop()`**。解析失败（`resolve_module` 返 `nullopt`）报 `ModuleNotFound`。
+- **`IMPORT`**（`Eval` 私有执行体，bool 契约同 `call_*` 族，unwind 留 dispatch_loop 调用点）：宿主 `resolve_module` 解析 specifier 为绝对规范路径（模块表键）-> intern -> `modules_` 查表：命中（体待 run-once / 循环导入跑中 / 已跑完）复用并压栈；未命中 `vm.load_module` 得模块，以其 `entry` 现场包空闭包经 `call_closure` 进帧后 break--**模块体 run-once 即执行一个函数**，由主循环照常驱动；模块体入口的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」，见 compile.md `FnKind::ModuleEntry`），RETURN 通用写回 callee 槽即完成栈效应，故命中/未命中栈效应统一 `[..., module]`，**无递归 `dispatch_loop()`**。解析失败（`resolve_module` 返 `nullopt`）报 `ModuleNotFound`。
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`
 

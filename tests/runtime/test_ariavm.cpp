@@ -31,6 +31,7 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::i8;
 using aria::kObjectClassOffset;
+using aria::NativeCallInfo;
 using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
@@ -234,19 +235,19 @@ namespace {
 
     // ---- 原生函数测试辅助 ----
 
-    // double(x):把 x*2 写入槽 0(就地返回),元数自查。
-    bool double_native(AriaExeContext& ctx, Span<Value> slots) {
-        const auto argc = slots.size() - 1;
-        if (argc != 1) {
+    // double(x):把 x*2 写入返回槽(就地返回),元数自查。
+    bool double_native(const NativeCallInfo& info) {
+        auto& ctx = info.ctx();
+        if (const auto argc = info.size(); argc != 1) {
             return ctx.arity_error(argc, 1);
         }
-        slots[0] = Value::from_int(slots[1].as_int() * 2);
+        info.set_return_val(Value::from_int(info[0].as_int() * 2));
         return true;
     }
 
     // fail_always():恒报错,验证侧信道错误从 run() 出栈为未捕获 Error。
-    bool fail_always_native(AriaExeContext& ctx, Span<Value> /*slots*/) {
-        return ctx.fail(ErrorCode::TypeMismatch, "fail_always always fails");
+    bool fail_always_native(const NativeCallInfo& info) {
+        return info.ctx().fail(ErrorCode::TypeMismatch, "fail_always always fails");
     }
 
     // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。name 经
@@ -1252,7 +1253,7 @@ TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
 
 // ---- 原生函数:CALL 命中 ObjNativeFn,同步调用,返回值写槽 0 ----
 
-// double(21) == 42:验证原生函数读 args(slots[1])、写返回槽(slots[0]),VM drop(argc) 后栈顶即返回值。
+// double(21) == 42:验证原生函数读实参(info[0])、写返回槽(set_return_val),VM drop(argc) 后栈顶即返回值。
 TEST_F(AriaVMStress, NativeFnSlot0Return) {
 
     auto&      gc     = vm.gc();
@@ -1281,8 +1282,8 @@ TEST_F(AriaVMStress, NativeFnZeroArity) {
     auto  guard = gc.make_guard(fn);
     auto& cu    = fn->unit();
     // 复用 double_native 但传 0 参:它会因 argc != 1 报错 -- 故另造一个无参内建。
-    static auto answer_native = +[](AriaExeContext& /*ctx*/, Span<Value> slots) -> bool {
-        slots[0] = Value::from_int(42); // 无参,直接写槽 0
+    static auto answer_native = +[](const NativeCallInfo& info) -> bool {
+        info.set_return_val(Value::from_int(42)); // 无参,直接写返回槽
         return true;
     };
     const auto nf_idx = add_native_const(cu, gc, "answer", answer_native);
@@ -1761,7 +1762,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 
 // 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
 // Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native 同步
-// 调用(no-op 不写 slots[0],this 原样即返回值),不进帧、留空 ObjInstance。
+// 调用(no-op 不写返回槽,this 原样即返回值),不进帧、留空 ObjInstance。
 TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 
     auto&     gc    = vm.gc();
@@ -2604,16 +2605,18 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 // ============================================================
 
 // echo_this():验证原生的调用约定 -- 绑定调用(call_bound_method)时 VM 把调用区槽 0
-// (bound 对象)覆写为 receiver 后调用:原生读 slots[0] 即 this(校验为 ObjInstance)、
-// 返回值写 slots[0] 原地,实参槽位与自由调用一致(slots[1..argc],本例 0 参)。
-bool echo_this_native(AriaExeContext& ctx, Span<Value> slots) {
-    if (slots.size() - 1 != 0) {
-        return ctx.arity_error(slots.size() - 1, 0);
+// (bound 对象)覆写为 receiver 后调用:原生读 self 即 this(校验为 ObjInstance)、
+// 返回值经 set_return_val 写回原 this 位,实参槽位与自由调用一致(info[0..],本例 0 参)。
+bool echo_this_native(const NativeCallInfo& info) {
+    auto& ctx = info.ctx();
+    if (const auto argc = info.size(); argc != 0) {
+        return ctx.arity_error(argc, 0);
     }
-    if (!slots[0].is_obj() || slots[0].as_obj()->type() != aria::ObjType::INSTANCE) {
+    const Value self = info.self();
+    if (!self.is_obj() || self.as_obj()->type() != aria::ObjType::INSTANCE) {
         return ctx.fail(ErrorCode::TypeMismatch, "echo_this receiver is not an instance");
     }
-    slots[0] = Value::from_int(1); // 返回 1:覆写 this 槽(返回槽即原 this 位)
+    info.set_return_val(Value::from_int(1)); // 返回 1:覆写 this 槽(返回槽即原 this 位)
     return true;
 }
 
@@ -2653,7 +2656,7 @@ TEST_F(AriaVMStress, StaticCallableReadsRawOnInstance) {
     EXPECT_TRUE(out->as_bool());
 }
 
-// 类路径读取(静态访问)取出裸原生值,不绑定 -- 直调时 slots[0] = callee(原生自身),
+// 类路径读取(静态访问)取出裸原生值,不绑定 -- 直调时槽 0 = callee(原生自身),
 // 非实例接收者,原生体内自查报 TypeMismatch。与实例路径(StaticCallableReadsRawOnInstance)
 // 互补,钉死「类表可调用值不因值类型被绑定」的边界。
 TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
@@ -2675,7 +2678,7 @@ TEST_F(AriaVMStress, NativeSlotClassAccessIsFreeCall) {
     emit_global(cu, OpCode::LOAD_GLOBAL, foo);  // [Foo]
     emit_named(cu, OpCode::LOAD_FIELD, m_name); // [native](类路径:裸值,无绑定无缓存)
     cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1); // 自由调用:slots[0] = callee(非实例) -> TypeMismatch
+    cu.emit_byte(0, 1); // 自由调用:槽 0 = callee(非实例) -> TypeMismatch
     cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);
@@ -2846,7 +2849,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
 
 // 原生 init 注册走类上赋值路径(MAKE_METHOD 仅收闭包,原生落表经 STORE_FIELD):
 // init Value 化后**合法** -- set_field 命中 "init" 同步 init_,实例化经 call_value 走
-// call_native:slots[0] = this(echo 校验接收者是实例后覆写返回 1),原生 init 的返回值
+// call_native:槽 0 = this(echo 校验接收者是实例后覆写返回 1),原生 init 的返回值
 // 即实例化结果(不写槽即返回 this,写槽可返回任意值)。
 TEST_F(AriaVMStress, NativeInitInstantiates) {
 
@@ -2870,7 +2873,7 @@ TEST_F(AriaVMStress, NativeInitInstantiates) {
     cu.emit_op(OpCode::POP, 1);
     emit_global(cu, OpCode::LOAD_GLOBAL, foo); // [Foo]
     cu.emit_op(OpCode::CALL, 1);
-    cu.emit_byte(0, 1); // 实例化:原生 init 收 slots[0]=this(echo 校验后返回 1)
+    cu.emit_byte(0, 1); // 实例化:原生 init 收槽 0=this(echo 校验后返回 1)
     cu.emit_op(OpCode::RETURN, 1);
 
     const auto out = vm.run(fn);

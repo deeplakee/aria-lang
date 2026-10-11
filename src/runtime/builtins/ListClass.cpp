@@ -20,36 +20,39 @@ namespace aria {
     namespace {
 
         // init(...) -> list:工厂构造,实参收进新 list 覆盖槽 0(call_class 预置的临时 instance 被替换)。
-        // GC 走查:实参全程在槽即根,copy_from 走 trivial 分配不触 GC,白色 list 写槽即发布。
-        bool fn_init(AriaExeContext& ctx, Span<Value> slots) {
-            const auto list = new_list(ctx.gc());
-            list->elements().copy_from({slots.data() + 1, slots.size() - 1});
-            slots[0] = Value::from_obj(list);
+        // GC 走查:实参全程在槽即根,push 走 trivial 分配不触 GC,白色 list 写槽即发布。
+        bool fn_init(const NativeCallInfo& info) {
+            const auto& ctx  = info.ctx();
+            const auto  list = new_list(ctx.gc());
+            for (u8 i = 0; i < info.size(); ++i) {
+                list->elements().push(info[i]);
+            }
+            info.set_return_val(Value::from_obj(list));
             return true;
         }
 
         // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
-        bool fn_push(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_push(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            self->elements().push(slots[1]); // trivial 分配不触 GC
-            slots[0] = Value::nil_val();
+            self->elements().push(info[0]); // trivial 分配不触 GC
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
         // pop() -> 末元素;空表报 IndexOutOfBounds(fail-fast,nil 哨兵不可行 -- 元素可合法存 nil)。
-        bool fn_pop(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_pop(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
@@ -57,85 +60,84 @@ namespace aria {
             if (list.empty()) {
                 return ctx.fail(ErrorCode::IndexOutOfBounds, "pop from empty list");
             }
-            slots[0] = list[list.size() - 1];
-            list.pop(); // 搬移时 receiver 已离 slots[0],trivial 无 GC 点
+            info.set_return_val(list[list.size() - 1]);
+            list.pop(); // 搬移时 receiver 已离槽 0,trivial 无 GC 点
             return true;
         }
 
         // insert(i, x) -> nil:i 前插入;负数从尾计数指「该下标元素之前」,合法域 [-(size), size]
         //(上界放宽到追加位)。
-        bool fn_insert(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 2) {
+        bool fn_insert(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 2) {
                 return ctx.arity_error(argc, 2);
             }
-            if (!slots[1].is_int()) {
-                return ctx.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}",
-                                type_name(slots[1]));
+            if (!info[0].is_int()) {
+                return ctx.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            const auto position = util::resolve_position(slots[1].as_int(), self->elements().size());
+            const auto position = util::resolve_position(info[0].as_int(), self->elements().size());
             if (!position) {
-                return ctx.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", slots[1].as_int());
+                return ctx.fail(ErrorCode::IndexOutOfBounds, "insert index {} out of range", info[0].as_int());
             }
-            self->elements().insert(*position, slots[2]);
-            slots[0] = Value::nil_val();
+            self->elements().insert(*position, info[1]);
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
         // remove(x) -> Bool:移除全部 == 命中元素;miss 返 false 不报错。
-        bool fn_remove(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_remove(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_bool(self->elements().remove(slots[1]));
+            info.set_return_val(Value::from_bool(self->elements().remove(info[0])));
             return true;
         }
 
         // remove_at(i) -> i 处元素:负数从尾计数,越界报原始键值。
-        bool fn_remove_at(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_remove_at(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            if (!slots[1].is_int()) {
+            if (!info[0].is_int()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
-                                type_name(slots[1]));
+                                type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
             auto&      list = self->elements();
-            const auto slot = util::resolve_index(slots[1].as_int(), list.size());
+            const auto slot = util::resolve_index(info[0].as_int(), list.size());
             if (!slot) {
-                return ctx.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", slots[1].as_int());
+                return ctx.fail(ErrorCode::IndexOutOfBounds, "remove_at index {} out of range", info[0].as_int());
             }
-            slots[0] = list[*slot];
+            info.set_return_val(list[*slot]);
             list.remove_at(*slot);
             return true;
         }
 
         // clear() -> nil:清空(长度归零,容量保留)。
-        bool fn_clear(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_clear(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
             self->elements().clear();
-            slots[0] = Value::nil_val();
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
@@ -157,14 +159,14 @@ namespace aria {
         }
 
         // sort() -> nil:就地升序。域 = 全数值或全字符串,先整体域检再排序,排序中途无失败路径;
-        // stable_sort 临时缓冲走 std 内存,receiver 在 slots[0];稳定序:等值元素(如 int 1 与
+        // stable_sort 临时缓冲走 std 内存,receiver 在槽 0;稳定序:等值元素(如 int 1 与
         // f64 1.0)保输入相对序。
-        bool fn_sort(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_sort(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
@@ -186,112 +188,111 @@ namespace aria {
                 }
             }
             std::ranges::stable_sort(list, value_less);
-            slots[0] = Value::nil_val();
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
         // reverse() -> nil:就地整段反转。
-        bool fn_reverse(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_reverse(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
             std::ranges::reverse(self->elements()); // trivial 交换,无 GC 点
-            slots[0] = Value::nil_val();
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
         // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil。
-        bool fn_find(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_find(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            const auto hit = self->elements().find(slots[1]);
-            slots[0]       = hit ? Value::from_int(static_cast<i64>(*hit)) : Value::nil_val();
+            const auto hit = self->elements().find(info[0]);
+            info.set_return_val(hit ? Value::from_int(static_cast<i64>(*hit)) : Value::nil_val());
             return true;
         }
 
         // contains(x) -> Bool:成员判定(list 无 in 算子,此即成员测试口)。
-        bool fn_contains(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_contains(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_bool(self->elements().contains(slots[1]));
+            info.set_return_val(Value::from_bool(self->elements().contains(info[0])));
             return true;
         }
 
         // size() -> 整数:元素数。
-        bool fn_size(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_size(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_int(static_cast<i64>(self->elements().size()));
+            info.set_return_val(Value::from_int(static_cast<i64>(self->elements().size())));
             return true;
         }
 
         // is_empty() -> Bool:空表判定(len == 0 的谓词形)。
-        bool fn_is_empty(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_is_empty(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_bool(self->elements().empty());
+            info.set_return_val(Value::from_bool(self->elements().empty()));
             return true;
         }
 
         // join(sep) -> string:以 sep 粘合各元素的字符串渲染;空 list 得空串,sep 可为空串。
-        bool fn_join(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_join(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto sep = try_as_obj<ObjString>(slots[1]);
+            const auto sep = try_as_obj<ObjString>(info[0]);
             if (sep == nullptr) {
-                return ctx.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}",
-                                type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(concat_values(ctx.gc(), self->elements(), sep->view()));
+            info.set_return_val(Value::from_obj(concat_values(ctx.gc(), self->elements(), sep->view())));
             return true;
         }
 
-        // iter() -> 迭代器。GC 约束:list 在 slots[0] 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
-        bool fn_iter(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        // iter() -> 迭代器。GC 约束:list 在槽 0 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
+        bool fn_iter(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_obj(new_list_iterator(ctx.gc(), self));
+            info.set_return_val(Value::from_obj(new_list_iterator(ctx.gc(), self)));
             return true;
         }
 
@@ -299,17 +300,17 @@ namespace aria {
 
         // __add__ -> 新 list:两表拼接;浅拷(嵌套容器共享同一对象)。
         // GC 走查:唯一分配点 new_list,两侧实参经调用区槽在栈,reserve/copy_from trivial,建成即写回槽 0。
-        bool fn___add__(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn___add__(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto rhs = try_as_obj<ObjList>(slots[1]);
+            const auto rhs = try_as_obj<ObjList>(info[0]);
             if (rhs == nullptr) {
                 return ctx.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
-                                type_name(slots[0]), type_name(slots[1]));
+                                type_name(info.self()), type_name(info[0]));
             }
-            const auto lhs = receiver<ObjList>(ctx, slots[0]);
+            const auto lhs = receiver<ObjList>(info);
             if (lhs == nullptr) {
                 return false;
             }
@@ -317,26 +318,26 @@ namespace aria {
             out->elements().reserve(lhs->elements().size() + rhs->elements().size());
             out->elements().copy_from(lhs->elements());
             out->elements().copy_from(rhs->elements());
-            slots[0] = Value::from_obj(out);
+            info.set_return_val(Value::from_obj(out));
             return true;
         }
 
         // __mul__ -> 新 list:整次重复(0 次得空表,浅拷同 __add__);乘数严格 int,负数报错不静默得空。
         // GC 走查同 __add__:唯一分配点 new_list,其后 reserve 加逐轮 copy_from 全程 trivial。
-        bool fn___mul__(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn___mul__(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            if (!slots[1].is_int()) {
+            if (!info[0].is_int()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a list and an integer, got {} and {}",
-                                type_name(slots[0]), type_name(slots[1]));
+                                type_name(info.self()), type_name(info[0]));
             }
-            const i64 count = slots[1].as_int();
+            const i64 count = info[0].as_int();
             if (count < 0) {
                 return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto self = receiver<ObjList>(ctx, slots[0]);
+            const auto self = receiver<ObjList>(info);
             if (self == nullptr) {
                 return false;
             }
@@ -345,7 +346,7 @@ namespace aria {
             for (i64 i = 0; i < count; ++i) {
                 out->elements().copy_from(self->elements());
             }
-            slots[0] = Value::from_obj(out);
+            info.set_return_val(Value::from_obj(out));
             return true;
         }
 

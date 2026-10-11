@@ -22,15 +22,15 @@ namespace aria {
 
         // init():默认构造落 _code/_message 两字段(链上实例恒有此二字段);子类自有 init 未落
         // 同名字段时,face 读据走 UndefinedProperty 类措辞。
-        bool fn_init(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_init(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto inst = try_as_obj<ObjInstance>(slots[0]);
+            const auto inst = try_as_obj<ObjInstance>(info.self());
             if (inst == nullptr) {
                 return ctx.fail(ErrorCode::TypeMismatch, "init requires an instance receiver, got {}",
-                                type_name(slots[0]));
+                                type_name(info.self()));
             }
             // GC 走查:receiver 经槽 0 栈根,键串零分配,_message 建成即存,窗口内零 GC 点免守卫。
             inst->store_field(ctx, ctx.str<"_code">(), Value::from_int(std::to_underlying(ErrorCode::Error)));
@@ -39,45 +39,45 @@ namespace aria {
         }
 
         // message() -> 消息原文:ObjException 读 message_(VM 报错为烘焙整串),实例读 _message 字段。
-        bool fn_message(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_message(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            if (const auto ex = try_as_obj<ObjException>(slots[0])) {
-                slots[0] = Value::from_obj(ex->message());
+            if (const auto ex = try_as_obj<ObjException>(info.self())) {
+                info.set_return_val(Value::from_obj(ex->message()));
                 return true;
             }
-            if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
+            if (const auto inst = try_as_obj<ObjInstance>(info.self())) {
                 if (const auto hit = inst->load_field(ctx, ctx.str<"_message">())) {
-                    slots[0] = *hit; // 建成即写槽:命中值经此根化
+                    info.set_return_val(*hit); // 建成即写槽:命中值经此根化
                     return true;
                 }
                 return false;
             }
             return ctx.fail(ErrorCode::TypeMismatch, "message requires an Exception receiver, got {}",
-                            type_name(slots[0]));
+                            type_name(info.self()));
         }
 
         // code() -> 错误码数字:ObjException 读 code_ 的 i64 视图,实例读 _code 字段。
-        bool fn_code(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_code(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            if (const auto ex = try_as_obj<ObjException>(slots[0])) {
-                slots[0] = Value::from_int(ex->numeric_code());
+            if (const auto ex = try_as_obj<ObjException>(info.self())) {
+                info.set_return_val(Value::from_int(ex->numeric_code()));
                 return true;
             }
-            if (const auto inst = try_as_obj<ObjInstance>(slots[0])) {
+            if (const auto inst = try_as_obj<ObjInstance>(info.self())) {
                 if (const auto hit = inst->load_field(ctx, ctx.str<"_code">())) {
-                    slots[0] = *hit; // 建成即写槽:命中值经此根化
+                    info.set_return_val(*hit); // 建成即写槽:命中值经此根化
                     return true;
                 }
                 return false;
             }
             return ctx.fail(ErrorCode::TypeMismatch, "code requires an Exception receiver, got {}",
-                            type_name(slots[0]));
+                            type_name(info.self()));
         }
 
         // Exception 类方法表。

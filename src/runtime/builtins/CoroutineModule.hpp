@@ -15,16 +15,16 @@ namespace aria {
     // make_module;四原语为 NativeFn 签名静态方法,报错族与调用机器面经 ctx,切换对经
     // ctx.host() 直调宿主私有面故为友元。
     class CoroutineModule {
-        static bool create(AriaExeContext& ctx, Span<Value> slots);
+        static bool create(const NativeCallInfo& info);
 
-        static bool resume(AriaExeContext& ctx, Span<Value> slots);
+        static bool resume(const NativeCallInfo& info);
 
-        static bool yield(AriaExeContext& ctx, Span<Value> slots);
+        static bool yield(const NativeCallInfo& info);
 
-        static bool status(AriaExeContext& ctx, Span<Value> slots);
+        static bool status(const NativeCallInfo& info);
 
-        // 方法表;slots = [<coroutine> 模块(接收者兼返回槽), co, payload..]。create/status 普通
-        // 原生;resume/yield 切换型:返 true 时 current_ 已切至对侧且不写 slots[0](对侧预留结果槽,
+        // 方法表;调用区 = [<coroutine> 模块(self 兼返回槽), co, payload..]。create/status 普通
+        // 原生;resume/yield 切换型:返 true 时 current_ 已切至对侧且不写返回槽(对侧预留结果槽,
         // 由 yield/RETURN 完成写;对侧死于未捕获错误时载荷走本侧挂起寄存器),false ⟺ 已 fail 未切换。
         static constexpr BuiltinFnEntry kModuleFunctions[] = {
                 {"create", create},

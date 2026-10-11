@@ -28,7 +28,7 @@ namespace aria {
 
     // fail 的返回哨兵,失败出口惯用法一行 `return fail(...);`。**Opt<T> 转换只对「不可由 bool
     // 构造」的 T 成立**--标量经 operator bool() 会构造出已初始化的 0/false 把 fail 吞成成功,
-    // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写 slots[0])。
+    // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写返回槽)。
     struct FailSignal {
         operator bool() const noexcept { return false; }
         template<typename T>

@@ -160,7 +160,7 @@ TEST(Compiler, CompileErrorSyntax) {
     EXPECT_FALSE(fail.error().code() == ErrorCode::Ok);
 }
 
-// ---- list 方法（push/pop：内置侧方法机制，LOAD_FIELD 恒绑定 + 原生 slots[0]=receiver） ----
+// ---- list 方法（push/pop：内置侧方法机制，LOAD_FIELD 恒绑定 + 原生槽 0=receiver） ----
 
 // push 追加到末尾、接受任意 Value、返回 nil（变更方法不鼓励链式）。
 TEST(Compiler, ListPushAppendsAndReturnsNil) {
@@ -729,7 +729,7 @@ TEST(Compiler, StringSplitKeepsEmptySegments) {
 }
 
 // split 的 receiver 若为临时值(不进常量池,仅 intern 弱根),切割循环里的分配会回收它--
-// 内容须在覆写 slots[0] 前拷离 GC 堆。字面量 receiver 经常量池强根,故既有用例不覆盖此形态。
+// 内容须在覆写返回槽前拷离 GC 堆。字面量 receiver 经常量池强根,故既有用例不覆盖此形态。
 TEST(Compiler, StringSplitTemporaryReceiverSurvivesStressGc) {
     EXPECT_EQ(run_int(R"(var xs = ("aaaa," + "bbbbbbbbbbbbbbbb").split(","); )"
                       R"(if (xs.size() == 2 && xs[0] == "aaaa") { return 1; } return 0;)"),

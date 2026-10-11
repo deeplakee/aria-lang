@@ -20,58 +20,58 @@ namespace aria {
 
     namespace {
 
-        // 内置原生函数实现(NativeFn 契约:读 slots[1..]、写 slots[0]、失败 return ctx.fail(...))
+        // 内置原生函数实现(NativeFn 契约:实参经 info 下标读、返回值 set_return_val 写、失败 return ctx.fail(...))
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
-        bool fn_type(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_type(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto name = new_string(ctx.gc(), type_name(slots[1])); // 静态名 intern,无 GC 风险
-            slots[0]        = Value::from_obj(name);
+            const auto name = new_string(ctx.gc(), type_name(info[0])); // 静态名 intern,无 GC 风险
+            info.set_return_val(Value::from_obj(name));
             return true;
         }
 
         // str(x) -> 字符串:值的可读渲染(复用 stringify)。
-        bool fn_str(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_str(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto s = new_string(ctx.gc(), stringify(slots[1])); // stringify 返 String,临时 view 跨调用有效
-            slots[0]     = Value::from_obj(s);
+            const auto s = new_string(ctx.gc(), stringify(info[0])); // stringify 返 String,临时 view 跨调用有效
+            info.set_return_val(Value::from_obj(s));
             return true;
         }
 
         // println([x]) -> nil:值的可读渲染加换行(stringify + io::println),省参只输出换行;可作一等值传参。
-        bool fn_println(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc > 1) {
+        bool fn_println(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc > 1) {
                 return ctx.arity_error_range(argc, 0, 1);
-            }
-            if (argc == 0) {
-                io::println();
+            } else if (argc == 1) {
+                io::println("{}", stringify(info[0]));
             } else {
-                io::println("{}", stringify(slots[1]));
+                io::println();
             }
-            slots[0] = Value::nil_val();
+            info.set_return_val(Value::nil_val());
             return true;
         }
 
         // assert(x[, msg]) -> nil:真值返 nil,否则抛 AssertionFailed(msg 非 string 静默忽略落默认消息)。
-        bool fn_assert(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
+        bool fn_assert(const NativeCallInfo& info) {
+            auto&      ctx  = info.ctx();
+            const auto argc = info.size();
             if (argc != 1 && argc != 2) {
                 return ctx.arity_error_range(argc, 1, 2);
             }
-            if (is_truthy(slots[1])) {
-                slots[0] = Value::nil_val();
+            if (is_truthy(info[0])) {
+                info.set_return_val(Value::nil_val());
                 return true;
             }
             StringView msg = "assertion failed";
             if (argc == 2) {
-                if (const auto s = try_as_obj<ObjString>(slots[2])) {
+                if (const auto s = try_as_obj<ObjString>(info[1])) {
                     msg = s->view();
                 }
             }
@@ -80,36 +80,36 @@ namespace aria {
 
         // clock() -> f64:单调时钟当前读数(秒)。起点未定(非 Unix 纪元),只有两次读数相减才有意义;
         // 同进程内跨调用单调不减,不受系统调时影响。
-        bool fn_clock(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_clock(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
             const auto raw_now = std::chrono::steady_clock::now().time_since_epoch();
-            slots[0]           = Value::from_f64(std::chrono::duration<double>(raw_now).count());
+            info.set_return_val(Value::from_f64(std::chrono::duration<double>(raw_now).count()));
             return true;
         }
 
         // Error(message[, code]) -> ObjException:用户异常工厂,直接产出 VM 同款异常对象;code 可选
         // int 原样携带(未设 = 默认 Error 码)。message 原样入库不烘 "Category: Name" 前缀,catch 侧原文取回。
-        bool fn_Error(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
+        bool fn_Error(const NativeCallInfo& info) {
+            auto&      ctx  = info.ctx();
+            const auto argc = info.size();
             if (argc != 1 && argc != 2) {
                 return ctx.arity_error_range(argc, 1, 2);
             }
-            const auto msg = try_as_obj<ObjString>(slots[1]);
+            const auto msg = try_as_obj<ObjString>(info[0]);
             if (msg == nullptr) {
-                return ctx.fail(ErrorCode::TypeMismatch, "argument must be a string, got {}", type_name(slots[1]));
+                return ctx.fail(ErrorCode::TypeMismatch, "argument must be a string, got {}", type_name(info[0]));
             }
             auto code = static_cast<i64>(std::to_underlying(ErrorCode::Error));
             if (argc == 2) {
-                if (!slots[2].is_int()) {
-                    return ctx.fail(ErrorCode::TypeMismatch, "argument must be an integer, got {}",
-                                    type_name(slots[2]));
+                if (!info[1].is_int()) {
+                    return ctx.fail(ErrorCode::TypeMismatch, "argument must be an integer, got {}", type_name(info[1]));
                 }
-                code = slots[2].as_int();
+                code = info[1].as_int();
             }
-            slots[0] = Value::from_obj(new_exception(ctx.gc(), code, msg->view()));
+            info.set_return_val(Value::from_obj(new_exception(ctx.gc(), code, msg->view())));
             return true;
         }
 

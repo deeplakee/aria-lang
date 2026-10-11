@@ -32,7 +32,7 @@ namespace aria {
         const usize start      = offset_;
         const auto [cp, width] = utf8::decode_one(str_->view(), offset_);
         offset_ += width;
-        // GC 时序:迭代器于调用方 slots[0] 栈根、str 经其 trace 可达;新串铸后即随返回值写回槽
+        // GC 时序:迭代器于调用方槽 0 栈根、str 经其 trace 可达;新串铸后即随返回值写回槽
         // 发布,窗口内无失根对象(命中单字符常量表时无铸造、无 GC 点)。宽 1 内判码点:ASCII 走
         // 常量表直读、非 ASCII 即坏字节走 encode(U+FFFD) 冷臂。
         if (width == 1) {

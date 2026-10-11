@@ -22,48 +22,48 @@ namespace aria {
 
         // init(src) -> 迭代器:工厂构造,按源类型铸对应迭代器覆盖槽 0(call_class 预置的临时
         // instance 被替换);只收 string/list/map,源在槽 1 即根,白色迭代器写槽即发布。
-        bool fn_init(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 1) {
+        bool fn_init(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            if (const auto list = try_as_obj<ObjList>(slots[1])) {
-                slots[0] = Value::from_obj(new_list_iterator(ctx.gc(), list));
+            if (const auto list = try_as_obj<ObjList>(info[0])) {
+                info.set_return_val(Value::from_obj(new_list_iterator(ctx.gc(), list)));
                 return true;
             }
-            if (const auto str = try_as_obj<ObjString>(slots[1])) {
-                slots[0] = Value::from_obj(new_string_iterator(ctx.gc(), str));
+            if (const auto str = try_as_obj<ObjString>(info[0])) {
+                info.set_return_val(Value::from_obj(new_string_iterator(ctx.gc(), str)));
                 return true;
             }
-            if (const auto map = try_as_obj<ObjMap>(slots[1])) {
-                slots[0] = Value::from_obj(new_map_iterator(ctx.gc(), map));
+            if (const auto map = try_as_obj<ObjMap>(info[0])) {
+                info.set_return_val(Value::from_obj(new_map_iterator(ctx.gc(), map)));
                 return true;
             }
             return ctx.fail(ErrorCode::TypeMismatch, "iterator source must be a string, list or map, got {}",
-                            type_name(slots[1]));
+                            type_name(info[0]));
         }
 
         // has_next() -> bool:是否还有下一个元素。
-        bool fn_has_next(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_has_next(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjIterator>(ctx, slots[0]);
+            const auto self = receiver<ObjIterator>(info);
             if (self == nullptr) {
                 return false;
             }
-            slots[0] = Value::from_bool(self->has_next());
+            info.set_return_val(Value::from_bool(self->has_next()));
             return true;
         }
 
         // next() -> 下一元素并推进游标;越界抛 IterationExhausted(fail-fast,可 catch)。
-        bool fn_next(AriaExeContext& ctx, Span<Value> slots) {
-            const auto argc = slots.size() - 1;
-            if (argc != 0) {
+        bool fn_next(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjIterator>(ctx, slots[0]);
+            const auto self = receiver<ObjIterator>(info);
             if (self == nullptr) {
                 return false;
             }
@@ -71,7 +71,7 @@ namespace aria {
             if (!value) {
                 return false; // 已 fail(IterationExhausted)
             }
-            slots[0] = *value;
+            info.set_return_val(*value);
             return true;
         }
 

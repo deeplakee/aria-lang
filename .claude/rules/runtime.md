@@ -83,6 +83,14 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - 搬运**前**记相对 old_base 的整数偏移--`top_`/各帧 `slots` 走栈内定长数组，开链 `location_` 节数不定、走 `List<usize>` 暂存（链序两趟间稳定，免数节点一趟）。
 - 搬运**后** `new_base + 偏移` 重建，从不触碰 dangling 指针（对 dangling 指针做指针减法是 UB）。
 
+## `runtime/NativeCallInfo.hpp`
+
+原生函数调用约定与调用视图（`object/ObjNativeFn.hpp` include 本头，object→runtime 唯一头依赖边）。
+
+- `using NativeFn = bool (*)(const NativeCallInfo& info)`：VM 同步直调、不经字节码帧，调用区 `[self, a1..aN]` 全程留栈（善后 drop 在原生返回后才发生）；失败返 false（载荷已在挂起错误寄存器），切换型原生（resume/yield）不写返回槽。
+- `NativeCallInfo` 持槽 0 在值栈缓冲中的下标而非指针，每次访问经 ctx 重取基址按偏移重算，原生执行期间的重入扩容（`grow_stack_` 搬迁）不再悬垂。接口：`ctx()`（执行上下文）/`self()`（槽 0：普通调用 = 闭包自身、方法调用 = receiver）/`operator[]`（实参按值只读，debug 断言越界）/`set_return_val(v)`（写返回槽，即槽 0）/`size()`（实参个数）。
+- 消费点：`Eval::call_native` 构造视图并善后，`Builtin::receiver<T>(info)` 为方法原语 receiver 提取口；设计全文见 vm-design.md §4.7。
+
 ## `runtime/ObjMovement.hpp`
 
 GC 对象壳（`ObjMovement final : Object, AriaExeContext`，唯一派生、零自有数据成员）：给执行上下文以 GC 一等值身份，主上下文与协程统一本型（主上下文 = ctor 首笔 GC 分配的唯一实例），`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（五态 suspended/normal/running/done/failed）。本类只有 Object 协议 override（`trace` 自标基类状态：值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点）与 `new_movement` 工厂。
@@ -153,7 +161,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 语言面 `coroutine.create/resume/yield/status`，载体是合成 `<coroutine>` 模块（ctor 临界区经 `Builtin::register_builtins` 变量腿构造，构造口 `CoroutineModule::make_module`：四原语按名写进模块 globals、模块经 `builtins_["coroutine"]` 可达、永不入 `modules_` 表；零新对象类型零新指令，协程本体即 ObjMovement）。**编译面零改动**：coroutine/yield 等都不是关键字，`coroutine.resume(co, v)` 就是普通成员调用表达式。坑点与不变式归档见 `coroutine-implementation-pitfalls.md`（槽协议 / 切换根安全 / 链式 unwind 定序 / 嵌套执行的切换红线）。
 
-- **四原语**（宿主类 `CoroutineModule` 的私有静态方法、NativeFn 签名、签名即 ctx；报错族与调用整形面经 ctx（`ctx.check_arity` / `co->prepare_call_args`，见 AriaExeContext 节），切换对经 `ctx.host()` 直调宿主私有面故为友元；类唯一公有口 `make_module` 构造模块并装载方法面（装载走私有 `register_functions`，经 `Builtin::register_module_functions` 底座装进模块 globals），经 kBuiltinVars 变量腿调用，同 list 等类方法面先例；住 `runtime/builtins/CoroutineModule.cpp`）：`create(closure)` 建协程压 closure 作槽 0（首启 callee 槽）；`resume(co, payload..)` 校验（元数 -> 类型 -> `state_` 五态穷举 switch：Suspended 唯一可恢复，Done/Failed 报死态、Normal/Running 报在链上）；首启/已挂起两臂各自自含完整序列，臂内可失败检查（首启元数 / 载荷数上界）先于切换，切换经切换原语对 `enter_coroutine`/`leave_coroutine`（AriaVM 私有，见下）；`yield(v?)` 先查嵌套执行（`ret_frame_` 非零即报 `YieldInNestedExecution`）再取 `current_->previous()` 为 resumer、空即主上下文报错；`status(co)` 投影 `ExecState`（`new_string(to_string(state))` 驻留命中取串，五串皆注册表条目零分配）。实参 Lua 式：**首启载荷即被调函数实参**（上界交 check_arity），已挂起后只收 0 或 1 个（yield 是单值表达式）。
+- **四原语**（宿主类 `CoroutineModule` 的私有静态方法、NativeFn 签名、ctx 经 `info.ctx()`；报错族与调用整形面经 ctx（`ctx.check_arity` / `co->prepare_call_args`，见 AriaExeContext 节），切换对经 `ctx.host()` 直调宿主私有面故为友元；类唯一公有口 `make_module` 构造模块并装载方法面（装载走私有 `register_functions`，经 `Builtin::register_module_functions` 底座装进模块 globals），经 kBuiltinVars 变量腿调用，同 list 等类方法面先例；住 `runtime/builtins/CoroutineModule.cpp`）：`create(closure)` 建协程压 closure 作槽 0（首启 callee 槽）；`resume(co, payload..)` 校验（元数 -> 类型 -> `state_` 五态穷举 switch：Suspended 唯一可恢复，Done/Failed 报死态、Normal/Running 报在链上）；首启/已挂起两臂各自自含完整序列，臂内可失败检查（首启元数 / 载荷数上界）先于切换，切换经切换原语对 `enter_coroutine`/`leave_coroutine`（AriaVM 私有，见下）；`yield(v?)` 先查嵌套执行（`ret_frame_` 非零即报 `YieldInNestedExecution`）再取 `current_->previous()` 为 resumer、空即主上下文报错；`status(co)` 投影 `ExecState`（`new_string(to_string(state))` 驻留命中取串，五串皆注册表条目零分配）。实参 Lua 式：**首启载荷即被调函数实参**（上界交 check_arity），已挂起后只收 0 或 1 个（yield 是单值表达式）。
 - **槽协议（机制核心）**：切换型原语返 true 后 `call_native` 事后 `ctx.drop(argc)` 使该上下文栈顶停在「那次调用的槽 0」-- 即预留结果槽，对侧一律写 `对侧->peek(0)`；两侧对称，切回方无需知道对方局部信息。首启是唯一不对称处（协程栈无预留槽，走压实参 + `prepare_call_args` 整形 + `enter_frame` 进帧，直取 call_closure 的不可失败尾段）。
 - **状态机**（`ExecState` 独立头 `runtime/ExecState.hpp`）：Suspended/Normal/Running/Done/Failed；resume 置对侧 Running + resumer Normal，yield/RETURN 完成切回置 resumer Running + 本侧 Suspended/Done 并解链（挂起态 `previous_` 恒空）。主上下文 uniform 参与换位但其 state_ 不参与任何判定（语言不可达）。
 - **切换原语对（切换序列唯一实现处）**：`enter_coroutine(co)`（置链 -> 双方 Running/Normal -> 换指）与 `leave_coroutine(departing_state)`（本侧置 departing_state 并解链 -> 恢复者置 Running -> 换指；yield 置 Suspended / RETURN 完成置 Done / 未捕获跳链置 Failed 三方向共用），AriaVM 私有、恢复者恒取 `current_`。

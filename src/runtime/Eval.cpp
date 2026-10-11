@@ -24,6 +24,7 @@
 #include "object/ObjUpvalue.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/NativeCallInfo.hpp"
 #include "runtime/opcode_profile.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -171,10 +172,10 @@ namespace aria {
         // 一律落 ctx(进场上下文,引用不可重绑)使栈顶停在该调用的槽 0(切换模型下的预留结果槽)。
         // 「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。实参留栈到 drop:
         // 切换型原生执行全程实参皆调用者栈根。
-        const auto slots = Span<Value>{&ctx.peek(argc), static_cast<usize>(argc + 1)};
+        const NativeCallInfo info{ctx, argc};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!ctx.has_error(), "pending error not cleared before native call");
-        if (obj->fn()(ctx, slots)) {
+        if (obj->fn()(info)) {
             ASSERT(!ctx.has_error(), "native fn returned true but raised error");
             ctx.drop(argc);
             return true;

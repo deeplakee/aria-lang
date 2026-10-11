@@ -25,6 +25,7 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::kModuleEntryName;
 using aria::List;
+using aria::NativeCallInfo;
 using aria::NativeFn;
 using aria::new_module;
 using aria::new_native_fn;
@@ -49,12 +50,12 @@ namespace {
 
     // ---- 重入口驱动原生:脚本经全局名传入闭包/绑定方法值,原生同步执行之 ----
 
-    // 拷出调用区实参(首参之后的全部)入 args 缓冲:调用区视角指进值栈,重入前先抄离 --
-    // args 别名契约的消费侧示范形态,跨重入期间值栈扩容无牵连。returns u8 argc。
-    u8 copy_call_args(Span<Value> rest, Value* args) {
-        const u8 argc = static_cast<u8>(rest.size());
-        for (usize i = 0; i < argc; ++i) {
-            args[i] = rest[i];
+    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_call
+    // 别名契约),视图读数按值抄离,跨重入期间值栈扩容无牵连。returns u8 argc。
+    u8 copy_call_args(const NativeCallInfo& info, const u8 skip, Value* args) {
+        const u8 argc = static_cast<u8>(info.size() - skip);
+        for (u8 i = 0; i < argc; ++i) {
+            args[i] = info[skip + i];
         }
         return argc;
     }
@@ -103,41 +104,43 @@ namespace aria {
     struct TestProbe {
         // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_closure 形态),fn 须闭包值;失败
         // 载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
-        static bool exec_closure_native(AriaExeContext& ctx, Span<Value> slots) {
-            if (slots.size() < 2) {
-                return ctx.arity_error(slots.size() - 1, 1);
+        static bool exec_closure_native(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc < 1) {
+                return ctx.arity_error(argc, 1);
             }
-            if (!slots[1].is_obj() || !slots[1].as_obj()->is<ObjClosure>()) {
+            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjClosure>()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "exec_closure expects a closure as its first argument");
             }
             Value      args[std::numeric_limits<u8>::max()];
-            const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
-            const auto result = ctx.execute_closure(slots[1].as_obj()->as<ObjClosure>(), {args, argc});
+            const u8   argc   = copy_call_args(info, 1, args);
+            const auto result = ctx.execute_closure(info[0].as_obj()->as<ObjClosure>(), {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }
-            slots[0] = *result;
+            info.set_return_val(*result);
             return true;
         }
 
         // exec_method(m, a1..aN):同步执行绑定方法 m(execute_method 形态,receiver 作 this),m 须
         // 绑定方法值(脚本 obj.name 的值即此形态)。余同 exec_closure。
-        static bool exec_method_native(AriaExeContext& ctx, Span<Value> slots) {
-            if (slots.size() < 2) {
-                return ctx.arity_error(slots.size() - 1, 1);
+        static bool exec_method_native(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc < 1) {
+                return ctx.arity_error(argc, 1);
             }
-            if (!slots[1].is_obj() || !slots[1].as_obj()->is<ObjBoundMethod>()) {
+            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjBoundMethod>()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "exec_method expects a bound method as its first argument");
             }
-            const auto bound = slots[1].as_obj()->as<ObjBoundMethod>();
+            const auto bound = info[0].as_obj()->as<ObjBoundMethod>();
             Value      args[std::numeric_limits<u8>::max()];
-            const u8   argc   = copy_call_args({slots.data() + 2, slots.size() - 2}, args);
+            const u8   argc   = copy_call_args(info, 1, args);
             const auto method = bound->method().as_obj()->as<ObjClosure>();
             const auto result = ctx.execute_method(bound->receiver(), method, {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }
-            slots[0] = *result;
+            info.set_return_val(*result);
             return true;
         }
     };

@@ -66,7 +66,7 @@ namespace {
     }
 
     // 原生方法绑定测试用的空实现(NativeFn 契约形;绑定测试不实际调用)。
-    bool noop_native(aria::AriaExeContext& /*ctx*/, aria::Span<Value> /*slots*/) { return true; }
+    bool noop_native(const aria::NativeCallInfo& /*info*/) { return true; }
 
 } // namespace
 

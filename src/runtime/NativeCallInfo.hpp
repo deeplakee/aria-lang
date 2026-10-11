@@ -7,9 +7,16 @@
 
 namespace aria {
 
-    // 原生函数调用视图:VM 同步直调、不经字节码帧,调用区 [self, a1..aN] 全程留栈(善后 drop 在原生
-    // 返回后才发生)。持槽 0 在值栈缓冲中的下标而非指针,每次访问经 ctx 重取基址按偏移重算,原生执
-    // 行期间的重入扩容(grow_stack_ 搬迁)不再悬垂。
+    class NativeCallInfo;
+
+    // 原生函数的 C++ 调用约定:VM 同步直调、不经字节码帧,调用区 [self, a1..aN] 全程留栈(善后
+    // drop 在原生返回后才发生)。原生经 NativeCallInfo 读 self 与实参、写返回值,失败返 false
+    //(载荷已在挂起错误寄存器);切换型原生(resume/yield)不写返回槽。
+    using NativeFn = bool (*)(const NativeCallInfo& info);
+
+    // 一次原生调用的操作面板:self 与实参只读、返回值经 set_return_val 写回。持槽 0 在值栈缓冲
+    // 中的下标而非指针,每次访问经 ctx 重取基址按偏移重算,原生执行期间的重入扩容(grow_stack_
+    // 搬迁)不再悬垂。
     class NativeCallInfo {
     public:
         // 调用区须已在栈上:栈顶 argc+1 个值恰为 [self, a1..argc]。

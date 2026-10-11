@@ -21,7 +21,7 @@ paths:
 - `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
 - `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
-- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用）。
+- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用；`NativeFn` 签名与调用视图 `NativeCallInfo` 住 `runtime/NativeCallInfo.hpp`）。
 - `ObjModule`（`ObjModule.hpp`）：模块 = 命名空间（一个源文件一个模块），非类。
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经上下文访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
@@ -40,7 +40,7 @@ paths:
 
 ### 错误与文案契约
 
-- **错误通道 = native fn 契约模型**：签名一律收 `AriaExeContext&` 单一句柄（分配经 `ctx.gc()`、报错一行 `ctx.fail(code, fmt, ...)`）。
+- **错误通道 = 原生契约模型**：协议签名一律收 `AriaExeContext&` 单一句柄（分配经 `ctx.gc()`、报错一行 `ctx.fail(code, fmt, ...)`）。
 - 协议失败时**自己 fail**--载荷直接入 `*current_` 挂起错误寄存器（构造即入寄存器即被 VM 根 tracer 标根，无「返回值在途」的白色无根窗口），**返回值只留信号**：
   - load 族 `Opt<Value>`：nullopt ⟺ 已 fail；somed 才是命中，命中 nil 亦 somed。
   - store 族 `bool`：false ⟺ 已 fail；失败出口经 `FailSignal` 哨兵一行化--override 一律 `return ctx.fail(...)`，哨兵按站点返回类型转 nullopt / false / nullptr。

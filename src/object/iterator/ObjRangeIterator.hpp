@@ -39,7 +39,7 @@ namespace aria {
         bool     forward_;      // 迭代方向:from<=to 正序递增;from>to 倒序递减(构造期定向)
     };
 
-    // 工厂:一次 new_object 无内部新建;调用方须已根化源 range(fn_iter 路径在 slots[0] 栈根),
+    // 工厂:一次 new_object 无内部新建;调用方须已根化源 range(fn_iter 路径在槽 0 栈根),
     // 返回对象白色无根、建成即写回槽发布。不持源指针:写回后 range 不可达、随时可回收,迭代器标量自足。
     [[nodiscard]]
     ObjRangeIterator* new_range_iterator(GC& gc, const ObjRange* range);

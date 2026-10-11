@@ -64,7 +64,7 @@ namespace {
 
     // 算子的实现是 String 类表里的原生方法(钩子键经 new_string 驻留命中取串,皆注册表条目零分配,
     // 故本函数无需自守):取槽内裸原生值(不绑定;与 VM 侧算子派发读的是同一批类表值)按原生契约
-    // 调用 -- slots[0] = receiver 兼返回槽、slots[1] = rhs。返回结果 Value;失败返 nullopt(载荷已
+    // 调用 -- 实参压调用区 [lhs, rhs](lhs 占 self 兼返回槽)。返回结果 Value;失败返 nullopt(载荷已
     // 在挂起寄存器)。调用方负责让两侧存活(receiver 与 rhs 由 make_string 入根)。端到端路径
     //(算子指令 -> 取钩子 -> 调用)由语料覆盖(13_strings 的拼接/比较各例,语料开 stress GC)。
     Opt<Value> invoke_string_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
@@ -72,12 +72,17 @@ namespace {
         if (!hook) {
             return std::nullopt;
         }
-        Value      slots[]{lhs, rhs};
-        const auto fn = hook->as_obj()->as<ObjNativeFn>();
-        if (!fn->fn()(*vm.current_context(), aria::Span<Value>{slots, 2})) {
+        auto&      ctx = *vm.current_context();
+        const auto fn  = hook->as_obj()->as<ObjNativeFn>();
+        ctx.push(lhs); // 调用区 [self, a1]:压栈即根
+        ctx.push(rhs);
+        const aria::NativeCallInfo info{ctx, 1};
+        if (!fn->fn()(info)) {
             return std::nullopt;
         }
-        return slots[0];
+        const Value result = info.self(); // 原生返回值写 self 槽
+        ctx.drop(2);
+        return result;
     }
 
     // 取切片结果并逐字符比对(切片恒产出 string;比较就在本函数内完成,结果串不需要额外根)。

@@ -112,6 +112,7 @@ add_library(aria_core STATIC
         src/object/EqualGuard.hpp
         src/object/Object.cpp
         src/object/Object.hpp
+        src/object/ObjType.hpp
         src/object/ObjBoundMethod.cpp
         src/object/ObjBoundMethod.hpp
         src/object/ObjClass.cpp

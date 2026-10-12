@@ -39,7 +39,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -60,7 +60,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -87,7 +87,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -164,7 +164,7 @@ namespace aria {
             }
             // receiver 全程留槽 0(临时串只有 intern 弱根,覆写即悬垂),src 即其视图;产出 list
             // 白色,下一句写回槽 0 发布,两句间无 GC 点故不再挂守卫;sep 经实参槽恒为根。
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -184,7 +184,7 @@ namespace aria {
             if (sub == nullptr) {
                 return ctx.fail(ErrorCode::TypeMismatch, "find argument must be a string, got {}", type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -204,7 +204,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "contains argument must be a string, got {}",
                                 type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -227,7 +227,7 @@ namespace aria {
             if (pattern->length() == 0) {
                 return ctx.fail(ErrorCode::EmptyPattern, "replace pattern must not be empty");
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -269,7 +269,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "substring index must be an integer, got {}",
                                 type_name(info[1]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -294,7 +294,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "starts_with argument must be a string, got {}",
                                 type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -312,7 +312,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "ends_with argument must be a string, got {}",
                                 type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -326,7 +326,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -340,7 +340,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -357,7 +357,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -397,7 +397,7 @@ namespace aria {
                                 type_name(info[0]));
             }
             const i64  index = info[0].as_int();
-            const auto self  = receiver<ObjString>(info);
+            const auto self  = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -420,7 +420,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -435,7 +435,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -450,7 +450,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -472,7 +472,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__lt__ requires two strings, got {} and {}",
                                 type_name(info.self()), aria::type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -490,7 +490,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__le__ requires two strings, got {} and {}",
                                 type_name(info.self()), aria::type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -508,7 +508,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__gt__ requires two strings, got {} and {}",
                                 type_name(info.self()), aria::type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -526,7 +526,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__ge__ requires two strings, got {} and {}",
                                 type_name(info.self()), aria::type_name(info[0]));
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }
@@ -546,7 +546,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__add__ requires two strings, got {} and {}",
                                 type_name(info.self()), type_name(info[0]));
             }
-            const auto lhs = receiver<ObjString>(info);
+            const auto lhs = info.receiver<ObjString>();
             if (lhs == nullptr) {
                 return false;
             }
@@ -573,7 +573,7 @@ namespace aria {
             if (count < 0) {
                 return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto self = receiver<ObjString>(info);
+            const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
             }

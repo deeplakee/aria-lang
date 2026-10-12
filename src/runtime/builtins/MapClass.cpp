@@ -33,7 +33,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -47,7 +47,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -61,7 +61,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -76,7 +76,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -91,7 +91,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -105,7 +105,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -121,7 +121,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -139,7 +139,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -159,7 +159,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }
@@ -181,7 +181,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjMap>(info);
+            const auto self = info.receiver<ObjMap>();
             if (self == nullptr) {
                 return false;
             }

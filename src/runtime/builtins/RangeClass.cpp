@@ -45,7 +45,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjRange>(info);
+            const auto self = info.receiver<ObjRange>();
             if (self == nullptr) {
                 return false;
             }

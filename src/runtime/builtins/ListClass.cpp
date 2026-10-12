@@ -37,7 +37,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -52,7 +52,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -75,7 +75,7 @@ namespace aria {
             if (!info[0].is_int()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "insert index must be an integer, got {}", type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -94,7 +94,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -112,7 +112,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "remove_at index must be an integer, got {}",
                                 type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -132,7 +132,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -166,7 +166,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -198,7 +198,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -213,7 +213,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -228,7 +228,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -242,7 +242,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -256,7 +256,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -274,7 +274,7 @@ namespace aria {
             if (sep == nullptr) {
                 return ctx.fail(ErrorCode::TypeMismatch, "join separator must be a string, got {}", type_name(info[0]));
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -288,7 +288,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }
@@ -310,7 +310,7 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "__add__ requires two lists, got {} and {}",
                                 type_name(info.self()), type_name(info[0]));
             }
-            const auto lhs = receiver<ObjList>(info);
+            const auto lhs = info.receiver<ObjList>();
             if (lhs == nullptr) {
                 return false;
             }
@@ -337,7 +337,7 @@ namespace aria {
             if (count < 0) {
                 return ctx.fail(ErrorCode::TypeMismatch, "__mul__ requires a non-negative integer, got {}", count);
             }
-            const auto self = receiver<ObjList>(info);
+            const auto self = info.receiver<ObjList>();
             if (self == nullptr) {
                 return false;
             }

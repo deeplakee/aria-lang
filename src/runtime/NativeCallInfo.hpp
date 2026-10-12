@@ -2,6 +2,8 @@
 #define ARIA_NATIVE_CALL_INFO_HPP
 
 #include "common.hpp"
+#include "error/ErrorCode.hpp"
+#include "object/Object.hpp"
 #include "runtime/AriaExeContext.hpp"
 #include "value/Value.hpp"
 
@@ -40,6 +42,19 @@ namespace aria {
         [[nodiscard]]
         Value self() const noexcept {
             return slot(0);
+        }
+
+        // 方法调用 receiver 的类型收窄:类上裸读后调用的 stray 是语言可达形态,self 须为 T。命中返
+        // T*,miss fail 后返 nullptr,调用方 false 出口。
+        template<DerivedFromObj T>
+        [[nodiscard]]
+        T* receiver() const {
+            constexpr auto tag  = obj_tag<T>();
+            const Value    self = slot(0);
+            if (self.is_obj() && self.as_obj()->type() == tag.tag) {
+                return self.as_obj()->as<T>();
+            }
+            return ctx_->fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(self));
         }
 
         // 实参只读访问,0 起不含槽 0;按值返回,跨重入持有安全(对象经栈根存活)。

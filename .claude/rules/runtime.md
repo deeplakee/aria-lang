@@ -88,8 +88,8 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 原生函数调用约定与调用视图（`object/ObjNativeFn.hpp` include 本头，object→runtime 唯一头依赖边）。
 
 - `using NativeFn = bool (*)(const NativeCallInfo& info)`：VM 同步直调、不经字节码帧，调用区 `[self, a1..aN]` 全程留栈（善后 drop 在原生返回后才发生）；失败返 false（载荷已在挂起错误寄存器），切换型原生（resume/yield）不写返回槽。
-- `NativeCallInfo` 持槽 0 在值栈缓冲中的下标而非指针，每次访问经 ctx 重取基址按偏移重算，原生执行期间的重入扩容（`grow_stack_` 搬迁）不再悬垂。接口：`ctx()`（执行上下文）/`self()`（槽 0：普通调用 = 闭包自身、方法调用 = receiver）/`operator[]`（实参按值只读，debug 断言越界）/`set_return_val(v)`（写返回槽，即槽 0）/`size()`（实参个数）。
-- 消费点：`Eval::call_native` 构造视图并善后，`Builtin::receiver<T>(info)` 为方法原语 receiver 提取口；设计全文见 vm-design.md §4.7。
+- `NativeCallInfo` 持槽 0 在值栈缓冲中的下标而非指针，每次访问经 ctx 重取基址按偏移重算，原生执行期间的重入扩容（`grow_stack_` 搬迁）不再悬垂。接口：`ctx()`（执行上下文）/`self()`（槽 0：普通调用 = 闭包自身、方法调用 = receiver）/`operator[]`（实参按值只读，debug 断言越界）/`set_return_val(v)`（写返回槽，即槽 0）/`size()`（实参个数）/`receiver<T>()`（方法调用 receiver 收窄为 T*，miss 报 TypeMismatch 转 nullptr）。
+- 消费点：`Eval::call_native` 构造视图并善后；设计全文见 vm-design.md §4.7。
 
 ## `runtime/ObjMovement.hpp`
 

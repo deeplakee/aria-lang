@@ -2,11 +2,7 @@
 #define ARIA_BUILTIN_HPP
 
 #include "common.hpp"
-#include "error/ErrorCode.hpp"
-#include "object/ObjNativeFn.hpp"
-#include "object/Object.hpp"
 #include "runtime/NativeCallInfo.hpp"
-#include "runtime/ObjMovement.hpp"
 
 namespace aria {
 
@@ -47,20 +43,6 @@ namespace aria {
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次。
         static void register_builtins(GC& gc, AriaHashTable& builtins);
     };
-
-    // 原生 receiver 提取:self 须为 T(绑定读路径恒真值;类上裸读后调用的 stray 是语言可达形态,
-    // 守卫拦下)。命中返 T*,miss fail 后返 nullptr,调用方 false 出口;tag 与报错小写限定词取自
-    // obj_tag<T>()(Object.hpp 的 tag 事实表)。
-    template<DerivedFromObj T>
-    [[nodiscard]]
-    T* receiver(const NativeCallInfo& info) {
-        constexpr auto tag  = obj_tag<T>();
-        const Value    self = info.self();
-        if (self.is_obj() && self.as_obj()->type() == tag.tag) {
-            return self.as_obj()->as<T>();
-        }
-        return info.ctx().fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(self));
-    }
 
 } // namespace aria
 

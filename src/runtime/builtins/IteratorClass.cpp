@@ -49,7 +49,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjIterator>(info);
+            const auto self = info.receiver<ObjIterator>();
             if (self == nullptr) {
                 return false;
             }
@@ -63,7 +63,7 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = receiver<ObjIterator>(info);
+            const auto self = info.receiver<ObjIterator>();
             if (self == nullptr) {
                 return false;
             }

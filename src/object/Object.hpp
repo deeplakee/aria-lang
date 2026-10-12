@@ -147,9 +147,9 @@ namespace aria {
 
         // 类型判定 = if constexpr 按 T 编译期选 tag,运行期单比较(两配置同价零 RTTI)。前置条件:
         // this 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =
-        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;新增 ObjType 须在此扩臂,漏臂由
-        // 末尾 UNREACHABLE 兜底。子类型禁定义 is/as/try_as 同名成员--成员调用从派生类作用域起
-        // 查找,同名即遮蔽本三件套。
+        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;新增 ObjType 须在此扩臂,漏臂
+        // 编译期报错。子类型禁定义 is/as/try_as 同名成员--成员调用从派生类作用域起查找,同名即
+        // 遮蔽本三件套。
         template<DerivedFromObj T>
         [[nodiscard]]
         bool is() const noexcept {
@@ -184,7 +184,7 @@ namespace aria {
             } else if constexpr (std::is_same_v<T, ObjMovement>) {
                 return type() == ObjType::MOVEMENT;
             } else {
-                UNREACHABLE();
+                STATIC_UNREACHABLE("is: no mapping for this Obj subclass");
             }
         }
 
@@ -247,7 +247,7 @@ namespace aria {
 
     // 具体子类型的 tag 事实表:ObjType 标识 + 报错用小写限定词(读作「某个 list 下标」,与类型
     // 名的 PascalCase 分属两域)。消费方 = 类型守卫与按类报错;与 is<T> 的分派表是同一 tag↔类
-    // 关联的两向。表对五内建类封闭,新增守卫类别须在此扩臂。
+    // 关联的两向。表对五内建类封闭,新增守卫类别须在此扩臂,漏臂编译期报错。
     struct ObjTag {
         ObjType    tag;
         StringView word;
@@ -265,8 +265,9 @@ namespace aria {
             return {ObjType::RANGE, "range"};
         } else if constexpr (std::is_same_v<T, ObjIterator>) {
             return {ObjType::ITERATOR, "iterator"};
+        } else {
+            STATIC_UNREACHABLE("obj_tag: no mapping for this Obj subclass");
         }
-        UNREACHABLE();
     }
 
 } // namespace aria

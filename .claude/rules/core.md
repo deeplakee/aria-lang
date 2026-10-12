@@ -19,6 +19,7 @@ paths:
 
 - `USING_NANBOXING`：默认定义（未定义 `ARIA_USE_TAGVALUE` 时；宏由根 CMakeLists.txt `option(ARIA_USE_TAGVALUE)` 注入或编译命令行手工 `-D`），`value/Value.hpp` 据此选 NanBoxing/TagValue 实现；TagValue 路径经 `-DARIA_USE_TAGVALUE=ON` 独立 build 目录全量构建 + ctest 验证。
 - `UNREACHABLE()`：NDEBUG 下 `std::unreachable()`，否则打印 `__FILE__`/`__LINE__`/`__func__` 后 `std::abort()`。
+- `STATIC_UNREACHABLE(message)`：编译期不可达，收口 if constexpr 白名单分派链的末臂；漏臂（白名单外的模板实参）被实例化时 `static_assert(false, message)` 即编译报错，两配置同体（不需要 NDEBUG 分流）。后随 `std::abort()` 只为给流分析器 `[[noreturn]]` 事实（防不返回误报），不入任何实例化的执行路径。适用判据：不可达性由模板实参（if constexpr 白名单链）决定时用它；不可达性属运行期值（枚举实参、主循环取流 OpCode 等）时保持 `UNREACHABLE()`。
 - `ASSERT(condition, message)`：NDEBUG 下空操作，否则失败打印 + abort。
 - `ARIA_NOINLINE`：`_MSC_VER` 下 `__declspec(noinline)`，否则 `__attribute__((noinline))`；热/冷路径分离用，防冷路径随热函数在每个调用点展开。
 - `static_assert(sizeof(void*) == 8)` 钉死 64 位平台。

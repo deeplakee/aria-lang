@@ -247,7 +247,7 @@ namespace aria {
             ctx.drop(2);
             ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) >= 0));
         } else {
-            UNREACHABLE(); // 白名单收在 try_string_fast_dispatch,可达 Op 恒为上列五个之一
+            STATIC_UNREACHABLE("run_string_binary: no arm for this Op");
         }
         return true;
     }
@@ -296,7 +296,7 @@ namespace aria {
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
             return obj->load_field(ctx, ctx.str<"__le__">());
         } else {
-            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+            STATIC_UNREACHABLE("get_obj_binary_op_impl: no arm for this Op");
         }
     }
 
@@ -344,7 +344,7 @@ namespace aria {
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
             ctx.push(Value::from_bool(lhs <= rhs));
         } else {
-            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+            STATIC_UNREACHABLE("run_binary_int: no arm for this Op");
         }
         return true;
     }
@@ -371,7 +371,7 @@ namespace aria {
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
             ctx.push(Value::from_bool(lhs <= rhs));
         } else {
-            UNREACHABLE(); // Op 恒为上列 9 个二元指令之一(调用点穷举)
+            STATIC_UNREACHABLE("run_binary_f64: no arm for this Op");
         }
         return true;
     }

@@ -28,6 +28,14 @@ namespace aria {
         } while (false)
 #endif
 
+// 编译期不可达:收口 if constexpr 白名单分派链的末臂,漏臂(白名单外的模板实参)实例化时编译报错。
+// abort 不入任何实例化路径,只为给流分析器 [[noreturn]] 事实;message 包括号会触发 C++26 扩展告警。
+#define STATIC_UNREACHABLE(message)    \
+    do {                               \
+        static_assert(false, message); \
+        std::abort();                  \
+    } while (false)
+
 #ifdef NDEBUG
     #define ASSERT(condition, message) ((void) 0)
 #else

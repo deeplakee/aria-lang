@@ -43,14 +43,14 @@ namespace aria {
         return true;
     }
 
-    String ObjList::debug_repr() const {
+    String ObjList::repr() const {
         // 环防护先查后挂:已在渲染路径上截断 "[...]",不截断则元素重遇无限递归。
         if (PrintGuard::is_cycle(this)) {
             return "[...]";
         }
         const PrintGuard guard{this};
-        // [1, "ab"] 式:元素走 repr(嵌套字符串带引号;嵌套 list 递归)。
-        return "[" + util::join(elements_, ", ", repr) + "]";
+        // [1, "ab"] 式:元素走 value_repr(嵌套字符串带引号;嵌套 list 递归)。
+        return "[" + util::join(elements_, ", ", value_repr) + "]";
     }
 
     Opt<Value> ObjList::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
@@ -58,7 +58,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjList::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
@@ -101,7 +101,7 @@ namespace aria {
         // 段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间,唯一失败点报错就地烘焙。
         const auto segment = resolve_slice_bounds(range, elements_.size());
         if (!segment) {
-            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
+            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->repr());
         }
         // 指针用 data() + 起点:空段起点落在末元素之后,operator[] 越界断言不容它。GC 走查:receiver
         // 与 range 经调用方值栈为根,段拷 trivial 不触 GC,新 list 由 run_load_index 写回原槽根化。

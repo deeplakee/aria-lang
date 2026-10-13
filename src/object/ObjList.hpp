@@ -48,7 +48,7 @@ namespace aria {
 
         // 调试渲染:`[1, "ab"]`;显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自 List bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]

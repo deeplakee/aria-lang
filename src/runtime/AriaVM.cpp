@@ -375,7 +375,7 @@ namespace aria {
         if (const auto ex = try_as_obj<ObjException>(payload)) {
             return {ex->code(), String{ex->message()->view()}};
         }
-        const auto msg = std::format("uncaught exception: {}", repr(payload));
+        const auto msg = std::format("uncaught exception: {}", value_repr(payload));
         return {ErrorCode::UncaughtException, Error::make_message(ErrorCode::UncaughtException, msg)};
     }
 

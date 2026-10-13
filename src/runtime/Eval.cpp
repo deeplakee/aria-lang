@@ -55,7 +55,7 @@ namespace aria {
 
         // 执行跟踪:每条指令执行前打印字节码/栈/帧(stderr,调试用)。常态编译,宏只守 dispatch_loop
         // 内调用点,关闭时零开销;frame.ip 此时指向待执行指令,据此解码(仅读不推进 VM 的 ip)。
-        // 栈渲染用 repr:调试渲染纯 C++,绝不执行用户代码(显示咨询面可重入跑钩子,不可入此)。
+        // 栈渲染用 value_repr:调试渲染纯 C++,绝不执行用户代码(显示咨询面可重入跑钩子,不可入此)。
         [[maybe_unused]] void trace_execution(AriaExeContext& ctx) {
             const auto& frames = ctx.frames();
             const auto& frame  = frames.top();
@@ -63,7 +63,7 @@ namespace aria {
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
             io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(&ctx),
-                      frame.module->debug_repr(), frame.closure->function()->debug_repr(), ip_off, instr);
+                      frame.module->repr(), frame.closure->function()->repr(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。
@@ -71,7 +71,7 @@ namespace aria {
             usize        col    = prefix.size();
             String       stack_str;
             for (auto p = ctx.stack_base(); p < ctx.stack_top(); ++p) {
-                const auto s = std::format("[ {} ]", repr(*p));
+                const auto s = std::format("[ {} ]", value_repr(*p));
                 if (p < frame.slots) {
                     col += s.size();
                 }
@@ -235,9 +235,9 @@ namespace aria {
     }
 
     Opt<ObjString*> Eval::stringify(AriaExeContext& ctx, const Value value) {
-        // 非对象值无钩子面:repr 的非对象臂即字面渲染(两渲染器非对象域逐臂同形)。
+        // 非对象值无钩子面:value_repr 的非对象臂即字面渲染(两渲染器非对象域逐臂同形)。
         if (!value.is_obj()) {
-            return new_string(ctx.gc(), repr(value));
+            return new_string(ctx.gc(), value_repr(value));
         }
         if (const auto s = try_as_obj<ObjString>(value)) {
             return s;

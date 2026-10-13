@@ -94,14 +94,14 @@ TEST(ObjClosure, AddUpvaluesInOrder) {
     EXPECT_EQ(c->upvalues()[1], u2);
 }
 
-// debug_repr 直取 function_ 名渲染 `<fn name>`,与纯函数同文案。
+// repr 直取 function_ 名渲染 `<fn name>`,与纯函数同文案。
 TEST(ObjClosure, DebugReprSameAsFunction) {
     GC   gc;
     auto fn = new_function(gc, "add", 0);
     auto c  = new_closure(gc, fn);
-    EXPECT_EQ(c->debug_repr(), "<fn add>");
-    // 调试渲染同文案(repr 经 debug_repr 虚分派)。
-    EXPECT_EQ(aria::repr(Value::from_obj(c)), "<fn add>");
+    EXPECT_EQ(c->repr(), "<fn add>");
+    // 调试渲染同文案(value_repr 经 repr 虚分派)。
+    EXPECT_EQ(aria::value_repr(Value::from_obj(c)), "<fn add>");
 }
 
 // 身份语义:同一 fn 的两次捕获是不同闭包;equals/=== 均按地址。

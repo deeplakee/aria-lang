@@ -110,7 +110,7 @@ TEST(ObjMap, Basics) {
     EXPECT_EQ(map->type(), aria::ObjType::MAP);
     EXPECT_EQ(map->type_name(), aria::StringView{"Map"});
     EXPECT_EQ(map->table().size(), 0u);
-    EXPECT_EQ(map->debug_repr(), "{}"); // 空 map 字面量形态
+    EXPECT_EQ(map->repr(), "{}"); // 空 map 字面量形态
 }
 
 // 任意键读:命中返回值;键判等按表内语义 ===(int 1 与 f64 1.0 是不同键)。
@@ -271,14 +271,14 @@ TEST(ObjMap, DebugRepr) {
     inner->elements().push(Value::from_obj(ab));
     auto map = make_map(gc, guard);
     map->table().set(Value::from_obj(k), Value::from_obj(inner));
-    EXPECT_EQ(map->debug_repr(), "{\"k\": [1, \"ab\"]}");
-    EXPECT_EQ(map->debug_repr(), "{\"k\": [1, \"ab\"]}");                      // 显示同文案
-    EXPECT_EQ(aria::stringify(Value::from_obj(map)), "{\"k\": [1, \"ab\"]}"); // str/println 位
+    EXPECT_EQ(map->repr(), "{\"k\": [1, \"ab\"]}");
+    EXPECT_EQ(map->repr(), "{\"k\": [1, \"ab\"]}");                           // 显示同文案
+    EXPECT_EQ(aria::value_str(Value::from_obj(map)), "{\"k\": [1, \"ab\"]}"); // str/println 位
 
     auto multi = make_map(gc, guard);
     multi->table().set(Value::from_int(1), Value::from_int(10));
     multi->table().set(Value::from_int(2), Value::from_int(20));
-    const String repr = multi->debug_repr();
+    const String repr = multi->repr();
     EXPECT_EQ(repr.front(), '{');
     EXPECT_EQ(repr.back(), '}');
     EXPECT_NE(repr.find("1: 10"), String::npos);
@@ -292,8 +292,8 @@ TEST(ObjMap, DebugReprSelfCycleTruncates) {
     auto guard = gc.make_guard();
     auto map   = make_map(gc, guard);
     map->table().set(Value::from_int(1), Value::from_obj(map));
-    EXPECT_EQ(map->debug_repr(), "{1: {...}}");
-    EXPECT_EQ(map->debug_repr(), "{1: {...}}"); // 前次守卫已出栈,再次渲染不受影响
+    EXPECT_EQ(map->repr(), "{1: {...}}");
+    EXPECT_EQ(map->repr(), "{1: {...}}"); // 前次守卫已出栈,再次渲染不受影响
 }
 
 // stress GC:map 为唯一根,键值串经 table_.trace 存活;漏标即丢。

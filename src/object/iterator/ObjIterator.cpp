@@ -9,7 +9,7 @@ namespace aria {
 
     ObjIterator::ObjIterator() : Object{ObjType::ITERATOR} {}
 
-    String ObjIterator::debug_repr() const {
+    String ObjIterator::repr() const {
         // 源类型不进文案:语言层单数 Iterator。
         return "<iterator>";
     }
@@ -19,7 +19,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjIterator::load_field(AriaExeContext& ctx, ObjString* name) {

@@ -97,7 +97,7 @@ TEST(ObjInstance, ToString) {
     auto klass = make_class(gc, "Foo");
     auto guard = gc.make_guard(klass);
     auto obj   = new_instance(gc, klass);
-    EXPECT_EQ(obj->debug_repr(), "<Foo instance>");
+    EXPECT_EQ(obj->repr(), "<Foo instance>");
 }
 
 TEST(ObjInstance, DebugRender) {
@@ -105,7 +105,7 @@ TEST(ObjInstance, DebugRender) {
     auto klass = make_class(gc, "Foo");
     auto guard = gc.make_guard(klass);
     auto obj   = new_instance(gc, klass);
-    EXPECT_EQ(aria::repr(Value::from_obj(obj)), "<Foo instance>"); // 调试渲染同文案
+    EXPECT_EQ(aria::value_repr(Value::from_obj(obj)), "<Foo instance>"); // 调试渲染同文案
 }
 
 // stress GC:实例为唯一根,其类(经 class_)、字段长串、方法闭包(经「obj -> class_ -> 类表」链)

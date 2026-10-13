@@ -107,7 +107,7 @@ dirname / stem 切分，由 `fs::module_name_and_dir` 按命中文件的绝对�
 - 加载层在 `resolve_module` 命中后由 `fs::module_name_and_dir` 按命中文件绝对规范路径定 `dir_`（dirname）
   与 `name_`（stem）；**`dir_` 指针恒非空、内容可空** -- `new_module` 未显式传 `dir` 时取当前工作目录作默认
   （cwd 不可用空串兜底；内容空时 `abs_path()` 返空串，相对导入基/源根播种随之空转）。
-- `name_` 兼作显示名（`debug_repr` / 报错渲染），不单独参与模块表查重。
+- `name_` 兼作显示名（`repr` / 报错渲染），不单独参与模块表查重。
 
 `run()` 时：`source_roots_[0]` = 入口模块 `dir_`（原地替换构造时的 cwd 占位），`[1..]`
 不动。`dir_` 指针恒非空、内容可空（cwd 不可用时空串兜底）--空串播种后裸名解析跳过空根。

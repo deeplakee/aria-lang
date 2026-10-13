@@ -129,5 +129,5 @@ TEST(ObjUpvalue, DebugRenderIsStableText) {
     GC    gc;
     Value v  = Value::nil_val();
     auto  uv = new_upvalue(gc, &v);
-    EXPECT_EQ(aria::repr(Value::from_obj(uv)), "<upvalue>");
+    EXPECT_EQ(aria::value_repr(Value::from_obj(uv)), "<upvalue>");
 }

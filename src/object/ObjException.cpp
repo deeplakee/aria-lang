@@ -25,14 +25,14 @@ namespace aria {
         gc.mark_object(message_);
     }
 
-    String ObjException::debug_repr() const { return String{message_->view()}; }
+    String ObjException::repr() const { return String{message_->view()}; }
 
     Opt<Value> ObjException::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         const auto klass = ctx.exception_class();
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjException::load_field(AriaExeContext& ctx, ObjString* name) {

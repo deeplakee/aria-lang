@@ -31,7 +31,7 @@ namespace aria {
         gc.mark_object(defining_class_); // 非方法闭包为 nullptr,容 nullptr;方法闭包经此级联标所属类
     }
 
-    String ObjClosure::debug_repr() const {
+    String ObjClosure::repr() const {
         // function_ 恒非空(ctor ASSERT):直取名渲染,不经虚委托(调试路径保持一跳)。
         return std::format("<fn {}>", function_->name()->view());
     }
@@ -41,7 +41,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjClosure::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }

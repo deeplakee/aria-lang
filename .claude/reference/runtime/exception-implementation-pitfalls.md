@@ -141,7 +141,7 @@ visitTryStmtNode:
 
 **动机**：抛出的实体有两个侧面--catch 侧面要绑 aria 值保留类型（`throw 42` → e=Int 42）；run() 侧面未捕获要回结构化 `Error`（保 `ErrorCode` + 位置串，供 `test_ariavm` 9 处 `error().code()` 断言）。单一 `Opt<Error>` 会丢类型（throw 时刻值就压成串）；单一 `Opt<Value>` 会丢码（未捕获恒 `UncaughtException`）。解法：单寄存器 `Opt<Value>`，**运行时错误包成 `ObjException`（携码）**、**用户 throw 存原值（携类型）**，两种载荷同住一个 Value 寄存器。
 
-**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留；M3 时代快照--现行 `code_` 已为 i64 单一存储并加 `numeric_code()` 双视图与 `Error` i64 重载，渲染经基类 `to_string` -> `debug_repr`（消息原文），成员解析已委托 Exception bootstrap 类；坑本体 = 单寄存器模型，不受影响）：
+**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留；M3 时代快照--现行 `code_` 已为 i64 单一存储并加 `numeric_code()` 双视图与 `Error` i64 重载，渲染经基类 `repr`（消息原文），成员解析已委托 Exception bootstrap 类；坑本体 = 单寄存器模型，不受影响）：
 ```cpp
 class ObjException final : Object {
     ErrorCode  code_;     // 错误码
@@ -150,7 +150,7 @@ public:
     ErrorCode  code()    const noexcept { return code_; }
     ObjString* message() const noexcept { return message_; }   // catch 的 println(e)/str(e) 渲染此串
     void trace(GC& g) const noexcept override { mark_obj(g, message_); }   // 标 message_ GC 串
-    String debug_repr() const override { return String{message_->view()}; } // println(e) 经根默认显示咨询面 -> 消息
+    String repr() const override { return String{message_->view()}; } // println(e) 经根默认显示咨询面 -> 消息
 };
 ```
 工厂 `new_exception(gc, code, StringView message)`（工厂内部 `new_string` 驻留并自守，见 `ObjException.hpp`）。`message_` 存**完整烘焙消息**（运行期不含位置前缀，位置由未捕获出口的 `at` 跟踪行给出；透传的编译期错误自带位置，原样保留）--catch 绑 ObjException 即绑原码原消息，位置不丢、catch UX 不退化。

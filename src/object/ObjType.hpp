@@ -25,7 +25,7 @@ namespace aria {
         MOVEMENT,
     };
 
-    // ObjType 的类型名映射(PascalCase):C++ 侧诊断与语言面(type() 内建/用户可见报错/debug_repr 默认)。
+    // ObjType 的类型名映射(PascalCase):C++ 侧诊断与语言面(type() 内建/用户可见报错/repr 默认)。
     [[nodiscard]]
     constexpr StringView to_string(const ObjType kind) noexcept {
         switch (kind) {

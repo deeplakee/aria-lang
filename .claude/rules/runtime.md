@@ -93,7 +93,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 
 ## `runtime/ObjMovement.hpp`
 
-GC 对象壳（`ObjMovement final : Object, AriaExeContext`，唯一派生、零自有数据成员）：给执行上下文以 GC 一等值身份，主上下文与协程统一本型（主上下文 = ctor 首笔 GC 分配的唯一实例），`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（五态 suspended/normal/running/done/failed）。本类只有 Object 协议 override（`trace` 自标基类状态：值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点）与 `new_movement` 工厂。
+GC 对象壳（`ObjMovement final : Object, AriaExeContext`，唯一派生、零自有数据成员）：给执行上下文以 GC 一等值身份，主上下文与协程统一本型（主上下文 = ctor 首笔 GC 分配的唯一实例），`type()` 报 `Coroutine`、`repr()` 报 `<coroutine {状态小写拼写}>` 动态形（五态 suspended/normal/running/done/failed）。本类只有 Object 协议 override（`trace` 自标基类状态：值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点）与 `new_movement` 工厂。
 
 ## `runtime/Eval.hpp` / `.cpp`
 
@@ -117,9 +117,9 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 
 ### 显示渲染与外部调用（str/println/插值/join 与 BUILD_STRING）
 
-用户可定制的显示唯一面 = `__str__` 钩子（`to_string` 虚函数已退役，`repr`/`debug_repr` 是纯 C++ 调试渲染永不执行用户代码；语义分双位，C++ 渲染器见 value.md）：
+用户可定制的显示唯一面 = `__str__` 钩子（`to_string` 虚函数已退役，`value_repr`/虚 `repr` 是纯 C++ 调试渲染永不执行用户代码；语义分双位，C++ 渲染器见 value.md）：
 
-- **`Eval::stringify(AriaExeContext&, Value) -> Opt<ObjString*>`**（公共渲染口，str/println/插值共口）：非对象值走 `repr` 的非对象臂；`ObjString` 直取原文（显示/调试分叉点）；其余对象经**魔术咨询口**解析 `__str__`（根类默认原生 = 渲染自身 `debug_repr`，兜底现役类面恒命中）后同步调用（槽 0 = 渲染对象、argc = 0），返回值须为 string（违约 `TypeMismatch`）。nullopt ⟺ 载荷已入挂起寄存器（钩子抛错 / 违约 / 嵌套过深；自渲染递归由重入计数上限折断报 `StackOverflow`）。钩子调用与产出验收收口在私有 `execute_str_hook`。
+- **`Eval::stringify(AriaExeContext&, Value) -> Opt<ObjString*>`**（公共渲染口，str/println/插值共口）：非对象值走 `value_repr` 的非对象臂；`ObjString` 直取原文（显示/调试分叉点）；其余对象经**魔术咨询口**解析 `__str__`（根类默认原生 = 渲染自身 `repr`，兜底现役类面恒命中）后同步调用（槽 0 = 渲染对象、argc = 0），返回值须为 string（违约 `TypeMismatch`）。nullopt ⟺ 载荷已入挂起寄存器（钩子抛错 / 违约 / 嵌套过深；自渲染递归由重入计数上限折断报 `StackOverflow`）。钩子调用与产出验收收口在私有 `execute_str_hook`。
 - **`Eval::concat_values(AriaExeContext&, Span<const Value>, StringView sep) -> Opt<ObjString*>`**（BUILD_STRING 与 join 段收拢共口）：各段一律经 `stringify` 收成 `StringView`（皆指驻留串），量长定容后单趟填充（join 预扫先例）。`values` **不得指进值栈**（渲染重入扩容搬迁必悬垂）；指容器内部缓冲可——容器被渲染中用户代码改写属用户程序自担。
 - **`BUILD_STRING` 执行体**：段值 `{base, count}` 指值栈，先抄离（`List<Value>` 快照）再渲染；失败载荷在寄存器走 `unwind_check` 善后；成功 drop n 再 push。
 - **外部调用机器（私有）**：`execute_callable(ctx, slot0, callee, args)` = 非循环上下文发起的同步调用口，按被调值形态纯分派——bound 递归解内层（沿用自身 receiver）/ 原生走 `execute_native`（`push_call_area` 构造调用区后 `call_native`、弹槽 0）/ 闭包走 `execute_closure` 重入体 / 非可调 `CallNonCallable`（`type X is not callable`）。
@@ -131,7 +131,7 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 
 ### 执行跟踪 `DEBUG_TRACE_EXECUTION`
 
-宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 主循环顶取 opcode 前（此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*ctx)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `println` 的 stdout 分流）：① `[trace] ctx <指针>  <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文；ctx 指针 = 行归属锚点，非移动 GC 下地址终生稳定，同指针即同上下文，切换模型下肉眼跟 resume/yield 交替）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `repr` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`repr` 不用 `stringify`**：Eval 内的 `stringify` 是重入显示咨询面（对非字符串对象运行用户 `__str__` 钩子），跟踪用 `repr` 纯 C++ 调试渲染（绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp` override 契约）。函数常态编译，关闭时无调用点、零开销。
+宏由 CMake `ARIA_DEBUG_TRACE_EXECUTION` option 控制（OFF 默认，对齐 `ARIA_DEBUG_GC`/`ARIA_DEBUG_PRINT_CODE`），控制是否在每条指令执行前打印执行状态：`dispatch_loop` 主循环顶取 opcode 前（此时 `frame.ip` 指向待执行指令）调匿名 `trace_execution(*ctx)` 经 `Disassembler::disassembleInstruction` 解码。三行输出到 stderr（与 GC 调试日志同走 stderr，与 `println` 的 stdout 分流）：① `[trace] ctx <指针>  <module name>  <fn名> @ip偏移 指令反汇编`（第一行即含完整位置上下文；ctx 指针 = 行归属锚点，非移动 GC 下地址终生稳定，同指针即同上下文，切换模型下肉眼跟 resume/yield 交替）；② `stack[n]: [ v1 ][ v2 ]...`（值栈 `[base, top)` 全部 Value 经 `value_repr` 渲染，空栈 `(empty)`）；③ `^ frame[i]`（`^` 对齐到当前帧 bottom 槽 `[` 下标，联动指示栈中哪一段是当前帧的局部区；fn/ip 已在字节码行不重复）。**`value_repr` 不用 `stringify`**：Eval 内的 `stringify` 是重入显示咨询面（对非字符串对象运行用户 `__str__` 钩子），跟踪用 `value_repr` 纯 C++ 调试渲染（绝不执行 aria 字节码 / 不触 GC，见 `Object.hpp` override 契约）。函数常态编译，关闭时无调用点、零开销。
 
 ### 指令频度探针 `ARIA_OPCODE_PROFILE`
 
@@ -159,7 +159,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ### 类与对象 bootstrap
 
-- **类与对象 bootstrap**：ctor 期 `bootstrap_registers()` 内编排--先十三类格位（构造均经宿主类 `XxxClass::make_class`：七 bootstrap 类（Object 根类唯一 super 为空、其余以它作 super）+ 函数族/Module/Class 六个零表单例单例类，见 object.md「内置类型的成员面」）与印章/兜底异常两单例，末 `builtins_` 曝光（十三类全量裸名曝光）。Object 根类方法面 no-op init + `is_a` + `__str__`（默认原生 = 渲染接收者自身 `debug_repr`；`is_a` 为类链归属判定：实例自 class_、函数族/模块/协程自各自单例链（vm 访问器，对象不持类指针）、类接收者自元类链，沿 super 指针同一比对）；Exception 构造与方法面装载经宿主类 `ExceptionClass::make_class`，方法面 init/message/code--默认 init 落 `_message`/`_code` 字段（键经常量串注册表），face 按接收者分派：ObjException 经 `vm.exception_class()` 委托触达读原生成员、链上实例 `load_field` 读同名字段（自有 init 违约未落字段即类措辞 `UndefinedProperty`），经 `builtins_` 的 "Exception" 键裸名可达，用户可继承；List/Iterator/Map/String/Range（`ObjClass(super=Object 根)`）方法面住 `runtime/builtins/`，方法体与方法表在各 .cpp 匿名命名空间（方法面是 VM 侧语言面、object 层保持纯表示），入各值寄存器格。
+- **类与对象 bootstrap**：ctor 期 `bootstrap_registers()` 内编排--先十三类格位（构造均经宿主类 `XxxClass::make_class`：七 bootstrap 类（Object 根类唯一 super 为空、其余以它作 super）+ 函数族/Module/Class 六个零表单例单例类，见 object.md「内置类型的成员面」）与印章/兜底异常两单例，末 `builtins_` 曝光（十三类全量裸名曝光）。Object 根类方法面 no-op init + `is_a` + `__str__`（默认原生 = 渲染接收者自身 `repr`；`is_a` 为类链归属判定：实例自 class_、函数族/模块/协程自各自单例链（vm 访问器，对象不持类指针）、类接收者自元类链，沿 super 指针同一比对）；Exception 构造与方法面装载经宿主类 `ExceptionClass::make_class`，方法面 init/message/code--默认 init 落 `_message`/`_code` 字段（键经常量串注册表），face 按接收者分派：ObjException 经 `vm.exception_class()` 委托触达读原生成员、链上实例 `load_field` 读同名字段（自有 init 违约未落字段即类措辞 `UndefinedProperty`），经 `builtins_` 的 "Exception" 键裸名可达，用户可继承；List/Iterator/Map/String/Range（`ObjClass(super=Object 根)`）方法面住 `runtime/builtins/`，方法体与方法表在各 .cpp 匿名命名空间（方法面是 VM 侧语言面、object 层保持纯表示），入各值寄存器格。
 
 ### `load_module`：模块加载与入表
 

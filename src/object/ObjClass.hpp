@@ -55,7 +55,7 @@ namespace aria {
 
         // 调试渲染:`<class Foo>`(name_ 恒非空,ctor ASSERT);显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:类值的"类"是 Class 元类单例,查找自元类链起(自身模板表出局 --
         // 按名字取值的咨询因此不可能命中模板表里的实例钩子)。

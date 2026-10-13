@@ -34,7 +34,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjMovement::load_field(AriaExeContext& ctx, ObjString* name) {

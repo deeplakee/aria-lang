@@ -131,20 +131,20 @@ TEST(ObjRange, DebugReprMatchesSourceSpelling) {
     auto exclusive = make_range(gc, guard, 0, 10, true);
     auto negatives = make_range(gc, guard, -2, 3, false);
     auto reversed  = make_range(gc, guard, 5, 3, false);
-    EXPECT_EQ(inclusive->debug_repr(), "0..10");
-    EXPECT_EQ(exclusive->debug_repr(), "0...10");
-    EXPECT_EQ(negatives->debug_repr(), "-2..3");
-    EXPECT_EQ(reversed->debug_repr(), "5..3"); // 倒序区间原样渲染两端点
+    EXPECT_EQ(inclusive->repr(), "0..10");
+    EXPECT_EQ(exclusive->repr(), "0...10");
+    EXPECT_EQ(negatives->repr(), "-2..3");
+    EXPECT_EQ(reversed->repr(), "5..3"); // 倒序区间原样渲染两端点
 }
 
-// 无上界开区间:to_ 为空(类型即契约)、含否上界归一 false、debug_repr 渲染 from..。
+// 无上界开区间:to_ 为空(类型即契约)、含否上界归一 false、repr 渲染 from..。
 TEST(ObjRange, UnboundedBasics) {
     GC   gc;
     auto guard = gc.make_guard();
     auto range = make_unbounded_range(gc, guard, 5);
     EXPECT_FALSE(range->to().has_value());
     EXPECT_FALSE(range->is_exclusive()); // ctor 归一:5.. 与 5... 同义
-    EXPECT_EQ(range->debug_repr(), "5..");
+    EXPECT_EQ(range->repr(), "5..");
     EXPECT_EQ(range->from(), 5);
     EXPECT_EQ(range->size(), sizeof(ObjRange));
 }

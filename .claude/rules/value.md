@@ -1,6 +1,6 @@
 ---
 name: aria-value
-description: aria 解释器 value 层模块参考：Value（NaN-boxing/TagValue 可切换）、AriaArray、AriaHashTable、value_equal/value_identical 双相等、stringify/repr 渲染。读写 src/value/** 或涉及值表示、栈上值布局、类型名打印时使用。
+description: aria 解释器 value 层模块参考：Value（NaN-boxing/TagValue 可切换）、AriaArray、AriaHashTable、value_equal/value_identical 双相等、value_str/value_repr 渲染。读写 src/value/** 或涉及值表示、栈上值布局、类型名打印时使用。
 paths:
   - "src/value/**"
 ---
@@ -26,7 +26,7 @@ paths:
 
 ## `value/ObjBridge.hpp`
 
-**Value↔Object 耦合辅助的收口头**：收「同时依赖 Value 与 Object 完整类型、必须头内定义（模板）」的辅助函数；非模板的重依赖件（`type_name(Value)`/`value_equal`/`value_hash`/`stringify`/`repr`）走「`Value.hpp` 声明 + `Value.cpp` 定义」的旧路。独立成头不常驻 `Value.hpp`：模板定义硬需 include `Object.hpp`，而该依赖只服务其用户面（runtime 与 object 两层：builtin 守卫 / 异常载荷判定 / 读路径绑定判别等），不拖累被编译层（常量池）广泛 include 的 `Value.hpp`。
+**Value↔Object 耦合辅助的收口头**：收「同时依赖 Value 与 Object 完整类型、必须头内定义（模板）」的辅助函数；非模板的重依赖件（`type_name(Value)`/`value_equal`/`value_hash`/`value_str`/`value_repr`）走「`Value.hpp` 声明 + `Value.cpp` 定义」的旧路。独立成头不常驻 `Value.hpp`：模板定义硬需 include `Object.hpp`，而该依赖只服务其用户面（runtime 与 object 两层：builtin 守卫 / 异常载荷判定 / 读路径绑定判别等），不拖累被编译层（常量池）广泛 include 的 `Value.hpp`。
 
 - `try_as_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
 - `is_callable_value(Value)`：类表成员值是否为「可调用」（闭包或原生）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
@@ -40,4 +40,4 @@ paths:
 - **std 容器键设施**：`std::hash<Value>`/`std::equal_to<Value>` 特化在头末，分别转发 `value_hash`/`value_identical`，令 std 容器可以 Value 作键（消费方：`FunctionCtx` 的常量池去重索引 `HashMap<Value,u16>`）。与 `AriaHashTable` 的键语义一致--`===` 而非 `==`，故 int 1 与 f64 1.0、`-0.0` 与 `0.0` 各为不同键。
 - **自然序小于** `value_less`（排序底座）：双数值按数值序（NaN 排在一切数值之前保严格弱序）；双字符串按无符号字节序走 `string_view::compare`。域外组合未定义、调用方先域检，list.sort 消费。
 - **辅助自由函数**：`is_num(Value)`、`as_num(Value)`（is_num 前提下取数值的 f64 视图：Int 升 f64 / F64 原样，非 num 值由 as_int 的 debug ASSERT 拦截；混合升浮点的取数口，消费方 value_equal / value_less / run_binary_numeric）、`is_truthy(Value)`（Lua 风格真值：仅 nil/false 为假）、`type_name(Value)`（**精确类型名**统一入口，PascalCase：原语走 constexpr 成员、Obj 取对象子类型；区别于成员的 constexpr 粗分类--后者 Obj 一律返 `Obj`；错误消息类型名打印一律用本自由函数）。
-- **渲染**：`format_f64(f64)`/`stringify(Value)`（**纯 C++ 显示位渲染**，与 VM 无关：字符串原文直取，其余与 `repr` 同口径，不执行用户代码）；`repr(Value)` 是**调试渲染**（执行跟踪 / 反汇编常量池 / 未捕获兜底共用），Obj 走虚 **`debug_repr()`**；`debug_repr` 的 override 契约是纯 C++ 惰性渲染（见 `Object.hpp`）。两渲染器都**不承载用户可重载显示**——`str`/`println`/插值/join 侧的用户钩子咨询面住 runtime 层（见 runtime.md「显示渲染与外部调用」）。
+- **渲染**：`format_f64(f64)`/`value_str(Value)`（**纯 C++ 显示位渲染**，与 VM 无关：字符串原文直取，其余与 `value_repr` 同口径，不执行用户代码）；`value_repr(Value)` 是**调试渲染**（执行跟踪 / 反汇编常量池 / 未捕获兜底共用），Obj 走虚 **`repr()`**；`repr` 的 override 契约是纯 C++ 惰性渲染（见 `Object.hpp`）。两渲染器都**不承载用户可重载显示**——`str`/`println`/插值/join 侧的用户钩子咨询面住 runtime 层（见 runtime.md「显示渲染与外部调用」）。

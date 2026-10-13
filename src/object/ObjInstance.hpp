@@ -40,7 +40,7 @@ namespace aria {
 
         // 调试渲染:`<Foo instance>`(class_ 恒非空);显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自本类模板链起查(fields 出局),字段不在时由成员读落此一腿。
         [[nodiscard]]

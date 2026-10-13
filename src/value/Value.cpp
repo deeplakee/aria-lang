@@ -70,15 +70,15 @@ namespace aria {
         return value.type_name();
     }
 
-    String stringify(const Value value) {
-        // 显示位:字符串原文直取,其余与 repr 同口径(repr 的臂即字面值与对象调试形)。
+    String value_str(const Value value) {
+        // 显示位:字符串原文直取,其余与 value_repr 同口径(value_repr 的臂即字面值与对象调试形)。
         if (const auto s = try_as_obj<ObjString>(value)) {
             return String{s->view()};
         }
-        return repr(value);
+        return value_repr(value);
     }
 
-    String repr(const Value value) {
+    String value_repr(const Value value) {
         switch (value.type()) {
             case Value::Type::Nil:
                 return "nil";
@@ -89,7 +89,7 @@ namespace aria {
             case Value::Type::F64:
                 return format_f64(value.as_f64());
             case Value::Type::Obj:
-                return value.as_obj()->debug_repr();
+                return value.as_obj()->repr();
         }
         UNREACHABLE();
     }

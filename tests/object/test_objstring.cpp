@@ -355,7 +355,7 @@ TEST(ObjString, OpAddConcatenates) {
     guard.push(sum->as_obj());
     const auto sum_str = try_as_obj<ObjString>(*sum);
     ASSERT_NE(sum_str, nullptr);
-    EXPECT_EQ(sum_str->debug_repr(), "\"0123456789abcdefghijKLM\"");
+    EXPECT_EQ(sum_str->repr(), "\"0123456789abcdefghijKLM\"");
     EXPECT_EQ(sum_str->length(), 23u);
 }
 
@@ -390,7 +390,7 @@ TEST(ObjString, OpAddHandlesEmptyOperands) {
     guard.push(one->as_obj());
     const auto one_str = try_as_obj<ObjString>(*one);
     ASSERT_NE(one_str, nullptr);
-    EXPECT_EQ(one_str->debug_repr(), "\"x\"");
+    EXPECT_EQ(one_str->repr(), "\"x\"");
 }
 
 // rhs 非 String:TypeMismatch 定向文案(不做隐式转字符串,显式转换走内置 str())。
@@ -423,7 +423,7 @@ TEST(ObjString, OpAddSurvivesStressCollect) {
     auto  sum   = invoke_string_hook(vm, "__add__", Value::from_obj(lhs), Value::from_obj(rhs));
     ASSERT_TRUE(sum.has_value());
     guard.push(sum->as_obj());
-    EXPECT_EQ(sum->as_obj()->debug_repr(), "\"stresscollect\"");
+    EXPECT_EQ(sum->as_obj()->repr(), "\"stresscollect\"");
 }
 
 // ---- 重复钩子(String 类表里的 __mul__ 原生) ----
@@ -440,7 +440,7 @@ TEST(ObjString, OpMulRepeats) {
     guard.push(twice->as_obj());
     const auto twice_str = try_as_obj<ObjString>(*twice);
     ASSERT_NE(twice_str, nullptr);
-    EXPECT_EQ(twice_str->debug_repr(), "\"0123456789abcdefghij0123456789abcdefghij\"");
+    EXPECT_EQ(twice_str->repr(), "\"0123456789abcdefghij0123456789abcdefghij\"");
     EXPECT_EQ(twice_str->length(), 40u);
 
     auto ab  = make_string(gc, guard, "h\xC3\xA9"); // 多字节:é 两字节原样成倍
@@ -520,7 +520,7 @@ TEST(ObjString, OpMulSurvivesStressCollect) {
     auto  rep   = invoke_string_hook(vm, "__mul__", Value::from_obj(lhs), Value::from_int(3));
     ASSERT_TRUE(rep.has_value());
     guard.push(rep->as_obj());
-    EXPECT_EQ(rep->as_obj()->debug_repr(), "\"gogogo\"");
+    EXPECT_EQ(rep->as_obj()->repr(), "\"gogogo\"");
 }
 
 // ---- 比较钩子(__lt__/__le__/__gt__/__ge__ = 字节序) ----

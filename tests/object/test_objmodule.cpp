@@ -85,7 +85,7 @@ TEST(ObjModule, SetEntry) {
 TEST(ObjModule, ToString) {
     GC   gc;
     auto m = make_module(gc, "lib/utils");
-    EXPECT_EQ(m->debug_repr(), "<module lib/utils>");
+    EXPECT_EQ(m->repr(), "<module lib/utils>");
 }
 
 TEST(ObjModule, GlobalsSet) {
@@ -231,7 +231,7 @@ TEST(ObjModule, LoadFieldNilBindingIsHit) {
     EXPECT_FALSE(vm.current_context()->has_error());
 }
 
-// miss:UndefinedProperty,文案与基类默认同形(模块描述经 debug_repr)。
+// miss:UndefinedProperty,文案与基类默认同形(模块描述经 repr)。
 TEST(ObjModule, LoadFieldMissFails) {
     AriaVM vm;
     auto&  gc    = vm.gc();

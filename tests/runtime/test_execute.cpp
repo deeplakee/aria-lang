@@ -462,7 +462,7 @@ TEST_F(NestedExecStress, DisplayFacesRouteThroughStringify) {
     check("b", "xPx");
     check("c", "P-P");
     check("e", "P");
-    // 容器 debug 位经 repr 渲染,不跑用户钩子(显示/调试分叉钉)。
+    // 容器 debug 位经 value_repr 渲染,不跑用户钩子(显示/调试分叉钉)。
     check("d", "[1, \"s\", <P instance>]");
 }
 

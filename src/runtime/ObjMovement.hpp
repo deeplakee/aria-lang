@@ -40,8 +40,8 @@ namespace aria {
 
         // 调试渲染:<coroutine 状态拼写>;aria:: 限定取自由函数重载。
         [[nodiscard]]
-        String debug_repr() const override {
-            return std::format("<coroutine {}>", aria::to_string(state_));
+        String repr() const override {
+            return std::format("<coroutine {}>", to_string(state_));
         }
 
         // 从所属类载入:自 Coroutine 类链起查(句柄无值本地状态)。

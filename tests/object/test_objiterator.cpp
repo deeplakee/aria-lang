@@ -75,7 +75,7 @@ namespace {
 
 } // namespace
 
-// 基类契约:类型名单数 "Iterator"、debug_repr "<iterator>"(源类型不进文案)。
+// 基类契约:类型名单数 "Iterator"、repr "<iterator>"(源类型不进文案)。
 TEST(ObjIterator, BaseReprAndType) {
     AriaVM vm;
     auto&  gc    = vm.gc();
@@ -84,8 +84,8 @@ TEST(ObjIterator, BaseReprAndType) {
     auto   iter  = make_list_iterator(gc, guard, list);
     EXPECT_EQ(iter->type(), aria::ObjType::ITERATOR);
     EXPECT_EQ(iter->type_name(), aria::StringView{"Iterator"});
-    EXPECT_EQ(iter->debug_repr(), "<iterator>");
-    EXPECT_EQ(iter->debug_repr(), "<iterator>"); // 显示同文案
+    EXPECT_EQ(iter->repr(), "<iterator>");
+    EXPECT_EQ(iter->repr(), "<iterator>"); // 显示同文案
 }
 
 // 同一 list 的两个迭代器按身份判等(游标互不串扰的结构前提)。

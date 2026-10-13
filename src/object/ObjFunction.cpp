@@ -23,7 +23,7 @@ namespace aria {
         unit_.trace(gc);
     }
 
-    String ObjFunction::debug_repr() const {
+    String ObjFunction::repr() const {
         // name_ 恒非空(ctor ASSERT)。
         return std::format("<fn {}>", name_->view());
     }

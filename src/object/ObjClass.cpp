@@ -32,7 +32,7 @@ namespace aria {
         field_.trace(gc);            // 遍历占用槽 mark_value(key+value);方法闭包的 defining_class 经其 trace 级联
     }
 
-    String ObjClass::debug_repr() const {
+    String ObjClass::repr() const {
         // name_ 恒非空(ctor ASSERT)。
         return std::format("<class {}>", name_->view());
     }
@@ -41,7 +41,7 @@ namespace aria {
         if (const auto v = ctx.class_class()->find_field(name)) { // 自元类链起,自身模板表出局
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->repr(), name->view());
     }
 
     Opt<Value> ObjClass::load_field(AriaExeContext& ctx, ObjString* name) {

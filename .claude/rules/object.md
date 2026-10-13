@@ -26,15 +26,15 @@ paths:
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经上下文访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
-- `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文的 GC 对象壳（`Object` 与执行上下文本体 `AriaExeContext` 多继承、唯一派生、零自有数据成员，`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`debug_repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。执行状态与机器全住基类；trace 自标基类状态（值栈/帧/开链/挂起载荷）并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
-- `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `debug_repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
+- `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文的 GC 对象壳（`Object` 与执行上下文本体 `AriaExeContext` 多继承、唯一派生、零自有数据成员，`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。成员/下标/算子协议全落基类默认（身份判等、不支持成员访问）--coroutine 值的可取行为。执行状态与机器全住基类；trace 自标基类状态（值栈/帧/开链/挂起载荷）并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
+- `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
 - `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_as_obj<T>`、`is_callable_value`、`is_method`）。
 
 ## 协议虚函数族
 
 声明在 `Object.hpp`，基类默认体在 `Object.cpp`（出声明因 `ctx.fail` 是 runtime/AriaExeContext.hpp 内模板、本头不可反向 include 它）。
 
-**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / deleted 拷贝移动）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`debug_repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
+**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / deleted 拷贝移动）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
 
 **仅类型内部消费的辅助留 private**（`ObjString::slice`、`ObjList::slice`、`ObjClass::find_field`），不按「可能有用」外放；const 重载的容器访问器按实际消费面取舍（无 const 消费者的不加）。`Object` 的四个字段（GC 侵入式链的 `next_` + `hash_` / `type_` / `is_marked_`）同样收在收尾 private 段，GC 取字段级访问经 `friend class GC`（sweep / free_all 直接取 `&next_` 摘链，链头 `objects_head_` 住 GC；其余三字段对外只经访问器）。
 
@@ -100,7 +100,7 @@ paths:
 
 - `ObjIterator` 是**唯一非 final 的 Object 子类型**（引擎缝基类，每源小子类继承；其余子类型全 final。`ObjType::ITERATOR`，语言层单数类型名 `type(it)` 恒 `"Iterator"`）。
 - 基类钉纯虚契约：`has_next() const noexcept -> bool`（纯查询、无分配无 fail，故不收 ctx）、`next(AriaExeContext&) -> Opt<Value>`（取下一元素并推进；越界一行 `return ctx.fail(IterationExhausted)`）、`trace`（各子类标各自的源，纯虚钉住忘标 = 编译错）、`size()`。
-- `load_field` / `load_field_bound` override 基类一次、全子类共享（走 Iterator bootstrap 类表）；`debug_repr` 渲染 `<iterator>`；`equals` 默认地址判等。
+- `load_field` / `load_field_bound` override 基类一次、全子类共享（走 Iterator bootstrap 类表）；`repr` 渲染 `<iterator>`；`equals` 默认地址判等。
 - 每源一个小子类、各持自然游标；**range 迭代器是唯一无源对象者**（range 不可变，ctor 期把端点拷成标量自足，`trace` 空体；方向构造期定向，from > to 即倒序）。
 - map 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；迭代中变更容器不设防（v1 不承诺）。序不承诺的理由：非定序哈希表是性能上的正确选择，且这一边缘特性各语言/实现标准不一，用户不应依赖。
 - **协议三方法（`iter`/`has_next`/`next`）是类表方法，不为迭代协议另开 Object 虚函数**：① 方法必须一等（`var n = it.next; n()` 虚函数做不了）；② 与用户类统一，单一派发路径；③ VM 内部无迭代消费者（解构走下标、GC 不迭代），双通道纯漂移风险；④ 能实现 `iter` 的对象必已支持成员查找、必已有方法表。

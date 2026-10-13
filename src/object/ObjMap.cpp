@@ -42,15 +42,15 @@ namespace aria {
         return true;
     }
 
-    String ObjMap::debug_repr() const {
+    String ObjMap::repr() const {
         // 环防护:自引用/互环时本 map 已在渲染路径上,截断 "{...}"(先查后挂,顺序反了自身即命中)。
         if (PrintGuard::is_cycle(this)) {
             return "{...}";
         }
         const PrintGuard guard{this};
-        // {"a": 1} 式:键值均走 repr;渲染序随占用槽(unspecified,与迭代序同级不承诺)。
+        // {"a": 1} 式:键值均走 value_repr;渲染序随占用槽(unspecified,与迭代序同级不承诺)。
         const auto entry_repr = [](const AriaHashTable::Entry& entry) {
-            return repr(entry.key) + ": " + repr(entry.value);
+            return value_repr(entry.key) + ": " + value_repr(entry.value);
         };
         return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
@@ -60,7 +60,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjMap::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
@@ -77,7 +77,7 @@ namespace aria {
         if (const auto entry = table_.find(key)) {
             return entry->value;
         }
-        return ctx.fail(ErrorCode::KeyError, "map key not found: {}", repr(key));
+        return ctx.fail(ErrorCode::KeyError, "map key not found: {}", value_repr(key));
     }
 
     bool ObjMap::store_index(AriaExeContext& ctx, const Value key, const Value value) {

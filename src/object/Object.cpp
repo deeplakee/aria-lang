@@ -13,7 +13,7 @@ namespace aria {
     // 协议默认体住本文件而不是 Object.hpp：默认实现要经上下文报错，而上下文头（ObjMovement.hpp）反向依赖本头，
     // 放头内会造成两个头互相 include。
     Opt<Value> Object::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->repr(), name->view());
     }
 
     Opt<Value> Object::load_field_bound(AriaExeContext& ctx, ObjString* name) {

@@ -36,7 +36,7 @@ namespace aria {
         return range != nullptr && from_ == range->from_ && to_ == range->to_ && is_exclusive_ == range->is_exclusive_;
     }
 
-    String ObjRange::debug_repr() const {
+    String ObjRange::repr() const {
         // 与源码拼写一致:.. 含上界、... 不含;无上界渲染 from..。
         if (!to_) {
             return std::format("{}..", from_);
@@ -49,7 +49,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjRange::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }

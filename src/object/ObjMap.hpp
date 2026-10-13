@@ -47,7 +47,7 @@ namespace aria {
 
         // 调试渲染:{"a": 1} 式。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自 Map bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]

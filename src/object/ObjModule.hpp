@@ -68,7 +68,7 @@ namespace aria {
 
         // 调试渲染:`<module lib/utils>`;显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自 Module 类链起查(globals 出局 -- 值态与类命名空间分层)。
         [[nodiscard]]

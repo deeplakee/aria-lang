@@ -44,14 +44,14 @@ namespace aria {
         return false;
     }
 
-    String ObjBoundMethod::debug_repr() const { return std::format("<bound method {}>", name()->view()); }
+    String ObjBoundMethod::repr() const { return std::format("<bound method {}>", name()->view()); }
 
     Opt<Value> ObjBoundMethod::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         const auto klass = ctx.bound_method_class();
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjBoundMethod::load_field(AriaExeContext& ctx, ObjString* name) {

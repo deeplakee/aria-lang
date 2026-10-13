@@ -66,14 +66,14 @@ namespace aria {
     [[nodiscard]]
     String format_f64(f64 value);
 
-    // 显示位渲染(纯 C++,与 VM 无关):字符串原文直取,其余与 repr 同口径;不执行用户代码。
+    // 显示位渲染(纯 C++,与 VM 无关):字符串原文直取,其余与 value_repr 同口径;不执行用户代码。
     [[nodiscard]]
-    String stringify(Value value);
+    String value_str(Value value);
 
-    // 调试渲染(执行跟踪/反汇编常量池/未捕获兜底等上下文):Obj 走 debug_repr();调试渲染
+    // 调试渲染(执行跟踪/反汇编常量池/未捕获兜底等上下文):Obj 走 repr();调试渲染
     // 永不执行用户代码,故在 dispatch_loop 内与无 VM 上下文处皆可安心调用。
     [[nodiscard]]
-    String repr(Value value);
+    String value_repr(Value value);
 
 } // namespace aria
 

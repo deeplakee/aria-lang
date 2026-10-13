@@ -72,7 +72,7 @@ namespace aria {
 
         // 调试渲染:`<upvalue>` 稳定短文案;显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
     private:
         Value*      location_;  // open:指入值栈的槽;closed:恒指 &closed_

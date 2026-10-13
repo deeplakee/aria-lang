@@ -61,7 +61,7 @@ namespace aria {
 
         // 调试渲染:直取 function_ 名渲染 `<fn name>`。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自 Closure 类链起查(本类无值本地状态)。
         [[nodiscard]]

@@ -601,7 +601,7 @@ namespace aria {
             return true;
         }
 
-        // __str__():显示原文;本类型是显示/调试分叉的唯一分叉点(显示原文,repr 走 debug_repr 带引号转义)。
+        // __str__():显示原文;本类型是显示/调试分叉的唯一分叉点(显示原文,value_repr 走 repr 带引号转义)。
         bool fn___str__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {

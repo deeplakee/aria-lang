@@ -47,13 +47,13 @@ namespace aria {
         globals_.trace(gc); // 遍历占用槽 mark_value(key) + mark_value(value)
     }
 
-    String ObjModule::debug_repr() const { return std::format("<module {}>", name_->view()); }
+    String ObjModule::repr() const { return std::format("<module {}>", name_->view()); }
 
     Opt<Value> ObjModule::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         if (const auto v = ctx.module_class()->find_field(name)) { // globals 出局,符号表遮蔽不影响类腿
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->repr(), name->view());
     }
 
     Opt<Value> ObjModule::load_field(AriaExeContext& ctx, ObjString* name) {

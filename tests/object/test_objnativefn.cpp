@@ -33,7 +33,7 @@ TEST(ObjNativeFn, NamedRendersFnName) {
     EXPECT_EQ(nf->type(), aria::ObjType::NATIVE_FN);
     EXPECT_EQ(nf->name(), name); // intern 同指针
     EXPECT_EQ(nf->fn(), noop_fn);
-    EXPECT_EQ(nf->debug_repr(), "<fn sample>");
+    EXPECT_EQ(nf->repr(), "<fn sample>");
 }
 
 // 匿名重载:new_native_fn(gc, fn) 以 kAnonymousName("<anonymous>") 建名,渲染 `<fn <anonymous>>`。
@@ -44,7 +44,7 @@ TEST(ObjNativeFn, AnonymousUsesAnonymousName) {
     auto         guard = gc.make_guard(nf);
     ASSERT_NE(nf->name(), nullptr);
     EXPECT_EQ(nf->name()->view(), kAnonymousName);
-    EXPECT_EQ(nf->debug_repr(), "<fn <anonymous>>");
+    EXPECT_EQ(nf->repr(), "<fn <anonymous>>");
 }
 
 // kAnonymousName 与 ObjFunction 的 lambda 命名一致("<anonymous>")。

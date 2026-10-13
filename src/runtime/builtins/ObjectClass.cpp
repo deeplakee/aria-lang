@@ -85,7 +85,7 @@ namespace aria {
             return true;
         }
 
-        // __str__():默认显示渲染,体 = 接收者对象自身类型的 debug_repr(非重入、不执行用户代码):
+        // __str__():默认显示渲染,体 = 接收者对象自身类型的 repr(非重入、不执行用户代码):
         // <Foo instance>/<class Foo>/<fn f>/协程形各归其位;凡类链抵达根的承载值缺省继承本实现,
         // 子类在表上覆写即沿链生效。
         bool fn___str__(const NativeCallInfo& info) {
@@ -97,7 +97,7 @@ namespace aria {
             if (!self.is_obj()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__str__'", type_name(self));
             }
-            info.set_return_val(Value::from_obj(new_string(ctx.gc(), self.as_obj()->debug_repr())));
+            info.set_return_val(Value::from_obj(new_string(ctx.gc(), self.as_obj()->repr())));
             return true;
         }
 

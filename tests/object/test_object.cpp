@@ -79,7 +79,7 @@ TEST(ObjectProtocolDefaults, MemberIndexDefaults) {
     auto k = new_string(gc, "len");
     guard.push(k);
 
-    // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 debug_repr)、
+    // 成员协议默认:load miss = "X has no member 'y'"(对象描述经 repr)、
     // store = "type X does not support field access"。Module 已 override 两协议(load = 成员查
     // globals_、store = 只读拒),故写默认体用 string 探(ObjString 不 override store_field)。
     EXPECT_FALSE(m->load_field(*vm.current_context(), k).has_value());

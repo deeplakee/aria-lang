@@ -129,7 +129,7 @@ TEST(ObjList, Basics) {
     EXPECT_EQ(list->type(), aria::ObjType::LIST);
     EXPECT_EQ(list->type_name(), aria::StringView{"List"});
     EXPECT_EQ(list->elements().size(), 0u);
-    EXPECT_EQ(list->debug_repr(), "[]"); // 空 list 字面量形态
+    EXPECT_EQ(list->repr(), "[]"); // 空 list 字面量形态
 }
 
 TEST(ObjList, FillKeepsOrder) {
@@ -198,9 +198,9 @@ TEST(ObjList, DebugRepr) {
     list->elements().push(Value::nil_val());
     list->elements().push(Value::from_obj(inner));
     // 嵌套字符串带引号(debug 形),嵌套 list 递归。
-    EXPECT_EQ(list->debug_repr(), "[1, \"ab\", nil, [2]]");
-    EXPECT_EQ(list->debug_repr(), "[1, \"ab\", nil, [2]]");                      // 显示同文案
-    EXPECT_EQ(aria::stringify(Value::from_obj(list)), "[1, \"ab\", nil, [2]]"); // str/println 位
+    EXPECT_EQ(list->repr(), "[1, \"ab\", nil, [2]]");
+    EXPECT_EQ(list->repr(), "[1, \"ab\", nil, [2]]");                           // 显示同文案
+    EXPECT_EQ(aria::value_str(Value::from_obj(list)), "[1, \"ab\", nil, [2]]"); // str/println 位
 }
 
 // 环防护:自引用/互环在渲染路径上重遇即截断 "[...]"(PrintGuard,防无限递归栈溢出)。
@@ -210,9 +210,9 @@ TEST(ObjList, DebugReprSelfCycleTruncates) {
     auto a     = make_list(gc, guard);
     a->elements().push(Value::from_int(1));
     a->elements().push(Value::from_obj(a));
-    EXPECT_EQ(a->debug_repr(), "[1, [...]]");
-    EXPECT_EQ(aria::stringify(Value::from_obj(a)), "[1, [...]]"); // str(显示位)经 stringify 同口径
-    EXPECT_EQ(a->debug_repr(), "[1, [...]]");                     // 前次守卫已出栈,再次渲染不受影响
+    EXPECT_EQ(a->repr(), "[1, [...]]");
+    EXPECT_EQ(aria::value_str(Value::from_obj(a)), "[1, [...]]"); // str(显示位)经 value_str 同口径
+    EXPECT_EQ(a->repr(), "[1, [...]]");                           // 前次守卫已出栈,再次渲染不受影响
 }
 
 TEST(ObjList, DebugReprMutualCycleTruncates) {
@@ -223,8 +223,8 @@ TEST(ObjList, DebugReprMutualCycleTruncates) {
     a->elements().push(Value::from_int(1));
     a->elements().push(Value::from_obj(b));
     b->elements().push(Value::from_obj(a));
-    EXPECT_EQ(a->debug_repr(), "[1, [[...]]]"); // a -> b -> a:在 b 内重遇 a 截断
-    EXPECT_EQ(b->debug_repr(), "[[1, [...]]]"); // b -> a -> b:在 a 内重遇 b 截断
+    EXPECT_EQ(a->repr(), "[1, [[...]]]"); // a -> b -> a:在 b 内重遇 a 截断
+    EXPECT_EQ(b->repr(), "[[1, [...]]]"); // b -> a -> b:在 a 内重遇 b 截断
 }
 
 // 守卫出栈正确性:同一非环内层 list 渲染两次,第二次不得误判环。
@@ -236,7 +236,7 @@ TEST(ObjList, DebugReprSharedElementRendersTwice) {
     auto outer = make_list(gc, guard);
     outer->elements().push(Value::from_obj(inner));
     outer->elements().push(Value::from_obj(inner));
-    EXPECT_EQ(outer->debug_repr(), "[[7], [7]]");
+    EXPECT_EQ(outer->repr(), "[[7], [7]]");
 }
 
 // ---- equals 环闭合(EqualGuard) ----
@@ -620,7 +620,7 @@ TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     EXPECT_EQ(native->name()->view(), "init");
 }
 
-// miss:类措辞 fail 随协议透传(主语为宿主类 debug_repr,非 receiver)。
+// miss:类措辞 fail 随协议透传(主语为宿主类 repr,非 receiver)。
 TEST(ObjList, LoadFieldMissFailsWithClassWording) {
     AriaVM vm;
     auto&  gc    = vm.gc();

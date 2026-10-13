@@ -82,7 +82,7 @@ namespace aria {
 
         // 调试渲染:`<fn add>`(入口 `<fn <main>>`、lambda `<fn <anonymous>>`);显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
     private:
         CodeUnit           unit_;

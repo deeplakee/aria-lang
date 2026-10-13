@@ -49,7 +49,7 @@ namespace aria {
 
         // 调试渲染:`<bound method m>`;显示同文案。
         [[nodiscard]]
-        String debug_repr() const override;
+        String repr() const override;
 
         // 从所属类载入:自 BoundMethod 类链起查(本类无值本地状态)。
         [[nodiscard]]

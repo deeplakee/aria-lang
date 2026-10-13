@@ -81,14 +81,14 @@ namespace aria {
         return view() == other->as<ObjString>()->view();
     }
 
-    String ObjString::debug_repr() const { return std::format("\"{}\"", util::escape_string(view())); }
+    String ObjString::repr() const { return std::format("\"{}\"", util::escape_string(view())); }
 
     Opt<Value> ObjString::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         const auto klass = ctx.string_class();
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjString::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
@@ -125,7 +125,7 @@ namespace aria {
         // receiver 与 range 经调用方值栈为根,唯一 GC 点在 take_string。段解析收口 resolve_slice_bounds。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
-            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->debug_repr());
+            return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->repr());
         }
         auto buffer = StringBuilder{ctx.gc(), view().substr(segment->start, segment->count)};
         if (segment->is_reversed) {

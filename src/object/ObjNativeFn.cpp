@@ -20,7 +20,7 @@ namespace aria {
         gc.mark_object(name_); // fn_ 是 C++ 指针非 GC 对象,唯一 GC 子节点即 name_
     }
 
-    String ObjNativeFn::debug_repr() const {
+    String ObjNativeFn::repr() const {
         // name_ 恒非空(ctor ASSERT)。
         return std::format("<fn {}>", name_->view());
     }
@@ -46,7 +46,7 @@ namespace aria {
         if (const auto v = klass->find_field(name)) {
             return v;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
     Opt<Value> ObjNativeFn::load_field(AriaExeContext& ctx, ObjString* name) {

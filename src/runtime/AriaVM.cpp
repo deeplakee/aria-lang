@@ -22,11 +22,17 @@
 #include "object/iterator/ObjMapIterator.hpp"
 #include "object/iterator/ObjRangeIterator.hpp"
 #include "runtime/Eval.hpp"
+#include "runtime/builtins/BoundMethodClass.hpp"
 #include "runtime/builtins/Builtin.hpp"
+#include "runtime/builtins/ClassClass.hpp"
+#include "runtime/builtins/ClosureClass.hpp"
+#include "runtime/builtins/CoroutineClass.hpp"
 #include "runtime/builtins/ExceptionClass.hpp"
 #include "runtime/builtins/IteratorClass.hpp"
 #include "runtime/builtins/ListClass.hpp"
 #include "runtime/builtins/MapClass.hpp"
+#include "runtime/builtins/ModuleClass.hpp"
+#include "runtime/builtins/NativeFnClass.hpp"
 #include "runtime/builtins/ObjectClass.hpp"
 #include "runtime/builtins/RangeClass.hpp"
 #include "runtime/builtins/StringClass.hpp"
@@ -122,20 +128,26 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 编排顺序即依赖序:Object 根类先建(其余内建类以它作 super),builtins_ 曝光最后。
-        registers_[kObjectClassOffset]    = ObjectClass::make_class(gc_);
-        registers_[kExceptionClassOffset] = ExceptionClass::make_class(gc_, object_class());
-        registers_[kIteratorClassOffset]  = IteratorClass::make_class(gc_, object_class());
-        registers_[kListClassOffset]      = ListClass::make_class(gc_, object_class());
-        registers_[kMapClassOffset]       = MapClass::make_class(gc_, object_class());
-        registers_[kStringClassOffset]    = StringClass::make_class(gc_, object_class());
-        registers_[kRangeClassOffset]     = RangeClass::make_class(gc_, object_class());
+        // 将类对象放在寄存器组中
+        registers_[kObjectClassOffset]      = ObjectClass::make_class(gc_);
+        registers_[kExceptionClassOffset]   = ExceptionClass::make_class(gc_, object_class());
+        registers_[kIteratorClassOffset]    = IteratorClass::make_class(gc_, object_class());
+        registers_[kListClassOffset]        = ListClass::make_class(gc_, object_class());
+        registers_[kMapClassOffset]         = MapClass::make_class(gc_, object_class());
+        registers_[kStringClassOffset]      = StringClass::make_class(gc_, object_class());
+        registers_[kRangeClassOffset]       = RangeClass::make_class(gc_, object_class());
+        registers_[kClosureClassOffset]     = ClosureClass::make_class(gc_, object_class());
+        registers_[kNativeFnClassOffset]    = NativeFnClass::make_class(gc_, object_class());
+        registers_[kBoundMethodClassOffset] = BoundMethodClass::make_class(gc_, object_class());
+        registers_[kModuleClassOffset]      = ModuleClass::make_class(gc_, object_class());
+        registers_[kCoroutineClassOffset]   = CoroutineClass::make_class(gc_, object_class());
+        registers_[kClassClassOffset]       = ClassClass::make_class(gc_, object_class());
         // 缺参印章:私有 ObjClass 身份令牌,用户不可达;equals 恒地址型,显式实参身份均异于印章。
         registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
         // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
 
-        // 类裸名曝光:is_a 链判定与类值触达。
+        // 将类对象也加放到内建对象/方法表中
         builtins_.set(Value::from_obj(object_class()->name()), Value::from_obj(object_class()));
         builtins_.set(Value::from_obj(exception_class()->name()), Value::from_obj(exception_class()));
         builtins_.set(Value::from_obj(iterator_class()->name()), Value::from_obj(iterator_class()));
@@ -143,6 +155,12 @@ namespace aria {
         builtins_.set(Value::from_obj(map_class()->name()), Value::from_obj(map_class()));
         builtins_.set(Value::from_obj(string_class()->name()), Value::from_obj(string_class()));
         builtins_.set(Value::from_obj(range_class()->name()), Value::from_obj(range_class()));
+        builtins_.set(Value::from_obj(closure_class()->name()), Value::from_obj(closure_class()));
+        builtins_.set(Value::from_obj(native_fn_class()->name()), Value::from_obj(native_fn_class()));
+        builtins_.set(Value::from_obj(bound_method_class()->name()), Value::from_obj(bound_method_class()));
+        builtins_.set(Value::from_obj(module_class()->name()), Value::from_obj(module_class()));
+        builtins_.set(Value::from_obj(coroutine_class()->name()), Value::from_obj(coroutine_class()));
+        builtins_.set(Value::from_obj(class_class()->name()), Value::from_obj(class_class()));
         assert_slots_filled(registers_, "registers_: unfilled slot after bootstrap");
     }
 

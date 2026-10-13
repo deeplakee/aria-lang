@@ -84,6 +84,14 @@ add_library(aria_core STATIC
         src/runtime/builtins/Builtin.hpp
         src/runtime/builtins/CoroutineModule.cpp
         src/runtime/builtins/CoroutineModule.hpp
+        src/runtime/builtins/BoundMethodClass.cpp
+        src/runtime/builtins/BoundMethodClass.hpp
+        src/runtime/builtins/ClassClass.cpp
+        src/runtime/builtins/ClassClass.hpp
+        src/runtime/builtins/ClosureClass.cpp
+        src/runtime/builtins/ClosureClass.hpp
+        src/runtime/builtins/CoroutineClass.cpp
+        src/runtime/builtins/CoroutineClass.hpp
         src/runtime/builtins/ExceptionClass.cpp
         src/runtime/builtins/ExceptionClass.hpp
         src/runtime/CallFrame.cpp
@@ -95,6 +103,10 @@ add_library(aria_core STATIC
         src/runtime/builtins/ListClass.hpp
         src/runtime/builtins/MapClass.cpp
         src/runtime/builtins/MapClass.hpp
+        src/runtime/builtins/ModuleClass.cpp
+        src/runtime/builtins/ModuleClass.hpp
+        src/runtime/builtins/NativeFnClass.cpp
+        src/runtime/builtins/NativeFnClass.hpp
         src/runtime/builtins/ObjectClass.cpp
         src/runtime/builtins/ObjectClass.hpp
         src/runtime/builtins/RangeClass.cpp

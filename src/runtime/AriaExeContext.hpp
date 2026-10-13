@@ -243,8 +243,6 @@ namespace aria {
         [[nodiscard]]
         FailSignal arity_error_at_least(u32 argc, u32 low);
 
-        // 调用整形面(call_closure 与 coroutine.resume 首启共用;体在本类,失败写本上下文寄存器)。
-
         // 元数检查:普通函数区间 [min_arity, arity](差额为带默认值参数),有缺省报区间文案、无缺省
         // 报单数;varargs 只保下界,多余实参由 prepare_call_args 打包。
         [[nodiscard]]
@@ -342,7 +340,7 @@ namespace aria {
         [[nodiscard]]
         ObjString* char_string(u8 byte) const noexcept;
 
-        // 七个 bootstrap 类的委托读取(体在 .cpp)。
+        // bootstrap 类的委托读取。
         [[nodiscard]]
         ObjClass* object_class() const noexcept;
 
@@ -363,6 +361,24 @@ namespace aria {
 
         [[nodiscard]]
         ObjClass* range_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* closure_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* native_fn_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* bound_method_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* module_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* coroutine_class() const noexcept;
+
+        [[nodiscard]]
+        ObjClass* class_class() const noexcept;
 
         // 宿主访问口:驱动循环与切换原语的 AriaVM 面经此取用(eval 层消费)。
         [[nodiscard]]

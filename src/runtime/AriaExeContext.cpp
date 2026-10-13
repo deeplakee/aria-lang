@@ -195,6 +195,18 @@ namespace aria {
 
     ObjClass* AriaExeContext::range_class() const noexcept { return host_->range_class(); }
 
+    ObjClass* AriaExeContext::closure_class() const noexcept { return host_->closure_class(); }
+
+    ObjClass* AriaExeContext::native_fn_class() const noexcept { return host_->native_fn_class(); }
+
+    ObjClass* AriaExeContext::bound_method_class() const noexcept { return host_->bound_method_class(); }
+
+    ObjClass* AriaExeContext::module_class() const noexcept { return host_->module_class(); }
+
+    ObjClass* AriaExeContext::coroutine_class() const noexcept { return host_->coroutine_class(); }
+
+    ObjClass* AriaExeContext::class_class() const noexcept { return host_->class_class(); }
+
     GC& AriaExeContext::gc() const noexcept { return host_->gc(); }
 
 } // namespace aria

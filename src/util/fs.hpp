@@ -22,9 +22,12 @@
     #include <sys/sysctl.h>
 #endif
 
-namespace aria::fs {
+namespace aria {
+    // std::filesystem 的统一简写,全库仅此一处定义,消费方勿再各自重复。
     namespace stdfs = std::filesystem;
+}
 
+namespace aria::fs {
     enum class FsErrCode : i32 {
         // 通用/未分类错误
         Unknown = 0,

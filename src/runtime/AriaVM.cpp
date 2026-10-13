@@ -44,8 +44,6 @@
 #include "value/Value.hpp"
 
 namespace aria {
-    namespace stdfs = std::filesystem;
-
     namespace {
 
         // 单例表收口:两张预置表长格的 VM 单例表(registers_ / str_table_)填完后不许留空格。

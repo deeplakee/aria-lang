@@ -2,7 +2,6 @@
 #define ARIA_SOURCE_FILE_HPP
 
 #include <algorithm>
-#include <filesystem>
 #include <format>
 #include <ranges>
 #include "common.hpp"
@@ -10,8 +9,6 @@
 #include "utf8.hpp"
 
 namespace aria::src {
-
-    namespace stdfs = std::filesystem;
 
     // 行/列位置(1-based)。
     struct LineCol {

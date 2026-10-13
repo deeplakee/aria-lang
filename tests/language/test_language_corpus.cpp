@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <sstream>
@@ -21,6 +20,7 @@
 
 #include "runtime/AriaVM.hpp"
 #include "type.hpp"
+#include "util/fs.hpp"
 
 #ifndef ARIA_LANG_CORPUS_DIR
     #error "ARIA_LANG_CORPUS_DIR 未定义：应由 tests/CMakeLists.txt 的 target_compile_definitions 注入语料根绝对路径"
@@ -37,7 +37,7 @@ namespace {
     using aria::StringView;
     using aria::usize;
 
-    namespace stdfs = std::filesystem;
+    namespace stdfs = aria::stdfs;
 
     // 语料用例类别：与目录结构一一对应，Malformed 用于钉住违反分层/命名约定的脚本。
     enum class CaseKind { Positive, CompileError, RuntimeError, Malformed };

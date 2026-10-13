@@ -648,6 +648,34 @@ namespace aria {
         return true;
     }
 
+    bool Eval::run_build_string(AriaExeContext& ctx, const u8 count) {
+        // 契约见 Eval.hpp。两遍式(join 预扫先例),段存储即值栈本身:首遍左到右逐段渲染,非串
+        // 段原槽换装成渲染串(栈即根,跨后续渲染保活);次遍零 GC 点单趟填充。段址逐访问现取 --
+        // 渲染重入可扩容搬迁值栈,跨 stringify 复用栈地址/引用必悬垂。
+        usize total = 0;
+        for (isize index = count; index > 0; --index) {
+            if (const auto s = try_as_obj<ObjString>(ctx.peek(index - 1))) {
+                total += s->length();
+                continue;
+            }
+            const auto rendered = stringify(ctx, ctx.peek(index - 1));
+            if (!rendered) {
+                return false;
+            }
+            ctx.peek(index - 1) = Value::from_obj(*rendered);
+            total += (*rendered)->length();
+        }
+        auto builder = StringBuilder{ctx.gc()};
+        builder.reserve(total);
+        for (isize index = count; index > 0; --index) {
+            builder.append(ctx.peek(index - 1).as_obj()->as<ObjString>()->view());
+        }
+        const auto result = builder.take_string();
+        ctx.drop(count);
+        ctx.push(Value::from_obj(result));
+        return true;
+    }
+
     bool Eval::run_make_class(AriaExeContext& ctx, ObjString* name) {
         // 契约见 Eval.hpp;[super] -> [class] 原地写回,铸类不弹不压。
         if (const auto super = try_as_obj<ObjClass>(ctx.peek(0))) {
@@ -1275,20 +1303,12 @@ namespace aria {
                         goto unwind_check;
                     }
                     break;
-                case OpCode::BUILD_STRING: {
-                    // n:u8;[v1..vn] -> [str]:插值串收拢。渲染可重入且扩容搬迁值栈,{base,count}
-                    // 指值栈,段值先抄离;失败载荷在寄存器交 unwind 善后,成功 drop n 再 push。
-                    const u8   count    = read_u8(frame);
-                    const auto base     = current->stack_top() - count;
-                    const auto segments = List<Value>{base, base + count};
-                    const auto result   = concat_values(*current, segments, {});
-                    if (!result) {
+                case OpCode::BUILD_STRING:
+                    // n:u8;[v1..vn] -> [str]:插值串收拢
+                    if (!run_build_string(*current, read_u8(frame))) {
                         goto unwind_check;
                     }
-                    current->drop(count);
-                    current->push(Value::from_obj(*result));
                     break;
-                }
                 case OpCode::IMPORT:
                     // path:u16;[..., module]
                     if (!run_import(*current, read_name(frame))) {

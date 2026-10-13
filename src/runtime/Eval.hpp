@@ -49,7 +49,7 @@ namespace aria {
         [[nodiscard]]
         static Opt<ObjString*> stringify(AriaExeContext& ctx, Value value);
 
-        // 段收拢(插值 BUILD_STRING 与 join 共口):各段一律经 stringify 收成 StringView,量长
+        // 段收拢(join 共口):各段一律经 stringify 收成 StringView,量长
         // 定容后单趟填充。nullopt ⟺ 某段渲染失败载荷在寄存器。values 不得指进值栈(渲染重入
         // 扩容搬迁必悬垂);指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担,解释器
         // 不设防;元素保活由调用方承担(栈根/容器根)。
@@ -191,6 +191,11 @@ namespace aria {
         // 非整数 fail TypeMismatch(静态文案不插端点值);端点 peek 在栈跨 new_range 的
         // maybe_collect(栈即根),铸完 drop 再 push。
         static bool run_make_range(AriaExeContext& ctx, u8 flags);
+
+        // BUILD_STRING 执行体:[v1..vn] -> [str] 插值串收拢:段存储即值栈 -- 非串段经
+        // stringify 渲染后原槽换装成串(栈即根),量长定容后单趟填充,不落临时段表;失败载荷在
+        // 寄存器,成功 drop n 再 push。
+        static bool run_build_string(AriaExeContext& ctx, u8 count);
 
         // MAKE_CLASS 执行体:[super] -> [class] 原地写回。super 须类值、且非内建容器五类
         //(iterator/list/map/string/range,Exception 与 Object 可作 super),否则 fail TypeMismatch;

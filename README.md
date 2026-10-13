@@ -69,7 +69,7 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
   `...rest` 后缀。
 - **异常**：`try`/`catch`，`throw` 任意值且 `catch` 绑原值；可继承内建 `Exception`
   定义自己的异常类型（实现 `message()` / `code()` 方法）；未捕获时打印逐帧堆栈跟踪。
-- **协程**：`coroutine.create/resume/yield/status`（非关键字，普通成员调用）。
+- **协程**：`Coroutine.create/resume/yield/status`（非关键字，普通成员调用）。
   `resume` 第一次启动时的参数作为协程函数实参，返回 `yield` 交出值或完成值；`yield` 可从任意调用深度发起；
   协程内未捕获的错误会重新抛给恢复方（外层 `try/catch` 可接住），堆栈跟踪在协程边界截断。
 - **容器与迭代协议**：list/map/range 都有字面量。list 与 string 用下标访问元素（负数从尾计数），

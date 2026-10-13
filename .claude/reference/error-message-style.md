@@ -49,7 +49,7 @@
 
 **元数族的被调者一律报泛称 `function`**，不收名字、不分 builtins 与用户函数。真名不可用：匿名函数的真名是 `<anonymous>`（无区分力），函数值与绑定的方法被取出后再调用（`var p = xs.push; p()`）时真名根本不在调用点上出现--报它等于让用户去源码里找一个他并没写过的名字；而直调场合（`f(1)`、`xs.push()`）名字本就在调用点上，detail 重复它没有增益。报错文案描述的是**用户写下的那次调用**，被调者的内部身份不是他能从调用点核对的东西（要看可 `println(p)`）。归属交给 `at` 行的调用点：arity 失败发生在进帧检查处、被调帧未进，故 `at` 行只到调用者帧，但那正是「哪一行哪一次调用」的答案。
 
-**类型族的实参位同理不带被调者名**（2026-09-26 裁定，coroutine 方法面首例）：方法/模块函数的实参类型错时 `<what>` 用泛称 `argument`（`argument must be a function, got Int`），不写 `coroutine.create` 一类的被调者全名--`at` 行已锚定调用点，detail 重复归属零增益，与元数族泛称同一哲学。
+**类型族的实参位同理不带被调者名**（2026-09-26 裁定，coroutine 方法面首例）：方法/模块函数的实参类型错时 `<what>` 用泛称 `argument`（`argument must be a function, got Int`），不写 `Coroutine.create` 一类的被调者全名--`at` 行已锚定调用点，detail 重复归属零增益，与元数族泛称同一哲学。
 
 **`<op>` 取值（协议族）**：`field access` / `field assignment` / `subscript access` / `subscript assignment` / `'<钩子名>'`（如 `'__add__'`、`'__call__'`）。读形态与写形态各占一个 op，不合并（`field access` 与 `field assignment` 是可分辨的两种失败）。
 

@@ -58,7 +58,7 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 原生函数与 Object 协议面向本类。报错族、调用整形面、分配、常量串与七个 bootstrap 类访问器在此；宿主回指针 `host_` 为私有成员（借用、不 trace），公有访问口 `host()` 供 eval 驱动与协程切换原语取宿主面，其余委托体住 `.cpp` 读宿主公有面。
 
 - **报错族（真身在此）**：`raise(code, fmt, args...)` 从零构造消息一步烘齐（`Error::make_message` 无位置版 + `new_exception`）后装箱写**本上下文寄存器**；`fail` = raise + 恒返 `FailSignal`（`[[nodiscard]]` 强制 `return ctx.fail(...);`）；`arity_error`×3 为措辞家族唯一口。`FailSignal`（fail 的返回哨兵）定义同住本头。
-- **调用整形面（真身在此）**：`check_arity`（元数检查，纯读无分配）与 `prepare_call_args`（实参整形：缺省印章经 `default_mark`、varargs 打包经 `gc()`）。call_closure 与 `coroutine.resume` 首启共用。
+- **调用整形面（真身在此）**：`check_arity`（元数检查，纯读无分配）与 `prepare_call_args`（实参整形：缺省印章经 `default_mark`、varargs 打包经 `gc()`）。call_closure 与 `Coroutine.resume` 首启共用。
 - **委托面**：`gc()` / `str<key>()` / `char_string()` / `str(index)` 与七个 bootstrap 类访问器。`str<key>` 是**宿主无关**的内联成员模板：键 -> 下标的解析在编译期用同层注册表（`runtime/str_table.hpp`）完成，下标经 `str(index)` 取宿主表——使用方只 include 本头即可实例化，无须拖入 AriaVM.hpp。
 - 构造临界区（宿主 bootstrap 期）宿主服务面尚未就位，期间只建对象、不走本面（工厂注释钉）。
 
@@ -159,7 +159,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ### 协程（M6 已落地）
 
-语言面 `coroutine.create/resume/yield/status`，载体是合成 `<coroutine>` 模块（ctor 临界区经 `Builtin::register_builtins` 变量腿构造，构造口 `CoroutineModule::make_module`：四原语按名写进模块 globals、模块经 `builtins_["coroutine"]` 可达、永不入 `modules_` 表；零新对象类型零新指令，协程本体即 ObjMovement）。**编译面零改动**：coroutine/yield 等都不是关键字，`coroutine.resume(co, v)` 就是普通成员调用表达式。坑点与不变式归档见 `coroutine-implementation-pitfalls.md`（槽协议 / 切换根安全 / 链式 unwind 定序 / 嵌套执行的切换红线）。
+语言面 `Coroutine.create/resume/yield/status`，载体是合成 `<coroutine>` 模块（ctor 临界区经 `Builtin::register_builtins` 变量腿构造，构造口 `CoroutineModule::make_module`：四原语按名写进模块 globals、模块经 `builtins_["coroutine"]` 可达、永不入 `modules_` 表；零新对象类型零新指令，协程本体即 ObjMovement）。**编译面零改动**：coroutine/yield 等都不是关键字，`Coroutine.resume(co, v)` 就是普通成员调用表达式。坑点与不变式归档见 `coroutine-implementation-pitfalls.md`（槽协议 / 切换根安全 / 链式 unwind 定序 / 嵌套执行的切换红线）。
 
 - **四原语**（宿主类 `CoroutineModule` 的私有静态方法、NativeFn 签名、ctx 经 `info.ctx()`；报错族与调用整形面经 ctx（`ctx.check_arity` / `co->prepare_call_args`，见 AriaExeContext 节），切换对经 `ctx.host()` 直调宿主私有面故为友元；类唯一公有口 `make_module` 构造模块并装载方法面（装载走私有 `register_functions`，经 `Builtin::register_module_functions` 底座装进模块 globals），经 kBuiltinVars 变量腿调用，同 list 等类方法面先例；住 `runtime/builtins/CoroutineModule.cpp`）：`create(closure)` 建协程压 closure 作槽 0（首启 callee 槽）；`resume(co, payload..)` 校验（元数 -> 类型 -> `state_` 五态穷举 switch：Suspended 唯一可恢复，Done/Failed 报死态、Normal/Running 报在链上）；首启/已挂起两臂各自自含完整序列，臂内可失败检查（首启元数 / 载荷数上界）先于切换，切换经切换原语对 `enter_coroutine`/`leave_coroutine`（AriaVM 私有，见下）；`yield(v?)` 先查嵌套执行（`ret_frame_` 非零即报 `YieldInNestedExecution`）再取 `current_->previous()` 为 resumer、空即主上下文报错；`status(co)` 投影 `ExecState`（`new_string(to_string(state))` 驻留命中取串，五串皆注册表条目零分配）。实参 Lua 式：**首启载荷即被调函数实参**（上界交 check_arity），已挂起后只收 0 或 1 个（yield 是单值表达式）。
 - **槽协议（机制核心）**：切换型原语返 true 后 `call_native` 事后 `ctx.drop(argc)` 使该上下文栈顶停在「那次调用的槽 0」-- 即预留结果槽，对侧一律写 `对侧->peek(0)`；两侧对称，切回方无需知道对方局部信息。首启是唯一不对称处（协程栈无预留槽，走压实参 + `prepare_call_args` 整形 + `enter_frame` 进帧，直取 call_closure 的不可失败尾段）。

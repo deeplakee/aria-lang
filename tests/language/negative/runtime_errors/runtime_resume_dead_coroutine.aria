@@ -1,5 +1,5 @@
 // 钉住：resume 已完成（Done）的协程为运行期错误 ResumeDeadCoroutine。
-var g = coroutine.create(fun() { coroutine.yield(1); });
-coroutine.resume(g);
-coroutine.resume(g);
-coroutine.resume(g);
+var g = Coroutine.create(fun() { Coroutine.yield(1); });
+Coroutine.resume(g);
+Coroutine.resume(g);
+Coroutine.resume(g);

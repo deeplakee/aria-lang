@@ -6,11 +6,9 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/ObjMovement.hpp"
-#include "runtime/builtins/CoroutineModule.hpp"
 #include "util/io.hpp"
 #include "value/AriaHashTable.hpp"
 #include "value/ObjBridge.hpp"
@@ -119,26 +117,12 @@ namespace aria {
                 {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
         };
 
-        // 内建变量表:名 + 自含构造的变量值。
-        constexpr BuiltinVarEntry kBuiltinVars[] = {
-                {"coroutine", CoroutineModule::make_module}, // <coroutine> 合成模块
-        };
-
         // 全局面函数装载口:按名写入给定 builtins 表;须在构造临界区(GC 挂起)内调用 -- 白色对象
         // 免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根。
         void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
             for (const auto& [name, fn]: fns) {
                 const auto fn_obj = new_native_fn(gc, name, fn);
                 table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
-            }
-        }
-
-        // 全局面变量装载口:GC 纪律同 register_functions(构造临界区内,init 产出即时入表不落中间)。
-        void register_variables(GC& gc, AriaHashTable& table, const Span<const BuiltinVarEntry> vars) {
-            for (const auto& [name, init_fn]: vars) {
-                const auto key   = new_string(gc, name);
-                const auto value = init_fn(gc);
-                table.set(Value::from_obj(key), value);
             }
         }
 
@@ -151,16 +135,6 @@ namespace aria {
         }
     }
 
-    void Builtin::register_module_functions(GC& gc, ObjModule* module, const Span<const BuiltinFnEntry> fns) {
-        for (const auto& [name, fn]: fns) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
-            module->globals().set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
-        }
-    }
-
-    void Builtin::register_builtins(GC& gc, AriaHashTable& builtins) {
-        register_functions(gc, builtins, kBuiltinFns);
-        register_variables(gc, builtins, kBuiltinVars);
-    }
+    void Builtin::register_builtins(GC& gc, AriaHashTable& builtins) { register_functions(gc, builtins, kBuiltinFns); }
 
 } // namespace aria

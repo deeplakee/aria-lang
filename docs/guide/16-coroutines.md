@@ -3,22 +3,22 @@
 协程是**可以挂起再继续的函数调用**。aria 的协程对标 Lua / Wren 的形态：单线程、协作式，
 所有切换点都显式写在代码里（`yield` 与 `resume`），没有调度器也没有并行 -- 适合写生成器、
 状态机、交错执行的协议逻辑，不是线程。语言面是一个内建模块的四函数：
-`coroutine.create` / `resume` / `yield` / `status`。协程本体是普通值（一等公民），可存进
+`Coroutine.create` / `resume` / `yield` / `status`。协程本体是普通值（一等公民），可存进
 变量、当参数传、放进容器。
 
 ## 最小往返
 
 ```aria
-var co = coroutine.create(fun() {
+var co = Coroutine.create(fun() {
     println("running");
-    coroutine.yield();           # 挂起，控制权交回恢复者
+    Coroutine.yield();           # 挂起，控制权交回恢复者
     println("resumed");
 });
-println(coroutine.status(co));   # create 只登记，不执行
-coroutine.resume(co);            # 启动：执行到 yield 停下
-println(coroutine.status(co));
-coroutine.resume(co);            # 继续：从 yield 处接着跑
-println(coroutine.status(co));   # 体执行完，协程死亡
+println(Coroutine.status(co));   # create 只登记，不执行
+Coroutine.resume(co);            # 启动：执行到 yield 停下
+println(Coroutine.status(co));
+Coroutine.resume(co);            # 继续：从 yield 处接着跑
+println(Coroutine.status(co));   # 体执行完，协程死亡
 ```
 
 输出：
@@ -41,14 +41,14 @@ done
 死亡时，`resume` 表达式的值是体的**返回值**：
 
 ```aria
-var co = coroutine.create(fun(a, b) {
-    var got = coroutine.yield(a + b);   # 把 a+b 交给恢复者，换回一个值
+var co = Coroutine.create(fun(a, b) {
+    var got = Coroutine.yield(a + b);   # 把 a+b 交给恢复者，换回一个值
     println("got: " + str(got));
     return a * b;
 });
-println(coroutine.resume(co, 3, 4));    # 首启：3、4 就是协程体实参
-println(coroutine.resume(co, "hi"));    # 唤醒："hi" 是 yield 表达式的值
-println(coroutine.status(co));
+println(Coroutine.resume(co, 3, 4));    # 首启：3、4 就是协程体实参
+println(Coroutine.resume(co, "hi"));    # 唤醒："hi" 是 yield 表达式的值
+println(Coroutine.status(co));
 ```
 
 输出：
@@ -71,15 +71,15 @@ done
 
 ```aria
 fun level2() {
-    coroutine.yield("two levels down");
+    Coroutine.yield("two levels down");
 }
 fun level1() {
     level2();
-    coroutine.yield("back in level1");
+    Coroutine.yield("back in level1");
 }
-var co = coroutine.create(level1);
-println(coroutine.resume(co));
-println(coroutine.resume(co));
+var co = Coroutine.create(level1);
+println(Coroutine.resume(co));
+println(Coroutine.resume(co));
 ```
 
 输出：
@@ -95,18 +95,18 @@ back in level1
 ```aria
 fun drain(co) {
     var xs = [];
-    while (coroutine.status(co) == "suspended") {
-        var v = coroutine.resume(co);
-        if (coroutine.status(co) == "suspended") {
+    while (Coroutine.status(co) == "suspended") {
+        var v = Coroutine.resume(co);
+        if (Coroutine.status(co) == "suspended") {
             xs.push(v);           # 还是 suspended 说明 v 是 yield 产出
         }
     }
     return xs;
 }
 fun squares_gen(n) {              # 工厂：上界烘焙进闭包，体本身零参数
-    return coroutine.create(fun() {
+    return Coroutine.create(fun() {
         for (var i = 1; i <= n; i = i + 1) {
-            coroutine.yield(i * i);
+            Coroutine.yield(i * i);
         }
     });
 }
@@ -135,16 +135,16 @@ println(drain(squares_gen(3)));
 resume 不是主上下文的专利 -- 协程也能恢复协程，恢复者进入 `"normal"`，链可以一直延长：
 
 ```aria
-var inner = coroutine.create(fun(host) {
-    println("host is " + coroutine.status(host));
+var inner = Coroutine.create(fun(host) {
+    println("host is " + Coroutine.status(host));
 });
-var outer = coroutine.create(fun() {
-    coroutine.resume(inner, outer);   # outer 自身作 inner 首启的实参
+var outer = Coroutine.create(fun() {
+    Coroutine.resume(inner, outer);   # outer 自身作 inner 首启的实参
     println("back in outer");
 });
-coroutine.resume(outer);
-println("outer: " + coroutine.status(outer));
-println("inner: " + coroutine.status(inner));
+Coroutine.resume(outer);
+println("outer: " + Coroutine.status(outer));
+println("inner: " + Coroutine.status(inner));
 ```
 
 输出：
@@ -165,16 +165,16 @@ inner: done
 `resume` 调用点**。接法与第 14 章完全一样：try / catch 兜住，`catch` 绑原值保类型：
 
 ```aria
-var co = coroutine.create(fun() { var x = 1 / 0; });
+var co = Coroutine.create(fun() { var x = 1 / 0; });
 try {
-    coroutine.resume(co);
+    Coroutine.resume(co);
 } catch (e) {
     println(str(e));
-    println(coroutine.status(co));
+    println(Coroutine.status(co));
 }
-var co2 = coroutine.create(fun() { throw "boom"; });
+var co2 = Coroutine.create(fun() { throw "boom"; });
 try {
-    coroutine.resume(co2);
+    Coroutine.resume(co2);
 } catch (e) {
     println(type(e));
     println(e);
@@ -198,8 +198,8 @@ boom
 fun leaf() {
     throw "boom in coroutine";
 }
-var co = coroutine.create(fun() { leaf(); });
-coroutine.resume(co);
+var co = Coroutine.create(fun() { leaf(); });
+Coroutine.resume(co);
 ```
 
 ```text
@@ -213,10 +213,10 @@ Runtime: UncaughtException uncaught exception: boom in coroutine
 
 <!-- expect-error: ResumeDeadCoroutine -->
 ```aria
-var co = coroutine.create(fun() { coroutine.yield(1); });
-coroutine.resume(co);
-coroutine.resume(co);
-coroutine.resume(co);   # 第二次 yield 没等到，体已完成
+var co = Coroutine.create(fun() { Coroutine.yield(1); });
+Coroutine.resume(co);
+Coroutine.resume(co);
+Coroutine.resume(co);   # 第二次 yield 没等到，体已完成
 ```
 
 ```text
@@ -226,7 +226,7 @@ Runtime: ResumeDeadCoroutine cannot resume a dead coroutine
 
 <!-- expect-error: YieldOutsideCoroutine -->
 ```aria
-coroutine.yield(1);     # 主上下文没有恢复者
+Coroutine.yield(1);     # 主上下文没有恢复者
 ```
 
 ```text
@@ -270,7 +270,7 @@ Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
    形态上的差别。
 4. 不运行先推理：协程体 `yield(1)` 后 `throw "late"`，主上下文不接 -- 程序输出什么、
    退出码形态如何（对照「错误穿过协程边界」一节）？验证后再想：若主上下文 try 住了，
-   `catch` 里 `coroutine.status(co)` 是什么？
+   `catch` 里 `Coroutine.status(co)` 是什么？
 
 ---
 

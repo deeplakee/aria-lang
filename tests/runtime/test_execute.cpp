@@ -233,16 +233,16 @@ TEST_F(NestedExecStress, DepthCappedAtRecursionLimit) {
 
 TEST_F(NestedExecStress, YieldInsideNestedRefused) {
     const auto src = R"(
-        fun yfn() { return coroutine.yield(); }
+        fun yfn() { return Coroutine.yield(); }
         fun wrapper() { return exec_closure(yfn); }
-        var co = coroutine.create(wrapper);
+        var co = Coroutine.create(wrapper);
         var caught = nil;
         try {
-            coroutine.resume(co);
+            Coroutine.resume(co);
         } catch (e) {
             caught = e;
         }
-        var st = coroutine.status(co);
+        var st = Coroutine.status(co);
     )";
     const auto r   = run_with_natives(vm, src, {{"exec_closure", &aria::TestProbe::exec_closure_native}});
     ASSERT_TRUE(r.result.has_value());
@@ -259,11 +259,11 @@ TEST_F(NestedExecStress, YieldInsideNestedRefused) {
 TEST_F(NestedExecStress, ResumeInsideNestedMultiplexes) {
     const auto src = R"(
         fun co_body() { return 42; }
-        var inner = coroutine.create(co_body);
-        fun mult() { return coroutine.resume(inner); }
+        var inner = Coroutine.create(co_body);
+        fun mult() { return Coroutine.resume(inner); }
         fun wrapper() { return exec_closure(mult); }
-        var outer = coroutine.create(wrapper);
-        var v = coroutine.resume(outer);
+        var outer = Coroutine.create(wrapper);
+        var v = Coroutine.resume(outer);
     )";
     const auto r   = run_with_natives(vm, src, {{"exec_closure", &aria::TestProbe::exec_closure_native}});
     ASSERT_TRUE(r.result.has_value());

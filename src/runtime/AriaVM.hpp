@@ -50,8 +50,8 @@ namespace aria {
         //(current_ 与各服务表)。
         friend class Eval;
 
-        // 协程模块方法面宿主:四原语经友元直调切换原语对与 current_ 等私有面。
-        friend class CoroutineModule;
+        // 协程类方法面宿主:四原语静态方法经友元直调切换原语对与 current_ 等私有面。
+        friend class CoroutineClass;
 
 #ifdef ARIA_OPCODE_PROFILE
         // 指令频度探针(仅探针构建):挂载为成员,友元取 current_ 等私有状态;唯一探测点 =

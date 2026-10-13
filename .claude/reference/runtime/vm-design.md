@@ -198,7 +198,7 @@ ASSERT(ctx.has_error(), "native fn returned false but raised no error");
 return false;                           // 载荷留寄存器,调用方 goto unwind_check
 ```
 
-切换型原生函数(`coroutine.resume`/`co.yield`)三条契约:
+切换型原生函数(`Coroutine.resume`/`co.yield`)三条契约:
 
 1. **成败分流,只碰对侧上下文**:切换成功 → 首启压载荷 + `prepare_call_args` 整形 + `enter_frame` 进帧(协程栈无预留槽的唯一不对称处)/ 已挂起把载荷写进对侧预留槽(`co->peek(0)`,即 yield 表达式的值),换指经切换原语对 `enter_coroutine`(resume 侧)与 `leave_coroutine(departing_state)`(yield 置 Suspended、完成置 Done、未捕获跳链置 Failed 三方向共用);任何校验失败 → **不切换**,`ctx.fail` 进调用者寄存器后返回 false。错误通道与切换通道彻底分流,bool 契约保持二值,非切换型原生函数零影响。**调用者侧的栈不动**--`[callee, a1..aN]` 原样留给 call_native 统一 drop;这同时是 GC 红利:实参(含协程对象自身)在原生函数执行全程都躺在调用者值栈上为根。
 2. **调用者侧栈效应由 call_native 统一在进场 `ctx` 上收敛(时点:切换后、切回前),不得推迟到切回方**:已切换时 `ctx.drop(argc)` 弹实参、留槽 0 为预留结果槽;yield 值/完成值/resume 载荷由对侧原语直接写对侧预留槽(`peek(0) = 值`)。不能留给切回方(yield/RETURN)清理--**切回方对本上下文当年那次 CALL 的 argc 一无所知**,且残槽会跨挂起期滞留值栈;归一后跨挂起期两侧栈形状恒定,任何一侧都不依赖另一侧的局部信息(Wren 的对应做法是切换型原语在 `runFiber`/`fiber_yield` 里两侧手工挪 `stackTop`,aria 把调用者侧收进 call_native 统一执行,切换型原生函数的契约面更小)。对侧死于未捕获错误时载荷走恢复者寄存器(链式 unwind,§4.5),该槽随调用区被 unwind_to_handler 截栈一并丢弃、无人补写。
@@ -266,7 +266,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
 | **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
-| **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`coroutine.create/resume/yield/status` 原生函数(友元宿主类 + 合成 `<coroutine>` 模块)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
+| **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(友元宿主类 + 合成 `<coroutine>` 模块)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 
 顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,44 个 visit)。
 

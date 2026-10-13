@@ -82,8 +82,6 @@ add_library(aria_core STATIC
         src/runtime/NativeCallInfo.hpp
         src/runtime/builtins/Builtin.cpp
         src/runtime/builtins/Builtin.hpp
-        src/runtime/builtins/CoroutineModule.cpp
-        src/runtime/builtins/CoroutineModule.hpp
         src/runtime/builtins/BoundMethodClass.cpp
         src/runtime/builtins/BoundMethodClass.hpp
         src/runtime/builtins/ClassClass.cpp

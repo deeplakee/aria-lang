@@ -344,7 +344,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     UndefinedProperty，可 catch）。
 #
 # 协程（编译期/VM 语义，文法不编码）：coroutine 模块提供 create/resume/yield/status 四件，
-# 非关键字--coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
+# 非关键字--Coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
 # 回退 builtins 表，命中合成 <coroutine> 模块）。协程本体即执行上下文对象，type(co) 报
 # "Coroutine"。语义（Lua/Wren 式）：
 #   - create(f) 收闭包建协程（状态 suspended，栈仅 [f]）；resume 首启的载荷即 f 的实参

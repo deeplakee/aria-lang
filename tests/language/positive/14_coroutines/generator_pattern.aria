@@ -3,15 +3,15 @@
 fun counter(n) {
     var i = 0;
     while (i < n) {
-        coroutine.yield(i);
+        Coroutine.yield(i);
         i = i + 1;
     }
     return n;
 }
-var g = coroutine.create(counter);
+var g = Coroutine.create(counter);
 var acc = [];
-while (coroutine.status(g) == "suspended") {
-    acc.push(coroutine.resume(g, 3));
+while (Coroutine.status(g) == "suspended") {
+    acc.push(Coroutine.resume(g, 3));
 }
 assert(acc == [0, 1, 2, 3]);
-assert(coroutine.status(g) == "done");
+assert(Coroutine.status(g) == "done");

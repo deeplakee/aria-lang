@@ -613,8 +613,8 @@ TEST_F(AriaVMStress, UncaughtInCoroutineTraceTruncatedAtBoundary) {
                            "fun leaf() {\n"
                            "    throw \"boom\";\n"
                            "}\n"
-                           "var co = coroutine.create(fun() { leaf(); });\n"
-                           "coroutine.resume(co);\n";
+                           "var co = Coroutine.create(fun() { leaf(); });\n"
+                           "Coroutine.resume(co);\n";
     aria::SourceFile source{aria::String{aria::kScriptModuleName}, aria::String{aria::kScriptModuleName},
                             aria::String{src}};
     auto             module = make_module(vm.gc());

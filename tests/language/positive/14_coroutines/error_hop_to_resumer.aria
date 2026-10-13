@@ -3,23 +3,23 @@
 fun thrower() {
     throw "from coroutine";
 }
-var co = coroutine.create(fun() {
+var co = Coroutine.create(fun() {
     thrower();               # 跨调用深度抛出
 });
 var got = "";
 try {
-    coroutine.resume(co);
+    Coroutine.resume(co);
     assert(false);           # 上一行必抛，不可达
 } catch (e) {
     got = e;                 # 用户 throw 原值保类型
 }
 assert(got == "from coroutine");
-assert(coroutine.status(co) == "failed");
+assert(Coroutine.status(co) == "failed");
 
 # 内建运行期错误同样跨边界：catch 绑 ObjException，str 渲染烘焙消息
 var msg = "";
 try {
-    coroutine.resume(coroutine.create(fun() { var x = 1 / 0; }));
+    Coroutine.resume(Coroutine.create(fun() { var x = 1 / 0; }));
 } catch (e) {
     msg = str(e);
 }
@@ -27,7 +27,7 @@ assert(msg == "Runtime: DivisionByZero integer division by zero");
 
 # catch 内继续 resume 新协程不受污染（寄存器已取空）
 try {
-    coroutine.resume(co);    # 连死协程不可恢复
+    Coroutine.resume(co);    # 连死协程不可恢复
     assert(false);
 } catch (e) {
     assert(type(e) == "Exception");

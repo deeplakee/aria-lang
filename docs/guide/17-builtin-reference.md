@@ -37,10 +37,10 @@
 
 | 函数 | 元数 | 行为 |
 | :--- | :--- | :--- |
-| `coroutine.create(fn)` | 1 | 以 fn 为体建协程（登记不执行），返新协程；fn 非函数报 `TypeMismatch` |
-| `coroutine.resume(co[, v...])` | 1..∞ | 首启：其余实参作协程体实参（元数照查）；已挂起：至多 1 个载荷作 `yield` 表达式值。返回 yield 值，协程体完成时返回其返回值 |
-| `coroutine.yield([v])` | 0..1 | 挂起当前协程，v 作恢复侧 `resume` 表达式的值；可从任意调用深度发起；主上下文调用报 `YieldOutsideCoroutine` |
-| `coroutine.status(co)` | 1 | 返回状态拼写串：`"suspended"` / `"running"` / `"normal"` / `"done"` / `"failed"` |
+| `Coroutine.create(fn)` | 1 | 以 fn 为体建协程（登记不执行），返新协程；fn 非函数报 `TypeMismatch` |
+| `Coroutine.resume(co[, v...])` | 1..∞ | 首启：其余实参作协程体实参（元数照查）；已挂起：至多 1 个载荷作 `yield` 表达式值。返回 yield 值，协程体完成时返回其返回值 |
+| `Coroutine.yield([v])` | 0..1 | 挂起当前协程，v 作恢复侧 `resume` 表达式的值；可从任意调用深度发起；主上下文调用报 `YieldOutsideCoroutine` |
+| `Coroutine.status(co)` | 1 | 返回状态拼写串：`"suspended"` / `"running"` / `"normal"` / `"done"` / `"failed"` |
 
 `co` 非协程报 `TypeMismatch`（`create` 对应报 fn 非函数）。
 

@@ -3,5 +3,5 @@
 fun leaf() {
     throw "boom in coroutine";
 }
-var co = coroutine.create(fun() { leaf(); });
-coroutine.resume(co);
+var co = Coroutine.create(fun() { leaf(); });
+Coroutine.resume(co);

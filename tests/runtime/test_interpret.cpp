@@ -173,18 +173,18 @@ TEST(Interpret, SuspendedCoroutineValuesSurviveStressGc) {
     const auto src = R"(
         fun body() {
             var inner = [1, 2, 3];
-            coroutine.yield(inner.size());
+            Coroutine.yield(inner.size());
             return inner[1];
         }
-        var co = coroutine.create(body);
-        assert(coroutine.resume(co) == 3);
+        var co = Coroutine.create(body);
+        assert(Coroutine.resume(co) == 3);
         var junk = [];
         var i = 0;
         while (i < 50) {
             junk.push([i]);
             i = i + 1;
         }
-        assert(coroutine.resume(co) == 2);
+        assert(Coroutine.resume(co) == 2);
     )";
     EXPECT_EQ(vm.interpret_from_src(src), InterpretResult::Ok);
 }
@@ -196,26 +196,26 @@ TEST(Interpret, InterleavedCoroutinesSurviveStressGc) {
     const auto src = R"(
         fun a_body() {
             var m = "aaa";
-            coroutine.yield(m);
+            Coroutine.yield(m);
             return m.size();
         }
         fun b_body() {
             var m = [9];
-            coroutine.yield(m);
+            Coroutine.yield(m);
             return m[0];
         }
-        var ca = coroutine.create(a_body);
-        var cb = coroutine.create(b_body);
-        assert(coroutine.resume(ca) == "aaa");
-        assert(coroutine.resume(cb) == [9]);
+        var ca = Coroutine.create(a_body);
+        var cb = Coroutine.create(b_body);
+        assert(Coroutine.resume(ca) == "aaa");
+        assert(Coroutine.resume(cb) == [9]);
         var junk = [];
         var i = 0;
         while (i < 50) {
             junk.push([i]);
             i = i + 1;
         }
-        assert(coroutine.resume(ca) == 3);
-        assert(coroutine.resume(cb) == 9);
+        assert(Coroutine.resume(ca) == 3);
+        assert(Coroutine.resume(cb) == 9);
     )";
     EXPECT_EQ(vm.interpret_from_src(src), InterpretResult::Ok);
 }

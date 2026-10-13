@@ -90,8 +90,8 @@ namespace aria {
         [[nodiscard]]
         static Opt<ObjString*> execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
-        // 按 Op 编译期选定算子钩子名,经成员协议裸查找取本对象上的实现(Op 由调用点穷举);nullopt
-        // ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
+        // 按 Op 编译期选定算子钩子名,经咨询口自类面取本对象上的实现(值本地状态出局;Op 由调用
+        // 点穷举);nullopt ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
         static Opt<Value> get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj);
 

@@ -1,5 +1,6 @@
 // 钉住：对象被调用时按 `__call__` 取实现（名字见 src/runtime/str_table.hpp 的注册表）--类链继承、
-// 实例字段遮蔽、零参钩子三条一起钉；类本身仍走实例化（CLASS 臂不在此路径）。
+// 零参钩子、实例字段不接管调用（魔术咨询自类面起查，值本地状态出局）三条一起钉；类本身仍走实例化
+// （CLASS 臂不在此路径）。
 def Adder {
   init(base) { this.base = base; }
   __call__(a, b) { return this.base + a + b; }
@@ -21,7 +22,7 @@ assert(Sub(100)(1, 1) == 102);    // 类链继承
 
 var shadow = Adder(0);
 shadow.__call__ = fun(x) { return x * 2; };
-assert(shadow(21) == 42);         // 实例字段遮蔽：字段里的函数值原值直调（收实参不收 this）
+assert(shadow(21, 0) == 21);      // 实例字段不接管调用：咨询仍取类面 __call__（值本地状态出局）
 
 // 钩子就是普通方法：能读、能显式按名调用
 assert(add.__call__(1, 2) == 13);

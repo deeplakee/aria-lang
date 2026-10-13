@@ -113,9 +113,10 @@ namespace aria {
             case ObjType::BOUND_METHOD:
                 return call_bound_method(ctx, obj->as<ObjBoundMethod>(), argc);
             default: {
-                // 其余对象类型:按 `__call__` 钩子名经成员协议取实现后调;调用区就地复用
-                // [callee, a1..aN] 恰是 [this, args](槽 0 兼返回槽),递归交 call_value 分发。
-                if (const auto target = obj->load_field(ctx, ctx.str<"__call__">())) {
+                // 其余对象类型:按 `__call__` 钩子名经咨询口自类面取实现后调(值本地状态出局);
+                // 调用区就地复用 [callee, a1..aN] 恰是 [this, args](槽 0 兼返回槽),递归交
+                // call_value 分发。
+                if (const auto target = obj->load_field_from_class(ctx, ctx.str<"__call__">())) {
                     return call_value(ctx, *target, argc);
                 }
                 return false; // 载荷已在挂起错误寄存器
@@ -362,7 +363,7 @@ namespace aria {
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->load_field(ctx, ctx.str<"__neg__">())) {
+            if (const auto target = operand.as_obj()->load_field_from_class(ctx, ctx.str<"__neg__">())) {
                 return call_value(ctx, *target, 0);
             }
             return false;
@@ -372,26 +373,26 @@ namespace aria {
 
     template<OpCode Op>
     Opt<Value> Eval::get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj) {
-        // 指令 -> 算子钩子名的编译期映射(Op 由调用点穷举);经成员协议裸查找取实现,与成员访问
-        // 同一协议缝(fields 遮蔽/类表/miss 措辞都由各类型 load_field 承担)。
+        // 指令 -> 算子钩子名的编译期映射(Op 由调用点穷举);经咨询口自类面取实现(值本地状态
+        // 出局),miss 措辞随各宿主咨询口烘焙。
         if constexpr (Op == OpCode::ADD) {
-            return obj->load_field(ctx, ctx.str<"__add__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__add__">());
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj->load_field(ctx, ctx.str<"__sub__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__sub__">());
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj->load_field(ctx, ctx.str<"__mul__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__mul__">());
         } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj->load_field(ctx, ctx.str<"__div__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__div__">());
         } else if constexpr (Op == OpCode::MOD) {
-            return obj->load_field(ctx, ctx.str<"__mod__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__mod__">());
         } else if constexpr (Op == OpCode::GREATER) {
-            return obj->load_field(ctx, ctx.str<"__gt__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__gt__">());
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj->load_field(ctx, ctx.str<"__ge__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__ge__">());
         } else if constexpr (Op == OpCode::LESS) {
-            return obj->load_field(ctx, ctx.str<"__lt__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__lt__">());
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj->load_field(ctx, ctx.str<"__le__">());
+            return obj->load_field_from_class(ctx, ctx.str<"__le__">());
         } else {
             STATIC_UNREACHABLE("get_obj_binary_op_impl: no arm for this Op");
         }

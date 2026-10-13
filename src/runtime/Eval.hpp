@@ -41,8 +41,8 @@ namespace aria {
         static Opt<Value> execute_closure(AriaExeContext& ctx, Value slot0, ObjClosure* closure,
                                           Span<const Value> args);
 
-        // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;ObjString 直取原文;其余
-        // 对象经类面咨询口取 __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
+        // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
+        // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
         // 解析值须可调、返回值须为 string(违约就地 TypeMismatch)。成功返回渲染串(驻留恒
         // 可达);nullopt ⟺ 载荷已入挂起寄存器(钩子抛错/违约/嵌套过深)。调用方保证 value
         // 「栈即根」。

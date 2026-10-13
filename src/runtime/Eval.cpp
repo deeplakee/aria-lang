@@ -236,14 +236,11 @@ namespace aria {
 
     Opt<ObjString*> Eval::stringify(AriaExeContext& ctx, const Value value) {
         // 非对象值无钩子面:value_repr 的非对象臂即字面渲染(两渲染器非对象域逐臂同形)。
+        // 对象一律经咨询口取 __str__:实例字段/模块全局等值本地状态出局,类链(元类链/单例链)
+        // 命中即实现;根类默认使现役类面恒命中,miss 臂兜契约(措辞已随咨询口烘焙)。
         if (!value.is_obj()) {
             return new_string(ctx.gc(), value_repr(value));
         }
-        if (const auto s = try_as_obj<ObjString>(value)) {
-            return s;
-        }
-        // 咨询口取 __str__:实例字段/模块全局等值本地状态出局,类链(元类链/单例链)命中即实现;
-        // 根类默认使现役类面恒命中,miss 臂兜契约(措辞已随咨询口烘焙)。
         const auto hook = value.as_obj()->load_field_from_class(ctx, ctx.str<"__str__">());
         if (!hook) {
             return std::nullopt;
@@ -597,15 +594,11 @@ namespace aria {
     }
 
     bool Eval::run_build_string(AriaExeContext& ctx, const u8 count) {
-        // 契约见 Eval.hpp。两遍式(join 预扫先例),段存储即值栈本身:首遍左到右逐段渲染,非串
-        // 段原槽换装成渲染串(栈即根,跨后续渲染保活);次遍零 GC 点单趟填充。段址逐访问现取 --
-        // 渲染重入可扩容搬迁值栈,跨 stringify 复用栈地址/引用必悬垂。
+        // 契约见 Eval.hpp。两遍式(join 预扫先例),段存储即值栈本身:首遍左到右逐段渲染,渲染串
+        // 原槽换装(栈即根,跨后续渲染保活);次遍零 GC 点单趟填充。段址逐访问现取 -- 渲染重入
+        // 可扩容搬迁值栈,跨 stringify 复用栈地址/引用必悬垂。
         usize total = 0;
         for (isize index = count; index > 0; --index) {
-            if (const auto s = try_as_obj<ObjString>(ctx.peek(index - 1))) {
-                total += s->length();
-                continue;
-            }
             const auto rendered = stringify(ctx, ctx.peek(index - 1));
             if (!rendered) {
                 return false;

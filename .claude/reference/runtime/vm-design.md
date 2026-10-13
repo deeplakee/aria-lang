@@ -96,7 +96,7 @@ class AriaVM {
 
 - **内部传播统一走寄存器 + unwind**：op 处理局部失败不再直接 `return runtime_err(...)` 短路出 dispatch_loop,而是就地 `raise`(一步烘消息装成 ObjException,不含位置前缀 -- 位置归未捕获跟踪行,见 §4.8)-> 存当前上下文挂起寄存器后调 `unwind` 查表派发 -- raise 与 unwind 不融合成 `*_and_*` 具名助手,站点两步(raise / run_* 返 false 后显式 `goto`)、与 CALL 失败善后同形,检查(返 Error 即 return / 返 nullopt 即回循环顶)收口在循环尾单一标签 `unwind_check`;用户 `throw V` 弹值 `ctx.raise(V)`(存原值不包)后同走 `unwind`。寄存器是唯一在途错误载体,try/catch 因此能同时接住 VM 检测错误与用户 throw 两类。
 - `unwind()` 在本循环出口边界内自最内帧向外遍历帧链(搜索下界 = `current_->ret_frame()`,边界随上下文走;逐跳只查当前上下文的帧链,全帧未命中且在 resume 链上则跳链续搜,见下「跨 Movement 模型」),每帧以 `frame.last_ip`(指令起始指针,主循环取指前写,坑点文档 #1/#2;与 `unit->code.data()` 相减反推 offset,表保持 offset 键)查 `CodeUnit::find_try_handler`;**搜索阶段不动帧栈/值栈、不物化、不做跟踪收集**(收集归物化点,见 §4.8)-> 命中 -> `Movement::unwind_to_handler(命中帧索引, record)` 一体完成:弃内层帧 + 按槽址关闭开 upvalue + 值栈截到 catch 参数槽 + `ip = handle` + 载荷 push 落槽(恰落 catch 参数槽,见坑点文档 #10)+ 清寄存器;全帧未命中返 false 分三分--边界非零(嵌套执行)`truncate_frames_to(边界)` 截净残帧交外层驱动循环续搜 / 边界零在链上转投一跳 / 链根仍未命中返回 false,善后归调用方(见下条)。
-- **未命中到链根 = 本次 run 以未捕获收场,是正常结局而非 fatal**:`dispatch_loop` 返 `bool`,错误不走返回值;物化收口在 `run()` 失败出口的 `rebake_uncaught_error()`--自寄存器反提 (码, 烘焙消息)(ObjException 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),经 `Error::from_baked` 一次物化成自足 `Error`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置;重入口 `execute_call` 的失败合同 = `nullopt` + 载荷留在寄存器,由重入调用方按 bool 契约续报(§4.11)。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`run()` 维持两态 `Result<Value, Error>`**:主上下文里 yield 即运行期错误(§4.9),挂起不进返回值,两态即终态;「Error 经返回类型」只住在 run() 边界,循环与重入口不经返回类型传错误。
+- **未命中到链根 = 本次 run 以未捕获收场,是正常结局而非 fatal**:`dispatch_loop` 返 `bool`,错误不走返回值;物化收口在 `run()` 失败出口的 `rebake_uncaught_error()`--自寄存器反提 (码, 烘焙消息)(ObjException 保原码原消息;用户原值包 `UncaughtException`),附堆栈跟踪(§4.8),经 `Error::from_baked` 一次物化成自足 `Error`。此后生死归调用方:CLI 打印 message 退码 1、REPL 打印后继续下一行、嵌入方拿 Error 自行处置;重入口 `execute_closure` 的失败合同 = `nullopt` + 载荷留在寄存器,由重入调用方按 bool 契约续报(§4.11)。`fatal_error` 只留给 Internal/Resource(解释器自身 bug/资源耗尽),与用户代码错误分轨。**`run()` 维持两态 `Result<Value, Error>`**:主上下文里 yield 即运行期错误(§4.9),挂起不进返回值,两态即终态;「Error 经返回类型」只住在 run() 边界,循环与重入口不经返回类型传错误。
 - **跨 Movement 模型(M6 链式多跳)**:unwind 的搜索以上下文为单位、以 resume 链为通道--本上下文全帧未命中且 `previous_` 非空时转投一跳:让位方先 `take_error()`(先于 reset,寄存器在 reset 内一并清空)再 `reset()`、`leave_coroutine(Failed)`(置 Failed 解链、恢复者置 Running 换指)、caller `raise` 载荷续搜(caller 寄存器必空:call_native 进场断言锁「进场前寄存器空」+ 切换型原生返 true 不写载荷 + 挂起期间无人可写非执行上下文的寄存器;take 到 raise 之间无 GC 点,载荷局部持有不丢根)。中间层无 handler 即连死(其 Running 瞬态被 Failed 覆盖),载荷逐跳向链根推进;链终止 = 主上下文才物化。调用点(dispatch_loop 循环尾 `unwind_check` 标签)一字不改、不收链参数,命中可能在多跳之后,调用方在 unwind 返回点重取本轮上下文后回循环顶重取帧(坑点文档 #11 的既有纪律正好覆盖)。寄存器物理在 Movement 内(协程各自独立、互不串扰),`current_` 是 dispatch_loop/call_value 族/raise 的统一作用对象。
 - **TryRecord 定稿字段**:`{begin, end, handle, stack_depth}`--不存 `frame_depth`(运行时量,编译期不可定)、不存 `catch_slot`(恒等于 `stack_depth`),见坑点文档 #5/#10。
 
@@ -139,7 +139,7 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 
 **不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `info.size()` 做元数校验,不符经 `ctx.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/error-message-style.md`)。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
-**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop` 的簿记性操作;`call_native` 善后假设返回时栈顶停在调用区上)。实参只读(`info[i]`)、返回值写返回槽(`set_return_val`)、报错经 `ctx.fail`/`raise`;视图按下标重算,重入扩容搬迁不再使实参读数悬垂。从原生深处回调 aria 函数走重入口(AriaExeContext 公共面 `execute_closure`/`execute_method`,§4.11;当前消费方仅统一测试探针 `TestProbe`)。GC 已启用(值栈/帧接根),原生函数内可经 `ctx.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,返回值写入后即随值栈为根。
+**叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop` 的簿记性操作;`call_native` 善后假设返回时栈顶停在调用区上)。实参只读(`info[i]`)、返回值写返回槽(`set_return_val`)、报错经 `ctx.fail`/`raise`;视图按下标重算,重入扩容搬迁不再使实参读数悬垂。从原生深处回调 aria 函数走重入口(AriaExeContext 公共面 `execute_closure`/`execute_method`,§4.11;消费方 = 显示咨询面的 `__str__` 钩子调用(§4.12)与统一测试探针 `TestProbe`)。GC 已启用(值栈/帧接根),原生函数内可经 `ctx.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,返回值写入后即随值栈为根。
 
 **内建作者体感**(从 `Result<Value, Error>` 的啰嗦降到一行):
 
@@ -147,7 +147,9 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 bool str_native(const NativeCallInfo& info) {
     auto& ctx = info.ctx();
     if (info.size() != 1) { return ctx.arity_error(info.size(), 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
-    info.set_return_val(Value::from_obj(new_string(ctx.gc(), stringify(info[0])))); // 就地返回
+    const auto s = Eval::stringify(ctx, info[0]); // 重入显示咨询面(__str__ 钩子,§4.12);失败载荷在寄存器
+      if (!s) { return false; }
+      info.set_return_val(Value::from_obj(*s)); // 就地返回
     return true;
 }
 ```
@@ -170,7 +172,7 @@ bool str_native(const NativeCallInfo& info) {
 
 **机制四件套**(Wren 源码索引见 §8):
 
-1. **create/resume/yield/status 是原生函数,不是操作码**(对标 Wren `Fiber.call/transfer/try`(共用 `runFiber`)与 `Fiber.yield`:全部原语,无 YIELD 操作码)。四原语住友元宿主类 `CoroutineModule`(AriaVM 的私有静态方法 + 方法表全收私有,唯一公有口 `make_module`;ctx 经 `info.ctx()`,元数检查与实参整形经 ctx 调用机器面,切换对经 `ctx.host()` 友元直调);语言面载体是 ctor 临界区经 `Builtin::register_builtins` 变量腿建的合成 `<coroutine>` 模块(方法表装进其 globals,模块经 `builtins_["coroutine"]` 可达、永不入 `modules_`)。resume 职责:校验(元数 → 类型 → `state_` 五态穷举 switch:Suspended 唯一可恢复,Done/Failed 报死态、Normal/Running 报在链上)→ 完成对**对侧**上下文的准备与写值(契约见下方「切换协议」;调用者侧栈一律留给 call_native 统一收敛)→ 经切换原语对换指 → 返回。
+1. **create/resume/yield/status 是原生函数,不是操作码**(对标 Wren `Fiber.call/transfer/try`(共用 `runFiber`)与 `Fiber.yield`:全部原语,无 YIELD 操作码)。四原语住友元宿主类 `CoroutineClass`(类内私有静态方法 + 方法表全收私有,唯一公有口 `make_class`;ctx 经 `info.ctx()`,元数检查与实参整形经 ctx 调用机器面,切换对经 `ctx.host()` 友元直调);语言面载体是 `Coroutine` bootstrap 类(类面方法,类经 `builtins_` 裸名曝光;协程内建模块形态已并入类面,无独立合成模块)。resume 职责:校验(元数 → 类型 → `state_` 五态穷举 switch:Suspended 唯一可恢复,Done/Failed 报死态、Normal/Running 报在链上)→ 完成对**对侧**上下文的准备与写值(契约见下方「切换协议」;调用者侧栈一律留给 call_native 统一收敛)→ 经切换原语对换指 → 返回。
 2. **切换对 `call_native` 透明,CALL case 零改动**:`call_native` 以进场 ctx 引用(调用发生时的上下文,事后簿记的真实锚点;引用不可重绑)为统一锚点--成功路径的 `drop(argc)` 与寄存器断言一律落在其上:未切换时它即 `current_`,已切换时它恰为刚被挂起的旧上下文,`drop` 恰好完成调用者侧栈归一,**无需分支、无需探测比较**(协议见下)。CALL case 更无需感知:成功路径本就只剩 `break`,循环顶自新 `current_` 取指。**aria 的切换同步成本为零**:解释器状态全堆驻留(`ip` 在 `CallFrame`、栈顶在 `Movement::top_`、每指令重取帧引用),没有可陈旧的循环级局部副本--相对 Wren 的简化(Wren 因 frame/ip/stackTop 缓存于 C 局部寄存器变量,切换前后须 `STORE_FRAME`/`LOAD_FRAME` 一对宏同步,aria 无此负担)。
 3. **RETURN 完成路径**(执行体收口 `run_return`,出口边界分流全景见 §4.11):协程最外帧弹尽且有 `previous_` → 完成值写恢复者预留槽(`resumer->peek(0)`)、`reset()`(死协程不留栈,先关开指)、`leave_coroutine(Done)` 置 Done 解链换指(对标 Wren RETURN:numFrames==0 且有 caller 则切回并写返回值);无 `previous_`(主上下文顶层)→ 收到主模块对象(入口收尾 ModuleEntry 所压,返回值留栈顶)。HALT case 另断言协程内不可达(手写字节码逃生口的防线)。
 4. **`run()` 两态与链根锚**:主上下文里 yield 即运行期错误(`YieldOutsideCoroutine`)--挂起只发生在协程内,run() 出口恒顶层 RETURN / 未捕获物化、必发生在 resume 链链根。resume/yield 的深处切换不产生 run 返回,切换不重入 `dispatch_loop()`;循环的可重入通道唯一 = 重入口(§4.11),且 `yield` 在嵌套执行内被运行期拒绝(§4.11)。`run()` 入口锚 `entry_ctx = current_` + 出口断言 `current_ == entry_ctx` 为永久不变式(run() 是唯一最外执行入口,漏交接当场炸)。
@@ -232,13 +234,13 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 ### 4.11 嵌套执行(重入口,已落地)
 
-指令执行中同步执行一个闭包的重入机制:在字节码执行程内经 `vm` 直接发起一次闭包/方法调用并驱动至结算。两口住 AriaExeContext 公共面,消费方免友元(当前唯一消费方是统一测试探针 `TestProbe`,经 `vm.current_context()->execute_closure(...)` 走公共面,白盒契约钉在 `tests/runtime/test_execute.cpp`)。
+指令执行中同步执行一个闭包的重入机制:在字节码执行程内经 `vm` 直接发起一次闭包/方法调用并驱动至结算。两口住 AriaExeContext 公共面,消费方免友元(消费方 = eval 层外部调用口 `execute_callable`(显示咨询面经它跑 `__str__` 钩子,§4.12)与统一测试探针 `TestProbe`,经 `vm.current_context()->execute_closure(...)` 走公共面,白盒契约钉在 `tests/runtime/test_execute.cpp`)。
 
 **出口边界**:`AriaExeContext::ret_frame_`(u32,0 = 最外执行)+ `recursion_depth_`(上限 `kMaxRecursionDepth` = 32)住上下文,消费方(`run_return`/`unwind`/`dispatch_loop`)一律自 `current_` 读取--无 VM 级基线成员。重入口经 `enter_recursion()` 挂界(边界 = 入场帧深,断言钉边界非零:零帧 = 无驱动,最外执行是 `run()` 职责、不经重入口)、`leave_recursion()` 归还外层边界。
 
-**两口一执行体**:`execute_closure(ObjClosure*, Span<const Value>)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjClosure*, Span<const Value>)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_call`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_closure` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
+**两口一执行体**:`execute_closure(ObjClosure*, Span<const Value>)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjClosure*, Span<const Value>)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_closure`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_closure` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
 
-**run_return 分流**:RETURN 执行体收口 `run_return`,取返回值弹帧后按弹后帧深对边界分档--高于边界 = 帧间返回写回 callee 槽;恰至非零边界 = 本(嵌套)循环收束,值交 `execute_call` 收取;零边界弹尽 = 主顶层返回(值留栈顶)或协程完成(值写恢复者预留槽后切换)。
+**run_return 分流**:RETURN 执行体收口 `run_return`,取返回值弹帧后按弹后帧深对边界分档--高于边界 = 帧间返回写回 callee 槽;恰至非零边界 = 本(嵌套)循环收束,值交 `execute_closure` 收取;零边界弹尽 = 主顶层返回(值留栈顶)或协程完成(值写恢复者预留槽后切换)。
 
 **unwind 嵌套臂**:边界之上全帧未命中即 `truncate_frames_to(边界)` 截净嵌套残帧返 false(只弃边界之上,不越界外层帧),载荷留寄存器交外层驱动循环续搜--嵌套残帧的清理单点收口在 unwind,失败善后不穿线到重入口。
 
@@ -247,6 +249,16 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 **单循环性质不变**:切换仍只发生在原生善后点;嵌套循环可多层并存(C++ 栈向上叠),任一时刻取指执行字节码的循环唯一,外层循环一律停在切换/善后点。
 
 **落地记录**(2026-10):重入态字段 + yield 拒绝(0261a2b)、循环出口 bool 化(04cdb9f)、出口边界迁 `ObjMovement::ret_frame_` 与递归记账 + `run()` 内联首入口(d8f8781)、嵌套执行口与统一执行体 `execute_call`(946b7d5)、方法形态口(7db3331)、统一友元探针与白盒测试(4e41dce)。
+
+### 4.12 显示渲染面(show 咨询口,已落地)
+
+显示定制钩子 = `__str__`(注册表 `str_table.hpp` 与算子 dunder 同表)。渲染语义分双位:
+- **显示位(重入咨询,跑用户代码)**:`str()`/`println`/插值/`join` 共口 `Eval::stringify(AriaExeContext&, Value) -> Opt<ObjString*>`--字面值字面渲染、`ObjString` 原文直取、其余对象经类面咨询口 `load_field_from_class` 解析 `__str__`(实例 fields / 模块 globals 等值本地状态出局;根类默认原生 = 渲染自身 `debug_repr`,兜底恒命中)后同步调用(调用区 `[receiver]`,argc = 0)。返回值须为 string,违约 `TypeMismatch`;不可调咨询值 `CallNonCallable`(`Eval::execute_callable`,按 bound/native/closure 形态分派:原生走 `execute_native`、闭包走 `execute_closure` 重入体)。自渲染递归由嵌套深度上限折断(`StackOverflow`);
+- **调试位(零用户代码)**:`repr`/`debug_repr` 纯 C++,执行跟踪/未捕获/反汇编常量池与容器元素恒调试形(嵌套字符串带引号);
+- **段收拢**:`Eval::concat_values`(BUILD_STRING 与 join 共口)两遍式收拢(段一律经 stringify 收 StringView -> 量长定容 -> 单趟填充);BUILD_STRING 段值先抄离值栈(重入扩容搬迁悬垂,失败载荷走 `unwind_check`);
+- **地位**:可重载显示虚函数已退役(`Object::to_string` 删除) -- C++ 对象层仅剩固定行为虚函数,显示定制唯一面 = `__str__`。
+
+落地记录(2026-10):类面基建(六零表单例类 + 成员读拆 `load_field_from_class` 咨询缝 + 类值元类链,7b45315..1b54b52)、渲染口落地(482e7c9)、显示位接线(eb70b08)、咨询换装(1600b0c)、虚函数退役(0986d0c)、语料(4b81b5b)。
 
 ## 5. 早期简化(M1 的刻意收敛,均已演化)
 
@@ -268,6 +280,8 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(友元宿主类 + 合成 `<coroutine>` 模块)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 
+| **M6 后:显示钩子与咨询面(已落地)** | 类面基建(六零表单例类 / `load_field_from_class` 咨询缝 / 类值元类链 / 协程模块并入类面,§4.12)+ 显示渲染面(`stringify`/`concat_values`/外部调用机器)+ `to_string` 虚函数退役 | `__str__` 语料与单测(1378 x2 绿) |
+
 顺序依赖:M4 依赖 M1 的帧/栈;M5 依赖 M4(方法即闭包);M6 依赖全部。M2/M3 可与 M4 并行。字节码编译器(AST->CodeUnit)已落地(CodeGen,44 个 visit)。
 
 ### M1 验证状态
@@ -282,7 +296,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - `ObjType::MOVEMENT` 已增(语言可见名 `Coroutine`,`type(co)` 报之)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册)。
-- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;变量腿(kBuiltinVars)另挂 `coroutine` 键 -> 合成 `<coroutine>` 模块,构造口 `CoroutineModule::make_module`)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 6 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
+- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;;协程原语经 `CoroutineClass::make_class` 落 `Coroutine` 类,类经 `builtins_` 裸名曝光)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 6 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考

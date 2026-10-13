@@ -57,11 +57,11 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
 - **函数**：一等值、`fun(x) { ... }` lambda、默认参数、`...varargs`；闭包捕获即引用，同一变量
   的多个闭包共享同一份状态（`make_counter` 那个例子）。
 - **类**：`def` 定义，`init` 构造器，`super` 单继承（`def Foo : Bar`），成员分静态变量、静态方法、
-  实例方法三类；实例字段是动态的；根类 `Object` 位于继承链顶端。运算符与调用可重载：在类上定义
-  `__add__`、`__lt__` 等十个算子钩子或 `__call__`，实例出现在左操作数 / 被调用位置时按名取实现
-  （仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，方法调用是同一套
-  `recv.name(args)` 语法；七个内建类（`Object` / `Exception` / `List` / `String` / `Map` /
-  `Range` / `Iterator`）本身也作为全局变量可以被访问。
+  实例方法三类；实例字段是动态的；根类 `Object` 位于继承链顶端。运算符、调用与显示可重载：在类上
+  定义 `__add__`、`__lt__` 等十个算子钩子、`__call__` 或 `__str__`，实例出现在左操作数 / 被调用 /
+  被显示位置时按名取实现（仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，
+  方法调用是同一套 `recv.name(args)` 语法；内建类（含函数族、`Module`、`Coroutine`、`Class` 元类）
+  本身也作为全局变量可以被访问。
 - **控制流**：`if`/`else`、`while`、C 风格 `for`、`for (pattern in expr)`、`break`/`continue`、
   `match`；`if` 与 `match` 也能作表达式。支持用逗号多个表达式连成序列表达式（从左到右
   逐个求值、取最后一个值）。

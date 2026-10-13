@@ -150,7 +150,7 @@ public:
     ErrorCode  code()    const noexcept { return code_; }
     ObjString* message() const noexcept { return message_; }   // catch 的 println(e)/str(e) 渲染此串
     void trace(GC& g) const noexcept override { mark_obj(g, message_); }   // 标 message_ GC 串
-    String to_string() const override { return message_->view(); }        // println(e) -> 消息
+    String debug_repr() const override { return String{message_->view()}; } // println(e) 经根默认显示咨询面 -> 消息
 };
 ```
 工厂 `new_exception(gc, code, StringView message)`（工厂内部 `new_string` 驻留并自守，见 `ObjException.hpp`）。`message_` 存**完整烘焙消息**（运行期不含位置前缀，位置由未捕获出口的 `at` 跟踪行给出；透传的编译期错误自带位置，原样保留）--catch 绑 ObjException 即绑原码原消息，位置不丢、catch UX 不退化。

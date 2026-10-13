@@ -39,7 +39,7 @@ build/aria                  # REPL（顶层 var 跨行保留）
 | 10 | [解构](10-destructuring.md) | 模式语法、三种位置、rest、交换 |
 | 11 | [match](11-match.md) | 语句与表达式形态、`==` 匹配、`_` 通配 |
 | 12 | [类与对象](12-classes.md) | `def`、四类成员、嵌套类、继承与 super、自定义可迭代 |
-| 13 | [运算符重载](13-operator-overloading.md) | 11 个钩子、仅左侧触发、`__call__` |
+| 13 | [运算符重载与显示钩子](13-operator-overloading.md) | 12 个钩子、仅左侧触发、`__call__`、`__str__` |
 | 14 | [异常](14-exceptions.md) | throw 任意值、catch 保类型、无 finally |
 | 15 | [模块](15-modules.md) | 一文件一模块、导入即执行、成员只读 |
 | 16 | [协程](16-coroutines.md) | create/resume/yield/status、生成器、跨协程错误 |

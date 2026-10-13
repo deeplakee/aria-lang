@@ -4,6 +4,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjInstance.hpp"
+#include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
@@ -51,11 +52,26 @@ namespace aria {
                 case ObjType::ITERATOR:
                     chain = ctx.iterator_class();
                     break;
+                case ObjType::CLOSURE:
+                    chain = ctx.closure_class();
+                    break;
+                case ObjType::NATIVE_FN:
+                    chain = ctx.native_fn_class();
+                    break;
+                case ObjType::BOUND_METHOD:
+                    chain = ctx.bound_method_class();
+                    break;
+                case ObjType::MODULE:
+                    chain = ctx.module_class();
+                    break;
+                case ObjType::MOVEMENT:
+                    chain = ctx.coroutine_class();
+                    break;
                 case ObjType::CLASS:
                     chain = info.self().as_obj()->as<ObjClass>();
                     break;
                 default:
-                    // 唯一可达 stray:类静态槽读出 is_a 后裸调(receiver 槽残留被调原生自身),响亮拒绝。
+                    // 唯一可达 stray:静态槽读出 is_a 后裸调(receiver 槽残留被调原生自身),响亮拒绝。
                     return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support 'is_a'", type_name(info.self()));
             }
             for (auto node = chain; node != nullptr; node = node->superclass()) {
@@ -68,10 +84,27 @@ namespace aria {
             return true;
         }
 
+        // __str__():默认显示渲染,体 = 接收者对象自身类型的 debug_repr(非重入、不执行用户代码):
+        // <Foo instance>/<class Foo>/<fn f>/协程形各归其位;凡类链抵达根的承载值缺省继承本实现,
+        // 子类在表上覆写即沿链生效。
+        bool fn___str__(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
+                return ctx.arity_error(argc, 0);
+            }
+            const auto self = info.self();
+            if (!self.is_obj()) {
+                return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support '__str__'", type_name(self));
+            }
+            info.set_return_val(Value::from_obj(new_string(ctx.gc(), self.as_obj()->debug_repr())));
+            return true;
+        }
+
         // Object 根类方法表。
         constexpr BuiltinFnEntry kObjectBuiltins[] = {
                 {"init", fn_init},
                 {"is_a", fn_is_a},
+                {"__str__", fn___str__},
         };
 
     } // namespace

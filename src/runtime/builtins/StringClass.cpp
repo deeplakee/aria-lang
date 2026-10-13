@@ -596,6 +596,20 @@ namespace aria {
             return true;
         }
 
+        // __str__():显示原文;本类型是显示/调试分叉的唯一分叉点(显示原文,repr 走 debug_repr 带引号转义)。
+        bool fn___str__(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 0) {
+                return ctx.arity_error(argc, 0);
+            }
+            const auto self = info.receiver<ObjString>();
+            if (self == nullptr) {
+                return false;
+            }
+            info.set_return_val(Value::from_obj(new_string(ctx.gc(), self->view())));
+            return true;
+        }
+
         // string 方法表。
         constexpr BuiltinFnEntry kStringBuiltins[] = {
                 {"init", fn_init},
@@ -622,6 +636,7 @@ namespace aria {
                 {"__ge__", fn___ge__},
                 {"__add__", fn___add__},
                 {"__mul__", fn___mul__},
+                {"__str__", fn___str__},
         };
 
     } // namespace

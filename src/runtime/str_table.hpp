@@ -18,6 +18,7 @@ namespace aria::str_table {
             "__ge__",    // comparison >=
             "__neg__",   // unary negation
             "__call__",  // call hook
+            "__str__",   // str hook
             "_message",  // Exception face 字段键
             "_code",     // Exception face 字段键
             "suspended", // coroutine status 串

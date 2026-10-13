@@ -19,7 +19,8 @@ namespace aria {
         bool fn_init(const NativeCallInfo&) { return true; }
 
         // is_a(klass) -> bool:接收者类链沿 super 与目标类同一比对;链根按接收者分派:实例自 class_,
-        // 异常与内置容器自各自 bootstrap 类,类接收者自自身;纯读无分配,receiver/target 两根全程在槽。
+        // 其余承载值自各自 bootstrap 类,类值自 Class 元类单例(类值的所属类,模板链不参与判定);
+        // 纯读无分配,receiver/target 两根全程在槽。
         bool fn_is_a(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -68,7 +69,7 @@ namespace aria {
                     chain = ctx.coroutine_class();
                     break;
                 case ObjType::CLASS:
-                    chain = info.self().as_obj()->as<ObjClass>();
+                    chain = ctx.class_class(); // 类值是 Class 元类的"实例",归属沿元类链
                     break;
                 default:
                     // 唯一可达 stray:静态槽读出 is_a 后裸调(receiver 槽残留被调原生自身),响亮拒绝。

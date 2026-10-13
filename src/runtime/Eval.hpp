@@ -111,22 +111,11 @@ namespace aria {
         [[nodiscard]]
         static bool run_binary_f64(AriaExeContext& ctx, f64 lhs, f64 rhs);
 
-        // 九个二元算子的执行体(算术/比较 block 唯一入口):两侧均 String 走 run_string_binary 就地
-        // 完成;其余非对象左值委托 run_binary_numeric,对象左值取算子实现后交 call_value(调用区
-        // [lhs, rhs] 即 [this, arg1])。peek 不弹 -- receiver 占调用区槽 0(栈即根)跨实现内分配。
+        // 九个二元算子的执行体(算术/比较 block 唯一入口):非对象左值委托 run_binary_numeric,
+        // 对象左值取算子实现后交 call_value(调用区 [lhs, rhs] 即 [this, arg1])。peek 不弹 --
+        // receiver 占调用区槽 0(栈即根)跨实现内分配。
         template<OpCode Op>
         static bool run_binary_operator(AriaExeContext& ctx);
-
-        // string 快路径派发门(lhs 非空,调用方已判 is_obj;白名单收在本方法:ADD 与四个字序比较,
-        // 其余算子恒 false):两侧均 String 交 run_string_binary 就地完成;返回 true = 已派发,
-        // false = 不适用落原路(非失败)。定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        static bool try_string_fast_dispatch(AriaExeContext& ctx, Object* lhs);
-
-        // string 算子快路径(白名单收在 try_string_fast_dispatch):[lhs, rhs] -> [r],就地拼接/按
-        // 无符号字节序比较,语义与 StringClass 对应钩子逐位一致;定义在 .cpp(实例化点全在本 TU)。
-        template<OpCode Op>
-        static bool run_string_binary(AriaExeContext& ctx, ObjString* lhs, ObjString* rhs);
 
         // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负,对象左值取 __neg__ 实现后调用(一元恒零
         // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。

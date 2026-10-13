@@ -285,68 +285,16 @@ namespace aria {
 
     template<OpCode Op>
     bool Eval::run_binary_operator(AriaExeContext& ctx) {
-        // 对象左值先试 string 快路径门,再取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],
-        // 槽 0 保持 receiver);非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),
-        // 取到的实现必可达(类表值 / 实例字段值),故无白色在途窗口、不挂守卫。
+        // 对象左值取本对象算子实现后调(调用区 [lhs, rhs] 即 [this, arg1],槽 0 保持 receiver);
+        // 非对象左值落 run_binary_numeric。GC 走查:receiver 占槽 0(栈即根),取到的实现必可达
+        // (类表值),故无白色在途窗口、不挂守卫。
         if (const auto lhs = ctx.peek(1); lhs.is_obj()) {
-            const auto obj = lhs.as_obj();
-            if (try_string_fast_dispatch<Op>(ctx, obj)) {
-                return true;
-            }
-            if (const auto target = get_obj_binary_op_impl<Op>(ctx, obj)) {
+            if (const auto target = get_obj_binary_op_impl<Op>(ctx, lhs.as_obj())) {
                 return call_value(ctx, *target, 1);
             }
             return false;
         }
         return run_binary_numeric<Op>(ctx);
-    }
-
-    template<OpCode Op>
-    bool Eval::try_string_fast_dispatch(AriaExeContext& ctx, Object* lhs) {
-        // string 快路径(lhs 非空,调用方已判 is_obj):两侧 tag 均 STRING 时就地拼接/字序比较,
-        // 免整条原生调用链;白名单仅 ADD 与四个字序比较实例化,其余算子恒 false。返回 true = 已
-        // 派发完成,false = 不适用落原路(非失败,两侧皆 string 的臂全无 fail 路径)。门体用 is/as
-        // 两段式守卫:热路径 flags-only(与平铺比较链同指令选择),免 try_as_obj/try_as 返 T* 的
-        // 指针物化分支(实测见 local-string-perf 报告 §7/§12)。
-        if constexpr (Op == OpCode::ADD || Op == OpCode::LESS || Op == OpCode::LESS_EQUAL || Op == OpCode::GREATER ||
-                      Op == OpCode::GREATER_EQUAL) {
-            if (lhs->is<ObjString>()) {
-                if (const Value rhs = ctx.peek(0); rhs.is_obj()) {
-                    if (const auto right = rhs.as_obj(); right->is<ObjString>()) {
-                        return run_string_binary<Op>(ctx, lhs->as<ObjString>(), right->as<ObjString>());
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    template<OpCode Op>
-    bool Eval::run_string_binary(AriaExeContext& ctx, ObjString* lhs, ObjString* rhs) {
-        // [lhs, rhs] -> [r]:拼接先查驻留(哈希自 lhs 终态续算 rhs,命中零拷贝),比较按无符号字节序;
-        // 语义与 StringClass 对应钩子逐位一致。GC 走查:唯一 GC 点是 new_string 内部 new_object 顶部
-        // maybe_collect,两操作数 peek 未弹在栈(栈即根);命中/铸后 drop+push 无 GC 点。
-        if constexpr (Op == OpCode::ADD) {
-            const auto hash   = util::hash_str(lhs->hash(), rhs->view());
-            const auto joined = new_string(ctx.gc(), lhs->view(), rhs->view(), hash);
-            ctx.drop(2);
-            ctx.push(Value::from_obj(joined));
-        } else if constexpr (Op == OpCode::LESS) {
-            ctx.drop(2);
-            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) < 0));
-        } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            ctx.drop(2);
-            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) <= 0));
-        } else if constexpr (Op == OpCode::GREATER) {
-            ctx.drop(2);
-            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) > 0));
-        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            ctx.drop(2);
-            ctx.push(Value::from_bool(lhs->view().compare(rhs->view()) >= 0));
-        } else {
-            STATIC_UNREACHABLE("run_string_binary: no arm for this Op");
-        }
-        return true;
     }
 
     bool Eval::run_negate(AriaExeContext& ctx) {

@@ -117,6 +117,13 @@ namespace aria {
         // 新增承载类型零 VM 改动;失败**自己 fail**、返回值只留信号(load 族 nullopt / store 族 false ⟺ 已 fail,
         // 失败出口 `return ctx.fail(...);`);fail 文案渲染值走非重入渲染;调用方保证接收者「栈即根」。
 
+        // 从所属类的成员链载入(名字即契约:从 class 起查,值本地状态出局) -- 实例自 klass 模板
+        // 链、类值自 Class 元类链、内建/函数族/模块/协程自各自单例链。错误契约同 load_field:
+        // nullopt ⟺ 已 fail,miss 措辞按宿主类型就地烘焙;映射在各宿主 override 内静态定型,
+        // 无运行期 switch。成员读 = 本地值态 + 本口缺席腿。
+        [[nodiscard]]
+        virtual Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name);
+
         // 裸查找命名成员(PREPARE_METHOD 与算子/调用派发统一入口):name 为 intern 串(=== 同指针查表)。
         // 返回查到的**原值**、永不铸 ObjBoundMethod、命中零分配:实例 fields 优先、miss 沿类链/表链取原值,
         // 故每次解析按当前类链即时生效。**槽 0 在消费时序里恒为接收者**(非方法成员被调用时它不是成员值)。
@@ -129,7 +136,6 @@ namespace aria {
         // 内置类表条目全为原生方法,命中无条件绑定;基类默认 = 直接委托 load_field。错误契约同 load_field。
         [[nodiscard]]
         virtual Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name);
-
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):基类默认报 "type X does
         // not support field access";ObjClass 落本类自身表恒成功;ObjInstance 动态字段永不失败;
         // ObjModule 恒拒(模块成员只读)。

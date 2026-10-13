@@ -70,8 +70,13 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取 override:模块成员 = 模块全局绑定,查 globals_ 直读原值;函数值为闭包恒非方法
-        // 不绑定 this,nil 绑定与「无此成员」由 find 空态区分。miss 文案同基类默认形。
+        // 从所属类载入:自 Module 类链起查(globals 出局 -- 值态与类命名空间分层)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 命名成员读取 override:globals_ 值态先行;miss 喂类命名空间(Module 链),再 miss 以
+        // 模块措辞 fail(文案逐字保留)。函数值为闭包恒非方法不绑定 this,nil 绑定与「无此成员」
+        // 由 find 空态区分。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 

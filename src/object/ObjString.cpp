@@ -85,9 +85,15 @@ namespace aria {
 
     String ObjString::to_string() const { return std::format("{}", view()); }
 
-    Opt<Value> ObjString::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.string_class()->load_field(ctx, name);
+    Opt<Value> ObjString::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.string_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
     }
+
+    Opt<Value> ObjString::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
 
     Opt<Value> ObjString::load_field_bound(AriaExeContext& ctx, ObjString* name) {
         const auto hit = load_field(ctx, name);

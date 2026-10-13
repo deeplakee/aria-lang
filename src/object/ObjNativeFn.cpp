@@ -4,7 +4,9 @@
 
 #include "aria.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/AriaExeContext.hpp"
 
 namespace aria {
 
@@ -39,4 +41,15 @@ namespace aria {
         return new_native_fn(gc, name_str, fn);
     }
 
+    Opt<Value> ObjNativeFn::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.native_fn_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+    }
+
+    Opt<Value> ObjNativeFn::load_field(AriaExeContext& ctx, ObjString* name) {
+        return load_field_from_class(ctx, name);
+    }
 } // namespace aria

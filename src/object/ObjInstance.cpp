@@ -25,21 +25,25 @@ namespace aria {
         return std::format("<{} instance>", class_->name()->view());
     }
 
-    Opt<Value> ObjInstance::load_field(AriaExeContext& ctx, ObjString* name) {
-        if (const auto entry = fields_.find(Value::from_obj(name))) {
-            return entry->value; // 真字段优先(字段里存的可调用值原值直调)
+    Opt<Value> ObjInstance::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        if (const auto v = class_->find_field(name)) { // 本类模板链起查(成员直取,不经映射)
+            return v;
         }
-        return class_->load_field(ctx, name); // 命中方法戳闭包也不绑定;miss 的类措辞随协议透传
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", class_->debug_repr(), name->view());
     }
 
-    Opt<Value> ObjInstance::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        // fields 命中即真字段优先;否则委托类协议沿链读穿透(miss 已就地 fail,只透传)。
-        // 命中按 is_method 判:方法绑 this、不写回 fields;new_bound_method 唯一分配点,实例已根化。
+    Opt<Value> ObjInstance::load_field(AriaExeContext& ctx, ObjString* name) {
+        // 真字段优先(字段里存的可调用值原值直调);miss 缺席腿在本口(类措辞 fail 随其烘焙)。
         if (const auto entry = fields_.find(Value::from_obj(name))) {
             return entry->value;
         }
+        return load_field_from_class(ctx, name);
+    }
 
-        const auto hit = class_->load_field(ctx, name);
+    Opt<Value> ObjInstance::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        // fields 命中即真字段优先;缺席经裸读探类链,命中按 is_method 判:方法绑 this、不写回
+        // fields;new_bound_method 唯一分配点,实例已根化。
+        const auto hit = load_field(ctx, name);
         if (!hit) {
             return std::nullopt;
         }

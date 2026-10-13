@@ -41,6 +41,15 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
+        // 从所属类载入:自 NativeFn 类链起查(本类无值本地状态)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 裸读 override:NativeFn 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
+        // 默认(原值直取,值自身即槽 0 接收者)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
+
     private:
         ObjString* name_;
         NativeFn   fn_;

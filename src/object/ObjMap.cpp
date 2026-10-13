@@ -55,9 +55,15 @@ namespace aria {
         return "{" + util::join(table_, ", ", entry_repr) + "}";
     }
 
-    Opt<Value> ObjMap::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.map_class()->load_field(ctx, name);
+    Opt<Value> ObjMap::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.map_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
     }
+
+    Opt<Value> ObjMap::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
 
     Opt<Value> ObjMap::load_field_bound(AriaExeContext& ctx, ObjString* name) {
         const auto hit = load_field(ctx, name);

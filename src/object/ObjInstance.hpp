@@ -42,6 +42,10 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
+        // 从所属类载入:自本类模板链起查(fields 出局),字段不在时由成员读落此一腿。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
         // 裸查找 override(调用路径与算子钩子取实现共用):不绑定,返回字段/类链里的原值交 VM 直调
         // (方法体从槽 0 读 this)。零分配,每次按当前类链解析。
         [[nodiscard]]

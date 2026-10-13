@@ -51,6 +51,15 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
+        // 从所属类载入:自 BoundMethod 类链起查(本类无值本地状态)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 裸读 override:BoundMethod 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
+        // 默认(原值直取,值自身即槽 0 接收者)。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
+
     private:
         Value method_;   // 被绑定方法值(闭包/原生;ctor 断言可调用)
         Value receiver_; // 绑定接收者(Value 泛化;闭包解包作方法帧槽 0 的 this,原生覆写调用区槽 0)

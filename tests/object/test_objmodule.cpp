@@ -6,6 +6,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/AriaHashTable.hpp"
@@ -261,4 +262,22 @@ TEST(ObjModule, StoreFieldRejectedAsReadOnly) {
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_EQ(message, "Runtime: TypeMismatch type Module does not support field assignment");
     EXPECT_EQ(m->globals().find(Value::from_obj(key)), nullptr); // 拒绝不留痕
+}
+
+// 类命名空间缺省腿:模块 globals 缺席的条目沿 Module 链命中根(is_a/__str__ 原生可及);
+// globals 命中恒先行,符号表遮蔽不受影响。
+TEST(ObjModule, ChainFallbackResolvesRootMembers) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   m     = make_module(gc, "helper");
+    guard.push(m);
+
+    for (const char* name: {"is_a", "__str__"}) {
+        const auto key = new_string(gc, name);
+        guard.push(key);
+        const auto hit = m->load_field(*vm.current_context(), key);
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>()); // 沿 Module 链继承根原生
+    }
 }

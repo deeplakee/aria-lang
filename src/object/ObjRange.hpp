@@ -62,11 +62,15 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 裸读 override:委托 Range bootstrap 类表直取原生值。
+        // 从所属类载入:自 Range bootstrap 类链起查(本类无值本地状态)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 裸读 override:Range bootstrap 类链直取(find_field 纯查询),miss 就地类措辞 fail。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一查找命中恒绑 this。
+        // 绑定读 override:同一趟裸读命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 

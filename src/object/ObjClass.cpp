@@ -37,12 +37,21 @@ namespace aria {
         return std::format("<class {}>", name_->view());
     }
 
-    Opt<Value> ObjClass::load_field(AriaExeContext& ctx, ObjString* name) {
-        // 读穿透直读不绑定不缓存;miss 的 fail 装箱是唯一分配点 -- 本类与 name 皆经调用方根化(peek 在栈)。
-        if (const auto v = find_field(name)) {
+    Opt<Value> ObjClass::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        if (const auto v = ctx.class_class()->find_field(name)) { // 自元类链起,自身模板表出局
             return v;
         }
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+    }
+
+    Opt<Value> ObjClass::load_field(AriaExeContext& ctx, ObjString* name) {
+        // 类值成员读与全库同一条定序:先查自己的模板链(静态读语义逐字保留:类常量/def 方法/类上
+        // 赋值全在此);miss 缺席腿在本口(归属链 = Class 元类链,自身模板表结构性不可达) --
+        // fail 装箱随本口;本类与 name 皆经调用方根化(peek 在栈)。
+        if (const auto v = find_field(name)) {
+            return v;
+        }
+        return load_field_from_class(ctx, name);
     }
 
     bool ObjClass::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {

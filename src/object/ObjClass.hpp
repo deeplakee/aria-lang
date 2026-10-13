@@ -57,19 +57,25 @@ namespace aria {
         [[nodiscard]]
         String debug_repr() const override;
 
-        // 命名成员读取 override:沿链读穿透直读,不绑定不缓存(类路径无 this);全链 miss 以类措辞
-        // fail,该 fail 装箱是唯一分配点。
+        // 从所属类载入:类值的"类"是 Class 元类单例,查找自元类链起(自身模板表出局 --
+        // 按名字取值的咨询因此不可能命中模板表里的实例钩子)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 命名成员读取 override:模板链读穿透直读,不绑定不缓存(类路径无 this);miss 喂类命名
+        // 空间(Class 元类链),再 miss 以类措辞 fail,该 fail 装箱是唯一分配点。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
+
+        // 链查原语(公开):沿 super 链查,链上首个命中拷出;纯查询零分配不 fail,
+        // 实例链腿与元类腿及将来按名取用的查询一律走它。
+        [[nodiscard]]
+        Opt<Value> find_field(ObjString* name) noexcept;
 
         // 命名成员写入 override:类上赋值落本类自身表恒成功(动态新增允许);本 override 无 fail 路径。
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
     private:
-        // 沿 super 链查,链上首个命中拷出;纯查询无分配不 fail(私有,组合方一律走 load_field 协议)。
-        [[nodiscard]]
-        Opt<Value> find_field(ObjString* name) noexcept;
-
         ObjString*    name_;       // 类名(intern 驻留;显示名;指针恒非空)
         ObjClass*     superclass_; // 父类(唯 Object 根为 nullptr;运行期注入后不可变)
         AriaHashTable field_;      // 类级成员表(惰性分配;单数 field_ 区分 ObjInstance.fields_)

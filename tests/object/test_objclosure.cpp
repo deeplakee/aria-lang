@@ -2,12 +2,17 @@
 
 #include <tuple>
 
+#include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClosure.hpp"
+#include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
+#include "runtime/AriaVM.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 using aria::GC;
@@ -46,6 +51,16 @@ namespace {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
         return aria::new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
+    }
+
+    // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
+    //(协议 fail 契约:load 族 nullopt ⟺ 寄存器必有载荷)。
+    aria::Pair<aria::ErrorCode, aria::String> take_pending_error(aria::AriaVM& vm) {
+        auto payload = vm.current_context()->take_error();
+        EXPECT_TRUE(payload.has_value());
+        const auto ex = aria::try_as_obj<aria::ObjException>(*payload);
+        EXPECT_NE(ex, nullptr);
+        return {ex->code(), aria::String{ex->message()->view()}};
     }
 
 } // namespace
@@ -133,4 +148,28 @@ TEST(ObjClosure, UnrootedClosureSwept) {
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
+}
+
+// 类面接入:闭包成员读经 Closure 链命中根(is_a/__str__ 原生可及),miss 以类措辞报。
+TEST(ObjClosure, ChainMembersResolvable) {
+    aria::AriaVM vm;
+    auto&        gc    = vm.gc();
+    auto         guard = gc.make_guard();
+    auto         fn    = new_function(gc, "worker", 0);
+    guard.push(fn);
+    auto closure = new_closure(gc, fn);
+    guard.push(closure);
+
+    const auto is_a_key = new_string(gc, "is_a");
+    guard.push(is_a_key);
+    const auto hit = closure->load_field(*vm.current_context(), is_a_key);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>()); // 沿 Closure 链继承根原生
+
+    const auto nope = new_string(gc, "nope");
+    guard.push(nope);
+    EXPECT_FALSE(closure->load_field(*vm.current_context(), nope).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, aria::ErrorCode::UndefinedProperty);
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <class Closure> has no member 'nope'");
 }

@@ -43,6 +43,15 @@ namespace aria {
         String debug_repr() const override {
             return std::format("<coroutine {}>", aria::to_string(state_));
         }
+
+        // 从所属类载入:自 Coroutine 类链起查(句柄无值本地状态)。
+        [[nodiscard]]
+        Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
+
+        // 裸读 override:Coroutine 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
+        // 默认(原值直取,句柄自身即槽 0 接收者)。定义在 .cpp。
+        [[nodiscard]]
+        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
     };
 
     // 工厂:分配执行上下文并绑定宿主回指针。返回对象白色无根,调用方须自行根化(主上下文经

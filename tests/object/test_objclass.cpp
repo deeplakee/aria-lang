@@ -7,6 +7,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/ObjBridge.hpp"
@@ -426,4 +427,48 @@ TEST(ObjClass, StoreFieldShadowsCreatesAndSyncsInit) {
     // 非可调用 init 亦放行(init Value 化):表槽/init_ 一致,实例化期由 call_value 兜底。
     EXPECT_TRUE(sub->store_field(*vm.current_context(), init_key, Value::from_int(5)));
     EXPECT_TRUE(value_identical(sub->init(), Value::from_int(5)));
+}
+
+// 读序:模板链先行 -- 类自身表命中即返回(即使与根条目同名),值缺席的条目才落到类命名
+// 空间(元类链)。钉死「用户模板成员不被元类遮蔽」与「类值缺口喂元类链」两条定序。
+TEST(ObjClass, TemplateChainReadPrecedesMetaclass) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   klass = make_class(gc, "Foo", vm.object_class());
+    guard.push(klass);
+
+    // 模板同名遮蔽:Foo.is_a 命中自身表,不落到根的 is_a。
+    const auto is_a_key = new_string(gc, "is_a");
+    guard.push(is_a_key);
+    const auto own = new_string(gc, "own override string");
+    guard.push(own);
+    klass->set_field(is_a_key, Value::from_obj(own));
+    const auto shadowed = klass->load_field(*vm.current_context(), is_a_key);
+    ASSERT_TRUE(shadowed.has_value());
+    EXPECT_TRUE(value_identical(*shadowed, Value::from_obj(own)));
+
+    // 元类链命中:类值自身表缺席、元类表有条目,经缺省腿链根取到。
+    const auto root_key = new_string(gc, "__str__");
+    guard.push(root_key);
+    const auto hook = klass->load_field(*vm.current_context(), root_key);
+    ASSERT_TRUE(hook.has_value());
+    EXPECT_TRUE(hook->as_obj()->is<aria::ObjNativeFn>()); // 沿链继承根注的默认 __str__ 原生
+}
+
+// 复现成员读定序的另一面:值态缺席 -> 类命名空间取到 -- 佐证读穿透直读不绑定不缓存的
+// 既有契约在两段读下不变(返回原值)。
+TEST(ObjClass, MissWordingPreserved) {
+    AriaVM vm;
+    auto&  gc    = vm.gc();
+    auto   guard = gc.make_guard();
+    auto   klass = make_class(gc, "Foo");
+    guard.push(klass);
+    const auto key = new_string(gc, "nope");
+    guard.push(key);
+
+    EXPECT_FALSE(klass->load_field(*vm.current_context(), key).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <class Foo> has no member 'nope'"); // 类措辞逐字保留
 }

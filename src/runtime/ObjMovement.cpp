@@ -1,6 +1,7 @@
 #include "runtime/ObjMovement.hpp"
 
 #include "memory/GC.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjUpvalue.hpp"
@@ -26,6 +27,18 @@ namespace aria {
             gc.mark_value(*pending);
         }
         gc.mark_object(previous_); // resume 链链上成员经灰栈级联,容 nullptr
+    }
+
+    Opt<Value> ObjMovement::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.coroutine_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+    }
+
+    Opt<Value> ObjMovement::load_field(AriaExeContext& ctx, ObjString* name) {
+        return load_field_from_class(ctx, name);
     }
 
     ObjMovement* new_movement(GC& gc, AriaVM& host) { return gc.new_object<ObjMovement>(&gc, &host); }

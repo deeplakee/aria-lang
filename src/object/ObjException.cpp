@@ -27,8 +27,16 @@ namespace aria {
 
     String ObjException::debug_repr() const { return String{message_->view()}; }
 
+    Opt<Value> ObjException::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.exception_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+    }
+
     Opt<Value> ObjException::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.exception_class()->load_field(ctx, name);
+        return load_field_from_class(ctx, name);
     }
 
     Opt<Value> ObjException::load_field_bound(AriaExeContext& ctx, ObjString* name) {

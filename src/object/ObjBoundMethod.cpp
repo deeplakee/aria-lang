@@ -3,9 +3,11 @@
 #include <format>
 
 #include "memory/GC.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjNativeFn.hpp"
+#include "runtime/AriaExeContext.hpp"
 #include "value/ObjBridge.hpp"
 
 namespace aria {
@@ -43,6 +45,18 @@ namespace aria {
     }
 
     String ObjBoundMethod::debug_repr() const { return std::format("<bound method {}>", name()->view()); }
+
+    Opt<Value> ObjBoundMethod::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.bound_method_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
+    }
+
+    Opt<Value> ObjBoundMethod::load_field(AriaExeContext& ctx, ObjString* name) {
+        return load_field_from_class(ctx, name);
+    }
 
     ObjBoundMethod* new_bound_method(GC& gc, const Value method, const Value receiver) {
         return gc.new_object<ObjBoundMethod>(method, receiver);

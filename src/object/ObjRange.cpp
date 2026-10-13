@@ -44,9 +44,15 @@ namespace aria {
         return std::format("{}{}{}", from_, is_exclusive_ ? "..." : "..", *to_);
     }
 
-    Opt<Value> ObjRange::load_field(AriaExeContext& ctx, ObjString* name) {
-        return ctx.range_class()->load_field(ctx, name);
+    Opt<Value> ObjRange::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        const auto klass = ctx.range_class();
+        if (const auto v = klass->find_field(name)) {
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->debug_repr(), name->view());
     }
+
+    Opt<Value> ObjRange::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
 
     Opt<Value> ObjRange::load_field_bound(AriaExeContext& ctx, ObjString* name) {
         const auto hit = load_field(ctx, name);

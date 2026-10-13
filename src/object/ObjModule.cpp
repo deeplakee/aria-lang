@@ -2,6 +2,8 @@
 
 #include <format>
 
+#include "object/ObjClass.hpp"
+
 #include "aria.hpp"
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
@@ -47,11 +49,20 @@ namespace aria {
 
     String ObjModule::debug_repr() const { return std::format("<module {}>", name_->view()); }
 
+    Opt<Value> ObjModule::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
+        if (const auto v = ctx.module_class()->find_field(name)) { // globals 出局,符号表遮蔽不影响类腿
+            return v;
+        }
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+    }
+
     Opt<Value> ObjModule::load_field(AriaExeContext& ctx, ObjString* name) {
+        // 全库同一条定序:先查自己的值态(globals 表);miss 缺席腿在本口(链上覆写/根成员即时
+        // 生效,模块措辞随其烘焙 -- 文案逐字保留)。
         if (const auto entry = globals_.find(Value::from_obj(name))) {
             return entry->value;
         }
-        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", this->debug_repr(), name->view());
+        return load_field_from_class(ctx, name);
     }
 
     bool ObjModule::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {

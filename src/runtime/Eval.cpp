@@ -9,6 +9,7 @@
 #include "bytecode/Disassembler.hpp"
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
+#include "memory/StringBuilder.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
@@ -87,6 +88,14 @@ namespace aria {
             io::print(stderr, "{}^ frame[{}]\n", String(col, ' '), static_cast<u32>(frames.size() - 1));
         }
 
+        // 调用区构造:[slot0, a1..aN] 依次压栈(槽 0 = receiver 兼返回槽)。
+        void push_call_area(AriaExeContext& ctx, const Value slot0, const Span<const Value> args) {
+            ctx.push(slot0);
+            for (const auto& arg: args) {
+                ctx.push(arg);
+            }
+        }
+
     } // namespace
 
     bool Eval::call_value(AriaExeContext& ctx, const Value callee, const u8 argc) {
@@ -138,35 +147,6 @@ namespace aria {
         return true;
     }
 
-    Opt<Value> Eval::execute_call(AriaExeContext& ctx, const Value slot0, ObjClosure* closure,
-                                  const Span<const Value> args) {
-        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
-        // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
-        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
-        // 重寻址(重入期间值栈可能搬迁)。
-        ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
-        if (ctx.recursion_depth() >= AriaExeContext::kMaxRecursionDepth) {
-            return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
-        }
-        if (args.size() > std::numeric_limits<u8>::max()) {
-            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
-        }
-        ASSERT(args.data() >= ctx.stack_top() || args.data() + args.size() <= ctx.stack_base() ||
-                       ctx.stack_size() + 1 + args.size() <= ctx.stack_capacity(),
-               "args alias the value stack without room to push");
-        ctx.push(slot0); // 入栈即根(槽 0 = 本调用返回槽)
-        for (const auto& arg: args) {
-            ctx.push(arg);
-        }
-        const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (call_closure(ctx, closure, args.size()) && dispatch_loop(ctx)) {
-            ctx.leave_recursion(saved_ret);
-            return ctx.pop(); // 闭包返回值
-        }
-        ctx.leave_recursion(saved_ret);
-        return std::nullopt; // 错误值在寄存器
-    }
-
     bool Eval::call_native(AriaExeContext& ctx, const ObjNativeFn* obj, const u8 argc) {
         // 同步调用不进帧。切换型原生成功后 vm.current_ 已被换至对侧,事后簿记(drop/寄存器断言)
         // 一律落 ctx(进场上下文,引用不可重绑)使栈顶停在该调用的槽 0(切换模型下的预留结果槽)。
@@ -184,6 +164,123 @@ namespace aria {
         // 失败:载荷留寄存器交调用方 take_error(bool 契约)。
         ASSERT(ctx.has_error(), "native fn returned false but raised no error");
         return false;
+    }
+
+    Opt<Value> Eval::execute_closure(AriaExeContext& ctx, const Value slot0, ObjClosure* closure,
+                                     const Span<const Value> args) {
+        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
+        // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
+        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
+        // 重寻址(重入期间值栈可能搬迁)。
+        ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
+        if (ctx.recursion_depth() >= AriaExeContext::kMaxRecursionDepth) {
+            return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
+        }
+        if (args.size() > std::numeric_limits<u8>::max()) {
+            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
+        }
+        ASSERT(args.data() >= ctx.stack_top() || args.data() + args.size() <= ctx.stack_base() ||
+                       ctx.stack_size() + 1 + args.size() <= ctx.stack_capacity(),
+               "args alias the value stack without room to push");
+        push_call_area(ctx, slot0, args);
+        const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
+        if (call_closure(ctx, closure, args.size()) && dispatch_loop(ctx)) {
+            ctx.leave_recursion(saved_ret);
+            return ctx.pop(); // 闭包返回值
+        }
+        ctx.leave_recursion(saved_ret);
+        return std::nullopt; // 错误值在寄存器
+    }
+
+    Opt<Value> Eval::execute_native(AriaExeContext& ctx, const Value slot0, const ObjNativeFn* native,
+                                    const Span<const Value> args) {
+        // 外部调用原生:调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹槽 0。
+        if (args.size() > std::numeric_limits<u8>::max()) {
+            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
+        }
+        push_call_area(ctx, slot0, args);
+        if (call_native(ctx, native, args.size())) {
+            return ctx.pop();
+        }
+        return std::nullopt;
+    }
+
+    Opt<Value> Eval::execute_callable(AriaExeContext& ctx, const Value slot0, const Value callee,
+                                      const Span<const Value> args) {
+        // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派,bound 解内层沿用自身
+        // receiver(ctor 契约:内层为闭包或原生)。失败载荷留寄存器。
+        if (const auto bound = try_as_obj<ObjBoundMethod>(callee)) {
+            return execute_callable(ctx, bound->receiver(), bound->method(), args);
+        }
+        if (const auto native = try_as_obj<ObjNativeFn>(callee)) {
+            return execute_native(ctx, slot0, native, args);
+        }
+        if (const auto closure = try_as_obj<ObjClosure>(callee)) {
+            return execute_closure(ctx, slot0, closure, args);
+        }
+        return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
+    }
+
+    Opt<ObjString*> Eval::execute_str_hook(AriaExeContext& ctx, const Value value, const Value hook) {
+        // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用,返回值须为 string。
+        const auto rendered = execute_callable(ctx, value, hook, {});
+        if (!rendered) {
+            return std::nullopt;
+        }
+        if (const auto s = try_as_obj<ObjString>(*rendered)) {
+            return s;
+        }
+        ctx.raise(ErrorCode::TypeMismatch, "'__str__' must return a string, got {}", type_name(*rendered));
+        return std::nullopt;
+    }
+
+    Opt<ObjString*> Eval::stringify(AriaExeContext& ctx, const Value value) {
+        // 非对象值无钩子面:repr 的非对象臂即字面渲染(两渲染器非对象域逐臂同形)。
+        if (!value.is_obj()) {
+            return new_string(ctx.gc(), repr(value));
+        }
+        if (const auto s = try_as_obj<ObjString>(value)) {
+            return s;
+        }
+        // 咨询口取 __str__:实例字段/模块全局等值本地状态出局,类链(元类链/单例链)命中即实现;
+        // 根类默认使现役类面恒命中,miss 臂兜契约(措辞已随咨询口烘焙)。
+        const auto hook = value.as_obj()->load_field_from_class(ctx, ctx.str<"__str__">());
+        if (!hook) {
+            return std::nullopt;
+        }
+        return execute_str_hook(ctx, value, *hook);
+    }
+
+    Opt<ObjString*> Eval::concat_values(AriaExeContext& ctx, const Span<const Value> values, const StringView sep) {
+        // 两遍式(先收视图量长定容、后单趟填充,join 预扫先例):各段一律经 stringify 收成
+        // 视图(皆指向驻留串,跨渲染稳定);失败即短路(nullopt ⟺ 某段载荷在寄存器)。填充段
+        // 零 GC 点,唯一 GC 点在 take_string。
+        List<StringView> parts;
+        usize            total = 0;
+        parts.reserve(values.size());
+        for (const auto& element: values) {
+            const auto rendered = stringify(ctx, element);
+            if (!rendered) {
+                return std::nullopt;
+            }
+            const auto view = (*rendered)->view();
+            total += view.size();
+            parts.push_back(view);
+        }
+
+        if (!values.empty()) {
+            total += (values.size() - 1) * sep.size();
+        }
+
+        auto builder = StringBuilder{ctx.gc()};
+        builder.reserve(total);
+        for (usize index = 0; index < parts.size(); ++index) {
+            if (index > 0) {
+                builder.append(sep);
+            }
+            builder.append(parts[index]);
+        }
+        return builder.take_string();
     }
 
     template<OpCode Op>
@@ -1184,7 +1281,7 @@ namespace aria {
                     // 无 GC 点)。
                     const u8   count  = read_u8(frame);
                     const auto base   = current->stack_top() - count;
-                    const auto result = concat_values(vm.gc_, {base, count}, {});
+                    const auto result = aria::concat_values(vm.gc_, {base, count}, {});
                     current->drop(count);
                     current->push(Value::from_obj(result));
                     break;

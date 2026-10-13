@@ -255,7 +255,7 @@ namespace aria {
         [[nodiscard]]
         u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
-        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_call;失败载荷留本上下文
+        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_closure;失败载荷留本上下文
         // 寄存器、残帧截净,调用方按 bool 契约交外层续搜;仅可在执行中的驱动内调)。
 
         // 闭包形态:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。

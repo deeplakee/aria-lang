@@ -87,11 +87,11 @@ namespace aria {
     // 重入口面
 
     Opt<Value> AriaExeContext::execute_closure(ObjClosure* closure, const Span<const Value> args) {
-        return Eval::execute_call(*this, Value::from_obj(closure), closure, args);
+        return Eval::execute_closure(*this, Value::from_obj(closure), closure, args);
     }
 
     Opt<Value> AriaExeContext::execute_method(const Value receiver, ObjClosure* method, const Span<const Value> args) {
-        return Eval::execute_call(*this, receiver, method, args);
+        return Eval::execute_closure(*this, receiver, method, args);
     }
 
     // 帧与开指链

@@ -602,11 +602,10 @@ namespace aria {
             if (const auto argc = info.size(); argc != 0) {
                 return ctx.arity_error(argc, 0);
             }
-            const auto self = info.receiver<ObjString>();
-            if (self == nullptr) {
+            if (info.receiver<ObjString>() == nullptr) {
                 return false;
             }
-            info.set_return_val(Value::from_obj(new_string(ctx.gc(), self->view())));
+            info.set_return_val(info.self());
             return true;
         }
 

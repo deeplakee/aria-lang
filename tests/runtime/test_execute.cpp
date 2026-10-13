@@ -13,6 +13,7 @@
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/Eval.hpp"
 #include "type.hpp"
 #include "util/source_file.hpp"
 #include "value/AriaHashTable.hpp"
@@ -22,6 +23,7 @@ using aria::AriaVM;
 using aria::Compiler;
 using aria::Error;
 using aria::ErrorCode;
+using aria::Eval;
 using aria::GC;
 using aria::kModuleEntryName;
 using aria::List;
@@ -50,7 +52,7 @@ namespace {
 
     // ---- 重入口驱动原生:脚本经全局名传入闭包/绑定方法值,原生同步执行之 ----
 
-    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_call
+    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_closure
     // 别名契约),视图读数按值抄离,跨重入期间值栈扩容无牵连。returns u8 argc。
     u8 copy_call_args(const NativeCallInfo& info, const u8 skip, Value* args) {
         const u8 argc = static_cast<u8>(info.size() - skip);
@@ -67,6 +69,21 @@ namespace {
             return std::nullopt;
         }
         return found->value;
+    }
+
+    // render(x) -> string:显示渲染探针(直驱 Eval::stringify:钩子命中/根默认/D2 违约全经此口),
+    // 失败载荷在寄存器按 bool 契约透传。
+    bool fn_render(const NativeCallInfo& info) {
+        auto& ctx = info.ctx();
+        if (const auto argc = info.size(); argc != 1) {
+            return ctx.arity_error(argc, 1);
+        }
+        const auto s = Eval::stringify(ctx, info[0]);
+        if (!s) {
+            return false;
+        }
+        info.set_return_val(Value::from_obj(*s));
+        return true;
     }
 
     // 脚轮驱动出口:result 供断言,module 供 globals 检视(vm 内根,vm 存活期有效)。
@@ -271,4 +288,153 @@ TEST_F(NestedExecStress, ResumeInsideNestedMultiplexes) {
     ASSERT_TRUE(v.has_value());
     // 嵌套执行内 resume 合法:inner 完成的 42 穿 exec_closure 回 wrapper 再回 outer。
     EXPECT_EQ(v->as_int(), 42);
+}
+
+// ---- Eval::stringify 显示渲染口(__str__ 咨询/D2 契约/重入) ----
+
+TEST_F(NestedExecStress, StringifyHookOnInstance) {
+    const auto src = R"src(
+        def Point {
+            init(x, y) { this.x = x; this.y = y; }
+            __str__() { return "P(${this.x},${this.y})"; }
+        }
+        var s = render(Point(1, 2));
+    )src";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto s = find_global(*r.module, vm.gc(), "s");
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(s->as_obj()->as<ObjString>()->view(), "P(1,2)");
+}
+
+TEST_F(NestedExecStress, StringifyRootDefaultDebugForm) {
+    const auto src = R"(
+        def Point {
+            init(x) { this.x = x; }
+        }
+        var s = render(Point(3));
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto s = find_global(*r.module, vm.gc(), "s");
+    ASSERT_TRUE(s.has_value());
+    // 链上无用户钩子:根类默认 __str__ 原生兜底,渲染实例 debug 形态。
+    EXPECT_EQ(s->as_obj()->as<ObjString>()->view(), "<Point instance>");
+}
+
+TEST_F(NestedExecStress, StringifyInstanceFieldShadowExcluded) {
+    const auto src = R"(
+        def Box { }
+        var b = Box();
+        b.__str__ = fun() { return "shadow"; };
+        var s = render(b);
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto s = find_global(*r.module, vm.gc(), "s");
+    ASSERT_TRUE(s.has_value());
+    // 咨询出局值本地状态:实例字段 __str__ 不接管渲染(成员读 b.__str__ 仍见字段值)。
+    EXPECT_EQ(s->as_obj()->as<ObjString>()->view(), "<Box instance>");
+}
+
+TEST_F(NestedExecStress, StringifyClassAttrNonCallableRejected) {
+    const auto src = R"(
+        def Box { }
+        Box.__str__ = 42;
+        var s = render(Box());
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_FALSE(r.result.has_value());
+    const Error& err = r.result.error();
+    // 非可调解析值由外部调用口收口(CallNonCallable),原码透传附 at 行。
+    EXPECT_EQ(err.code(), ErrorCode::CallNonCallable);
+    EXPECT_NE(err.message().find("type Int is not callable"), String::npos);
+}
+
+TEST_F(NestedExecStress, StringifyHookMustReturnString) {
+    const auto src = R"(
+        def Box {
+            __str__() { return 42; }
+        }
+        var s = render(Box());
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_FALSE(r.result.has_value());
+    const Error& err = r.result.error();
+    EXPECT_EQ(err.code(), ErrorCode::TypeMismatch);
+    EXPECT_NE(err.message().find("'__str__' must return a string, got Int"), String::npos);
+}
+
+TEST_F(NestedExecStress, StringifyHookRaisePropagates) {
+    const auto src = R"(
+        def Box {
+            __str__() { throw "render boom"; }
+        }
+        var s = render(Box());
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_FALSE(r.result.has_value());
+    const Error& err = r.result.error();
+    EXPECT_EQ(err.code(), ErrorCode::UncaughtException);
+    EXPECT_NE(err.message().find("render boom"), String::npos);
+}
+
+TEST_F(NestedExecStress, StringifyRecursionCapped) {
+    const auto src = R"(
+        def Loop {
+            __str__() { return render(this); }
+        }
+        var s = render(Loop());
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_FALSE(r.result.has_value());
+    const Error& err = r.result.error();
+    // 自指渲染在嵌套深度上限处折断(每圈两层:render 原生 + __str__ 闭包),VM 异常载荷保持原码。
+    EXPECT_EQ(err.code(), ErrorCode::StackOverflow);
+    EXPECT_NE(err.message().find("nested execution too deep"), String::npos);
+}
+
+TEST_F(NestedExecStress, StringifyBoundMethodHook) {
+    const auto src = R"(
+        def Format {
+            fmt() { return "F"; }
+        }
+        def Box { }
+        Box.__str__ = Format().fmt;
+        var s = render(Box());
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto s = find_global(*r.module, vm.gc(), "s");
+    ASSERT_TRUE(s.has_value());
+    // bound 形态经 call_value 分派:沿用 bound 自身 receiver,argc = 0。
+    EXPECT_EQ(s->as_obj()->as<ObjString>()->view(), "F");
+}
+
+TEST_F(NestedExecStress, StringifyPlainAndBuiltinValues) {
+    const auto src = R"(
+        def Point { }
+        var a = render(42);
+        var b = render(nil);
+        var c = render(true);
+        var d = render(1.5);
+        var e = render("raw");
+        var f = render([1, 2]);
+        var g = render(Point);
+    )";
+    const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto check = [&](const char* name, const StringView want) {
+        const auto v = find_global(*r.module, vm.gc(), name);
+        ASSERT_TRUE(v.has_value()) << name;
+        EXPECT_EQ(v->as_obj()->as<ObjString>()->view(), want) << name;
+    };
+    check("a", "42");
+    check("b", "nil");
+    check("c", "true");
+    check("d", "1.5");
+    check("e", "raw");
+    check("f", "[1, 2]");
+    // 类值沿元类链命中根默认,渲染 debug 形态。
+    check("g", "<class Point>");
 }

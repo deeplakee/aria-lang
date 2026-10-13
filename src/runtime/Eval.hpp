@@ -38,7 +38,23 @@ namespace aria {
         // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
         // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
         [[nodiscard]]
-        static Opt<Value> execute_call(AriaExeContext& ctx, Value slot0, ObjClosure* closure, Span<const Value> args);
+        static Opt<Value> execute_closure(AriaExeContext& ctx, Value slot0, ObjClosure* closure,
+                                          Span<const Value> args);
+
+        // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;ObjString 直取原文;其余
+        // 对象经类面咨询口取 __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
+        // 解析值须可调、返回值须为 string(违约就地 TypeMismatch)。成功返回渲染串(驻留恒
+        // 可达);nullopt ⟺ 载荷已入挂起寄存器(钩子抛错/违约/嵌套过深)。调用方保证 value
+        // 「栈即根」。
+        [[nodiscard]]
+        static Opt<ObjString*> stringify(AriaExeContext& ctx, Value value);
+
+        // 段收拢(插值 BUILD_STRING 与 join 共口):各段一律经 stringify 收成 StringView,量长
+        // 定容后单趟填充。nullopt ⟺ 某段渲染失败载荷在寄存器。values 契约同 execute_closure
+        // 的 args -- 不得指进值栈或容器内部(渲染可重入扩容搬迁),调用方先抄离;元素对象保活
+        // 由调用方承担(栈根/容器根)。
+        [[nodiscard]]
+        static Opt<ObjString*> concat_values(AriaExeContext& ctx, Span<const Value> values, StringView sep);
 
     private:
         // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用
@@ -56,6 +72,23 @@ namespace aria {
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
         static bool call_native(AriaExeContext& ctx, const ObjNativeFn* obj, u8 argc);
+
+        // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
+        // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
+        [[nodiscard]]
+        static Opt<Value> execute_native(AriaExeContext& ctx, Value slot0, const ObjNativeFn* native,
+                                         Span<const Value> args);
+
+        // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派 -- bound 解内层沿用自身
+        // receiver(ctor 契约:内层为闭包或原生),原生走 execute_native,闭包交 execute_closure
+        // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
+        [[nodiscard]]
+        static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, Span<const Value> args);
+
+        // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用(hook 为咨询口解析值),返回值须为
+        // string,违约 TypeMismatch。nullopt ⟺ 载荷留寄存器。
+        [[nodiscard]]
+        static Opt<ObjString*> execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
         // 按 Op 编译期选定算子钩子名,经成员协议裸查找取本对象上的实现(Op 由调用点穷举);nullopt
         // ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。

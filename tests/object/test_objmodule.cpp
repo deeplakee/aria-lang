@@ -85,7 +85,7 @@ TEST(ObjModule, SetEntry) {
 TEST(ObjModule, ToString) {
     GC   gc;
     auto m = make_module(gc, "lib/utils");
-    EXPECT_EQ(m->to_string(), "<module lib/utils>");
+    EXPECT_EQ(m->debug_repr(), "<module lib/utils>");
 }
 
 TEST(ObjModule, GlobalsSet) {

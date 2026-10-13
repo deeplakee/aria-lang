@@ -97,7 +97,7 @@ TEST(ObjInstance, ToString) {
     auto klass = make_class(gc, "Foo");
     auto guard = gc.make_guard(klass);
     auto obj   = new_instance(gc, klass);
-    EXPECT_EQ(obj->to_string(), "<Foo instance>");
+    EXPECT_EQ(obj->debug_repr(), "<Foo instance>");
 }
 
 TEST(ObjInstance, DebugRender) {

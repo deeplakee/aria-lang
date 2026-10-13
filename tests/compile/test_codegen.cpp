@@ -1419,7 +1419,7 @@ TEST(CodeGen, RuntimeErrorCaughtBindsObjException) {
     const auto ex = out->as_obj()->as<aria::ObjException>();
     ASSERT_NE(ex, nullptr);
     EXPECT_EQ(ex->code(), ErrorCode::DivisionByZero);
-    EXPECT_EQ(ex->to_string(), "Runtime: DivisionByZero integer division by zero");
+    EXPECT_EQ(ex->debug_repr(), "Runtime: DivisionByZero integer division by zero");
 }
 
 TEST(CodeGen, RethrowPreservesCode) {

@@ -53,13 +53,10 @@ namespace aria {
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 调试渲染(repr 位):字面量形式 `"<转义内容>"`(显示与调试分叉,与 to_string 成对 override)。
+        // 调试渲染(repr 位):字面量形式 `"<转义内容>"`(显示与调试分叉:显示位渲染面直取原文,
+        // 对象不设 override)。
         [[nodiscard]]
         String debug_repr() const override;
-
-        // 可读描述(显示位):字符内容原文(无引号)。
-        [[nodiscard]]
-        String to_string() const override;
 
         // 从所属类载入:自 String bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]

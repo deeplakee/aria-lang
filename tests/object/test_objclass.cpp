@@ -195,7 +195,7 @@ TEST(ObjClass, ReshadowInsertsOwnKey) {
 TEST(ObjClass, ToString) {
     GC   gc;
     auto klass = make_class(gc, "Foo");
-    EXPECT_EQ(klass->to_string(), "<class Foo>");
+    EXPECT_EQ(klass->debug_repr(), "<class Foo>");
 }
 
 TEST(ObjClass, DebugRender) {

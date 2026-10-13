@@ -85,7 +85,7 @@ TEST(ObjIterator, BaseReprAndType) {
     EXPECT_EQ(iter->type(), aria::ObjType::ITERATOR);
     EXPECT_EQ(iter->type_name(), aria::StringView{"Iterator"});
     EXPECT_EQ(iter->debug_repr(), "<iterator>");
-    EXPECT_EQ(iter->to_string(), "<iterator>"); // 显示同文案
+    EXPECT_EQ(iter->debug_repr(), "<iterator>"); // 显示同文案
 }
 
 // 同一 list 的两个迭代器按身份判等(游标互不串扰的结构前提)。

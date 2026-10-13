@@ -89,10 +89,10 @@ TEST(ObjFunction, EmitIntoUnit) {
 TEST(ObjFunction, ToString) {
     GC   gc;
     auto fn = new_function(gc, "add", 0);
-    EXPECT_EQ(fn->to_string(), "<fn add>");
+    EXPECT_EQ(fn->debug_repr(), "<fn add>");
 
     auto script = new_function(gc, "<main>", 0); // 匿名入口单元(<main> 名)
-    EXPECT_EQ(script->to_string(), "<fn <main>>");
+    EXPECT_EQ(script->debug_repr(), "<fn <main>>");
 }
 
 TEST(ObjFunction, TraceMarksNameAndConstants) {
@@ -123,7 +123,7 @@ TEST(ObjFunction, SweptAfterGuardReleased) {
     {
         auto guard  = gc.make_guard(fn);
         std::ignore = new_string(gc, "trigger"); // GC:fn 存活
-        EXPECT_EQ(fn->to_string(), "<fn add>");
+        EXPECT_EQ(fn->debug_repr(), "<fn add>");
     } // guard 析构 pop 临时根 -> fn 不再受保护
     const usize before = gc.bytes_allocated();
     std::ignore        = new_string(gc, "trigger2"); // GC:fn 与其 name 串(无引用)回收

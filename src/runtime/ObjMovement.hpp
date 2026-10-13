@@ -38,7 +38,7 @@ namespace aria {
             return sizeof(ObjMovement);
         }
 
-        // 调试渲染:<coroutine 状态拼写>;aria:: 限定取自由函数重载(基类成员 to_string 会遮蔽)。
+        // 调试渲染:<coroutine 状态拼写>;aria:: 限定取自由函数重载。
         [[nodiscard]]
         String debug_repr() const override {
             return std::format("<coroutine {}>", aria::to_string(state_));

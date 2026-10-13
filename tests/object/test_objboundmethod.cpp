@@ -130,11 +130,11 @@ TEST(ObjBoundMethod, ToString) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
     auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
-    EXPECT_EQ(bound->to_string(), "<bound method m>");
+    EXPECT_EQ(bound->debug_repr(), "<bound method m>");
 }
 
 // 原生方法绑定(M5 泛化):method_ 可为 ObjNativeFn -- 内建类型方法的载体;
-// name() 非虚取名分派(闭包 fn 名 / 原生 name_),to_string 与调试渲染同文案。
+// name() 非虚取名分派(闭包 fn 名 / 原生 name_),调试渲染同文案。
 TEST(ObjBoundMethod, NativeMethodBinding) {
     GC   gc;
     auto native = new_native_fn(gc, "echo", noop_native); // StringView 重载:名字经工厂内部 intern 并自守
@@ -147,7 +147,7 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
     auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));
     EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(native)));
     EXPECT_EQ(bound->name()->view(), "echo");
-    EXPECT_EQ(bound->to_string(), "<bound method echo>");
+    EXPECT_EQ(bound->debug_repr(), "<bound method echo>");
     EXPECT_EQ(aria::repr(Value::from_obj(bound)), "<bound method echo>"); // 调试渲染同文案
 }
 

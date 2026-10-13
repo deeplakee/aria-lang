@@ -55,8 +55,7 @@ namespace aria {
 
         // 执行跟踪:每条指令执行前打印字节码/栈/帧(stderr,调试用)。常态编译,宏只守 dispatch_loop
         // 内调用点,关闭时零开销;frame.ip 此时指向待执行指令,据此解码(仅读不推进 VM 的 ip)。
-        // 栈渲染用 repr 不用 stringify:后者 Obj 走可重载虚 to_string,在
-        // dispatch_loop 内会重入 VM 致无限递归;debug_repr 纯 C++,绝不触用户重载。
+        // 栈渲染用 repr:调试渲染纯 C++,绝不执行用户代码(显示咨询面可重入跑钩子,不可入此)。
         [[maybe_unused]] void trace_execution(AriaExeContext& ctx) {
             const auto& frames = ctx.frames();
             const auto& frame  = frames.top();
@@ -64,7 +63,7 @@ namespace aria {
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
             io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(&ctx),
-                      frame.module->to_string(), frame.closure->function()->to_string(), ip_off, instr);
+                      frame.module->debug_repr(), frame.closure->function()->debug_repr(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。

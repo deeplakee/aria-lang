@@ -7,6 +7,7 @@
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "util/util.hpp"
+#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -70,19 +71,11 @@ namespace aria {
     }
 
     String stringify(const Value value) {
-        switch (value.type()) {
-            case Value::Type::Nil:
-                return "nil";
-            case Value::Type::Bool:
-                return value.as_bool() ? "true" : "false";
-            case Value::Type::Int:
-                return std::format("{}", value.as_int());
-            case Value::Type::F64:
-                return format_f64(value.as_f64());
-            case Value::Type::Obj:
-                return value.as_obj()->to_string();
+        // 显示位:字符串原文直取,其余与 repr 同口径(repr 的臂即字面值与对象调试形)。
+        if (const auto s = try_as_obj<ObjString>(value)) {
+            return String{s->view()};
         }
-        UNREACHABLE();
+        return repr(value);
     }
 
     String repr(const Value value) {

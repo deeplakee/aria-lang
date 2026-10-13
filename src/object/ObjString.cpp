@@ -83,8 +83,6 @@ namespace aria {
 
     String ObjString::debug_repr() const { return std::format("\"{}\"", util::escape_string(view())); }
 
-    String ObjString::to_string() const { return std::format("{}", view()); }
-
     Opt<Value> ObjString::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         const auto klass = ctx.string_class();
         if (const auto v = klass->find_field(name)) {

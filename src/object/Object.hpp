@@ -106,13 +106,6 @@ namespace aria {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
-        // 可读描述(str 位),基类默认 = debug_repr;显示与调试分叉的子类型两者都 override
-        //(当前唯一 ObjString:显示原文/调试带引号转义)。
-        [[nodiscard]]
-        virtual String to_string() const {
-            return debug_repr();
-        }
-
         // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点):语义在各宿主 override 一次收口,
         // 新增承载类型零 VM 改动;失败**自己 fail**、返回值只留信号(load 族 nullopt / store 族 false ⟺ 已 fail,
         // 失败出口 `return ctx.fail(...);`);fail 文案渲染值走非重入渲染;调用方保证接收者「栈即根」。

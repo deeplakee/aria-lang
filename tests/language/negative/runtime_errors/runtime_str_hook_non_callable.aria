@@ -1,0 +1,5 @@
+# 钉住：类面 __str__ 解析值须可调——类表条目为非可调值（静态槽 42）时，对象显示即报 CallNonCallable。
+def Box {
+}
+Box.__str__ = 42;
+var s = str(Box());

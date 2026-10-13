@@ -1,0 +1,61 @@
+# 钉住：__str__ 显示钩子（经类面咨询口解析）——实例钩子、类链继承、子类覆写、实例字段
+# 不接管显示（值本地状态出局，成员读仍见字段值）、容器 debug 位渲染永不跑钩子、类值显示
+# 零执行（元类链兜底走根默认）、单渲染计数、钩子抛错经 try 派发。
+
+# 实例钩子：显示咨询命中类面 __str__，返回值即显示产物
+def P {
+    init(v) { this.v = v; }
+    __str__() { return "P(${this.v})"; }
+}
+assert(str(P(1)) == "P(1)");
+assert("x${P(2)}" == "xP(2)");        # 插值段同走咨询面
+
+# 单渲染计数：一个插值段恰好咨询 + 渲染一次，不做隐藏重渲
+var n = 0;
+def C {
+    __str__() { n = n + 1; return "C"; }
+}
+var c = C();
+var one = "x${c}";
+assert(n == 1);
+var two = "${c}${c}";
+assert(n == 3);
+
+# 类链继承与覆写：子类无自有钩子沿链取父类的；覆写后子类生效、父类不受扰
+def Sub : P {
+}
+assert(str(Sub(5)) == "P(5)");
+def Ovr : P {
+    __str__() { return "O"; }
+}
+assert(str(Ovr(6)) == "O");
+assert(str(P(7)) == "P(7)");
+
+# 实例字段不接管显示；字段值仍可经成员读取出
+def Q {
+}
+var q = Q();
+q.__str__ = fun() { return "F"; };
+assert(str(q) == "<Q instance>");
+assert(type(q.__str__) == "Closure");
+
+# 容器 debug 位：元素一律调试渲染（不跑用户钩子），字符串元素带引号
+assert(str([P(1), "s", 1, Q()]) == "[<P instance>, \"s\", 1, <Q instance>]");
+
+# 类值显示零执行：类值的显示自元类链兜底（根默认，debug 形），自身模板 __str__ 不运行
+def Z {
+    __str__() { assert(false, "class-value display must not run its own hook"); }
+}
+assert(str(Z) == "<class Z>");
+
+# 钩子抛错经 try 派发：渲染失败载荷 = 抛出原值
+var caught = "";
+def B {
+    __str__() { throw "render boom"; }
+}
+try {
+    var s = str(B());
+} catch (e) {
+    caught = e;
+}
+assert(caught == "render boom");

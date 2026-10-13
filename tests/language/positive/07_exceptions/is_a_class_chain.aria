@@ -59,3 +59,10 @@ assert((1..2).is_a(Range));
 assert([].iter().is_a(Iterator));
 assert([1, 2].is_a(Object));     # 任意对象沿链命中根
 assert(Object.is_a(Object));     # 元类链沿至根类，根类命中自身名下
+
+# fn 族/协程单例腿：咨询归属链 = 各自 bootstrap 单例类
+var fn = fun(a) { return a; };
+assert(fn.is_a(Closure));
+assert(fn.is_a(Object));
+assert(println.is_a(NativeFn));
+assert(Coroutine.create(fun() { yield; }).is_a(Coroutine));

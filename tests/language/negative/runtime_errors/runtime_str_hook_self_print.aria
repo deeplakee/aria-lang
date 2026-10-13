@@ -1,0 +1,6 @@
+# 钉住：__str__ 渲染中再渲染自身 = 无界递归，嵌套深度上限折断 StackOverflow
+# （跟踪收敛到外层调用点，嵌套段帧随善后截净）。
+def Loop {
+    __str__() { return str(this); }
+}
+var s = str(Loop());

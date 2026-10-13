@@ -11,3 +11,13 @@ assert(str("abc".size()) == "3");     # 组合：size -> Int -> str
 # str 结果是普通字符串：可 == 比较、可再取 size
 assert(str(140737488355327).size() == 15);
 assert(str(1 == 1.0) == "true");
+
+# fn 族/协程/迭代器/容器值的显示形式（经类咨询面命中根默认 = debug 形）
+fun named(v) { return v; }
+assert(str(named) == "<fn named>");
+assert(str(println) == "<fn println>");
+assert(str([1].iter()) == "<iterator>");
+assert(str({}) == "{}");
+var co = Coroutine.create(fun() { yield; });
+assert(str(co) == "<coroutine suspended>");
+assert(Coroutine.status(co) == "suspended");

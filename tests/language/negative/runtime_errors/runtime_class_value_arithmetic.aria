@@ -1,0 +1,6 @@
+# 钉住：类值参与算术——经元类链咨询 __add__，全链 miss 响亮 UndefinedProperty
+# （措辞用类自身 debug 形；类模板表不是类值的咨询源）。
+def Box {
+    init(v) { this.v = v; }
+}
+var s = Box + 1;

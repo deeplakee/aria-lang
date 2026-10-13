@@ -1,0 +1,5 @@
+# 钉住：__str__ 钩子返回值须为 string，否则 TypeMismatch（str()/插值/println 同口）。
+def Box {
+    __str__() { return 42; }
+}
+var s = str(Box());

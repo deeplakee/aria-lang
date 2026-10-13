@@ -1,0 +1,14 @@
+# 钉住：__str__ 经 println 的显示输出（golden 逐字节）——实例钩子产物、类值 debug 形、
+# 插值、容器 debug 形、零执行形态。
+def P {
+    init(v) { this.v = v; }
+    __str__() { return "P(${this.v})"; }
+}
+println(P(1));
+println(P);
+println("v=${P(2)}");
+println([P(3)]);
+def Z {
+    __str__() { return "Z"; }
+}
+println(str(Z));

@@ -1276,14 +1276,17 @@ namespace aria {
                     }
                     break;
                 case OpCode::BUILD_STRING: {
-                    // n:u8;[v1..vn] -> [str]:插值串收拢,段值 peek 在栈(「栈即根」),拼接负载
-                    // 在 concat_values(渲染与 str()/println 同源),铸完 drop n 再 push(窗口内
-                    // 无 GC 点)。
-                    const u8   count  = read_u8(frame);
-                    const auto base   = current->stack_top() - count;
-                    const auto result = aria::concat_values(vm.gc_, {base, count}, {});
+                    // n:u8;[v1..vn] -> [str]:插值串收拢。渲染可重入且扩容搬迁值栈,{base,count}
+                    // 指值栈,段值先抄离;失败载荷在寄存器交 unwind 善后,成功 drop n 再 push。
+                    const u8   count    = read_u8(frame);
+                    const auto base     = current->stack_top() - count;
+                    const auto segments = List<Value>{base, base + count};
+                    const auto result   = concat_values(*current, segments, {});
+                    if (!result) {
+                        goto unwind_check;
+                    }
                     current->drop(count);
-                    current->push(Value::from_obj(result));
+                    current->push(Value::from_obj(*result));
                     break;
                 }
                 case OpCode::IMPORT:

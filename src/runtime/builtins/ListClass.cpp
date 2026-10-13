@@ -9,6 +9,7 @@
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjListIterator.hpp"
+#include "runtime/Eval.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "util/util.hpp"
@@ -278,7 +279,11 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            info.set_return_val(Value::from_obj(concat_values(ctx.gc(), self->elements(), sep->view())));
+            const auto s = Eval::concat_values(ctx, self->elements(), sep->view());
+            if (!s) {
+                return false; // 载荷在寄存器,交外层续搜
+            }
+            info.set_return_val(Value::from_obj(*s));
             return true;
         }
 

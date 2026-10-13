@@ -438,3 +438,57 @@ TEST_F(NestedExecStress, StringifyPlainAndBuiltinValues) {
     // 类值沿元类链命中根默认,渲染 debug 形态。
     check("g", "<class Point>");
 }
+
+// ---- 显示位接线(str/println/String/join/插值全走 __str__ 咨询面) ----
+
+TEST_F(NestedExecStress, DisplayFacesRouteThroughStringify) {
+    const auto src = R"src(
+        def P { __str__() { return "P"; } }
+        var a = str(P());
+        var b = "x${P()}x";
+        var c = [P(), P()].join("-");
+        var d = str([1, "s", P()]);
+        var e = String(P());
+    )src";
+    const auto r   = run_with_natives(vm, src, {});
+    ASSERT_TRUE(r.result.has_value());
+    const auto check = [&](const char* name, const StringView want) {
+        const auto v = find_global(*r.module, vm.gc(), name);
+        ASSERT_TRUE(v.has_value()) << name;
+        EXPECT_EQ(v->as_obj()->as<ObjString>()->view(), want) << name;
+    };
+    // str/插值/String( 逐对象咨询钩子。
+    check("a", "P");
+    check("b", "xPx");
+    check("c", "P-P");
+    check("e", "P");
+    // 容器 debug 位经 repr 渲染,不跑用户钩子(显示/调试分叉钉)。
+    check("d", "[1, \"s\", <P instance>]");
+}
+
+TEST_F(NestedExecStress, DisplayRenderFailureUnwindsCleanly) {
+    const auto src = R"src(
+        def Q { __str__() { throw "render boom"; } }
+        var caught = "";
+        try {
+            var s = "x${Q()}";
+        } catch (e) {
+            caught = e;
+        }
+        var joined = "";
+        try {
+            var t = [Q()].join("-");
+        } catch (e) {
+            joined = e;
+        }
+    )src";
+    const auto r   = run_with_natives(vm, src, {});
+    ASSERT_TRUE(r.result.has_value());
+    const auto caught = find_global(*r.module, vm.gc(), "caught");
+    const auto joined = find_global(*r.module, vm.gc(), "joined");
+    ASSERT_TRUE(caught.has_value());
+    ASSERT_TRUE(joined.has_value());
+    // BUILD_STRING 失败臂与 join 抄离渲染失败:载荷经 unwind 派发,catch 绑抛出原值。
+    EXPECT_EQ(caught->as_obj()->as<ObjString>()->view(), "render boom");
+    EXPECT_EQ(joined->as_obj()->as<ObjString>()->view(), "render boom");
+}

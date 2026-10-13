@@ -8,6 +8,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
+#include "runtime/Eval.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/io.hpp"
 #include "value/AriaHashTable.hpp"
@@ -31,24 +32,31 @@ namespace aria {
             return true;
         }
 
-        // str(x) -> 字符串:值的可读渲染(复用 stringify)。
+        // str(x) -> 字符串:值的可读渲染。
         bool fn_str(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            const auto s = new_string(ctx.gc(), stringify(info[0])); // stringify 返 String,临时 view 跨调用有效
-            info.set_return_val(Value::from_obj(s));
+            const auto str = Eval::stringify(ctx, info[0]);
+            if (!str) {
+                return false; // 载荷在寄存器,交外层续搜
+            }
+            info.set_return_val(Value::from_obj(*str));
             return true;
         }
 
-        // println([x]) -> nil:值的可读渲染加换行(stringify + io::println),省参只输出换行;可作一等值传参。
+        // println([x]) -> nil:值的可读渲染加换行,省参只输出换行;可作一等值传参。
         bool fn_println(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc > 1) {
                 return ctx.arity_error_range(argc, 0, 1);
             } else if (argc == 1) {
-                io::println("{}", stringify(info[0]));
+                const auto str = Eval::stringify(ctx, info[0]);
+                if (!str) {
+                    return false; // 载荷在寄存器,交外层续搜
+                }
+                io::println("{}", (*str)->view());
             } else {
                 io::println();
             }

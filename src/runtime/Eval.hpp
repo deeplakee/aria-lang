@@ -50,9 +50,9 @@ namespace aria {
         static Opt<ObjString*> stringify(AriaExeContext& ctx, Value value);
 
         // 段收拢(插值 BUILD_STRING 与 join 共口):各段一律经 stringify 收成 StringView,量长
-        // 定容后单趟填充。nullopt ⟺ 某段渲染失败载荷在寄存器。values 契约同 execute_closure
-        // 的 args -- 不得指进值栈或容器内部(渲染可重入扩容搬迁),调用方先抄离;元素对象保活
-        // 由调用方承担(栈根/容器根)。
+        // 定容后单趟填充。nullopt ⟺ 某段渲染失败载荷在寄存器。values 不得指进值栈(渲染重入
+        // 扩容搬迁必悬垂);指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担,解释器
+        // 不设防;元素保活由调用方承担(栈根/容器根)。
         [[nodiscard]]
         static Opt<ObjString*> concat_values(AriaExeContext& ctx, Span<const Value> values, StringView sep);
 

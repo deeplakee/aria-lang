@@ -8,6 +8,7 @@
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjStringIterator.hpp"
+#include "runtime/Eval.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "util/utf8.hpp"
@@ -22,14 +23,18 @@ namespace aria {
         // 下标域约定:除 codepoint_at(码点序号)外全部字节域(与 len/s[i] 同域);string 不可变,
         // 方法全部产出新串。
 
-        // init(v) -> string:转换构造,任意值经 stringify 可读渲染(与内建 str 同域同实现),
+        // init(v) -> string:转换构造,任意值的可读渲染(与内建 str 同域同实现),
         // 覆盖槽 0(call_class 预置的临时 instance 被替换)。
         bool fn_init(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
                 return ctx.arity_error(argc, 1);
             }
-            info.set_return_val(Value::from_obj(new_string(ctx.gc(), stringify(info[0]))));
+            const auto str = Eval::stringify(ctx, info[0]);
+            if (!str) {
+                return false; // 载荷在寄存器,交外层续搜
+            }
+            info.set_return_val(Value::from_obj(*str));
             return true;
         }
 

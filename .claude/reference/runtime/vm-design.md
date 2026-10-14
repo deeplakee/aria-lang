@@ -238,7 +238,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 **出口边界**:`AriaExeContext::ret_frame_`(u32,0 = 最外执行)+ `recursion_depth_`(上限 `kMaxRecursionDepth` = 32)住上下文,消费方(`run_return`/`unwind`/`dispatch_loop`)一律自 `current_` 读取--无 VM 级基线成员。重入口经 `enter_recursion()` 挂界(边界 = 入场帧深,断言钉边界非零:零帧 = 无驱动,最外执行是 `run()` 职责、不经重入口)、`leave_recursion()` 归还外层边界。
 
-**两口一执行体**:`execute_closure(ObjClosure*, Span<const Value>)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjClosure*, Span<const Value>)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_closure`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_closure` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
+**两口一执行体**:`execute_closure(ObjClosure*, ArgList)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjClosure*, ArgList)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_closure`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_closure` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
 
 **run_return 分流**:RETURN 执行体收口 `run_return`,取返回值弹帧后按弹后帧深对边界分档--高于边界 = 帧间返回写回 callee 槽;恰至非零边界 = 本(嵌套)循环收束,值交 `execute_closure` 收取;零边界弹尽 = 主顶层返回(值留栈顶)或协程完成(值写恢复者预留槽后切换)。
 

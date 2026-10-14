@@ -88,7 +88,7 @@ namespace aria {
         }
 
         // 调用区构造:[slot0, a1..aN] 依次压栈(槽 0 = receiver 兼返回槽)。
-        void push_call_area(AriaExeContext& ctx, const Value slot0, const Span<const Value> args) {
+        void push_call_area(AriaExeContext& ctx, const Value slot0, const ArgList args) {
             ctx.push(slot0);
             for (const auto& arg: args) {
                 ctx.push(arg);
@@ -166,8 +166,7 @@ namespace aria {
         return false;
     }
 
-    Opt<Value> Eval::execute_closure(AriaExeContext& ctx, const Value slot0, ObjClosure* closure,
-                                     const Span<const Value> args) {
+    Opt<Value> Eval::execute_closure(AriaExeContext& ctx, const Value slot0, ObjClosure* closure, const ArgList args) {
         // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
         // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
         // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
@@ -193,7 +192,7 @@ namespace aria {
     }
 
     Opt<Value> Eval::execute_native(AriaExeContext& ctx, const Value slot0, const ObjNativeFn* native,
-                                    const Span<const Value> args) {
+                                    const ArgList args) {
         // 外部调用原生:调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹槽 0。
         if (args.size() > std::numeric_limits<u8>::max()) {
             return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
@@ -205,8 +204,7 @@ namespace aria {
         return std::nullopt;
     }
 
-    Opt<Value> Eval::execute_callable(AriaExeContext& ctx, const Value slot0, const Value callee,
-                                      const Span<const Value> args) {
+    Opt<Value> Eval::execute_callable(AriaExeContext& ctx, const Value slot0, const Value callee, const ArgList args) {
         // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派,bound 解内层沿用自身
         // receiver(ctor 契约:内层为闭包或原生)。失败载荷留寄存器。
         if (const auto bound = try_as_obj<ObjBoundMethod>(callee)) {

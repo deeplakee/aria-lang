@@ -260,11 +260,11 @@ namespace aria {
 
         // 闭包形态:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
         [[nodiscard]]
-        Opt<Value> execute_closure(ObjClosure* closure, Span<const Value> args);
+        Opt<Value> execute_closure(ObjClosure* closure, ArgList args);
 
         // 方法形态:receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 = 声明参数数。
         [[nodiscard]]
-        Opt<Value> execute_method(Value receiver, ObjClosure* method, Span<const Value> args);
+        Opt<Value> execute_method(Value receiver, ObjClosure* method, ArgList args);
 
         // 协程状态与 resume 链:previous_ = 「谁恢复了我」,自 current_ 沿链回走,链尾恒为主
         // 上下文;切换收口在 AriaVM,本类不自切。resume 先置链、yield / RETURN 完成一律解链,

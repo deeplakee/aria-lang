@@ -75,6 +75,9 @@ namespace aria {
     [[nodiscard]]
     String value_repr(Value value);
 
+    // 实参表形态的只读值段(调用机器共口);非实参语义的值段仍写字面 Span<const Value>。
+    using ArgList = Span<const Value>;
+
 } // namespace aria
 
 // std 容器以 Value 作键所需的两个特化:哈希转发 value_hash、判等转发 value_identical(===)

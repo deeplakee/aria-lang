@@ -38,8 +38,7 @@ namespace aria {
         // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
         // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
         [[nodiscard]]
-        static Opt<Value> execute_closure(AriaExeContext& ctx, Value slot0, ObjClosure* closure,
-                                          Span<const Value> args);
+        static Opt<Value> execute_closure(AriaExeContext& ctx, Value slot0, ObjClosure* closure, ArgList args);
 
         // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
         // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
@@ -76,14 +75,13 @@ namespace aria {
         // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
         // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_native(AriaExeContext& ctx, Value slot0, const ObjNativeFn* native,
-                                         Span<const Value> args);
+        static Opt<Value> execute_native(AriaExeContext& ctx, Value slot0, const ObjNativeFn* native, ArgList args);
 
         // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派 -- bound 解内层沿用自身
         // receiver(ctor 契约:内层为闭包或原生),原生走 execute_native,闭包交 execute_closure
         // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, Span<const Value> args);
+        static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
 
         // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用(hook 为咨询口解析值),返回值须为
         // string,违约 TypeMismatch。nullopt ⟺ 载荷留寄存器。

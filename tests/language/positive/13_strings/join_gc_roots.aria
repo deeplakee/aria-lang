@@ -1,0 +1,41 @@
+// 钉住：join 的临时渲染串跨后续渲染、嵌套 join 与错误出口的 GC 保活。
+var numbers = [];
+for (var i = 0; i < 2000; i += 1) {
+    numbers.push(i);
+}
+var parts = numbers.join(",").split(",");
+assert(parts.size() == 2000);
+for (var i = 0; i < parts.size(); i += 1) {
+    assert(parts[i].to_int() == i);
+}
+
+def Label {
+    init(number) { this.number = number; }
+    __str__() { return "temporary-rendered-label-${this.number}"; }
+}
+var labels = [Label(101), Label(202), Label(303)];
+assert(labels.join("|") ==
+       "temporary-rendered-label-101|temporary-rendered-label-202|temporary-rendered-label-303");
+assert(labels.join("") ==
+       "temporary-rendered-label-101temporary-rendered-label-202temporary-rendered-label-303");
+
+// 内层 join 的守卫退场不能弹掉外层已渲染段的根。
+def NestedLabel {
+    init(number) { this.number = number; }
+    __str__() { return [this.number, this.number + 1].join(":"); }
+}
+assert([NestedLabel(101), NestedLabel(202), NestedLabel(303)].join("|") == "101:102|202:203|303:304");
+
+// 渲染中途抛错后仍透传原载荷，后续 join 正常运行。
+def BrokenLabel {
+    __str__() { throw "join render failed"; }
+}
+var caught = false;
+try {
+    [Label(404), BrokenLabel()].join(",");
+} catch (error) {
+    assert(error == "join render failed");
+    caught = true;
+}
+assert(caught);
+assert([NestedLabel(404), Label(505)].join("|") == "404:405|temporary-rendered-label-505");

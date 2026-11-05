@@ -248,8 +248,9 @@ namespace aria {
 
     Opt<ObjString*> Eval::concat_values(AriaExeContext& ctx, const Span<const Value> values, const StringView sep) {
         // 两遍式(先收视图量长定容、后单趟填充,join 预扫先例):各段一律经 stringify 收成
-        // 视图(皆指向驻留串,跨渲染稳定);失败即短路(nullopt ⟺ 某段载荷在寄存器)。填充段
-        // 零 GC 点,唯一 GC 点在 take_string。
+        // 视图,逐段把渲染串压入临时根(驻留池是弱根),跨后续渲染保活;失败即短路
+        // (nullopt ⟺ 某段载荷在寄存器)。填充段零 GC 点,唯一 GC 点在 take_string。
+        auto             guard = ctx.gc().make_guard();
         List<StringView> parts;
         usize            total = 0;
         parts.reserve(values.size());
@@ -258,6 +259,7 @@ namespace aria {
             if (!rendered) {
                 return std::nullopt;
             }
+            guard.push(*rendered);
             const auto view = (*rendered)->view();
             total += view.size();
             parts.push_back(view);

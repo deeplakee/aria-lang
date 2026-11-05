@@ -120,8 +120,8 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 用户可定制的显示唯一面 = `__str__` 钩子（`to_string` 虚函数已退役，`value_repr`/虚 `repr` 是纯 C++ 调试渲染永不执行用户代码；语义分双位，C++ 渲染器见 value.md）：
 
 - **`Eval::stringify(AriaExeContext&, Value) -> Opt<ObjString*>`**（公共渲染口，str/println/插值共口）：非对象值走 `value_repr` 的非对象臂；对象一律经**魔术咨询口**解析 `__str__`（String 自有钩子返回原文，即显示/调试分叉点；根类默认原生 = 渲染自身 `repr`，兜底现役类面恒命中）后同步调用（槽 0 = 渲染对象、argc = 0），返回值须为 string（违约 `TypeMismatch`）。nullopt ⟺ 载荷已入挂起寄存器（钩子抛错 / 违约 / 嵌套过深；自渲染递归由重入计数上限折断报 `StackOverflow`）。钩子调用与产出验收收口在私有 `execute_str_hook`。
-- **`Eval::concat_values(AriaExeContext&, Span<const Value>, StringView sep) -> Opt<ObjString*>`**（BUILD_STRING 与 join 段收拢共口）：各段一律经 `stringify` 收成 `StringView`（皆指驻留串），量长定容后单趟填充（join 预扫先例）。`values` **不得指进值栈**（渲染重入扩容搬迁必悬垂）；指容器内部缓冲可——容器被渲染中用户代码改写属用户程序自担。
-- **`BUILD_STRING` 执行体**：段值 `{base, count}` 指值栈，先抄离（`List<Value>` 快照）再渲染；失败载荷在寄存器走 `unwind_check` 善后；成功 drop n 再 push。
+- **`Eval::concat_values(AriaExeContext&, Span<const Value>, StringView sep) -> Opt<ObjString*>`**（join 段收拢口）：各段一律经 `stringify` 收成 `StringView`，量长定容后单趟填充。驻留池是弱根，故每个渲染结果须立即压入本调用的 `GC::Guard`，跨后续渲染保活至拼接完成；正常返回与错误短路均由 RAII 弹根，嵌套调用守卫严格嵌套。`stringify` 返回本身不保活结果，其他调用方同样须在下个 GC 点前发布或根化。`values` **不得指进值栈**（渲染重入扩容搬迁必悬垂）；指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担。
+- **`BUILD_STRING` 执行体**：由 `run_build_string` 两遍处理值栈段，首遍逐段渲染并原槽换装为结果串（栈即根），段址每次经下标重取以避重入扩容搬迁；次遍量长定容后单趟填充。失败载荷在寄存器走 `unwind_check` 善后；成功 drop n 再 push。
 - **外部调用机器（私有）**：`execute_callable(ctx, slot0, callee, args)` = 非循环上下文发起的同步调用口，按被调值形态纯分派——bound 递归解内层（沿用自身 receiver）/ 原生走 `execute_native`（`push_call_area` 构造调用区后 `call_native`、弹槽 0）/ 闭包走 `execute_closure` 重入体 / 非可调 `CallNonCallable`（`type X is not callable`）。
 - **join 元素面**：`ListClass::join` 直传容器视图（`self->elements()`）。
 

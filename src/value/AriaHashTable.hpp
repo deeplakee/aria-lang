@@ -28,7 +28,7 @@ namespace aria {
     // 加 trace(GC&)(遍历占用槽 mark_value key+value)。基类 dtor 非虚但本子类不作多态基;不可拷贝/移动。
     class AriaHashTable : public HashTable<Value, Value, ValueHash, ValueEq> {
     public:
-        using HashTable<Value, Value, ValueHash, ValueEq>::HashTable; // 继承 explicit HashTable(GC*) ctor
+        using HashTable<Value, Value, ValueHash, ValueEq>::HashTable;
 
         // 迭代器只看 ctrl、不加载非占用 Entry,mark 遍历对垃圾槽安全。
         void trace(GC& gc) const noexcept {

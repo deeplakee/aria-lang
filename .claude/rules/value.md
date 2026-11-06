@@ -11,7 +11,7 @@ paths:
 
 切换机制见 `common.hpp`（core.md）：`value/Value.hpp` 经 `#ifdef` 选 `NanBoxing.hpp`（`aria::nanboxing`）或 `TagValue.hpp`（`aria::tagvalue`），并 `using namespace` 进 `aria`。
 
-- `NanBoxing::Value`：把 Nil/Bool/F64/Int/Obj 压进单个 64 位 double（int 为 i48 载荷、指针取低 48 位），`sizeof == 8`；`TagValue::Value`：`Type` tag + union，`sizeof == 16`。
+- `NanBoxing::Value`：把 Nil/Bool/F64/Int/Obj 压进单个 64 位 double（int 为 i48 载荷、指针取低 48 位），`sizeof == 8`；非 f64 位型 = sign==1 装低 48 位指针（x86-64/ARM64 用户态）、sign==0 时 bits 48..49 为 tag（1=nil、2=bool 真值在 bit 0、3=int 48 位补码）。`TagValue::Value`：`Type` tag + union，`sizeof == 16`。
 - 二者 API 一致（`from_bool`/`from_f64`/`from_int`/`from_i32`/`from_obj`/`is_*`/`as_*`/`type()`/`type_name()`；已知例外：`is_box()` 仅 NanBoxing 有、`as_i32()` 两表示各一份且全库零调用），均为 trivial + standard-layout（各头 `static_assert` 把关），可 `memcpy`、可入 `FrameStack`。
 - **默认初始化不定值**：默认构造 `= default` 为 trivial，默认初始化 `Value v;` 是不定值**并非 nil**，取 nil/真/假统一走工厂 `nil_val()`/`true_val()`/`false_val()`。差异：NanBoxing 走私有 `Value(u64)` 构造；TagValue 走 `Value{}` 零填充 -> `Type::Nil` = 0 即 nil，而 NanBoxing 的 `Value{}` 零填充是 f64 `0.0` 非 nil--零填充值栈时留意（当前无 `Array<Value>::resize` 类零填充消费点，属预防性约束）。
 - **NaN 规范化**：两者的 `from_f64` 都把任意 NaN 规范化为硬件 quiet NaN（`0x7ff8...`）--NanBoxing 免其被误判为 boxed 值，且 `===` 按位比较下 `NaN === NaN` 成立依赖两表示共同规范化，任一侧不规范即语义分叉。
@@ -30,7 +30,7 @@ paths:
 
 - `try_as_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
 - `is_callable_value(Value)`：类表成员值是否为「可调用」（闭包或原生）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
-- `is_method(Value)`：类表成员值是否为「方法」--defining class 戳定的方法闭包，读路径（`ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD`）的绑定判别谓词；方法承载形态的**泛化扩展缝**。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
+- `is_method(Value)`：类表成员值是否为「方法」--defining class 戳定的方法闭包（戳定发生在 `MAKE_METHOD` 指令路径；`MAKE_STATIC` 与类上赋值不戳，故静态槽恒非方法），读路径（`ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD`）的绑定判别谓词；方法承载形态的**泛化扩展缝**。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
 
 ## `value/Value.hpp` / `.cpp`
 
@@ -39,5 +39,6 @@ paths:
 - **双相等**：`value_equal`（`==` 内容相等，Int/F64 跨类型 IEEE 数值、Obj 调 `Object::equals` 虚函数）、`value_identical`（`===` 严格相等，类型严格、f64 按位、Obj 指针）；哈希键用 `===`。
 - **std 容器键设施**：`std::hash<Value>`/`std::equal_to<Value>` 特化在头末，分别转发 `value_hash`/`value_identical`，令 std 容器可以 Value 作键（消费方：`FunctionCtx` 的常量池去重索引 `HashMap<Value,u16>`）。与 `AriaHashTable` 的键语义一致--`===` 而非 `==`，故 int 1 与 f64 1.0、`-0.0` 与 `0.0` 各为不同键。
 - **自然序小于** `value_less`（排序底座）：双数值按数值序（NaN 排在一切数值之前保严格弱序）；双字符串按无符号字节序走 `string_view::compare`。域外组合未定义、调用方先域检，list.sort 消费。
+- `ArgList`（= `Span<const Value>`）：实参表形态的只读值段别名，消费方为 Eval 三执行口与 `AriaExeContext` 执行口；非实参语义的值段仍写字面 `Span<const Value>`。
 - **辅助自由函数**：`is_num(Value)`、`as_num(Value)`（is_num 前提下取数值的 f64 视图：Int 升 f64 / F64 原样，非 num 值由 as_int 的 debug ASSERT 拦截；混合升浮点的取数口，消费方 value_equal / value_less / run_binary_numeric）、`is_truthy(Value)`（Lua 风格真值：仅 nil/false 为假）、`type_name(Value)`（**精确类型名**统一入口，PascalCase：原语走 constexpr 成员、Obj 取对象子类型；区别于成员的 constexpr 粗分类--后者 Obj 一律返 `Obj`；错误消息类型名打印一律用本自由函数）。
-- **渲染**：`format_f64(f64)`/`value_str(Value)`（**纯 C++ 显示位渲染**，与 VM 无关：字符串原文直取，其余与 `value_repr` 同口径，不执行用户代码）；`value_repr(Value)` 是**调试渲染**（执行跟踪 / 反汇编常量池 / 未捕获兜底共用），Obj 走虚 **`repr()`**；`repr` 的 override 契约是纯 C++ 惰性渲染（见 `Object.hpp`）。两渲染器都**不承载用户可重载显示**——`str`/`println`/插值/join 侧的用户钩子咨询面住 runtime 层（见 runtime.md「显示渲染与外部调用」）。
+- **渲染**：`format_f64(f64)`/`value_str(Value)`（**纯 C++ 显示位渲染**，与 VM 无关：字符串原文直取，其余与 `value_repr` 同口径，不执行用户代码）；`value_repr(Value)` 是**调试渲染**（执行跟踪 / 反汇编常量池 / 未捕获兜底共用），Obj 走虚 **`repr()`**；`repr` 的 override 契约是纯 C++ 惰性渲染（见 `Object.hpp`）。两渲染器都**不承载用户可重载显示**--`str`/`println`/插值/join 侧的用户钩子咨询面住 runtime 层（见 runtime.md「显示渲染与外部调用」）。

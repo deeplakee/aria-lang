@@ -22,7 +22,7 @@ namespace aria {
             case Value::Type::F64:
                 return util::hash_num(std::bit_cast<u64>(value.as_f64()));
             case Value::Type::Obj:
-                return value.as_obj()->hash(); // ObjString:内容 FNV-1a;其它:地址哈希
+                return value.as_obj()->hash(); // 不可变型(ObjString/ObjRange)内容哈希,可变型地址哈希
         }
         return 0;
     }

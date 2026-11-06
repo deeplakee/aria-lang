@@ -27,8 +27,8 @@ namespace aria {
         return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
     }
 
-    // 类表成员值是否为「方法」:defining class 戳定的方法闭包(MAKE_METHOD 注册时戳;
-    // MAKE_STATIC/类上赋值不戳,故静态槽恒非方法)。
+    // 类表成员值是否为「方法」:defining class 戳定的方法闭包(仅方法注册路径戳定;
+    // 静态注册与类上赋值不戳,故静态槽恒非方法)。
     [[nodiscard]]
     inline bool is_method(const Value value) noexcept {
         const auto closure = try_as_obj<ObjClosure>(value);

@@ -11,10 +11,9 @@ namespace aria {
 
 namespace aria::nanboxing {
 
-    // NaN-boxing 值表示(C++23):真 double 原样存储,其余类型藏进 quiet NaN 未用位型。只认领 top-2 mantissa
-    // bits 置位的 kQNan 子集,避开硬件 canonical quiet NaN(0x7ff8...),使算术产生的 NaN 落回 is_f64 判定、
-    // 绝不与 boxed 值冲突。非 f64 位布局:sign==1 -> 低 48 位为指针(x86-64/ARM64 用户态);sign==0 -> tag 在
-    // bits 48..49:1 = nil、2 = bool(真值在 bit 0)、3 = int(48 位补码,bits 0..47)。
+    // NaN-boxing 值表示(C++23):真 double 原样存储,其余类型藏进 quiet NaN 未用位型;只认领 top-2 mantissa
+    // bits 的 kQNan 子集、避开硬件 canonical quiet NaN(0x7ff8...),算术 NaN 恒落回 is_f64 判定。非 f64 位型:
+    // sign==1 装低 48 位指针(x86-64/ARM64 用户态),sign==0 的 bits 48..49 为 tag(nil/bool/int,详表见 value.md)。
     class Value {
         using Obj = Object*;
 
@@ -34,7 +33,7 @@ namespace aria::nanboxing {
         static constexpr u64 kTrueBits  = kQNan | kTagBool | 1u;
 
         // 默认构造为 trivial(= default,POD 可 memcpy/入 FrameStack):默认初始化 Value v; 的 bits_ 为不定值;
-        // 值初始化 Value{} 是 f64 0.0 而非 nil(与 TagValue 的 Value{} 恰为合法 nil 互为镜像),需要 nil 用 nil_val()。
+        // 值初始化 Value{} 是 f64 0.0 而非 nil,需要 nil 用 nil_val()。
         constexpr Value() noexcept = default;
 
         [[nodiscard]]
@@ -60,7 +59,7 @@ namespace aria::nanboxing {
         [[nodiscard]]
         static constexpr Value from_f64(const f64 value) noexcept {
             // 把任意 NaN 规范化为单一位型(硬件 canonical quiet NaN),回出时绝不会被误判为
-            // boxed 值;与 TagValue 的同款契约互为对齐点(=== 按位比较下 NaN===NaN 的前提)。
+            // boxed 值(=== 按位比较下 NaN===NaN 的前提)。
             if (value != value) {
                 return Value{0x7ff8000000000000ull};
             }

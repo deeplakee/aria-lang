@@ -12,7 +12,7 @@ namespace aria {
     // find/contains/remove(按 value_equal,嵌套容器按内容递归)。基类 dtor 非虚但本子类不作多态基,故安全;不可拷贝/移动。
     class AriaArray : public Array<Value> {
     public:
-        using Array<Value>::Array; // 继承 explicit Array(GC*) ctor
+        using Array<Value>::Array;
 
         // trace 期无 push 不扩容,range-for 迭代器恒有效。
         void trace(GC& gc) const noexcept {

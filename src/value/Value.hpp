@@ -21,8 +21,8 @@ namespace aria {
     class ObjString;
 
     // Value 的哈希与相等判定函数;只用两表示共有的 type()/as_*() API,两表示下都能编译。
-    // 双相等体系(语言 == 与 === 的语义来源):== = value_equal,内容相等--Int/F64 跨类型 IEEE 数值,Obj 走
-    // Object::equals(不做 JS 式强制转换);=== = value_identical,类型严格--f64 按位,Obj 指针相等;哈希表键用 ===。
+    // 双相等体系(语言 == 与 === 的语义来源):== = value_equal,内容相等--Int/F64 跨类型 IEEE 数值,Obj 按
+    // 内容虚分派相等(不做 JS 式强制转换);=== = value_identical,类型严格--f64 按位,Obj 指针相等;哈希表键用 ===。
     [[nodiscard]]
     inline bool is_num(const Value value) noexcept {
         return value.is_int() || value.is_f64();
@@ -40,8 +40,7 @@ namespace aria {
         return !(value.is_nil() || (value.is_bool() && !value.as_bool()));
     }
 
-    // 精确类型名统一入口(区别于 Value::type_name 的粗分类:对 Obj 取子类型精确拼写,后者返 "Obj");
-    // 定义在 Value.cpp(需 Object 完整类型)。
+    // 精确类型名统一入口(区别于 Value::type_name 的粗分类:对 Obj 取子类型精确拼写,后者返 "Obj")。
     [[nodiscard]]
     StringView type_name(Value value) noexcept;
 
@@ -71,11 +70,11 @@ namespace aria {
     String value_str(Value value);
 
     // 调试渲染(执行跟踪/反汇编常量池/未捕获兜底等上下文):Obj 走 repr();调试渲染
-    // 永不执行用户代码,故在 dispatch_loop 内与无 VM 上下文处皆可安心调用。
+    // 永不执行用户代码,故在 VM 主循环内与无 VM 上下文处皆可安心调用。
     [[nodiscard]]
     String value_repr(Value value);
 
-    // 实参表形态的只读值段(调用机器共口);非实参语义的值段仍写字面 Span<const Value>。
+    // 实参表形态的只读值段;非实参语义的值段仍写字面 Span<const Value>。
     using ArgList = Span<const Value>;
 
 } // namespace aria

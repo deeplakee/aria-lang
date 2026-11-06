@@ -19,8 +19,7 @@ namespace aria::tagvalue {
         enum class Type : u8 { Nil, Bool, F64, Int, Obj };
 
         // 默认构造为 trivial(= default,POD 可 memcpy/入 FrameStack):默认初始化为不定值,值初始化 Value{} 零填充
-        // 恰为合法 nil(tag_=0=Type::Nil 首枚举、union 零位 nullptr_t)。与 NanBoxing 互为镜像:那边 Value{} = f64 0.0 非
-        // nil。
+        // 恰为合法 nil(tag_=0=Type::Nil 首枚举、union 零位 nullptr_t)。
         constexpr Value() noexcept = default;
 
         [[nodiscard]]
@@ -45,8 +44,8 @@ namespace aria::tagvalue {
 
         [[nodiscard]]
         static constexpr Value from_f64(const f64 value) noexcept {
-            // 规范化 NaN 到单一 bit pattern(0x7ff8...,与 NanBoxing 一致),消除两表示分叉:
-            // value_identical(===) 按位比较,规范化后任意两个 NaN bit 相等 -> NaN===NaN true。
+            // 规范化 NaN 到单一 bit pattern(0x7ff8...):value_identical(===) 按位比较,
+            // 规范化后任意两个 NaN bit 相等 -> NaN===NaN true。
             if (value != value) {
                 return Value{std::bit_cast<f64>(0x7ff8000000000000ull)};
             }
@@ -150,7 +149,7 @@ namespace aria::tagvalue {
         }
 
     private:
-        // 底层构造仅供工厂方法内部使用,外部创建 Value 统一走工厂(private 收口与 NanBoxing 一致)。
+        // 底层构造仅供工厂方法内部使用,外部创建 Value 统一走工厂(private 收口使 from_f64 的 NaN 规范化不可绕过)。
         explicit Value(const bool val) : tag_{Type::Bool} { bool_val_ = val; }
 
         explicit Value(const f64 val) : tag_{Type::F64} { f64_val_ = val; }

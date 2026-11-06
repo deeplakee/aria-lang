@@ -115,6 +115,11 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 - **集合**：`MAKE_LIST`/`MAKE_MAP` 元素/键值 peek 在栈跨 `new_*` 顶部（「栈即根」）、整段拷入走 trivial 分配不触 GC；下标族 `LOAD_INDEX`/`STORE_INDEX` 统一走 `Object::load_index`/`store_index` 协议（list 整数键从尾计数 + Range 键切片、map 任意键 miss `KeyError`、string 字节键）；`MAKE_RANGE` 端点须整数（非整数 `TypeMismatch`）。
 - **值填槽**：局部槽由编译器按「值填槽」填充（声明不预占，初始化器值 / 无初始化器时的 `LOAD_NIL` 恰落槽位，见指令集文档 §4.3）。**真值** Lua 风格（仅 nil/false 假）。
 
+### 整数运算
+
+- Int 固定 i48，`run_binary_int` 的加/减/乘/除及 `run_negate` 结果越界经 `ctx.fail(IntegerOverflow, "integer result out of range")` 进入 VM 异常通道。乘法先按符号选幅值上限，以除法比较后再乘，避免宿主 i64 中间结果溢出；其他算术在 i64 内计算后闸 i48。
+- 除法向零截断，`MIN / -1` 溢出，`MIN % -1` 合法得零；除/模零保留原码。比较与混合浮点路径不受影响。复合赋值和前置自增/自减复用同一指令，失败不执行写回，已发生的操作数副作用保留。两种值表示、Debug/Release 同语义。
+
 ### 显示渲染与外部调用（str/println/插值/join 与 BUILD_STRING）
 
 用户可定制的显示唯一面 = `__str__` 钩子（`to_string` 虚函数已退役，`value_repr`/虚 `repr` 是纯 C++ 调试渲染永不执行用户代码；语义分双位，C++ 渲染器见 value.md）：

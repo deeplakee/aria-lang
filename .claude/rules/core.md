@@ -46,7 +46,7 @@ paths:
 
 项目级定义头（`namespace aria`，仅 include `common.hpp`，任何层均可无分层顾虑引用）。收拢语言/产品层固有命名事实作单一事实源，防各层字面量漂移。
 
-- **语言值域**：`kIntMin`/`kIntMax`（i48 = 默认表示 `Value::from_int` 的 48 位尾部；域拦截只有两处输入闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text`，两表示构建同界。TagValue 构建下 `from_int` 收全 i64，域仅靠闸门约定；Eval 运行期算术不设闸，NaN-boxing release 构建下越域算术静默截尾）。
+- **语言值域**：`kIntMin`/`kIntMax` 定义统一 i48 域。字面量经 `CodeGen::validate_int_literal` 检查、文本转换经 `util::parse_int_text` 检查；Eval 整数算术结果与 range 迭代产出越界时走 `IntegerOverflow`。两表示 `from_int` 仅接收域内值并以 Debug 断言守内部契约；Release 同样由上层执行语言检查。
 - **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
 - **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（主入口名）、`kModuleEntryName = "<module>"`（模块体入口名；两者入口体同为 ModuleEntry 形态，返回值恒为模块对象）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用；lambda 留栈不绑定由 LambdaExprNode/FnKind 判定，名字仅作显示）。
 - **构造角色名**：`kInitName = "init"`（实例方法构造角色；"init" 本身是普通标识符，角色由 def 体裸方法位与名字共同判定 -- parser 据名烙 `FnKind::InitMethod`（隐式返回尾返 this），runtime 据名维护类 `init_` 槽（`ObjClass::set_field` 同步））。

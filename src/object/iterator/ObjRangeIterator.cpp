@@ -12,7 +12,7 @@ namespace aria {
     usize ObjRangeIterator::size() const noexcept { return sizeof(ObjRangeIterator); }
 
     bool ObjRangeIterator::has_next() const noexcept {
-        // 五态方向矩阵:无上界恒真(无限序列,消费方自理边界);正/倒向与含/不含上界四种比较见 return;
+        // 五态方向矩阵:无上界恒真(域外请求由 next 报溢出);正/倒向与含/不含上界四种比较见 return;
         // 空区间仅剩 from==to 且不含上界(5...5),首问即 false、零迭代。
         if (!to_) {
             return true;
@@ -26,8 +26,11 @@ namespace aria {
         if (!has_next()) {
             return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
+        if (current_ < kIntMin || current_ > kIntMax) {
+            return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+        }
         const auto value = Value::from_int(current_);
-        // 推进永不溢出:i48 整数域(NaN-boxing payload + 字面量编译期上限)兜底;TagValue 下回绕推满端点不设防(不承诺)。
+        // i64 游标允许推进到 i48 域外一位:有界区间此后耗尽,无上界区间下次 next 才报溢出。
         if (forward_) {
             ++current_;
         } else {

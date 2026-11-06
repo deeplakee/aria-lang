@@ -1,0 +1,3 @@
+// 钉住：未捕获的整数溢出按运行期错误退出并保留堆栈位置。
+fun multiply(lhs, rhs) { return lhs * rhs; }
+multiply(140737488355327, 140737488355327);

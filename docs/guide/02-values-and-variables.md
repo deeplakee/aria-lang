@@ -106,6 +106,24 @@ var x = 140737488355328;
 lit.aria:1:9: Semantic: NumberOutOfRange integer literal 140737488355328 out of range
 ```
 
+整数运算保持精确结果：`+`、`-`、`*`、`/`、一元取负的结果超出 i48 时，抛出可捕获的
+`IntegerOverflow`，不回绕，也不自动转为浮点。Debug/Release 和两种值表示的行为相同。
+`MIN / -1` 溢出，`MIN % -1` 返回 `0`；整数除零与模零仍分别报 `DivisionByZero` 和 `ModuloByZero`。
+
+```aria
+var x = 140737488355327;
+try {
+    x += 1;
+} catch (error) {
+    assert(error.message().contains("IntegerOverflow"));
+    assert(x == 140737488355327);
+}
+```
+
+复合赋值和前置自增/自减使用同一规则：失败不写回目标，操作数已经产生的副作用保留。
+每个运算分别检查，中间结果越界即失败，即使后续运算本可以把结果带回范围内。
+字符串 `to_int()` 越界仍返回 `nil`；混入浮点操作数时走浮点运算规则。
+
 ## float：双精度浮点
 
 `float` 是 IEEE 754 双精度（`f64`）。字面量要么带小数点，要么带指数；**必须是一个完整形态**，

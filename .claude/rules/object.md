@@ -102,6 +102,7 @@ paths:
 - 基类钉纯虚契约：`has_next() const noexcept -> bool`（纯查询、无分配无 fail，故不收 ctx）、`next(AriaExeContext&) -> Opt<Value>`（取下一元素并推进；越界一行 `return ctx.fail(IterationExhausted)`）、`trace`（各子类标各自的源，纯虚钉住忘标 = 编译错）、`size()`。
 - `load_field` / `load_field_bound` override 基类一次、全子类共享（走 Iterator bootstrap 类表）；`repr` 渲染 `<iterator>`；`equals` 默认地址判等。
 - 每源一个小子类、各持自然游标；**range 迭代器是唯一无源对象者**（range 不可变，ctor 期把端点拷成标量自足，`trace` 空体；方向构造期定向，from > to 即倒序）。
+- range 游标用 i64 容纳 i48 域外一位：有界区间合法终点产出后正常耗尽；无上界区间 `has_next` 恒真，产出 `kIntMax` 后再次 `next` 才经 `ctx.fail(IntegerOverflow, "integer result out of range")` 报错，不回绕、不提前拒绝合法终点。
 - map 迭代序 unspecified，map 迭代器产出 `[k, v]` 二元 list；迭代中变更容器不设防（v1 不承诺）。序不承诺的理由：非定序哈希表是性能上的正确选择，且这一边缘特性各语言/实现标准不一，用户不应依赖。
 - **协议三方法（`iter`/`has_next`/`next`）是类表方法，不为迭代协议另开 Object 虚函数**：① 方法必须一等（`var n = it.next; n()` 虚函数做不了）；② 与用户类统一，单一派发路径；③ VM 内部无迭代消费者（解构走下标、GC 不迭代），双通道纯漂移风险；④ 能实现 `iter` 的对象必已支持成员查找、必已有方法表。
 - **形态判据（每源子类 + 纯虚契约，而非单一结构体 + switch）**：单一 `ObjIterator{source, cursor}` 兼多义、按类型 `switch` 分派，违背引擎缝「不按子类型分型」的架构；跨语言（Python/JS/Java/C#/C++）均为每源独立迭代器 + 统一虚契约。C++ STL 迭代器不能直接当语言值（GC 一等 Value、指针悬于元素缓冲扩容、用户类需统一协议），但其「每类型自己的表示 + 统一契约」思想即本方案的运行期对应物。迭代器对象不可省：游标状态须随迭代器走，容器不可自带游标（否则嵌套遍历同一容器互相串扰）。

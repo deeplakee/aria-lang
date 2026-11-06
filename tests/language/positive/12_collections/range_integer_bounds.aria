@@ -1,0 +1,31 @@
+// 钉住：有界 range 可产出 i48 端点并正常耗尽，无上界 range 在请求域外值时才报溢出。
+var max = 140737488355327;
+var min = -140737488355328;
+var upper = (max - 1..max).iter();
+assert(upper.next() == max - 1);
+assert(upper.has_next());
+assert(upper.next() == max);
+assert(!upper.has_next());
+var lower = (min + 1..min).iter();
+assert(lower.next() == min + 1);
+assert(lower.next() == min);
+assert(!lower.has_next());
+var exclusive = (max - 1...max).iter();
+assert(exclusive.next() == max - 1);
+assert(!exclusive.has_next());
+var singleton = (min..min).iter();
+assert(singleton.next() == min);
+assert(!singleton.has_next());
+var unbounded = (max..).iter();
+assert(unbounded.has_next());
+assert(unbounded.next() == max);
+assert(unbounded.has_next());
+var caught = false;
+try { unbounded.next(); } catch (error) {
+    assert(error.message().contains("IntegerOverflow integer result out of range"));
+    caught = true;
+}
+assert(caught);
+var count = 0;
+for (value in max - 1..max) { count += 1; }
+assert(count == 2);

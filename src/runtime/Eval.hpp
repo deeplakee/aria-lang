@@ -99,7 +99,8 @@ namespace aria {
         template<OpCode Op>
         static bool run_binary_numeric(AriaExeContext& ctx);
 
-        // 整数域九算子(结果压栈):除/模零是域特有失败,就地 fail;% 为 C++ 语义。
+        // 整数域九算子(结果压栈):结果越 i48 报 IntegerOverflow,乘法在计算前检查以避 i64 溢出;
+        // 除/模零就地 fail;% 向零截断,MIN % -1 得零。
         template<OpCode Op>
         [[nodiscard]]
         static bool run_binary_int(AriaExeContext& ctx, i64 lhs, i64 rhs);

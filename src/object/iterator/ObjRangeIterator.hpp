@@ -9,7 +9,7 @@ namespace aria {
     class ObjRange;
 
     // range 迭代器:不持源对象,构造时把端点拷成标量;游标即区间当前值,构造期定向(from > to 为倒序),
-    // 无上界区间恒有下一个元素。
+    // 无上界区间 has_next 恒真,但 next 请求超出 i48 的元素时报 IntegerOverflow。
     class ObjRangeIterator final : public ObjIterator {
     public:
         ObjRangeIterator(i64 from, Opt<i64> to, bool is_exclusive);

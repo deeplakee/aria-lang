@@ -1,0 +1,54 @@
+// 钉住：i48 边界内精确计算，越界可 catch，失败不写回但保留操作数求值的副作用。
+var max = 140737488355327;
+var min = -140737488355328;
+assert(max + 0 == max && min - 0 == min);
+assert(min + 1 == -140737488355327);
+assert(max - min / -1.0 == -1.0);
+assert(max * 1 == max && 1 * min == min);
+assert(min * 0 == 0 && 0 * min == 0);
+assert(min * 1 == min && -1 * max == -140737488355327);
+assert(-70368744177664 * 2 == min);
+assert(70368744177664 * -2 == min);
+assert(-70368744177663 * -2 == max - 1);
+assert(min / 1 == min && min / 2 == -70368744177664);
+assert(min % -1 == 0 && min % 1 == 0);
+assert(-7 / 3 == -2 && -7 % 3 == -1);
+assert(max + 1.0 == 140737488355328.0);
+assert(min / -1.0 == 140737488355328.0);
+assert(min * -1.0 == 140737488355328.0);
+assert("140737488355328".to_int() == nil);
+
+fun expect_overflow(operation) {
+    var caught = false;
+    try { operation(); } catch (error) {
+        assert(error.is_a(Exception));
+        assert(error.message().contains("IntegerOverflow integer result out of range"));
+        caught = true;
+    }
+    assert(caught);
+}
+var value = max;
+expect_overflow(fun() { value += 1; });
+assert(value == max);
+expect_overflow(fun() { ++value; });
+assert(value == max);
+value = min;
+expect_overflow(fun() { value -= 1; });
+assert(value == min);
+expect_overflow(fun() { --value; });
+assert(value == min);
+expect_overflow(fun() { value /= -1; });
+assert(value == min);
+value %= -1;
+assert(value == 0);
+
+var values = [max];
+var calls = 0;
+fun operand() { calls += 1; return 2; }
+expect_overflow(fun() { values[0] *= operand(); });
+assert(values[0] == max && calls == 1);
+def Box { init(value) { this.value = value; } }
+var box = Box(min);
+expect_overflow(fun() { box.value /= -1; });
+assert(box.value == min);
+assert(20 + 22 == 42);

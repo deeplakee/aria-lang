@@ -3,7 +3,7 @@
 
 #include <bit>
 #include <type_traits>
-#include "common.hpp"
+#include "aria.hpp"
 
 namespace aria {
     class Object;
@@ -69,8 +69,7 @@ namespace aria::nanboxing {
         [[nodiscard]]
         static constexpr Value from_int(int64_t value) noexcept {
             // 按 48 位补码整数存储(值域 [-2^47, 2^47),越界 ASSERT)。
-            ASSERT(value >= -(static_cast<int64_t>(1) << 47) && value < (static_cast<int64_t>(1) << 47),
-                   "integer does not fit in 48-bit NaN-box payload");
+            ASSERT(value >= kIntMin && value <= kIntMax, "integer value out of range");
             return Value{kQNan | kTagInt | (static_cast<u64>(value) & kPayload)};
         }
 

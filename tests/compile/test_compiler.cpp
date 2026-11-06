@@ -128,6 +128,42 @@ TEST(Compiler, Arithmetic) {
     EXPECT_EQ(run_int("return (1 + 2) * 3;"), 9);
 }
 
+// 每条失败路径都必须走 VM 异常通道,乘法覆盖结果越 i48 和中间乘积越 i64 两档。
+TEST(Compiler, IntegerOverflow) {
+    constexpr aria::StringView kSources[] = {
+            "return 140737488355327 + 1;",
+            "return -140737488355328 - 1;",
+            "return -140737488355328 + -1;",
+            "return 140737488355327 - -1;",
+            "return 140737488355327 * 2;",
+            "return -140737488355328 * 2;",
+            "return -140737488355328 * -1;",
+            "return 70368744177664 * 2;",
+            "return 140737488355327 * 140737488355327;",
+            "return -140737488355328 * -140737488355328;",
+            "return -140737488355328 * 140737488355327;",
+            "return 140737488355327 * -140737488355327;",
+            "return -140737488355328 / -1;",
+            "var value = -140737488355328; return -value;",
+            "return -(-140737488355328);",
+            "var value = 140737488355327; return ++value;",
+            "var value = -140737488355328; return --value;",
+            "var value = 140737488355327; value += 1; return value;",
+            "var value = -140737488355328; value -= 1; return value;",
+            "var value = 140737488355327; value *= 2; return value;",
+            "var value = -140737488355328; value /= -1; return value;",
+            "return (140737488355327 + 1) - 1;",
+            "var iterator = (140737488355327..).iter(); iterator.next(); return iterator.next();",
+    };
+    for (const auto source: kSources) {
+        SCOPED_TRACE(source);
+        auto result = run_value(source);
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error().code(), ErrorCode::IntegerOverflow);
+        EXPECT_NE(result.error().message().find("integer result out of range"), aria::String::npos);
+    }
+}
+
 // 函数与递归：经 Compiler 编译后 VM 能调用并返回。
 TEST(Compiler, FunctionAndRecursion) {
     EXPECT_EQ(run_int("fun fib(n) { if (n < 2) { return n; } return fib(n - 1) + fib(n - 2); } return fib(10);"), 55);

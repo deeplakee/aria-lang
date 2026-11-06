@@ -268,7 +268,7 @@ namespace aria::util {
     }
 
     // 整串十进制整数文本解析(数据语法,非源码字面量):收 [+-][0-9]+,整串消费且落 i48 值域内才 somed。
-    // 不跳空白、不收下划线/进制前缀(那是源码字面量语法);域闸设此:越域值经 Value::from_int 会被静默截尾。
+    // 不跳空白、不收下划线/进制前缀(那是源码字面量语法);越域返 nullopt,不传给要求域内值的 from_int。
     [[nodiscard]]
     inline Opt<i64> parse_int_text(const StringView text) {
         const auto body   = text.starts_with('+') ? text.substr(1) : text;

@@ -216,14 +216,16 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子取实现再调（String 拼接即内建钩子、用户类可重载，仅左操作数触发），取不到报 UndefinedProperty（非对象左值才报 TypeMismatch） |
 | `SUBTRACT` | `[a, b] -> [a-b]` | 数值减 |
 | `MULTIPLY` | `[a, b] -> [a*b]` | |
-| `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE） |
-| `MOD` | `[a, b] -> [a%b]` | 取模 |
+| `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`，MIN / -1 报 `IntegerOverflow`；含 F64 走 IEEE） |
+| `MOD` | `[a, b] -> [a%b]` | 整数余数按向零截断的商计算，MIN % -1 得 0，模零报 `ModuloByZero`；含 F64 走 fmod |
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
-| `NEGATE` | `[a] -> [-a]` | 数值取负；对象经 `__neg__` 钩子 |
+| `NEGATE` | `[a] -> [-a]` | 数值取负（Int 的 MIN 报 `IntegerOverflow`）；对象经 `__neg__` 钩子 |
 
 > 9 个数值二元算子（4 比较 + 5 算术）的对象左值全有对应钩子：`__lt__`/`__le__`/`__gt__`/`__ge__`/`__add__`/`__sub__`/`__mul__`/`__div__`/`__mod__`，形态同 `ADD` 行（仅左操作数触发，钩子 miss 报 UndefinedProperty；非对象左值报 TypeMismatch）。
 
 > 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（`flags` 位义见 `code.hpp` `kRangeFlagExclusive`，落地形态见 §6.3）。
+
+整数加、减、乘、除与一元取负的结果须在 i48 域内，越界经 VM 异常通道报 `IntegerOverflow`；不回绕、不自动升浮点。复合赋值与前置自增/自减复用这些指令，算术失败时不执行写回。
 
 ### 4.10 栈操作
 

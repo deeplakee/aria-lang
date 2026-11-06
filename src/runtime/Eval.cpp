@@ -298,6 +298,9 @@ namespace aria {
         // [v] 即 [this]);其余类型报 InvalidOperand。GC 走查同 run_binary_operator。
         const Value operand = ctx.peek(0);
         if (operand.is_int()) {
+            if (operand.as_int() == kIntMin) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
             ctx.peek(0) = Value::from_int(-operand.as_int());
             return true;
         }
@@ -359,34 +362,51 @@ namespace aria {
 
     template<OpCode Op>
     bool Eval::run_binary_int(AriaExeContext& ctx, const i64 lhs, const i64 rhs) {
-        // 整数域九算子:结果压栈。除/模零是域特有失败(整数无 inf/nan),就地 fail;% 为 C++ 语义。
+        // i48 输入的加/减/除在 i64 内安全,结果入栈前统一检查;乘法须在计算前按幅值检查,
+        // 避免中间乘积溢出 i64。比较不产整数;% 向零截断,MIN % -1 合法得零。
+        i64 result = 0;
         if constexpr (Op == OpCode::ADD) {
-            ctx.push(Value::from_int(lhs + rhs));
+            result = lhs + rhs;
         } else if constexpr (Op == OpCode::SUBTRACT) {
-            ctx.push(Value::from_int(lhs - rhs));
+            result = lhs - rhs;
         } else if constexpr (Op == OpCode::MULTIPLY) {
-            ctx.push(Value::from_int(lhs * rhs));
+            const i64  lhs_magnitude = lhs < 0 ? -lhs : lhs;
+            const i64  rhs_magnitude = rhs < 0 ? -rhs : rhs;
+            const bool is_negative   = (lhs < 0) != (rhs < 0);
+            const i64  limit         = is_negative ? -kIntMin : kIntMax;
+            if (lhs_magnitude != 0 && rhs_magnitude > limit / lhs_magnitude) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
+            result = lhs * rhs;
         } else if constexpr (Op == OpCode::DIVIDE) {
             if (rhs == 0) {
                 return ctx.fail(ErrorCode::DivisionByZero, "integer division by zero");
             }
-            ctx.push(Value::from_int(lhs / rhs));
+            result = lhs / rhs;
         } else if constexpr (Op == OpCode::MOD) {
             if (rhs == 0) {
                 return ctx.fail(ErrorCode::ModuloByZero, "integer modulo by zero");
             }
-            ctx.push(Value::from_int(lhs % rhs));
+            result = lhs % rhs;
         } else if constexpr (Op == OpCode::GREATER) {
             ctx.push(Value::from_bool(lhs > rhs));
+            return true;
         } else if constexpr (Op == OpCode::GREATER_EQUAL) {
             ctx.push(Value::from_bool(lhs >= rhs));
+            return true;
         } else if constexpr (Op == OpCode::LESS) {
             ctx.push(Value::from_bool(lhs < rhs));
+            return true;
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
             ctx.push(Value::from_bool(lhs <= rhs));
+            return true;
         } else {
             STATIC_UNREACHABLE("run_binary_int: no arm for this Op");
         }
+        if (result < kIntMin || result > kIntMax) {
+            return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+        }
+        ctx.push(Value::from_int(result));
         return true;
     }
 

@@ -23,6 +23,8 @@ paths:
 - `kCategoryNames` 的哨兵 `static_assert` **只拦表长漂移**：枚举增删而表未跟会炸；行序错位不炸断言，靠增删时自查。
 - 死面登记（grep 实测零引用，2026-11-05 复测）：`ErrorCode::Ok`（仅测试哨兵消费）、`UndefinedType`、`RedefinedClass`、`NotIterable`、`IteratorProtocol`、`SuperNoBaseClass`、`CircularImport`、`InvalidBytecode`、`StackUnderflow`、`InvalidState`、`SourceTooLarge`。
 
+- `IntegerOverflow` 属 Runtime：整数算术结果或无上界 range 请求超出 i48 时，经上下文 `fail` 装箱，可 catch；唯一 detail = `integer result out of range`。字面量越界仍属 Semantic 的 `NumberOutOfRange`。
+
 ## `error/Error.hpp`
 
 构造面 = 私有 raw 构造 + 静态工厂（`from_detail` ×2 / `from_baked` / `make_message` ×2）+ `fatal_error` ×2，逐条语义见 `Error.hpp` 头注。跨文件事实两条：

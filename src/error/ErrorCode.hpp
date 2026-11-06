@@ -87,6 +87,7 @@ namespace aria {
     X(YieldInNestedExecution, Runtime)      /* yield inside a nested execution */                                   \
     X(StackOverflow, Runtime)               /* recursion too deep */                                                \
     X(CircularImport, Runtime)              /* import cycle */                                                      \
+    X(IntegerOverflow, Runtime)             /* integer result beyond i48 */                                         \
     /* ========== INTERNAL ERROR (interpreter invariants) ========== */                                             \
     X(Unreachable, Internal)     /* code that should be unreachable ran */                                          \
     X(AssertionFailed, Internal) /* language assert() builtin failed (sole producer) */                             \

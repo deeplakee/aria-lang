@@ -3,7 +3,7 @@
 
 #include <bit>
 #include <type_traits>
-#include "common.hpp"
+#include "aria.hpp"
 
 namespace aria {
     class Object;
@@ -54,6 +54,7 @@ namespace aria::tagvalue {
 
         [[nodiscard]]
         static constexpr Value from_int(const i64 value) noexcept {
+            ASSERT(value >= kIntMin && value <= kIntMax, "integer value out of range");
             return Value{value};
         }
 

@@ -12,7 +12,7 @@ namespace aria {
     // 方法体与方法表住同名 .cpp。
     class ObjectClass {
     public:
-        // 唯一构造口:建根类并装载方法面;返回白色对象,发布进根由调用点承担。
+        // 唯一构造口,建 Object 根类(无 super)。
         static ObjClass* make_class(GC& gc);
     };
 

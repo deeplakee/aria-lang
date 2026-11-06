@@ -102,7 +102,7 @@ class AriaVM {
 
 ### 4.6 GC 接入(M6,对应 gc-plan Phase 4)
 
-> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时标 `modules_`/`builtins_`/`registers_`/`str_table_` 四表 + `current_` 一点(其余经对象图级联,见下);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 当时以纯 C++ 类落地(非 Object),tracer 直标;M6(B1)已升级 `ObjMovement : Object` 且主上下文一并 GC 分配(ctor 首笔),tracer 收敛为只标 `current_` 一点--运行链与挂起协程全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联(`contexts_` 与链尾断言退役,§4.9)。下方描述即当前形态。
+> **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时标 `modules_`/`builtins_`/`registers_`/`str_table_`/`char_cache_` 五表 + `current_` 一点(其余经对象图级联,见下);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 当时以纯 C++ 类落地(非 Object),tracer 直标;M6(B1)已升级 `ObjMovement : Object` 且主上下文一并 GC 分配(ctor 首笔),tracer 收敛为只标 `current_` 一点--运行链与挂起协程全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联(`contexts_` 与链尾断言退役,§4.9)。下方描述即当前形态。
 
 - 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure`(trace 级联标 function 与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
@@ -215,7 +215,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 **M6 落地记录**(2026-09,B1-B3):
 
 1. B1(96aa55e/bc93d79/d0ac244/12bee08):`ObjMovement : Object` + `ObjType::MOVEMENT` + trace 收口;主上下文堆化(ctor 首笔 GC 分配,`main_ctx_` 成员退役),tracer 收敛为只标 `current_` 一点,`contexts_`/链尾断言退役;run() 入口锚 + 出口断言钉链根交接。
-2. B2(8adae5c/5b3151a/e1508fc):`ExecState` 五态 + 状态拼写常量、`new_movement` 工厂;四原语(友元宿主类 `CoroutineModule` + 合成 `<coroutine>` 模块 + `Builtin::register_module_functions` 底座)、RETURN 完成切回、HALT 断言、`call_native` 删成功路径守卫(false 路径「禁止 false+切换」保留为永久契约)。
+2. B2(8adae5c/5b3151a/e1508fc):`ExecState` 五态 + 状态拼写常量、`new_movement` 工厂;四原语(友元宿主类 `CoroutineModule` + 合成 `<coroutine>` 模块 + `Builtin::register_module_functions` 底座;当时形态,现行 = CoroutineClass 类面、register_functions 口)、RETURN 完成切回、HALT 断言、`call_native` 删成功路径守卫(false 路径「禁止 false+切换」保留为永久契约)。
 3. B3(310a20c):跨协程错误--`unwind()` 链式多跳(本节「错误跨协程」)+ 跟踪截断(§4.8)。
 
 对初稿的两处偏离:`ExecOutcome` 三态未采用(主上下文里 yield 直接报运行期错误,run() 维持两态);`main_ctx_` 不以值成员保留而整体堆化(换来 tracer 单点与主/协程类型统一)。坑点与不变式归档见 `coroutine-implementation-pitfalls.md`。
@@ -278,7 +278,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
 | **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
-| **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(友元宿主类 + 合成 `<coroutine>` 模块)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
+| **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(经 `Coroutine` 类、builtins_ 裸名曝光)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 
 | **M6 后:显示钩子与咨询面(已落地)** | 类面基建(六零表单例类 / `load_field_from_class` 咨询缝 / 类值元类链 / 协程模块并入类面,§4.12)+ 显示渲染面(`stringify`/`concat_values`/外部调用机器)+ `to_string` 虚函数退役 | `__str__` 语料与单测(1378 x2 绿) |
 
@@ -290,13 +290,13 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - **短路跳转的 L_end 是 `<b>` 之后的汇合点**(非 `<b>` 之前);跳转偏移以读完操作数后的 ip 为基准(与 Disassembler 解码一致),手写回填需按此计算。
 - 除法/真值语义(已定,bytecode-instruction-set.md §9 #8):int/int 截断整除、除/模零报运行时错误、f64 按 IEEE(除零得 inf/nan)、真值为 Lua 风格(仅 nil/false 为假)。
 
-## 7. 缺口清单(实施前需补的东西)
+## 7. 既定决定清单
 
-- **协程不新增指令**(M6 定稿并落地,§4.9):create/resume/yield/status 走原生函数通道(合成 `<coroutine>` 模块,经 `builtins_["coroutine"]` 可达),指令集零增补。
+- **协程不新增指令**(M6 定稿并落地,§4.9):create/resume/yield/status 走原生函数通道(经 `Coroutine` 类,类经 `builtins_` 裸名曝光),指令集零增补。
 - `ObjType::MOVEMENT` 已增(语言可见名 `Coroutine`,`type(co)` 报之)。
 - **`TryRecord` 字段已定稿**:`{begin, end, handle, stack_depth}`(无 `frame_depth`/`catch_slot`,见坑点文档 #5/#10),`find_try_handler` 返 `Opt<const TryRecord*>`。
 - **GC 的 VM 根回调接口**已落地(`GC::set_vm_roots`,AriaVM 构造期注册)。
-- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;;协程原语经 `CoroutineClass::make_class` 落 `Coroutine` 类,类经 `builtins_` 裸名曝光)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 6 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
+- **内置函数注册机制**(方案 B「VM 级 builtins 表 + LOAD_GLOBAL 回退」,无新指令):`src/runtime/builtins/Builtin.{hpp,cpp}` 的 `Builtin::register_builtins(GC&, AriaHashTable&)` 把 `type`/`str`/`println`/`assert` 等经 `new_native_fn` 包成 `ObjNativeFn` 后按名 `set` 进 AriaVM 的 `builtins_` 表(VM 级 `AriaHashTable`,全 VM 共享一份;`print` 关键字与 `PRINT` 指令已整体移除,输出口是 `println` 内建;协程原语经 `CoroutineClass::make_class` 落 `Coroutine` 类,类经 `builtins_` 裸名曝光)。注入点唯一:AriaVM 构造期 `set_vm_roots` 之后调用一次。`LOAD_GLOBAL` 先查当前模块 globals,miss 回退 `builtins_`(Python 式 globals -> builtins 查找链);`STORE_GLOBAL` **不**回退 builtins(赋值不隐式创建,必须先 var 声明,见 `docs/grammar.txt`「作用域模型」的裸名赋值条),仅 `DEF_GLOBAL` 写模块 globals 可 shadow 内置。intern 池保证 CodeGen 发射 `LOAD_GLOBAL "name"` 与注册名同指。不取方案 A「按模块预填 globals」(会在 REPL 逐行 `run()` 重注册、覆写用户 shadow);方案 B 一份只读表回避之,并省每模块 6 个 `ObjNativeFn` 分配。原生函数类型与 CALL 路径见 §4.7。
 - **VM 与 GC 的拥有关系**:已定 -- VM 拥有 `GC gc_` 值成员(每 VM 一个 GC,REPL 常驻)。
 
 ## 8. 参考
@@ -307,4 +307,4 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 - AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。
 - `.claude/reference/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
 - `.claude/reference/runtime/coroutine-implementation-pitfalls.md`:M6 协程实现踩坑归档(§4.9 的实现级细节:槽协议/切换根安全/链式 unwind 定序/嵌套执行的切换红线)。
-- **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现;本地副本 `/Users/icelake/src/wren`,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。
+- **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。

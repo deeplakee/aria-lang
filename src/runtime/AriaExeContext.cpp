@@ -43,7 +43,7 @@ namespace aria {
     // 调用整形面
 
     bool AriaExeContext::check_arity(const ObjFunction* fn, const u8 argc) {
-        // 契约见 AriaExeContext.hpp;检查纯读,无分配。
+        // 检查纯读,无分配。
         const auto arity     = fn->arity();
         const auto min_arity = fn->min_arity();
         if (fn->is_varargs()) {

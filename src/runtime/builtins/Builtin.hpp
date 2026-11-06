@@ -10,8 +10,7 @@ namespace aria {
     class ObjClass;
     class AriaHashTable;
 
-    // 内建面目录伞:Builtin 全局内建与 <Name>Class 类型方法面。内建函数注册进 VM 级只读 builtins_ 表,
-    // 经 LOAD_GLOBAL 在模块 globals 优先、miss 回退 builtins 命中;STORE_GLOBAL 只写 globals 不回退。
+    // 内建面目录伞:Builtin 全局内建与 <Name>Class 类型方法面;内建函数注册进 VM 级只读 builtins_ 表。
 
     // 内建函数表条目:名 + 原生函数指针(全局表/类方法表共此一形态)。
     struct BuiltinFnEntry {

@@ -32,8 +32,7 @@ namespace aria {
 
     // 解释器宿主:持 GC、服务表(模块表/builtins/寄存器组/常量串表)、当前执行上下文与执行入口;
     // 字节码驱动住 eval 层(Eval),经友元缝取宿主内部。GC 根经 tracer 注册进自有 gc_(gc_ 声明
-    // 居首,析构逆序下 tracer 与成员同生共死)。运行时错误统一 raise 入寄存器、经 unwind 查
-    // CodeUnit 异常记录表派发。
+    // 居首,析构逆序下 tracer 与成员同生共死);运行时错误 raise 入寄存器、经 unwind 派发。
     class AriaVM {
     public:
         AriaVM();
@@ -120,8 +119,7 @@ namespace aria {
             return source_roots_;
         }
 
-        // 覆盖配置源根:替换 [1..]、保留入口槽 [0](run() 按入口模块 dir_ 原地替换);当前仅测试
-        // 消费,属嵌入预留面。
+        // 覆盖配置源根:替换 [1..]、保留入口槽 [0](run() 按入口模块 dir_ 原地替换)。
         void set_source_roots(List<String> roots) noexcept;
 
     private:
@@ -130,7 +128,7 @@ namespace aria {
 
         // IMPORT 解析层:把 specifier 解析为命中文件的绝对规范路径(= 模块表键)。相对 specifier
         //(./、../、.、..)的基恒为当前模块自己的目录,永不逃逸到别的源根;裸名沿 source_roots_
-        // 逐基探测(weakly_canonical + exists-check,对齐 Python sys.path);均未命中返 nullopt。
+        // 逐基探测(weakly_canonical + exists-check);均未命中返 nullopt。
         [[nodiscard]]
         Opt<String> resolve_module(StringView spec, StringView current_module_path) const;
 

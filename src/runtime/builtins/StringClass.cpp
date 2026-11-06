@@ -32,7 +32,7 @@ namespace aria {
             }
             const auto str = Eval::stringify(ctx, info[0]);
             if (!str) {
-                return false; // 载荷在寄存器,交外层续搜
+                return false;
             }
             info.set_return_val(Value::from_obj(*str));
             return true;
@@ -449,7 +449,7 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器。GC 约束:str 在槽 0 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
+        // iter() -> 迭代器(迭代器族 GC 纪律)。
         bool fn_iter(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {

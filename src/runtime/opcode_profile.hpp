@@ -25,7 +25,7 @@ namespace aria {
     enum class ObjType : u8;
 
     // 指令频度探针:计数状态全部本类自持(每 VM 一份,不跨 VM 混账);解码与 Disassembler 同源
-    // -- 位宽取 kOpCodeFormats、名字渲染用 kOpCodeNames。
+    // -- 名字渲染用 kOpCodeNames。
     class OpcodeProfiler {
     public:
         // 析构即产出:门控在析构而非 run() 出口,使 AriaVM 侧除取指行外无任何探针代码。

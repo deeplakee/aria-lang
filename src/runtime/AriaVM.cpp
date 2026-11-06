@@ -272,7 +272,7 @@ namespace aria {
         // 入口锚 = 本轮入口上下文(即主上下文):dispatch_loop 出口(顶层 RETURN / 未捕获物化)均
         // 发生在链根,出口断言据此保证切换交接完整(漏交接当场炸,不等下一轮入口)。
         const auto entry_ctx = current_;
-        // 入口槽 [0] 原地替换为入口模块 dir_(对齐 Python sys.path[0]);dir_ 可空。
+        // 入口槽 [0] 原地替换为入口模块 dir_;dir_ 可空。
         source_roots_[0] = fn->module()->dir()->view();
 
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
@@ -324,7 +324,7 @@ namespace aria {
             return probe_bases(bases, file_name);
         }
 
-        // 裸名:沿 source_roots_ 逐根试(对齐 Python sys.path);空根跳过。
+        // 裸名:沿 source_roots_ 逐根试;空根跳过。
         List<stdfs::path> bases;
         for (const auto& root: source_roots_) {
             if (!root.empty()) {
@@ -335,8 +335,7 @@ namespace aria {
     }
 
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
-        // 契约见 AriaVM.hpp;canonical_path 已由调用方根化。加载事实源 = modules_ 表成员资格
-        //(编译成功才入表,失败不留表项)。
+        // canonical_path 已由调用方根化。
 
         // 1. 读盘(路径解析已过 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());

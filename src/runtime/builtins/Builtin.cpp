@@ -19,7 +19,7 @@ namespace aria {
 
     namespace {
 
-        // 内置原生函数实现(NativeFn 契约:实参经 info 下标读、返回值 set_return_val 写、失败 return ctx.fail(...))
+        // 内置原生函数实现
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
         bool fn_type(const NativeCallInfo& info) {
@@ -54,7 +54,7 @@ namespace aria {
             } else if (argc == 1) {
                 const auto str = Eval::stringify(ctx, info[0]);
                 if (!str) {
-                    return false; // 载荷在寄存器,交外层续搜
+                    return false;
                 }
                 io::println("{}", (*str)->view());
             } else {

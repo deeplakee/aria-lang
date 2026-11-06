@@ -169,8 +169,7 @@ namespace aria {
     Opt<Value> Eval::execute_closure(AriaExeContext& ctx, const Value slot0, ObjClosure* closure, const ArgList args) {
         // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
         // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
-        // args 契约见声明处(不指进值栈,或留足压档余量)。重入返回后写返回槽恒经 peek
-        // 重寻址(重入期间值栈可能搬迁)。
+        // args 不指进值栈或留足压档余量;重入返回后写返回槽恒经 peek 重寻址(值栈可能搬迁)。
         ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
         if (ctx.recursion_depth() >= AriaExeContext::kMaxRecursionDepth) {
             return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep"); // 载荷入寄存器
@@ -295,7 +294,7 @@ namespace aria {
     }
 
     bool Eval::run_negate(AriaExeContext& ctx) {
-        // [v] -> [r]:整数/浮点就地取负;对象左值取 __neg__ 实现后调用(一元恒零实参,调用区
+        // 整数/浮点就地取负;对象左值取 __neg__ 实现后调用(一元恒零实参,调用区
         // [v] 即 [this]);其余类型报 InvalidOperand。GC 走查同 run_binary_operator。
         const Value operand = ctx.peek(0);
         if (operand.is_int()) {
@@ -433,7 +432,7 @@ namespace aria {
     }
 
     bool Eval::run_store_field(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp;非对象守卫同 run_load_field。
+        // 非对象守卫同 run_load_field。
         const Value obj = ctx.peek(1);
         if (!obj.is_obj()) {
             return ctx.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name(obj));
@@ -447,12 +446,12 @@ namespace aria {
     }
 
     bool Eval::run_load_this_field(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp;this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
+        // this 取顶帧槽 0(帧槽「栈即根」同 run_load_super_field),经
         // load_field_bound 协议出值压栈([] -> [v]),miss 文案由协议 override 就地烘焙。
         const Value this_value = ctx.frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
             if (const auto result = inst->load_field_bound(ctx, name)) {
-                ctx.push(*result); // [] -> [v]
+                ctx.push(*result);
                 return true;
             }
             return false;
@@ -461,7 +460,7 @@ namespace aria {
     }
 
     bool Eval::run_store_this_field(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp;写入:[v] -> [v](peek-store,值留栈,this 不经值栈)。store_field
+        // 写入:[v] -> [v](peek-store,值留栈,this 不经值栈)。store_field
         // 恒成功(实例字段动态),false 分支为契约透传防御形态。非实例兜底同读取执行体。
         const Value this_value = ctx.frames().top().slots[0];
         if (const auto inst = try_as_obj<ObjInstance>(this_value)) {
@@ -475,7 +474,7 @@ namespace aria {
     }
 
     bool Eval::run_prepare_method(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp。两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
+        // 两段式第一段:接收者在栈顶(实参尚未求值)。协议解析期间它须在栈
         // (「栈即根」)-- 裸查找命中零分配(基类默认 fail;宿主 override 皆纯透传/纯查询),唯一
         // 分配点是 miss 的 fail 装箱。解析先于实参求值。
         const Value recv = ctx.peek(0);
@@ -490,7 +489,7 @@ namespace aria {
     }
 
     bool Eval::run_call_method(AriaExeContext& ctx, const u8 argc) {
-        // 契约见 Eval.hpp。纯调用,不再解析:[recv, target, a1..aN] 里实参整体下移一格补掉待调值
+        // 纯调用,不再解析:实参整体下移一格补掉待调值
         // 占的那格 -> [recv, a1..aN](槽 0 = receiver = this);待调值交 call_value 统一分发
         // (argc == 0 时下移为空转)。
         const Value target = ctx.peek(argc);
@@ -502,7 +501,7 @@ namespace aria {
     }
 
     bool Eval::try_list_load_fast_dispatch(AriaExeContext& ctx, Object* target, const Value idx) {
-        // 契约见 Eval.hpp;命中臂写回 obj 槽再弹 idx,与虚路径同栈效应。
+        // 命中臂写回 obj 槽再弹 idx,与虚路径同栈效应。
         if (target->is<ObjList>() && idx.is_int()) {
             const auto list = target->as<ObjList>();
             if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
@@ -515,7 +514,6 @@ namespace aria {
     }
 
     bool Eval::try_list_store_fast_dispatch(AriaExeContext& ctx, Object* target, const Value idx, const Value value) {
-        // 契约见 Eval.hpp。
         if (target->is<ObjList>() && idx.is_int()) {
             const auto list = target->as<ObjList>();
             if (const auto slot = util::resolve_index(idx.as_int(), list->elements().size())) {
@@ -529,7 +527,7 @@ namespace aria {
     }
 
     bool Eval::run_load_index(AriaExeContext& ctx) {
-        // 契约见 Eval.hpp;非对象守卫同 run_load_field(文案与协议基类默认同串)。
+        // 非对象守卫同 run_load_field(文案与协议基类默认同串)。
         const Value idx = ctx.peek(0);
         const Value obj = ctx.peek(1);
         if (!obj.is_obj()) {
@@ -548,7 +546,7 @@ namespace aria {
     }
 
     bool Eval::run_store_index(AriaExeContext& ctx) {
-        // 契约见 Eval.hpp;非对象守卫同 run_load_index。
+        // 非对象守卫同 run_load_index。
         const Value value = ctx.peek(0);
         const Value idx   = ctx.peek(1);
         const Value obj   = ctx.peek(2);
@@ -568,7 +566,7 @@ namespace aria {
     }
 
     bool Eval::run_make_range(AriaExeContext& ctx, const u8 flags) {
-        // 契约见 Eval.hpp。端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」,端点为标量
+        // 端点 peek 在栈跨 new_range 顶部 maybe_collect(「栈即根」,端点为标量
         // 整数非对象);铸完 drop 再 push(窗口内无 GC 点)。非整数端点 TypeMismatch,文案报端点类型。
         if ((flags & kRangeFlagUnbounded) != 0) {
             const Value from = ctx.peek(0);
@@ -594,7 +592,7 @@ namespace aria {
     }
 
     bool Eval::run_build_string(AriaExeContext& ctx, const u8 count) {
-        // 契约见 Eval.hpp。两遍式(join 预扫先例),段存储即值栈本身:首遍左到右逐段渲染,渲染串
+        // 两遍式(join 预扫先例),段存储即值栈本身:首遍左到右逐段渲染,渲染串
         // 原槽换装(栈即根,跨后续渲染保活);次遍零 GC 点单趟填充。段址逐访问现取 -- 渲染重入
         // 可扩容搬迁值栈,跨 stringify 复用栈地址/引用必悬垂。
         usize total = 0;
@@ -618,7 +616,7 @@ namespace aria {
     }
 
     bool Eval::run_make_class(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp;[super] -> [class] 原地写回,铸类不弹不压。
+        // 铸类原地写回,不弹不压。
         if (const auto super = try_as_obj<ObjClass>(ctx.peek(0))) {
             // 内建容器五类不可继承(方法面 receiver 恒具体内建对象,实例无从满足);Object 放行:
             // 无 super 的 def 以 LOAD_REG 直发它,与显式 : Object 同栈形不可分。
@@ -636,7 +634,7 @@ namespace aria {
     }
 
     bool Eval::run_load_super_field(AriaExeContext& ctx, ObjString* name) {
-        // 契约见 Eval.hpp;miss 时类措辞 fail 已入寄存器,本函数只透传信号。
+        // miss 时类措辞 fail 已入寄存器,本函数只透传信号。
         const auto& frame    = ctx.frames().top();
         const auto  defining = frame.closure->defining_class();
         ASSERT(defining != nullptr, "closure has no defining class (compiler invariant)");
@@ -708,12 +706,9 @@ namespace aria {
     }
 
     bool Eval::unwind(AriaVM& vm) {
-        // 前提:寄存器已有载荷(入口断言把关)。搜索阶段不动帧栈/值栈,命中就地回退派发。搜索
-        // 边界 = vm.current_->ret_frame()(随上下文走,逐跳重读)。返回 true = 已派发(落回循环顶重取帧);
-        // false = 边界之上全帧未命中,载荷留寄存器:边界非零(嵌套执行)即本次调用无法处理,截到
-        // 边界清残帧后交外层循环续搜;边界为零则链上有恢复者已转投(协程置 Failed 死去,载荷 raise
-        // 进恢复者,由其循环续搜),链根仍无 handler -> 调用方善后(收跟踪物化)。命中可能在多跳
-        // 之后,vm.current_ 已非进入时的上下文。
+        // 前提:寄存器已有载荷(入口断言把关);搜索不动帧栈/值栈、命中就地回退派发,搜索边界 =
+        // ret_frame()(随上下文走,逐跳重读)。false = 边界上全帧未命中:嵌套执行截到边界交外层
+        // 续搜、链上有恢复者已转投(协程置 Failed)、链根交调用方善后;命中可能在多跳之后。
         ASSERT(vm.current_->has_error(), "no pending payload");
 
         while (true) {
@@ -742,9 +737,8 @@ namespace aria {
 
             // 边界为零仍全帧未命中:在链上转投一跳,链终止(主上下文)交调用方善后。
             if (const auto caller = vm.current_->previous()) {
-                // 四步定序承重:take 先于 reset(reset 一并清寄存器,且先关开指、死协程不留栈,
-                // 向外泄漏的捕获闭包取值安全);caller 寄存器此刻必空(call_native 进场断言锁,
-                // 挂起期间无人可写非执行上下文的寄存器);take 到 raise 之间无 GC 点,载荷局部持有
+                // 四步定序承重:take 先于 reset(reset 清寄存器且先关开指,外泄捕获闭包取值
+                // 安全);caller 寄存器必空(进场断言锁);take 到 raise 间无 GC 点,载荷局部
                 // 不丢根。
                 const auto payload = vm.current_->take_error();
                 vm.current_->reset();
@@ -757,17 +751,9 @@ namespace aria {
     }
 
     bool Eval::dispatch_loop(AriaExeContext& ctx) {
-        // 主循环:驱动当前上下文至顶层返回/未捕获。current 为本轮上下文指针:可能换指的调用点
-        //(CALL 族经 call_native 的切换型原生 / RETURN 协程完成切回 / unwind 跳链)之后经
-        // vm.current_ 重指,其余指令路径 current_ 恒不变(进场上下文换指后仍存活,挂起经 previous_
-        // 链根可达);frame 为栈顶帧指针,与 current 一并重取。使快照失效的变更点(进帧/弹帧/换指:
-        // CALL 族、算子与取负的钩子、RETURN、IMPORT、unwind)一律 goto sync_now 善后 -- 与错误
-        // 善后标签 unwind_check 对称的单一出口,循环顶 ASSERT 复核防漏。vm 为宿主引用缓存(恒定,
-        // 不随切换变),宿主面一律经它;unwind 恒持 vm(跨协程跳链逐跳重读 current_)。出口协议
-        //(返 bool):成功 = 返回值已写回调用区槽 0(栈顶);失败 = 载荷留寄存器,失败出口均就地善后
-        //(未捕获搜索截到边界或物化清场;进帧前失败帧未进;错误不走返回值通道)。出口边界 =
-        // current->ret_frame()(住 AriaExeContext 随上下文走,重入场写入/退场归还;最外执行恒零,弹空
-        // 帧栈即本循环驱动的最外帧弹尽;协程各链独立计帧,链内弹尽即跨到完成/顶层出口)。
+        // 主循环:驱动当前上下文至顶层返回/未捕获。current/frame 快照在换指点(CALL 族切换型/
+        // RETURN 切回/unwind 跳链)后经 vm.current_ 重取,失效变更点一律 goto sync_now(与
+        // unwind_check 对称单一出口)。出口:成功 = 返回值写回槽 0,失败 = 载荷留寄存器就地善后。
         auto& vm      = ctx.host();
         auto  current = &ctx;
         auto  frame   = &current->frames().top();
@@ -814,7 +800,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_REG: {
-                    // [] -> [regs[n]]:压 VM 单例寄存器;下标即注册表枚举值,编译器只发合法下标,
+                    // 压 VM 值寄存器;下标即注册表枚举值,编译器只发合法下标,
                     // 同 LOAD_LOCAL 槽访问不设防。
                     current->push(Value::from_obj(vm.registers_[read_u8(frame)]));
                     break;
@@ -897,7 +883,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::DEF_GLOBAL: {
-                    // [v] -> []:以常量池 name 为键在当前模块 globals 首次定义(顶层 var 唯一
+                    // 以常量池 name 为键在当前模块 globals 首次定义(顶层 var 唯一
                     // 创建全局的入口)。栈即根:peek 留 v 跨 set,写完才 drop。
                     ObjString* name = read_name(frame);
                     frame->module->globals().set(Value::from_obj(name), current->peek(0));
@@ -905,7 +891,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::LOAD_GLOBAL: {
-                    // [] -> [v]:按名查当前模块 globals,miss 回退宿主 builtins 表,皆未命中 ->
+                    // 按名查当前模块 globals,miss 回退宿主 builtins 表,皆未命中 ->
                     // UndefinedVariable。push 先写栈再 grow,载荷已入栈根后方可能 collect。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
@@ -921,7 +907,7 @@ namespace aria {
                     break;
                 }
                 case OpCode::STORE_GLOBAL: {
-                    // [v] -> [v]:peek-store 到模块 globals;未定义 -> UndefinedVariable(赋值不
+                    // peek-store 到模块 globals;未定义 -> UndefinedVariable(赋值不
                     // 隐式创建)。无分配。
                     ObjString*  name  = read_name(frame);
                     const Value key   = Value::from_obj(name);
@@ -946,13 +932,12 @@ namespace aria {
                     }
                     break;
                 case OpCode::LOAD_INDEX:
-                    // [obj, idx] -> [v]
                     if (!run_load_index(*current)) {
                         goto unwind_check;
                     }
                     break;
                 case OpCode::STORE_INDEX:
-                    // [obj, idx, v] -> [v](peek-store,值下移两格)
+                    // peek-store:值下移两格
                     if (!run_store_index(*current)) {
                         goto unwind_check;
                     }

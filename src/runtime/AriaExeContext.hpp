@@ -28,7 +28,7 @@ namespace aria {
 
     // fail 的返回哨兵,失败出口惯用法一行 `return fail(...);`。**Opt<T> 转换只对「不可由 bool
     // 构造」的 T 成立**--标量经 operator bool() 会构造出已初始化的 0/false 把 fail 吞成成功,
-    // 标量返回型站点改用 bool + 出参(先例:StringClass 算子钩子契约返 bool、结果写返回槽)。
+    // 标量返回型站点改用 bool + 出参。
     struct FailSignal {
         operator bool() const noexcept { return false; }
         template<typename T>
@@ -41,12 +41,10 @@ namespace aria {
         }
     };
 
-    // 执行上下文本体:一段执行的完整状态 -- 可增长值栈 + 帧栈 + open upvalue 链 + 挂起错误
-    // 寄存器 + resume 链 + 执行状态 + 嵌套执行边界;三类指针(top_/活动帧 slots/开指 location_)
-    // 在栈增长时按「搬运前记槽偏移、搬运后新基址重建」重绑。原生函数与 Object 协议面向本面:
-    // 报错族写本上下文自己的寄存器(执行中的 ctx 恒 == current_,写点即调用方上下文),常量串
-    // 与七个 bootstrap 类访问器经私有 host_ 回指针委托宿主。GC 对象壳 ObjMovement(唯一派生,
-    // 构造私有 + 友元钉死)把本面包成 GC 一等值,主上下文与协程统一本型。
+    // 执行上下文本体:一段执行的完整状态,原生函数与 Object 协议面向本面(报错族写本上下文
+    // 自己的寄存器;常量串与 bootstrap 类访问器经私有 host_ 回指针委托宿主)。三类指针(top_/
+    // 活动帧 slots/开指 location_)在栈增长时按「搬运前记槽偏移、搬运后新基址重建」重绑;GC
+    // 对象壳 ObjMovement(唯一派生,构造私有 + 友元钉死)把本面包成 GC 一等值。
     class AriaExeContext {
     public:
         static constexpr usize kStackInit = 1024; // 值栈初始容量(Value 槽,NaN-boxing 8KB/TagValue 16KB);不足时 2x 增长
@@ -106,9 +104,8 @@ namespace aria {
         }
 
         // 异常派发:回退到第 n 帧(含)并转入 record 的 catch handler;全帧未命中不走本函数
-        //(交 reset())。truncate 一步弃内层帧(栈顶未动,被弃槽区全存活);close_upvalues
-        //(catch 槽) 关掉其上开指后,值栈顶截到 catch 参数槽、置 ip 跳 record.handle,寄存器
-        // 载荷 push 落槽(取走后至 push 无分配,不失根)。
+        //(交 reset())。先关 catch 槽上开指,再截值栈到 catch 参数槽、置 ip 跳 handler,末
+        // push 载荷落槽(取走后至 push 无分配,不失根)。
         void unwind_to_handler(const usize n, const TryRecord& record) noexcept {
             ASSERT(n < frames_.size(), "frame index out of range");
             frames_.truncate(n + 1);
@@ -189,9 +186,8 @@ namespace aria {
         }
 
         // 挂起错误寄存器(侧信道):冷路径错误经 raise 写入,VM 在安全点 has_error() 后
-        // take_error() 传播,寄存器随上下文走。载荷为 Value -- VM/原生错误装 ObjException、
-        // aria throw 原值入(catch 绑原值保类型);置入后随本对象 trace 标根,取出前跨安全点
-        // 分配不回收。
+        // take_error() 传播,寄存器随上下文走;载荷为 Value,置入后随本对象 trace 标根,取出
+        // 前跨安全点分配不回收。
         void raise(const Value err) noexcept {
             ASSERT(!pending_error_.has_value(), "pending error already set (take/clear before re-raise)");
             pending_error_ = err;
@@ -214,10 +210,9 @@ namespace aria {
             return pending_error_;
         }
 
-        // 报错族:从零构造消息一步烘齐(Error::make_message 无位置版 + new_exception),消息
-        // **不含位置前缀**(位置由 unwind 未捕获出口的逐帧 at 行给出);装箱分配可能触 GC,载荷
-        // 构造后立即入寄存器(tracer 已标根)。fail = raise + 恒返失败信号,[[nodiscard]] 强制
-        // `return ctx.fail(...);`。
+        // 报错族:从零构造消息一步烘齐,**不含位置前缀**(位置由 unwind 未捕获出口的逐帧 at
+        // 行给出);装箱分配可能触 GC,载荷构造后立即入寄存器(tracer 已标根)。fail = raise +
+        // 恒返失败信号,[[nodiscard]] 强制 `return ctx.fail(...);`。
         template<typename... Args>
         void raise(const ErrorCode code, std::format_string<Args...> fmt, Args&&... args) {
             const auto msg = Error::make_message(code, std::format(fmt, std::forward<Args>(args)...));
@@ -250,8 +245,7 @@ namespace aria {
 
         // 实参整形:把本上下文栈顶从实参深度整形成帧参数槽深并返回槽深。①缺省垫充:未传的固定
         // 参数槽压缺省印章(体局部槽号按满参编,参数槽 1..n、体局部自 n+1 起);②varargs 打包:
-        // 多余实参整段收集为新 list 压 rest 槽(帧槽深 = arity + 1,无多余实参铸空表 -- rest 恒为
-        // list 非 nil)。
+        // 多余实参整段收集为新 list 压 rest 槽(rest 恒为 list 非 nil,无多余实参铸空表)。
         [[nodiscard]]
         u8 prepare_call_args(const ObjFunction* fn, u8 argc);
 
@@ -278,7 +272,7 @@ namespace aria {
         void set_previous(ObjMovement* prev) noexcept { previous_ = prev; }
 
         // 取走恢复者并断链(yield / RETURN 完成解链的唯一出口,维持挂起态 previous_ 恒 nullptr;
-        // 与 take_error 同族 -- 挂起状态的取走并置空收口)。
+        // 挂起状态的取走并置空收口)。
         [[nodiscard]]
         ObjMovement* take_previous() noexcept {
             return util::take(previous_);
@@ -393,8 +387,8 @@ namespace aria {
     protected:
         // protected 非虚析构:上下文的删除唯一出口 = GC 摘链经 Object*(首基类虚析构),虚化只会
         // 给每个上下文多付一张 vptr;protected 把经本面的误删封死为编译错。
-        ~AriaExeContext() = default; // buf_ 经自持 GC* 释放值栈(同 ObjString long_chars_ 先例);frames_
-                                     // UPtr 自释放;open upvalue 节点是 GC 对象,归 GC 管。
+        ~AriaExeContext() = default; // buf_ 经自持 GC* 释放值栈;frames_ UPtr 自释放;
+                                     // open upvalue 节点是 GC 对象,归 GC 管。
 
     private:
         // 唯一派生 ObjMovement 经多继承收编本面;构造私有结构性钉死唯一派生。

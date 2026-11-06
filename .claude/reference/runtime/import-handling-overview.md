@@ -23,7 +23,7 @@
 Token (Import / As / String / Identifier)
    │  ② Parser              已实现
    ▼
-ImportStmtNode { path:UPtr<ExprNode>(StringLiteralNode), alias:String }
+ImportStmtNode { path:StringLiteralNode*, alias:StringView }
    │  ③ AST→CodeUnit 编译器  ✓ 已实现（CodeGen : AstVisitor）
    ▼
 OpCode::IMPORT  path:u16   (常量池 ObjString 索引; 压模块值于栈顶)
@@ -78,8 +78,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   `expect_identifier()` 作 alias → `expect(Semicolon)` → 构造 `ImportStmtNode(loc, path, alias)`。
   **path 文法钉死字符串字面量，此处不做任何路径解析或文件系统检查**。
 - **AST 节点**（`src/compile/Ast.hpp`）：`struct ImportStmtNode : StmtNode`，字段
-  `UPtr<ExprNode> path;`（Parser 保证指向 `StringLiteralNode`，与字面段同形）/
-  `String alias;`。`dump` 渲染 `ImportStmt as=...`，path 以 `StringLiteral` 子行渲染
+  `StringLiteralNode* path;`（Parser 保证，arena 裸指针，与字面段同形）与 `StringView alias;`。`dump` 渲染 `ImportStmt as=...`，path 以 `StringLiteral` 子行渲染
   （`Ast.cpp`），`accept` 调 `visitor.visitImportStmtNode(this)`。
 - **visitor**（`src/compile/AstVisitor.hpp`）：`visitImportStmtNode` 为纯虚，由 `CodeGen` override。
 
@@ -118,12 +117,12 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 ### IMPORT 操作码执行
 
 `src/runtime/Eval.cpp` 主循环 `case OpCode::IMPORT` 收口于私有成员
-`Eval::run_import(AriaVM& vm, const ObjString* path)`
+`Eval::run_import(AriaExeContext& ctx, const ObjString* path)`
 （bool 契约同 call_* 族：false ⟺ 载荷已 raise，unwind 留 dispatch_loop 调用点），步骤：
 
 1. case 站点 `read_name(frame)` 读一个 u16 常量池索引取 `ObjString* path` 传入（良构前提是常量
    必为 intern 的 `ObjString*`）。
-2. 以导入方帧模块 `abs_path()`（`Eval::run_import` 内经 `vm.current_->frames().top()` 自取）为当前模块
+2. 以导入方帧模块 `abs_path()`（`Eval::run_import` 内经 `ctx.frames().top()` 自取）为当前模块
    绝对路径，传 `resolve_module` 解析：
    - **失败**（`nullopt`，无源根命中）：经 `fail` 报 `ModuleNotFound`
      （`"module not found: '<path>'"`，带 IMPORT 站点位置）。
@@ -161,7 +160,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   约定 + 原地赋值，reuse 安全不累积旧入口根。`set_source_roots` 经 `resize(1)` 保留 `[0]`、替换
   `[1..]`（置空即清掉默认 stdlib）。**`source_roots_` 已被 IMPORT 的裸名解析消费**。
 - 模块表 `modules_` 经 VM 根 tracer 注册进 GC（构造里 `gc_.set_vm_roots(...)`，tracer 标
-  `modules_` + `builtins_` + `current_` 沿 `previous_` 执行链各上下文的值栈/帧/挂起错误寄存器）。
+  `modules_`/`builtins_`/`registers_`/`str_table_`/`char_cache_` 五表 + `current_` 一点，沿 `previous_` 执行链各上下文的值栈/帧/挂起错误寄存器）。
   键 = 绝对规范路径
   `ObjString*`（intern），值 = `ObjModule*`，均装箱为 `Value` 入 `AriaHashTable`。
 

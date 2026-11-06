@@ -19,7 +19,7 @@ namespace aria {
 
     namespace {
 
-        // 指令字节长 = 1 + 操作数字节数(位宽取 Disassembler 同源的 kOpCodeFormats 表)。
+        // 指令字节长 = 1 + 操作数字节数(位宽查 kOpCodeFormats 表)。
         constexpr usize size_of(const OpCode op) noexcept {
             switch (kOpCodeFormats[std::to_underlying(op)]) {
                 case OpFormat::Simple:
@@ -83,7 +83,7 @@ namespace aria {
         }
         prev_op_ = op;
 
-        // 逐指令记账(与 dispatch_loop 同形):操作数直方图旁路读不推进 ip;调用面在取指点
+        // 逐指令记账:操作数直方图旁路读不推进 ip;调用面在取指点
         // peek、跳转走向在取指点判定(栈形是编译器不变式),出边按实际落点记 -- 落空记 pairs_
         //(可融合面),跳走记 jt_。
         switch (op) {

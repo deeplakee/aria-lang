@@ -95,7 +95,7 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 
 ## 坑 #10：嵌套执行的切换红线 -- yield 穿界被运行期拒绝，resume 多路复用安全
 
-**现状**：重入口已落地（vm-design.md §4.11；私有 `execute_closure`/`execute_method`），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
+**现状**：重入口已落地（vm-design.md §4.11；`execute_closure`/`execute_method`，现为 AriaExeContext 公共面），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
 
 - **resume 放行**：dispatch_loop 每指令自 `current_` 重取帧，嵌套循环驱动被恢复协程安全；被恢复协程出口边界恒零，完成/让位自动按链切回，嵌套循环随后在自己边界收束（白盒钉子 `ResumeInsideNestedMultiplexes`）。
 - **yield 拒绝**：`ret_frame_` 非零即处于嵌套执行，yield 校验段首检即报 `YieldInNestedExecution`。嵌套循环等的是同步结果，挂起即穿界--切走 `current_` 后嵌套循环会转去驱动切回方上下文，被挂起上下文的嵌套帧悬在栈上，出口边界语义全部失效。
@@ -113,5 +113,5 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 - C++：`UncaughtInCoroutineTraceTruncatedAtBoundary`（截断精确等值断言）、
   `SuspendedCoroutineValuesSurviveStressGc` / `InterleavedCoroutinesSurviveStressGc`
   （stress GC 悬挂压力）；重入口（坑 #10）：`tests/runtime/test_execute.cpp` 的 `NestedExecStress`
-  （统一友元 `TestProbe` 驱动私有 `execute_closure`/`execute_method`：返回值 / this 绑定 /
+  （统一 `TestProbe` 驱动 `execute_closure`/`execute_method`（现公共面，无须友元）：返回值 / this 绑定 /
   未捕获截断 / 外层 try 接获 / 深度上限 / 嵌套 yield 拒绝 / 嵌套 resume 多路复用，stress GC 全程开）。

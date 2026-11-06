@@ -61,11 +61,11 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 
 **根因**：`FrameStack` 要求 T trivial + trivially-copyable + trivially-destructible（`static_assert` 三连）。NSDMI 会使类的默认构造函数变为非 trivial（即便初始化值是常量），导致 `is_trivial_v` 为 false。`CallFrame` 是 trivially-copyable 聚合，禁用 NSDMI。
 
-**对策**：`CallFrame` 新字段**不写默认值**，初始化收敛进 `init_frame_`（Movement.cpp 已有此模式：`f.slots = ...; f.function = ...;` 逐字段赋值）。新增 `f.last_ip = f.ip;`（= code 起始；不用 nullptr -- 与 data() 相减是 UB）即可。保持 `CallFrame` 为纯聚合（无 NSDMI、无用户构造函数）。
+**对策**：`CallFrame` 新字段**不写默认值**，初始化收敛进 `init_frame_`（现 `CallFrame::init`，CallFrame.cpp；当时住 Movement.cpp：`f.slots = ...; f.function = ...;` 逐字段赋值）。新增 `f.last_ip = f.ip;`（= code 起始；不用 nullptr -- 与 data() 相减是 UB）即可。保持 `CallFrame` 为纯聚合（无 NSDMI、无用户构造函数）。
 
 ```cpp
 struct CallFrame {          // M3 时代快照:callable 字段当时为 ObjFunction*,M4 收敛后为 ObjClosure* closure
-    ObjFunction* function;  // (现字段名与类型见 runtime/ObjMovement.hpp);坑本体(NSDMI 禁令)不受影响
+    ObjFunction* function;  // (现字段名与类型见 runtime/CallFrame.hpp);坑本体(NSDMI 禁令)不受影响
     CodeUnit*    unit;
     ObjModule*   module;
     u8*          ip;
@@ -133,7 +133,7 @@ visitTryStmtNode:
 
 **根因**：`stack_depth` 是「try 入作用域时**本帧**已声明的局部数」，相对 `frame.slots`（本帧槽 0），不是相对 `stack_base`（全局值栈基址）。跨帧 unwind 到 handler 帧时，要截断到 `handler_frame.slots + stack_depth`，丢弃 try 体内的临时值与本帧残留，但保留 handler 帧的 callee/参数/已声明局部。
 
-**对策**：截栈基准按上式算，动作住 `Movement::unwind_to_handler(命中帧索引, record)`（一体完成弃帧 / 关开指 / 截栈 / 跳 handler / 载荷落槽，见坑 #13/#17）：先按槽址关开指（槽区仍存活），再截到 `handler_frame.slots + stack_depth`，最后 `push(载荷)` 恰落 catch 参数槽（值填槽，无需 `STORE_LOCAL`，见坑 #10）。早期外露的 `Movement::truncate_stack(usize)` 已删除、职责并入该执行体。
+**对策**：截栈基准按上式算，动作住 `AriaExeContext::unwind_to_handler(命中帧索引, record)`（一体完成弃帧 / 关开指 / 截栈 / 跳 handler / 载荷落槽，见坑 #13/#17）：先按槽址关开指（槽区仍存活），再截到 `handler_frame.slots + stack_depth`，最后 `push(载荷)` 恰落 catch 参数槽（值填槽，无需 `STORE_LOCAL`，见坑 #10）。早期外露的 `Movement::truncate_stack(usize)` 已删除、职责并入该执行体。
 
 ---
 
@@ -174,7 +174,7 @@ public:
 
 **catch 绑 ObjException 的 M3 可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地（现已落地：ExceptionClass face 的 init/message/code）。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
-**站点改动**：`call_*` 失败 / `call_native` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaVM::raise`/`fail`）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
+**站点改动**：`call_*` 失败 / `call_native` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaExeContext::raise`/`fail`，拆类后自 AriaVM 迁入）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
 
 ---
 
@@ -283,7 +283,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 ## 坑 #13：unwind() 帧遍历（终态：纯搜索，不再逐帧 `exit_frame`）
 
-**约束**：遍历必须**不动帧栈** -- 未命中的帧只记跟踪三元组（帧引用全程有效），命中后交由 `Movement::unwind_to_handler(命中帧索引, record)` 一体完成弃帧 + 关开指 + 截栈 + 跳 handler + 载荷落槽（见坑 #6），全帧未命中走 `reset()` 一次清场。
+**约束**：遍历必须**不动帧栈** -- 未命中的帧只记跟踪三元组（帧引用全程有效），命中后交由 `AriaExeContext::unwind_to_handler(命中帧索引, record)` 一体完成弃帧 + 关开指 + 截栈 + 跳 handler + 载荷落槽（见坑 #6），全帧未命中走 `reset()` 一次清场。
 
 **终态补记（2026-10，重入口批）**：未命中退出随出口边界（`current_->ret_frame()`）三分--边界非零（嵌套执行）即截净残帧交外层驱动续搜（不清场）；边界零在链上转投一跳（坑 #5 定序）；链根仍未命中返 false，`reset()` 清场归 `run()` 的 `rebake_uncaught_error()`。「未命中时记三元组」同已废，跟踪收集迁物化点（坑 #16 补记）。
 
@@ -293,7 +293,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 ## 坑 #14：单寄存器 `pending_error_ : Opt<Value>` 的落地分工
 
-**约束**：`Movement` 不持 `GC&`，故**装箱上移** -- `AriaVM::raise(code, detail)` / `fail` 负责构造 `ObjException` 并 `ctx.raise(Value)` 存入，`Movement` 只暴露 `raise(Value)`（存原值、不包）与 `has_error()` / `take_error()` / 只读 `pending_error()` 访问器；载荷类型为 `Opt<Value>`（装 ObjException 或用户 throw 原值，见坑 #7），`reset()` 一并清空。
+**约束**：`Movement` 不持 `GC&`，故**装箱上移** -- `AriaExeContext::raise(code, detail)` / `fail` 负责构造 `ObjException` 并 `ctx.raise(Value)` 存入，本类只暴露 `raise(Value)`（存原值、不包）与 `has_error()` / `take_error()` / 只读 `pending_error()` 访问器；载荷类型为 `Opt<Value>`（装 ObjException 或用户 throw 原值，见坑 #7），`reset()` 一并清空。
 
 旧形态的两件均已删除：`truncate_stack`（职责并入 `unwind_to_handler`，见坑 #13）与双寄存器 `pending_throw_` 四件套。`pending_error_` 的 GC 标根见坑 #8。
 
@@ -327,9 +327,9 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 - **未命中帧 / RETURN**：帧被 `exit_frame` 弹掉，关闭可内置其内（坑 #18）。
 - **命中 handler**：**帧不退**（执行点跳回本帧 catch 入口，handler 帧不弹），不经 `exit_frame`；丢弃的只有值栈区间 `[slots + stack_depth, top)`（坑 #6 的截断基准）。try 体被捕获局部恰好住在该区间（try 体局部自 slot `stack_depth` 起声明，坑 #10），必须显式关闭。
 
-且顺序**承重**：关开指 -> 截栈 -> `push(载荷)`（三步都住 `Movement::unwind_to_handler`）。载荷 push 落 catch 参数槽 == slot `stack_depth` == **弹弃区首槽**（坑 #10 的「值填槽」约定在此反咬一口）：若不先关，push 覆写被捕获局部槽，迁值读到的是异常值而非局部末值 -- 闭包此后读到的是 catch 参数。截栈本身只移 `top_` 不覆写，不承重；截栈后的**首个覆写点**就是 push，close 必须在它之前。
+且顺序**承重**：关开指 -> 截栈 -> `push(载荷)`（三步都住 `AriaExeContext::unwind_to_handler`）。载荷 push 落 catch 参数槽 == slot `stack_depth` == **弹弃区首槽**（坑 #10 的「值填槽」约定在此反咬一口）：若不先关，push 覆写被捕获局部槽，迁值读到的是异常值而非局部末值 -- 闭包此后读到的是 catch 参数。截栈本身只移 `top_` 不覆写，不承重；截栈后的**首个覆写点**就是 push，close 必须在它之前。
 
-**对策**：命中分支三步定序，收口在 `Movement::unwind_to_handler`（坑 #13）：`close_upvalues(catch 槽)`（槽区存活时迁值，基准与坑 #6 截断同源）-> 截栈 -> `push(take_error())`。测试：`UnwindHitClosesTryBodyUpvalue`（命中：try 体 upvalue 随丢弃区间迁移，catch 覆写后读 5）/`UnwindClosesCapturedUpvalue`（未命中：经 `exit_frame` 关闭，catch 覆写陈旧槽后仍读 43）。
+**对策**：命中分支三步定序，收口在 `AriaExeContext::unwind_to_handler`（坑 #13）：`close_upvalues(catch 槽)`（槽区存活时迁值，基准与坑 #6 截断同源）-> 截栈 -> `push(take_error())`。测试：`UnwindHitClosesTryBodyUpvalue`（命中：try 体 upvalue 随丢弃区间迁移，catch 覆写后读 5）/`UnwindClosesCapturedUpvalue`（未命中：经 `exit_frame` 关闭，catch 覆写陈旧槽后仍读 43）。
 
 ## 坑 #18：「帧退出 ⇒ 本帧区间开指全关」单点收口进 exit_frame + reset() 安全网
 
@@ -339,7 +339,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 - `exit_frame` 内**先取 `slots` 再 close/pop**：`frames_.top()` 引用在 pop 后悬垂，不可先 pop 再读（与坑 #2 同族的引用生命周期纪律）。
 - 关闭须在**槽区仍存活**时（复位 `top_` 之前）完成：弹帧后调用者的后续 push 自 callee 槽起逐槽覆写已弃局部区，未迁值的被捕获局部会被踩掉（与坑 #17 的 push 覆写同因，方向相反：一个是 unwind 载荷，一个是 RETURN 后调用者的栈增长）。
 
-**reset() 安全网**：HALT 收场**不弹帧**（`case HALT: return` 直接出 dispatch_loop；CodeGen 从不发射 HALT，它是手写字节码/嵌入方的逃生口），帧上开指残留在链上。`run()` 复用主上下文（REPL 逐行、测试多次 run），残留开指会跨 run 指入被覆写的栈区，再经幸存闭包（如挂在模块 globals 上的）读出脏值。故 `Movement::reset()` 先 `close_upvalues(buf_.data())`（全链）再清场 -- `run()` 前后各一次的清场即激活此安全网。
+**reset() 安全网**：HALT 收场**不弹帧**（HALT 直接出 dispatch_loop，现行形态为压 nil 后返 true；CodeGen 从不发射 HALT，它是手写字节码/嵌入方的逃生口），帧上开指残留在链上。`run()` 复用主上下文（REPL 逐行、测试多次 run），残留开指会跨 run 指入被覆写的栈区，再经幸存闭包（如挂在模块 globals 上的）读出脏值。故 `AriaExeContext::reset()` 先 `close_upvalues(buf_.data())`（全链）再清场 -- `run()` 前后各一次的清场即激活此安全网。
 
 ## 坑 #19：CLOSE_UPVALUE 批量关闭语义（Lua OP_CLOSE 式）与发射时序的安全性前提
 

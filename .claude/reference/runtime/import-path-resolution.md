@@ -54,7 +54,7 @@
 
 1. **入口槽 `source_roots_[0]`**：入口模块的 `dir_`（即入口文件所在目录，对齐 Python
    `sys.path[0]`；整次运行固定，不随导入方文件变化）。VM 构造时先以**当前工作目录**占住
-   `[0]`（前期源根），`run()` 时用入口模块 `dir_` 原地替换（前置：入口模块 `dir_` 非空）。
+   `[0]`（前期源根），`run()` 时用入口模块 `dir_` 原地替换（`dir_` 可空：空串根在裸名解析中被跳过）。
 2. **编译器相对 stdlib 目录**（约定，VM 构造时由 `fs::program_dir()` 推导，如
    `<exe_dir>/../share/aria/lib`，经 `weakly_canonical` 规范化后推入 `source_roots_[1..]`；
    确切路径待定）。
@@ -137,7 +137,7 @@ IMPORT 以绝对键查 `modules_`：
 
 ## 根安全
 
-GC 已启用（VM 根 tracer 标 `modules_` + 值栈 + 帧），`dispatch_loop()` 不持 `LockGuard`：
+GC 已启用（VM 根 tracer 标五表 + `current_` 一点，值栈/帧经执行上下文 trace 级联），`dispatch_loop()` 不持 `LockGuard`：
 
 - `path` 经常量池根（同 `LOAD_CONST`）。
 - 绝对键经 `new_string` intern 驻留（weak root）。

@@ -281,7 +281,7 @@ namespace aria {
             }
             const auto s = Eval::concat_values(ctx, self->elements(), sep->view());
             if (!s) {
-                return false; // 载荷在寄存器,交外层续搜
+                return false;
             }
             info.set_return_val(Value::from_obj(*s));
             return true;

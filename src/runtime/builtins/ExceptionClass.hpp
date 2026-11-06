@@ -12,7 +12,7 @@ namespace aria {
     // 用户异常基类(可继承定义自己的异常类型)。
     class ExceptionClass {
     public:
-        // 唯一构造口:建类(挂 super)并装载方法面;返回白色对象,发布进根由调用点承担。
+        // 唯一构造口,建类挂 super。
         static ObjClass* make_class(GC& gc, ObjClass* super);
     };
 

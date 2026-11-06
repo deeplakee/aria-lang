@@ -9,8 +9,7 @@
 
 namespace aria::str {
 
-    // \u{...} 转义的失败类别:词法期按类别报 InvalidEscape(锚点 = '\' 起点),展开侧输入必合法、
-    // 各类别不可达。
+    // \u{...} 转义的失败类别:词法期按类别报 InvalidEscape。
     enum class UnicodeEscapeError : u8 {
         MissingOpenBrace,    // 'u' 后缺 '{'
         MissingCloseBrace,   // hex 段后缺 '}'
@@ -19,8 +18,8 @@ namespace aria::str {
     };
 
     // 解析 \u{hex} 转义:raw 为从 'u' 起的源文余串。成功返回 {解码字节串(1-4 字节 UTF-8), 消费的
-    // 原始字节数(含 'u' 与两侧花括号)};失败返回类别,由调用方按各自通道处置(词法期报错 / 展开
-    // 侧断言)。词法期校验与内容展开两侧的唯一解析口。
+    // 原始字节数(含 'u' 与两侧花括号)};失败返回类别,由调用方按通道处置。词法期校验与内容展开
+    // 两侧的唯一解析口。
     [[nodiscard]]
     inline Result<Pair<String, usize>, UnicodeEscapeError> decode_unicode_escape(const StringView raw) {
         usize pos = 1; // 消费 'u'
@@ -105,8 +104,7 @@ namespace aria::str {
                     ++pos;
                     break;
                 case 'u': {
-                    // \u{hex}:词法期已校验,失败不可达,ASSERT 兜底(防词法/展开两侧转义集合漂移);
-                    // raw[pos] == 'u',余串从 'u' 起传入,consumed 含 'u' 与两侧花括号
+                    // 词法期已校验,ASSERT 兜底
                     const auto parsed = decode_unicode_escape(raw.substr(pos));
                     ASSERT(parsed.has_value(), "invalid \\u escape after lex-time validation");
                     const auto& [encoded, consumed] = *parsed;

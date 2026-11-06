@@ -177,7 +177,6 @@ namespace aria::util {
                 result += std::format("\n{}\n", description_);
             }
 
-            // Arguments 分节：按注册序遍历 positional，遇首个时才输出分节头
             bool any_positional = false;
             for (const auto& p: defs_) {
                 if (p.kind_ != Slot::Positional) {
@@ -187,12 +186,11 @@ namespace aria::util {
                     result += "\nArguments:\n";
                     any_positional = true;
                 }
-                // 名字字段宽 16、描述对齐第 18 列（2 空格缩进 + 16；超长则贴紧，不留空格）
+                // 名字字段宽 16、描述对齐第 18 列；超长则贴紧
                 const usize pad = 16 - std::min<usize>(16, p.long_name_.size());
                 result += std::format("  {}{}{}\n", p.long_name_, String(pad, ' '), p.description_);
             }
 
-            // Options 分节：named 参数（flag/option）按注册序渲染
             // 先算各前缀最大宽度（option 含 " <VALUE>"），描述统一对齐到 max+2 列，所有描述同列
             usize max_prefix = 0;
             for (const auto& d: defs_) {

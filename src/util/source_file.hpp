@@ -41,7 +41,7 @@ namespace aria::src {
             return content_;
         }
 
-        // 与 wc -l 同语义:无尾 LF 的末行也算一行,尾 LF 不额外计空行;空内容为 0。
+        // 无尾 LF 的末行也算一行,尾 LF 不额外计空行;空内容为 0。
         [[nodiscard]]
         u32 line_count() const {
             ensure_line_starts();

@@ -32,8 +32,8 @@ namespace aria::util {
             io::print("\n");
         }
 
-        // splitmix64 mixing step(Vigna lowbias32 变体):64 位雪崩成 32 位散列;常数/移位为其
-        // 32 位输出低偏置调优,高位差异充分传播到低 32 位(Swiss Table 取低位作 h2)。
+        // splitmix64 终裁器(Vigna),截 32 位输出:64 位位模式雪崩散列,高位差异充分传播到低
+        // 32 位(Swiss Table 取低位作 h2)。
         [[nodiscard]]
         inline u32 splitmix64_mix32(u64 value) noexcept {
             value ^= value >> 30;

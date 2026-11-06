@@ -25,24 +25,21 @@
 namespace aria {
     // std::filesystem 的统一简写,全库仅此一处定义,消费方勿再各自重复。
     namespace stdfs = std::filesystem;
-}
+} // namespace aria
 
 namespace aria::fs {
+    // 文件系统错误码,按百位分段:0 通用 / 1xx 路径 / 2xx 权限 / 3xx I/O / 4xx 符号链接 / 5xx 操作语义。
     enum class FsErrCode : i32 {
-        // 通用/未分类错误
         Unknown = 0,
 
-        // 路径与名称相关
         InvalidPath   = 100,
         PathTooLong   = 101,
         NotFound      = 102,
         AlreadyExists = 103,
 
-        // 权限与安全
         PermissionDenied = 200,
         ReadOnlyFs       = 201,
 
-        // I/O 与资源
         IoError          = 300,
         DiskFull         = 301,
         TooManyOpenFiles = 302,
@@ -50,11 +47,9 @@ namespace aria::fs {
         NotADirectory    = 304, // 期望目录但遇到了文件
         FileInUse        = 305,
 
-        // 符号链接相关
         SymlinkLoop   = 400,
         BrokenSymlink = 401,
 
-        // 操作语义错误
         NotEmpty        = 500, // 删除非空目录
         CrossDeviceLink = 501, // 跨设备移动/硬链接
         UnsupportedOp   = 502, // 当前文件系统不支持该操作

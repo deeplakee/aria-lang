@@ -9,7 +9,8 @@ paths:
 
 ## `util/fs.hpp`
 
-- **路径/读盘原语**：`read_file`/`current_dir`/`program_dir`/`absolute`/`resolve`（`weakly_canonical`）。
+- **`aria::stdfs` 别名**：`std::filesystem` 的统一简写，全库仅本头一处定义，消费方直接使用不再重复别名。
+- **路径/读盘原语**：`read_file`/`current_dir`/`program_dir`/`absolute`/`resolve`（`weakly_canonical`；`resolve` 当前仅测试消费，生产路径解析收口在 `AriaVM::resolve_module` 一侧）。
 - **`module_name_and_dir(StringView path) -> Pair<String,String>{name,dir}`**：把文件路径拆为入口模块身份--`name` = basename 去最后一个扩展名（`path::stem()`）、`dir` = `dirname(absolute(path))`（`absolute` 失败退化为原路径）。纯路径工具，不读盘、不校验存在性；`name` 可能为空，调用方据空 `name` 判加载错误。
 - **错误码**：`FsErrCode`；`detail::to_fserr(std::error_code)` 做映射（经 `default_error_condition()`）；`detail::errno_to_fserr(int e)` 与无参重载（读当前线程 errno）；`detail::executable_path()` 四平台分流取当前可执行文件路径（`program_dir` 基础）。
 
@@ -17,7 +18,7 @@ paths:
 
 - `using codepoint = u32`；常量 `kReplacementChar`。
 - `decode_one(str, offset=0)` -> `{codepoint, 字节数}`：合法序列返真实码点与字节数；非法序列返 `{kReplacementChar, 1}`（只吞一个坏字节）；`offset >= size()` 越界返 `{kReplacementChar, 0}` 不读取。
-- **ASCII 快路径就地内联、多字节交 `detail::decode_multibyte`（`ARIA_NOINLINE`）**：调用点绝大多数走 ASCII，多字节那套长度表/续接校验/组装/双重校验不随调用点展开（实测词法各形态快 3-12%，数字与探针见 `.claude/reference/compile/lexer-notes.md` §5）。
+- **ASCII 快路径就地内联、多字节交 `detail::decode_multibyte`（`ARIA_NOINLINE`）**：调用点绝大多数走 ASCII，多字节那套长度表/续接校验/组装/双重校验不随调用点展开（实测数字与探针见 `.claude/reference/compile/lexer-notes.md` §5）。
 - `encode`/`is_valid`；`is_ascii(ch|u8)`（该字节是否 ASCII--源码字节经 char 或 u8 两种来路取，两个重载把窄化收进来，ASCII 边界只写一处）。
 - `is_id_start`/`is_id_continue`/`is_whitespace`/`is_digit`/`is_alpha` 等 tokenizer 辅助（码点分类用区间近似，非完整 UCD）。
 
@@ -44,12 +45,13 @@ paths:
 
 `namespace aria::util`（与 fs/utf8 同）。
 
-- **调试/信息**：`print_binary`（高位在前、按位分组打印表示；当前零消费者）、`print_compiler_info`（当前零消费者）、`to_void_ptr`、`escape_string(StringView) -> String`（转义 `"`/`\`/`\n`/`\t`/`\r` 与控制字符为 `\x{HH}`，非 ASCII 透传；供 `ObjString` debug/repr 渲染）。
-- **哈希**：`hash_num`/`hash_addr`（数值/地址哈希，经 `detail::splitmix64_mix32`（Vigna lowbias32，专为 32 位输出低偏置调优））、`hash_str`（字符串 FNV-1a 32-bit，经 `detail::fnv1a_32`；二参重载自前缀终态续算，`hash(a)` 续算 b 即 `hash(a+b)`）。
+- **调试/信息**：`print_binary`（高位在前、按位分组打印表示；当前零消费者）、`print_compiler_info`（当前零消费者）、`to_void_ptr`、`escape_string(StringView) -> String`（转义 `"`/`\`/`\n`/`\t`/`\r` 与控制字符为 `\x{HH}`（纯展示形态，非语言转义语法、不保证可回 lex），非 ASCII 透传；供 `ObjString::repr` 渲染）。
+- **哈希**：`hash_num`/`hash_addr`（数值/地址哈希，经 `detail::splitmix64_mix32`（Vigna splitmix64 终裁器截 32 位输出，高位差异充分传播到低位））、`hash_str`（字符串 FNV-1a 32-bit，经 `detail::fnv1a_32`；二参重载自前缀终态续算，`hash(a)` 续算 b 即 `hash(a+b)`）。
 - **小端编解码**：`make_u16(u8,u8)`/`split_word(u16)`/`split_dword(u32)`（`split_dword` 当前零消费者）。
 - **栈/Opt 取值**：`pop_top(Stack<T>&) -> T`（取栈顶并弹出，调用方须保证栈非空，`[[nodiscard]]`）；`take` 重载族（取走并置空，`std::exchange` 习语，`[[nodiscard]]` 返被取值）：`take(Opt<T>&) -> Opt<T>`（置 `nullopt`）、`take(T*&) -> T*`（置 `nullptr`）、`take(UnsignedInteger T&) -> T`（归零；concept `UnsignedInteger = is_unsigned_v && !is_same_v<bool>`，bool 特意排除）、`take(bool&) -> bool`（置 `false`，具名重载两态语义）。
 - **拼接**：`join(Range, StringView delimiter, Fn&&)`（range 逐元素经 Fn 渲染后 delimiter 连接的共用底座，repr 类拼接消费）；`concat_string(StringView, StringView)`（两段拼接成新串，一次定容两段 append；模块加载文件名拼接消费）。
 - **下标换算**：`abs_diff(usize, usize)`（两下标距离，无符号域不下溢；命名对齐 C++26 `std::abs_diff`）；`resolve_index(i64, usize)`（负下标从尾计数归一化 + 越界判定，`nullopt` 即越界；无上界形态的末元素/空段折算在 `ObjRange::resolve_slice_bounds` 里做）；`resolve_position(i64, usize)`（插入位解析，`resolve_index` 的姊妹函数：同式归一，唯上界放宽到 `== size` 即追加位，`list.insert` 消费）。
+- **`FixedString<capacity>`**：类类型 NTTP 载体（`consteval` 从字面量构造，含 `'\0'` 拷入 `data_`、`view()` 去 `'\0'`）；`public data_` 是结构化类型硬条件，含 `'\0'` 存储保证同内容字面量的 NTTP 相等性恒命中。消费口 = `AriaExeContext::str<util::FixedString key>` 编译期键下标（结构化 NTTP 的唯一消费面）。
 - **文本解析**：`try_parse<T>(StringView, Args&&...) -> Opt<T>`（`std::from_chars` 全量解析机械封装：无错误且整串消费完才 somed，否则 `nullopt`；`Args` 透传 `base` 等参数，收什么文本形态由上层判定）；`parse_int_text(StringView) -> Opt<i64>` / `parse_float_text(StringView) -> Opt<f64>`--整串十进制**数据文本**解析（`try_parse` 之上的文法封装）：收前导 `[+-]`、整串须被消费完；不跳空白、不收下划线与进制前缀（那是源码字面量语法，见 `Lexer` 的 `parse_int` 一族，两套文法刻意不同）。`parse_int_text` 另闸语言 int 的 i48 域（越域返 `nullopt`--越域值经 `Value::from_int` 会被静默截尾）；`parse_float_text` 收 `inf`/`nan`、越 f64 域返 `nullopt` 不饱和成 inf。失败一律 `nullopt`，兜底文案交调用方。
 
 ## `util/cli.hpp`
@@ -86,4 +88,4 @@ paths:
 **访问与 help**
 
 - `has`/`get(name) -> Opt<String>`（option/positional 已提供返值（含显式空串）、未提供或命中的是 flag 返 `nullopt`）/`extra_args()`。
-- `help()`（在 `Cli` 上）：Usage 行（`[OPTIONS]` 恒展示）+ Arguments 分节（按注册序遍历 positional）+ Options 分节按**注册序**遍历 named 参数（内置 help 恒居首位），描述统一对齐到各前缀最大宽度 + 2 列，option 行尾追加 `[default: ...]`。
+- `help()`（在 `Cli` 上）：Usage 行（`[OPTIONS]` 恒展示）+ Arguments 分节（按注册序遍历 positional）+ Options 分节按**注册序**遍历 named 参数（内置 help 恒居首位；排版对齐细则见 `cli.hpp` `help()` 内注释），option 行尾追加 `[default: ...]`。

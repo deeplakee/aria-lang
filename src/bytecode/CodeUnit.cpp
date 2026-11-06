@@ -20,7 +20,7 @@ namespace aria {
     }
 
     void CodeUnit::emit_word(const u16 word, const u32 line) {
-        const auto bytes = util::split_word(word); // 小端: [低字节, 高字节]
+        const auto bytes = util::split_word(word);
         emit_byte(bytes[0], line);
         emit_byte(bytes[1], line);
     }
@@ -56,7 +56,7 @@ namespace aria {
         if (offset > kMaxJumpOffset) {
             return false;
         }
-        const auto bytes  = util::split_word(static_cast<u16>(offset)); // 小端: [低字节, 高字节]
+        const auto bytes  = util::split_word(static_cast<u16>(offset));
         code[src_off]     = bytes[0];
         code[src_off + 1] = bytes[1];
         return true;

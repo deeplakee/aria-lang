@@ -65,7 +65,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | 列表/映射元素数 | `u16`（2B） | `MAKE_LIST` `MAKE_MAP` | 字面量可能 >255 元素；这俩不热，`u16` 免分批 lowering |
 | 插值段数 | `u8`（1B） | `BUILD_STRING` | 单串 255 段（127 档）足够，超限编译期拒绝 |
 | 立即整数 | `i8`（1B 有符号，-128..127） | `LOAD_IMM` | 0/1/-1/小下标等高频小整数；大整数走 `LOAD_CONST` |
-| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器格数即 VM 单例数（当前 9 格），`u8` 富余 |
+| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器分单例/类两段（单例段 2 格 + 类段 13 格，共 15 格），`u8` 富余 |
 
 ### 2.3 操作数位宽策略：N 短变体与方向拆分
 
@@ -119,7 +119,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `HALT` | 无 | `... -> ...` | 停止 VM 主循环（顶层执行末尾 / 致命退出） |
+| `HALT` | 无 | `... -> [..., nil]` | 停止 VM 主循环；断言不在协程内、压 nil 后返 true。真实程序不产 `HALT`（编译器从不发射，仅手写字节码用），顶层退出走 `RETURN`（§4.17） |
 | `NOP` | 无 | `... -> ...` | 空操作（占位、调试断点） |
 
 ### 4.2 常量与字面量加载
@@ -131,7 +131,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_NIL` | 无 | `[] -> [nil]` | 压入 nil |
 | `LOAD_TRUE` | 无 | `[] -> [true]` | 压入 true |
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
-| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（VM 单例对象统一存放表 `AriaVM::registers_`，bootstrap 填充、tracer 逐格标根；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`，Object 根类即其中 ObjectClass 格） |
+| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（`AriaVM::registers_` 同时持 VM 单例与 13 个 bootstrap 类，bootstrap 填充、tracer 逐格标根；发射点跨两段：缺省参数印章 DefaultMark、match 无臂哨兵 MatchNoArm、隐式超类 ObjectClass；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`） |
 
 > 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.claude/rules/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
 
@@ -165,7 +165,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 set 写入当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
-| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（type/str/println/assert/clock/Error、七个内建类 object/exception/iterator/list/map/string/range、coroutine 模块），再 miss 报 `UndefinedVariable` |
+| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（6 个函数 type/str/println/assert/clock/Error + 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class），再 miss 报 `UndefinedVariable` |
 | `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals 表；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var` 声明），不回退 builtins |
 
 全局表是各 `ObjModule` 持有的 `AriaHashTable`（即 `HashTable<Value, Value, ValueHash, ValueEq>`，键为装箱的 intern `ObjString*`）。`name` 操作数是常量池中的 ObjString 索引。
@@ -213,13 +213,15 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `GREATER_EQUAL` | `[a, b] -> [a>=b]` | |
 | `LESS` | `[a, b] -> [a<b]` | |
 | `LESS_EQUAL` | `[a, b] -> [a<=b]` | |
-| `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子取实现再调（String 拼接即内建钩子、用户类可重载，仅左操作数触发），取不到报 TypeMismatch |
+| `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子取实现再调（String 拼接即内建钩子、用户类可重载，仅左操作数触发），取不到报 UndefinedProperty（非对象左值才报 TypeMismatch） |
 | `SUBTRACT` | `[a, b] -> [a-b]` | 数值减 |
 | `MULTIPLY` | `[a, b] -> [a*b]` | |
 | `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`；含 F64 走 IEEE） |
 | `MOD` | `[a, b] -> [a%b]` | 取模 |
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负；对象经 `__neg__` 钩子 |
+
+> 9 个数值二元算子（4 比较 + 5 算术）的对象左值全有对应钩子：`__lt__`/`__le__`/`__gt__`/`__ge__`/`__add__`/`__sub__`/`__mul__`/`__div__`/`__mod__`，形态同 `ADD` 行（仅左操作数触发，钩子 miss 报 UndefinedProperty；非对象左值报 TypeMismatch）。
 
 > 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（`flags` 位义见 `code.hpp` `kRangeFlagExclusive`，落地形态见 §6.3）。
 
@@ -249,7 +251,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `JUMP_FALSE` | `off:u16` | `[v] -> []` | 弹出 `v`；假则前向跳，真则落空 |
 | `JUMP_TRUE_OR_POP` | `off:u16` | `[v] -> [v]`（真，跳）/ `[v] -> []`（假，落空） | 真则**跳且留值**（结果即 `v`），假则弹落空。用于 `||` 短路 |
 | `JUMP_FALSE_OR_POP` | `off:u16` | `[v] -> [v]`（假，跳）/ `[v] -> []`（真，落空） | 假则**跳且留值**（结果即 `v`），真则弹落空。用于 `&&` 短路 |
-| `JUMP_BACK` | `off:u16` | `... -> ...` | 后向无条件跳 `ip -= off`；while/for/for-in 回边、`continue` |
+| `JUMP_BACK` | `off:u16` | `... -> ...` | 后向无条件跳 `ip -= off`；while/for/for-in 回边、`continue`；回边兼 GC 安全点（循环负载的回收触发点） |
 | `JUMP_NE` | `off:u16` | `[a, b] -> []` | `EQUAL;JUMP_FALSE` 融合形：`value_equal` 判等，假则前向跳 |
 
 `_OR_POP` 变体（"命中跳，否则弹"）保证短路时被测值本身成为表达式结果（`a && b` 当 `a` 假时结果为 `a`，无需重压）；落空分支弹掉被测值，使跳/落空两路在汇合点栈深一致。`if`/`while` 等条件判断用弹出版 `JUMP_TRUE`/`JUMP_FALSE`。
@@ -282,7 +284,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass` |
+| `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass`；内建容器五类（list/map/string/range/iterator）不可继承、非类 super 报 TypeMismatch（均运行期错误） |
 | `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
 | `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
@@ -604,7 +606,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂七个内建类 object/exception/iterator/list/map/string/range 与 `coroutine` 合成模块）+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
 
 ### 6.5 迭代器
@@ -628,7 +630,7 @@ class CodeUnit {
 - **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFunction::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
 - **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
 
-`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_`；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
+`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
 
 ## 8. 反汇编器输出格式（已落地）
 
@@ -663,7 +665,7 @@ code:
 - code 行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `   |` 占位）+ opcode 名（左对齐 16 列）+ 操作数段（存在才追加，前置两空格）+ `;` 解析注释。
 - 操作数段按格式渲染：`U8`/`U16` 裸 hex；`ConstU16`/`Import` 为 `hex  ; <常量渲染>`；`ImmI8` 为 `hex  ; <有符号十进制>`；`RangeFlags` 为 `hex  ; flags=0xNN`；前向跳转为 **`偏移 -> 目标`**（如 `0003 -> 0009`）、后向（`JUMP_BACK`）为 **`偏移 <- 目标`**，偏移与目标都列出。
 - 注释为**解析注释**（把操作数解释成人可读形式），不含栈效应标注；栈效应见 §4 各表。
-- 残缺字节码容错：操作数缺失渲染 `<truncated>` 并停解码；opcode 字节越界（`>= kOpCodeCount`）渲染 `<bad opcode 0xNN>` 并停解码；常量索引越界渲染 `<bad idx N>`；寄存器索引越界（`>= kValueRegisterCount`）渲染 `<bad reg N>`。
+- 残缺字节码容错：操作数缺失渲染 `<truncated>` 并停解码；opcode 字节越界（`>= kOpCodeCount`）渲染 `<bad opcode 0xNN>`，消耗该字节后继续解码下一字节；真正停解码的只有操作数截断（`<truncated>`）；常量索引越界渲染 `<bad idx N>`；寄存器索引越界（`>= kValueRegisterCount`）渲染 `<bad reg N>`。
 - 解码表驱动：`Disassembler` 查 `code.hpp` X 表生成物（`kOpCodeNames`/`kOpCodeFormats`）按格式分发（§2.1），新增指令零改动；VM 主循环自持 switch（热路径操作数读取内联于各 case，不查表），新增指令需 X 表 + VM case 两处同步。
 - `disassembleInstruction(codeunit, offset)` 复用同一解码路径，供 VM 执行跟踪逐条打印（输出即 code 行的指令段，不含偏移/行号前缀）。
 

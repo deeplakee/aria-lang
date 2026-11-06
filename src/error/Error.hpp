@@ -28,7 +28,7 @@ namespace aria {
         }
 
         // 带位置版,供词法/语法/语义阶段:构造期就地烘位置前缀(SourceFile 此刻存活),此后不持位置;
-        // 空态 loc 无须特判 --空位置串天然无前缀(如 CodeGen::fail 取 node->loc() 即可能为空态)。
+        // 空态 loc 无须特判 --空位置串天然无前缀。
         [[nodiscard]]
         static Error from_detail(const ErrorCode code, const SourceLoc loc, const StringView detail) {
             return Error{code, make_message(code, loc.to_string(), detail)};
@@ -41,7 +41,7 @@ namespace aria {
         }
 
         // 烘焙单点(一对共名重载,与 from_detail 同构):完整消息 = [location + ": "] + "Category: Name"
-        //[ + " " + detail];detail 为原始细节串(不含 "Category:" 前缀,防双烘),位置串由调用方格式化好传入。
+        // [ + " " + detail];detail 为原始细节串(不含 "Category:" 前缀,防双烘),位置串由调用方格式化好传入。
 
         static String make_message(const ErrorCode code, const StringView detail) {
             String s = std::format("{}: {}", to_string(category_of(code)), to_string(code));

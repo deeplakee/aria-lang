@@ -89,7 +89,7 @@ namespace aria {
     X(CircularImport, Runtime)              /* import cycle */                                                      \
     /* ========== INTERNAL ERROR (interpreter invariants) ========== */                                             \
     X(Unreachable, Internal)     /* code that should be unreachable ran */                                          \
-    X(AssertionFailed, Internal) /* internal assertion failed */                                                    \
+    X(AssertionFailed, Internal) /* language assert() builtin failed (sole producer) */                             \
     X(InvalidBytecode, Internal) /* corrupt code unit or invalid opcode */                                          \
     X(StackUnderflow, Internal)  /* VM stack imbalance (popped more than pushed) */                                 \
     X(InvalidState, Internal)    /* VM in an invalid internal state */                                              \

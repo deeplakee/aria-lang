@@ -105,7 +105,7 @@ catch 里 `return` 没有任何限制，函数正常返回。
 ## Exception 对象：message、code 与 Error
 
 异常对象有两个方法：`message()` 返回消息（运行期错误是完整消息，含 `类别: 码` 前缀），
-`code()` 返回**错误码数字**（每个错误码对应一个注册表序号，如除零是 `28`）：
+`code()` 返回**错误码数字**（每个错误码对应一个注册表序号，如除零是 `29`）：
 
 ```aria
 try {
@@ -119,7 +119,7 @@ try {
 输出：
 
 ```text
-28
+29
 Runtime: DivisionByZero integer division by zero
 ```
 
@@ -146,7 +146,7 @@ try {
 输出：
 
 ```text
-42
+43
 invalid age: -3
 ```
 
@@ -218,6 +218,14 @@ not found
 询问（内建异常对 `Exception` 也命中）：
 
 ```aria
+def HttpError : Exception {
+    init(status, msg) {
+        this.status = status;
+        this._code = status;
+        this._message = msg;
+    }
+}
+
 def Timeout : Exception {
 }
 

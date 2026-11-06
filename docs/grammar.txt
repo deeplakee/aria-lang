@@ -170,8 +170,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 其余类型（含 list/map）仍仅数值。
 # 运算符重载（编译期/VM 语义，文法不编码）：用户类以 dunder 方法名定义重载--算术五件
 # （__add__/__sub__/__mul__/__div__/__mod__）、比较四件（__lt__/__le__/__gt__/__ge__）、
-# 一元取负（__neg__）与调用钩子（__call__，obj(args) 形态）。重载方法即普通方法：经成员
-# 查找路径取实现（实例 fields 优先、可遮蔽，再沿类链）。**仅左操作数/被调用对象触发**（无
+# 一元取负（__neg__）、调用钩子（__call__，obj(args) 形态）与显示钩子（__str__，共 12 个）。
+# 重载方法即普通方法：经类面咨询口取实现（实例字段出局、不可遮蔽，沿类链查类值；被咨询对象
+# 为类值时走 Class 元类链，自身模板表出局）。**仅左操作数/被调用对象触发**（无
 # Python __radd__ 式反射形态）：obj + 1 走 obj.__add__(1)，1 + obj 仍落数值域报错。实例
 # 未定义该钩子即成员缺席（<class Box> has no member '__add__'）；内置类型未实现的算子报
 # 「本类型不支持」；String 的 +/* 与四比较、List 的 +/* 即其内建钩子形态。判等（==/!=）与
@@ -244,7 +245,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # try/finally 裁撤记录（2026-09）：finally 子句已从文法移除（tryCatchStmt 仅存可选 catch，
 # 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
 # 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock/Error 六函数，
-# 另挂七个内建类与 coroutine 模块）；参照实现 Lua/Wren 均
+# 另挂十三个内建类（协程原语在内建类 Coroutine 上））；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
 # finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
 # 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常
@@ -274,7 +275,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   （静态/实例方法/foo.x 回退）统一终止于 Object（裸名走模块全局，不在此列）。原始值（nil/bool/数字，非 Obj）
 #   不在 Object 层次内（纳入为 uniform OOP 目标方向，尚未实现）；内置 Obj 类型经 bootstrap 类挂
 #   Object 根（list/map/string/range/iterator 均已挂）。
-#   内建类调用与继承（运行期语义，文法不编码）：七个内建类以内建名直接可达、可作一等值。
+#   内建类调用与继承（运行期语义，文法不编码）：十三个内建类以内建名直接可达、可作一等值。
 #   类调用即构造（init 为原生工厂，覆盖 call_class 预置的临时 instance）：List(...)/Map()/
 #   String(v)/Range(a[, b])/Iterator(src) 各产出对应内建值（形状与域见各方法面）；内建容器
 #   五类（iterator/list/map/string/range）不可作 superclass（继承位写它们报 TypeMismatch，
@@ -343,9 +344,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     读它报 UndefinedProperty；循环导入的半初始化模块只影响尚未执行到的绑定（读它同报
 #     UndefinedProperty，可 catch）。
 #
-# 协程（编译期/VM 语义，文法不编码）：coroutine 模块提供 create/resume/yield/status 四件，
-# 非关键字--Coroutine.resume(co, v) 就是普通成员调用表达式（裸名 coroutine 走 LOAD_GLOBAL
-# 回退 builtins 表，命中合成 <coroutine> 模块）。协程本体即执行上下文对象，type(co) 报
+# 协程（编译期/VM 语义，文法不编码）：内建类 Coroutine（builtins 表按类名直接可达、可作一等值）
+# 提供四个类方法 create/resume/yield/status，非关键字--Coroutine.resume(co, v) 就是普通成员调用
+# 表达式（裸名 Coroutine 走 LOAD_GLOBAL 回退 builtins 表）。协程本体即执行上下文对象，type(co) 报
 # "Coroutine"。语义（Lua/Wren 式）：
 #   - create(f) 收闭包建协程（状态 suspended，栈仅 [f]）；resume 首启的载荷即 f 的实参
 #     （上界交被调者元数，默认参数/varargs 照常）；已挂起后只收 0 或 1 个载荷（yield 是

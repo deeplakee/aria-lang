@@ -203,7 +203,7 @@ Coroutine.resume(co);
 ```
 
 ```text
-Runtime: UncaughtException uncaught exception: boom in coroutine
+Runtime: UncaughtException uncaught exception: "boom in coroutine"
   at <main> (cor.aria:5)
 ```
 

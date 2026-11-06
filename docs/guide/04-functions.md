@@ -180,7 +180,7 @@ println(add(1));
 
 ```text
 Runtime: WrongArity function expects 2 arguments, got 1
-  at <main> (arity.aria:3)
+  at <main> (arity.aria:2)
 ```
 
 ## 一等函数

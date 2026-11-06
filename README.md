@@ -58,8 +58,8 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
   的多个闭包共享同一份状态（`make_counter` 那个例子）。
 - **类**：`def` 定义，`init` 构造器，`super` 单继承（`def Foo : Bar`），成员分静态变量、静态方法、
   实例方法三类；实例字段是动态的；根类 `Object` 位于继承链顶端。运算符、调用与显示可重载：在类上
-  定义 `__add__`、`__lt__` 等十个算子钩子、`__call__` 或 `__str__`，实例出现在左操作数 / 被调用 /
-  被显示位置时按名取实现（仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，
+  定义 `__add__`、`__lt__` 等 12 个钩子（五个算术、四个比较、一元取负、调用、显示渲染），
+  实例出现在左操作数 / 被调用 / 被显示位置时按名取实现（仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，
   方法调用是同一套 `recv.name(args)` 语法；内建类（含函数族、`Module`、`Coroutine`、`Class` 元类）
   本身也作为全局变量可以被访问。
 - **控制流**：`if`/`else`、`while`、C 风格 `for`、`for (pattern in expr)`、`break`/`continue`、
@@ -81,8 +81,8 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（必须绑定一个别名）。模块顶层绑定即模块成员，
   通过 `U.f()` 访问模块成员变量，成员只读。
 - **内置函数**：`type` / `str` / `assert` / `println` / `clock` / `Error`（都可当一等值传递；`println` 是唯一的
-  输出口，`clock` 返回单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建模块
-  `coroutine` 提供协程原语。
+  输出口，`clock` 返回单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建类
+  `Coroutine` 提供协程原语（见上「协程」条）。
 
 ## 构建与运行
 

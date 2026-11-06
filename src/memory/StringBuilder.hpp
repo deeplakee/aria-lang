@@ -10,16 +10,12 @@
 namespace aria {
 
     // 可增长原始字节缓冲:buffer 经 GC 分配器家族分配(bytes_allocated_ 自动记账),append 直写字节;
-    // take_string 把 buffer 零拷贝移交 ObjString(免中间层累积与最终整串拷贝),内容哈希在铸造口
-    // 按当时内容一次全算(唯一消费点) -- 增长期间的就地改写(迭代器)不涉任何哈希失效协议。
-    // 容量策略:builder 是一次性构建 -> 定型移交,空余空间是纯负资产 -- 扩容一律精确按需(无倍增
-    // 无空余;超容 append 逐次 realloc 搬迁一次旧内容,碎片化流式追加须先量后填,如 join 预扫),
-    // 多发 append 的总长可预知消费方先 reserve 一次定容免逐段重配,单发 append 自身即精确按需
-    // 定容免 reserve。分配口径恒含终态 '\0' 位:append 交付后 data_[size_] 恒为 '\0',定容路径的
-    // take 长臂即同尺寸 realloc(零拷贝零新分配)。
-    // GC 纪律:allocate/reallocate 永不触发 GC(GC 核心不变式),本类全程零 GC 点、无需守卫;唯一
-    // GC 点在 take_string 委托的 new_string 接管重载内部 new_object 顶部,buffer 是 raw 内存不受
-    // sweep 影响。take 后空态可复用。
+    // take_string 把 buffer 零拷贝移交 ObjString,内容哈希在铸造口按当时内容一次全算 -- 增长期间
+    // 的就地改写(迭代器)不涉任何哈希失效协议。容量策略:一次性构建 -> 定型移交,空余空间是纯负
+    // 资产,扩容一律精确按需(无倍增);碎片化流式追加须先量后填(如 join 预扫),多发 append 总长
+    // 可预知时先 reserve 定容。分配口径恒含终态 '\0' 位:append 交付后 data_[size_] 恒 '\0',定容
+    // 路径的 take 长臂即同尺寸 realloc。本类全程零 GC 点,唯一 GC 点在 take_string 委托的
+    // new_string 接管重载内部;take 后空态可复用。
     class StringBuilder {
     public:
         explicit StringBuilder(GC& gc) : gc_{&gc}, data_{nullptr}, size_{0}, cap_{0} {}
@@ -81,9 +77,8 @@ namespace aria {
         char* end() noexcept { return data_ + size_; }
 
         // 移交铸串:驻留判定(命中零拷贝返回)与接管/SSO 化收在 new_string 接管重载,buffer 释放
-        // 责任随三臂移交;data_/size_/cap_ 取走归空态,本对象可继续 append 复用,三个 take 各自
-        // 独立字段、实参求值顺序无关(串哈希按当时内容算出)。调用方已持 hash_str(内容)终态时
-        // 用 hash 重载,免重算。
+        // 责任随三臂移交;data_/size_/cap_ 取走归空态,本对象可继续 append 复用。已持 hash_str(内容)
+        // 终态时用 hash 重载免重算。
         ObjString* take_string() { return take_string(util::hash_str(view())); }
 
         ObjString* take_string(const u32 hash) {

@@ -8,7 +8,7 @@
 namespace aria {
 
     // 对象壳池:按槽尺寸类(8 B 一档)的定长空壳仓库,同尺寸死壳就地复用,后端只见 span 大块流量。
-    // 槽尺寸 = sizeof 上取整到 8,超过 kMaxPooledSlotBytes 不池化、直连后端(正确性不变);永不触发 GC。
+    // 槽尺寸 = sizeof 上取整到 8,超过 kMaxPooledSlotBytes 不池化、直连后端(正确性不变)。
     class ShellPool {
     public:
         ShellPool() noexcept : classes_{} {}

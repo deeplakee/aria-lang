@@ -10,7 +10,7 @@ paths:
 ## `memory/Buffer.hpp`
 
 - `Buffer<T, Alloc = GC>`（`TriviallyCopyable`/`TrivialAllocator` 约束）：只持 `{alloc, data, cap}` 的最小可增长缓冲底座，集中 `allocate`/`reallocate`/`deallocate`，**无逻辑长度**。
-- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，**不返回基址差**（算 delta 是 UB）--有派生裸指针的调用方（AriaExeContext 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `AriaExeContext::grow_stack_`）。
+- `reserve(new_cap)` 仅在 `new_cap > cap_` 时经 `alloc->reallocate<T>` 搬迁，旧基址失效（realloc 后再用旧指针是 UB）--有派生裸指针的调用方（AriaExeContext 值栈）须在前后各取一次 `data()`、以整数偏移重建（详见 `AriaExeContext::grow_stack_`）。
 - 非拷贝/非移动。`Array` 与 `AriaExeContext` 值栈均建于其上；不适用于内容需重定位的容器（HashTable rehash / InternPool rehash 直接用分配器）。
 
 ## `memory/Array.hpp`
@@ -37,11 +37,11 @@ paths:
 header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**weak root**，字符串专用 set--不进 `mark_roots_`，`collect` 在 sweep 前调 `remove_white()` 摘除指向白色串的表项防 sweep 后悬垂）。
 
 - 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。`find` 含两段重载（先比总长，候选切前/后两个子 view 分别与 lhs/rhs 比较）-- 供拼接方先查后拼（`new_string` 两段重载经 `GC::intern_find` 转发使用）。
-- 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破（同 `Object.hpp` 对 GC 的处理）。
+- 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破。
 
 ## `memory/StringBuilder.hpp`
 
-header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造（`StringBuilder{gc, src}`，gc 构造+append 一体，单发形态消费方直用）+ `append`（直写字节，不持哈希状态；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒为 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩——超容 append 逐次 realloc 搬迁，碎片化流式追加须先量后填；reserve 的价值=让多发 append 免逐段搬迁，单发 append 自身即精确定容免 reserve）+ `resize`（直写后提交终长：`reserve(n)` 后经 `begin()` 直写 `[begin, begin+n)` 的消费方（解码等外部产源）以此收口，置 `size_` 与终态 `'\0'`、不搬运不清零，前置容量须已定容）；检视面 = `view`/`size`/`begin`/`end`（已建内容直读直改，就地改写无哈希失效协议）；`take_string` 把 buffer 零拷贝移交 `ObjString`（另具 hash 重载，调用方已持终态哈希免重算），内容哈希在铸造口按当时内容一次全算（唯一消费点）。驻留判定收在五参 `new_string` 接管重载：命中零拷贝返已有串 / 长串收缩接管 / 短串 SSO 化释放 buffer。GC 纪律：allocate/reallocate 永不触发 GC（核心不变式），本类全程零 GC 点、无需守卫，唯一 GC 点在 take 的 `new_object` 顶部；take 后空态可复用。
+header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造 `StringBuilder{gc, src}` + `append`（直写；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩；碎片化流式追加须先量后填，如 join 预扫）+ `resize`（`reserve(n)` 后经 `begin()` 直写、以此提交终长的外部产源收口）；检视面 = `view`/`size`/`begin`/`end`；`take_string` 把 buffer 零拷贝移交 `ObjString`（驻留判定与接管/SSO 化收在 `new_string` 五参接管重载；另具 hash 重载免重算），take 后空态可复用。容量策略理由与 GC 纪律见该头类头注。
 
 ## `memory/RawAlloc.hpp`
 
@@ -49,7 +49,7 @@ header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 
 
 ## `memory/AstArena.hpp`
 
-header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按请求字节数取整到 1 MiB 量子扩新块；bump 扩块无搬移成本，不做几何倍增）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(const List<T>&)`（元素一次性拷入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可拷贝——static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与实测见 `.claude/reference/memory/ast-arena-notes.md`。
+header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按请求字节数取整到 1 MiB 量子扩新块；bump 扩块无搬移成本，不做几何倍增）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(const List<T>&)`（元素一次性拷入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可拷贝--static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与实测见 `.claude/reference/memory/ast-arena-notes.md`。
 
 ## `memory/ShellPool.hpp`
 
@@ -57,7 +57,7 @@ header-only 对象壳池：按槽尺寸类（8 B 一档，槽尺寸 = sizeof 上
 
 - `alloc<T>()`：`sizeof(T)` 编译期落格（零运行期查表）+ `static_assert(alignof(T) <= 8)` 兜底；`push(shell_bytes, shell)`：按 `Object::size()` 的精确 sizeof 落格，与 alloc 侧同源恒命中同格。
 - span = 64 KB 后端大块，块头 `SpanHeader`（链 + bump 游标）切槽；空壳链节点寄生死壳内存头 8 B（析构后死字节，构造时覆写）。
-- span 只获取不归还（峰值驻留到进程结束），`~ShellPool` 排空全还后端（~GC `free_all_` 先把残留壳压回池）。**永不触发 GC**；`bytes_allocated_` 逐对象记账留在 `GC::new_object`/`delete_object`，span 开销不计。
+- span 只获取不归还（峰值驻留到进程结束），`~ShellPool` 排空全还后端（~GC `free_all_` 先把残留壳压回池）。`bytes_allocated_` 逐对象记账留在 `GC::new_object`/`delete_object`，span 开销不计。
 
 ## `memory/GC.hpp` / `.cpp`
 

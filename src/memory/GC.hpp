@@ -15,7 +15,7 @@ namespace aria {
 
     // GC:解释器统一内存分配器 + mark-sweep 回收器。roots = 临时根 + VM 根(宿主经 std::function 回调注册,
     // 标什么由宿主定)。
-    // **核心不变式**:allocate/reallocate 永不触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。
+    // **核心不变式**:allocate/reallocate 与壳池取槽永不触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。
     class GC {
     public:
         GC() noexcept;
@@ -26,8 +26,7 @@ namespace aria {
         GC(GC&&)                 = delete;
         GC& operator=(GC&&)      = delete;
 
-        // 分配 count*sizeof(T) 字节,失败走 fatal_error(OutOfMemory)。**INVARIANT: 永不触发 GC**--
-        // 调用方可裸持白色对象跨本调用。
+        // 分配 count*sizeof(T) 字节,失败走 fatal_error(OutOfMemory)。**INVARIANT: 永不触发 GC**。
         template<typename T>
         [[nodiscard]]
         T* allocate(usize count);
@@ -36,7 +35,7 @@ namespace aria {
         void deallocate(T* p, usize count) noexcept;
 
         // realloc 语义:new_count==0 退化为 deallocate;否则后端原生 realloc(扩缩容都允许,基址可能不变)。
-        // **INVARIANT: 永不触发 GC**--调本函数期间裸持的白色对象不会被回收。
+        // **INVARIANT: 永不触发 GC**。
         template<typename T>
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);

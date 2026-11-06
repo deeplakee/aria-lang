@@ -66,7 +66,7 @@ namespace aria {
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos          = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                pos          = (pos + (step++)) & mask; // 三角探测
                 ObjString* s = slots_[pos];
                 if (s == nullptr) {
                     return nullptr; // 空槽,探针终止
@@ -78,9 +78,9 @@ namespace aria {
             return nullptr; // 安全上限耗尽(不变式下不会到达)
         }
 
-        // 两段查找:内容等于 lhs+rhs 拼接的驻留串,语义等价于对拼接结果做上式单段 find
-        //(哈希由调用方按 hash_str(lhs 的哈希, rhs) 续算)。先比总长,候选切成两个子 view
-        // 分别与两段比较 -- 拼接方免先拼出整段即可查驻留(命中零拷贝)。
+        // 两段查找:内容等于 lhs+rhs 拼接的驻留串,语义等价于对拼接结果做单段 find;哈希由调用方
+        // 按 hash_str(lhs 的哈希, rhs) 续算。先比总长,候选切成两个子 view 分别与两段比较 --
+        // 拼接方免先拼出整段即可查驻留(命中零拷贝)。
         [[nodiscard]]
         ObjString* find(const StringView lhs, const StringView rhs, const u32 hash) const noexcept {
             ASSERT(hash == util::hash_str(util::hash_str(lhs), rhs), "hash must be hash_str(hash_str(lhs), rhs)");
@@ -95,7 +95,7 @@ namespace aria {
             usize step = 0;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos          = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                pos          = (pos + (step++)) & mask; // 三角探测
                 ObjString* s = slots_[pos];
                 if (s == nullptr) {
                     return nullptr; // 空槽,探针终止
@@ -115,7 +115,7 @@ namespace aria {
         // 插入 s(假定其内容未驻留:调用方先 find 查重,未命中才 insert)。可能触发 rehash。
         void insert(ObjString* s) {
             ASSERT(s != nullptr && !is_tombstone(s), "invalid slot for insert");
-            // 确保有空槽(阈值见类头注,含 cap_==0 初始分配)。
+            // 确保有空槽。
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);
             } else {
@@ -133,7 +133,7 @@ namespace aria {
             usize tomb = kNpos;
 
             for (usize probe = 0; probe < cap_; ++probe) {
-                pos                  = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                pos                  = (pos + (step++)) & mask; // 三角探测
                 const ObjString* cur = slots_[pos];
                 if (cur == nullptr) {
                     const usize insert_pos = (tomb != kNpos) ? tomb : pos;
@@ -186,7 +186,7 @@ namespace aria {
                 usize pos  = s->hash();
                 usize step = 0;
                 do {
-                    pos = (pos + (step++)) & mask; // 三角探测(偏移序见类头注)
+                    pos = (pos + (step++)) & mask; // 三角探测
                 } while (slots_[pos] != nullptr); // 新表无墓碑,只撞占用槽
                 slots_[pos] = s;
                 ++count_;

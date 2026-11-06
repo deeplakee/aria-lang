@@ -243,7 +243,7 @@ namespace aria {
         }
 
     private:
-        // 插入前确保有空槽(阈值见类头注):cap_==0 初始分配、过满扩容 ×2、墓碑过多原容 compact。
+        // 插入前确保有空槽:cap_==0 初始分配、过满扩容 ×2、墓碑过多原容 compact。
         void maybe_rehash_for_insert_() {
             if (cap_ == 0) {
                 grow_and_rehash_(kInitialCap);

@@ -1,6 +1,6 @@
 # AST bump arena（实验批）实测与机制
 
-> 源码位置：`src/memory/AstArena.hpp`（AstArena / AstList，消费方在 compile 层）、`src/compile/Ast.hpp`（节点成员换装）
+> 源码位置：`src/memory/AstArena.hpp`（AstArena / Span 列表视图，消费方在 compile 层）、`src/compile/Ast.hpp`（节点成员换装）
 > 模块参考：`.claude/rules/memory.md`（AstArena / RawAlloc 条）、`.claude/rules/compile.md`（ast / Parser / Compiler 条）
 > 用途：记录把 AST 所有权从 `UPtr` 递归析构换成 arena 整批释放的机制契约与实测数字；动 Parser /
 > CodeGen 的分配与遍历路径前先读这篇。
@@ -11,7 +11,7 @@
   析构整批释放、**不跑任何析构函数**；块链头兼当前填充块（新块恒头插、只从头分配，单 `head_` 游标即足）。
   后备经 `mem::alloc/free`（RawAlloc 同族三口，随 `ARIA_USE_MIMALLOC` 开关），分配失败
   `fatal_error(OutOfMemory)`、全程不抛（先例 `GC::allocate`）。
-  成立前提是节点成员全为平凡类型：子节点裸指针互指、名字/字符串借源缓冲、列表为 `AstList`——这些由
+  成立前提是节点成员全为平凡类型：子节点裸指针互指、名字/字符串借源缓冲、列表为 Span 视图——这些由
   Ast.hpp 节点形态保证，新增节点成员不得引入自持堆资源。
 - 列表视图：`make_list(const List<T>&)` 把解析期局部 vector 的元素一次性拷入 arena，返回 `Span<T>`（std::span，
   {data, usize size}，16 B）；空表零分配，元素须平凡可拷贝（static_assert 钉住）。`make_list` 是节点

@@ -9,8 +9,7 @@
 
 namespace aria {
 
-    // 基于 Buffer 的可扩容 trivial 数组:Buffer 加逻辑长度(len_ <= cap),2 倍几何增长,memcpy 搬迁;
-    // 不可拷贝/不可移动。
+    // 基于 Buffer 的可扩容 trivial 数组:Buffer 加逻辑长度(len_ <= cap),2 倍几何增长,memcpy 搬迁。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Array {
         static constexpr usize kInitialCapacity = 8; // 首次分配与几何增长起点
@@ -19,7 +18,7 @@ namespace aria {
         usize            len_; // 逻辑长度(<= buf_.capacity())
 
         // 内部扩容原语:确保容量 >= required_capacity,不足则从当前容量(空态落到 kInitialCapacity=8)起 2 倍
-        // 几何增长,一次 reallocate 到位(永不触发 GC)。push/resize 与公开 reserve 共用,内部不反向依赖公开接口。
+        // 几何增长,一次 reallocate 到位。push/resize 与公开 reserve 共用,内部不反向依赖公开接口。
         void ensure_capacity(const usize required_capacity) noexcept {
             if (required_capacity <= buf_.capacity()) {
                 return;
@@ -153,7 +152,7 @@ namespace aria {
         }
 
         // 迭代器:存储连续,直接以裸指针为迭代器。扩容即失效(push/resize/reserve 可能触发 reallocate 搬迁,
-        // 同 std::vector);mark-sweep GC 不搬迁块且 allocate/reallocate 永不触发 GC,迭代期间的分配/GC 不影响本缓冲。
+        // 同 std::vector);mark-sweep GC 不搬迁块,迭代期间的分配/GC 不影响本缓冲。
         [[nodiscard]]
         T* begin() noexcept {
             return buf_.data();

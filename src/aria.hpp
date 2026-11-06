@@ -10,7 +10,7 @@ namespace aria {
 
     // 语言值域
 
-    // 整数(i48)值域:NaN-boxing 的 48 位尾部即语言 int 域;越域报错不静默截断。
+    // 整数(i48)值域:NaN-boxing 48 位尾部即语言 int 域;字面量与数据语法按此对齐拦截。
     constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
     constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
 

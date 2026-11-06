@@ -46,13 +46,13 @@ paths:
 
 项目级定义头（`namespace aria`，仅 include `common.hpp`，任何层均可无分层顾虑引用）。收拢语言/产品层固有命名事实作单一事实源，防各层字面量漂移。
 
-- **语言值域**：`kIntMin`/`kIntMax`（i48 = `Value::from_int` 的 48 位尾部；字面量闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text` 同界）。
+- **语言值域**：`kIntMin`/`kIntMax`（i48 = 默认表示 `Value::from_int` 的 48 位尾部；域拦截只有两处输入闸门 `CodeGen::validate_int_literal` 与 `util::parse_int_text`，两表示构建同界。TagValue 构建下 `from_int` 收全 i64，域仅靠闸门约定；Eval 运行期算术不设闸，NaN-boxing release 构建下越域算术静默截尾）。
 - **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
 - **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（主入口名）、`kModuleEntryName = "<module>"`（模块体入口名；两者入口体同为 ModuleEntry 形态，返回值恒为模块对象）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用；lambda 留栈不绑定由 LambdaExprNode/FnKind 判定，名字仅作显示）。
 - **构造角色名**：`kInitName = "init"`（实例方法构造角色；"init" 本身是普通标识符，角色由 def 体裸方法位与名字共同判定 -- parser 据名烙 `FnKind::InitMethod`（隐式返回尾返 this），runtime 据名维护类 `init_` 槽（`ObjClass::set_field` 同步））。
-- **运算符与调用重载方法名**（十一个 dunder，如 `__add__`/`__call__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（纯拼写表）与「恒久存活」的根见 `runtime/str_table.hpp`（见 `runtime.md`「共享状态」的常量串表）。
+- **运算符与调用重载方法名**（12 个 dunder：10 个运算符钩子 = 5 个二元算术 + 4 个比较 + `__neg__`，加 `__call__` 与 `__str__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（VM 常量串注册表：dunder 钩子名 + Exception 字段键 + 协程状态串）与「恒久存活」的根见 `runtime/str_table.hpp`（见 `runtime.md`「共享状态」的常量串表）。
 - **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
-- **执行上下文前向声明**：`class AriaExeContext;`（执行上下文本体，定义住 `runtime/AriaExeContext.hpp`；GC 对象壳 `ObjMovement` 多继承它，同层定义）--住本头 = 任何层（含 object）可拼写且不拖 runtime 头（`NativeFn` 签名的可见性前提）。
+- **执行上下文前向声明**：`class AriaExeContext;`（执行上下文本体，定义住 `runtime/AriaExeContext.hpp`；GC 对象壳 `ObjMovement` 多继承它，同层定义）--住本头 = 任何层（含 object）可拼写且不拖 runtime 头（`Object.hpp` 六个虚函数签名以 `AriaExeContext&` 为参，是其可见性前提）。
 - **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。
 
 ## `main.cpp`

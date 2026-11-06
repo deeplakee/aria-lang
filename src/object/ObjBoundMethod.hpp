@@ -55,8 +55,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸读 override:BoundMethod 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
-        // 默认(原值直取,值自身即槽 0 接收者)。
+        // 裸读 override:类链直取,miss 就地 fail;绑定读走基类默认(原值自身即槽 0 接收者)。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
@@ -65,7 +64,7 @@ namespace aria {
         Value receiver_; // 绑定接收者(Value 泛化;闭包解包作方法帧槽 0 的 this,原生覆写调用区槽 0)
     };
 
-    // 工厂:分配 ObjBoundMethod;调用方须自行根化 method 与 receiver 中的对象,建成须立即发布进根。
+    // 工厂:分配 ObjBoundMethod;调用方须自行根化 method 与 receiver 中的对象。
     [[nodiscard]]
     ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver);
 

@@ -67,8 +67,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸读 override:Closure 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
-        // 默认(原值直取,值自身即槽 0 接收者)。
+        // 裸读 override:类链直取,miss 就地 fail;绑定读走基类默认(原值自身即槽 0 接收者)。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 

@@ -68,7 +68,7 @@ namespace aria {
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
         // 链查原语(公开):沿 super 链查,链上首个命中拷出;纯查询零分配不 fail,
-        // 实例链腿与元类腿及将来按名取用的查询一律走它。
+        // 实例链腿与元类腿一律走它。
         [[nodiscard]]
         Opt<Value> find_field(ObjString* name) noexcept;
 
@@ -82,8 +82,7 @@ namespace aria {
         Value         init_;       // 构造器方法值(闭包/原生)
     };
 
-    // 工厂:分配 ObjClass(init_ 由 ctor 自 super 派生);name 与 super 皆白色,调用方须自行根化,
-    // 建成须立即发布进根。
+    // 工厂:分配 ObjClass(init_ 由 ctor 自 super 派生);name 与 super 皆白色,调用方须自行根化。
     [[nodiscard]]
     ObjClass* new_class(GC& gc, ObjString* name, ObjClass* super);
 

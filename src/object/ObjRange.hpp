@@ -45,7 +45,7 @@ namespace aria {
             return is_exclusive_;
         }
 
-        // 纯值无子对象,标记空操作(对标 ObjString)。
+        // 纯值无子对象,标记空操作。
         void trace(GC&) const noexcept override {}
 
         // 壳定长(三标量字段,无外挂 buffer)。
@@ -70,7 +70,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一趟裸读命中恒绑 this。
+        // 绑定读 override:命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
@@ -80,7 +80,7 @@ namespace aria {
         bool     is_exclusive_; // true: from...to(不含上界);false: from..to(含上界);无上界恒 false
     };
 
-    // 工厂:分配 ObjRange(纯值,无入参对象可守);返回对象白色无根,调用方建成即发布进根。
+    // 工厂:分配 ObjRange(纯值,无入参对象可守)。
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from, i64 to, bool is_exclusive);
 

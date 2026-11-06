@@ -33,11 +33,11 @@ namespace aria {
         Opt<Value> next(AriaExeContext& ctx) override;
 
     private:
-        ObjString* str_;    // 被遍历者(恒非空;经 trace 标根)
+        ObjString* str_;    // 被遍历者(恒非空)
         usize      offset_; // 下一码点的字节偏移(逐码点推进,恒在字符边界)
     };
 
-    // 工厂:分配 ObjStringIterator(单次分配);调用方须已根化 str,返回对象白色无根,建成即写回槽发布。
+    // 工厂:分配 ObjStringIterator(单次分配);调用方须已根化 str,建成即写回槽发布。
     [[nodiscard]]
     ObjStringIterator* new_string_iterator(GC& gc, ObjString* str);
 

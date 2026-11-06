@@ -33,11 +33,11 @@ namespace aria {
         Opt<Value> next(AriaExeContext& ctx) override;
 
     private:
-        ObjList* list_;   // 被遍历者(恒非空;经 trace 标根)
+        ObjList* list_;   // 被遍历者(恒非空)
         usize    cursor_; // 下一元素下标(单调 +1)
     };
 
-    // 工厂:分配 ObjListIterator(单次分配);调用方须已根化 list,返回对象白色无根,建成即写回槽发布。
+    // 工厂:分配 ObjListIterator(单次分配);调用方须已根化 list,建成即写回槽发布。
     [[nodiscard]]
     ObjListIterator* new_list_iterator(GC& gc, ObjList* list);
 

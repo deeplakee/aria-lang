@@ -48,15 +48,13 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸读 override:Coroutine 类链直取(find_field 纯查询),miss 就地类措辞 fail;绑定读走基类
-        // 默认(原值直取,句柄自身即槽 0 接收者)。定义在 .cpp。
+        // 裸读 override:类链直取,miss 就地 fail;绑定读走基类默认(句柄自身即槽 0 接收者)。定义在 .cpp。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
     };
 
-    // 工厂:分配执行上下文并绑定宿主回指针。返回对象白色无根,调用方须自行根化(主上下文经
-    // current_、协程经 create 原语发布)。构造临界区内(宿主 bootstrap 期)宿主服务面尚未就位,
-    // 期间只建对象、不走 ctx 服务面。
+    // 工厂:分配执行上下文并绑定宿主回指针。主上下文经 current_、协程经 create 原语发布。构造
+    // 临界区内(宿主 bootstrap 期)宿主服务面尚未就位,期间只建对象、不走 ctx 服务面。
     [[nodiscard]]
     ObjMovement* new_movement(GC& gc, AriaVM& host);
 

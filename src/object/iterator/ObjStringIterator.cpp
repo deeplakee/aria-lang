@@ -22,12 +22,12 @@ namespace aria {
     bool ObjStringIterator::has_next() const noexcept { return offset_ < str_->length(); }
 
     Opt<Value> ObjStringIterator::next(AriaExeContext& ctx) {
-        // 越界 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
+        // 越界 fail-fast(仅手写滥用触此)。
         if (offset_ >= str_->length()) {
             return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }
         // decode_one 恒返宽度 >= 1(offset < length 下,非法序列返 replacement 且宽 1),游标必进、不死循环。
-        // 内容零重生(同 fn_chars):坏字节(宽 1 却非 ASCII)走 encode(U+FFFD) 冷臂;宽 1 必 ASCII
+        // 内容零重生:坏字节(宽 1 却非 ASCII)走 encode(U+FFFD) 冷臂;宽 1 必 ASCII
         // 走单字符常量表;多字节切 str 原字节。
         const usize start      = offset_;
         const auto [cp, width] = utf8::decode_one(str_->view(), offset_);

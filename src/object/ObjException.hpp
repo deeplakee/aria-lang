@@ -64,7 +64,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一趟裸读命中恒绑 this。
+        // 绑定读 override:命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
@@ -73,8 +73,8 @@ namespace aria {
         ObjString* message_; // 完整烘焙消息串(intern;指针恒非空,内容可空)
     };
 
-    // 工厂:message 须为已烘好的完整消息串(原样存,不经 make_message);内部 new_string 驻留自守,返回对象白色
-    // 无根,须立即发布进根(如 raise 入寄存器)。ErrorCode 重载 = VM 报错装箱;i64 重载 = 数字码参直通。
+    // 工厂:message 须为已烘好的完整消息串(原样存,不经 make_message);内部 new_string 驻留自守,
+    // 产出后须立即发布进根(如 raise 入寄存器)。ErrorCode 重载 = VM 报错装箱;i64 重载 = 数字码参直通。
     [[nodiscard]]
     ObjException* new_exception(GC& gc, ErrorCode code, StringView message);
 

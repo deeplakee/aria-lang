@@ -57,7 +57,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一趟裸读命中恒绑 this。
+        // 绑定读 override:命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
@@ -73,7 +73,7 @@ namespace aria {
         AriaHashTable table_; // 键值表(GC 分配器绑定;set 惰性首分配,trivial 分配不触 GC)
     };
 
-    // 工厂:分配空 ObjMap(单次分配,无入参对象可守);返回对象白色无根,调用方建成即发布进根。
+    // 工厂:分配空 ObjMap(单次分配,无入参对象可守)。
     [[nodiscard]]
     ObjMap* new_map(GC& gc);
 

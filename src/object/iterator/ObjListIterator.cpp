@@ -21,7 +21,7 @@ namespace aria {
     bool ObjListIterator::has_next() const noexcept { return cursor_ < list_->elements().size(); }
 
     Opt<Value> ObjListIterator::next(AriaExeContext& ctx) {
-        // 越界 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此(nil 哨兵与合法 nil 元素不可区分)。
+        // 越界 fail-fast(仅手写滥用触此;nil 哨兵与合法 nil 元素不可区分)。
         if (cursor_ >= list_->elements().size()) {
             return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }

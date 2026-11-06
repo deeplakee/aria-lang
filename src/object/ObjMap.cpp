@@ -23,7 +23,7 @@ namespace aria {
         if (this == other) {
             return true;
         }
-        // 环闭合:同对重遇已在比较链上,视为相等(余归纳,正则树同构);互环否则无限互递归。
+        // 环闭合防无限互递归。
         if (EqualGuard::is_cycle(this, other)) {
             return true;
         }

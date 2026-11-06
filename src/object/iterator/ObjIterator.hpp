@@ -35,7 +35,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一趟裸读命中恒绑 this。
+        // 绑定读 override:命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 

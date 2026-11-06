@@ -66,12 +66,12 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:同一趟裸读命中恒绑 this。
+        // 绑定读 override:命中恒绑 this。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
         // 整数键 = 字节域(与 len 同域):产出单字节 1-char string,负数从尾计数、归一化后越界即报;
-        // 多字节序列中间字节取该字节自身。Range 键走切片。查读含一次 intern 分配:receiver 经值栈为根。
+        // 多字节序列中间字节取该字节自身(经单字符常量表直读,零分配)。Range 键走切片。receiver 经值栈为根。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
@@ -108,8 +108,7 @@ namespace aria {
 
     // 接管铸造:内容等于 data[0..size),释放责任随三臂移交本函数 -- 命中驻留释放 buffer 返已有串;
     // 未命中长串收缩 buffer 后由 ObjString 接管(零拷贝),未命中短串拷进 SSO 槽后释放 buffer。
-    // data 为空指针且 size 为 0 合法(空串)。唯一 GC 点是 new_object 顶部 maybe_collect,buffer
-    // 为 raw 内存不受影响。
+    // data 为空指针且 size 为 0 合法(空串);buffer 是 raw 内存,不受回收影响。
     [[nodiscard]]
     ObjString* new_string(GC& gc, char* data, usize size, usize cap, u32 hash);
 

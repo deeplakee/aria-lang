@@ -122,7 +122,7 @@ namespace aria {
 
     Opt<Value> ObjString::slice(AriaExeContext& ctx, const ObjRange* range) const {
         // 段内容拷进 GC 记账 builder(带种串构造单发定容),倒序段在 builder 上按字节反转(字节域);
-        // receiver 与 range 经调用方值栈为根,唯一 GC 点在 take_string。段解析收口 resolve_slice_bounds。
+        // receiver 与 range 经调用方值栈为根。段解析收口 resolve_slice_bounds。
         const auto segment = resolve_slice_bounds(range, length_);
         if (!segment) {
             return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->repr());
@@ -140,8 +140,7 @@ namespace aria {
         if (const auto found = gc.intern_find(src, hash)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
-        // s 此刻白色无根,但 intern_insert 走 trivial 分配不触发 GC,跨 insert 不会被回收,无需守卫;
-        // 唯一 GC 触发点是下方 new_object 顶部的 maybe_collect,发生在 s 诞生前。
+        // intern_insert 走 trivial 分配不触发 GC,s 跨 insert 无需守卫。
         const auto s = gc.new_object<ObjString>(gc, src, hash);
         gc.intern_insert(s);
         return s;
@@ -152,7 +151,6 @@ namespace aria {
         if (const auto found = gc.intern_find(lhs, rhs, hash)) {
             return found; // 命中驻留池:返回已有串,不分配、不 GC
         }
-        // GC 走查同上:唯一 GC 点是 new_object 顶部 maybe_collect,发生在 s 诞生前;
         // lhs/rhs 宿主串由调用方保活(调用点两侧均栈根)。
         const auto s = gc.new_object<ObjString>(gc, lhs, rhs, hash);
         gc.intern_insert(s);
@@ -166,8 +164,7 @@ namespace aria {
             gc.deallocate<char>(data, cap);
             return found;
         }
-        // GC 走查:唯一 GC 点是 new_object 顶部 maybe_collect,buffer 为 raw 内存不受影响;
-        // intern_insert 走 trivial 分配不触发 GC。表示形态(SSO/长串)由接管构造自分流。
+        // buffer 为 raw 内存不受回收影响;表示形态(SSO/长串)由接管构造自分流。
         const auto s = gc.new_object<ObjString>(gc, data, size, cap, hash);
         gc.intern_insert(s);
         return s;

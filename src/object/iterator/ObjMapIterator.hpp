@@ -34,11 +34,11 @@ namespace aria {
         Opt<Value> next(AriaExeContext& ctx) override;
 
     private:
-        ObjMap*                       map_;    // 被遍历者(恒非空;经 trace 标根)
+        ObjMap*                       map_;    // 被遍历者(恒非空)
         AriaHashTable::const_iterator cursor_; // 槽位扫描游标(占用槽序推进)
     };
 
-    // 工厂:分配 ObjMapIterator(单次分配);调用方须已根化 map,返回对象白色无根,建成即写回槽发布。
+    // 工厂:分配 ObjMapIterator(单次分配);调用方须已根化 map,建成即写回槽发布。
     [[nodiscard]]
     ObjMapIterator* new_map_iterator(GC& gc, ObjMap* map);
 

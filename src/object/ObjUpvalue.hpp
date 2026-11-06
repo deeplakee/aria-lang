@@ -80,8 +80,8 @@ namespace aria {
         ObjUpvalue* next_open_; // 开链下一节点(按槽址降序;链尾 nullptr;勿用 next_--撞基类 Object::next_)
     };
 
-    // 工厂:分配 ObjUpvalue 并置 open 指向 slot。入参是裸栈槽地址,无对象可守;返回对象白色无根,
-    // 调用方须立即链入 VM 开链(或入闭包 upvalues_,经 VM 根 tracer 标根)。
+    // 工厂:分配 ObjUpvalue 并置 open 指向 slot。入参是裸栈槽地址,无对象可守;调用方须立即
+    // 链入 VM 开链(或入闭包 upvalues_,经 VM 根 tracer 标根)。
     [[nodiscard]]
     ObjUpvalue* new_upvalue(GC& gc, Value* slot);
 

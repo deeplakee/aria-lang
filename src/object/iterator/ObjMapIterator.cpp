@@ -23,7 +23,7 @@ namespace aria {
     bool ObjMapIterator::has_next() const noexcept { return cursor_ != map_->table().end(); }
 
     Opt<Value> ObjMapIterator::next(AriaExeContext& ctx) {
-        // 耗尽 fail-fast:forIn 靠 has_next 把关,仅手写滥用触此。
+        // 耗尽 fail-fast(仅手写滥用触此)。
         if (!has_next()) {
             return ctx.fail(ErrorCode::IterationExhausted, "iterator exhausted");
         }

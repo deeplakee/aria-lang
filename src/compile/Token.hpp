@@ -26,7 +26,7 @@ namespace aria {
     };
 
     // 词法单元：lexer 产出的最小语法单位。lexeme 以指针 + 长度直存，恒为源缓冲的子区间（EOF 锚在
-    // 末尾 '\0' 哨兵位）；位置不随 token 携带——单次编译恒单源文件，Parser 持 SourceFile& 以
+    // 末尾 '\0' 哨兵位）；位置不随 token 携带--单次编译恒单源文件，Parser 持 SourceFile& 以
     // lexeme 指针对源缓冲起点的偏移派生 SourceLoc。字符串族另持转义标记与展开后长度，内层原文视图
     // 经 string_value() 剥边界取得，同样借自源缓冲。借出的视图均不得越过所引对象的存活期。
     class Token {

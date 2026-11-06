@@ -34,7 +34,7 @@ namespace aria {
         // 一值）。由 bind_pattern 设置、整个模式子树经 accept 共用。
         enum class PatternBindMode : u8 { Fill, Store };
 
-        // 隐藏局部名源：<destructure_N> 合成名既非源缓冲视图也非字面量，由本源自备稳定宿主——
+        // 隐藏局部名源：<destructure_N> 合成名既非源缓冲视图也非字面量，由本源自备稳定宿主--
         // std::string 堆对象地址恒定，借出视图存活覆盖编译期；序号只增，名字天然唯一。
         struct HiddenNameSource {
             u32                next_index = 0;

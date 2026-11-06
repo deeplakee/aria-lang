@@ -72,37 +72,37 @@ namespace aria {
 
     namespace Op {
         enum class Binary : u8 {
-            Or,              // ||
-            And,             // &&
-            EqualEqual,      // ==
-            EqualEqualEqual, // ===
-            BangEqual,       // !=
-            BangEqualEqual,  // !==
-            Greater,         // >
-            GreaterEqual,    // >=
-            Less,            // <
-            LessEqual,       // <=
-            Plus,            // +
-            Minus,           // -
-            Star,            // *
-            Slash,           // /
-            Percent,         // %
+            Or,
+            And,
+            EqualEqual,
+            EqualEqualEqual,
+            BangEqual,      // !=
+            BangEqualEqual, // !==
+            Greater,
+            GreaterEqual,
+            Less,
+            LessEqual,
+            Plus,
+            Minus,
+            Star,
+            Slash,
+            Percent,
         };
 
         enum class Unary : u8 {
-            Minus,  // -
-            Not,    // !
+            Minus,
+            Not,
             PreInc, // ++（前置）
             PreDec, // --（前置）
         };
 
         enum class Assignment : u8 {
-            Assign,        // =
-            PlusAssign,    // +=
-            MinusAssign,   // -=
-            StarAssign,    // *=
-            SlashAssign,   // /=
-            PercentAssign, // %=
+            Assign,
+            PlusAssign,
+            MinusAssign,
+            StarAssign,
+            SlashAssign,
+            PercentAssign,
         };
 
         // 运算符可读名。
@@ -137,7 +137,7 @@ namespace aria {
         String dump(usize indent) const;
     };
 
-    // match 语句分支：matchPattern "=>" statement。
+    // match 语句分支。
     struct MatchArm {
         MatchPattern pattern;
         StmtNode*    body = nullptr;
@@ -146,7 +146,7 @@ namespace aria {
         String dump(usize indent) const;
     };
 
-    // match 表达式分支：matchPattern "=>" expression。
+    // match 表达式分支。
     struct MatchExprArm {
         MatchPattern pattern;
         ExprNode*    body = nullptr; // 结果表达式
@@ -233,7 +233,7 @@ namespace aria {
 
     } // namespace detail::ast
 
-    // ProgramNode：program -> declaration*。整个编译单元的根，持顶层声明（StmtNode）列表。
+    // ProgramNode：整个编译单元的根，持顶层声明（StmtNode）列表。
     struct ProgramNode : ASTNode {
         ProgramNode(const SourceLoc loc, const Span<StmtNode*> decls) : ASTNode{loc}, decls{decls} {}
 
@@ -247,7 +247,7 @@ namespace aria {
 
     // 语句节点（StmtNode）
 
-    // BlockNode：语句块（block -> "{" declaration* "}"），持 declaration 列表（统一为 StmtNode）。
+    // BlockNode：语句块，持 declaration 列表（统一为 StmtNode）。
     struct BlockNode : StmtNode {
         BlockNode(const SourceLoc loc, const Span<StmtNode*> stmts) : StmtNode{loc}, stmts{stmts} {}
 
@@ -259,7 +259,7 @@ namespace aria {
         Span<StmtNode*> stmts;
     };
 
-    // 表达式语句：expression ";"。
+    // 表达式语句。
     struct ExprStmtNode : StmtNode {
         ExprStmtNode(const SourceLoc loc, ExprNode* expr) : StmtNode{loc}, expr{expr} {}
 
@@ -271,7 +271,7 @@ namespace aria {
         ExprNode* expr;
     };
 
-    // if 语句：if (cond) stmt (else stmt)?。
+    // if 语句。
     struct IfStmtNode : StmtNode {
         IfStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* then_br, StmtNode* else_br) :
             StmtNode{loc}, cond{cond}, then_br{then_br}, else_br{else_br} {}
@@ -286,7 +286,7 @@ namespace aria {
         StmtNode* else_br;
     };
 
-    // while 语句：while (cond) stmt。
+    // while 语句。
     struct WhileStmtNode : StmtNode {
         WhileStmtNode(const SourceLoc loc, ExprNode* cond, StmtNode* body) : StmtNode{loc}, cond{cond}, body{body} {}
 
@@ -299,7 +299,7 @@ namespace aria {
         StmtNode* body;
     };
 
-    // for 语句（C 风格）：for (init; cond; incr) stmt，init / cond / incr 均可省。
+    // for 语句（C 风格），init / cond / incr 均可省。
     struct ForStmtNode : StmtNode {
         ForStmtNode(const SourceLoc loc, StmtNode* init, ExprNode* cond, ExprNode* incr, StmtNode* body) :
             StmtNode{loc}, init{init}, cond{cond}, incr{incr}, body{body} {}
@@ -315,7 +315,7 @@ namespace aria {
         StmtNode* body;
     };
 
-    // for-in 语句：for (pattern in expr) stmt，pattern 绑 next() 的值；listPattern 按位置解构。
+    // for-in 语句，pattern 绑 next() 的值；listPattern 按位置解构。
     struct ForInStmtNode : StmtNode {
         ForInStmtNode(const SourceLoc loc, PatternNode* pattern, ExprNode* iterable, StmtNode* body) :
             StmtNode{loc}, pattern{pattern}, iterable{iterable}, body{body} {}
@@ -350,7 +350,7 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
     };
 
-    // return 语句：return expression? ";"。value 缺省表无返回值。
+    // return 语句。value 缺省表无返回值。
     struct ReturnStmtNode : StmtNode {
         ReturnStmtNode(const SourceLoc loc, ExprNode* value) : StmtNode{loc}, value{value} {}
 
@@ -362,8 +362,7 @@ namespace aria {
         ExprNode* value;
     };
 
-    // import 语句：import string as identifier ";"。path 文法钉死字符串字面量，解码在代码生成端；
-    // alias 为绑定的本地名。
+    // import 语句。path 文法钉死字符串字面量，解码在代码生成端；alias 为绑定的本地名。
     struct ImportStmtNode : StmtNode {
         ImportStmtNode(const SourceLoc loc, StringLiteralNode* path, const StringView alias) :
             StmtNode{loc}, path{path}, alias{alias} {}
@@ -377,8 +376,8 @@ namespace aria {
         StringView         alias;
     };
 
-    // try 语句：try block (catch (id) block)?；ename/catch_body 成对缺省（parser 保证；
-    // ename 空视图即无 catch，identifier 恒非空），语义阶段强制 catch 必有（TryWithoutHandler）。
+    // try 语句。ename/catch_body 成对缺省（parser 保证；ename 空视图即无 catch，identifier 恒非空），
+    // 语义阶段强制 catch 必有（TryWithoutHandler）。
     struct TryStmtNode : StmtNode {
         TryStmtNode(const SourceLoc loc, BlockNode* body, const StringView ename, BlockNode* catch_body) :
             StmtNode{loc}, body{body}, ename{ename}, catch_body{catch_body} {}
@@ -393,7 +392,7 @@ namespace aria {
         BlockNode* catch_body;
     };
 
-    // throw 语句：throw expression ";"。
+    // throw 语句。
     struct ThrowStmtNode : StmtNode {
         ThrowStmtNode(const SourceLoc loc, ExprNode* expr) : StmtNode{loc}, expr{expr} {}
 
@@ -405,7 +404,7 @@ namespace aria {
         ExprNode* expr;
     };
 
-    // match 语句：match (expr) { matchArm+ }。分支为 statement（MatchArm.body）。
+    // match 语句。分支为 statement（MatchArm.body）。
     struct MatchStmtNode : StmtNode {
         MatchStmtNode(const SourceLoc loc, ExprNode* subject, const Span<MatchArm> arms) :
             StmtNode{loc}, subject{subject}, arms{arms} {}
@@ -421,7 +420,7 @@ namespace aria {
 
     // 声明节点（StmtNode 派生：声明即「可出现在 program/block 顶层的语句」）
 
-    // 函数声明：fun identifier params block；kind 由 parser 烙定。
+    // 函数声明。kind 由 parser 烙定。
     struct FunDeclNode : StmtNode {
         FunDeclNode(const SourceLoc loc, const StringView name, const Span<Param> params, BlockNode* body,
                     const FnKind kind) : StmtNode{loc}, name{name}, params{params}, body{body}, kind{kind} {}
@@ -437,8 +436,8 @@ namespace aria {
         FnKind      kind;
     };
 
-    // def 声明："def" identifier (":" expression)? "{" member* "}"（成员含嵌套 defDecl）。
-    // members 按源序保留，静态变量初始化即此序（前一静态变量可被后续初始化器引用）。
+    // def 声明（成员含嵌套 defDecl）。members 按源序保留，静态变量初始化即此序
+    // （前一静态变量可被后续初始化器引用）。
     struct DefDeclNode : StmtNode {
         DefDeclNode(const SourceLoc loc, const StringView name, ExprNode* superclass, const Span<StmtNode*> members,
                     const bool is_member) :
@@ -455,7 +454,7 @@ namespace aria {
         bool            is_member; // 语句位声明(false)/类体成员位嵌套类(true)
     };
 
-    // var 声明：var varTarget ("=" expr)? ("," ...)* ";"。
+    // var 声明。
     struct VarDeclNode : StmtNode {
         VarDeclNode(const SourceLoc loc, const Span<VarBinding> bindings) : StmtNode{loc}, bindings{bindings} {}
 
@@ -538,7 +537,7 @@ namespace aria {
         Span<ExprNode*> parts;
     };
 
-    // 布尔字面量：true / false。
+    // 布尔字面量。
     struct BoolLiteralNode : ExprNode {
         BoolLiteralNode(const SourceLoc loc, const bool value) noexcept : ExprNode{loc}, value{value} {}
 
@@ -582,7 +581,7 @@ namespace aria {
         void accept(AstVisitor& visitor) override;
     };
 
-    // super 成员表达式：super "." identifier（文法单形，裸 super 解析期不收）；写形态非左值。
+    // super 成员表达式（文法单形，裸 super 解析期不收）。写形态非左值。
     struct SuperExprNode : ExprNode {
         SuperExprNode(const SourceLoc loc, const StringView name) : ExprNode{loc}, name{name} {}
 
@@ -611,7 +610,7 @@ namespace aria {
         ExprNode*  rhs;
     };
 
-    // 一元（前缀）表达式：- / ! / ++ / -- 作用于后续 unary。
+    // 一元（前缀）表达式。
     struct UnaryExprNode : ExprNode {
         UnaryExprNode(const SourceLoc loc, const Op::Unary op, ExprNode* operand) :
             ExprNode{loc}, op{op}, operand{operand} {}
@@ -625,7 +624,7 @@ namespace aria {
         ExprNode* operand;
     };
 
-    // 赋值（含复合赋值）：target op= value，target 合法性在语义阶段查。
+    // 赋值（含复合赋值）。target 合法性在语义阶段查。
     struct AssignmentNode : ExprNode {
         AssignmentNode(const SourceLoc loc, const Op::Assignment op, ExprNode* target, ExprNode* value) :
             ExprNode{loc}, op{op}, target{target}, value{value} {}
@@ -640,7 +639,7 @@ namespace aria {
         ExprNode*      value;
     };
 
-    // 解构赋值：listPattern = expression。
+    // 解构赋值。
     struct DestructureAssignmentNode : ExprNode {
         DestructureAssignmentNode(const SourceLoc loc, ListPatternNode* target, ExprNode* value) :
             ExprNode{loc}, target{target}, value{value} {}
@@ -654,7 +653,7 @@ namespace aria {
         ExprNode*        value;
     };
 
-    // 函数调用：callee(args)。
+    // 函数调用。
     struct CallNode : ExprNode {
         CallNode(const SourceLoc loc, ExprNode* callee, const Span<ExprNode*> args) :
             ExprNode{loc}, callee{callee}, args{args} {}
@@ -668,7 +667,7 @@ namespace aria {
         Span<ExprNode*> args;
     };
 
-    // 字段访问：object.name。
+    // 字段访问。
     struct FieldAccessNode : ExprNode {
         FieldAccessNode(const SourceLoc loc, ExprNode* object, const StringView name) :
             ExprNode{loc}, object{object}, name{name} {}
@@ -682,7 +681,7 @@ namespace aria {
         StringView name;
     };
 
-    // 下标访问：object[index]。
+    // 下标访问。
     struct IndexAccessNode : ExprNode {
         IndexAccessNode(const SourceLoc loc, ExprNode* object, ExprNode* index) :
             ExprNode{loc}, object{object}, index{index} {}
@@ -698,7 +697,7 @@ namespace aria {
 
     // 复合表达式（primary 的复合部分）
 
-    // 列表字面量：[e, e, ...]。
+    // 列表字面量。
     struct ListExprNode : ExprNode {
         ListExprNode(const SourceLoc loc, const Span<ExprNode*> elems) : ExprNode{loc}, elems{elems} {}
 
@@ -710,7 +709,7 @@ namespace aria {
         Span<ExprNode*> elems;
     };
 
-    // map 字面量：{ k: v, ... }。键为任意 expression（运行时求值）。
+    // map 字面量。键为任意 expression（运行时求值）。
     struct MapExprNode : ExprNode {
         MapExprNode(const SourceLoc loc, const Span<MapEntry> entries) : ExprNode{loc}, entries{entries} {}
 
@@ -722,7 +721,7 @@ namespace aria {
         Span<MapEntry> entries;
     };
 
-    // 区间表达式：a..b（含上界）/ a...b（不含上界）/ a.. 或 a...（无上界，upper 为空，两者同义）。
+    // 区间表达式。无上界时 upper 为空（a.. 与 a... 同义），含否由 is_exclusive 区分。
     struct RangeExprNode : ExprNode {
         RangeExprNode(const SourceLoc loc, const bool is_exclusive, ExprNode* lower, ExprNode* upper) :
             ExprNode{loc}, is_exclusive{is_exclusive}, lower{lower}, upper{upper} {}
@@ -737,7 +736,7 @@ namespace aria {
         ExprNode* upper;
     };
 
-    // if 表达式：if (cond) { then } else { else }，分支为单表达式块。
+    // if 表达式，分支为单表达式块。
     struct IfExprNode : ExprNode {
         IfExprNode(const SourceLoc loc, ExprNode* cond, ExprNode* then_br, ExprNode* else_br) :
             ExprNode{loc}, cond{cond}, then_br{then_br}, else_br{else_br} {}
@@ -752,7 +751,7 @@ namespace aria {
         ExprNode* else_br;
     };
 
-    // lambda 表达式：fun params block。
+    // lambda 表达式。
     struct LambdaExprNode : ExprNode {
         LambdaExprNode(const SourceLoc loc, const Span<Param> params, BlockNode* body) :
             ExprNode{loc}, params{params}, body{body} {}
@@ -766,7 +765,7 @@ namespace aria {
         BlockNode*  body;
     };
 
-    // match 表达式：match (subject) { pat => expr ... }。
+    // match 表达式。
     struct MatchExprNode : ExprNode {
         MatchExprNode(const SourceLoc loc, ExprNode* subject, const Span<MatchExprArm> arms) :
             ExprNode{loc}, subject{subject}, arms{arms} {}

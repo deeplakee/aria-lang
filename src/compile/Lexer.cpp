@@ -116,7 +116,6 @@ namespace aria {
         tokens_.emplace_back(TokenType::Eof, StringView{src_.data() + src_.size(), 0});
     }
 
-    // 单步分派：产一个普通 token（或吞一段 trivia）。run 主循环与插值档内扫描共用。
     void Lexer::dispatch_one() {
         const auto cp = utf8::decode_one(src_, pos_).first; // 各分支自行解码推进
 
@@ -156,12 +155,10 @@ namespace aria {
         }
     }
 
-    // 当前位是否行注释起点（// 或 #，均到行尾）。
     bool Lexer::is_line_comment_start(const utf8::codepoint cp) const noexcept {
         return (cp == '/' && peek_byte(1) == '/') || cp == '#';
     }
 
-    // 当前位是否进制前缀（0b/0o/0x，大小写均可）：是则返回进制数（2/8/16），否则 nullopt。
     Opt<u8> Lexer::radix_prefix_base() const noexcept {
         if (peek_byte(0) != '0') {
             return std::nullopt;
@@ -266,7 +263,7 @@ namespace aria {
         }
     }
 
-    // 字符串字面量扫描，同时是模板（字符串即模板）：状态机驱动——文本态交 scan_string_text 扫段产
+    // 字符串字面量扫描，同时是模板（字符串即模板）：状态机驱动 -- 文本态交 scan_string_text 扫段产
     // 段 token（${ 开档），档内态交 scan_string_hole 扫花括号配对内的普通 token 流，两态交替至闭串。
     // 整串无档退化普通 String token（Parser/CodeGen 走纯字面路径）。
     void Lexer::scan_string(const char quote) {

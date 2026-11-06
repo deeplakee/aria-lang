@@ -85,8 +85,6 @@ namespace aria {
     Parser::Parser(AstArena& arena, SourceFile& source, List<Token>& tokens) noexcept :
         arena_{arena}, source_{source}, pos_{0}, tokens_{tokens}, errors_{} {}
 
-    // 字符串族 token -> 字面节点：内层原文视图 + 消费形态随 token 走，primary / import /
-    // 插值字面段三处共用。
     StringLiteralNode* Parser::make_string_literal(const Token& token) const {
         return arena_.make<StringLiteralNode>(loc_of(token), token.string_value(), token.shape());
     }

@@ -270,11 +270,6 @@ namespace aria {
     }
 
     u32 CodeGen::emit_cond_jump(ExprNode& cond, const u32 line) {
-        // 条件跳转发射收口:条件恰为 `==` 二元时直发融合指令 JUMP_NE(与
-        // [cond][JUMP_FALSE] 逐语义等价,省一次派发往返);其余形态原样 [cond][JUMP_FALSE]。
-        // 融合判定必须在 AST 形状上做 -- 发射期「尾字节恰为 EQUAL」不等于「该 EQUAL 的值即
-        // 本次条件」(|| 链 rhs 的 EQUAL 与外层跳转之间隔着值消费关系,按尾字节误融合会双弹
-        // 操作数、还覆盖 || 已回填的链尾补丁地址)。
         if (const auto* eq = dynamic_cast<const BinaryExprNode*>(&cond);
             eq != nullptr && eq->op == Op::Binary::EqualEqual) {
             emit_expr(*eq->lhs);
@@ -392,8 +387,8 @@ namespace aria {
             }
             push_source();
             emit_int_literal(static_cast<i64>(index), line, node.loc());
-            cur_cu()->emit_op(OpCode::LOAD_INDEX, line); // [src, idx] -> [element]
-            node.elems[index]->accept(*this);            // 递归绑定（模式不变）
+            cur_cu()->emit_op(OpCode::LOAD_INDEX, line);
+            node.elems[index]->accept(*this); // 递归绑定（模式不变）
         }
         if (node.rest) {
             // rest 位 = 无上界 range 作下标键（切片，空尾得空 list）；绑名经 rest 节点自身 visit。
@@ -479,8 +474,8 @@ namespace aria {
     }
 
     void CodeGen::compile_params(const Span<Param> params, const SourceLoc loc) {
-        // 未传槽由 VM 预垫缺省印章（寄存器 DefaultMark）：逐缺省槽与印章判等，命中才求值默认值换入；
-        // 缺省表达式解析不到的名字按常规链落外层/全局；序言后栈空。
+        // 未传槽由 VM 预垫缺省印章（寄存器 DefaultMark）；缺省表达式解析不到的名字按常规链落
+        // 外层/全局；序言后栈空。
         const u32 line = loc.line();
         for (usize i = 0; i < params.size(); ++i) {
             const auto& param = params[i];
@@ -534,7 +529,7 @@ namespace aria {
         const auto fn = new_function(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
         // 入池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
-        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjClosure 并建/复用 upvalue。
+        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjClosure。
         cur_cu()->emit_op(OpCode::CLOSURE, decl_loc.line());
         cur_cu()->emit_word(fn_idx, decl_loc.line());
 
@@ -783,7 +778,7 @@ namespace aria {
 
     void CodeGen::visitThrowStmtNode(ThrowStmtNode& node) {
         const u32 line = node.line();
-        // THROW 弹值入挂起寄存器，由 unwind 查异常记录表派发；原值不包 ObjException，catch 绑原值保类型。
+        // THROW 原值不包 ObjException,catch 绑原值保类型。
         // [v]
         emit_expr(*node.expr);
         cur_cu()->emit_op(OpCode::THROW, line); // [v] -> [](派发 handler 时值落 catch 参数槽)
@@ -871,7 +866,7 @@ namespace aria {
 
         // ⑤ 尾部弹栈：顶层与类体绑定驻留的类值在此归位（与 bind_class_value 配对）；局部绑定无此尾。
         if (node.is_member || mod_ctx_->is_global_scope()) {
-            cur_cu()->emit_op(OpCode::POP, line); // [class] -> [] 弹驻留类值
+            cur_cu()->emit_op(OpCode::POP, line); // 弹驻留类值
         }
     }
 
@@ -979,7 +974,7 @@ namespace aria {
             emit_expr(*part);
         }
         cur_cu()->emit_op(OpCode::BUILD_STRING, line);
-        cur_cu()->emit_byte(node.parts.size(), line); // [v1..vn] -> [str]
+        cur_cu()->emit_byte(node.parts.size(), line);
     }
 
     void CodeGen::visitBoolLiteralNode(BoolLiteralNode& node) {
@@ -1117,7 +1112,7 @@ namespace aria {
         for (const auto& arg: node.args) {
             emit_expr(*arg);
         }
-        cur_cu()->emit_op(OpCode::CALL_METHOD, line); // 纯调用：[recv, target, a1..aN] -> [r]
+        cur_cu()->emit_op(OpCode::CALL_METHOD, line); // 纯调用
         cur_cu()->emit_byte(node.args.size(), line);
         return true;
     }
@@ -1151,11 +1146,11 @@ namespace aria {
             case LvalueMode::Load:
             case LvalueMode::Locate:
                 cur_cu()->emit_op(OpCode::LOAD_THIS_FIELD, line);
-                cur_cu()->emit_word(name_idx, line); // [..] -> [.., v]
+                cur_cu()->emit_word(name_idx, line);
                 return true;
             case LvalueMode::Store:
                 cur_cu()->emit_op(OpCode::STORE_THIS_FIELD, line);
-                cur_cu()->emit_word(name_idx, line); // [v] -> [v]，peek-store 留值
+                cur_cu()->emit_word(name_idx, line);
                 return true;
         }
         UNREACHABLE();
@@ -1184,7 +1179,7 @@ namespace aria {
             case LvalueMode::Store:
                 // 接收者已由 Prepare 压在值下方，只发 store 指令
                 cur_cu()->emit_op(OpCode::STORE_FIELD, line);
-                cur_cu()->emit_word(name_idx, line); // [obj, v] -> [v]
+                cur_cu()->emit_word(name_idx, line);
                 return;
             case LvalueMode::Locate:
                 // DUP 副本供写入步复用，定位只求值一次。
@@ -1213,7 +1208,7 @@ namespace aria {
                 return;
             case LvalueMode::Store:
                 // obj/idx 已由 Prepare 压在值下方,只发 store 指令
-                cur_cu()->emit_op(OpCode::STORE_INDEX, line); // [obj, idx, v] -> [v]
+                cur_cu()->emit_op(OpCode::STORE_INDEX, line);
                 return;
             case LvalueMode::Locate:
                 emit_expr(*node.object);
@@ -1235,7 +1230,7 @@ namespace aria {
             emit_expr(*element);
         }
         cur_cu()->emit_op(OpCode::MAKE_LIST, line);
-        cur_cu()->emit_word(node.elems.size(), line); // [v1..vn] -> [list]
+        cur_cu()->emit_word(node.elems.size(), line);
     }
 
     void CodeGen::visitMapExprNode(MapExprNode& node) {
@@ -1249,7 +1244,7 @@ namespace aria {
             emit_expr(*value); // 键值交替下栈,成 MAKE_MAP 的 [k1,v1..kn,vn] 栈形
         }
         cur_cu()->emit_op(OpCode::MAKE_MAP, line);
-        cur_cu()->emit_word(node.entries.size(), line); // [k1,v1..kn,vn] -> [map]
+        cur_cu()->emit_word(node.entries.size(), line);
     }
 
     void CodeGen::visitRangeExprNode(RangeExprNode& node) {
@@ -1261,7 +1256,6 @@ namespace aria {
             cur_cu()->emit_byte(kRangeFlagUnbounded, line);
             return;
         }
-        // [from, to] -> [range]
         emit_expr(*node.upper); // 端点左→右下栈,成 MAKE_RANGE 的 [from, to] 栈形
         cur_cu()->emit_op(OpCode::MAKE_RANGE, line);
         cur_cu()->emit_byte(node.is_exclusive ? kRangeFlagExclusive : kRangeFlagInclusive, line);

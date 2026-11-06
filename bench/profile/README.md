@@ -24,7 +24,7 @@ python3 bench/profile/opcode_profile.py --static --aria=build/disasm/aria
 
 ## 语料
 
-画像负载 8 个**真实世界形态**的负载(aria-only,不配跨语言端口)与 `bench/lang/workloads/` 的
+画像负载 8 个**真实世界形态**的负载(原为 aria-only 画像语料,合并后已补齐跨语言端口)与 `bench/lang/workloads/` 的
 8 个真实负载于 2026-09-27 合并为一份语料,统一住 `bench/lang/workloads/`(16 个负载),两个驱动
 共享:本驱动跑画像,`bench/lang/lang_bench.py` 跑墙钟。`bench/lang/workloads` 各语言端口齐全、
 有值一致性门禁;每个负载都是一台「完整的小应用」(编解码器 / 解释器 / 模板引擎 / diff /

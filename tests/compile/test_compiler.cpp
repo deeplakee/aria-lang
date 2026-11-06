@@ -28,12 +28,9 @@ using aria::Value;
 
 namespace {
 
-    // 持有 AriaVM（进而其 GC）+ 实际 SourceFile + 结果一并返回，使返回值引用的 GC 对象在调用方
-    // 检视期间存活--否则辅助函数返回即销毁局部 vm/source -> GC 回收对象悬垂。
-    // Error 构造期已把位置烘成自有串、不再指向 SourceFile，故 SourceFile 的存活只关涉 GC 对象
-    // （ObjFunction 等）的检视，与 Error 无关；unique_ptr 持堆稳定地址仍为 GC 对象地址稳定所需。
-    // 转发 has_value/error 并提供 bool/->/* ，调用点按 Result 惯用法访问（CPP_Naming_Convention
-    // 「Optional/Result 用法」：取值 */->，判断隐式 bool，不设 .value()）。
+    // 持有 AriaVM(进而其 GC)+ 实际 SourceFile + 结果一并返回,使返回值引用的 GC 对象在调用方
+    // 检视期间存活(unique_ptr 持堆稳定地址,GC 对象地址稳定所需);转发 has_value/error 并提供
+    // bool/->/*,调用点按 Result 惯用法访问。
     struct RunResult {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
@@ -61,11 +58,9 @@ namespace {
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
-    // 带值取数惯用法：顶层已禁带值 return，且入口（ModuleEntry）返回值恒为模块对象，入口的
-    // RETURN 不可能替用户代码传值。故把源码包进探针函数（不调用）编译，再从入口常量池取
-    // __probe__ 的 ObjFunction 直接 run：探针是普通函数，RETURN 通用写回 callee 槽，其返回值
-    // 即 run() 返回值（fn 经 run() 内 make_guard 根化）。仅取值/错误码站点走此入口；钉模块
-    // 顶层语义的站点走 run_source（不包）。
+    // 带值取数惯用法:顶层禁带值 return,故把源码包进探针函数(不调用)编译,再从入口常量池取
+    // __probe__ 的 ObjFunction 直接 run,其返回值即 run() 返回值。仅取值/错误码站点走此入口;
+    // 钉模块顶层语义的站点走 run_source(不包)。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();

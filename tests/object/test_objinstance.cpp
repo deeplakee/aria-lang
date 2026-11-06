@@ -192,10 +192,9 @@ TEST(ObjInstance, UnrootedInstanceSwept) {
 
 // ---- 成员访问协议 override ----
 
-// load_field_bound 分流:fields 命中优先 → 委托类协议(ObjClass::load_field 沿链读穿透直读,类协议
-// 不绑定不缓存):方法闭包(看 defining class 戳不看值类型)现场绑 this(**每次访问一个新 bound,
-// 不写回 fields**)、其余直读、全链 miss 随类措辞 fail(本 override 只透传)。类/父类改写后实例
-// 立即见新值(读与调用同一份可见性)。load_field(调用路径)与内置同规则:不绑定,给原值。
+// load_field_bound 分流:fields 命中优先 -> 委托类协议(沿链读穿透直读,不绑定不缓存):方法闭包
+// 看 defining class 戳现场绑 this(每次访问新 bound、不写回 fields)、其余直读、miss 随类措辞 fail。
+// 类/父类改写后实例立即见新值;load_field(调用路径)与内置同规则:不绑定,给原值。
 TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     AriaVM vm;
     auto&  gc    = vm.gc();

@@ -85,7 +85,7 @@ python3 bench/lang/lang_bench.py --aria=build/rel/aria --format=md > /tmp/lang-b
 bench/lang/
   lang_bench.py   驱动(起进程计时 + 值一致性门禁 + 跨语言对照表)
   features/       40 个语言功能细项,一行一条路径(下表逐个说明)
-  workloads/      16 个整程序负载(lang 8 个各语言端口齐全 + 画像 8 个 aria-only)
+  workloads/      16 个整程序负载,各语言端口齐全(后 8 个原画像语料 2026-09-28 补齐端口)
   README.md       本文件
 ```
 

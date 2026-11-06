@@ -297,10 +297,9 @@ TEST(ObjClass, UnrootedClassSwept) {
 
 // ---- 成员访问协议 override ----
 
-// 构造期 init 派生:ObjClass 构造函数自 super 派生 init_ --super 非空出厂即继承父 init_
-// 当前值(快照语义:此后父 init 变更不传导);Object 根态(super==nullptr)出厂 nil,由
-// bootstrap 经 set_field 设(VM 级行为由
-// InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉)。
+// 构造期 init 派生:ObjClass 构造函数自 super 派生 init_ -- super 非空出厂即继承父 init_ 当前值
+// (快照语义,此后父 init 变更不传导);Object 根态出厂 nil,由 bootstrap 经 set_field 设(行为由
+// test_ariavm 的 InstantiateNoInitUsesSeededNativeInit/InheritanceOverrideAndSuperCall 钉)。
 TEST(ObjClass, CtorDerivesInitFromSuper) {
     GC   gc;
     auto guard = gc.make_guard();

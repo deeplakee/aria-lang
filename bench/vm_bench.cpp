@@ -1,38 +1,15 @@
 // bench/vm_bench.cpp
 //
-// VM 层性能基准：方法派发 / 迭代协议 / 调用开销。这些数字是「不绑定派发」取舍的依据（解读见
-// .claude/reference/bytecode/bytecode-instruction-set.md §6.2），
-// 本程序是它们的可复现入口--改 CodeGen 发射或 VM 派发路径前后各跑一次对照，把新数字回写文档。
+// VM 层性能基准:方法派发/迭代协议/调用开销,每行压一种派发形态、迭代次数统一 kIterations,
+// ns/次可跨行比较。核心手法 = 同二进制内「协议形态(PREPARE_METHOD + CALL_METHOD) vs 预绑定
+// 形态(先读方法值再调)」对照,差值即不绑定派发可回收的上界。数字与解读见
+// .claude/reference/bytecode/bytecode-instruction-set.md §6.2。计时单位是毫秒级整段运行,
+// best-of-N 循环收在普通函数里(与 lexer_bench 的不抽外壳纪律差异见 lexer-notes §1)。
 //
-// 每行压一种派发形态，迭代次数统一 kIterations（循环体共 1,638,400 次），故 ns/次可跨行比较：
-//   forin_list / forin_range  迭代协议：iter/has_next/next 各一次 `PREPARE_METHOD` + `CALL_METHOD`
-//   starts_with               单方法调用：一次 `PREPARE_METHOD` + `CALL_METHOD`（不涉迭代协议）
-//   instance_call/instance_read  用户类实例方法的调用与**读取**:调用走「类链查表 + 不绑定」,
-//                              读取每次现场绑定(方法值是一等值,必须产出 bound 对象)
-//   instance_operator         用户类算子重载:`a + b`(ADD -> 按名取实现 -> 调用) 对 `a.__add__(b)`
-//                             (名字由常量池给出),两形态只差「名字从哪来」
-//   plain_call                普通函数调用：无 `LOAD_FIELD` 的调用下界
-//   forin_string / forin_map  string 逐码点、map 逐 pair 迭代（每次迭代另有对象分配，非纯派发成本）
-//
-// 前三行是「同一程序两形态」的**同二进制内对照**，本基准的核心手法：
-//   - 协议形态：源码写 `recv.name(args)`（现编译为 `PREPARE_METHOD` + `CALL_METHOD` 两段，零 bound 物化）
-//   - 预绑定形态：先把方法值读到局部（`var nx = it.next`）再调 `nx()`--循环体内零 `LOAD_FIELD`、
-//     零 ObjBoundMethod，即「不绑定派发能达到的下界」。预绑定不是正常写法，只作对照。
-//   两形态算同一个结果（BENCH_CHECK 断言相等），差值 = 每次调用花在 `LOAD_FIELD` + 绑定 + 多一次
-//   dispatch 上的成本，也就是不绑定派发可回收的**上界**（两段式 PREPARE_METHOD + CALL_METHOD 相对两步
-//   形态节省的量;两段式自身的开销见 bytecode-instruction-set.md §6.2）。两侧同处一个二进制，跨构建抖动
-//   （±5-10%，见 lexer-notes §1）不进入差值结论。
-//
-// 计时纪律（同 lexer_bench）：进程内 best-of-N 取最小，不单发进程计时（同一二进制重复运行的抖动在
-// ±1% 内）。本基准的计时单位是「整段 VM 运行」（毫秒级）而非逐 token 的紧循环，故 best-of-N 循环
-// 收在一个普通函数里--lexer_bench 的「不抽模板 + lambda 外壳」针对的是外壳开销与测量单位同量级
-// （逐 token 循环）的情形，此处不适用。
-//
-// 复现须用优化构建（无 LTO，理由同 lexer_bench）：
-//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
-//   cmake --build build/rel --target vm_bench -j
-//   ./build/rel/bench/vm_bench
-// Debug 构建（ASSERT 全开、无内联）下数字成倍偏离，只可对拍行为，程序会自行提示。
+// 复现(无 LTO,理由同 lexer_bench):
+//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
+//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/rel --target vm_bench -j \
+//     && ./build/rel/bench/vm_bench
 
 #include <algorithm>
 #include <chrono>

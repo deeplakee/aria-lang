@@ -65,7 +65,7 @@ TEST(ObjectTryAs, ConstOverload) {
 
 // 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 ctx.fail 入
 // 寄存器后返失败信号 --load 族 nullopt、store 族 false。本测试钉住默认形态(码 + 文案子串)
-// 防将来基类签名漂移。探针取当下仍未 override 的类型:string 探 store_field(ObjString 无
+// 基类签名漂移即红。探针取当下仍未 override 的类型:string 探 store_field(ObjString 无
 // store_field override)、Module 探下标(Module override 了 load/store_field)。算子与可调用
 // 两侧随成员协议走(按钩子名 load_field,措辞由各类型成员协议承担),无独立的基类默认可钉。
 

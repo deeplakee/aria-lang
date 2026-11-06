@@ -169,17 +169,10 @@ namespace {
         return aria::new_function(gc, m, "<main>", 0, 0, false);
     }
 
-    // ---- IMPORT 路径解析测试辅助 ----
-    //
-    // 设计见 .claude/reference/runtime/import-path-resolution.md:IMPORT 把 specifier 解析为命中
-    // 文件的绝对规范路径(weakly_canonical)作模块表键;模块绝对路径 = dir_ + "/" + name_ + ".aria",
-    // run() 把入口模块 dir_ 播种为 source_roots_[0]。
-    //
-    // 测试需:真实临时文件让 exists-check 命中、按解析出的绝对键预注册合成模块入 modules_、
-    // 给模块设 dir_/name_。
-    //
-    // macOS 下 testing::TempDir() 常落在符号链接后(/var -> /private/var),基准须先 weakly_canonical
-    // 规范化,保证预注册键与 resolve_module 输出逐字节一致。
+    // ---- IMPORT 路径解析测试辅助 ----(设计见 import-path-resolution.md;测试需真实临时文件
+    // 让 exists-check 命中、按解析出的绝对键预注册合成模块入 modules_ 并设 dir_/name_。)
+    // macOS 下 testing::TempDir() 常落在符号链接后(/var -> /private/var),基准须先
+    // weakly_canonical 规范化,保证预注册键与 resolve_module 输出逐字节一致。
 
     // 按「套件名_用例名」建独立子目录并返回其规范绝对路径:TempDir() 全程序共享、跨运行不清理,
     // 各测试直接建同路径文件会互相污染(如依赖「lib/math.aria 不存在」的用例);按用例名隔离后
@@ -1112,8 +1105,9 @@ TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {
 }
 
 // M3:模块体 run-once 期间 throw -- unwind 弹 <module> 帧后,导入方 IMPORT 站点所在 try 捕获
-// (外层帧 last_ip = IMPORT 指令,pitfalls 坑 #2),异常值落 catch 参数槽;boomer 半初始化仍在
-// 表中(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 跑完后检视捕获全局(interpret 只回类别)。
+// (外层帧 last_ip = IMPORT 指令,exception-implementation-pitfalls.md 坑 #2),异常值落 catch 参数槽;
+// boomer 半初始化仍在表(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 跑完后检视捕获全局(interpret
+// 只回类别)。
 TEST_F(AriaVMStress, ImportModuleThrowCaughtByImporter) {
 
     vm.set_source_roots({});

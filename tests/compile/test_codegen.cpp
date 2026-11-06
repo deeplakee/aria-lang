@@ -116,7 +116,7 @@ namespace {
         return RunResult{std::move(vm), std::move(result)};
     }
 
-    // 带值取数惯用法（探针函数包裹的理由与五要素）见 test_compiler.cpp 的 run_value 注；
+    // 带值取数惯用法（探针函数包裹的理由）见 test_compiler.cpp 的 run_value 注；
     // 本侧站点：仅取值。钉模块顶层语义（顶层 var 落全局等）的站点走 run_source（不包）。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
@@ -1386,7 +1386,7 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
 // 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表。
 // 单寄存器模型：用户 throw 存原值保类型、运行时错误装箱 ObjException 携码；未捕获物化 Error
 // 并烘焙逐帧堆栈跟踪（内 -> 外，最内帧紧贴消息行）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
-// （pitfalls 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
+// （exception-implementation-pitfalls.md 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
 
 TEST(CodeGen, ThrowIntCaughtBindsValue) {
     // throw 42 被 catch 捕获，e 绑原值保类型（单寄存器模型，坑 #7）。
@@ -1456,7 +1456,7 @@ TEST(CodeGen, NestedTryOuterCatchesInnerRethrow) {
 }
 
 TEST(CodeGen, CrossFrameCatch) {
-    // 跨帧捕获：被调函数 throw，unwind 逐帧 exit_frame 后在调用者帧命中 handler（坑 #13），
+    // 跨帧捕获：被调函数 throw，unwind 纯搜索不动帧栈、在调用者帧命中后一体完成弃帧派发（坑 #13），
     // 截值栈到 frame.slots + stack_depth，异常值 push 落 catch 参数槽。
     auto out = run_value("fun f() { throw \"cross\"; } try { f(); } catch (e) { return e; }");
     ASSERT_TRUE(out.has_value()) << out.error().message();

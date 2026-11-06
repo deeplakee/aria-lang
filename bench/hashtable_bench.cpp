@@ -1,13 +1,10 @@
 // bench/hashtable_bench.cpp
 //
-// HashTable 性能基准:测量 set / find-hit / find-miss / erase 的吞吐,
-// 对比良好哈希(IntHash)与弱哈希(WeakHash,探测链更长),并附非计时正确性校验。
+// HashTable 性能基准:set/find-hit/find-miss/erase 吞吐,良好哈希(IntHash)对比弱哈希(WeakHash,
+// 探测链更长),附非计时正确性校验。仅用 GC 作 Trivial 分配器(不调 new_object),测的是 Swiss
+// Table 本身探测与 rehash 性能,无 GC 噪声。
 //
-// 仅用 GC 作 Trivial 分配器(allocate/deallocate,不触发 GC 回收 -- 本测不调 new_object),
-// 故测的是 HashTable 本身的瑞士表(Swiss Table)探测与 rehash 性能,无 GC 噪声。
-//
-// 构建:cmake --build build --target hashtable_bench -j
-// 运行:./build/bench/hashtable_bench
+// 构建:cmake --build build --target hashtable_bench -j;运行:./build/bench/hashtable_bench
 
 #include <algorithm>
 #include <chrono>

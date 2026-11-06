@@ -166,9 +166,8 @@ namespace {
 
 // --- 分派：每个具体节点类型经 accept() 命中正确的 visitXxxNode ---
 //
-// 覆盖全部 43 个具体节点，验证节点 accept -> visitor.visitXxxNode 的双分派既正确（命中
-// 对应方法）又完备（每个节点类型都实现 accept）。新增节点类型时若未实现 accept 与对应
-// visitXxxNode，本测试编译期即报错。
+// 逐节点经 accept 命中对应 visitXxxNode(RecordingVisitor 持全部 44 个 override);新增节点
+// 类型时若未实现 accept 与对应 visitXxxNode,本测试编译期即报错。
 
 TEST(AstVisitorDispatch, StatementsAndDeclarations) {
     AstArena arena;

@@ -1,34 +1,14 @@
 // bench/lexer_bench.cpp
 //
-// 词法层性能基准：词法吞吐（四种源形态）、端到端编译、位置派生原语、utf8 解码微基准。
-// 这些数字与解读归档在 .claude/reference/compile/lexer-notes.md，本程序是它们的可复现入口--
-// 改 Lexer / SourceLoc / utf8::decode_one 前后各跑一次对照，把新数字回写文档。
+// 词法层性能基准:词法吞吐(四源形态 normal/numeric/cjk/string(_huge),规模与 lexer-notes §2
+// 对应、改规模须同步文档)、端到端编译、位置派生原语、utf8 解码微基准。数字与解读归档在
+// .claude/reference/compile/lexer-notes.md,本程序是可复现入口。计时循环写死原地、不抽
+// 「best-of-N + lambda」外壳(外壳噪声与逐 token 紧循环同量级,缘由与实测见 lexer-notes §1)。
 //
-// 四种源形态各压不同的成本（规模与 lexer-notes §2 的 MB / token 列对应，改规模须同步文档）：
-//   normal   常规代码（多行，注释/字符串/数字混杂）-- 贴近真实源码，压主循环的分派成本
-//   numeric  单行 "1,1,1,…"（约每字节一个 token）-- 放大逐 token 的小分派成本；真实代码无此形态
-//   cjk      多字节为主（标识符/字符串/注释）-- 把成本压到 utf8::decode_one
-//   string   长字符串字面量为主（含多字节与转义）-- 压字符串扫描路径
-//   string_huge 同 string 形态、规模更大 -- 压超大字面量路径（词法期记账 + 消费端解码直写铸串）
-//
-// 端到端编译（Lexer -> Parser -> CodeGen）另量一遍：位置派生的收益要整条链路一起看。
-// 位置派生原语（locate / line_at 的行表缓存）单列一节：它们是「位置只存偏移」这一取舍的依据。
-// utf8 解码微基准供将来的解码重构对照（lexer-notes §5）--decode_one 的消费者含 Lexer、
-// 行表构建与字符串码点遍历等多族,Lexer 只是其一。
-//
-// 计时纪律（两条都是踩过的坑，见 lexer-notes §1）：
-//   - 进程内 best-of-N 取最小，不要单发进程计时（单发易吃相邻工作的干扰,实测数字见 lexer-notes）。
-//   - 每节的计时循环写死在原地，不抽公共的「best-of-N 模板 + lambda」外壳：同一二进制内对照，
-//     外壳本身就会让同一段词法变慢（实测幅度见 lexer-notes），足以掩盖要量的差异。
-//     同理，跨二进制比绝对值要先确认代码布局变了多少。
-//
-// 复现 lexer-notes 的数字须用优化构建（文档各表统一在 -O2 -DNDEBUG、无 LTO 下测得）：
-//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
-//   cmake --build build/rel --target lexer_bench -j
-//   ./build/rel/bench/lexer_bench
-// 两处都有量级：Debug 构建（build/ 默认）下 ASSERT 全开、无内联，数字成倍偏离，只可用于对拍行为；
-// Release 默认开 LTO，跨 TU 内联让词法再快约 15%（同一命令去掉 -DARIA_ENABLE_LTO=OFF 即可对照,
-// 各形态实测幅度见 lexer-notes），故文档各表统一以无 LTO 为基线。
+// 复现(文档各表统一 -O2 -DNDEBUG 无 LTO 基线;Debug 只可对拍行为,LTO 影响见 lexer-notes):
+//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
+//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/rel --target lexer_bench -j \
+//     && ./build/rel/bench/lexer_bench
 
 #include <algorithm>
 #include <chrono>

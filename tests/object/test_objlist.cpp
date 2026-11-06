@@ -85,11 +85,9 @@ namespace {
         return {ex->code(), String{ex->message()->view()}};
     }
 
-    // 算子的实现是 List 类表里的原生方法(钩子键经 new_string 驻留命中取串,皆注册表条目零分配,
-    // 故本函数无需自守):取类表内裸原生值(不绑定;与 VM 侧算子派发读的是同一批类表值)按原生
-    // 契约调用 -- 实参压调用区 [lhs, rhs](lhs 占 self 兼返回槽)。返回结果 Value;失败返
-    // nullopt(载荷已在挂起寄存器)。调用方负责让两侧存活(两侧经 make_list 入根)。端到端路径
-    //(算子指令 -> 取钩子 -> 调用)由语料覆盖(12_collections 拼接/重复各例)。
+    // 算子的实现是 List 类表里的原生方法(钩子键经 new_string 驻留命中取串,注册表条目零分配,
+    // 无需自守):取类表内裸原生值(不绑定)按原生契约调用,实参压调用区 [lhs, rhs];失败返
+    // nullopt(载荷已入寄存器)。两侧经 make_list 入根;端到端由语料覆盖(12_collections)。
     Opt<Value> invoke_list_hook(AriaVM& vm, const StringView hook_key, const Value lhs, const Value rhs) {
         const auto hook = vm.list_class()->load_field(*vm.current_context(), new_string(vm.gc(), hook_key));
         if (!hook) {

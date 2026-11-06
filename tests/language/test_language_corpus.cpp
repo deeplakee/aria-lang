@@ -1,13 +1,6 @@
-// aria 语言脚本级端到端语料 runner：参数化 GTest，语料树内每个 .aria 脚本一个用例。
-// 目录分层、命名、golden/.err 规则与当前禁区见 tests/language/README.md。
-//
-// 判定规则（按脚本相对语料根的路径）：
-//   positive/**                 -> interpret_from_path 须 Ok（脚本内以 assert 自检；
-//                                  存在同名 .out 时 stdout 逐字节精确比对）。
-//   negative/compile_errors/compile_*.aria -> 须 CompileError。
-//   negative/runtime_errors/runtime_*.aria -> 须 RuntimeError。
-//   两类负向均支持同名 .err：存在时 stderr 须包含 .err 每行子串。
-// 路径中任何分量名为 lib 的目录整体跳过（09_modules 的辅助模块只经 import 驱动）。
+// aria 语言脚本级端到端语料 runner:参数化 GTest,语料树内每个 .aria 脚本一个用例。
+// 目录分层、判定规则(positive/.out/compile_/runtime_/.err)与写作规范见 tests/language/README.md。
+// 路径中任何分量名为 lib 的目录整体跳过(09_modules 的辅助模块只经 import 驱动)。
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -44,15 +37,14 @@ namespace {
 
     // 单个语料用例：脚本路径 + 判定所需全部静态信息（collect 期一次备齐，用例体零 IO）。
     struct CorpusCase {
-        String   path;       // 脚本绝对路径（喂给 interpret_from_path）
-        String   rel_path;   // 相对语料根路径（分类依据；失败消息展示）
-        String   name;       // ctest 用例名：rel_path 去 .aria 后缀、/ 换 _
-        CaseKind kind;       // 判定类别
-        bool     has_golden; // positive：存在同名 .out golden（捕获 stdout 比对）
-        String   golden;     // .out 全文（逐字节比对）
-        bool     has_err;    // runtime 负向：存在同名 .err（捕获 stderr 比对）
-        // .err 每行一个子串，全部须出现在 stderr
-        List<String> err_substrings;
+        String       path;
+        String       rel_path;
+        String       name; // ctest 用例名:rel_path 去 .aria 后缀、/ 换 _
+        CaseKind     kind;
+        bool         has_golden;
+        String       golden;
+        bool         has_err;
+        List<String> err_substrings; // .err 每行一个子串,全部须出现在 stderr
     };
 
     // gtest 参数打印：失败消息里展示相对路径即可定位，不倾倒全文。

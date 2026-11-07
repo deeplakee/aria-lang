@@ -1,0 +1,6 @@
+// 辅助模块：这些名字是普通导出，不构成模块对象的内建能力。
+var name = "exported name";
+var calls = 0;
+var unset = nil;
+fun is_a(target) { calls += 1; return "exported is_a"; }
+fun __str__() { calls += 1; return "exported display"; }

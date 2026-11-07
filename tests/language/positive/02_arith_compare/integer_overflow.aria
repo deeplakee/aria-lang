@@ -21,7 +21,7 @@ assert("140737488355328".to_int() == nil);
 fun expect_overflow(operation) {
     var caught = false;
     try { operation(); } catch (error) {
-        assert(error.is_a(Exception));
+        assert(is_a(error, Exception));
         assert(error.message().contains("IntegerOverflow integer result out of range"));
         caught = true;
     }

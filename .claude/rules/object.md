@@ -55,7 +55,7 @@ paths:
 - **① `load_field` / `store_field`**：命名成员的裸查找与写入协议（`load_field` = 裸查找原语：返回命中原值、永不铸 `ObjBoundMethod`、命中零分配；LOAD/STORE_FIELD 族指令统一分派点，VM 不按子类型 switch 分型）。`load_field` 消费方两类：`run_prepare_method`（`PREPARE_METHOD` 的成员解析缝，解析先于实参求值）与 VM 侧算子/调用派发（按编译期选定的钩子名取 `__add__`/`__neg__`/`__call__` 等，见 ②）。override：`ObjInstance` / `ObjClass` / `ObjModule` / `ObjException` / 函数族（closure/nativefn/boundmethod，纯透传形态）与内置集合 / 迭代器（见下）。
 - **①′ `load_field_bound`**：命名成员读取的**绑定形态**（同一趟裸查找命中后按宿主决定绑定：实例 fields 命中原样直读、类链命中经 `is_method` 现场绑；内置容器/迭代器/异常无条件绑）。消费方 = `run_load_field`/`run_load_this_field`（LOAD_FIELD/LOAD_THIS_FIELD 的统一执行体）。**基类默认 = 直接委托 `load_field`**（类/模块等读取本就不绑定，照取命中原值，未 override 类型读行为即裸查找）。
 - **①' `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `ctx.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。
-- **①″ 魔术咨询口 `load_field_from_class`**：从所属 class 起查的成员载入（**值本地状态出局**：实例 fields / 模块 globals 等不参与）；错误契约同 `load_field`（nullopt ⟺ 已 fail），miss 措辞按宿主类型就地烘焙。它是成员读的**缺席腿**：`load_field = 本地值态命中 + 本口缺席腿`（两缝的公共底座，基类不再提供跨类型通用查体）。override 族映射在各宿主 override 内静态定型（无运行期 switch）：`ObjInstance` 自 `class_` 模板链、类值自 `Class` 元类链、内建/函数族/模块/协程自各自 bootstrap 单例链、不可达为值的类型落基类 `UNREACHABLE`。
+- **①″ 魔术咨询口 `load_field_from_class`**：从所属 class 起查的成员载入（**值本地状态出局**：实例 fields / 模块 globals 等不参与）；错误契约同 `load_field`（nullopt ⟺ 已 fail），miss 措辞按宿主类型就地烘焙。实例与内建对象可将它用于成员读的类链腿；module/class 的普通成员缺席不再委托本口。override 族映射在各宿主 override 内静态定型（无运行期 switch）：`ObjInstance` 自 `class_` 模板链、类值自 `Class` 元类链、内建/函数族/模块/协程自各自 bootstrap 单例链、不可达为值的类型落基类 `UNREACHABLE`。
 - **② 算子与调用派发**：VM 侧按**编译期选定的钩子名**（`runtime/str_table.hpp` 注册表拼写）经**魔术咨询口** `load_field_from_class` 取实现（实例 fields 遮蔽出局），取到后按调用形态调（调用区槽 0 保持 receiver）。站点：`run_binary_operator<Op>` 的 `get_obj_binary_op_impl<Op>`（九个二元算子，Op -> `__add__` 等的映射是 if-constexpr 编译期链）、`run_negate`（`__neg__`）、`call_value` switch `default` 臂（`__call__`，取到后用**同一调用区**递归分发，`[callee, a1..aN]` 恰是 `[this, args]`）与显示咨询（`__str__`，住 `Eval::stringify`，重入，见 runtime.md「显示渲染与外部调用」）。咨询源同前：内置容器查自身 bootstrap 类链、类值走元类链（自身模板表结构性不可达）；miss 均落宿主咨询口的类措辞（`UndefinedProperty`；非对象 callee 仍报 `CallNonCallable`）。取实现恒走裸读零分配（与 `PREPARE_METHOD` 同形），绑定形态只属 `load_field_bound` 的值读取路径。
 - 钩子名是**语言级事实**（拼写注册表 `runtime/str_table.hpp`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
 - **钩子自指/成环不兜底**（拍板）：自指环经**类表条目**可达（实例 fields 已出局）--类上静态 `Box.__call__ = <实例>` 一类条目让咨询取到会再触发的值，无穷重 `call_value` 直至 C++ 栈溢出（SIGSEGV，无错误消息；`__str__` 自渲染不同，经重入口计数受嵌套深度上限折断报 `StackOverflow`）。按「手写死循环同类」处理、后果由使用者承担--不加自指检测、不改查找路径。
@@ -139,3 +139,9 @@ paths:
 - `switch (obj->type())` 臂内等静态已知场合用 `obj->as<T>()`（NDEBUG 裸 cast 不校验）；多分支枚举分派（如 `Eval::call_value`）天然合理，保留枚举写法。
 - **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。三件套是 Object 的成员模板，子类型禁定义同名成员（成员调用从派生类作用域起查找，同名即遮蔽）。
 - 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `v.as_obj()->is/as<X>()`。
+
+## 成员访问分离 P1（当前范围）
+
+module 的普通 load_field 只查 globals，class 只查本类及父类模板表，miss 就地 fail，不回退到 Module/Class 类链。隐式钩子仍走 load_field_from_class，模块 globals 与类自身模板表不参与其对象身份的隐式查询。结构检查由全局 is_a/is_subclass 使用 Builtin.cpp 内部的纯结构查询实现；Object 删除内建 is_a。
+
+本批未修改 load_field_bound、方法戳、原生函数表示或 PREPARE_METHOD/CALL_METHOD 栈形；成员绑定与未绑定方法调用的统一留待 P2。

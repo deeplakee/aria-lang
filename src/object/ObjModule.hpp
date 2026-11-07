@@ -74,9 +74,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 命名成员读取 override:globals_ 值态先行;miss 喂类命名空间(Module 链),再 miss 以
-        // 模块措辞 fail(文案逐字保留)。函数值为闭包恒非方法不绑定 this,nil 绑定与「无此成员」
-        // 由 find 空态区分。
+        // 普通成员仅查 globals_,不回退到 Module 类链;命中 nil 与缺席分开,值原样返回。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 

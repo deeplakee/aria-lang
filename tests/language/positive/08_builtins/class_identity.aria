@@ -1,0 +1,40 @@
+// 钉住：外部身份检查与模板继承分离，原始值与用户同名成员不污染结构查询。
+def Base {}
+def Derived : Base {}
+def Other {}
+assert(is_subclass(Derived, Base));
+assert(is_subclass(Derived, Derived));
+assert(is_subclass(Base, Object));
+assert(!is_subclass(Base, Derived));
+assert(!is_subclass(Derived, Other));
+assert(is_subclass(List, Object));
+assert(is_a(Derived, Class));
+assert(!is_a(Derived, Base));
+assert(is_a(Derived(), Base));
+assert(!is_a(nil, Object));
+assert(!is_a(false, Object));
+assert(!is_a(1, Object));
+assert(!is_a(1.5, Object));
+var check = is_a;
+assert(check([], List));
+var relation = is_subclass;
+assert(relation(Derived, Base));
+
+var calls = 0;
+def Pretend {
+    is_a(target) { calls += 1; return false; }
+}
+var value = Pretend();
+assert(is_a(value, Pretend));
+assert(calls == 0);
+assert(!value.is_a(Pretend));
+assert(calls == 1);
+
+// 普通类成员不跨入 Class 元类链；同名 nil 仍是模板成员命中。
+Class.metadata_only = 7;
+var caught = 0;
+try { var missing = Derived.metadata_only; } catch (error) { caught += 1; }
+assert(caught == 1);
+Derived.metadata_only = nil;
+assert(Derived.metadata_only == nil);
+assert(Class.metadata_only == 7);

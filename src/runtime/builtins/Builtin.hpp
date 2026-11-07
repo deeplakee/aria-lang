@@ -18,7 +18,7 @@ namespace aria {
         NativeFn   fn;
     };
 
-    // 全局内建面宿主:六原生与私有表住同名 .cpp,公有面 = 类表装载底座加编排口 register_builtins
+    // 全局内建面宿主:实现与私有表住同名 .cpp,公有面 = 类表装载底座加编排口 register_builtins
     //(AriaVM ctor 在 set_vm_roots 后调用一次)。
     class Builtin {
     public:

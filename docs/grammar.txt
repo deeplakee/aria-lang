@@ -261,7 +261,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   体内裸名解析顺序：局部变量 -> upvalue -> 模块全局（类静态不在裸名作用域，经 ClassName.x）。
 #   Foo(args) 实例化；实例方法经
 #   superclass（":" expression，运行期求值）链继承，super.m(...) 仍可用。外部访问：Foo.x 取/设静态成员；
-#   foo.x 先查实例自身属性，未命中再回退静态成员（实例属性遮蔽同名静态成员）。静态/实例方法
+#   Foo.x 只查模板继承链，不回退 Class 元类；foo.x 先查实例自身属性，未命中再查类成员。静态/实例方法
 #   区分、访问顺序与遮蔽语义属编译期/VM 范畴，文法不编码（仅约束 member 的三种起首写法）。
 #   静态成员继承（编译期/VM 语义，文法不编码）：静态变量与静态方法经 superclass 链继承，
 #   取 Python/JS class attributes 式读穿透、写遮蔽：子类未重声明时
@@ -284,8 +284,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #   作用域模型（编译期/VM 语义，文法不编码，Python/JS 路子）：
 #   - 模块 = 命名空间（非类）：文件是一个模块，顶层 var/fun/class 是模块级绑定（模块全局），
 #     不是某个类的静态；顶层可执行语句编进模块体，导入时跑一次。模块存于 VM 内部模块表。
-#   - ObjClass 单指针：super（继承）；无 meta 元类（YAGNI）。根：
-#     Object（super=nil，继承终止）。
+#   - ObjClass 的 superclass 表达模板继承，链根 Object（super=nil）。Class bootstrap 元类表达
+#     类对象的真实所属类型，不参与 Foo.x 的普通查找；不支持用户可定义元类。
 #   - 裸名解析：局部（LOAD_LOCAL）-> upvalue（LOAD_UPVALUE）-> 模块全局（LOAD_GLOBAL，
 #     运行期查模块全局表）。不走 enclosing+super，不查类静态--类静态不在裸名作用域。未命中
 #     报错。裸名只看局部、upvalue、模块全局。
@@ -342,8 +342,17 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     不隐式绑定 this）；嵌套导入的模块本身也是成员（`H.Inner.tag`）。成员**只读**：越模块
 #     写报运行期 TypeMismatch（`H.x = v` 会隐式创建他人未声明全局，与「赋值不隐式创建」冲突），
 #     暴露可变状态由模块自己的函数承担（模块内写自己的全局不受限）。未声明的名不是成员，
-#     读它报 UndefinedProperty；循环导入的半初始化模块只影响尚未执行到的绑定（读它同报
+#     读它报 UndefinedProperty，不回退 Module/Object 类链；同名导出 is_a/name/__str__ 合法。
+#     str(module) 仍从 Module 类查询显示钩子，不读取 globals。
+#     循环导入的半初始化模块只影响尚未执行到的绑定（读它同报
 #     UndefinedProperty，可 catch）。
+#
+# 对象结构检查（内置函数，不新增文法）：is_a(value, target) 按真实所属类链判定，
+# target 必须是类；实例自其 klass 起查，类值自 Class 起查，模块自 Module 起查，其他对象自
+# 对应 bootstrap 类起查。nil/bool/数字返回 false，但非法 target 仍先报 TypeMismatch。
+# is_subclass(derived, base) 两参须是类，沿 derived 自身与 superclass 链判定，包含自身。
+# 两项操作恰收两参，不读取用户同名成员或执行用户代码；Object 不再提供内建 is_a 方法。
+# 成员绑定及调用机制保持本批之前的行为，未绑定方法显式接收者等规则待 P2 实施。
 #
 # 协程（编译期/VM 语义，文法不编码）：内建类 Coroutine（builtins 表按类名直接可达、可作一等值）
 # 提供四个类方法 create/resume/yield/status，非关键字--Coroutine.resume(co, v) 就是普通成员调用

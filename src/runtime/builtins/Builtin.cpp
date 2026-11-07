@@ -6,6 +6,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
+#include "object/ObjInstance.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/Eval.hpp"
@@ -19,6 +20,54 @@ namespace aria {
 
     namespace {
 
+        // 结构查询直接读取真实归属，不执行普通成员访问或用户钩子。
+        [[nodiscard]]
+        ObjClass* class_of(const AriaExeContext& ctx, const Value value) noexcept {
+            if (!value.is_obj()) {
+                return nullptr;
+            }
+            switch (value.as_obj()->type()) {
+                case ObjType::INSTANCE:
+                    return value.as_obj()->as<ObjInstance>()->klass();
+                case ObjType::CLASS:
+                    return ctx.class_class();
+                case ObjType::MODULE:
+                    return ctx.module_class();
+                case ObjType::CLOSURE:
+                    return ctx.closure_class();
+                case ObjType::NATIVE_FN:
+                    return ctx.native_fn_class();
+                case ObjType::BOUND_METHOD:
+                    return ctx.bound_method_class();
+                case ObjType::MOVEMENT:
+                    return ctx.coroutine_class();
+                case ObjType::EXCEPTION:
+                    return ctx.exception_class();
+                case ObjType::LIST:
+                    return ctx.list_class();
+                case ObjType::MAP:
+                    return ctx.map_class();
+                case ObjType::STRING:
+                    return ctx.string_class();
+                case ObjType::RANGE:
+                    return ctx.range_class();
+                case ObjType::ITERATOR:
+                    return ctx.iterator_class();
+                default:
+                    UNREACHABLE();
+            }
+        }
+
+        [[nodiscard]]
+        bool is_subclass_of(const ObjClass* const derived, const ObjClass* const base) noexcept {
+            for (auto klass = derived; klass != nullptr; klass = klass->superclass()) {
+                if (klass == base) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // 内置原生函数实现
 
         // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
@@ -29,6 +78,38 @@ namespace aria {
             }
             const auto name = new_string(ctx.gc(), type_name(info[0])); // 静态名 intern,无 GC 风险
             info.set_return_val(Value::from_obj(name));
+            return true;
+        }
+
+        // is_a(value, target):检查真实所属类链,原始值无所属类而返回 false。
+        bool fn_is_a(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 2) {
+                return ctx.arity_error(argc, 2);
+            }
+            const auto target = try_as_obj<ObjClass>(info[1]);
+            if (target == nullptr) {
+                return ctx.fail(ErrorCode::TypeMismatch, "argument must be a class, got {}", type_name(info[1]));
+            }
+            info.set_return_val(Value::from_bool(is_subclass_of(class_of(ctx, info[0]), target)));
+            return true;
+        }
+
+        // is_subclass(derived, base):模板继承关系包含自身,与类值的 Class 身份分开。
+        bool fn_is_subclass(const NativeCallInfo& info) {
+            auto& ctx = info.ctx();
+            if (const auto argc = info.size(); argc != 2) {
+                return ctx.arity_error(argc, 2);
+            }
+            const auto derived = try_as_obj<ObjClass>(info[0]);
+            if (derived == nullptr) {
+                return ctx.fail(ErrorCode::TypeMismatch, "argument must be a class, got {}", type_name(info[0]));
+            }
+            const auto base = try_as_obj<ObjClass>(info[1]);
+            if (base == nullptr) {
+                return ctx.fail(ErrorCode::TypeMismatch, "argument must be a class, got {}", type_name(info[1]));
+            }
+            info.set_return_val(Value::from_bool(is_subclass_of(derived, base)));
             return true;
         }
 
@@ -121,8 +202,8 @@ namespace aria {
 
         // 内置全局函数表。
         constexpr BuiltinFnEntry kBuiltinFns[] = {
-                {"type", fn_type},     {"str", fn_str},     {"println", fn_println},
-                {"assert", fn_assert}, {"clock", fn_clock}, {"Error", fn_Error},
+                {"type", fn_type},   {"str", fn_str},     {"println", fn_println}, {"assert", fn_assert},
+                {"clock", fn_clock}, {"Error", fn_Error}, {"is_a", fn_is_a},       {"is_subclass", fn_is_subclass},
         };
 
         // 全局面函数装载口:按名写入给定 builtins 表;须在构造临界区(GC 挂起)内调用 -- 白色对象

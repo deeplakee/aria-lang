@@ -98,7 +98,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - **list `+`/`*` 算子**（拼接/重复）：`+` 两侧皆 `List` 产浅拷新表（嵌套容器按元素共享）、源表
   不动；`*` 按整数次数重复，乘数校验同 string（严格 Int、负数报错）；`+=`/`*=` 复合赋值重绑
   新值不原地改（与 push 的就地语义相对照），见 12_collections/list_concat、list_repeat。
-- **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），成员只读、写报
+- **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），只查 globals、不回退 Module/Object，成员只读、写报
   `TypeMismatch`；09_modules 直接经 `H.x` 观察辅助模块。
 - **list 方法面**（push/pop/insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/
   join/iter）：变更方法一律就地改、返 nil；`remove` 例外（移除**全部** `==` 命中元素、返命中布尔，
@@ -129,7 +129,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - **Exception 面**（07_exceptions）：运行期错误装箱对象与 `Error(msg[, code])` 工厂产物有
   `message()`/`code()` 方法（完整烘焙消息 / 错误码数字：VM 报错 = 注册表序号，Error 码参
   收整数原样携带，非整数报 `TypeMismatch`）；裸名 `Exception` 可被子类化（实例是普通
-  ObjInstance，字段自管，`type` 恒 `"Instance"`）；根类方法 `x.is_a(类)` 沿继承链判归属
+  ObjInstance，字段自管，`type` 恒 `"Instance"`）；外部函数 `is_a(x, 类)` 按真实所属类链判归属
   （实例/异常/内置容器/类接收者同走一路，目标位须类值非类报 `TypeMismatch`）。
 
 ## 如何新增用例

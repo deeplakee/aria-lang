@@ -4,7 +4,7 @@
 消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语法产生式以
 [docs/grammar.txt](../grammar.txt) 为准；语义设计见 `.claude/reference/`。
 
-## 全局内建函数（6 个）
+## 全局内建函数（8 个）
 
 | 函数 | 元数 | 行为 |
 | :--- | :--- | :--- |
@@ -14,6 +14,8 @@
 | `assert(cond[, msg])` | 1..2 | cond 为真返回 nil；为假抛 `AssertionFailed`。msg 为字符串时进错误消息，非字符串静默忽略 |
 | `clock()` | 0 | 返回 f64 单调时钟秒数。**只有两次读数相减有意义**（起点未规定），用于自测耗时 |
 | `Error(message[, code])` | 1..2 | 造一个异常对象（`type == "Exception"`）：`message` 为所给字符串原样；`code` 可选，整数错误码原样携带（`e.code()` 即其值）；实参类型不符报 `TypeMismatch`（见[异常章](14-exceptions.md)） |
+| `is_a(value, target)` | 2 | target 必须为类；按 value 的真实所属类链检查身份，不读取用户成员；原始 nil/bool/数字返回 false |
+| `is_subclass(derived, base)` | 2 | 两参必须为类；检查 derived 自身及父类链是否包含 base，包含自身，不执行用户代码 |
 
 全部内建都是一等值，可以存进变量、当参数传。用户在模块顶层 `var` 同名绑定会遮蔽内建
 （名字解析先查模块全局、再回退内建表），但别这么干。
@@ -43,6 +45,10 @@
 | `Coroutine.status(co)` | 1 | 返回状态拼写串：`"suspended"` / `"running"` / `"normal"` / `"done"` / `"failed"` |
 
 `co` 非协程报 `TypeMismatch`（`create` 对应报 fn 非函数）。
+
+## 模块与类的成员范围
+
+模块点号只查顶层绑定，类点号只查自身及父类的声明成员，均不回退到 Module/Class 的对象能力面。类型归属与类继承关系使用上述外部函数。
 
 ## string 方法面（18 个 + 6 个算子钩子）
 

@@ -150,7 +150,7 @@ TEST(ObjClosure, UnrootedClosureSwept) {
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-// 类面接入:闭包成员读经 Closure 链命中根(is_a/__str__ 原生可及),miss 以类措辞报。
+// 类面接入:闭包成员读经 Closure 链命中根(__str__ 原生可及),miss 以类措辞报。
 TEST(ObjClosure, ChainMembersResolvable) {
     aria::AriaVM vm;
     auto&        gc    = vm.gc();
@@ -160,9 +160,9 @@ TEST(ObjClosure, ChainMembersResolvable) {
     auto closure = new_closure(gc, fn);
     guard.push(closure);
 
-    const auto is_a_key = new_string(gc, "is_a");
-    guard.push(is_a_key);
-    const auto hit = closure->load_field(*vm.current_context(), is_a_key);
+    const auto display_key = new_string(gc, "__str__");
+    guard.push(display_key);
+    const auto hit = closure->load_field(*vm.current_context(), display_key);
     ASSERT_TRUE(hit.has_value());
     EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>()); // 沿 Closure 链继承根原生
 

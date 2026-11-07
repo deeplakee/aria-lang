@@ -57,12 +57,11 @@ namespace aria {
     }
 
     Opt<Value> ObjModule::load_field(AriaExeContext& ctx, ObjString* name) {
-        // 全库同一条定序:先查自己的值态(globals 表);miss 缺席腿在本口(链上覆写/根成员即时
-        // 生效,模块措辞随其烘焙 -- 文案逐字保留)。
+        // 模块点号只访问顶层绑定,不回退到 Module/Object 的能力面。
         if (const auto entry = globals_.find(Value::from_obj(name))) {
             return entry->value;
         }
-        return load_field_from_class(ctx, name);
+        return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", repr(), name->view());
     }
 
     bool ObjModule::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {

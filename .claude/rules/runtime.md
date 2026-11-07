@@ -103,7 +103,7 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 
 指令 case 与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 case 语义见 `Eval.cpp` dispatch_loop（case 注释即契约）。本层只需记住的跨文件约定：
 
-- **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert/clock/Error 与 Exception 类经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
+- **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert/clock/Error/is_a/is_subclass 与 Exception 类经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
 - **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`：非对象左值委托 `run_binary_numeric<Op>`，对象左值经 `get_obj_binary_op_impl<Op>` 按编译期选定的钩子名走**魔术咨询口** `load_field_from_class` 取实现（值本地状态出局，见 object.md ①″；miss 措辞随各宿主咨询口烘焙），取到后 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`），取不到即已 fail。`+` 与四个比较算子的域 = 数值 ∪ String（String 的拼接经驻留池、比较按无符号字节序，见 object.md ②）。
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：callable 收敛为闭包（`ObjFunction` 退为常量池内部物），`call_value` 编排后按 callee 类型分发到 `call_closure`/`call_native`/`call_class`/`call_bound_method`，其余对象类型按调用钩子 `__call__` 经魔术咨询口取实现后递归分发（值本地状态出局）。
@@ -167,7 +167,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 - 各 `XxxClass::make_class` 是该内建类的唯一构造口（建类 + 装载方法面；挂 super 族 = Exception/Iterator/String/List/Map/Range，ObjectClass 建根类无 super）；返回白色对象，发布进根由调用点承担（工厂守卫原则见 object.md）。
 - 迭代器族方法（`list/map/range/string` 的 `iter()` 与 `map.keys()` 等）：receiver 留槽 0 于栈根、白色产物建成即写回槽发布，中间无 GC 点。
 
-- **ctor 编排**：ctor 期 `bootstrap_registers()` 内编排--先十三类格位（构造均经宿主类 `XxxClass::make_class`：七 bootstrap 类（Object 根类唯一 super 为空、其余以它作 super）+ 函数族/Module/Class 六个零表单例类，见 object.md「内置类型的成员面」）与印章/兜底异常两单例，末 `builtins_` 曝光（十三类全量裸名曝光）。Object 根类方法面 no-op init + `is_a` + `__str__`（默认原生 = 渲染接收者自身 `repr`；`is_a` 为类链归属判定：实例自 class_、函数族/模块/协程自各自单例链（vm 访问器，对象不持类指针）、类接收者自元类链，沿 super 指针同一比对）；Exception 构造与方法面装载经宿主类 `ExceptionClass::make_class`，方法面 init/message/code--默认 init 落 `_message`/`_code` 字段（键经常量串注册表），face 按接收者分派：ObjException 经 `vm.exception_class()` 委托触达读原生成员、链上实例 `load_field` 读同名字段（自有 init 违约未落字段即类措辞 `UndefinedProperty`），经 `builtins_` 的 "Exception" 键裸名可达，用户可继承；List/Iterator/Map/String/Range（`ObjClass(super=Object 根)`）方法面住 `runtime/builtins/`，方法体与方法表在各 .cpp 匿名命名空间（方法面是 VM 侧语言面、object 层保持纯表示），入各值寄存器格。
+- **ctor 编排**：ctor 期 `bootstrap_registers()` 内编排--先十三类格位（构造均经宿主类 `XxxClass::make_class`：七 bootstrap 类（Object 根类唯一 super 为空、其余以它作 super）+ 函数族/Module/Class 六个零表单例类，见 object.md「内置类型的成员面」）与印章/兜底异常两单例，末 `builtins_` 曝光（十三类全量裸名曝光）。Object 根类方法面 no-op init + `__str__`（默认原生 = 渲染接收者自身 `repr`）；原有 is_a 判定迁移到全局 is_a(value, target)，另提供 is_subclass(derived, base) 区分模板继承与类值身份；Exception 构造与方法面装载经宿主类 `ExceptionClass::make_class`，方法面 init/message/code--默认 init 落 `_message`/`_code` 字段（键经常量串注册表），face 按接收者分派：ObjException 经 `vm.exception_class()` 委托触达读原生成员、链上实例 `load_field` 读同名字段（自有 init 违约未落字段即类措辞 `UndefinedProperty`），经 `builtins_` 的 "Exception" 键裸名可达，用户可继承；List/Iterator/Map/String/Range（`ObjClass(super=Object 根)`）方法面住 `runtime/builtins/`，方法体与方法表在各 .cpp 匿名命名空间（方法面是 VM 侧语言面、object 层保持纯表示），入各值寄存器格。
 
 ### `load_module`：模块加载与入表
 
@@ -192,7 +192,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 - 自有 `GC gc_`（值成员，每 VM 一个）+ 当前执行上下文 `current_`（`ObjMovement*`，dispatch_loop/`call_value` 族/raise 的作用对象；ctor 首笔 GC 分配、随 `~GC` 的 `free_all_` 释放，内部与 previous_ 链经 `ObjMovement::trace` 级联。主上下文 = 其初值，无独立成员，由 `run()` 入口锚 + 出口断言钉住。M6 单循环切换模型：resume/yield 为原生函数、CALL 善后点换指、循环重入只走重入口（ctx `execute_closure`/`execute_method`），任何时刻取指执行字节码的循环唯一、正在执行的字节码所在上下文恒等于 `current_`）。
 - 模块表 `modules_`（`AriaHashTable`，键 = 规范路径 `ObjString*` intern、值 = `ObjModule*`，均装箱为 `Value`）。
-- VM 级只读 builtins 表 `builtins_`（构造期由 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error，另经 bootstrap 挂十三个内建类裸名（键 = 类 name() 的 PascalCase：Object/Exception/Iterator/List/Map/String/Range/Closure/NativeFn/BoundMethod/Module/Coroutine/Class，Exception 即用户异常基类、可被子类化，协程原语在 Coroutine 类面、无独立合成模块），全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
+- VM 级只读 builtins 表 `builtins_`（构造期由 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂十三个内建类裸名（键 = 类 name() 的 PascalCase：Object/Exception/Iterator/List/Map/String/Range/Closure/NativeFn/BoundMethod/Module/Coroutine/Class，Exception 即用户异常基类、可被子类化，协程原语在 Coroutine 类面、无独立合成模块），全 VM 共享，`LOAD_GLOBAL` 模块 globals 未命中后回退查此）。
 - 源根列表 `source_roots_`（`List<String>`，`[0]` = 入口槽 cwd 占位/`run()` 换入口 `dir_`、`[1..]` = 配置根 stdlib；`set_source_roots` 可整体替换 [1..]，当前消费者仅测试--隔离 stdlib 或注入测试根，CLI 暂无配置通道）与值寄存器组 `registers_`（`List<Object*>`，bootstrap 类与印章/兜底异常两单例的统一存放表，构造期按表长预置格、bootstrap 按 `k<名字>Offset` 具名格位填、填完经 `assert_slots_filled` 收口，注册表见 `runtime/value_register.hpp`--单例段/类段两子表直展开，九格访问器与类曝光的生成源，寄存器只读）。
 - 常量串表 `str_table_`（`List<ObjString*>`，VM 自己按名取用的字符串常量的唯一存放处，注册表见 `runtime/str_table.hpp`）：构造期按表长预置格、bootstrap 按下标（表序）逐格 `new_string` 填入，填完经 `assert_slots_filled` 收口；tracer 一趟 `mark_object` 标根--**驻留池是 weak root，不标根则下轮 collect 即摘除**（算子钩子名尤其如此：实例算子派发每次都要一个稳定的 `ObjString*`，不标根就退化成每轮重铸）。同家族成员 = 单字符常量表 `char_cache_[256]`（direct-mapped 字节值即下标，bootstrap_char_cache 启动期一次铸满填全字节域、同一构造临界区；`char_string(u8)` 纯读访问器 + tracer 同循环标根--s[i]/chars()/iterator 的逐字符产出经它直取，免逐铸一遍哈希+池探测+memcmp；look-aside 一致性：常量表只回经池驻留的对象，其它铸造路径经池恒同对象）。消费点分两路：字面量经 `ctx.str<"__add__">()` 编译期定下标（static_assert 校验，热路径）；运行期键（coroutine status）经 `new_string` 驻留命中取串（零分配，冷路径），bootstrap 期钩子名经 `new_native_fn` 同池驻留由本表锚保命中。注册表的**成员判据**：只收 VM 自己按名取用的串--代码里写下的常量名（字段/方法名）不进此表，那些编进常量池经 `ObjFunction::trace` 已可达。**钩子名命名**：前后双下划线避撞用户标识符，十二个钩子名覆盖九个二元算子、一元取负、调用与显示钩子（`__str__`），`/` 无 `//` 形态故拼 `__div__`。
 - 构造时把 VM 根 tracer 经 `gc_.set_vm_roots` 注册进自有 GC（组合而非继承：GC 不识 VM 类型），于构造临界区（`make_lock` 挂起 GC，窗口内创建免守卫、解锁前对象须全部发布进 tracer 可达之家）内 bootstrap 常量串表 + registers 并注册 builtins（常量串表须先于 registers：算子钩子名经驻留铸造，读的是本表锚定的池条目）。
@@ -231,3 +231,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 ### finally 不支持
 
 善后后继 defer 已降为可选后续、不绑定里程碑：`finally` 回归普通标识符；try 无 catch 报 `TryWithoutHandler`（消息 `'try' requires a catch clause`）。
+
+### 成员访问分离 P1
+
+Builtin.cpp 匿名命名空间内的辅助函数提供 class_of(ctx, value) 与 is_subclass_of(derived, base) 的纯结构查询：原始值无所属类，类对象属于 Class，模块属于 Module。全局 is_a 先校验 target，再判 value 所属类链；is_subclass 独立校验两参并从 derived 自身查 superclass。两者都不执行普通成员访问。module/class 的普通 load_field 不回退所属类型链，隐式钩子查询保持原路径。Eval、NativeCallInfo、协程与两段式调用机制均未在 P1 修改。

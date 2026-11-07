@@ -264,20 +264,29 @@ TEST(ObjModule, StoreFieldRejectedAsReadOnly) {
     EXPECT_EQ(m->globals().find(Value::from_obj(key)), nullptr); // 拒绝不留痕
 }
 
-// 类命名空间缺省腿:模块 globals 缺席的条目沿 Module 链命中根(is_a/__str__ 原生可及);
-// globals 命中恒先行,符号表遮蔽不受影响。
-TEST(ObjModule, ChainFallbackResolvesRootMembers) {
-    AriaVM vm;
-    auto&  gc    = vm.gc();
-    auto   guard = gc.make_guard();
-    auto   m     = make_module(gc, "helper");
-    guard.push(m);
+// 模块普通访问不回退到 Module/Object;隐式所属类查询与 globals 分离。
+TEST(ObjModule, NamespaceDoesNotFallBackToClass) {
+    AriaVM     vm;
+    auto&      gc     = vm.gc();
+    auto       guard  = gc.make_guard();
+    const auto module = make_module(gc, "helper");
+    guard.push(module);
+    const auto key = new_string(gc, "__str__");
+    guard.push(key);
 
-    for (const char* name: {"is_a", "__str__"}) {
-        const auto key = new_string(gc, name);
-        guard.push(key);
-        const auto hit = m->load_field(*vm.current_context(), key);
-        ASSERT_TRUE(hit.has_value());
-        EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>()); // 沿 Module 链继承根原生
-    }
+    EXPECT_FALSE(module->load_field(*vm.current_context(), key).has_value());
+    const auto [code, message] = take_pending_error(vm);
+    EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <module helper> has no member '__str__'");
+    const auto hook = module->load_field_from_class(*vm.current_context(), key);
+    ASSERT_TRUE(hook.has_value());
+    EXPECT_TRUE(hook->as_obj()->is<aria::ObjNativeFn>());
+
+    module->globals().set(Value::from_obj(key), Value::nil_val());
+    const auto own = module->load_field(*vm.current_context(), key);
+    ASSERT_TRUE(own.has_value());
+    EXPECT_TRUE(own->is_nil());
+    const auto unchanged = module->load_field_from_class(*vm.current_context(), key);
+    ASSERT_TRUE(unchanged.has_value());
+    EXPECT_TRUE(unchanged->as_obj()->is<aria::ObjNativeFn>());
 }

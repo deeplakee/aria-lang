@@ -6,7 +6,7 @@ assert(a.size() == 3);
 assert(a[0] == 1 && a[2] == 3);
 a.push(4);
 assert(a.size() == 4);
-assert(a.is_a(List));
+assert(is_a(a, List));
 assert(List().is_empty());
 assert(List([1], 2).size() == 2); // 元素任意值，list 实参是单个元素不展开
 
@@ -16,7 +16,7 @@ assert(m.is_empty());
 m["k"] = 1;
 assert(m["k"] == 1);
 assert(m.size() == 1);
-assert(m.is_a(Map));
+assert(is_a(m, Map));
 
 // Range：1 元等价 1...（无上界）、2 元等价 1...5（不含上界）
 var sum = 0;

@@ -39,10 +39,11 @@ Class
 - 实例字段**动态**：`this.name = name` 这一句既是「创建」也是「赋值」，不需要提前声明。
 - 方法可以带默认参数与 varargs（第 4 章语法原样适用，`this` 占槽 0 不参与收集）。
 - `type()` 对一切实例返回 `"Instance"`、对类本身返回 `"Class"`，不区分类名。
-- 每个对象都有一个继承自 `Object` 的方法 `is_a(类)`：沿自己的继承链判定归属，子类命中
-  以父类型提出的询问（`d.is_a(Base)`），类本身也可作接收者（`Derived.is_a(Base)` 即
-  「Derived 继承自 Base」）。七个内建类 `Object`/`Exception`/`Iterator`/`List`/`Map`/
-  `String`/`Range` 以内建名直接可达，内置值同判（`[1, 2].is_a(List)`、`"s".is_a(Object)`）；
+- 外部函数 `is_a(value, 类)` 检查对象的真实所属类链：`is_a(d, Base)` 对子类实例为真；
+  `is_a(Derived, Class)` 为真，`is_a(Derived, Base)` 为假。类继承关系使用
+  `is_subclass(Derived, Base)`，包含自身。两项操作都不读取用户同名成员。
+- 内建类以内建名直接可达，内置值同判（`is_a([1, 2], List)`、`is_a("s", Object)`）；
+  原始 nil/bool/数字不在 Object 类链中，`is_a(1, Object)` 返回 false。
   用法见[异常章](14-exceptions.md)的自定义异常分类。
 
 ## this：沿外围就近捕获
@@ -164,7 +165,9 @@ m
 cm
 ```
 
-静态成员可以事后动态添加（`Foo.anything = v;` 直接写上就是）。跨类访问都是
+`Foo.x` 只查 Foo 自身与父类的声明成员，不在缺席时转查 Class 元类；
+类对象自身的身份用 `is_a(Foo, Class)` 检查。静态成员可以事后动态添加
+（`Foo.anything = v;` 直接写上就是）。跨类访问都是
 `类名.名字` / `实例.名字`，没有 import 之外的可见性修饰。
 
 ## 绑定方法

@@ -62,8 +62,7 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 命名成员读取 override:模板链读穿透直读,不绑定不缓存(类路径无 this);miss 喂类命名
-        // 空间(Class 元类链),再 miss 以类措辞 fail,该 fail 装箱是唯一分配点。
+        // 普通成员只沿模板链读穿透,不绑定不缓存;miss 就地报错,不回退到 Class 元类链。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 

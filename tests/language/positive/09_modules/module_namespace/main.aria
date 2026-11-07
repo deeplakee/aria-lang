@@ -1,0 +1,20 @@
+// 钉住：模块点号仅查导出，显示与身份检查不咨询导出里的同名函数。
+import "./lib/exports" as M;
+assert(M.name == "exported name");
+assert(M.unset == nil);
+assert(is_a(M, Module));
+assert(is_a(M, Object));
+assert(str(M) == "<module exports>");
+assert(M.calls == 0);
+assert(M.is_a(Module) == "exported is_a");
+assert(M.__str__() == "exported display");
+assert(M.calls == 2);
+var exported = M.is_a;
+assert(exported(Module) == "exported is_a");
+assert(M.calls == 3);
+var caught = 0;
+try { var missing = M.init; } catch (error) { caught += 1; }
+assert(caught == 1);
+Module.metadata_only = 7;
+try { var missing = M.metadata_only; } catch (error) { caught += 1; }
+assert(caught == 2);

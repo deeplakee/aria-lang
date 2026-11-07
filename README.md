@@ -62,7 +62,7 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
   定义 `__add__`、`__lt__` 等 12 个钩子（五个算术、四个比较、一元取负、调用、显示渲染），
   实例出现在左操作数 / 被调用 / 被显示位置时按名取实现（仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，
   方法调用是同一套 `recv.name(args)` 语法；内建类（含函数族、`Module`、`Coroutine`、`Class` 元类）
-  本身也作为全局变量可以被访问。
+  本身也作为全局变量可以被访问。类上的点号只查本类与父类的声明成员，不回退到元类能力。
 - **控制流**：`if`/`else`、`while`、C 风格 `for`、`for (pattern in expr)`、`break`/`continue`、
   `match`；`if` 与 `match` 也能作表达式。支持用逗号多个表达式连成序列表达式（从左到右
   逐个求值、取最后一个值）。
@@ -80,10 +80,11 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
   比较按无符号字节序；下标与 `size()` 都按字节计，逐码点用 `chars()`。字符串即模板：`"n = ${x}"`
   的 `${...}` 里可以写完整表达式、渲染默认和 `str()` 同效果。
 - **模块**：一个文件就是一个模块，`import "./utils" as U;`（必须绑定一个别名）。模块顶层绑定即模块成员，
-  通过 `U.f()` 访问模块成员变量，成员只读。
-- **内置函数**：`type` / `str` / `assert` / `println` / `clock` / `Error`（都可当一等值传递；`println` 是唯一的
-  输出口，`clock` 返回单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建类
-  `Coroutine` 提供协程原语（见上「协程」条）。
+  `U.x` / `U.f()` 只访问模块导出，不回退到 Module/Object 的成员；成员只读。
+- **内置函数**：`type` / `str` / `assert` / `println` / `clock` / `Error` / `is_a` / `is_subclass`
+  （都可当一等值传递；`println` 是唯一的输出口，`clock` 返回单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建类
+  `Coroutine` 提供协程原语（见上「协程」条）。`is_a(value, Class)` 检查真实所属类链，
+  `is_subclass(Derived, Base)` 检查类继承；两者不读取用户同名成员。
 
 ## 构建与运行
 

@@ -214,7 +214,7 @@ not found
 默认构造，实例不带载荷（`message()` 是空串、`code()` 是缺省码）；自有 `init`
 两个都没落就调 face，会得到 `UndefinedProperty`（成员读取的常规措辞）。
 
-分类之后用根类方法 `is_a(类型)` 判归属--它沿继承链判定，子类命中以父类型提出的
+分类之后用外部函数 `is_a(value, 类型)` 判归属--它沿继承链判定，子类命中以父类型提出的
 询问（内建异常对 `Exception` 也命中）：
 
 ```aria
@@ -230,10 +230,10 @@ def Timeout : Exception {
 }
 
 fun describe(e) {
-    if (e.is_a(Timeout)) {
+    if (is_a(e, Timeout)) {
         return "timed out";
     }
-    if (e.is_a(HttpError)) {
+    if (is_a(e, HttpError)) {
         return "http " + str(e.status);
     }
     return "unknown";
@@ -367,7 +367,7 @@ Internal: AssertionFailed custom message
 
 - `throw` 任意值，`catch` 绑原值保类型；运行期错误装箱为 `type(e) == "Exception"`。
 - 异常对象有 `message()` / `code()`；`Error(msg, 码?)` 直接造用户异常（码为整数原样携带）。
-- 继承 `Exception` 定义自己的异常类型，实例字段自管；`e.is_a(类型)` 沿继承链判归属。
+- 继承 `Exception` 定义自己的异常类型，实例字段自管；`is_a(e, 类型)` 沿继承链判归属。
 - 嵌套取最近 handler，沿调用链展开；catch 内可 `return`、可再 `throw`。
 - `try` 必带 `catch`；没有 `finally`（设计取舍，当前无 OS 资源类内建）。
 - `assert` 失败即抛 `AssertionFailed`（`Internal:` 前缀），同样可 catch。

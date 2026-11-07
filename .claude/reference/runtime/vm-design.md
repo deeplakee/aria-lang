@@ -268,6 +268,10 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 两表示 `Value::from_int` 只接收域内值(Debug 同款断言),语言错误由调用方检查。字面量越界保持编译错误 `NumberOutOfRange`,`to_int` 越界仍返 nil,浮点路径保持 IEEE 语义。range 迭代器内部 i64 游标可到域外一位,有界区间产出终点后耗尽;无上界区间可产出 `kIntMax`,随后请求下一元素时报 `IntegerOverflow`。
 
+### 4.14 成员访问分离 P1
+
+模块点号仅查 globals；类点号仅查自身及父类模板表。全局 is_a(value, target) 使用真实所属类链，is_subclass(derived, base) 查询模板继承，包含自身；原始值的 is_a 返回 false，非法目标类仍报 TypeMismatch。结构查询由 Builtin.cpp 内部辅助函数实现，不读取用户同名成员。Object 不再注册内建 is_a，默认 init 与 __str__ 保留，隐式钩子查询不变。本阶段不修改方法绑定、字节码调用栈形或协程/重入口。
+
 ## 5. 早期简化(M1 的刻意收敛,均已演化)
 
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。当时的收敛项现状:

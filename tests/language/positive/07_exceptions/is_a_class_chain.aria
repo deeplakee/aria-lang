@@ -1,7 +1,4 @@
-# 钉住：Object 根类 is_a 方法——类链归属判定：实例自本类沿 super 链、异常自 Exception、
-# 内置容器自各自 bootstrap 类、类值自 Class 元类单例（模板链不是类值的归属链）。经继承
-# 触达，用户异常类型与内建异常同走一路。（bootstrap 类经 builtins_ 裸名曝光，内置类与
-# Object 根可直接提问。）
+# 钉住：外部 is_a 按真实所属类链判定，类对象身份与模板继承关系分开。
 def Base : Exception {
 }
 def Derived : Base {
@@ -11,58 +8,58 @@ def Unrelated {
 
 # 实例接收者：沿自身类链向上命中即 true
 var d = Derived();
-assert(d.is_a(Derived));
-assert(d.is_a(Base));
-assert(d.is_a(Exception));
+assert(is_a(d, Derived));
+assert(is_a(d, Base));
+assert(is_a(d, Exception));
 var b = Base();
-assert(b.is_a(Base));
-assert(b.is_a(Exception));
-assert(!b.is_a(Derived));        # 父类实例不命中子类
+assert(is_a(b, Base));
+assert(is_a(b, Exception));
+assert(!is_a(b, Derived));        # 父类实例不命中子类
 var u = Unrelated();
-assert(u.is_a(Unrelated));
-assert(!u.is_a(Exception));      # Object 根下与 Exception 平行的分支不串
-assert(!u.is_a(Base));
+assert(is_a(u, Unrelated));
+assert(!is_a(u, Exception));      # Object 根下与 Exception 平行的分支不串
+assert(!is_a(u, Base));
 
 # 异常接收者：链根 = Exception bootstrap 类
 try {
     var x = 1 / 0;
 } catch (e) {
-    assert(e.is_a(Exception));
-    assert(!e.is_a(Base));
-    assert(!e.is_a(Derived));
+    assert(is_a(e, Exception));
+    assert(!is_a(e, Base));
+    assert(!is_a(e, Derived));
 }
 var err = Error("x");
-assert(err.is_a(Exception));
-assert(!err.is_a(Base));
+assert(is_a(err, Exception));
+assert(!is_a(err, Base));
 
 # 类接收者：链根 = Class 元类单例（类值的归属链）
-assert(Derived.is_a(Class));
-assert(Base.is_a(Class));
-assert(Object.is_a(Class));
-assert(Class.is_a(Class));
-assert(Derived.is_a(Object));    # 元类链沿至根
-assert(!Derived.is_a(Base));     # 模板继承链不参与类值判定
-assert(!Base.is_a(Exception));
+assert(is_a(Derived, Class));
+assert(is_a(Base, Class));
+assert(is_a(Object, Class));
+assert(is_a(Class, Class));
+assert(is_a(Derived, Object));    # 元类链沿至根
+assert(!is_a(Derived, Base));     # 模板继承链不参与类值判定
+assert(!is_a(Base, Exception));
 
 # 内置容器/迭代器：解析委托各自 bootstrap 类，沿链走（对 Exception 目标恒 miss）
-assert(![].is_a(Exception));
-assert(!"s".is_a(Base));
-assert(!{}.is_a(Exception));
-assert(!(1..2).is_a(Base));
-assert(![].iter().is_a(Exception));
+assert(!is_a([], Exception));
+assert(!is_a("s", Base));
+assert(!is_a({}, Exception));
+assert(!is_a((1..2), Base));
+assert(!is_a([].iter(), Exception));
 
 # 内置类裸名曝光：内置值对内置类与根类的归属判定
-assert([1, 2].is_a(List));
-assert("s".is_a(String));
-assert({}.is_a(Map));
-assert((1..2).is_a(Range));
-assert([].iter().is_a(Iterator));
-assert([1, 2].is_a(Object));     # 任意对象沿链命中根
-assert(Object.is_a(Object));     # 元类链沿至根类，根类命中自身名下
+assert(is_a([1, 2], List));
+assert(is_a("s", String));
+assert(is_a({}, Map));
+assert(is_a((1..2), Range));
+assert(is_a([].iter(), Iterator));
+assert(is_a([1, 2], Object));     # 任意对象沿链命中根
+assert(is_a(Object, Object));     # 元类链沿至根类，根类命中自身名下
 
 # fn 族/协程单例腿：咨询归属链 = 各自 bootstrap 单例类
 var fn = fun(a) { return a; };
-assert(fn.is_a(Closure));
-assert(fn.is_a(Object));
-assert(println.is_a(NativeFn));
-assert(Coroutine.create(fun() { yield; }).is_a(Coroutine));
+assert(is_a(fn, Closure));
+assert(is_a(fn, Object));
+assert(is_a(println, NativeFn));
+assert(is_a(Coroutine.create(fun() { yield; }), Coroutine));

@@ -253,7 +253,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 ### 4.12 显示渲染面(show 咨询口,已落地)
 
 显示定制钩子 = `__str__`(注册表 `str_table.hpp` 与算子 dunder 同表)。渲染语义分双位:
-- **显示位(重入咨询,跑用户代码)**:`str()`/`println`/插值/`join` 共口 `Eval::stringify(AriaExeContext&, Value) -> Opt<ObjString*>`--字面值字面渲染、对象一律经类面咨询口 `load_field_from_class` 解析 `__str__`(String 自有钩子返回原文,即显示/调试分叉点;实例 fields / 模块 globals 等值本地状态出局;根类默认原生 = 渲染自身 `repr`,兜底恒命中)后同步调用(调用区 `[receiver]`,argc = 0)。返回值须为 string,违约 `TypeMismatch`;不可调咨询值 `CallNonCallable`(`Eval::execute_callable`,按 bound/native/closure 形态分派:原生走 `execute_native`、闭包走 `execute_closure` 重入体)。自渲染递归由嵌套深度上限折断(`StackOverflow`);
+- **显示位(重入咨询,跑用户代码)**:`str()`/`println`/插值/`join` 共口 `Eval::stringify(AriaExeContext&, Value) -> ObjString*`--字面值字面渲染、对象一律经类面咨询口 `load_field_from_class` 解析 `__str__`(String 自有钩子返回原文,即显示/调试分叉点;实例 fields / 模块 globals 等值本地状态出局;根类默认原生 = 渲染自身 `repr`,兜底恒命中)后同步调用(调用区 `[receiver]`,argc = 0)。返回值须为 string,违约 `TypeMismatch`;不可调咨询值 `CallNonCallable`(`Eval::execute_callable`,按 bound/native/closure 形态分派:原生走 `execute_native`、闭包走 `execute_closure` 重入体)。失败 nullptr ⟺ 载荷在挂起寄存器;自渲染递归由嵌套深度上限折断(`StackOverflow`);
 - **调试位(零用户代码)**:`value_repr`/虚 `repr` 纯 C++,执行跟踪/未捕获/反汇编常量池与容器元素恒调试形(嵌套字符串带引号);
 - **段收拢**:join 经 `Eval::concat_values` 两遍式收拢(段一律经 stringify 收 StringView -> 量长定容 -> 单趟填充)。驻留池是弱根,每个渲染结果立即压入本调用的 `GC::Guard`,跨后续渲染保活至拼接完成,正常返回与错误短路均由 RAII 弹根。BUILD_STRING 经 `run_build_string` 逐段渲染后原槽换装为结果串(栈即根),每次访问重取槽址以避重入扩容搬迁,再定容填充;失败载荷走 `unwind_check`;
 - **地位**:可重载显示虚函数已退役(`Object::to_string` 删除) -- C++ 对象层仅剩固定行为虚函数,显示定制唯一面 = `__str__`。

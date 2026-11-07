@@ -218,20 +218,20 @@ namespace aria {
         return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
     }
 
-    Opt<ObjString*> Eval::execute_str_hook(AriaExeContext& ctx, const Value value, const Value hook) {
+    ObjString* Eval::execute_str_hook(AriaExeContext& ctx, const Value value, const Value hook) {
         // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用,返回值须为 string。
         const auto rendered = execute_callable(ctx, value, hook, {});
         if (!rendered) {
-            return std::nullopt;
+            return nullptr;
         }
-        if (const auto s = try_as_obj<ObjString>(*rendered)) {
-            return s;
+        if (const auto string = try_as_obj<ObjString>(*rendered)) {
+            return string;
         }
         ctx.raise(ErrorCode::TypeMismatch, "'__str__' must return a string, got {}", type_name(*rendered));
-        return std::nullopt;
+        return nullptr;
     }
 
-    Opt<ObjString*> Eval::stringify(AriaExeContext& ctx, const Value value) {
+    ObjString* Eval::stringify(AriaExeContext& ctx, const Value value) {
         // 非对象值无钩子面:value_repr 的非对象臂即字面渲染(两渲染器非对象域逐臂同形)。
         // 对象一律经咨询口取 __str__:实例字段/模块全局等值本地状态出局,类链(元类链/单例链)
         // 命中即实现;根类默认使现役类面恒命中,miss 臂兜契约(措辞已随咨询口烘焙)。
@@ -240,15 +240,15 @@ namespace aria {
         }
         const auto hook = value.as_obj()->load_field_from_class(ctx, ctx.str<"__str__">());
         if (!hook) {
-            return std::nullopt;
+            return nullptr;
         }
         return execute_str_hook(ctx, value, *hook);
     }
 
-    Opt<ObjString*> Eval::concat_values(AriaExeContext& ctx, const Span<const Value> values, const StringView sep) {
+    ObjString* Eval::concat_values(AriaExeContext& ctx, const Span<const Value> values, const StringView sep) {
         // 两遍式(先收视图量长定容、后单趟填充,join 预扫先例):各段一律经 stringify 收成
         // 视图,逐段把渲染串压入临时根(驻留池是弱根),跨后续渲染保活;失败即短路
-        // (nullopt ⟺ 某段载荷在寄存器)。填充段零 GC 点,唯一 GC 点在 take_string。
+        // (nullptr ⟺ 某段载荷在寄存器)。填充段零 GC 点,唯一 GC 点在 take_string。
         auto             guard = ctx.gc().make_guard();
         List<StringView> parts;
         usize            total = 0;
@@ -256,10 +256,10 @@ namespace aria {
         for (const auto& element: values) {
             const auto rendered = stringify(ctx, element);
             if (!rendered) {
-                return std::nullopt;
+                return nullptr;
             }
-            guard.push(*rendered);
-            const auto view = (*rendered)->view();
+            guard.push(rendered);
+            const auto view = rendered->view();
             total += view.size();
             parts.push_back(view);
         }
@@ -621,8 +621,8 @@ namespace aria {
             if (!rendered) {
                 return false;
             }
-            ctx.peek(index - 1) = Value::from_obj(*rendered);
-            total += (*rendered)->length();
+            ctx.peek(index - 1) = Value::from_obj(rendered);
+            total += rendered->length();
         }
         auto builder = StringBuilder{ctx.gc()};
         builder.reserve(total);

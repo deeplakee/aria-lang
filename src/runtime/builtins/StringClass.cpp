@@ -34,7 +34,7 @@ namespace aria {
             if (!str) {
                 return false;
             }
-            info.set_return_val(Value::from_obj(*str));
+            info.set_return_val(Value::from_obj(str));
             return true;
         }
 

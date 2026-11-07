@@ -42,7 +42,7 @@ namespace aria {
             if (!str) {
                 return false; // 载荷在寄存器,交外层续搜
             }
-            info.set_return_val(Value::from_obj(*str));
+            info.set_return_val(Value::from_obj(str));
             return true;
         }
 
@@ -56,7 +56,7 @@ namespace aria {
                 if (!str) {
                     return false;
                 }
-                io::println("{}", (*str)->view());
+                io::println("{}", str->view());
             } else {
                 io::println();
             }

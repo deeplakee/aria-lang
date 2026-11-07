@@ -43,17 +43,17 @@ namespace aria {
         // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
         // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
         // 解析值须可调、返回值须为 string(违约就地 TypeMismatch)。成功返回渲染串,调用方须
-        // 在下个 GC 点前发布或根化(驻留池是弱根);nullopt ⟺ 载荷已入挂起寄存器(钩子抛错/
+        // 在下个 GC 点前发布或根化(驻留池是弱根);nullptr ⟺ 载荷已入挂起寄存器(钩子抛错/
         // 违约/嵌套过深)。调用方保证 value「栈即根」。
         [[nodiscard]]
-        static Opt<ObjString*> stringify(AriaExeContext& ctx, Value value);
+        static ObjString* stringify(AriaExeContext& ctx, Value value);
 
         // 段收拢(join 共口):各段一律经 stringify 收成 StringView,渲染串由本调用临时根保活至
-        // 拼接完成,量长定容后单趟填充。nullopt ⟺ 某段渲染失败载荷在寄存器。values 不得指进值栈(渲染重入
+        // 拼接完成,量长定容后单趟填充。nullptr ⟺ 某段渲染失败载荷在寄存器。values 不得指进值栈(渲染重入
         // 扩容搬迁必悬垂);指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担,解释器
         // 不设防;元素保活由调用方承担(栈根/容器根)。
         [[nodiscard]]
-        static Opt<ObjString*> concat_values(AriaExeContext& ctx, Span<const Value> values, StringView sep);
+        static ObjString* concat_values(AriaExeContext& ctx, Span<const Value> values, StringView sep);
 
     private:
         // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用
@@ -84,9 +84,9 @@ namespace aria {
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
 
         // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用(hook 为咨询口解析值),返回值须为
-        // string,违约 TypeMismatch。nullopt ⟺ 载荷留寄存器。
+        // string,违约 TypeMismatch。nullptr ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<ObjString*> execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
+        static ObjString* execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
         // 按 Op 编译期选定算子钩子名,经咨询口自类面取本对象上的实现(值本地状态出局;Op 由调用
         // 点穷举);nullopt ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。

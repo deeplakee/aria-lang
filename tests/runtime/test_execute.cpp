@@ -82,7 +82,7 @@ namespace {
         if (!s) {
             return false;
         }
-        info.set_return_val(Value::from_obj(*s));
+        info.set_return_val(Value::from_obj(s));
         return true;
     }
 

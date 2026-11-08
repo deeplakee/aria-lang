@@ -21,7 +21,7 @@ paths:
 - `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
 - `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
-- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用；`NativeFn` 签名与调用视图 `NativeCallInfo` 住 `runtime/NativeCallInfo.hpp`）。
+- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用；`NativeFn` 签名与调用视图 `NativeCallInfo` 住 `runtime/NativeCallInfo.hpp`）；`defining_class_` 非空表示原生实例方法，注册时设置并参与 trace，普通/静态函数为空。
 - `ObjModule`（`ObjModule.hpp`）：模块 = 命名空间（一个源文件一个模块），非类。
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经上下文访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
@@ -64,7 +64,7 @@ paths:
 
 - **九族（string/list/map/range/iterator/exception/closure/nativefn/boundmethod）的成员读共享同一趟咨询**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` = 裸读原语直委托咨询口（无 fields）；`load_field_bound` 在容器/迭代器/异常族命中即自持 `new_bound_method` 恒绑 this（内置类表条目全为原生、恒为方法，判别无须戳）；函数族三型（closure/nativefn/boundmethod）无 override、走基类默认原值直出。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
-- 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
+- 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），Coroutine 的静态原语经 `register_class_functions` 注册，不设置定义类。方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
 - **零表单例类六个**（P1 类面基建，`value_register.hpp` 新增六行）：`ClosureClass`/`NativeFnClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）与 `CoroutineClass`（表收 `create`/`resume`/`yield`/`status` 四静态原语，协程内建模块形态并入类面）。与七 bootstrap 类合计十三格；十三类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
 
 ## 跨类型规则
@@ -81,6 +81,8 @@ paths:
 - **判别按戳不按值类型**：MAKE_METHOD 注册时戳、MAKE_STATIC / 类上赋值不戳 ⟹ 静态槽原值直读；赋值闭包无戳 ⟹ 改写后按静态读原值、不再绑定（方法性随值携带）。
 - **挂闭包而非共享的 `ObjFunction` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
 - 非方法闭包（静态方法 fun / lambda / 其余）恒 nullptr。
+- 原生函数沿用同一 `defining_class_` 判据：`register_class_methods` 设置注册类，`new_native_fn` 默认与 `register_class_functions` 保持 nullptr。成员赋值不重写归属，trace 标记定义类；本轮不据此增加通用接收者归属校验。
+- `is_method(Value)` 同时识别脚本/原生实例方法，不把普通函数或已有 BoundMethod 当成待绑定方法。`super` 读取也使用此判据。
 
 ### `init_` 派生
 
@@ -92,7 +94,7 @@ paths:
 ### 类成员读写与绑定方法不缓存
 
 - **类成员读写取 Python/JS 式读穿透、写遮蔽**：读沿 super 链 fall-through；写落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新、沿链全 miss 的新名字亦落接收类，动态新增允许），父表不动。
-- **绑定方法不缓存**：`ObjInstance::load_field_bound` 先查实例字段，命中原样返回（包括裸方法、已有绑定方法与 nil）；仅类链命中的方法戳闭包**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
+- **绑定方法不缓存**：`ObjInstance::load_field_bound` 先查实例字段，命中原样返回（包括裸方法、已有绑定方法与 nil）；仅类链命中的脚本/原生实例方法**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
 - 缓存会让「类 / 父类改写方法」对已取过方法的实例陈旧、monkey patch 半可用且难解释；不缓存换来改写对既有实例立即生效（monkey patch 完整）与 `fields_` 回归纯字段。
 - 方法值是一等值省不掉；**调用路径**（`PREPARE_METHOD` 与算子/调用派发）经裸查找 `load_field` 走零分配、不绑定形态。
 
@@ -144,4 +146,4 @@ paths:
 
 module 的普通 load_field 只查 globals，class 只查本类及父类模板表，miss 就地 fail，不回退到 Module/Class 类链。隐式钩子仍走 load_field_from_class，模块 globals 与类自身模板表不参与其对象身份的隐式查询。结构检查由全局 is_a/is_subclass 使用 Builtin.cpp 内部的纯结构查询实现；Object 删除内建 is_a。
 
-本批未修改 load_field_bound、方法戳、原生函数表示或 PREPARE_METHOD/CALL_METHOD 栈形；成员绑定与未绑定方法调用的统一留待 P2。
+普通命名空间边界保持。原生实例方法现以 defining_class_ 标记，绑定读取与脚本方法共用 is_method；不增加未绑定方法显式首参调用或改变 PREPARE_METHOD/CALL_METHOD 栈形。

@@ -150,7 +150,7 @@ namespace aria {
         static bool run_call_method(AriaExeContext& ctx, u8 argc);
 
         // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(编译器不变式,ASSERT 把关),
-        // 自父类沿链读穿透、不含 defining 自身;命中方法闭包则绑 this=帧槽 0 压栈,其余原值直读。
+        // 自父类沿链读穿透、不含 defining 自身;命中脚本/原生实例方法则绑 this=帧槽 0,其余原值直读。
         // 全链 miss 为语言可达错误,经协议 fail。
         static bool run_load_super_field(AriaExeContext& ctx, ObjString* name);
 

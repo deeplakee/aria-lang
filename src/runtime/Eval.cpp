@@ -665,7 +665,7 @@ namespace aria {
             return false;
         }
         if (const auto member = *hit; is_method(member)) {
-            // 方法命中:建成立即压栈,this 经帧槽根化;方法对象经 super 链根可达
+            // 脚本/原生实例方法命中:建成立即压栈,this 经帧槽根化;方法对象经 super 链根可达
             ctx.push(Value::from_obj(new_bound_method(ctx.gc(), member, frame.slots[0])));
         } else {
             ctx.push(member); // 静态槽原值直读,不绑定不缓存

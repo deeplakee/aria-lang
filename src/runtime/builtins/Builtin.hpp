@@ -25,6 +25,9 @@ namespace aria {
         // 按名把内建方法表逐条注册进类字段表,成为该类实例的内建方法面(receiver 恒绑定)。
         static void register_class_methods(GC& gc, ObjClass* klass, Span<const BuiltinFnEntry> methods);
 
+        // 注册类命名空间中的静态函数,不设置实例方法定义类。
+        static void register_class_functions(GC& gc, ObjClass* klass, Span<const BuiltinFnEntry> functions);
+
         // 注册全部内置;由 AriaVM ctor 在 set_vm_roots 之后调用一次。
         static void register_builtins(GC& gc, AriaHashTable& builtins);
     };

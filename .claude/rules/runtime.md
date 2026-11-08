@@ -91,6 +91,8 @@ VM/执行上下文的设计与分阶段路线见 `.claude/reference/runtime/vm-d
 - `NativeCallInfo` 持槽 0 在值栈缓冲中的下标而非指针，每次访问经 ctx 重取基址按偏移重算，原生执行期间的重入扩容（`grow_stack_` 搬迁）不再悬垂。接口：`ctx()`（执行上下文）/`self()`（槽 0：普通调用 = 闭包自身、方法调用 = receiver）/`operator[]`（实参按值只读，debug 断言越界）/`set_return_val(v)`（写返回槽，即槽 0）/`size()`（实参个数）/`receiver<T>()`（方法调用 receiver 收窄为 T*，miss 报 TypeMismatch 转 nullptr）。
 - 消费点：`Eval::call_native` 构造视图并善后；设计全文见 vm-design.md §4.7。
 
+原生实例方法经 `Builtin::register_class_methods` 设置 ObjNativeFn 的 defining_class；Coroutine 静态原语经 `register_class_functions` 注册并保持空。`is_method` 同时识别脚本/原生实例方法，ObjInstance 类链读取与 super 使用该判据；Object 默认读取仍只委托 load_field，不改变函数族等对象的绑定策略。
+
 ## `runtime/ObjMovement.hpp`
 
 GC 对象壳（`ObjMovement final : Object, AriaExeContext`，唯一派生、零自有数据成员）：给执行上下文以 GC 一等值身份，主上下文与协程统一本型（主上下文 = ctor 首笔 GC 分配的唯一实例），`type()` 报 `Coroutine`、`repr()` 报 `<coroutine {状态小写拼写}>` 动态形（五态 suspended/normal/running/done/failed）。本类只有 Object 协议 override（`trace` 自标基类状态：值栈已用区间/活动帧/open upvalue 开链/挂起错误寄存器，并经 `mark_object(previous_)` 沿 resume 链级联；VM 根 tracer 只标 `current_` 一点）与 `new_movement` 工厂。

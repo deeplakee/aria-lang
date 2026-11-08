@@ -10,14 +10,16 @@
 
 namespace aria {
 
-    ObjNativeFn::ObjNativeFn(ObjString* name, NativeFn fn) : Object{ObjType::NATIVE_FN}, name_{name}, fn_{fn} {
+    ObjNativeFn::ObjNativeFn(ObjString* name, const NativeFn fn) :
+        Object{ObjType::NATIVE_FN}, name_{name}, fn_{fn}, defining_class_{nullptr} {
         ASSERT(fn != nullptr, "function pointer must not be null");
         // name_ 恒非空:匿名用 kAnonymousName。
         ASSERT(name != nullptr, "function name must not be null (use kAnonymousName for anonymous)");
     }
 
     void ObjNativeFn::trace(GC& gc) const noexcept {
-        gc.mark_object(name_); // fn_ 是 C++ 指针非 GC 对象,唯一 GC 子节点即 name_
+        gc.mark_object(name_);
+        gc.mark_object(defining_class_);
     }
 
     String ObjNativeFn::repr() const {

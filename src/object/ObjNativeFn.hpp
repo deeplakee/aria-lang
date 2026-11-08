@@ -10,9 +10,10 @@
 namespace aria {
 
     class GC;
+    class ObjClass;
     class ObjString;
 
-    // 原生函数对象:把一个 C++ 函数包装成可在 aria 里调用的值;匿名函数名用 kAnonymousName。
+    // 原生函数对象:把一个 C++ 函数包装成可在 aria 里调用的值;defining_class_ 非空表示实例方法。
     class ObjNativeFn final : public Object {
     public:
         ObjNativeFn(ObjString* name, NativeFn fn);
@@ -28,7 +29,20 @@ namespace aria {
             return fn_;
         }
 
-        // mark_object 容 nullptr 仅防御(name_ 本应恒非空)。
+        // 实例方法注册时设置,成员赋值不改变定义归属;普通函数与静态函数为 nullptr。
+        [[nodiscard]]
+        ObjClass* defining_class() const noexcept {
+            return defining_class_;
+        }
+
+        [[nodiscard]]
+        bool is_method() const noexcept {
+            return defining_class_ != nullptr;
+        }
+
+        void set_defining_class(ObjClass* klass) noexcept { defining_class_ = klass; }
+
+        // 标记名称与定义类;普通函数的定义类为空。
         void trace(GC& gc) const noexcept override;
 
         // 壳定长,无外挂子内存。
@@ -52,6 +66,7 @@ namespace aria {
     private:
         ObjString* name_;
         NativeFn   fn_;
+        ObjClass*  defining_class_;
     };
 
     // 工厂:分配 ObjNativeFn;调用方须自行根化 name(fn 是标量)。

@@ -121,7 +121,7 @@ namespace aria {
     ObjClass* CoroutineClass::make_class(GC& gc, ObjClass* super) {
         // Coroutine 类:协程句柄的类面载体 + 四原语静态方法面(类名与 type() 的类型名一致)。
         const auto klass = new_class(gc, "Coroutine", super);
-        Builtin::register_class_methods(gc, klass, kCoroutineBuiltins);
+        Builtin::register_class_functions(gc, klass, kCoroutineBuiltins);
         return klass;
     }
 

@@ -2,6 +2,7 @@
 #define ARIA_OBJBRIDGE_HPP
 
 #include "object/ObjClosure.hpp"
+#include "object/ObjNativeFn.hpp"
 #include "object/Object.hpp"
 #include "value/Value.hpp"
 
@@ -27,12 +28,17 @@ namespace aria {
         return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
     }
 
-    // 类表成员值是否为「方法」:defining class 戳定的方法闭包(仅方法注册路径戳定;
-    // 静态注册与类上赋值不戳,故静态槽恒非方法)。
+    // 需要接收者的未绑定实例方法:脚本闭包与原生函数均以 defining class 判定。
+    // 普通/静态函数不戳,已有绑定方法不重复绑定;成员赋值不改变函数值携带的标记。
     [[nodiscard]]
     inline bool is_method(const Value value) noexcept {
-        const auto closure = try_as_obj<ObjClosure>(value);
-        return closure != nullptr && closure->is_method();
+        if (const auto closure = try_as_obj<ObjClosure>(value)) {
+            return closure->is_method();
+        }
+        if (const auto native = try_as_obj<ObjNativeFn>(value)) {
+            return native->is_method();
+        }
+        return false;
     }
 
 } // namespace aria

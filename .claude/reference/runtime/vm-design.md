@@ -124,7 +124,9 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 
 **返回值就地写槽 0** -- 原生经 `info.set_return_val(v)` 把返回值写进槽 0(原地覆盖 callee)。VM 调用后 `ctx.drop(argc)` 弹掉 a1..aN,槽 0 升至栈顶即返回值--比「`drop(argc+1)` + `push(result)`」省一压,且原生函数就地掌控返回槽。VM 侧 `call_native` 以 `NativeCallInfo{ctx, argc}` 构造视图(槽 0 下标 = `stack_size() - argc - 1`,进场时算一次);栈形与用户函数 `CALL` 一致(`[callee, a1..aN]`,callee 在槽 0)。
 
-**方法调用形态(M5 泛化;类表读路径仅绑定 defining class 戳定的方法闭包,原生绑定形态由对象层直接构造承载)** -- 经 `ObjBoundMethod` 绑定的原生方法(内建类型方法载体):调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
+**方法调用形态(脚本闭包与原生函数均以 defining_class 标记实例方法)** -- 经 `ObjBoundMethod` 绑定的原生方法(内建类型方法载体):调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
+
+ObjNativeFn 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。is_method 同时识别脚本与原生实例方法;ObjInstance 类链读取据此绑定原生实例方法;Object 默认读取仍只委托 load_field,class/module 命名空间与实例字段仍原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
 
 **错误走侧信道寄存器** -- 原生函数调 `ctx.fail(code, fmt, ...)`(或 `ctx.raise(code, detail)`)写入执行上下文的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`ctx.fail` 返 `FailSignal` 哨兵(按调用点返回类型隐式转换:false/nullptr/nullopt)、`ctx.raise` 返 void(语句式站点),故失败路径惯用一行 `return ctx.fail(...)`(同时置寄存器与返回失败),成功路径 `info.set_return_val(...); return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`ctx.drop(argc)`,槽 0 升至栈顶;切换后 drop 落进场 ctx 的例外见 §4.9),`false` 后载荷留寄存器,调用方错误站点统一 `goto unwind_check` 交 `unwind` 派发/物化(§4.5)。`Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
 

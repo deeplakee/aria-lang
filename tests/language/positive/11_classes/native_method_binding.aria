@@ -1,0 +1,54 @@
+// 原生实例方法从类型链读取时绑定接收者,声明命名空间与静态函数保持原值。
+def Counter {
+    parent_text() { return super.__str__(); }
+    parent_reader() { return super.__str__; }
+}
+var counter = Counter();
+var show = counter.__str__;
+assert(type(show) == "BoundMethod");
+assert(show() == "<Counter instance>");
+assert(counter.parent_text() == "<Counter instance>");
+assert(counter.parent_reader()() == "<Counter instance>");
+
+// 类声明读取不绑定;同一原生方法放进实例字段后也保持裸值。
+assert(type(Counter.__str__) == "NativeFn");
+assert(Counter.__str__ === Object.__str__);
+Counter.text = Object.__str__;
+var text = counter.text;
+assert(text() == "<Counter instance>");
+counter.callback = Object.__str__;
+assert(counter.callback === Object.__str__);
+
+// 静态原语仍保持普通原生函数值。
+fun worker() { return 7; }
+var co = Coroutine.create(worker);
+assert(co.create === Coroutine.create);
+assert(co.resume === Coroutine.resume);
+assert(co.yield === Coroutine.yield);
+assert(co.status === Coroutine.status);
+var resume = co.resume;
+assert(resume(co) == 7);
+assert(Coroutine.status(co) == "done");
+
+// 用户异常子类继承的原生方法,包括 super 读取,保留同一接收者。
+def UserError : Exception {
+    init(message) {
+        super.init();
+        this._message = message;
+    }
+    parent_message() {
+        var read = super.message;
+        return read();
+    }
+}
+var error = UserError("hello");
+var message = error.message;
+assert(message() == "hello");
+assert(error.parent_message() == "hello");
+
+// 模块导出的原生实例方法不因标记而绑定模块。
+import "./lib/native_method_exports" as exports;
+assert(exports.method === Object.__str__);
+assert(exports.function === println);
+assert(type(exports.bound) == "BoundMethod");
+assert(exports.bound() == "[]");

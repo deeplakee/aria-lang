@@ -220,6 +220,14 @@ namespace aria {
     void Builtin::register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {
             const auto fn_obj = new_native_fn(gc, name, fn);
+            fn_obj->set_defining_class(klass);
+            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
+        }
+    }
+
+    void Builtin::register_class_functions(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> functions) {
+        for (const auto& [name, fn]: functions) {
+            const auto fn_obj = new_native_fn(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
     }

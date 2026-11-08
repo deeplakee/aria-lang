@@ -31,7 +31,7 @@ paths:
 
 - `try_as_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
 - `is_callable_value(Value)`：类表成员值是否为「可调用」（闭包或原生）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
-- `is_method(Value)`：类表成员值是否为「方法」--defining class 戳定的方法闭包（戳定发生在 `MAKE_METHOD` 指令路径；`MAKE_STATIC` 与类上赋值不戳，故静态槽恒非方法），读路径（`ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD`）的绑定判别谓词；方法承载形态的**泛化扩展缝**。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
+- `is_method(Value)`：是否为需要接收者的未绑定实例方法；Closure 与 NativeFn 均以非空 defining_class 判定。脚本标记由 MAKE_METHOD 设置，原生标记由 register_class_methods 设置；普通/静态函数保持空，成员赋值不重写标记。ObjInstance 类链读取和 LOAD_SUPER_FIELD 使用该谓词；BoundMethod 返回 false，避免重复绑定。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
 
 ## `value/Value.hpp` / `.cpp`
 

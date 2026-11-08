@@ -1,0 +1,4 @@
+// 模块绑定保存原生实例方法、普通原生函数和已有绑定方法。
+var method = Object.__str__;
+var function = println;
+var bound = [].__str__;

@@ -1,6 +1,8 @@
 #include "Object.hpp"
 
+#include "object/ObjBoundMethod.hpp"
 #include "runtime/ObjMovement.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -13,8 +15,18 @@ namespace aria {
     // 没有独立成员规则时,普通查询默认采用类型成员查询。
     Opt<Value> Object::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
 
-    // 基类默认:直接委托裸查找 load_field(读取本就不绑定的类型照取原值);会绑定的类型各自 override。
-    Opt<Value> Object::load_field_bound(AriaExeContext& ctx, ObjString* name) { return load_field(ctx, name); }
+    // 普通成员中的实例方法默认绑定当前对象,其他值保持原样。
+    Opt<Value> Object::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
+        if (!hit) {
+            return std::nullopt;
+        }
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
+    }
 
     bool Object::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {
         return ctx.fail(ErrorCode::UndefinedProperty, "type {} does not support field access", type_name());

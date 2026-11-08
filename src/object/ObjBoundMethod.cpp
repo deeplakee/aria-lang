@@ -54,18 +54,6 @@ namespace aria {
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
     }
 
-    Opt<Value> ObjBoundMethod::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        const auto hit = load_field(ctx, name);
-        if (!hit) {
-            return std::nullopt;
-        }
-        const auto member = *hit;
-        if (!is_method(member)) {
-            return member;
-        }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
-    }
-
     ObjBoundMethod* new_bound_method(GC& gc, const Value method, const Value receiver) {
         return gc.new_object<ObjBoundMethod>(method, receiver);
     }

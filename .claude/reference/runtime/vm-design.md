@@ -127,7 +127,7 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 
 **方法调用形态(脚本闭包与原生函数均以 defining_class 标记实例方法)** -- 经 `ObjBoundMethod` 绑定的原生方法(内建类型方法载体):调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
 
-ObjNativeFn 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。is_method 同时识别脚本与原生实例方法;ObjInstance、内建容器/迭代器/异常以及函数族/协程值的显式绑定读取据此绑定脚本或原生实例方法,其他值及已有绑定方法原样返回;Object 默认读取仍只委托 load_field,class/module 命名空间与实例字段仍原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
+ObjNativeFn 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。is_method 同时识别脚本与原生实例方法;Object 默认绑定读取经 load_field 查询后据此绑定脚本或原生实例方法,其他值及已有绑定方法原样返回;内建容器/迭代器/异常以及函数族/协程值继承此实现,ObjInstance 保留字段与类链的来源区分,class/module 显式保持命名空间成员原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
 
 可调用对象派发时,call_value 的 __call__ 分支先将槽 0 设为实际被调用对象,再从其类型链查询实现并递归派发。成员直接调用留下的字段宿主不能充当该对象的 this;普通函数、类构造和绑定方法各自的分支不受此覆写规则影响。实参槽位与数量保持不变,已有绑定钩子仍使用其保存的接收者,转发到另一个可调用对象时重新建立该对象的接收者。
 
@@ -277,7 +277,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 模块点号仅查 globals；类点号仅查自身及父类模板表。全局 is_a(value, target) 使用真实所属类链，is_subclass(derived, base) 查询模板继承，包含自身；原始值的 is_a 返回 false，非法目标类仍报 TypeMismatch。结构查询由 Builtin.cpp 内部辅助函数实现，不读取用户同名成员。Object 不再注册内建 is_a，默认 init 与 __str__ 保留，隐式钩子查询不变。本阶段不修改方法绑定、字节码调用栈形或协程/重入口。
 
-普通成员读取的基类默认路径为 `load_field` -> `load_field_from_class`；类型查询的基类默认报 `UndefinedProperty`。仅实例字段、类声明链和模块 globals 需要重写普通查询，内建对象、函数族、迭代器与协程继承默认委托；各类型保留自己的类型查询及缺席文案，绑定读取策略不变。
+普通成员读取的基类默认路径为 `load_field` -> `load_field_from_class`；类型查询的基类默认报 `UndefinedProperty`。仅实例字段、类声明链和模块 globals 需要重写普通查询，内建对象、函数族、迭代器与协程继承默认委托；各类型保留自己的类型查询及缺席文案。`Object::load_field_bound` 默认在普通查询后仅绑定实例方法，其余值原样返回；实例重写以区分字段与类链来源，类和模块重写以保持声明命名空间的原值语义，其他现有类型继承默认绑定。
 
 ## 5. 早期简化(M1 的刻意收敛,均已演化)
 

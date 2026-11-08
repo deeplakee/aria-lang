@@ -60,10 +60,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
     private:
         i64        code_;    // 错误码数字(单一存储:VM 报错 = 注册表序号;Error 码参 = 用户所给 int)
         ObjString* message_; // 完整烘焙消息串(intern;指针恒非空,内容可空)

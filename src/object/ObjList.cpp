@@ -3,7 +3,6 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/EqualGuard.hpp"
-#include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjRange.hpp"
 #include "object/PrintGuard.hpp"
@@ -59,18 +58,6 @@ namespace aria {
             return v;
         }
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
-    }
-
-    Opt<Value> ObjList::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        const auto hit = load_field(ctx, name);
-        if (!hit) {
-            return std::nullopt;
-        }
-        const auto member = *hit;
-        if (!is_method(member)) {
-            return member;
-        }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     Opt<Value> ObjList::load_index(AriaExeContext& ctx, const Value key) {

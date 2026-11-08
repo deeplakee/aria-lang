@@ -47,10 +47,6 @@ namespace aria {
         // 从所属类载入:自 Coroutine 类链起查(句柄无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
-
-        // 绑定读 override:仅实例方法绑定当前对象,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
     };
 
     // 工厂:分配执行上下文并绑定宿主回指针。主上下文经 current_、协程经 create 原语发布。构造

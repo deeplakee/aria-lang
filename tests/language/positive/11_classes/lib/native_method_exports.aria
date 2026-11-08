@@ -2,3 +2,7 @@
 var method = Object.__str__;
 var function = println;
 var bound = [].__str__;
+def MethodOwner {
+    read() { return 23; }
+}
+var script_method = MethodOwner.read;

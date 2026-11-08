@@ -1,4 +1,4 @@
-// 函数族与协程值显式绑定类型实例方法,其他类型成员保持原值。
+// 函数族与协程值绑定类型实例方法,其他类型成员保持原值。
 def Counter {
     init(value) { this.value = value; }
     read() { return this.value; }

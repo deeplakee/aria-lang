@@ -78,6 +78,10 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
+        // 声明命名空间中的成员保持原值,不绑定当前对象。
+        [[nodiscard]]
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
+
         // 命名成员写入:模块成员只读 -- 越模块写会隐式创建未声明全局,违「赋值不隐式创建」。
         [[nodiscard]]
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;

@@ -2,11 +2,9 @@
 
 #include "error/Error.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/ObjMovement.hpp"
-#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -34,18 +32,6 @@ namespace aria {
             return v;
         }
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
-    }
-
-    Opt<Value> ObjException::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        const auto hit = load_field(ctx, name);
-        if (!hit) {
-            return std::nullopt;
-        }
-        const auto member = *hit;
-        if (!is_method(member)) {
-            return member;
-        }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     ObjException* new_exception(GC& gc, const ErrorCode code, const StringView message) {

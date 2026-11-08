@@ -54,10 +54,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
         // 整数键:负数从尾计数、归一化后越界即报(越界值就地拼进文案),非整数键 TypeMismatch,查读无分配。
         // Range 键 = 切片:产出新 list、只读(路径有分配),段解析收口 resolve_slice_bounds。
         [[nodiscard]]

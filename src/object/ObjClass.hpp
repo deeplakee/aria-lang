@@ -66,6 +66,10 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
+        // 声明命名空间中的成员保持原值,不绑定当前对象。
+        [[nodiscard]]
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
+
         // 链查原语(公开):沿 super 链查,链上首个命中拷出;纯查询零分配不 fail,
         // 实例链腿与元类腿一律走它。
         [[nodiscard]]

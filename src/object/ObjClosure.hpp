@@ -67,10 +67,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定当前对象,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
     private:
         ObjFunction*       function_;       // 被包函数(恒非空,ctor ASSERT)
         Array<ObjUpvalue*> upvalues_;       // 捕获数组(ctor 空,CLOSURE 执行期逐个后填)

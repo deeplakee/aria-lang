@@ -53,10 +53,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
         // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;

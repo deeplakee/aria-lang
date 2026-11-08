@@ -31,10 +31,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
         // 是否还有下一个元素。纯查询,无分配、不报错。
         [[nodiscard]]
         virtual bool has_next() const noexcept = 0;

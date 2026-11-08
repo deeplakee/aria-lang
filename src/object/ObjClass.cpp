@@ -52,6 +52,8 @@ namespace aria {
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", repr(), name->view());
     }
 
+    Opt<Value> ObjClass::load_field_bound(AriaExeContext& ctx, ObjString* name) { return load_field(ctx, name); }
+
     bool ObjClass::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {
         set_field(name, value); // 继承名/新名新建键、本类已有原槽更新、父表不动;"init" 同步内聚于此
         return true;

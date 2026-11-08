@@ -1,10 +1,8 @@
 #include "object/ObjRange.hpp"
 
-#include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
-#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -51,18 +49,6 @@ namespace aria {
             return v;
         }
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", klass->repr(), name->view());
-    }
-
-    Opt<Value> ObjRange::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        const auto hit = load_field(ctx, name);
-        if (!hit) {
-            return std::nullopt;
-        }
-        const auto member = *hit;
-        if (!is_method(member)) {
-            return member;
-        }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

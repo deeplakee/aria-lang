@@ -62,10 +62,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
         // 整数键 = 字节域(与 len 同域):产出单字节 1-char string,负数从尾计数、归一化后越界即报;
         // 多字节序列中间字节取该字节自身(经单字符常量表直读,零分配)。Range 键走切片。receiver 经值栈为根。
         [[nodiscard]]

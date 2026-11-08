@@ -64,6 +64,8 @@ namespace aria {
         return ctx.fail(ErrorCode::UndefinedProperty, "{} has no member '{}'", repr(), name->view());
     }
 
+    Opt<Value> ObjModule::load_field_bound(AriaExeContext& ctx, ObjString* name) { return load_field(ctx, name); }
+
     bool ObjModule::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {
         return ctx.fail(ErrorCode::TypeMismatch, "type {} does not support field assignment", type_name());
     }

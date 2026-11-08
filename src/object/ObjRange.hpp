@@ -66,10 +66,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override:仅实例方法绑定 this,其余成员原样返回。
-        [[nodiscard]]
-        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
-
     private:
         i64      from_;         // 区间起点端点(恒有)
         Opt<i64> to_;           // 区间终点端点;nullopt = 无上界开区间

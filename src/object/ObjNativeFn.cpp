@@ -29,22 +29,6 @@ namespace aria {
         return std::format("<fn {}>", name_->view());
     }
 
-    ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
-        return gc.new_object<ObjNativeFn>(name, fn);
-    }
-
-    ObjNativeFn* new_native_fn(GC& gc, const NativeFn fn) {
-        // 匿名重载:委托 StringView 名重载,驻留与守卫由其内部完成。
-        return new_native_fn(gc, kAnonymousName, fn);
-    }
-
-    ObjNativeFn* new_native_fn(GC& gc, const StringView name, const NativeFn fn) {
-        // name_str 由本函数内部 intern 并自守跨下方 new_object;调用方传文本即可。
-        const auto name_str = new_string(gc, name);
-        const auto guard    = gc.make_guard(name_str);
-        return new_native_fn(gc, name_str, fn);
-    }
-
     Opt<Value> ObjNativeFn::load_field_from_class(AriaExeContext& ctx, ObjString* name) {
         const auto klass = ctx.native_fn_class();
         if (const auto v = klass->find_field(name)) {
@@ -68,4 +52,21 @@ namespace aria {
         }
         return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
+
+    ObjNativeFn* new_native_fn(GC& gc, ObjString* name, const NativeFn fn) {
+        return gc.new_object<ObjNativeFn>(name, fn);
+    }
+
+    ObjNativeFn* new_native_fn(GC& gc, const NativeFn fn) {
+        // 匿名重载:委托 StringView 名重载,驻留与守卫由其内部完成。
+        return new_native_fn(gc, kAnonymousName, fn);
+    }
+
+    ObjNativeFn* new_native_fn(GC& gc, const StringView name, const NativeFn fn) {
+        // name_str 由本函数内部 intern 并自守跨下方 new_object;调用方传文本即可。
+        const auto name_str = new_string(gc, name);
+        const auto guard    = gc.make_guard(name_str);
+        return new_native_fn(gc, name_str, fn);
+    }
+
 } // namespace aria

@@ -113,8 +113,8 @@ namespace aria {
                 return call_bound_method(ctx, obj->as<ObjBoundMethod>(), argc);
             default: {
                 // 其余对象类型:按 `__call__` 钩子名经咨询口自类面取实现后调(值本地状态出局);
-                // 调用区就地复用 [callee, a1..aN] 恰是 [this, args](槽 0 兼返回槽),递归交
-                // call_value 分发。
+                // 槽 0 改为实际被调用对象,不沿用成员宿主;查询期间对象也保持在栈上。
+                ctx.peek(argc) = callee;
                 if (const auto target = obj->load_field_from_class(ctx, ctx.str<"__call__">())) {
                     return call_value(ctx, *target, argc);
                 }

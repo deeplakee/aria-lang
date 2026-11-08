@@ -1,0 +1,51 @@
+// 可调用对象字段以实际被调用对象作为 __call__ 接收者,不使用字段宿主。
+def Callable {
+    init(base) { this.base = base; }
+    __call__(first, second) { return this.base + first * 10 + second; }
+    read() { return this.base; }
+}
+def Holder {
+    init() { this.base = 1000; }
+    read() { return this.base; }
+}
+var holder = Holder();
+holder.callback = Callable(7);
+assert(holder.callback(2, 3) == 30);
+var callback = holder.callback;
+assert(callback(2, 3) == 30);
+
+// 普通函数、已有绑定方法、实例方法及类构造的原有派发不变。
+fun plain(first, second) { return first * 10 + second; }
+holder.function_value = plain;
+assert(holder.function_value(2, 3) == 23);
+var other = Callable(90);
+holder.bound = other.read;
+assert(holder.bound() == 90);
+assert(holder.read() == 1000);
+holder.kind = Callable;
+assert(holder.kind(12).read() == 12);
+
+// __call__ 自身是已有绑定方法时,仍使用它保存的接收者。
+def BoundCallable {}
+BoundCallable.__call__ = other.read;
+holder.bound_callable = BoundCallable();
+assert(holder.bound_callable() == 90);
+
+// 递归转发到另一个可调用对象时,每一层都建立自己的接收者。
+def Forward {}
+Forward.__call__ = Callable(50);
+holder.forward = Forward();
+assert(holder.forward(2, 3) == 73);
+
+// 实参仍按原顺序求值并传递,被调用对象在实参求值前已选定。
+var order = 0;
+fun first_arg() { order = order * 10 + 1; return 2; }
+fun second_arg() { order = order * 10 + 2; return 3; }
+assert(holder.callback(first_arg(), second_arg()) == 30);
+assert(order == 12);
+fun replace_callback() {
+    holder.callback = Callable(80);
+    return 2;
+}
+assert(holder.callback(replace_callback(), 3) == 30);
+assert(holder.callback(2, 3) == 103);

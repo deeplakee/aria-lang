@@ -128,6 +128,8 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 
 ObjNativeFn 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。is_method 同时识别脚本与原生实例方法;ObjInstance、内建容器/迭代器/异常以及函数族/协程值的显式绑定读取据此绑定脚本或原生实例方法,其他值及已有绑定方法原样返回;Object 默认读取仍只委托 load_field,class/module 命名空间与实例字段仍原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
 
+可调用对象派发时,call_value 的 __call__ 分支先将槽 0 设为实际被调用对象,再从其类型链查询实现并递归派发。成员直接调用留下的字段宿主不能充当该对象的 this;普通函数、类构造和绑定方法各自的分支不受此覆写规则影响。实参槽位与数量保持不变,已有绑定钩子仍使用其保存的接收者,转发到另一个可调用对象时重新建立该对象的接收者。
+
 **错误走侧信道寄存器** -- 原生函数调 `ctx.fail(code, fmt, ...)`(或 `ctx.raise(code, detail)`)写入执行上下文的挂起错误寄存器(`Movement::pending_error_`)后 `return false`;`ctx.fail` 返 `FailSignal` 哨兵(按调用点返回类型隐式转换:false/nullptr/nullopt)、`ctx.raise` 返 void(语句式站点),故失败路径惯用一行 `return ctx.fail(...)`(同时置寄存器与返回失败),成功路径 `info.set_return_val(...); return true;`。VM 在 `CALL` 后以**返回的 bool 为成败信号**--`true` 走成功路径(`ctx.drop(argc)`,槽 0 升至栈顶;切换后 drop 落进场 ctx 的例外见 §4.9),`false` 后载荷留寄存器,调用方错误站点统一 `goto unwind_check` 交 `unwind` 派发/物化(§4.5)。`Error` 仅在出错时构造,不进每次调用的返回值。寄存器置于**执行上下文**而非 `AriaVM`:错误状态随上下文走,M6 协程期每个协程有独立的挂起错误(各自 raise/检查,互不串扰);M1 单一主上下文,等价于 VM 级单寄存器。`reset()` 复用上下文时一并清空;`raise` 断言当前无挂起(防嵌套 raise 未取走就再 raise)。
 
 **bool 与寄存器的同步** -- bool 是成败信号,寄存器是错误载荷容器,二者须一致。VM 据 bool 分支:成功路径仅 debug 断言 `!has_error()` 验证契约(寄存器本就空 -- 进场已守、原生未 raise;若违约 debug 暴露,release 不静默清掉掩盖),失败路径 `take_error()` 取载荷(寄存器空则 `*` 解引用空 Opt 属 UB,debug 断言先暴露)。debug 断言 `ok == !has_error()` 捕捉两类违约:

@@ -48,9 +48,13 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸读 override:类链直取,miss 就地 fail;绑定读走基类默认(句柄自身即槽 0 接收者)。定义在 .cpp。
+        // 裸读 override:类链直取,miss 就地 fail。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
+
+        // 绑定读 override:仅实例方法绑定当前对象,其余成员原样返回。
+        [[nodiscard]]
+        Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
     };
 
     // 工厂:分配执行上下文并绑定宿主回指针。主上下文经 current_、协程经 create 原语发布。构造

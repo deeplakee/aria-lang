@@ -1,0 +1,57 @@
+// 函数族与协程值显式绑定类型实例方法,其他类型成员保持原值。
+def Counter {
+    init(value) { this.value = value; }
+    read() { return this.value; }
+    constant() { return 37; }
+}
+var counter = Counter(7);
+var bound = counter.read;
+fun worker() { return 11; }
+fun plain() { return 19; }
+var co = Coroutine.create(worker);
+
+for ([kind, value, expected] in [
+    [Closure, worker, "<fn worker>"],
+    [NativeFn, println, "<fn println>"],
+    [BoundMethod, bound, "<bound method read>"],
+    [Coroutine, co, "<coroutine suspended>"]
+]) {
+    var show = value.__str__;
+    assert(type(show) == "BoundMethod");
+    assert(show() == expected);
+
+    kind.answer = 42;
+    assert(value.answer == 42);
+    kind.empty_value = nil;
+    assert(value.empty_value == nil);
+
+    kind.function_value = plain;
+    assert(value.function_value === plain);
+    var function_value = value.function_value;
+    assert(function_value() == 19);
+
+    kind.native_function = type;
+    assert(value.native_function === type);
+
+    kind.callback = bound;
+    assert(value.callback === bound);
+    var callback = value.callback;
+    assert(callback() == 7);
+
+    kind.script_method = Counter.constant;
+    var script_method = value.script_method;
+    assert(type(script_method) == "BoundMethod");
+    assert(script_method() == 37);
+}
+
+// 读取 bound 自身的方法不改其内部接收者;Coroutine 静态原语仍不绑定。
+assert(bound() == 7);
+assert(worker() == 11);
+assert(co.create === Coroutine.create);
+assert(co.resume === Coroutine.resume);
+assert(co.yield === Coroutine.yield);
+assert(co.status === Coroutine.status);
+var show_coroutine = co.__str__;
+var resume = co.resume;
+assert(resume(co) == 11);
+assert(show_coroutine() == "<coroutine done>");

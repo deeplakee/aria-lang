@@ -1,10 +1,12 @@
 #include "object/ObjClosure.hpp"
 
 #include "memory/GC.hpp"
+#include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaExeContext.hpp"
+#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -45,6 +47,18 @@ namespace aria {
     }
 
     Opt<Value> ObjClosure::load_field(AriaExeContext& ctx, ObjString* name) { return load_field_from_class(ctx, name); }
+
+    Opt<Value> ObjClosure::load_field_bound(AriaExeContext& ctx, ObjString* name) {
+        const auto hit = load_field(ctx, name);
+        if (!hit) {
+            return std::nullopt;
+        }
+        const auto member = *hit;
+        if (!aria::is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
+    }
 
     ObjClosure* new_closure(GC& gc, ObjFunction* function) { return gc.new_object<ObjClosure>(gc, function); }
 

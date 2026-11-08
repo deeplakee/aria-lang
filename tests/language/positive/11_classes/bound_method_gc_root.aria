@@ -1,0 +1,20 @@
+// 临时绑定方法解包后,目标闭包及捕获值跨变参打包的 GC 存活。
+fun make_class() {
+    var captured = "bound" + str(456);
+    def Counter {
+        read(...args) {
+            return captured + str(this.base + args[0]);
+        }
+    }
+    return Counter;
+}
+var Counter = make_class();
+var counter = Counter();
+counter.base = 50;
+fun take_method() { return counter.read; }
+fun replace_method() {
+    Counter.read = nil;
+    return 3;
+}
+assert(take_method()(replace_method()) == "bound45653");
+assert(Counter.read == nil);

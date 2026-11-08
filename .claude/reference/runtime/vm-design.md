@@ -105,6 +105,7 @@ class AriaVM {
 > **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时标 `modules_`/`builtins_`/`registers_`/`str_table_`/`char_cache_` 五表 + `current_` 一点(其余经对象图级联,见下);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 当时以纯 C++ 类落地(非 Object),tracer 直标;M6(B1)已升级 `ObjMovement : Object` 且主上下文一并 GC 分配(ctor 首笔),tracer 收敛为只标 `current_` 一点--运行链与挂起协程全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联(`contexts_` 与链尾断言退役,§4.9)。下方描述即当前形态。
 
 - 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure`(trace 级联标 function 与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
+- 闭包进帧的根交接由 `Eval::call_closure` 收口:入口建立闭包临时根,覆盖参数检查、帧容量检查与 `prepare_call_args` 的变参 List 分配;`enter_frame` 发布后由 `frame.closure` 接管,函数退出释放临时根。直接方法调用移除 target 栈槽、绑定方法解包替换槽 0 后,均不可再依赖原栈槽或类表保活闭包;实参求值可能已改写类表。闭包的 trace 同时保活函数和捕获值。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
 - safe point:循环回边(`JUMP_BACK`)与 `new_object` 内(已落地)。`CALL` 与协程切换点不设 `maybe_collect`:切换序列零分配,首启压参的栈扩容不触 GC(Buffer allocate/reallocate 不变式),无必要。
 

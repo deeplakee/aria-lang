@@ -1,0 +1,19 @@
+// 实参改写类方法后,已解析的闭包及捕获值跨变参打包的 GC 存活。
+fun make_class() {
+    var captured = "direct" + str(123);
+    def Counter {
+        read(...args) {
+            return captured + str(this.base + args[0]);
+        }
+    }
+    return Counter;
+}
+var Counter = make_class();
+var counter = Counter();
+counter.base = 40;
+fun replace_method() {
+    Counter.read = nil;
+    return 2;
+}
+assert(counter.read(replace_method()) == "direct12342");
+assert(Counter.read == nil);

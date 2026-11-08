@@ -136,14 +136,17 @@ namespace aria {
     }
 
     bool Eval::call_closure(AriaExeContext& ctx, ObjClosure* obj, const u8 argc) {
-        const auto fn = obj->function();
+        // 进帧前由临时根保活闭包;进帧后由 frame.closure 接管。
+        const auto guard = ctx.gc().make_guard(obj);
+        const auto fn    = obj->function();
         if (!ctx.check_arity(fn, argc)) {
             return false;
         }
         if (ctx.frames_full()) {
             return ctx.fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
-        ctx.enter_frame(obj, ctx.prepare_call_args(fn, argc));
+        const auto prepared_argc = ctx.prepare_call_args(fn, argc);
+        ctx.enter_frame(obj, prepared_argc);
         return true;
     }
 

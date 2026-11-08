@@ -30,4 +30,7 @@ __pycache__/
 .claude/settings.local.json
 .claude/.local/
 
+# Codex CLI 本地配置（指向本机 CLion MCP 端口，机器相关）
+.codex/
+
 .zcode/plans/

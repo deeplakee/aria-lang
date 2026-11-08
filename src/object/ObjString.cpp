@@ -112,7 +112,7 @@ namespace aria {
     Opt<Value> ObjString::slice(AriaExeContext& ctx, const ObjRange* range) const {
         // 段内容拷进 GC 记账 builder(带种串构造单发定容),倒序段在 builder 上按字节反转(字节域);
         // receiver 与 range 经调用方值栈为根。段解析收口 resolve_slice_bounds。
-        const auto segment = resolve_slice_bounds(range, length_);
+        const auto segment = range->resolve_slice_bounds(length_);
         if (!segment) {
             return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->repr());
         }

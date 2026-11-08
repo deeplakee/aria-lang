@@ -26,6 +26,32 @@ namespace aria {
         Object{content_hash(from, Opt<i64>{}, false), ObjType::RANGE}, from_{from}, to_{std::nullopt},
         is_exclusive_{false} {}
 
+    Opt<SliceSegment> ObjRange::resolve_slice_bounds(const usize size) const noexcept {
+        const bool is_unbounded = !has_upper();
+
+        // 无上界形态另放行「末尾之后一位」= 空段(解构 rest 的空尾据此成立),先短路它。
+        if (is_unbounded && from_ == static_cast<i64>(size)) {
+            return SliceSegment{.start = size, .count = 0, .is_reversed = false};
+        }
+        const auto from = util::resolve_index(from_, size);
+        if (!from) {
+            return std::nullopt;
+        }
+        // 无上界形态(后缀语义):自起点取到末尾。
+        if (is_unbounded) {
+            return SliceSegment{.start = *from, .count = size - *from, .is_reversed = false};
+        }
+        // 有上界:上界同须落实元素位置(空容器自然 nullopt);方向由归一化端点大小关系定,不含上界少走末元素。
+        const auto to = util::resolve_index(*to_, size);
+        if (!to) {
+            return std::nullopt;
+        }
+        const bool  is_reversed = *from > *to;
+        const usize start       = is_reversed ? *to + is_exclusive_ : *from;
+        const usize count       = util::abs_diff(*from, *to) + (is_exclusive_ ? 0 : 1);
+        return SliceSegment{.start = start, .count = count, .is_reversed = is_reversed};
+    }
+
     bool ObjRange::equals(const Object* other) const noexcept {
         ASSERT(other != nullptr, "null object pointer");
         if (this == other) {
@@ -56,33 +82,5 @@ namespace aria {
     }
 
     ObjRange* new_range(GC& gc, const i64 from) { return gc.new_object<ObjRange>(from); }
-
-    Opt<SliceSegment> resolve_slice_bounds(const ObjRange* range, const usize size) noexcept {
-        const i64  raw_from     = range->from();
-        const bool is_unbounded = !range->has_upper();
-
-        // 无上界形态另放行「末尾之后一位」= 空段(解构 rest 的空尾据此成立),先短路它。
-        if (is_unbounded && raw_from == static_cast<i64>(size)) {
-            return SliceSegment{.start = size, .count = 0, .is_reversed = false};
-        }
-        const auto from = util::resolve_index(raw_from, size);
-        if (!from) {
-            return std::nullopt;
-        }
-        // 无上界形态(后缀语义):自起点取到末尾。
-        if (is_unbounded) {
-            return SliceSegment{.start = *from, .count = size - *from, .is_reversed = false};
-        }
-        // 有上界:上界同须落实元素位置(空容器自然 nullopt);方向由归一化端点大小关系定,不含上界少走末元素。
-        const auto to = util::resolve_index(*range->to(), size);
-        if (!to) {
-            return std::nullopt;
-        }
-        const bool  is_exclusive = range->is_exclusive();
-        const bool  is_reversed  = *from > *to;
-        const usize start        = is_reversed ? *to + is_exclusive : *from;
-        const usize count        = util::abs_diff(*from, *to) + (is_exclusive ? 0 : 1);
-        return SliceSegment{.start = start, .count = count, .is_reversed = is_reversed};
-    }
 
 } // namespace aria

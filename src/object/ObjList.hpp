@@ -55,7 +55,7 @@ namespace aria {
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
         // 整数键:负数从尾计数、归一化后越界即报(越界值就地拼进文案),非整数键 TypeMismatch,查读无分配。
-        // Range 键 = 切片:产出新 list、只读(路径有分配),段解析收口 resolve_slice_bounds。
+        // Range 键 = 切片:产出新 list、只读(路径有分配)。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
@@ -64,8 +64,7 @@ namespace aria {
         bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
     private:
-        // 切片(Range 键):段解析收口 ObjRange.cpp 的 resolve_slice_bounds(从尾计数、无上界给后缀、
-        // 空段以两端相等+不含上界表示),本函数只按方向折算 count、铸新 list 段拷。
+        // 切片(Range 键):负端点从尾计数,无上界取后缀,倒序区间产出倒序元素;返回新 list。
         [[nodiscard]]
         Opt<Value> slice(AriaExeContext& ctx, const ObjRange* range);
 

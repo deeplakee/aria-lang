@@ -88,7 +88,7 @@ namespace aria {
 
     Opt<Value> ObjList::slice(AriaExeContext& ctx, const ObjRange* range) {
         // 段解析收口 resolve_slice_bounds:nullopt = 无法形成合法区间,唯一失败点报错就地烘焙。
-        const auto segment = resolve_slice_bounds(range, elements_.size());
+        const auto segment = range->resolve_slice_bounds(elements_.size());
         if (!segment) {
             return ctx.fail(ErrorCode::IndexOutOfBounds, "slice range {} out of range", range->repr());
         }

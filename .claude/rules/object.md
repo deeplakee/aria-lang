@@ -121,7 +121,7 @@ paths:
 
 ### 切片段两类型共享
 
-- `resolve_slice_bounds(range, size)`（`ObjRange.cpp` 收口）是 `ObjList` 与 `ObjString` 切片的共同解析口，返 `Opt<SliceSegment>{start, count, is_reversed}`。
+- `ObjRange::resolve_slice_bounds(size) const noexcept`（`ObjRange.cpp` 收口）是 `ObjList` 与 `ObjString` 切片的共同解析口，返 `Opt<SliceSegment>{start, count, is_reversed}`。
 - 长度与方向的折算全在解析口：有上界形态两端点各从尾计数、方向由归一化端点大小关系自带（与 range 迭代同一判据）、不含上界少走迭代序末元素、两端相等即空段；**无上界形态 `i..` 走后缀语义**，起点从尾计数后允许 `== size` 得空段（解构 rest 的空尾据此成立）。
 - 端点越界与空容器同为 nullopt，唯一失败文案 `slice range {} out of range`（插被请求的 range 渲染，list 与 string 同串）。
 - list 切片铸新 list 段拷（正序整段一次拷 / 倒序经 `Array::copy_reversed_from`）；string 切片域仍是字节，倒序段产出字节倒排串（多字节输入下非合法 UTF-8）。

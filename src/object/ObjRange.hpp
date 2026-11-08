@@ -8,6 +8,13 @@ namespace aria {
 
     class ObjString;
 
+    // 切片段解析结果:升序源段起点 + 元素数 + 是否反向写入;长度与方向折算全在解析口完成,消费端只按此段拷。
+    struct SliceSegment {
+        usize start;
+        usize count;
+        bool  is_reversed;
+    };
+
     // range 对象:a..b(含上界)/a...b(不含上界)/a..(无上界)的纯值载体;from > to 表示倒序区间,方向由迭代器推断。
     class ObjRange final : public Object {
     public:
@@ -45,6 +52,11 @@ namespace aria {
             return is_exclusive_;
         }
 
+        // 切片段解析(容器 size -> SliceSegment),有上界两端点各经 resolve_index 从尾计数且均须落实元素位置;
+        // 无上界为后缀语义,起点允许 == size 得空段(解构 rest 的空尾据此成立)。纯换算,无分配无 fail。
+        [[nodiscard]]
+        Opt<SliceSegment> resolve_slice_bounds(usize size) const noexcept;
+
         // 纯值无子对象,标记空操作。
         void trace(GC&) const noexcept override {}
 
@@ -79,18 +91,6 @@ namespace aria {
     // 无上界开区间重载(MAKE_RANGE unbounded 位)。
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from);
-
-    // 切片段解析结果:升序源段起点 + 元素数 + 是否反向写入;长度与方向折算全在解析口完成,消费端只按此段拷。
-    struct SliceSegment {
-        usize start;
-        usize count;
-        bool  is_reversed;
-    };
-
-    // 切片段解析(range + 容器 size -> SliceSegment),有上界/无上界两形态统一在此:有上界两端点各经 resolve_index 从尾计数
-    // 且均须落实元素位置;无上界为后缀语义,起点允许 == size 得空段(解构 rest 的空尾据此成立)。纯换算,无分配无 fail。
-    [[nodiscard]]
-    Opt<SliceSegment> resolve_slice_bounds(const ObjRange* range, usize size) noexcept;
 
 } // namespace aria
 

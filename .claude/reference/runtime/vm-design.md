@@ -277,6 +277,8 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 模块点号仅查 globals；类点号仅查自身及父类模板表。全局 is_a(value, target) 使用真实所属类链，is_subclass(derived, base) 查询模板继承，包含自身；原始值的 is_a 返回 false，非法目标类仍报 TypeMismatch。结构查询由 Builtin.cpp 内部辅助函数实现，不读取用户同名成员。Object 不再注册内建 is_a，默认 init 与 __str__ 保留，隐式钩子查询不变。本阶段不修改方法绑定、字节码调用栈形或协程/重入口。
 
+普通成员读取的基类默认路径为 `load_field` -> `load_field_from_class`；类型查询的基类默认报 `UndefinedProperty`。仅实例字段、类声明链和模块 globals 需要重写普通查询，内建对象、函数族、迭代器与协程继承默认委托；各类型保留自己的类型查询及缺席文案，绑定读取策略不变。
+
 ## 5. 早期简化(M1 的刻意收敛,均已演化)
 
 M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里跑完,值栈与帧栈行为正确**。当时的收敛项现状:

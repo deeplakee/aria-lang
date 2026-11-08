@@ -1,11 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <format>
+
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
+#include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
@@ -102,4 +105,39 @@ TEST(ObjectProtocolDefaults, MemberIndexDefaults) {
     std::tie(code, msg) = take_pending_error(vm);
     EXPECT_EQ(code, ErrorCode::TypeMismatch);
     EXPECT_TRUE(msg.contains("type Module does not support subscript access"));
+}
+
+// 内部对象没有类型成员表,普通读、绑定读与类型查询均返回可恢复的缺席错误。
+TEST(ObjectProtocolDefaults, FunctionAndUpvalueMissingMembers) {
+    AriaVM vm;
+    vm.gc().set_stress(true);
+    auto&      gc       = vm.gc();
+    const auto module   = new_module(gc, "<test>");
+    auto       guard    = gc.make_guard(module);
+    const auto function = aria::new_function(gc, module, "internal", 0, 0, false);
+    guard.push(function);
+    auto       slot    = Value::nil_val();
+    const auto upvalue = aria::new_upvalue(gc, &slot);
+    guard.push(upvalue);
+    const auto name = new_string(gc, "missing");
+    guard.push(name);
+
+    aria::Object* objects[] = {function, upvalue};
+    for (const auto object: objects) {
+        const auto expected = std::format("Runtime: UndefinedProperty {} has no member 'missing'", object->repr());
+        EXPECT_FALSE(object->load_field_from_class(*vm.current_context(), name));
+        auto [code, message] = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+        EXPECT_EQ(message, expected);
+
+        EXPECT_FALSE(object->load_field(*vm.current_context(), name));
+        std::tie(code, message) = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+        EXPECT_EQ(message, expected);
+
+        EXPECT_FALSE(object->load_field_bound(*vm.current_context(), name));
+        std::tie(code, message) = take_pending_error(vm);
+        EXPECT_EQ(code, ErrorCode::UndefinedProperty);
+        EXPECT_EQ(message, expected);
+    }
 }

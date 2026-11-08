@@ -48,10 +48,6 @@ namespace aria {
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸读 override:类链直取,miss 就地 fail。
-        [[nodiscard]]
-        Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
-
         // 绑定读 override:仅实例方法绑定当前对象,其余成员原样返回。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;

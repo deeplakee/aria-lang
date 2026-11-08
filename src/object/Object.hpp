@@ -113,14 +113,14 @@ namespace aria {
         // 从所属类的成员链载入(名字即契约:从 class 起查,值本地状态出局) -- 实例自 klass 模板
         // 链、类值自 Class 元类链、内建/函数族/模块/协程自各自单例链。错误契约同 load_field:
         // nullopt ⟺ 已 fail,miss 措辞按宿主类型就地烘焙;映射在各宿主 override 内静态定型,
-        // 无运行期 switch。成员读 = 本地值态 + 本口缺席腿。
+        // 无运行期 switch。基类默认报 UndefinedProperty;成员读 = 本地值态 + 本口缺席腿。
         [[nodiscard]]
         virtual Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name);
 
-        // 裸查找命名成员(PREPARE_METHOD 与算子/调用派发统一入口):name 为 intern 串(=== 同指针查表)。
-        // 返回查到的**原值**、永不铸 ObjBoundMethod、命中零分配:实例 fields 优先、miss 沿类链/表链取原值,
-        // 故每次解析按当前类链即时生效。**槽 0 在消费时序里恒为接收者**(非方法成员被调用时它不是成员值)。
-        // 错误契约:nullopt ⟺ 已 fail,miss 文案随宿主 override 就地烘焙;基类默认报 UndefinedProperty。
+        // 普通命名成员的裸查询(PREPARE_METHOD 解析入口,也供绑定读取使用):name 为 intern 串。
+        // 命中返回原值、零分配,不创建 ObjBoundMethod;基类默认委托类型成员查询。
+        // 实例重写为字段优先、再查类链;类重写为声明链查询;模块重写为 globals 查询。
+        // 错误契约:nullopt ⟺ 已 fail,miss 文案随宿主 override 就地烘焙;基类默认委托 load_field_from_class。
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaExeContext& ctx, ObjString* name);
 

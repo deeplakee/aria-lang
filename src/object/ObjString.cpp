@@ -98,7 +98,11 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     Opt<Value> ObjString::load_index(AriaExeContext& ctx, const Value key) {

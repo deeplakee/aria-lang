@@ -4,6 +4,7 @@
 #include "object/ObjClass.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
+#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -59,7 +60,11 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     ObjRange* new_range(GC& gc, const i64 from, const i64 to, const bool is_exclusive) {

@@ -3,6 +3,7 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "runtime/ObjMovement.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -31,7 +32,11 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
 } // namespace aria

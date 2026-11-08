@@ -8,6 +8,7 @@
 #include "object/PrintGuard.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/util.hpp"
+#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 namespace aria {
@@ -70,7 +71,11 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     Opt<Value> ObjMap::load_index(AriaExeContext& ctx, const Value key) {

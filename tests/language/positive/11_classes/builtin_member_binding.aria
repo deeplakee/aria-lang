@@ -1,0 +1,65 @@
+// 内建对象仅绑定未绑定实例方法;普通值、普通函数和已有绑定方法保持原值。
+def Owner {
+    init(value) { this.value = value; }
+    read() { return this.value; }
+    constant() { return 37; }
+}
+var owner = Owner(7);
+var bound = owner.read;
+fun plain() { return 19; }
+
+for ([kind, value] in [
+    [List, []], [Map, {}], [String, "text"],
+    [Range, 1..2], [Iterator, [].iter()], [Exception, Error("message")]
+]) {
+    kind.answer = 42;
+    assert(value.answer == 42);
+    kind.empty_value = nil;
+    assert(value.empty_value == nil);
+
+    kind.function_value = plain;
+    assert(value.function_value === plain);
+    var function_value = value.function_value;
+    assert(function_value() == 19);
+
+    kind.native_function = type;
+    assert(value.native_function === type);
+    var native_function = value.native_function;
+    assert(native_function(1) == "Int");
+
+    kind.callback = bound;
+    assert(value.callback === bound);
+    var callback = value.callback;
+    assert(callback() == 7);
+    assert(value.callback() == 7);
+
+    kind.script_method = Owner.constant;
+    var script_method = value.script_method;
+    assert(type(script_method) == "BoundMethod");
+    assert(script_method() == 37);
+
+    kind.native_method = Object.init;
+    var native_method = value.native_method;
+    assert(type(native_method) == "BoundMethod");
+    assert(native_method() === value);
+}
+
+// 跨类移植保留方法性,不兼容的接收者在实际调用时报告类型错误。
+List.size_ = Map.size;
+var items = [];
+var size = items.size_;
+assert(type(size) == "BoundMethod");
+var rejected = 0;
+try {
+    items.size_();
+} catch (error) {
+    assert(error.message().contains("receiver must be a map, got List"));
+    rejected += 1;
+}
+try {
+    size();
+} catch (error) {
+    assert(error.message().contains("receiver must be a map, got List"));
+    rejected += 1;
+}
+assert(rejected == 2);

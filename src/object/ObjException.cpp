@@ -6,6 +6,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/ObjMovement.hpp"
+#include "value/ObjBridge.hpp"
 
 namespace aria {
 
@@ -44,7 +45,11 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), *hit, this));
+        const auto member = *hit;
+        if (!is_method(member)) {
+            return member;
+        }
+        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
     }
 
     ObjException* new_exception(GC& gc, const ErrorCode code, const StringView message) {

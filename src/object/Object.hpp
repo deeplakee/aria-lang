@@ -126,7 +126,7 @@ namespace aria {
 
         // 绑定读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):同一趟裸查找;实例 fields 命中恒
         // 直读,类链命中经 is_method 现场铸 bound 绑 this、不写回 fields(类/父类改写对既有实例立即生效);
-        // 内置类表条目全为原生方法,命中无条件绑定;基类默认 = 直接委托 load_field。错误契约同 load_field。
+        // 内置容器/迭代器/异常同样仅绑定实例方法;基类默认 = 直接委托 load_field。错误契约同 load_field。
         [[nodiscard]]
         virtual Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name);
         // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):基类默认报 "type X does

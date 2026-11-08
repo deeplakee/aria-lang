@@ -41,9 +41,12 @@ namespace aria {
     }
 
     Opt<Value> ObjInstance::load_field_bound(AriaExeContext& ctx, ObjString* name) {
-        // fields 命中即真字段优先;缺席经裸读探类链,命中按 is_method 判:方法绑 this、不写回
-        // fields;new_bound_method 唯一分配点,实例已根化。
-        const auto hit = load_field(ctx, name);
+        // 实例字段命中原样返回;仅类链命中的方法现场绑定,不写回 fields。
+        // new_bound_method 为唯一分配点,实例已根化。
+        if (const auto entry = fields_.find(Value::from_obj(name))) {
+            return entry->value;
+        }
+        const auto hit = load_field_from_class(ctx, name);
         if (!hit) {
             return std::nullopt;
         }

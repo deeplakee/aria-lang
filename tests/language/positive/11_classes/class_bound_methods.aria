@@ -3,6 +3,7 @@
 def Greeter {
     init(name) { this.name = name; }
     code() { return this.name * 10; }
+    callback_value() { return this.callback; }
 }
 var g1 = Greeter(1);
 var g2 = Greeter(2);
@@ -43,3 +44,18 @@ fun keep() {
 }
 keep();
 assert(leak() == 420);
+
+// 实例字段里的裸方法保持原值,普通读取与 this 字段读取都不自动绑定。
+g1.callback = Greeter.code;
+assert(g1.callback === Greeter.code);
+assert(type(g1.callback) == "Closure");
+assert(g1.callback_value() === Greeter.code);
+
+// 字段遮蔽同名类方法时,已有绑定方法和 nil 也都原样返回。
+g2.code = m;
+assert(g2.code === m);
+assert(g2.code() == 10);
+g2.code = Greeter.code;
+assert(g2.code === Greeter.code);
+g2.code = nil;
+assert(g2.code == nil);

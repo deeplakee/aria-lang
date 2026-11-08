@@ -92,7 +92,7 @@ paths:
 ### 类成员读写与绑定方法不缓存
 
 - **类成员读写取 Python/JS 式读穿透、写遮蔽**：读沿 super 链 fall-through；写落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新、沿链全 miss 的新名字亦落接收类，动态新增允许），父表不动。
-- **绑定方法不缓存**：`ObjInstance::load_field_bound` 命中方法戳闭包即**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
+- **绑定方法不缓存**：`ObjInstance::load_field_bound` 先查实例字段，命中原样返回（包括裸方法、已有绑定方法与 nil）；仅类链命中的方法戳闭包**每次访问现场绑定**新 `ObjBoundMethod`，**不写回 fields**。
 - 缓存会让「类 / 父类改写方法」对已取过方法的实例陈旧、monkey patch 半可用且难解释；不缓存换来改写对既有实例立即生效（monkey patch 完整）与 `fields_` 回归纯字段。
 - 方法值是一等值省不掉；**调用路径**（`PREPARE_METHOD` 与算子/调用派发）经裸查找 `load_field` 走零分配、不绑定形态。
 

@@ -4,14 +4,14 @@
 
 #include "bytecode/code.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 
 using aria::GC;
 using aria::new_module;
 using aria::new_string;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::StringView;
@@ -27,45 +27,46 @@ namespace {
 
     // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
     // collect 回收 m)。返回白色,调用方自守。无缺省、无 varargs。
-    ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
+    ObjFnProto* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity, arity, false); // min_arity = arity
+        return aria::new_fn_proto(gc, m, name, arity, arity, false); // min_arity = arity
     }
 
-    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_function。
+    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_fn_proto。
     // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
     // 扫掉;name 串由工厂内部 intern 并自守。
-    ObjFunction* new_function(GC& gc, const StringView name, const u8 arity) {
+    ObjFnProto* new_fn_proto(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
-        return aria::new_function(gc, m, name, arity, arity, false); // min_arity = arity
+        return aria::new_fn_proto(gc, m, name, arity, arity, false); // min_arity = arity
     }
 
 } // namespace
 
 // varargs 标志:工厂尾参入对象;arity 语义为**固定参数数**(rest 不计,帧槽深 = arity + 1)。
-TEST(ObjFunction, VarargsFlag) {
+TEST(ObjFnProto, VarargsFlag) {
     GC   gc;
     auto m      = make_module(gc);
     auto guard  = gc.make_guard(m);
-    auto var_fn = aria::new_function(gc, m, "f", 2, 1, true);
+    auto var_fn = aria::new_fn_proto(gc, m, "f", 2, 1, true);
     guard.push(var_fn);
     EXPECT_TRUE(var_fn->is_varargs());
     EXPECT_EQ(var_fn->arity(), 2); // rest 不计
     EXPECT_EQ(var_fn->min_arity(), 1);
 
-    auto plain = aria::new_function(gc, m, "g", 3, 3, false);
+    auto plain = aria::new_fn_proto(gc, m, "g", 3, 3, false);
     guard.push(plain);
     EXPECT_FALSE(plain->is_varargs());
     EXPECT_EQ(plain->arity(), 3);
 }
 
-TEST(ObjFunction, Basics) {
+TEST(ObjFnProto, Basics) {
     GC   gc;
     auto name = new_string(gc, "add");
-    auto fn   = new_function(gc, name->view(), 2);
-    EXPECT_TRUE(fn->is<ObjFunction>());
-    EXPECT_EQ(fn->type(), aria::ObjType::FUNCTION);
+    auto fn   = new_fn_proto(gc, name->view(), 2);
+    EXPECT_TRUE(fn->is<ObjFnProto>());
+    EXPECT_EQ(fn->type(), aria::ObjType::FN_PROTO);
+    EXPECT_EQ(fn->type_name(), "FnProto");
     EXPECT_EQ(fn->name(), name); // 同名 intern 同指针
     EXPECT_EQ(fn->arity(), 2);
     EXPECT_TRUE(fn->unit().code.empty()); // 初始空 CodeUnit
@@ -73,9 +74,9 @@ TEST(ObjFunction, Basics) {
     EXPECT_TRUE(fn->unit().lines.empty());
 }
 
-TEST(ObjFunction, EmitIntoUnit) {
+TEST(ObjFnProto, EmitIntoUnit) {
     GC    gc;
-    auto  fn = new_function(gc, "mul", 1);
+    auto  fn = new_fn_proto(gc, "mul", 1);
     auto& cu = fn->unit();
     cu.emit_op(aria::OpCode::LOAD_CONST, 3);
     cu.emit_word(cu.add_constant(Value::from_i32(42)), 3);
@@ -86,19 +87,19 @@ TEST(ObjFunction, EmitIntoUnit) {
     EXPECT_EQ(cu.constants.size(), usize{1});
 }
 
-TEST(ObjFunction, ToString) {
+TEST(ObjFnProto, ToString) {
     GC   gc;
-    auto fn = new_function(gc, "add", 0);
+    auto fn = new_fn_proto(gc, "add", 0);
     EXPECT_EQ(fn->repr(), "<fn add>");
 
-    auto script = new_function(gc, "<main>", 0); // 匿名入口单元(<main> 名)
+    auto script = new_fn_proto(gc, "<main>", 0); // 匿名入口单元(<main> 名)
     EXPECT_EQ(script->repr(), "<fn <main>>");
 }
 
-TEST(ObjFunction, TraceMarksNameAndConstants) {
+TEST(ObjFnProto, TraceMarksNameAndConstants) {
     GC gc;
     gc.set_stress(true);
-    auto fn    = new_function(gc, "add", 2);
+    auto fn    = new_fn_proto(gc, "add", 2);
     auto guard = gc.make_guard(fn); // stress 下后续任何 new_object 都会 collect,先保住 fn
     // 长串常量(独立 buffer,被回收则内容不可访问)
     auto constant = new_string(gc, "a long constant string beyond sso");
@@ -108,18 +109,18 @@ TEST(ObjFunction, TraceMarksNameAndConstants) {
     EXPECT_EQ(constant->view(), "a long constant string beyond sso");
 }
 
-TEST(ObjFunction, UnrootedFunctionSwept) {
+TEST(ObjFnProto, UnrootedFunctionSwept) {
     GC gc;
-    std::ignore        = new_function(gc, "f", 0); // 无根
+    std::ignore        = new_fn_proto(gc, "f", 0); // 无根
     const usize before = gc.bytes_allocated();
     gc.collect(); // 壳 + CodeUnit 内部 Array(此处未 emit,容量 0)回收
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-TEST(ObjFunction, SweptAfterGuardReleased) {
+TEST(ObjFnProto, SweptAfterGuardReleased) {
     GC gc;
     gc.set_stress(true);
-    auto fn = new_function(gc, "add", 0);
+    auto fn = new_fn_proto(gc, "add", 0);
     {
         auto guard  = gc.make_guard(fn);
         std::ignore = new_string(gc, "trigger"); // GC:fn 存活
@@ -131,7 +132,7 @@ TEST(ObjFunction, SweptAfterGuardReleased) {
 }
 
 // module_ 回指:构造时传入模块,不可变、非空。
-TEST(ObjFunction, ModuleBackref) {
+TEST(ObjFnProto, ModuleBackref) {
     GC   gc;
     auto m  = make_module(gc, "lib/utils");
     auto fn = make_function(gc, m, "f", 0);
@@ -140,7 +141,7 @@ TEST(ObjFunction, ModuleBackref) {
 
 // trace 标 module_:fn 入根 -> fn.trace 标 module_ -> 模块(及模块 name_)存活。
 // 验证 module <-> entry 环不影响 mark-sweep(module_ 不被根,仅经 fn.trace 可达)。
-TEST(ObjFunction, TraceMarksModule) {
+TEST(ObjFnProto, TraceMarksModule) {
     GC   gc;
     auto m  = make_module(gc, "lib/utils"); // 模块不单独根
     auto fn = make_function(gc, m, "f", 0); // m 经 make_function 内部 guard 存活至 fn 入根

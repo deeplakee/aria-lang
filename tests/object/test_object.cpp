@@ -5,7 +5,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
@@ -19,7 +19,7 @@ using aria::GC;
 using aria::new_module;
 using aria::new_string;
 using aria::ObjException;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::Pair;
@@ -54,7 +54,7 @@ TEST(ObjectTryAs, MatchReturnsPointer) {
 TEST(ObjectTryAs, MismatchReturnsNull) {
     GC   gc;
     auto s = new_string(gc, "hello");
-    EXPECT_EQ(s->try_as<ObjFunction>(), nullptr);
+    EXPECT_EQ(s->try_as<ObjFnProto>(), nullptr);
 }
 
 // const 重载:const Object* -> const T*。
@@ -63,7 +63,7 @@ TEST(ObjectTryAs, ConstOverload) {
     auto                s = new_string(gc, "hello");
     const aria::Object* o = s;
     EXPECT_EQ(o->try_as<ObjString>(), s);
-    EXPECT_EQ(o->try_as<ObjFunction>(), nullptr);
+    EXPECT_EQ(o->try_as<ObjFnProto>(), nullptr);
 }
 
 // 成员/下标访问协议的**基类默认**:未 override 的子类型对协议操作一律 ctx.fail 入
@@ -114,7 +114,7 @@ TEST(ObjectProtocolDefaults, FunctionAndUpvalueMissingMembers) {
     auto&      gc       = vm.gc();
     const auto module   = new_module(gc, "<test>");
     auto       guard    = gc.make_guard(module);
-    const auto function = aria::new_function(gc, module, "internal", 0, 0, false);
+    const auto function = aria::new_fn_proto(gc, module, "internal", 0, 0, false);
     guard.push(function);
     auto       slot    = Value::nil_val();
     const auto upvalue = aria::new_upvalue(gc, &slot);

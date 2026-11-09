@@ -52,7 +52,7 @@ TEST(ObjNativeFn, AnonymousUsesAnonymousName) {
     EXPECT_EQ(nf->repr(), "<fn <anonymous>>");
 }
 
-// kAnonymousName 与 ObjFunction 的 lambda 命名一致("<anonymous>")。
+// kAnonymousName 与 ObjFnProto 的 lambda 命名一致("<anonymous>")。
 TEST(ObjNativeFn, AnonymousNameConstantValue) { EXPECT_EQ(kAnonymousName, StringView{"<anonymous>"}); }
 
 // 只根化方法即可保活定义类;复制到其他类表不改变方法性或定义归属。

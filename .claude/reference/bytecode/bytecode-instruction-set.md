@@ -271,11 +271,11 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNativeFn`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
-| `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFunction`，创建 `ObjClosure` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
+| `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjClosure` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFunction` 元数据（非字节码尾随操作数）--`ObjFunction` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFunction`、建 `ObjClosure` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFnProto`、建 `ObjClosure` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
@@ -422,12 +422,12 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ### 5.4 闭包 / upvalue
 
-已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFunction`，无前置 `LOAD_CONST`）：
+已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFnProto`，无前置 `LOAD_CONST`）：
 
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
 # (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalueDesc 表,
-#  编译期 flush 进 ObjFunction 元数据)
+#  编译期 flush 进 ObjFnProto 元数据)
 CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upvalue_descs() 建捕获, 无尾随操作数
 # 块结束、x 将销毁且被捕获时: POP_N 整区弹局部 + CLOSE_UPVALUE 批量关闭槽址 >= 新栈顶的开 upvalue
 # (CodeGen emit_pop_locals_to 发射, 仅当弹区含被捕获局部, 落点见 §4.4);帧退出(RETURN/unwind)
@@ -629,10 +629,10 @@ class CodeUnit {
 四个容器字段直接 public 裸露，VM/编译器/反汇编器直接操作；字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`）收口于 CodeUnit 方法，越界以 bool 返回交调用方翻译。详见 `.claude/rules/bytecode.md`。
 
 - **`code` 用 `Array<u8>`**：opcode 与操作数统一按字节寻址，VM 读操作数直接取字节。
-- **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFunction::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
-- **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFunction` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
+- **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFnProto::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
+- **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFnProto` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
 
-`ObjFunction` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFunction::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
+`ObjFnProto` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFnProto::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
 
 ## 8. 反汇编器输出格式（已落地）
 

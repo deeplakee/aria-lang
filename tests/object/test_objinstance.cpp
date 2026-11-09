@@ -6,7 +6,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
@@ -20,7 +20,7 @@ using aria::GC;
 using aria::new_bound_method;
 using aria::new_class;
 using aria::new_closure;
-using aria::new_function;
+using aria::new_fn_proto;
 using aria::new_instance;
 using aria::new_module;
 using aria::new_string;
@@ -28,7 +28,7 @@ using aria::ObjBoundMethod;
 using aria::ObjClass;
 using aria::ObjClosure;
 using aria::ObjException;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjInstance;
 using aria::ObjModule;
 using aria::ObjString;
@@ -59,7 +59,7 @@ namespace {
     ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
-        auto fn    = new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
+        auto fn    = new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
         guard.push(fn);
         return new_closure(gc, fn);
     }

@@ -8,7 +8,7 @@
 #include "compile/Compiler.hpp"
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
@@ -21,7 +21,7 @@ using aria::Error;
 using aria::ErrorCode;
 using aria::i64;
 using aria::new_module;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::Result;
 using aria::SourceFile;
 using aria::Value;
@@ -44,7 +44,7 @@ namespace {
     };
 
     // 端到端：构造实际 SourceFile -> AriaVM::run(source, module)（编译并执行）。经 VM 的编译并执行入口
-    // （内部 Compiler 编排 + run(ObjFunction*)），非手拼 lex/parse/codegen/run。开 stress GC 锻炼编译期 +
+    // （内部 Compiler 编排 + run(ObjFnProto*)），非手拼 lex/parse/codegen/run。开 stress GC 锻炼编译期 +
     // 运行期根接线（module 经 CodeGen::compile 内部 make_guard 根化、值栈/帧经 vm_roots tracer 标根）。
     // source 经 unique_ptr 持堆，活到调用方检视完返回值/错误（编译期 Error 的 SourceLoc 指向它）。
     RunResult run_source(std::string_view src) {
@@ -59,7 +59,7 @@ namespace {
     }
 
     // 带值取数惯用法:顶层禁带值 return,故把源码包进探针函数(不调用)编译,再从入口常量池取
-    // __probe__ 的 ObjFunction 直接 run,其返回值即 run() 返回值。仅取值/错误码站点走此入口;
+    // __probe__ 的 ObjFnProto 直接 run,其返回值即 run() 返回值。仅取值/错误码站点走此入口;
     // 钉模块顶层语义的站点走 run_source(不包)。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
@@ -74,12 +74,12 @@ namespace {
         if (!compiled) {
             return RunResult{std::move(vm), std::move(source), std::unexpected(std::move(compiled).error())};
         }
-        ObjFunction* probe = nullptr;
+        ObjFnProto* probe = nullptr;
         for (const auto& constant: (*compiled)->unit().constants) {
-            if (!constant.is_obj() || !constant.as_obj()->is<ObjFunction>()) {
+            if (!constant.is_obj() || !constant.as_obj()->is<ObjFnProto>()) {
                 continue;
             }
-            auto* fn = constant.as_obj()->as<ObjFunction>();
+            auto* fn = constant.as_obj()->as<ObjFnProto>();
             if (fn->name()->view() == "__probe__") {
                 probe = fn;
             }
@@ -98,7 +98,7 @@ namespace {
     struct CompileFail {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
-        Result<ObjFunction*, Error> result;
+        Result<ObjFnProto*, Error>  result;
         Error&                      error() noexcept { return result.error(); }
         const Error&                error() const noexcept { return result.error(); }
     };
@@ -122,7 +122,7 @@ namespace {
 
 } // namespace
 
-// 基础算术：源文件 -> ObjFunction -> 运行得整数（入口 <main> 为函数，顶层 return 合法）。
+// 基础算术：源文件 -> ObjFnProto -> 运行得整数（入口 <main> 为函数，顶层 return 合法）。
 TEST(Compiler, Arithmetic) {
     EXPECT_EQ(run_int("return 1 + 2 * 3;"), 7);
     EXPECT_EQ(run_int("return (1 + 2) * 3;"), 9);

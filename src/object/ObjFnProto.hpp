@@ -1,5 +1,5 @@
-#ifndef ARIA_OBJ_FUNCTION_HPP
-#define ARIA_OBJ_FUNCTION_HPP
+#ifndef ARIA_OBJ_FN_PROTO_HPP
+#define ARIA_OBJ_FN_PROTO_HPP
 
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
@@ -20,12 +20,13 @@ namespace aria {
         bool operator==(const UpvalueDesc&) const = default;
     };
 
-    // 函数对象:字节码(CodeUnit)+ 所属模块 + 名 + 元数;地址哈希型。
+    // GC 托管的函数原型:字节码(CodeUnit)+ 所属模块 + 名 + 元数 + 捕获描述;地址哈希型。
+    // 原型存于常量池,运行期函数值由 ObjClosure 包装。
     // arity_ 不含 varargs 槽(帧槽深 = arity + 1);调用时实参数必须落在 [min_arity, arity] 区间。
-    class ObjFunction final : public Object {
+    class ObjFnProto final : public Object {
     public:
-        ObjFunction(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
-        ~ObjFunction() override = default; // CodeUnit / upvalue_descs_ 级联自释放,无额外子内存
+        ObjFnProto(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
+        ~ObjFnProto() override = default; // CodeUnit / upvalue_descs_ 级联自释放,无额外子内存
 
         [[nodiscard]]
         CodeUnit& unit() noexcept {
@@ -77,7 +78,7 @@ namespace aria {
         // 壳定长(CodeUnit / upvalue_descs_ 内部 Array 自管理,级联释放)。
         [[nodiscard]]
         usize size() const noexcept override {
-            return sizeof(ObjFunction);
+            return sizeof(ObjFnProto);
         }
 
         // 调试渲染:`<fn add>`(入口 `<fn <main>>`、lambda `<fn <anonymous>>`);显示同文案。
@@ -94,14 +95,14 @@ namespace aria {
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
-    // 工厂:分配 ObjFunction。module 与 name 皆 weak root,调用方须自行根化;StringView 重载内部
+    // 工厂:分配 ObjFnProto。module 与 name 皆 weak root,调用方须自行根化;StringView 重载内部
     // intern name 并自守,调用方只需根化 module。
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
+    ObjFnProto* new_fn_proto(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
 
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjModule* module, StringView name, u8 arity, u8 min_arity, bool is_varargs);
+    ObjFnProto* new_fn_proto(GC& gc, ObjModule* module, StringView name, u8 arity, u8 min_arity, bool is_varargs);
 
 } // namespace aria
 
-#endif // ARIA_OBJ_FUNCTION_HPP
+#endif // ARIA_OBJ_FN_PROTO_HPP

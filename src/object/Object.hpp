@@ -16,7 +16,7 @@ namespace aria {
     class GC;
     class Object;
     class ObjString;
-    class ObjFunction;
+    class ObjFnProto;
     class ObjNativeFn;
     class ObjUpvalue;
     class ObjClosure;
@@ -154,8 +154,8 @@ namespace aria {
         bool is() const noexcept {
             if constexpr (std::is_same_v<T, ObjString>) {
                 return type() == ObjType::STRING;
-            } else if constexpr (std::is_same_v<T, ObjFunction>) {
-                return type() == ObjType::FUNCTION;
+            } else if constexpr (std::is_same_v<T, ObjFnProto>) {
+                return type() == ObjType::FN_PROTO;
             } else if constexpr (std::is_same_v<T, ObjNativeFn>) {
                 return type() == ObjType::NATIVE_FN;
             } else if constexpr (std::is_same_v<T, ObjUpvalue>) {

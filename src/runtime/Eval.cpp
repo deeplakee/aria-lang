@@ -14,7 +14,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjMap.hpp"
@@ -63,7 +63,7 @@ namespace aria {
             const auto  instr  = Disassembler::disassembleInstruction(frame.unit, ip_off);
 
             io::print(stderr, "[trace] ctx {:p}  {}  {} @{:04X}  {}\n", static_cast<const void*>(&ctx),
-                      frame.module->repr(), frame.closure->function()->repr(), ip_off, instr);
+                      frame.module->repr(), frame.closure->proto()->repr(), ip_off, instr);
 
             // 栈行与 ^ 列号一趟同步算:^ 对齐到当前帧栈底(slots 所指槽)的 [ 下方;slots 越过
             // 栈顶时(异常态)所有槽位都满足 p < slots,累加自然停在全部段之和,无需分支。
@@ -138,7 +138,7 @@ namespace aria {
     bool Eval::call_closure(AriaExeContext& ctx, ObjClosure* obj, const u8 argc) {
         // 进帧前由临时根保活闭包;进帧后由 frame.closure 接管。
         const auto guard = ctx.gc().make_guard(obj);
-        const auto fn    = obj->function();
+        const auto fn    = obj->proto();
         if (!ctx.check_arity(fn, argc)) {
             return false;
         }
@@ -1154,12 +1154,12 @@ namespace aria {
                     goto sync_now;
                 }
                 case OpCode::CLOSURE: {
-                    // fn:u16;[] -> [closure]:取常量池 ObjFunction 现场包 ObjClosure,按捕获描述
+                    // fn:u16;[] -> [closure]:取常量池 ObjFnProto 现场包 ObjClosure,按捕获描述
                     // 表逐个填:is_local 捕外围帧局部槽(经 capture_upvalue 收「同一局部一份引用」),
                     // 否则复制外围闭包的对应 upvalue(共享同一份引用)。根安全(栈即根):闭包建成
                     // 立即压栈,desc 循环内 new_upvalue 免守卫。
                     const auto idx     = read_u16(frame);
-                    const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFunction>();
+                    const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFnProto>();
                     const auto closure = new_closure(vm.gc_, fn);
                     current->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
                     for (const auto& [is_local, index]: fn->upvalue_descs()) {

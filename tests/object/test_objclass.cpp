@@ -5,7 +5,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -18,13 +18,13 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::new_class;
 using aria::new_closure;
-using aria::new_function;
+using aria::new_fn_proto;
 using aria::new_module;
 using aria::new_string;
 using aria::ObjClass;
 using aria::ObjClosure;
 using aria::ObjException;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::Pair;
@@ -51,10 +51,10 @@ namespace {
 
     // 临时模块 + 具名函数:守卫收口在助手内(机制测试不关心模块归属)。m 未根须自守:
     // 工厂内 intern name 与 new_object 均 GC 点。返回白色,调用方自守。
-    ObjFunction* make_function(GC& gc, const StringView name, const u8 arity) {
+    ObjFnProto* make_function(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
-        return new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
+        return new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
     // 具名闭包:fn 经守卫跨 new_closure。返回的闭包未根,fn 经其可达。
@@ -237,7 +237,7 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
         sub->set_field(ikey, Value::from_obj(init)); // 落表 + 同步 init_(set_field 单一写入口)
         constant = new_string(gc, "a long constant string beyond sso padding"); // 建时 collect:在根者存活
         guard.push(constant);
-        init->function()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
+        init->proto()->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
         mkey = new_string(gc, "m");
         guard.push(mkey);
         vkey = new_string(gc, "x");

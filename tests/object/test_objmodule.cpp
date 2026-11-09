@@ -4,7 +4,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
@@ -16,10 +16,10 @@
 using aria::AriaVM;
 using aria::ErrorCode;
 using aria::GC;
-using aria::new_function;
+using aria::new_fn_proto;
 using aria::new_module;
 using aria::new_string;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::Pair;
@@ -45,9 +45,9 @@ namespace {
 
     // 指定模块的具名函数:m 未根须自守(工厂内 intern name 与 new_object 均 GC 点,可能
     // collect 回收 m)。返回白色,调用方自守。
-    ObjFunction* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
+    ObjFnProto* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
-        return new_function(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
+        return new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件

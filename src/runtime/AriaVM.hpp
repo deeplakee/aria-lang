@@ -16,7 +16,7 @@ namespace aria {
     class ObjBoundMethod;
     class ObjClass;
     class ObjClosure;
-    class ObjFunction;
+    class ObjFnProto;
     class ObjInstance;
     class ObjModule;
     class ObjString;
@@ -61,9 +61,9 @@ namespace aria {
         // 唯一的首次执行入口:锚定入口上下文(出口断言 current_ 回锚点,漏切换交接当场炸) +
         // 源根入口槽 [0] 播种 + 前后 reset 清场,入口 fn 包空闭包后内联首次进入本体(出口边界
         // 恒零,弹空帧栈即出口);CodeUnit 假定良构,失败为未捕获运行时错误。
-        Result<Value, Error> run(ObjFunction* fn);
+        Result<Value, Error> run(ObjFnProto* fn);
 
-        // 编译 source 到 module 的入口 ObjFunction 并执行;source 须存活到返回(编译期 Error 的
+        // 编译 source 到 module 的入口 ObjFnProto 并执行;source 须存活到返回(编译期 Error 的
         // SourceLoc 指着它),module 无需调用方守(编译期已 make_guard 根化)。失败为首错 Error 透传。
         Result<Value, Error> run(SourceFile& source, ObjModule* module);
 

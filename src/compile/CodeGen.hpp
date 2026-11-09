@@ -2,7 +2,7 @@
 #define ARIA_CODEGEN_HPP
 
 // 字节码生成器：单遍遍历 AST（AstVisitor）同时完成名字解析 / 语义检查 / 字节码发射，ProgramNode ->
-// 入口 ObjFunction；ExprNode visit 留一值、StmtNode visit 留零值。
+// 入口 ObjFnProto；ExprNode visit 留一值、StmtNode visit 留零值。
 // GC：compile() 入口 make_guard(module) 贯穿全程，建设中对象经 module 根链可达；入池前分配皆 trivial
 // 不触 GC，new_string（intern）为 weak root，name 串由工厂 StringView 重载 intern 并自守。
 
@@ -21,7 +21,7 @@ namespace aria {
 
     class GC;
     class ObjModule;
-    class ObjFunction;
+    class ObjFnProto;
     class CodeUnit;
 
     class CodeGen final : public AstVisitor {
@@ -48,10 +48,10 @@ namespace aria {
         };
 
     public:
-        // 编译 program 为 module 的入口 ObjFunction（arity 0，名 entry_name：主入口 kMainEntryName /
+        // 编译 program 为 module 的入口 ObjFnProto（arity 0，名 entry_name：主入口 kMainEntryName /
         // 导入模块 kModuleEntryName）。分配归属 gc；成功已 set_entry，失败返回首错 Error。
-        static Result<ObjFunction*, Error> compile(GC& gc, const ProgramNode& program, ObjModule* module,
-                                                   StringView entry_name);
+        static Result<ObjFnProto*, Error> compile(GC& gc, const ProgramNode& program, ObjModule* module,
+                                                  StringView entry_name);
 
         ~CodeGen() override                    = default;
         CodeGen(const CodeGen&)                = delete;
@@ -118,11 +118,11 @@ namespace aria {
         UPtr<ModuleCtx>  mod_ctx_;
 
         // compile 的实例侧实现（单遍合一）。
-        Result<ObjFunction*, Error> generate_bytecode(const ProgramNode& program, ObjModule* module,
-                                                      StringView entry_name);
+        Result<ObjFnProto*, Error> generate_bytecode(const ProgramNode& program, ObjModule* module,
+                                                     StringView entry_name);
 
         // 建入口函数 + set_entry + 构造 ModuleCtx；须在 module 已根化（guard）之后调用。
-        ObjFunction* init_module(ObjModule* module, StringView entry_name);
+        ObjFnProto* init_module(ObjModule* module, StringView entry_name);
 
         // 由 mod_ctx_ 游标派生，编译外（mod_ctx_ 为空）不可调用。
         [[nodiscard]]

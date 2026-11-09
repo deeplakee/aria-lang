@@ -132,8 +132,8 @@ add_library(aria_core STATIC
         src/object/ObjClosure.hpp
         src/object/ObjString.cpp
         src/object/ObjString.hpp
-        src/object/ObjFunction.cpp
-        src/object/ObjFunction.hpp
+        src/object/ObjFnProto.cpp
+        src/object/ObjFnProto.hpp
         src/object/ObjInstance.cpp
         src/object/ObjInstance.hpp
         src/object/ObjList.cpp

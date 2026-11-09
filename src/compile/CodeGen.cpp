@@ -10,7 +10,7 @@
 #include "bytecode/CodeUnit.hpp"
 #include "memory/GC.hpp"
 #include "memory/StringBuilder.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/value_register.hpp"
@@ -116,14 +116,14 @@ namespace aria {
     } // namespace
 
     // 静态服务入口：一次性对象上跑单次编译。
-    Result<ObjFunction*, Error> CodeGen::compile(GC& gc, const ProgramNode& program, ObjModule* module,
-                                                 const StringView entry_name) {
+    Result<ObjFnProto*, Error> CodeGen::compile(GC& gc, const ProgramNode& program, ObjModule* module,
+                                                const StringView entry_name) {
         CodeGen self{gc};
         return self.generate_bytecode(program, module, entry_name);
     }
 
-    Result<ObjFunction*, Error> CodeGen::generate_bytecode(const ProgramNode& program, ObjModule* module,
-                                                           const StringView entry_name) {
+    Result<ObjFnProto*, Error> CodeGen::generate_bytecode(const ProgramNode& program, ObjModule* module,
+                                                          const StringView entry_name) {
         // module 入临时根贯穿全程。
         const auto guard = gc_.make_guard(module);
 
@@ -149,9 +149,9 @@ namespace aria {
         return entry;
     }
 
-    ObjFunction* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
+    ObjFnProto* CodeGen::init_module(ObjModule* module, const StringView entry_name) {
         // 入口无参
-        const auto entry = new_function(gc_, module, entry_name, 0, 0, false);
+        const auto entry = new_fn_proto(gc_, module, entry_name, 0, 0, false);
         module->set_entry(entry);
         mod_ctx_ = std::make_unique<ModuleCtx>(module);
         return entry;
@@ -526,7 +526,7 @@ namespace aria {
         // varargs 恒末位（Parser 保证）：rest 槽由 call_closure 打包多余实参为 list，帧参数槽深 = arity + is_varargs。
         const bool has_varargs = !params.empty() && params.back().is_varargs;
         const auto fixed_arity = static_cast<u8>(params.size() - (has_varargs ? 1 : 0));
-        const auto fn = new_function(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
+        const auto fn = new_fn_proto(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
         // 入池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
         // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjClosure。
@@ -545,7 +545,7 @@ namespace aria {
         emit_stmt(body);
         emit_implicit_return(body.loc());
 
-        // 把子上下文的捕获描述 flush 进 fn 元数据（CLOSURE 先发射不碍事：表在 ObjFunction 上，
+        // 把子上下文的捕获描述 flush 进 fn 元数据（CLOSURE 先发射不碍事：表在 ObjFnProto 上，
         // VM 执行 CLOSURE 时才读）。
         fn->upvalue_descs().copy_from(child->upvalues_);
 

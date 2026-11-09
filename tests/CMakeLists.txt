@@ -32,7 +32,7 @@ add_executable(aria_tests
         object/test_objboundmethod.cpp
         object/test_objclass.cpp
         object/test_objclosure.cpp
-        object/test_objfunction.cpp
+        object/test_objfnproto.cpp
         object/test_objinstance.cpp
         object/test_objiterator.cpp
         object/test_objlist.cpp

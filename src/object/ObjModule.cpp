@@ -7,7 +7,7 @@
 #include "aria.hpp"
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/ObjMovement.hpp"
 #include "util/fs.hpp"

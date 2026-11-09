@@ -9,7 +9,6 @@
 namespace aria {
 
     class ObjModule;
-    class ObjFunction;
     class FunctionCtx;
 
     class ModuleCtx {

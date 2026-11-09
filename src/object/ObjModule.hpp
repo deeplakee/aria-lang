@@ -9,7 +9,7 @@ namespace aria {
 
     class GC;
     class ObjString;
-    class ObjFunction;
+    class ObjFnProto;
 
     // 模块对象:aria 语言里的模块(一个源文件对应一个模块,充当命名空间与全局绑定域)。
     class ObjModule final : public Object {
@@ -49,13 +49,13 @@ namespace aria {
             return globals_;
         }
 
-        // 模块体(顶层语句编进的 ObjFunction,arity 0 匿名),导入时 run-once;nullptr 表无体。
+        // 模块体(顶层语句编进的 ObjFnProto,arity 0 匿名),导入时 run-once;nullptr 表无体。
         [[nodiscard]]
-        ObjFunction* entry() const noexcept {
+        ObjFnProto* entry() const noexcept {
             return entry_;
         }
 
-        void set_entry(ObjFunction* entry) noexcept { entry_ = entry; }
+        void set_entry(ObjFnProto* entry) noexcept { entry_ = entry; }
 
         // 标 name_ + dir_ + entry_ + globals_(key+value)。
         void trace(GC& gc) const noexcept override;
@@ -89,7 +89,7 @@ namespace aria {
     private:
         ObjString*    name_;    // 模块名(stem,intern;指针恒非空,内容可空)
         ObjString*    dir_;     // 所在目录(intern;指针恒非空,内容可空)
-        ObjFunction*  entry_;   // 模块体(run-once;可为 nullptr)
+        ObjFnProto*   entry_;   // 模块体(run-once;可为 nullptr)
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 

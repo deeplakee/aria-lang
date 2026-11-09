@@ -14,9 +14,9 @@ namespace aria {
     // 运行期从不经其写字节,last_ip 反推 offset 的前提 = 帧存活期间 code 缓冲恒定(非移动 GC +
     // 执行期零 emit)。
     struct CallFrame {
-        ObjClosure* closure; // 持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 function() 取
-        CodeUnit*   unit;    // 缓存 closure->function()->unit(),省每条指令一跳
-        ObjModule*  module;  // 缓存 closure->function()->module(),供 *_GLOBAL 定位模块 globals
+        ObjClosure* closure; // 持闭包(callable 收敛为闭包,顶层入口也闭包);元数据经其 proto() 取
+        CodeUnit*   unit;    // 缓存 closure->proto()->unit(),省每条指令一跳
+        ObjModule*  module;  // 缓存 closure->proto()->module(),供 *_GLOBAL 定位模块 globals
         u8*         ip;      // 指令指针(冷路径按需反推 offset)
         Value*      slots;   // 本帧局部基址(callee 槽 0,参数槽 1..)
         u8*         last_ip; // 最近取指指令起始(循环顶写;行号/unwind 查表锚点)

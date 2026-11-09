@@ -14,7 +14,7 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
@@ -268,7 +268,7 @@ namespace aria {
         return interpret_run(source, module);
     }
 
-    Result<Value, Error> AriaVM::run(ObjFunction* fn) {
+    Result<Value, Error> AriaVM::run(ObjFnProto* fn) {
         // 入口锚 = 本轮入口上下文(即主上下文):dispatch_loop 出口(顶层 RETURN / 未捕获物化)均
         // 发生在链根,出口断言据此保证切换交接完整(漏交接当场炸,不等下一轮入口)。
         const auto entry_ctx = current_;
@@ -380,16 +380,16 @@ namespace aria {
         // 自顶帧向下收集 (fn, mod, last_ip) 烘跟踪行(跨协程死帧已随 reset 退场)-> take 载荷 ->
         // reset 清场 -> 烘焙成自足 Error。物化路径仅 string 拼接无 GC 分配点。
         struct TraceEntry {
-            ObjFunction* fn;     // 帧函数(名字渲染)
-            ObjModule*   mod;    // 帧模块(位置串渲染,ObjModule::format_location)
-            u32          ip_off; // 行号经 fn->unit().line_for_offset 查
+            ObjFnProto* fn;     // 帧函数(名字渲染)
+            ObjModule*  mod;    // 帧模块(位置串渲染,ObjModule::format_location)
+            u32         ip_off; // 行号经 fn->unit().line_for_offset 查
         };
         List<TraceEntry> trace;
 
         auto& frames = current_->frames();
         for (usize i = frames.size(); i > 0; --i) {
             auto& [frame_closure, unit, module, ip, slots, last_ip] = frames[i - 1];
-            trace.emplace_back(frame_closure->function(), module, static_cast<u32>(last_ip - unit->code.data()));
+            trace.emplace_back(frame_closure->proto(), module, static_cast<u32>(last_ip - unit->code.data()));
         }
         auto [code, msg] = take_uncaught_error();
         current_->reset();

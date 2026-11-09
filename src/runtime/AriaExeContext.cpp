@@ -3,7 +3,7 @@
 #include <format>
 
 #include "object/ObjClosure.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
@@ -42,7 +42,7 @@ namespace aria {
 
     // 调用整形面
 
-    bool AriaExeContext::check_arity(const ObjFunction* fn, const u8 argc) {
+    bool AriaExeContext::check_arity(const ObjFnProto* fn, const u8 argc) {
         // 检查纯读,无分配。
         const auto arity     = fn->arity();
         const auto min_arity = fn->min_arity();
@@ -61,7 +61,7 @@ namespace aria {
         return true;
     }
 
-    u8 AriaExeContext::prepare_call_args(const ObjFunction* fn, const u8 argc) {
+    u8 AriaExeContext::prepare_call_args(const ObjFnProto* fn, const u8 argc) {
         // GC 走查:new_list 为唯一分配点 -- 额外实参 peek 在栈(栈即根),copy_from 走 trivial
         // 分配不触 GC,白色 list 随即 drop+push 入值栈根,窗口内无 GC 点;垫充压寄存器单例无分配。
         const auto arity = fn->arity();

@@ -9,7 +9,7 @@ namespace aria {
     enum class ObjType : u8 {
         BASE,
         STRING,
-        FUNCTION,
+        FN_PROTO,
         NATIVE_FN,
         UPVALUE,
         CLASS,
@@ -33,8 +33,8 @@ namespace aria {
                 return "Base";
             case ObjType::STRING:
                 return "String";
-            case ObjType::FUNCTION:
-                return "Function";
+            case ObjType::FN_PROTO:
+                return "FnProto";
             case ObjType::NATIVE_FN:
                 return "NativeFn";
             case ObjType::UPVALUE:

@@ -56,7 +56,7 @@ namespace aria {
             // 首启:载荷即被调函数实参(上界交 check_arity 报被调者元数,默认参数/varargs 照常)。
             const auto closure = try_as_obj<ObjClosure>(co->peek(0));
             ASSERT(closure != nullptr, "coroutine slot-0 is not a closure (create invariant)");
-            const auto fn = closure->function();
+            const auto fn = closure->proto();
             if (!ctx.check_arity(fn, payload)) {
                 return false;
             }

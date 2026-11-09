@@ -21,7 +21,7 @@
 #include "aria.hpp"
 #include "compile/Compiler.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/Object.hpp"
 #include "runtime/AriaVM.hpp"
@@ -35,7 +35,7 @@ using aria::i64;
 using aria::kMainEntryName;
 using aria::List;
 using aria::new_module;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::Pair;
 using aria::String;
 using aria::StringView;
@@ -77,7 +77,7 @@ namespace {
     struct Program {
         UPtr<AriaVM>     vm;
         UPtr<SourceFile> source;
-        ObjFunction*     fn;
+        ObjFnProto*      fn;
     };
 
     [[nodiscard]] Program make_program(const StringView name, String content) {
@@ -93,11 +93,11 @@ namespace {
         auto* module   = new_module(gc, name); // StringView 重载：名字经工厂内部 intern 并自守
         auto  compiled = Compiler::compile(gc, *source, module, kMainEntryName);
         BENCH_CHECK(compiled.has_value(), "compile failed");
-        ObjFunction* probe = nullptr;
+        ObjFnProto* probe = nullptr;
         for (const auto& constant: (*compiled)->unit().constants) {
-            if (constant.is_obj() && constant.as_obj()->is<ObjFunction>() &&
-                constant.as_obj()->as<ObjFunction>()->name()->view() == "__probe__") {
-                probe = constant.as_obj()->as<ObjFunction>();
+            if (constant.is_obj() && constant.as_obj()->is<ObjFnProto>() &&
+                constant.as_obj()->as<ObjFnProto>()->name()->view() == "__probe__") {
+                probe = constant.as_obj()->as<ObjFnProto>();
             }
         }
         BENCH_CHECK(probe != nullptr, "probe fn missing from entry constants");

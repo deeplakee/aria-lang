@@ -1,6 +1,6 @@
 ---
 name: aria-object
-description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFunction（含捕获描述表 UpvalueDesc）、ObjClosure/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjNativeFn、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
+description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFnProto（含捕获描述表 UpvalueDesc）、ObjClosure/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjNativeFn、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
 paths:
   - "src/object/**"
 ---
@@ -15,9 +15,9 @@ paths:
 - `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`NativeFn`/...）。
 - `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
 - `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；调试位带引号转义、显示位直取原文（分叉在渲染面，对象不设 override）。铸造入口 = `new_string` 工厂族（先查驻留命中返回已有串、未命中才分配+insert），含两段重载 `new_string(gc, lhs, rhs, hash)`（先查后拼：命中零拷贝，哈希为 `hash_str(hash_str(lhs), rhs)` 续算终态）与接管重载 `new_string(gc, data, size, cap, hash)`（buffer 释放责任随三臂移交：命中释放返已有串 / 长串收缩后由接管构造臂零拷贝接管 / 短串 SSO 化后释放）。
-- `ObjFunction`（`ObjFunction.hpp`）：`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。
+- `ObjFnProto`（`ObjFnProto.hpp`）：GC 托管的函数原型，`ObjType::FN_PROTO`（类型名 `FnProto`），经 `new_fn_proto` 创建；`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。存于 Value 常量池，不直接作为运行期函数值调用。
 - `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
-- `ObjClosure`（`ObjClosure.hpp`）：被包函数 + upvalue 数组 + `defining_class_`；运行期一律以闭包进帧，`ObjFunction` 退为常量池内部物。
+- `ObjClosure`（`ObjClosure.hpp`）：函数原型（`proto_`，经 `proto()` 访问）+ upvalue 数组 + `defining_class_`；运行期一律以闭包进帧，原型共享、捕获状态随闭包实例持有。
 - `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
 - `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
@@ -79,7 +79,7 @@ paths:
 
 - 闭包上的 `defining_class_` **一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.closure->defining_class()` 直读）+ **方法性标记**（`is_method()`；读路径 `ObjInstance::load_field_bound` / `LOAD_SUPER_FIELD` 据非空判绑 this）。
 - **判别按戳不按值类型**：MAKE_METHOD 注册时戳、MAKE_STATIC / 类上赋值不戳 ⟹ 静态槽原值直读；赋值闭包无戳 ⟹ 改写后按静态读原值、不再绑定（方法性随值携带）。
-- **挂闭包而非共享的 `ObjFunction` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
+- **挂闭包而非共享的 `ObjFnProto` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
 - 非方法闭包（静态方法 fun / lambda / 其余）恒 nullptr。
 - 原生函数沿用同一 `defining_class_` 判据：`register_class_methods` 设置注册类，`new_native_fn` 默认与 `register_class_functions` 保持 nullptr。成员赋值不重写归属，trace 标记定义类；本轮不据此增加通用接收者归属校验。
 - `is_method(Value)` 同时识别脚本/原生实例方法，不把普通函数或已有 BoundMethod 当成待绑定方法。`super` 读取也使用此判据。

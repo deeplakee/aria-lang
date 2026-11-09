@@ -51,7 +51,7 @@ namespace aria {
             return sizeof(ObjNativeFn);
         }
 
-        // 调试渲染:`<fn name>`(与 ObjFunction 一致;native 身份经 type() 反射可见)。
+        // 调试渲染:`<fn name>`(与 ObjFnProto 一致;native 身份经 type() 反射可见)。
         [[nodiscard]]
         String repr() const override;
 

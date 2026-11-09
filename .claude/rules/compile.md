@@ -20,11 +20,11 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 - **FnKind.hpp**：函数种类枚举（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry）。各 kind 的绑定形态/隐式返回尾/槽 0 语义的权威表述见该头注册表注。
 - **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责；局部名 `Local.name` 借 `StringView`（AST 名字视图/kThisName/空哑元，存活覆盖编译期）。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见头注。`LoopCtx` 字段语义与三种循环占位回填详见 `.claude/reference/compile/loopctx.md`。
 - **ModuleCtx.hpp / .cpp**：模块编译上下文（模块句柄 + 当前函数上下文游标兼拥有入口 + 顶层全局名注册表），与 FunctionCtx 对齐成「模块 > 函数 > 作用域」三层；全局名注册表 `defined_globals_` 键借 `StringView`（AST 名字视图，存活覆盖编译期）；单成员兼两职的设计与出错析构走链见头注。
-- **Compiler.hpp / Compiler.cpp**：编排器，串联 Lexer -> Parser -> CodeGen，统一翻译为 `Result<ObjFunction*, Error>`（首错即止）。吃实际 `SourceFile&`（不拥有不重建）；AST 不外返、Error 构造期已烘位置，故 source 只须存活到 `compile()` 返回；AST 归 `compile()` 栈上 `AstArena`（`memory/AstArena.hpp`）所有（RAII，unwind 即整批释放）。四入口（Lexer::tokenize / Parser::parse / CodeGen::compile / Compiler::compile）均静态无状态；compile 的 gc 与 VM 同一 GC。
+- **Compiler.hpp / Compiler.cpp**：编排器，串联 Lexer -> Parser -> CodeGen，统一翻译为 `Result<ObjFnProto*, Error>`（首错即止）。吃实际 `SourceFile&`（不拥有不重建）；AST 不外返、Error 构造期已烘位置，故 source 只须存活到 `compile()` 返回；AST 归 `compile()` 栈上 `AstArena`（`memory/AstArena.hpp`）所有（RAII，unwind 即整批释放）。四入口（Lexer::tokenize / Parser::parse / CodeGen::compile / Compiler::compile）均静态无状态；compile 的 gc 与 VM 同一 GC。
 
 ## CodeGen（单遍合一）
 
-`CodeGen final : AstVisitor`，一次 AST 遍历同时做名字解析 + 语义检查 + 字节码发射，产出模块入口 `ObjFunction*`（arity 0）。状态分离（模块/函数/作用域三层，游标寄存于 ModuleCtx）、emit 下沉 CodeUnit、`_or_fail` 失败翻译、值填槽不变式、裸名解析序（局部 -> upvalue -> 全局）、跳转回填、弹区清理、for-in/match/try/解构 lowering 的完整机制见 `CodeGen.hpp` 类头注与各方法注，及 `.claude/reference/compile/compound-assignment-lowering.md`（LvalueMode 与复合赋值）。
+`CodeGen final : AstVisitor`，一次 AST 遍历同时做名字解析 + 语义检查 + 字节码发射，产出模块入口 `ObjFnProto*`（arity 0）。状态分离（模块/函数/作用域三层，游标寄存于 ModuleCtx）、emit 下沉 CodeUnit、`_or_fail` 失败翻译、值填槽不变式、裸名解析序（局部 -> upvalue -> 全局）、跳转回填、弹区清理、for-in/match/try/解构 lowering 的完整机制见 `CodeGen.hpp` 类头注与各方法注，及 `.claude/reference/compile/compound-assignment-lowering.md`（LvalueMode 与复合赋值）。
 
 **设计决策（代码注释仅简版，论证在此）**：
 
@@ -40,7 +40,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 ## 测试
 
-- `tests/compile/test_codegen.cpp`：端到端 `tokenize -> parse -> CodeGen::compile -> AriaVM::run`；`run_value` 探针惯用法（顶层禁带值 return，包进 `__probe__` 函数从常量池取 ObjFunction 直跑）。覆盖闭包/类/match/解构/容量钉子。
+- `tests/compile/test_codegen.cpp`：端到端 `tokenize -> parse -> CodeGen::compile -> AriaVM::run`；`run_value` 探针惯用法（顶层禁带值 return，包进 `__probe__` 函数从常量池取 ObjFnProto 直跑）。覆盖闭包/类/match/解构/容量钉子。
 - `tests/compile/test_compiler.cpp`：经 Compiler 编排层端到端（非手拼），stress GC 锻炼编译期根接线。
 - `tests/compile/test_lexer.cpp` / `test_parser.cpp` / `test_ast.cpp` / `test_astvisitor.cpp`：词法面（数字/串/插值档/注释形态）、文法面（消歧与恢复式收集）、AST dump 形状与 visitor 全分派覆盖。
 - `tests/language/` 语料（正向 assert/负向钉错误码）是改语言面的验收面。

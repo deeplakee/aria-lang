@@ -2,12 +2,12 @@
 
 #include "bytecode/CodeUnit.hpp"
 #include "object/ObjClosure.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 
 namespace aria {
 
     void CallFrame::init(CallFrame& frame, ObjClosure* closure, Value* stack_top, const u8 argc) {
-        const auto fn = closure->function();
+        const auto fn = closure->proto();
         frame.slots   = stack_top - argc - 1;
         frame.closure = closure;
         frame.unit    = &fn->unit();

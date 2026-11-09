@@ -12,7 +12,7 @@
 #include "memory/AstArena.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
@@ -29,7 +29,7 @@ using aria::GC;
 using aria::i64;
 using aria::Lexer;
 using aria::new_module;
-using aria::ObjFunction;
+using aria::ObjFnProto;
 using aria::ObjModule;
 using aria::Parser;
 using aria::Result;
@@ -39,9 +39,9 @@ using aria::Value;
 namespace {
 
     // 端到端：源码 -> tokenize -> parse -> CodeGen::compile。
-    // 断言词法/语法成功（测试用例均用合法语法），返回编译结果（入口 ObjFunction 或首错 Error）。
-    // 注意：返回的 ObjFunction 及其常量池 ObjString 归属调用方提供的 vm 的 GC，须在 vm 存活期间使用。
-    Result<ObjFunction*, Error> compile_source(GC& gc, ObjModule* module, std::string_view src) {
+    // 断言词法/语法成功（测试用例均用合法语法），返回编译结果（入口 ObjFnProto 或首错 Error）。
+    // 注意：返回的 ObjFnProto 及其常量池 ObjString 归属调用方提供的 vm 的 GC，须在 vm 存活期间使用。
+    Result<ObjFnProto*, Error> compile_source(GC& gc, ObjModule* module, std::string_view src) {
         SourceFile file{"<test>", "<test>", aria::String{src}};
         auto       lex = Lexer::tokenize(file);
         if (!lex) {
@@ -69,23 +69,23 @@ namespace {
     };
 
     struct Compiled {
-        std::unique_ptr<AriaVM>     vm;
-        Result<ObjFunction*, Error> result;
-        bool                        has_value() const noexcept { return result.has_value(); }
-        ObjFunction*                operator->() const noexcept { return *result; }
-        ObjFunction&                operator*() const noexcept { return **result; }
-        Error&                      error() noexcept { return result.error(); }
-        const Error&                error() const noexcept { return result.error(); }
+        std::unique_ptr<AriaVM>    vm;
+        Result<ObjFnProto*, Error> result;
+        bool                       has_value() const noexcept { return result.has_value(); }
+        ObjFnProto*                operator->() const noexcept { return *result; }
+        ObjFnProto&                operator*() const noexcept { return **result; }
+        Error&                     error() noexcept { return result.error(); }
+        const Error&               error() const noexcept { return result.error(); }
     };
 
-    // 从入口函数常量池取名为 name 的嵌套 ObjFunction（run_value 探针提取与 find_nested_function
+    // 从入口函数常量池取名为 name 的嵌套 ObjFnProto（run_value 探针提取与 find_nested_function
     // 共用;调用方保证 entry 存活期间使用返回值,对象经常量池根链可达）。
-    ObjFunction* find_entry_nested(ObjFunction& entry, const std::string_view name) {
+    ObjFnProto* find_entry_nested(ObjFnProto& entry, const std::string_view name) {
         for (const auto& constant: entry.unit().constants) {
-            if (!constant.is_obj() || !constant.as_obj()->is<ObjFunction>()) {
+            if (!constant.is_obj() || !constant.as_obj()->is<ObjFnProto>()) {
                 continue;
             }
-            auto* fn = constant.as_obj()->as<ObjFunction>();
+            auto* fn = constant.as_obj()->as<ObjFnProto>();
             if (fn->name()->view() == name) {
                 return fn;
             }
@@ -93,9 +93,9 @@ namespace {
         return nullptr;
     }
 
-    // 取入口函数常量池里名为 name 的嵌套 ObjFunction（方法与 lambda 体各占一个 CodeUnit）：
+    // 取入口函数常量池里名为 name 的嵌套 ObjFnProto（方法与 lambda 体各占一个 CodeUnit）：
     // 方法体内的发射断言要看它们的 unit，入口 unit 只有 CLOSURE/调用序列。
-    ObjFunction* find_nested_function(Compiled& compiled, const std::string_view name) {
+    ObjFnProto* find_nested_function(Compiled& compiled, const std::string_view name) {
         return find_entry_nested(*compiled, name);
     }
 
@@ -704,7 +704,7 @@ TEST(CodeGen, ImportEmitsImport) {
     EXPECT_NE(text.find("DEF_GLOBAL"), aria::String::npos); // 顶层经 DEF_GLOBAL 绑全局
 }
 
-// 闭包 lowering：具名 fun / lambda 一律发 CLOSURE fn_idx，捕获描述存 ObjFunction 元数据、不进字节码流。
+// 闭包 lowering：具名 fun / lambda 一律发 CLOSURE fn_idx，捕获描述存 ObjFnProto 元数据、不进字节码流。
 TEST(CodeGen, ClosureDisassembly) {
     auto compiled = compile_only("fun make() { var x = 1; return fun() { return x; }; }");
     ASSERT_TRUE(compiled.has_value());
@@ -1085,8 +1085,8 @@ TEST(CodeGen, DefaultParamPrologueDisassembly) {
     auto c = compile_only("fun f(a, b = 5) { return b; } f(1);");
     ASSERT_TRUE(c.has_value()) << c.error().message();
     // 序言发射在子函数 f 的 unit 内(入口 unit 只有 CLOSURE/调用序列):经入口常量池取 f 的
-    // ObjFunction 再反汇编其 unit。
-    const ObjFunction* f = find_nested_function(c, "f");
+    // ObjFnProto 再反汇编其 unit。
+    const ObjFnProto* f = find_nested_function(c, "f");
     ASSERT_NE(f, nullptr);
     EXPECT_EQ(f->arity(), 2);
     EXPECT_EQ(f->min_arity(), 1); // 必传 a,缺省 b
@@ -1270,7 +1270,7 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
 // 内置函数（type / str / println / assert）
 // ============================================================
 // 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
-// （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFunction*)，
+// （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFnProto*)，
 // VM ctor 已注册 builtins，故单次 run 测试天然覆盖。跨行 shadow 持久见 BuiltinShadowPersistsAcrossRuns。
 
 TEST(CodeGen, BuiltinType) {

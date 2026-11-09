@@ -44,9 +44,9 @@ class ObjMovement final : public Object, public AriaExeContext {};
 
 // 帧是纯 POD(FrameStack 要求 trivially-copyable;只持指针,满足约束)
 struct CallFrame {
-    ObjClosure*  closure;    // M4 起持闭包(callable 收敛为闭包,顶层入口也是闭包);元数据经其 function() 取
-    CodeUnit*    unit;      // 缓存 closure->function()->unit(),省每条指令一跳
-    ObjModule*   module;    // 缓存 closure->function()->module(),供 *_GLOBAL 定位模块 globals
+    ObjClosure*  closure;    // M4 起持闭包(callable 收敛为闭包,顶层入口也是闭包);元数据经其 proto() 取
+    CodeUnit*    unit;      // 缓存 closure->proto()->unit(),省每条指令一跳
+    ObjModule*   module;    // 缓存 closure->proto()->module(),供 *_GLOBAL 定位模块 globals
     u8*          ip;        // 裸指针最快;raise 等冷路径按需算 offset
     Value*       slots;     // 本帧局部基址(普通帧 callee=槽0、方法帧 this=槽0(M5),参数从槽 1 起、局部)
     u8*          last_ip;   // 最近取指指令起始(行号/unwind 查表锚点)
@@ -142,7 +142,7 @@ ObjNativeFn 的 defining_class_ 默认空,实例方法注册时设置并由 trac
 
 **错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 println(e) 不显示位置(同 Python str(e))。
 
-**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `info.size()` 做元数校验,不符经 `ctx.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/error-message-style.md`)。这与 `ObjFunction.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:`ObjFunction` 进帧需 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
+**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `info.size()` 做元数校验,不符经 `ctx.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/error-message-style.md`)。这与 `ObjFnProto.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:脚本闭包进帧时依据原型的 arity 布局部槽,`ObjNativeFn` 不进帧、无需 VM 预校验。将来若要统一可上 `ObjCallable` 基类暴露 `Opt<u8> arity()`,但当前不上(YAGNI)。
 
 **叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop` 的簿记性操作;`call_native` 善后假设返回时栈顶停在调用区上)。实参只读(`info[i]`)、返回值写返回槽(`set_return_val`)、报错经 `ctx.fail`/`raise`;视图按下标重算,重入扩容搬迁不再使实参读数悬垂。从原生深处回调 aria 函数走重入口(AriaExeContext 公共面 `execute_closure`/`execute_method`,§4.11;消费方 = 显示咨询面的 `__str__` 钩子调用(§4.12)与统一测试探针 `TestProbe`)。GC 已启用(值栈/帧接根),原生函数内可经 `ctx.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,返回值写入后即随值栈为根。
 
@@ -295,7 +295,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M1 跑起来(已落地)** | `Movement`(纯 C++ 类)+ `VMContext` 别名;`CallFrame`(持 `ObjFunction*`);`AriaVM::run()`:`LOAD_CONST/LOAD_IMM/LOAD_NIL/TRUE/FALSE`、局部槽(含 `_L`)、算术/比较/`NOT`/`NEGATE`、`POP/POP_N/DUP/DUP2`、`JUMP*`/`JUMP_BACK`、`CALL`(`ObjFunction` 进帧 + `ObjNativeFn` 同步调用,见 §4.7)、`RETURN`、`HALT`。值栈可增长;`VMContext` 挂起错误寄存器(§4.7,M1 `raise` 切片)。注:本行为 M1 时代快照,`_L` 变体、`VMContext` 别名与 `CallFrame` 持 `ObjFunction*` 均为当时形态(现行 = 无 `_L`、别名已删、帧持 `ObjClosure*`) | 手写字节码算术/循环/函数调用/原生函数跑通 |
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(bytecode-instruction-set.md §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
-| **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFunction` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
+| **M4 闭包(已落地)** | `ObjClosure`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjClosure*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFnProto` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
 | **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjClosure) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(经 `Coroutine` 类、builtins_ 裸名曝光)+ call_native 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 

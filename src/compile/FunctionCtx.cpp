@@ -2,11 +2,11 @@
 
 #include <ranges>
 
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 
 namespace aria {
 
-    FunctionCtx::FunctionCtx(ObjFunction* fn, FunctionCtx* enclosing, const FnKind kind) :
+    FunctionCtx::FunctionCtx(ObjFnProto* fn, FunctionCtx* enclosing, const FnKind kind) :
         enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
         // 非方法族的哑元 callee 空名，词法不可达、不可引用。
         const auto name = is_method(kind) ? kThisName : StringView{};

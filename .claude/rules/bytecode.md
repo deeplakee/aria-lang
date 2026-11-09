@@ -21,7 +21,7 @@ paths:
 
 ## `bytecode/CodeUnit.hpp`
 
-`CodeUnit` 字节码容器（`ObjFunction` 的值成员，非 Object）。
+`CodeUnit` 字节码容器（`ObjFnProto` 的值成员，非 Object）。
 
 - **操作数位宽事实源** `kU8OperandMax`/`kU16OperandMax`（u8/u16 操作数最大 255/65535，`namespace aria` 级 constexpr）在头内置；本类与 CodeGen 的各语义上限常量（本侧 `kMaxPopChunk`/`kMaxNLocalSlot`/`kMaxJumpOffset`/`kMaxConstantIndex`、CodeGen 侧 `kMaxArity`/`kMaxArguments`/`kMaxConstants`/`kMaxListElements`/`kMaxMapEntries`/`kMaxLocals`）以之为源。
 - **四个容器字段直接 public 裸露**（VM/编译器/反汇编器直接操作裸字段）：`code`（`Array<u8>` 字节流，opcode + 内联操作数小端）、`constants`（`AriaArray` 常量池，白赚 `trace`）、`lines`（`Array<LineEntry>` RLE 行段表）、`try_records`（`Array<TryRecord>` 异常记录表）。

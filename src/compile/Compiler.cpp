@@ -5,13 +5,13 @@
 #include "compile/Parser.hpp"
 #include "memory/AstArena.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjModule.hpp"
 
 namespace aria {
 
-    Result<ObjFunction*, Error> Compiler::compile(GC& gc, SourceFile& source, ObjModule* module,
-                                                  const StringView entry_name) {
+    Result<ObjFnProto*, Error> Compiler::compile(GC& gc, SourceFile& source, ObjModule* module,
+                                                 const StringView entry_name) {
         auto tokens = Lexer::tokenize(source);
         if (!tokens) {
             return std::unexpected(std::move(tokens.error()));

@@ -39,7 +39,7 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 
 **根因**：CALL 进帧后，调用者帧的 `ip` 停在「CALL 之后的下一条」，等被调用者 RETURN 后回来继续。异常 unwind 时要查的是「触发本次调用的 CALL 站点」是否落在某 try 区间内，而 CALL 站点 = `frame.ip - sizeof(CALL指令)`，不是 `frame.ip`。
 
-**对策**：每帧记录「最后执行指令起始指针」。在 `CallFrame` 加 `u8* last_ip` 字段（无 NSDMI，`init_frame_` 置 code 起始，见坑 #3）。**在 `dispatch_loop()` 循环顶每轮取指前无条件写**（单次指针 store，热路径开销可接受，换取对所有 raise 站点的统一正确性；写入点代码同坑 #1）。**表示决策**：帧内存**指针**（与 `ip` 同为非 const 指向，运行期从不经二者写字节）、查表时与 `unit->code.data()` 相减反推 offset（`try_records`/行号表保持 offset 键不动）-- 与 `ip` 同取向（vm-design §4.3「裸指针走热路径、offset 冷路径换算」），主循环省一次基址减法与截断 cast；成立前提是帧存活期间 `code` 缓冲恒定（非移动 GC、CodeUnit 为 `ObjFunction` 值成员、执行期零 emit、IMPORT 现场编译新建 unit）。
+**对策**：每帧记录「最后执行指令起始指针」。在 `CallFrame` 加 `u8* last_ip` 字段（无 NSDMI，`init_frame_` 置 code 起始，见坑 #3）。**在 `dispatch_loop()` 循环顶每轮取指前无条件写**（单次指针 store，热路径开销可接受，换取对所有 raise 站点的统一正确性；写入点代码同坑 #1）。**表示决策**：帧内存**指针**（与 `ip` 同为非 const 指向，运行期从不经二者写字节）、查表时与 `unit->code.data()` 相减反推 offset（`try_records`/行号表保持 offset 键不动）-- 与 `ip` 同取向（vm-design §4.3「裸指针走热路径、offset 冷路径换算」），主循环省一次基址减法与截断 cast；成立前提是帧存活期间 `code` 缓冲恒定（非移动 GC、CodeUnit 为 `ObjFnProto` 值成员、执行期零 emit、IMPORT 现场编译新建 unit）。
 
 每轮写一次覆盖全部 raise 情形，**无需分挂起点/raise 点、无需 raise helper 收 `ip_off`、无需 `ip_start` 快照**：
 

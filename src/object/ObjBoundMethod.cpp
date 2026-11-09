@@ -5,7 +5,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjClosure.hpp"
-#include "object/ObjFunction.hpp"
+#include "object/ObjFnProto.hpp"
 #include "object/ObjNativeFn.hpp"
 #include "runtime/AriaExeContext.hpp"
 #include "value/ObjBridge.hpp"

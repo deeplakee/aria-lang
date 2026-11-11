@@ -17,23 +17,14 @@ namespace aria {
         return value.is_obj() ? value.as_obj()->try_as<T>() : nullptr;
     }
 
-    // 类表成员值是否为「可调用」:闭包(字节码方法)或原生函数(内建方法)。
+    // 取需要绑定接收者的实例方法;普通函数和已绑定方法均不命中。
     [[nodiscard]]
-    inline bool is_callable(const Value value) noexcept {
-        if (!value.is_obj()) {
-            return false;
+    inline ObjFunction* try_as_method(const Value value) noexcept {
+        const auto function = try_as_obj<ObjFunction>(value);
+        if (function && function->is_method()) {
+            return function;
         }
-        return value.as_obj()->type() == ObjType::FUNCTION;
-    }
-
-    // 需要接收者的未绑定实例方法:脚本闭包与原生函数均以 defining class 判定。
-    // 普通/静态函数不戳,已有绑定方法不重复绑定;成员赋值不改变函数值携带的标记。
-    [[nodiscard]]
-    inline bool is_method(const Value value) noexcept {
-        if (const auto function = try_as_obj<ObjFunction>(value)) {
-            return function->is_method();
-        }
-        return false;
+        return nullptr;
     }
 
 } // namespace aria

@@ -28,7 +28,6 @@ using aria::new_string;
 using aria::new_string_iterator;
 using aria::ObjBoundMethod;
 using aria::ObjException;
-using aria::ObjFunction;
 using aria::ObjList;
 using aria::ObjListIterator;
 using aria::ObjString;
@@ -124,8 +123,8 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(iter)));
-    const auto native = method->method().as_obj()->try_as<ObjFunction>();
-    ASSERT_NE(native, nullptr);
+    const auto native = method->method();
+    EXPECT_TRUE(native->is_native());
     EXPECT_EQ(native->name()->view(), "has_next");
 }
 

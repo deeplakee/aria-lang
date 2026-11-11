@@ -67,9 +67,8 @@ namespace aria {
         // call_value 通用分发。
         static bool call_class(AriaExeContext& ctx, ObjClass* obj, u8 argc);
 
-        // 绑定方法调用:槽 0 原位覆写为 receiver(this 替代 callee,实参槽位不动),余下交
-        // call_value 分发。方法值无需守卫:覆写后经类表槽/缓存可达。
-        static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, u8 argc);
+        // 绑定方法调用:槽 0 改为 receiver,直接交 call_function;两条函数调用路径各自根化函数。
+        static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, u8 argc);
 
         // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。
         static bool call_native_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
@@ -79,8 +78,8 @@ namespace aria {
         [[nodiscard]]
         static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
-        // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派 -- bound 解内层沿用自身
-        // receiver(ctor 契约:内层为函数对象),原生走 execute_native_fn,aria 函数交 execute_aria_fn
+        // 外部调用口(非循环上下文发起的同步调用):绑定方法直接取其函数和接收者,
+        // 原生载荷走 execute_native_fn,Aria 载荷交 execute_aria_fn
         // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);

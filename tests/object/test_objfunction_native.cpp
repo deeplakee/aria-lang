@@ -4,7 +4,6 @@
 #include "object/ObjClass.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
-#include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
 using aria::GC;
@@ -40,7 +39,6 @@ TEST(ObjFunctionNative, NamedRendersFnName) {
     EXPECT_EQ(function->repr(), "<fn sample>");
     EXPECT_EQ(function->defining_class(), nullptr);
     EXPECT_FALSE(function->is_method());
-    EXPECT_FALSE(aria::is_method(Value::from_obj(function)));
 }
 
 // 匿名重载:new_function(gc, native) 以 kAnonymousName("<anonymous>") 建名,渲染 `<fn <anonymous>>`。
@@ -75,7 +73,6 @@ TEST(ObjFunctionNative, DefiningClassSurvivesCollectAndMemberAssignment) {
     ASSERT_NE(method->defining_class(), nullptr);
     EXPECT_EQ(method->defining_class()->name()->view(), "Owner");
     EXPECT_TRUE(method->is_method());
-    EXPECT_TRUE(aria::is_method(Value::from_obj(method)));
 
     auto other = aria::new_class(gc, "Other", nullptr);
     guard.push(other);

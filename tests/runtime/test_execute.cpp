@@ -152,7 +152,7 @@ namespace aria {
             const auto bound = info[0].as_obj()->as<ObjBoundMethod>();
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args(info, 1, args);
-            const auto method = bound->method().as_obj()->as<ObjFunction>();
+            const auto method = bound->method();
             const auto result = ctx.execute_method(bound->receiver(), method, {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
@@ -397,18 +397,24 @@ TEST_F(NestedExecStress, StringifyRecursionCapped) {
 TEST_F(NestedExecStress, StringifyBoundMethodHook) {
     const auto src = R"(
         def Format {
-            fmt() { return "F"; }
+            init(text) { this.text = text; }
+            fmt() { return this.text; }
         }
         def Box { }
-        Box.__str__ = Format().fmt;
-        var s = render(Box());
+        Box.__str__ = Format("F").fmt;
+        var aria_text = render(Box());
+        Box.__str__ = [1, 2].__str__;
+        var native_text = render(Box());
     )";
     const auto r   = run_with_natives(vm, src, {{"render", fn_render}});
     ASSERT_TRUE(r.result.has_value());
-    const auto s = find_global(*r.module, vm.gc(), "s");
-    ASSERT_TRUE(s.has_value());
-    // bound 形态经 call_value 分派:沿用 bound 自身 receiver,argc = 0。
-    EXPECT_EQ(s->as_obj()->as<ObjString>()->view(), "F");
+    // 绑定钩子经 execute_callable 分派:沿用其自身 receiver,argc = 0。
+    const auto aria_text = find_global(*r.module, vm.gc(), "aria_text");
+    ASSERT_TRUE(aria_text.has_value());
+    EXPECT_EQ(aria_text->as_obj()->as<ObjString>()->view(), "F");
+    const auto native_text = find_global(*r.module, vm.gc(), "native_text");
+    ASSERT_TRUE(native_text.has_value());
+    EXPECT_EQ(native_text->as_obj()->as<ObjString>()->view(), "[1, 2]");
 }
 
 TEST_F(NestedExecStress, StringifyPlainAndBuiltinValues) {

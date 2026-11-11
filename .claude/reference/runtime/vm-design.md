@@ -125,9 +125,9 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 
 **返回值就地写槽 0** -- 原生经 `info.set_return_val(v)` 把返回值写进槽 0(原地覆盖 callee)。VM 调用后 `ctx.drop(argc)` 弹掉 a1..aN,槽 0 升至栈顶即返回值--比「`drop(argc+1)` + `push(result)`」省一压,且原生函数就地掌控返回槽。VM 侧 `call_native_fn` 以 `NativeCallInfo{ctx, argc}` 构造视图(槽 0 下标 = `stack_size() - argc - 1`,进场时算一次);栈形与用户函数 `CALL` 一致(`[callee, a1..aN]`,callee 在槽 0)。
 
-**方法调用形态(脚本闭包与原生函数均以 defining_class 标记实例方法)** -- 经 `ObjBoundMethod` 绑定的原生方法(内建类型方法载体):调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
+**方法调用形态(Aria 与原生函数均以 defining_class 标记实例方法)** -- `ObjBoundMethod` 持 `ObjFunction*` 与 `Value` 接收者，VM 直接按函数载荷分派。以原生方法为例:调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
 
-ObjFunction 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。is_method 同时识别脚本与原生实例方法;Object 默认绑定读取经 load_field 查询后据此绑定脚本或原生实例方法,其他值及已有绑定方法原样返回;内建容器/迭代器/异常以及函数族/协程值继承此实现,ObjInstance 保留字段与类链的来源区分,class/module 显式保持命名空间成员原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
+ObjFunction 的 defining_class_ 默认空,实例方法注册时设置并由 trace 标记;普通内建与 Coroutine 静态原语保持空。`ObjFunction::is_method()` 同时识别脚本与原生实例方法;Object 默认绑定读取经 load_field 查询后据此绑定脚本或原生实例方法,其他值及已有绑定方法原样返回;内建容器/迭代器/异常以及函数族/协程值继承此实现,ObjInstance 保留字段与类链的来源区分,class/module 显式保持命名空间成员原样返回。super 读取按同一方法判据绑定 this。定义归属随函数值保留,不因成员赋值改变;此标记不引入通用接收者归属校验。
 
 可调用对象派发时,call_value 的 __call__ 分支先将槽 0 设为实际被调用对象,再从其类型链查询实现并递归派发。成员直接调用留下的字段宿主不能充当该对象的 this;普通函数、类构造和绑定方法各自的分支不受此覆写规则影响。实参槽位与数量保持不变,已有绑定钩子仍使用其保存的接收者,转发到另一个可调用对象时重新建立该对象的接收者。
 
@@ -258,7 +258,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 ### 4.12 显示渲染面(show 咨询口,已落地)
 
 显示定制钩子 = `__str__`(注册表 `str_table.hpp` 与算子 dunder 同表)。渲染语义分双位:
-- **显示位(重入咨询,跑用户代码)**:`str()`/`println`/插值/`join` 共口 `Eval::stringify(AriaExeContext&, Value) -> ObjString*`--字面值字面渲染、对象一律经类面咨询口 `load_field_from_class` 解析 `__str__`(String 自有钩子返回原文,即显示/调试分叉点;实例 fields / 模块 globals 等值本地状态出局;根类默认原生 = 渲染自身 `repr`,兜底恒命中)后同步调用(调用区 `[receiver]`,argc = 0)。返回值须为 string,违约 `TypeMismatch`;不可调咨询值 `CallNonCallable`(`Eval::execute_callable`,按 bound/native/closure 形态分派:原生走 `execute_native_fn`、闭包走 `execute_aria_fn` 重入体)。失败 nullptr ⟺ 载荷在挂起寄存器;自渲染递归由嵌套深度上限折断(`StackOverflow`);
+- **显示位(重入咨询,跑用户代码)**:`str()`/`println`/插值/`join` 共口 `Eval::stringify(AriaExeContext&, Value) -> ObjString*`--字面值字面渲染、对象一律经类面咨询口 `load_field_from_class` 解析 `__str__`(String 自有钩子返回原文,即显示/调试分叉点;实例 fields / 模块 globals 等值本地状态出局;根类默认原生 = 渲染自身 `repr`,兜底恒命中)后同步调用(调用区 `[receiver]`,argc = 0)。返回值须为 string,违约 `TypeMismatch`;不可调咨询值 `CallNonCallable`(`Eval::execute_callable`,绑定方法直接取其函数与接收者:原生走 `execute_native_fn`、闭包走 `execute_aria_fn` 重入体)。失败 nullptr ⟺ 载荷在挂起寄存器;自渲染递归由嵌套深度上限折断(`StackOverflow`);
 - **调试位(零用户代码)**:`value_repr`/虚 `repr` 纯 C++,执行跟踪/未捕获/反汇编常量池与容器元素恒调试形(嵌套字符串带引号);
 - **段收拢**:join 经 `Eval::concat_values` 两遍式收拢(段一律经 stringify 收 StringView -> 量长定容 -> 单趟填充)。驻留池是弱根,每个渲染结果立即压入本调用的 `GC::Guard`,跨后续渲染保活至拼接完成,正常返回与错误短路均由 RAII 弹根。BUILD_STRING 经 `run_build_string` 逐段渲染后原槽换装为结果串(栈即根),每次访问重取槽址以避重入扩容搬迁,再定容填充;失败载荷走 `unwind_check`;
 - **地位**:可重载显示虚函数已退役(`Object::to_string` 删除) -- C++ 对象层仅剩固定行为虚函数,显示定制唯一面 = `__str__`。

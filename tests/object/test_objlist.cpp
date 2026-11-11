@@ -596,8 +596,8 @@ TEST(ObjList, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(list)));
-    const auto native = method->method().as_obj()->try_as<ObjFunction>();
-    ASSERT_NE(native, nullptr);
+    const auto native = method->method();
+    EXPECT_TRUE(native->is_native());
     EXPECT_EQ(native->name()->view(), "push");
 }
 
@@ -613,8 +613,8 @@ TEST(ObjList, LoadFieldInitResolvesToFactoryNative) {
     guard.push(bound->as_obj());
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
-    const auto native = method->method().as_obj()->try_as<ObjFunction>();
-    ASSERT_NE(native, nullptr);
+    const auto native = method->method();
+    EXPECT_TRUE(native->is_native());
     EXPECT_EQ(native->name()->view(), "init");
 }
 

@@ -127,9 +127,10 @@ namespace aria {
         return call_value(ctx, obj->init(), argc);
     }
 
-    bool Eval::call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, const u8 argc) {
-        ctx.peek(argc) = obj->receiver(); // 槽 0:bound -> this(实参槽位不动)
-        return call_value(ctx, obj->method(), argc);
+    bool Eval::call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, const u8 argc) {
+        const auto method = bound->method();
+        ctx.peek(argc)    = bound->receiver(); // 槽 0:bound -> this(实参槽位不动)
+        return call_function(ctx, method, argc);
     }
 
     bool Eval::call_function(AriaExeContext& ctx, ObjFunction* function, const u8 argc) {
@@ -210,17 +211,19 @@ namespace aria {
         return std::nullopt;
     }
 
-    Opt<Value> Eval::execute_callable(AriaExeContext& ctx, const Value slot0, const Value callee, const ArgList args) {
-        // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派,bound 解内层沿用自身
-        // receiver(ctor 契约:内层为函数对象)。失败载荷留寄存器。
+    Opt<Value> Eval::execute_callable(AriaExeContext& ctx, Value slot0, const Value callee, const ArgList args) {
+        ObjFunction* function;
         if (const auto bound = try_as_obj<ObjBoundMethod>(callee)) {
-            return execute_callable(ctx, bound->receiver(), bound->method(), args);
+            function = bound->method();
+            slot0    = bound->receiver();
+        } else {
+            function = try_as_obj<ObjFunction>(callee);
+            if (!function) {
+                return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
+            }
         }
-        if (const auto function = try_as_obj<ObjFunction>(callee)) {
-            return function->is_native() ? execute_native_fn(ctx, slot0, function, args)
-                                         : execute_aria_fn(ctx, slot0, function, args);
-        }
-        return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
+        return function->is_native() ? execute_native_fn(ctx, slot0, function, args)
+                                     : execute_aria_fn(ctx, slot0, function, args);
     }
 
     ObjString* Eval::execute_str_hook(AriaExeContext& ctx, const Value value, const Value hook) {
@@ -669,11 +672,11 @@ namespace aria {
         if (!hit) {
             return false;
         }
-        if (const auto member = *hit; is_method(member)) {
+        if (const auto method = try_as_method(*hit)) {
             // 脚本/原生实例方法命中:建成立即压栈,this 经帧槽根化;方法对象经 super 链根可达
-            ctx.push(Value::from_obj(new_bound_method(ctx.gc(), member, frame.slots[0])));
+            ctx.push(Value::from_obj(new_bound_method(ctx.gc(), method, frame.slots[0])));
         } else {
-            ctx.push(member); // 静态槽原值直读,不绑定不缓存
+            ctx.push(*hit); // 非方法值原样返回
         }
         return true;
     }

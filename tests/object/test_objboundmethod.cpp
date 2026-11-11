@@ -77,10 +77,10 @@ TEST(ObjBoundMethod, Basics) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
 
-    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 建时(非 stress)无 collect
+    auto bound = new_bound_method(gc, method, Value::from_obj(inst)); // 建时(非 stress)无 collect
     EXPECT_TRUE(bound->is<ObjBoundMethod>());
     EXPECT_EQ(bound->type(), aria::ObjType::BOUND_METHOD);
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+    EXPECT_EQ(bound->method(), method);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
 }
 
@@ -94,8 +94,8 @@ TEST(ObjBoundMethod, ObjectReceiverOverload) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
 
-    auto bound = new_bound_method(gc, Value::from_obj(method), inst);
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+    auto bound = new_bound_method(gc, method, inst);
+    EXPECT_EQ(bound->method(), method);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
 }
 
@@ -111,8 +111,8 @@ TEST(ObjBoundMethod, IdentitySemantics) {
     auto i2 = make_instance(gc, klass);
     guard.push(i2);
 
-    auto b1 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i1));
-    auto b2 = new_bound_method(gc, Value::from_obj(method), Value::from_obj(i2));
+    auto b1 = new_bound_method(gc, method, Value::from_obj(i1));
+    auto b2 = new_bound_method(gc, method, Value::from_obj(i2));
     EXPECT_NE(b1, b2);
     EXPECT_TRUE(value_identical(Value::from_obj(b1), Value::from_obj(b1)));
     EXPECT_FALSE(value_identical(Value::from_obj(b1), Value::from_obj(b2)));
@@ -127,7 +127,7 @@ TEST(ObjBoundMethod, ToString) {
     guard.push(klass);
     auto inst = make_instance(gc, klass);
     guard.push(inst);
-    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
+    auto bound = new_bound_method(gc, method, Value::from_obj(inst));
     EXPECT_EQ(bound->repr(), "<bound method m>");
 }
 
@@ -142,8 +142,8 @@ TEST(ObjBoundMethod, NativeMethodBinding) {
     auto inst = make_instance(gc, klass);
     guard.push(inst);
 
-    auto bound = new_bound_method(gc, Value::from_obj(native), Value::from_obj(inst));
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(native)));
+    auto bound = new_bound_method(gc, native, Value::from_obj(inst));
+    EXPECT_EQ(bound->method(), native);
     EXPECT_EQ(bound->name()->view(), "echo");
     EXPECT_EQ(bound->repr(), "<bound method echo>");
     EXPECT_EQ(aria::value_repr(Value::from_obj(bound)), "<bound method echo>"); // 调试渲染同文案
@@ -157,7 +157,7 @@ TEST(ObjBoundMethod, DebugRender) {
     guard.push(klass);
     auto inst = make_instance(gc, klass);
     guard.push(inst);
-    auto bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
+    auto bound = new_bound_method(gc, method, Value::from_obj(inst));
     EXPECT_EQ(aria::value_repr(Value::from_obj(bound)), "<bound method m>"); // 调试渲染同文案
 }
 
@@ -186,7 +186,7 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
         // push 走 trivial 分配不触 GC
         method->proto()->unit().add_constant(Value::from_obj(constant));
         // 建时 collect:经守卫存活
-        bound = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst));
+        bound = new_bound_method(gc, method, Value::from_obj(inst));
         guard.push(bound);
         // 作用域退出:全部临时根弹出,method/inst/klass 此后仅经 bound.trace 可达
     }
@@ -196,7 +196,7 @@ TEST(ObjBoundMethod, TraceStressKeepsMethodAndReceiver) {
     const usize before = gc.bytes_allocated();
     gc.collect(); // 显式 collect(不分配):若 trace 漏标,失根对象在此掉数
     EXPECT_EQ(gc.bytes_allocated(), before);
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+    EXPECT_EQ(bound->method(), method);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst)));
     EXPECT_EQ(constant->view(), "a long constant string beyond sso padding");
     EXPECT_EQ(inst->klass(), klass);
@@ -209,7 +209,7 @@ TEST(ObjBoundMethod, UnrootedBoundMethodSwept) {
     auto method        = make_closure(gc, "m", 1);
     auto klass         = make_class(gc, "orphan");
     auto inst          = make_instance(gc, klass);
-    std::ignore        = new_bound_method(gc, Value::from_obj(method), Value::from_obj(inst)); // 全链无根
+    std::ignore        = new_bound_method(gc, method, Value::from_obj(inst)); // 全链无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);

@@ -8,13 +8,14 @@
 namespace aria {
 
     class GC;
+    class ObjFunction;
     class ObjString;
 
     // 绑定方法对象:方法值与其绑定的接收者,在 obj.m 读取类的实例方法时产生;静态成员不产生该对象。
     class ObjBoundMethod final : public Object {
     public:
-        ObjBoundMethod(Value method, Value receiver);
-        ~ObjBoundMethod() override = default; // method_/receiver_ 是 GC 值,不归本类释放
+        ObjBoundMethod(ObjFunction* method, Value receiver);
+        ~ObjBoundMethod() override = default;
 
         ObjBoundMethod(const ObjBoundMethod&)            = delete;
         ObjBoundMethod& operator=(const ObjBoundMethod&) = delete;
@@ -22,7 +23,7 @@ namespace aria {
         ObjBoundMethod& operator=(ObjBoundMethod&&)      = delete;
 
         [[nodiscard]]
-        Value method() const noexcept {
+        ObjFunction* method() const noexcept {
             return method_;
         }
 
@@ -31,7 +32,7 @@ namespace aria {
             return receiver_;
         }
 
-        // 绑定的方法对象之名(闭包取 fn 名、原生取 name_,intern 恒非空);非虚、定义在 .cpp。
+        // 取绑定函数的驻留名称。
         [[nodiscard]]
         ObjString* name() const noexcept;
 
@@ -56,17 +57,17 @@ namespace aria {
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
     private:
-        Value method_;   // 被绑定方法值(闭包/原生;ctor 断言可调用)
-        Value receiver_; // 绑定接收者(Value 泛化;闭包解包作方法帧槽 0 的 this,原生覆写调用区槽 0)
+        ObjFunction* method_;   // 被绑定的 Aria 或原生函数,恒非空
+        Value        receiver_; // 绑定接收者,调用时写入槽 0
     };
 
     // 工厂:分配 ObjBoundMethod;调用方须自行根化 method 与 receiver 中的对象。
     [[nodiscard]]
-    ObjBoundMethod* new_bound_method(GC& gc, Value method, Value receiver);
+    ObjBoundMethod* new_bound_method(GC& gc, ObjFunction* method, Value receiver);
 
     // receiver 为对象指针的便捷重载:装箱后委托 Value 版;receiver 须非空。
     [[nodiscard]]
-    ObjBoundMethod* new_bound_method(GC& gc, Value method, Object* receiver);
+    ObjBoundMethod* new_bound_method(GC& gc, ObjFunction* method, Object* receiver);
 
 } // namespace aria
 

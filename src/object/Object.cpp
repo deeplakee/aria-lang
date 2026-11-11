@@ -21,11 +21,10 @@ namespace aria {
         if (!hit) {
             return std::nullopt;
         }
-        const auto member = *hit;
-        if (!is_method(member)) {
-            return member;
+        if (const auto method = try_as_method(*hit)) {
+            return Value::from_obj(new_bound_method(ctx.gc(), method, this));
         }
-        return Value::from_obj(new_bound_method(ctx.gc(), member, this));
+        return hit;
     }
 
     bool Object::store_field(AriaExeContext& ctx, ObjString* name, const Value value) {

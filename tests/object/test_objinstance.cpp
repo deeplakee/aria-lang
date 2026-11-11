@@ -177,7 +177,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
     const auto* rebound = after_collect->as_obj()->try_as<ObjBoundMethod>();
     ASSERT_NE(rebound, nullptr);
     EXPECT_TRUE(value_identical(rebound->receiver(), Value::from_obj(obj)));
-    EXPECT_TRUE(value_identical(rebound->method(), Value::from_obj(method))); // 实现在类表,全链随活
+    EXPECT_EQ(rebound->method(), method); // 实现在类表,全链随活
 }
 
 // 未根实例被 sweep(壳 + 其 class_/fields 值若无他根一并回收)。
@@ -234,7 +234,7 @@ TEST(ObjInstance, LoadFieldBindsReadsStaticAndResolvesFresh) {
     auto bound = method_read->as_obj()->try_as<ObjBoundMethod>();
     ASSERT_NE(bound, nullptr);
     EXPECT_TRUE(value_identical(bound->receiver(), Value::from_obj(inst))); // this=本实例
-    EXPECT_TRUE(value_identical(bound->method(), Value::from_obj(method)));
+    EXPECT_EQ(bound->method(), method);
 
     // 二次读同键:现场重绑 -- 新对象(=== 假)但内容相等(== 真);分配计数两读各 +1
     // 即「每次访问物化新 bound」的判据。

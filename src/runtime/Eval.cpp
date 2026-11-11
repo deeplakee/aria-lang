@@ -154,12 +154,11 @@ namespace aria {
         return true;
     }
 
-    bool Eval::call_native_fn(AriaExeContext& ctx, ObjFunction* function, const u8 argc) {
+    bool Eval::call_native_fn(AriaExeContext& ctx, const ObjFunction* function, const u8 argc) {
         // 同步调用不进帧。切换型原生成功后 vm.current_ 已被换至对侧,事后簿记(drop/寄存器断言)
         // 一律落 ctx(进场上下文,引用不可重绑)使栈顶停在该调用的槽 0(切换模型下的预留结果槽)。
         // 「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。实参留栈到 drop:
         // 切换型原生执行全程实参皆调用者栈根。
-        const auto           guard = ctx.gc().make_guard(function);
         const NativeCallInfo info{ctx, argc};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!ctx.has_error(), "pending error not cleared before native call");
@@ -199,7 +198,7 @@ namespace aria {
         return std::nullopt; // 错误值在寄存器
     }
 
-    Opt<Value> Eval::execute_native_fn(AriaExeContext& ctx, const Value slot0, ObjFunction* function,
+    Opt<Value> Eval::execute_native_fn(AriaExeContext& ctx, const Value slot0, const ObjFunction* function,
                                        const ArgList args) {
         // 外部调用原生:调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹槽 0。
         if (args.size() > std::numeric_limits<u8>::max()) {

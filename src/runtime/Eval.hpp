@@ -70,12 +70,13 @@ namespace aria {
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, u8 argc);
 
         // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。
-        static bool call_native_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
+        static bool call_native_fn(AriaExeContext& ctx, const ObjFunction* function, u8 argc);
 
         // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
         // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
+        static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, const ObjFunction* function,
+                                            ArgList args);
 
         // 外部调用口(非循环上下文发起的同步调用):绑定方法直接取其函数和接收者,
         // 原生载荷走 execute_native_fn,Aria 载荷交 execute_aria_fn

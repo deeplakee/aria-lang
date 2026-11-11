@@ -123,6 +123,8 @@ using NativeFn = bool (*)(const NativeCallInfo& info);
 - 实参与 self:`info[i]`(0 起,按值)读实参 a1..aN,`argc = info.size()`;`info.self()` 读槽 0(callee / receiver)。视图持槽 0 在值栈缓冲中的**下标而非指针**,每次访问经 ctx 重取基址按偏移重算 -- 原生执行期间的重入扩容(`grow_stack_` 搬迁)不使读数悬垂;实参只读不可写。
 - 返回 `bool`:`true` = 成功(返回值经 `info.set_return_val(v)` 写槽 0,见下;例外:切换型原生返 true 不写之,§4.9),`false` = 失败(已调 `ctx.fail`/`ctx.raise` 置寄存器,见下)。
 
+**原生函数对象的生命周期** -- `call_native_fn` 在任何可能触发 GC 的操作前，从 `ObjFunction` 按值取出 `NativeFn`。回调可以触发 GC，VM 从进入回调起不再访问该函数对象，因此无需为它挂临时根。回调所需的接收者和实参由调用区保活。
+
 **返回值就地写槽 0** -- 原生经 `info.set_return_val(v)` 把返回值写进槽 0(原地覆盖 callee)。VM 调用后 `ctx.drop(argc)` 弹掉 a1..aN,槽 0 升至栈顶即返回值--比「`drop(argc+1)` + `push(result)`」省一压,且原生函数就地掌控返回槽。VM 侧 `call_native_fn` 以 `NativeCallInfo{ctx, argc}` 构造视图(槽 0 下标 = `stack_size() - argc - 1`,进场时算一次);栈形与用户函数 `CALL` 一致(`[callee, a1..aN]`,callee 在槽 0)。
 
 **方法调用形态(Aria 与原生函数均以 defining_class 标记实例方法)** -- `ObjBoundMethod` 持 `ObjFunction*` 与 `Value` 接收者，VM 直接按函数载荷分派。以原生方法为例:调用区 `[bound, a1..aN]` 的槽 0 为 bound 对象,VM 调用前覆写为 receiver -- 原生经 `info.self()` 读到 this(self 槽同时是返回槽);实参槽位与自由调用一致(实参不动槽、无整形)。类路径/静态访问(`Foo.m`)取出裸原生值不绑定,self = 原生自身,与自由调用无异。`init` 亦可为原生:实例化统一走 call_value 分发,Object 根类的 no-op init 即原生形态 -- 不调 `set_return_val` 即返回 this;写槽可返回任意值,嵌入 API 灵活性。
@@ -188,7 +190,7 @@ bool str_native(const NativeCallInfo& info) {
 // call_native_fn(现行实现,完整形状):ctx 即进场上下文,是全部事后簿记(drop/寄存器断言)的锚点。
 const NativeCallInfo info{ctx, argc};
 ASSERT(!ctx.has_error(), "pending error not cleared before native call");
-if (obj->fn()(info)) {
+if (function->fn()(info)) {
     // 成功契约对调用方寄存器断言:ctx 引用不可重绑,未切换时它即 current_,已切换时是被挂起的
     // 旧上下文 -- 两侧都是「调用发生时的上下文」,新上下文的寄存器不归本次调用管。
     ASSERT(!ctx.has_error(), "native fn returned true but raised error");

@@ -109,7 +109,8 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 - **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`：非对象左值委托 `run_binary_numeric<Op>`，对象左值经 `get_obj_binary_op_impl<Op>` 按编译期选定的钩子名走**魔术咨询口** `load_field_from_class` 取实现（值本地状态出局，见 object.md ①″；miss 措辞随各宿主咨询口烘焙），取到后 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`），取不到即已 fail。`+` 与四个比较算子的域 = 数值 ∪ String（String 的拼接经驻留池、比较按无符号字节序，见 object.md ②）。
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：两种函数载荷共用 `ObjFunction`（`ObjFnProto` 是常量池中的原型），`call_value` 编排后按 callee 类型分发到 `call_function`/`call_class`/`call_bound_method`，函数入口经 `is_native()` 再分发至 `call_native_fn` 或 `call_aria_fn`，其余对象类型先把槽 0 设为实际 callee，再按调用钩子 `__call__` 经魔术咨询口取实现后递归分发（值本地状态出局）；成员宿主不充当该对象的接收者，实参槽位不变。
-- `call_bound_method` 取绑定的函数指针，用接收者覆写槽 0，再交 `call_function`；原生与 Aria 调用各自临时根化函数。
+- `call_bound_method` 取绑定的函数指针，用接收者覆写槽 0，再交 `call_function`。
+- `call_native_fn` 在进入回调前按值读出 C++ 函数指针，此前没有 GC 点，之后不再访问 `ObjFunction`；接收者与实参由调用区保活。
 - `call_class` 先把已选定的类写入槽 0，跨 `new_instance` 的 GC 点保活。成员调用的槽 0 可能原先是成员宿主，且实参求值可能已改写存放该类的成员。实例建成后覆盖槽 0，接手保活类并充当 `init` 的 `this`。
 - `call_*` 族均签名即 ctx（作用于 ctx 即正在执行的上下文，与 dispatch_loop/raise 语义统一），返 `bool` 成败：失败时错误载荷已 `raise` 进当前上下文挂起寄存器，调用方据 bool 调 `unwind()`。
 - **闭包进帧的根交接**：`call_aria_fn` 从入口用临时根保护闭包及其函数、捕获值，覆盖检查与实参整形；`enter_frame` 发布后由 `frame.function` 接管，退出函数释放临时根。不得依赖类表继续持有已解析的方法，也不得依赖槽 0 仍保存绑定方法对象；变参打包中的 `new_list` 会触发 GC。
@@ -245,4 +246,4 @@ Builtin.cpp 匿名命名空间内的辅助函数提供 class_of(ctx, value) 与 
 
 ### 统一函数载荷
 
-`FunctionClass` 替换 Closure / NativeFn 两个公开类，`type()` 与 `is_a` 对两种载荷使用相同的 Function 身份。`CallFrame::function` 只持 aria 载荷的 `ObjFunction*`，进帧断言该约束；`execute_function` / `execute_method` 是 aria 函数的重入口。原生调用仍同步、不进帧，调用期间用临时根保活函数，实参留栈到 drop，成功时可切换上下文，失败不得切换。画像的 call 表按唯一 FUNCTION 标签聚合；ncall 表先按 `is_native()` 筛选后按名计数，不产生同名标签覆盖。
+`FunctionClass` 替换 Closure / NativeFn 两个公开类，`type()` 与 `is_a` 对两种载荷使用相同的 Function 身份。`CallFrame::function` 只持 aria 载荷的 `ObjFunction*`，进帧断言该约束；`execute_function` / `execute_method` 是 aria 函数的重入口。原生调用仍同步、不进帧，实参留栈到 drop，成功时可切换上下文，失败不得切换。画像的 call 表按唯一 FUNCTION 标签聚合；ncall 表先按 `is_native()` 筛选后按名计数，不产生同名标签覆盖。

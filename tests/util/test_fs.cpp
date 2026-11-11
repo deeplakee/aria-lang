@@ -52,9 +52,9 @@ TEST(FsReadFile, MissingFileReturnsNotFound) {
 }
 
 TEST(FsReadFile, DirectoryReturnsError) {
-    // 读取目录应失败（具体错误码因平台而异，这里只断言失败）
-    auto r = fs::read_file(testing::TempDir());
-    EXPECT_FALSE(r.has_value());
+    const auto result = fs::read_file(testing::TempDir());
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), fs::FsErrCode::IsDirectory);
 }
 
 // ---------------------------------------------------------------------------

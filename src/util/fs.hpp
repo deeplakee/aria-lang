@@ -153,7 +153,13 @@ namespace aria::fs {
     // 会静默得到空串而非报错，本函数面向常规文件（源码加载）。
     [[nodiscard]]
     inline Result<String, FsErrCode> read_file(const StringView path) {
-        auto file = std::ifstream{String{path}, std::ios::in | std::ios::binary};
+        const auto file_path = String{path};
+        // 打开目录不一定失败，必须在探测文件大小前拒绝目录；其他错误仍由打开操作报告。
+        if (std::error_code error; stdfs::is_directory(file_path, error)) {
+            return std::unexpected(FsErrCode::IsDirectory);
+        }
+
+        auto file = std::ifstream{file_path, std::ios::in | std::ios::binary};
         if (!file) {
             return std::unexpected(detail::errno_to_fserr());
         }

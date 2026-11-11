@@ -11,6 +11,7 @@ paths:
 
 - **`aria::stdfs` 别名**：`std::filesystem` 的统一简写，全库仅本头一处定义，消费方直接使用不再重复别名。
 - **路径/读盘原语**：`read_file`/`current_dir`/`program_dir`/`absolute`/`resolve`（`weakly_canonical`；`resolve` 当前仅测试消费，生产路径解析收口在 `AriaVM::resolve_module` 一侧）。
+- **`read_file`**：打开前显式拒绝目录（含指向目录的符号链接），统一返回 `FsErrCode::IsDirectory`；其他打开失败仍按 `errno` 映射。普通文件按探测的长度一次读入。
 - **`module_name_and_dir(StringView path) -> Pair<String,String>{name,dir}`**：把文件路径拆为入口模块身份--`name` = basename 去最后一个扩展名（`path::stem()`）、`dir` = `dirname(absolute(path))`（`absolute` 失败退化为原路径）。纯路径工具，不读盘、不校验存在性；`name` 可能为空，调用方据空 `name` 判加载错误。
 - **错误码**：`FsErrCode`；`detail::to_fserr(std::error_code)` 做映射（经 `default_error_condition()`）；`detail::errno_to_fserr(int e)` 与无参重载（读当前线程 errno）；`detail::executable_path()` 四平台分流取当前可执行文件路径（`program_dir` 基础）。
 

@@ -235,7 +235,7 @@ Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
 ```
 
 此外 `resume` 非协程对象报 `TypeMismatch argument must be a coroutine, got Int`（按实参
-实际类型报），`create` 非函数报 `TypeMismatch argument must be a function, got Int`；
+实际类型报），`create` 非函数报 `TypeMismatch argument must be an aria function, got Int`；
 恢复链中间的协程（`"normal"` / `"running"`）报 `ResumeNonSuspendedCoroutine`。
 
 ## 语义边界
@@ -275,3 +275,5 @@ Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
 ---
 
 [上一章：模块](15-modules.md) · [下一章：附录：内建参考](17-builtin-reference.md)
+
+`Coroutine.create` 的入口必须是 aria 函数。原生函数虽然同属 `Function` 类型，不能用作协程入口。

@@ -1,8 +1,7 @@
 #ifndef ARIA_OBJBRIDGE_HPP
 #define ARIA_OBJBRIDGE_HPP
 
-#include "object/ObjClosure.hpp"
-#include "object/ObjNativeFn.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/Object.hpp"
 #include "value/Value.hpp"
 
@@ -20,23 +19,19 @@ namespace aria {
 
     // 类表成员值是否为「可调用」:闭包(字节码方法)或原生函数(内建方法)。
     [[nodiscard]]
-    inline bool is_callable_value(const Value value) noexcept {
+    inline bool is_callable(const Value value) noexcept {
         if (!value.is_obj()) {
             return false;
         }
-        const ObjType t = value.as_obj()->type();
-        return t == ObjType::CLOSURE || t == ObjType::NATIVE_FN;
+        return value.as_obj()->type() == ObjType::FUNCTION;
     }
 
     // 需要接收者的未绑定实例方法:脚本闭包与原生函数均以 defining class 判定。
     // 普通/静态函数不戳,已有绑定方法不重复绑定;成员赋值不改变函数值携带的标记。
     [[nodiscard]]
     inline bool is_method(const Value value) noexcept {
-        if (const auto closure = try_as_obj<ObjClosure>(value)) {
-            return closure->is_method();
-        }
-        if (const auto native = try_as_obj<ObjNativeFn>(value)) {
-            return native->is_method();
+        if (const auto function = try_as_obj<ObjFunction>(value)) {
+            return function->is_method();
         }
         return false;
     }

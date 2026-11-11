@@ -8,7 +8,7 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
-#include "object/ObjNativeFn.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
@@ -26,7 +26,7 @@ using aria::new_range;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
-using aria::ObjNativeFn;
+using aria::ObjFunction;
 using aria::ObjString;
 using aria::Opt;
 using aria::Pair;
@@ -71,7 +71,7 @@ namespace {
             return std::nullopt;
         }
         auto&      ctx = *vm.current_context();
-        const auto fn  = hook->as_obj()->as<ObjNativeFn>();
+        const auto fn  = hook->as_obj()->as<ObjFunction>();
         ctx.push(lhs); // 调用区 [self, a1]:压栈即根
         ctx.push(rhs);
         const aria::NativeCallInfo info{ctx, 1};
@@ -305,7 +305,7 @@ TEST(ObjString, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(s)));
-    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
+    const auto native = method->method().as_obj()->try_as<ObjFunction>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "upper");
 }

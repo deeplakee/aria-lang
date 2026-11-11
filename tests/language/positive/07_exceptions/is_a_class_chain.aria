@@ -59,7 +59,7 @@ assert(is_a(Object, Object));     # 元类链沿至根类，根类命中自身�
 
 # fn 族/协程单例腿：咨询归属链 = 各自 bootstrap 单例类
 var fn = fun(a) { return a; };
-assert(is_a(fn, Closure));
+assert(is_a(fn, Function));
 assert(is_a(fn, Object));
-assert(is_a(println, NativeFn));
+assert(is_a(println, Function));
 assert(is_a(Coroutine.create(fun() { yield; }), Coroutine));

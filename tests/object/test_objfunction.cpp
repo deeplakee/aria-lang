@@ -4,11 +4,10 @@
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
@@ -16,11 +15,11 @@
 #include "value/Value.hpp"
 
 using aria::GC;
-using aria::new_closure;
+using aria::new_function;
 using aria::new_string;
 using aria::new_upvalue;
-using aria::ObjClosure;
 using aria::ObjFnProto;
+using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::ObjUpvalue;
@@ -66,22 +65,23 @@ namespace {
 } // namespace
 
 // 基础:包住 fn,upvalues_ 空态(CLOSURE 执行期才逐个后填)。
-TEST(ObjClosure, WrapsFunction) {
+TEST(ObjFunction, WrapsFunction) {
     GC   gc;
     auto fn = new_fn_proto(gc, "add", 2);
-    auto c  = new_closure(gc, fn);
-    EXPECT_TRUE(c->is<ObjClosure>());
-    EXPECT_EQ(c->type(), aria::ObjType::CLOSURE);
-    EXPECT_EQ(c->type_name(), "Closure");
+    auto c  = new_function(gc, fn);
+    EXPECT_TRUE(c->is<ObjFunction>());
+    EXPECT_FALSE(c->is_native());
+    EXPECT_EQ(c->type(), aria::ObjType::FUNCTION);
+    EXPECT_EQ(c->type_name(), "Function");
     EXPECT_EQ(c->proto(), fn);
     EXPECT_TRUE(c->upvalues().empty());
 }
 
 // 捕获数组:逐个后填,按下标可取。
-TEST(ObjClosure, AddUpvaluesInOrder) {
+TEST(ObjFunction, AddUpvaluesInOrder) {
     GC    gc;
     auto  fn    = new_fn_proto(gc, "f", 0);
-    auto  c     = new_closure(gc, fn);
+    auto  c     = new_function(gc, fn);
     auto  guard = gc.make_guard(c); // 习惯性守卫(非 stress 下无 GC 触发)
     Value a     = Value::from_i32(1);
     Value b     = Value::from_i32(2);
@@ -95,21 +95,21 @@ TEST(ObjClosure, AddUpvaluesInOrder) {
 }
 
 // repr 直取 function_ 名渲染 `<fn name>`,与纯函数同文案。
-TEST(ObjClosure, DebugReprSameAsFunction) {
+TEST(ObjFunction, DebugReprSameAsFunction) {
     GC   gc;
     auto fn = new_fn_proto(gc, "add", 0);
-    auto c  = new_closure(gc, fn);
+    auto c  = new_function(gc, fn);
     EXPECT_EQ(c->repr(), "<fn add>");
     // 调试渲染同文案(value_repr 经 repr 虚分派)。
     EXPECT_EQ(aria::value_repr(Value::from_obj(c)), "<fn add>");
 }
 
 // 身份语义:同一 fn 的两次捕获是不同闭包;equals/=== 均按地址。
-TEST(ObjClosure, IdentitySemantics) {
+TEST(ObjFunction, IdentitySemantics) {
     GC   gc;
     auto fn = new_fn_proto(gc, "f", 0);
-    auto c1 = new_closure(gc, fn);
-    auto c2 = new_closure(gc, fn);
+    auto c1 = new_function(gc, fn);
+    auto c2 = new_function(gc, fn);
     EXPECT_NE(c1, c2);
     EXPECT_TRUE(value_identical(Value::from_obj(c1), Value::from_obj(c1)));
     EXPECT_FALSE(value_identical(Value::from_obj(c1), Value::from_obj(c2)));
@@ -117,12 +117,12 @@ TEST(ObjClosure, IdentitySemantics) {
 }
 
 // stress GC:仅根闭包,fn(含常量池长串)与 upvalue(含栈槽内捕获串)全链经 c.trace 存活。
-TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
+TEST(ObjFunction, TraceMarksFunctionAndUpvalues) {
     GC gc;
     gc.set_stress(true);
     auto fn    = new_fn_proto(gc, "f", 0);
-    auto guard = gc.make_guard(fn);   // stress 下先根化 fn(c 建好后另经 c 可达)
-    auto c     = new_closure(gc, fn); // 建时 collect:fn 经 guard 存活
+    auto guard = gc.make_guard(fn);    // stress 下先根化 fn(c 建好后另经 c 可达)
+    auto c     = new_function(gc, fn); // 建时 collect:fn 经 guard 存活
     guard.push(c);
     auto constant = new_string(gc, "a long constant string beyond sso padding");
     fn->unit().add_constant(Value::from_obj(constant)); // push 走 trivial 分配不触 GC
@@ -141,35 +141,69 @@ TEST(ObjClosure, TraceMarksFunctionAndUpvalues) {
 }
 
 // 无根闭包被 sweep(闭包壳 + fn 壳 + CodeUnit 内部 Array)。
-TEST(ObjClosure, UnrootedClosureSwept) {
+TEST(ObjFunction, UnrootedClosureSwept) {
     GC   gc;
     auto fn            = new_fn_proto(gc, "f", 0);
-    std::ignore        = new_closure(gc, fn); // 两者皆无根
+    std::ignore        = new_function(gc, fn); // 两者皆无根
     const usize before = gc.bytes_allocated();
     gc.collect();
     EXPECT_LT(gc.bytes_allocated(), before);
 }
 
-// 类面接入:闭包成员读经 Closure 链命中根(__str__ 原生可及),miss 以类措辞报。
-TEST(ObjClosure, ChainMembersResolvable) {
+// 类面接入:闭包成员读经 Function 链命中根(__str__ 原生可及),miss 以类措辞报。
+TEST(ObjFunction, ChainMembersResolvable) {
     aria::AriaVM vm;
     auto&        gc    = vm.gc();
     auto         guard = gc.make_guard();
     auto         fn    = new_fn_proto(gc, "worker", 0);
     guard.push(fn);
-    auto closure = new_closure(gc, fn);
+    auto closure = new_function(gc, fn);
     guard.push(closure);
 
     const auto display_key = new_string(gc, "__str__");
     guard.push(display_key);
     const auto hit = closure->load_field(*vm.current_context(), display_key);
     ASSERT_TRUE(hit.has_value());
-    EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>()); // 沿 Closure 链继承根原生
+    EXPECT_TRUE(hit->as_obj()->is<aria::ObjFunction>()); // 沿 Function 链继承根原生
 
     const auto nope = new_string(gc, "nope");
     guard.push(nope);
     EXPECT_FALSE(closure->load_field(*vm.current_context(), nope).has_value());
     const auto [code, message] = take_pending_error(vm);
     EXPECT_EQ(code, aria::ErrorCode::UndefinedProperty);
-    EXPECT_EQ(message, "Runtime: UndefinedProperty <class Closure> has no member 'nope'");
+    EXPECT_EQ(message, "Runtime: UndefinedProperty <class Function> has no member 'nope'");
+}
+
+// 只根化函数对象:两种活动载荷各自保活名称、原型、常量和捕获值。
+TEST(ObjFunction, PayloadGraphsSurviveWithOnlyFunctionsRooted) {
+    GC gc;
+    gc.set_stress(true);
+    ObjFunction* function = nullptr;
+    {
+        const auto proto = new_fn_proto(gc, "script_root", 0);
+        const auto guard = gc.make_guard(proto);
+        function         = new_function(gc, proto);
+    }
+    auto       guard  = gc.make_guard(function);
+    const auto native = new_function(
+            gc, "native function name beyond sso padding", +[](const aria::NativeCallInfo& info) {
+                info.set_return_val(Value::nil_val());
+                return true;
+            });
+    guard.push(native);
+    const auto constant = new_string(gc, "constant retained through function payload");
+    function->proto()->unit().add_constant(Value::from_obj(constant));
+    Value      captured = Value::nil_val();
+    const auto upvalue  = new_upvalue(gc, &captured);
+    function->add_upvalue(upvalue);
+    captured = Value::from_obj(new_string(gc, "captured value retained through function payload"));
+    gc.collect();
+    EXPECT_EQ(function->name()->view(), "script_root");
+    EXPECT_EQ(function->proto()->unit().constants[0].as_obj()->as<ObjString>()->view(),
+              "constant retained through function payload");
+    EXPECT_EQ(function->upvalues()[0]->value_slot()->as_obj()->as<ObjString>()->view(),
+              "captured value retained through function payload");
+    EXPECT_EQ(native->name()->view(), "native function name beyond sso padding");
+    EXPECT_TRUE(native->is_native());
+    EXPECT_FALSE(function->is_native());
 }

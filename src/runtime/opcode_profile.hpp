@@ -63,7 +63,7 @@ namespace aria {
         static constexpr usize kOperandBuckets    = 49;
         static constexpr usize kOperandLastBucket = kOperandBuckets - 1;
 
-        // call_kinds_ 槽数(ObjType 现有 16 值,倍余量;越界由 .cpp 的 static_assert 把关)。
+        // call_kinds_ 槽数(ObjType 现有 15 值,倍余量;越界由 .cpp 的 static_assert 把关)。
         static constexpr usize kCallKindSlots = 32;
 
         u64             total_                                   = 0;

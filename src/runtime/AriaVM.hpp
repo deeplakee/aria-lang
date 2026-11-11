@@ -15,7 +15,7 @@ namespace aria {
 
     class ObjBoundMethod;
     class ObjClass;
-    class ObjClosure;
+    class ObjFunction;
     class ObjFnProto;
     class ObjInstance;
     class ObjModule;

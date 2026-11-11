@@ -980,7 +980,7 @@ TEST(CodeGen, ErrNumberOutOfRange) {
 }
 
 // ============================================================
-// 默认参数（印章方案：call_closure 垫充 + 序言身份判等换值）
+// 默认参数（印章方案：call_aria_fn 垫充 + 序言身份判等换值）
 // ============================================================
 
 TEST(CodeGen, DefaultParamFillAndExplicitArg) {
@@ -1005,7 +1005,7 @@ TEST(CodeGen, DefaultParamIndirectCall) {
 }
 
 TEST(CodeGen, DefaultParamOnInit) {
-    // init 缺省参数:call_class 换实例进槽 0 后走 call_closure,垫充同路。
+    // init 缺省参数:call_class 换实例进槽 0 后走 call_aria_fn,垫充同路。
     EXPECT_EQ(run_int("def P { init(x, y = 5) { this.x = x; this.y = y; } } var p = P(1); return p.x * 10 + p.y;"), 15);
     EXPECT_EQ(run_int("def P { init(x, y = 5) { this.x = x; this.y = y; } } var p = P(1, 2); return p.x * 10 + p.y;"),
               12);
@@ -1291,7 +1291,7 @@ TEST(CodeGen, BuiltinStr) {
 TEST(CodeGen, BuiltinPrintln) {
     // println 是内建函数，可作一等值传参；输出渲染钉在语料 08_builtins/println_builtin
     // （配 .out 逐字节比对），此处只钉可取值与身份。
-    EXPECT_EQ(aria::value_str((*run_value("return type(println);"))), "NativeFn");
+    EXPECT_EQ(aria::value_str((*run_value("return type(println);"))), "Function");
 }
 
 TEST(CodeGen, BuiltinPrintlnArityCheck) {

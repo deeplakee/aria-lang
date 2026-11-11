@@ -10,7 +10,7 @@ namespace aria {
         BASE,
         STRING,
         FN_PROTO,
-        NATIVE_FN,
+        FUNCTION,
         UPVALUE,
         CLASS,
         INSTANCE,
@@ -21,7 +21,6 @@ namespace aria {
         RANGE,
         ITERATOR,
         EXCEPTION,
-        CLOSURE,
         MOVEMENT,
     };
 
@@ -35,8 +34,8 @@ namespace aria {
                 return "String";
             case ObjType::FN_PROTO:
                 return "FnProto";
-            case ObjType::NATIVE_FN:
-                return "NativeFn";
+            case ObjType::FUNCTION:
+                return "Function";
             case ObjType::UPVALUE:
                 return "Upvalue";
             case ObjType::CLASS:
@@ -57,8 +56,6 @@ namespace aria {
                 return "Iterator";
             case ObjType::EXCEPTION:
                 return "Exception";
-            case ObjType::CLOSURE:
-                return "Closure";
             case ObjType::MOVEMENT:
                 return "Coroutine"; // 语言概念是协程;MOVEMENT 只是 C++ 实现词根
             default:

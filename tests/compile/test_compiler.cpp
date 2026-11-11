@@ -667,7 +667,7 @@ TEST(Compiler, RangeForInUnderStressGc) {
               900);
 }
 
-// ---- varargs(...rest:list 载体,call_closure 打包多余实参) ----
+// ---- varargs(...rest:list 载体,call_aria_fn 打包多余实参) ----
 
 // 多余实参按序收集进 rest(list;下标可断言)。
 TEST(Compiler, VarargsCollectsExtras) {

@@ -30,8 +30,8 @@ paths:
 **Value↔Object 耦合辅助的收口头**：收「同时依赖 Value 与 Object 完整类型、必须头内定义（模板）」的辅助函数；非模板的重依赖件（`type_name(Value)`/`value_equal`/`value_hash`/`value_str`/`value_repr`）走「`Value.hpp` 声明 + `Value.cpp` 定义」的旧路。独立成头不常驻 `Value.hpp`：模板定义硬需 include `Object.hpp`，而该依赖只服务其用户面（runtime 与 object 两层：builtin 守卫 / 异常载荷判定 / 读路径绑定判别等），不拖累被编译层（常量池）广泛 include 的 `Value.hpp`。
 
 - `try_as_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
-- `is_callable_value(Value)`：类表成员值是否为「可调用」（闭包或原生）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
-- `is_method(Value)`：是否为需要接收者的未绑定实例方法；Closure 与 NativeFn 均以非空 defining_class 判定。脚本标记由 MAKE_METHOD 设置，原生标记由 register_class_methods 设置；普通/静态函数保持空，成员赋值不重写标记。ObjInstance 类链读取和 LOAD_SUPER_FIELD 使用该谓词；BoundMethod 返回 false，避免重复绑定。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
+- `is_callable(Value)`：类表成员值是否为函数（统一识别 `ObjFunction` 的两种载荷）。**读路径绑定判别不走本谓词**（改判 `is_method(Value)` 的 defining class 戳）；本谓词保留为可调用集合的**泛化扩展缝**，现行消费仅 `ObjBoundMethod` ctor ASSERT。
+- `is_method(Value)`：是否为需要接收者的未绑定实例方法；Function 的两种载荷均以非空 defining_class 判定。脚本标记由 MAKE_METHOD 设置，原生标记由 register_class_methods 设置；普通/静态函数保持空，成员赋值不重写标记。ObjInstance 类链读取和 LOAD_SUPER_FIELD 使用该谓词；BoundMethod 返回 false，避免重复绑定。与 `compile/FnKind.hpp` 的 `is_method(FnKind)` 同名异参、互不相关。
 
 ## `value/Value.hpp` / `.cpp`
 

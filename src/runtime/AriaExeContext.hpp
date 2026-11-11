@@ -20,7 +20,7 @@ namespace aria {
 
     class AriaVM;
     class ObjClass;
-    class ObjClosure;
+    class ObjFunction;
     class ObjFnProto;
     class ObjMovement;
     class ObjString;
@@ -132,7 +132,7 @@ namespace aria {
         // 进帧:为对 closure 的调用 acquire 一个空帧并就位字段,与 exit_frame 成对,锁「栈顶帧
         // slots 即值栈本帧槽 0」不变量;slots = top - argc - 1(栈顶须形如 [callee, a1..aN]),
         // 槽 0 语义由调用方进帧前写定(普通帧 = 闭包自身 / 方法帧 = this)。定义在 .cpp。
-        void enter_frame(ObjClosure* closure, u8 argc);
+        void enter_frame(ObjFunction* closure, u8 argc);
 
         // open upvalue 开链:链头按槽址降序,所在区间被关闭时(RETURN/unwind/CLOSE_UPVALUE)
         // 摘链迁值;链上节点经本对象 trace 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂。
@@ -249,16 +249,16 @@ namespace aria {
         [[nodiscard]]
         u8 prepare_call_args(const ObjFnProto* fn, u8 argc);
 
-        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_closure;失败载荷留本上下文
+        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_aria_fn;失败载荷留本上下文
         // 寄存器、残帧截净,调用方按 bool 契约交外层续搜;仅可在执行中的驱动内调)。
 
-        // 闭包形态:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
+        // 仅接受 aria 函数:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
         [[nodiscard]]
-        Opt<Value> execute_closure(ObjClosure* closure, ArgList args);
+        Opt<Value> execute_function(ObjFunction* closure, ArgList args);
 
         // 方法形态:receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 = 声明参数数。
         [[nodiscard]]
-        Opt<Value> execute_method(Value receiver, ObjClosure* method, ArgList args);
+        Opt<Value> execute_method(Value receiver, ObjFunction* method, ArgList args);
 
         // 协程状态与 resume 链:previous_ = 「谁恢复了我」,自 current_ 沿链回走,链尾恒为主
         // 上下文;切换收口在 AriaVM,本类不自切。resume 先置链、yield / RETURN 完成一律解链,
@@ -299,7 +299,7 @@ namespace aria {
         }
 
         // 递归进场:换防本循环返回边界并取走外层值,递归深度 +1。须在 push 占位 callee 之后、
-        // call_closure 进帧之前调用(此刻 frames_.size() 即重入点边界)。
+        // call_aria_fn 进帧之前调用(此刻 frames_.size() 即重入点边界)。
         [[nodiscard]]
         u32 enter_recursion() noexcept {
             const u32 old_ret = ret_frame_;
@@ -357,10 +357,7 @@ namespace aria {
         ObjClass* range_class() const noexcept;
 
         [[nodiscard]]
-        ObjClass* closure_class() const noexcept;
-
-        [[nodiscard]]
-        ObjClass* native_fn_class() const noexcept;
+        ObjClass* function_class() const noexcept;
 
         [[nodiscard]]
         ObjClass* bound_method_class() const noexcept;

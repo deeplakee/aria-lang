@@ -21,19 +21,18 @@ namespace aria {
     X(MatchNoArm, match_no_arm, Object)  /* fallback exception when no match arm matches (shared ObjException; \
                                LOAD_REG + THROW) */
 
-#define ARIA_VALUE_REGISTER_CLASS_LIST(X)                                                                            \
-    X(ObjectClass, object_class, ObjClass)       /* Object root class (base of a def with no super) */               \
-    X(ExceptionClass, exception_class, ObjClass) /* Exception bootstrap class (message/code; super is Object) */     \
-    X(IteratorClass, iterator_class, ObjClass)   /* Iterator bootstrap class (has_next/next; super is Object) */     \
-    X(ListClass, list_class, ObjClass)           /* List bootstrap class (built-in list methods; super is Object) */ \
-    X(MapClass, map_class, ObjClass)             /* Map bootstrap class (built-in map methods; super is Object) */   \
-    X(StringClass, string_class, ObjClass)   /* String bootstrap class (built-in string methods; super is Object) */ \
-    X(RangeClass, range_class, ObjClass)     /* Range bootstrap class (built-in range methods; super is Object) */   \
-    X(ClosureClass, closure_class, ObjClass) /* Closure class (no own members; chain only) */                        \
-    X(NativeFnClass, native_fn_class, ObjClass)       /* NativeFn class (no own members; chain only) */              \
-    X(BoundMethodClass, bound_method_class, ObjClass) /* BoundMethod class (no own members; chain only) */           \
-    X(ModuleClass, module_class, ObjClass)            /* Module class (import-loaded modules; super is Object) */    \
-    X(CoroutineClass, coroutine_class, ObjClass)      /* Coroutine class (create/resume/yield/status statics) */     \
+#define ARIA_VALUE_REGISTER_CLASS_LIST(X)                                                                              \
+    X(ObjectClass, object_class, ObjClass)       /* Object root class (base of a def with no super) */                 \
+    X(ExceptionClass, exception_class, ObjClass) /* Exception bootstrap class (message/code; super is Object) */       \
+    X(IteratorClass, iterator_class, ObjClass)   /* Iterator bootstrap class (has_next/next; super is Object) */       \
+    X(ListClass, list_class, ObjClass)           /* List bootstrap class (built-in list methods; super is Object) */   \
+    X(MapClass, map_class, ObjClass)             /* Map bootstrap class (built-in map methods; super is Object) */     \
+    X(StringClass, string_class, ObjClass)     /* String bootstrap class (built-in string methods; super is Object) */ \
+    X(RangeClass, range_class, ObjClass)       /* Range bootstrap class (built-in range methods; super is Object) */   \
+    X(FunctionClass, function_class, ObjClass) /* Function class (native and aria payloads) */                         \
+    X(BoundMethodClass, bound_method_class, ObjClass) /* BoundMethod class (no own members; chain only) */             \
+    X(ModuleClass, module_class, ObjClass)            /* Module class (import-loaded modules; super is Object) */      \
+    X(CoroutineClass, coroutine_class, ObjClass)      /* Coroutine class (create/resume/yield/status statics) */       \
     X(ClassClass, class_class, ObjClass)              /* Class metaclass (class values as objects; super is Object) */
 
 #define ARIA_VALUE_REGISTER_LIST(X) ARIA_VALUE_REGISTER_SINGLETON_LIST(X) ARIA_VALUE_REGISTER_CLASS_LIST(X)

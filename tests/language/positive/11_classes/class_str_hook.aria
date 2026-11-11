@@ -37,7 +37,7 @@ def Q {
 var q = Q();
 q.__str__ = fun() { return "F"; };
 assert(str(q) == "<Q instance>");
-assert(type(q.__str__) == "Closure");
+assert(type(q.__str__) == "Function");
 
 # 容器 debug 位：元素一律调试渲染（不跑用户钩子），字符串元素带引号
 assert(str([P(1), "s", 1, Q()]) == "[<P instance>, \"s\", 1, <Q instance>]");

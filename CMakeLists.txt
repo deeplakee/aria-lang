@@ -86,8 +86,8 @@ add_library(aria_core STATIC
         src/runtime/builtins/BoundMethodClass.hpp
         src/runtime/builtins/ClassClass.cpp
         src/runtime/builtins/ClassClass.hpp
-        src/runtime/builtins/ClosureClass.cpp
-        src/runtime/builtins/ClosureClass.hpp
+        src/runtime/builtins/FunctionClass.cpp
+        src/runtime/builtins/FunctionClass.hpp
         src/runtime/builtins/CoroutineClass.cpp
         src/runtime/builtins/CoroutineClass.hpp
         src/runtime/builtins/ExceptionClass.cpp
@@ -103,8 +103,6 @@ add_library(aria_core STATIC
         src/runtime/builtins/MapClass.hpp
         src/runtime/builtins/ModuleClass.cpp
         src/runtime/builtins/ModuleClass.hpp
-        src/runtime/builtins/NativeFnClass.cpp
-        src/runtime/builtins/NativeFnClass.hpp
         src/runtime/builtins/ObjectClass.cpp
         src/runtime/builtins/ObjectClass.hpp
         src/runtime/builtins/RangeClass.cpp
@@ -128,8 +126,8 @@ add_library(aria_core STATIC
         src/object/ObjBoundMethod.hpp
         src/object/ObjClass.cpp
         src/object/ObjClass.hpp
-        src/object/ObjClosure.cpp
-        src/object/ObjClosure.hpp
+        src/object/ObjFunction.cpp
+        src/object/ObjFunction.hpp
         src/object/ObjString.cpp
         src/object/ObjString.hpp
         src/object/ObjFnProto.cpp
@@ -142,8 +140,6 @@ add_library(aria_core STATIC
         src/object/ObjMap.hpp
         src/object/ObjModule.cpp
         src/object/ObjModule.hpp
-        src/object/ObjNativeFn.cpp
-        src/object/ObjNativeFn.hpp
         src/object/ObjException.cpp
         src/object/ObjException.hpp
         src/object/ObjRange.cpp

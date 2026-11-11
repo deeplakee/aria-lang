@@ -1,0 +1,2 @@
+// 协程首帧必须来自 aria 函数,原生载荷不能作为入口。
+Coroutine.create(println);

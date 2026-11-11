@@ -8,7 +8,7 @@
     #include <utility>
 
     #include "bytecode/CodeUnit.hpp"
-    #include "object/ObjNativeFn.hpp"
+    #include "object/ObjFunction.hpp"
     #include "object/ObjString.hpp"
     #include "runtime/AriaVM.hpp"
     #include "runtime/ObjMovement.hpp"
@@ -251,8 +251,8 @@ namespace aria {
         }
         const auto kind = callee->type();
         ++call_kinds_[std::to_underlying(kind)];
-        if (kind == ObjType::NATIVE_FN) {
-            ++find_or_add(native_calls_, callee->as<ObjNativeFn>()->name(), kind).count;
+        if (kind == ObjType::FUNCTION && callee->as<ObjFunction>()->is_native()) {
+            ++find_or_add(native_calls_, callee->as<ObjFunction>()->name(), kind).count;
         }
     }
 

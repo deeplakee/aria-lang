@@ -300,10 +300,10 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     对齐顶层腿早绑）--B 的静态初始化器经 A.B 自引用可用；同名嵌套走成员表后写遮蔽；
 #     superclass 位收完整 expression，嵌套兄弟类经全路径可达
 #     （def Inner2 : A.Inner1，求值时 A 与 Inner1 均已绑定）。
-#   - 方法闭包（ObjClosure）持 defining class：一职双任--super 来源（LOAD_SUPER_FIELD）+
+#   - 函数值（ObjFunction，原生与 aria 载荷统一）持 defining class：一职双任--super 来源（LOAD_SUPER_FIELD）+
 #     方法性标记（2026-09-11 改定：读路径据非空判绑 this；MAKE_METHOD 注册时戳，fun 静态经
 #     MAKE_STATIC 不戳）。无 enclosing 走链。
-#   - 原生函数（ObjNativeFn）同样以 defining class 非空标记实例方法，用户实例类链及 super
+#   - 原生函数（ObjFunction）同样以 defining class 非空标记实例方法，用户实例类链及 super
 #     读取据此绑定接收者；
 #     普通/静态原生函数为空，类和模块声明读取保持原值，成员赋值不改变函数的定义归属。
 #   - this（实例，小写）为捕获 upvalue（arrow-function 语义）：this 是实例方法槽 0（方法帧

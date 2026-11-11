@@ -7,8 +7,8 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjList.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
 #include "object/iterator/ObjIterator.hpp"
@@ -28,9 +28,9 @@ using aria::new_string;
 using aria::new_string_iterator;
 using aria::ObjBoundMethod;
 using aria::ObjException;
+using aria::ObjFunction;
 using aria::ObjList;
 using aria::ObjListIterator;
-using aria::ObjNativeFn;
 using aria::ObjString;
 using aria::ObjStringIterator;
 using aria::Pair;
@@ -124,7 +124,7 @@ TEST(ObjIterator, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(iter)));
-    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
+    const auto native = method->method().as_obj()->try_as<ObjFunction>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "has_next");
 }

@@ -12,9 +12,9 @@
 #include "memory/GC.hpp"
 #include "memory/StringBuilder.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
@@ -25,14 +25,13 @@
 #include "runtime/builtins/BoundMethodClass.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "runtime/builtins/ClassClass.hpp"
-#include "runtime/builtins/ClosureClass.hpp"
 #include "runtime/builtins/CoroutineClass.hpp"
 #include "runtime/builtins/ExceptionClass.hpp"
+#include "runtime/builtins/FunctionClass.hpp"
 #include "runtime/builtins/IteratorClass.hpp"
 #include "runtime/builtins/ListClass.hpp"
 #include "runtime/builtins/MapClass.hpp"
 #include "runtime/builtins/ModuleClass.hpp"
-#include "runtime/builtins/NativeFnClass.hpp"
 #include "runtime/builtins/ObjectClass.hpp"
 #include "runtime/builtins/RangeClass.hpp"
 #include "runtime/builtins/StringClass.hpp"
@@ -134,8 +133,7 @@ namespace aria {
         registers_[kMapClassOffset]         = MapClass::make_class(gc_, object_class());
         registers_[kStringClassOffset]      = StringClass::make_class(gc_, object_class());
         registers_[kRangeClassOffset]       = RangeClass::make_class(gc_, object_class());
-        registers_[kClosureClassOffset]     = ClosureClass::make_class(gc_, object_class());
-        registers_[kNativeFnClassOffset]    = NativeFnClass::make_class(gc_, object_class());
+        registers_[kFunctionClassOffset]    = FunctionClass::make_class(gc_, object_class());
         registers_[kBoundMethodClassOffset] = BoundMethodClass::make_class(gc_, object_class());
         registers_[kModuleClassOffset]      = ModuleClass::make_class(gc_, object_class());
         registers_[kCoroutineClassOffset]   = CoroutineClass::make_class(gc_, object_class());
@@ -153,8 +151,7 @@ namespace aria {
         builtins_.set(Value::from_obj(map_class()->name()), Value::from_obj(map_class()));
         builtins_.set(Value::from_obj(string_class()->name()), Value::from_obj(string_class()));
         builtins_.set(Value::from_obj(range_class()->name()), Value::from_obj(range_class()));
-        builtins_.set(Value::from_obj(closure_class()->name()), Value::from_obj(closure_class()));
-        builtins_.set(Value::from_obj(native_fn_class()->name()), Value::from_obj(native_fn_class()));
+        builtins_.set(Value::from_obj(function_class()->name()), Value::from_obj(function_class()));
         builtins_.set(Value::from_obj(bound_method_class()->name()), Value::from_obj(bound_method_class()));
         builtins_.set(Value::from_obj(module_class()->name()), Value::from_obj(module_class()));
         builtins_.set(Value::from_obj(coroutine_class()->name()), Value::from_obj(coroutine_class()));
@@ -278,13 +275,13 @@ namespace aria {
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
         current_->reset();
 
-        // 包空闭包:fn 跨 new_closure 顶 maybe_collect 须有根,make_guard 兜底。
+        // 包空闭包:fn 跨 new_function 顶 maybe_collect 须有根,make_guard 兜底。
         const auto guard   = gc_.make_guard(fn);
-        const auto closure = new_closure(gc_, fn);
+        const auto closure = new_function(gc_, fn);
 
         // 首次进入(最外执行):出口边界恒零,弹空帧栈即出口。
         current_->push(Value::from_obj(closure)); // 入栈即根
-        Eval::call_closure(*current_, closure, 0);
+        Eval::call_aria_fn(*current_, closure, 0);
         Result<Value, Error> result =
                 Eval::dispatch_loop(*current_) ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
@@ -365,7 +362,6 @@ namespace aria {
         modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         return module;
     }
-
 
     Pair<ErrorCode, String> AriaVM::take_uncaught_error() const {
         const auto payload = *current_->take_error();

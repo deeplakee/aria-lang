@@ -42,10 +42,10 @@ println(type(log));
 ```text
 [log] hi
 nil
-Closure
+Function
 ```
 
-`type()` 对函数统一返回 `"Closure"`。提前返回是常态写法：
+`type()` 对函数统一返回 `"Function"`。提前返回是常态写法：
 
 ```aria
 fun safe_div(a, b) {
@@ -248,7 +248,7 @@ Runtime: StackOverflow call frame stack overflow
 ## 小结
 
 - `fun name(params) { ... }` 声明函数；lambda 是表达式 `fun(params) { ... }`。
-- 一切函数都返回值：不写 `return` 得 `nil`；`type()` 返回 `"Closure"`。
+- 一切函数都返回值：不写 `return` 得 `nil`；`type()` 返回 `"Function"`。
 - 默认参数在调用时求值、可引用先前参数，必须排在无默认参数之后。
 - `...name` varargs 收集多余实参为 list，必须居末。
 - 元数不符是运行期 `WrongArity`；递归超 256 帧报 `StackOverflow`。

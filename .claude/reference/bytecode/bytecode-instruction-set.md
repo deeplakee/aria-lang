@@ -270,12 +270,12 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjClosure` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjNativeFn`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
-| `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjClosure` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
+| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjFunction` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjFunction`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
+| `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjFunction` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFnProto`、建 `ObjClosure` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
@@ -289,7 +289,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass`；内建容器五类（list/map/string/range/iterator）不可继承、非类 super 报 TypeMismatch（均运行期错误） |
 | `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjClosure.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjClosure 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
+| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjFunction.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjFunction 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
 | `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::load_field` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `load_field` override 就地烘焙 |
 | `CALL_METHOD` | `argc:u8` | `[recv, target, a1..aN] -> [r]` | 方法调用的**第二段**：待调值在 `peek(argc)`、接收者在 `peek(argc + 1)`；实参整体下移一格补掉待调值占的那格得调用区 `[recv, a1..aN]`（槽 0 = receiver = this），交 `call_value` 统一分发（执行体 `run_call_method`）。**纯调用**，不再解析；**不物化 ObjBoundMethod**（见 §5.6/§6.2） |
 | `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
@@ -509,7 +509,7 @@ CALL_METHOD argc        ; [r]                  实参整体下移一格补掉 ta
 
 一处**形态差异**：非方法成员被调用时，调用区槽 0 是**接收者**而非那个成员值本身（两步形态下 `LOAD_FIELD` 会把接收者顶替成成员值）。可观察的有两处：① `x.init()`（实例上经类链解析到 Object 根的**原生** no-op init，不被绑定）返回**实例本身**，而非那个原生函数对象--内置类 super 挂 Object 根、调用返回 receiver 自身是同一取舍的两面：uniform OOP 提前半步落地（内置类型也走 bootstrap 类 + Object 根），代价是 `s.init()` 这类调用会经链解析到 Object 根的 no-op init，属已知的小语义毛边，uniform OOP 落地时随 Object 方法面一并审视；② `C.m(args)`（经类调实例方法：方法戳闭包被当值调、不被绑定）时方法体里的 `this` 是**类对象**（两步形态下是那个闭包自身）。① 由语料钉住，② 为同一条规则的派生形态、不作承诺。
 
-**槽 0 保持接收者为什么可行**（三方各得其所）：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数恰好**正需要**槽 0 = receiver（其 `this` 兼返回槽，且 `call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
+**槽 0 保持接收者为什么可行**（三方各得其所）：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数恰好**正需要**槽 0 = receiver（其 `this` 兼返回槽，且 `call_native_fn` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
 
 `super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代协议每迭代两次方法调用，是这条路径收益最大的地方，见 §6.2）。
 
@@ -594,7 +594,7 @@ L_end:
 
 **现状**：`obj.m(args)` 发 `PREPARE_METHOD name` + `CALL_METHOD argc` 两段（见 §5.6）。历史两阶段：① 最初是 `LOAD_FIELD`(返回绑定方法) + `CALL` 两步，每次调用铸一个 `ObjBoundMethod`；② 单条 `INVOKE_METHOD` 融合掉这次物化并把解析推到执行期（晚于实参求值）；③ 现改回两段，把解析放回实参求值**之前**（次序语义），同时保留 ② 的零物化。
 
-**解析协议**（`Object::load_field`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口--槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认 fail（未 override 类型无成员语义）；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
+**解析协议**（`Object::load_field`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口--槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native_fn` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认 fail（未 override 类型无成员语义）；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
 
 **实测结论**（`bench/vm_bench.cpp` 可复测；具体数字是驱动输出、不留档）：两段式相对 ① 两步物化在各迭代协议/方法调用场景显著更快且消除 bound 物化分配（分配/次归零）；相对 ② 单条融合，以同二进制字节改写对照（同一份字节码只改写编码）测得代价约**每次调用 1 ns**（argc = 0 时下移为空转）。② 的单条融合因「解析晚于实参求值」的次序语义改判被弃（见 §5.6）。
 

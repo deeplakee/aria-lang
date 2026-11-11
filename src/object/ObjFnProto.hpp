@@ -21,7 +21,7 @@ namespace aria {
     };
 
     // GC 托管的函数原型:字节码(CodeUnit)+ 所属模块 + 名 + 元数 + 捕获描述;地址哈希型。
-    // 原型存于常量池,运行期函数值由 ObjClosure 包装。
+    // 原型存于常量池,运行期函数值由 ObjFunction 包装。
     // arity_ 不含 varargs 槽(帧槽深 = arity + 1);调用时实参数必须落在 [min_arity, arity] 区间。
     class ObjFnProto final : public Object {
     public:
@@ -48,7 +48,7 @@ namespace aria {
             return arity_;
         }
 
-        // 必传参数数(<= arity,差额为带默认值参数);call_closure 区间检查下界。
+        // 必传参数数(<= arity,差额为带默认值参数);call_aria_fn 区间检查下界。
         [[nodiscard]]
         u8 min_arity() const noexcept {
             return min_arity_;

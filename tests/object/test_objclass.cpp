@@ -3,11 +3,10 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/ObjBridge.hpp"
@@ -17,14 +16,14 @@ using aria::AriaVM;
 using aria::ErrorCode;
 using aria::GC;
 using aria::new_class;
-using aria::new_closure;
 using aria::new_fn_proto;
+using aria::new_function;
 using aria::new_module;
 using aria::new_string;
 using aria::ObjClass;
-using aria::ObjClosure;
 using aria::ObjException;
 using aria::ObjFnProto;
+using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::Pair;
@@ -57,11 +56,11 @@ namespace {
         return new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
-    // 具名闭包:fn 经守卫跨 new_closure。返回的闭包未根,fn 经其可达。
-    ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
+    // 具名闭包:fn 经守卫跨 new_function。返回的闭包未根,fn 经其可达。
+    ObjFunction* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto fn    = make_function(gc, name, arity);
         auto guard = gc.make_guard(fn);
-        return new_closure(gc, fn);
+        return new_function(gc, fn);
     }
 
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
@@ -212,15 +211,15 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
     auto&  gc = vm.gc();
     gc.set_stress(true);
 
-    ObjClass*   super    = nullptr;
-    ObjClass*   sub      = nullptr;
-    ObjClosure* method   = nullptr;
-    ObjClosure* init     = nullptr;
-    ObjString*  ikey     = nullptr;
-    ObjString*  mkey     = nullptr;
-    ObjString*  vkey     = nullptr;
-    ObjString*  val      = nullptr;
-    ObjString*  constant = nullptr;
+    ObjClass*    super    = nullptr;
+    ObjClass*    sub      = nullptr;
+    ObjFunction* method   = nullptr;
+    ObjFunction* init     = nullptr;
+    ObjString*   ikey     = nullptr;
+    ObjString*   mkey     = nullptr;
+    ObjString*   vkey     = nullptr;
+    ObjString*   val      = nullptr;
+    ObjString*   constant = nullptr;
     {
         auto guard = gc.make_guard();
         super      = make_class(gc, "Base"); // 建时 collect:name 经助手内守卫
@@ -266,9 +265,9 @@ TEST(ObjClass, TraceStressKeepsStaticsInitAndSuper) {
 // defining class 级联:类仅经方法闭包的 defining_class_ 可达(闭包为根),collect 后类存活
 // --静态方法闭包经 Foo.m 上栈时类亡指针不悬垂（defining_class_ 戳住闭包，见 .claude/rules/object.md）。
 TEST(ObjClass, DefiningClassSurvivesViaClosureTrace) {
-    GC          gc;
-    ObjClass*   klass  = nullptr;
-    ObjClosure* method = nullptr;
+    GC           gc;
+    ObjClass*    klass  = nullptr;
+    ObjFunction* method = nullptr;
     {
         auto guard = gc.make_guard();
         klass      = make_class(gc, "K");
@@ -461,7 +460,7 @@ TEST(ObjClass, TemplateNamespaceDoesNotFallBackToMetaclass) {
     guard.push(root_key);
     const auto hook = klass->load_field(*vm.current_context(), root_key);
     ASSERT_TRUE(hook.has_value());
-    EXPECT_TRUE(hook->as_obj()->is<aria::ObjNativeFn>());
+    EXPECT_TRUE(hook->as_obj()->is<aria::ObjFunction>());
 }
 
 // 全模板链缺席时保留接收类措辞。

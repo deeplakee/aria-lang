@@ -31,14 +31,14 @@ add_executable(aria_tests
         object/test_object.cpp
         object/test_objboundmethod.cpp
         object/test_objclass.cpp
-        object/test_objclosure.cpp
+        object/test_objfunction.cpp
         object/test_objfnproto.cpp
         object/test_objinstance.cpp
         object/test_objiterator.cpp
         object/test_objlist.cpp
         object/test_objmap.cpp
         object/test_objmodule.cpp
-        object/test_objnativefn.cpp
+        object/test_objfunction_native.cpp
         object/test_objexception.cpp
         object/test_objrange.cpp
         object/test_objstring.cpp

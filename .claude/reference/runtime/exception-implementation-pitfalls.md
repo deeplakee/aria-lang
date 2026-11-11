@@ -64,7 +64,7 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 **对策**：`CallFrame` 新字段**不写默认值**，初始化收敛进 `init_frame_`（现 `CallFrame::init`，CallFrame.cpp；当时住 Movement.cpp：`f.slots = ...; f.function = ...;` 逐字段赋值）。新增 `f.last_ip = f.ip;`（= code 起始；不用 nullptr -- 与 data() 相减是 UB）即可。保持 `CallFrame` 为纯聚合（无 NSDMI、无用户构造函数）。
 
 ```cpp
-struct CallFrame {          // M3 时代快照:callable 字段当时为 ObjFunction*,M4 收敛后为 ObjClosure* closure
+struct CallFrame {          // M3 时代快照:callable 字段当时为 ObjFunction*,M4 收敛后为 ObjFunction* closure
     ObjFunction* function;  // (现字段名与类型见 runtime/CallFrame.hpp);坑本体(NSDMI 禁令)不受影响
     CodeUnit*    unit;
     ObjModule*   module;
@@ -174,7 +174,7 @@ public:
 
 **catch 绑 ObjException 的 M3 可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地（现已落地：ExceptionClass face 的 init/message/code）。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
-**站点改动**：`call_*` 失败 / `call_native` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaExeContext::raise`/`fail`，拆类后自 AriaVM 迁入）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
+**站点改动**：`call_*` 失败 / `call_native_fn` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaExeContext::raise`/`fail`，拆类后自 AriaVM 迁入）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
 
 ---
 

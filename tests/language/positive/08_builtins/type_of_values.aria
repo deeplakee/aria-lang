@@ -1,4 +1,4 @@
-// 钉住：type() 返回值类型名--Int/F64/String/Nil/Bool/Closure/Exception。
+// 钉住：type() 返回值类型名--Int/F64/String/Nil/Bool/Function/Exception。
 assert(type(1) == "Int");
 assert(type(-1) == "Int");
 assert(type(1.0) == "F64");
@@ -11,9 +11,9 @@ assert(type(true) == "Bool");
 assert(type(false) == "Bool");
 assert(type(1) != type(1.0));
 fun f() { return 1; }
-assert(type(f) == "Closure");
+assert(type(f) == "Function");
 var lam = fun(x) { return x; };
-assert(type(lam) == "Closure");
+assert(type(lam) == "Function");
 try {
     var x = 1 / 0;
 } catch (e) {

@@ -36,7 +36,7 @@ Range
 ```
 
 浮点类型的名字是 `F64`（对应 C 的 `double`）。函数、闭包、类、实例、模块、迭代器也是值，
-`type()` 分别返回 `"Closure"`、`"Class"`、`"Instance"`、`"Module"`、`"Iterator"`，
+`type()` 分别返回 `"Function"`、`"Class"`、`"Instance"`、`"Module"`、`"Iterator"`，
 见面时再细说。
 
 ## nil 与 bool

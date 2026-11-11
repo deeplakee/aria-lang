@@ -7,10 +7,9 @@
 #include "error/Error.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "runtime/Eval.hpp"
@@ -29,12 +28,12 @@ using aria::kModuleEntryName;
 using aria::List;
 using aria::NativeCallInfo;
 using aria::NativeFn;
+using aria::new_function;
 using aria::new_module;
-using aria::new_native_fn;
 using aria::new_string;
 using aria::ObjBoundMethod;
-using aria::ObjClosure;
 using aria::ObjException;
+using aria::ObjFunction;
 using aria::ObjModule;
 using aria::ObjString;
 using aria::Opt;
@@ -52,7 +51,7 @@ namespace {
 
     // ---- 重入口驱动原生:脚本经全局名传入闭包/绑定方法值,原生同步执行之 ----
 
-    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_closure
+    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_function
     // 别名契约),视图读数按值抄离,跨重入期间值栈扩容无牵连。returns u8 argc。
     u8 copy_call_args(const NativeCallInfo& info, const u8 skip, Value* args) {
         const u8 argc = static_cast<u8>(info.size() - skip);
@@ -100,8 +99,8 @@ namespace {
         auto  guard  = gc.make_guard(module);
         for (const auto& [name, fn]: natives) {
             const auto key    = new_string(gc, name);
-            const auto kguard = gc.make_guard(key); // key 白色须跨 new_native_fn 的 GC 点存活
-            module->globals().set(Value::from_obj(key), Value::from_obj(new_native_fn(gc, key, fn)));
+            const auto kguard = gc.make_guard(key); // key 白色须跨 new_function 的 GC 点存活
+            module->globals().set(Value::from_obj(key), Value::from_obj(new_function(gc, key, fn)));
         }
         SourceFile source{"<test-script>", "<test-script>.aria", String{src}};
         const auto entry = Compiler::compile(gc, source, module, kModuleEntryName);
@@ -116,22 +115,23 @@ namespace {
 
 namespace aria {
 
-    // 重入口驱动探针宿主(全走公共面:ctx 服务面与重入口 execute_closure/execute_method;定义
+    // 重入口驱动探针宿主(全走公共面:ctx 服务面与重入口 execute_function/execute_method;定义
     // 全收于此)。
     struct TestProbe {
-        // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_closure 形态),fn 须闭包值;失败
+        // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_function 形态),fn 须闭包值;失败
         // 载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
         static bool exec_closure_native(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc < 1) {
                 return ctx.arity_error(argc, 1);
             }
-            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjClosure>()) {
+            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjFunction>() ||
+                info[0].as_obj()->as<ObjFunction>()->is_native()) {
                 return ctx.fail(ErrorCode::TypeMismatch, "exec_closure expects a closure as its first argument");
             }
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args(info, 1, args);
-            const auto result = ctx.execute_closure(info[0].as_obj()->as<ObjClosure>(), {args, argc});
+            const auto result = ctx.execute_function(info[0].as_obj()->as<ObjFunction>(), {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜
             }
@@ -152,7 +152,7 @@ namespace aria {
             const auto bound = info[0].as_obj()->as<ObjBoundMethod>();
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args(info, 1, args);
-            const auto method = bound->method().as_obj()->as<ObjClosure>();
+            const auto method = bound->method().as_obj()->as<ObjFunction>();
             const auto result = ctx.execute_method(bound->receiver(), method, {args, argc});
             if (!result.has_value()) {
                 return false; // 载荷在寄存器,交外层续搜

@@ -4,7 +4,7 @@
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "runtime/ObjMovement.hpp"
@@ -18,9 +18,9 @@ namespace aria {
         if (const auto argc = info.size(); argc != 1) {
             return ctx.arity_error(argc, 1);
         }
-        const auto closure = try_as_obj<ObjClosure>(info[0]);
-        if (closure == nullptr) {
-            return ctx.fail(ErrorCode::TypeMismatch, "argument must be a function, got {}", type_name(info[0]));
+        const auto closure = try_as_obj<ObjFunction>(info[0]);
+        if (closure == nullptr || closure->is_native()) {
+            return ctx.fail(ErrorCode::TypeMismatch, "argument must be an aria function, got {}", type_name(info[0]));
         }
         const auto co = new_movement(ctx.gc(), ctx.host());
         co->push(Value::from_obj(closure));       // 槽 0:被调闭包(首启进帧的 callee 槽;push 扩容不触 GC)
@@ -54,8 +54,8 @@ namespace aria {
         const auto payload = static_cast<u8>(info.size() - 1);
         if (co->frames().empty()) {
             // 首启:载荷即被调函数实参(上界交 check_arity 报被调者元数,默认参数/varargs 照常)。
-            const auto closure = try_as_obj<ObjClosure>(co->peek(0));
-            ASSERT(closure != nullptr, "coroutine slot-0 is not a closure (create invariant)");
+            const auto closure = try_as_obj<ObjFunction>(co->peek(0));
+            ASSERT(closure != nullptr && !closure->is_native(), "coroutine slot-0 must be an aria function");
             const auto fn = closure->proto();
             if (!ctx.check_arity(fn, payload)) {
                 return false;
@@ -64,7 +64,7 @@ namespace aria {
             for (usize i = 0; i < payload; ++i) {
                 co->push(info[1 + i]); // push 扩容不触 GC(allocate/reallocate 不变式)
             }
-            // 元数已预检、协程帧栈必空,直取 call_closure 的整形加进帧尾段;varargs 打包顶
+            // 元数已预检、协程帧栈必空,直取 call_aria_fn 的整形加进帧尾段;varargs 打包顶
             // maybe_collect 时恢复者经 previous_ 边可达。
             co->enter_frame(closure, co->prepare_call_args(fn, payload));
         } else {
@@ -73,7 +73,7 @@ namespace aria {
                 return ctx.arity_error_range(info.size(), 1, 2);
             }
             ctx.host().enter_coroutine(co);
-            // 协程栈顶即 yield 预留槽(call_native 事后 drop 停在它上面),载荷写入即 yield 表达式的值;
+            // 协程栈顶即 yield 预留槽(call_native_fn 事后 drop 停在它上面),载荷写入即 yield 表达式的值;
             // 载荷仍在恢复者调用区,跨换指读取安全。
             co->peek(0) = payload == 0 ? Value::nil_val() : info[1];
         }

@@ -10,9 +10,9 @@
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjMap.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
@@ -30,10 +30,10 @@ using aria::new_range;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
+using aria::ObjFunction;
 using aria::ObjList;
 using aria::ObjMap;
 using aria::ObjMapIterator;
-using aria::ObjNativeFn;
 using aria::ObjRange;
 using aria::ObjString;
 using aria::Pair;
@@ -361,7 +361,7 @@ TEST(ObjMap, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(map)));
-    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
+    const auto native = method->method().as_obj()->try_as<ObjFunction>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "iter");
 }

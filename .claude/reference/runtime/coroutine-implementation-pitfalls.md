@@ -9,14 +9,14 @@
 
 ---
 
-## 坑 #1：槽协议 -- 预留结果槽住 call_native 的 drop，不在原语里写调用者栈
+## 坑 #1：槽协议 -- 预留结果槽住 call_native_fn 的 drop，不在原语里写调用者栈
 
-**机制**：切换型原语返 true 后，`call_native` 事后 `ctx.drop(argc)` 使该上下文栈顶
+**机制**：切换型原语返 true 后，`call_native_fn` 事后 `ctx.drop(argc)` 使该上下文栈顶
 停在「那次调用的槽 0」-- 这就是预留结果槽，对侧一律写 `对侧->peek(0)`。两侧完全对称，切回方
 无需知道对方局部信息。**首启是唯一不对称处**：协程栈只有 create 压的 `[closure]`，无预留槽，
 故首次 resume 走「压实参 + `prepare_call_args` 整形 + `enter_frame` 进帧」。
 
-**纪律**：原语不碰调用者值栈（原生叶子调用契约本就禁止），调用者侧收敛全权归 call_native；
+**纪律**：原语不碰调用者值栈（原生叶子调用契约本就禁止），调用者侧收敛全权归 call_native_fn；
 不能推迟到切回方清理--切回方对本上下文当年那次 CALL 的 argc 一无所知，且残槽会跨挂起期滞留
 值栈。
 
@@ -25,14 +25,14 @@
 **约束**：`coroutine->set_previous(current_)` 必须先于 `current_ = coroutine`。GC 根只标
 `current_` 一点，换指后恢复者只经 `co->previous_` 这一条边可达；首启切换后
 `prepare_call_args` 的默认垫充/varargs 打包经 `new_object` 顶 `maybe_collect`，恢复者与其实参
-以此边存活（「实参留栈到 drop」是 call_native 的既定红利，实参仍在恢复者调用区为根）。
+以此边存活（「实参留栈到 drop」是 call_native_fn 的既定红利，实参仍在恢复者调用区为根）。
 
 ## 坑 #3：一切可失败的检查先于切换
 
 **约束**：resume 两臂内，元数预检（首启交 `check_arity` 报被调者元数）、载荷数上界（已挂起
 `arity_error_range` 1..2）等可失败动作全部先于 `enter_coroutine`；切换之后只剩不可失败的
-动作。原因有二：失败载荷须落**恢复者**寄存器（call_native 的 false 路径契约「禁止 false +
-切换」，断言钉）；首启直取 `call_closure` 的整形+进帧尾段（检查段在预检后全为死分支），
+动作。原因有二：失败载荷须落**恢复者**寄存器（call_native_fn 的 false 路径契约「禁止 false +
+切换」，断言钉）；首启直取 `call_aria_fn` 的整形+进帧尾段（检查段在预检后全为死分支），
 不给第二种失败通道。
 
 ## 坑 #4：状态五态与 previous_ 判链等价；主上下文 state_ 语言不可达
@@ -51,7 +51,7 @@ resume 的「`state_` 五态穷举 switch」与「`previous_ != nullptr` 判链�
 1. `take_error()` 先于 `reset()` -- 寄存器在 reset 内一并清空，取晚了载荷即丢。
 2. `reset()` 先关开指再清场 -- 死协程向外泄漏的捕获闭包取值安全（复用既有行为）。
 3. `leave_coroutine(ExecState::Failed)` -- 置 Failed、解链、恢复者置 Running、换指。
-4. `caller->raise(payload)` 收尾 -- caller 寄存器此刻**必空**，依据三重：call_native 进场
+4. `caller->raise(payload)` 收尾 -- caller 寄存器此刻**必空**，依据三重：call_native_fn 进场
    断言锁「进场前寄存器空」、切换型原生返 true 不写载荷、挂起期间无人可写非执行上下文的
    寄存器（`raise` 断言防重复 raise）。take 到 raise 之间无 GC 点（reset/leave 均零分配），
    载荷局部持有不丢根。
@@ -95,7 +95,7 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 
 ## 坑 #10：嵌套执行的切换红线 -- yield 穿界被运行期拒绝，resume 多路复用安全
 
-**现状**：重入口已落地（vm-design.md §4.11；`execute_closure`/`execute_method`，现为 AriaExeContext 公共面），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
+**现状**：重入口已落地（vm-design.md §4.11；`execute_function`/`execute_method`，现为 AriaExeContext 公共面），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
 
 - **resume 放行**：dispatch_loop 每指令自 `current_` 重取帧，嵌套循环驱动被恢复协程安全；被恢复协程出口边界恒零，完成/让位自动按链切回，嵌套循环随后在自己边界收束（白盒钉子 `ResumeInsideNestedMultiplexes`）。
 - **yield 拒绝**：`ret_frame_` 非零即处于嵌套执行，yield 校验段首检即报 `YieldInNestedExecution`。嵌套循环等的是同步结果，挂起即穿界--切走 `current_` 后嵌套循环会转去驱动切回方上下文，被挂起上下文的嵌套帧悬在栈上，出口边界语义全部失效。
@@ -113,5 +113,5 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 - C++：`UncaughtInCoroutineTraceTruncatedAtBoundary`（截断精确等值断言）、
   `SuspendedCoroutineValuesSurviveStressGc` / `InterleavedCoroutinesSurviveStressGc`
   （stress GC 悬挂压力）；重入口（坑 #10）：`tests/runtime/test_execute.cpp` 的 `NestedExecStress`
-  （统一 `TestProbe` 驱动 `execute_closure`/`execute_method`（现公共面，无须友元）：返回值 / this 绑定 /
+  （统一 `TestProbe` 驱动 `execute_function`/`execute_method`（现公共面，无须友元）：返回值 / this 绑定 /
   未捕获截断 / 外层 try 接获 / 深度上限 / 嵌套 yield 拒绝 / 嵌套 resume 多路复用，stress GC 全程开）。

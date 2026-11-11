@@ -4,9 +4,9 @@
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
@@ -19,16 +19,16 @@ using aria::ErrorCode;
 using aria::GC;
 using aria::new_bound_method;
 using aria::new_class;
-using aria::new_closure;
 using aria::new_fn_proto;
+using aria::new_function;
 using aria::new_instance;
 using aria::new_module;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjClass;
-using aria::ObjClosure;
 using aria::ObjException;
 using aria::ObjFnProto;
+using aria::ObjFunction;
 using aria::ObjInstance;
 using aria::ObjModule;
 using aria::ObjString;
@@ -56,12 +56,12 @@ namespace {
 
     // 临时模块 + 具名闭包:守卫收口在助手内。返回的闭包未根,fn 经其可达。m 未根须自守:
     // 工厂内 intern name 与 new_object 均 GC 点。
-    ObjClosure* make_closure(GC& gc, const StringView name, const u8 arity) {
+    ObjFunction* make_closure(GC& gc, const StringView name, const u8 arity) {
         auto m     = new_module(gc, StringView{"<script>"});
         auto guard = gc.make_guard(m);
         auto fn    = new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
         guard.push(fn);
-        return new_closure(gc, fn);
+        return new_function(gc, fn);
     }
 
     // 实例:守卫 klass 跨 new_instance。返回的 inst 未根,调用方跨 GC 点持有须自行守卫。
@@ -118,7 +118,7 @@ TEST(ObjInstance, TraceStressKeepsClassFieldsAndFreshBound) {
 
     ObjClass*       klass  = nullptr;
     ObjInstance*    obj    = nullptr;
-    ObjClosure*     method = nullptr;
+    ObjFunction*    method = nullptr;
     ObjBoundMethod* bound  = nullptr;
     ObjString*      bkey   = nullptr;
     ObjString*      fkey   = nullptr;

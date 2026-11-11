@@ -31,4 +31,4 @@ assert((c + Box(7)).v == 17);     // 算子仍取类链 __add__（字段出局�
 // 钩子就是普通方法：能读、能显式按名调用（实例侧读出绑定方法，类表侧读出裸原生）
 assert(a.__add__(b).v == 3);
 assert("ab".__add__("c") == "abc");
-assert(type(c.__add__) == "Closure");
+assert(type(c.__add__) == "Function");

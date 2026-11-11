@@ -124,7 +124,7 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
   显式写出），负向见 runtime_inherit_builtin_class 与 runtime_ctor_* 三例。
 - **receiver 守卫**：类上裸读方法后调用的两种 stray 形态（两段式槽 0 = 类对象、一等值
   中转槽 0 = 原生自身）报 `TypeMismatch receiver must be a <list|string|map|range|iterator>,
-  got <Class|NativeFn>`（五类原生入口统一守卫，原生不再依赖「槽 0 恒本类型」的 unchecked
+  got <Class|Function>`（五类原生入口统一守卫，原生不再依赖「槽 0 恒本类型」的 unchecked
   cast），负向见 runtime_receiver_* 三例。
 - **Exception 面**（07_exceptions）：运行期错误装箱对象与 `Error(msg[, code])` 工厂产物有
   `message()`/`code()` 方法（完整烘焙消息 / 错误码数字：VM 报错 = 注册表序号，Error 码参

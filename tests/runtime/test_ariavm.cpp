@@ -12,12 +12,11 @@
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjClosure.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
 #include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
@@ -33,14 +32,14 @@ using aria::i8;
 using aria::kObjectClassOffset;
 using aria::NativeCallInfo;
 using aria::NativeFn;
+using aria::new_function;
 using aria::new_module;
-using aria::new_native_fn;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjClass;
-using aria::ObjClosure;
 using aria::ObjException;
 using aria::ObjFnProto;
+using aria::ObjFunction;
 using aria::ObjInstance;
 using aria::ObjModule;
 using aria::ObjString;
@@ -244,9 +243,9 @@ namespace {
     }
 
     // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。name 经
-    // new_native_fn 的 StringView 重载内部 intern 并自守;add_constant 为 trivial push 无 GC 点。
+    // new_function 的 StringView 重载内部 intern 并自守;add_constant 为 trivial push 无 GC 点。
     u16 add_native_const(CodeUnit& cu, GC& gc, const char* name, NativeFn fn) {
-        const auto nf = new_native_fn(gc, name, fn);
+        const auto nf = new_function(gc, name, fn);
         return cu.add_constant(Value::from_obj(nf));
     }
 
@@ -1152,7 +1151,7 @@ TEST_F(AriaVMStress, ExceptionBootstrapClassFace) {
     for (const auto* member: {"init", "message", "code"}) {
         const auto hit = klass->load_field(*vm.current_context(), new_string(vm.gc(), member));
         ASSERT_TRUE(hit.has_value());
-        EXPECT_TRUE(hit->as_obj()->is<aria::ObjNativeFn>());
+        EXPECT_TRUE(hit->as_obj()->is<aria::ObjFunction>());
     }
 
     // 实例腿:链上实例经默认 init 恒有 _message/_code(默认 ""/Error 默认码);自有 init 落用户
@@ -1245,7 +1244,7 @@ TEST_F(AriaVMStress, ReimportReusesLoadedModule) {
     EXPECT_EQ(vm.modules().size(), 1u); // 仅 helper 一个被导入模块
 }
 
-// ---- 原生函数:CALL 命中 ObjNativeFn,同步调用,返回值写槽 0 ----
+// ---- 原生函数:CALL 命中 ObjFunction,同步调用,返回值写槽 0 ----
 
 // double(21) == 42:验证原生函数读实参(info[0])、写返回槽(set_return_val),VM drop(argc) 后栈顶即返回值。
 TEST_F(AriaVMStress, NativeFnSlot0Return) {
@@ -1479,8 +1478,8 @@ TEST_F(AriaVMStress, SameSlotCaptureSharesOneUpvalue) {
     auto c2_entry = m->globals().find(Value::from_obj(new_string(gc, "c2")));
     ASSERT_NE(c1_entry, nullptr);
     ASSERT_NE(c2_entry, nullptr);
-    auto c1 = c1_entry->value.as_obj()->as<ObjClosure>();
-    auto c2 = c2_entry->value.as_obj()->as<ObjClosure>();
+    auto c1 = c1_entry->value.as_obj()->as<ObjFunction>();
+    auto c2 = c2_entry->value.as_obj()->as<ObjFunction>();
     ASSERT_EQ(c1->upvalues().size(), usize{1});
     ASSERT_EQ(c2->upvalues().size(), usize{1});
     EXPECT_EQ(c1->upvalues()[0], c2->upvalues()[0]);
@@ -1755,7 +1754,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 // ============================================================
 
 // 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
-// Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native 同步
+// Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native_fn 同步
 // 调用(no-op 不写返回槽,this 原样即返回值),不进帧、留空 ObjInstance。
 TEST_F(AriaVMStress, InstantiateNoInitUsesSeededNativeInit) {
 
@@ -1806,7 +1805,7 @@ TEST_F(AriaVMStress, LoadRegPushesObjectClass) {
     EXPECT_EQ(out->as_obj(), vm.object_class()); // === 指针相等:寄存器值即 Object 根类
 }
 
-// 自定义 init 带参:Foo(7) -- 槽 0 原位换实例后 call_closure 进方法帧 [this, a]
+// 自定义 init 带参:Foo(7) -- 槽 0 原位换实例后 call_aria_fn 进方法帧 [this, a]
 // (this 替代 callee 占槽 0,实参槽位不动);init 内 this.tag = a(STORE_THIS_FIELD)
 // 落 fields 表、返回 this(LOAD_LOCAL 0 + RETURN);调用点取回实例后 LOAD_FIELD 读回
 // 字段(fields 命中)。
@@ -2168,8 +2167,8 @@ TEST_F(AriaVMStress, MethodRewriteViaClassAssignmentSnapshot) {
     EXPECT_EQ(fetch("r1").as_int(), 1); // 改写前取出的 bound 值固绑旧闭包
     const auto b2_v = fetch("b2");
     // 新解析:赋值闭包未戳 ⟹ 读回原值不绑定
-    EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::CLOSURE);
-    EXPECT_EQ(b2_v.as_obj()->as<ObjClosure>()->proto(), new_m); // === new_m 闭包本体
+    EXPECT_EQ(b2_v.as_obj()->type(), aria::ObjType::FUNCTION);
+    EXPECT_EQ(b2_v.as_obj()->as<ObjFunction>()->proto(), new_m); // === new_m 闭包本体
     // b2 自由调用仍执行新闭包(返回 2)
     EXPECT_EQ(fetch("r2").as_int(), 2);
 }
@@ -2745,7 +2744,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMethodRaw) {
 
 // 戳定方法(decorating class 戳)经普通 CALL 自由调用:方法帧槽 0 = callee(closure),非实例。
 // LOAD_THIS_FIELD 命中 -> 响亮 TypeMismatch 兜底(旧为 ASSERT 开发期捕,Release 下空指针段错误);
-// 消息取 TypeMismatch 族的 requires 形状,type_name 渲染 Closure。与
+// 消息取 TypeMismatch 族的 requires 形状,type_name 渲染 Function。与
 // NativeSlotClassAccessIsFreeCall 互补:那里原生体内自查,这里方法体经 this 指令触达兜底站。
 TEST_F(AriaVMStress, StampedMethodFreeCallThisFieldFails) {
 
@@ -2782,7 +2781,7 @@ TEST_F(AriaVMStress, StampedMethodFreeCallThisFieldFails) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch field access requires an instance, got Closure\n"
+    EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch field access requires an instance, got Function\n"
                                      "  at im (<script>:1)\n"
                                      "  at <main> (<script>:1)");
 }
@@ -2843,7 +2842,7 @@ TEST_F(AriaVMStress, SuperReadsStaticMember) {
 
 // 原生 init 注册走类上赋值路径(MAKE_METHOD 仅收闭包,原生落表经 STORE_FIELD):
 // init Value 化后**合法** -- set_field 命中 "init" 同步 init_,实例化经 call_value 走
-// call_native:槽 0 = this(echo 校验接收者是实例后覆写返回 1),原生 init 的返回值
+// call_native_fn:槽 0 = this(echo 校验接收者是实例后覆写返回 1),原生 init 的返回值
 // 即实例化结果(不写槽即返回 this,写槽可返回任意值)。
 TEST_F(AriaVMStress, NativeInitInstantiates) {
 

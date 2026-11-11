@@ -26,7 +26,7 @@
 | :--- | :--- |
 | 整数 / 浮点 / 字符串 / 布尔 / nil | `"Int"` / `"F64"` / `"String"` / `"Bool"` / `"Nil"` |
 | 列表 / 映射 / 区间 / 迭代器 | `"List"` / `"Map"` / `"Range"` / `"Iterator"` |
-| 函数与闭包 | `"Closure"` |
+| aria / 原生函数 | `"Function"` |
 | 类 / 实例 | `"Class"` / `"Instance"`（不区分类名） |
 | 模块 | `"Module"` |
 | 协程 | `"Coroutine"` |

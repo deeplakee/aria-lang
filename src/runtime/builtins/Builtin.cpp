@@ -6,8 +6,8 @@
 #include "memory/GC.hpp"
 #include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/Eval.hpp"
 #include "runtime/ObjMovement.hpp"
@@ -33,10 +33,8 @@ namespace aria {
                     return ctx.class_class();
                 case ObjType::MODULE:
                     return ctx.module_class();
-                case ObjType::CLOSURE:
-                    return ctx.closure_class();
-                case ObjType::NATIVE_FN:
-                    return ctx.native_fn_class();
+                case ObjType::FUNCTION:
+                    return ctx.function_class();
                 case ObjType::BOUND_METHOD:
                     return ctx.bound_method_class();
                 case ObjType::MOVEMENT:
@@ -210,7 +208,7 @@ namespace aria {
         // 免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根。
         void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
             for (const auto& [name, fn]: fns) {
-                const auto fn_obj = new_native_fn(gc, name, fn);
+                const auto fn_obj = new_function(gc, name, fn);
                 table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
             }
         }
@@ -219,7 +217,7 @@ namespace aria {
 
     void Builtin::register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
+            const auto fn_obj = new_function(gc, name, fn);
             fn_obj->set_defining_class(klass);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
@@ -227,7 +225,7 @@ namespace aria {
 
     void Builtin::register_class_functions(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> functions) {
         for (const auto& [name, fn]: functions) {
-            const auto fn_obj = new_native_fn(gc, name, fn);
+            const auto fn_obj = new_function(gc, name, fn);
             klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
         }
     }

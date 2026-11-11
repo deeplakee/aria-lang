@@ -8,7 +8,7 @@
 #include "memory/GC.hpp"
 #include "object/ObjBoundMethod.hpp"
 #include "object/ObjClass.hpp"
-#include "object/ObjNativeFn.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/Object.hpp"
@@ -26,7 +26,7 @@ using aria::new_range_iterator;
 using aria::new_string;
 using aria::ObjBoundMethod;
 using aria::ObjException;
-using aria::ObjNativeFn;
+using aria::ObjFunction;
 using aria::ObjRange;
 using aria::ObjRangeIterator;
 using aria::ObjString;
@@ -188,7 +188,7 @@ TEST(ObjRange, LoadFieldBindsNativeToReceiver) {
     const auto method = try_as_obj<ObjBoundMethod>(*bound);
     ASSERT_NE(method, nullptr);
     EXPECT_TRUE(value_identical(method->receiver(), Value::from_obj(range)));
-    const auto native = method->method().as_obj()->try_as<ObjNativeFn>();
+    const auto native = method->method().as_obj()->try_as<ObjFunction>();
     ASSERT_NE(native, nullptr);
     EXPECT_EQ(native->name()->view(), "iter");
 }

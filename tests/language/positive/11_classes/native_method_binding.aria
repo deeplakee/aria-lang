@@ -11,9 +11,9 @@ assert(counter.parent_text() == "<Counter instance>");
 assert(counter.parent_reader()() == "<Counter instance>");
 
 // 类声明读取不绑定;同一原生方法放进实例字段后也保持裸值。
-assert(type(Counter.__str__) == "NativeFn");
+assert(type(Counter.__str__) == "Function");
 assert(Counter.__str__ === Object.__str__);
-assert(type(Counter.parent_text) == "Closure");
+assert(type(Counter.parent_text) == "Function");
 Counter.text = Object.__str__;
 var text = counter.text;
 assert(text() == "<Counter instance>");
@@ -50,7 +50,7 @@ assert(error.parent_message() == "hello");
 // 模块导出的原生实例方法不因标记而绑定模块。
 import "./lib/native_method_exports" as exports;
 assert(exports.method === Object.__str__);
-assert(type(exports.script_method) == "Closure");
+assert(type(exports.script_method) == "Function");
 assert(exports.script_method === exports.MethodOwner.read);
 assert(exports.function === println);
 assert(type(exports.bound) == "BoundMethod");

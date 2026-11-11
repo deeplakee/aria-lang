@@ -1,2 +1,2 @@
-Runtime: TypeMismatch receiver must be a list, got NativeFn
+Runtime: TypeMismatch receiver must be a list, got Function
 at <main> (

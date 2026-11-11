@@ -10,8 +10,7 @@ namespace aria {
     class AriaVM;
     class ObjBoundMethod;
     class ObjClass;
-    class ObjClosure;
-    class ObjNativeFn;
+    class ObjFunction;
     class ObjString;
     class Object;
 
@@ -29,16 +28,16 @@ namespace aria {
 
         // 闭包调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
         // 整形后进帧。失败 WrongArity/StackOverflow。
-        static bool call_closure(AriaExeContext& ctx, ObjClosure* obj, u8 argc);
+        static bool call_aria_fn(AriaExeContext& ctx, ObjFunction* obj, u8 argc);
 
-        // 重入执行体(AriaExeContext 重入口 execute_closure/execute_method 的共用体):压 slot0 与
+        // 重入执行体(AriaExeContext 重入口 execute_function/execute_method 的共用体):压 slot0 与
         // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
         // 收取闭包返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
         // false 交外层续搜;递归深度达 kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报
         // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
         // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
         [[nodiscard]]
-        static Opt<Value> execute_closure(AriaExeContext& ctx, Value slot0, ObjClosure* closure, ArgList args);
+        static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* closure, ArgList args);
 
         // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
         // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
@@ -61,6 +60,9 @@ namespace aria {
         // false/nullptr ⟺ 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 传播。
         static bool call_value(AriaExeContext& ctx, Value callee, u8 argc);
 
+        // 函数值单点分派:原生同步执行,aria 载荷整理参数后进帧。
+        static bool call_function(AriaExeContext& ctx, ObjFunction* function, u8 argc);
+
         // 类实例化:new_instance 为唯一 GC 点,建成即槽 0 原位换实例(即新帧 this),余下交
         // call_value 通用分发。
         static bool call_class(AriaExeContext& ctx, ObjClass* obj, u8 argc);
@@ -70,15 +72,15 @@ namespace aria {
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, u8 argc);
 
         // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
-        static bool call_native(AriaExeContext& ctx, const ObjNativeFn* obj, u8 argc);
+        static bool call_native_fn(AriaExeContext& ctx, ObjFunction* obj, u8 argc);
 
         // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
         // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_native(AriaExeContext& ctx, Value slot0, const ObjNativeFn* native, ArgList args);
+        static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, ObjFunction* native, ArgList args);
 
         // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派 -- bound 解内层沿用自身
-        // receiver(ctor 契约:内层为闭包或原生),原生走 execute_native,闭包交 execute_closure
+        // receiver(ctor 契约:内层为闭包或原生),原生走 execute_native_fn,闭包交 execute_aria_fn
         // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
@@ -132,8 +134,8 @@ namespace aria {
         static bool run_store_field(AriaExeContext& ctx, ObjString* name);
 
         // THIS 对执行体:this 取顶帧槽 0,this 不经值栈与 obj.m 同走 field 协议。槽 0 非实例 = this
-        // 被自由调用/类直调掏空(经 call_closure 的写法不可达),响亮 TypeMismatch 兜底(帧形
-        // 不变式只对 call_closure 成立)。
+        // 被自由调用/类直调掏空(经 call_aria_fn 的写法不可达),响亮 TypeMismatch 兜底(帧形
+        // 不变式只对 call_aria_fn 成立)。
         static bool run_load_this_field(AriaExeContext& ctx, ObjString* name);
 
         // 写入执行体:[v] -> [v](peek-store 经 this 的 store_field,实例字段动态即创建)。非实例

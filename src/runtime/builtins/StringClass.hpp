@@ -7,7 +7,6 @@ namespace aria {
 
     class GC;
     class ObjClass;
-    class ObjNativeFn;
 
     // string 方法面(String bootstrap 类)自持单元:公有面 = make_class,方法体与方法表住同名 .cpp。
     class StringClass {

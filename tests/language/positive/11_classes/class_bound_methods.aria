@@ -48,7 +48,7 @@ assert(leak() == 420);
 // 实例字段里的裸方法保持原值,普通读取与 this 字段读取都不自动绑定。
 g1.callback = Greeter.code;
 assert(g1.callback === Greeter.code);
-assert(type(g1.callback) == "Closure");
+assert(type(g1.callback) == "Function");
 assert(g1.callback_value() === Greeter.code);
 
 // 字段遮蔽同名类方法时,已有绑定方法和 nil 也都原样返回。

@@ -1,6 +1,6 @@
 ---
 name: aria-object
-description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFnProto（含捕获描述表 UpvalueDesc）、ObjClosure/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjNativeFn、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
+description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFnProto（含捕获描述表 UpvalueDesc）、ObjFunction/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
 paths:
   - "src/object/**"
 ---
@@ -12,23 +12,22 @@ paths:
 ## 类型地图
 
 - `Object`（`object/Object.hpp`）：所有 GC 对象的基类。用 `ObjType` 枚举（独立头 `object/ObjType.hpp`）、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。两 ctor 即「缓存哈希」的**构造期分发**--不可变对象传算好的内容哈希、可变对象取地址哈希；故 `hash_` 留在基类，查询期直接 `o->hash()`，无需按类型分发的自由函数。
-- `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`NativeFn`/...）。
+- `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`Function`/...）。
 - `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
 - `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；调试位带引号转义、显示位直取原文（分叉在渲染面，对象不设 override）。铸造入口 = `new_string` 工厂族（先查驻留命中返回已有串、未命中才分配+insert），含两段重载 `new_string(gc, lhs, rhs, hash)`（先查后拼：命中零拷贝，哈希为 `hash_str(hash_str(lhs), rhs)` 续算终态）与接管重载 `new_string(gc, data, size, cap, hash)`（buffer 释放责任随三臂移交：命中释放返已有串 / 长串收缩后由接管构造臂零拷贝接管 / 短串 SSO 化后释放）。
 - `ObjFnProto`（`ObjFnProto.hpp`）：GC 托管的函数原型，`ObjType::FN_PROTO`（类型名 `FnProto`），经 `new_fn_proto` 创建；`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。存于 Value 常量池，不直接作为运行期函数值调用。
 - `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
-- `ObjClosure`（`ObjClosure.hpp`）：函数原型（`proto_`，经 `proto()` 访问）+ upvalue 数组 + `defining_class_`；运行期一律以闭包进帧，原型共享、捕获状态随闭包实例持有。
+- `ObjFunction`（`ObjFunction.hpp`）：唯一运行期函数对象，`ObjType::FUNCTION` / 类型名 `Function`；内联 `std::variant` 保存原生载荷（名称 + `NativeFn`）或 aria 载荷（`ObjFnProto*` + upvalue 数组），`is_native()` 查询载荷，`proto()` / `upvalues()` 仅用于 aria 载荷、`fn()` 仅用于原生载荷。共同持 `defining_class_`，经 `new_function` 重载工厂创建；`trace` 只遍历活动载荷和定义类。
 - `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
 - `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
-- `ObjNativeFn`（`ObjNativeFn.hpp`）：把 C++ `NativeFn` 包成 aria `Value`（builtins / 嵌入 API 用；`NativeFn` 签名与调用视图 `NativeCallInfo` 住 `runtime/NativeCallInfo.hpp`）；`defining_class_` 非空表示原生实例方法，注册时设置并参与 trace，普通/静态函数为空。
 - `ObjModule`（`ObjModule.hpp`）：模块 = 命名空间（一个源文件一个模块），非类。
 - `ObjException`（`ObjException.hpp`）：VM 检测错误 / 原生报错的装箱载荷；注意 aria 的 `throw` 抛任意 `Value`，不限定本类型。成员解析委托 Exception bootstrap 类（`ctx.exception_class()`，沿链达 Object 根；`message`/`code` face 经此触达、按接收者分派：本类型读原生成员，链上实例经 `load_field` 读 `_message`/`_code` 字段；与其他内建对象经上下文访问器取自身 bootstrap 类同款，本类不持类指针）。`code_` 是错误码数字（i64 单一存储：VM 报错 = 注册表序号，`Error(msg, code)` 码参 = 用户所给 int），双视图消费：`code()` 转 ErrorCode（C++ 消费方，VM 路径 cast 保真）、`numeric_code()` 保 i64（语言面）。
 - `ObjList` / `ObjMap` / `ObjRange`：`[...]` / `{...}` / `a..b` 字面量的运行期载体。
 - 迭代器族（`object/iterator/`）：`ObjIterator` 基类 + 每源一个小子类 `ObjListIterator` / `ObjStringIterator` / `ObjMapIterator` / `ObjRangeIterator`。
 - `ObjMovement`（`runtime/ObjMovement.hpp`，文件住 runtime 层）：执行上下文的 GC 对象壳（`Object` 与执行上下文本体 `AriaExeContext` 多继承、唯一派生、零自有数据成员，`ObjType::MOVEMENT`，主上下文与协程统一本型，主上下文为 ctor 首笔分配的唯一实例）。`type()` 报 `Coroutine`、`repr()` 报 `<coroutine {状态小写拼写}>` 动态形（`ExecState` 五态：suspended/normal/running/done/failed，`status` 直接投影 `state_` 不做谓词派生；主上下文亦参与换位但无人读）。类型成员查询已 override（Coroutine 类链直取），普通成员读继承基类委托，下标/算子协议落基类默认（身份判等、不支持）--coroutine 值的可取行为。执行状态与机器全住基类；trace 自标基类状态（值栈/帧/开链/挂起载荷）并经 `mark_object(previous_)` 沿 resume 链级联；机制细节见 runtime.md。
 - `EqualGuard.hpp` / `PrintGuard.hpp`：递归 `equals` / `repr` 的 thread_local 环守卫（容器入口挂；命中即视为相等 / 截断 `[...]`）。
-- `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_as_obj<T>`、`is_callable_value`、`is_method`）。
+- `value/ObjBridge.hpp`：Value↔Object 耦合辅助的收口头（`try_as_obj<T>`、`is_callable`、`is_method`）。
 
 ## 协议虚函数族
 
@@ -62,10 +61,10 @@ paths:
 
 ### 内置类型的成员面
 
-- **九族（string/list/map/range/iterator/exception/closure/nativefn/boundmethod）的成员读共享同一趟咨询**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 is_method 命中值创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；跨类方法赋值不改变归属，接收者兼容性仍由实际方法调用检查；函数族（closure/nativefn/boundmethod）与协程值也继承该默认绑定策略；已有 BoundMethod 原样返回，读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。
+- **八族（string/list/map/range/iterator/exception/function/boundmethod）的成员读共享同一趟咨询**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 is_method 命中值创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；跨类方法赋值不改变归属，接收者兼容性仍由实际方法调用检查；函数族（function/boundmethod）与协程值也继承该默认绑定策略；已有 BoundMethod 原样返回，读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
 - 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），Coroutine 的静态原语经 `register_class_functions` 注册，不设置定义类。方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
-- **零表单例类六个**（P1 类面基建，`value_register.hpp` 新增六行）：`ClosureClass`/`NativeFnClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）与 `CoroutineClass`（表收 `create`/`resume`/`yield`/`status` 四静态原语，协程内建模块形态并入类面）。与七 bootstrap 类合计十三格；十三类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
+- **零表单例类五个**（P1 类面基建，`value_register.hpp` 类段）：`FunctionClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）与 `CoroutineClass`（表收 `create`/`resume`/`yield`/`status` 四静态原语，协程内建模块形态并入类面）。与七 bootstrap 类合计十二格；十二类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
 
 ## 跨类型规则
 
@@ -77,11 +76,11 @@ paths:
 
 ### `defining_class_` 戳规则
 
-- 闭包上的 `defining_class_` **一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.closure->defining_class()` 直读）+ **方法性标记**（`is_method()`；读路径 `ObjInstance::load_field_bound` / `LOAD_SUPER_FIELD` 据非空判绑 this）。
+- 闭包上的 `defining_class_` **一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.function->defining_class()` 直读）+ **方法性标记**（`is_method()`；读路径 `ObjInstance::load_field_bound` / `LOAD_SUPER_FIELD` 据非空判绑 this）。
 - **判别按戳不按值类型**：MAKE_METHOD 注册时戳、MAKE_STATIC / 类上赋值不戳 ⟹ 静态槽原值直读；赋值闭包无戳 ⟹ 改写后按静态读原值、不再绑定（方法性随值携带）。
 - **挂闭包而非共享的 `ObjFnProto` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
 - 非方法闭包（静态方法 fun / lambda / 其余）恒 nullptr。
-- 原生函数沿用同一 `defining_class_` 判据：`register_class_methods` 设置注册类，`new_native_fn` 默认与 `register_class_functions` 保持 nullptr。成员赋值不重写归属，trace 标记定义类；本轮不据此增加通用接收者归属校验。
+- 原生函数沿用同一 `defining_class_` 判据：`register_class_methods` 设置注册类，`new_function` 默认与 `register_class_functions` 保持 nullptr。成员赋值不重写归属，trace 标记定义类；本轮不据此增加通用接收者归属校验。
 - `is_method(Value)` 同时识别脚本/原生实例方法，不把普通函数或已有 BoundMethod 当成待绑定方法。`super` 读取也使用此判据。
 
 ### `init_` 派生

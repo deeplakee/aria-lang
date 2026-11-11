@@ -2,8 +2,8 @@
 
 #include <format>
 
-#include "object/ObjClosure.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjList.hpp"
 #include "object/ObjUpvalue.hpp"
 #include "runtime/AriaVM.hpp"
@@ -86,17 +86,17 @@ namespace aria {
 
     // 重入口面
 
-    Opt<Value> AriaExeContext::execute_closure(ObjClosure* closure, const ArgList args) {
-        return Eval::execute_closure(*this, Value::from_obj(closure), closure, args);
+    Opt<Value> AriaExeContext::execute_function(ObjFunction* closure, const ArgList args) {
+        return Eval::execute_aria_fn(*this, Value::from_obj(closure), closure, args);
     }
 
-    Opt<Value> AriaExeContext::execute_method(const Value receiver, ObjClosure* method, const ArgList args) {
-        return Eval::execute_closure(*this, receiver, method, args);
+    Opt<Value> AriaExeContext::execute_method(const Value receiver, ObjFunction* method, const ArgList args) {
+        return Eval::execute_aria_fn(*this, receiver, method, args);
     }
 
     // 帧与开指链
 
-    void AriaExeContext::enter_frame(ObjClosure* closure, const u8 argc) {
+    void AriaExeContext::enter_frame(ObjFunction* closure, const u8 argc) {
         CallFrame::init(frames_.acquire(), closure, top_, argc);
     }
 
@@ -195,9 +195,7 @@ namespace aria {
 
     ObjClass* AriaExeContext::range_class() const noexcept { return host_->range_class(); }
 
-    ObjClass* AriaExeContext::closure_class() const noexcept { return host_->closure_class(); }
-
-    ObjClass* AriaExeContext::native_fn_class() const noexcept { return host_->native_fn_class(); }
+    ObjClass* AriaExeContext::function_class() const noexcept { return host_->function_class(); }
 
     ObjClass* AriaExeContext::bound_method_class() const noexcept { return host_->bound_method_class(); }
 

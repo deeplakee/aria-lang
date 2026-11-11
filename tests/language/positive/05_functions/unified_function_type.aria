@@ -1,0 +1,22 @@
+// 原生与 aria 函数共享 Function 类型、成员表,捕获函数仍保持独立状态。
+fun make(value) {
+    fun next() { value += 1; return value; }
+    return next;
+}
+var first = make(10);
+var second = make(20);
+assert(type(first) == "Function");
+assert(type(println) == "Function");
+assert(is_a(first, Function));
+assert(is_a(println, Function));
+assert(first() == 11);
+assert(second() == 21);
+assert(first() == 12);
+Function.shared = 37;
+assert(first.shared == 37);
+assert(println.shared == 37);
+Function.shared = 41;
+assert(second.shared == 41);
+assert(type.shared == 41);
+assert(str(first) == "<fn next>");
+assert(str(println) == "<fn println>");

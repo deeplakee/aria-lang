@@ -18,7 +18,7 @@ assert(println() == nil); # 0 参同样返 nil
 
 # 返 nil：结果可参与表达式（作语句时被 POP 丢弃）
 assert(println("ret") == nil);
-assert(type(println) == "NativeFn");
+assert(type(println) == "Function");
 
 # 一等值：可作实参传入、经形参调用
 fun twice(f, x) {

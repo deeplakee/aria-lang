@@ -5,8 +5,8 @@
 #include "memory/GC.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
 #include "object/ObjModule.hpp"
-#include "object/ObjNativeFn.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaVM.hpp"
 #include "value/AriaHashTable.hpp"
@@ -280,7 +280,7 @@ TEST(ObjModule, NamespaceDoesNotFallBackToClass) {
     EXPECT_EQ(message, "Runtime: UndefinedProperty <module helper> has no member '__str__'");
     const auto hook = module->load_field_from_class(*vm.current_context(), key);
     ASSERT_TRUE(hook.has_value());
-    EXPECT_TRUE(hook->as_obj()->is<aria::ObjNativeFn>());
+    EXPECT_TRUE(hook->as_obj()->is<aria::ObjFunction>());
 
     module->globals().set(Value::from_obj(key), Value::nil_val());
     const auto own = module->load_field(*vm.current_context(), key);
@@ -288,5 +288,5 @@ TEST(ObjModule, NamespaceDoesNotFallBackToClass) {
     EXPECT_TRUE(own->is_nil());
     const auto unchanged = module->load_field_from_class(*vm.current_context(), key);
     ASSERT_TRUE(unchanged.has_value());
-    EXPECT_TRUE(unchanged->as_obj()->is<aria::ObjNativeFn>());
+    EXPECT_TRUE(unchanged->as_obj()->is<aria::ObjFunction>());
 }

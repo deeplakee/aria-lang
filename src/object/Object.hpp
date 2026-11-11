@@ -17,9 +17,8 @@ namespace aria {
     class Object;
     class ObjString;
     class ObjFnProto;
-    class ObjNativeFn;
     class ObjUpvalue;
-    class ObjClosure;
+    class ObjFunction;
     class ObjClass;
     class ObjInstance;
     class ObjBoundMethod;
@@ -156,8 +155,6 @@ namespace aria {
                 return type() == ObjType::STRING;
             } else if constexpr (std::is_same_v<T, ObjFnProto>) {
                 return type() == ObjType::FN_PROTO;
-            } else if constexpr (std::is_same_v<T, ObjNativeFn>) {
-                return type() == ObjType::NATIVE_FN;
             } else if constexpr (std::is_same_v<T, ObjUpvalue>) {
                 return type() == ObjType::UPVALUE;
             } else if constexpr (std::is_same_v<T, ObjClass>) {
@@ -178,8 +175,8 @@ namespace aria {
                 return type() == ObjType::ITERATOR;
             } else if constexpr (std::is_same_v<T, ObjException>) {
                 return type() == ObjType::EXCEPTION;
-            } else if constexpr (std::is_same_v<T, ObjClosure>) {
-                return type() == ObjType::CLOSURE;
+            } else if constexpr (std::is_same_v<T, ObjFunction>) {
+                return type() == ObjType::FUNCTION;
             } else if constexpr (std::is_same_v<T, ObjMovement>) {
                 return type() == ObjType::MOVEMENT;
             } else {

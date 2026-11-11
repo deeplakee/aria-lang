@@ -523,13 +523,13 @@ namespace aria {
         // 失败即抛 AriaCompileException，先于所有分配与发射。
         validate_params(params, decl_loc);
 
-        // varargs 恒末位（Parser 保证）：rest 槽由 call_closure 打包多余实参为 list，帧参数槽深 = arity + is_varargs。
+        // varargs 恒末位（Parser 保证）：rest 槽由 call_aria_fn 打包多余实参为 list，帧参数槽深 = arity + is_varargs。
         const bool has_varargs = !params.empty() && params.back().is_varargs;
         const auto fixed_arity = static_cast<u8>(params.size() - (has_varargs ? 1 : 0));
         const auto fn = new_fn_proto(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
         // 入池后即经 module 根链可达。
         const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
-        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjClosure。
+        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjFunction。
         cur_cu()->emit_op(OpCode::CLOSURE, decl_loc.line());
         cur_cu()->emit_word(fn_idx, decl_loc.line());
 

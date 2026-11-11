@@ -34,7 +34,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 - **缺省参数作用域**：默认值表达式可见前序参数、自身/后序对解析结构性不可见（Python/C++ 同款）。
 - **语言参照系**：值填槽是对 clox 预占槽模式的偏离；`CLOSE_UPVALUE` 对齐 Lua `OP_CLOSE`；复合赋值 locator-once 是 C 标准对 `E1 += E2` 的定义；`resolve_upvalue` 是 clox resolveUpvalue 形。
 
-**语义检查（首错即止，内联各 visit）**：`InvalidAssignmentTarget`/`Break|ContinueOutsideLoop`/`TryWithoutHandler`/`UnreachableArm`/`DuplicateParam`/`TooManyParameters|Arguments`/`RedefinedVariable`/`ThisOutsideClass`/`SuperOutsideMethod`/`NumberOutOfRange`（i48）/`TooManyLocals`/`TooManyUpvalues`（容量 256 = `kMaxUpvalues`+1，第 257 条拒）/`CodeUnitTooLarge`/`TooManyElements`。顶层裸 `return` 合法（带值报 `ReturnValueAtTopLevel`）；varargs 为零发射翻转（rest 即末位局部槽，值由 `call_closure` 打包就位）。
+**语义检查（首错即止，内联各 visit）**：`InvalidAssignmentTarget`/`Break|ContinueOutsideLoop`/`TryWithoutHandler`/`UnreachableArm`/`DuplicateParam`/`TooManyParameters|Arguments`/`RedefinedVariable`/`ThisOutsideClass`/`SuperOutsideMethod`/`NumberOutOfRange`（i48）/`TooManyLocals`/`TooManyUpvalues`（容量 256 = `kMaxUpvalues`+1，第 257 条拒）/`CodeUnitTooLarge`/`TooManyElements`。顶层裸 `return` 合法（带值报 `ReturnValueAtTopLevel`）；varargs 为零发射翻转（rest 即末位局部槽，值由 `call_aria_fn` 打包就位）。
 
 **坑编号纪律**：exception-implementation-pitfalls.md 与 coroutine-implementation-pitfalls.md 的坑编号空间各自独立（同号不同坑），src/ 注释引用坑号须带文档名前缀（如 `exception-pitfalls 坑 #4`）；exception 侧坑编号被广泛引用不得重排。
 

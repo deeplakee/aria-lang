@@ -11,8 +11,8 @@ fun plain() { return 19; }
 var co = Coroutine.create(worker);
 
 for ([kind, value, expected] in [
-    [Closure, worker, "<fn worker>"],
-    [NativeFn, println, "<fn println>"],
+    [Function, worker, "<fn worker>"],
+    [Function, println, "<fn println>"],
     [BoundMethod, bound, "<bound method read>"],
     [Coroutine, co, "<coroutine suspended>"]
 ]) {

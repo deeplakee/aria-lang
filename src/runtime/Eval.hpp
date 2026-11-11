@@ -66,7 +66,7 @@ namespace aria {
         // 类实例化:类在槽 0 跨 new_instance 保活,建成后槽 0 换成实例,用作 init 的 this。
         static bool call_class(AriaExeContext& ctx, ObjClass* klass, u8 argc);
 
-        // 绑定方法调用:槽 0 改为 receiver,直接交 call_function;两条函数调用路径各自根化函数。
+        // 绑定方法调用:槽 0 改为 receiver,直接交 call_function。
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, u8 argc);
 
         // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。

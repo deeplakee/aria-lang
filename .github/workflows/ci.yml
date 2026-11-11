@@ -69,6 +69,18 @@ jobs:
             cxx: g++-14
             build_type: Release
             tagvalue: 'OFF'
+          - name: Windows x64 (Release, NaN-boxing)
+            runner: windows-2025
+            cc: clang
+            cxx: clang++
+            build_type: Release
+            tagvalue: 'OFF'
+          - name: macOS arm64 (Release, NaN-boxing)
+            runner: macos-26
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+            build_type: Release
+            tagvalue: 'OFF'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,4 +118,6 @@ jobs:
 
       - name: Smoke test Release CLI
         if: matrix.build_type == 'Release'
-        run: ./build/aria -e 'assert(6 * 7 == 42);'
+        run: |
+          $aria = if ($IsWindows) { './build/aria.exe' } else { './build/aria' }
+          & $aria -e 'assert(6 * 7 == 42);'

@@ -121,6 +121,9 @@ ctest --test-dir build --output-on-failure
 编写的脚本语料，正向脚本用 `assert` 验证结果、负向脚本断言预期的错误码，端到端驱动解释器，兼作 GC 压力
 安全网，详见 `tests/language/README.md`。
 
+CI 使用 `clang-format` **23.1.3** 和根目录的 `.clang-format`，检查 `src/`、`tests/`、`bench/` 中
+由 Git 跟踪的 `.cpp` 与 `.hpp` 文件。本地格式化时请使用同一版本。
+
 性能基准位于 `bench/`：`lexer_bench` / `hashtable_bench` / `vm_bench` 三个进程内微基准，以及源文件
 级基准 `bench/lang/`（40 个语言功能细项与 16 个真实负载，多数带 CPython / Node / Lua / Java 对照
 端口）。基准一律以原样 Release 构建测量（默认开 LTO；Debug 与 Release 的读数可差一个数量级），

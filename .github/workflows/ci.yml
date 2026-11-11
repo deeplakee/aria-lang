@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64 (NaN-boxing)
+            runner: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            tagvalue: 'OFF'
+          - name: Windows x64 (NaN-boxing)
+            runner: windows-2025
+            cc: clang
+            cxx: clang++
+            tagvalue: 'OFF'
+          - name: macOS arm64 (NaN-boxing)
+            runner: macos-26
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+            tagvalue: 'OFF'
+          - name: Linux x64 (TagValue)
+            runner: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            tagvalue: 'ON'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and test (Debug)
+        shell: pwsh
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          ARIA_USE_TAGVALUE: ${{ matrix.tagvalue }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($IsWindows) {
+            # 让 Clang 和 Ninja 使用 Visual Studio 的链接器、头文件与 SDK。
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $visualStudio = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if (-not $visualStudio) { throw 'Visual Studio C++ tools not found' }
+            & (Join-Path $visualStudio 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          }
+
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DARIA_USE_TAGVALUE=$env:ARIA_USE_TAGVALUE"
+          cmake --build build --target aria aria_tests --parallel 2
+          ctest --test-dir build --output-on-failure --no-tests=error

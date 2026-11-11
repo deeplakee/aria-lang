@@ -10,10 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  check-error-messages:
+    name: Check error messages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: python3 tools/check_error_messages.py
+
   test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
     strategy:
       fail-fast: false
       matrix:
@@ -22,43 +36,67 @@ jobs:
             runner: ubuntu-24.04
             cc: gcc-14
             cxx: g++-14
+            build_type: Debug
             tagvalue: 'OFF'
           - name: Windows x64 (NaN-boxing)
             runner: windows-2025
             cc: clang
             cxx: clang++
+            build_type: Debug
             tagvalue: 'OFF'
           - name: macOS arm64 (NaN-boxing)
             runner: macos-26
             cc: /usr/bin/clang
             cxx: /usr/bin/clang++
+            build_type: Debug
             tagvalue: 'OFF'
           - name: Linux x64 (TagValue)
             runner: ubuntu-24.04
             cc: gcc-14
             cxx: g++-14
+            build_type: Debug
             tagvalue: 'ON'
+          - name: Linux x64 (Release, NaN-boxing)
+            runner: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            build_type: Release
+            tagvalue: 'OFF'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Build and test (Debug)
-        shell: pwsh
+      - name: Set up Visual Studio toolchain
+        if: runner.os == 'Windows'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $visualStudio = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $visualStudio) { throw 'Visual Studio C++ tools not found' }
+          & (Join-Path $visualStudio 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+
+          # 将 Visual Studio 和 SDK 的工具、头文件及库路径传给后续步骤。
+          foreach ($name in 'Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir',
+              'WindowsSdkDir', 'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion') {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value) { "$name=$value" >> $env:GITHUB_ENV }
+          }
+
+      - name: Configure
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          CMAKE_BUILD_TYPE: ${{ matrix.build_type }}
           ARIA_USE_TAGVALUE: ${{ matrix.tagvalue }}
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          if ($IsWindows) {
-            # 让 Clang 和 Ninja 使用 Visual Studio 的链接器、头文件与 SDK。
-            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-            $visualStudio = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            if (-not $visualStudio) { throw 'Visual Studio C++ tools not found' }
-            & (Join-Path $visualStudio 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-          }
+        run: cmake -S . -B build -G Ninja "-DCMAKE_BUILD_TYPE=$env:CMAKE_BUILD_TYPE" "-DARIA_USE_TAGVALUE=$env:ARIA_USE_TAGVALUE"
 
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DARIA_USE_TAGVALUE=$env:ARIA_USE_TAGVALUE"
-          cmake --build build --target aria aria_tests --parallel 2
-          ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Build
+        run: cmake --build build --target aria aria_tests --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Smoke test Release CLI
+        if: matrix.build_type == 'Release'
+        run: ./build/aria -e 'assert(6 * 7 == 42);'

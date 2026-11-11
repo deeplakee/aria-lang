@@ -1,0 +1,23 @@
+// 成员调用先选中旧类，再计算实参。即使实参改写该字段，旧类也要活到实例创建完成。
+def Host {}
+def Replacement {}
+
+fun make_class() {
+    def Ephemeral {
+        init(value) {
+            this.value = value;
+        }
+    }
+    return Ephemeral;
+}
+
+Host.factory = make_class();
+
+fun replace() {
+    Host.factory = Replacement;
+    return 42;
+}
+
+var answer = Host.factory(replace());
+assert(answer.value == 42);
+assert(Host.factory === Replacement);

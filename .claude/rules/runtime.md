@@ -110,6 +110,7 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 - **相等/栈操作/跳转**：`EQUAL`/`NOT_EQUAL` 走 `value_equal`、`STRICT_*` 走 `value_identical`；`JUMP*` 为 u16、方向在 opcode、偏移以读完操作数后 ip 为基准，含 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` 短路。
 - **`CALL` 族**：两种函数载荷共用 `ObjFunction`（`ObjFnProto` 是常量池中的原型），`call_value` 编排后按 callee 类型分发到 `call_function`/`call_class`/`call_bound_method`，函数入口经 `is_native()` 再分发至 `call_native_fn` 或 `call_aria_fn`，其余对象类型先把槽 0 设为实际 callee，再按调用钩子 `__call__` 经魔术咨询口取实现后递归分发（值本地状态出局）；成员宿主不充当该对象的接收者，实参槽位不变。
 - `call_bound_method` 取绑定的函数指针，用接收者覆写槽 0，再交 `call_function`；原生与 Aria 调用各自临时根化函数。
+- `call_class` 先把已选定的类写入槽 0，跨 `new_instance` 的 GC 点保活。成员调用的槽 0 可能原先是成员宿主，且实参求值可能已改写存放该类的成员。实例建成后覆盖槽 0，接手保活类并充当 `init` 的 `this`。
 - `call_*` 族均签名即 ctx（作用于 ctx 即正在执行的上下文，与 dispatch_loop/raise 语义统一），返 `bool` 成败：失败时错误载荷已 `raise` 进当前上下文挂起寄存器，调用方据 bool 调 `unwind()`。
 - **闭包进帧的根交接**：`call_aria_fn` 从入口用临时根保护闭包及其函数、捕获值，覆盖检查与实参整形；`enter_frame` 发布后由 `frame.function` 接管，退出函数释放临时根。不得依赖类表继续持有已解析的方法，也不得依赖槽 0 仍保存绑定方法对象；变参打包中的 `new_list` 会触发 GC。
 - **`RETURN`**：执行体收口 `run_return()`，取返回值弹帧（`exit_frame` 内置关本帧被捕获局部，值迁入各自 upvalue 自持）后按弹后帧深对出口边界分档（边界 = `current_->ret_frame()`）：高于边界 = 帧间返回，写回 callee 槽（IMPORT 的模块值 = 模块体自己的返回值，同此写回）；恰至非零边界 = 本（嵌套）循环收束，返回值交重入口 `execute_aria_fn` 收取；零边界弹尽再按 `previous_` 分派--空 = 主入口返回（主模块对象，入口收尾所压），非空 = 协程最外帧完成切回（完成值写恢复者预留槽，见「协程」节）。

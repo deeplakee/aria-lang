@@ -63,9 +63,8 @@ namespace aria {
         // 函数值单点分派:原生同步执行,aria 载荷整理参数后进帧。
         static bool call_function(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
-        // 类实例化:new_instance 为唯一 GC 点,建成即槽 0 原位换实例(即新帧 this),余下交
-        // call_value 通用分发。
-        static bool call_class(AriaExeContext& ctx, ObjClass* obj, u8 argc);
+        // 类实例化:类在槽 0 跨 new_instance 保活,建成后槽 0 换成实例,用作 init 的 this。
+        static bool call_class(AriaExeContext& ctx, ObjClass* klass, u8 argc);
 
         // 绑定方法调用:槽 0 改为 receiver,直接交 call_function;两条函数调用路径各自根化函数。
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, u8 argc);

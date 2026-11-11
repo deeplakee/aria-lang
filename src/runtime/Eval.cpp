@@ -120,11 +120,12 @@ namespace aria {
         }
     }
 
-    bool Eval::call_class(AriaExeContext& ctx, ObjClass* obj, const u8 argc) {
-        // GC 点仅 new_instance,建成即原生写槽;init 按契约恒有值(非可调值由 call_value 报错)。
-        const auto instance = new_instance(ctx.gc(), obj);
-        ctx.peek(argc)      = Value::from_obj(instance); // 建成即写槽:instance 经值栈根化(即新帧 this)
-        return call_value(ctx, obj->init(), argc);
+    bool Eval::call_class(AriaExeContext& ctx, ObjClass* klass, const u8 argc) {
+        // 成员调用的槽 0 可能还放着成员宿主。先写入类,跨 new_instance 的 GC 点保活。
+        ctx.peek(argc)      = Value::from_obj(klass);
+        const auto instance = new_instance(ctx.gc(), klass);
+        ctx.peek(argc)      = Value::from_obj(instance); // 实例接手保活类,同时成为 init 的 this
+        return call_value(ctx, klass->init(), argc);
     }
 
     bool Eval::call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, const u8 argc) {
@@ -519,7 +520,7 @@ namespace aria {
     bool Eval::run_call_method(AriaExeContext& ctx, const u8 argc) {
         // 纯调用,不再解析:实参整体下移一格补掉待调值
         // 占的那格 -> [recv, a1..aN](槽 0 = receiver = this);待调值交 call_value 统一分发
-        // (argc == 0 时下移为空转)。
+        // (argc == 0 时下移为空转)。目标离栈后,各分支须在 GC 点前保活仍要使用的对象。
         const Value target = ctx.peek(argc);
         for (u8 i = argc; i >= 1; --i) {
             ctx.peek(i) = ctx.peek(i - 1);

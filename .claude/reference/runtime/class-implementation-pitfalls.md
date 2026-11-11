@@ -19,11 +19,11 @@
 - `MAKE_CLASS`：**peek super 不先弹** -- super（可能刚经 `LOAD_GLOBAL` 解出）跨 `new_class` 分配必须在栈；新建类写回原槽，top 不变。
 - `MAKE_METHOD`/`MAKE_STATIC`：`[class, v] -> [class]`，两值均 peek 不弹（`set_field` 落表走 trivial 分配不触 GC，戳 defining class 是裸写），弹值留 class；编译器路径栈形 ASSERT 钉。
 - `LOAD_FIELD`：obj = peek(0) **不先弹**（绑定分配跨 GC 须保 obj 在栈）；命中方法闭包时 `new_bound_method` 返回白色 bound，写回原槽即根化（缓存已取消，bound **不回填 fields 表**、无第二根）。
-- `call_class`：`new_instance` 是唯一 GC 点（klass 经值栈根化），instance 建成即写 callee 槽（**槽 0 原位换实例** = 新帧 this），余下交 `call_value` 通用分发。
+- `call_class`：先把类写入槽 0，再跨 `new_instance` 的 GC 点分配实例。成员调用在实参求值前选中类；实参可以覆盖保存旧类的字段，而 `CALL_METHOD` 整理调用区后旧类可能只剩 C++ 局部引用。实例建成即覆盖槽 0，经 `ObjInstance::trace` 接手保活类，并充当 `init` 的 this。
 
 **反向坑（守卫过度）**：早期曾按「表 upsert 的 rehash 分配跨 GC 须守卫」写三处多余守卫 -- 认知错误，`HashTable` set/upsert 走 trivial 分配**永不触发 GC**（GC 核心不变式），review 后整删（其中 `MAKE_CLASS` 的 name 实为常量池可达，连 weak root 都不是）。守卫纪律按「真 GC 点」划，不按「看起来像分配」划。
 
-**测试**：`ClassGraphSurvivesExplicitCollect`（实例/绑定/类跨 GC 存活）、`StoreFieldDeepStackShift`（`STORE_FIELD` 单槽下移在深栈多临时值下）、`ThisFieldDeepStackInMethod`。
+**测试**：`class_call_gc_root.aria`（实参替换成员中的类后，已选中的类仍可实例化）、`ClassGraphSurvivesExplicitCollect`（实例/绑定/类跨 GC 存活）、`StoreFieldDeepStackShift`（`STORE_FIELD` 单槽下移在深栈多临时值下）、`ThisFieldDeepStackInMethod`。
 
 ## 坑 #3：init_ 的一致性（现行契约见 `rules/object.md`「`init_` 派生」）
 

@@ -21,7 +21,6 @@ namespace aria {
     class AriaVM;
     struct CallFrame;
     class Object;
-    class ObjString;
     enum class ObjType : u8;
 
     // 指令频度探针:计数状态全部本类自持(每 VM 一份,不跨 VM 混账);解码与 Disassembler 同源
@@ -39,17 +38,16 @@ namespace aria {
         OpCode fetch(const AriaVM& vm, CallFrame* frame);
 
     private:
-        // (类型, 名) 计数条目:方法面按接收者 ObjType + 名,native 调用再按名;名指针即键
-        //(intern 串身份恒一)。
+        // 按类型与名字文本计数。画像持有文本,原 GC 字符串可在输出前回收。
         struct NameEntry {
-            ObjString* name;
-            ObjType    kind;
-            u64        count;
+            String  name;
+            ObjType kind;
+            u64     count;
         };
 
-        static NameEntry& find_or_add(List<NameEntry>& table, ObjString* name, ObjType kind);
+        static NameEntry& find_or_add(List<NameEntry>& table, StringView name, ObjType kind);
 
-        void note_method(ObjString* name, ObjType kind);
+        void note_method(StringView name, ObjType kind);
 
         void note_callee(Object* callee);
 

@@ -136,7 +136,7 @@ namespace aria {
                 note_operand(index, peek_u16(frame));
                 if (vm.current_->stack_size() > 0) {
                     if (const Value recv = vm.current_->peek(0); recv.is_obj()) {
-                        note_method(peek_const_name(frame), recv.as_obj()->type());
+                        note_method(peek_const_name(frame)->view(), recv.as_obj()->type());
                     }
                 }
                 break;
@@ -229,17 +229,17 @@ namespace aria {
         return op;
     }
 
-    OpcodeProfiler::NameEntry& OpcodeProfiler::find_or_add(List<NameEntry>& table, ObjString* name,
+    OpcodeProfiler::NameEntry& OpcodeProfiler::find_or_add(List<NameEntry>& table, const StringView name,
                                                            const ObjType kind) {
         for (auto& entry: table) {
-            if (entry.name == name && entry.kind == kind) {
+            if (entry.kind == kind && entry.name == name) {
                 return entry;
             }
         }
-        return table.emplace_back(NameEntry{name, kind, 0});
+        return table.emplace_back(NameEntry{String{name}, kind, 0});
     }
 
-    void OpcodeProfiler::note_method(ObjString* name, const ObjType kind) {
+    void OpcodeProfiler::note_method(const StringView name, const ObjType kind) {
         ++find_or_add(method_calls_, name, kind).count;
     }
 
@@ -252,7 +252,7 @@ namespace aria {
         const auto kind = callee->type();
         ++call_kinds_[std::to_underlying(kind)];
         if (kind == ObjType::FUNCTION && callee->as<ObjFunction>()->is_native()) {
-            ++find_or_add(native_calls_, callee->as<ObjFunction>()->name(), kind).count;
+            ++find_or_add(native_calls_, callee->as<ObjFunction>()->name()->view(), kind).count;
         }
     }
 
@@ -334,8 +334,7 @@ namespace aria {
             }
             std::ranges::sort(hits, [](const NameEntry* a, const NameEntry* b) { return a->count > b->count; });
             for (const auto hit: hits) {
-                io::println(stderr, "[opprofile] {} {} {} {}", tag, hit->count, to_string(hit->kind),
-                            hit->name->view());
+                io::println(stderr, "[opprofile] {} {} {} {}", tag, hit->count, to_string(hit->kind), hit->name);
             }
         };
         dump_names("mcall", method_calls_);

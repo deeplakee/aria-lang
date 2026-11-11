@@ -147,6 +147,8 @@ eval 层驱动引擎（M1-M6 机制已落地；M6 = 协程单循环切换模型�
 
 CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测点 = `dispatch_loop` 取指行的 `ARIA_FETCH_OPCODE(ctx, frame)` 宏**（定义于 `runtime/opcode_profile.hpp`，唯一使用点即该行）：常态构建展开为原取指表达式 `static_cast<OpCode>(read_u8(frame))`，逐字一致零开销；探针构建经 current 取宿主展开为 `current->host().opcode_profiler_.fetch(current->host(), frame)`。`OpcodeProfiler` 是 AriaVM 的友元类、以成员挂载（生命周期随 VM，AriaVM.hpp 仅一处 ifdef 友元 + 一处 ifdef 成员），在与 dispatch_loop 同形的逐指令 switch（全枚举，-Wswitch 逼同步）里按「出边可预测性」分流记账：**前看** -- 直线型指令的 fall-through 配对记 `pairs_`（下一取指恒落在指令结束地址，该处一个字节即后继 opcode）、条件跳转取指点 peek 栈顶按极性判走向（命中率记 `branch_taken_`，不落空记 `pairs_`、跳走记 `jt_`）、无条件跳转记 `jt_` 目标对；**后看** -- 帧切换五指令（CALL/CALL_METHOD/RETURN/IMPORT/THROW）的落点取指时才知，目的地经 `prev_op_`（单值拷贝、哨兵 HALT，不存地址 -- REPL 行边界上一行单元可能已被 GC 回收）在下一取指补记派发对。`pairs_ ∪ jt_` 逐位等于旧口径转移矩阵。另有逐条计数、操作数直方图、PREPARE_METHOD/CALL/CALL_METHOD 的栈顶 peek（方法面按接收者 ObjType + 名、callee 分发面）。指令解码与 Disassembler 同源（kOpCodeFormats/kOpCodeNames）；实现住 `runtime/opcode_profile.cpp`（常态构建空 TU）。析构即产出：按 `ARIA_OPCODE_STATS` 环境变量门控 dump 到 stderr（每 VM 一段），格式由 `bench/profile/opcode_profile.py` 消费（`tr` 键由 pair+jt 合成）；画像驱动与负载语料见 `bench/profile/`（`--static` 模式配 `-DARIA_DEBUG_PRINT_CODE=ON` 构建采静态发射计数）。
 
+方法名与原生函数名均按 `(ObjType, 名字文本)` 聚合。`OpcodeProfiler` 只在新增条目时复制名字，原 `ObjString` 即使在输出前被 GC 回收，计数与显示也不受影响。
+
 ## `runtime/AriaVM.hpp` / `.cpp`
 
 解释器宿主（M1-M6 机制已落地）：持 GC、模块表、builtins 表、值寄存器组、常量串表、单字符表、源根与执行入口；字节码驱动住 eval 层（Eval，友元缝），本类留守宿主服务（IMPORT 加载、未捕获物化、协程切换原语）。

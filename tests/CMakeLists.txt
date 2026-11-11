@@ -58,6 +58,10 @@ add_executable(aria_tests
 target_include_directories(aria_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(aria_tests PRIVATE aria_core gtest_main)
 
+if (ARIA_OPCODE_PROFILE)
+    target_sources(aria_tests PRIVATE runtime/test_opcode_profile.cpp)
+endif ()
+
 # language 语料根：runner（test_language_corpus.cpp）经该绝对路径递归发现 .aria 脚本
 target_compile_definitions(aria_tests PRIVATE ARIA_LANG_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/language")
 

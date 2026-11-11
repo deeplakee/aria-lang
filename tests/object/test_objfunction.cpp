@@ -83,10 +83,10 @@ TEST(ObjFunction, AddUpvaluesInOrder) {
     auto  proto   = new_fn_proto(gc, "f", 0);
     auto  closure = new_function(gc, proto);
     auto  guard   = gc.make_guard(closure); // 习惯性守卫(非 stress 下无 GC 触发)
-    Value a     = Value::from_i32(1);
-    Value b     = Value::from_i32(2);
-    auto  u1    = new_upvalue(gc, &a);
-    auto  u2    = new_upvalue(gc, &b);
+    Value a       = Value::from_i32(1);
+    Value b       = Value::from_i32(2);
+    auto  u1      = new_upvalue(gc, &a);
+    auto  u2      = new_upvalue(gc, &b);
     closure->add_upvalue(u1);
     closure->add_upvalue(u2);
     EXPECT_EQ(closure->upvalues().size(), usize{2});
@@ -184,7 +184,7 @@ TEST(ObjFunction, PayloadGraphsSurviveWithOnlyFunctionsRooted) {
         const auto guard = gc.make_guard(proto);
         function         = new_function(gc, proto);
     }
-    auto       guard  = gc.make_guard(function);
+    auto       guard           = gc.make_guard(function);
     const auto native_function = new_function(
             gc, "native function name beyond sso padding", +[](const aria::NativeCallInfo& info) {
                 info.set_return_val(Value::nil_val());

@@ -27,8 +27,8 @@ namespace {
 // 具名原生函数:name 传入非空,渲染 `<fn name>`。
 TEST(ObjFunctionNative, NamedRendersFnName) {
     GC           gc;
-    auto         name  = new_string(gc, "sample");
-    auto         guard = gc.make_guard(name); // name 是 weak root,跨 new_object 顶 maybe_collect 先保
+    auto         name     = new_string(gc, "sample");
+    auto         guard    = gc.make_guard(name); // name 是 weak root,跨 new_object 顶 maybe_collect 先保
     ObjFunction* function = new_function(gc, name, noop_fn);
     EXPECT_TRUE(function->is<ObjFunction>());
     EXPECT_TRUE(function->is_native());

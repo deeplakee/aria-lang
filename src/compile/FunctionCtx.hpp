@@ -36,7 +36,7 @@ namespace aria {
         FunctionCtx() = delete;
 
         // 单构造：enclosing = nullptr 为入口 <main> 上下文，否则嵌套；实例方法族槽 0 = 具名局部 this。
-        explicit FunctionCtx(ObjFnProto* fn, FunctionCtx* enclosing, FnKind kind);
+        explicit FunctionCtx(ObjFnProto* proto, FunctionCtx* enclosing, FnKind kind);
 
         FunctionCtx(const FunctionCtx&)                = delete;
         FunctionCtx& operator=(const FunctionCtx&)     = delete;
@@ -69,7 +69,7 @@ namespace aria {
 
         // 父编译期长于子，enclosing_ 裸指针在子生命期内稳定。
         FunctionCtx*      enclosing_;
-        ObjFnProto*       fn_;
+        ObjFnProto*       proto_;
         FnKind            kind_;
         List<Local>       locals_;
         u32               scope_depth_;

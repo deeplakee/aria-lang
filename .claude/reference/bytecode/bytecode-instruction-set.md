@@ -270,12 +270,12 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjFunction` -> 执行函数体；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjFunction`/绑定方法 -> 调原生/方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
-| `CLOSURE` | `fn:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjFunction` 并按 `fn` 的捕获描述表填 upvalue 数组（见下） |
+| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjFunction` -> 按载荷调用 Aria 函数或原生入口；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjBoundMethod` -> 用绑定的接收者调用方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
+| `CLOSURE` | `proto_index:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjFunction` 并按原型的捕获描述表填 upvalue 数组（见下） |
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE fn:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `fn.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE proto_index:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `proto.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
@@ -287,7 +287,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass`；内建容器五类（list/map/string/range/iterator）不可继承、非类 super 报 TypeMismatch（均运行期错误） |
-| `MAKE_METHOD` | `name:u16` | `[class, closure] -> [class]` | 弹 `closure`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收闭包**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
+| `MAKE_METHOD` | `name:u16` | `[class, method] -> [class]` | 弹 `method`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收 Aria 函数**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
 | `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
 | `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjFunction.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjFunction 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
 | `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::load_field` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `load_field` override 就地烘焙 |
@@ -426,9 +426,9 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
-# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于 fn 的 UpvalueDesc 表,
+# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于原型的 UpvalueDesc 表,
 #  编译期 flush 进 ObjFnProto 元数据)
-CLOSURE fn_idx         ; [closure]   ; VM 读 fn.upvalue_descs() 建捕获, 无尾随操作数
+CLOSURE proto_index    ; [closure]   ; VM 读 proto.upvalue_descs() 建捕获, 无尾随操作数
 # 块结束、x 将销毁且被捕获时: POP_N 整区弹局部 + CLOSE_UPVALUE 批量关闭槽址 >= 新栈顶的开 upvalue
 # (CodeGen emit_pop_locals_to 发射, 仅当弹区含被捕获局部, 落点见 §4.4);帧退出(RETURN/unwind)
 # 由 VM close_upvalues 整段关闭,无指令

@@ -6,8 +6,8 @@
 
 namespace aria {
 
-    FunctionCtx::FunctionCtx(ObjFnProto* fn, FunctionCtx* enclosing, const FnKind kind) :
-        enclosing_{enclosing}, fn_{fn}, kind_{kind}, scope_depth_{0} {
+    FunctionCtx::FunctionCtx(ObjFnProto* proto, FunctionCtx* enclosing, const FnKind kind) :
+        enclosing_{enclosing}, proto_{proto}, kind_{kind}, scope_depth_{0} {
         // 非方法族的哑元 callee 空名，词法不可达、不可引用。
         const auto name = is_method(kind) ? kThisName : StringView{};
         locals_.push_back(Local{.name = name, .depth = 0, .is_captured = false});
@@ -23,7 +23,7 @@ namespace aria {
             return entry->second;
         }
         // 先入池后登记：键的保活只靠池，入池为 trivial 分配不触 GC。
-        const auto index = fn_->unit().add_constant(value);
+        const auto index = proto_->unit().add_constant(value);
         constant_index_.emplace(value, index);
         return index;
     }

@@ -129,10 +129,10 @@ namespace aria {
             return frames_.size() >= kFrameMax;
         }
 
-        // 进帧:为对 closure 的调用 acquire 一个空帧并就位字段,与 exit_frame 成对,锁「栈顶帧
+        // 进帧:为 aria 函数调用 acquire 一个空帧并就位字段,与 exit_frame 成对,锁「栈顶帧
         // slots 即值栈本帧槽 0」不变量;slots = top - argc - 1(栈顶须形如 [callee, a1..aN]),
-        // 槽 0 语义由调用方进帧前写定(普通帧 = 闭包自身 / 方法帧 = this)。定义在 .cpp。
-        void enter_frame(ObjFunction* closure, u8 argc);
+        // 槽 0 语义由调用方进帧前写定(普通帧 = 函数自身 / 方法帧 = this)。定义在 .cpp。
+        void enter_frame(ObjFunction* function, u8 argc);
 
         // open upvalue 开链:链头按槽址降序,所在区间被关闭时(RETURN/unwind/CLOSE_UPVALUE)
         // 摘链迁值;链上节点经本对象 trace 标根 -- 防「闭包已死而 upvalue 仍在链」悬垂。
@@ -241,20 +241,20 @@ namespace aria {
         // 元数检查:普通函数区间 [min_arity, arity](差额为带默认值参数),有缺省报区间文案、无缺省
         // 报单数;varargs 只保下界,多余实参由 prepare_call_args 打包。
         [[nodiscard]]
-        bool check_arity(const ObjFnProto* fn, u8 argc);
+        bool check_arity(const ObjFnProto* proto, u8 argc);
 
         // 实参整形:把本上下文栈顶从实参深度整形成帧参数槽深并返回槽深。①缺省垫充:未传的固定
         // 参数槽压缺省印章(体局部槽号按满参编,参数槽 1..n、体局部自 n+1 起);②varargs 打包:
         // 多余实参整段收集为新 list 压 rest 槽(rest 恒为 list 非 nil,无多余实参铸空表)。
         [[nodiscard]]
-        u8 prepare_call_args(const ObjFnProto* fn, u8 argc);
+        u8 prepare_call_args(const ObjFnProto* proto, u8 argc);
 
         // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_aria_fn;失败载荷留本上下文
         // 寄存器、残帧截净,调用方按 bool 契约交外层续搜;仅可在执行中的驱动内调)。
 
-        // 仅接受 aria 函数:closure 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
+        // 仅接受 aria 函数:function 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
         [[nodiscard]]
-        Opt<Value> execute_function(ObjFunction* closure, ArgList args);
+        Opt<Value> execute_function(ObjFunction* function, ArgList args);
 
         // 方法形态:receiver 落调用区槽 0(帧槽 0 = this,兼返回槽),method 元数口径 = 声明参数数。
         [[nodiscard]]

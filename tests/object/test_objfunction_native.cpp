@@ -30,28 +30,28 @@ TEST(ObjFunctionNative, NamedRendersFnName) {
     GC           gc;
     auto         name  = new_string(gc, "sample");
     auto         guard = gc.make_guard(name); // name 是 weak root,跨 new_object 顶 maybe_collect 先保
-    ObjFunction* nf    = new_function(gc, name, noop_fn);
-    EXPECT_TRUE(nf->is<ObjFunction>());
-    EXPECT_TRUE(nf->is_native());
-    EXPECT_EQ(nf->type_name(), "Function");
-    EXPECT_EQ(nf->type(), aria::ObjType::FUNCTION);
-    EXPECT_EQ(nf->name(), name); // intern 同指针
-    EXPECT_EQ(nf->fn(), noop_fn);
-    EXPECT_EQ(nf->repr(), "<fn sample>");
-    EXPECT_EQ(nf->defining_class(), nullptr);
-    EXPECT_FALSE(nf->is_method());
-    EXPECT_FALSE(aria::is_method(Value::from_obj(nf)));
+    ObjFunction* function = new_function(gc, name, noop_fn);
+    EXPECT_TRUE(function->is<ObjFunction>());
+    EXPECT_TRUE(function->is_native());
+    EXPECT_EQ(function->type_name(), "Function");
+    EXPECT_EQ(function->type(), aria::ObjType::FUNCTION);
+    EXPECT_EQ(function->name(), name); // intern 同指针
+    EXPECT_EQ(function->fn(), noop_fn);
+    EXPECT_EQ(function->repr(), "<fn sample>");
+    EXPECT_EQ(function->defining_class(), nullptr);
+    EXPECT_FALSE(function->is_method());
+    EXPECT_FALSE(aria::is_method(Value::from_obj(function)));
 }
 
-// 匿名重载:new_function(gc, fn) 以 kAnonymousName("<anonymous>") 建名,渲染 `<fn <anonymous>>`。
+// 匿名重载:new_function(gc, native) 以 kAnonymousName("<anonymous>") 建名,渲染 `<fn <anonymous>>`。
 // name_ 恒非空(ctor ASSERT),无 nullptr 空态。
 TEST(ObjFunctionNative, AnonymousUsesAnonymousName) {
     GC           gc;
-    ObjFunction* nf    = new_function(gc, noop_fn);
-    auto         guard = gc.make_guard(nf);
-    ASSERT_NE(nf->name(), nullptr);
-    EXPECT_EQ(nf->name()->view(), kAnonymousName);
-    EXPECT_EQ(nf->repr(), "<fn <anonymous>>");
+    ObjFunction* function = new_function(gc, noop_fn);
+    auto         guard    = gc.make_guard(function);
+    ASSERT_NE(function->name(), nullptr);
+    EXPECT_EQ(function->name()->view(), kAnonymousName);
+    EXPECT_EQ(function->repr(), "<fn <anonymous>>");
 }
 
 // kAnonymousName 与 ObjFnProto 的 lambda 命名一致("<anonymous>")。

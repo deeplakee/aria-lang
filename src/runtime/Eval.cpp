@@ -136,32 +136,32 @@ namespace aria {
         return function->is_native() ? call_native_fn(ctx, function, argc) : call_aria_fn(ctx, function, argc);
     }
 
-    bool Eval::call_aria_fn(AriaExeContext& ctx, ObjFunction* obj, const u8 argc) {
-        ASSERT(!obj->is_native(), "function must have an aria payload");
-        // 进帧前由临时根保活闭包;进帧后由 frame.function 接管。
-        const auto guard = ctx.gc().make_guard(obj);
-        const auto fn    = obj->proto();
-        if (!ctx.check_arity(fn, argc)) {
+    bool Eval::call_aria_fn(AriaExeContext& ctx, ObjFunction* function, const u8 argc) {
+        ASSERT(!function->is_native(), "function must have an aria payload");
+        // 进帧前由临时根保活函数对象;进帧后由 frame.function 接管。
+        const auto guard = ctx.gc().make_guard(function);
+        const auto proto = function->proto();
+        if (!ctx.check_arity(proto, argc)) {
             return false;
         }
         if (ctx.frames_full()) {
             return ctx.fail(ErrorCode::StackOverflow, "call frame stack overflow");
         }
-        const auto prepared_argc = ctx.prepare_call_args(fn, argc);
-        ctx.enter_frame(obj, prepared_argc);
+        const auto prepared_argc = ctx.prepare_call_args(proto, argc);
+        ctx.enter_frame(function, prepared_argc);
         return true;
     }
 
-    bool Eval::call_native_fn(AriaExeContext& ctx, ObjFunction* obj, const u8 argc) {
+    bool Eval::call_native_fn(AriaExeContext& ctx, ObjFunction* function, const u8 argc) {
         // 同步调用不进帧。切换型原生成功后 vm.current_ 已被换至对侧,事后簿记(drop/寄存器断言)
         // 一律落 ctx(进场上下文,引用不可重绑)使栈顶停在该调用的槽 0(切换模型下的预留结果槽)。
         // 「false + 切换」为永久契约 -- 失败载荷在调用方上下文,切走即无人消费。实参留栈到 drop:
         // 切换型原生执行全程实参皆调用者栈根。
-        const auto           guard = ctx.gc().make_guard(obj);
+        const auto           guard = ctx.gc().make_guard(function);
         const NativeCallInfo info{ctx, argc};
         // 进场前寄存器应空(上次错误已被 take_error 取走 / reset 清空)。
         ASSERT(!ctx.has_error(), "pending error not cleared before native call");
-        if (obj->fn()(info)) {
+        if (function->fn()(info)) {
             ASSERT(!ctx.has_error(), "native fn returned true but raised error");
             ctx.drop(argc);
             return true;
@@ -172,8 +172,9 @@ namespace aria {
         return false;
     }
 
-    Opt<Value> Eval::execute_aria_fn(AriaExeContext& ctx, const Value slot0, ObjFunction* closure, const ArgList args) {
-        // 重入执行体:压 slot0 与 args 后同步驱动一次闭包调用至结算。成功 = 栈顶收取闭包返回值;
+    Opt<Value> Eval::execute_aria_fn(AriaExeContext& ctx, const Value slot0, ObjFunction* function,
+                                     const ArgList args) {
+        // 重入执行体:压 slot0 与 args 后同步驱动一次 Aria 函数调用至结算。成功 = 栈顶收取返回值;
         // 失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜。
         // args 不指进值栈或留足压档余量;重入返回后写返回槽恒经 peek 重寻址(值栈可能搬迁)。
         ASSERT(&ctx == ctx.host().current_, "reentry must target the executing context");
@@ -188,22 +189,22 @@ namespace aria {
                "args alias the value stack without room to push");
         push_call_area(ctx, slot0, args);
         const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (call_aria_fn(ctx, closure, args.size()) && dispatch_loop(ctx)) {
+        if (call_aria_fn(ctx, function, args.size()) && dispatch_loop(ctx)) {
             ctx.leave_recursion(saved_ret);
-            return ctx.pop(); // 闭包返回值
+            return ctx.pop(); // 函数返回值
         }
         ctx.leave_recursion(saved_ret);
         return std::nullopt; // 错误值在寄存器
     }
 
-    Opt<Value> Eval::execute_native_fn(AriaExeContext& ctx, const Value slot0, ObjFunction* native,
+    Opt<Value> Eval::execute_native_fn(AriaExeContext& ctx, const Value slot0, ObjFunction* function,
                                        const ArgList args) {
         // 外部调用原生:调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹槽 0。
         if (args.size() > std::numeric_limits<u8>::max()) {
             return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size()); // 载荷入寄存器
         }
         push_call_area(ctx, slot0, args);
-        if (call_native_fn(ctx, native, args.size())) {
+        if (call_native_fn(ctx, function, args.size())) {
             return ctx.pop();
         }
         return std::nullopt;
@@ -211,7 +212,7 @@ namespace aria {
 
     Opt<Value> Eval::execute_callable(AriaExeContext& ctx, const Value slot0, const Value callee, const ArgList args) {
         // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派,bound 解内层沿用自身
-        // receiver(ctor 契约:内层为闭包或原生)。失败载荷留寄存器。
+        // receiver(ctor 契约:内层为函数对象)。失败载荷留寄存器。
         if (const auto bound = try_as_obj<ObjBoundMethod>(callee)) {
             return execute_callable(ctx, bound->receiver(), bound->method(), args);
         }
@@ -696,13 +697,13 @@ namespace aria {
         if (module == nullptr) {
             return false; // 载荷已在寄存器
         }
-        // entry 经 module->entry_ 根可达;闭包建成即压栈根化。
-        const auto entry = module->entry();
-        ASSERT(entry != nullptr, "load_module returned a module whose entry is not set");
-        const auto closure = new_function(ctx.gc(), entry);
-        ctx.push(Value::from_obj(closure));
+        // 原型经 module->entry_ 根可达;入口函数建成即压栈根化。
+        const auto proto = module->entry();
+        ASSERT(proto != nullptr, "load_module returned a module whose entry is not set");
+        const auto function = new_function(ctx.gc(), proto);
+        ctx.push(Value::from_obj(function));
         // 进帧失败(栈溢出等):帧未进,callee 仍在栈顶(unwind 截栈时一并丢弃)。
-        return call_aria_fn(ctx, closure, 0);
+        return call_aria_fn(ctx, function, 0);
     }
 
     bool Eval::run_return(AriaExeContext& ctx) {
@@ -740,8 +741,8 @@ namespace aria {
             auto& frames = vm.current_->frames();
             // 无符号下溢即终止
             for (usize i = frames.size() - 1; i >= vm.current_->ret_frame() && i < frames.size(); --i) {
-                auto& [closure, unit, module, ip, slots, last_ip] = frames[i];
-                const u32 ip_off                                  = static_cast<u32>(last_ip - unit->code.data());
+                auto& [function, unit, module, ip, slots, last_ip] = frames[i];
+                const u32 ip_off                                   = static_cast<u32>(last_ip - unit->code.data());
                 if (const auto record = unit->find_try_handler(ip_off)) {
                     // 命中:回退到命中帧并转入 record 的 catch handler(统一在 AriaExeContext::unwind_to_handler)。
                     // 命中可能在多跳之后 -- vm.current_ 已非进入 unwind 时的上下文,调用方一律经循环顶
@@ -1155,15 +1156,15 @@ namespace aria {
                     goto sync_now;
                 }
                 case OpCode::CLOSURE: {
-                    // fn:u16;[] -> [closure]:取常量池 ObjFnProto 现场包 ObjFunction,按捕获描述
+                    // proto_index:u16;[] -> [closure]:取常量池 ObjFnProto 现场包 ObjFunction,按捕获描述
                     // 表逐个填:is_local 捕外围帧局部槽(经 capture_upvalue 收「同一局部一份引用」),
                     // 否则复制外围闭包的对应 upvalue(共享同一份引用)。根安全(栈即根):闭包建成
                     // 立即压栈,desc 循环内 new_upvalue 免守卫。
-                    const auto idx     = read_u16(frame);
-                    const auto fn      = frame->unit->constants[idx].as_obj()->as<ObjFnProto>();
-                    const auto closure = new_function(vm.gc_, fn);
+                    const auto proto_index = read_u16(frame);
+                    const auto proto       = frame->unit->constants[proto_index].as_obj()->as<ObjFnProto>();
+                    const auto closure     = new_function(vm.gc_, proto);
                     current->push(Value::from_obj(closure)); // 立即入栈:值栈即根,跨 desc 循环免守卫
-                    for (const auto& [is_local, index]: fn->upvalue_descs()) {
+                    for (const auto& [is_local, index]: proto->upvalue_descs()) {
                         if (is_local) {
                             closure->add_upvalue(current->capture_upvalue(frame->slots + index));
                         } else {
@@ -1181,17 +1182,17 @@ namespace aria {
                     }
                     break;
                 case OpCode::MAKE_METHOD: {
-                    // name:u16;[class, closure] -> [class]:实例方法注册,仅收闭包(方法性 =
+                    // name:u16;[class, method] -> [class]:实例方法注册,仅收 aria 函数(方法性 =
                     // defining class 戳),栈形经 ASSERT 校验(值恒来自上一条 CLOSURE,语言写不出
                     // 违例)。set_field 命中 "init" 同步 init_ + 播戳 -- 一职双任(super 来源 +
                     // 方法性标记,读路径据非空判绑)。
-                    const auto klass  = try_as_obj<ObjClass>(current->peek(1));
-                    const auto method = current->peek(0);
+                    const auto klass        = try_as_obj<ObjClass>(current->peek(1));
+                    const auto method_value = current->peek(0);
                     ASSERT(klass != nullptr, "slot-1 is not a class (malformed stack)");
-                    klass->set_field(read_name(frame), method);
-                    const auto closure = try_as_obj<ObjFunction>(method);
-                    ASSERT(closure != nullptr && !closure->is_native(), "slot-0 must be an aria function");
-                    closure->set_defining_class(klass);
+                    const auto method = try_as_obj<ObjFunction>(method_value);
+                    ASSERT(method != nullptr && !method->is_native(), "slot-0 must be an aria function");
+                    klass->set_field(read_name(frame), method_value);
+                    method->set_defining_class(klass);
                     current->drop(1);
                     break;
                 }

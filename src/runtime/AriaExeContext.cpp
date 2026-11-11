@@ -42,11 +42,11 @@ namespace aria {
 
     // 调用整形面
 
-    bool AriaExeContext::check_arity(const ObjFnProto* fn, const u8 argc) {
+    bool AriaExeContext::check_arity(const ObjFnProto* proto, const u8 argc) {
         // 检查纯读,无分配。
-        const auto arity     = fn->arity();
-        const auto min_arity = fn->min_arity();
-        if (fn->is_varargs()) {
+        const auto arity     = proto->arity();
+        const auto min_arity = proto->min_arity();
+        if (proto->is_varargs()) {
             if (argc < min_arity) {
                 return arity_error_at_least(argc, min_arity);
             }
@@ -61,10 +61,10 @@ namespace aria {
         return true;
     }
 
-    u8 AriaExeContext::prepare_call_args(const ObjFnProto* fn, const u8 argc) {
+    u8 AriaExeContext::prepare_call_args(const ObjFnProto* proto, const u8 argc) {
         // GC 走查:new_list 为唯一分配点 -- 额外实参 peek 在栈(栈即根),copy_from 走 trivial
         // 分配不触 GC,白色 list 随即 drop+push 入值栈根,窗口内无 GC 点;垫充压寄存器单例无分配。
-        const auto arity = fn->arity();
+        const auto arity = proto->arity();
 
         // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
         const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
@@ -73,7 +73,7 @@ namespace aria {
         }
 
         // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
-        if (fn->is_varargs()) {
+        if (proto->is_varargs()) {
             const auto extras = argc > arity ? static_cast<u8>(argc - arity) : u8{0};
             const auto rest   = new_list(gc());
             rest->elements().copy_from({stack_top() - extras, extras});
@@ -86,8 +86,8 @@ namespace aria {
 
     // 重入口面
 
-    Opt<Value> AriaExeContext::execute_function(ObjFunction* closure, const ArgList args) {
-        return Eval::execute_aria_fn(*this, Value::from_obj(closure), closure, args);
+    Opt<Value> AriaExeContext::execute_function(ObjFunction* function, const ArgList args) {
+        return Eval::execute_aria_fn(*this, Value::from_obj(function), function, args);
     }
 
     Opt<Value> AriaExeContext::execute_method(const Value receiver, ObjFunction* method, const ArgList args) {
@@ -96,8 +96,8 @@ namespace aria {
 
     // 帧与开指链
 
-    void AriaExeContext::enter_frame(ObjFunction* closure, const u8 argc) {
-        CallFrame::init(frames_.acquire(), closure, top_, argc);
+    void AriaExeContext::enter_frame(ObjFunction* function, const u8 argc) {
+        CallFrame::init(frames_.acquire(), function, top_, argc);
     }
 
     // 「同一局部只有一份引用」不变式由此收口;建新到插链之间无任何分配点,入链后即随本对象

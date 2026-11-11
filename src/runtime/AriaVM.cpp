@@ -265,23 +265,23 @@ namespace aria {
         return interpret_run(source, module);
     }
 
-    Result<Value, Error> AriaVM::run(ObjFnProto* fn) {
+    Result<Value, Error> AriaVM::run(ObjFnProto* proto) {
         // 入口锚 = 本轮入口上下文(即主上下文):dispatch_loop 出口(顶层 RETURN / 未捕获物化)均
         // 发生在链根,出口断言据此保证切换交接完整(漏交接当场炸,不等下一轮入口)。
         const auto entry_ctx = current_;
         // 入口槽 [0] 原地替换为入口模块 dir_;dir_ 可空。
-        source_roots_[0] = fn->module()->dir()->view();
+        source_roots_[0] = proto->module()->dir()->view();
 
         // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
         current_->reset();
 
-        // 包空闭包:fn 跨 new_function 顶 maybe_collect 须有根,make_guard 兜底。
-        const auto guard   = gc_.make_guard(fn);
-        const auto closure = new_function(gc_, fn);
+        // 创建入口函数:原型跨 new_function 的 GC 点须有根。
+        const auto guard          = gc_.make_guard(proto);
+        const auto entry_function = new_function(gc_, proto);
 
         // 首次进入(最外执行):出口边界恒零,弹空帧栈即出口。
-        current_->push(Value::from_obj(closure)); // 入栈即根
-        Eval::call_aria_fn(*current_, closure, 0);
+        current_->push(Value::from_obj(entry_function)); // 入栈即根
+        Eval::call_aria_fn(*current_, entry_function, 0);
         Result<Value, Error> result =
                 Eval::dispatch_loop(*current_) ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
@@ -373,25 +373,25 @@ namespace aria {
     }
 
     Error AriaVM::rebake_uncaught_error() const {
-        // 自顶帧向下收集 (fn, mod, last_ip) 烘跟踪行(跨协程死帧已随 reset 退场)-> take 载荷 ->
+        // 自顶帧向下收集 (proto, module, ip_off) 烘跟踪行(跨协程死帧已随 reset 退场)-> take 载荷 ->
         // reset 清场 -> 烘焙成自足 Error。物化路径仅 string 拼接无 GC 分配点。
         struct TraceEntry {
-            ObjFnProto* fn;     // 帧函数(名字渲染)
-            ObjModule*  mod;    // 帧模块(位置串渲染,ObjModule::format_location)
-            u32         ip_off; // 行号经 fn->unit().line_for_offset 查
+            ObjFnProto* proto;  // 函数原型(名字渲染)
+            ObjModule*  module; // 帧模块(位置串渲染,ObjModule::format_location)
+            u32         ip_off; // 行号经 proto->unit().line_for_offset 查
         };
         List<TraceEntry> trace;
 
         auto& frames = current_->frames();
         for (usize i = frames.size(); i > 0; --i) {
-            auto& [frame_closure, unit, module, ip, slots, last_ip] = frames[i - 1];
-            trace.emplace_back(frame_closure->proto(), module, static_cast<u32>(last_ip - unit->code.data()));
+            auto& [function, unit, module, ip, slots, last_ip] = frames[i - 1];
+            trace.emplace_back(function->proto(), module, static_cast<u32>(last_ip - unit->code.data()));
         }
         auto [code, msg] = take_uncaught_error();
         current_->reset();
-        for (const auto& [fn, mod, ip_off]: trace) {
-            const u32 line = fn->unit().line_for_offset(ip_off);
-            msg += std::format("\n  at {} ({})", fn->name()->view(), mod->format_location(line));
+        for (const auto& [proto, module, ip_off]: trace) {
+            const u32 line = proto->unit().line_for_offset(ip_off);
+            msg += std::format("\n  at {} ({})", proto->name()->view(), module->format_location(line));
         }
         return Error::from_baked(code, msg);
     }

@@ -104,7 +104,7 @@ class AriaVM {
 
 > **已前拉(开发期即启用 GC)**:值栈/帧的根接线不等 M6 -- `AriaVM` 构造时即经 `gc_.set_vm_roots` 注册 tracer,collect 时标 `modules_`/`builtins_`/`registers_`/`str_table_`/`char_cache_` 五表 + `current_` 一点(其余经对象图级联,见下);`run()` 不持 `LockGuard`,`JUMP_BACK` 是真实 safe point(`gc_.maybe_collect()`)。`Movement` 当时以纯 C++ 类落地(非 Object),tracer 直标;M6(B1)已升级 `ObjMovement : Object` 且主上下文一并 GC 分配(ctor 首笔),tracer 收敛为只标 `current_` 一点--运行链与挂起协程全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联(`contexts_` 与链尾断言退役,§4.9)。下方描述即当前形态。
 
-- 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `closure`(trace 级联标 function 与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
+- 每个 `ObjMovement` trace 自己(对标 Wren `blackenFiber`):值栈**已用部分**(`stack_ .. top_`,顶上的垃圾不标)、每帧 `function`(trace 级联标原型与 upvalues)、open upvalue 链、`previous_`、挂起错误寄存器。`FrameStack::span()` 正好返回已用区间。
 - 闭包进帧的根交接由 `Eval::call_aria_fn` 收口:入口建立闭包临时根,覆盖参数检查、帧容量检查与 `prepare_call_args` 的变参 List 分配;`enter_frame` 发布后由 `frame.function` 接管,函数退出释放临时根。直接方法调用移除 target 栈槽、绑定方法解包替换槽 0 后,均不可再依赖原栈槽或类表保活闭包;实参求值可能已改写类表。闭包的 trace 同时保活函数和捕获值。
 - GC 找到 VM 的方式:VM 向 GC 注册 mark 回调(或 GC 持不完整 `VM*` + 虚接口),避免 GC 反向依赖 VM 头文件。
 - safe point:循环回边(`JUMP_BACK`)与 `new_object` 内(已落地)。`CALL` 与协程切换点不设 `maybe_collect`:切换序列零分配,首启压参的栈扩容不触 GC(Buffer allocate/reallocate 不变式),无必要。
@@ -213,7 +213,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 **`previous_` 对齐 Wren caller 语义**:resume 时设(`enter_coroutine`)、**yield、完成与未捕获跳链都解链**(`leave_coroutine`)。`previous_` 的含义是「下一次让位时回到哪」,不是持久 resume 链;挂起态恒空是安全前提(resume 的已挂起臂、yield 判主上下文都读它)。置链/解链与状态写点成对(切换点唯一收口在原语对),故「`state_` 五态穷举」与「`previous_` 判链」在用户可达协程上严格等价--aria 取状态单源判定,覆盖显式(对标 Wren:caller 在 yield 与 RETURN 完成时都置 NULL,"Fiber has already been called" 仅在 caller 非空时报)。主上下文 uniform 参与换位(resume 置 Normal、让位置 Running)但其 `state_` 语言不可达(status 无路径),不参与任何判定。
 
-**GC**:主上下文一并 GC 分配(ctor 首笔 `gc_.new_object<ObjMovement>`),VM 级协程根仅 `current_` 一个,tracer 只标这一点--运行链(`current_ -> previous_ -> ...` 的中间层)与挂起协程(用户持有的协程值)全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联;`trace` 对标 Wren `blackenFiber`:值栈已用区间 + 各帧 `closure`/`module`(closure 级联标 function 与 upvalues)+ open upvalue 链 + `previous_` + 挂起错误寄存器。**退役的是 `contexts_` 调度列表、链尾断言与独立的 `main_ctx_` 成员**--切换只发生在结构性位置,没有可违反的纪律;链根交接由 run() 入口锚/出口断言钉(§3)。
+**GC**:主上下文一并 GC 分配(ctor 首笔 `gc_.new_object<ObjMovement>`),VM 级协程根仅 `current_` 一个,tracer 只标这一点--运行链(`current_ -> previous_ -> ...` 的中间层)与挂起协程(用户持有的协程值)全部经 `ObjMovement::trace` 的 `mark_object(previous_)` 灰栈级联;`trace` 对标 Wren `blackenFiber`:值栈已用区间 + 各帧 `function`/`module`(函数对象级联标原型与 upvalues)+ open upvalue 链 + `previous_` + 挂起错误寄存器。**退役的是 `contexts_` 调度列表、链尾断言与独立的 `main_ctx_` 成员**--切换只发生在结构性位置,没有可违反的纪律;链根交接由 run() 入口锚/出口断言钉(§3)。
 
 **错误跨协程**(接 §4.5):协程 A 内未捕获(unwind 遍历 A 的帧链无 handler)→ A `take_error()` 取载荷、`reset()` 清场、置 Failed 解链,把载荷 raise 进 resume 调用者的挂起寄存器,unwind **就地**继续搜调用者的帧链--中间层无 handler 即连死,载荷逐跳上投至链根(主上下文)才物化。设计初稿曾设想「等价于 resume 作为一次失败的原生调用,调用方按既有 bool 契约取出」--该说法按字面不成立:resume 切走时 `ctx.drop(argc)` 已执行、`return true` 已返回,CALL 善后点早已收工,主循环没有逐指令的 `has_error()` 检查,恢复者侧没有任何时机消费该载荷;正确形态就是 unwind 自身跳链(调用点 `unwind_check` 一字不改)。对标 Wren `runtimeError` 沿 caller 链逐 fiber 中止、遇 `FIBER_TRY` 调用者则错误值写入其调用槽并恢复之;aria 的寄存器模型无需 Wren 的 `fiber->error` 专用字段。跟踪截断(每跳重收集,at 行只含接收侧帧链)见 §4.8。
 
@@ -243,7 +243,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 **出口边界**:`AriaExeContext::ret_frame_`(u32,0 = 最外执行)+ `recursion_depth_`(上限 `kMaxRecursionDepth` = 32)住上下文,消费方(`run_return`/`unwind`/`dispatch_loop`)一律自 `current_` 读取--无 VM 级基线成员。重入口经 `enter_recursion()` 挂界(边界 = 入场帧深,断言钉边界非零:零帧 = 无驱动,最外执行是 `run()` 职责、不经重入口)、`leave_recursion()` 归还外层边界。
 
-**两口一执行体**:`execute_function(ObjFunction*, ArgList)`(闭包形态,槽 0 = closure 自身)与 `execute_method(Value receiver, ObjFunction*, ArgList)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_aria_fn`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_aria_fn` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
+**两口一执行体**:`execute_function(ObjFunction* function, ArgList args)`(Aria 函数直接调用,槽 0 = function 自身)与 `execute_method(Value receiver, ObjFunction*, ArgList)`(方法形态,槽 0 = receiver 即 this)住 AriaExeContext 公共面,共同委托 eval 层 `Eval::execute_aria_fn`:深度/元数预检(超限报 `StackOverflow`/`WrongArity`) -> 压调用区 `[slot0, a1..aN]`(argc = 实参数,不含槽 0;`args` 契约 = 不得指进 `current_` 值栈,要传栈上段须留足压档余量--扩容搬迁令旧指针悬垂,debug 断言复核) -> `call_aria_fn` 进帧 -> 同步驱动 `dispatch_loop` 至本调用结算。成功 = 栈顶收取返回值;失败合同 = 返 `nullopt` 且载荷留寄存器、嵌套残帧已被 unwind 截净,由调用方按 bool 契约 `return false` 交外层循环续搜。
 
 **run_return 分流**:RETURN 执行体收口 `run_return`,取返回值弹帧后按弹后帧深对边界分档--高于边界 = 帧间返回写回 callee 槽;恰至非零边界 = 本(嵌套)循环收束,值交 `execute_aria_fn` 收取;零边界弹尽 = 主顶层返回(值留栈顶)或协程完成(值写恢复者预留槽后切换)。
 

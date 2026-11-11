@@ -17,7 +17,7 @@ paths:
 - `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；调试位带引号转义、显示位直取原文（分叉在渲染面，对象不设 override）。铸造入口 = `new_string` 工厂族（先查驻留命中返回已有串、未命中才分配+insert），含两段重载 `new_string(gc, lhs, rhs, hash)`（先查后拼：命中零拷贝，哈希为 `hash_str(hash_str(lhs), rhs)` 续算终态）与接管重载 `new_string(gc, data, size, cap, hash)`（buffer 释放责任随三臂移交：命中释放返已有串 / 长串收缩后由接管构造臂零拷贝接管 / 短串 SSO 化后释放）。
 - `ObjFnProto`（`ObjFnProto.hpp`）：GC 托管的函数原型，`ObjType::FN_PROTO`（类型名 `FnProto`），经 `new_fn_proto` 创建；`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。存于 Value 常量池，不直接作为运行期函数值调用。
 - `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
-- `ObjFunction`（`ObjFunction.hpp`）：唯一运行期函数对象，`ObjType::FUNCTION` / 类型名 `Function`；内联 `std::variant` 保存原生载荷（名称 + `NativeFn`）或 aria 载荷（`ObjFnProto*` + upvalue 数组），`is_native()` 查询载荷，`proto()` / `upvalues()` 仅用于 aria 载荷、`fn()` 仅用于原生载荷。共同持 `defining_class_`，经 `new_function` 重载工厂创建；`trace` 只遍历活动载荷和定义类。
+- `ObjFunction`（`ObjFunction.hpp`）：唯一运行期函数对象，`ObjType::FUNCTION` / 类型名 `Function`；内联 `std::variant` 保存原生载荷（名称 + C++ 函数指针 `NativeFn`）或 aria 载荷（`ObjFnProto*` + upvalue 数组），`is_native()` 查询载荷，`proto()` / `upvalues()` 仅用于 aria 载荷、`fn()` 仅用于原生载荷。共同持 `defining_class_`，经 `new_function` 重载工厂创建；`trace` 只遍历活动载荷和定义类。
 - `ObjClass`（`ObjClass.hpp`）：def 类的运行期载体（类级静态表 + superclass 单链，实例字段不在类上）。
 - `ObjInstance`（`ObjInstance.hpp`）：类实例化的产物（所属类 + 实例字段表）。
 - `ObjBoundMethod`（`ObjBoundMethod.hpp`）：被绑定方法值 + 接收者。
@@ -78,7 +78,7 @@ paths:
 
 - 闭包上的 `defining_class_` **一职双任**：super 来源（`LOAD_SUPER_FIELD` 从 `frame.function->defining_class()` 直读）+ **方法性标记**（`is_method()`；读路径 `ObjInstance::load_field_bound` / `LOAD_SUPER_FIELD` 据非空判绑 this）。
 - **判别按戳不按值类型**：MAKE_METHOD 注册时戳、MAKE_STATIC / 类上赋值不戳 ⟹ 静态槽原值直读；赋值闭包无戳 ⟹ 改写后按静态读原值、不再绑定（方法性随值携带）。
-- **挂闭包而非共享的 `ObjFnProto` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一 fn 常量，superclass 运行期可重绑，戳共享 fn 会跨实例串错 super 链。
+- **挂闭包而非共享的 `ObjFnProto` 常量**：函数体内 def 执行 N 次产生 N 个类共用同一原型常量，superclass 运行期可重绑，戳共享原型会跨实例串错 super 链。
 - 非方法闭包（静态方法 fun / lambda / 其余）恒 nullptr。
 - 原生函数沿用同一 `defining_class_` 判据：`register_class_methods` 设置注册类，`new_function` 默认与 `register_class_functions` 保持 nullptr。成员赋值不重写归属，trace 标记定义类；本轮不据此增加通用接收者归属校验。
 - `is_method(Value)` 同时识别脚本/原生实例方法，不把普通函数或已有 BoundMethod 当成待绑定方法。`super` 读取也使用此判据。

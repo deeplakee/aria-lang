@@ -20,7 +20,7 @@ namespace aria {
     class ObjFunction final : public Object {
     public:
         ObjFunction(GC& gc, ObjFnProto* proto);
-        ObjFunction(ObjString* name, NativeFn fn);
+        ObjFunction(ObjString* name, NativeFn native);
         ~ObjFunction() override = default;
 
         ObjFunction(const ObjFunction&)            = delete;
@@ -99,13 +99,13 @@ namespace aria {
 
     // 原生工厂:ObjString* 名称由调用方根化;其他重载内部驻留并自守名称。
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, ObjString* name, NativeFn fn);
+    ObjFunction* new_function(GC& gc, ObjString* name, NativeFn native);
 
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, NativeFn fn);
+    ObjFunction* new_function(GC& gc, NativeFn native);
 
     [[nodiscard]]
-    ObjFunction* new_function(GC& gc, StringView name, NativeFn fn);
+    ObjFunction* new_function(GC& gc, StringView name, NativeFn native);
 
 } // namespace aria
 

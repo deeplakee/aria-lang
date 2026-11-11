@@ -16,10 +16,10 @@ namespace aria {
         ASSERT(proto != nullptr, "function prototype must not be null");
     }
 
-    ObjFunction::ObjFunction(ObjString* name, const NativeFn fn) :
-        Object{ObjType::FUNCTION}, payload_{std::in_place_type<NativeData>, name, fn}, defining_class_{nullptr} {
+    ObjFunction::ObjFunction(ObjString* name, const NativeFn native) :
+        Object{ObjType::FUNCTION}, payload_{std::in_place_type<NativeData>, name, native}, defining_class_{nullptr} {
         ASSERT(name != nullptr, "function name must not be null (use kAnonymousName for anonymous)");
-        ASSERT(fn != nullptr, "function pointer must not be null");
+        ASSERT(native != nullptr, "function pointer must not be null");
     }
 
     ObjString* ObjFunction::name() const noexcept {
@@ -72,16 +72,16 @@ namespace aria {
 
     ObjFunction* new_function(GC& gc, ObjFnProto* proto) { return gc.new_object<ObjFunction>(gc, proto); }
 
-    ObjFunction* new_function(GC& gc, ObjString* name, const NativeFn fn) {
-        return gc.new_object<ObjFunction>(name, fn);
+    ObjFunction* new_function(GC& gc, ObjString* name, const NativeFn native) {
+        return gc.new_object<ObjFunction>(name, native);
     }
 
-    ObjFunction* new_function(GC& gc, const NativeFn fn) { return new_function(gc, kAnonymousName, fn); }
+    ObjFunction* new_function(GC& gc, const NativeFn native) { return new_function(gc, kAnonymousName, native); }
 
-    ObjFunction* new_function(GC& gc, const StringView name, const NativeFn fn) {
+    ObjFunction* new_function(GC& gc, const StringView name, const NativeFn native) {
         const auto name_str = new_string(gc, name);
         const auto guard    = gc.make_guard(name_str);
-        return new_function(gc, name_str, fn);
+        return new_function(gc, name_str, native);
     }
 
 } // namespace aria

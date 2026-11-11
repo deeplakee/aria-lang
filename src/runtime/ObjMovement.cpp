@@ -16,7 +16,7 @@ namespace aria {
             gc.mark_value(*p); // mark_value 对非对象 Value no-op,栈槽含 int/f64/bool/nil 安全
         }
         for (const auto& frame: frames_.span()) {
-            gc.mark_object(frame.function); // trace 级联标 function/upvalues;容 nullptr
+            gc.mark_object(frame.function); // trace 级联标原型和 upvalues;容 nullptr
             gc.mark_object(frame.module);
         }
         // 开链节点可能仅被本链引用(闭包已死),须单独标(mark 幂等,双标无害)。

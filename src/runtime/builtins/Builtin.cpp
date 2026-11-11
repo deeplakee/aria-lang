@@ -206,10 +206,10 @@ namespace aria {
 
         // 全局面函数装载口:按名写入给定 builtins 表;须在构造临界区(GC 挂起)内调用 -- 白色对象
         // 免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根。
-        void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> fns) {
-            for (const auto& [name, fn]: fns) {
-                const auto fn_obj = new_function(gc, name, fn);
-                table.set(Value::from_obj(fn_obj->name()), Value::from_obj(fn_obj));
+        void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> functions) {
+            for (const auto& [name, fn]: functions) {
+                const auto function = new_function(gc, name, fn);
+                table.set(Value::from_obj(function->name()), Value::from_obj(function));
             }
         }
 
@@ -217,16 +217,16 @@ namespace aria {
 
     void Builtin::register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {
-            const auto fn_obj = new_function(gc, name, fn);
-            fn_obj->set_defining_class(klass);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
+            const auto method = new_function(gc, name, fn);
+            method->set_defining_class(klass);
+            klass->set_field(method->name(), Value::from_obj(method));
         }
     }
 
     void Builtin::register_class_functions(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> functions) {
         for (const auto& [name, fn]: functions) {
-            const auto fn_obj = new_function(gc, name, fn);
-            klass->set_field(fn_obj->name(), Value::from_obj(fn_obj));
+            const auto function = new_function(gc, name, fn);
+            klass->set_field(function->name(), Value::from_obj(function));
         }
     }
 

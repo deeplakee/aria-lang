@@ -18,12 +18,12 @@ namespace aria {
         if (const auto argc = info.size(); argc != 1) {
             return ctx.arity_error(argc, 1);
         }
-        const auto closure = try_as_obj<ObjFunction>(info[0]);
-        if (closure == nullptr || closure->is_native()) {
+        const auto function = try_as_obj<ObjFunction>(info[0]);
+        if (function == nullptr || function->is_native()) {
             return ctx.fail(ErrorCode::TypeMismatch, "argument must be an aria function, got {}", type_name(info[0]));
         }
         const auto co = new_movement(ctx.gc(), ctx.host());
-        co->push(Value::from_obj(closure));       // 槽 0:被调闭包(首启进帧的 callee 槽;push 扩容不触 GC)
+        co->push(Value::from_obj(function));      // 槽 0:入口函数(首启进帧的 callee 槽;push 扩容不触 GC)
         info.set_return_val(Value::from_obj(co)); // 返回槽发布,建成即根化;自分配点至此无 GC 点,免守卫
         return true;
     }
@@ -54,10 +54,10 @@ namespace aria {
         const auto payload = static_cast<u8>(info.size() - 1);
         if (co->frames().empty()) {
             // 首启:载荷即被调函数实参(上界交 check_arity 报被调者元数,默认参数/varargs 照常)。
-            const auto closure = try_as_obj<ObjFunction>(co->peek(0));
-            ASSERT(closure != nullptr && !closure->is_native(), "coroutine slot-0 must be an aria function");
-            const auto fn = closure->proto();
-            if (!ctx.check_arity(fn, payload)) {
+            const auto function = try_as_obj<ObjFunction>(co->peek(0));
+            ASSERT(function != nullptr && !function->is_native(), "coroutine slot-0 must be an aria function");
+            const auto proto = function->proto();
+            if (!ctx.check_arity(proto, payload)) {
                 return false;
             }
             ctx.host().enter_coroutine(co);
@@ -66,7 +66,7 @@ namespace aria {
             }
             // 元数已预检、协程帧栈必空,直取 call_aria_fn 的整形加进帧尾段;varargs 打包顶
             // maybe_collect 时恢复者经 previous_ 边可达。
-            co->enter_frame(closure, co->prepare_call_args(fn, payload));
+            co->enter_frame(function, co->prepare_call_args(proto, payload));
         } else {
             // 已挂起:yield 是单值表达式,只收 0 或 1 个载荷。
             if (payload > 1) {

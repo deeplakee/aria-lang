@@ -159,7 +159,7 @@ namespace aria {
 
     FunctionCtx* CodeGen::cur_fn_ctx() const noexcept { return mod_ctx_->current_fn_ctx_; }
 
-    CodeUnit* CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->fn_->unit(); }
+    CodeUnit* CodeGen::cur_cu() const noexcept { return &cur_fn_ctx()->proto_->unit(); }
 
     u16 CodeGen::add_constant_or_fail(const Value value, const SourceLoc loc) const {
         // 溢出预检 fail CodeUnitTooLarge，使 CodeUnit::add_constant 内部 ASSERT 永不触达。
@@ -526,17 +526,17 @@ namespace aria {
         // varargs 恒末位（Parser 保证）：rest 槽由 call_aria_fn 打包多余实参为 list，帧参数槽深 = arity + is_varargs。
         const bool has_varargs = !params.empty() && params.back().is_varargs;
         const auto fixed_arity = static_cast<u8>(params.size() - (has_varargs ? 1 : 0));
-        const auto fn = new_fn_proto(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
+        const auto proto = new_fn_proto(gc_, mod_ctx_->module_, name, fixed_arity, min_arity(params), has_varargs);
         // 入池后即经 module 根链可达。
-        const auto fn_idx = add_constant_or_fail(Value::from_obj(fn), decl_loc);
-        // CLOSURE fn_idx：VM 现场按捕获描述表（下方 flush 进 fn 元数据）包 ObjFunction。
+        const auto proto_index = add_constant_or_fail(Value::from_obj(proto), decl_loc);
+        // CLOSURE proto_index：VM 按原型上的捕获描述表创建闭包。
         cur_cu()->emit_op(OpCode::CLOSURE, decl_loc.line());
-        cur_cu()->emit_word(fn_idx, decl_loc.line());
+        cur_cu()->emit_word(proto_index, decl_loc.line());
 
         bind_function_value(kind, name, decl_loc);
 
         // 切到子上下文：cu 随游标自动切到子 unit，无需 save/restore；enclosing_ 回父。
-        const auto child          = new FunctionCtx{fn, cur_fn_ctx(), kind};
+        const auto child          = new FunctionCtx{proto, cur_fn_ctx(), kind};
         mod_ctx_->current_fn_ctx_ = child;
 
         compile_params(params, decl_loc);
@@ -545,9 +545,8 @@ namespace aria {
         emit_stmt(body);
         emit_implicit_return(body.loc());
 
-        // 把子上下文的捕获描述 flush 进 fn 元数据（CLOSURE 先发射不碍事：表在 ObjFnProto 上，
-        // VM 执行 CLOSURE 时才读）。
-        fn->upvalue_descs().copy_from(child->upvalues_);
+        // 捕获描述写入原型；VM 执行 CLOSURE 时才读。
+        proto->upvalue_descs().copy_from(child->upvalues_);
 
 #ifdef DEBUG_PRINT_COMPILED_CODE
         // 打印刚编译完成函数的反汇编。

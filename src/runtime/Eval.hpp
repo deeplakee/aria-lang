@@ -26,18 +26,18 @@ namespace aria {
         // 上下文在可能换指的调用点之后经内部指针重取(见 Eval.cpp 函数头注释)。
         static bool dispatch_loop(AriaExeContext& ctx);
 
-        // 闭包调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
+        // Aria 函数调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
         // 整形后进帧。失败 WrongArity/StackOverflow。
-        static bool call_aria_fn(AriaExeContext& ctx, ObjFunction* obj, u8 argc);
+        static bool call_aria_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
         // 重入执行体(AriaExeContext 重入口 execute_function/execute_method 的共用体):压 slot0 与
         // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
-        // 收取闭包返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
+        // 收取函数返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
         // false 交外层续搜;递归深度达 kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报
         // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
         // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
         [[nodiscard]]
-        static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* closure, ArgList args);
+        static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
         // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
         // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
@@ -71,16 +71,16 @@ namespace aria {
         // call_value 分发。方法值无需守卫:覆写后经类表槽/缓存可达。
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* obj, u8 argc);
 
-        // 原生函数调用:同步调 obj->fn(),不进帧;bool 契约透传。
-        static bool call_native_fn(AriaExeContext& ctx, ObjFunction* obj, u8 argc);
+        // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。
+        static bool call_native_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
         // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
         // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, ObjFunction* native, ArgList args);
+        static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
         // 外部调用口(非循环上下文发起的同步调用):按被调值形态分派 -- bound 解内层沿用自身
-        // receiver(ctor 契约:内层为闭包或原生),原生走 execute_native_fn,闭包交 execute_aria_fn
+        // receiver(ctor 契约:内层为函数对象),原生走 execute_native_fn,aria 函数交 execute_aria_fn
         // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
@@ -151,7 +151,7 @@ namespace aria {
         // 纯调用,不再解析。
         static bool run_call_method(AriaExeContext& ctx, u8 argc);
 
-        // LOAD_SUPER_FIELD 执行体:defining class 取顶帧 closure 直读(编译器不变式,ASSERT 把关),
+        // LOAD_SUPER_FIELD 执行体:defining class 从顶帧的 function 直读(编译器不变式,ASSERT 把关),
         // 自父类沿链读穿透、不含 defining 自身;命中脚本/原生实例方法则绑 this=帧槽 0,其余原值直读。
         // 全链 miss 为语言可达错误,经协议 fail。
         static bool run_load_super_field(AriaExeContext& ctx, ObjString* name);

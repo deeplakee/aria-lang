@@ -2,7 +2,7 @@
 
 面向有编程经验读者的 aria 语言教程：从构建运行讲到类、异常、模块与协程，附内建速查。行文是
 **教学视角**（示例驱动、由浅入深）；语法产生式的规范在
-[docs/grammar.txt](../grammar.txt)，语义设计见 `.claude/reference/`。
+[docs/grammar.txt](../grammar.txt)。
 
 ## 怎么跑示例
 

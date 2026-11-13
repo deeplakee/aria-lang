@@ -6,35 +6,39 @@ aria 是用 C++23 实现的**跨平台**解释器（自研脚本语言，目标�
 
 - **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M6（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`Coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子、`__str__` 显示钩子（经类面咨询口：实例字段出局、类值走元类链、容器调试位零执行））、字符串插值、显示虚函数退役（`to_string` 删除，显示定制唯一面 = `__str__`）。
 - **待落地**：range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
-- 里程碑级细节见 `.claude/reference/runtime/vm-design.md` §6 路线表，各特性语义决策见对应 `.claude/reference/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
+- 里程碑级细节见 `.agents/design/vm-design.md` §6 路线表，各特性语义决策见对应 `.agents/design/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 
 ## 文档与参考（按需加载）
 
-### 模块参考 `.claude/rules/<dir>.md`（9 个，自动加载）
+### 模块参考 `.agents/rules/<dir>.md`（9 个，自动加载）
 
 frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读则不进上下文：
 
 | 源码目录 | 参考文件 | 覆盖 |
 | --- | --- | --- |
-| `src/common.hpp`/`type.hpp`/`sys.hpp`/`aria.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.claude/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / aria(项目级定义) / main(解释器入口) / interpreter(CLI 分发核心) |
-| `src/util/**` | `.claude/rules/util.md` | fs / utf8 / source_file / io / util / cli |
-| `src/value/**` | `.claude/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
-| `src/error/**` | `.claude/rules/error.md` | ErrorCode / Error / AriaException |
-| `src/compile/**` | `.claude/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
-| `src/bytecode/**` | `.claude/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
-| `src/runtime/**` | `.claude/rules/runtime.md` | FrameStack / AriaExeContext 执行上下文本体 / ObjMovement GC 对象壳 / Eval 驱动引擎 / AriaVM 宿主 / Builtins（含异常通道落地状态） |
-| `src/object/**` | `.claude/rules/object.md` | Object / ObjString / ObjFnProto / ObjUpvalue / ObjFunction / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjException / ObjModule / ObjMovement / iterator 族 |
-| `src/memory/**` | `.claude/rules/memory.md` | Buffer / Array / Allocator / RawAlloc / HashTable / InternPool / ShellPool / GC |
+| `src/common.hpp`/`type.hpp`/`sys.hpp`/`aria.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.agents/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / aria(项目级定义) / main(解释器入口) / interpreter(CLI 分发核心) |
+| `src/util/**` | `.agents/rules/util.md` | fs / utf8 / source_file / io / util / cli |
+| `src/value/**` | `.agents/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
+| `src/error/**` | `.agents/rules/error.md` | ErrorCode / Error / AriaException |
+| `src/compile/**` | `.agents/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
+| `src/bytecode/**` | `.agents/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
+| `src/runtime/**` | `.agents/rules/runtime.md` | FrameStack / AriaExeContext 执行上下文本体 / ObjMovement GC 对象壳 / Eval 驱动引擎 / AriaVM 宿主 / Builtins（含异常通道落地状态） |
+| `src/object/**` | `.agents/rules/object.md` | Object / ObjString / ObjFnProto / ObjUpvalue / ObjFunction / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjException / ObjModule / ObjMovement / iterator 族 |
+| `src/memory/**` | `.agents/rules/memory.md` | Buffer / Array / Allocator / RawAlloc / HashTable / InternPool / ShellPool / GC |
 
-### 深度设计文档 `.claude/reference/`（不自动加载，需要时 Read）
+### 设计与规格 `.agents/design/`（不自动加载，需要时 Read）
 
-- `bytecode/bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
-- `runtime/vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
-- `runtime/import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
+- `bytecode-instruction-set.md` -- 指令集规格（功能 / 操作数位宽 / 栈效应 / 反汇编格式）。
+- `vm-design.md` -- AriaVM / 执行上下文设计与 M1-M6 分阶段路线。
+- `import-handling-overview.md` / `import-path-resolution.md` -- import 端到端处理与路径解析细节。
+- `compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
+- `error-message-style.md` -- 报错文案语言与句式家族规范（机械门禁 `tools/check_error_messages.py`）。
+
+### 踩坑与测量笔记 `.agents/notes/`（不自动加载，需要时 Read）
+
 - `runtime/exception-implementation-pitfalls.md` -- M3 异常踩坑归档（含 finally 裁撤与 defer 后继说明；异常相关特性重启前重读）。
 - `runtime/class-implementation-pitfalls.md` -- M5 类踩坑归档（bound 缓存已取消 = 读路径每次访问现场绑定、peek-不弹栈白色对象发布、`init_` 写点（ctor 自 super 派生 + `set_field` 同步）、Locate 合流栈泄漏；类相关特性重启前重读）。
 - `runtime/coroutine-implementation-pitfalls.md` -- M6 协程踩坑归档（槽协议、切换根安全、链式 unwind 四步定序、嵌套执行的切换红线；协程相关特性重启前重读）。
-- `compile/compound-assignment-lowering.md` / `loopctx.md` -- 复合赋值 lowering、LoopCtx 与 break/continue 回填机制。
 - `memory/ast-arena-notes.md` -- AST bump arena 契约与实测（动 Parser/CodeGen 分配与遍历路径前先读）。
 - `compile/lexer-notes.md` -- 词法层实测数字与已实测否决的优化清单（动词法性能前先读；含测量纪律与尚未纳入基准的输入形态）。
 - `bench/lang-bench-notes.md` -- aria 源文件级性能基准（`bench/lang/` 与它的驱动 `lang_bench.py`）的测量纪律与端口纪律、跨语言覆盖差异的理由、已实测排除项。
@@ -45,11 +49,14 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ### 技能与软链现状
 
-- `.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.claude/rules/<dir>.md`（9 个模块相对软链，与规则文件同名，`core.md` 对应技能 `aria-core`）：ZCode 把同一份规则文件暴露为技能、按 frontmatter `description` 自动触发，`paths:` 字段仅 Claude Code 消费。
-- `.zcode/skills/aria-commit/SKILL.md` 收 commit 说明规范（frontmatter 供技能注册、正文即规范），**每次 commit 前必读**。
-- 新增模块规则：建 `.claude/rules/<dir>.md`（frontmatter 带 name/description/paths），并补一条 `.zcode/skills/aria-<dir>/SKILL.md` 相对软链。
+实体一律住中立目录 `.agents/`（`rules/` 模块参考、`skills/` 场景技能、`notes/` 踩坑与测量笔记）；`.zcode/skills/` 与 `.claude/rules/` 只是各工具的**软链适配层**：
 
-> 同步义务：改模块代码时同步更新对应 `.claude/rules/<dir>.md`；改设计时同步 `.claude/reference/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
+- `.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.agents/rules/<dir>.md`（9 个模块技能，`core.md` 对应技能 `aria-core`）：ZCode 按 frontmatter `description` 自动触发。
+- `.claude/rules/<dir>.md` **软链** → `../../.agents/rules/<dir>.md`（同名 9 条）：Claude Code 按 frontmatter `paths:` 读到匹配源码路径时自动加载。
+- `.agents/skills/aria-commit/SKILL.md` 收 commit 说明规范（`.zcode/skills/aria-commit/SKILL.md` 软链之），**每次 commit 前必读**。
+- 新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths），并补 `.zcode/skills/aria-<dir>/SKILL.md` 与 `.claude/rules/<dir>.md` 两条相对软链。
+
+> 同步义务：改模块代码时同步更新对应 `.agents/rules/<dir>.md`；改设计时同步 `.agents/design/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
 
 ## 构建
 
@@ -62,8 +69,8 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 ## Git 提交纪律（强制）
 
 - **改动完成不自行 commit**：代码/文档改完、验证全绿后即向用户报告并停手，改动留在工作区等 review；用户明确说提交（「commit」/「提交吧」等）后才执行 `git commit`。不抢先 `git add` 备提交。
-- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `.zcode/skills/aria-commit/SKILL.md` 成文，**一律英文 ASCII-only**（禁 CJK / 全角标点 / Unicode em-dash，破折号用 `--`）：标题行 `<type>(<scope>): <subject>`（type 固定九类枚举、祈使句动词原形、无句号、软目标 ≤ 50 列硬上限 72 列）+ **正文默认不写**（只在标题与 diff 说不清 why 时写 1~3 句散文、≤ 4 行，不分段标签、不列 bullet）+ 可选末行 `Tests: ...`（跑过测试就写实际结果）。只写本次改了什么：实现步骤流水、评审/决策注记、被否方案推导、实测数字、文档指针、规划词汇一律不进说明（各一条反例见规范 §3）。
-- **落笔前加载技能 `aria-commit`（= `.zcode/skills/aria-commit/SKILL.md` 本体）并走规范 §4 五步**，不凭记忆：① `git add -u` 后 `git diff --cached --stat` 核范围；② 说明写进临时文件（`/tmp/commit_msg.txt` 一类），不用 `-m` 随手一句；③ 跑 `python3 tools/check_commit_msg.py <file>`，必须返回 0；④ `git commit -F <file>`（改已有说明用 `git commit --amend -F <file>`，仅限未推送）；⑤ `git log -1 --format=%B` 复读，对规范 §7 自检清单逐条过（「正文是不是在讲过程」脚本判不出）。第 ③ 步另有 `commit-msg` 钩子（`tools/hooks/`，经 `git config core.hooksPath tools/hooks` 启用）在落库时自动兜底，违规直接拒提交。
+- 用户确认提交后：一批一 commit（一次 commit = 一次 review 通过的批），提交说明按根目录 `.agents/skills/aria-commit/SKILL.md` 成文，**一律英文 ASCII-only**（禁 CJK / 全角标点 / Unicode em-dash，破折号用 `--`）：标题行 `<type>(<scope>): <subject>`（type 固定九类枚举、祈使句动词原形、无句号、软目标 ≤ 50 列硬上限 72 列）+ **正文默认不写**（只在标题与 diff 说不清 why 时写 1~3 句散文、≤ 4 行，不分段标签、不列 bullet）+ 可选末行 `Tests: ...`（跑过测试就写实际结果）。只写本次改了什么：实现步骤流水、评审/决策注记、被否方案推导、实测数字、文档指针、规划词汇一律不进说明（各一条反例见规范 §3）。
+- **落笔前加载技能 `aria-commit`（= `.agents/skills/aria-commit/SKILL.md` 本体）并走规范 §4 五步**，不凭记忆：① `git add -u` 后 `git diff --cached --stat` 核范围；② 说明写进临时文件（`/tmp/commit_msg.txt` 一类），不用 `-m` 随手一句；③ 跑 `python3 tools/check_commit_msg.py <file>`，必须返回 0；④ `git commit -F <file>`（改已有说明用 `git commit --amend -F <file>`，仅限未推送）；⑤ `git log -1 --format=%B` 复读，对规范 §7 自检清单逐条过（「正文是不是在讲过程」脚本判不出）。第 ③ 步另有 `commit-msg` 钩子（`tools/hooks/`，经 `git config core.hooksPath tools/hooks` 启用）在落库时自动兜底，违规直接拒提交。
 
 ## 输出与格式化（强制）
 
@@ -73,7 +80,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 错误处理（src/error/）
 
-原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.claude/rules/error.md`，通道 2 的落地状态见 `.claude/rules/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
+原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/rules/error.md`，通道 2 的落地状态见 `.agents/rules/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
 - **四条错误通道**（设计见 vm-design.md §4.5-§4.8）：
@@ -81,7 +88,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
   2. **VM 自管异常状态（运行期主通道）**：throw/catch 与 VM 检测到的运行时错误统一走 VM 机制，错误实体是 `ObjException`（携码 + 烘焙消息，**不含位置**），装箱为 Value 存入当前执行上下文的挂起错误寄存器。故**运行期错误不就地构造 Error**：`Error` 仅在 `unwind()` 全未命中的出口物化，位置由该出口烘焙的逐帧 `at` 堆栈跟踪给出。
   3. **`AriaException` 派生**（C++ 异常）：仅用于 VM 之外、跨 C++ 调用栈的边界（Parser / CodeGen 深层 `fail()` 抛出、顶层 catch 翻译为 `Result`）；VM 主循环内不用（不跨 C++ 栈且是热路径）。
   4. **`fatal_error()`**（`[[noreturn]]`）：Internal / Resource 类不可恢复错误（`Unreachable`/`OutOfMemory`），打印 stderr 后 `std::exit(1)`。
-- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：消息壳 `Category: Code` 由枚举名经 `#` 派生（本地化要另加名表、破坏单一事实源），故 detail 也一律英文，禁 CJK 与全角标点；同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）。适用面含编译期报错、运行期报错、CLI help/usage、源码内 ASSERT 文案（注释与文档不受约束）；**ASSERT 文案不重复宏已打的文件/行/函数名**（不写 `Class::method: ` 前缀）。通则 8 条、句式家族表与断言规则见 `.claude/reference/error-message-style.md`，机械门禁 `tools/check_error_messages.py`。
+- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：消息壳 `Category: Code` 由枚举名经 `#` 派生（本地化要另加名表、破坏单一事实源），故 detail 也一律英文，禁 CJK 与全角标点；同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）。适用面含编译期报错、运行期报错、CLI help/usage、源码内 ASSERT 文案（注释与文档不受约束）；**ASSERT 文案不重复宏已打的文件/行/函数名**（不写 `Class::method: ` 前缀）。通则 8 条、句式家族表与断言规则见 `.agents/design/error-message-style.md`，机械门禁 `tools/check_error_messages.py`。
 
 ## 工具
 
@@ -110,7 +117,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 类型（src/type.hpp）
 
-**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.claude/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
+**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.agents/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
 
 ## 代码组织
 
@@ -145,7 +152,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 陷阱
 
-- `SourceFile` 以指针传入（非拥有）：其借出的 `StringView`（`content()`/`Token::lexeme`）与 AST 节点烙入的 `SourceLoc` 须在 `SourceFile` 存活且地址不变期间使用--就位后再 tokenize，之后勿 move（SSO 短串 move 会改 data 地址）。`Error` 位置已烘焙、不受此约束。完整分析见 `.claude/rules/util.md`。
+- `SourceFile` 以指针传入（非拥有）：其借出的 `StringView`（`content()`/`Token::lexeme`）与 AST 节点烙入的 `SourceLoc` 须在 `SourceFile` 存活且地址不变期间使用--就位后再 tokenize，之后勿 move（SSO 短串 move 会改 data 地址）。`Error` 位置已烘焙、不受此约束。完整分析见 `.agents/rules/util.md`。
 - 源码加载时 CRLF/CR 已归一化为 LF，`line`/`locate` 内部只按 `\n` 切行。
 
 ## 测试
@@ -156,7 +163,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - 测试链接 `aria_core` + `gtest_main`，用 `gtest_discover_tests` 注册到 ctest。
 - 临时文件用 `testing::TempDir()`（gtest 提供）写入，测试结束自动清理。
 - `tests/language/` 另有 aria 自己写的脚本语料（正向 assert 收口、负向钉错误码，端到端驱动解释器，兼作 GC 压力网），跑法与约束见 `tests/language/README.md`；改语言面时它同样是验收面。
-- `bench/lang/` 是**性能**语料（同为 aria 源码，但逐文件起进程计时、可与 `.py` / `.js` / `.lua` / `.java` 端口对照）：清单与跑法见 `bench/lang/README.md`，驱动 `bench/lang/lang_bench.py`（数字是它的输出，不留档），纪律与覆盖差异的理由见 `.claude/reference/bench/lang-bench-notes.md`；被测二进制用原样的 Release 构建（LTO 默认开，别为跑基准关优化）。
+- `bench/lang/` 是**性能**语料（同为 aria 源码，但逐文件起进程计时、可与 `.py` / `.js` / `.lua` / `.java` 端口对照）：清单与跑法见 `bench/lang/README.md`，驱动 `bench/lang/lang_bench.py`（数字是它的输出，不留档），纪律与覆盖差异的理由见 `.agents/notes/bench/lang-bench-notes.md`；被测二进制用原样的 Release 构建（LTO 默认开，别为跑基准关优化）。
 - `bench/profile/` 是**指令频度画像**语料与驱动 `opcode_profile.py`（画像负载 8 个已于 2026-09-27 并入 `bench/lang/workloads/` 合并语料,画像跑 16 个负载），配 `-DARIA_OPCODE_PROFILE=ON` 探针构建（`src/runtime/opcode_profile.hpp`，常态构建零开销）：量指令构成（高频指令 / 相邻对 / 操作数分布 / 方法面调用量）而非墙钟，为特化 / 融合 / 快派发类改动供数；快照报告住其目录。
 
 `build/` 与 `cmake-build-*` 均已加入 `.gitignore`。

@@ -1,7 +1,7 @@
 # M6 协程（单循环切换模型）实现坑点记录
 
 > M6 协程通道的坑点与不变式归档，**协程/切换/跨上下文相关特性重启前必读**。设计基线见
-> `vm-design.md` §4.9，机制现状见 `.claude/rules/runtime.md`「协程」节，异常侧背景（寄存器
+> `vm-design.md` §4.9，机制现状见 `.agents/rules/runtime.md`「协程」节，异常侧背景（寄存器
 > 模型/unwind/跟踪行）见 `exception-implementation-pitfalls.md`（坑编号 #1-#20，本文沿用
 > 其「坑 #N」编号空间之外的独立编号）。落地批次：B1 对象化（96aa55e/bc93d79/d0ac244/12bee08）、
 > B2 状态机与四原语（8adae5c/5b3151a/e1508fc）、B3 跨协程错误（310a20c）；重入口批（2026-10，

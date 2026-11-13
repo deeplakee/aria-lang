@@ -22,7 +22,7 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
-**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,签名即上下文(dispatch_loop 体内经本轮指针在换指点后重取;unwind 恒持 vm 跨协程跳链);AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.claude/rules/runtime.md` 的 Eval 节。
+**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,签名即上下文(dispatch_loop 体内经本轮指针在换指点后重取;unwind 恒持 vm 跨协程跳链);AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.agents/rules/runtime.md` 的 Eval 节。
 
 ## 3. 结构草图
 
@@ -298,7 +298,7 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 | **M2 全局与模块(已落地)** | `ObjModule`、模块表、`DEF/LOAD/STORE_GLOBAL`、内置函数注册机制(bytecode-instruction-set.md §6.4 待决项在此定) | 模块顶层 var/fun 可定义可读 |
 | **M3 异常(已落地)** | `TryRecord` 定稿字段、统一寄存器传播 + `unwind`、`THROW`、运行期位置标注与未捕获堆栈跟踪(§4.8);finally 不做(裁撤,善后后继 defer 为可选后续,见 grammar.txt 说明区与坑点文档裁撤记录) | try/catch 单测,跨帧 unwind 正确 |
 | **M4 闭包(已落地)** | `ObjFunction`/`ObjUpvalue`、`CLOSURE`、open upvalue 开链(按槽址降序)、`CallFrame` 换持 `ObjFunction*`(callable 收敛为闭包,顶层入口也是闭包,`ObjFnProto` 退为常量池内部物)、值栈增长第三类重绑(§4.1)、编译翻转(`resolve_upvalue` 递归捕获解析 + `CLOSE_UPVALUE` 作用域退出批量关闭)。语义模型「捕获即引用」(Lua/clox 式);defer 善后为可选后续 | 计数器闭包等经典样例正确,NaN-boxing 与 TagValue 双值表示配置下全绿 |
-| **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.claude/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjFunction) | 类定义/实例化/继承/super 样例通过 |
+| **M5 类与对象(已落地)** | `ObjClass`/`ObjInstance`/`ObjBoundMethod`、`MAKE_*` 系列、bootstrap Object 根类、`init` 缓存(bytecode-instruction-set.md §5.5;六项设计决策:无 meta/静态+方法单表/构造期 bootstrap Object/bound 缓存进实例 fields 表(三铁则；已反转取消,见 `.agents/rules/object.md`「类成员读写与绑定方法不缓存」)/STORE_FIELD 与 MAKE_STATIC 镜像双指令/defining class 挂 ObjFunction) | 类定义/实例化/继承/super 样例通过 |
 | **M6 协程 + GC 根(已落地)** | `ObjMovement : Object`(重命名 + trace + `ObjType::MOVEMENT`,主上下文一并 GC 分配)、GC 根收敛 `current_` 单点、**单循环切换模型**(§4.9):`Coroutine.create/resume/yield/status` 原生函数(经 `Coroutine` 类、builtins_ 裸名曝光)+ call_native_fn 善后落进场 ctx + RETURN 完成切回解链 + 跨协程错误 `unwind` 链式多跳;主上下文里 yield 即运行期错误(`run()` 维持两态,`ExecOutcome` 退役) | 协程生成器样例;stress GC 下多协程无悬垂;三上下文连死多跳与跟踪截断语料 |
 
 | **M6 后:显示钩子与咨询面(已落地)** | 类面基建(六零表单例类 / `load_field_from_class` 咨询缝 / 类值元类链 / 协程模块并入类面,§4.12)+ 显示渲染面(`stringify`/`concat_values`/外部调用机器)+ `to_string` 虚函数退役 | `__str__` 语料与单测(1378 x2 绿) |
@@ -322,12 +322,12 @@ M1 目标只有一句话:**让一个手写/编译产出的 CodeUnit 在 VM 里�
 
 ## 8. 参考
 
-- `.claude/reference/bytecode/bytecode-instruction-set.md`:指令集/操作数编码/栈效应/lowering(VM 实现的操作语义基准)。
+- `.agents/design/bytecode-instruction-set.md`:指令集/操作数编码/栈效应/lowering(VM 实现的操作语义基准)。
 - `src/runtime/FrameStack.hpp`:帧栈模板 + `truncate`(unwind 用)。
 - `src/bytecode/CodeUnit.hpp`:`TryRecord`/`find_try_handler`(异常查表已就绪)。
 - AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。
-- `.claude/reference/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
-- `.claude/reference/runtime/coroutine-implementation-pitfalls.md`:M6 协程实现踩坑归档(§4.9 的实现级细节:槽协议/切换根安全/链式 unwind 定序/嵌套执行的切换红线)。
+- `.agents/notes/runtime/exception-implementation-pitfalls.md`:M3 异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;M4 补录闭包 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
+- `.agents/notes/runtime/coroutine-implementation-pitfalls.md`:M6 协程实现踩坑归档(§4.9 的实现级细节:槽协议/切换根安全/链式 unwind 定序/嵌套执行的切换红线)。
 - **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。
 
 ## 统一 Function 表示

@@ -1,6 +1,6 @@
 # M3 异常（try/catch/throw）实现坑点记录
 
-> M3 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.claude/rules/runtime.md`「VM 异常通道」，发射侧见 `.claude/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属 M3、#17-#20 属 M4 闭包的 upvalue 关闭与截栈/弹帧交互（见下「M4 补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下 M3b 节）。
+> M3 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.agents/rules/runtime.md`「VM 异常通道」，发射侧见 `.agents/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属 M3、#17-#20 属 M4 闭包的 upvalue 关闭与截栈/弹帧交互（见下「M4 补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下 M3b 节）。
 
 ---
 
@@ -162,7 +162,7 @@ public:
 | 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, repr(V))` |
 | 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`println(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码 + 原消息） |
 
-**Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.claude/rules/error.md`）。
+**Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.agents/rules/error.md`）。
 
 **两硬约束都满足**：
 - 类型保留：用户 throw 存原值，catch 绑原值 ✅。

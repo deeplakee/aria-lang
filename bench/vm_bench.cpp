@@ -3,7 +3,7 @@
 // VM 层性能基准:方法派发/迭代协议/调用开销,每行压一种派发形态、迭代次数统一 kIterations,
 // ns/次可跨行比较。核心手法 = 同二进制内「协议形态(PREPARE_METHOD + CALL_METHOD) vs 预绑定
 // 形态(先读方法值再调)」对照,差值即不绑定派发可回收的上界。数字与解读见
-// .claude/reference/bytecode/bytecode-instruction-set.md §6.2。计时单位是毫秒级整段运行,
+// .agents/design/bytecode-instruction-set.md §6.2。计时单位是毫秒级整段运行,
 // best-of-N 循环收在普通函数里(与 lexer_bench 的不抽外壳纪律差异见 lexer-notes §1)。
 //
 // 复现(无 LTO,理由同 lexer_bench):

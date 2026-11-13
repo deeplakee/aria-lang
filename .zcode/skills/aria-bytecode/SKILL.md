@@ -1,1 +1,1 @@
-../../../.claude/rules/bytecode.md
+../../../.agents/rules/bytecode.md

@@ -1,1 +1,1 @@
-../../../.claude/rules/object.md
+../../../.agents/rules/object.md

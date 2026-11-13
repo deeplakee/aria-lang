@@ -1,1 +1,1 @@
-../../../.claude/rules/error.md
+../../../.agents/rules/error.md

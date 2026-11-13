@@ -15,7 +15,7 @@ MicroPython run-perfbench 都用平均;CLBG / Ruby benchmark-driver 默认用最
     进程总耗时 = 进程启动 + 词法/编译 + VM bootstrap + 负载(即"直接跑这个文件"的耗时)
 
 两者之差是该脚本的启动+编译开销。**跨语言对照一律看负载段**:总耗时把各运行时的启动成本混了进来
-(各运行时启动成本量级见 .claude/reference/bench/lang-bench-notes.md §1),只有负载段是同一份负载的读数。
+(各运行时启动成本量级见 .agents/notes/bench/lang-bench-notes.md §1),只有负载段是同一份负载的读数。
 
 输出:测量期间进度打 stderr,测完在 stdout 打整份报告--速览(每门对照语言领先/落后多少行)、aria
 自身的绝对值表、跨语言对照表(每门语言的绝对耗时 + 相对 aria 的倍数)、值一致性门禁,末尾是固定列宽

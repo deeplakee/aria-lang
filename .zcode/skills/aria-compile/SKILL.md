@@ -1,1 +1,1 @@
-../../../.claude/rules/compile.md
+../../../.agents/rules/compile.md

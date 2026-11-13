@@ -1,1 +1,1 @@
-../../../.claude/rules/util.md
+../../../.agents/rules/util.md

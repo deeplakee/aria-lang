@@ -26,7 +26,7 @@ local-*.md
 # Python 字节码（bench 驱动）
 __pycache__/
 
-# Claude Code 本地配置（项目文档 .claude/rules / reference / plans 入库）
+# Claude Code 本地配置（规则软链适配层与 .agents/ 实体均入库）
 .claude/settings.local.json
 .claude/.local/
 

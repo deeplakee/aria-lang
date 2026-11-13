@@ -1,1 +1,1 @@
-../../../.claude/rules/runtime.md
+../../../.agents/rules/runtime.md

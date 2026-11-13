@@ -1,0 +1,71 @@
+---
+name: aria-core
+description: aria 解释器（C++23）顶层公共头模块参考：common.hpp（宏/USING_NANBOXING）、type.hpp（i32/String/List/Result 等类型别名）、sys.hpp（平台宏）、aria.hpp（项目级定义：kAriaExtension 等语言级命名）、main.cpp（入口）、interpreter.hpp（CLI 分发核心）。读写这些顶层文件或涉及类型别名选择、平台检测、项目级命名定义、CLI 入口分发时使用。
+paths:
+  - "src/aria.hpp"
+  - "src/common.hpp"
+  - "src/type.hpp"
+  - "src/sys.hpp"
+  - "src/main.cpp"
+  - "src/interpreter.hpp"
+  - "src/interpreter.cpp"
+---
+
+# 顶层公共头模块参考
+
+## `common.hpp`
+
+项目级公共头，被几乎所有 .hpp/.cpp 间接 include，置于 `namespace aria`。include `<cstdio>`/`<cstdlib>`/`<cstring>`/`<utility>` + `sys.hpp` + `type.hpp`，是各模块共享的「前置依赖收口」。
+
+- `USING_NANBOXING`：默认定义（未定义 `ARIA_USE_TAGVALUE` 时；宏由根 CMakeLists.txt `option(ARIA_USE_TAGVALUE)` 注入或编译命令行手工 `-D`），`value/Value.hpp` 据此选 NanBoxing/TagValue 实现；TagValue 路径经 `-DARIA_USE_TAGVALUE=ON` 独立 build 目录全量构建 + ctest 验证。
+- `UNREACHABLE()`：NDEBUG 下 `std::unreachable()`，否则打印 `__FILE__`/`__LINE__`/`__func__` 后 `std::abort()`。
+- `STATIC_UNREACHABLE(message)`：编译期不可达，收口 if constexpr 白名单分派链的末臂；漏臂（白名单外的模板实参）被实例化时 `static_assert(false, message)` 即编译报错，两配置同体（不需要 NDEBUG 分流）。后随 `std::abort()` 只为给流分析器 `[[noreturn]]` 事实（防不返回误报），不入任何实例化的执行路径。适用判据：不可达性由模板实参（if constexpr 白名单链）决定时用它；不可达性属运行期值（枚举实参、主循环取流 OpCode 等）时保持 `UNREACHABLE()`。
+- `ASSERT(condition, message)`：NDEBUG 下空操作，否则失败打印 + abort。
+- `ARIA_NOINLINE`：`_MSC_VER` 下 `__declspec(noinline)`，否则 `__attribute__((noinline))`；热/冷路径分离用，防冷路径随热函数在每个调用点展开。
+- `static_assert(sizeof(void*) == 8)` 钉死 64 位平台。
+
+## `type.hpp`
+
+项目类型别名层（`namespace aria`）。**禁直接用 `std::string`/`int`/`size_t` 等**，统一走本头别名；全部为别名，无约束/无平台分流。
+
+- 整数：`i8`/`u8`/`i16`/`u16`/`i32`/`u32`/`i64`/`u64`（映射 `int8_t`..`uint64_t`）；`f32`=`float`/`f64`=`double`；`isize`=`std::ptrdiff_t`/`usize`=`std::size_t`。
+- 字符串：`String`=`std::string`、`StringView`=`std::string_view`。
+- 容器：`List<T>`=`std::vector<T>`、`Vector<T,N>`=`std::array<T,N>`、`Stack<T>`=`std::stack<T>`、`HashMap<K,V>`=`std::unordered_map<K,V>`、`HashSet<T>`=`std::unordered_set<T>`、`Pair<T1,T2>`=`std::pair`、`Tuple<...>`=`std::tuple`、`Span<T>`=`std::span<T>`。
+- 智能/结果：`UPtr<T>`=`std::unique_ptr<T>`、`SPtr<T>`=`std::shared_ptr<T>`、`Result<T,E>`=`std::expected<T,E>`（项目默认错误返回通道）、`Opt<T>`=`std::optional<T>`。
+
+## `sys.hpp`
+
+平台检测宏（`namespace aria`，无依赖，被 `common.hpp` 最先 include）。按编译器预定义宏分流：
+
+- `__linux__` + `__ANDROID__` -> `SYS_ANDROID`；`__linux__` 非 Android -> `SYS_LINUX`。
+- `__APPLE__` 经 `TargetConditionals.h` 分 `SYS_IOS`/`SYS_MACOS`（未知 Apple 平台 `#error`）。
+- `_WIN32`/`_WIN64` -> `SYS_WINDOWS`；`__FreeBSD__` -> `SYS_FREEBSD`；未知平台 `#error`。
+- Windows 下额外保证 `WIN32_LEAN_AND_MEAN` 与 `NOMINMAX` 已定义（未定义则补 `#define`，避免 `<windows.h>` 拖入多余符号与 `min`/`max` 宏污染）--含 `<windows.h>` 前本头会先就位，无需再手动加守卫。
+
+## `aria.hpp`
+
+项目级定义头（`namespace aria`，仅 include `common.hpp`，任何层均可无分层顾虑引用）。收拢语言/产品层固有命名事实作单一事实源，防各层字面量漂移。
+
+- **语言值域**：`kIntMin`/`kIntMax` 定义统一 i48 域。字面量经 `CodeGen::validate_int_literal` 检查、文本转换经 `util::parse_int_text` 检查；Eval 整数算术结果与 range 迭代产出越界时走 `IntegerOverflow`。两表示 `from_int` 仅接收域内值并以 Debug 断言守内部契约；Release 同样由上层执行语言检查。
+- **扩展名**：`kAriaExtension = ".aria"`（模块源文件扩展名；`ObjModule::abs_path` 以之合成模块表键，`AriaVM::resolve_module` 剥/补 import spec 末段后缀）。
+- **VM 合成实体保留名**（「`<`/`>` 非合法标识符字符、用户代码无法撞名」不变式）：`kMainEntryName = "<main>"`（主入口名）、`kModuleEntryName = "<module>"`（模块体入口名；两者入口体同为 ModuleEntry 形态，返回值恒为模块对象）、`kScriptModuleName = "<script>"`（`--eval` 合成模块）、`kReplModuleName = "<repl>"`（REPL 合成模块）、`kAnonymousName = "<anonymous>"`（lambda/匿名原生函数共用；lambda 留栈不绑定由 LambdaExprNode/FnKind 判定，名字仅作显示）。
+- **构造角色名**：`kInitName = "init"`（实例方法构造角色；"init" 本身是普通标识符，角色由 def 体裸方法位与名字共同判定 -- parser 据名烙 `FnKind::InitMethod`（隐式返回尾返 this），runtime 据名维护类 `init_` 槽（`ObjClass::set_field` 同步））。
+- **运算符与调用重载方法名**（12 个 dunder：10 个运算符钩子 = 5 个二元算术 + 4 个比较 + `__neg__`，加 `__call__` 与 `__str__`）：**不落本头**--它们是 VM 运行期按名取用的常量串，注册表（VM 常量串注册表：dunder 钩子名 + Exception 字段键 + 协程状态串）与「恒久存活」的根见 `runtime/str_table.hpp`（见 `runtime.md`「共享状态」的常量串表）。
+- **产品标识与部署约定**：`kProductName = "aria"`（CLI 程序名 + REPL 提示符）、语义化版本分量 `kVersionMajor`/`kVersionMinor`/`kVersionPatch`（0.1.0；**不设字符串副本**防漂移，`--version` 消费点 format 拼接展示，代码内判定直接比较分量）、`kStdlibRelPath = "../share/aria/lib"`（内建 stdlib 相对可执行文件目录的安装约定，播种默认源根 `[1]`）。
+- **执行上下文前向声明**：`class AriaExeContext;`（执行上下文本体，定义住 `runtime/AriaExeContext.hpp`；GC 对象壳 `ObjMovement` 多继承它，同层定义）--住本头 = 任何层（含 object）可拼写且不拖 runtime 头（`Object.hpp` 六个虚函数签名以 `AriaExeContext&` 为参，是其可见性前提）。
+- **分工**：基础设施归 `common.hpp`、通用工具归 `util/`、领域对象模型归各模块头；后续新增项目级命名优先落此头。**本头只定义名字，不定义派发语义**。
+
+## `main.cpp`
+
+**正式 aria 解释器入口**。`int main(argc, argv)` 设 isocline 历史、把 `argc/argv` 透传 `cli_dispatch`（见 `interpreter.hpp`），传入 isocline 行读取器（`ic_readline("aria")` + `free`，`exit`/`quit`/EOF 结束 REPL）。本身不含分发/编译/执行逻辑。退出码 0 成功 / 1 任何错误。
+
+## `interpreter.hpp` / `interpreter.cpp`
+
+解释器 CLI 入口分发核心，供 `main.cpp` 转调与测试驱动（属 `aria` 可执行文件目标，不在 `aria_core`；测试目标单独编译 `interpreter.cpp` 以供符号）。
+
+- **声明/实现分离**：`.hpp` 仅暴露公共 API（`LineReader` + `cli_dispatch` 声明），只 include `<functional>` + `common.hpp`；AriaVM/GC/ObjModule/SourceFile/util::Cli 等内部依赖与实现全部收口在 `.cpp`。
+- **`.cpp` 匿名命名空间 helper**：`build_cli`（建 `util::Cli`：`--repl`、`--eval`/`-e`、`--version`/`-v`、可选位置参数 `<file>`，外加内置 `--help`/`-h`）、`run_repl`/`run_src`/`run_file`（均不对外暴露）。
+- **`cli_dispatch(i32 argc, char* argv[], const LineReader&)`** 按优先级 `--help > --version > --eval > --repl > <file> > 默认 REPL`（无参即进 REPL）派发，返回退出码 0/1；解析失败打错误 + help 并返 1。`--version` 打印 `aria 0.1.0`（kProductName + 版本分量 format 拼接）后短路。
+- **执行路径**：`--eval` 走 `run_src(StringView)`、`<file>` 走 `run_file(StringView)`（各自自建 `AriaVM` 调 `interpret_from_src`/`interpret_from_path`，错误内部渲染 stderr）。
+- **REPL**：`run_repl` 复用单个 `<repl>` 模块逐行 `run(SourceFile&, ObjModule*)`（第二参是 `ObjModule*`）编译执行；模块不入模块表（合成名），故经 `gc.make_guard` 跨行保活，使顶层 `var` 经 `DEF_GLOBAL` 落 `globals_` 跨行持久；逐行错误渲染 stderr 后循环不中断（容错继续）。
+- **`LineReader = std::function<bool(String&)>`**：main 用 isocline 实现，测试注入流读取器 lambda（见 `tests/runtime/test_interpreter.cpp`）。

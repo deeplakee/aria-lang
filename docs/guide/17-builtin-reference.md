@@ -2,7 +2,7 @@
 
 本章是速查手册：全局内建函数、各类型方法面、下标与切片规则、`type()` 返回名、常见错误
 消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语法产生式以
-[docs/grammar.txt](../grammar.txt) 为准；语义设计见 `.claude/reference/`。
+[docs/grammar.txt](../grammar.txt) 为准。
 
 ## 全局内建函数（8 个）
 
@@ -190,7 +190,7 @@ Resource: ModuleNotFound module not found: 'nope'
 
 ## 去处
 
-- 语法产生式：[docs/grammar.txt](../grammar.txt)（语法面单一事实源；语义设计见 `.claude/reference/`）。
+- 语法产生式：[docs/grammar.txt](../grammar.txt)。
 - 实现与构建：仓库根 `README.md`。
 - 本章缺的东西（`enumerate` 一类迭代辅助、更多 range 方法）语言层尚未提供，教程不预先
   书写。

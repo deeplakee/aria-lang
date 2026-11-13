@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""commit 说明机械检查器(规范见 .zcode/skills/aria-commit/SKILL.md;检查项清单以本文件常量为准)。
+"""commit 说明机械检查器(规范见 .agents/skills/aria-commit/SKILL.md;检查项清单以本文件常量为准)。
 
 用法:
     python3 tools/check_commit_msg.py <message-file>

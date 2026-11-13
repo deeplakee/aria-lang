@@ -133,7 +133,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
 | `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（`AriaVM::registers_` 同时持 VM 单例与 13 个 bootstrap 类，bootstrap 填充、tracer 逐格标根；发射点跨两段：缺省参数印章 DefaultMark、match 无臂哨兵 MatchNoArm、隐式超类 ObjectClass；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`） |
 
-> 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.claude/rules/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
+> 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.agents/rules/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
 
 ### 4.3 局部变量
 
@@ -608,7 +608,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.claude/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.agents/rules/runtime.md` 与 vm-design.md §7）。
 - 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
 
 ### 6.5 迭代器
@@ -626,7 +626,7 @@ class CodeUnit {
 };
 ```
 
-四个容器字段直接 public 裸露，VM/编译器/反汇编器直接操作；字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`）收口于 CodeUnit 方法，越界以 bool 返回交调用方翻译。详见 `.claude/rules/bytecode.md`。
+四个容器字段直接 public 裸露，VM/编译器/反汇编器直接操作；字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`）收口于 CodeUnit 方法，越界以 bool 返回交调用方翻译。详见 `.agents/rules/bytecode.md`。
 
 - **`code` 用 `Array<u8>`**：opcode 与操作数统一按字节寻址，VM 读操作数直接取字节。
 - **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFnProto::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
@@ -679,7 +679,7 @@ code:
 
 - `src/bytecode/code.hpp`：`OpCode` 枚举（本文基准）。
 - `docs/grammar.txt`：语言文法（lowering 的需求来源）。
-- `.claude/reference/compile/compound-assignment-lowering.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
+- `.agents/design/compound-assignment-lowering.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
 - `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
 - `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
 - AGENTS.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。

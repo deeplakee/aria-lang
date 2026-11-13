@@ -10,7 +10,7 @@ msg_file="$1"
 root="$(git rev-parse --show-toplevel)"
 
 if ! python3 "$root/tools/check_commit_msg.py" "$msg_file"; then
-    echo "commit 说明未过机械检查 -- 规范见 .zcode/skills/aria-commit/SKILL.md(技能 aria-commit)" >&2
+    echo "commit 说明未过机械检查 -- 规范见 .agents/skills/aria-commit/SKILL.md(技能 aria-commit)" >&2
     echo "按上方提示逐条改;确认无误要绕过时用 git commit --no-verify" >&2
     exit 1
 fi

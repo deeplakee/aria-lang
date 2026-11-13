@@ -333,6 +333,61 @@ namespace aria {
     }
 
     template<OpCode Op>
+    bool Eval::run_bitwise_operator(AriaExeContext& ctx) {
+        // 纯 Int 域位算子(无对象钩子):& | ^ 按位结果恒在 i48 域(符号扩展闭包)零检查;
+        // 移位先做计数域检查,<< 另按幅值计算前检查(乘法同款:越界移位裸算可 UB),>>>
+        // 结果统一域检查(唯一失败面 = 计数 0 的负操作数)。全程无分配无 GC 点。
+        const Value rhs_value = ctx.pop();
+        const Value lhs_value = ctx.pop();
+        if (!(lhs_value.is_int() && rhs_value.is_int())) {
+            return ctx.fail(ErrorCode::TypeMismatch, "operator '{}' requires integers, got {} and {}", op_symbol(Op),
+                            type_name(lhs_value), type_name(rhs_value));
+        }
+        const i64 lhs = lhs_value.as_int();
+        const i64 rhs = rhs_value.as_int();
+        if constexpr (Op == OpCode::SHIFT_LEFT || Op == OpCode::SHIFT_RIGHT || Op == OpCode::SHIFT_RIGHT_LOGICAL) {
+            if (rhs < 0 || rhs > kMaxShiftCount) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "shift count must be between 0 and {}, got {}",
+                                kMaxShiftCount, rhs);
+            }
+        }
+        if constexpr (Op == OpCode::BIT_AND) {
+            ctx.push(Value::from_int(lhs & rhs));
+        } else if constexpr (Op == OpCode::BIT_OR) {
+            ctx.push(Value::from_int(lhs | rhs));
+        } else if constexpr (Op == OpCode::BIT_XOR) {
+            ctx.push(Value::from_int(lhs ^ rhs));
+        } else if constexpr (Op == OpCode::SHIFT_LEFT) {
+            if (lhs != 0 && (lhs > (kIntMax >> rhs) || lhs < (kIntMin >> rhs))) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
+            ctx.push(Value::from_int(lhs << rhs));
+        } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
+            ctx.push(Value::from_int(lhs >> rhs)); // C++20 有符号右移为算术右移,结果恒在域内
+        } else {
+            static_assert(Op == OpCode::SHIFT_RIGHT_LOGICAL);
+            // 48 位无符号视图逻辑右移;计数 >= 1 结果恒 <= kIntMax,计数 0 的负操作数越域。
+            const auto result = static_cast<i64>((static_cast<u64>(lhs) & 0xFFFFFFFFFFFF) >> rhs);
+            if (result > kIntMax) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
+            ctx.push(Value::from_int(result));
+        }
+        return true;
+    }
+
+    bool Eval::run_bit_not(AriaExeContext& ctx) {
+        // 按位取反:~x == -x-1 在 i48 域封闭(~kIntMax == kIntMin),i64 取反零检查入域;
+        // 无对象钩子,非 Int 报 InvalidOperand。
+        const Value operand = ctx.peek(0);
+        if (operand.is_int()) {
+            ctx.peek(0) = Value::from_int(~operand.as_int());
+            return true;
+        }
+        return ctx.fail(ErrorCode::InvalidOperand, "bitwise not requires an integer, got {}", type_name(operand));
+    }
+
+    template<OpCode Op>
     Opt<Value> Eval::get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj) {
         // 指令 -> 算子钩子名的编译期映射(Op 由调用点穷举);经咨询口自类面取实现(值本地状态
         // 出局),miss 措辞随各宿主咨询口烘焙。
@@ -1063,6 +1118,37 @@ namespace aria {
                         goto unwind_check;
                     }
                     goto sync_now;
+                // 位算术(纯 Int 域,共用执行体 run_bitwise_operator;不调用户代码,无需 sync_now)
+                case OpCode::BIT_AND:
+                    if (!run_bitwise_operator<OpCode::BIT_AND>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::BIT_OR:
+                    if (!run_bitwise_operator<OpCode::BIT_OR>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::BIT_XOR:
+                    if (!run_bitwise_operator<OpCode::BIT_XOR>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::SHIFT_LEFT:
+                    if (!run_bitwise_operator<OpCode::SHIFT_LEFT>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::SHIFT_RIGHT:
+                    if (!run_bitwise_operator<OpCode::SHIFT_RIGHT>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
+                case OpCode::SHIFT_RIGHT_LOGICAL:
+                    if (!run_bitwise_operator<OpCode::SHIFT_RIGHT_LOGICAL>(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
                 case OpCode::NOT:
                     current->push(Value::from_bool(!is_truthy(current->pop())));
                     break;
@@ -1071,6 +1157,11 @@ namespace aria {
                         goto unwind_check;
                     }
                     goto sync_now;
+                case OpCode::BIT_NOT:
+                    if (!run_bit_not(*current)) {
+                        goto unwind_check;
+                    }
+                    break;
 
                 // 栈操作
                 case OpCode::POP:

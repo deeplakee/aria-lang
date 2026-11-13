@@ -127,6 +127,15 @@ namespace aria {
         // 实参,调用区 [v] 即 [this]);其余类型报 InvalidOperand。契约同上。
         static bool run_negate(AriaExeContext& ctx);
 
+        // 位算子二元执行体(六指令共用,Op 由调用点穷举实例化):纯 Int 域、无对象钩子,非 Int 报
+        // TypeMismatch;& | ^ 结果恒在 i48 域(符号扩展闭包)零检查;移位先做计数域检查,<< 另按幅值
+        // 计算前检查(乘法同款),>>> 结果统一域检查。定义在 .cpp(实例化点全在本 TU)。
+        template<OpCode Op>
+        static bool run_bitwise_operator(AriaExeContext& ctx);
+
+        // BIT_NOT 执行体:[v] -> [r]:i48 域封闭取反(~x == -x-1)零检查;非 Int 报 InvalidOperand。
+        static bool run_bit_not(AriaExeContext& ctx);
+
         // field 族指令执行体;bool 契约同 call_value(对象协议失败由 override 内 ctx.fail 就地烘焙,
         // 非对象守卫由执行体 fail),peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(栈即根)。
 

@@ -14,6 +14,9 @@ namespace aria {
     constexpr i64 kIntMin = -(static_cast<i64>(1) << 47);
     constexpr i64 kIntMax = (static_cast<i64>(1) << 47) - 1;
 
+    // 移位计数上限:i48 位宽的最大有效移位(上限位置形态,判定与上限直接比较)。
+    constexpr i64 kMaxShiftCount = 47;
+
     // 模块源文件扩展名:一个源文件 = 一个模块。
     constexpr StringView kAriaExtension = ".aria";
 

@@ -28,9 +28,9 @@ external/    isocline（REPL）/ googletest / mimalloc，vendored、构建零联
 
 ## 当前进度
 
-- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM M1-M6（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`Coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、P0 语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子、`__str__` 显示钩子（经类面咨询口：实例字段出局、类值走元类链、容器调试位零执行））、字符串插值、显示虚函数退役（`to_string` 删除，显示定制唯一面 = `__str__`）。
-- **待落地**：range 方法面按需另批（现仅 `iter`）；defer 善后为可选后续，不绑定里程碑。
-- 里程碑级细节见 `.agents/design/vm-design.md` §6 路线表，各特性语义决策见对应 `.agents/design/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
+- **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`Coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子、`__str__` 显示钩子（经类面咨询口：实例字段出局、类值走元类链、容器调试位零执行））、字符串插值、显示虚函数退役（`to_string` 删除，显示定制唯一面 = `__str__`）。
+- **待落地**：range 方法面（现仅 `iter`）；defer 善后为可选后续。
+- 各特性语义决策见 `.agents/design/vm-design.md` 与对应 `.agents/design/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 
 ## 常用命令
 
@@ -68,8 +68,8 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 **深度文档（不自动加载，需要时 Read）**：
 
-- 设计与规格 `.agents/design/`：`bytecode-instruction-set.md`（指令集规格）/ `vm-design.md`（AriaVM 与执行上下文设计、M1-M6 路线）/ `import-handling-overview.md` + `import-path-resolution.md`（import 端到端与路径解析）/ `compound-assignment-lowering.md` + `loopctx.md`（复合赋值 lowering、LoopCtx 与 break/continue 回填）/ `error-message-style.md`（报错文案规范本体，机械门禁 `tools/check_error_messages.py`）。
-- 踩坑与测量笔记 `.agents/notes/`：`runtime/exception-implementation-pitfalls.md`（M3 异常）/ `runtime/class-implementation-pitfalls.md`（M5 类）/ `runtime/coroutine-implementation-pitfalls.md`（M6 协程）--对应特性重启前重读；`memory/ast-arena-notes.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer-notes.md`（动词法性能前先读）/ `bench/lang-bench-notes.md`（基准测量与端口纪律）。
+- 设计与规格 `.agents/design/`：`bytecode-instruction-set.md`（指令集规格）/ `vm-design.md`（AriaVM 与执行上下文设计）/ `import-handling-overview.md` + `import-path-resolution.md`（import 端到端与路径解析）/ `compound-assignment-lowering.md` + `loopctx.md`（复合赋值 lowering、LoopCtx 与 break/continue 回填）/ `error-message-style.md`（报错文案规范本体，机械门禁 `tools/check_error_messages.py`）。
+- 踩坑与测量笔记 `.agents/notes/`：`runtime/exception-implementation-pitfalls.md`（异常）/ `runtime/class-implementation-pitfalls.md`（类机制）/ `runtime/coroutine-implementation-pitfalls.md`（协程）--对应特性重启前重读；`memory/ast-arena-notes.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer-notes.md`（动词法性能前先读）/ `bench/lang-bench-notes.md`（基准测量与端口纪律）。
 - 语言文法与人类文档 `docs/`：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 
 新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths），并补 `.zcode/skills/aria-<dir>/SKILL.md` 与 `.claude/rules/<dir>.md` 两条相对软链；新增场景技能：建 `.agents/skills/<name>/SKILL.md` 并补 `.zcode/skills/<name>/SKILL.md` 软链。

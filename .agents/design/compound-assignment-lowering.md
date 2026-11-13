@@ -172,7 +172,7 @@ STORE_FIELD f       ; [e]                Store 腿(Store 分派):只发这一条
 - 普通 `lhs = e`：`emit_lvalue(lhs, Prepare)` -> `<e>` -> `emit_lvalue(lhs, Store)`(peek-store)。Prepare = 定位准备腿，只发 locator 的运行时部分（一般对象/捕获 this 的 `<obj>`；Identifier/帧内 this 的 locator 编译期常量，臂恒 no-op）--`STORE_FIELD` 栈形 `[obj, v] -> [v]` 要求接收者先于值入栈，接收者发射权归目标节点；帧内 this 的写腿 `STORE_THIS_FIELD` 不经栈取 this。与复合赋值只差中间腿（值 vs op）。
 - 复合 `lhs op= e`：`emit_lvalue(lhs, Locate)` -> `<e>` -> `<op>` -> `emit_lvalue(lhs, Store)`。生产侧统一发 `Locate`;目标节点按 locator 性质分派:编译期常量(Identifier;帧内 this 的 FieldAccess)定位腿与 `Load` 同形--重 resolve 廉价且无副作用,"locator 只求值一次"自然成立;运行时 locator(Field/Index)以 `Locate` 单次求值、经 `DUP`/`DUP2` 留 VM 栈、Load/Store 复用栈上副本(见 §4.2/§4.3),非编译期 stash。前置 `++`/`--` 同族,首腿同为 `Locate`(§5)。
 
-即 locator-once 按 locator 性质两路实现:编译期常量(Identifier、帧内 this)走"重 resolve 廉价可重做",定位腿与 `Load` 同形(无副本可留);运行时 locator(Field/Index)走"VM 栈 DUP/DUP2 复用";两者都不靠编译期缓存 locator 描述。`Locate` 已随 M5 类落地启用:一般对象定位腿发 `<obj> DUP LOAD_FIELD`,帧内 this 定位腿折叠 `LOAD_THIS_FIELD`(写 `STORE_THIS_FIELD` 不经栈取 this);IndexAccess 的 DUP2 形态（§4.3）已随 list 下标接线落地。
+即 locator-once 按 locator 性质两路实现:编译期常量(Identifier、帧内 this)走"重 resolve 廉价可重做",定位腿与 `Load` 同形(无副本可留);运行时 locator(Field/Index)走"VM 栈 DUP/DUP2 复用";两者都不靠编译期缓存 locator 描述。`Locate` 已随类机制落地启用:一般对象定位腿发 `<obj> DUP LOAD_FIELD`,帧内 this 定位腿折叠 `LOAD_THIS_FIELD`(写 `STORE_THIS_FIELD` 不经栈取 this);IndexAccess 的 DUP2 形态（§4.3）已随 list 下标接线落地。
 
 ## 7. 不要这么做
 

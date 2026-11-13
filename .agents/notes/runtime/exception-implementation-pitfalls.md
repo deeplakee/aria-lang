@@ -1,14 +1,14 @@
-# M3 异常（try/catch/throw）实现坑点记录
+# 异常（try/catch/throw）实现坑点记录
 
-> M3 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.agents/rules/runtime.md`「VM 异常通道」，发射侧见 `.agents/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属 M3、#17-#20 属 M4 闭包的 upvalue 关闭与截栈/弹帧交互（见下「M4 补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下 M3b 节）。
+> 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.agents/rules/runtime.md`「VM 异常通道」，发射侧见 `.agents/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属异常机制本体、#17-#20 属闭包的 upvalue 关闭与截栈/弹帧交互（见下「闭包补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下「finally 裁撤记录」节）。
 
 ---
 
-## M3b finally 裁撤记录（2026-09）
+## finally 裁撤记录（2026-09）
 
-finally 子句在定稿控制流语义后整体裁撤、不再进入路线图（`finally` 回归普通标识符；try/catch 保持原形态，try 须有 catch）。裁撤理由：其存在价值是资源善后，而语言层尚无制造 OS 资源的内建，参照实现 Lua/Wren 亦无 finally；单向门 -- 将来重新引入是向后兼容的语法增补。
+finally 子句在定稿控制流语义后整体裁撤（`finally` 回归普通标识符；try/catch 保持原形态，try 须有 catch）。裁撤理由：其存在价值是资源善后，而语言层尚无制造 OS 资源的内建，参照实现 Lua/Wren 亦无 finally；单向门 -- 将来重新引入是向后兼容的语法增补。
 
-- **善后后继：defer**（可选后续、不绑定里程碑）：注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）重启设计时定。
+- **善后后继：defer**（可选后续）：注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行。defer 的善后体是函数/表达式，return/break/continue 天然绑定其内部，finally 特有的「控制流不得离开」问题在 defer 下消解；细节（求值时机 / 捕获语义 / 是否要 errdefer）重启设计时定。
 - **两机制共享的 VM 难点（defer 落地时须面对，保留备忘）**：unwind 途中执行用户代码 + 善后代码自身抛错替换在途异常（原异常丢失）；且在途状态不能只住 `pending_error_`（unwind 途中执行嵌套 try/catch 时，catch 命中会清寄存器吞掉在途异常），须另存专用槽位后续传（坑 #7/#14 单寄存器模型的边界）。
 - **曾定稿的 finally 控制流语义存档**（若将来重新引入 finally，按此起步）：finally 必达（正常结束 / catch 命中 / 异常续传三退出路径各执行一次）；finally 体内 return 一律禁止（嵌套 fun/lambda 的 return 绑定自身函数不受限）、break/continue 指向 finally 外循环禁止（体内自含循环允许）--编译期语义错误；throw 放行但替换挂起中的异常。「不继承 Java/Python/JS 覆盖语义」的既定取向（公认 footgun、生态以 lint 劝阻、与 aria 无静默错误行为取向冲突）复用于 defer 的善后体设计。
 
@@ -64,7 +64,7 @@ raise 时用 `frame.last_ip`（指令起始）反推 offset 调 `find_try_handle
 **对策**：`CallFrame` 新字段**不写默认值**，初始化收敛进 `init_frame_`（现 `CallFrame::init`，CallFrame.cpp；当时住 Movement.cpp：`f.slots = ...; f.function = ...;` 逐字段赋值）。新增 `f.last_ip = f.ip;`（= code 起始；不用 nullptr -- 与 data() 相减是 UB）即可。保持 `CallFrame` 为纯聚合（无 NSDMI、无用户构造函数）。
 
 ```cpp
-struct CallFrame {          // M3 时代快照:callable 字段当时为 ObjFunction*,M4 收敛后为 ObjFunction* closure
+struct CallFrame {          // 早期快照:callable 字段当时为 ObjFunction*,闭包收敛后为 ObjFunction* closure
     ObjFunction* function;  // (现字段名与类型见 runtime/CallFrame.hpp);坑本体(NSDMI 禁令)不受影响
     CodeUnit*    unit;
     ObjModule*   module;
@@ -141,7 +141,7 @@ visitTryStmtNode:
 
 **动机**：抛出的实体有两个侧面--catch 侧面要绑 aria 值保留类型（`throw 42` → e=Int 42）；run() 侧面未捕获要回结构化 `Error`（保 `ErrorCode` + 位置串，供 `test_ariavm` 9 处 `error().code()` 断言）。单一 `Opt<Error>` 会丢类型（throw 时刻值就压成串）；单一 `Opt<Value>` 会丢码（未捕获恒 `UncaughtException`）。解法：单寄存器 `Opt<Value>`，**运行时错误包成 `ObjException`（携码）**、**用户 throw 存原值（携类型）**，两种载荷同住一个 Value 寄存器。
 
-**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留；M3 时代快照--现行 `code_` 已为 i64 单一存储并加 `numeric_code()` 双视图与 `Error` i64 重载，渲染经基类 `repr`（消息原文），成员解析已委托 Exception bootstrap 类；坑本体 = 单寄存器模型，不受影响）：
+**ObjException**（新 Object 子类型，`ObjType::EXCEPTION` 枚举早已预留；早期快照--现行 `code_` 已为 i64 单一存储并加 `numeric_code()` 双视图与 `Error` i64 重载，渲染经基类 `repr`（消息原文），成员解析已委托 Exception bootstrap 类；坑本体 = 单寄存器模型，不受影响）：
 ```cpp
 class ObjException final : Object {
     ErrorCode  code_;     // 错误码
@@ -172,7 +172,7 @@ public:
 - 双寄存器：catch 绑懒合成消息串 → `throw e` 存串 → 未捕获回 `UncaughtException`（**丢 DivisionByZero**）。
 - 单寄存器：catch 绑 ObjException → `throw e` 存同一 ObjException → 未捕获 `from_baked` 回 `DivisionByZero` ✅。
 
-**catch 绑 ObjException 的 M3 可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 留待 M5 方法/字段落地（现已落地：ExceptionClass face 的 init/message/code）。M3 catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
+**catch 绑 ObjException 的可用性**：`println(e)`/`str(e)` 渲染消息 ✅；字符串拼接需 `"x" + str(e)`（`e` 非字符串，`e + "x"` 类型错）；`e.message()`/`e.code()` 已落地（ExceptionClass face 的 init/message/code）。catch-of-runtime-error 的字符串操作多一个 `str()` 调用，可接受。
 
 **站点改动**：`call_*` 失败 / `call_native_fn` / 各处报错站点一律置 `pending_error_ = new_exception(...)`（包一层 ObjException；raise 不烙位置前缀，位置归未捕获出口的 `at` 跟踪行，见坑 #15/#16）。`vm.fail(code, ...)` 助手内部包，原生函数与 call_* 失败站点调用点不变（报错装箱统一收口 `AriaExeContext::raise`/`fail`，拆类后自 AriaVM 迁入）。用户 `throw` 存原值不包。`unwind` 命中 handler 时 `push(*pending_error_)`（无需懒合成分支）。
 
@@ -193,7 +193,7 @@ for (Movement* m = current_; m != nullptr; m = m->previous()) {
 }
 ```
 
-`mark_value` 对 ObjException 会进一步 `ObjException::trace` 标其 `message_` ObjString。**不可遗漏**，否则 stress GC 下 try/catch 路径 use-after-free。（M6 对象化后上方循环已退役：VM 根 tracer 只标 `current_` 一点，`pending_error_` 改经 `ObjMovement::trace` 对象图级联标根，效果等价。）
+`mark_value` 对 ObjException 会进一步 `ObjException::trace` 标其 `message_` ObjString。**不可遗漏**，否则 stress GC 下 try/catch 路径 use-after-free。（上下文对象化后上方循环已退役：VM 根 tracer 只标 `current_` 一点，`pending_error_` 改经 `ObjMovement::trace` 对象图级联标根，效果等价。）
 
 **构造期守卫（已由工厂自守化解）**：`raise` 内 `new_exception(gc, code, message)` 的 message 参数是 C++ 侧 `String`（`Error::make_message` 产物，非 GC 对象），工厂内部 `new_string` 驻留并自行守卫跨下方 `new_object`（工厂守「自己创建的」，见 ObjException.hpp）；返回对象白色无根，但 `raise` 收尾即入 `pending_error_`（之间无分配），入寄存器后经 tracer 根化，无需调用方 `make_guard`。
 
@@ -242,7 +242,7 @@ cur_cu()->try_records[rec_idx].stack_depth = stack_depth;
 
 **注意**：`catch_slot` 在 lowering 里仍由 `define_local_or_fail` 拿到（catch 体经 `LOAD_LOCAL catch_slot` 读 `e`），但它 == `stack_depth`，**只编译期用、不入 `TryRecord`**。`e` 由 unwind 的 push 在运行期填槽）。
 
-**核对（已读 `FunctionCtx.cpp` 现有实现；M4 起收口为单方法 `FunctionCtx::end_scope()`）**：`end_scope` **真正 `locals_.pop_back()` 移除**原 scope 局部（非只减 `scope_depth_`），故 `locals_.size()` 精确反映当前活局部、**无陈旧项堆积**。`stack_depth = cur_fn_ctx()->locals_.size()`（try 体 `begin_scope` 前快照）= try 入口活局部数 = 下一可用 slot = catch 参数槽。try 体 `end_scope` 弹回 `stack_depth`，catch 参数 `add_local` 后 `locals_.size() == stack_depth + 1`、catch 参数 slot == `stack_depth`。定稿成立，无问题。
+**核对（已读 `FunctionCtx.cpp` 现有实现；现收口为单方法 `FunctionCtx::end_scope()`）**：`end_scope` **真正 `locals_.pop_back()` 移除**原 scope 局部（非只减 `scope_depth_`），故 `locals_.size()` 精确反映当前活局部、**无陈旧项堆积**。`stack_depth = cur_fn_ctx()->locals_.size()`（try 体 `begin_scope` 前快照）= try 入口活局部数 = 下一可用 slot = catch 参数槽。try 体 `end_scope` 弹回 `stack_depth`，catch 参数 `add_local` 后 `locals_.size() == stack_depth + 1`、catch 参数 slot == `stack_depth`。定稿成立，无问题。
 
 ---
 
@@ -267,9 +267,9 @@ break;                                   // 命中 handler -> frame 已废,回�
 
 **终态补记（2026-09-24）**：26 处站点的三行检查样板收口为循环尾单一标签 `unwind_check`（switch 后 `continue` 隔离正常路径，错误站点 `goto` 跳入；未捕获 `return`、命中 handler 落回循环尾回循环顶重取帧）。switch 之后现有标签体，仍不引用 `frame`，坑前提不变。
 
-**终态补记（2026-10，重入口批）**：错误不再走返回值--`unwind` 返 `bool`（true = 已派发），`unwind_check` 未命中直接 `return false` 出循环；物化收口迁 `run()` 失败出口的 `rebake_uncaught_error()`。上方两段代码样例中 `if (auto u = unwind())` 的 `Opt<Error>` 形态随之作废；命中 handler 落回循环顶重取帧的前提不变。
+**终态补记（2026-10，重入口改造）**：错误不再走返回值--`unwind` 返 `bool`（true = 已派发），`unwind_check` 未命中直接 `return false` 出循环；物化收口迁 `run()` 失败出口的 `rebake_uncaught_error()`。上方两段代码样例中 `if (auto u = unwind())` 的 `Opt<Error>` 形态随之作废；命中 handler 落回循环顶重取帧的前提不变。
 
-例外（已消除，M3 前置改造）：IMPORT 内 `load_module` 已统一走寄存器--返 `ObjModule*`（`nullptr ⟺` 载荷已 raise 入 `*current_`），编译期 Error 就地 `new_exception` 原样装配箱（from_baked 语义不重烘，code+消息逐字节保真，位置语义见坑 #15/#16）、`ModuleNotFound` 经 `fail` 烘 IMPORT 站点位置，调用方 `take_error` 取出传播。M3 改造时它不再是直传残留。
+例外（已消除，异常通道前置改造）：IMPORT 内 `load_module` 已统一走寄存器--返 `ObjModule*`（`nullptr ⟺` 载荷已 raise 入 `*current_`），编译期 Error 就地 `new_exception` 原样装配箱（from_baked 语义不重烘，code+消息逐字节保真，位置语义见坑 #15/#16）、`ModuleNotFound` 经 `fail` 烘 IMPORT 站点位置，调用方 `take_error` 取出传播。改造后不再是直传残留。
 
 `call_value` 失败站点：
 ```cpp
@@ -285,7 +285,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 **约束**：遍历必须**不动帧栈** -- 未命中的帧只记跟踪三元组（帧引用全程有效），命中后交由 `AriaExeContext::unwind_to_handler(命中帧索引, record)` 一体完成弃帧 + 关开指 + 截栈 + 跳 handler + 载荷落槽（见坑 #6），全帧未命中走 `reset()` 一次清场。
 
-**终态补记（2026-10，重入口批）**：未命中退出随出口边界（`current_->ret_frame()`）三分--边界非零（嵌套执行）即截净残帧交外层驱动续搜（不清场）；边界零在链上转投一跳（坑 #5 定序）；链根仍未命中返 false，`reset()` 清场归 `run()` 的 `rebake_uncaught_error()`。「未命中时记三元组」同已废，跟踪收集迁物化点（坑 #16 补记）。
+**终态补记（2026-10，重入口改造）**：未命中退出随出口边界（`current_->ret_frame()`）三分--边界非零（嵌套执行）即截净残帧交外层驱动续搜（不清场）；边界零在链上转投一跳（坑 #5 定序）；链根仍未命中返 false，`reset()` 清场归 `run()` 的 `rebake_uncaught_error()`。「未命中时记三元组」同已废，跟踪收集迁物化点（坑 #16 补记）。
 
 旧形态「未命中即 `ctx.exit_frame()` 逐帧弹」已废，两处硬伤：弹帧使循环内的帧引用悬垂（命中后继续用旧引用即 use-after-free）；走到「所有帧无 handler」时帧已全弹、跟踪无帧可查，故跟踪改为遍历中顺路收集（坑 #16；后随 2026-10 重入口批再迁物化点，坑 #16 补记）。机制现状见 `rules/runtime.md`「VM 异常通道」。
 
@@ -311,13 +311,13 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 **约束**：跟踪在 uncaught 出口一次性生成、**不存 `ObjException`**（对标 Python：traceback 取自活帧，异常对象不背全程 trace；catch 掉的异常多数用不上）。落点 = `unwind()` 遍历帧链时**每帧退出前**顺带收集 `(function, module, last_ip)` 三元组--走到未捕获时帧已全弹，故必须顺路收集；命中 handler 则收集弃用。`last_ip` 在此两用（查表 + 跟踪行号）：顶帧 = 故障指令、外层帧 = CALL 站点。物化 `Error` 时按收集序（内 -> 外，最内帧紧贴消息行，主流 traceback 惯例）逐帧格式化为 `  at <fn名> (<位置串>)` 追加到 `Error::message_` 尾部--烘焙进 message 而非 VM 直接输出，`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。透传错误无跟踪。语义与输出示例见 `vm-design.md` §4.8 与 `rules/runtime.md`「未捕获堆栈跟踪」。
 
-**终态补记（2026-10，重入口批）**：顺路收集随出口协议演进作废--未捕获出口帧链活着（`unwind` 未命中不清场），「走到未捕获时帧已全弹、必须顺路收集」的前提不再成立。收集迁物化点 `rebake_uncaught_error()`：现场自顶帧向下逐帧收集、按序烘焙，收集与烘焙单点同口。截断语义不变：物化只含物化时刻存活的帧链--死协程帧随转投序列 `reset()` 退场、嵌套执行残帧已被 unwind 边界臂截净，一律不并入跟踪。
+**终态补记（2026-10，重入口改造）**：顺路收集随出口协议演进作废--未捕获出口帧链活着（`unwind` 未命中不清场），「走到未捕获时帧已全弹、必须顺路收集」的前提不再成立。收集迁物化点 `rebake_uncaught_error()`：现场自顶帧向下逐帧收集、按序烘焙，收集与烘焙单点同口。截断语义不变：物化只含物化时刻存活的帧链--死协程帧随转投序列 `reset()` 退场、嵌套执行残帧已被 unwind 边界臂截净，一律不并入跟踪。
 
 ---
 
-## M4 补录：闭包 upvalue 关闭与 unwind 的交互坑点（2026-09，已落地）
+## 闭包补录：upvalue 关闭与 unwind 的交互坑点（2026-09，已落地）
 
-> M4 闭包在 M3 的截栈/弹帧机制上叠加「upvalue 关闭」维度：局部槽还可能被 open upvalue 链上的 `ObjUpvalue` 开指着，故「丢弃一段栈区」的每条路径（RETURN 弹帧 / unwind 命中截栈 / 未命中弹帧 / 作用域退出）都必须先回答「区间内开指何时关、谁负责关」。四条记录的对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（闭包机制节）与 `tests/compile/test_codegen.cpp`（M4 节）。
+> 闭包机制在异常的截栈/弹帧机制上叠加「upvalue 关闭」维度：局部槽还可能被 open upvalue 链上的 `ObjUpvalue` 开指着，故「丢弃一段栈区」的每条路径（RETURN 弹帧 / unwind 命中截栈 / 未命中弹帧 / 作用域退出）都必须先回答「区间内开指何时关、谁负责关」。四条记录的对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（闭包机制节）与 `tests/compile/test_codegen.cpp`（闭包节）。
 
 ## 坑 #17：unwind 命中分支的关闭点 -- close 必须先于截栈与 push，且 handler 帧不退、不经 exit_frame
 

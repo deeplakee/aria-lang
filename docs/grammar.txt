@@ -248,10 +248,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock/Error 六函数，
 # 另挂十三个内建类（协程原语在内建类 Coroutine 上））；参照实现 Lua/Wren 均
 # 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
-# finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「M3b finally
+# finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「finally
 # 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常
-# unwind 时 LIFO 执行）；defer 已降为可选后续（优先级最低，其他功能完成后另定，2026-09
-# 决定不再绑定 M4），细节重启设计时定。
+# unwind 时 LIFO 执行）；defer 为可选后续（优先级最低，其他功能完成后另定），细节重启设计时定。
 #
 # def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> memberVar | funDecl | function）--
 #   - memberVar（var name (= expr)?;）-> 静态变量，属类本身（Foo.x 读写）。窄形态：var 后仅单
@@ -355,7 +354,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 对应 bootstrap 类起查。nil/bool/数字返回 false，但非法 target 仍先报 TypeMismatch。
 # is_subclass(derived, base) 两参须是类，沿 derived 自身与 superclass 链判定，包含自身。
 # 两项操作恰收两参，不读取用户同名成员或执行用户代码；Object 不再提供内建 is_a 方法。
-# 成员绑定及调用机制保持本批之前的行为，未绑定方法显式接收者等规则待 P2 实施。
+# 成员绑定及调用机制保持既有行为；未绑定方法显式接收者一类规则属将来的扩展，实施时另定。
 #
 # 协程（编译期/VM 语义，文法不编码）：内建类 Coroutine（builtins 表按类名直接可达、可作一等值）
 # 提供四个类方法 create/resume/yield/status，非关键字--Coroutine.resume(co, v) 就是普通成员调用

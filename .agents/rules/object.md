@@ -1,6 +1,6 @@
 ---
 name: aria-object
-description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFnProto（含捕获描述表 UpvalueDesc）、ObjFunction/ObjUpvalue（M4 闭包）、ObjClass/ObjInstance/ObjBoundMethod（M5 类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
+description: aria 解释器 object 层模块参考：Object 基类与 is<T>/as<T>/try_as<T> 约定、ObjString（SSO+intern）、ObjFnProto（含捕获描述表 UpvalueDesc）、ObjFunction/ObjUpvalue（闭包）、ObjClass/ObjInstance/ObjBoundMethod（类）、ObjList/ObjMap/ObjRange（集合值）、object/iterator 迭代器族、ObjException、ObjModule、AriaExeContext 执行上下文本体与 ObjMovement GC 对象壳（文件住 runtime 层）。读写 src/object/** 或涉及对象子类型、GC 根纪律、intern 驻留时使用。
 paths:
   - "src/object/**"
 ---
@@ -64,7 +64,7 @@ paths:
 - **八族（string/list/map/range/iterator/exception/function/boundmethod）的成员读共享同一趟咨询**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 `ObjFunction::is_method()` 为真的函数创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；跨类方法赋值不改变归属，接收者兼容性仍由实际方法调用检查；函数族（function/boundmethod）与协程值也继承该默认绑定策略；已有 BoundMethod 原样返回，读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
 - 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），Coroutine 的静态原语经 `register_class_functions` 注册，不设置定义类。方法清单即各 `XxxClass.cpp` 匿名命名空间的方法表；全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
-- **零表单例类五个**（P1 类面基建，`value_register.hpp` 类段）：`FunctionClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）与 `CoroutineClass`（表收 `create`/`resume`/`yield`/`status` 四静态原语，协程内建模块形态并入类面）。与七 bootstrap 类合计十二格；十二类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
+- **零表单例类五个**（`value_register.hpp` 类段）：`FunctionClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）与 `CoroutineClass`（表收 `create`/`resume`/`yield`/`status` 四静态原语，协程内建模块形态并入类面）。与七 bootstrap 类合计十二格；十二类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
 
 ## 跨类型规则
 
@@ -141,7 +141,7 @@ paths:
 - **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。三件套是 Object 的成员模板，子类型禁定义同名成员（成员调用从派生类作用域起查找，同名即遮蔽）。
 - 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `v.as_obj()->is/as<X>()`。
 
-## 成员访问分离 P1（当前范围）
+## 成员访问分离（当前范围）
 
 module 的普通 load_field 只查 globals，class 只查本类及父类模板表，miss 就地 fail，不回退到 Module/Class 类链。隐式钩子仍走 load_field_from_class，模块 globals 与类自身模板表不参与其对象身份的隐式查询。结构检查由全局 is_a/is_subclass 使用 Builtin.cpp 内部的纯结构查询实现；Object 删除内建 is_a。
 

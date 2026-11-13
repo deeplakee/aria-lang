@@ -53,7 +53,7 @@ struct LoopCtx {
 
 `break`/`continue` 跳出循环体时，循环体内声明的局部变量在运行期已「离开作用域」，必须在跳转指令前用 `POP_N` 弹掉，否则栈会泄漏。`loop_scope_depth` 记录的是循环**体所在 scope 的外层深度**，`emit_pop_locals_to(loop_scope_depth)` 会弹掉所有比这更深的局部（即循环体内声明的局部），无论 `break`/`continue` 出现在循环体的哪一层嵌套块里。
 
-注意 `emit_pop_locals_to` **只发射、不移除登记**（M4 起与退出作用域共用同一发射口：整区一条 `POP_N`，弹区含被捕获局部才追加一条批量 `CLOSE_UPVALUE`）；真正从 `locals_` 移除的只有退出作用域路径随后调的 `FunctionCtx::end_scope()`。因为 `break`/`continue` 后的语句（死代码或其他分支）仍在作用域内，可引用这些局部。若 break/continue 路径误走了登记移除，循环体局部会被 `locals_` pop_back 掉，后续语句引用该名会误落全局（运行期 `UndefinedVariable`）。
+注意 `emit_pop_locals_to` **只发射、不移除登记**（与退出作用域共用同一发射口：整区一条 `POP_N`，弹区含被捕获局部才追加一条批量 `CLOSE_UPVALUE`）；真正从 `locals_` 移除的只有退出作用域路径随后调的 `FunctionCtx::end_scope()`。因为 `break`/`continue` 后的语句（死代码或其他分支）仍在作用域内，可引用这些局部。若 break/continue 路径误走了登记移除，循环体局部会被 `locals_` pop_back 掉，后续语句引用该名会误落全局（运行期 `UndefinedVariable`）。
 
 ### 4.3 入栈/出栈的 RAII 式对称
 

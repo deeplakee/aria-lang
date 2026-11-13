@@ -148,7 +148,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
 
-**局部区预留约定（M1 已验证）**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
+**局部区预留约定**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
 
 ### 4.4 Upvalue 与闭包
 
@@ -158,7 +158,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `STORE_UPVALUE` | `idx:u8` | `[v] -> [v]` | peek-store 到该 upvalue |
 | `CLOSE_UPVALUE` | 无 | `[] -> []` | 批量关闭所有槽址 >= 当前栈顶的开 upvalue：值迁入堆上的 `ObjUpvalue.closed`，无弹栈（弹栈由前置 `POP_N` 承担；对齐 Lua `OP_CLOSE`）。作用域退出时编译器在弹区 `POP_N` 后发射（仅当弹区含被捕获局部） |
 
-> 三条均已落地（M4）。编译期单函数捕获上限 = u8 索引域容量 256（索引 0..255），超限报 `TooManyUpvalues`。`CLOSE_UPVALUE` 的发射点由 CodeGen `emit_pop_locals_to` 统一收口（M4，退出作用域与 break/continue 共用）：弹出比目标深度更深的局部区时整区一条 `POP_N`（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（批量关闭槽址 >= 新栈顶的开 upvalue；弹区槽已在新栈顶之上，不 push 不覆写即安全，且两指令均无分配无安全点；外层帧槽址恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部）。落点：块/循环/try 的 `end_scope` 退出、for-in per-iteration 出口（每轮新鲜绑定语义：每轮关闭旧 upvalue，下一轮捕获全新一份）、break/continue 跳出循环；此外帧退出（RETURN / unwind 丢弃区间）由 VM `exit_frame`/`close_upvalues` 整段关闭，无需指令（见 §5.9 与 runtime.md）。`STORE_UPVALUE` 的 peek-store 与 STORE_LOCAL/STORE_GLOBAL 同约定（§3.1）。
+> 三条均已落地。编译期单函数捕获上限 = u8 索引域容量 256（索引 0..255），超限报 `TooManyUpvalues`。`CLOSE_UPVALUE` 的发射点由 CodeGen `emit_pop_locals_to` 统一收口（退出作用域与 break/continue 共用）：弹出比目标深度更深的局部区时整区一条 `POP_N`（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（批量关闭槽址 >= 新栈顶的开 upvalue；弹区槽已在新栈顶之上，不 push 不覆写即安全，且两指令均无分配无安全点；外层帧槽址恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部）。落点：块/循环/try 的 `end_scope` 退出、for-in per-iteration 出口（每轮新鲜绑定语义：每轮关闭旧 upvalue，下一轮捕获全新一份）、break/continue 跳出循环；此外帧退出（RETURN / unwind 丢弃区间）由 VM `exit_frame`/`close_upvalues` 整段关闭，无需指令（见 §5.9 与 runtime.md）。`STORE_UPVALUE` 的 peek-store 与 STORE_LOCAL/STORE_GLOBAL 同约定（§3.1）。
 
 ### 4.5 全局变量
 
@@ -275,7 +275,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 
 `CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述（已落地，M4）**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE proto_index:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `proto.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**`CLOSURE` 的捕获描述**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE proto_index:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `proto.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
 
 - `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
 - `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
@@ -422,7 +422,7 @@ STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 
 ### 5.4 闭包 / upvalue
 
-已落地（M4）。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFnProto`，无前置 `LOAD_CONST`）：
+已落地。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFnProto`，无前置 `LOAD_CONST`）：
 
 ```
 # 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
@@ -608,7 +608,7 @@ L_end:
 
 ### 6.4 内建函数与 rest 切片
 
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.agents/rules/runtime.md` 与 vm-design.md §7）。
+- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.agents/rules/runtime.md` 与 vm-design.md §5）。
 - 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
 
 ### 6.5 迭代器
@@ -632,7 +632,7 @@ class CodeUnit {
 - **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFnProto::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
 - **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFnProto` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
 
-`ObjFnProto` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFnProto::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地（M4）：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
+`ObjFnProto` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFnProto::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
 
 ## 8. 反汇编器输出格式（已落地）
 

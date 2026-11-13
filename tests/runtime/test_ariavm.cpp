@@ -146,7 +146,7 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // 指定共享模块的具名函数:M4 闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
+    // 指定共享模块的具名函数:闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
     // 返回白色,调用方自守。m 未根须自守:工厂内 intern name 与 new_object 均 GC 点。
     ObjFnProto* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
@@ -530,7 +530,7 @@ TEST_F(AriaVMStress, TypeMismatchIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::TypeMismatch);
-    // 直报站点统一切入寄存器(M3):消息在装箱点烘齐(码类前缀+细节,不含位置前缀 --
+    // 直报站点统一切入寄存器:消息在装箱点烘齐(码类前缀+细节,不含位置前缀 --
     // 位置归跟踪行),未捕获物化时尾部附堆栈跟踪行(单帧即 at <main>,行号 = ADD 指令所在行)。
     EXPECT_EQ(out.error().message(), "Runtime: TypeMismatch operator '+' requires numbers, got Nil and Int\n"
                                      "  at <main> (<script>:3)");
@@ -550,7 +550,7 @@ TEST_F(AriaVMStress, DivisionByZeroIsUncaught) {
     const auto out = vm.run(fn);
     ASSERT_FALSE(out.has_value());
     EXPECT_EQ(out.error().code(), ErrorCode::DivisionByZero);
-    // 同 TypeMismatchIsUncaught:位置由未捕获堆栈跟踪行携带(M3,消息无位置前缀)。
+    // 同 TypeMismatchIsUncaught:位置由未捕获堆栈跟踪行携带(消息无位置前缀)。
     EXPECT_EQ(out.error().message(), "Runtime: DivisionByZero integer division by zero\n"
                                      "  at <main> (<script>:1)");
 }
@@ -596,8 +596,8 @@ TEST_F(AriaVMStress, StackOverflowOnRunawayRecursion) {
     EXPECT_EQ(out.error().code(), ErrorCode::StackOverflow);
 }
 
-// M6:协程内未捕获错误经 unwind 链式多跳转投主上下文,主上下文亦未捕获 -> 物化 Error。跟踪截断
-// 在协程边界(P4):at 行只含主上下文帧链,最内层 = resume 调用点(原生不进帧),协程内帧(匿名
+// 协程内未捕获错误经 unwind 链式多跳转投主上下文,主上下文亦未捕获 -> 物化 Error。跟踪截断
+// 在协程边界:at 行只含主上下文帧链,最内层 = resume 调用点(原生不进帧),协程内帧(匿名
 // 闭包体与 leaf)不并入 -- 语料 .err 是子串判定、钉不了缺席,精确等值断言钉在这里。
 TEST_F(AriaVMStress, UncaughtInCoroutineTraceTruncatedAtBoundary) {
 
@@ -1103,7 +1103,7 @@ TEST_F(AriaVMStress, ImportModuleRuntimeErrorPropagates) {
     EXPECT_EQ(result, aria::InterpretResult::RuntimeError);
 }
 
-// M3:模块体 run-once 期间 throw -- unwind 弹 <module> 帧后,导入方 IMPORT 站点所在 try 捕获
+// 模块体 run-once 期间 throw -- unwind 弹 <module> 帧后,导入方 IMPORT 站点所在 try 捕获
 // (外层帧 last_ip = IMPORT 指令,exception-implementation-pitfalls.md 坑 #2),异常值落 catch 参数槽;
 // boomer 半初始化仍在表(加载事实源 = 表成员资格)。经 run(SourceFile&, ObjModule&) 跑完后检视捕获全局(interpret
 // 只回类别)。
@@ -1335,7 +1335,7 @@ TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
 }
 
 // ============================================================
-// M4 闭包机制(手写 emit;全部跑在 AriaVMStress 下,每个 new_object 触发 collect,
+// 闭包机制(手写 emit;全部跑在 AriaVMStress 下,每个 new_object 触发 collect,
 // 顺带锻炼开链 tracer 标根 / CLOSURE 根安全 / 关闭挂点的分配安全)
 // ============================================================
 
@@ -1749,7 +1749,7 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
 }
 
 // ============================================================
-// M5 类机制(手写 emit)。全部跑在 AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼
+// 类机制(手写 emit)。全部跑在 AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼
 // bootstrap 根 / 实例化快慢路径 / LOAD_FIELD 现场绑定 / 超类链的分配安全。
 // ============================================================
 
@@ -2416,7 +2416,7 @@ TEST_F(AriaVMStress, InstanceFieldShadowsStatic) {
     EXPECT_EQ(out->as_int(), 8);
 }
 
-// ---- M5 报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_FIELD 运行期防线)----
+// ---- 类机制报错矩阵( LOAD_FIELD/STORE_FIELD/MAKE_CLASS/LOAD_SUPER_FIELD 运行期防线)----
 
 // 对 nil 取字段 -> UndefinedProperty(nil 并入非对象统一文案「type Nil does not support
 // field access」,类型名 Nil 已可辨识)。
@@ -2592,7 +2592,7 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
 }
 
 // ============================================================
-// M5 泛化:native 落表(原生值经 MAKE_STATIC/类上赋值落类表 = 静态槽语义,读恒原值
+// 泛化:native 落表(原生值经 MAKE_STATIC/类上赋值落类表 = 静态槽语义,读恒原值
 // --方法性 = defining class 戳;绑定形态 ObjBoundMethod 的原生分支由对象层直接构造,
 // 见 test_objboundmethod)。
 // ============================================================

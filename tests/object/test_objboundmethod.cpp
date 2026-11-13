@@ -131,7 +131,7 @@ TEST(ObjBoundMethod, ToString) {
     EXPECT_EQ(bound->repr(), "<bound method m>");
 }
 
-// 原生方法绑定(M5 泛化):method_ 可为 ObjFunction -- 内建类型方法的载体;
+// 原生方法绑定(泛化):method_ 可为 ObjFunction -- 内建类型方法的载体;
 // name() 非虚取名分派(闭包 fn 名 / 原生 name_),调试渲染同文案。
 TEST(ObjBoundMethod, NativeMethodBinding) {
     GC   gc;

@@ -230,5 +230,4 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
   ObjModule `dir_`/`name_`/`abs_path()` 字段规格亦在此文。
 - [`bytecode-instruction-set.md`](../bytecode/bytecode-instruction-set.md) §4.15 / §5.9：IMPORT 指令
   格式与模块导入设计段。
-- [`vm-design.md`](./vm-design.md)：`ObjModule` / 模块表 / `DEF/LOAD/STORE_GLOBAL` 的分阶段
-  规划（M2 起用）。
+- [`vm-design.md`](./vm-design.md)：`ObjModule` / 模块表 / `DEF/LOAD/STORE_GLOBAL` 的设计。

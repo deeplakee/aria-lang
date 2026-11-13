@@ -14,8 +14,8 @@ description: 加或改一条字节码指令（OpCode）时使用。列出完整�
 
 ## 2. 同步面（按序过）
 
-1. **`src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST`**：**末尾追加**一行 `X(NAME, Format)`。枚举顺序即 opcode 数值，插中间会移动所有后续指令的编号（`kOpCodeCount`、画像输出、手写字节码全受影响）。
-2. **`tests/bytecode/test_disassembler.cpp` 的 `EXPECT_EQ(kOpCodeCount, 79u)`**：X 表行数哨兵，加一条就改这个数（不改则测试红，这是它存在的意义）。
+1. **`src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST`**：**按语义段插入**一行 `X(NAME, Format)`（新算子排进对应段，二元与一元对齐段内既有排布）。opcode 编号会移动，但无数值稳定消费面：CodeUnit 无序列化格式、画像按名输出、测试对 opcode 的引用全走枚举符号（裸字节是操作数载荷）。唯一硬约束：勿拆散 `LOAD_LOCAL_1..8` / `STORE_LOCAL_1..8`（static_assert 锁连续）。
+2. **`tests/bytecode/test_disassembler.cpp` 的 `EXPECT_EQ(kOpCodeCount, 85u)`**：X 表行数哨兵，加一条就改这个数（不改则测试红，这是它存在的意义）。
 3. **`src/runtime/Eval.cpp` 的 `dispatch_loop`**：加 `case`。漏了不会编译错--落 `default: UNREACHABLE()`，**运行期 fatal**。
 4. **`src/runtime/opcode_profile.cpp`**：同步 `fetch` 的全枚举 switch。新增格式时核对 `size_of`（默认按 3 字节）；改变出边时核对 `records_fall_pair` 与 `is_frame_switch`（分别按格式和指令分类）。
 5. **`Disassembler`**：按格式表自动分发，既有格式零改动；**只有新格式**才加分发分支。渲染回归在 `tests/bytecode/test_disassembler.cpp`。

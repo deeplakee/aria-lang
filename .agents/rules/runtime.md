@@ -7,7 +7,7 @@ paths:
 
 # runtime 层模块参考
 
-VM/执行上下文的设计与分阶段路线见 `.agents/design/vm-design.md`；import 端到端处理见 `.agents/design/import-handling-overview.md`，路径解析细节见 `.agents/design/import-path-resolution.md`；M3 异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception-implementation-pitfalls.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的成本基线与测量手法见 `bench/vm_bench.cpp` 文件头与 `bytecode-instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
+VM/执行上下文的设计与分阶段路线见 `.agents/design/vm-design.md`；import 端到端处理见 `.agents/design/import-handling-overview.md`，路径解析细节见 `.agents/design/import-path-resolution.md`；M3 异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception-implementation-pitfalls.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的测量入口与形态取舍见 `bench/vm_bench.cpp` 文件头与 `bytecode-instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
 
 ## `runtime/FrameStack.hpp`
 

@@ -237,7 +237,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 - **GCC 系能兑现 per-site 且无广播成本,派发热路径确有小胜**;但其 switch 被编成比较链、基线本身弱,语言级(整程序)收益微小且在浮点重型负载上大幅回退,绝对水平仍全面落后 clang 的 switch 构建,不足以养双形态基础设施。
 - CPython/Lua 同为「switch 与 computed goto 两形态按编译器条件择一」,其保留 computed goto 的前提是主场 GCC 上有两位数收益;aria 实测不存在这个前提。
 
-结论:**默认恒为 switch 形态**;若未来主平台/主编译器变化且实测 computed goto 净赢,从 264acab 复活机制再评估。测量原始数据与取证细节见仓库根 `computed-goto-bench-ab.md`(测量工件,不入库)。
+结论:**默认恒为 switch 形态**;若未来主平台/主编译器变化且实测 computed goto 净赢,从 264acab 复活机制再评估。
 
 ### 4.11 嵌套执行(重入口,已落地)
 

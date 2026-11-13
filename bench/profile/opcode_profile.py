@@ -266,8 +266,7 @@ def main():
             entry = dict(data)
             for kind in ("pair", "jt", "tr"):  # tuple 键序列化不成 JSON,折成 "A|B"
                 entry[kind] = {"|".join(k): v for k, v in data[kind].items()}
-            # 旧口径 tr = fall-through 配对(pair)+ 跳转目标/帧切换派发边(jt),合成后与
-            # 2026-09 快照的转移矩阵口径可比
+            # tr = fall-through 配对(pair) + 跳转目标/帧切换派发边(jt) 的合成
             merged = dict(entry["pair"])
             for key, count in entry["jt"].items():
                 merged[key] = merged.get(key, 0) + count

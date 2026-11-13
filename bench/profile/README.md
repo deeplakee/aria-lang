@@ -59,5 +59,4 @@ python3 bench/profile/opcode_profile.py --static --aria=build/disasm/aria
 - **指令计数是确定量**:同一语料任何机器上逐位相同,可入库可对照;ns/instr 是机器量,只在那台
   机的 Release 原样构建上成立(报告里标注机器)。
 - 性能结论一律回到 `build/rel` 原样 Release 做 A/B(对齐 `bench/lang` 纪律);探针构建只出计数,
-  不出时间。
-- 报告快照存 `local-opcode-profile-<日期>.md`(分析型文档,数字是当时的语料与本机结论;`local-` 前缀的 markdown 一律本机报告,不入库)。
+  不出时间。测量结果只在当次评审里使用,不落任何仓库内文件。

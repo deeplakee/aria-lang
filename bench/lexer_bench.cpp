@@ -1,9 +1,9 @@
 // bench/lexer_bench.cpp
 //
-// 词法层性能基准:词法吞吐(四源形态 normal/numeric/cjk/string(_huge),规模与 lexer-notes §2
-// 对应、改规模须同步文档)、端到端编译、位置派生原语、utf8 解码微基准。数字与解读归档在
-// .agents/notes/compile/lexer-notes.md,本程序是可复现入口。计时循环写死原地、不抽
-// 「best-of-N + lambda」外壳(外壳噪声与逐 token 紧循环同量级,缘由与实测见 lexer-notes §1)。
+// 词法层性能基准:词法吞吐(四源形态 normal/numeric/cjk/string(_huge))、端到端编译、位置派生
+// 原语、utf8 解码微基准。测量纪律与已否形态见 .agents/notes/compile/lexer-notes.md,本程序是
+// 可复现入口。计时循环写死原地、不抽「best-of-N + lambda」外壳(外壳噪声与逐 token 紧循环同
+// 量级,缘由见 lexer-notes §1)。
 //
 // 复现(文档各表统一 -O2 -DNDEBUG 无 LTO 基线;Debug 只可对拍行为,LTO 影响见 lexer-notes):
 //   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \

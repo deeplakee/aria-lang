@@ -242,13 +242,8 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 臂间无分隔符）与表达式（matchExpr，分支为 expression，无花括号；臂间以 "," 分隔，
 # 不允许尾逗号）。"=>" 为新引入符号。
 #
-# try/finally 裁撤记录（2026-09）：finally 子句已从文法移除（tryCatchStmt 仅存可选 catch，
-# 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
-# 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock/Error 六函数，
-# 另挂十三个内建类（协程原语在内建类 Coroutine 上））；参照实现 Lua/Wren 均
-# 无 finally；其控制流语义是剩余异常机制中最贵的一块。善后后继为 defer（Go/Zig 式：defer
-# 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行）；defer 为可选后续（优先级最低，
-# 其他功能完成后另定），细节重启设计时定。
+# tryCatchStmt 产生式允许省略 catch，但语义检查要求 try 必须带 catch（TryWithoutHandler）。
+# 不支持 finally 子句；finally 是普通标识符。
 #
 # def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> memberVar | funDecl | function）--
 #   - memberVar（var name (= expr)?;）-> 静态变量，属类本身（Foo.x 读写）。窄形态：var 后仅单

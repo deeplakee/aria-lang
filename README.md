@@ -84,8 +84,8 @@ Windows 配置（Ninja + clang）、构建选项（TagValue 值表示 / mimalloc
 ## 测试与基准
 
 ```sh
-cmake --build build --target aria_tests -j
-ctest --test-dir build --output-on-failure
+cmake --build build --target aria_tests -j &&
+ctest --test-dir build --output-on-failure --no-tests=error
 ```
 
 测试分两层：`tests/<module>/` 是按模块分目录的 C++ 单元测试；`tests/language/` 是用 aria

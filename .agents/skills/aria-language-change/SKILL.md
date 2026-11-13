@@ -22,22 +22,13 @@ description: aria 语言面改动同步清单：改文法（docs/grammar.txt）�
 
 ## 2. 验证要求
 
-- **双配置全量**：NaN-boxing（默认）与 TagValue（`-DARIA_USE_TAGVALUE=ON` 独立
-  build 目录）各跑一遍 build + ctest 全量（含语料）。
-- 语料 runner 是 PRE_TEST 发现：新增 `.aria` 无需重链接，`ctest --test-dir build -R <片段>` 即收。
+- 按[测试文档](../../../docs/testing.md#值的两种表示)完成默认与 TagValue 的全量验证（含语料）；新增语料先[单点验证](../../../docs/testing.md#验证新增语言脚本)。
 - 报错文案变更跑 `python3 tools/check_error_messages.py`，并手工同步 `docs/guide/17-builtin-reference.md`「常见错误消息速查」里逐字引用的消息（门禁只扫 `src/`）。
 
-## 3. 语料写作红线（详见 `tests/language/README.md`）
-
-- 正向一律 `assert` 收口，期望值手算写死，不写同义反复。
-- **不钉临时未实装行为**：「期待报错」的负向用例只收设计上永久如此的错误，
-  未落地特性（见该 README「当前禁区」节）写了翻转日会变红。
-- `.err` 子串只取消息稳定正文，禁绝对路径与随内容漂移的行号。
-- 教程面：map 顺序未规定，示例一律先 sort 再输出。
-
-## 4. 常见走偏
+## 3. 常见走偏
 
 - 只改实现不改文法 / 只改文法不改语料 = 验收面缺口（三者都是验收面，缺一项即未完成）。
-- 特性落地时要**回头删** `tests/language/README.md`「当前禁区」里已翻转的条目并补负向用例--禁区不清理会继续指挥后续用例。
+- 按[语料规则](../../../tests/language/README.md)编写用例。特性落地时同步删掉该 README「当前禁区」中已失效的条目。
+- 教程面：map 顺序未规定，示例一律先 sort 再输出。
 - 语义决策（拍板点）记入 `.agents/reference/` 或 `.agents/notes/` 的对应文档，
   不散落在 commit 说明或会话里。

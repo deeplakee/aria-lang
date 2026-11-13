@@ -1,5 +1,5 @@
 #!/bin/sh
-# pre-commit 钩子:每次 git commit 自动用 tools/check_error_messages.py 判报错文案,违规即拒提交。
+# pre-commit 钩子：检查报错文案和暂存的文档，违规即拒提交。
 #
 # 一次性启用(仓库级本地配置,钩子本体入库,与 commit-msg 共用 core.hooksPath):
 #     git config core.hooksPath tools/hooks
@@ -14,7 +14,7 @@ if ! python3 "$root/tools/check_error_messages.py" "$root/src"; then
     exit 1
 fi
 
-if ! python3 "$root/tools/check_agent_docs.py"; then
-    echo "agent 文档未过机械检查 -- 路径须存在、符号须还在源码里、reference/notes 禁落地记录与计划词" >&2
+if ! python3 "$root/tools/check_agent_docs.py" --staged; then
+    echo "暂存的文档未过机械检查 -- 请修正并重新暂存" >&2
     exit 1
 fi

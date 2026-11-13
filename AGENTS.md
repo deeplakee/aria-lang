@@ -37,19 +37,26 @@ external/    isocline（REPL）/ googletest / mimalloc，vendored、构建零联
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug   # 配置（Windows / 构建选项见 docs/building.md）
 cmake --build build --target aria -j           # 构建解释器
-cmake --build build --target aria_tests -j && ctest --test-dir build --output-on-failure  # 测试
+cmake --build build --target aria_tests -j && ctest --test-dir build --output-on-failure --no-tests=error
 clang++ -std=c++23 -I src -fsyntax-only <file>  # 单文件语法检查（-I src 必带）
 clang-format -i <file>                         # 格式化（clang-format 23.1.3，与 CI 一致）
 python3 tools/check_error_messages.py          # 报错文案机械检查（钩子壳 tools/hooks/pre-commit）
 python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩子壳 tools/hooks/commit-msg）
-python3 tools/check_agent_docs.py              # agent 文档防漂移检查（路径/符号/禁词，钩子壳 tools/hooks/pre-commit）
+python3 tools/check_agent_docs.py              # 检查文档链接、agent 文档路径/标识符/禁词
 ```
 
 构建细节（三平台配置 / 构建选项 / 构建目录约定 / clangd）见 `docs/building.md`；测试组织与跑法见 `docs/testing.md`（技能 `aria-testing`）；跑基准见技能 `aria-bench`。
 
 ## 文档地图
 
-真源一律住中立目录 `.agents/` 或 `docs/`，各 agent 的工具目录（`.claude/`、`.zcode/` 等）不入库：开发者按自己用的 agent 在本地建软链指向 `.agents/` 对应文件（技能按 frontmatter `description` 触发，模块参考按 `paths:` 匹配加载）。
+真源一律住中立目录 `.agents/` 或 `docs/`。新检出时按下表和任务场景手动读取。自动发现依赖工具
+支持并配置了对应的目录和 frontmatter（技能用 `description`，按路径加载的规则用 `paths:`）。
+各工具的本地接线不入库。例如，在仓库根目录给使用 `.claude/rules/` 的工具接入 bytecode 参考：
+
+```sh
+mkdir -p .claude/rules
+ln -s ../../.agents/reference/bytecode.md .claude/rules/bytecode.md
+```
 
 `.agents/` 按「拿它干什么」分三桶，写文档先判归属：
 
@@ -59,7 +66,7 @@ python3 tools/check_agent_docs.py              # agent 文档防漂移检查（�
 | `notes/` | 别再犯、别重做：踩坑挣下的不变式、被否方案的结论、测量纪律 | 现状复述（代码注释或 reference 已写的不要抄第二份） |
 | `skills/` | 怎么做一件事：按序过的关卡与判据 | 与 `docs/` 同文的正文（只留判据 + 指针） |
 
-**模块参考 `.agents/reference/`（9 个，读到匹配源码路径时自动加载）**：
+**模块参考 `.agents/reference/`（按源码路径选读）**：
 
 | 源码目录 | 参考文件 | 覆盖 |
 | --- | --- | --- |
@@ -89,7 +96,9 @@ python3 tools/check_agent_docs.py              # agent 文档防漂移检查（�
 
 **人类文档 `docs/`**：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 
-文档里的仓库路径与 `Foo::bar` 引用由 `tools/check_agent_docs.py` 机械校验（pre-commit 挂载）；`reference/` 与 `notes/` 还禁落地记录与计划词汇。
+`tools/check_agent_docs.py` 检查行内 Markdown 相对链接的目标路径，以及 agent 文档里的仓库路径、
+标识符与禁词。`Foo::bar` 只查两个标识符是否分别出现，不验证成员归属。CI 检查检出内容；
+本地启用 Git 钩子后，pre-commit 检查暂存快照。
 
 新增模块参考：建 `.agents/reference/<dir>.md`（frontmatter 带 name/description/paths）；新增规格放 `.agents/reference/specs/`，由对应模块参考指路；新增场景技能：建 `.agents/skills/<name>/SKILL.md`。本地软链按自己用的 agent 自建，不入库。
 
@@ -161,7 +170,7 @@ python3 tools/check_agent_docs.py              # agent 文档防漂移检查（�
 
 ## 错误处理（src/error/）
 
-原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/reference/error.md`，通道 2 的落地状态见 `.agents/reference/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
+原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/reference/error.md`，通道 2 见 `.agents/reference/runtime.md`「VM 异常通道」。
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
 - **四条错误通道**（见 `.agents/reference/runtime.md`「VM 异常通道」）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。

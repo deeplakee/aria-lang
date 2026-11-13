@@ -11,13 +11,33 @@
 ## 运行测试
 
 ```sh
-cmake --build build --target aria_tests -j
-ctest --test-dir build --output-on-failure    # 运行全部测试
-ctest --test-dir build -R <名字片段>           # 只运行名字匹配的测试
+cmake --build build --target aria_tests -j && ctest --test-dir build --output-on-failure --no-tests=error
+```
+
+只运行已登记、名字匹配的用例：
+
+```sh
+ctest --test-dir build -R '用例名片段' --output-on-failure --no-tests=error
 ```
 
 如果编译失败，先修复编译错误再运行 ctest：测试程序是上一次成功构建的产物，直接运行
 得到的是旧版本的结果。
+
+### 验证新增语言脚本
+
+已有测试二进制时，不必重新构建。直接运行 GTest，它每次启动都会扫描语料目录：
+
+```sh
+build/tests/aria_tests --gtest_filter='*用例名片段*'
+```
+
+Windows 的可执行文件为 `build/tests/aria_tests.exe`（Ninja 单配置构建）。检查输出是否实际跑了
+目标用例：GTest 匹配不到用例时也可以返回成功。语料用例名由相对路径去掉 `.aria`、把 `/`
+换成 `_` 得到，模块用例可用目录名匹配。
+
+CTest 的 `PRE_TEST` 模式会复用已有发现清单，单独增删脚本不会让它失效。语料清单改动后，
+全量验收可在新构建目录运行 CTest，或直接运行不带筛选的 GTest。CTest 的
+`--no-tests=error` 只能防止完全没匹配到测试，不能发现清单里缺了部分用例。
 
 ## 编写测试
 
@@ -27,9 +47,7 @@ ctest --test-dir build -R <名字片段>           # 只运行名字匹配的测
 `testing::TempDir()` 只返回系统临时目录，不会建目录也不会清理：文件名要带用例名（并行
 运行 `ctest -j` 时共享同一目录），需要的话在用例里自己建子目录并删除。
 
-**语言测试脚本**的完整规则（目录结构、判定方式、期望输出文件的写法）见
-`tests/language/README.md`。要点：正向脚本必须成功运行，并用 `assert` 验证结果；反向
-脚本要求程序在编译期或运行期失败。新增脚本会被 ctest 自动发现，不需要重新构建。
+**语言测试脚本**的目录结构、判定方式和期望文件写法见 [语料 README](../tests/language/README.md)。
 
 ## 值的两种表示
 
@@ -53,5 +71,5 @@ ctest --test-dir build -R <名字片段>           # 只运行名字匹配的测
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 在每次提交时运行：报错文案与代码格式检查；Linux、Windows、
-macOS 三平台的构建与全部测试，其中包含 TagValue 配置与 Release 配置。
+推送到 `main` 或向 `main` 提交 PR 时，CI 运行文档、报错文案与代码格式检查，并在
+Linux、Windows、macOS 构建和测试，其中包含 Linux TagValue 配置与三平台 Release 配置。

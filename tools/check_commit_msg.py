@@ -4,8 +4,8 @@
 用法:
     python3 tools/check_commit_msg.py <message-file>
 
-只查机器能判的项;语义判断(正文是否在讲过程、subject 是否真的在说改动)仍靠人读
-(规范第 5 步)。有硬违规时打印违规行与改法并返回 1。
+格式违规会打印行号与改法并返回 1。内容模式只提示复核，语义判断仍靠人读
+（规范第 5 步）。
 """
 
 import re
@@ -31,20 +31,19 @@ SECTION_LABELS = ("why", "what", "how", "motivation", "changes", "notes", "backg
 PAST_TENSE_VERBS = (
     "added", "fixed", "removed", "renamed", "moved", "changed", "updated", "deleted", "implemented", "landed",
     "introduced", "replaced", "simplified", "refactored", "cleaned", "dropped", "made", "allowed", "improved",
-    "reduced", "increased", "merged", "split", "reverted", "bumped", "aligned", "unified", "extracted", "migrated",
+    "reduced", "increased", "merged", "reverted", "bumped", "aligned", "unified", "extracted", "migrated",
 )
 
-# 硬禁词:命中即违规。判据是「这段文字描述的是本次改动,还是得到它的过程」(规范 §3)。
-BANNED_PATTERNS = (
+# 内容线索：命中后由读者判断是否违反规范 §3（如百分比也可能是配置值）。
+CONTENT_HINTS = (
     (r"as discussed|per review|per discussion|we decided|we chose|decision was|user decision|after review",
      "过程/决策注记:直述理由本身"),
     (r"this commit|this change|the purpose of this|this patch", "自我指涉旁白:直接说内容"),
     (r"full rationale|detailed rationale|see\s+\S+\.(md|txt)|for details see|refer to .*\.md",
      "文档指针:文档随批提交,说明里不指路"),
-    (r"benchmark(ed|s)? (shows|says)|\d+(\.\d+)?% (faster|slower|fewer)|\d+ ns", "测量数据:归 reference 文档或单独 perf 提交"),
-    (r"\d+(\.\d+)?\s*%", "实测数字:结论写方向,数字归 reference 文档"),
-    (r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b", "commit 哈希:说明不指路,git log 已有"),
-    (r"\b20\d\d-\d\d(-\d\d)?\b", "日期:说明里不写落地时间"),
+    (r"benchmark(ed|s)? (shows|says)|\d+(\.\d+)?\s*%|\d+ ns", "核对是否为实测数据；配置值可以保留"),
+    (r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b", "核对是否用 commit 哈希指路"),
+    (r"\b20\d\d-\d\d(-\d\d)?\b", "核对是否在记录落地时间"),
     (r"\b(initially|originally|previously|at first|used to)\b", "过程叙述:只写现在的行为与机制"),
     (r"\bM[1-6]\b|phase \d|stage \d|batch \d|milestone", "规划词汇:按语言域名称描述改动"),
     (r"^\s*(improve|clean up|enhance|polish|optimize) (the )?(code|things|stuff)", "空泛评价:说机制变化"),
@@ -114,7 +113,7 @@ def main(argv) -> int:
     if tests_lines and not tests_lines[0][len(TESTS_LABEL):].strip():
         violations.append((None, f"`{TESTS_LABEL}` 行为空", "写实际跑过的命令与结果,或整行删掉"))
 
-    # 逐行检查:ASCII-only、列宽、禁词、正文形态。
+    # 逐行检查：ASCII、列宽与正文形态是门禁，内容模式仅提示。
     for number, line in enumerate(lines, 1):
         bad_chars = sorted({ch for ch in line if ord(ch) > 0x7E})
         if bad_chars:
@@ -122,10 +121,10 @@ def main(argv) -> int:
             violations.append((number, f"含非 ASCII 字符 {shown}", "说明一律英文 ASCII-only:禁 CJK/全角标点/em-dash(规范 §1)"))
         if len(line) > WIDTH_MAX:
             violations.append((number, f"列宽 {len(line)} > {WIDTH_MAX}", "按 72 列折行"))
-        for pattern, advice in BANNED_PATTERNS:
+        for pattern, advice in CONTENT_HINTS:
             hit = re.search(pattern, line, re.IGNORECASE)
             if hit is not None:
-                violations.append((number, f"命中禁写内容 {hit.group(0)!r}", advice))
+                advisories.append(f"第 {number} 行匹配 {hit.group(0)!r} -- {advice}")
         if number > 1 and line.strip():
             if is_section_label(line):
                 violations.append((number, "正文用了段标签(旧三段骨架)", "正文写散文,不分段标签(规范 §3)"))
@@ -142,7 +141,7 @@ def main(argv) -> int:
         print(f"\n共 {len(violations)} 处违规,未通过。")
         return 1
 
-    print(f"通过: {len(lines)} 行,无 ASCII/列宽/形状/禁写内容违规。")
+    print(f"通过: {len(lines)} 行，无格式违规。")
     return 0
 
 

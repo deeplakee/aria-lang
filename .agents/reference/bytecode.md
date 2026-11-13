@@ -14,7 +14,7 @@ paths:
 **指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（以注册表为准；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0；`kOpCodeCount == 79` 有测试哨兵）。
 
 - 表展开生成 `OpCode` 枚举 / `kOpCodeCount`（越界判定用，替代依赖枚举稠密）/ `kOpCodeNames` / `kOpCodeFormats`（`inline constexpr` 查表，供 Disassembler 等冷路径消费；VM 热路径不查表）；`OpFormat` 是独立的操作数格式类别枚举（`Simple`/`U8`/`U16`/`ConstU16`/`ImmI8`/`JumpFwd`/`JumpBack`/`RangeFlags`/`RegU8`/`Import`）。
-- **新增指令流程**：X 表加一行（选既有 OpFormat）-> Eval 主循环（`dispatch_loop`）加对应 case -> 文档同步；Disassembler 与名字/格式表零改动。**引入新 OpFormat 类别**要同步三处：Disassembler 分发 switch、`runtime/opcode_profile.cpp` 的 `size_of`（`default: return 3` 会把新格式静默当 3 字节）与 `records_fall_pair`（直线型判定按格式派生）。
+- 指令改动的同步面与验证步骤见 [aria-bytecode-change](../skills/aria-bytecode-change/SKILL.md)。
 - `op_symbol(OpCode)`（`inline constexpr`）：二元算术/比较指令 -> 报错消息里的源码算子记号（`ADD` 为 `"+"`），其余 opcode 取到即 `"?"`（消费方只对本组取号，别的落 `default` 表编程错误）。消费方 = VM 数值二元的类型守卫。
 - **表内不放说明性注释**（中英混排难以列对齐），语义细节统一放表头注释块速览与 `.agents/reference/specs/instruction-set.md`；续行符 `\` 对齐交给 clang-format（`AlignEscapedNewlines: Left`）自动维护；若确需表内注释只能用块注释 `/* */`（多行宏体内 `//` 会因反斜杠续行吞掉下一行）。
 - **无 `SETUP_EXCEPT`/`END_EXCEPT`**：异常走 CodeUnit 内记录表，见 `AGENTS.md`「错误处理」第 2 条。完整指令清单见 `.agents/reference/specs/instruction-set.md`。

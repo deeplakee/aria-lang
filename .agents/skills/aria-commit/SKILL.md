@@ -34,7 +34,7 @@ Tests: <optional single line>
 | `feat` | 行为从无到有（新特性 / 新机制 / 新 builtin） |
 | `fix` | 行为从错到对 |
 | `refactor` | 外部可观测行为不变的结构调整 |
-| `perf` | 行为不变，动机就是性能（量化对比归 reference 文档，不进说明） |
+| `perf` | 行为不变，动机就是性能（测量报告按 [aria-bench](../aria-bench/SKILL.md) 处理） |
 | `docs` | 只改文档与注释 |
 | `test` | 只改测试与语料基建（伴随 feat/fix 的测试随本批，不单拆） |
 | `build` | 构建系统与依赖 |
@@ -54,7 +54,7 @@ scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `by
 | 实现步骤流水 | "first added a method to ObjString, then moved it into util" | 只写最终落点 |
 | 评审/决策过程 | "(user decision)"、"as discussed, we picked option B" | 直述理由本身 |
 | 被否方案推导 | "deliberately not shared with the Lexer parser (which accepts `_`)" | 一行结论或不写 |
-| 实测数据 | "extracting the helper measured 9% slower" | 删；数字属 reference 文档或 `perf` 提交 |
+| 实测数据 | "extracting the helper measured 9% slower" | 说明只写原因；配置阈值之类的行为常量可以保留 |
 | 文档指针 | "full rationale in some-plan.md" | 删；文档随批提交，`git show --stat` 即可见 |
 | 项目状态叙述 | "there was previously nowhere to put this" | 删；只写现在的行为与机制 |
 | 规划词汇 | "M5 phase 3"、"batch 9"、"finalize" | 按语言域名称描述改动 |
@@ -66,7 +66,7 @@ scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `by
 2. 说明写进临时文件（如 `/tmp/commit_msg.txt`），不用 `-m` 随手一句。
 3. `python3 tools/check_commit_msg.py <file>` 必须返回 0。两个坑：缺参数时它返 2（不是通过）；以 `Merge ` / `Revert ` / `fixup!` / `squash!` 开头时它直接返 0（等于没查）。`commit-msg` 钩子会在落库时再跑一遍，但钩子是**本地配置**--新环境要先 `git config core.hooksPath tools/hooks`，否则静默不生效。
 4. `git commit -F <file>`；未推送时改说明用 `git commit --amend -F <file>`。
-5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。它能判的只有形态：行数/列宽/ASCII、段标签与列表项、禁词表（过程注记、文档指针、规划词汇、**任何百分比数字、commit 哈希、日期、`initially`/`previously` 一类过程词**）。动词选词也要看一眼：`split`、`set` 这类兼作过去式的原形会被脚本当完成体拒掉，换 `divide`、`assign` 之类。
+5. `git log -1 --format=%B` 复读一遍。脚本拦截标题和正文格式错误；过程词、百分比、疑似哈希和日期等内容模式只提示。按 §3 复核它们在句中的作用，确认正文确实在解释本次改动的理由。
 
 ## 5. 粒度与流程
 

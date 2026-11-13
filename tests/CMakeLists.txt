@@ -68,7 +68,6 @@ target_compile_definitions(aria_tests PRIVATE ARIA_LANG_CORPUS_DIR="${CMAKE_CURR
 # interpreter.cpp 实现 cli_dispatch,属 CLI 层归 aria 可执行(不进 aria_core);测试需其符号,单独编入。
 target_sources(aria_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/interpreter.cpp)
 
-# DISCOVERY_MODE PRE_TEST：ctest 启动时（而非构建后）枚举测试--language 语料是
-# 文件驱动参数化（新增 .aria 脚本不触发重链接），构建期枚举会漏新脚本。
+# PRE_TEST 将枚举延迟到 ctest 启动，但会复用发现清单。新增语料直接跑 GTest，见 docs/testing.md。
 include(GoogleTest)
 gtest_discover_tests(aria_tests DISCOVERY_MODE PRE_TEST)

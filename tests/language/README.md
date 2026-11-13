@@ -138,16 +138,14 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
    `compile_`/`runtime_` 前缀命名。文件名 snake_case 表意。
 2. 正向脚本写 assert 自检；需要钉输出格式时加 `.out` golden（实测生成）。
    运行期负向需要核对消息时加 `.err`（每行一个稳定子串）。
-3. 直接 `ctest --test-dir build -R <用例名片段>` 验证（发现是 PRE_TEST 模式，
-   新增脚本无需重链接/重新 configure 即被 ctest 收到）。
+3. 按[测试文档的新增语料跑法](../../docs/testing.md#验证新增语言脚本)直接运行 GTest，核对实际执行的用例。
 4. 09_modules 新用例：建 `用例名/` 子目录放 `main.aria`，辅助模块放 `用例名/lib/`。
 
 ## runner 机制备忘
 
 - 发现：`ARIA_LANG_CORPUS_DIR`（CMake 注入，见 `tests/CMakeLists.txt`）为根递归收集
   `*.aria`，跳过 `lib` 目录分量，排序注册（用例集确定）。
-- `gtest_discover_tests(aria_tests DISCOVERY_MODE PRE_TEST)`：ctest 启动时枚举测试。
-  语料是文件驱动参数化，新增 `.aria` 不会触发重链接，构建期枚举会漏新脚本--
-  切 PRE_TEST 后无需任何额外步骤。
+- GTest 进程启动时扫描语料；CTest 用 `PRE_TEST` 生成或复用发现清单。单独增删语料不会刷新
+  CTest 清单，跑法见[测试文档](../../docs/testing.md#验证新增语言脚本)。
 - 失败消息含脚本相对路径、期望类别与 golden/.err 差异摘要；`LanguageCorpusDiscovery.
   CorpusTreeIsHealthy` 钉住语料树非空、无违反命名约定的脚本、用例名不撞车。

@@ -11,7 +11,7 @@ paths:
 
 - **`aria::stdfs` 别名**：`std::filesystem` 的统一简写，全库仅本头一处定义，消费方直接使用不再重复别名。
 - **路径/读盘原语**：`read_file`/`current_dir`/`program_dir`/`absolute`/`resolve`（`weakly_canonical`；`resolve` 当前仅测试消费，生产路径解析收口在 `AriaVM::resolve_module` 一侧）。
-- **`read_file`**：打开前显式拒绝目录（含指向目录的符号链接），统一返回 `FsErrCode::IsDirectory`；其他打开失败仍按 `errno` 映射。普通文件按探测的长度一次读入。
+- **`read_file`**：打开前显式拒绝目录（含指向目录的符号链接），统一返回 `FsErrCode::IsDirectory`；其他打开失败仍按 `errno` 映射。普通文件按探测的长度一次读入；探测长度为 0 的特殊文件（`/proc`、sysfs）静默返回空串而非报错。
 - **`module_name_and_dir(StringView path) -> Pair<String,String>{name,dir}`**：把文件路径拆为入口模块身份--`name` = basename 去最后一个扩展名（`path::stem()`）、`dir` = `dirname(absolute(path))`（`absolute` 失败退化为原路径）。纯路径工具，不读盘、不校验存在性；`name` 可能为空，调用方据空 `name` 判加载错误。
 - **错误码**：`FsErrCode`；`detail::to_fserr(std::error_code)` 做映射（经 `default_error_condition()`）；`detail::errno_to_fserr(int e)` 与无参重载（读当前线程 errno）；`detail::executable_path()` 四平台分流取当前可执行文件路径（`program_dir` 基础）。
 
@@ -25,21 +25,21 @@ paths:
 
 ## `util/source_file.hpp`
 
-- **`SourceFile`**：默认构造 + 3 参 ctor；`from_path` 剥 BOM、CRLF->LF、UTF-8 校验，非法返 `FsErrCode::InvalidEncoding`；访问器 `name()`/`path()`/`content()` 返 `StringView`、`line_count()`。
+- **`SourceFile`**：默认构造 + 3 参 ctor。**只有 `from_path` 做归一化**（剥 BOM、CRLF->LF、UTF-8 校验，非法返 `FsErrCode::InvalidEncoding`）；3 参 ctor 原样存文本，REPL 与 `--eval` 走这条，要归一化必须经 `from_path`。访问器 `name()`/`path()`/`content()` 返 `StringView`、`line_count()`。
 - **位置类型 `LineCol`/`SourceLoc`（offsets-only）**：`SourceFile*` + 字节偏移；行列是**派生量**。`line()` 走 `SourceFile::line_at`（行表二分 + 单条行缓存），逐发射节点的热路径；`line_col()`/`to_string()` 走 `locate`（列须数码点，O(行内码点数) 的**冷路径**，只应被错误渲染与测试调用，勿在逐 token 循环里读列）。
 - `to_string()` 渲染 `path:line:col`；空态（src=nullptr）返 0 偏移/0 行/空串（空态即「无位置」非「未知位置」，可与「空位置串 = 无前缀」的消费方直接组合）。
-- `line(n)`/`line_at(offset)`/`locate(offset)`：EOF（offset == 内容末尾）与越界钳制一律返「下一行第 1 列」（编辑器光标停末尾语义）。行表懒构建 + 行解析单条缓存（内容构造后不变 + 单线程编译，故缓存无需失效）。
+- `line(n)` 取第 n 行（1-based）内容、不含行尾 LF，`n == 0` 或超出 `line_count()` 返空 view；`line_at(offset)`/`locate(offset)` 把 EOF（offset == 内容末尾）与越界钳到「下一行第 1 列」（`line_count()+1, 1`，编辑器光标停末尾语义）。偏移与行表均为 `u32`：4 GiB 以上源会静默错位（`SourceTooLarge` 目前无生产者、读盘也不检大小）。行表懒构建 + 行解析单条缓存（内容构造后不变 + 单线程编译，故缓存无需失效）。
 - **生命期陷阱（跨模块，调用方必读）**：`SourceFile` 以引用/指针传入（`Lexer::tokenize(SourceFile&)`），AST 节点烙入的 `SourceLoc::src_`（经它查行表与缓存，故 `SourceFile` 亦须可就地读、地址稳定）与 `Token::lexeme`/`content()`/`name()`/`path()` 借出的 view 须在 `SourceFile` 存活且地址不变期间使用；`SourceFile` 含 `String content_`，**SSO 短串 move 后 data 地址会变**（SSO buffer 跟随对象）--实践：让 `SourceFile` 就位后再 tokenize，之后不再 move 该对象；多个 `SourceFile` 存容器并已取 view 后勿再增删致重分配。`Error` 不在此列（构造期把 `SourceLoc` 烘进自有 `message_` 串，与 `SourceFile` 生命周期解耦）。
 
 ## `util/io.hpp`
 
-`io::print`/`io::println`（`std::print`/`std::println` 的 using 别名，全库输出统一入口）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`；当前全库零消费者，REPL 行读取走 isocline，见 `main.cpp`）。
+`io::print`/`io::println`（`std::print`/`std::println` 的 using 别名，全库输出统一入口）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`；当前全库零消费者，REPL 行读取走 isocline，见 `main.cpp`。两者**无法区分 EOF 与空行**，`readchar` 亦无法区分 EOF 与字节 0xFF，启用前先定 EOF 判据）。
 
 ## `util/str.hpp`
 
 `namespace aria::str`（与 fs/utf8 同），header-only 的字符串字面量转义展开工具。
 
-- **`decode_string_content(StringView raw, char* out) -> usize`**：展开字面内层原文中的转义序列直写 `out`（容量由词法期记账的 `decoded_len` 保证），返回写入字节数。全函数无错误路径（词法期已校验全部转义合法），未知转义经 `UNREACHABLE` 拦截（防词法/展开两侧转义集合漂移）。消费方两处：`CodeGen` 的字符串字面驻留口（经 `StringBuilder` 直写 + `resize` 提交终长 + `take_string` 接管铸串）与 `Parser` 的插值空段过滤（`shape().decoded_len` 判空）。
+- **`decode_string_content(StringView raw, char* out) -> usize`**：展开字面内层原文中的转义序列直写 `out`（容量由词法期记账的 `decoded_len` 保证），返回写入字节数。全函数无错误路径（词法期已校验全部转义合法），未知转义经 `UNREACHABLE` 拦截（防词法/展开两侧转义集合漂移）。调用方只有 `CodeGen` 的字符串字面驻留口（经 `StringBuilder` 直写 + `resize` 提交终长 + `take_string` 接管铸串）；`Parser` 的插值空段过滤只用词法期记的 `decoded_len` 判空，不调用本函数。
 - **`decode_unicode_escape(StringView raw) -> Result<Pair<String, usize>, UnicodeEscapeError>`**：`\u{hex}` 的唯一解析口，词法期校验与内容展开两侧共用。`raw` 为从 `'u'` 起的余串；成功返回 `{解码字节串（1-4 字节 UTF-8）, 消费原始字节数（含 'u' 与两侧花括号）}`，失败返回 `UnicodeEscapeError` 类别（MissingOpenBrace/MissingCloseBrace/BadHexDigits/CodepointOutOfRange），由调用方按各自通道处置（Lexer 报带锚点的 `InvalidEscape`，展开侧 ASSERT 不可达）。
 
 ## `util/util.hpp`
@@ -88,5 +88,5 @@ paths:
 
 **访问与 help**
 
-- `has`/`get(name) -> Opt<String>`（option/positional 已提供返值（含显式空串）、未提供或命中的是 flag 返 `nullopt`）/`extra_args()`。
+- `has(name) -> bool`、`get(name) -> Opt<String>`（option/positional 已提供返值（含显式空串）、未提供或命中的是 flag 返 `nullopt`）、`extra_args()`。
 - `help()`（在 `Cli` 上）：Usage 行（`[OPTIONS]` 恒展示）+ Arguments 分节（按注册序遍历 positional）+ Options 分节按**注册序**遍历 named 参数（内置 help 恒居首位；排版对齐细则见 `cli.hpp` `help()` 内注释），option 行尾追加 `[default: ...]`。

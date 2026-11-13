@@ -13,7 +13,7 @@ paths:
 
 - `NanBoxing::Value`：把 Nil/Bool/F64/Int/Obj 压进单个 64 位 double（int 为 i48 载荷、指针取低 48 位），`sizeof == 8`；非 f64 位型 = sign==1 装低 48 位指针（x86-64/ARM64 用户态）、sign==0 时 bits 48..49 为 tag（1=nil、2=bool 真值在 bit 0、3=int 48 位补码）。`TagValue::Value`：`Type` tag + union，`sizeof == 16`。
 - 二者 API 一致（`from_bool`/`from_f64`/`from_int`/`from_i32`/`from_obj`/`is_*`/`as_*`/`type()`/`type_name()`；已知例外：`is_box()` 仅 NanBoxing 有、`as_i32()` 两表示各一份且全库零调用），均为 trivial + standard-layout（各头 `static_assert` 把关），可 `memcpy`、可入 `FrameStack`。
-- **整数域契约**：两表示的 `from_int` 均要求输入已在 `kIntMin..kIntMax` 内（Debug 同款断言），不承担语言错误分派。字面量与文本转换各守输入闸门，Eval 算术和 range 迭代在装箱前检查；运行期越界走可捕获的 `IntegerOverflow`，Debug/Release 不分叉。
+- **整数域契约**：两表示的 `from_int` 均要求输入已在 `kIntMin..kIntMax` 内（Debug 同款断言），不承担语言错误分派。字面量与文本转换各守输入闸门，Eval 算术和 range 迭代在装箱前检查；运行期越界走可捕获的 `IntegerOverflow`，Debug/Release 不分叉。断言是唯一把关：违约时两表示行为分叉（NanBoxing 把载荷截到 48 位、TagValue 存完整 i64 而 tag 仍是 Int），Release 下都静默，故域检查必须留在装箱之前。
 - **默认初始化不定值**：默认构造 `= default` 为 trivial，默认初始化 `Value v;` 是不定值**并非 nil**，取 nil/真/假统一走工厂 `nil_val()`/`true_val()`/`false_val()`。差异：NanBoxing 走私有 `Value(u64)` 构造；TagValue 走 `Value{}` 零填充 -> `Type::Nil` = 0 即 nil，而 NanBoxing 的 `Value{}` 零填充是 f64 `0.0` 非 nil--零填充值栈时留意（当前无 `Array<Value>::resize` 类零填充消费点，属预防性约束）。
 - **NaN 规范化**：两者的 `from_f64` 都把任意 NaN 规范化为硬件 quiet NaN（`0x7ff8...`）--NanBoxing 免其被误判为 boxed 值，且 `===` 按位比较下 `NaN === NaN` 成立依赖两表示共同规范化，任一侧不规范即语义分叉。
 
@@ -27,7 +27,7 @@ paths:
 
 ## `value/ObjBridge.hpp`
 
-**Value↔Object 耦合辅助的收口头**：收「同时依赖 Value 与 Object 完整类型、必须头内定义（模板）」的辅助函数；非模板的重依赖件（`type_name(Value)`/`value_equal`/`value_hash`/`value_str`/`value_repr`）走「`Value.hpp` 声明 + `Value.cpp` 定义」的旧路。独立成头不常驻 `Value.hpp`：模板定义硬需 include `Object.hpp`，而该依赖只服务其用户面（runtime 与 object 两层：builtin 守卫 / 异常载荷判定 / 读路径绑定判别等），不拖累被编译层（常量池）广泛 include 的 `Value.hpp`。
+**Value↔Object 耦合辅助的收口头**：收「同时依赖 Value 与 Object 完整类型、必须头内定义（模板）」的辅助函数；非模板的重依赖件（`type_name(Value)`/`value_equal`/`value_hash`/`value_str`/`value_repr`）声明在 `Value.hpp`、定义在 `Value.cpp`。独立成头不常驻 `Value.hpp`：模板定义硬需 include `Object.hpp`，而该依赖只服务其用户面（runtime 与 object 两层：builtin 守卫 / 异常载荷判定 / 读路径绑定判别等），不拖累被编译层（常量池）广泛 include 的 `Value.hpp`。
 
 - `try_as_obj<T>(const Value value)`（`DerivedFromObj` 约束，按值收参）：`is_obj()` + `Object::try_as<T>` 合一的「守卫后使用」一步守卫（非对象/类型不符返 nullptr）。
 - `try_as_method(Value)`：取出带实例方法标记的 `ObjFunction*`，供成员读取创建绑定方法；其他值（含普通函数和已绑定方法）返 nullptr。

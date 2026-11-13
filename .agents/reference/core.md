@@ -15,12 +15,12 @@ paths:
 
 ## `common.hpp`
 
-项目级公共头，被几乎所有 .hpp/.cpp 间接 include，置于 `namespace aria`。include `<cstdio>`/`<cstdlib>`/`<cstring>`/`<utility>` + `sys.hpp` + `type.hpp`，是各模块共享的「前置依赖收口」。
+项目级公共头，被几乎所有 .hpp/.cpp 间接 include，置于 `namespace aria`；include `<cstdio>`/`<cstdlib>`/`<cstring>`/`<utility>` + `sys.hpp` + `type.hpp`，下游只 include 本头即可得到这套公共依赖。
 
 - `USING_NANBOXING`：默认定义（未定义 `ARIA_USE_TAGVALUE` 时；宏由根 CMakeLists.txt `option(ARIA_USE_TAGVALUE)` 注入或编译命令行手工 `-D`），`value/Value.hpp` 据此选 NanBoxing/TagValue 实现；TagValue 路径经 `-DARIA_USE_TAGVALUE=ON` 独立 build 目录全量构建 + ctest 验证。
 - `UNREACHABLE()`：NDEBUG 下 `std::unreachable()`，否则打印 `__FILE__`/`__LINE__`/`__func__` 后 `std::abort()`。
 - `STATIC_UNREACHABLE(message)`：编译期不可达，收口 if constexpr 白名单分派链的末臂；漏臂（白名单外的模板实参）被实例化时 `static_assert(false, message)` 即编译报错，两配置同体（不需要 NDEBUG 分流）。后随 `std::abort()` 只为给流分析器 `[[noreturn]]` 事实（防不返回误报），不入任何实例化的执行路径。适用判据：不可达性由模板实参（if constexpr 白名单链）决定时用它；不可达性属运行期值（枚举实参、主循环取流 OpCode 等）时保持 `UNREACHABLE()`。
-- `ASSERT(condition, message)`：NDEBUG 下空操作，否则失败打印 + abort。
+- `ASSERT(condition, message)`：NDEBUG 下整体消失（展开为 `(void) 0`），否则失败打印 + abort。**不得把有副作用的表达式或 Release 仍需执行的检查放进 ASSERT**。
 - `ARIA_NOINLINE`：`_MSC_VER` 下 `__declspec(noinline)`，否则 `__attribute__((noinline))`；热/冷路径分离用，防冷路径随热函数在每个调用点展开。
 - `static_assert(sizeof(void*) == 8)` 钉死 64 位平台。
 
@@ -57,7 +57,7 @@ paths:
 
 ## `main.cpp`
 
-**正式 aria 解释器入口**。`int main(argc, argv)` 设 isocline 历史、把 `argc/argv` 透传 `cli_dispatch`（见 `interpreter.hpp`），传入 isocline 行读取器（`ic_readline("aria")` + `free`，`exit`/`quit`/EOF 结束 REPL）。本身不含分发/编译/执行逻辑。退出码 0 成功 / 1 任何错误。
+**aria 解释器进程入口**。`int main(argc, argv)` 设 isocline 历史、把 `argc/argv` 透传 `cli_dispatch`（见 `interpreter.hpp`），传入 isocline 行读取器（`ic_readline(kProductName.data())` + `free`，`exit`/`quit`/EOF 结束 REPL）。本身不含分发/编译/执行逻辑。退出码 = `cli_dispatch` 的返回值（0 成功 / 1 任何错误）；REPL 是例外：行内错误只渲染到 stderr、循环继续，进程最终仍返 0。
 
 ## `interpreter.hpp` / `interpreter.cpp`
 
@@ -66,6 +66,6 @@ paths:
 - **声明/实现分离**：`.hpp` 仅暴露公共 API（`LineReader` + `cli_dispatch` 声明），只 include `<functional>` + `common.hpp`；AriaVM/GC/ObjModule/SourceFile/util::Cli 等内部依赖与实现全部收口在 `.cpp`。
 - **`.cpp` 匿名命名空间 helper**：`build_cli`（建 `util::Cli`：`--repl`、`--eval`/`-e`、`--version`/`-v`、可选位置参数 `<file>`，外加内置 `--help`/`-h`）、`run_repl`/`run_src`/`run_file`（均不对外暴露）。
 - **`cli_dispatch(i32 argc, char* argv[], const LineReader&)`** 按优先级 `--help > --version > --eval > --repl > <file> > 默认 REPL`（无参即进 REPL）派发，返回退出码 0/1；解析失败打错误 + help 并返 1。`--version` 打印 `aria 0.1.0`（kProductName + 版本分量 format 拼接）后短路。
-- **执行路径**：`--eval` 走 `run_src(StringView)`、`<file>` 走 `run_file(StringView)`（各自自建 `AriaVM` 调 `interpret_from_src`/`interpret_from_path`，错误内部渲染 stderr）。
-- **REPL**：`run_repl` 复用单个 `<repl>` 模块逐行 `run(SourceFile&, ObjModule*)`（第二参是 `ObjModule*`）编译执行；模块不入模块表（合成名），故经 `gc.make_guard` 跨行保活，使顶层 `var` 经 `DEF_GLOBAL` 落 `globals_` 跨行持久；逐行错误渲染 stderr 后循环不中断（容错继续）。
+- **执行路径**：`--eval` 走 `run_src(StringView)`、`<file>` 走 `run_file(StringView)`（各自自建 `AriaVM` 调 `interpret_from_src`/`interpret_from_path`，错误内部渲染 stderr）。`AriaVM` 不可拷贝、不可移动，`run()` 进出各 `reset()` 一次并断言回到入口上下文；REPL 跨行复用同一个 VM 即靠这条，改执行路径时别叠帧/串状态。
+- **REPL**：`run_repl` 复用单个 `<repl>` 模块逐行 `run(SourceFile&, ObjModule*)`，空行直接跳过；模块不入模块表（合成名），故经 `gc.make_guard` 跨行保活，使顶层 `var` 经 `DEF_GLOBAL` 落 `globals_` 跨行持久；逐行错误渲染 stderr 后循环不中断（容错继续）。
 - **`LineReader = std::function<bool(String&)>`**：main 用 isocline 实现，测试注入流读取器 lambda（见 `tests/runtime/test_interpreter.cpp`）。

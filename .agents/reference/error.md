@@ -11,17 +11,19 @@ paths:
 
 ## 四条错误通道（原则常驻 `AGENTS.md`「错误处理」节，此处收口实例）
 
-- ① **`Result<T, Error>` 返回**（编译期通道 + VM 边界返回类型）：Parser 恢复式收集，Lexer / CodeGen / Compiler 首错即止；各 `Result` 签名见各头文件。`AriaVM::run()` 的 `Result` 仅为未捕获出口的边界返回类型，运行期错误不以 Result 逐站传播。
-- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `AriaExeContext::pending_error_`；装箱点 `AriaExeContext::raise(code, detail)` 一步烘齐（`ctx.fail`/`call_value` 族 bool 契约共用），消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出。`Error` 仅在 `run()` 未捕获善后出口经 `AriaVM::rebake_uncaught_error` 反提拆件 + `from_baked` 物化构造（物化前提：帧链活着，unwind 未命中不清场）。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.agents/reference/runtime.md`「VM 异常通道」，设计见 .agents/notes/runtime/vm.md §4.5。
-- ③ **`AriaException`**（C++ 异常）：仅跨 C++ 调用栈边界（Parser/CodeGen 深层 `fail()`）。
-- ④ **`fatal_error()`**：Internal/Resource 不可恢复（生产调用点仅 OOM 一族）。
+- ① **`Result<…, Error>` 返回**（编译期通道 + VM 边界返回类型）：Parser 恢复式收集，签名为 `Result<ProgramNode*, List<Error>>`（`Compiler` 再收窄成首个 `Error`）；Lexer / CodeGen 首错即止。各 `Result` 签名见各头文件。`AriaVM::run()` 的 `Result` 仅为未捕获出口的边界返回类型，运行期错误不以 Result 逐站传播。
+- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `AriaExeContext::pending_error_`；装箱点 `AriaExeContext::raise(code, detail)` 一步烘齐（`ctx.fail`/`call_value` 族 bool 契约共用），消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出。寄存器单槽：`raise` 在已有挂起错误时 ASSERT，必须先 `take_error()`；`reset()` 会一并清空。`Error` 仅在 `run()` 未捕获善后出口经 `AriaVM::rebake_uncaught_error` 反提拆件 + `from_baked` 物化构造（物化前提：帧链活着，unwind 未命中不清场）。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.agents/reference/runtime.md`「VM 异常通道」，设计见 `.agents/notes/runtime/vm.md` §4.5。
+- ③ **`AriaException`**（C++ 异常）：仅跨 C++ 调用栈边界--Lexer / Parser / CodeGen 的深层报错点 `throw`，各自顶层 `catch` 翻译为 Result；VM 主循环内不用。
+- ④ **`fatal_error()`**：Internal/Resource 不可恢复（生产调用点仅 OOM 一族）。打印 `aria: fatal: <msg>` 后 `std::exit(1)`，不跑栈展开、不跑析构与 GC 善后。
+
+**`ctx.fail(...)` 的返回契约**：恒返 `FailSignal`（`[[nodiscard]]`），按语境隐式转 `bool` / `T*` / `Opt<T>`。`Opt<T>` 转换只对「不可由 bool 构造」的 `T` 成立--标量返回型站点必须改 `bool` + 出参，否则失败信号被隐式构造成 `0`/`false` 而静默成功。
 
 ## `error/ErrorCode.hpp`
 
 全量错误码注册表（X-Macro `ARIA_ERROR_LIST` 单一事实源，加一行 `X(名字, 大类)` 即收口）；注册表机制、五层分层与查表函数见该头头注。跨文件事实两条：
 
 - `kCategoryNames` 的哨兵 `static_assert` **只拦表长漂移**：枚举增删而表未跟会炸；行序错位不炸断言，靠增删时自查。
-- 死面登记（grep 零引用）：`ErrorCode::Ok`（仅测试哨兵消费）、`UndefinedType`、`RedefinedClass`、`NotIterable`、`IteratorProtocol`、`SuperNoBaseClass`、`CircularImport`、`InvalidBytecode`、`StackUnderflow`、`InvalidState`、`SourceTooLarge`。
+- 无生产者的码（名字仍出现在测试名与语料断言里，但 `src/` 内无生产者--勿据名称出现与否判定可达性）：`ErrorCode::Ok`（仅测试哨兵消费）、`UndefinedType`、`RedefinedClass`、`NotIterable`、`IteratorProtocol`、`SuperNoBaseClass`、`CircularImport`、`InvalidBytecode`、`StackUnderflow`、`InvalidState`、`SourceTooLarge`。
 
 - `IntegerOverflow` 属 Runtime：整数算术结果或无上界 range 请求超出 i48 时，经上下文 `fail` 装箱，可 catch；唯一 detail = `integer result out of range`。字面量越界仍属 Semantic 的 `NumberOutOfRange`。
 
@@ -34,4 +36,4 @@ paths:
 
 ## `error/AriaException.hpp`
 
-纯 Error 载体，不挂 `std::exception` 协议面；唯一公开构造收成品 `Error`（镜像工厂会随 `Error` 构造面漂移），构造面见头注。`AriaCompileException`/`AriaRuntimeException` 仅类型标签、不校验所持 Error 的类别；**`AriaRuntimeException` 现无使用点**（grep 核实）。
+纯 Error 载体，不挂 `std::exception` 协议面；唯一公开构造收成品 `Error`（镜像工厂会随 `Error` 构造面漂移），构造面见头注。`AriaCompileException`/`AriaRuntimeException` 仅类型标签、不校验所持 Error 的类别；**`AriaRuntimeException` 现无使用点**。

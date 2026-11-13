@@ -7,7 +7,7 @@ description: aria 仓库 commit 说明规范：说明一律英文 ASCII，形状
 
 > **Subject 说改了什么，正文说为什么。正文默认不写，说明一律英文。**
 
-本文件是仓库 commit 说明的规范（ZCode 技能 `aria-commit` 的正文），AGENTS.md「Git 提交纪律」节为其摘要，细节以本文件为准。设计目标是**一眼读完**：多数提交只有一行标题，长内容归 `.agents/design/` 与 `.agents/notes/` 等档案文档，commit 只当索引。说明用英文对齐主流规范（Conventional Commits 与 git 社区惯用的祈使句标题），也便于 `git log --oneline` 在任何终端与编码下稳定显示。本文件自身的中文叙述不受此限。
+本文件是仓库 commit 说明的规范（技能 `aria-commit` 的正文），AGENTS.md「Git 提交纪律」节为其摘要，细节以本文件为准。设计目标是**一眼读完**：多数提交只有一行标题，长内容归 `.agents/design/` 与 `.agents/notes/` 等档案文档，commit 只当索引。说明用英文对齐主流规范（Conventional Commits 与 git 社区惯用的祈使句标题），也便于 `git log --oneline` 在任何终端与编码下稳定显示。本文件自身的中文叙述不受此限。
 
 ## 1. 形状
 

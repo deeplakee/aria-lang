@@ -1,1 +1,0 @@
-../../../.agents/skills/aria-testing/SKILL.md

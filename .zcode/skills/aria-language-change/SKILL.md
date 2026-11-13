@@ -1,1 +1,0 @@
-../../../.agents/skills/aria-language-change/SKILL.md

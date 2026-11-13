@@ -1,1 +1,0 @@
-../../../.agents/skills/aria-commit/SKILL.md

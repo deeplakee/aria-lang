@@ -20,8 +20,7 @@ bench/       性能基准：lexer / vm / hashtable 进程内微基准 + lang/ �
 docs/        guide/（教程）、grammar.txt（文法）、building / testing、
              cpp-naming-convention；索引见 docs/README.md
 .agents/     agent 协作真源：rules/（模块参考）、skills/（场景技能）、notes/（踩坑与
-             测量笔记）、design/（设计与规格）；.zcode/skills/ 与 .claude/rules/ 只是
-             各工具的软链适配层
+             测量笔记）、design/（设计与规格）；各 agent 的工具目录本地自建、不入库
 tools/       开发脚本与 git 钩子（commit 说明 / 报错文案机械检查）
 external/    isocline（REPL）/ googletest / mimalloc，vendored、构建零联网
 ```
@@ -48,7 +47,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 ## 文档地图
 
-真源一律住中立目录 `.agents/` 或 `docs/`；`.zcode/skills/` 与 `.claude/rules/` 只是各工具的**软链适配层**（ZCode 按技能 frontmatter `description` 触发，Claude Code 按 `paths:` 自动加载）。
+真源一律住中立目录 `.agents/` 或 `docs/`，各 agent 的工具目录（`.claude/`、`.zcode/` 等）不入库：开发者按自己用的 agent 在本地建软链指向 `.agents/` 对应文件（技能按 frontmatter `description` 触发，模块规则按 `paths:` 匹配加载）。
 
 **模块参考 `.agents/rules/`（9 个，读到匹配源码路径时自动加载）**：
 
@@ -72,7 +71,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 - 踩坑与测量笔记 `.agents/notes/`：`runtime/exception-implementation-pitfalls.md`（异常）/ `runtime/class-implementation-pitfalls.md`（类机制）/ `runtime/coroutine-implementation-pitfalls.md`（协程）--对应特性重启前重读；`memory/ast-arena-notes.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer-notes.md`（动词法性能前先读）/ `bench/lang-bench-notes.md`（基准测量与端口纪律）。
 - 语言文法与人类文档 `docs/`：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 
-新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths），并补 `.zcode/skills/aria-<dir>/SKILL.md` 与 `.claude/rules/<dir>.md` 两条相对软链；新增场景技能：建 `.agents/skills/<name>/SKILL.md` 并补 `.zcode/skills/<name>/SKILL.md` 软链。
+新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths）；新增场景技能：建 `.agents/skills/<name>/SKILL.md`。本地软链按自己用的 agent 自建，不入库。
 
 ## 强制规范
 

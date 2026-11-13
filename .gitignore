@@ -26,11 +26,10 @@ local-*.md
 # Python 字节码（bench 驱动）
 __pycache__/
 
-# Claude Code 本地配置（规则软链适配层与 .agents/ 实体均入库）
-.claude/settings.local.json
-.claude/.local/
+# 本地 agent 工具目录（真源住 .agents/，各开发者按自己用的 agent 本地自建软链）
+/.claude/
+/.zcode/
+/.zcodeignore
 
 # Codex CLI 本地配置（指向本机 CLion MCP 端口，机器相关）
-.codex/
-
-.zcode/plans/
+/.codex/

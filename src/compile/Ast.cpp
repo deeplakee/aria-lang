@@ -44,6 +44,18 @@ namespace aria {
                     return "/";
                 case Binary::Percent:
                     return "%";
+                case Binary::BitAnd:
+                    return "&";
+                case Binary::BitOr:
+                    return "|";
+                case Binary::BitXor:
+                    return "^";
+                case Binary::Shl:
+                    return "<<";
+                case Binary::Shr:
+                    return ">>";
+                case Binary::Ushr:
+                    return ">>>";
             }
             UNREACHABLE();
         }
@@ -58,6 +70,8 @@ namespace aria {
                     return "++";
                 case Unary::PreDec:
                     return "--";
+                case Unary::BitNot:
+                    return "~";
             }
             UNREACHABLE();
         }
@@ -76,6 +90,18 @@ namespace aria {
                     return "/=";
                 case Assignment::PercentAssign:
                     return "%=";
+                case Assignment::BitAndAssign:
+                    return "&=";
+                case Assignment::BitOrAssign:
+                    return "|=";
+                case Assignment::BitXorAssign:
+                    return "^=";
+                case Assignment::ShlAssign:
+                    return "<<=";
+                case Assignment::ShrAssign:
+                    return ">>=";
+                case Assignment::UshrAssign:
+                    return ">>>=";
             }
             UNREACHABLE();
         }

@@ -87,6 +87,12 @@ namespace aria {
             Star,
             Slash,
             Percent,
+            BitAnd, // &（按位与；逻辑 && 是上面的 And）
+            BitOr,  // |（按位或；逻辑 || 是上面的 Or）
+            BitXor, // ^
+            Shl,    // <<
+            Shr,    // >>（算术右移）
+            Ushr,   // >>>（逻辑右移）
         };
 
         enum class Unary : u8 {
@@ -94,6 +100,7 @@ namespace aria {
             Not,
             PreInc, // ++（前置）
             PreDec, // --（前置）
+            BitNot, // ~（按位取反）
         };
 
         enum class Assignment : u8 {
@@ -103,6 +110,12 @@ namespace aria {
             StarAssign,
             SlashAssign,
             PercentAssign,
+            BitAndAssign,
+            BitOrAssign,
+            BitXorAssign,
+            ShlAssign,
+            ShrAssign,
+            UshrAssign,
         };
 
         // 运算符可读名。

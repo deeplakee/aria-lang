@@ -168,7 +168,7 @@ namespace {
         return aria::new_fn_proto(gc, m, "<main>", 0, 0, false);
     }
 
-    // ---- IMPORT 路径解析测试辅助 ----(设计见 .agents/reference/specs/import-paths.md;测试需真实临时文件
+    // ---- IMPORT 路径解析测试辅助 ----(设计见 .agents/reference/specs/import.md;测试需真实临时文件
     // 让 exists-check 命中、按解析出的绝对键预注册合成模块入 modules_ 并设 dir_/name_。)
     // macOS 下 testing::TempDir() 常落在符号链接后(/var -> /private/var),基准须先
     // weakly_canonical 规范化,保证预注册键与 resolve_module 输出逐字节一致。

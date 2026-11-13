@@ -75,8 +75,8 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 **规格 `.agents/reference/specs/`（不自动加载，由对应模块参考指路后 Read）**：
 
 - `instruction-set.md`：指令集、操作数编码、栈效应、lowering 蓝图。
-- `compound-assignment.md` / `loopctx.md`：复合赋值 locator-once lowering；LoopCtx 与 break/continue 回填。
-- `import-overview.md` / `import-paths.md`：import 端到端链路与路径解析。
+- `lowering.md`：赋值类表达式的 locator-once lowering（复合赋值与前置 `++`/`--`）、LoopCtx 与 break/continue 回填。
+- `import.md`：import 端到端链路与路径解析。
 - `error-messages.md`：报错文案规范本体（机械门禁 `tools/check_error_messages.py`）。
 
 **踩坑与测量笔记 `.agents/notes/`（不自动加载，对应特性重启前重读）**：

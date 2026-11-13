@@ -39,6 +39,6 @@
 
 **全绿掩盖**：直线测试里泄漏值随帧丢弃、不撞 `POP_N`，768 绿下带病落地 -- **全绿不证栈平衡**；帧内泄漏类改动须配「泄漏撞 `POP_N`/改变量」的钉子。
 
-**对策**：编译期常量 locator（帧内 this / Identifier）**节点侧折叠** -- Locate 与 Load 同臂发同指令（`visitIdentifierNode` `case Load: case Locate:` 折叠、帧内 this 三臂折叠），不发 DUP；一般路径 `obj.f op= e` 保持 DUP 定位腿（`STORE_FIELD` 消费副本，几何平衡）。全组合发射矩阵与逐行栈形见 `.agents/reference/specs/compound-assignment.md` §6。
+**对策**：编译期常量 locator（帧内 this / Identifier）**节点侧折叠** -- Locate 与 Load 同臂发同指令（`visitIdentifierNode` `case Load: case Locate:` 折叠、帧内 this 三臂折叠），不发 DUP；一般路径 `obj.f op= e` 保持 DUP 定位腿（`STORE_FIELD` 消费副本，几何平衡）。全组合发射矩阵与逐行栈形见 `.agents/reference/specs/lowering.md` §6。
 
 **测试**：`ThisFieldCompoundAsCallArg`（复合赋值作调用实参 `h(1, this.n += 3)` -- 暴露形态：修复前副本把 callee 顶偏报 `CallNonCallable`，修复后 110）、`CompoundAssignOnThisField`。

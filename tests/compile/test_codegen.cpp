@@ -1985,7 +1985,7 @@ TEST(CodeGen, FieldAccessOnPrimitiveIsRuntimeError) {
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
 }
 
-// ---- 复合赋值 / 前置自增的字段腿（Locate 启用，.agents/reference/specs/compound-assignment.md §4.2）----
+// ---- 复合赋值 / 前置自增的字段腿（Locate 启用，.agents/reference/specs/lowering.md §一）----
 
 // 实例字段复合赋值与前置自增：<obj> DUP LOAD_FIELD ... STORE_FIELD，locator 单次求值。
 TEST(CodeGen, CompoundAssignOnInstanceField) {

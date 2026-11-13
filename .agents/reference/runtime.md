@@ -7,7 +7,7 @@ paths:
 
 # runtime 层模块参考
 
-VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端处理见 `.agents/reference/specs/import-overview.md`，路径解析细节见 `.agents/reference/specs/import-paths.md`；异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的测量入口与形态取舍见 `bench/vm_bench.cpp` 文件头与 `.agents/reference/specs/instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
+VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端处理与路径解析见 `.agents/reference/specs/import.md`；异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的测量入口与形态取舍见 `bench/vm_bench.cpp` 文件头与 `.agents/reference/specs/instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
 
 ## `runtime/FrameStack.hpp`
 
@@ -181,7 +181,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 - **`load_module(canonical_path, import_specifier)`**（私有，**仅加载与编译**、**仅限 dispatch_loop 驱动期调用**（寄存器随 `*current_` 走，run 外直调错误会被吞））：读盘 -> 派生身份（`fs::module_name_and_dir`，同入口约定）-> `new_module` + `make_guard` -> `Compiler::compile(..., kModuleEntryName)` -> **编译成功才 `modules_.set` 入表**（加载事实源 = 表成员资格，供循环导入命中体执行中的半初始化对象；编译失败不留表项、同路径重试重新加载）。**入表先于模块体执行**，故模块体抛错/运行期失败后表项不回滚，表内保留半初始化模块（后续 import 循环导入语义即命中它）。`canonical_path` 一身二任：`modules_` 表键 + 读盘路径。
 - **错误契约同 `call_value` 族**：返 `ObjModule*`，失败 `nullptr ⟺` 载荷已 `raise`；读盘失败/name 空经 `fail` 报 `ModuleNotFound`（带 IMPORT 站点位置），编译期 `Error` 就地 `new_exception` 原样装配箱透传（含被导入文件位置，不重烘）。
-- **根安全**：`run_import` 的 `gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 `new_*` 分配根化（intern weak root 不保命）；`modules_.set` 等表 rehash 走 trivial 分配不触 GC、不是守卫承重点；`module`/`entry` 经 `modules_` + `module->entry_` 根可达。详见 `.agents/reference/specs/import-overview.md`/`.agents/reference/specs/import-paths.md`。
+- **根安全**：`run_import` 的 `gc_.make_guard(canonical_path)` 跨 `load_module` 内一串 `new_*` 分配根化（intern weak root 不保命）；`modules_.set` 等表 rehash 走 trivial 分配不触 GC、不是守卫承重点；`module`/`entry` 经 `modules_` + `module->entry_` 根可达。详见 `.agents/reference/specs/import.md`。
 
 ### 协程
 

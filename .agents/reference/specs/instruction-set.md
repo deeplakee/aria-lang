@@ -91,7 +91,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 
 ### 3.1 STORE 系列统一「peek-store」约定（已落地）
 
-文法 `expression -> assignment`，赋值是**表达式**，须产出值（`x = e` 的值即 `e` 的值；`x += e`、`++x` 返回新值，见 `.agents/reference/specs/compound-assignment.md` §5）。为此所有 `STORE_*` 统一为 **peek-store**：**只消费定位元（locator），保留被存值于栈顶**。
+文法 `expression -> assignment`，赋值是**表达式**，须产出值（`x = e` 的值即 `e` 的值；`x += e`、`++x` 返回新值，见 `.agents/reference/specs/lowering.md` §5）。为此所有 `STORE_*` 统一为 **peek-store**：**只消费定位元（locator），保留被存值于栈顶**。
 
 | 指令 | 栈效应（peek-store） |
 | :--- | :--- |
@@ -107,7 +107,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 > 改弹净形态则赋值表达式约定（值留栈顶）会迫使**热路径**每次字段赋值多一次 `DUP` 右值。故取专用指令
 > `MAKE_STATIC`/`MAKE_METHOD [class,v] -> [class]`，两场景均零冗余，成本落在一次性创建路径。
 
-语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。此约定**消解** `.agents/reference/specs/compound-assignment.md` §5 末尾「STORE 留值与否未决」的备注：采用留值，§4 各序列的末尾 `[]` 应理解为「语句上下文补 `POP` 后」的形态。详见 §5.3。
+语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。此约定**消解** `.agents/reference/specs/lowering.md` §5 末尾「STORE 留值与否未决」的备注：采用留值，§4 各序列的末尾 `[]` 应理解为「语句上下文补 `POP` 后」的形态。详见 §5.3。
 
 > 备选：pop-store（消费被存值），表达式上下文需额外旋转/临时槽保值。peek-store 更统一，本文采之。
 
@@ -127,7 +127,7 @@ CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `LOAD_CONST` | `idx:u16` | `[] -> [c]` | 压入常量池 `constants_[idx]`（串/大整数/浮点/函数对象） |
-| `LOAD_IMM` | `n:i8` | `[] -> [n]` | 压入小整数立即数（避开常量池，0/1/-1/小下标高频）。`.agents/reference/specs/compound-assignment.md` 中记作 `LOAD_I` |
+| `LOAD_IMM` | `n:i8` | `[] -> [n]` | 压入小整数立即数（避开常量池，0/1/-1/小下标高频）。`.agents/reference/specs/lowering.md` 中记作 `LOAD_I` |
 | `LOAD_NIL` | 无 | `[] -> [nil]` | 压入 nil |
 | `LOAD_TRUE` | 无 | `[] -> [true]` | 压入 true |
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
@@ -186,7 +186,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `LOAD_INDEX` | 无 | `[obj, idx] -> [v]` | 弹 `idx, obj`，压入 `obj[idx]`（list/map/string；越界/类型不符 -> 运行时错误） |
 | `STORE_INDEX` | 无 | `[obj, idx, v] -> [v]` | peek-store：弹 `idx, obj`，存 `obj[idx] = v`，留 `v` |
 
-> 下标操作数全在栈上，无内联操作数。`LOAD_INDEX`/`STORE_INDEX` 的取数顺序（栈顶为 `idx`、其下为 `obj`）即 `.agents/reference/specs/compound-assignment.md` §4.3 假设的形态。
+> 下标操作数全在栈上，无内联操作数。`LOAD_INDEX`/`STORE_INDEX` 的取数顺序（栈顶为 `idx`、其下为 `obj`）即 `.agents/reference/specs/lowering.md` §4.3 假设的形态。
 
 ### 4.8 this 字段（优化）
 
@@ -236,7 +236,7 @@ N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射�
 | `DUP` | 无 | `[a] -> [a, a]` | 复制栈顶 1 槽 |
 | `DUP2` | 无 | `[a, b] -> [a, b, a, b]` | 复制栈顶 2 槽（保序），对应 Python `DUP_TOP_TWO` |
 
-`DUP`/`DUP2` 为复合赋值 / 前置 `++`/`--` 的 locator 保留而设（见 `.agents/reference/specs/compound-assignment.md`），亦是通用栈操作。
+`DUP`/`DUP2` 为复合赋值 / 前置 `++`/`--` 的 locator 保留而设（见 `.agents/reference/specs/lowering.md`），亦是通用栈操作。
 
 ### 4.11 输出 / 调试
 
@@ -396,7 +396,7 @@ L_end:
 
 ### 5.3 赋值 / 复合赋值 / 前置 `++`/`--`（peek-store 形态）
 
-采用 §3.1 的 peek-store 约定后，`.agents/reference/specs/compound-assignment.md` §4 各序列末尾留值（语句上下文补 `POP`）。以 `obj.f += e` 与 `++obj[idx]` 为例：
+采用 §3.1 的 peek-store 约定后，`.agents/reference/specs/lowering.md` §4 各序列末尾留值（语句上下文补 `POP`）。以 `obj.f += e` 与 `++obj[idx]` 为例：
 
 ```
 # obj.f += e  (表达式上下文, 结果为 新值)
@@ -418,7 +418,7 @@ ADD                    ; [obj, idx, newval]
 STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
 ```
 
-`--E` 把 `ADD` 换 `SUBTRACT`；标识符 / this 字段形式按 §4.3/§4.8 无 `DUP` 或省 `obj`。详见 `.agents/reference/specs/compound-assignment.md`（本文仅以 peek-store 更新其 tail 语义）。
+`--E` 把 `ADD` 换 `SUBTRACT`；标识符 / this 字段形式按 §4.3/§4.8 无 `DUP` 或省 `obj`。详见 `.agents/reference/specs/lowering.md`（本文仅以 peek-store 更新其 tail 语义）。
 
 ### 5.4 闭包 / upvalue
 
@@ -679,7 +679,7 @@ code:
 
 - `src/bytecode/code.hpp`：`OpCode` 枚举（本文基准）。
 - `docs/grammar.txt`：语言文法（lowering 的需求来源）。
-- `.agents/reference/specs/compound-assignment.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
+- `.agents/reference/specs/lowering.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
 - `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
 - `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
 - AGENTS.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。

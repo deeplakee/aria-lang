@@ -125,16 +125,50 @@ TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
 // ---------------------------------------------------------------------------
 
 TEST(LexerOperator, LongestMatch) {
-    const String        src      = "+ += ++ - -= -- * *= / /= % %= = == => ! != > >= < <= && || .. ... .";
-    const List<TokType> expected = {
-            TokType::Plus,       TokType::PlusEqual,    TokType::PlusPlus,  TokType::Minus,        TokType::MinusEqual,
-            TokType::MinusMinus, TokType::Star,         TokType::StarEqual, TokType::Slash,        TokType::SlashEqual,
-            TokType::Percent,    TokType::PercentEqual, TokType::Equal,     TokType::EqualEqual,   TokType::FatArrow,
-            TokType::Bang,       TokType::BangEqual,    TokType::Greater,   TokType::GreaterEqual, TokType::Less,
-            TokType::LessEqual,  TokType::AndAnd,       TokType::OrOr,      TokType::DotDot,       TokType::DotDotDot,
-            TokType::Dot,        TokType::Eof};
-    const auto  lexed  = lex_ok(src);
-    const auto& tokens = lexed->tokens;
+    const String        src      = "+ += ++ - -= -- * *= / /= % %= = == => ! != > >= < <= && || .. ... . "
+                                   "& &= | |= ^ ^= << <<= >> >>= >>> >>>= ~";
+    const List<TokType> expected = {TokType::Plus,
+                                    TokType::PlusEqual,
+                                    TokType::PlusPlus,
+                                    TokType::Minus,
+                                    TokType::MinusEqual,
+                                    TokType::MinusMinus,
+                                    TokType::Star,
+                                    TokType::StarEqual,
+                                    TokType::Slash,
+                                    TokType::SlashEqual,
+                                    TokType::Percent,
+                                    TokType::PercentEqual,
+                                    TokType::Equal,
+                                    TokType::EqualEqual,
+                                    TokType::FatArrow,
+                                    TokType::Bang,
+                                    TokType::BangEqual,
+                                    TokType::Greater,
+                                    TokType::GreaterEqual,
+                                    TokType::Less,
+                                    TokType::LessEqual,
+                                    TokType::AndAnd,
+                                    TokType::OrOr,
+                                    TokType::DotDot,
+                                    TokType::DotDotDot,
+                                    TokType::Dot,
+                                    TokType::Ampersand,
+                                    TokType::AmpersandEqual,
+                                    TokType::Pipe,
+                                    TokType::PipeEqual,
+                                    TokType::Caret,
+                                    TokType::CaretEqual,
+                                    TokType::LessLess,
+                                    TokType::LessLessEqual,
+                                    TokType::GreaterGreater,
+                                    TokType::GreaterGreaterEqual,
+                                    TokType::GreaterGreaterGreater,
+                                    TokType::GreaterGreaterGreaterEqual,
+                                    TokType::Tilde,
+                                    TokType::Eof};
+    const auto          lexed    = lex_ok(src);
+    const auto&         tokens   = lexed->tokens;
     ASSERT_EQ(tokens.size(), expected.size());
     for (usize i = 0; i < tokens.size(); ++i) {
         EXPECT_EQ(tokens[i].type(), expected[i]) << "at token " << i;
@@ -583,11 +617,6 @@ TEST(LexerError, InvalidNumber) {
 
 TEST(LexerError, InvalidCharacter) {
     const auto err = lex_err("@");
-    EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
-}
-
-TEST(LexerError, LoneAmpersand) {
-    const auto err = lex_err("&");
     EXPECT_EQ(err.code(), ErrorCode::InvalidCharacter);
 }
 

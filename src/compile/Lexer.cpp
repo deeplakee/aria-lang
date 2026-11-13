@@ -498,12 +498,30 @@ namespace aria {
                 return make_token(TokenType::Bang, 1);
             }
             case '>': {
+                if (peek_byte(1) == '>') {
+                    if (peek_byte(2) == '>') {
+                        if (peek_byte(3) == '=') {
+                            return make_token(TokenType::GreaterGreaterGreaterEqual, 4);
+                        }
+                        return make_token(TokenType::GreaterGreaterGreater, 3);
+                    }
+                    if (peek_byte(2) == '=') {
+                        return make_token(TokenType::GreaterGreaterEqual, 3);
+                    }
+                    return make_token(TokenType::GreaterGreater, 2);
+                }
                 if (peek_byte(1) == '=') {
                     return make_token(TokenType::GreaterEqual, 2);
                 }
                 return make_token(TokenType::Greater, 1);
             }
             case '<': {
+                if (peek_byte(1) == '<') {
+                    if (peek_byte(2) == '=') {
+                        return make_token(TokenType::LessLessEqual, 3);
+                    }
+                    return make_token(TokenType::LessLess, 2);
+                }
                 if (peek_byte(1) == '=') {
                     return make_token(TokenType::LessEqual, 2);
                 }
@@ -513,12 +531,25 @@ namespace aria {
                 if (peek_byte(1) == '&') {
                     return make_token(TokenType::AndAnd, 2);
                 }
-                error(ErrorCode::InvalidCharacter, "expected '&&', got '&'");
+                if (peek_byte(1) == '=') {
+                    return make_token(TokenType::AmpersandEqual, 2);
+                }
+                return make_token(TokenType::Ampersand, 1);
             case '|':
                 if (peek_byte(1) == '|') {
                     return make_token(TokenType::OrOr, 2);
                 }
-                error(ErrorCode::InvalidCharacter, "expected '||', got '|'");
+                if (peek_byte(1) == '=') {
+                    return make_token(TokenType::PipeEqual, 2);
+                }
+                return make_token(TokenType::Pipe, 1);
+            case '^':
+                if (peek_byte(1) == '=') {
+                    return make_token(TokenType::CaretEqual, 2);
+                }
+                return make_token(TokenType::Caret, 1);
+            case '~':
+                return make_token(TokenType::Tilde, 1);
             case '.': {
                 if (peek_byte(1) == '.') {
                     if (peek_byte(2) == '.') {

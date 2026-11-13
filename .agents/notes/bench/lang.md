@@ -7,8 +7,8 @@
 
 ## 1. 测量纪律
 
-- 构建即原样的 Release 配置(`-DCMAKE_BUILD_TYPE=Release`:LTO 默认开、`-O3 -DNDEBUG`),编译器随
-  CMake 默认,全部 TU(含 isocline)都是这一套。对照语言:CPython(用 `sys.executable`,与驱动同
+- 构建即原样的 Release 配置（`-DCMAKE_BUILD_TYPE=Release`：`-O3 -DNDEBUG`），编译器随 CMake 默认；
+  LTO 只作用于 `aria_core` 与 `aria`，isocline / gtest 不参与。对照语言:CPython(用 `sys.executable`,与驱动同
   解释器)、Node、Lua、OpenJDK。
 - **读数里含 GC**:mark-sweep GC 在所有构建里都开(开发期即开,设计使然);`ASSERT` 则在 Release 下被
   `NDEBUG` 编译为空(`common.hpp`),即量的是没有断言开销的路径。
@@ -42,9 +42,10 @@
 
 - **同算法、同规模、同校验和**:端口必须与 aria 版做同一份工作、断出同一批读数,否则对比表在比两件
   不同的事。规模常量写在各脚本头部,改规模时所有语言同步改。
-- **值一致性门禁**:每个脚本(含各语言端口)都要打印 `value <键>: <整数>` 行,驱动逐语言比对同一基准的
-  键值表,任一键不同即判该行失败。这把「同算法」从口头承诺变成机械保证--批量写端口时它是唯一安全网
-  (防凭记忆写错断言值)。因此**只有各语言读数一致的量才进 `value` 行**:反例是字符串的字节
+- **值一致性门禁**：除 `startup_floor`（唯一不打印标记行的脚本，只测启动成本）外，每个脚本都打印
+  `value <键>: <整数>` 行，驱动逐语言比对键值表、任一键不同即判该行失败。这把「同算法」从口头承诺变成
+  机械保证。**缺口**：某语言的 value 行为空时驱动是跳过该语言而非报错，故端口完全漏打 value 也会静默
+  通过--加端口时手工核对一次。因此**只有各语言读数一致的量才进 `value` 行**:反例是字符串的字节
   长度(UTF-8 语言与 UTF-16 语言不同),故 `string_codepoint` 只收码点域读数。
 - 容器与写法按**各语言自然形态**取,不追求逐 op 同构:`sieve` 用 Python `bytearray` / JS `Uint8Array` /
   Java `boolean[]` / Lua 表 / aria `list`;排序用各语言的原地排序。下标按各语言的基址换算(Lua 1-based
@@ -64,7 +65,7 @@
 
 | 行 | 缺哪个语言 | 原因 |
 | --- | --- | --- |
-| `iterator_manual` | 全部端口(aria-only) | 各语言的显式迭代写法不对齐:Python / JS 的 `next()` 以抛异常报尽,Java 的 `Iterator` 次序语义不同,故只测 aria 自身协议 |
+| `iterator_manual` | 全部端口(aria-only) | 各语言的显式迭代写法不对齐：Python 的 `next()` 以 `StopIteration` 报尽，JS 的迭代器协议返回 `{value, done}`、耗尽不抛，Java 的 `Iterator` 次序语义又不同，故只测 aria 自身协议 |
 | `import_module` | 全部端口(aria-only) | 模块机制不可对齐:Python 的 import 在进程启动期执行、Java 全在编译期,故只测 aria 的 IMPORT + 跨模块调用 |
 | `operator_overload` | JS / Java | 两门语言都没有算子重载(`a + b` 恒为内置语义) |
 | `call_hook` | JS / Java | 没有可调用对象:JS 里「调用」本就是函数调用(与 `plain_call` 无区别),Java 无 `__call__` |
@@ -81,16 +82,16 @@
 | `bound_method_read` | Lua 读方法值不绑定(函数是一等值,self 显式传),与 aria 读路径现场绑定机制不同 |
 | `closure_upvalue` | Java 的 lambda 只能捕获 effectively-final 局部,可变捕获用单元素数组当持有槽 |
 | `string_concat_compare` | Java 无字符串比较算子,用 `compareTo`;拼接用非 final 局部以避免 javac 常量折叠 |
-| `list_methods` / `list_slice` / `string_ops` / `string_methods`(Lua) | Lua 的表与字符串库没有 `find` / 切片 / `split`,这些操作只能手写循环 -- 这些行比的是**实现形态**而不是派发速度,读 Lua 列时要留意 |
+| `list_methods` / `list_slice` / `string_ops` / `string_methods`(Lua) | Lua 的字符串库有 `find`/`gsub`/`sub`，但没有切片与 `split`，表也没有对应方法，故这些行是「内建 + 手写循环」的混合形态 -- 比的是**实现形态**而不是派发速度 |
 | `json_codec` | Java 以 `RuntimeException` 表达解析失败(aria 可 throw 任意值,零分配);Lua 以唯一哨兵表表示 JSON null(表槽存不了 nil),空表只出现在校验段被丢弃的残缺值里 |
 
 ## 4. 排除项
 
 - **不含需要数学内建的负载**:语言面暂无 `sqrt`,故 classic 的 `nbody` / `spectral-norm` 无法表达;
-  `pidigits` 需任意精度整数,与 i48 域冲突。将来若加数学内建,这三项可直接补进 `workloads/`。
-- **fannkuch_redux 钉的不是公开那个 checksum**:公开值的带符号约定无法从翻面语义复原(试过三种符号
-  约定均不合);翻面语义本身确凿(`max_flips` 与公开 `Pfannkuchen` 值一致),故该脚本改钉
-  `max_flips`(公开可比)+ `flips_sum`(本语料自定义)+ `perm_count`(闭式)三个序无关量。
+  `pidigits` 需任意精度整数,与 i48 域冲突。
+- **fannkuch_redux 钉的不是公开那个 checksum**:公开值的带符号约定无法从翻面语义复原;翻面语义本身
+  确凿(`max_flips` 与公开 `Pfannkuchen` 值一致),故该脚本钉 `max_flips`(公开可比)+
+  `flips_sum`(本语料自定义)+ `perm_count`(闭式)三个序无关量。
 - **aria 整数是 i48**:脚本的中间量与校验和须留在 ±2^47 内(Debug 下 `Value::from_int` 有断言)。现存
   脚本的 LCG 中间积约 1.0e14,贴着上限但安全;改规模时先算一遍。
 - **内建 `clock()` 返 f64 秒、单调、起点未定**(`src/runtime/builtins/Builtin.cpp`):只能相减,别当
@@ -108,15 +109,11 @@
 改一条指令想看它的单次成本去 `vm_bench`;想看它在一个真实程序里的体感、或想看 aria 相对其它语言的
 位次,来这一层。两处的绝对数字不可互相换算(进程内不含启动/编译,进程级含)。
 
-## 6. 读表时的四条注意
+## 6. 读表时的注意
 
-跑一次驱动得到当前数字后,按这四条读:
-
-1. **按「派发 vs 原语」分组看**:凡是一轮里做很多次字节码派发的行(算术循环、方法派发、类字段、异常
-   热路径),量的是解释器派发侧;凡是 CPython 用 C 原语一步做掉的行(varargs 打包、切片、`dict` / `map`
-   迭代、解构绑定、字符串方法面),量的是库实现侧。前者的差距说明派发侧优劣,后者的差距指出下一步
-   该把哪些常用操作下沉成原语。
-2. **分配密集的行看 `binary_trees`**:它是纯对象分配 + 字段访问,是 GC / 对象分配的观测点。
-3. **JIT 语言(Node / Java)是另一个量级**,只作参照,不与解释器列直接比较。
-4. **Lua 是最接近的解释器同侪**;但凡是 Lua 只能手写、aria 有原生实现的行(第 3 节末表),比的是
-   实现形态,不是解释器速度,读 Lua 列时留意。
+- **按「派发 vs 原语」分组看**:一轮里做很多次字节码派发的行(算术循环、方法派发、类字段、异常热路径)
+  量的是解释器派发侧;CPython 用 C 原语一步做掉的行(varargs 打包、切片、`dict`/`map` 迭代、解构绑定、
+  字符串方法面)量的是库实现侧。两列的差距是两类不同的东西,不能混着读。
+- **分配密集的行看 `binary_trees`**:纯对象分配 + 字段访问,是 GC / 对象分配的观测点。
+- **JIT 语言(Node / Java)是另一个量级**,只作参照,不与解释器列直接比较。Lua 是最接近的解释器同侪;
+  但凡是 Lua 只能手写、aria 有原生实现的行(§3 末表),比的是实现形态、不是解释器速度。

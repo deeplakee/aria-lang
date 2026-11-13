@@ -22,26 +22,26 @@ paths:
 ## `memory/Allocator.hpp`
 
 - `TriviallyCopyable` / `TrivialAllocator` concept（后者以 `u8` 为代表类型校验 `allocate<T>`/`reallocate<T>`/`deallocate<T>`）+ `class GC;` 前向声明。
-- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`，使用 GC 作分配器的具体类（`AriaArray`/`AriaHashTable`/`CodeUnit`/`AriaExeContext`/`InternPool`）自行 include（`InternPool` 经 ctor 函数体内 `static_assert(TrivialAllocator<Alloc>)` 约束--GC 为其值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
+- `Buffer`/`Array`/`HashTable` 经此与具体分配器**解耦**：容器头不 include `GC.hpp`。GC 作分配器的具体类各按需要完整类型的位置 include `GC.hpp`（`AriaArray`/`AriaHashTable`/`AriaExeContext`）；`CodeUnit`/`InternPool` 只前向声明即可（GC 只作模板实参/缺省实参）--`InternPool` 的 `static_assert(TrivialAllocator<Alloc>)` 因此落在 ctor 函数体（GC 是它的值成员拥有者，类体内处不完整类型，约束延后到实例化点）。
 
 ## `memory/HashTable.hpp`
 
-通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq,Alloc = GC>`（值无关，不依赖 Value；`HashFunctor`/`EqFunctor` concept 约束 Hash/Eq 为可默认构造的 noexcept 函数对象）。
+通用 Swiss Table 模板 `HashTable<K,V,Hash,Eq,Alloc = GC>`（值无关，不依赖 Value）；`HashFunctor`/`EqFunctor` 要求 `is_class_v`（拒函数指针）、可默认构造的 noexcept 函数对象，且 `operator()` 返回型严格为 `u32`/`bool`）。
 
 - ctrl 字节编码（0xFF 空 / 0xFE 墓碑 / 0x00..0x7F 占用+h2）+ h1/h2 拆分 + 2 的幂 cap（`kInitialCap = 8`）+ 三角探测 + 7/8 负载因子。
 - `set`（命中覆写/未命中插入）/`find`（返 `Entry*`）/`erase`/`clear` + 只读 `const_iterator`（跳空槽/墓碑，AriaHashTable trace 与 ObjMap 迭代走此通道）。
-- 两块独立分配（`ctrl_` + `entries_`），rehash 一起重分配。不可拷贝/不可移动，持 `Alloc*`。
+- 两块独立分配（`ctrl_` + `entries_`），rehash 一起重分配。插入前看两个阈值：`count + tombstones` 过 7/8 扩容 ×2；墓碑过 1/8 触发**同容量 compact**（原容重 hash、墓碑丢弃）。不可拷贝/不可移动，持 `Alloc*`。
 
 ## `memory/InternPool.hpp`
 
 header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**weak root**，字符串专用 set--不进 `mark_roots_`，`collect` 在 sweep 前调 `remove_white()` 摘除指向白色串的表项防 sweep 后悬垂）。
 
-- 裸 `ObjString** slots_` + 低位标签（nullptr 空 / `0x1` 墓碑 / 真指针占用；每槽一个 `ObjString*`），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。`find` 含两段重载（先比总长，候选切前/后两个子 view 分别与 lhs/rhs 比较）-- 供拼接方先查后拼（`new_string` 两段重载经 `GC::intern_find` 转发使用）。
+- 裸 `ObjString** slots_` + **哨兵指针**（nullptr 空 / `reinterpret_cast<ObjString*>(0x1)` 墓碑 / 真指针占用；每槽一个 `ObjString*`，不是指针低位打标），初始槽数 `kInitialCap = 8`，无 ctrl/h2（靠内容比较）；`find`/`insert`/`remove_white`。`find` 含两段重载（先比总长，候选切前/后两个子 view 分别与 lhs/rhs 比较）-- 供拼接方先查后拼（`new_string` 两段重载经 `GC::intern_find` 转发使用）。`insert` 的前提是调用方已先 `find` 查重（注释写明）；两段重载 `find` 传入的 hash 必须等于内容 hash（assert 把关）。
 - 头循环（GC 持值成员 <-> InternPool 用 `GC*`）经模板延后具现化 + ctor 函数体内 `static_assert` 打破。
 
 ## `memory/StringBuilder.hpp`
 
-header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造 `StringBuilder{gc, src}` + `append`（直写；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩；碎片化流式追加须先量后填，如 join 预扫）+ `resize`（`reserve(n)` 后经 `begin()` 直写、以此提交终长的外部产源收口）；检视面 = `view`/`size`/`begin`/`end`；`take_string` 把 buffer 零拷贝移交 `ObjString`（驻留判定与接管/SSO 化收在 `new_string` 五参接管重载；另具 hash 重载免重算），take 后空态可复用。容量策略理由与 GC 纪律见该头类头注。
+header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造 `StringBuilder{gc, src}` + `append`（直写；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩；碎片化流式追加须先量后填，如 join 预扫）+ `resize`（`reserve(n)` 后经 `begin()` 直写、以此提交终长的外部产源收口）；检视面 = `view`/`size`/`begin`/`end`；`take_string` 把 buffer 移交 `ObjString`（驻留判定与接管/SSO 化收在 `new_string` 五参接管重载；另具 hash 重载免重算），**只有长串臂是原地接管**（realloc 只做记账对齐、后端原地返回），短串拷入 SSO 槽后释放 buffer、驻留命中则直接释放 buffer。take 后空态可复用。容量策略理由与 GC 纪律见该头类头注。
 
 ## `memory/RawAlloc.hpp`
 
@@ -49,13 +49,13 @@ header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 
 
 ## `memory/AstArena.hpp`
 
-header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按请求字节数取整到 1 MiB 量子扩新块；bump 扩块无搬移成本，不做几何倍增）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(const List<T>&)`（元素一次性拷入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可拷贝--static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。机制契约与设计依据见 `.agents/notes/memory/ast-arena.md`。
+header-only AST 专用 bump 分配器（消费方在 compile 层）：节点与列表缓冲自大块（首块 256 KB，放不下按请求字节数取整到 1 MiB 量子扩新块；bump 扩块无搬移成本，不做几何倍增）顺序分配，析构沿块链整批释放、不跑任何析构函数，块链头兼当前填充块（新块恒头插、只从头分配）。构造面 = `make<T>(args...)`（构造语义同 make_unique）+ `make_list(const List<T>&)`（元素一次性拷入 arena，返回 `Span<T>` 视图；空表零分配，元素须平凡可拷贝--static_assert 钉住；它是节点列表字段的唯一生产口，Span 会自容器隐式转换，局部容器不得直接喂字段，别名即悬垂）；检视面 = `node_count()` / `allocated_bytes()`。后备经 `mem::alloc/free`，失败 `fatal_error(OutOfMemory)`、全程不抛。块基址只保证 16 B 对齐（malloc 对齐 + `Block` 头偏移），`alignas` 超过 16 的节点类型不保证对齐。机制契约与设计依据见 `.agents/notes/memory/ast-arena.md`。
 
 ## `memory/ShellPool.hpp`
 
 header-only 对象壳池：按槽尺寸类（8 B 一档，槽尺寸 = sizeof 上取整到 8，≤ `kMaxPooledSlotBytes`=256；超大壳直连后端，正确性不变）的定长空壳仓库，接在 GC 与 RawAlloc 之间。壳只经 `new_object`/`delete_object` 生死，同尺寸死壳就地复用，后端只见 span 大块与容器缓冲流量。
 
-- `alloc<T>()`：`sizeof(T)` 编译期落格（零运行期查表）+ `static_assert(alignof(T) <= 8)` 兜底；`push(shell_bytes, shell)`：按 `Object::size()` 的精确 sizeof 落格，与 alloc 侧同源恒命中同格。
+- `alloc<T>()`：`sizeof(T)` 编译期落格（零运行期查表）+ `static_assert(alignof(T) <= 8)` 兜底；`push(shell_bytes, shell)`：按虚 `Object::size()` 的精确 `sizeof` 落格。两侧同源的前提是每个 `Obj*` 的 `size()` override 恰好等于 `sizeof(T)`--写错就跨槽尺寸类复用壳。
 - span = 64 KB 后端大块，块头 `SpanHeader`（链 + bump 游标）切槽；空壳链节点寄生死壳内存头 8 B（析构后死字节，构造时覆写）。
 - span 只获取不归还（峰值驻留到进程结束），`~ShellPool` 排空全还后端（~GC `free_all_` 先把残留壳压回池）。`bytes_allocated_` 逐对象记账留在 `GC::new_object`/`delete_object`，span 开销不计。
 
@@ -65,9 +65,9 @@ GC 分配器（`allocate<T>`/`deallocate<T>`/`reallocate<T>` 模板，按 T 计�
 
 **公共入口与设施**
 
-- mark-sweep 入口 `mark_value`/`mark_object`/`maybe_collect`/`collect`；临时根 `push_temp_root` + `Guard` RAII / `make_guard`（`Guard::push` 增量压入）；禁用锁 `disable_gc`/`enable_gc`（`u32 lock_count_` 计数，支持嵌套）+ `LockGuard`/`make_lock`/`is_gc_disabled()`。
+- mark-sweep 入口 `mark_value`/`mark_object`/`maybe_collect`/`collect`；临时根 `push_temp_root` + `Guard` RAII / `make_guard`（`Guard::push` 增量压入）。**`Guard` 是朴素栈，生存期必须严格嵌套**：无归属校验，A 先于 B 析构会弹掉 B 的根，无断言可拦。禁用锁 `disable_gc`/`enable_gc`（`u32 lock_count_` 计数，支持嵌套）+ `LockGuard`/`make_lock`/`is_gc_disabled()`；`collect()` 在 `lock_count_ > 0` 时直接返回（锁住期间只跳过、不清场）。
 - stress 开关 `set_stress`（测试用，开启后每次 `new_object` 强制 collect）；`bytes_allocated()`（**存活**字节、随回收回落）与 `allocation_count()`（累计 `new_object` 次数、单调不减--给基准确定性分配读数，见 `bench/vm_bench.cpp`）。
-- 常量 `kInitialGcThreshold = 1024*4`、`kGcGrowFactor = 2`；`gray_stack_`/`temp_roots_` 用 `List`（scratch，不计 `bytes_allocated_`）；`intern_.slots_` 计入 `bytes_allocated_`。
+- 常量 `kInitialGcThreshold = 1024*4`（`next_gc_` 初值）、`kGcGrowFactor = 2`；每次 `collect` 后 `next_gc_` 重算为 `bytes_allocated_ * kGcGrowFactor`（按存活量自适应，非固定步长）；`gray_stack_`/`temp_roots_` 用 `List`（scratch，不计 `bytes_allocated_`）；`intern_.slots_` 计入 `bytes_allocated_`。
 - `InternPool intern_` 成员（`intern_find`/`intern_insert` 委托；`collect` 在 sweep 前调 `intern_.remove_white()`）。
 
 **VM 根 tracer**

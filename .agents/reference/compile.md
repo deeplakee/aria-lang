@@ -18,13 +18,13 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 - **Parser.hpp / Parser.cpp**：`Parser::parse(AstArena&, SourceFile&, List<Token>&) -> Result<ProgramNode*, List<Error>>`（token 表与 source 均借用不持有，存活须覆盖 parse 调用；arena 由调用方持有并传入，节点裸指针借用，存活须覆盖整棵 AST 的消费期），递归下降各函数与文法非终结符一一对应；错误经 `AriaCompileException` 在递归深处抛出、`declaration()` 层 catch + panic-mode `synchronize()` 恢复式收集。消歧点（for/for-in 前瞻、fun 声明/lambda、`{` block/mapExpr 按调用上下文、`[` 解构赋值/listExpr 按 token 预扫）的论证在各函数注释。
 - **AstVisitor.hpp**：访问者接口，44 个 `visitXxxNode(XxxNode&)` 纯虚（1 根 + 17 语句 + 23 表达式 + 3 模式），编译器强制子类穷尽覆盖；双分派由节点 `accept` 完成。具体子类：`CodeGen`。
 - **FnKind.hpp**：函数种类枚举（Function/Lambda/StaticMethod/Method/InitMethod/ModuleEntry）。各 kind 的绑定形态/隐式返回尾/槽 0 语义的权威表述见该头注册表注。
-- **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责；`proto_` 指向当前编译的函数原型；局部名 `Local.name` 借 `StringView`（AST 名字视图/kThisName/空哑元，存活覆盖编译期）。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见头注。`LoopCtx` 字段语义与三种循环占位回填详见 `.agents/reference/specs/loopctx.md`。
+- **FunctionCtx.hpp / .cpp**：单函数编译上下文，**只负责「登记」**（局部/作用域/循环栈/upvalue 捕获描述/常量池去重索引），「发射」由 CodeGen 负责；`proto_` 指向当前编译的函数原型；局部名 `Local.name` 借 `StringView`（AST 名字视图/kThisName/空哑元，存活覆盖编译期）。所有权（入口归 ModuleCtx、子归 compile_function）与常量池去重索引「每函数一份是硬约束」的论证见该头成员注释。`LoopCtx` 字段语义与三种循环占位回填详见 `.agents/reference/specs/loopctx.md`。
 - **ModuleCtx.hpp / .cpp**：模块编译上下文（模块句柄 + 当前函数上下文游标兼拥有入口 + 顶层全局名注册表），与 FunctionCtx 对齐成「模块 > 函数 > 作用域」三层；全局名注册表 `defined_globals_` 键借 `StringView`（AST 名字视图，存活覆盖编译期）；单成员兼两职的设计与出错析构走链见头注。
 - **Compiler.hpp / Compiler.cpp**：编排器，串联 Lexer -> Parser -> CodeGen，统一翻译为 `Result<ObjFnProto*, Error>`（首错即止）。吃实际 `SourceFile&`（不拥有不重建）；AST 不外返、Error 构造期已烘位置，故 source 只须存活到 `compile()` 返回；AST 归 `compile()` 栈上 `AstArena`（`memory/AstArena.hpp`）所有（RAII，unwind 即整批释放）。四入口（Lexer::tokenize / Parser::parse / CodeGen::compile / Compiler::compile）均静态无状态；compile 的 gc 与 VM 同一 GC。
 
 ## CodeGen（单遍合一）
 
-`CodeGen final : AstVisitor`，一次 AST 遍历同时做名字解析 + 语义检查 + 字节码发射，产出模块入口 `ObjFnProto*`（arity 0）。状态分离（模块/函数/作用域三层，游标寄存于 ModuleCtx）、emit 下沉 CodeUnit、`_or_fail` 失败翻译、值填槽不变式、裸名解析序（局部 -> upvalue -> 全局）、跳转回填、弹区清理、for-in/match/try/解构 lowering 的完整机制见 `CodeGen.hpp` 类头注与各方法注，及 `.agents/reference/specs/compound-assignment.md`（LvalueMode 与复合赋值）。
+`CodeGen final : AstVisitor`，一次 AST 遍历同时做名字解析 + 语义检查 + 字节码发射，产出模块入口 `ObjFnProto*`（arity 0）。类头注只交代单遍遍历与 GC 两点，机制细节读 `CodeGen.cpp` 各方法注：状态分离（模块/函数/作用域三层，游标寄存于 ModuleCtx）、emit 下沉 CodeUnit、`_or_fail` 失败翻译、值填槽不变式、裸名解析序（局部 -> upvalue -> 全局）、跳转回填、弹区清理、for-in/match/try/解构 lowering，及 `.agents/reference/specs/compound-assignment.md`（LvalueMode 与复合赋值）。
 
 **设计决策（代码注释仅简版，论证在此）**：
 
@@ -36,7 +36,7 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 **语义检查（首错即止，内联各 visit）**：`InvalidAssignmentTarget`/`Break|ContinueOutsideLoop`/`TryWithoutHandler`/`UnreachableArm`/`DuplicateParam`/`TooManyParameters|Arguments`/`RedefinedVariable`/`ThisOutsideClass`/`SuperOutsideMethod`/`NumberOutOfRange`（i48）/`TooManyLocals`/`TooManyUpvalues`（容量 256 = `kMaxUpvalues`+1，第 257 条拒）/`CodeUnitTooLarge`/`TooManyElements`。顶层裸 `return` 合法（带值报 `ReturnValueAtTopLevel`）；varargs 为零发射翻转（rest 即末位局部槽，值由 `call_aria_fn` 打包就位）。
 
-**坑编号纪律**：.agents/notes/runtime/exception.md 与 .agents/notes/runtime/coroutine.md 的坑编号空间各自独立（同号不同坑），src/ 注释引用坑号须带文档名前缀（如 `exception-pitfalls 坑 #4`）；exception 侧坑编号被广泛引用不得重排。
+**坑编号纪律**：`.agents/notes/runtime/exception.md` 与 `.agents/notes/runtime/coroutine.md` 的坑编号空间各自独立（同号不同坑），引用一律带文档名（如 `exception 坑 #4`）；exception 侧编号被测试用例按号引用，不得重排。
 
 ## 测试
 

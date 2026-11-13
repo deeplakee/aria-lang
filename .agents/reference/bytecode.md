@@ -14,7 +14,7 @@ paths:
 **指令集单一事实源 = `ARIA_OPCODE_LIST(X)` X-Macro**：每行 `X(枚举名, OpFormat类别)`（以注册表为准；枚举顺序即 opcode 数值，首条 `HALT` 隐式为 0；`kOpCodeCount == 79` 有测试哨兵）。
 
 - 表展开生成 `OpCode` 枚举 / `kOpCodeCount`（越界判定用，替代依赖枚举稠密）/ `kOpCodeNames` / `kOpCodeFormats`（`inline constexpr` 查表，供 Disassembler 等冷路径消费；VM 热路径不查表）；`OpFormat` 是独立的操作数格式类别枚举（`Simple`/`U8`/`U16`/`ConstU16`/`ImmI8`/`JumpFwd`/`JumpBack`/`RangeFlags`/`RegU8`/`Import`）。
-- **新增指令流程**：X 表加一行（选既有 OpFormat）-> Eval 主循环（`dispatch_loop`）加对应 case -> 文档同步；Disassembler 与名字/格式表零改动（仅引入新格式类别时才同步其分发 switch）。
+- **新增指令流程**：X 表加一行（选既有 OpFormat）-> Eval 主循环（`dispatch_loop`）加对应 case -> 文档同步；Disassembler 与名字/格式表零改动。**引入新 OpFormat 类别**要同步三处：Disassembler 分发 switch、`runtime/opcode_profile.cpp` 的 `size_of`（`default: return 3` 会把新格式静默当 3 字节）与 `records_fall_pair`（直线型判定按格式派生）。
 - `op_symbol(OpCode)`（`inline constexpr`）：二元算术/比较指令 -> 报错消息里的源码算子记号（`ADD` 为 `"+"`），其余 opcode 取到即 `"?"`（消费方只对本组取号，别的落 `default` 表编程错误）。消费方 = VM 数值二元的类型守卫。
 - **表内不放说明性注释**（中英混排难以列对齐），语义细节统一放表头注释块速览与 `.agents/reference/specs/instruction-set.md`；续行符 `\` 对齐交给 clang-format（`AlignEscapedNewlines: Left`）自动维护；若确需表内注释只能用块注释 `/* */`（多行宏体内 `//` 会因反斜杠续行吞掉下一行）。
 - **无 `SETUP_EXCEPT`/`END_EXCEPT`**：异常走 CodeUnit 内记录表，见 `AGENTS.md`「错误处理」第 2 条。完整指令清单见 `.agents/reference/specs/instruction-set.md`。
@@ -23,11 +23,11 @@ paths:
 
 `CodeUnit` 字节码容器（`ObjFnProto` 的值成员，非 Object）。
 
-- **操作数位宽事实源** `kU8OperandMax`/`kU16OperandMax`（u8/u16 操作数最大 255/65535，`namespace aria` 级 constexpr）在头内置；本类与 CodeGen 的各语义上限常量（本侧 `kMaxPopChunk`/`kMaxNLocalSlot`/`kMaxJumpOffset`/`kMaxConstantIndex`、CodeGen 侧 `kMaxArity`/`kMaxArguments`/`kMaxConstants`/`kMaxListElements`/`kMaxMapEntries`/`kMaxLocals`）以之为源。
+- **操作数位宽事实源** `kU8OperandMax`/`kU16OperandMax`（u8/u16 操作数最大 255/65535，`namespace aria` 级 constexpr）在头内置；本类与 CodeGen 的各语义上限常量（本侧 `kMaxPopChunk`/`kMaxNLocalSlot`/`kMaxJumpOffset`/`kMaxConstantIndex`、CodeGen 侧 `kMaxArity`/`kMaxArguments`/`kMaxConstants`/`kMaxListElements`/`kMaxMapEntries`/`kMaxLocals`/`kMaxInterpSegments`）以之为源。
 - **四个容器字段直接 public 裸露**（VM/编译器/反汇编器直接操作裸字段）：`code`（`Array<u8>` 字节流，opcode + 内联操作数小端）、`constants`（`AriaArray` 常量池，白赚 `trace`）、`lines`（`Array<LineEntry>` RLE 行段表）、`try_records`（`Array<TryRecord>` 异常记录表）。
-- `try_records` **按 `begin` 非降序**（CodeGen 入口预插占位 + 结尾回填保证；相等合法--内层 try 是外层体首条语句时零发射间隔），`find_try_handler` 二分前溯取最内层；`TryRecord{begin,end,handle,stack_depth}` 的 `stack_depth` 是 try 入口局部数编译期快照，unwind 据此截值栈并把异常值落 catch 参数槽。
-- **仅保留有不可散落逻辑的方法**：`emit_byte`/`emit_word`/`emit_op`（带 `line`）、`emit_pop_n`（分块 <= 255）、`emit_jump`/`patch_jump`/`emit_jump_back`（占位回填，越界返 false 不写）、`emit_load_local`/`emit_store_local`（slot 1..8 发零操作数 N 短变体 `LOAD/STORE_LOCAL_k`，槽号内嵌枚举名、连续性由 code.hpp static_assert 钉住；否则通用形态 + `u16` 槽号）、`size`、`add_constant`（**只追加不去重**--按值去重收口在编译期 `FunctionCtx::add_constant`，池内无同值重复项）、`line_for_offset`（RLE 二分）、`find_try_handler`、`trace`、`disassemble`（完整签名与语义见头注释）。
-- **字节码编码逻辑（emit/跳转编码/回填/分块/槽位变体）收口于此**，编译器不再自持薄包装；越界以 bool 返回交调用方翻译为 Error，本类不持 Error 语义。
+- `try_records` **按 `begin` 非降序**（CodeGen 入口预插占位 + 结尾回填保证；相等合法--内层 try 是外层体首条语句时零发射间隔），`find_try_handler` 二分前溯取最内层。该查询要求 try 区间**良嵌套**（不交叉）：交叉时前溯会命中错误 handler，良嵌套由 CodeGen 的发射顺序保证。`TryRecord{begin,end,handle,stack_depth}` 的 `stack_depth` 是 try 入口局部数编译期快照，unwind 据此截值栈并把异常值落 catch 参数槽。
+- **仅保留有不可散落逻辑的方法**：`emit_byte`/`emit_word`/`emit_op`（带 `line`）、`emit_pop_n`（分块 <= 255；`count == 0` 零发射、单块为 1 时降级成 `POP`）、`emit_jump`/`patch_jump`/`emit_jump_back`（占位回填）、`emit_load_local`/`emit_store_local`（slot 1..8 发零操作数 N 短变体 `LOAD/STORE_LOCAL_k`，槽号内嵌枚举名、连续性由 code.hpp static_assert 钉住；否则通用形态 + `u16` 槽号）、`size`、`add_constant`（**只追加不去重**--按值去重收口在编译期 `FunctionCtx::add_constant`，池内无同值重复项）、`line_for_offset`（RLE 二分）、`find_try_handler`、`trace`、`disassemble`（完整签名与语义见头注释）。
+- **字节码编码逻辑（emit/跳转编码/回填/分块/槽位变体）收口于此**，编译器不再自持薄包装；该翻译成哪个 `ErrorCode` 归调用方。**bool 契约只属跳转族**：`patch_jump`/`emit_jump_back` 超出 u16 偏移返 false 且不写占位；`patch_jump(src_off)` 没有 target 参数--目标恒为调用时刻的 `size()`，故同一目标的占位必须连续回填、回填顺序即代码顺序。`add_constant` 无 bool 契约，池满走 ASSERT（`kMaxConstantIndex`）。
 - **行号无状态模型**：emit 一律带 `line`（无重载、无 `last_line_`，调用方自跟踪当前行；RLE 去重收口私有 `record_line_`）。`explicit CodeUnit(GC* gc)`（容器分配器绑定 GC）；非拷贝/非移动。
 
 ## `bytecode/Disassembler.hpp` / `.cpp`

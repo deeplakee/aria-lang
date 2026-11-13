@@ -1,0 +1,2 @@
+// 钉住：equality 紧于 &（解析为 (1 == 1) & 1），Bool 落位算子域外报 TypeMismatch。
+1 == 1 & 1;

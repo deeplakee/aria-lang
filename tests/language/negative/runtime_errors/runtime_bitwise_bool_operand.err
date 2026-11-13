@@ -1,0 +1,2 @@
+Runtime: TypeMismatch operator '&' requires integers, got Bool and Int
+at <main> (

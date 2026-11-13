@@ -1,0 +1,26 @@
+// 钉住：位复合赋值 &= |= ^= <<= >>= >>>=（E1 op= E2）与 locator-once（下标副作用只发生一次）。
+var a = 5;
+a &= 3;
+assert(a == 1);
+a |= 8;
+assert(a == 9);
+a ^= 12;
+assert(a == 5);
+a <<= 2;
+assert(a == 20);
+a >>= 1;
+assert(a == 10);
+a >>>= 1;
+assert(a == 5);
+var neg = -16;
+neg >>= 2;
+assert(neg == -4);
+var calls = 0;
+fun slot() {
+    calls += 1;
+    return 0;
+}
+var arr = [7];
+arr[slot()] &= 1;
+assert(calls == 1);
+assert(arr[0] == 1);

@@ -1,0 +1,2 @@
+// 钉住：~ 纯 Int 域，F64 报 InvalidOperand。
+~1.5;

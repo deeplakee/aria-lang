@@ -1,0 +1,2 @@
+Runtime: InvalidOperand bitwise not requires an integer, got F64
+at <main> (

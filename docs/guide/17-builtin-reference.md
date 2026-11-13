@@ -120,7 +120,7 @@
 | 类型 | 方法 | 行为 |
 | :--- | :--- | :--- |
 | range | `Range(a)` / `Range(a, b)` 类调用 | 工厂构造：等价 `a...`（无上界）/ `a...b`（不含上界），端点须整数 |
-| range | `iter()` | 整数迭代器（方向由端点定）。range 方法面目前仅此一个 |
+| range | `iter()` | 整数迭代器（方向由端点定） |
 | iterator | `Iterator(src)` 类调用 | 工厂构造：按源类型铸迭代器，只收 string / list / map |
 | iterator | `has_next()` | 是否还有值 |
 | iterator | `next()` | 取下一值并推进；耗尽后再调报 `IterationExhausted` |

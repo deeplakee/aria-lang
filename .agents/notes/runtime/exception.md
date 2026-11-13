@@ -79,7 +79,7 @@ try 体里被闭包捕获的局部，其 upvalue 开指着本帧槽；命中 han
 
 作用域退出**不弹栈**（对齐 Lua `OP_CLOSE`）：`POP_N` 整区弹局部（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（关闭槽址 >= 新栈顶的开 upvalue）。此时弹区槽已在新栈顶之上，close 仍要读它们迁值，安全性靠三条：① 两指令均无分配、无 GC 点，其间无覆写触发点；② close 只读弹区不写弹区（迁值写各自 `closed_`）；③ 外层帧槽址恒低于本帧，故「槽址 >= 本帧新栈顶」只属弹区局部。
 
-**若在 `POP_N` 与 `CLOSE_UPVALUE` 之间插入任何 push（调试钩子、defer 类机制），前提 ① 即破**--这是 defer 落地时必须重新核对的一条。
+**若在 `POP_N` 与 `CLOSE_UPVALUE` 之间插入任何 push（调试钩子一类机制），前提 ① 即破**--插入任何 push 类机制前必须重新核对这一条。
 
 for-in per-iteration 出口每轮都发（若捕获），即「每轮新鲜绑定」的落地机制。
 
@@ -90,4 +90,4 @@ for-in per-iteration 出口每轮都发（若捕获），即「每轮新鲜绑�
 
 ## 17. `finally` 与 defer
 
-`finally` 已从文法移除（`finally` 回归普通标识符，try 必须带 catch，报 `TryWithoutHandler`），故 unwind 流程**没有 finally 汇合点**。善后后继是 defer（未实装）：它与本机制共享两个难点--① unwind 途中执行用户代码；② 善后代码自身抛错会替换在途异常，且在途异常不能只住单寄存器（途中嵌套 try/catch 命中会清掉它），须另存专用槽位。若重新引入 finally，控制流语义从零定（不继承 Java/Python 的覆盖语义）。
+`finally` 已从文法移除（`finally` 回归普通标识符，try 必须带 catch，报 `TryWithoutHandler`），故 unwind 流程**没有 finally 汇合点**。善后 defer 已裁定不做，若重开它与本机制共享两个难点--① unwind 途中执行用户代码；② 善后代码自身抛错会替换在途异常，且在途异常不能只住单寄存器（途中嵌套 try/catch 命中会清掉它），须另存专用槽位。若重新引入 finally，控制流语义从零定（不继承 Java/Python 的覆盖语义）。

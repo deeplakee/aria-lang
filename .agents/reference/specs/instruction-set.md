@@ -380,7 +380,7 @@ L_catch:               ; 抛出时 unwind 到此；截栈后 push 异常值，�
 L_end:
 ```
 
-`Eval::unwind(vm)`：按帧 `last_ip` 反推 offset、自最内帧向外查记录表（纯搜索，不动帧栈/值栈、不物化）-> 命中帧调 `AriaExeContext::unwind_to_handler(帧索引, record)` 一体完成（弃内层帧 + 按槽址关开 upvalue + 栈顶截到 catch 槽 + `ip = handle` + 载荷落槽）；全帧未命中按出口边界三分流（嵌套执行截净残帧续搜 / 协程链转投一跳 / 主上下文物化）。物化归 `AriaVM::rebake_uncaught_error`，跟踪行逐帧烘焙在消息尾部。`finally` 不支持（无 finally 汇合点；善后后继 defer 为可选方向，未实装）。
+`Eval::unwind(vm)`：按帧 `last_ip` 反推 offset、自最内帧向外查记录表（纯搜索，不动帧栈/值栈、不物化）-> 命中帧调 `AriaExeContext::unwind_to_handler(帧索引, record)` 一体完成（弃内层帧 + 按槽址关开 upvalue + 栈顶截到 catch 槽 + `ip = handle` + 载荷落槽）；全帧未命中按出口边界三分流（嵌套执行截净残帧续搜 / 协程链转投一跳 / 主上下文物化）。物化归 `AriaVM::rebake_uncaught_error`，跟踪行逐帧烘焙在消息尾部。`finally` 不支持（无 finally 汇合点；善后 defer 已裁定不做）。
 
 ## 5. 相关文档
 

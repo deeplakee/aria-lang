@@ -49,32 +49,45 @@ namespace aria {
     X(Super, "super") /* base class method */                                          \
     X(Match, "match") /* match statement / match expression */
 
-#define ARIA_TOKEN_OPERATOR_LIST(X) \
-    X(Plus, "+")                    \
-    X(Minus, "-")                   \
-    X(Star, "*")                    \
-    X(Slash, "/")                   \
-    X(Percent, "%")                 \
-    X(PlusEqual, "+=")              \
-    X(MinusEqual, "-=")             \
-    X(StarEqual, "*=")              \
-    X(SlashEqual, "/=")             \
-    X(PercentEqual, "%=")           \
-    X(Equal, "=")                   \
-    X(EqualEqual, "==")             \
-    X(EqualEqualEqual, "===")       \
-    X(BangEqual, "!=")              \
-    X(BangEqualEqual, "!==")        \
-    X(Bang, "!")                    \
-    X(Greater, ">")                 \
-    X(GreaterEqual, ">=")           \
-    X(Less, "<")                    \
-    X(LessEqual, "<=")              \
-    X(AndAnd, "&&")                 \
-    X(OrOr, "||")                   \
-    X(PlusPlus, "++")               \
-    X(MinusMinus, "--")             \
-    X(FatArrow, "=>")               \
+#define ARIA_TOKEN_OPERATOR_LIST(X)       \
+    X(Plus, "+")                          \
+    X(Minus, "-")                         \
+    X(Star, "*")                          \
+    X(Slash, "/")                         \
+    X(Percent, "%")                       \
+    X(PlusEqual, "+=")                    \
+    X(MinusEqual, "-=")                   \
+    X(StarEqual, "*=")                    \
+    X(SlashEqual, "/=")                   \
+    X(PercentEqual, "%=")                 \
+    X(AmpersandEqual, "&=")               \
+    X(PipeEqual, "|=")                    \
+    X(CaretEqual, "^=")                   \
+    X(LessLessEqual, "<<=")               \
+    X(GreaterGreaterEqual, ">>=")         \
+    X(GreaterGreaterGreaterEqual, ">>>=") \
+    X(Equal, "=")                         \
+    X(EqualEqual, "==")                   \
+    X(EqualEqualEqual, "===")             \
+    X(BangEqual, "!=")                    \
+    X(BangEqualEqual, "!==")              \
+    X(Bang, "!")                          \
+    X(Greater, ">")                       \
+    X(GreaterEqual, ">=")                 \
+    X(Less, "<")                          \
+    X(LessEqual, "<=")                    \
+    X(LessLess, "<<")                     \
+    X(GreaterGreater, ">>")               \
+    X(GreaterGreaterGreater, ">>>")       \
+    X(AndAnd, "&&")                       \
+    X(OrOr, "||")                         \
+    X(Ampersand, "&")                     \
+    X(Pipe, "|")                          \
+    X(Caret, "^")                         \
+    X(Tilde, "~")                         \
+    X(PlusPlus, "++")                     \
+    X(MinusMinus, "--")                   \
+    X(FatArrow, "=>")                     \
     X(DotDot, "..") /* range (upper bound inclusive, a..b) */
 
 #define ARIA_TOKEN_PUNCT_LIST(X) \

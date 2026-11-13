@@ -51,17 +51,21 @@ exprStmt       -> sequenceExpr ";"
 expression     -> assignment
 sequenceExpr   -> expression ( "," expression )*
 
-assignment     -> logic_or ( ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) assignment )?
+assignment     -> logic_or ( ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=" ) assignment )?
                | listPattern "=" assignment
 
 logic_or       -> logic_and ( "||" logic_and )*
-logic_and      -> equality ( "&&" equality )*
+logic_and      -> bit_or ( "&&" bit_or )*
+bit_or         -> bit_xor ( "|" bit_xor )*
+bit_xor        -> bit_and ( "^" bit_and )*
+bit_and        -> equality ( "&" equality )*
 equality       -> comparison ( ( "!=" | "==" | "!==" | "===" ) comparison )*
 comparison     -> range ( ( ">" | ">=" | "<" | "<=" ) range )*
-range          -> term ( ( ".." | "..." ) term? )?
+range          -> shift ( ( ".." | "..." ) shift? )?
+shift          -> term ( ( "<<" | ">>" | ">>>" ) term )*
 term           -> factor ( ( "-" | "+" ) factor )*
 factor         -> unary ( ( "/" | "*" | "%" ) unary )*
-unary          -> ( "-" | "!" | "++" | "--" ) unary | value
+unary          -> ( "-" | "!" | "++" | "--" | "~" ) unary | value
 value          -> primary ( args | "." identifier | "[" expression "]" )*
 args           -> "(" ( expression ( "," expression )* )? ")"
 
@@ -150,9 +154,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 #     （"var x = a, b;" 在语句层是双绑定，同形异义）；下标 obj[expr]（"m[a, b]" 惯读为
 #     多维下标）；matchPattern（模式位序列值无意义）。
 #
-# 运算符优先级（从低到高）：逗号(序列) < 赋值 < || < && < 相等 < 比较 < 区间 < 加减
-# < 乘除模 < 一元
-# (含前置 ++/--/!/-) < 后缀调用/取字段/取下标。同层多为左结合；一元右结合；
+# 运算符优先级（从低到高）：逗号(序列) < 赋值 < || < && < | < ^ < & < 相等 < 比较 < 区间
+# < 移位 < 加减 < 乘除模 < 一元
+# (含前置 ++/--/!/-/~) < 后缀调用/取字段/取下标。同层多为左结合；一元右结合；
 # 赋值右结合。相等层含 ==/!=/===/!==（同优先级、左结合）：== 内容相等(value_equal，
 # Int/F64 跨类型 IEEE 数值、Obj 调 Object::equals 虚函数)、=== 严格相等(value_identical，
 # 类型严格、f64 按位、Obj 指针)；!= / !== 分别为 == / === 的取反（NOT_EQUAL /

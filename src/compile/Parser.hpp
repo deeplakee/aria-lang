@@ -181,6 +181,15 @@ namespace aria {
         ExprNode* logic_and();
 
         [[nodiscard]]
+        ExprNode* bit_or();
+
+        [[nodiscard]]
+        ExprNode* bit_xor();
+
+        [[nodiscard]]
+        ExprNode* bit_and();
+
+        [[nodiscard]]
         ExprNode* equality();
 
         [[nodiscard]]
@@ -191,6 +200,9 @@ namespace aria {
 
         [[nodiscard]]
         ExprNode* term();
+
+        [[nodiscard]]
+        ExprNode* shift();
 
         [[nodiscard]]
         ExprNode* factor();

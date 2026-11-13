@@ -23,6 +23,18 @@ namespace aria {
                     return Op::Assignment::SlashAssign;
                 case TokenType::PercentEqual:
                     return Op::Assignment::PercentAssign;
+                case TokenType::AmpersandEqual:
+                    return Op::Assignment::BitAndAssign;
+                case TokenType::PipeEqual:
+                    return Op::Assignment::BitOrAssign;
+                case TokenType::CaretEqual:
+                    return Op::Assignment::BitXorAssign;
+                case TokenType::LessLessEqual:
+                    return Op::Assignment::ShlAssign;
+                case TokenType::GreaterGreaterEqual:
+                    return Op::Assignment::ShrAssign;
+                case TokenType::GreaterGreaterGreaterEqual:
+                    return Op::Assignment::UshrAssign;
                 default:
                     UNREACHABLE();
             }
@@ -60,6 +72,18 @@ namespace aria {
                     return Op::Binary::Slash;
                 case TokenType::Percent:
                     return Op::Binary::Percent;
+                case TokenType::Ampersand:
+                    return Op::Binary::BitAnd;
+                case TokenType::Pipe:
+                    return Op::Binary::BitOr;
+                case TokenType::Caret:
+                    return Op::Binary::BitXor;
+                case TokenType::LessLess:
+                    return Op::Binary::Shl;
+                case TokenType::GreaterGreater:
+                    return Op::Binary::Shr;
+                case TokenType::GreaterGreaterGreater:
+                    return Op::Binary::Ushr;
                 default:
                     UNREACHABLE();
             }
@@ -75,6 +99,8 @@ namespace aria {
                     return Op::Unary::PreInc;
                 case TokenType::MinusMinus:
                     return Op::Unary::PreDec;
+                case TokenType::Tilde:
+                    return Op::Unary::BitNot;
                 default:
                     UNREACHABLE();
             }
@@ -595,7 +621,10 @@ namespace aria {
 
         ExprNode* lhs = logic_or();
         if (match(TokenType::Equal) || match(TokenType::PlusEqual) || match(TokenType::MinusEqual) ||
-            match(TokenType::StarEqual) || match(TokenType::SlashEqual) || match(TokenType::PercentEqual)) {
+            match(TokenType::StarEqual) || match(TokenType::SlashEqual) || match(TokenType::PercentEqual) ||
+            match(TokenType::AmpersandEqual) || match(TokenType::PipeEqual) || match(TokenType::CaretEqual) ||
+            match(TokenType::LessLessEqual) || match(TokenType::GreaterGreaterEqual) ||
+            match(TokenType::GreaterGreaterGreaterEqual)) {
             const auto op = assignment_op(previous().type());
             return arena_.make<AssignmentNode>(loc, op, lhs, assignment());
         }
@@ -614,8 +643,38 @@ namespace aria {
 
     ExprNode* Parser::logic_and() {
         const SourceLoc loc  = loc_of(peek());
-        ExprNode*       expr = equality();
+        ExprNode*       expr = bit_or();
         while (match(TokenType::AndAnd)) {
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, bit_or());
+        }
+        return expr;
+    }
+
+    ExprNode* Parser::bit_or() {
+        const SourceLoc loc  = loc_of(peek());
+        ExprNode*       expr = bit_xor();
+        while (match(TokenType::Pipe)) {
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, bit_xor());
+        }
+        return expr;
+    }
+
+    ExprNode* Parser::bit_xor() {
+        const SourceLoc loc  = loc_of(peek());
+        ExprNode*       expr = bit_and();
+        while (match(TokenType::Caret)) {
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, bit_and());
+        }
+        return expr;
+    }
+
+    ExprNode* Parser::bit_and() {
+        const SourceLoc loc  = loc_of(peek());
+        ExprNode*       expr = equality();
+        while (match(TokenType::Ampersand)) {
             const auto op = binary_op(previous().type());
             expr          = arena_.make<BinaryExprNode>(loc, op, expr, equality());
         }
@@ -648,7 +707,7 @@ namespace aria {
     // DotDotDot 与 rest/varargs 前缀复用，按位置消歧；无上界时 .. 与 ... 语义同义。
     ExprNode* Parser::range() {
         const SourceLoc loc   = loc_of(peek());
-        ExprNode*       lower = term();
+        ExprNode*       lower = shift();
         if (match(TokenType::DotDot) || match(TokenType::DotDotDot)) {
             const bool is_exclusive = previous().is(TokenType::DotDotDot);
             // 无上界走试探：term() 能解析则收 upper，失败即 .. / ... 后不跟表达式，回滚游标判无上界。
@@ -656,7 +715,7 @@ namespace aria {
             // upper 位表达式残缺也落此路，报错移到外层语法错，仍显性。
             const usize save = pos_;
             try {
-                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, term());
+                return arena_.make<RangeExprNode>(loc, is_exclusive, lower, shift());
             } catch (const AriaCompileException&) {
                 pos_ = save;
                 return arena_.make<RangeExprNode>(loc, is_exclusive, lower, nullptr);
@@ -676,6 +735,17 @@ namespace aria {
         return expr;
     }
 
+    ExprNode* Parser::shift() {
+        const SourceLoc loc  = loc_of(peek());
+        ExprNode*       expr = term();
+        while (match(TokenType::LessLess) || match(TokenType::GreaterGreater) ||
+               match(TokenType::GreaterGreaterGreater)) {
+            const auto op = binary_op(previous().type());
+            expr          = arena_.make<BinaryExprNode>(loc, op, expr, term());
+        }
+        return expr;
+    }
+
     ExprNode* Parser::factor() {
         const SourceLoc loc  = loc_of(peek());
         ExprNode*       expr = unary();
@@ -688,8 +758,8 @@ namespace aria {
 
     ExprNode* Parser::unary() {
         const SourceLoc loc = loc_of(peek());
-        if (match(TokenType::Minus) || match(TokenType::Bang) || match(TokenType::PlusPlus) ||
-            match(TokenType::MinusMinus)) {
+        if (match(TokenType::Minus) || match(TokenType::Bang) || match(TokenType::Tilde) ||
+            match(TokenType::PlusPlus) || match(TokenType::MinusMinus)) {
             const auto op = unary_op(previous().type());
             return arena_.make<UnaryExprNode>(loc, op, unary()); // 右结合：允许 -- -x
         }

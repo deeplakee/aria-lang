@@ -166,7 +166,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 - 源根入口槽 `[0]` 原地替换为入口模块 `dir_` + 前后各一次 `reset()` 清场（前：HALT 收场的上一轮不弹帧，不先清场会把新帧叠在陈旧帧上；后：避免 `run()` 外 GC 经 tracer 标到陈旧栈值）。
 - 从 `proto` 创建 `entry_function`（原型跨 `new_function` 的 GC 点由 `make_guard` 保活），入口动作内联在函数体：压 callee + `Eval::call_aria_fn` 进帧（返回 bool 有意忽略，承重不变式两条：入口函数 arity 0/下限 0 恒过元数检查、`reset()` 后帧栈空不会帧满）-> `Eval::dispatch_loop(*current_)` 主循环驱动当前上下文；false 出口经私有 `rebake_uncaught_error()` 物化未捕获 `Error`（见「VM 异常通道」节）。
 
-### GC 已启用
+### GC 开启
 
 值栈 `[base, top)` + 各活动帧 `function`/`module` + open upvalue 开链经 `ObjMovement::trace` 标根（VM 根 tracer 只标 `current_` 一点，各上下文内部与 previous_ 链经对象图级联；见下「共享状态」）；`IMPORT` 的**命中臂**取到模块对象后 `current_->push(module)` 压栈（经 `modules_` 根可达，非移动 GC 故指针稳定，**不加守卫**），未命中臂压的是入口函数（模块值由模块体 RETURN 写回）；`JUMP_BACK`（循环回边）为 safe point 调 `gc_.maybe_collect()`。
 

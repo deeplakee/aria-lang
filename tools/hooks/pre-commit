@@ -13,3 +13,8 @@ if ! python3 "$root/tools/check_error_messages.py" "$root/src"; then
     echo "按上方提示逐条改;确认无误要绕过时用 git commit --no-verify" >&2
     exit 1
 fi
+
+if ! python3 "$root/tools/check_agent_docs.py"; then
+    echo "agent 文档未过机械检查 -- 路径须存在、符号须还在源码里、reference/notes 禁落地记录与计划词" >&2
+    exit 1
+fi

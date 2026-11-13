@@ -42,6 +42,7 @@ clang++ -std=c++23 -I src -fsyntax-only <file>  # 单文件语法检查（-I src
 clang-format -i <file>                         # 格式化（clang-format 23.1.3，与 CI 一致）
 python3 tools/check_error_messages.py          # 报错文案机械检查（钩子壳 tools/hooks/pre-commit）
 python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩子壳 tools/hooks/commit-msg）
+python3 tools/check_agent_docs.py              # agent 文档防漂移检查（路径/符号/禁词，钩子壳 tools/hooks/pre-commit）
 ```
 
 构建细节（三平台配置 / 构建选项 / 构建目录约定 / clangd）见 `docs/building.md`；测试组织与跑法见 `docs/testing.md`（技能 `aria-testing`）；跑基准见技能 `aria-bench`。
@@ -88,6 +89,8 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 **人类文档 `docs/`**：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 
+文档里的仓库路径与 `Foo::bar` 引用由 `tools/check_agent_docs.py` 机械校验（pre-commit 挂载）；`reference/` 与 `notes/` 还禁落地记录与计划词汇。
+
 新增模块参考：建 `.agents/reference/<dir>.md`（frontmatter 带 name/description/paths）；新增规格放 `.agents/reference/specs/`，由对应模块参考指路；新增场景技能：建 `.agents/skills/<name>/SKILL.md`。本地软链按自己用的 agent 自建，不入库。
 
 ## 强制规范
@@ -114,7 +117,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 变量与参数名的语义同属强制，规则见 `docs/cpp-naming-convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单--`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`src`（源文件/源码文本，随 `SourceFile`）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
 
-返回值处置同属强制，规则见 `docs/cpp-naming-convention.md`「Nodiscard 与结果丢弃」节。要点：丢弃 `[[nodiscard]]` 返回值写 `std::ignore = f(...)`，不写 `(void) f(...)`（含 `AriaVM::fail`，其惯用出口仍是 `return vm.fail(...)`）；被调函数未标 `[[nodiscard]]` 时调用语句前不留 `(void)`，那是纯装饰、直接删；压制未用**变量**的 `(void) x;` 保留，压制未用**参数**一律不许（签名照常带类型带参数名）；用 `std::ignore` 的 TU 显式 `#include <tuple>`。
+返回值处置同属强制，规则见 `docs/cpp-naming-convention.md`「Nodiscard 与结果丢弃」节。要点：丢弃 `[[nodiscard]]` 返回值写 `std::ignore = f(...)`，不写 `(void) f(...)`（含 `AriaExeContext::fail`，其惯用出口仍是 `return ctx.fail(...)`）；被调函数未标 `[[nodiscard]]` 时调用语句前不留 `(void)`，那是纯装饰、直接删；压制未用**变量**的 `(void) x;` 保留，压制未用**参数**一律不许（签名照常带类型带参数名）；用 `std::ignore` 的 TU 显式 `#include <tuple>`。
 
 ### 类型（src/type.hpp）
 
@@ -162,7 +165,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
 - **四条错误通道**（见 `.agents/reference/runtime.md`「VM 异常通道」）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。
-- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）；ASSERT 文案不重复宏已打的文件/行/函数名。通则、句式家族表与机械门禁见 `.agents/reference/specs/error-messages.md` 与技能 `aria-error-messages`。
+- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：同一语义只许一种形状（元数走 `AriaExeContext::arity_error` 唯一口）；ASSERT 文案不重复宏已打的文件/行/函数名。通则、句式家族表与机械门禁见 `.agents/reference/specs/error-messages.md` 与技能 `aria-error-messages`。
 
 ## Git 提交纪律（强制）
 

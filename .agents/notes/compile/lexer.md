@@ -26,7 +26,7 @@
 
 ## 2. 设计判断
 
-已落地的词法优化（机制现状见 `.agents/reference/compile.md` 的 Lexer/Token 条）：位置按需派生、消费辅助收口、
+词法优化的现状（机制见 `.agents/reference/compile.md` 的 Lexer/Token 条）：位置按需派生、消费辅助收口、
 utf8 热/冷拆分、字符串普通段整段追加、关键字注册表拆分（纯表 + 长度早退）、token 表按源预留、Token
 平凡化（无 tag union + 字符串解析内容后置）。均经 dump 对拍与双配置全量 ctest 验收等价。
 
@@ -39,7 +39,7 @@ utf8 热/冷拆分、字符串普通段整段追加、关键字注册表拆分�
   裸倍增；不带 `+1` 的形态在纯密集源有越界回退（已实测），`+1` 是刀口修复不是笔缀。
 - **utf8 解码成本在函数体大小而非调用次数**：绝大多数调用是单字节 ASCII，执行路径极短，真正的开销是
   `decode_one` 在每个调用点被内联展开（多字节那套长度表/续接校验/组装/双重校验在各站点占据代码空间）。
-  故热/冷拆分（`detail::decode_multibyte` + `ARIA_NOINLINE`）已落地。
+  故热/冷拆分取 `detail::decode_multibyte` + `ARIA_NOINLINE`。
 
 ## 3. 已实测否决（勿重提，除非测量条件变了）
 

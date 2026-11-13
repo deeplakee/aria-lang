@@ -60,12 +60,24 @@ namespace aria {
                     return OpCode::DIVIDE;
                 case Op::Binary::Percent:
                     return OpCode::MOD;
+                case Op::Binary::BitAnd:
+                    return OpCode::BIT_AND;
+                case Op::Binary::BitOr:
+                    return OpCode::BIT_OR;
+                case Op::Binary::BitXor:
+                    return OpCode::BIT_XOR;
+                case Op::Binary::Shl:
+                    return OpCode::SHIFT_LEFT;
+                case Op::Binary::Shr:
+                    return OpCode::SHIFT_RIGHT;
+                case Op::Binary::Ushr:
+                    return OpCode::SHIFT_RIGHT_LOGICAL;
                 default:
                     UNREACHABLE();
             }
         }
 
-        // 复合赋值 op -> 对应二元 op；文法仅算术五种复合，= 不入表（直走 store）。
+        // 复合赋值 op -> 对应二元 op；算术五种 + 位六种复合，= 不入表（直走 store）。
         Op::Binary compound_op(const Op::Assignment op) noexcept {
             switch (op) {
                 case Op::Assignment::PlusAssign:
@@ -78,6 +90,18 @@ namespace aria {
                     return Op::Binary::Slash;
                 case Op::Assignment::PercentAssign:
                     return Op::Binary::Percent;
+                case Op::Assignment::BitAndAssign:
+                    return Op::Binary::BitAnd;
+                case Op::Assignment::BitOrAssign:
+                    return Op::Binary::BitOr;
+                case Op::Assignment::BitXorAssign:
+                    return Op::Binary::BitXor;
+                case Op::Assignment::ShlAssign:
+                    return Op::Binary::Shl;
+                case Op::Assignment::ShrAssign:
+                    return Op::Binary::Shr;
+                case Op::Assignment::UshrAssign:
+                    return Op::Binary::Ushr;
                 default:
                     UNREACHABLE();
             }
@@ -1055,8 +1079,9 @@ namespace aria {
                 cur_cu()->emit_op(OpCode::NEGATE, line);
                 return;
             case Op::Unary::Not:
+            case Op::Unary::BitNot:
                 emit_expr(operand);
-                cur_cu()->emit_op(OpCode::NOT, line);
+                cur_cu()->emit_op(node.op == Op::Unary::Not ? OpCode::NOT : OpCode::BIT_NOT, line);
                 return;
             case Op::Unary::PreInc:
             case Op::Unary::PreDec: {

@@ -42,6 +42,10 @@ BANNED_PATTERNS = (
     (r"full rationale|detailed rationale|see\s+\S+\.(md|txt)|for details see|refer to .*\.md",
      "文档指针:文档随批提交,说明里不指路"),
     (r"benchmark(ed|s)? (shows|says)|\d+(\.\d+)?% (faster|slower|fewer)|\d+ ns", "测量数据:归 reference 文档或单独 perf 提交"),
+    (r"\d+(\.\d+)?\s*%", "实测数字:结论写方向,数字归 reference 文档"),
+    (r"\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b", "commit 哈希:说明不指路,git log 已有"),
+    (r"\b20\d\d-\d\d(-\d\d)?\b", "日期:说明里不写落地时间"),
+    (r"\b(initially|originally|previously|at first|used to)\b", "过程叙述:只写现在的行为与机制"),
     (r"\bM[1-6]\b|phase \d|stage \d|batch \d|milestone", "规划词汇:按语言域名称描述改动"),
     (r"^\s*(improve|clean up|enhance|polish|optimize) (the )?(code|things|stuff)", "空泛评价:说机制变化"),
 )
@@ -125,8 +129,8 @@ def main(argv) -> int:
         if number > 1 and line.strip():
             if is_section_label(line):
                 violations.append((number, "正文用了段标签(旧三段骨架)", "正文写散文,不分段标签(规范 §3)"))
-            if re.match(r"^\s*[-*+]\s", line):
-                violations.append((number, "正文出现列表项", "正文写散文,不列 bullet(规范 §1)"))
+            if re.match(r"^\s*[-*+]\s", line) or re.match(r"^\s*\d+[.)]\s", line):
+                violations.append((number, "正文出现列表项", "正文写散文,不列 bullet/编号列表(规范 §1)"))
 
     for number, reason, advice in violations:
         where = f"第 {number} 行" if number else "整体"

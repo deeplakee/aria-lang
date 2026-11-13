@@ -66,7 +66,7 @@ scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `by
 2. 说明写进临时文件（如 `/tmp/commit_msg.txt`），不用 `-m` 随手一句。
 3. `python3 tools/check_commit_msg.py <file>` 必须返回 0。两个坑：缺参数时它返 2（不是通过）；以 `Merge ` / `Revert ` / `fixup!` / `squash!` 开头时它直接返 0（等于没查）。`commit-msg` 钩子会在落库时再跑一遍，但钩子是**本地配置**--新环境要先 `git config core.hooksPath tools/hooks`，否则静默不生效。
 4. `git commit -F <file>`；未推送时改说明用 `git commit --amend -F <file>`。
-5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。动词选词也要看一眼：`split`、`set` 这类兼作过去式的原形会被脚本当完成体拒掉，换 `divide`、`assign` 之类。
+5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。它能判的只有形态：行数/列宽/ASCII、段标签与列表项、禁词表（过程注记、文档指针、规划词汇、**任何百分比数字、commit 哈希、日期、`initially`/`previously` 一类过程词**）。动词选词也要看一眼：`split`、`set` 这类兼作过去式的原形会被脚本当完成体拒掉，换 `divide`、`assign` 之类。
 
 ## 5. 粒度与流程
 

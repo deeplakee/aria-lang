@@ -1,18 +1,18 @@
 ---
 name: aria-error
-description: aria 解释器 error 层模块参考：ErrorCode/ErrorCategory、Error（静态工厂构造面）、AriaException、fatal_error。读写 src/error/** 或涉及四条错误通道（Result 返回/VM 自管异常/AriaException 边界/fatal_error）、错误消息烘焙时使用。报错文案的语言与句式家族见 `.agents/design/error-message-style.md`；通道总览见 AGENTS.md「错误处理」节。
+description: aria 解释器 error 层模块参考：ErrorCode/ErrorCategory、Error（静态工厂构造面）、AriaException、fatal_error。读写 src/error/** 或涉及四条错误通道（Result 返回/VM 自管异常/AriaException 边界/fatal_error）、错误消息烘焙时使用。报错文案的语言与句式家族见 `.agents/reference/specs/error-messages.md`；通道总览见 AGENTS.md「错误处理」节。
 paths:
   - "src/error/**"
 ---
 
 # error 层模块参考
 
-> **文案**（语言 / 通则 / 句式家族）见 `.agents/design/error-message-style.md`，改任何报错点措辞前先读那份规范。各 API 的构造与烘焙语义以代码头注为准（`Error.hpp` 类头注与工厂注、`ErrorCode.hpp` 注册表头注已逐条收口），本文件只述通道归属与跨文件设计边界。
+> **文案**（语言 / 通则 / 句式家族）见 `.agents/reference/specs/error-messages.md`，改任何报错点措辞前先读那份规范。各 API 的构造与烘焙语义以代码头注为准（`Error.hpp` 类头注与工厂注、`ErrorCode.hpp` 注册表头注已逐条收口），本文件只述通道归属与跨文件设计边界。
 
 ## 四条错误通道（原则常驻 `AGENTS.md`「错误处理」节，此处收口实例）
 
 - ① **`Result<T, Error>` 返回**（编译期通道 + VM 边界返回类型）：Parser 恢复式收集，Lexer / CodeGen / Compiler 首错即止；各 `Result` 签名见各头文件。`AriaVM::run()` 的 `Result` 仅为未捕获出口的边界返回类型，运行期错误不以 Result 逐站传播。
-- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `AriaExeContext::pending_error_`；装箱点 `AriaExeContext::raise(code, detail)` 一步烘齐（`ctx.fail`/`call_value` 族 bool 契约共用），消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出。`Error` 仅在 `run()` 未捕获善后出口经 `AriaVM::rebake_uncaught_error` 反提拆件 + `from_baked` 物化构造（物化前提：帧链活着，unwind 未命中不清场）。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.agents/rules/runtime.md`「VM 异常通道」，设计见 vm-design.md §4.5。
+- ② **VM 自管异常（运行期主通道）**：错误实体为 `ObjException`，存当前执行上下文挂起错误寄存器 `AriaExeContext::pending_error_`；装箱点 `AriaExeContext::raise(code, detail)` 一步烘齐（`ctx.fail`/`call_value` 族 bool 契约共用），消息**不含位置前缀**--位置由未捕获出口的 at 跟踪行给出。`Error` 仅在 `run()` 未捕获善后出口经 `AriaVM::rebake_uncaught_error` 反提拆件 + `from_baked` 物化构造（物化前提：帧链活着，unwind 未命中不清场）。接 unwind（`THROW` + CodeUnit 异常记录表）：落地状态见 `.agents/reference/runtime.md`「VM 异常通道」，设计见 .agents/notes/runtime/vm.md §4.5。
 - ③ **`AriaException`**（C++ 异常）：仅跨 C++ 调用栈边界（Parser/CodeGen 深层 `fail()`）。
 - ④ **`fatal_error()`**：Internal/Resource 不可恢复（生产调用点仅 OOM 一族）。
 

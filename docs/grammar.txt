@@ -125,8 +125,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 对 E1 += E2 的定义，非字面展开的两次）。对带副作用左值关键：arr[f()] += 1 中 f()
 # 只调一次，getObj().field += 1 中 getObj() 只调一次。字节码生成须走单次求值 lowering--
 # Identifier 左值重解析一遍（名字解析无副作用，locator-once 天然成立），Field/Index 左值
-# 经栈上 DUP/DUP2 保留 locator（见 compound-assignment-lowering.md），不得将带副作用的
-# LHS 子树求值两遍。普通 = 无此约束。
+# 经栈上 DUP/DUP2 保留 locator，不得将带副作用的 LHS 子树求值两遍。普通 = 无此约束。
 #
 # 表达式与语句的边界：if/fun/while/for 等既是语句关键字，又能出现在表达式位置
 # （ifExpr、lambdaExpr）。parser 按调用上下文调度--解析 statement 时走语句产生式，
@@ -247,10 +246,9 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 语义要求 try 须有 catch），`finally` 回归普通标识符。理由：finally 的存在价值是资源善后，
 # 而语言层尚无制造 OS 资源的内建（builtins 仅 type/str/println/assert/clock/Error 六函数，
 # 另挂十三个内建类（协程原语在内建类 Coroutine 上））；参照实现 Lua/Wren 均
-# 无 finally；其控制流语义是剩余异常机制中最贵的一块。曾定稿「finally 体内控制流不得离开
-# finally」的编译期禁止方案，细则存档于 exception-implementation-pitfalls.md「finally
-# 裁撤记录」。善后后继为 defer（Go/Zig 式：defer 注册善后表达式，函数正常退出与异常
-# unwind 时 LIFO 执行）；defer 为可选后续（优先级最低，其他功能完成后另定），细节重启设计时定。
+# 无 finally；其控制流语义是剩余异常机制中最贵的一块。善后后继为 defer（Go/Zig 式：defer
+# 注册善后表达式，函数正常退出与异常 unwind 时 LIFO 执行）；defer 为可选后续（优先级最低，
+# 其他功能完成后另定），细节重启设计时定。
 #
 # def / 静态成员 / 实例方法：defDecl 体内三种成员（member -> memberVar | funDecl | function）--
 #   - memberVar（var name (= expr)?;）-> 静态变量，属类本身（Foo.x 读写）。窄形态：var 后仅单

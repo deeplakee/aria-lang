@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""报错文案机械检查器(规范见 .agents/design/error-message-style.md)。
+"""报错文案机械检查器(规范见 .agents/reference/specs/error-messages.md)。
 
 用法:
     python3 tools/check_error_messages.py [路径...]     # 默认 src/
@@ -251,7 +251,7 @@ def main(argv):
             print("%s:%d: %s: %s" % (path, line, rule, detail))
             total += 1
     if total:
-        print("\n共 %d 处违规 -- 规范见 .agents/design/error-message-style.md" % total)
+        print("\n共 %d 处违规 -- 规范见 .agents/reference/specs/error-messages.md" % total)
         return 1
     print("报错文案机械检查通过(%d 个文件)" % len(targets))
     return 0

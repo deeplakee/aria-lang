@@ -1386,7 +1386,7 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
 // 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表。
 // 单寄存器模型：用户 throw 存原值保类型、运行时错误装箱 ObjException 携码；未捕获物化 Error
 // 并烘焙逐帧堆栈跟踪（内 -> 外，最内帧紧贴消息行）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
-// （exception-implementation-pitfalls.md 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
+// （.agents/notes/runtime/exception.md 坑 #8）。合成模块 <test> 的位置前缀退化 "<test>:line"。
 
 TEST(CodeGen, ThrowIntCaughtBindsValue) {
     // throw 42 被 catch 捕获，e 绑原值保类型（单寄存器模型，坑 #7）。
@@ -1985,7 +1985,7 @@ TEST(CodeGen, FieldAccessOnPrimitiveIsRuntimeError) {
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedProperty);
 }
 
-// ---- 复合赋值 / 前置自增的字段腿（Locate 启用，compound-assignment-lowering.md §4.2）----
+// ---- 复合赋值 / 前置自增的字段腿（Locate 启用，.agents/reference/specs/compound-assignment.md §4.2）----
 
 // 实例字段复合赋值与前置自增：<obj> DUP LOAD_FIELD ... STORE_FIELD，locator 单次求值。
 TEST(CodeGen, CompoundAssignOnInstanceField) {

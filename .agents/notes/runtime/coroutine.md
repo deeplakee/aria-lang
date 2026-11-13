@@ -1,8 +1,8 @@
 # 协程（单循环切换模型）实现坑点记录
 
 > 协程通道的坑点与不变式归档，**协程/切换/跨上下文相关特性重启前必读**。设计基线见
-> `vm-design.md` §4.9，机制现状见 `.agents/rules/runtime.md`「协程」节，异常侧背景（寄存器
-> 模型/unwind/跟踪行）见 `exception-implementation-pitfalls.md`（坑编号 #1-#20，本文沿用
+> `.agents/notes/runtime/vm.md` §4.9，机制现状见 `.agents/reference/runtime.md`「协程」节，异常侧背景（寄存器
+> 模型/unwind/跟踪行）见 `.agents/notes/runtime/exception.md`（坑编号 #1-#20，本文沿用
 > 其「坑 #N」编号空间之外的独立编号）。落地：对象化（96aa55e/bc93d79/d0ac244/12bee08）、
 > 状态机与四原语（8adae5c/5b3151a/e1508fc）、跨协程错误（310a20c）；重入口改造（2026-10，
 > 坑 #10 改判：0261a2b/04cdb9f/d8f8781/946b7d5/7db3331/4e41dce）。
@@ -62,7 +62,7 @@ resume 的「`state_` 五态穷举 switch」与「`previous_ != nullptr` 判链�
 
 **预留槽在错误路径无人写**：载荷走恢复者寄存器，resume 的调用区被 unwind_to_handler 截栈
 一并丢弃--不要试图在错误路径补写槽 0，「失败 resume 返回错误值」的形态已被否决（消费时机
-不存在，见 vm-design.md §4.9「错误跨协程」的被否记录）。
+不存在，见 .agents/notes/runtime/vm.md §4.9「错误跨协程」的被否记录）。
 
 ## 坑 #6：跟踪截断 -- 物化只含物化时刻存活的帧链，截断在协程边界
 
@@ -95,7 +95,7 @@ dispatch_loop 的出口（顶层 RETURN / 未捕获物化）都发生在 resume 
 
 ## 坑 #10：嵌套执行的切换红线 -- yield 穿界被运行期拒绝，resume 多路复用安全
 
-**现状**：重入口已落地（vm-design.md §4.11；`execute_function`/`execute_method`，现为 AriaExeContext 公共面），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
+**现状**：重入口已落地（.agents/notes/runtime/vm.md §4.11；`execute_function`/`execute_method`，现为 AriaExeContext 公共面），切换型原生在嵌套执行内可达，可达性按两侧定向分流：
 
 - **resume 放行**：dispatch_loop 每指令自 `current_` 重取帧，嵌套循环驱动被恢复协程安全；被恢复协程出口边界恒零，完成/让位自动按链切回，嵌套循环随后在自己边界收束（白盒钉子 `ResumeInsideNestedMultiplexes`）。
 - **yield 拒绝**：`ret_frame_` 非零即处于嵌套执行，yield 校验段首检即报 `YieldInNestedExecution`。嵌套循环等的是同步结果，挂起即穿界--切走 `current_` 后嵌套循环会转去驱动切回方上下文，被挂起上下文的嵌套帧悬在栈上，出口边界语义全部失效。

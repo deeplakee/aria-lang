@@ -19,7 +19,7 @@ paths:
 
 - `using codepoint = u32`；常量 `kReplacementChar`。
 - `decode_one(str, offset=0)` -> `{codepoint, 字节数}`：合法序列返真实码点与字节数；非法序列返 `{kReplacementChar, 1}`（只吞一个坏字节）；`offset >= size()` 越界返 `{kReplacementChar, 0}` 不读取。
-- **ASCII 快路径就地内联、多字节交 `detail::decode_multibyte`（`ARIA_NOINLINE`）**：调用点绝大多数走 ASCII，多字节那套长度表/续接校验/组装/双重校验不随调用点展开（依据见 `.agents/notes/compile/lexer-notes.md` 的 utf8 节）。
+- **ASCII 快路径就地内联、多字节交 `detail::decode_multibyte`（`ARIA_NOINLINE`）**：调用点绝大多数走 ASCII，多字节那套长度表/续接校验/组装/双重校验不随调用点展开（依据见 `.agents/notes/compile/lexer.md` 的 utf8 节）。
 - `encode`/`is_valid`；`is_ascii(ch|u8)`（该字节是否 ASCII--源码字节经 char 或 u8 两种来路取，两个重载把窄化收进来，ASCII 边界只写一处）。
 - `is_id_start`/`is_id_continue`/`is_whitespace`/`is_digit`/`is_alpha` 等 tokenizer 辅助（码点分类用区间近似，非完整 UCD）。
 

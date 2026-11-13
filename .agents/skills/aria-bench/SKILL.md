@@ -6,7 +6,7 @@ description: aria 性能测量纪律：跑基准、做 A/B 对比、写性能报
 # aria 性能测量纪律
 
 > 场景：评估一次改动的性能影响、跑基准出数字、写性能报告。清单与驱动用法见
-> `bench/lang/README.md`；测量纪律全文与跨语言端口纪律见 `.agents/notes/bench/lang-bench-notes.md`。
+> `bench/lang/README.md`；测量纪律全文与跨语言端口纪律见 `.agents/notes/bench/lang.md`。
 > 本文件是入口速查，两者冲突时以 notes 为准。
 
 ## 1. 先选对层

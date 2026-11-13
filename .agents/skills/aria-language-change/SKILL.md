@@ -1,6 +1,6 @@
 ---
 name: aria-language-change
-description: aria 语言面改动同步清单：改文法（docs/grammar.txt）、词法、语义或新增语言特性时使用。列出全部同步义务面：Parser/CodeGen 实现、tests/language 语料正负向、docs/guide 教程章节、README 特性表、.agents/rules 模块参考，及双配置全量验证要求。
+description: aria 语言面改动同步清单：改文法（docs/grammar.txt）、词法、语义或新增语言特性时使用。列出全部同步义务面：Parser/CodeGen 实现、tests/language 语料正负向、docs/guide 教程章节、README 特性表、.agents/reference 模块参考，及双配置全量验证要求。
 ---
 
 # aria 语言面改动同步清单
@@ -18,7 +18,7 @@ description: aria 语言面改动同步清单：改文法（docs/grammar.txt）�
 | 3 | 语料 | `tests/language/` | 正向脚本 `assert` 收口钉住新语义；行为报错变更同步负向用例与 `.err` 子串 |
 | 4 | 教程 | `docs/guide/` 对应章 | 示例实跑验证（教程只写已落地特性，报错展示真实输出）；必要时更新章首目录与 `17-builtin-reference.md` |
 | 5 | 特性表 | `README.md`「语言特性」节 | 新特性 / 行为变更须反映在读者面清单 |
-| 6 | 模块参考 | `.agents/rules/` 对应模块 | compile / runtime / object 相关条目随代码同批更新 |
+| 6 | 模块参考 | `.agents/reference/` 对应模块 | compile / runtime / object 相关条目随代码同批更新 |
 
 ## 2. 验证要求
 
@@ -38,5 +38,5 @@ description: aria 语言面改动同步清单：改文法（docs/grammar.txt）�
 ## 4. 常见走偏
 
 - 只改实现不改文法 / 只改文法不改语料 = 验收面缺口，review 直接打回。
-- 语义决策（拍板点）记入对应设计文档 `.agents/design/` 或笔记 `.agents/notes/`，
+- 语义决策（拍板点）记入 `.agents/reference/` 或 `.agents/notes/` 的对应文档，
   不散落在 commit 说明或会话里。

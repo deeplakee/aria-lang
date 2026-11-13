@@ -3,8 +3,8 @@
 > 本文介绍 aria 当前对 `import` 的**端到端处理**：从文法、词法、Parser、AST，到字节码、
 > VM 执行、模块对象、文件系统原语，以及各环节的实现状态与测试覆盖。路径解析（裸名 / 相对 /
 > 绝对规范键 / `.aria` 后缀 / 逐源根 exists-check / 模块表查表）的细节见
-> [`import-path-resolution.md`](./import-path-resolution.md)，本文不重复，只在必要时引用。
-> 指令格式与栈效应见 [`bytecode-instruction-set.md`](../bytecode/bytecode-instruction-set.md) §4.15。
+> [`.agents/reference/specs/import-paths.md`](./.agents/reference/specs/import-paths.md)，本文不重复，只在必要时引用。
+> 指令格式与栈效应见 [`.agents/reference/specs/instruction-set.md`](../bytecode/.agents/reference/specs/instruction-set.md) §4.15。
 
 ## 一句话结论
 
@@ -65,7 +65,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 - **关键字**（`src/compile/TokenType.hpp` 的 `ARIA_TOKEN_KEYWORD_LIST`）：`TokenType::Import`、`TokenType::As`。
 
 > 导入路径语义（源根列表与裸名/相对两类路径、目录包与源根越界的**未实现**状态、符号链接归一等）
-> 以 `docs/grammar.txt`「说明」区的模块导入条与 [`import-path-resolution.md`](./import-path-resolution.md)
+> 以 `docs/grammar.txt`「说明」区的模块导入条与 [`.agents/reference/specs/import-paths.md`](./.agents/reference/specs/import-paths.md)
 > 为准，本文不重复。
 
 ## ② Parser 与 AST
@@ -90,7 +90,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
 ## ③ 字节码
 
 - **`OpCode::IMPORT`**（`src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST`）：枚举项，格式类别 `Import`。
-- **指令格式**（`bytecode-instruction-set.md` §4.15）：`IMPORT path:u16`，栈效应
+- **指令格式**（`.agents/reference/specs/instruction-set.md` §4.15）：`IMPORT path:u16`，栈效应
   `... -> [module]`（压模块值）。`path` 为常量池 `ObjString` 索引。绑定不在 IMPORT 内--交 CodeGen 按作用域经 `DEF_GLOBAL` / 值填槽走。import 不靠额外操作码。
 - **反汇编**（`src/bytecode/Disassembler.cpp` 的 `import_instruction`）：读一个 u16 常量池索引，
   渲染 `IMPORT PPPP  ; path`。
@@ -112,7 +112,7 @@ resolve_module()  →  new_string() intern  →  modules_ 查表
   符号链接经 `weakly_canonical` 规避双加载。
 - 越界 / 沙箱检测（相对导入越出源根）不在本原语职责内，留待加载层据源根列表判定。
 
-> 完整规则表、示例与边界见 [`import-path-resolution.md`](./import-path-resolution.md)。
+> 完整规则表、示例与边界见 [`.agents/reference/specs/import-paths.md`](./.agents/reference/specs/import-paths.md)。
 
 ### IMPORT 操作码执行
 
@@ -190,7 +190,7 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 
 **后续缺口**：目录包 `index.aria` 查找、相对导入越出源根的检测（`weakly_canonical` 折叠 `..`
 后据源根列表判定报错）、解析缓存（IMPORT 重复执行同一 specifier 避免重复 stat，见
-[`import-path-resolution.md`](./import-path-resolution.md)「当前边界与后续」）均留待后续。
+[`.agents/reference/specs/import-paths.md`](./.agents/reference/specs/import-paths.md)「当前边界与后续」）均留待后续。
 
 ## 测试覆盖
 
@@ -225,9 +225,9 @@ IMPORT 未命中分支经 `load_module(canonical_path, import_specifier)`（`src
 
 ## 相关文档
 
-- [`import-path-resolution.md`](./import-path-resolution.md)：路径解析（裸名 / 相对 / 绝对规范键、
+- [`.agents/reference/specs/import-paths.md`](./.agents/reference/specs/import-paths.md)：路径解析（裸名 / 相对 / 绝对规范键、
   逐源根 exists-check、`.aria` 后缀、模块表命中与未命中、根安全、示例、边界）的专文；
   ObjModule `dir_`/`name_`/`abs_path()` 字段规格亦在此文。
-- [`bytecode-instruction-set.md`](../bytecode/bytecode-instruction-set.md) §4.15 / §5.9：IMPORT 指令
+- [`.agents/reference/specs/instruction-set.md`](../bytecode/.agents/reference/specs/instruction-set.md) §4.15 / §5.9：IMPORT 指令
   格式与模块导入设计段。
-- [`vm-design.md`](./vm-design.md)：`ObjModule` / 模块表 / `DEF/LOAD/STORE_GLOBAL` 的设计。
+- [`.agents/notes/runtime/vm.md`](./.agents/notes/runtime/vm.md)：`ObjModule` / 模块表 / `DEF/LOAD/STORE_GLOBAL` 的设计。

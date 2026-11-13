@@ -1,6 +1,6 @@
 # VM 与执行上下文设计
 
-本文档描述 `AriaVM` 与执行上下文的设计。基准:`bytecode-instruction-set.md`(指令集/栈效应/操作数编码)、`FrameStack.hpp`、`CodeUnit.hpp`(含 `TryRecord`/`find_try_handler`)。
+本文档描述 `AriaVM` 与执行上下文的设计。基准:`.agents/reference/specs/instruction-set.md`(指令集/栈效应/操作数编码)、`FrameStack.hpp`、`CodeUnit.hpp`(含 `TryRecord`/`find_try_handler`)。
 
 ## 1. 命名决定
 
@@ -20,7 +20,7 @@ VM 的全部状态按「谁拥有」切两层,执行级状态的引入点即在�
 
 核心结论:**主上下文与协程同构**--主上下文就是「永不 yield 的协程」,`run()` 循环对二者零特判。协程要是一等值(可存入 list、可传参),故最终形态必须是 `Object` 子类型;主上下文作为 Object 多付的只是对象头(几十字节),相对值栈(约 KB)可忽略。
 
-**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,签名即上下文(dispatch_loop 体内经本轮指针在换指点后重取;unwind 恒持 vm 跨协程跳链);AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.agents/rules/runtime.md` 的 Eval 节。
+**代码分层**:状态归属仍如上两层不变;驱动代码独立成 eval 层(`runtime/Eval.hpp/.cpp`,`class Eval` 全静态方法宿主,AriaVM 友元缝)持 dispatch_loop、指令执行体、call 机器与 unwind,签名即上下文(dispatch_loop 体内经本轮指针在换指点后重取;unwind 恒持 vm 跨协程跳链);AriaVM 收窄为宿主(GC/服务表/执行入口/IMPORT 加载/未捕获物化)。模块参考见 `.agents/reference/runtime.md` 的 Eval 节。
 
 ## 3. 结构草图
 
@@ -76,7 +76,7 @@ class AriaVM {
 
 ### 4.1 值栈可增长,搬迁时重定位指针
 
-值栈初始定容(`kStackInit`)、`push` 溢出时 2x 增长:整体搬迁(GC reallocate,内部 memcpy)后,把 `top_` 与所有活动帧的 `slots` 按新旧基址差重定位。增长打破「指针绝对稳定」,故每次增长后指进值栈的裸指针都必须重定位--共**三类**:`top_`、各活动帧 `slots`、open upvalue 链的 `location_`(第三类:搬运前走链把各 `location_` 相对 old_base 的偏移记入 `List<usize>`(链序两趟间稳定,免数节点一趟),搬运后 `new_base + 偏移`重建;同法偏移两趟、从不触碰 dangling 指针,见 `Movement::grow_stack_`。指针式 upvalue 表示的既定取舍--「索引式免重绑」方案被否:它省下重绑,但每次 `LOAD/STORE_UPVALUE` 多一次加法,且偏离 clox/Wren/Lua 与本文 §4.1/bytecode-instruction-set.md §4.4 预写的指针式模型,不取)。帧栈 `FrameStack` 仍一次分配永不扩容:帧数少、无需增长,且其指针稳定性不受值栈搬迁影响。
+值栈初始定容(`kStackInit`)、`push` 溢出时 2x 增长:整体搬迁(GC reallocate,内部 memcpy)后,把 `top_` 与所有活动帧的 `slots` 按新旧基址差重定位。增长打破「指针绝对稳定」,故每次增长后指进值栈的裸指针都必须重定位--共**三类**:`top_`、各活动帧 `slots`、open upvalue 链的 `location_`(第三类:搬运前走链把各 `location_` 相对 old_base 的偏移记入 `List<usize>`(链序两趟间稳定,免数节点一趟),搬运后 `new_base + 偏移`重建;同法偏移两趟、从不触碰 dangling 指针,见 `Movement::grow_stack_`。指针式 upvalue 表示的既定取舍--「索引式免重绑」方案被否:它省下重绑,但每次 `LOAD/STORE_UPVALUE` 多一次加法,且偏离 clox/Wren/Lua 与本文 §4.1/.agents/reference/specs/instruction-set.md §4.4 预写的指针式模型,不取)。帧栈 `FrameStack` 仍一次分配永不扩容:帧数少、无需增长,且其指针稳定性不受值栈搬迁影响。
 
 ### 4.2 值栈不复用 `FrameStack<Value, N>`
 
@@ -142,7 +142,7 @@ ObjFunction 的 defining_class_ 默认空,实例方法注册时设置并由 trac
 
 **错误位置(见 §4.8)** -- 运行期位置**不烘入消息**:被抛出的错误只携带码与描述(对齐 clox/Python 惯例),位置唯一载体是未捕获出口的堆栈跟踪 `at` 行(顶帧 last_ip 恰为故障指令,原生不进帧时即 caller 的 CALL 站点);catch 侧 println(e) 不显示位置(同 Python str(e))。
 
-**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `info.size()` 做元数校验,不符经 `ctx.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/error-message-style.md`)。这与 `ObjFnProto.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:脚本闭包进帧时依据原型的 arity 布局部槽,原生载荷不进帧、无需 VM 预校验。
+**不存 arity** -- 原生函数天然变参(对标 Lua/Wren/clox),fn 自查 `info.size()` 做元数校验,不符经 `ctx.arity_error(...)` 报 `WrongArity`(措辞家族唯一口,见 `reference/.agents/reference/specs/error-messages.md`)。这与 `ObjFnProto.arity_`(进帧布局需要、编译期定死)的不对称由调用约定正当化:脚本闭包进帧时依据原型的 arity 布局部槽,原生载荷不进帧、无需 VM 预校验。
 
 **叶子调用契约** -- 原生函数不得操作 VM 值栈(`push`/`pop`/`drop` 的簿记性操作;`call_native_fn` 善后假设返回时栈顶停在调用区上)。实参只读(`info[i]`)、返回值写返回槽(`set_return_val`)、报错经 `ctx.fail`/`raise`;视图按下标重算,重入扩容搬迁不再使实参读数悬垂。从原生深处回调 aria 函数走重入口(AriaExeContext 公共面 `execute_function`/`execute_method`,§4.11;消费方 = 显示咨询面的 `__str__` 钩子调用(§4.12)与统一测试探针 `TestProbe`)。GC 已启用(值栈/帧接根),原生函数内可经 `ctx.gc()` 分配(`new_string`/`new_object` 等);跨分配持有的中间对象须 `Guard` 入临时根,返回值写入后即随值栈为根。
 
@@ -151,7 +151,7 @@ ObjFunction 的 defining_class_ 默认空,实例方法注册时设置并由 trac
 ```cpp
 bool str_native(const NativeCallInfo& info) {
     auto& ctx = info.ctx();
-    if (info.size() != 1) { return ctx.arity_error(info.size(), 1); } // 元数报错唯一口(措辞家族见 error-message-style.md)
+    if (info.size() != 1) { return ctx.arity_error(info.size(), 1); } // 元数报错唯一口(措辞家族见 .agents/reference/specs/error-messages.md)
     const auto s = Eval::stringify(ctx, info[0]); // 重入显示咨询面(__str__ 钩子,§4.12);失败载荷在寄存器
       if (!s) { return false; }
       info.set_return_val(Value::from_obj(*s)); // 就地返回
@@ -217,7 +217,7 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 **错误跨协程**(接 §4.5):协程 A 内未捕获(unwind 遍历 A 的帧链无 handler)→ A `take_error()` 取载荷、`reset()` 清场、置 Failed 解链,把载荷 raise 进 resume 调用者的挂起寄存器,unwind **就地**继续搜调用者的帧链--中间层无 handler 即连死,载荷逐跳上投至链根(主上下文)才物化。设计初稿曾设想「等价于 resume 作为一次失败的原生调用,调用方按既有 bool 契约取出」--该说法按字面不成立:resume 切走时 `ctx.drop(argc)` 已执行、`return true` 已返回,CALL 善后点早已收工,主循环没有逐指令的 `has_error()` 检查,恢复者侧没有任何时机消费该载荷;正确形态就是 unwind 自身跳链(调用点 `unwind_check` 一字不改)。对标 Wren `runtimeError` 沿 caller 链逐 fiber 中止、遇 `FIBER_TRY` 调用者则错误值写入其调用槽并恢复之;aria 的寄存器模型无需 Wren 的 `fiber->error` 专用字段。跟踪截断(每跳重收集,at 行只含接收侧帧链)见 §4.8。
 
-对初稿的两处偏离:`ExecOutcome` 三态未采用(主上下文里 yield 直接报运行期错误,run() 维持两态);`main_ctx_` 不以值成员保留而整体堆化(换来 tracer 单点与主/协程类型统一)。坑点与不变式归档见 `coroutine-implementation-pitfalls.md`。
+对初稿的两处偏离:`ExecOutcome` 三态未采用(主上下文里 yield 直接报运行期错误,run() 维持两态);`main_ctx_` 不以值成员保留而整体堆化(换来 tracer 单点与主/协程类型统一)。坑点与不变式归档见 `.agents/notes/runtime/coroutine.md`。
 
 **性能注记**:Wren 以 C 局部寄存器缓存 frame/ip/stackStart 换取每指令速度,代价是切换须显式同步;aria 目前反其道(全堆驻留,切换零成本,每指令多几次内存载入)。若将来测得热路径受损,可引入「指令内工作副本 + 指令边界写回」的缓存--注意快照的正确形态是**指令级 + 显式同步点**,而非「整个 `dispatch_loop` 生命期的入口快照」(后者已废弃,见 runtime.md)。
 
@@ -280,12 +280,12 @@ return false;                           // 载荷留寄存器,调用方 goto unw
 
 ## 6. 参考
 
-- `.agents/design/bytecode-instruction-set.md`:指令集/操作数编码/栈效应/lowering(VM 实现的操作语义基准)。
+- `.agents/reference/specs/instruction-set.md`:指令集/操作数编码/栈效应/lowering(VM 实现的操作语义基准)。
 - `src/runtime/FrameStack.hpp`:帧栈模板 + `truncate`(unwind 用)。
 - `src/bytecode/CodeUnit.hpp`:`TryRecord`/`find_try_handler`(异常查表已就绪)。
 - AGENTS.md「错误处理」第 2 条:VM 自管异常的设计目标。
-- `.agents/notes/runtime/exception-implementation-pitfalls.md`:异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;闭包补录 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
-- `.agents/notes/runtime/coroutine-implementation-pitfalls.md`:协程实现踩坑归档(§4.9 的实现级细节:槽协议/切换根安全/链式 unwind 定序/嵌套执行的切换红线)。
+- `.agents/notes/runtime/exception.md`:异常实现踩坑归档(本文 §4.5/§4.8 定稿的实现级细节与坑编号 #1-#16;闭包补录 upvalue 关闭与 unwind 截栈/弹帧交互的坑点)。
+- `.agents/notes/runtime/coroutine.md`:协程实现踩坑归档(§4.9 的实现级细节:槽协议/切换根安全/链式 unwind 定序/嵌套执行的切换红线)。
 - **Wren 0.4 源码**(§4.9 单循环切换模型的参考实现,上游 wren.io/wren):`runInterpreter`(`wren_vm.c`,循环缓存 + `STORE_FRAME`/`LOAD_FRAME` 同步、CALL 原语善后「采用被换走的 fiber」、RETURN 完成切回、`RUNTIME_ERROR` 宏)、`runtimeError`(错误沿 caller 链传播)、`runFiber`/`fiber_yield`/`fiber_suspend`(`wren_core.c`,fiber 原语族与返回槽契约)、`blackenFiber`(`wren_value.c`,协程 GC 标记)。
 
 ## 统一 Function 表示

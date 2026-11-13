@@ -1,6 +1,6 @@
 # 异常（try/catch/throw）实现坑点记录
 
-> 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `vm-design.md` §4.5-§4.8，机制现状见 `.agents/rules/runtime.md`「VM 异常通道」，发射侧见 `.agents/rules/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属异常机制本体、#17-#20 属闭包的 upvalue 关闭与截栈/弹帧交互（见下「闭包补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下「finally 裁撤记录」节）。
+> 异常通道（`throw/catch` + VM 运行时错误统一走自管 unwind）的坑点归档，**异常类特性重启前必读**。设计基线见 `.agents/notes/runtime/vm.md` §4.5-§4.8，机制现状见 `.agents/reference/runtime.md`「VM 异常通道」，发射侧见 `.agents/reference/compile.md`「CodeGen」节与 `CodeGen.cpp` 的 visitTryStmtNode/visitThrowStmtNode 注。坑 #1-#16 属异常机制本体、#17-#20 属闭包的 upvalue 关闭与截栈/弹帧交互（见下「闭包补录」节）；**坑编号被 `src/` 与 `tests/` 广泛引用，不得重排** -- 故 #9、#12 两节删除后编号留空不复用（#9 是「`UPtr` 要取 `.get()`」的编译期 gotcha，编译器即暴露、非承重；#12 的 THROW 单行语义已被坑 #7 表格覆盖）。范围：只做 try/catch/throw（`finally` 已裁撤，见下「finally 裁撤记录」节）。
 
 ---
 
@@ -123,7 +123,7 @@ visitTryStmtNode:
 
 ## 坑 #5：frame_depth 是运行时量，不能存进 TryRecord
 
-**约束**：`TryRecord` 不得存 `frame_depth`（unwind 时刻的调用栈深度，编译期不可定）；帧深度由「从最内帧向外遍历帧链、首命中即在该帧 unwind」隐式决定，只存编译期可知的 `stack_depth`。字段定稿见 `vm-design.md` §4.5，`catch_slot` 恒等于 `stack_depth` 见坑 #10。
+**约束**：`TryRecord` 不得存 `frame_depth`（unwind 时刻的调用栈深度，编译期不可定）；帧深度由「从最内帧向外遍历帧链、首命中即在该帧 unwind」隐式决定，只存编译期可知的 `stack_depth`。字段定稿见 `.agents/notes/runtime/vm.md` §4.5，`catch_slot` 恒等于 `stack_depth` 见坑 #10。
 
 ---
 
@@ -162,7 +162,7 @@ public:
 | 用户 `throw V` | `V`（原值，不包） | `V`（保类型：`throw 42`→e=Int 42） | `Error::from_detail(ErrorCode::UncaughtException, repr(V))` |
 | 运行时错误 / native `fail` | `new_exception(gc, err.code(), err.message())`（包成 ObjException，工厂内部驻留） | ObjException（`println(e)` 渲染消息；re-throw 保码） | `Error::from_baked(ex.code(), ex.message()->view())`（原码 + 原消息） |
 
-**Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.agents/rules/error.md`）。
+**Error 需「原样装载已烘串」的构造入口**（已落地为静态工厂 `from_baked(code, baked_string)`）：烘焙路径（`from_detail` 无位置/带位置两重载）都经 `make_message`（对已烘焙消息双重前缀）。`from_baked` 跳过 `make_message`、直接装已烘焙串--两类合法调用方是 ObjException 反提 `Error` 回传 run() 与 dispatch_loop 直报站点 `runtime_err`。收口于 Error.hpp（构造面见 `.agents/reference/error.md`）。
 
 **两硬约束都满足**：
 - 类型保留：用户 throw 存原值，catch 绑原值 ✅。
@@ -287,7 +287,7 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 **终态补记（2026-10，重入口改造）**：未命中退出随出口边界（`current_->ret_frame()`）三分--边界非零（嵌套执行）即截净残帧交外层驱动续搜（不清场）；边界零在链上转投一跳（坑 #5 定序）；链根仍未命中返 false，`reset()` 清场归 `run()` 的 `rebake_uncaught_error()`。「未命中时记三元组」同已废，跟踪收集迁物化点（坑 #16 补记）。
 
-旧形态「未命中即 `ctx.exit_frame()` 逐帧弹」已废，两处硬伤：弹帧使循环内的帧引用悬垂（命中后继续用旧引用即 use-after-free）；走到「所有帧无 handler」时帧已全弹、跟踪无帧可查，故跟踪改为遍历中顺路收集（坑 #16；后随 2026-10 重入口批再迁物化点，坑 #16 补记）。机制现状见 `rules/runtime.md`「VM 异常通道」。
+旧形态「未命中即 `ctx.exit_frame()` 逐帧弹」已废，两处硬伤：弹帧使循环内的帧引用悬垂（命中后继续用旧引用即 use-after-free）；走到「所有帧无 handler」时帧已全弹、跟踪无帧可查，故跟踪改为遍历中顺路收集（坑 #16；后随 2026-10 重入口批再迁物化点，坑 #16 补记）。机制现状见 `.agents/reference/runtime.md`「VM 异常通道」。
 
 ---
 
@@ -303,13 +303,13 @@ if (!call_value(callee, argc)) {                 // 作用于 *current_,失败�
 
 **现行契约**：运行期错误的位置**不烘入** `ObjException` 消息，消息形态 = `Error::make_message(code, detail)`（无位置版）；位置唯一载体是未捕获出口的堆栈跟踪 `at` 行（坑 #16）。顶帧 `last_ip` 即故障指令、`call_*` 失败与原生报错即 caller 帧的 CALL 站点（原生不进帧），故无需在 take 点补标、无双重标注；`last_ip` 由主循环取指前写（坑 #1/#2），本坑为其又一消费方。透传的被导入模块编译期错误自带位置、不经 unwind 亦不标注。
 
-早期形态「装箱点烘 `path:line` 前缀」及配套的 `runtime_loc` 助手、`raise_detail` 壳、`with_runtime_loc` 两段式均已删除（与跟踪行信息重复，且 THROW 原值与透传编译错两路本就无/自带位置）。完整语义见 `vm-design.md` §4.8 与 `rules/runtime.md`。
+早期形态「装箱点烘 `path:line` 前缀」及配套的 `runtime_loc` 助手、`raise_detail` 壳、`with_runtime_loc` 两段式均已删除（与跟踪行信息重复，且 THROW 原值与透传编译错两路本就无/自带位置）。完整语义见 `.agents/notes/runtime/vm.md` §4.8 与 `.agents/reference/runtime.md`。
 
 ---
 
 ## 坑 #16：未捕获堆栈跟踪（收集与烘焙收口物化点 rebake_uncaught_error）
 
-**约束**：跟踪在 uncaught 出口一次性生成、**不存 `ObjException`**（对标 Python：traceback 取自活帧，异常对象不背全程 trace；catch 掉的异常多数用不上）。落点 = `unwind()` 遍历帧链时**每帧退出前**顺带收集 `(function, module, last_ip)` 三元组--走到未捕获时帧已全弹，故必须顺路收集；命中 handler 则收集弃用。`last_ip` 在此两用（查表 + 跟踪行号）：顶帧 = 故障指令、外层帧 = CALL 站点。物化 `Error` 时按收集序（内 -> 外，最内帧紧贴消息行，主流 traceback 惯例）逐帧格式化为 `  at <fn名> (<位置串>)` 追加到 `Error::message_` 尾部--烘焙进 message 而非 VM 直接输出，`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。透传错误无跟踪。语义与输出示例见 `vm-design.md` §4.8 与 `rules/runtime.md`「未捕获堆栈跟踪」。
+**约束**：跟踪在 uncaught 出口一次性生成、**不存 `ObjException`**（对标 Python：traceback 取自活帧，异常对象不背全程 trace；catch 掉的异常多数用不上）。落点 = `unwind()` 遍历帧链时**每帧退出前**顺带收集 `(function, module, last_ip)` 三元组--走到未捕获时帧已全弹，故必须顺路收集；命中 handler 则收集弃用。`last_ip` 在此两用（查表 + 跟踪行号）：顶帧 = 故障指令、外层帧 = CALL 站点。物化 `Error` 时按收集序（内 -> 外，最内帧紧贴消息行，主流 traceback 惯例）逐帧格式化为 `  at <fn名> (<位置串>)` 追加到 `Error::message_` 尾部--烘焙进 message 而非 VM 直接输出，`interpret_run` 打印零改动、测试可断言、嵌入方自行决定展示。透传错误无跟踪。语义与输出示例见 `.agents/notes/runtime/vm.md` §4.8 与 `.agents/reference/runtime.md`「未捕获堆栈跟踪」。
 
 **终态补记（2026-10，重入口改造）**：顺路收集随出口协议演进作废--未捕获出口帧链活着（`unwind` 未命中不清场），「走到未捕获时帧已全弹、必须顺路收集」的前提不再成立。收集迁物化点 `rebake_uncaught_error()`：现场自顶帧向下逐帧收集、按序烘焙，收集与烘焙单点同口。截断语义不变：物化只含物化时刻存活的帧链--死协程帧随转投序列 `reset()` 退场、嵌套执行残帧已被 unwind 边界臂截净，一律不并入跟踪。
 

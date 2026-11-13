@@ -1,10 +1,10 @@
 # 类与对象实现坑点记录
 
-> 类机制在闭包/值栈机制上叠加了「类表 + 实例 fields 表（+ 早期的 bound-method 缓存，已于 2026-09-20 取消）+ 方法帧槽 0 = this」维度（现行语义契约见 `.agents/rules/object.md` 与 `.agents/rules/compile.md`「CodeGen」节的设计决策，本文不复述）。只录实施/复盘期确认的四个坑点高发区，对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（类机制节）与 `tests/compile/test_codegen.cpp`（类与对象节）。
+> 类机制在闭包/值栈机制上叠加了「类表 + 实例 fields 表（+ 早期的 bound-method 缓存，已于 2026-09-20 取消）+ 方法帧槽 0 = this」维度（现行语义契约见 `.agents/reference/object.md` 与 `.agents/reference/compile.md`「CodeGen」节的设计决策，本文不复述）。只录实施/复盘期确认的四个坑点高发区，对策均已实施，测试钉在 `tests/runtime/test_ariavm.cpp`（类机制节）与 `tests/compile/test_codegen.cpp`（类与对象节）。
 
 ## 坑 #1：bound-method 缓存与遮蔽的交互（**已反转：缓存取消**）
 
-**结局（2026-09-20）**：整个缓存机制连同其「三铁则」一起删除（现行契约见 `.agents/rules/object.md`「类成员读写与绑定方法不缓存」）。反转理由是语义而非性能：缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜，同一表达式的结果取决于该实例此前是否取过该方法，属最难解释的一类语义。取消后成员解析每次都按当前类链进行，monkey patch 完整可用；调用路径经裸查找 `load_field` 走不绑定形态（零分配），代价只在读路径（`obj.m` 每次访问铸一个 bound，与 JS/Python 同款）。
+**结局（2026-09-20）**：整个缓存机制连同其「三铁则」一起删除（现行契约见 `.agents/reference/object.md`「类成员读写与绑定方法不缓存」）。反转理由是语义而非性能：缓存让「类/父类上改写方法」对**既有实例**陈旧、对**新建实例**新鲜，同一表达式的结果取决于该实例此前是否取过该方法，属最难解释的一类语义。取消后成员解析每次都按当前类链进行，monkey patch 完整可用；调用路径经裸查找 `load_field` 走不绑定形态（零分配），代价只在读路径（`obj.m` 每次访问铸一个 bound，与 JS/Python 同款）。
 
 **取消后仍成立的两条纪律**：① `fields_` 命中优先 -- 纯字段遮蔽类链，语义不变；② `LOAD_SUPER_FIELD` 不写 fields -- 「super 站点的解析结果不得驻留成实例成员」由它走独立的 `ObjClass::load_field` 实现保证，与实例表无关。
 
@@ -25,7 +25,7 @@
 
 **测试**：`class_call_gc_root.aria`（实参替换成员中的类后，已选中的类仍可实例化）、`ClassGraphSurvivesExplicitCollect`（实例/绑定/类跨 GC 存活）、`StoreFieldDeepStackShift`（`STORE_FIELD` 单槽下移在深栈多临时值下）、`ThisFieldDeepStackInMethod`。
 
-## 坑 #3：init_ 的一致性（现行契约见 `rules/object.md`「`init_` 派生」）
+## 坑 #3：init_ 的一致性（现行契约见 `.agents/reference/object.md`「`init_` 派生」）
 
 **要点**：`init_` 由 **`ObjClass` 构造函数自 super 派生**（ctor 初始化列表，**快照语义**：此后父 init 变更不传导 -- 有意为之，非漏同步），`set_field` 命中 "init" 时同步；两处写点全在对象内，「建成的类 init_ 恒有值」是**构造期结构保证**（`set_init` 公共可变器已退役，单消费者 setter 收进 ctor）。`init_` 是 `Value`（闭包/原生皆可；Object 根出厂 nil 由 bootstrap 设），类上赋非可调用值放行（`Foo.init = 5`）、由**调用点**的 `call_value` 报 `CallNonCallable` 兜底 -- 「init 仅认闭包」的写点检查是死代码，已删。实例化帧形：init 闭包靠编译器尾部 `LOAD_LOCAL 0; RETURN` 返 this，Object 根的 no-op 原生不写槽即返回实例（`slots[0]` 已是 this）。
 
@@ -39,6 +39,6 @@
 
 **全绿掩盖**：直线测试里泄漏值随帧丢弃、不撞 `POP_N`，768 绿下带病落地 -- **全绿不证栈平衡**；帧内泄漏类改动须配「泄漏撞 `POP_N`/改变量」的钉子。
 
-**对策**：编译期常量 locator（帧内 this / Identifier）**节点侧折叠** -- Locate 与 Load 同臂发同指令（`visitIdentifierNode` `case Load: case Locate:` 折叠、帧内 this 三臂折叠），不发 DUP；一般路径 `obj.f op= e` 保持 DUP 定位腿（`STORE_FIELD` 消费副本，几何平衡）。全组合发射矩阵与逐行栈形见 `compound-assignment-lowering.md` §6。
+**对策**：编译期常量 locator（帧内 this / Identifier）**节点侧折叠** -- Locate 与 Load 同臂发同指令（`visitIdentifierNode` `case Load: case Locate:` 折叠、帧内 this 三臂折叠），不发 DUP；一般路径 `obj.f op= e` 保持 DUP 定位腿（`STORE_FIELD` 消费副本，几何平衡）。全组合发射矩阵与逐行栈形见 `.agents/reference/specs/compound-assignment.md` §6。
 
 **测试**：`ThisFieldCompoundAsCallArg`（复合赋值作调用实参 `h(1, this.n += 3)` -- 暴露形态：修复前副本把 callee 顶偏报 `CallNonCallable`，修复后 110）、`CompoundAssignOnThisField`。

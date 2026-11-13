@@ -19,8 +19,9 @@ bench/       性能基准：lexer / vm / hashtable 进程内微基准 + lang/ �
              （带 CPython / Node / Lua / Java 对照端口）+ profile/ 指令频度画像
 docs/        guide/（教程）、grammar.txt（文法）、building / testing、
              cpp-naming-convention；索引见 docs/README.md
-.agents/     agent 协作真源：rules/（模块参考）、skills/（场景技能）、notes/（踩坑与
-             测量笔记）、design/（设计与规格）；各 agent 的工具目录本地自建、不入库
+.agents/     agent 协作真源，按「拿它干什么」分三桶：reference/（现状参考 +
+             specs/ 规格）、notes/（踩坑与测量笔记）、skills/（流程清单）；
+             各 agent 的工具目录本地自建、不入库
 tools/       开发脚本与 git 钩子（commit 说明 / 报错文案机械检查）
 external/    isocline（REPL）/ googletest / mimalloc，vendored、构建零联网
 ```
@@ -29,7 +30,7 @@ external/    isocline（REPL）/ googletest / mimalloc，vendored、构建零联
 
 - **已落地**：util / value / error / compile / bytecode / memory 各层基础设施、GC（开发期即开）、Object 全部子类型、AriaVM（主循环 / 模块表与 IMPORT / 异常 / 闭包 / 类 / 协程：`Coroutine.create/resume/yield/status`、单循环切换模型、跨协程错误链式 unwind）、语言面补齐（值寄存器组、默认参数与 varargs、match 降糖、集合下标与切片、方法机制与迭代协议、解构含 rest、string/list/map 方法面、运算符重载的 11 个 dunder 钩子、`__str__` 显示钩子（经类面咨询口：实例字段出局、类值走元类链、容器调试位零执行））、字符串插值、显示虚函数退役（`to_string` 删除，显示定制唯一面 = `__str__`）。
 - **待落地**：range 方法面（现仅 `iter`）；defer 善后为可选后续。
-- 各特性语义决策见 `.agents/design/vm-design.md` 与对应 `.agents/design/` 文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
+- 各特性语义决策见 `.agents/reference/` 与 `.agents/notes/` 的对应文档；`README.md` 是面向读者的项目介绍（语言概览 / 构建运行 / 项目结构），不承担进度记录。
 
 ## 常用命令
 
@@ -47,31 +48,47 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 ## 文档地图
 
-真源一律住中立目录 `.agents/` 或 `docs/`，各 agent 的工具目录（`.claude/`、`.zcode/` 等）不入库：开发者按自己用的 agent 在本地建软链指向 `.agents/` 对应文件（技能按 frontmatter `description` 触发，模块规则按 `paths:` 匹配加载）。
+真源一律住中立目录 `.agents/` 或 `docs/`，各 agent 的工具目录（`.claude/`、`.zcode/` 等）不入库：开发者按自己用的 agent 在本地建软链指向 `.agents/` 对应文件（技能按 frontmatter `description` 触发，模块参考按 `paths:` 匹配加载）。
 
-**模块参考 `.agents/rules/`（9 个，读到匹配源码路径时自动加载）**：
+`.agents/` 按「拿它干什么」分三桶，写文档先判归属：
+
+| 桶 | 只收 | 不收 |
+| --- | --- | --- |
+| `reference/` | 现在是什么：接口契约、类型地图、协议缝、跨类型规则、规格 | 历史沿革、被否方案、测量数字、路线 |
+| `notes/` | 别再犯、别重做：踩坑挣下的不变式、被否方案的结论、测量纪律 | 现状复述（代码注释或 reference 已写的不要抄第二份） |
+| `skills/` | 怎么做一件事：按序过的关卡与判据 | 与 `docs/` 同文的正文（只留判据 + 指针） |
+
+**模块参考 `.agents/reference/`（9 个，读到匹配源码路径时自动加载）**：
 
 | 源码目录 | 参考文件 | 覆盖 |
 | --- | --- | --- |
-| `src/common.hpp`/`type.hpp`/`sys.hpp`/`aria.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.agents/rules/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / aria(项目级定义) / main(解释器入口) / interpreter(CLI 分发核心) |
-| `src/util/**` | `.agents/rules/util.md` | fs / utf8 / source_file / io / util / cli |
-| `src/value/**` | `.agents/rules/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
-| `src/error/**` | `.agents/rules/error.md` | ErrorCode / Error / AriaException |
-| `src/compile/**` | `.agents/rules/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
-| `src/bytecode/**` | `.agents/rules/bytecode.md` | code.hpp / CodeUnit / Disassembler |
-| `src/runtime/**` | `.agents/rules/runtime.md` | FrameStack / AriaExeContext 执行上下文本体 / ObjMovement GC 对象壳 / Eval 驱动引擎 / AriaVM 宿主 / Builtins（含异常通道落地状态） |
-| `src/object/**` | `.agents/rules/object.md` | Object / ObjString / ObjFnProto / ObjUpvalue / ObjFunction / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjException / ObjModule / ObjMovement / iterator 族 |
-| `src/memory/**` | `.agents/rules/memory.md` | Buffer / Array / Allocator / RawAlloc / HashTable / InternPool / ShellPool / GC |
+| `src/common.hpp`/`type.hpp`/`sys.hpp`/`aria.hpp`/`main.cpp`/`interpreter.hpp`/`interpreter.cpp` | `.agents/reference/core.md` | common(宏/USING_NANBOXING) / type(别名) / sys(平台宏) / aria(项目级定义) / main(解释器入口) / interpreter(CLI 分发核心) |
+| `src/util/**` | `.agents/reference/util.md` | fs / utf8 / source_file / io / util / cli |
+| `src/value/**` | `.agents/reference/value.md` | Value(NanBoxing/TagValue) / AriaArray / AriaHashTable |
+| `src/error/**` | `.agents/reference/error.md` | ErrorCode / Error / AriaException |
+| `src/compile/**` | `.agents/reference/compile.md` | Token / Lexer / ast / Parser / AstVisitor / FunctionCtx / ModuleCtx / CodeGen / Compiler |
+| `src/bytecode/**` | `.agents/reference/bytecode.md` | code.hpp / CodeUnit / Disassembler |
+| `src/runtime/**` | `.agents/reference/runtime.md` | FrameStack / AriaExeContext 执行上下文本体 / ObjMovement GC 对象壳 / Eval 驱动引擎 / AriaVM 宿主 / Builtins（含异常通道落地状态） |
+| `src/object/**` | `.agents/reference/object.md` | Object / ObjString / ObjFnProto / ObjUpvalue / ObjFunction / ObjClass / ObjInstance / ObjBoundMethod / ObjList / ObjMap / ObjRange / ObjException / ObjModule / ObjMovement / iterator 族 |
+| `src/memory/**` | `.agents/reference/memory.md` | Buffer / Array / Allocator / RawAlloc / HashTable / InternPool / ShellPool / GC |
+
+**规格 `.agents/reference/specs/`（不自动加载，由对应模块参考指路后 Read）**：
+
+- `instruction-set.md`：指令集、操作数编码、栈效应、lowering 蓝图。
+- `compound-assignment.md` / `loopctx.md`：复合赋值 locator-once lowering；LoopCtx 与 break/continue 回填。
+- `import-overview.md` / `import-paths.md`：import 端到端链路与路径解析。
+- `error-messages.md`：报错文案规范本体（机械门禁 `tools/check_error_messages.py`）。
+
+**踩坑与测量笔记 `.agents/notes/`（不自动加载，对应特性重启前重读）**：
+
+- `runtime/exception.md`（异常）/ `runtime/coroutine.md`（协程）/ `runtime/vm.md`（VM 结构与派发、重入的取舍）。
+- `memory/ast-arena.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer.md`（动词法性能前先读）/ `.agents/notes/bench/lang.md`（基准测量与端口纪律）。
 
 **场景技能 `.agents/skills/`（5 个，按工作场景触发）**：`aria-commit`（commit 说明规范，**每次 commit 前必读**）、`aria-bench`（性能测量纪律与报告规范）、`aria-error-messages`（报错文案速查）、`aria-language-change`（语言面改动同步清单）、`aria-testing`（测试组织与新增流程）。
 
-**深度文档（不自动加载，需要时 Read）**：
+**人类文档 `docs/`**：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 
-- 设计与规格 `.agents/design/`：`bytecode-instruction-set.md`（指令集规格）/ `vm-design.md`（AriaVM 与执行上下文设计）/ `import-handling-overview.md` + `import-path-resolution.md`（import 端到端与路径解析）/ `compound-assignment-lowering.md` + `loopctx.md`（复合赋值 lowering、LoopCtx 与 break/continue 回填）/ `error-message-style.md`（报错文案规范本体，机械门禁 `tools/check_error_messages.py`）。
-- 踩坑与测量笔记 `.agents/notes/`：`runtime/exception-implementation-pitfalls.md`（异常）/ `runtime/class-implementation-pitfalls.md`（类机制）/ `runtime/coroutine-implementation-pitfalls.md`（协程）--对应特性重启前重读；`memory/ast-arena-notes.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer-notes.md`（动词法性能前先读）/ `bench/lang-bench-notes.md`（基准测量与端口纪律）。
-- 语言文法与人类文档 `docs/`：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
-
-新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths）；新增场景技能：建 `.agents/skills/<name>/SKILL.md`。本地软链按自己用的 agent 自建，不入库。
+新增模块参考：建 `.agents/reference/<dir>.md`（frontmatter 带 name/description/paths）；新增规格放 `.agents/reference/specs/`，由对应模块参考指路；新增场景技能：建 `.agents/skills/<name>/SKILL.md`。本地软链按自己用的 agent 自建，不入库。
 
 ## 强制规范
 
@@ -101,7 +118,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 ### 类型（src/type.hpp）
 
-**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.agents/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `docs/cpp-naming-convention.md`「Optional/Result 用法」节。
+**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.agents/reference/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `docs/cpp-naming-convention.md`「Optional/Result 用法」节。
 
 ### 代码组织
 
@@ -136,16 +153,16 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 ### 陷阱
 
-- `SourceFile` 以指针传入（非拥有）：其借出的 `StringView`（`content()`/`Token::lexeme`）与 AST 节点烙入的 `SourceLoc` 须在 `SourceFile` 存活且地址不变期间使用--就位后再 tokenize，之后勿 move（SSO 短串 move 会改 data 地址）。`Error` 位置已烘焙、不受此约束。完整分析见 `.agents/rules/util.md`。
+- `SourceFile` 以指针传入（非拥有）：其借出的 `StringView`（`content()`/`Token::lexeme`）与 AST 节点烙入的 `SourceLoc` 须在 `SourceFile` 存活且地址不变期间使用--就位后再 tokenize，之后勿 move（SSO 短串 move 会改 data 地址）。`Error` 位置已烘焙、不受此约束。完整分析见 `.agents/reference/util.md`。
 - 源码加载时 CRLF/CR 已归一化为 LF，`line`/`locate` 内部只按 `\n` 切行。
 
 ## 错误处理（src/error/）
 
-原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/rules/error.md`，通道 2 的落地状态见 `.agents/rules/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
+原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/reference/error.md`，通道 2 的落地状态见 `.agents/reference/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
-- **四条错误通道**（设计见 `.agents/design/vm-design.md` §4.5-§4.8）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。
-- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）；ASSERT 文案不重复宏已打的文件/行/函数名。通则、句式家族表与机械门禁见 `.agents/design/error-message-style.md` 与技能 `aria-error-messages`。
+- **四条错误通道**（设计见 `.agents/notes/runtime/vm.md` §4.5-§4.8）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。
+- **文案一律英文 ASCII-only，句式按家族表收口**（强制）：同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）；ASSERT 文案不重复宏已打的文件/行/函数名。通则、句式家族表与机械门禁见 `.agents/reference/specs/error-messages.md` 与技能 `aria-error-messages`。
 
 ## Git 提交纪律（强制）
 
@@ -155,6 +172,6 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 ## 同步义务
 
-- 改模块代码：同步更新对应 `.agents/rules/<dir>.md`，随代码同批落库。
-- 改设计：同步 `.agents/design/` 对应文档，随代码同批落库。
+- 改模块代码：同步更新对应 `.agents/reference/<dir>.md`，随代码同批落库。
+- 改规格或机制：同步 `.agents/reference/specs/` 对应规格；踩坑结论进 `.agents/notes/`，随代码同批落库。
 - 改文法：同步 `docs/grammar.txt` + 实现 + 测试；语言面改动的完整同步清单见技能 `aria-language-change`（tests/language 语料、docs/guide 章节、README 特性表一并同步）。

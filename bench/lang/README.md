@@ -171,7 +171,7 @@ bench/lang/
 
 ## 为什么有些行只有 aria、有些行缺某个语言
 
-`aria-only` 与缺列的原因逐行记在 `.agents/notes/bench/lang-bench-notes.md`「跨语言覆盖差异」一节
+`aria-only` 与缺列的原因逐行记在 `.agents/notes/bench/lang.md`「跨语言覆盖差异」一节
 (总览:JS / Java 没有算子重载与可调用对象,Java 没有解构与默认参数、也做不到 throw 任意值,而
 `iterator_manual` / `import_module` 这类行的各语言机制根本不可对齐)。那份文档同时还写清了测量纪律
 (为什么用平均、进程级计时含哪些成本、各语言计时函数的口径差异)与各行的近似写法--这些是维护基准
@@ -210,4 +210,4 @@ println("bench-time: " + str(dt * 1000.0) + " ms");   // 驱动解析成「负�
 - Java 端口:文件名与类名不必一致(非 public 类合法),驱动按源码里的 `class` 名起进程。
 
 端口怎么写才算「对得上」、Java 端口为什么要跑两遍、Lua 的计时函数是什么口径,见
-`.agents/notes/bench/lang-bench-notes.md`。
+`.agents/notes/bench/lang.md`。

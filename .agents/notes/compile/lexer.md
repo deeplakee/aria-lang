@@ -1,7 +1,7 @@
 # 词法层测量纪律与被否方案
 
 > 源码位置：`src/compile/Lexer.hpp` / `Lexer.cpp`（主循环、消费辅助）、`src/util/source_file.hpp`（位置派生）
-> 模块参考：`.agents/rules/compile.md`（Lexer 条）、`.agents/rules/util.md`（source_file 条）
+> 模块参考：`.agents/reference/compile.md`（Lexer 条）、`.agents/reference/util.md`（source_file 条）
 > 用途：动词法性能之前先读这篇。这里只收**测量纪律**、**设计判断**与**已实测否决的优化**；机制描述在
 > 模块参考里，不重复。测量数字是 bench 的输出，跑一次就有，不在文档里留档。
 
@@ -26,7 +26,7 @@
 
 ## 2. 设计判断
 
-已落地的词法优化（机制现状见 `.agents/rules/compile.md` 的 Lexer/Token 条）：位置按需派生、消费辅助收口、
+已落地的词法优化（机制现状见 `.agents/reference/compile.md` 的 Lexer/Token 条）：位置按需派生、消费辅助收口、
 utf8 热/冷拆分、字符串普通段整段追加、关键字注册表拆分（纯表 + 长度早退）、token 表按源预留、Token
 平凡化（无 tag union + 字符串解析内容后置）。均经 dump 对拍与双配置全量 ctest 验收等价。
 

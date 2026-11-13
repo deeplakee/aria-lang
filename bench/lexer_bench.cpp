@@ -1,7 +1,7 @@
 // bench/lexer_bench.cpp
 //
 // 词法层性能基准:词法吞吐(四源形态 normal/numeric/cjk/string(_huge))、端到端编译、位置派生
-// 原语、utf8 解码微基准。测量纪律与已否形态见 .agents/notes/compile/lexer-notes.md,本程序是
+// 原语、utf8 解码微基准。测量纪律与已否形态见 .agents/notes/compile/lexer.md,本程序是
 // 可复现入口。计时循环写死原地、不抽「best-of-N + lambda」外壳(外壳噪声与逐 token 紧循环同
 // 量级,缘由见 lexer-notes §1)。
 //

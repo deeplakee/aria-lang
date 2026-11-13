@@ -1,12 +1,12 @@
 ---
 name: aria-error-messages
-description: aria 报错文案规范速查：写或改任何面向用户的报错文案（编译期 / 运行期 / CLI / ASSERT）时使用。含 detail 通则、句式家族表要点、元数族 arity_error 唯一口、被调者泛称、ASSERT 文案规则与机械门禁 tools/check_error_messages.py。规范本体在 .agents/design/error-message-style.md。
+description: aria 报错文案规范速查：写或改任何面向用户的报错文案（编译期 / 运行期 / CLI / ASSERT）时使用。含 detail 通则、句式家族表要点、元数族 arity_error 唯一口、被调者泛称、ASSERT 文案规则与机械门禁 tools/check_error_messages.py。规范本体在 .agents/reference/specs/error-messages.md。
 ---
 
 # aria 报错文案速查
 
 > 场景：新增或修改报错点、写 ASSERT 文案、报错被机械门禁打回。通则 8 条、句式家族表
-> 全文与裁定背景见 `.agents/design/error-message-style.md`；四条错误通道的归属见 `.agents/rules/error.md`。
+> 全文与裁定背景见 `.agents/reference/specs/error-messages.md`；四条错误通道的归属见 `.agents/reference/error.md`。
 > 本文件是落笔前的速查，两者冲突时以规范本体为准。
 
 ## 1. 硬规则（机械门禁可查）

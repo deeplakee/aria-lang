@@ -1,7 +1,7 @@
 # 导入路径解析
 
 > 本文描述 `OpCode::IMPORT` 当前实现的路径解析与模块查表逻辑。指令格式与栈效应见
-> `bytecode-instruction-set.md §4.15`，本文只聚焦「specifier -> 绝对规范键 -> 模块表命中」
+> `.agents/reference/specs/instruction-set.md §4.15`，本文只聚焦「specifier -> 绝对规范键 -> 模块表命中」
 > 这条链路。
 
 ## 总览
@@ -128,7 +128,7 @@ IMPORT 以绝对键查 `modules_`：
   编译期/运行期错误原样透传(含其文件位置;`load_module` 错误契约同 call_aria_fn 族:返 `ObjModule*`,失败
   `nullptr ⟺` 载荷已 raise 入寄存器,编译期 Error 就地 `new_exception` 原样装配箱,调用方 `unwind()` 派发/物化);
   读盘失败/name 空报 `ErrorCode::ModuleNotFound`(经 `fail` 烘 IMPORT 站点位置)。详见
-  `import-handling-overview.md`「加载层接入位置」。
+  `.agents/reference/specs/import-overview.md`「加载层接入位置」。
 - **解析失败**（无源根命中 `<base>/<spec>.aria`）：报 `ErrorCode::ModuleNotFound`
   （`module not found: '<path>'`，经 `fail` 烘 IMPORT 站点位置）。
 
@@ -180,4 +180,4 @@ GC 已启用（VM 根 tracer 标五表 + `current_` 一点，值栈/帧经执行
   据源根列表判定，本原语不限路径范围）。
 
 > 全景与各环节状态（词法 / 语法 / 编译器缺口 / 字节码 / VM / ObjModule / fs 原语 / 测试）
-> 另见 [`import-handling-overview.md`](./import-handling-overview.md)。
+> 另见 [`.agents/reference/specs/import-overview.md`](./.agents/reference/specs/import-overview.md)。

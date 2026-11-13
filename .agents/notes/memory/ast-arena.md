@@ -1,7 +1,7 @@
 # AST bump arena 机制契约
 
 > 源码位置：`src/memory/AstArena.hpp`（AstArena / Span 列表视图，消费方在 compile 层）、`src/compile/Ast.hpp`（节点成员换装）
-> 模块参考：`.agents/rules/memory.md`（AstArena / RawAlloc 条）、`.agents/rules/compile.md`（ast / Parser / Compiler 条）
+> 模块参考：`.agents/reference/memory.md`（AstArena / RawAlloc 条）、`.agents/reference/compile.md`（ast / Parser / Compiler 条）
 > 用途：记录把 AST 所有权从 `UPtr` 递归析构换成 arena 整批释放的机制契约与设计依据；动 Parser /
 > CodeGen 的分配与遍历路径前先读这篇。测量数字是 bench 的输出，不在文档里留档。
 

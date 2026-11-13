@@ -5,8 +5,9 @@ description: aria 测试组织与新增测试流程：写 C++ GTest 用例或 ar
 
 # aria 测试指南
 
-> 场景：为某模块补 C++ 白盒测试、写 aria 语言语料、或跑/登记测试。语料细则见
-> `tests/language/README.md`；GTest 位于 `tests/<module>/`、链接 `aria_core` + `gtest_main`。
+> 场景：为某模块补 C++ 白盒测试、写 aria 语言语料、或跑/登记测试。组织总览见
+> `docs/testing.md`；语料细则见 `tests/language/README.md`；GTest 位于 `tests/<module>/`、
+> 链接 `aria_core` + `gtest_main`。
 
 ## 1. 两层测试
 

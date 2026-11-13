@@ -98,7 +98,7 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ## 命名（强制）
 
-只采用一套规则，不混 Google/LLVM/Unreal。优先级：可读性 > 一致性 > 简洁性。注释用中文。（完整规则见根目录 `CPP_Naming_Convention.md`，本节为其摘要。）
+只采用一套规则，不混 Google/LLVM/Unreal。优先级：可读性 > 一致性 > 简洁性。注释用中文。（完整规则见`docs/cpp-naming-convention.md`，本节为其摘要。）
 
 - 类型 / struct / enum class / 别名 / concept / 模板类型参数 / 枚举值：`PascalCase`
 - 函数 / 变量 / 参数：`snake_case`
@@ -108,15 +108,15 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 - 布尔用 `is_`/`has_`/`can_`/`should_`/`was_`/`needs_` 前缀
 - 禁 Hungarian（`m_`）、禁保留标识符（`_Foo`）、禁宏风格常量（`MAX_SIZE`）
 
-参数传递（指针 / 引用 / 按值的选择）同属强制，规则见根目录 `CPP_Naming_Convention.md`「Parameter Passing」节。要点：**所有权只经 `UPtr` 出现**；object 层 GC 对象类型（`Object`/`Obj*`）一律按指针；服务/宿主（`GC`/`AriaVM`/`SourceFile` 等借用期必非空）按引用；仅可空（`nullptr` 合法）、位置/槽位（`Value*`）、dyn_cast 查询族与容器分配器注入（`Alloc*`）用指针；AST 节点非空借用按引用（`visitXxxNode(XxxNode&)`）；小值类型（`Value`/标量/`SourceLoc`/`StringView`/`Span`）按值，`const` 写在定义处（不改参契约，纯声明不写）。
+参数传递（指针 / 引用 / 按值的选择）同属强制，规则见`docs/cpp-naming-convention.md`「Parameter Passing」节。要点：**所有权只经 `UPtr` 出现**；object 层 GC 对象类型（`Object`/`Obj*`）一律按指针；服务/宿主（`GC`/`AriaVM`/`SourceFile` 等借用期必非空）按引用；仅可空（`nullptr` 合法）、位置/槽位（`Value*`）、dyn_cast 查询族与容器分配器注入（`Alloc*`）用指针；AST 节点非空借用按引用（`visitXxxNode(XxxNode&)`）；小值类型（`Value`/标量/`SourceLoc`/`StringView`/`Span`）按值，`const` 写在定义处（不改参契约，纯声明不写）。
 
-变量与参数名的语义同属强制，规则见根目录 `CPP_Naming_Convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单--`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`src`（源文件/源码文本，随 `SourceFile`）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
+变量与参数名的语义同属强制，规则见`docs/cpp-naming-convention.md`「Variable & Parameter Names」节。要点：**默认完整单词**，参数零单字母（下标 `index`；纯数量参数可用 `n`），禁臆造截断（`mod`/`tok`/`res` 一类，截断会撞词且 grep 不可及）；单字母与缩写只来自成文白名单--`i`/`j`/`k`（循环计数）、`n`（数量，「n 个 xx」）、`c`（逐字符扫描局部）、`ch`（字符参数）、`lhs`/`rhs`（操作数）、`loc`（随 `SourceLoc` 短名）、`src`（源文件/源码文本，随 `SourceFile`）、`cp`（码点）、`expr`/`stmt`（AST 节点）、`ctx`（执行上下文），清单是闭集、新条目先入表再用；同一概念全库同名。
 
-返回值处置同属强制，规则见根目录 `CPP_Naming_Convention.md`「Nodiscard 与结果丢弃」节。要点：丢弃 `[[nodiscard]]` 返回值写 `std::ignore = f(...)`，不写 `(void) f(...)`（含 `AriaVM::fail`，其惯用出口仍是 `return vm.fail(...)`）；被调函数未标 `[[nodiscard]]` 时调用语句前不留 `(void)`，那是纯装饰、直接删；压制未用**变量**的 `(void) x;` 保留，压制未用**参数**一律不许（签名照常带类型带参数名）；用 `std::ignore` 的 TU 显式 `#include <tuple>`。
+返回值处置同属强制，规则见`docs/cpp-naming-convention.md`「Nodiscard 与结果丢弃」节。要点：丢弃 `[[nodiscard]]` 返回值写 `std::ignore = f(...)`，不写 `(void) f(...)`（含 `AriaVM::fail`，其惯用出口仍是 `return vm.fail(...)`）；被调函数未标 `[[nodiscard]]` 时调用语句前不留 `(void)`，那是纯装饰、直接删；压制未用**变量**的 `(void) x;` 保留，压制未用**参数**一律不许（签名照常带类型带参数名）；用 `std::ignore` 的 TU 显式 `#include <tuple>`。
 
 ## 类型（src/type.hpp）
 
-**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.agents/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `CPP_Naming_Convention.md`「Optional/Result 用法」节。
+**不要直接用 `std::string`/`int`/`size_t` 等**，一律用 `src/type.hpp` 的别名（`i8..i64`/`u8..u64`/`isize`/`usize`/`f32`/`f64`/`String`/`StringView`/`List`/`Vector`/`HashMap`/`HashSet`/`Stack`/`Pair`/`Tuple`/`Span`/`UPtr`/`SPtr`/`Result<T,E>`/`Opt<T>`；完整映射见该头与 `.agents/rules/core.md`）。错误处理倾向 `Result` 返回而非抛异常。`Opt`/`Result` 的判断/取值/move 按语境各定一式（条件隐式 bool、取值 `*`/`->` 禁 `.value()`、终局 move、断言显式 `has_value()`），规则见 `docs/cpp-naming-convention.md`「Optional/Result 用法」节。
 
 ## 代码组织
 

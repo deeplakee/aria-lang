@@ -51,64 +51,35 @@ println("n = ${1 + 1}, next = ${next()}");                     # n = 2, next = 4
 
 ## 语言特性
 
-- **值与类型**：`nil` / `bool` / `int`（48 位整数，值域 `[-2^47, 2^47)`）/ `float`（`f64`）/ `string`（UTF-8）/
-  `list` / `map` / `range`，以及函数、闭包、类、实例、模块、迭代器等对象类型。
-  整数运算结果越界抛出可捕获的 `IntegerOverflow`，不回绕、不自动升浮点。
-  相等分两级：`==` 内容相等（数值跨 `int`/`float` 成立），`===` 严格相等。
-- **函数**：一等值、`fun(x) { ... }` lambda、默认参数、`...varargs`；闭包捕获即引用，同一变量
-  的多个闭包共享同一份状态（`make_counter` 那个例子）。
-- **类**：`def` 定义，`init` 构造器，`super` 单继承（`def Foo : Bar`），成员分静态变量、静态方法、
-  实例方法三类；实例字段是动态的；根类 `Object` 位于继承链顶端。运算符、调用与显示可重载：在类上
-  定义 `__add__`、`__lt__` 等 12 个钩子（五个算术、四个比较、一元取负、调用、显示渲染），
-  实例出现在左操作数 / 被调用 / 被显示位置时按名取实现（仅左侧触发，不支持反射调用）。内置的 list/map/string/range 也是类，
-  方法调用是同一套 `recv.name(args)` 语法；内建类（含函数族、`Module`、`Coroutine`、`Class` 元类）
-  本身也作为全局变量可以被访问。类上的点号只查本类与父类的声明成员，不回退到元类能力。
-- **控制流**：`if`/`else`、`while`、C 风格 `for`、`for (pattern in expr)`、`break`/`continue`、
-  `match`；`if` 与 `match` 也能作表达式。支持用逗号多个表达式连成序列表达式（从左到右
-  逐个求值、取最后一个值）。
-- **解构**：`var [a, b] = ...`、`[a, b] = [b, a]`、`for ([k, v] in ...)`，支持嵌套、`_` 占位与
-  `...rest` 后缀。
-- **异常**：`try`/`catch`，`throw` 任意值且 `catch` 绑原值；可继承内建 `Exception`
-  定义自己的异常类型（实现 `message()` / `code()` 方法）；未捕获时打印逐帧堆栈跟踪。
-- **协程**：`Coroutine.create/resume/yield/status`（非关键字，普通成员调用）。
-  `resume` 第一次启动时的参数作为协程函数实参，返回 `yield` 交出值或完成值；`yield` 可从任意调用深度发起；
-  协程内未捕获的错误会重新抛给恢复方（外层 `try/catch` 可接住），堆栈跟踪在协程边界截断。
-- **容器与迭代协议**：list/map/range 都有字面量。list 与 string 用下标访问元素（负数从尾计数），
-  map 用键下标取值；以 range 作下标就是切片（`xs[1..3]`，倒序 range 得到倒序段）。
-  `for-in` 建立在统一的迭代协议上，也可以显式取迭代器。内建类型都提供了各自的内建方法。
-- **字符串**：`+` 拼接只在两侧都是 String 时成立（无隐式转换，其他类型需要先用内置 `str()` 转为字符串）；
-  比较按无符号字节序；下标与 `size()` 都按字节计，逐码点用 `chars()`。字符串即模板：`"n = ${x}"`
-  的 `${...}` 里可以写完整表达式、渲染默认和 `str()` 同效果。
-- **模块**：一个文件就是一个模块，`import "./utils" as U;`（必须绑定一个别名）。模块顶层绑定即模块成员，
-  `U.x` / `U.f()` 只访问模块导出，不回退到 Module/Object 的成员；成员只读。
-- **内置函数**：`type` / `str` / `assert` / `println` / `clock` / `Error` / `is_a` / `is_subclass`
-  （都可当一等值传递；`println` 是唯一的输出口，`clock` 返回单调时钟秒数、只可相减，`Error(message[, code])` 造异常值）。另有内建类
-  `Coroutine` 提供协程原语（见上「协程」条）。`is_a(value, Class)` 检查真实所属类链，
-  `is_subclass(Derived, Base)` 检查类继承；两者不读取用户同名成员。
+- 动态类型：`nil` / `bool` / `int` / `float` / `string`（UTF-8）/ `list` / `map` / `range`，
+  以及函数、类、模块等对象类型。
+- 函数是一等值：`fun(x) { ... }` lambda、默认参数、`...varargs`；闭包捕获即引用。
+- 类：`def` 定义，`init` 构造器，`super` 单继承；运算符、调用与显示均可重载。
+- 控制流：`if` / `while` / C 风格 `for` / `for-in` / `break` / `continue` / `match`；
+  `if` 与 `match` 也能作表达式。
+- 解构：`var [a, b] = ...`、`[a, b] = [b, a]`、`for ([k, v] in map)`，支持嵌套、`_` 与 `...rest`。
+- 异常：`try` / `catch`，`throw` 任意值；可继承内建 `Exception` 定义自己的异常类型。
+- 协程：`Coroutine.create / resume / yield / status`，`yield` 可从任意调用深度发起。
+- 容器：字面量、负数下标、range 切片（`xs[1..3]`）；`for-in` 走统一的迭代协议。
+- 字符串插值：`"n = ${x}"`，`${...}` 里可以写完整表达式。
+- 模块：一个文件一个模块，`import "./utils" as U;` 绑定别名访问，成员只读。
 
 ## 构建与运行
 
-需要 CMake ≥ 3.20 与支持 C++23 的编译器（`clang++` / `clang-format` / `clangd` 建议在 PATH 中）。
-第三方依赖均 vendored 于 `external/`。
+需要 CMake ≥ 3.20 与支持 C++23 的编译器，第三方依赖均 vendored 于 `external/`，构建零联网。
 
 ```sh
 # Linux / macOS
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-
-# Windows（Ninja + clang；clang++ 为 MSVC target 时链接器走本机 Visual Studio）
-cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
-
 cmake --build build --target aria -j
-```
 
-解释器 CLI：
-
-```sh
 build/aria script.aria        # 运行脚本
 build/aria -e 'println(1 + 1);' # 求值一段源码
 build/aria --repl             # 交互式 REPL（顶层 var 跨行保留）
-build/aria --version
 ```
+
+Windows 配置（Ninja + clang）、构建选项（TagValue 值表示 / mimalloc / 指令频度探针）与
+构建目录约定见 [docs/building.md](docs/building.md)。
 
 ## 测试与基准
 
@@ -117,48 +88,35 @@ cmake --build build --target aria_tests -j
 ctest --test-dir build --output-on-failure
 ```
 
-测试分两层：`tests/<module>/` 是按模块分目录的 C++ GTest 白盒用例；`tests/language/` 是用 aria
-编写的脚本语料，正向脚本用 `assert` 验证结果、负向脚本断言预期的错误码，端到端驱动解释器，兼作 GC 压力
-安全网，详见 `tests/language/README.md`。
+测试分两层：`tests/<module>/` 是按模块分目录的 C++ 单元测试；`tests/language/` 是用 aria
+语言写成的测试脚本，端到端运行解释器。
 
-CI 使用 `clang-format` **23.1.3** 和根目录的 `.clang-format`，检查 `src/`、`tests/`、`bench/` 中
-由 Git 跟踪的 `.cpp` 与 `.hpp` 文件。本地格式化时请使用同一版本。
-
-性能基准位于 `bench/`：`lexer_bench` / `hashtable_bench` / `vm_bench` 三个进程内微基准，以及源文件
-级基准 `bench/lang/`（40 个语言功能细项与 16 个真实负载，多数带 CPython / Node / Lua / Java 对照
-端口）。基准一律以原样 Release 构建测量（默认开 LTO；Debug 与 Release 的读数可差一个数量级），
-驱动与清单见 `bench/lang/README.md`：
-
-```sh
-cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release
-cmake --build build/rel --target aria -j
-python3 bench/lang/lang_bench.py --aria=build/rel/aria
-```
-
-值表示默认为 NaN-boxing；另提供等价的 TagValue 表示（CMake 选项 `-DARIA_USE_TAGVALUE=ON`），
-启用后须在独立构建目录全量重跑测试。
+性能基准位于 `bench/`：进程内微基准与整程序基准 `bench/lang/`（带 CPython / Node / Lua / Java
+对照端口），以 Release 构建测量。测试的组织与编写见 [docs/testing.md](docs/testing.md)。
 
 ## 实现
 
 ```
-src/         入口在 main.cpp / interpreter.cpp（CLI 分发），其余按层分目录：
-  compile/   Lexer / Parser / CodeGen / Compiler，单遍产出字节码
-  bytecode/  指令集（code.hpp）、CodeUnit、Disassembler
-  runtime/   AriaVM 主循环与执行上下文；builtins/ 是内建函数与各类型的方法
-  object/    Object 基类与全部 Obj* 子类型（字符串 / 函数 / 类 / 容器 / 迭代器等）
-  memory/    GC 与内存基础设施（Allocator / HashTable / InternPool / StringBuilder 等）
-  value/     Value 值表示（NaN-boxing，可切换 TagValue）、AriaArray / AriaHashTable
-  error/     ErrorCode / Error / AriaException
-  util/      fs / utf8 / source_file / io / cli 等工具（多为 header-only）
-tests/       C++ GTest 白盒用例（tests/<module>/）+ aria 脚本语料（tests/language/）
-bench/       性能基准：lexer / vm / hashtable 进程内微基准 + lang/ 源文件级基准
-             （带 CPython / Node / Lua / Java 对照端口）
-external/    isocline（REPL）/ googletest / mimalloc，vendored、构建时无需联网
-docs/        grammar.txt（语言文法）与 guide/（语言教程）
-tools/       开发脚本与 git 钩子（commit 说明 / 报错文案机械检查）
+.
+├── src/             解释器源码；入口 main.cpp / interpreter.cpp（CLI 分发），其余按层分目录
+│   ├── compile/     Lexer / Parser / CodeGen / Compiler，单遍产出字节码
+│   ├── bytecode/    指令集（code.hpp）、CodeUnit、Disassembler
+│   ├── runtime/     AriaVM 主循环与执行上下文；builtins/ 是内建函数与各类型的方法
+│   ├── object/      Object 基类与全部 Obj* 子类型（字符串 / 函数 / 类 / 容器 / 迭代器等）
+│   ├── memory/      GC 与内存基础设施（Allocator / HashTable / InternPool / StringBuilder 等）
+│   ├── value/       Value 值表示（NaN-boxing，可切换 TagValue）、AriaArray / AriaHashTable
+│   ├── error/       ErrorCode / Error / AriaException
+│   └── util/        fs / utf8 / source_file / io / cli 等工具（多为 header-only）
+├── tests/           C++ 单元测试（tests/<module>/）+ aria 语言测试脚本（tests/language/）
+├── bench/           进程内微基准与 lang/ 整程序基准（带 CPython / Node / Lua / Java 对照端口）
+├── external/        isocline（REPL）/ googletest / mimalloc，vendored、构建时无需联网
+├── docs/            grammar.txt（语言文法）、guide/（语言教程）、building / testing 等文档
+└── tools/           开发脚本与 git 钩子（commit 说明 / 报错文案机械检查）
 ```
 
 ## 进一步阅读
 
-- `docs/guide/` -- 语言教程（17 章，末章为内建速查附录），示例全部可直接运行。
-- `docs/grammar.txt` -- 语言文法规范。
+- [语言教程](docs/guide/) -- 17 章，从值与变量讲到协程，示例全部可直接运行。
+- [语言文法](docs/grammar.txt) -- 产生式规范。
+- [构建与运行](docs/building.md) -- 三平台配置、构建选项与开发环境。
+- [测试](docs/testing.md) -- 测试的组织与编写、性能基准与 CI。

@@ -49,12 +49,11 @@ frontmatter 带 `paths:`，读到匹配源码路径时**自动加载**，不读�
 
 ### 技能与软链现状
 
-实体一律住中立目录 `.agents/`（`rules/` 模块参考、`skills/` 场景技能、`notes/` 踩坑与测量笔记）；`.zcode/skills/` 与 `.claude/rules/` 只是各工具的**软链适配层**：
+实体一律住中立目录 `.agents/`（`rules/` 模块参考、`skills/` 场景技能、`notes/` 踩坑与测量笔记）；`.zcode/skills/` 与 `.claude/rules/` 只是各工具的**软链适配层**。技能分两轴：
 
-- `.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.agents/rules/<dir>.md`（9 个模块技能，`core.md` 对应技能 `aria-core`）：ZCode 按 frontmatter `description` 自动触发。
-- `.claude/rules/<dir>.md` **软链** → `../../.agents/rules/<dir>.md`（同名 9 条）：Claude Code 按 frontmatter `paths:` 读到匹配源码路径时自动加载。
-- `.agents/skills/aria-commit/SKILL.md` 收 commit 说明规范（`.zcode/skills/aria-commit/SKILL.md` 软链之），**每次 commit 前必读**。
-- 新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths），并补 `.zcode/skills/aria-<dir>/SKILL.md` 与 `.claude/rules/<dir>.md` 两条相对软链。
+- **模块轴 ×9**：`.zcode/skills/aria-<dir>/SKILL.md` **软链** → `../../../.agents/rules/<dir>.md`（`core.md` 对应技能 `aria-core`），ZCode 按 frontmatter `description` 自动触发；`.claude/rules/<dir>.md` **软链** → `../../.agents/rules/<dir>.md`（同名 9 条），Claude Code 按 frontmatter `paths:` 读到匹配源码路径时自动加载。
+- **场景轴 ×5**（实体住 `.agents/skills/`，`.zcode/skills/` 同名软链）：`aria-commit`（commit 说明规范，**每次 commit 前必读**）、`aria-bench`（性能测量纪律与报告规范）、`aria-error-messages`（报错文案速查）、`aria-language-change`（语言面改动同步清单）、`aria-testing`（测试组织与新增流程）。
+- 新增模块规则：建 `.agents/rules/<dir>.md`（frontmatter 带 name/description/paths），并补 `.zcode/skills/aria-<dir>/SKILL.md` 与 `.claude/rules/<dir>.md` 两条相对软链；新增场景技能：建 `.agents/skills/<name>/SKILL.md` 并补 `.zcode/skills/<name>/SKILL.md` 软链。
 
 > 同步义务：改模块代码时同步更新对应 `.agents/rules/<dir>.md`；改设计时同步 `.agents/design/` 对应文档；改文法时同步 `docs/grammar.txt` + 代码 + 测试。
 

@@ -1,6 +1,6 @@
 # 导入（import）
 
-`import "PATH" as ALIAS;` 的端到端形态：文法 -> 字节码 -> VM 路径解析 -> 模块表 -> 加载与 run-once。指令格式与栈效应见 `instruction-set.md` §4.15；`ObjModule` 字段规格见 object.md「模块身份」。
+`import "PATH" as ALIAS;` 的端到端形态：文法 -> 字节码 -> VM 路径解析 -> 模块表 -> 加载与 run-once。指令格式与栈效应见 `instruction-set.md` §3.14；`ObjModule` 字段规格见 object.md「模块身份」。
 
 ## 文法与前端
 

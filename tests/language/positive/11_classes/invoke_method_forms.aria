@@ -46,7 +46,7 @@ assert(bound == d.label);    // 内容相等
 
 // 成员解析先于实参求值（PREPARE_METHOD 在实参之前执行，Python/Lua/JS 同款次序）：实参改写接收者
 // 成员后，解析取的仍是改写前的值；解析失败时实参根本不跑。两处即该语义的钉子
-// （见 bytecode-instruction-set.md §5.6）。
+// （见 instruction-set.md §4.5）。
 def Slot { init(f) { this.f = f; } }
 fun first(v) { return 1; }
 fun second(v) { return 2; }

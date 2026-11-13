@@ -1,685 +1,390 @@
-# 字节码指令集设计
+# 字节码指令集
 
-aria 是**栈式字节码 VM**：所有运算经值栈完成，指令带固定格式内联操作数。本文档以 `src/bytecode/code.hpp` 现有 `OpCode` 枚举为基准，逐条整理**功能 / 操作数位宽 / 栈效应**，并给出 CodeUnit 结构、反汇编器格式、关键 lowering 与缺口分析，作为指令集的规格基准。
+栈式字节码 VM 的指令规格：功能 / 操作数位宽 / 栈效应 / 关键 lowering。`OpCode` 以 `src/bytecode/code.hpp` 的 `ARIA_OPCODE_LIST(X)` 为唯一事实源（本文件是它的规格说明，不重复编码细节）。容器与编码方法见 `bytecode.md`；赋值类 lowering 的完整方案见 `lowering.md`；异常通道见 `runtime.md`「VM 异常通道」；语言语义见 `docs/grammar.txt`。
 
-> 现状：`OpCode` 为 **X-Macro 单一事实源表**（`code.hpp` 的 `ARIA_OPCODE_LIST(X)`，79 条，每行 `X(枚举名, OpFormat类别)`，生成枚举 / `kOpCodeCount` / `kOpCodeNames` / `kOpCodeFormats`）；`CodeUnit` 已落地（字节流 + 常量池 + RLE 行号表 + 异常记录表 + emit/跳转编码/槽位变体收口）；操作数编码与栈效应约定已落地。
+`OpCode : u8`，共 79 条（含 16 条局部槽 N 短变体），`kOpCodeCount` 有测试哨兵；`OpFormat` 是操作数格式类别（`Simple`/`U8`/`U16`/`ConstU16`/`ImmI8`/`JumpFwd`/`JumpBack`/`RangeFlags`/`RegU8`/`Import`）。
 
-## 1. 现状与基准
+## 1. 操作数编码
 
-### 1.1 枚举现状（以 `code.hpp` 为准）
+### 字节流
 
-`OpCode : u8`，共 79 条（含 16 条局部槽 N 短变体），按功能分组：
+代码段是**单字节流**：1 字节 opcode 后跟内联操作数，小端。VM 的 `ip` 按 opcode 查 `kOpCodeFormats` 决定读几字节；反汇编器与 VM 共用同一约定（VM 热路径仍自持 switch，操作数读取内联在各 case，不查表）。
 
-| 分组 | 指令 |
-| :--- | :--- |
-| 停机 | `HALT` |
-| 常量/字面量加载 | `LOAD_CONST` `LOAD_NIL` `LOAD_TRUE` `LOAD_FALSE` `LOAD_IMM` `LOAD_REG` |
-| 局部变量 | `LOAD_LOCAL` `STORE_LOCAL`（通用，`slot:u16`）+ `LOAD_LOCAL_1..8` `STORE_LOCAL_1..8`（N 短变体，零操作数） |
-| Upvalue | `LOAD_UPVALUE` `STORE_UPVALUE` `CLOSE_UPVALUE` |
-| 全局变量 | `DEF_GLOBAL` `LOAD_GLOBAL` `STORE_GLOBAL` |
-| 字段 | `LOAD_FIELD` `STORE_FIELD` |
-| 下标 | `LOAD_INDEX` `STORE_INDEX` |
-| this 字段（优化） | `LOAD_THIS_FIELD` `STORE_THIS_FIELD` |
-| 算术/比较/逻辑 | `EQUAL` `NOT_EQUAL` `STRICT_EQUAL` `STRICT_NOT_EQUAL` `GREATER` `GREATER_EQUAL` `LESS` `LESS_EQUAL` `ADD` `SUBTRACT` `MULTIPLY` `DIVIDE` `MOD` `NOT` `NEGATE` |
-| 栈操作 | `POP` `POP_N` `DUP` `DUP2` |
-| 调试 | `NOP` |
-| 控制流 | `JUMP` `JUMP_TRUE` `JUMP_TRUE_OR_POP` `JUMP_FALSE` `JUMP_FALSE_OR_POP` `JUMP_BACK` `JUMP_NE` |
-| 函数/闭包 | `CALL` `CLOSURE` |
-| 类/对象 | `MAKE_CLASS` `MAKE_METHOD` `MAKE_STATIC` `LOAD_SUPER_FIELD` `PREPARE_METHOD` `CALL_METHOD` `MAKE_LIST` `MAKE_MAP` `MAKE_RANGE` `BUILD_STRING` |
-| 模块导入 | `IMPORT` |
-| 异常 | `THROW` |
-| 返回 | `RETURN` |
+新增指令的同步点 = X 表加一行 + VM 加 case；反汇编器零改动。**引入新 `OpFormat` 类别**要同步三处：Disassembler 分发 switch、`opcode_profile.cpp` 的 `size_of` 与 `records_fall_pair`（见 `bytecode.md`）。
 
-`u8` 上限 256，当前 79 条，扩空间充裕。
-
-### 1.2 已定决策
-
-- **异常机制走 CodeUnit 内异常记录表**，**不引入** `SETUP_EXCEPT`/`END_EXCEPT` 操作码：`try` 范围与 handler 由编译期生成的记录表登记，运行时按 `ip` 查表 unwind（见 §4.16/§5.9/§6.1）。
-- **`MAKE_RANGE`** 已加入（区间构造，见 §4.14）。
-- **`BUILD_STRING`** 已加入（插值串收拢，见 §4.14；段数 `u8`、渲染与 `str()` 同源）。
-- **跳转 `u16` 方向拆分 + 局部槽 N 短变体**：跳转偏移 `u16` 无符号、方向编码于 opcode（前向 `JUMP*` `ip+=off`、后向 `JUMP_BACK` `ip-=off`），后向恒无条件（while/for/for-in 回边）；局部槽 `slot:u16` 通用形态 + `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8` 零操作数 N 短变体。见 §2.3/§4.3/§4.12。
-- **`PREPARE_METHOD` + `CALL_METHOD`** 已启用（两段式「先解析、后调用」，见 §4.14/§5.6/§6.2）：编译器对 `recv.name(args)` 发 `<recv>` + `PREPARE_METHOD name` + `<args>` + `CALL_METHOD argc`，成员解析经 `Object::load_field` 协议在**实参求值之前**完成（Python/Lua/JS 同款次序）、结果压栈跨指令存活；`CALL_METHOD` 是纯调用（不再解析），把实参整体下移一格补掉待调值占的那格即得与两步形态逐位一致的调用区。
-
-## 2. 操作数编码约定
-
-### 2.1 字节流模型
-
-CodeUnit 的代码段是**单字节流**：1 字节 opcode 后跟若干字节内联操作数。VM 的 `ip`（指令指针）按 opcode 查「操作数格式表」决定读取几字节、如何拼。
-
-- **代码段类型 `Array<u8>`**：opcode 以 `static_cast<u8>(op)` 存入，操作数直接写字节，让操作数字节与 opcode 统一寻址（见 §7）。
-- **字节序：小端**（低位在前）。仅影响内存表示与反汇编可读性，不落盘则无跨平台问题。
-- 反汇编器与 VM 遵循同一「opcode -> 操作数格式」解码约定（本节即规格）。**共享表已提取**：`code.hpp` 的 `ARIA_OPCODE_LIST(X)` 双列表（枚举名 + 操作数格式类别）展开生成 `kOpCodeNames`/`kOpCodeFormats`，反汇编器按格式表分发解码；VM 主循环仍自持 switch（热路径操作数读取内联于各 case，不查表）。新增指令的同步点 = X 表加一行 + VM 加 case；反汇编器零改动（仅引入新 `OpFormat` 类别时才同步其分发 switch）。
-
-### 2.2 操作数位宽
-
-下表各类位宽与 `code.hpp` 中 `OpFormat` 格式类别的对应：`u16` 常量池索引 -> `ConstU16`；局部槽通用形态 `u16` -> `U16`（N 短变体零操作数 -> `Simple`）；Upvalue 与参数数与 `POP_N` 与插值段数 -> `U8`；跳转偏移 -> `JumpFwd`/`JumpBack`；列表/映射元素数 -> `U16`；立即整数 -> `ImmI8`。`Simple`/`RangeFlags`/`RegU8`/`Import` 为反汇编渲染层面的细分（无操作数 / MAKE_RANGE flags / 寄存器索引附可读名注释 / path 注释）。
+### 位宽
 
 | 操作数种类 | 位宽 | 用于 | 理由 |
 | :--- | :--- | :--- | :--- |
-| 常量池索引 | `u16`（2B，0..65535） | `LOAD_CONST`/全局名/字段名/`CLOSURE`/类与方法名/`IMPORT` 路径 | 模块级 chunk 常量多（串、名、函数对象），256 易超；统一 `u16` 免长短变体，简化编译器与反汇编器（已定：不设 `u8` + `LOAD_CONST_L` 式长变体，每条常量引用多 1 字节是接受的代价） |
-| 局部槽号 | N 短变体（零操作数，槽 1..8 内嵌枚举名）/ `u16`（2B）通用 | `LOAD_LOCAL` `STORE_LOCAL`（通用）+ `LOAD_LOCAL_1..8` `STORE_LOCAL_1..8`（N 短变体） | 槽 1..8 覆盖动态执行的绝大多数取局部（画像结论），1 字节指令消掉最热操作数；槽 0 与 >8 走通用 u16（65535 槽无硬上限），发射时已知、无需回填 |
-| Upvalue 索引 | `u8` | `LOAD_UPVALUE` `STORE_UPVALUE` | 256 upvalue 远超实际 |
-| 调用参数数 | `u8` | `CALL` | 255 参数足够 |
-| 跳转偏移 | `u16`（2B 无符号） | `JUMP*`（前向 `ip+=off`）/ `JUMP_BACK`（后向 `ip-=off`） | 方向编码于 opcode，各得 64KB 量程；后向恒无条件（while/for/for-in 回边），条件跳转恒前向（§2.3/§4.12） |
-| `POP_N` 计数 | `u8` | `POP_N` | 块结束清理临时，单次 255 足够 |
-| 列表/映射元素数 | `u16`（2B） | `MAKE_LIST` `MAKE_MAP` | 字面量可能 >255 元素；这俩不热，`u16` 免分批 lowering |
-| 插值段数 | `u8`（1B） | `BUILD_STRING` | 单串 255 段（127 档）足够，超限编译期拒绝 |
-| 立即整数 | `i8`（1B 有符号，-128..127） | `LOAD_IMM` | 0/1/-1/小下标等高频小整数；大整数走 `LOAD_CONST` |
-| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器分单例/类两段（单例段 2 格 + 类段 13 格，共 15 格），`u8` 富余 |
+| 常量池索引 | `u16` | `LOAD_CONST` / 全局名 / 字段名 / `CLOSURE` / 类与方法名 / `IMPORT` | 模块级常量多，256 易超；统一 `u16` 免长短变体（不设 `u8` + `_L` 长变体，每条常量引用多 1 字节是接受的代价） |
+| 局部槽号 | 零操作数（槽 1..8 内嵌枚举名）/ `u16` 通用 | `LOAD/STORE_LOCAL_1..8` + `LOAD/STORE_LOCAL` | 槽 1..8 覆盖绝大多数取局部（画像结论），1 字节指令消掉最热操作数；槽 0 与 >8 走通用形态 |
+| Upvalue 索引 | `u8` | `LOAD/STORE_UPVALUE` | 256 远超实际；超限编译期 `TooManyUpvalues` |
+| 调用参数数 | `u8` | `CALL` `CALL_METHOD` | 255 参数足够，超限编译期 `TooManyArguments` |
+| 跳转偏移 | `u16` 无符号 | `JUMP*`（前向 `ip += off`）/ `JUMP_BACK`（后向 `ip -= off`） | 方向编码于 opcode，各得 64KB 量程；回边恒无条件、条件跳转恒前向，故无需有符号域与长变体 |
+| `POP_N` 计数 | `u8` | `POP_N` | 单次 255 足够，更大由 `emit_pop_n` 分块 |
+| 列表/映射元素数 | `u16` | `MAKE_LIST` `MAKE_MAP` | 字面量可能 >255；这俩不热，`u16` 免分批 lowering |
+| 插值段数 | `u8` | `BUILD_STRING` | 单串 255 段（127 档）足够，超限编译期拒绝 |
+| 立即整数 | `i8`（-128..127） | `LOAD_IMM` | 0/1/-1/小下标等高频小整数；大整数走 `LOAD_CONST` |
+| 值寄存器索引 | `u8` | `LOAD_REG` | 寄存器分单例段 2 格 + 类段 12 格 = 14 格，`u8` 富余 |
 
-### 2.3 操作数位宽策略：N 短变体与方向拆分
+### N 短变体与跳转方向拆分
 
-局部槽与跳转这两类高频/可能溢出的操作数，分别用不同策略保范围又省字节。
+**局部槽**：`LOAD/STORE_LOCAL` 是通用形态（`slot:u16`），槽 1..8 直接发零操作数短变体（槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射侧按枚举差换算、VM 侧逐 case 写死槽号）。槽号在分配时就确定，**发射即定形态、无需回填**。
 
-**局部槽 -- N 短变体 + `u16` 通用**：`LOAD_LOCAL`/`STORE_LOCAL` 为通用形态（`slot:u16`，3B）；槽 1..8 编译器直接发零操作数短变体 `LOAD_LOCAL_1..8`/`STORE_LOCAL_1..8`（1B，槽号内嵌枚举名尾号，表内 8 行连续由 `code.hpp` static_assert 钉住，发射侧按枚举差换算 opcode、VM 侧逐 case 写死槽号常量）。槽号在编译器分配槽时就确定，**发射时即定形态、无需回填**；槽 0（哑元/this）与 >8 走通用形态，`u16` = 65535 槽无硬上限。
+**跳转**：偏移 `u16` 无符号、方向在 opcode--前向 `JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`/`JUMP_NE`，后向仅 `JUMP_BACK` 且恒无条件。依据：aria 只有 `while`/`for`/`for-in`（无 `do-while`），回边即循环体末尾跳回条件判断处；`if`/`while` 条件、`&&`/`||` 短路与 `match` 恒前向。前向跳转仍需回填（先占位、目标确定后写偏移），但只有一种宽度、无短/长选择。代价是单条跳转封顶 64KB，超限报 `CodeUnitTooLarge`。
 
-**跳转 -- `u16` + 方向拆分（无长变体）**：偏移 `u16` 无符号，方向编码于 opcode：前向（`ip += off`）`JUMP`/`JUMP_TRUE`/`JUMP_FALSE`/`JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP`/`JUMP_NE`，后向（`ip -= off`）`JUMP_BACK`（仅此一条、且无条件）。依据：aria 只有 `while`/`for`/`for-in` 三种循环（文法无 `do-while`/`repeat-until`），回边恒为「循环体末尾无条件跳回条件判断处」-- 后向跳转天然恒无条件；条件跳转（`if`/`while` 条件、`&&`/`||` 短路、`match`）恒前向。故前向/后向各分得完整 `u16` 量程（64KB，约 26K 指令），无需有符号 `i16` 的 ±32KB，也无需 `_L` 长变体与分支松弛。
+## 2. 栈效应记号
 
-| 操作数 | 何时可知 | 策略 |
-| :--- | :--- | :--- |
-| 局部槽号 | 编译器分配槽时即知 | 槽 1..8 发 N 短变体（零操作数），其余 `u16` 通用，零回填 |
-| 后向跳转偏移 | 发射时已知（回边目标先于跳转） | `u16`，`JUMP_BACK` |
-| 前向跳转偏移 | 回填时才知（前向目标后于跳转） | `u16`，方向在 opcode；超 64KB 编译错误 |
+- 栈横向写出、**右侧为栈顶**：`[a, b]` 表示 `a` 在下、`b` 在顶；`...` 表示更深栈内容。
+- `[a, b] -> [c]`：弹 `a,b` 压 `c`，净 -1。
 
-> 前向跳转仍需回填（先占位、目标确定后写偏移），但只有一种宽度（`u16`），回填即定值、无短/长选择、无重排 -- 比「`i16` + 长变体 + 分支松弛」简单得多。后向跳转发射时已知，未来若需长变体也无需回填（与局部槽同性质）。代价：单条跳转量程封顶 64KB，超限（超大函数/超大模块顶层）报编译错误。
+**STORE 系列统一 peek-store**：赋值是表达式、须产出值（`x = e` 的值即 `e`；`x += e`、`++x` 返回新值），故所有 `STORE_*` **只消费定位元、保留被存值于栈顶**：
 
-## 3. 栈效应记号
-
-- 栈横向写出，**右侧为栈顶**：`[a, b]` 表示 `a` 在下、`b` 在顶。
-- `...` 表示无关的更深栈内容（省略）。
-- 形如 `[a, b] -> [c]`：弹出 `a,b`，压入 `c`，净效应 -1。
-
-### 3.1 STORE 系列统一「peek-store」约定（已落地）
-
-文法 `expression -> assignment`，赋值是**表达式**，须产出值（`x = e` 的值即 `e` 的值；`x += e`、`++x` 返回新值，见 `.agents/reference/specs/lowering.md` §5）。为此所有 `STORE_*` 统一为 **peek-store**：**只消费定位元（locator），保留被存值于栈顶**。
-
-| 指令 | 栈效应（peek-store） |
+| 指令 | 栈效应 |
 | :--- | :--- |
 | `STORE_LOCAL` / `STORE_UPVALUE` / `STORE_GLOBAL` / `STORE_THIS_FIELD` | `[v] -> [v]` |
-| `STORE_FIELD idx` | `[obj, v] -> [v]` |
+| `STORE_FIELD` | `[obj, v] -> [v]` |
 | `STORE_INDEX` | `[obj, idx, v] -> [v]` |
 
-> `STORE_FIELD` 接收者为 `ObjClass` 时即类上赋值 -- `MAKE_STATIC` 的镜像形态（写遮蔽落接收类自身表，见 §5.5）。
->
-> **为何必须是两条镜像指令**：静态成员的「创建」（类体内，栈 `[class, v]`，出口留 `class` 弹 `v`）与「赋值」（体外
-> `Foo.x = v`，栈进同形 `[class, v]`，出口却要弹 `class` 留 `v` 以保赋值表达式的值）**栈进同形、出口要求互反**，
-> 单一栈形态服务不了两者：复用 peek-store `STORE_FIELD` 于创建，需每成员额外 `DUP class` + 尾 `POP` 两条凑指令；
-> 改弹净形态则赋值表达式约定（值留栈顶）会迫使**热路径**每次字段赋值多一次 `DUP` 右值。故取专用指令
-> `MAKE_STATIC`/`MAKE_METHOD [class,v] -> [class]`，两场景均零冗余，成本落在一次性创建路径。
+语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。故本文各 lowering 图末尾的「新值」就是赋值表达式的值。
 
-语句上下文（`exprStmt`）在 `STORE_*` 后补一条 `POP` 丢弃。此约定**消解** `.agents/reference/specs/lowering.md` §5 末尾「STORE 留值与否未决」的备注：采用留值，§4 各序列的末尾 `[]` 应理解为「语句上下文补 `POP` 后」的形态。详见 §5.3。
+## 3. 指令详表
 
-> 备选：pop-store（消费被存值），表达式上下文需额外旋转/临时槽保值。peek-store 更统一，本文采之。
+每条给出操作数 / 栈效应 / 语义；`无` 表无操作数。
 
-## 4. 指令详表
-
-每条给出：操作数（位宽）/ 栈效应 / 语义。`无` 表无操作数。
-
-### 4.1 停机与空操作
+### 3.1 停机与空操作
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `HALT` | 无 | `... -> [..., nil]` | 停止 VM 主循环；断言不在协程内、压 nil 后返 true。真实程序不产 `HALT`（编译器从不发射，仅手写字节码用），顶层退出走 `RETURN`（§4.17） |
+| `HALT` | 无 | `... -> [..., nil]` | 停止主循环；断言不在协程内、压 nil 后返 true。编译器从不发射（顶层退出走 `RETURN`），仅供手写字节码 |
 | `NOP` | 无 | `... -> ...` | 空操作（占位、调试断点） |
 
-### 4.2 常量与字面量加载
+### 3.2 常量与字面量加载
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_CONST` | `idx:u16` | `[] -> [c]` | 压入常量池 `constants_[idx]`（串/大整数/浮点/函数对象） |
-| `LOAD_IMM` | `n:i8` | `[] -> [n]` | 压入小整数立即数（避开常量池，0/1/-1/小下标高频）。`.agents/reference/specs/lowering.md` 中记作 `LOAD_I` |
+| `LOAD_CONST` | `idx:u16` | `[] -> [c]` | 压入常量池 `constants_[idx]`（串 / 大整数 / 浮点 / 函数原型） |
+| `LOAD_IMM` | `n:i8` | `[] -> [n]` | 压入小整数立即数（避开常量池） |
 | `LOAD_NIL` | 无 | `[] -> [nil]` | 压入 nil |
 | `LOAD_TRUE` | 无 | `[] -> [true]` | 压入 true |
 | `LOAD_FALSE` | 无 | `[] -> [false]` | 压入 false |
-| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压栈 VM 值寄存器 `n` 的值（`AriaVM::registers_` 同时持 VM 单例与 13 个 bootstrap 类，bootstrap 填充、tracer 逐格标根；发射点跨两段：缺省参数印章 DefaultMark、match 无臂哨兵 MatchNoArm、隐式超类 ObjectClass；**寄存器只读，无 STORE_REG**；注册表单一事实源见 `runtime/value_register.hpp`） |
+| `LOAD_REG` | `n:u8` | `[] -> [regs[n]]` | 压值寄存器 `n`（注册表见 `runtime/value_register.hpp`：单例段 2 格 DefaultMark/MatchNoArm + 类段 12 格；bootstrap 填充、tracer 逐格标根；**只读，无 STORE_REG**）。发射点 = 缺省参数印章、match 无臂哨兵、隐式超类 ObjectClass |
 
-> 注：NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `.agents/reference/value.md`）。`LOAD_NIL` 必须产出 `Value::nil_val()`，不可依赖零填充。
+> NanBoxing 下 `Value{}` 零填充是 f64 `0.0` **非 nil**（见 `value.md`），`LOAD_NIL` 必须产出 `Value::nil_val()`。
 
-### 4.3 局部变量
-
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `LOAD_LOCAL` | `slot:u16` | `[] -> [v]` | 压入当前帧 `slots_[slot]`（通用形态，槽 0 与 >8 用） |
-| `STORE_LOCAL` | `slot:u16` | `[v] -> [v]` | peek-store 到 `slots_[slot]`（通用形态） |
-| `LOAD_LOCAL_1..8` | 无 | `[] -> [v]` | 压入 `slots_[k]`，槽号 k 内嵌枚举名尾号（1B，槽 1..8 覆盖动态执行的绝大多数，画像结论） |
-| `STORE_LOCAL_1..8` | 无 | `[v] -> [v]` | peek-store 到 `slots_[k]`（1B） |
-
-N 短变体 16 条与通用形态语义逐位一致，仅编码不同；发射选择收口在 `CodeUnit::emit_load_local`/`emit_store_local`（slot 1..8 发 N 短变体，否则通用 + u16），发射侧按枚举差换算 opcode、VM 侧逐 case 写死槽号常量（表内 8 行连续由 `code.hpp` static_assert 钉住，为发射侧换算前提）。
-
-局部槽由编译器在函数/块作用域内分配：普通函数帧 slot 0 为哑元（callee 占位），用户局部自槽 1 起、形参占 slot 1..n（即函数前 n 个局部）；方法帧形 `[this, a1..aN]`，`this` 占槽 0（首个具名局部）、形参自槽 1 起（见 §4.8）。
-
-**局部区预留约定**：`CallFrame.slots` 指向帧入口的 callee（参数已躺在 `slots[1..argc+1)`），但**槽区不会被自动保留**--临时值压栈恰好会写进 `slots[k]`。故编译器须保证**每个局部槽在作为活动局部使用前已被填充**，使已填充槽位于活动栈顶之下、临时值在其上压栈，避免覆写。填充机制（编译器侧）：声明局部时**不预占**（`declare_local` 仅登记并标未初始化、不发指令），其初始化器求值产生的值（或无初始化器时一条 `LOAD_NIL`）**恰好压在该局部槽位**即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。for-in 的 `<iter>`/pattern 无例外同用值填槽（`<iter>` 在 `iter()` 出值后 declare、值即该槽；pattern 每轮 fresh scope 值填槽），无 `LOAD_NIL` 预占、无 `STORE_LOCAL`/`POP` 回绑。顶层帧同理（无参数，各顶层局部按上述机制填充）。
-
-### 4.4 Upvalue 与闭包
+### 3.3 局部变量
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_UPVALUE` | `idx:u8` | `[] -> [v]` | 压入当前闭包的第 `idx` 个 upvalue（开指栈槽或已关闭值） |
-| `STORE_UPVALUE` | `idx:u8` | `[v] -> [v]` | peek-store 到该 upvalue |
-| `CLOSE_UPVALUE` | 无 | `[] -> []` | 批量关闭所有槽址 >= 当前栈顶的开 upvalue：值迁入堆上的 `ObjUpvalue.closed`，无弹栈（弹栈由前置 `POP_N` 承担；对齐 Lua `OP_CLOSE`）。作用域退出时编译器在弹区 `POP_N` 后发射（仅当弹区含被捕获局部） |
+| `LOAD_LOCAL` | `slot:u16` | `[] -> [v]` | 压入当前帧 `slots_[slot]`（槽 0 与 >8 用） |
+| `STORE_LOCAL` | `slot:u16` | `[v] -> [v]` | peek-store |
+| `LOAD_LOCAL_1..8` | 无 | `[] -> [v]` | 压入 `slots_[k]`，k 内嵌枚举名 |
+| `STORE_LOCAL_1..8` | 无 | `[v] -> [v]` | peek-store 到 `slots_[k]` |
 
-> 三条均已落地。编译期单函数捕获上限 = u8 索引域容量 256（索引 0..255），超限报 `TooManyUpvalues`。`CLOSE_UPVALUE` 的发射点由 CodeGen `emit_pop_locals_to` 统一收口（退出作用域与 break/continue 共用）：弹出比目标深度更深的局部区时整区一条 `POP_N`（被捕获局部一并计数），弹区含被捕获局部才追加一条 `CLOSE_UPVALUE`（批量关闭槽址 >= 新栈顶的开 upvalue；弹区槽已在新栈顶之上，不 push 不覆写即安全，且两指令均无分配无安全点；外层帧槽址恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部）。落点：块/循环/try 的 `end_scope` 退出、for-in per-iteration 出口（每轮新鲜绑定语义：每轮关闭旧 upvalue，下一轮捕获全新一份）、break/continue 跳出循环；此外帧退出（RETURN / unwind 丢弃区间）由 VM `exit_frame`/`close_upvalues` 整段关闭，无需指令（见 §5.9 与 runtime.md）。`STORE_UPVALUE` 的 peek-store 与 STORE_LOCAL/STORE_GLOBAL 同约定（§3.1）。
+N 短变体与通用形态语义逐位一致，选择收口在 `CodeUnit::emit_load_local`/`emit_store_local`。
 
-### 4.5 全局变量
+**局部槽分配与值填槽**：普通函数帧槽 0 为哑元（callee 占位），用户局部自槽 1 起、形参占槽 1..n；方法帧形 `[this, a1..aN]`，`this` 占槽 0。「槽区不会被自动保留」--临时值压栈恰好会写进 `slots[k]`，故编译器须保证**每个局部槽在作为活动局部使用前已被填充**。填充机制：声明局部时**不预占**（`define_local_or_fail`/`add_local` 只登记、不发指令），初始化器的值（或无初始化器时一条 `LOAD_NIL`）恰好压在该槽位即完成填充（依赖「declare 与 init 原子相邻、此前所有局部已填充」不变式，故「下个局部 slot = 当前栈高」，无需 store/pop）。for-in 的 `<iter>` 与 pattern 同用值填槽。
 
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹出值，以 `constants_[name]`（ObjString）为键 set 写入当前模块 globals（命中覆写；重定义属编译期语义错误 `RedefinedVariable`，运行期按定义处理；用于顶层 `var`/`fun`/import 别名） |
-| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 按名查当前模块 globals 压入，miss 回退 VM 级 builtins 表（6 个函数 type/str/println/assert/clock/Error/is_a/is_subclass + 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class），再 miss 报 `UndefinedVariable` |
-| `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals 表；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var` 声明），不回退 builtins |
-
-全局表是各 `ObjModule` 持有的 `AriaHashTable`（即 `HashTable<Value, Value, ValueHash, ValueEq>`，键为装箱的 intern `ObjString*`）。`name` 操作数是常量池中的 ObjString 索引。
-
-### 4.6 字段（实例属性）
+### 3.4 Upvalue 与闭包
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_FIELD` | `name:u16` | `[obj] -> [v]` | 弹出实例，压入 `obj.name`。若 `name` 是方法，压入**绑定方法** `ObjBoundMethod`（绑 `this=obj`），供后续 `CALL` |
-| `STORE_FIELD` | `name:u16` | `[obj, v] -> [v]` | peek-store：弹 `obj`，存 `obj.name = v`，留 `v` |
+| `LOAD_UPVALUE` | `idx:u8` | `[] -> [v]` | 压入当前闭包第 `idx` 个 upvalue（开指栈槽或已关闭值） |
+| `STORE_UPVALUE` | `idx:u8` | `[v] -> [v]` | peek-store（写穿外层槽或已关 cell，不查 init、不 mark） |
+| `CLOSE_UPVALUE` | 无 | `[] -> []` | 批量关闭所有槽址 >= 当前栈顶的开 upvalue：值迁入 `ObjUpvalue.closed`，**不弹栈**（弹栈由前置 `POP_N` 承担，对齐 Lua `OP_CLOSE`） |
 
-`LOAD_FIELD` 对方法名返回绑定方法：方法值**读取**（`obj.m`、传参、存集合）的语义载体仍是它（现场绑定，每次访问产出新 bound -- 缓存已于 2026-09-20 取消，`===` 身份不复存在，内容相等走 `==`）；而 `obj.m(args)` 的**调用**已由 `PREPARE_METHOD` + `CALL_METHOD` 两段表达（见 §5.6/§6.2）。
+`CLOSE_UPVALUE` 的发射收口在 `CodeGen::emit_pop_locals_to`（退出作用域与 break/continue 共用）：弹区整区一条 `POP_N`（被捕获局部一并计数），**弹区含被捕获局部才追加**一条 `CLOSE_UPVALUE`（两指令均无分配无安全点；外层帧槽址恒低于本帧，故新栈顶之上的开 upvalue 只属弹区局部）。落点：块/循环/try 的 `end_scope`、for-in 每轮出口（每轮关闭旧 upvalue，下一轮重新捕获）。帧退出（RETURN / unwind 丢弃区间）由 VM `exit_frame`/`close_upvalues` 整段关闭，无需指令。
 
-### 4.7 下标
-
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `LOAD_INDEX` | 无 | `[obj, idx] -> [v]` | 弹 `idx, obj`，压入 `obj[idx]`（list/map/string；越界/类型不符 -> 运行时错误） |
-| `STORE_INDEX` | 无 | `[obj, idx, v] -> [v]` | peek-store：弹 `idx, obj`，存 `obj[idx] = v`，留 `v` |
-
-> 下标操作数全在栈上，无内联操作数。`LOAD_INDEX`/`STORE_INDEX` 的取数顺序（栈顶为 `idx`、其下为 `obj`）即 `.agents/reference/specs/lowering.md` §4.3 假设的形态。
-
-### 4.8 this 字段（优化）
-
-`this` 在方法帧中固定占槽 0（方法帧 `[this, a1..aN]`，this 替代 callee 占位）。`obj.field` 当 `obj` 恰为 `this` 时，可省去压 `this` 这一步：
+### 3.5 全局变量
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压入 `this.name`（`this` 取自帧槽 0，不压栈） |
+| `DEF_GLOBAL` | `name:u16` | `[v] -> []` | 弹值，以 `constants_[name]` 为键写入当前模块 globals（命中覆写）；用于顶层 `var`/`fun`/`def`/import 别名 |
+| `LOAD_GLOBAL` | `name:u16` | `[] -> [v]` | 查当前模块 globals，miss 回退 VM 级 builtins 表（8 个函数 `type`/`str`/`println`/`assert`/`clock`/`Error`/`is_a`/`is_subclass` + 12 个内建类 `Object`/`Exception`/`Iterator`/`List`/`Map`/`String`/`Range`/`Function`/`BoundMethod`/`Module`/`Coroutine`/`Class`），再 miss 报 `UndefinedVariable` |
+| `STORE_GLOBAL` | `name:u16` | `[v] -> [v]` | peek-store 到模块 globals；未定义报 `UndefinedVariable`（赋值不隐式创建，必须先 `var`），**不回退 builtins** |
+
+全局表是各 `ObjModule` 持有的 `AriaHashTable`（键为装箱的 intern `ObjString*`），`name` 操作数是常量池索引。builtins 表是构造期一次性填充的只读表，不引入 `LOAD_BUILTIN` 指令。
+
+### 3.6 字段
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `LOAD_FIELD` | `name:u16` | `[obj] -> [v]` | 弹接收者，压 `obj.name`；命中实例方法时压**绑定方法**（供后续 `CALL`），命中原值原样压 |
+| `STORE_FIELD` | `name:u16` | `[obj, v] -> [v]` | peek-store：弹 `obj`、存 `obj.name = v`、留 `v` |
+
+`obj.m(args)` 的**调用**不走 `LOAD_FIELD`（两段式见 §4.5）；`obj.m` 的**读取**仍经此指令现场绑定，**每次访问产出新 `ObjBoundMethod`**（不缓存：类/父类改写方法要对既有实例立即生效，`===` 因此不为真，内容相等走 `==`）。
+
+`STORE_FIELD` 的接收者是 `ObjClass` 时即类上赋值（写遮蔽落接收类自身表）；类体内创建静态成员的镜像指令是 `MAKE_STATIC`，两者栈进同形、出口互反，故必须是两条指令。
+
+### 3.7 下标
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `LOAD_INDEX` | 无 | `[obj, idx] -> [v]` | 压入 `obj[idx]`（list/map/string；越界/类型不符为运行期错误） |
+| `STORE_INDEX` | 无 | `[obj, idx, v] -> [v]` | peek-store |
+
+栈顶为 `idx`、其下为 `obj`，无内联操作数。
+
+### 3.8 this 字段
+
+`this` 在方法帧固定占槽 0（方法帧 `[this, a1..aN]`）。`obj.field` 当 `obj` 恰为 `this` 时省去压 `this`：
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `LOAD_THIS_FIELD` | `name:u16` | `[] -> [v]` | 压 `this.name`（this 取帧槽 0，不压栈） |
 | `STORE_THIS_FIELD` | `name:u16` | `[v] -> [v]` | peek-store 到 `this.name` |
 
-纯 `this` 表达式经专用解析（沿 fn ctx 链找最近实例方法）：当前帧命中 -> `LOAD_LOCAL 0`；嵌套函数 -> 捕获为 upvalue（`LOAD_UPVALUE`，见 §5.5）。
+纯 `this` 表达式：当前帧是实例方法 -> `LOAD_LOCAL 0`；嵌套函数 -> 捕获为 upvalue（`LOAD_UPVALUE`）。链上无实例方法时报编译期错误。
 
-### 4.9 算术 / 比较 / 逻辑
+### 3.9 算术 / 比较 / 逻辑
 
-二元算术/比较：`[a, b] -> [r]`（弹 2 压 1，净 -1）。一元：`[a] -> [r]`（净 0）。均无操作数。
+二元 `[a, b] -> [r]`（净 -1），一元 `[a] -> [r]`（净 0），均无操作数。
 
 | 操作码 | 栈效应 | 语义 |
 | :--- | :--- | :--- |
-| `EQUAL` | `[a, b] -> [a==b]` | 内容相等（`value_equal`：Int/F64 跨类型 IEEE 数值、Obj 调 `Object::equals` 虚函数；-0.0==0.0 true、NaN!=NaN） |
-| `NOT_EQUAL` | `[a, b] -> [a!=b]` | `EQUAL` 取反 |
-| `STRICT_EQUAL` | `[a, b] -> [a===b]` | 严格相等（`value_identical`：类型严格、f64 按位、Obj 指针；1===1.0 false、-0.0!==0.0、NaN 规范化后 NaN===NaN true） |
-| `STRICT_NOT_EQUAL` | `[a, b] -> [a!==b]` | `STRICT_EQUAL` 取反 |
-| `GREATER` | `[a, b] -> [a>b]` | 数值比较；类型不符 -> 运行时错误 |
-| `GREATER_EQUAL` | `[a, b] -> [a>=b]` | |
-| `LESS` | `[a, b] -> [a<b]` | |
-| `LESS_EQUAL` | `[a, b] -> [a<=b]` | |
-| `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子取实现再调（String 拼接即内建钩子、用户类可重载，仅左操作数触发），取不到报 UndefinedProperty（非对象左值才报 TypeMismatch） |
-| `SUBTRACT` | `[a, b] -> [a-b]` | 数值减 |
-| `MULTIPLY` | `[a, b] -> [a*b]` | |
-| `DIVIDE` | `[a, b] -> [a/b]` | 数值除（已定：双 Int 走整数除法（截断）、除零报 `DivisionByZero`，MIN / -1 报 `IntegerOverflow`；含 F64 走 IEEE） |
-| `MOD` | `[a, b] -> [a%b]` | 整数余数按向零截断的商计算，MIN % -1 得 0，模零报 `ModuloByZero`；含 F64 走 fmod |
-| `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果为 bool） |
+| `EQUAL` | `[a, b] -> [a==b]` | 内容相等（`value_equal`：Int/F64 跨类型 IEEE 数值、Obj 调虚 `equals`；`-0.0 == 0.0` 真、`NaN != NaN`） |
+| `NOT_EQUAL` | `[a, b] -> [a!=b]` | 取反 |
+| `STRICT_EQUAL` | `[a, b] -> [a===b]` | 严格相等（`value_identical`：类型严格、f64 按位、Obj 指针；`1 === 1.0` 假、`-0.0 !== 0.0`、`NaN === NaN` 真） |
+| `STRICT_NOT_EQUAL` | `[a, b] -> [a!==b]` | 取反 |
+| `GREATER` / `GREATER_EQUAL` / `LESS` / `LESS_EQUAL` | `[a, b] -> [bool]` | 数值比较；类型不符为运行期错误 |
+| `ADD` | `[a, b] -> [a+b]` | 数值加；对象左值经 `__add__` 钩子（String 拼接即内建钩子、用户类可重载，**仅左操作数触发**），钩子 miss 报 `UndefinedProperty`，非对象左值报 `TypeMismatch` |
+| `SUBTRACT` / `MULTIPLY` | `[a, b] -> [r]` | 数值减 / 乘 |
+| `DIVIDE` | `[a, b] -> [a/b]` | 双 Int 走整数除法（向零截断），除零报 `DivisionByZero`，`MIN / -1` 报 `IntegerOverflow`；含 F64 走 IEEE |
+| `MOD` | `[a, b] -> [a%b]` | 整数余数按向零截断的商，`MIN % -1` 得 0，模零报 `ModuloByZero`；含 F64 走 fmod |
+| `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负（Int 的 MIN 报 `IntegerOverflow`）；对象经 `__neg__` 钩子 |
 
-> 9 个数值二元算子（4 比较 + 5 算术）的对象左值全有对应钩子：`__lt__`/`__le__`/`__gt__`/`__ge__`/`__add__`/`__sub__`/`__mul__`/`__div__`/`__mod__`，形态同 `ADD` 行（仅左操作数触发，钩子 miss 报 UndefinedProperty；非对象左值报 TypeMismatch）。
+9 个数值二元算子（4 比较 + 5 算术）的对象左值全有钩子：`__lt__`/`__le__`/`__gt__`/`__ge__`/`__add__`/`__sub__`/`__mul__`/`__div__`/`__mod__`。整数加/减/乘/除与一元取负的结果须在 i48 域内，越界报 `IntegerOverflow`，不回绕、不自动升浮点；复合赋值与前置自增复用这些指令，算术失败不写回（已发生的操作数副作用保留）。
 
-> 逻辑 `&&`/`||` **短路求值**，不设独立 `AND`/`OR` 指令，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（见 §5.2）。区间 `..`/`...` 经 `MAKE_RANGE` 发射（`flags` 位义见 `code.hpp` `kRangeFlagExclusive`，落地形态见 §6.3）。
+`&&`/`||` 短路，不设 `AND`/`OR`，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（§4.2）。
 
-整数加、减、乘、除与一元取负的结果须在 i48 域内，越界经 VM 异常通道报 `IntegerOverflow`；不回绕、不自动升浮点。复合赋值与前置自增/自减复用这些指令，算术失败时不执行写回。
-
-### 4.10 栈操作
+### 3.10 栈操作
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
 | `POP` | 无 | `[v] -> []` | 丢弃栈顶 |
-| `POP_N` | `n:u8` | `[v1..vn] -> []` | 丢弃栈顶 `n` 个（块结束清理多个临时） |
+| `POP_N` | `n:u8` | `[v1..vn] -> []` | 丢弃栈顶 `n` 个 |
 | `DUP` | 无 | `[a] -> [a, a]` | 复制栈顶 1 槽 |
-| `DUP2` | 无 | `[a, b] -> [a, b, a, b]` | 复制栈顶 2 槽（保序），对应 Python `DUP_TOP_TWO` |
+| `DUP2` | 无 | `[a, b] -> [a, b, a, b]` | 复制栈顶 2 槽（保序） |
 
-`DUP`/`DUP2` 为复合赋值 / 前置 `++`/`--` 的 locator 保留而设（见 `.agents/reference/specs/lowering.md`），亦是通用栈操作。
+`DUP`/`DUP2` 为复合赋值的 locator 保留而设（`lowering.md`），亦是通用栈操作。
 
-### 4.11 输出 / 调试
+### 3.11 控制流
 
-（无专用 opcode：输出走内建 `println`/`str`，调试走 `NOP` 与调试构建开关；本节保留节号以稳住交叉引用。）
-
-### 4.12 控制流（跳转）
-
-跳转偏移为 `u16` 无符号，方向编码于 opcode：前向（`JUMP*`）`ip += off`、后向（`JUMP_BACK`）`ip -= off`。偏移相对于**跳转指令操作数末尾的下一字节**（即 `ip` 在读完操作数后的位置）。
+偏移相对于**读完操作数后的下一字节**。
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `JUMP` | `off:u16` | `... -> ...` | 前向无条件跳 `ip += off` |
-| `JUMP_TRUE` | `off:u16` | `[v] -> []` | 弹出 `v`；真则前向跳，假则落空 |
-| `JUMP_FALSE` | `off:u16` | `[v] -> []` | 弹出 `v`；假则前向跳，真则落空 |
-| `JUMP_TRUE_OR_POP` | `off:u16` | `[v] -> [v]`（真，跳）/ `[v] -> []`（假，落空） | 真则**跳且留值**（结果即 `v`），假则弹落空。用于 `||` 短路 |
-| `JUMP_FALSE_OR_POP` | `off:u16` | `[v] -> [v]`（假，跳）/ `[v] -> []`（真，落空） | 假则**跳且留值**（结果即 `v`），真则弹落空。用于 `&&` 短路 |
-| `JUMP_BACK` | `off:u16` | `... -> ...` | 后向无条件跳 `ip -= off`；while/for/for-in 回边、`continue`；回边兼 GC 安全点（循环负载的回收触发点） |
-| `JUMP_NE` | `off:u16` | `[a, b] -> []` | `EQUAL;JUMP_FALSE` 融合形：`value_equal` 判等，假则前向跳 |
+| `JUMP` | `off:u16` | `... -> ...` | 前向无条件 |
+| `JUMP_TRUE` | `off:u16` | `[v] -> []` | 弹 `v`，真则前向跳 |
+| `JUMP_FALSE` | `off:u16` | `[v] -> []` | 弹 `v`，假则前向跳 |
+| `JUMP_TRUE_OR_POP` | `off:u16` | 真：`[v] -> [v]`（跳且留值）；假：`[v] -> []` | `||` 短路 |
+| `JUMP_FALSE_OR_POP` | `off:u16` | 假：`[v] -> [v]`（跳且留值）；真：`[v] -> []` | `&&` 短路 |
+| `JUMP_BACK` | `off:u16` | `... -> ...` | 后向无条件；while/for/for-in 回边、`continue`。回边兼 GC 安全点 |
+| `JUMP_NE` | `off:u16` | `[a, b] -> []` | `EQUAL; JUMP_FALSE` 的融合形：`value_equal` 判等，不等则前向跳 |
 
-`_OR_POP` 变体（"命中跳，否则弹"）保证短路时被测值本身成为表达式结果（`a && b` 当 `a` 假时结果为 `a`，无需重压）；落空分支弹掉被测值，使跳/落空两路在汇合点栈深一致。`if`/`while` 等条件判断用弹出版 `JUMP_TRUE`/`JUMP_FALSE`。
+`_OR_POP` 变体保证短路时被测值本身成为表达式结果（`a && b` 当 `a` 假时结果为 `a`），落空分支弹掉被测值使两路在汇合点栈深一致。`if`/`while` 条件用弹出版。
 
-**比较跳转融合形（仅 EQUAL）**：`JUMP_NE` 是 `EQUAL;JUMP_FALSE` 相邻对的等价单指令化，省一次派发往返，吸收三类站点：条件表达式恰为 `==` 二元的条件跳转站（`if`/`while`/`for` 条件、三元 `if` 表达式，经 `CodeGen::emit_cond_jump` 收口）、`match` 臂判等与缺省参数印章判等（两处自产 EQUAL，按构造直发融合形）；`for-in` 的 `has_next` 等调用结果条件不融合。
+**融合只在 `==` 直连时做**：`JUMP_NE` 由 `CodeGen::emit_cond_jump` 在「条件表达式恰为 `==` 二元」时直发（`if`/`while`/`for` 条件、三元 `if` 表达式），`match` 臂判等与缺省参数印章判等两处自产 `EQUAL` 也按构造直发；判定在 **AST 形状**上做，不能看发射期尾字节--`||` 链 rhs 的 `==` 也以 `EQUAL` 结尾但那个值是链的中间结果，按尾字节改写会双弹操作数并把跳转占位覆写到已回填的链尾补丁上。`for-in` 的 `has_next` 调用结果不融合。
 
-融合判定必须在 **AST 形状**上做，不能看发射期尾字节：「流末字节恰为 EQUAL」不等于「该 EQUAL 的值即本次跳转条件」-- `||` 链 rhs 的 `==` 以 EQUAL 结尾，紧接着外层条件跳转发射，但那个 EQUAL 的值是链的中间结果而非跳转条件；按尾字节改写会双弹操作数、还把跳转占位覆写到 `||` 已回填的链尾补丁地址上（brainfuck 负载实测踩中）。故非 `==` 直连的条件一律保持 `[cond][JUMP_FALSE]` 两指令序列。VM 侧与两指令序列逐项等价：`value_equal` 判等、假则前跳。
+**`LESS; JUMP_FALSE` 有意不融合**：`LESS` 的对象臂可经 `__lt__` 钩子把控制流转进被调帧（进帧即返、被调体在下一轮 dispatch 才执行），「比较 + 按结果跳转」无法在单条指令的一个 case 内跨帧完成；数值/string 快路径虽可就地完成，但发射期无从预知接收者类型。故 `LESS` 尾保持两指令序列。
 
-**`LESS;JUMP_FALSE` 有意不融合**（设计边界，勿再立项）：`LESS` 的对象臂可经 `__lt__` 钩子把控制流转移进被调帧（`call_value` 进帧即返，被调体在下一轮 dispatch 循环才执行），「比较 + 按结果跳转」无法在单条指令的一个 case 执行内跨帧边界完成；数值与 string 快路径虽可就地完成，但发射期无从预知接收者类型，故 `LESS` 尾一律保持两指令序列。
-
-各 `JUMP*` 前向、`JUMP_BACK` 后向（方向在 opcode，偏移恒 `u16` 无符号，各 64KB 量程）。后向跳转恒无条件：aria 只有 `while`/`for`/`for-in`（无 `do-while`），回边即循环体末尾跳回条件判断处，天然无条件；条件跳转恒前向（§2.3）。
-
-### 4.13 函数调用与闭包
+### 3.12 函数调用与闭包
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调用 `callee`（`N=argc`）。callee 为 `ObjFunction` -> 按载荷调用 Aria 函数或原生入口；为 `ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返回实例）；为 `ObjBoundMethod` -> 用绑定的接收者调用方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
-| `CLOSURE` | `proto_index:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，创建 `ObjFunction` 并按原型的捕获描述表填 upvalue 数组（见下） |
+| `CALL` | `argc:u8` | `[callee, a1..aN] -> [r]` | 调 `callee`。`ObjFunction` -> 按载荷调 Aria 函数或原生入口；`ObjClass` -> 实例化（分配 `ObjInstance` + 调 `init`，返实例）；`ObjBoundMethod` -> 用绑定接收者调方法；其余对象经 `__call__` 钩子取实现后以同一调用区递归分发；非对象报 `CallNonCallable` |
+| `CLOSURE` | `proto_index:u16` | `[] -> [closure]` | 取常量池 `ObjFnProto`，建 `ObjFunction` 并按捕获描述表填 upvalue 数组，**立即压栈**（栈即根） |
 
-`CALL` **重载**函数调用与类实例化：`Foo(args)` 编译为 `LOAD Foo` + `<args>` + `CALL argc`，VM 见 callee 是 `ObjClass` 即走实例化路径。故无需独立 `NEW` 指令。
+`CALL` 兼作实例化（`Foo(args)` 编译为 `LOAD Foo` + 实参 + `CALL`），故无 `NEW` 指令。
 
-**`CLOSURE` 的捕获描述**：存于 `ObjFnProto` 元数据（非字节码尾随操作数）--`ObjFnProto` 持 `Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`，编译器 `compile_function` 尾部把子上下文（FunctionCtx）登记的捕获描述一次性 flush 进来。`CLOSURE proto_index:u16` 取常量池里的 `ObjFnProto`、建 `ObjFunction` 并立即压栈（「栈即根」），VM 遍历 `proto.upvalue_descs()` 逐个建 `ObjUpvalue`（开指槽或复用外层 upvalue）：
+**捕获描述存于 `ObjFnProto`**（`Array<UpvalueDesc>`，每条 `{is_local: bool, index: u16}`），由 `compile_function` 尾部一次性 flush，**不进字节码流**--故 `CLOSURE` 定长 3B、反汇编器线性扫即可。`is_local=true` 捕获外层帧局部槽 `index`（同槽经开链复用同一 `ObjUpvalue`，「捕获即引用」）；`false` 捕获外层闭包第 `index` 个 upvalue（穿透）。解析收口 `CodeGen::resolve_upvalue`（递归；容量超限报 `TooManyUpvalues`）。
 
-- `is_local=true`：捕获**外层帧**的局部槽 `index`（真捕获；同槽捕获经开链复用同一 `ObjUpvalue`，「捕获即引用」）。
-- `is_local=false`：捕获**外层闭包**的第 `index` 个 upvalue（穿透捕获；复制外围闭包的同下标 upvalue 指针）。
-
-`index` 用 `u16` 与 `LOAD_LOCAL` 的 `slot:u16` 同域（0..65535），无捕获范围短板。捕获描述不进字节码流，`CLOSURE` 定长 3B、反汇编器线性扫即可（无需按元数据步进 `ip`）。编译器侧捕获解析见 `CodeGen::resolve_upvalue`（递归：外层局部命中 -> `{is_local=true, slot}` 并置该局部 `is_captured`；否则穿透外层 upvalue -> `{is_local=false, idx}`；容量超限报 `TooManyUpvalues`）。
-
-### 4.14 类与对象
+### 3.13 类与对象
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 superClass，创建 `ObjClass`（名取自常量池、`super`=弹出类），压栈。无显式父类时编译器先发 `LOAD_REG ObjectClass`；内建容器五类（list/map/string/range/iterator）不可继承、非类 super 报 TypeMismatch（均运行期错误） |
-| `MAKE_METHOD` | `name:u16` | `[class, method] -> [class]` | 弹 `method`，作为**普通方法（实例方法）** `name` 注册到 `class`（**仅实例方法、仅收 Aria 函数**；静态方法 `fun` 经 `MAKE_STATIC`）；闭包戳 `defining class`（一职双任：super 来源 + 方法性标记，读路径 `ObjInstance::load_field_bound`/`LOAD_SUPER_FIELD` 据非空判绑 this）。`init` 命中时同步 `ObjClass.init_`（经 `set_field` 内聚）；`class` 留栈继续接收成员 |
-| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹 `value`，作为静态变量（`var` 声明 lowering：eager 求值初始化器后存）或**静态方法（`fun`，闭包值）**存入 `class`；不戳 `defining class` ⟹ 静态槽持函数值/lambda/原生读恒原值；`class` 留栈继续接收成员 |
-| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取自帧槽 0，父类取自**当前闭包的 defining class**（`ObjFunction.defining_class->superclass`，MAKE_METHOD 注册时戳、不经栈）；沿父链查 `name`（方法性 = defining class 戳，不看值类型）：defining class 非空的 ObjFunction 绑成 `ObjBoundMethod` 压栈供 `CALL`，其余（静态方法 fun/持函数值的静态变量/原生/静态值）原值直读压栈 |
-| `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 方法调用的**第一段**：接收者在栈顶（实参尚未求值），经 `Object::load_field` 取被调值压栈（执行体 `run_prepare_method`）。解析先于实参求值 ⟹ 解析失败时实参根本不跑、实参改写成员不影响本次调用（§5.6）。错误面与 `LOAD_FIELD` 同：非对象接收者由执行体报「does not support field access」，成员 miss 的文案由宿主 `load_field` override 就地烘焙 |
-| `CALL_METHOD` | `argc:u8` | `[recv, target, a1..aN] -> [r]` | 方法调用的**第二段**：待调值在 `peek(argc)`、接收者在 `peek(argc + 1)`；实参整体下移一格补掉待调值占的那格得调用区 `[recv, a1..aN]`（槽 0 = receiver = this），交 `call_value` 统一分发（执行体 `run_call_method`）。**纯调用**，不再解析；**不物化 ObjBoundMethod**（见 §5.6/§6.2） |
-| `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 `n` 个为元素创建 `ObjList`（保序），压栈 |
-| `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 `n` 对 `(k,v)` 逐对 `set` 创建 `ObjMap`（重复键后键胜），压栈 |
-| `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 取栈顶 `from, to`（或 unbounded 时单值 `from`）创建 `ObjRange`（字段同名）；`flags` 位义见 `code.hpp`（`..` 含、`...` 不含、无上界不编含否位）。供 `for-in` 遍历区间（`ObjRange` 实现迭代协议） |
-| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 `n` 段按序拼成单串压栈（插值串 `"...${...}..."` 收拢，字面段为 `LOAD_CONST` 驻留串、表达式段为求值结果）；渲染语义与 `str()` 同源（`stringify`，`ObjString` 段直写字节零渲染），StringBuilder 量长定容单次分配 |
+| `MAKE_CLASS` | `name:u16` | `[super] -> [class]` | 弹 super 建 `ObjClass`。无显式父类时编译器先发 `LOAD_REG ObjectClass`；**内建容器五类（List/Map/String/Range/Iterator）不可作 super**（`cannot inherit from built-in class '<name>'`）、非类 super 报 `TypeMismatch`（均运行期错误） |
+| `MAKE_METHOD` | `name:u16` | `[class, method] -> [class]` | 弹方法闭包、注册为实例方法（**仅实例方法、仅收 Aria 函数**）；戳 `defining_class`（一职双任：super 来源 + 方法性标记）。命中 `"init"` 时经 `set_field` 同步 `ObjClass.init_`；`class` 留栈继续接收成员 |
+| `MAKE_STATIC` | `name:u16` | `[class, value] -> [class]` | 弹值存为静态变量或静态方法；**不戳** `defining_class` ⟹ 静态槽持函数值读恒原值 |
+| `LOAD_SUPER_FIELD` | `name:u16` | `[] -> [v]` | `this` 取帧槽 0，父类取当前闭包的 `defining_class->superclass`，沿父链查 `name`；带方法戳的闭包绑成 `ObjBoundMethod`，其余原值直读 |
+| `PREPARE_METHOD` | `name:u16` | `[recv] -> [recv, target]` | 两段式第一段：接收者在栈顶（实参尚未求值），经 `Object::load_field` 取被调值压栈 |
+| `CALL_METHOD` | `argc:u8` | `[recv, target, a1..aN] -> [r]` | 两段式第二段：待调值在 `peek(argc)`、接收者在 `peek(argc+1)`；实参整体下移一格补掉 target 那格得 `[recv, a1..aN]`，交 `call_value`。**纯调用、不再解析、不物化 bound** |
+| `MAKE_LIST` | `n:u16` | `[v1..vn] -> [list]` | 取栈顶 n 个建 `ObjList`（保序） |
+| `MAKE_MAP` | `n:u16` | `[k1,v1..kn,vn] -> [map]` | 取栈顶 n 对建 `ObjMap`（重复键后键胜） |
+| `MAKE_RANGE` | `flags:u8` | `[from, to] -> [range]` / `[from] -> [range]` | 建 `ObjRange`（内容哈希、不可变）；`flags` 位义见 `code.hpp`：`0x00` 含上界、`0x01` 不含、`0x02` 无上界（`from..` 与 `from...` 同义）。端点非整数报 `TypeMismatch` |
+| `BUILD_STRING` | `n:u8` | `[v1..vn] -> [str]` | 取栈顶 n 段按序拼成单串（插值收拢）；渲染与 `str()` 同源（`stringify`，String 段直写字节零渲染），量长定容单次分配 |
 
-def 声明 lowering：先装载父类入栈（显式 `LOAD_GLOBAL "Bar"`；无父类时发 `LOAD_REG`（寄存器 `ObjectClass`）装 `Object`），`MAKE_CLASS` 弹父类创建类；随后按成员出现顺序发射--静态变量（`varDecl`）与静态方法（`funDecl`）求值/发 `CLOSURE` 后经 `MAKE_STATIC` 存入类（不戳 defining class，读恒原值）；实例方法（`function`，含 `init`）发 `CLOSURE` + `MAKE_METHOD`（戳 defining class = 方法性标记），`class` 始终留栈；末尾 `STORE_GLOBAL`/`STORE_LOCAL` 绑定类名，或 `POP` 丢弃（见 §5.5）。`init` 不用专用指令、由 init 缓存按名查（§5.5）。`def` 在运行时仍是 `ObjClass`，OpCode 名（`MAKE_CLASS` 等）与 `ObjType::CLASS` 不随关键字改名。
-
-### 4.15 模块导入
-
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `IMPORT` | `path:u16` | `... -> [module]` | 解析 `path` 并复用/加载模块，把 `ObjModule` 压栈。绑定交后续 `DEF_GLOBAL`/值填槽按作用域走 |
-
-`path` 为常量池 ObjString 索引。模块解析、路径搜索、循环导入检测留 VM/嵌入层。`IMPORT` 仅负责取模块对象压栈；绑定由 CodeGen 按作用域走--顶层经 `DEF_GLOBAL alias`（弹值定义全局）、嵌套经值填槽（`IMPORT` 压在 `declare_local` 的 slot 即该局部），与 `var`/`fun` 同形 lowering。故 `IMPORT` 不带 `alias` 操作数。
-
-### 4.16 异常
-
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `THROW` | 无 | `[v] -> ` | 弹出 aria 值 `v` 作为异常抛出（原值入挂起寄存器不包，catch 绑原值保类型）；`unwind` 查各帧 `try_records` 回退到最近 `try` handler。控制流转移，栈由 unwind 重建 |
-
-> **异常机制走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**：`try` 块的范围与 handler 地址由编译期生成的**异常记录表**（存于 CodeUnit）登记，`THROW`/`raise` 时按帧 `last_ip` 反推 offset 查表，定位最近覆盖当前指令的 `try` 记录，按记录 `truncate` 回退并跳到 handler。比操作码方案更紧凑（不污染字节码流、无需每进/出 `try` 发指令）。记录表结构与查表见 §6.1，lowering 见 §5.9。
-
-### 4.17 返回
-
-| 操作码 | 操作数 | 栈效应 | 语义 |
-| :--- | :--- | :--- | :--- |
-| `RETURN` | 无 | `[v] -> ` | 从当前函数返回 `v`（无返回值时编译器先发 `LOAD_NIL`）。退出当前 `CallFrame`，把 `v` 压入调用者栈顶，`ip` 恢复到 `CALL` 之后 |
-
-`RETURN` 也用于顶层执行结束：入口函数（主入口 `<main>` 与导入模块体 `<module>` 同为 ModuleEntry 形态）的返回值恒为模块对象--编译器在入口收尾发射「压模块对象常量 + RETURN」（裸 `return;` 同形，带值 `return` 编译期拒绝 `ReturnValueAtTopLevel`），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。`HALT` 与顶层 `RETURN` 的分工：`HALT` 彻底停机，`RETURN` 仅退一帧。
-
-## 5. 关键 lowering
-
-### 5.1 if / while / for / for-in
+**def 声明的发射序**（文法见 `grammar.txt`，成员语义见 `object.md`）：
 
 ```
-# if (cond) then else elseB
+<super>                    ; 显式父类 LOAD_GLOBAL / 无父类 LOAD_REG ObjectClass
+MAKE_CLASS "Foo"           ; [class]
+# 绑定类名紧跟 MAKE_CLASS（不等到成员发完）：
+#   顶层  DUP; DEF_GLOBAL "Foo"
+#   局部  DUP; <值填槽到局部槽>
+#   嵌套  DUP2; MAKE_STATIC "B"; POP     -- A.B 作为 A 的静态成员
+# 然后按成员出现顺序发射，class 始终留栈：
+<expr>  MAKE_STATIC "x"    ; 静态变量（eager 求值初始化器）
+CLOSURE MAKE_STATIC "s"    ; 静态方法（fun）
+CLOSURE MAKE_METHOD "m"    ; 实例方法（含 init）
+POP                        ; 弹掉驻留的类值
+```
+
+类名先绑定使类体内可自引用（`A.x`、构造 `A()`）；静态初始化器 throw 后类名保持绑定（残留语义）。
+
+**`super.m(args)` 不经两段式**（callee 是 `SuperExprNode`）：`LOAD_SUPER_FIELD` + 实参 + `CALL`。
+
+### 3.14 模块导入
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `IMPORT` | `path:u16` | `... -> [module]` | 解析路径并复用/加载模块，把 `ObjModule` 压栈 |
+
+`path` 是常量池 ObjString 索引。**绑定不在本指令内**：CodeGen 在 `IMPORT` 之后按作用域声明并绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽），故 `IMPORT` 不带 `alias` 操作数。解析、查表、run-once 与错误契约见 `import.md`。
+
+### 3.15 异常
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `THROW` | 无 | `[v] ->` | 弹 aria 值作异常抛出（**原值**入挂起寄存器，不包 `ObjException`，catch 绑原值保类型）；unwind 查各帧 `try_records` 回退到最近 handler，栈由 unwind 重建 |
+
+**异常走 CodeUnit 内记录表，不设 `SETUP_EXCEPT`/`END_EXCEPT`**：`try` 范围与 handler 地址由编译期生成的 `Array<TryRecord>` 登记（`{begin, end, handle, stack_depth}`，按 `begin` 非降序、由入口预插占位 + 结尾回填保证），`THROW`/`raise` 按帧 `last_ip` 反推 offset 二分查表（区间须良嵌套）。比操作码方案更紧凑：不污染字节码流、无需进/出 try 发指令。
+
+### 3.16 返回
+
+| 操作码 | 操作数 | 栈效应 | 语义 |
+| :--- | :--- | :--- | :--- |
+| `RETURN` | 无 | `[v] ->` | 从当前函数返回 `v`（无返回值时编译器先发 `LOAD_NIL`）。退帧、把 `v` 写回调用者槽 0、`ip` 恢复 |
+
+入口函数（`<main>` 与导入模块体 `<module>` 同为 ModuleEntry 形态）的返回值恒为模块对象--编译器在入口收尾发射「压模块对象常量 + RETURN」，裸 `return;` 同形，带值 `return` 编译期拒绝（`ReturnValueAtTopLevel`），故 `IMPORT` 命中/未命中栈效应统一 `[..., module]`。
+
+## 4. 关键 lowering
+
+### 4.1 if / while / for / for-in
+
+```
+# if / while / for 的条件经 emit_cond_jump：条件恰为 == 直连时发 JUMP_NE，否则 EQUAL/值 + JUMP_FALSE
 <cond>                 ; [c]
-JUMP_FALSE L_else      ; []
-<then>                 ; [...]
+JUMP_FALSE L_else      ; []            （== 直连时即 JUMP_NE L_else）
+<then>
 JUMP L_end
-L_else:
-<elseB>
+L_else: <elseB>
 L_end:
 
 # while (cond) body
-L_start:
-<cond>                 ; [c]
-JUMP_FALSE L_end       ; []
-<body>
-JUMP_BACK L_start
-L_end:
-# break -> JUMP L_end ; continue -> JUMP_BACK L_start
-
+L_start: <cond>; JUMP_FALSE L_end; <body>; JUMP_BACK L_start; L_end:
 # for (init; cond; incr) body
-<init>                 ; varDecl: 分配局部; exprStmt: <e> + POP
-L_start:
-<cond>                 ; 省略 -> 恒真, 跳过此段
-JUMP_FALSE L_end       ; []
-<body>
-<incr>                 ; <e> + POP
-JUMP_BACK L_start
-L_end:
-# continue -> JUMP L_incr (有 incr: 前向跳, 回填须先于 incr 发射; 无 incr -> JUMP_BACK L_cond); break -> JUMP L_end
+<init>; L_cond: <cond>; JUMP_FALSE L_end; <body>; L_incr: <incr> + POP; JUMP_BACK L_cond; L_end:
+# break -> JUMP L_end；continue -> 有 incr 时前向 JUMP 回填到 L_incr，否则 JUMP_BACK 循环头
 ```
 
-for-in 依赖迭代协议（`iter`/`has_next`/`next`），靠方法调用表达（见 §5.6）：
+break/continue 在跳转前先 `emit_pop_locals_to(loop_scope_depth)` 弹体内局部；回填时机与 `LoopCtx` 全貌见 `lowering.md`。
+
+for-in 依赖迭代协议，三站点都发两段式调用：
 
 ```
-# for (pat in iterable) body
-<iterable>             ; [obj]
-PREPARE_METHOD "iter"  ; [obj, iter]   解析此刻完成
-CALL_METHOD 0          ; [it]          调用区槽 0 = receiver
+<iterable>
+PREPARE_METHOD "iter"; CALL_METHOD 0          ; [it]    迭代器存 for-in scope 局部（值填槽）
 L_start:
-LOAD_LOCAL <iter>      ; [it]          迭代器存 for-in scope 局部(值填槽)
-PREPARE_METHOD "has_next"
-CALL_METHOD 0          ; [bool]
-JUMP_FALSE L_end       ; []
-LOAD_LOCAL <iter>
-PREPARE_METHOD "next"
-CALL_METHOD 0          ; [v]           绑入 pat (identifier: 值填槽 declare 不发指令; "_": POP 丢弃)
+LOAD_LOCAL <iter>; PREPARE_METHOD "has_next"; CALL_METHOD 0
+JUMP_FALSE L_end
+LOAD_LOCAL <iter>; PREPARE_METHOD "next"; CALL_METHOD 0   ; 绑入 pattern（identifier 值填槽 / "_" 补 POP）
 <body>
+POP_N <per-iteration 局部数>                     ; 每轮 per-iteration scope 出口（含捕获时 + CLOSE_UPVALUE）
 JUMP_BACK L_start
 L_end:
 ```
 
-### 5.2 短路逻辑 `&&` / `||`
+### 4.2 短路逻辑
 
 ```
-# a && b   (a 假则结果为 a, 否则结果为 b)
-<a>                    ; [a]
-JUMP_FALSE_OR_POP L_end ; [a] (a 假跳, 留 a) / [] (a 真落空)
-<b>                    ; [b]
-L_end:                 ; 结果在栈顶
-
-# a || b   (a 真则结果为 a, 否则结果为 b)
-<a>                    ; [a]
-JUMP_TRUE_OR_POP L_end  ; [a] (a 真跳, 留 a) / [] (a 假落空)
-<b>                    ; [b]
-L_end:
+# a && b（a 假则结果为 a，否则为 b）
+<a>; JUMP_FALSE_OR_POP L_end; <b>; L_end:
+# a || b（a 真则结果为 a，否则为 b）
+<a>; JUMP_TRUE_OR_POP L_end; <b>; L_end:
 ```
 
-### 5.3 赋值 / 复合赋值 / 前置 `++`/`--`（peek-store 形态）
+### 4.3 赋值 / 复合赋值 / 前置 `++`/`--`
 
-采用 §3.1 的 peek-store 约定后，`.agents/reference/specs/lowering.md` §4 各序列末尾留值（语句上下文补 `POP`）。以 `obj.f += e` 与 `++obj[idx]` 为例：
+locator-once 的完整方案（`LvalueMode` 四态、三种左值腿、组合矩阵、逐行示例）见 `lowering.md`。此处只记两条：store 腿是 peek-store（§2），语句上下文补 `POP`；`x += e` / `++x` 的结果是新值。
 
-```
-# obj.f += e  (表达式上下文, 结果为 新值)
-<obj>                  ; [obj]
-DUP                    ; [obj, obj]
-LOAD_FIELD "f"         ; [obj, obj.f]
-<e>                    ; [obj, obj.f, e]
-<op>                   ; [obj, newval]      newval = obj.f op e
-STORE_FIELD "f"        ; [newval]           peek-store: 弹 obj, 留 newval
-# 语句上下文在此补 POP -> []
-
-# ++obj[idx]  (返回新值)
-<obj>                  ; [obj]
-<idx>                  ; [obj, idx]
-DUP2                   ; [obj, idx, obj, idx]
-LOAD_INDEX             ; [obj, idx, obj[idx]]
-LOAD_IMM 1             ; [obj, idx, obj[idx], 1]
-ADD                    ; [obj, idx, newval]
-STORE_INDEX            ; [newval]           peek-store: 弹 obj,idx, 留 newval
-```
-
-`--E` 把 `ADD` 换 `SUBTRACT`；标识符 / this 字段形式按 §4.3/§4.8 无 `DUP` 或省 `obj`。详见 `.agents/reference/specs/lowering.md`（本文仅以 peek-store 更新其 tail 语义）。
-
-### 5.4 闭包 / upvalue
-
-已落地。具名 fun / lambda 一律经 `CLOSURE` 上栈（`CLOSURE` 自取常量池 `ObjFnProto`，无前置 `LOAD_CONST`）：
+### 4.4 闭包 / upvalue
 
 ```
-# 外层函数内定义闭包, 捕获外层 local x (slot 3) 与外层 upvalue u (idx 1)
-# (捕获描述 [{is_local=true, index=3}, {is_local=false, index=1}] 存于原型的 UpvalueDesc 表,
-#  编译期 flush 进 ObjFnProto 元数据)
-CLOSURE proto_index    ; [closure]   ; VM 读 proto.upvalue_descs() 建捕获, 无尾随操作数
-# 块结束、x 将销毁且被捕获时: POP_N 整区弹局部 + CLOSE_UPVALUE 批量关闭槽址 >= 新栈顶的开 upvalue
-# (CodeGen emit_pop_locals_to 发射, 仅当弹区含被捕获局部, 落点见 §4.4);帧退出(RETURN/unwind)
-# 由 VM close_upvalues 整段关闭,无指令
+CLOSURE proto_index    ; [closure]   捕获描述在原型元数据里，无尾随操作数
+# 块结束且弹区含被捕获局部：POP_N 整区弹局部 + CLOSE_UPVALUE（emit_pop_locals_to，见 §3.4）
 ```
 
-### 5.5 def / 静态成员 / 实例方法 / super / 实例化
-
-def 体内三种成员：`var` -> 静态变量（属类，`ClassName.x` 读写）；`fun name(){}` -> 静态方法（无 `this`，经 `ClassName.x` 访问静态成员）；`name(){}`（裸 identifier）-> 实例方法（`this` 占帧槽 0，经 superclass 链继承、`super.m()` 可用）。体内裸名解析顺序：**局部 -> upvalue -> 模块全局**（类静态不在裸名作用域，经 `ClassName.x` 限定访问）。`def` 在运行时仍是 `ObjClass`。
+### 4.5 方法调用（两段式）
 
 ```
-# def Foo : Bar { var x = 1; fun s() {...} init(...) {...} m(...) {...} }
-LOAD_GLOBAL "Bar"      ; [super]    ; 显式父类（def Foo 无父类时改发 LOAD_REG ObjectClass）
-MAKE_CLASS "Foo"       ; [class]    ; 弹 super 创建 Foo
-LOAD_IMM 1             ; [class, 1] ; var x = 1
-MAKE_STATIC "x"        ; [class]    ; 存为静态变量 x
-MAKE_STATIC "s"        ; [class]    ; 静态方法: fun 经 MAKE_STATIC, 不戳 defining class
-MAKE_METHOD "init"     ; [class]    ; 实例方法: this 占帧槽 0（命中同步 init_）
-MAKE_METHOD "m"        ; [class]    ; 实例方法
-STORE_GLOBAL "Foo"     ; []         ; 绑类名 (或 STORE_LOCAL)
-
-# Foo(args)  实例化
-LOAD_GLOBAL "Foo"      ; [class]
-<args>                 ; [class, a1..aN]
-CALL argc              ; [instance] ; VM 见 ObjClass -> 新建 ObjInstance + 调 init
-
-# super.m(args)
-LOAD_SUPER_FIELD "m"   ; [bound]    ; this 来自帧槽 0, 父类来自当前闭包的 defining class
-<args>                 ; [bound, a1..aN]
-CALL argc              ; [r]
+<recv>
+PREPARE_METHOD "m"     ; [recv, target]   解析此刻完成（实参尚未求值）
+<args>                 ; [recv, target, a1..aN]
+CALL_METHOD argc       ; [r]              实参下移一格补掉 target
 ```
 
-静态变量**创建**经 `MAKE_STATIC`（eager 求值初始化器后存，见上文 lowering）；静态访问与实例回退复用字段指令：`Foo.x` / `foo.x` 读均发 `LOAD_FIELD`（对象层 `load_field_bound` 协议 -- 实例先查 fields 表、未命中沿类链查静态，读穿透），写发 `STORE_FIELD`（接收者为 `ObjClass` 时写遮蔽落自身表，即上节 `MAKE_STATIC` 镜像形态）；裸名解析见下文作用域模型（`LOAD_GLOBAL` 查模块全局，类静态经 `ClassName.x` 限定）。
+- **次序**：解析先于实参求值（Python/Lua/JS 同款）。可观察两处：实参表达式反过来改写接收者同名成员时，本次调用用**改写前**取好的值；解析失败时实参**根本不跑**。语料 `positive/11_classes/invoke_method_forms.aria` 钉住。
+- **零物化**：`PREPARE_METHOD` 只取被调值（不绑 this），`CALL_METHOD` 收口调用区、槽 0 保持接收者。三方各得其所：方法命中时 `call_bound_method` 用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native_fn` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
+- **等价性**：本机制是 `LOAD_FIELD` + `CALL` 的等价改造，不是「只在类表查方法」--字段优先遮蔽方法、非可调用成员照旧报 `CallNonCallable`（复用同一条成员解析路径）。
+- **形态差异（两条已知毛边）**：非方法成员被调用时槽 0 是**接收者**而非成员值本身，故 `x.init()`（经类链解析到 Object 根的原生 no-op init）返回**实例本身**；`C.m(args)`（经类调实例方法）时方法体里的 `this` 是**类对象**。前者由语料钉住，后者是同一条规则的派生物、不作承诺。
+- **设计边界**：本缝要求解析是纯查询。若将来引入可跑用户代码的成员面（getter/property），解析位置已经正确（`PREPARE_METHOD` 内），但还需另做「同步跑到该帧返回再取值」的嵌套调用机制，不得把用户代码塞进 `load_field` override 的返回值语义里。
 
-静态成员继承（编译期/VM 语义）：静态变量与静态方法经 `ObjClass.superclass_` 链继承（与实例方法分派同一机制、复用同一指针）。类成员读写取 Python/JS class attributes 语义（读穿透、写遮蔽）：子类未重声明时读沿链穿透命中父类槽；类上赋值 `Sub.x = v` 落**接收类自身**表（继承名新建遮蔽键、本类已有原槽更新），沿链全 miss 的新名字亦落接收类自身表（动态新增允许），方法槽亦允许改写（"init" 赋值同步 `ObjClass.init_`）。类静态经 `ClassName.x` 限定访问（运行期走 super）、不在裸名作用域（见下文作用域模型）。
+### 4.6 match
 
-**实例方法绑定不做缓存**（`obj.m` 每次访问现场绑定）：实例 fields 表纯字段，不存绑定结果。理由：类/父类上改写方法槽后，已取过方法的实例若沿用旧绑定会让 monkey patch 半可用且难解释；「每取一次方法白铸一个 bound」的成本改由方法调用的两段式路径消化（§5.6：`recv.m(args)` 经裸查找 `load_field` 取不绑定值，零物化）。故 `obj.m` 两次访问得到两个不同对象（`===` 为假），内容相等走 `==`；字段优先遮蔽同名方法、非可调用成员照旧报 `CallNonCallable`。
-
-Object 根类（编译期/VM 语义）：所有用户类隐式继承内置 Object 根类，统一继承链语义。**Bootstrap**：VM init 阶段、用户代码执行前，创建 Object--一个普通 `ObjClass`，`superclass_ = nil`（唯一 nil 超类的类），值寄存器组 ObjectClass 格存放（**不进 globals/builtins/任何模块**，裸名解析四层均够不到、正常代码访问不到）。**编译器隐式超类**：`def Foo`（无显式父类）编译等价于 `def Foo : Object`，编译器填 Object 作隐式超类；`def Foo : Bar` 设 super=Bar（经 Bar 链最终到达 Object）。隐式 Object 引用经 `LOAD_REG`（值寄存器 `ObjectClass`，VM 内部指针，**不按名字查**）--Object 不入任何名字空间，用户 shadow 全局名无从谈起，继承机制天然免疫用户命名。**Object 方法集**：现状 = `init`（原生 no-op，`return true` 不写槽即返回 this）、`is_a(Class)`（类链归属判定）与 `__str__`（显示默认原生 = 渲染自身 debug 形，用户可覆写定制显示，咨询经类链）；`hash`/`class` 仍属建议项、尚未实现--每个方法被所有实例继承，加之前先权衡。Object **不带静态变量**（根类保持最小，静态会被全类经链共享）。Object 方法体内 `super` **非法**（它是根，无超类），编译期/VM 报错。`Object()` 实例化允许（permissive），产出持 Object 方法的最小 ObjInstance。**边界**：Object 统一的是用户定义类的实例（持 ObjClass 的 ObjInstance）。原始值（nil/bool/f64/int，NaN-boxing 内联载荷，非 Obj）不在 Object 层次内；内置 Obj 类型（ObjString/ObjList/ObjMap 等，C++ 类型带 ObjType tag、不持 ObjClass）暂亦不在内；纳入内置类型为 uniform OOP 目标方向（见下文）。链式查找（静态/实例方法/`foo.x` 回退/`init` 解析）统一终止于 Object（裸名走模块全局，不在此列）。
-
-`init` 缓存与实例化路径（编译期/VM 语义）：`init` 不在实例化时查表，而在 **`ObjClass` 构造函数中自 super 派生**--ctor 初始化列表读 `super->init()`，super 非空出厂即继承（O(1) 不走链），Object 根由 bootstrap 设原生 no-op `init`，`init_` 恒有值。`init_` 为 **Value**（闭包/原生皆可）：调用类时先把选中的类写入槽 0 保活，再分配实例并原位写回槽 0，最后经 `call_value(klass->init(), argc)` 通用分发 -- init 闭包进方法帧（编译器尾部 `LOAD_LOCAL 0; RETURN` 返 this）、原生同步调用（Object 的 no-op 不写 slots[0] 即返回 this）、非可调用值（类上赋 `Foo.init = 5` 放行）报 CallNonCallable 兜底。无指针同一性快路径（原生 no-op 调用开销可忽略，不值得特判）。aria 实例字段由 `init` 内 `this.x = ...` 动态设置，无自定义 `init` 的类本无字段要初始化。同步关系：`def` 一次性定义方法集；类上赋值可改写方法槽（读穿透、写遮蔽，已取过的方法值不受影响--每次访问现场绑定）；"init" 赋值经 `ObjClass::set_field` 命中同步 `init_`（值形态不特判），表槽/`init_` 一致始终成立。
-
-**作用域模型：模块即命名空间 + 裸名走词法+模块全局**（编译期/VM 语义，Python/JS 路子）：
-
-- **模块 = 命名空间（非类）**：文件是一个模块，顶层 `var`/`fun`/`class` 是**模块级绑定**（模块全局），不是某个类的静态；顶层可执行语句编进模块体（`ObjFn`），导入时跑一次（run-once）。模块存于 VM 内部模块表，不是某个 root 类的静态。
-- **ObjClass 指针**：仅 `super`（继承），无 meta 元类指针（uniform OOP 未来需要时再增--现在预留只多一个空指针与一条 `trace` 分支，YAGNI）。**根**：`Object`（`super=nil`，继承终止）。
-- **裸名解析（词法 + 模块全局，无类静态）**：编译期判定局部/参数 -> `LOAD_LOCAL`、upvalue -> `LOAD_UPVALUE`；否则发 `LOAD_GLOBAL`，运行期查**当前模块的全局表**。**不走 enclosing+super，不查类静态**--类静态不在裸名作用域。未命中则全局未定义（报错）。裸名只看：局部、upvalue（外围函数局部）、模块全局。
-- **裸名赋值与声明（写路径，与读对称）**：裸名赋值 `x = v`（无 `var`）走与读相同路径（`STORE_LOCAL` / `STORE_UPVALUE` / `STORE_GLOBAL` 查模块全局表），命中即写，未命中报错（不隐式创建，必须先 `var` 声明）。`STORE_UPVALUE` 与 `LOAD_UPVALUE` 对称（闭包变异）。`var` 声明：**函数体**=局部、**模块顶层**=模块全局、**类体**=静态（经 `ClassName.x` 访问，不进裸名）。实例字段写经 `STORE_FIELD`（`this.x = v` / `obj.x = v`，动态创建）。
-- **类静态访问（限定，运行期）**：`ClassName.x`--解析 `ClassName`（裸名，通常是模块全局或经全路径），再沿其 super 链查静态（含继承，共享槽语义），运行期。`this.x` / `obj.x`--实例访问，先查实例字段，未命中回退类静态（沿实例 class 的 super 链）。**裸名看不到类静态**，必须限定。
-- **嵌套类（全路径）**：`class B` 在 `class A` 内 -> `B` 是 `A` 的静态 `A.B`。从内部引用 `B` 须经全路径 `A.B`（限定访问，运行期查 `A` 的静态 `B`），**无 enclosing 链、无裸名**。模块顶层类是模块全局，裸名可访；嵌套类不是模块全局，须全路径。
-- **无 `This` 关键字**：自引用写类名（`Foo.x`）。
-- **方法闭包持 defining class（一职双任）**：super 来源（`LOAD_SUPER_FIELD` 的“父类来自当前闭包”）+ 方法性标记（读路径绑 this 判据）。**不再用于 enclosing 走链**（无 enclosing）。
-- **`this`（实例，小写）为捕获 upvalue（arrow-function 语义）**：`this` 是实例方法的帧槽 0（首个具名局部）；嵌套函数引用 `this` 时，沿外围函数帧找最近的**实例方法**，把它的槽 0 捕获为 upvalue（`this` -> `LOAD_UPVALUE`，`.x` -> `LOAD_FIELD`）。若链上无实例方法（静态方法、顶层函数、或只嵌在静态方法里），`this` 不可用--编译期报错。静态方法本身无 `this`。
-- **`super` 边界**：`super.m()` 实例方法可用--用帧槽 0 的 `this` 调被覆写的实例方法（`LOAD_SUPER_FIELD` 从 defining class 的 super 起）；`super.x` 读父类成员（2026-09-11 改定：命中 defining class 戳定的方法闭包绑 this、静态槽（含持函数值的 var/静态方法/原生）原值直读，方法性看戳不看值类型）。静态方法无 `this`，super 仅在实例方法体内可用（编译期挡）。
-- **静态初始化时机（eager）**：静态变量的初始化器在类定义时求值（eager），非首次访问（lazy）。故 `class A { var x = B(); }` 要求 `B` 先于 `A` 定义；类定义顺序即静态初始化顺序。
-- **动态加静态**：允许；`Foo.newStatic = v`（新名）落接收类自身表（继承名新建遮蔽键、父类不可见），与 `var` 声明同落一张表。实例字段动态（`this.x = v` 创建），静态经类上赋值亦可动态新增。
-- **缓存**：`LOAD_GLOBAL`（模块全局查表）默认不缓存，内联缓存（per call-site）留作后续优化；`init` 缓存见上文本节。
-
-**模块导入**：文件是模块（非类）。解释器启动时定**源根列表**（source root list）--标准库 `lib` 路径 + 入口文件所在目录（`-L`/环境变量等额外源根留待后续）。导入路径只写在字符串里（**无裸标识符形态 `import foo`**），分两类，二者是同一解析原语、仅基目录列表不同：`import "lib/utils" as Utils`（**非相对路径**，基 = 源根列表，逐个 exists-check 首个命中）、`import "./utils" as U` / `import "../lib/x" as X`（**相对路径**，基 = 当前文件所在目录，单一基、不碰源根列表）。`import "path" as alias` **强制 `as alias`**--绑模块到 `alias`（当前作用域变量：模块顶层 = 模块全局、函数体/块内 = 局部；`IMPORT` 压模块值于栈顶，绑定经 `DEF_GLOBAL`（顶层）或值填槽（嵌套）按作用域走），不解析路径算模块名。模块表键 = 命中文件的**绝对规范路径**（`weakly_canonical`）：符号链接归一（等价路径不双加载）、跨根不碰撞、相对导入天然落在自己所在树；重叠源根按列表顺序首次命中。允许循环导入--命中正在初始化的模块返回半初始化对象。裸名不触发自动导入，兄弟模块须显式 `import "./sibling" as Sibling`。**未实现（留待加载层）**：目录包（`<base>/<spec>/index.aria`，故 `import "lib" as Lib` 现不成立）、相对导入越出源根之上的检测、`-L` 标志与环境变量源根、`aria run` 项目级执行的源根标记文件（`aria.toml`/`.ariaroot`）。
-
-**目标方向：uniform OOP（Design B）**：aria 的方向是把内置类型也纳入 aria 类体系--每个内置 Obj 类型配一个 `ObjClass`（String/List/Map 继承 Object），`class_` 进 Object 头，方法统一走 `class_->lookup` 分派，内置类型继承 Object 的公共方法。原始值（nil/bool/f64/int）进一步可经 tag->class 映射（Num/Bool 类）获得方法分派而不装箱（Wren 路子），仍保 NaN-boxing 内联存储。性能上走 CPython 式 intrinsic 做热路径--统一语义为规约、intrinsic 为快路径，二者兼得；`+8B class_` 只落 Obj、不落原始值，代价 bounded。此为方向性目标，尚未实现；落地前可先用 Design A（内置保持特殊、虚 `op_get_field`）作 interim，不阻塞迁移（`op_get_field` 接口保持、内部从虚派发换类表查找）。
-
-### 5.6 方法调用与 for-in（两段式派发）
-
-`obj.m(args)` 发射两段：解析在**实参求值之前**完成，调用是纯调用。
-
-```
-<recv>                  ; [recv]
-PREPARE_METHOD "m"      ; [recv, target]       解析此刻完成（实参尚未求值）
-<args>                  ; [recv, target, a1..aN]
-CALL_METHOD argc        ; [r]                  实参整体下移一格补掉 target 占的那格
-```
-
-执行期：`PREPARE_METHOD` 经 `Object::load_field` 协议取被调值压栈（跨指令存活靠值栈根化）；`CALL_METHOD` 把实参整体下移一格、得调用区 `[recv, a1..aN]`（槽 0 = receiver = this）后交 `call_value` 分发，方法命中时 `call_bound_method` 用 bound 的 receiver 覆写槽 0（同一对象）、字段里的可调用值/类静态槽值原值占槽 0（不绑）。调用区与两步形态留下的栈形**逐位一致**，故进帧整形（缺省参数垫充/varargs 打包）与异常 unwind 全不受影响。**等价性口径**：两段式是 `LOAD_FIELD` + `CALL` 的等价改造，不是「只在类表里查方法」--字段优先遮蔽方法、非可调用成员照旧报 `CallNonCallable`，都靠复用同一条成员解析路径保证。
-
-**次序语义（与两步形态、与主流一致）**：解析先于实参求值，Python/Lua/JS 同款。可观察两处：① 实参表达式反过来改写接收者同名成员时，本次调用用的是**改写前**取好的那个值；② 解析失败（成员缺失/非对象）时实参**根本不跑**。两处都由语料钉住（`tests/language/positive/11_classes/invoke_method_forms.aria`）。
-
-> 设计边界：本缝要求解析是**纯查询**（当前实现满足：字段命中 / 类链走表，无用户代码）。若将来引入「解析可跑用户代码」的成员面（getter/property/`__getattr__`），解析位置已经正确（`PREPARE_METHOD` 内），但还需另做「同步跑到该帧返回再取值」的嵌套调用机制，不得把用户代码塞进 `load_field` override 的返回值语义里。
-
-一处**形态差异**：非方法成员被调用时，调用区槽 0 是**接收者**而非那个成员值本身（两步形态下 `LOAD_FIELD` 会把接收者顶替成成员值）。可观察的有两处：① `x.init()`（实例上经类链解析到 Object 根的**原生** no-op init，不被绑定）返回**实例本身**，而非那个原生函数对象--内置类 super 挂 Object 根、调用返回 receiver 自身是同一取舍的两面：uniform OOP 提前半步落地（内置类型也走 bootstrap 类 + Object 根），代价是 `s.init()` 这类调用会经链解析到 Object 根的 no-op init，属已知的小语义毛边，uniform OOP 落地时随 Object 方法面一并审视；② `C.m(args)`（经类调实例方法：方法戳闭包被当值调、不被绑定）时方法体里的 `this` 是**类对象**（两步形态下是那个闭包自身）。① 由语料钉住，② 为同一条规则的派生形态、不作承诺。
-
-**槽 0 保持接收者为什么可行**（三方各得其所）：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数恰好**正需要**槽 0 = receiver（其 `this` 兼返回槽，且 `call_native_fn` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。
-
-`super.m(args)` 不经两段式：callee 是 `SuperExprNode`，仍发 `LOAD_SUPER_FIELD` + `CALL`。for-in 的 `iter`/`has_next`/`next` 由编译器三站点统一发 `PREPARE_METHOD` + `CALL_METHOD`（迭代协议每迭代两次方法调用，是这条路径收益最大的地方，见 §6.2）。
-
-### 5.7 match（糖 -> 逐臂比较链，已落地）
-
-match 无独立指令：subject 求值一次驻留栈上（in-flight 临时，无隐藏局部；命中臂入口 `POP` 消费，全臂未命中由 `THROW` 的 unwind 清栈），逐臂展开「`DUP` 复制 subject + 模式表达式 + `EQUAL`（== 内容相等，见 §4.9）+ `JUMP_FALSE` 未命中跳下臂」链：
+无独立指令：subject 求值一次驻留栈上（in-flight 临时、无隐藏局部），逐臂展开「`DUP` + 模式表达式 + `JUMP_NE` 下臂」链：
 
 ```
 <subject>              ; [s]
-# arm 1 (模式 p1)
-DUP                    ; [s, s]  副本供比较,subject 本尊保留
-<p1>                   ; [s, s, p1]
-EQUAL                  ; [s, bool]
-JUMP_FALSE L_arm2      ; [s]     未命中 -> 下臂
-POP                    ; []      命中:丢弃 subject 进臂体
+DUP; <p1>; JUMP_NE L_arm2   ; [s]  判等不等则跳下臂（融合形，见 §3.11）
+POP                          ; []   命中：丢 subject 进臂体
 <body1>
 JUMP L_end
-L_arm2:                # "_" 臂:无比较,POP 直入臂体
-POP                    ; []
-<body2>
-JUMP L_end
+L_arm2:                # "_" 臂：无比较，POP 直入臂体
+POP; <body2>; JUMP L_end
 L_noarm:               # 全臂未命中
-LOAD_REG MatchNoArm    ; [e]     共享 ObjException(VM bootstrap 铸造,消息静态)
-THROW                  ; []      弹 e 入挂起寄存器,unwind 接管不落 L_end
+LOAD_REG MatchNoArm    ; [e]  共享 ObjException（bootstrap 铸造，消息静态）
+THROW
 L_end:
 ```
 
-matchStmt 与 matchExpr 同构：臂体分别为语句（净零值）/ 单表达式（每臂恰一值），`L_end` 汇合点栈深各自还原（语句 0 / 表达式 +1）。臂间无分隔符；通配臂恒末臂（其后臂任何输入下不可达，编译期 `UnreachableArm` 拒绝，故 `_` 至多一条），`_` 末臂在场时兜底尾为死码仍统一发射；pattern 按臂序惰性求值（命中即停，后臂模式不求值）。
+- `matchStmt` 与 `matchExpr` 同构：臂体分别为语句（净零值）/ 单表达式（每臂恰一值），`L_end` 汇合点栈深各自还原（语句 0 / 表达式 +1）。
+- **臂间分隔符不同**：`matchStmt` 臂间无分隔符；`matchExpr` 臂间以 `,` 分隔、不允许尾逗号（见 `grammar.txt`）。
+- 通配臂恒末臂且至多一条（其后臂不可达，编译期 `UnreachableArm`）；`_` 末臂在场时兜底尾为死码仍统一发射。pattern 按臂序惰性求值（命中即停）。
 
-### 5.8 解构赋值 `listPattern = expr`（零新指令，已落地）
+### 4.7 解构赋值
 
-解构赋值的源值恒驻栈顶，每次访问前 `DUP`（`LOAD_INDEX` 吃掉源与下标两值）；绑完收尾弹掉本层源值，净消耗栈顶一值，故调用点先 `DUP` 一份右值作表达式的结果。
+源值恒驻栈顶，每次访问前 `DUP`（`LOAD_INDEX` 吃掉源与下标两值）；绑完收尾弹掉本层源值，净消耗栈顶一值，故调用点先 `DUP` 一份右值作表达式结果。
 
 ```
 # [a, _, c] = rhs
-<rhs>                  ; [rhs]         右值(表达式值由调用点先 DUP 一份)
-DUP                    ; [rhs, rhs]
-LOAD_IMM 0             ; [rhs, rhs, 0]
-LOAD_INDEX             ; [rhs, rhs[0]] 绑 a: resolve_name_or_fail + emit_store_var + POP
-                       ;               (STORE_* 是 peek-store,故补 POP)
-                       ; "_" 位跳过:不产生下标访问,故该位置越界/缺键都不报
-DUP; LOAD_IMM 2; LOAD_INDEX; STORE...; POP   ; 绑 c(下标即源位置序号)
-POP                    ; []            收尾弹本层源值
+<rhs>; DUP                  ; [rhs, rhs]  右值（表达式值由调用点先 DUP 一份）
+LOAD_IMM 0; LOAD_INDEX      ; [rhs, rhs[0]]
+STORE_...; POP              ; 绑 a（STORE_* 是 peek-store，故补 POP）
+DUP; LOAD_IMM 2; LOAD_INDEX; STORE_...; POP   ; 绑 c（下标即源位置序号）
+POP                         ; []  收尾弹本层源值
 ```
 
-- 访问数 >= 2 的 `listPattern` 先经隐藏局部 `<destructure_N>` 复取源值（0 访问直弹源值、1 访问源值即消耗品、不建隐藏局部）。
-- **rest 位**（`...rest`）：压「前缀位置数」下标后 `MAKE_RANGE`（无上界位）作键取后缀，即 `list[i..]` 的无上界切片语义（空尾与空源都给空 list），**无需专用 slice 指令**。
+`"_"` 位不产生下标访问，故该位置越界/缺键都不报。访问数 >= 2 的 `listPattern` 先经隐藏局部 `<destructure_N>` 复取源值（0 访问直弹、1 访问源值即消耗品）。**rest 位** `...rest`：压前缀位置数后 `MAKE_RANGE`（无上界位）作键取后缀，即无上界切片语义（空尾与空源都给空 list），无专用指令。
 
-### 5.9 try/catch（CodeUnit 内异常记录表方案）
+### 4.8 try / catch
 
-不设 `SETUP_EXCEPT`/`END_EXCEPT` 操作码。编译期为每个 `try` 在 CodeUnit 的异常记录表生成一条记录：
-
-```
-记录表条目: { begin, end, handle=L_catch, stack_depth }   -- 帧深度由 unwind 遍历隐式决定, catch_slot 由 handler 约定承载
-```
-
-字节码本身不含 try 设置/清理指令，`<body>` 直接顺序排列：
+编译期为每个 `try` 在 CodeUnit 的记录表生成一条 `{begin, end, handle=L_catch, stack_depth}`；字节码本身不含 try 设置/清理指令，`<body>` 直接顺序排列：
 
 ```
-<body>                 ; try 体内, 顺序执行
-JUMP L_end            ; 正常完成: 跳过 catch
-L_catch:               ; 抛出时 VM 经 raise 查表 unwind 到此; unwind 截栈后 push 异常值,
-                       ; 恰落 catch 参数槽(== stack_depth, 值填槽, 无 STORE_LOCAL)
+<body>                 ; try 体内顺序执行
+JUMP L_end             ; 正常完成，跳过 catch
+L_catch:               ; 抛出时 unwind 到此；截栈后 push 异常值，恰落 catch 参数槽（== stack_depth，值填槽、无 STORE_LOCAL）
   <catch_body>
 L_end:
-# 未捕获的异常继续 raise (VM 在帧耗尽时终止)
 ```
 
-`raise` 流程（`AriaVM::unwind()`）：按帧 `last_ip` 反推 offset -> 自最内帧向外逐帧查当前 CodeUnit 记录表找最近覆盖该指令的条目（纯搜索，不动帧栈）-> 命中帧处调 `Movement::unwind_to_handler(n, record)` 一体完成：弃内层帧 + 按槽址关闭开 upvalue（含被弃帧与 try 体段的开指，槽区存活时迁值）+ 栈顶截到 catch 参数槽 + `ip = handle` + 载荷 push 落 catch 参数槽；全帧未命中则 `Movement::reset()` 一次清场（全链关开指、清帧、栈复位，载荷先行取走）后从未捕获出口物化 `Error`（反提寄存器载荷）并烘焙内->外逐帧 `at` 堆栈跟踪（最内帧紧贴消息行）。`finally` 不支持（善后后继 defer 为可选后续），unwind 流程无 finally 汇合点。
+`Eval::unwind(vm)`：按帧 `last_ip` 反推 offset、自最内帧向外查记录表（纯搜索，不动帧栈/值栈、不物化）-> 命中帧调 `AriaExeContext::unwind_to_handler(帧索引, record)` 一体完成（弃内层帧 + 按槽址关开 upvalue + 栈顶截到 catch 槽 + `ip = handle` + 载荷落槽）；全帧未命中按出口边界三分流（嵌套执行截净残帧续搜 / 协程链转投一跳 / 主上下文物化）。物化归 `AriaVM::rebake_uncaught_error`，跟踪行逐帧烘焙在消息尾部。`finally` 不支持（无 finally 汇合点；善后后继 defer 为可选方向，未实装）。
 
-## 6. 缺口分析（相对文法与 AGENTS.md）
+## 5. 相关文档
 
-### 6.1 异常记录表（已采纳方案，已落地）
-
-**决定不引入 `SETUP_EXCEPT`/`END_EXCEPT` 操作码**，改用 CodeUnit 内异常记录表。`code.hpp` 仅有 `THROW`（足够：抛出动作本身只需 `THROW`，try 的范围/handler 由记录表登记，无需进/出 try 的指令）。文法 `tryCatchStmt` 已解析。已落地全链：`CodeUnit` 持 `Array<TryRecord> try_records`，每条 `TryRecord{begin, end, handle, stack_depth}`（按 `begin` 非降序，CodeGen 入口预插占位 + 结尾回填保证；`stack_depth` = try 入口局部数编译期快照，供值栈回退），`find_try_handler(ip)` 二分查最近覆盖 `ip` 的 try 记录，返 `Opt<const TryRecord*>` 指向命中记录；VM `unwind` 查表 + 逐帧回退 + 截栈跳 handler + 未捕获物化带堆栈跟踪（§5.9）；`THROW` 运行时语义（弹值入寄存器 + unwind，catch 绑原值保类型）；CodeGen try/catch（含嵌套）/throw 发射。待实现项：
-
-- `finally` -- 不做（已从文法移除，无占位）；善后后继 defer 为可选后续，defer 的 unwind 途中执行语义届时细化。
-
-详见 AGENTS.md「错误处理」第 2 条。
-
-### 6.2 方法调用派发（两段式，已落地）
-
-**现状**：`obj.m(args)` 发 `PREPARE_METHOD name` + `CALL_METHOD argc` 两段（见 §5.6）。历史两阶段：① 最初是 `LOAD_FIELD`(返回绑定方法) + `CALL` 两步，每次调用铸一个 `ObjBoundMethod`；② 单条 `INVOKE_METHOD` 融合掉这次物化并把解析推到执行期（晚于实参求值）；③ 现改回两段，把解析放回实参求值**之前**（次序语义），同时保留 ② 的零物化。
-
-**解析协议**（`Object::load_field`，见 `object.md`）：只回答**该被调的值**；调用区由 `CALL_METHOD` 收口--槽 0 保持 receiver 原样。这条约定恰好让三方各得其所：方法命中时 `call_bound_method` 自会用 bound 的 receiver 覆写槽 0；内置类表的原生函数正需要槽 0 = receiver（其 `this` 兼返回槽，`call_native_fn` 从不碰槽 0）；字段里的可调用值/静态槽值走闭包或原生调用、不读槽 0。基类默认 fail（未 override 类型无成员语义）；实例与内置容器/迭代器（List/Map/String/Range/Iterator）各自 override 成「直取原值/查自身 bootstrap 类表取原生值」，**每次调用零分配**。
-
-**实测结论**（`bench/vm_bench.cpp` 可复测；具体数字是驱动输出、不留档）：两段式相对 ① 两步物化在各迭代协议/方法调用场景显著更快且消除 bound 物化分配（分配/次归零）；相对 ② 单条融合，以同二进制字节改写对照（同一份字节码只改写编码）实测代价为每次调用纳秒级（argc = 0 时下移为空转）。② 的单条融合因「解析晚于实参求值」的次序语义改判被弃（见 §5.6）。
-
-两段式相对 ② 多出的工作是：第二次 dispatch、一次压栈 + 一次弹栈、argc 次 Value 下移、一次 peek；端到端真实程序上代价小幅、随场景而异（对照负载用于剔除构建级布局偏移）。两段式保留 ① 消除的物化收益的绝大部分，分配列不变。
-
-**备选形态（都已实现并实测，均不如现状）**：① 目标槽放调用区之**下** + 帧位（`RETURN` 收尾）--少一次下移，但多一次帧深比较 + 帧位写 + `RETURN` 分支，且改动落在 `RETURN` 上（纯函数调用也走那条路，端到端回归更明显）；② 目标槽放调用区之下 + 调用点补一条 `POP_UNDER`--无帧状态但每次调用多一整条指令的 dispatch。
-
-### 6.3 `MAKE_RANGE`（已加入）
-
-文法 `range -> term ( (".."|"...") term? )?`（无上界开区间 `term?` 为空），AST 有 `RangeExprNode`。`MAKE_RANGE flags:u8`（`[from, to] -> [range]` / 无上界 `[from] -> [range]`，`flags` 位义见 `code.hpp` `kRangeFlagExclusive`/`kRangeFlagUnbounded`：0x00 含上界、0x01 不含、0x02 无上界（`from..` 与 `from...` 同义，含否位不编）。**已启用编译**：CodeGen 按端点左→右发射后发 `MAKE_RANGE`；执行体验证两端为整数（非整数 TypeMismatch）后铸 `ObjRange`（内容哈希型不可变对象）；for-in 经迭代协议走通（`ObjRangeIterator` 无源对象、标量自足），迭代方向由端点推断（from>to 倒序，`10..1` 产出 10→1、`10...1` 产出 10→2），空区间只剩 from==to 且不含上界。步长等扩展留内建或后续指令。
-
-### 6.4 内建函数与 rest 切片
-
-- 内建已落地：VM 级只读 builtins 表（`AriaVM::builtins_`，构造期 `Builtin::register_builtins` 一次性填充 type/str/println/assert/clock/Error/is_a/is_subclass，另经 bootstrap 挂 13 个内建类 object/exception/iterator/list/map/string/range/closure/native_fn/bound_method/module/coroutine/class（协程原语在 `Coroutine` 类面，非模块））+ `LOAD_GLOBAL` 模块 globals 未命中后回退查表，不引入 `LOAD_BUILTIN` 指令（见 `.agents/reference/runtime.md` 与 .agents/notes/runtime/vm.md §5）。
-- 解构 `rest` 收集 `list[i..]` 已落地，**复用切片能力**：`MAKE_RANGE`（无上界位）+ `LOAD_INDEX` 的 Range 键路径（`ObjList::slice` 的无上界后缀支），无专用指令（见 §5.8）。
-
-### 6.5 迭代器
-
-`ObjType::ITERATOR` 已落地（`object/iterator/` 下每源一对文件，基类 `ObjIterator` 钉纯虚协议）。for-in 经方法调用（§5.6）实现，无需独立迭代指令；`iter`/`has_next`/`next` 作为各 bootstrap 类的方法面提供（`iter` 已落地于 List/Map/String/Range 四类型）。
-
-## 7. CodeUnit 结构
-
-```cpp
-class CodeUnit {
-    Array<u8>        code;        // 字节流: opcode + 内联操作数 (小端)
-    AriaArray        constants;   // 常量池 (Array<Value> + trace)
-    Array<LineEntry> lines;       // RLE 行段表 (offset -> line)
-    Array<TryRecord> try_records; // 异常记录表 (按 begin 非降序、允许相等, 见 §6.1)
-};
-```
-
-四个容器字段直接 public 裸露，VM/编译器/反汇编器直接操作；字节码编码逻辑（`emit_op`/`emit_byte`/`emit_word`/`emit_pop_n`/`emit_jump`/`patch_jump`/`emit_jump_back`/`emit_load_local`/`emit_store_local`）收口于 CodeUnit 方法，越界以 bool 返回交调用方翻译。详见 `.agents/reference/bytecode.md`。
-
-- **`code` 用 `Array<u8>`**：opcode 与操作数统一按字节寻址，VM 读操作数直接取字节。
-- **`constants` 用 `AriaArray`**（`Array<Value>` + `trace`）：白赚 `trace(GC&)`，`ObjFnProto::trace` 直接委托；`LOAD_CONST idx` 等以此索引。ObjString 经 intern 驻留，等价内容共享同一 `ObjString*`。
-- **行号表 `lines`**：RLE 压缩的 `Array<LineEntry{offset,line}>`，`line_for_offset` 二分查行，供运行时 `ip -> 行号` 映射。`SourceFile*` 由拥有该 CodeUnit 的 `ObjFnProto` 经其 `module_` 持有，`LineCol` 的列在运行时按需由 `SourceFile::locate` 重算（避免每偏移存全 `LineCol`）。
-
-`ObjFnProto` 已落地：持 `ObjString* name_`、`CodeUnit unit_`（值成员）、`ObjModule* module_`、`u8 arity_` 与 `u8 min_arity_`（缺省参数后实参区间 `[min_arity, arity]`）；`ObjFnProto::trace` 标 name、module、委托 `unit_.trace`（常量池；module_ 回指成环，mark-sweep 三色标记天然破环）。`Array<UpvalueDesc>` 捕获描述表（每条 `{is_local: bool, index: u16}`，见 §4.13）已落地：编译器 `compile_function` 尾部把子上下文登记的捕获描述一次性 flush 进来，VM 执行 `CLOSURE` 时只读。
-
-## 8. 反汇编器输出格式（已落地）
-
-输出含表头、**常量池小节（非空才列）**、**异常记录表小节（非空才列）**、code 段与结尾行（下例只示格式与列宽，非某个程序的真实输出）：
-
-```
-== <main> ==
-
-constants:
-  0000: "hello"
-  0001: 1
-
-try records:
-  0000: [0003, 0009) handle=000B stack_depth=0
-
-code:
-0000    1 LOAD_CONST        0000  ; "hello"
-0003    | POP
-0004    | LOAD_IMM          01  ; 1
-0006    | JUMP_FALSE        0002 -> 000B
-0009    | LOAD_NIL
-000A    | RETURN
-000B    | POP_N             01
-000D    | LOAD_TRUE
-000E    | RETURN
-
-== end ==
-```
-
-- 常量池行：`  索引(4 hex): <repr 渲染>`（字符串带引号转义）；越界索引渲染 `<bad idx N>`。
-- 异常记录表行：`  索引(4 hex): [begin, end) handle=H stack_depth=D`（`TryRecord` 四字段，见 §6.1），与 code 段偏移对照阅读。
-- code 行：偏移（4 hex）+ 行号（右对齐 4 列十进制，与上行同号用 `   |` 占位）+ opcode 名（左对齐 16 列）+ 操作数段（存在才追加，前置两空格）+ `;` 解析注释。
-- 操作数段按格式渲染：`U8`/`U16` 裸 hex；`ConstU16`/`Import` 为 `hex  ; <常量渲染>`；`ImmI8` 为 `hex  ; <有符号十进制>`；`RangeFlags` 为 `hex  ; flags=0xNN`；前向跳转为 **`偏移 -> 目标`**（如 `0003 -> 0009`）、后向（`JUMP_BACK`）为 **`偏移 <- 目标`**，偏移与目标都列出。
-- 注释为**解析注释**（把操作数解释成人可读形式），不含栈效应标注；栈效应见 §4 各表。
-- 残缺字节码容错：操作数缺失渲染 `<truncated>` 并停解码；opcode 字节越界（`>= kOpCodeCount`）渲染 `<bad opcode 0xNN>`，消耗该字节后继续解码下一字节；真正停解码的只有操作数截断（`<truncated>`）；常量索引越界渲染 `<bad idx N>`；寄存器索引越界（`>= kValueRegisterCount`）渲染 `<bad reg N>`。
-- 解码表驱动：`Disassembler` 查 `code.hpp` X 表生成物（`kOpCodeNames`/`kOpCodeFormats`）按格式分发（§2.1），新增指令零改动；VM 主循环自持 switch（热路径操作数读取内联于各 case，不查表），新增指令需 X 表 + VM case 两处同步。
-- `disassembleInstruction(codeunit, offset)` 复用同一解码路径，供 VM 执行跟踪逐条打印（输出即 code 行的指令段，不含偏移/行号前缀）。
-
-## 9. 已决事项
-
-本表的待决事项均已定案并落入正文/实现：`STORE_*` peek-store（§3.1）、常量索引 `u16` 统一（§2.2）、跳转方向拆分与 N 短变体（§2.3）、算子钩子族（§4.9）、两段式方法调用（§6.2）、异常记录表（§5.9/§6.1）、`MAKE_RANGE`（§6.3）、整除/浮除语义（§4.9）、内建经 VM builtins 表回退（§6.4）、行号 RLE（§7）。被否备选随各节正文就近保留。
-
-## 10. 参考
-
-- `src/bytecode/code.hpp`：`OpCode` 枚举（本文基准）。
-- `docs/grammar.txt`：语言文法（lowering 的需求来源）。
-- `.agents/reference/specs/lowering.md`：复合赋值 / 前置 `++`/`--` 的 locator-once lowering（本文 §3.1/§5.3 以 peek-store 更新其 tail 语义）。
-- `src/runtime/FrameStack.hpp`：`FrameStack<T,Capacity>` + `truncate(n)`，供异常 unwind。
-- `src/value/Value.hpp` / `Value.cpp`：`value_hash`/`value_equal`/`value_identical`（`EQUAL`/`STRICT_EQUAL` 指令与全局表键语义来源；哈希键用 `===`）。
-- AGENTS.md「错误处理」第 2 条：VM 自管异常（`THROW` + CodeUnit 内异常记录表 `TryRecord`，不引入 `SETUP_EXCEPT`/`END_EXCEPT`，见 §4.16/§6.1）。
+- `bytecode.md`：`CodeUnit` 容器、emit/回填方法、反汇编器输出格式。
+- `lowering.md`：赋值类 locator-once（`LvalueMode`、三种左值腿、`LoopCtx` 与 break/continue 回填）。
+- `import.md`：模块解析与加载。`runtime.md`：异常通道、`CallFrame`、执行入口。
+- `docs/grammar.txt`：文法与作用域模型（本文只讲发射，不复述语义）。

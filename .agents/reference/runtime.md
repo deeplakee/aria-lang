@@ -7,7 +7,7 @@ paths:
 
 # runtime 层模块参考
 
-VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端处理与路径解析见 `.agents/reference/specs/import.md`；异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的测量入口与形态取舍见 `bench/vm_bench.cpp` 文件头与 `.agents/reference/specs/instruction-set.md` §6.2（动 VM 派发路径前先读）。均按需 Read。
+VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端处理与路径解析见 `.agents/reference/specs/import.md`；异常（try/catch/throw）的踩坑归档与对策见 `.agents/notes/runtime/exception.md`（finally 不支持、后继 defer 为可选后续，异常相关特性重启前重读）；方法派发/迭代协议的测量入口与形态取舍见 `bench/vm_bench.cpp` 文件头与 `.agents/reference/specs/instruction-set.md` §4.5（动 VM 派发路径前先读）。均按需 Read。
 
 ## `runtime/FrameStack.hpp`
 

@@ -87,11 +87,11 @@ namespace aria {
     // 重入口面
 
     Opt<Value> AriaExeContext::execute_function(ObjFunction* function, const ArgList args) {
-        return Eval::execute_aria_fn(*this, Value::from_obj(function), function, args);
+        return Eval::execute_function(*this, Value::from_obj(function), function, args);
     }
 
     Opt<Value> AriaExeContext::execute_method(const Value receiver, ObjFunction* method, const ArgList args) {
-        return Eval::execute_aria_fn(*this, receiver, method, args);
+        return Eval::execute_function(*this, receiver, method, args);
     }
 
     // 帧与开指链

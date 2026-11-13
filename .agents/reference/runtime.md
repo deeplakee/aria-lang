@@ -66,7 +66,7 @@ VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端�
 
 - `ret_frame_`（u32，0 = 最外执行）+ `recursion_depth_`（上限 `kMaxRecursionDepth` = 32）--驱动循环的出口边界与重入深度随上下文走，消费方一律从 `current_` 读取（无 VM 级基线成员）。入口挂界 `enter_recursion()`（边界 = 入场帧深，断言钉边界非零--零帧 = 无驱动，最外执行只走 `run()`）、退场 `leave_recursion()` 归还外层边界。
 - `truncate_frames_to(depth)`：一步退到 depth 的截帧原语，unwind 的嵌套未命中臂借此截净残留帧（depth >= 帧数时无操作）。
-- 重入口两口 = 公共面 `execute_function(function, args)`（Aria 函数直接调用，槽 0 = function 自身）/ `execute_method(receiver, method, args)`（方法形态，槽 0 = receiver 即 this），共同委托 eval 层 `Eval::execute_aria_fn`：压调用区 `[slot0, a1..aN]` + `call_aria_fn` 进帧 + 同步驱动 `dispatch_loop` 至本调用结算（出口边界 = 上行挂的 `ret_frame_`）。仅可在执行中的驱动内调（入场断言钉边界非零）。消费方免友元（当前消费方 = eval 层外部调用口 `execute_callable` 显示咨询面经它跑 `__str__` 钩子 + 测试探针 `TestProbe` 经 `info.ctx()->execute_function(...)`，见 `tests/runtime/test_execute.cpp`）。
+- 重入口两口 = 公共面 `execute_function(function, args)`（函数直接调用，槽 0 = function 自身）/ `execute_method(receiver, method, args)`（方法形态，槽 0 = receiver 即 this），共同委托 eval 层 `Eval::execute_function`（ObjFunction 统一载荷执行口）：原生载荷同步执行，aria 载荷压调用区 `[slot0, a1..aN]` + `call_aria_fn` 进帧 + 同步驱动 `dispatch_loop` 至本调用结算（出口边界 = 上行挂的 `ret_frame_`）；aria 载荷仅可在执行中的驱动内调（入场断言钉边界非零）。消费方免友元（当前消费方 = eval 层外部调用口 `execute_callable` 显示咨询面经它跑 `__str__` 钩子 + 测试探针 `TestProbe` 经 `info.ctx()->execute_function(...)`，见 `tests/runtime/test_execute.cpp`）。
 - 参数契约与失败合同（`Eval::execute_aria_fn` 声明处同款）：`args` 按声明序、不含槽 0；可以指进当前值栈，条件是压档余量够（扩容会搬迁、旧指针即悬垂），由 debug 断言复核。失败返 `nullopt` 且载荷留挂起寄存器、嵌套残帧已被 unwind 截净，调用方按 bool 契约 `return false` 交外层循环续搜；深度达 `kMaxRecursionDepth` 报 `StackOverflow`，实参超 u8 域报 `WrongArity`。
 
 ### `runtime/CallFrame.hpp`（`CallFrame`，trivially-copyable 聚合）
@@ -99,7 +99,7 @@ GC 对象壳（`ObjMovement final : Object, AriaExeContext`，唯一派生、零
 
 ## `runtime/Eval.hpp` / `.cpp`
 
-eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静态方法宿主，宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达。签名分两族：**跨协程跳链逐跳重读 `current_` 的 `unwind` 恒持 `AriaVM& vm`**，其余方法签名即上下文（ctx 耦合机器随上下文走，宿主服务经 `ctx.host()`）。主循环 `dispatch_loop(AriaExeContext& entry)` 参数即进场上下文，体内经本轮上下文指针在可能换指的调用点（CALL 族经 call_native_fn 的切换型原生 / RETURN 协程完成切回 / unwind 跳链）之后以 `vm.current_` 重指，其余指令路径 `current_` 恒不变（进场上下文换指后仍存活，挂起经 `previous_` 链根可达）；宿主面（`registers_`/`builtins_`/`gc_`）经函数首缓存的宿主引用。公共驱动面 = `dispatch_loop`（宿主 run/重入执行体的驱动口）、`call_aria_fn`（闭包进帧单点，签名即 ctx）、`execute_aria_fn`（重入执行体，签名即 `AriaExeContext& ctx`、收 `ObjFunction*`，AriaExeContext 重入口两口的共用体）与 `stringify`/`concat_values`（显示渲染与段收拢，见「显示渲染与外部调用」节）；`run_*` 指令执行体、算子模板族、call 机器、外部调用机器（`execute_callable`/`execute_native_fn`/`execute_str_hook`）与 `unwind` 是 Eval 私有，`push_call_area` 是 `Eval.cpp` 匿名命名空间的 TU 局部 helper，模板定义与实例化点全在本 TU。
+eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静态方法宿主，宿主内部（`current_` 与各服务表）经 AriaVM 友元缝到达。签名分两族：**跨协程跳链逐跳重读 `current_` 的 `unwind` 恒持 `AriaVM& vm`**，其余方法签名即上下文（ctx 耦合机器随上下文走，宿主服务经 `ctx.host()`）。主循环 `dispatch_loop(AriaExeContext& entry)` 参数即进场上下文，体内经本轮上下文指针在可能换指的调用点（CALL 族经 call_native_fn 的切换型原生 / RETURN 协程完成切回 / unwind 跳链）之后以 `vm.current_` 重指，其余指令路径 `current_` 恒不变（进场上下文换指后仍存活，挂起经 `previous_` 链根可达）；宿主面（`registers_`/`builtins_`/`gc_`）经函数首缓存的宿主引用。公共驱动面 = `dispatch_loop`（宿主 run/重入执行体的驱动口）、`call_aria_fn`（闭包进帧单点，签名即 ctx）、`execute_function`（ObjFunction 统一载荷执行口，签名即 `AriaExeContext& ctx`、收 `ObjFunction*`，AriaExeContext 重入口两口的共用体：原生同步执行 / aria 重入驱动）与 `stringify`/`concat_values`（显示渲染与段收拢，见「显示渲染与外部调用」节）；`run_*` 指令执行体、算子模板族、call 机器、外部调用机器（`execute_callable`/`execute_aria_fn`/`execute_native_fn`/`execute_str_hook`）与 `unwind` 是 Eval 私有，`push_call_area` 是 `Eval.cpp` 匿名命名空间的 TU 局部 helper，模板定义与实例化点全在本 TU。
 
 ### 指令子集
 
@@ -114,7 +114,7 @@ eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静�
 - `call_class` 先把已选定的类写入槽 0，跨 `new_instance` 的 GC 点保活。成员调用的槽 0 可能原先是成员宿主，且实参求值可能已改写存放该类的成员。实例建成后覆盖槽 0，接手保活类并充当 `init` 的 `this`。
 - `call_*` 族均签名即 ctx（作用于 ctx 即正在执行的上下文，与 dispatch_loop/raise 语义统一），返 `bool` 成败：失败时错误载荷已 `raise` 进当前上下文挂起寄存器，调用方据 bool 调 `unwind()`。
 - **闭包进帧的根交接**：`call_aria_fn` 从入口用临时根保护闭包及其函数、捕获值，覆盖检查与实参整形；`enter_frame` 发布后由 `frame.function` 接管，退出函数释放临时根。不得依赖类表继续持有已解析的方法，也不得依赖槽 0 仍保存绑定方法对象；变参打包中的 `new_list` 会触发 GC。
-- **`RETURN`**：执行体收口 `run_return()`，取返回值弹帧（`exit_frame` 内置关本帧被捕获局部，值迁入各自 upvalue 自持）后按弹后帧深对出口边界分档（边界 = `current_->ret_frame()`）：高于边界 = 帧间返回，写回 callee 槽（IMPORT 的模块值 = 模块体自己的返回值，同此写回）；恰至非零边界 = 本（嵌套）循环收束，返回值交重入口 `execute_aria_fn` 收取；零边界弹尽再按 `previous_` 分派--空 = 主入口返回（主模块对象，入口收尾所压），非空 = 协程最外帧完成切回（完成值写恢复者预留槽，见「协程」节）。
+- **`RETURN`**：执行体收口 `run_return()`，取返回值弹帧（`exit_frame` 内置关本帧被捕获局部，值迁入各自 upvalue 自持）后按弹后帧深对出口边界分档（边界 = `current_->ret_frame()`）：高于边界 = 帧间返回，写回 callee 槽（IMPORT 的模块值 = 模块体自己的返回值，同此写回）；恰至非零边界 = 本（嵌套）循环收束，返回值交重入口的 aria 臂 `execute_aria_fn` 收取；零边界弹尽再按 `previous_` 分派--空 = 主入口返回（主模块对象，入口收尾所压），非空 = 协程最外帧完成切回（完成值写恢复者预留槽，见「协程」节）。
 - **闭包与 upvalue**：`CLOSURE` 取常量池 `ObjFnProto` 现场包闭包并**立即压栈**（「栈即根」，跨捕获循环免守卫）；`is_local` 槽址经 `capture_upvalue` 单点复用/新建插链，`false` 穿透复制外层 upvalue；`LOAD/STORE_UPVALUE` 经 `value_slot()` 开/闭两态同址不分叉；`CLOSE_UPVALUE` 批量关槽址 >= 栈顶的开 upvalue、无弹栈（对齐 Lua `OP_CLOSE`，编译器在弹区 `POP_N` 后发射）。
 - **类 / 字段 / 方法族**：`LOAD_REG`（压只读值寄存器）、`MAKE_CLASS`（peek super 不弹跨分配；非类值语言可达报 `TypeMismatch`，**内建容器五类（List/Map/String/Range/Iterator）不得作 super**）、`MAKE_METHOD`/`MAKE_STATIC`（经 `ObjClass::set_field` 落接收类表；MAKE_METHOD 仅实例方法仅收闭包、戳 defining class 一职双任 = super 来源 + 方法性标记，MAKE_STATIC 收静态变量与 fun 静态方法不戳）、`LOAD_FIELD`/`STORE_FIELD`（命名成员读/写统一走 `Object::load_field_bound`/`store_field` 协议，执行体只透传信号）、`LOAD_THIS_FIELD`/`STORE_THIS_FIELD`（各有执行体 `run_load_this_field`/`run_store_this_field`，this 取帧槽 0 不经栈，编译器不变式 + ASSERT 钉）、`LOAD_SUPER_FIELD`（defining class 从方法闭包直读，从父类起沿链查不含自身）、`PREPARE_METHOD`/`CALL_METHOD`（见下）。
 - **方法两段式**：`recv.name(args)` 一律 `PREPARE_METHOD` + `CALL_METHOD`（解析先于实参求值，经 `Object::load_field` 不绑定取被调值；CALL_METHOD 把调用区整成 `[recv, a1..aN]` 后交 `call_value`），与 `call_value` 逐位同形；`super.m(args)` 不经两段式。
@@ -133,7 +133,7 @@ eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静�
 - **`Eval::stringify(AriaExeContext&, Value) -> ObjString*`**（公共渲染口，str/println/插值共口）：非对象值走 `value_repr` 的非对象臂；对象一律经**魔术咨询口**解析 `__str__`（String 自有钩子返回原文，即显示/调试分叉点；根类默认原生 = 渲染自身 `repr`，兜底现役类面恒命中）后同步调用（槽 0 = 渲染对象、argc = 0），返回值须为 string（违约 `TypeMismatch`）。nullptr ⟺ 载荷已入挂起寄存器（钩子抛错 / 违约 / 嵌套过深；自渲染递归由重入计数上限折断报 `StackOverflow`）。钩子调用与产出验收收口在私有 `execute_str_hook`。
 - **`Eval::concat_values(AriaExeContext&, Span<const Value>, StringView sep) -> ObjString*`**（join 段收拢口）：各段一律经 `stringify` 收成 `StringView`，量长定容后单趟填充。驻留池是弱根，故每个渲染结果须立即压入本调用的 `GC::Guard`，跨后续渲染保活至拼接完成；正常返回与错误短路均由 RAII 弹根，嵌套调用守卫严格嵌套。`stringify` 返回本身不保活结果，其他调用方同样须在下个 GC 点前发布或根化。`values` **不得指进值栈**（渲染重入扩容搬迁必悬垂）；指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担。
 - **`BUILD_STRING` 执行体**：由 `run_build_string` 两遍处理值栈段，首遍逐段渲染并原槽换装为结果串（栈即根），段址每次经下标重取以避重入扩容搬迁；次遍量长定容后单趟填充。失败载荷在寄存器走 `unwind_check` 善后；成功 drop n 再 push。
-- **外部调用机器（私有）**：`execute_callable(ctx, slot0, callee, args)` = 非循环上下文发起的同步调用口，按被调值形态纯分派--绑定方法直接取函数指针与自身接收者/ 原生走 `execute_native_fn`（`push_call_area` 构造调用区后 `call_native_fn`、弹槽 0）/ Aria 函数走 `execute_aria_fn` 重入体 / 非可调 `CallNonCallable`（`type X is not callable`）。
+- **外部调用机器（私有）**：`execute_callable(ctx, slot0, callee, args)` = 非循环上下文发起的同步调用口，按被调值形态纯分派--绑定方法直接取函数指针与自身接收者/ 函数载荷统一交 `execute_function`（原生同步 / aria 重入体）/ 非可调 `CallNonCallable`（`type X is not callable`）。
 - **join 元素面**：`ListClass::join` 直传容器视图（`self->elements()`）。
 
 ### `IMPORT` 执行体
@@ -227,7 +227,7 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 闭环与无 Result 直报形态
 
-- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步（raise / run_* 返 false 后显式 `goto`）、与 `CALL` 失败善后同形。检查收口在循环尾**两个对称的单一出口**：`unwind_check`（错误站点 goto 入口）与 `sync_now`（CALL/RETURN/IMPORT 等换指之后 goto 入口，标签体重取本轮上下文与帧后回循环顶）；`unwind` 返 true（命中 handler）落回循环尾、回循环顶重取帧，返 false（边界之上全帧未命中）本循环即返 `false` 出循环--善后归调用方：`run()` 物化未捕获 `Error`、重入口 `execute_aria_fn` 返 `nullopt` 由调用方按 bool 契约续报（见「执行入口」节）。循环顶每轮断言 `frame == &current->frames().top()`，故新增任何换指点都必须 `goto sync_now`；正常路径 `break` 出 switch 后经 `continue` 跳过标签（**switch 之后不得新增引用 frame 的代码**，标签体同守，该前提钉在 dispatch_loop 循环顶注释）。
+- dispatch_loop 内全部运行时错误站点统一走寄存器（无 `Result` 直报形态）；raise 与 unwind 不融合成 `*_and_*` 助手，站点就地两步（raise / run_* 返 false 后显式 `goto`）、与 `CALL` 失败善后同形。检查收口在循环尾**两个对称的单一出口**：`unwind_check`（错误站点 goto 入口）与 `sync_now`（CALL/RETURN/IMPORT 等换指之后 goto 入口，标签体重取本轮上下文与帧后回循环顶）；`unwind` 返 true（命中 handler）落回循环尾、回循环顶重取帧，返 false（边界之上全帧未命中）本循环即返 `false` 出循环--善后归调用方：`run()` 物化未捕获 `Error`、重入口 `execute_function` 返 `nullopt` 由调用方按 bool 契约续报（见「执行入口」节）。循环顶每轮断言 `frame == &current->frames().top()`，故新增任何换指点都必须 `goto sync_now`；正常路径 `break` 出 switch 后经 `continue` 跳过标签（**switch 之后不得新增引用 frame 的代码**，标签体同守，该前提钉在 dispatch_loop 循环顶注释）。
 - 循环出口协议返 `bool`：成功 = 返回值已写回调用区槽 0 即栈顶；失败 = 载荷留寄存器、帧链活着。物化点 `rebake_uncaught_error()` 的跟踪烘焙为纯 string 拼接（无 GC 分配点），其前提「帧链活着」由 unwind 未命中不清场保证。
 - 9 个算术/比较 case 经 `run_binary_operator<Op>`（bool 契约同 `call_value`）；`NEGATE`/`LOAD|STORE_GLOBAL` 解析失败经 `raise` 就地装箱，`IMPORT` 解析失败在 `run_import` 经 `fail` 同源装箱返 false，`THROW` 弹值存原值，`CALL`/`load_module` 失败载荷已在寄存器，随后一律 `unwind()` 查表派发（未命中善后见上条）。
 
@@ -246,4 +246,4 @@ aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自�
 
 ### 统一函数载荷
 
-函数只有 `Function` 一个类型标签（原生与 aria 两种载荷共用 `ObjFunction`，`type()`/`is_a` 给出同一身份）。`CallFrame::function` 只持 aria 载荷的 `ObjFunction*`，进帧断言该约束；`execute_function`/`execute_method` 是 aria 函数的重入口。原生调用仍同步、不进帧，实参留栈到 drop，成功时可切换上下文，失败不得切换。画像的 call 表按唯一 FUNCTION 标签聚合；ncall 表先按 `is_native()` 筛选后按名计数，不产生同名标签覆盖。
+函数只有 `Function` 一个类型标签（原生与 aria 两种载荷共用 `ObjFunction`，`type()`/`is_a` 给出同一身份）。`CallFrame::function` 只持 aria 载荷的 `ObjFunction*`，进帧断言该约束；`execute_function`/`execute_method` 是函数值的重入口（原生载荷同步执行、aria 载荷重入驱动，经 eval 层 `Eval::execute_function` 分派）。原生调用仍同步、不进帧，实参留栈到 drop，成功时可切换上下文，失败不得切换。画像的 call 表按唯一 FUNCTION 标签聚合；ncall 表先按 `is_native()` 筛选后按名计数，不产生同名标签覆盖。

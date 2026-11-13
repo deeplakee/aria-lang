@@ -30,14 +30,11 @@ namespace aria {
         // 整形后进帧。失败 WrongArity/StackOverflow。
         static bool call_aria_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
-        // 重入执行体(AriaExeContext 重入口 execute_function/execute_method 的共用体):压 slot0 与
-        // args(栈形 [slot0, a1..aN],argc = 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶
-        // 收取函数返回值;失败 nullopt 且载荷留寄存器、残留帧已截净,调用方按 bool 契约 return
-        // false 交外层续搜;递归深度达 kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报
-        // WrongArity。ctx 恒为正在执行的上下文(契约,断言钉)。args 不得指进本上下文值栈;若传
-        // 栈上段,压档余量须足(扩容会搬迁旧块使视角悬垂,断言复核之)。
+        // ObjFunction 统一载荷执行口(AriaExeContext 重入口 execute_function/execute_method 的
+        // 共用体):原生载荷同步执行、aria 载荷重入驱动,契约随两臂(私有段)。失败 nullopt ⟺
+        // 载荷留寄存器。
         [[nodiscard]]
-        static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
+        static Opt<Value> execute_function(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
         // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
         // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
@@ -72,15 +69,24 @@ namespace aria {
         // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。
         static bool call_native_fn(AriaExeContext& ctx, const ObjFunction* function, u8 argc);
 
-        // 外部调用原生(同步):调用区 [slot0, a1..aN] 在此构造(槽 0 = receiver 兼返回槽),调毕弹
-        // 槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺ 载荷留寄存器。
+        // 重入执行体(execute_function 的 aria 臂):压 slot0 与 args(栈形 [slot0, a1..aN],argc =
+        // 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶收取函数返回值;失败 nullopt 且载荷
+        // 留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜;递归深度达
+        // kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报 WrongArity。ctx 恒为正在执行的
+        // 上下文(契约,断言钉)。args 不得指进本上下文值栈;若传栈上段,压档余量须足(扩容会搬迁
+        // 旧块使视角悬垂,断言复核之)。
+        [[nodiscard]]
+        static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
+
+        // 外部调用原生(execute_function 的原生臂,同步):调用区 [slot0, a1..aN] 在此构造(槽 0 =
+        // receiver 兼返回槽),调毕弹槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺
+        // 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, const ObjFunction* function,
                                             ArgList args);
 
-        // 外部调用口(非循环上下文发起的同步调用):绑定方法直接取其函数和接收者,
-        // 原生载荷走 execute_native_fn,Aria 载荷交 execute_aria_fn
-        // 重入驱动;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
+        // 外部调用口(非循环上下文发起的同步调用):绑定方法直接取其函数和接收者,函数载荷统一交
+        // execute_function 分派;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
 

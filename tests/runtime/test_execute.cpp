@@ -118,16 +118,15 @@ namespace aria {
     // 重入口驱动探针宿主(全走公共面:ctx 服务面与重入口 execute_function/execute_method;定义
     // 全收于此)。
     struct TestProbe {
-        // exec_closure(fn, a1..aN):同步执行闭包 fn(execute_function 形态),fn 须闭包值;失败
-        // 载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
+        // exec_closure(fn, a1..aN):同步执行函数 fn(execute_function 形态),fn 须函数值(原生/aria
+        // 载荷皆可);失败载荷已在寄存器按 bool 契约返 false,成功返回值写槽 0。
         static bool exec_closure_native(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc < 1) {
                 return ctx.arity_error(argc, 1);
             }
-            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjFunction>() ||
-                info[0].as_obj()->as<ObjFunction>()->is_native()) {
-                return ctx.fail(ErrorCode::TypeMismatch, "exec_closure expects a closure as its first argument");
+            if (!info[0].is_obj() || !info[0].as_obj()->is<ObjFunction>()) {
+                return ctx.fail(ErrorCode::TypeMismatch, "exec_closure expects a function as its first argument");
             }
             Value      args[std::numeric_limits<u8>::max()];
             const u8   argc   = copy_call_args(info, 1, args);
@@ -202,6 +201,34 @@ TEST_F(NestedExecStress, RunMethodBindsThis) {
     ASSERT_TRUE(r2.has_value());
     EXPECT_EQ(r1->as_int(), 10);
     EXPECT_EQ(r2->as_int(), 15);
+}
+
+TEST_F(NestedExecStress, RunNativeFnReturnsValue) {
+    const auto src = R"(
+        var g = exec_closure(render, 123);
+    )";
+    const auto r =
+            run_with_natives(vm, src, {{"exec_closure", &aria::TestProbe::exec_closure_native}, {"render", fn_render}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto g = find_global(*r.module, vm.gc(), "g");
+    ASSERT_TRUE(g.has_value());
+    // 原生载荷经重入口同步执行(不进帧、无嵌套驱动):产出即返回值。
+    const auto s = g->as_obj()->as<ObjString>();
+    EXPECT_EQ(s->view(), "123");
+}
+
+TEST_F(NestedExecStress, RunNativeMethodBindsReceiver) {
+    const auto src = R"(
+        var m = "abc".upper;
+        var u = exec_method(m);
+    )";
+    const auto r   = run_with_natives(vm, src, {{"exec_method", &aria::TestProbe::exec_method_native}});
+    ASSERT_TRUE(r.result.has_value());
+    const auto u = find_global(*r.module, vm.gc(), "u");
+    ASSERT_TRUE(u.has_value());
+    // 绑定原生实例方法经重入口执行:receiver 作槽 0,原生 receiver<T>() 语义照常成立。
+    const auto s = u->as_obj()->as<ObjString>();
+    EXPECT_EQ(s->view(), "ABC");
 }
 
 TEST_F(NestedExecStress, UncaughtSurfacesAtTopLevel) {

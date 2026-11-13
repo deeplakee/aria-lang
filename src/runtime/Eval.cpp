@@ -211,26 +211,26 @@ namespace aria {
         return std::nullopt;
     }
 
+    Opt<Value> Eval::execute_function(AriaExeContext& ctx, const Value slot0, ObjFunction* function,
+                                      const ArgList args) {
+        return function->is_native() ? execute_native_fn(ctx, slot0, function, args)
+                                     : execute_aria_fn(ctx, slot0, function, args);
+    }
+
     Opt<Value> Eval::execute_callable(AriaExeContext& ctx, Value slot0, const Value callee, const ArgList args) {
         if (!callee.is_obj()) {
             return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
         }
-        ObjFunction* function;
         switch (Object* obj = callee.as_obj(); obj->type()) {
             case ObjType::BOUND_METHOD: {
                 const auto bound = obj->as<ObjBoundMethod>();
-                function         = bound->method();
-                slot0            = bound->receiver();
-                break;
+                return execute_function(ctx, bound->receiver(), bound->method(), args);
             }
             case ObjType::FUNCTION:
-                function = obj->as<ObjFunction>();
-                break;
+                return execute_function(ctx, slot0, obj->as<ObjFunction>(), args);
             default:
                 return ctx.fail(ErrorCode::CallNonCallable, "type {} is not callable", type_name(callee));
         }
-        return function->is_native() ? execute_native_fn(ctx, slot0, function, args)
-                                     : execute_aria_fn(ctx, slot0, function, args);
     }
 
     ObjString* Eval::execute_str_hook(AriaExeContext& ctx, const Value value, const Value hook) {

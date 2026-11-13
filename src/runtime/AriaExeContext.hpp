@@ -249,10 +249,11 @@ namespace aria {
         [[nodiscard]]
         u8 prepare_call_args(const ObjFnProto* proto, u8 argc);
 
-        // 重入口面(嵌套执行同步执行闭包/方法,两口共用 Eval::execute_aria_fn;失败载荷留本上下文
-        // 寄存器、残帧截净,调用方按 bool 契约交外层续搜;仅可在执行中的驱动内调)。
+        // 重入口面(嵌套执行同步执行函数/方法,两口共用 Eval::execute_function,载荷不限:原生同步
+        // 执行、aria 重入驱动;失败载荷留本上下文寄存器、残帧截净,调用方按 bool 契约交外层续搜;
+        // 仅可在执行中的驱动内调)。
 
-        // 仅接受 aria 函数:function 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
+        // function 自身落调用区槽 0(兼返回槽),args 按声明序压其上。
         [[nodiscard]]
         Opt<Value> execute_function(ObjFunction* function, ArgList args);
 

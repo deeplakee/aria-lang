@@ -72,8 +72,15 @@ namespace aria {
     X(MULTIPLY, Simple)                    \
     X(DIVIDE, Simple)                      \
     X(MOD, Simple)                         \
+    X(BIT_AND, Simple)                     \
+    X(BIT_OR, Simple)                      \
+    X(BIT_XOR, Simple)                     \
+    X(SHIFT_LEFT, Simple)                  \
+    X(SHIFT_RIGHT, Simple)                 \
+    X(SHIFT_RIGHT_LOGICAL, Simple)         \
     X(NOT, Simple)                         \
     X(NEGATE, Simple)                      \
+    X(BIT_NOT, Simple)                     \
     /* ---- stack ops ---- */              \
     X(POP, Simple)                         \
     X(POP_N, U8)                           \
@@ -155,6 +162,20 @@ namespace aria {
                 return "<";
             case OpCode::LESS_EQUAL:
                 return "<=";
+            case OpCode::BIT_AND:
+                return "&";
+            case OpCode::BIT_OR:
+                return "|";
+            case OpCode::BIT_XOR:
+                return "^";
+            case OpCode::SHIFT_LEFT:
+                return "<<";
+            case OpCode::SHIFT_RIGHT:
+                return ">>";
+            case OpCode::SHIFT_RIGHT_LOGICAL:
+                return ">>>";
+            case OpCode::BIT_NOT:
+                return "~";
             default:
                 return "?";
         }

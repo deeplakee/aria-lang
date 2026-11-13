@@ -208,8 +208,15 @@ namespace aria {
             case OpCode::MULTIPLY:
             case OpCode::DIVIDE:
             case OpCode::MOD:
+            case OpCode::BIT_AND:
+            case OpCode::BIT_OR:
+            case OpCode::BIT_XOR:
+            case OpCode::SHIFT_LEFT:
+            case OpCode::SHIFT_RIGHT:
+            case OpCode::SHIFT_RIGHT_LOGICAL:
             case OpCode::NOT:
             case OpCode::NEGATE:
+            case OpCode::BIT_NOT:
             case OpCode::POP:
             case OpCode::DUP:
             case OpCode::DUP2:

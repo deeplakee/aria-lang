@@ -81,7 +81,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 
 **踩坑与测量笔记 `.agents/notes/`（不自动加载，对应特性重启前重读）**：
 
-- `runtime/exception.md`（异常）/ `runtime/coroutine.md`（协程）/ `runtime/vm.md`（VM 结构与派发、重入的取舍）。
+- `runtime/exception.md`（异常）/ `runtime/coroutine.md`（协程）/ `runtime/vm.md`（VM 结构与已否决方案）。
 - `memory/ast-arena.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer.md`（动词法性能前先读）/ `.agents/notes/bench/lang.md`（基准测量与端口纪律）。
 
 **场景技能 `.agents/skills/`（5 个，按工作场景触发）**：`aria-commit`（commit 说明规范，**每次 commit 前必读**）、`aria-bench`（性能测量纪律与报告规范）、`aria-error-messages`（报错文案速查）、`aria-language-change`（语言面改动同步清单）、`aria-testing`（测试组织与新增流程）。
@@ -161,7 +161,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 原则常驻；Error 的静态工厂构造面 / 字段与尺寸 / ObjException 装箱载荷等结构细节见 `.agents/reference/error.md`，通道 2 的落地状态见 `.agents/reference/runtime.md`「VM 异常通道」（读对应源码时自动加载）。
 
 - **核心原则：内部用码，边界用 Error。** `ErrorCode`（1 字节纯码）供解释器**内部**判定（不变式断言 / 状态机分支 / 码到操作的映射）；`Error`（码 + 构造期一次性烘焙的完整消息，**不持 `SourceFile*`**、无悬空风险）是**边界与展示**的载体。
-- **四条错误通道**（设计见 `.agents/notes/runtime/vm.md` §4.5-§4.8）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。
+- **四条错误通道**（见 `.agents/reference/runtime.md`「VM 异常通道」）：① `Result<T, Error>` 返回--编译期可恢复错误的常规通道，VM 侧仅为未捕获出口的边界返回类型；② VM 自管异常状态（运行期主通道）--错误实体 `ObjException`（携码 + 烘焙消息、不含位置）存挂起错误寄存器，**运行期错误不就地构造 Error**，`Error` 仅在 `unwind()` 全未命中的出口物化、位置由逐帧 `at` 跟踪给出；③ `AriaException` 派生（C++ 异常）--仅用于 VM 之外跨 C++ 调用栈的边界，VM 主循环内不用；④ `fatal_error()`（`[[noreturn]]`）--Internal / Resource 类不可恢复错误。
 - **文案一律英文 ASCII-only，句式按家族表收口**（强制）：同一语义只许一种形状（元数走 `AriaVM::arity_error` 唯一口）；ASSERT 文案不重复宏已打的文件/行/函数名。通则、句式家族表与机械门禁见 `.agents/reference/specs/error-messages.md` 与技能 `aria-error-messages`。
 
 ## Git 提交纪律（强制）

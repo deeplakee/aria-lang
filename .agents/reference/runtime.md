@@ -43,7 +43,7 @@ VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端�
 
 ### 协程 resume 链字段 `previous_`
 
-`previous()`/`set_previous()`--resume 链：A resume B 即 `B->previous_` 置 A、`current_` 换指 B；链尾恒为主上下文（`previous_` 恒 nullptr）。`run()` 的出口断言钉的是**上下文交接完整**（`current_ == entry_ctx`），不是 resume/yield 成对--重入口改造后嵌套执行内的 resume 合法。单循环切换模型下 `previous_` 对齐 Wren caller 语义（yield/完成解链、允许再 resume）。VM 根 tracer 只标 `current_` 一点，链上其余上下文经 trace 尾部 `mark_object(previous_)` 级联标根（挂起中 resumer 的唯一可达边）。见 `.agents/notes/runtime/vm.md` §4.9。
+`previous()`/`set_previous()`--resume 链：A resume B 即 `B->previous_` 置 A、`current_` 换指 B；链尾恒为主上下文（`previous_` 恒 nullptr）。`run()` 的出口断言钉的是**上下文交接完整**（`current_ == entry_ctx`），不是 resume/yield 成对--重入口改造后嵌套执行内的 resume 合法。单循环切换模型下 `previous_` 对齐 Wren caller 语义（yield/完成解链、允许再 resume）。VM 根 tracer 只标 `current_` 一点，链上其余上下文经 trace 尾部 `mark_object(previous_)` 级联标根（挂起中 resumer 的唯一可达边）。见 `.agents/notes/runtime/vm.md`。
 
 ### 挂起错误寄存器
 
@@ -89,7 +89,7 @@ VM/执行上下文的设计见 `.agents/notes/runtime/vm.md`；import 端到端�
 
 - `using NativeFn = bool (*)(const NativeCallInfo& info)`：VM 同步直调、不经字节码帧，调用区 `[self, a1..aN]` 全程留栈（善后 drop 在原生返回后才发生）；失败返 false（载荷已在挂起错误寄存器），切换型原生（resume/yield）不写返回槽。
 - `NativeCallInfo` 持槽 0 在值栈缓冲中的下标而非指针，每次访问经 ctx 重取基址按偏移重算，原生执行期间的重入扩容（`grow_stack_` 搬迁）不再悬垂。接口：`ctx()`（执行上下文）/`self()`（槽 0：普通调用 = 闭包自身、方法调用 = receiver）/`operator[]`（实参按值只读，debug 断言越界）/`set_return_val(v)`（写返回槽，即槽 0）/`size()`（实参个数）/`receiver<T>()`（方法调用 receiver 收窄为 T*，miss 报 TypeMismatch 转 nullptr）。
-- 消费点：`Eval::call_native_fn` 构造视图并善后；设计全文见 .agents/notes/runtime/vm.md §4.7。
+- 消费点：`Eval::call_native_fn` 构造视图并善后；设计见 `NativeCallInfo.hpp` 头注与本节上文。
 
 原生实例方法经 `Builtin::register_class_methods` 设置 ObjFunction 的 defining_class；Coroutine 静态原语经 `register_class_functions` 注册并保持空。`ObjFunction::is_method()` 同时识别脚本/原生实例方法，ObjInstance 类链读取与 super 使用该判据；Object 默认绑定读取经 load_field 查询后仅绑定实例方法，函数族与协程值继承该实现，普通/静态函数与已有绑定方法原样返回；实例、类和模块保留各自的绑定读取策略。
 
@@ -210,7 +210,7 @@ CMake option（OFF 默认，对齐上方三个调试 option）。**唯一探测�
 
 ## VM 异常通道（throw/catch）
 
-aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），设计全文见 `.agents/notes/runtime/vm.md` §4.5-§4.8/§7，踩坑对策见 `.agents/notes/runtime/exception.md`（坑编号 #1-#20）。
+aria 语言的 `throw/catch` 与 VM 检测到的运行时错误统一走 VM 自管机制（不引入 `SETUP_EXCEPT`/`END_EXCEPT`，不依赖 C++ 异常），实现定序见 `.agents/notes/runtime/exception.md`，踩坑对策见 `.agents/notes/runtime/exception.md`（坑编号 #1-#20）。
 
 - 错误站点 raise 载荷入挂起寄存器 -> `Eval::unwind()`（非 const，链式多跳会切换 `current_`）在出口边界内自最内帧向外以 `last_ip`（指令起始，非已推进的 `ip`）反推 offset 查各帧 `CodeUnit::try_records`（`find_try_handler`，嵌套取最内层），纯搜索不动帧栈/值栈、不物化、不做跟踪收集（收集归物化点，见「未捕获堆栈跟踪」节）。搜索下界 = `current_->ret_frame()`（出口边界随上下文走，逐跳重读）。
 - 命中（循环内就地提前返回）：`unwind_to_handler(命中帧索引, record)` 一体完成弃帧+截 catch 槽+ip 跳+载荷落槽（见 AriaExeContext 节），载荷落 catch 参数槽（恒 == stack_depth，值填槽无 `STORE_LOCAL`）。

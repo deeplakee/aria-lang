@@ -14,8 +14,9 @@
   `NDEBUG` 编译为空(`common.hpp`),即量的是没有断言开销的路径。
 - **量的是实际发布的那份二进制**:这一层的数字要和其它语言的发行构建比,所以不加任何缩水开关--
   LTO / `-O3` 关掉会让每一行都慢一大截(两位数百分比,薄的派发热路径吃亏最多),那样比出来的位次没有
-  意义。进程内基准(`lexer_bench` / `vm_bench`)相反,为了复现文档里的存档数字约定用无 LTO 配方,两层
-  的配方别混用。跨构建对比前先固定 Debug/Release 与 LTO 两项。
+  意义。进程内基准(`lexer_bench` / `vm_bench` / `hashtable_bench`)相反,为了复现存档数字用 `-O2 -DNDEBUG`、
+  无 LTO 的配方,并另用构建目录 `build/micro`(与 `build/rel` 的配方互斥,同目录反复重配会读到缓存旗标
+  钉住的旧产物)。两层的配方别混用。跨构建对比前先固定 Debug/Release 与 LTO 两项。
 - **进程级计时**:每个基准起一次子进程(等价手工 `./build/rel/aria xx.aria`),预热 1 轮丢弃后跑 5 轮,
   报**平均值 ± 标准差**并列最小值。平均是 CPython 官方的口径(pyperf 默认 mean ± stddev,并先标定到
   `--min-time`;MicroPython 的 run-perfbench 同样报平均),最小值是 CLBG / Ruby benchmark-driver 的口径,

@@ -21,9 +21,11 @@ ctest --test-dir build -R <名字片段>           # 只运行名字匹配的测
 
 ## 编写测试
 
-**C++ 测试**放在 `tests/<对应模块>/` 下，文件名形如 `test_<模块>.cpp`，并添加到
-`tests/CMakeLists.txt` 的 `aria_tests` 源列表——没有登记的文件不会参与编译，也就不会
-运行。测试需要临时文件时，使用 `testing::TempDir()` 返回的目录，测试结束后自动清理。
+**C++ 测试**放在 `tests/<对应模块>/` 下，文件名按主题取（如 `test_gc.cpp`、
+`test_array.cpp`，一个模块可以有多个文件），并添加到 `tests/CMakeLists.txt` 的
+`aria_tests` 源列表——没有登记的文件不会参与编译，也就不会运行。测试需要临时文件时，
+`testing::TempDir()` 只返回系统临时目录，不会建目录也不会清理：文件名要带用例名（并行
+运行 `ctest -j` 时共享同一目录），需要的话在用例里自己建子目录并删除。
 
 **语言测试脚本**的完整规则（目录结构、判定方式、期望输出文件的写法）见
 `tests/language/README.md`。要点：正向脚本必须成功运行，并用 `assert` 验证结果；反向

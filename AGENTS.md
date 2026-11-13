@@ -84,7 +84,7 @@ python3 tools/check_commit_msg.py <msg-file>   # commit 说明机械检查（钩
 - `runtime/exception.md`（异常）/ `runtime/coroutine.md`（协程）/ `runtime/vm.md`（VM 结构与已否决方案）。
 - `memory/ast-arena.md`（动 Parser/CodeGen 分配路径前先读）/ `compile/lexer.md`（动词法性能前先读）/ `.agents/notes/bench/lang.md`（基准测量与端口纪律）。
 
-**场景技能 `.agents/skills/`（5 个，按工作场景触发）**：`aria-commit`（commit 说明规范，**每次 commit 前必读**）、`aria-bench`（性能测量纪律与报告规范）、`aria-error-messages`（报错文案速查）、`aria-language-change`（语言面改动同步清单）、`aria-testing`（测试组织与新增流程）。
+**场景技能 `.agents/skills/`（7 个，按工作场景触发）**：`aria-commit`（commit 说明规范，**每次 commit 前必读**）、`aria-bench`（性能测量纪律与报告规范）、`aria-error-messages`（报错文案速查）、`aria-language-change`（语言面改动同步清单）、`aria-testing`（测试组织与新增流程）、`aria-add-builtin`（加内建方法/静态原语/内建类的同步面）、`aria-bytecode-change`（加/改指令的同步面）。
 
 **人类文档 `docs/`**：`grammar.txt`（手写文法规范，Lexer / Parser 实现应与其一致）、`guide/`（17 章教程，语言面验收面之一）、`building.md` / `testing.md`、`cpp-naming-convention.md`（命名规范本体）。
 

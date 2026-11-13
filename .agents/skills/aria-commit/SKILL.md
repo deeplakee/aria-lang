@@ -21,7 +21,7 @@ Tests: <optional single line>
 
 | 段 | 必写 | 约束 |
 | :--- | :--- | :--- |
-| Subject | 是 | **祈使句**、动词原形开头（`add` 不取 `added`）、小写开头、无句号；软目标 ≤ 50 列，硬上限 72 列 |
+| Subject | 是 | **祈使句**、动词原形开头（`add` 不取 `added`）、小写开头、无句号；软目标 ≤ 50 列。**72 列是整行上限**（含 `<type>(<scope>): ` 前缀），scope 长时得缩标题 |
 | Body | 否 | 只在「标题与 diff 说不清 why」时写；1~3 句**散文**，≤ 4 行；不分段标签、不列 bullet；72 列折行 |
 | `Tests:` 行 | 否 | 跑过测试/构建就带一行结果；纯文档与脚本类可省；须是说明末行 |
 
@@ -41,7 +41,7 @@ Tests: <optional single line>
 | `style` | 不改语义的格式化 |
 | `chore` | 其余杂项（`.gitignore`、脚本、agent 配置） |
 
-scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `bytecode` / `runtime` / `object` / `memory` / `tests` / `docs` / `build`）；跨模块逗号分隔、主模块在前、至多三个；全库性改动省略 scope。
+scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `bytecode` / `runtime` / `object` / `memory` / `tests` / `docs` / `build`）；跨模块逗号分隔、主模块在前、至多三个；全库性改动省略 scope。这是**约定而非门禁**：`check_commit_msg.py` 只校验 type 在九类内，不校验 scope。
 
 ## 3. 正文写什么
 
@@ -62,11 +62,11 @@ scope 取仓库模块名（`core` / `util` / `value` / `error` / `compile` / `by
 
 ## 4. 落笔（每次提交强制）
 
-1. `git add -u` 后 `git diff --cached --stat` 核范围，只含本批文件。
+1. 暂存后 `git diff --cached --stat` 核范围，只含本批文件。注意 `git add -u` **不收未跟踪文件**--新增语料/测试/文档要先 `git add <路径>`，否则批次静默残缺且 `--stat` 不会提示。
 2. 说明写进临时文件（如 `/tmp/commit_msg.txt`），不用 `-m` 随手一句。
-3. `python3 tools/check_commit_msg.py <file>` 必须返回 0；`commit-msg` 钩子（`git config core.hooksPath tools/hooks` 启用）会在落库时自动再跑一遍，违规拒提交。
+3. `python3 tools/check_commit_msg.py <file>` 必须返回 0。两个坑：缺参数时它返 2（不是通过）；以 `Merge ` / `Revert ` / `fixup!` / `squash!` 开头时它直接返 0（等于没查）。`commit-msg` 钩子会在落库时再跑一遍，但钩子是**本地配置**--新环境要先 `git config core.hooksPath tools/hooks`，否则静默不生效。
 4. `git commit -F <file>`；未推送时改说明用 `git commit --amend -F <file>`。
-5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。
+5. `git log -1 --format=%B` 复读一遍--脚本判不出「正文是不是在讲过程」。动词选词也要看一眼：`split`、`set` 这类兼作过去式的原形会被脚本当完成体拒掉，换 `divide`、`assign` 之类。
 
 ## 5. 粒度与流程
 
@@ -85,7 +85,7 @@ Strings could only be converted out, so reading numeric data meant
 hand-rolled parsing. Both methods parse the whole string in decimal via
 util::parse_int_text/parse_float_text and return nil on failure; to_int
 additionally gates the i48 domain.
-Tests: ctest 1158/1158 (default + TagValue); clang-format clean
+Tests: ctest all green (default + TagValue); clang-format clean
 ```
 
 ```text

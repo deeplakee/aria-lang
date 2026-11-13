@@ -7,9 +7,9 @@
 // best-of-N 循环收在普通函数里(与 lexer_bench 的不抽外壳纪律差异见 lexer-notes §1)。
 //
 // 复现(无 LTO,理由同 lexer_bench):
-//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
-//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/rel --target vm_bench -j \
-//     && ./build/rel/bench/vm_bench
+//   cmake -S . -B build/micro -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
+//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/micro --target vm_bench -j \
+//     && ./build/micro/bench/vm_bench
 
 #include <algorithm>
 #include <chrono>

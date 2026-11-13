@@ -4,7 +4,7 @@
 // 探测链更长),附非计时正确性校验。仅用 GC 作 Trivial 分配器(不调 new_object),测的是 Swiss
 // Table 本身探测与 rehash 性能,无 GC 噪声。
 //
-// 构建:cmake --build build --target hashtable_bench -j;运行:./build/bench/hashtable_bench
+// 构建:cmake --build build/micro --target hashtable_bench -j;运行:./build/micro/bench/hashtable_bench
 
 #include <algorithm>
 #include <chrono>

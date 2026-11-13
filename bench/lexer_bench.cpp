@@ -6,9 +6,9 @@
 // 量级,缘由见 lexer-notes §1)。
 //
 // 复现(文档各表统一 -O2 -DNDEBUG 无 LTO 基线;Debug 只可对拍行为,LTO 影响见 lexer-notes):
-//   cmake -S . -B build/rel -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
-//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/rel --target lexer_bench -j \
-//     && ./build/rel/bench/lexer_bench
+//   cmake -S . -B build/micro -DCMAKE_BUILD_TYPE=Release -DARIA_ENABLE_LTO=OFF \
+//     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" && cmake --build build/micro --target lexer_bench -j \
+//     && ./build/micro/bench/lexer_bench
 
 #include <algorithm>
 #include <chrono>

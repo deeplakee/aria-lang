@@ -63,8 +63,7 @@ namespace aria {
     X(RedefinedClass, Semantic)          /* class defined twice */                                                  \
     X(NumberOutOfRange, Semantic)        /* integer literal beyond i48 (the grammar defers overflow here) */        \
     /* ========== RUNTIME ERROR (execution stage) ========== */                                                     \
-    X(TypeMismatch, Runtime)                /* operand type mismatch (number + non-number) */                       \
-    X(InvalidOperand, Runtime)              /* bad unary operand (negating a non-number) */                         \
+    X(TypeMismatch, Runtime)                /* operand or argument outside the accepted type or domain */           \
     X(IndexOutOfBounds, Runtime)            /* index or slice out of bounds (list, string, substring, empty pop) */ \
     X(DivisionByZero, Runtime)              /* division by zero */                                                  \
     X(ModuloByZero, Runtime)                /* modulo by zero */                                                    \

@@ -6,7 +6,7 @@ try {
     assert(false);       # 上一行必抛，不可达
 } catch (e) {
     assert(type(e) == "Exception");
-    assert(e.code() == 29);      # DivisionByZero
+    assert(e.code() == 28);      # DivisionByZero
     assert(e.message() == "Runtime: DivisionByZero integer division by zero");
 }
 try {
@@ -22,5 +22,5 @@ try {
     var m = e.message;
     var c = e.code;
     assert(m() == "Runtime: ModuloByZero integer modulo by zero");
-    assert(c() == 30);           # ModuloByZero
+    assert(c() == 29);           # ModuloByZero
 }

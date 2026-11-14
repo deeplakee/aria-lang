@@ -1,0 +1,2 @@
+Runtime: TypeMismatch negate requires a number, got Bool
+at <main> (

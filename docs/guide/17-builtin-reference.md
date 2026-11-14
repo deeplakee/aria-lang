@@ -163,6 +163,7 @@ Runtime: IndexOutOfBounds pop from empty list
 Runtime: IndexOutOfBounds substring range 3..9 out of range
 Runtime: KeyError map key not found: "nope"
 Runtime: TypeMismatch __add__ requires two strings, got String and Int
+Runtime: TypeMismatch __mul__ requires a non-negative integer, got -1
 Runtime: TypeMismatch operator '<' requires numbers, got Int and String
 Runtime: TypeMismatch range bounds must be integers, got F64 and Int
 Runtime: TypeMismatch cannot inherit from built-in class 'List'

@@ -1,2 +1,2 @@
-// 钉住：~ 纯 Int 域，F64 报 InvalidOperand。
+// 钉住：~ 纯 Int 域，F64 报 TypeMismatch。
 ~1.5;

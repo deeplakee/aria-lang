@@ -310,7 +310,7 @@ namespace aria {
 
     bool Eval::run_negate(AriaExeContext& ctx) {
         // 整数/浮点就地取负;对象左值取 __neg__ 实现后调用(一元恒零实参,调用区
-        // [v] 即 [this]);其余类型报 InvalidOperand。GC 走查同 run_binary_operator。
+        // [v] 即 [this]);其余类型报 TypeMismatch。GC 走查同 run_binary_operator。
         const Value operand = ctx.peek(0);
         if (operand.is_int()) {
             if (operand.as_int() == kIntMin) {
@@ -329,14 +329,15 @@ namespace aria {
             }
             return false;
         }
-        return ctx.fail(ErrorCode::InvalidOperand, "negate requires a number, got {}", type_name(operand));
+        return ctx.fail(ErrorCode::TypeMismatch, "negate requires a number, got {}", type_name(operand));
     }
 
     template<OpCode Op>
     bool Eval::run_bitwise_operator(AriaExeContext& ctx) {
-        // 纯 Int 域位算子(无对象钩子):& | ^ 按位结果恒在 i48 域(符号扩展闭包)零检查;
-        // 移位先做计数域检查,<< 另按幅值计算前检查(乘法同款:越界移位裸算可 UB),>>>
-        // 结果统一域检查(唯一失败面 = 计数 0 的负操作数)。全程无分配无 GC 点。
+        // 纯 Int 域位算子(无对象钩子)。& | ^ 的结果恒在 i48 域内,无需检查。
+        // 移位先检查计数。<< 在计算前确认数学结果可用 i48 表示,避免回绕。
+        // >>> 检查移位后的结果,仅负数右移 0 位时结果越界。
+        // 成功路径不分配。报错会分配异常对象,可能触发 GC。
         const Value rhs_value = ctx.pop();
         const Value lhs_value = ctx.pop();
         if (!(lhs_value.is_int() && rhs_value.is_int())) {
@@ -378,13 +379,13 @@ namespace aria {
 
     bool Eval::run_bit_not(AriaExeContext& ctx) {
         // 按位取反:~x == -x-1 在 i48 域封闭(~kIntMax == kIntMin),i64 取反零检查入域;
-        // 无对象钩子,非 Int 报 InvalidOperand。
+        // 无对象钩子,非 Int 报 TypeMismatch。
         const Value operand = ctx.peek(0);
         if (operand.is_int()) {
             ctx.peek(0) = Value::from_int(~operand.as_int());
             return true;
         }
-        return ctx.fail(ErrorCode::InvalidOperand, "bitwise not requires an integer, got {}", type_name(operand));
+        return ctx.fail(ErrorCode::TypeMismatch, "bitwise not requires an integer, got {}", type_name(operand));
     }
 
     template<OpCode Op>

@@ -279,7 +279,7 @@ Runtime: TypeMismatch __add__ requires two strings, got String and Int
   at <main> (concat.aria:1)
 ```
 
-字符串重复的乘数必须是整数（浮点一律报错，负数也报错而不静默得空串）：
+字符串重复的乘数必须是非负整数。浮点和负整数乘数都报 `TypeMismatch`。
 
 ```aria
 println("ab" * 3);      # ababab
@@ -317,7 +317,7 @@ println(2.5 % 2);  # 0.5
 
 ### 位运算：`&` `|` `^` `~` `<<` `>>` `>>>`
 
-位运算只在整数上成立：任一操作数是浮点、bool 或字符串都直接报错，不升浮点，也没有
+位运算只在整数上成立：任一操作数是浮点、bool 或字符串都报 `TypeMismatch`，不升浮点，也没有
 对应的重载钩子。`&` `|` `^` `~` 的结果恒在 48 位整数域内：
 
 ```aria
@@ -341,6 +341,14 @@ println(3 << 46);
 println(-16 >> 2);    # -4
 println(-16 >>> 2);   # 70368744177660
 println(-1 >>> 1);    # 140737488355327
+```
+
+负数逻辑右移 `0` 位时，无符号位模式对应的值超出有符号 48 位整数域，会抛出
+`IntegerOverflow`。
+
+<!-- expect-error: IntegerOverflow -->
+```aria
+println(-1 >>> 0);
 ```
 
 优先级与 C 一致：加减紧于移位（`1 + 2 << 3` 是 `(1 + 2) << 3` 即 `24`），相等紧于

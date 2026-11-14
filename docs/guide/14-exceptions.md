@@ -105,7 +105,7 @@ catch 里 `return` 没有任何限制，函数正常返回。
 ## Exception 对象：message、code 与 Error
 
 异常对象有两个方法：`message()` 返回消息（运行期错误是完整消息，含 `类别: 码` 前缀），
-`code()` 返回**错误码数字**（每个错误码对应一个注册表序号，如除零是 `29`）：
+`code()` 返回**错误码数字**（每个错误码对应一个注册表序号，如除零是 `28`）：
 
 ```aria
 try {
@@ -119,7 +119,7 @@ try {
 输出：
 
 ```text
-29
+28
 Runtime: DivisionByZero integer division by zero
 ```
 
@@ -146,7 +146,7 @@ try {
 输出：
 
 ```text
-43
+42
 invalid age: -3
 ```
 
@@ -352,7 +352,7 @@ Internal: AssertionFailed custom message
 | `ModuloByZero` | 整数模零（`%` 右操作数为 0） |
 | `IndexOutOfBounds` | 列表 / 字符串下标越界、空表 `pop`、切片端点越界 |
 | `KeyError` | map 下标读 miss |
-| `TypeMismatch` | 算子两域不符（数值 / 字符串 / 钩子签名） |
+| `TypeMismatch` | 操作数或实参不符合类型要求，例如对布尔值取负，或给重复运算传入负数 |
 | `UndefinedVariable` | 读 / 写未声明的名字 |
 | `UndefinedProperty` | 对象缺成员（含缺运算符钩子、不可迭代值） |
 | `WrongArity` | 实参个数不符 |

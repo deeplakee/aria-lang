@@ -123,6 +123,7 @@ eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静�
 
 ### 整数运算
 
+- 数值路径的一元取负与二元算术，以及只收 Int 的位运算，操作数类型不符均报 `TypeMismatch`。字符串和列表的 `__mul__` 只接受非负整数，非 Int 或负整数乘数均报 `TypeMismatch`。
 - Int 固定 i48，`run_binary_int` 的加/减/乘/除及 `run_negate` 结果越界经 `ctx.fail(IntegerOverflow, "integer result out of range")` 进入 VM 异常通道。乘法先按符号选幅值上限，以除法比较后再乘，避免宿主 i64 中间结果溢出；其他算术在 i64 内计算后闸 i48。
 - 除法向零截断，`MIN / -1` 溢出，`MIN % -1` 合法得零；除/模零保留原码。比较与混合浮点路径不受影响。复合赋值和前置自增/自减复用同一指令，失败不执行写回，已发生的操作数副作用保留。两种值表示、Debug/Release 同语义。
 

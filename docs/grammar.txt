@@ -167,6 +167,7 @@ comment        -> "//" [^\n]* | "#" [^\n]*
 # 产新串、List * Int 产新表，均整次重复、0 次得空；乘数严格 Int，F64 一律拒（同下标访问
 # 口径），负数报 TypeMismatch 不静默得空）；其余含 String/List 的类型组合报运行期
 # TypeMismatch；无隐式转字符串，显式转换走内置 str()。
+# 算术操作数类型不符报 TypeMismatch（含一元取负、内建算子钩子的参数检查）。
 # 比较层（< <= > >=）为数值与字符串两域：两侧皆 String 时按**无符号字节序**比（与 size/s[i]
 # 的字节域同域，s[i] 切出的非法单字节串亦全序；UTF-8 保序故合法文本上与按码点比较一致；
 # 大小写敏感、无 locale/collation），结果 Bool；含 String 的混合组合报 TypeMismatch；

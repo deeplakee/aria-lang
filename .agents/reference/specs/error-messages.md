@@ -64,6 +64,8 @@
 | 有钩子但实参类型错 | `<hook> requires <T>, got <actual>` | `__lt__ requires two strings, got String and Int` |
 | 数值内建路径（无钩子可指） | `operator '<sym>' requires numbers, got <a> and <b>` | `operator '+' requires numbers, got Nil and Int` |
 
+一元算子的类型检查同样报 `TypeMismatch`（如 `negate requires a number, got Bool`）。内建重复运算的乘数域为非负整数，负数也报 `TypeMismatch`（如 `__mul__ requires a non-negative integer, got -1`）。
+
 ## 4. ASSERT / static_assert 文案
 
 `ASSERT(cond, msg)` 展开为 `[file:line] Assert failed in <func>(): <msg>`（见 `src/common.hpp`），**位置与函数名已由宏给出**。故断言文案：

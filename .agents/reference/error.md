@@ -26,6 +26,7 @@ paths:
 - 无生产者的码（名字仍出现在测试名与语料断言里，但 `src/` 内无生产者--勿据名称出现与否判定可达性）：`ErrorCode::Ok`（仅测试哨兵消费）、`UndefinedType`、`RedefinedClass`、`NotIterable`、`IteratorProtocol`、`SuperNoBaseClass`、`CircularImport`、`InvalidBytecode`、`StackUnderflow`、`InvalidState`、`SourceTooLarge`。
 
 - `IntegerOverflow` 属 Runtime：整数算术结果或无上界 range 请求超出 i48 时，经上下文 `fail` 装箱，可 catch；唯一 detail = `integer result out of range`。字面量越界仍属 Semantic 的 `NumberOutOfRange`。
+- 算术和位运算的操作数类型不符报 `TypeMismatch`，含一元算子和内建重载。字符串和列表的负重复次数也报 `TypeMismatch`，因为重复运算要求非负整数。
 
 ## `error/Error.hpp`
 

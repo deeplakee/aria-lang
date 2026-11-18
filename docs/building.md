@@ -34,9 +34,10 @@ build/aria --version
 
 ## 构建类型与选项
 
-日常开发使用 Debug 即可；性能测量必须使用 Release——它默认开启 `-O3` 与链接时优化
-（LTO），基准读数都以这一配置为准，Debug 与 Release 的差距可以达到一个数量级。需要
-临时关闭 LTO 时，配置时加 `-DARIA_ENABLE_LTO=OFF`。
+日常开发使用 Debug；性能测量使用 Release。整程序基准 `bench/lang/` 使用原样
+Release（默认开启 LTO）；进程内微基准使用单独的 `build/micro` 配方（`-O2 -DNDEBUG`、
+关闭 LTO）。配方与测量纪律以 [aria-bench](../.agents/skills/aria-bench/SKILL.md) 为准，
+不同配方的绝对读数不混用。临时关闭 LTO 时加 `-DARIA_ENABLE_LTO=OFF`。
 
 其余 CMake 选项（默认值以 `CMakeLists.txt` 为准）：
 

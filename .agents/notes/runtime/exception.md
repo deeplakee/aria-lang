@@ -39,7 +39,7 @@
 
 ## 7. 挂起寄存器不在值栈内，必须显式标根（#8）
 
-raise 到 take 之间可能跨 `new_exception` 的 `maybe_collect` 与 handler 处截栈/push 触发的 GC；寄存器里的 `ObjException`（及用户 throw 的任意 `Obj*`）不在值栈区间，若不标根就被回收、catch 绑到悬垂对象。归属：`ObjMovement::trace` 自标 `pending_error_`（VM 根 tracer 只标 `current_` 一点，其余经对象图级联）。try/catch 路径必须开 stress GC 验证。
+挂起载荷在 raise 到 take 之间可能跨分配与 GC；寄存器里的 `ObjException`（及用户 throw 的任意 `Obj*`）不在值栈区间，若不标根就被回收、catch 绑到悬垂对象。归属：`ObjMovement::trace` 自标 `pending_error_`（VM 根 tracer 只标 `current_` 一点，其余经对象图级联）。try/catch 路径必须开 stress GC 验证。
 
 ## 8. catch 参数走「值填槽」：`catch_slot == stack_depth`（#10）
 
@@ -51,7 +51,7 @@ raise 到 take 之间可能跨 `new_exception` 的 `maybe_collect` 与 handler �
 
 `dispatch_loop` 循环顶持 `frame` 引用；`unwind` 命中时 `frames_.truncate` 可能弹掉多帧，旧引用立即悬垂。现行形态：错误站点 `goto unwind_check`，命中即回循环尾、回循环顶重取帧；换指后需重取上下文/帧的站点 `goto sync_now`。**switch 之后与两个标签体内都不得新增引用 `frame` 的代码**（该前提钉在循环顶注释），循环顶每轮断言 `frame == &current->frames().top()`。
 
-## 10. `unwind` 是纯搜索，不动帧栈（#13）
+## 10. 搜索与退场分离（#13）
 
 遍历只读各帧 `last_ip` 查表；命中后交给 `unwind_to_handler` 一体完成，未命中的帧不被逐个弹出（早期形态逐帧 `exit_frame` 有两处硬伤：帧引用悬垂；走到未捕获时帧已全弹、跟踪无帧可查）。未命中按出口边界三分流：嵌套执行截净残帧交外层续搜 / 协程链转投一跳 / 链根返 false 交 `run()` 物化。
 

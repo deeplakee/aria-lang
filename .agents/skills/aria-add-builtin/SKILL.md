@@ -33,7 +33,7 @@ description: 给 aria 加内建方法、静态原语或新内建类时使用。�
 
 ## 4. 文档
 
-- `.agents/reference/object.md`「内置类型的成员面」：改类面清单（新方法/新类都要）。
-- 新类：`reference/runtime.md`「类与对象 bootstrap」的类清单与格数一并改。
+- 注册、绑定或接收者约束变化时更新 `.agents/reference/object.md`「内置类型的成员面」。仅增加方法且通用约定不变时，不在模块参考重复方法表。
+- 新类：核对 value_register.hpp、bootstrap 与裸名曝光；构造机制变化时同步 runtime 参考「类与对象 bootstrap」，不另维护格数副本。
 - **`docs/guide/17-builtin-reference.md`**：人类文档逐条列内建方法，必须同步（它是面向读者的验收面）。
 - `README.md` 的语言特性表按「特性」粒度写，单个方法一般不动。

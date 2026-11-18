@@ -14,7 +14,9 @@ paths:
 - `Object`（`object/Object.hpp`）：所有 GC 对象的基类。用 `ObjType` 枚举（独立头 `object/ObjType.hpp`）、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。两 ctor 即「缓存哈希」的**构造期分发**--不可变对象传算好的内容哈希、可变对象取地址哈希；故 `hash_` 留在基类，查询期直接 `o->hash()`，无需按类型分发的自由函数。
 - `Object::type_name()` 非虚，纯由 `type_` 决定；类型名映射单一来源 = `to_string(ObjType)`，全项目类型名 PascalCase（原语 `Nil`/`Bool`/`Int`/`F64`/`Obj`，对象 `String`/`Function`/...）。
 - `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
-- `ObjString`（`ObjString.hpp`）：SSO 字符串 + FNV-1a 哈希 + intern 驻留；调试位带引号转义、显示位直取原文（分叉在渲染面，对象不设 override）。铸造入口 = `new_string` 工厂族（先查驻留命中返回已有串、未命中才分配+insert），含两段重载 `new_string(gc, lhs, rhs, hash)`（先查后拼：命中零拷贝，哈希为 `hash_str(hash_str(lhs), rhs)` 续算终态）与接管重载 `new_string(gc, data, size, cap, hash)`（buffer 释放责任随三臂移交：命中释放返已有串 / 长串收缩后由接管构造臂零拷贝接管 / 短串 SSO 化后释放）。三条不变式：① **`new_string` 是唯一铸造路径**（`value_identical` 对 Obj 比指针、驻留池以 `===` 为键，全靠所有字符串都过池）；② **内容哈希在 ctor 烘焙且无写入口**，改本类时不要加 setter（否则作键即腐坏）；③ **未声明 deleted 拷贝/移动**（其余 `Obj*` 都删了）--隐式拷贝只浅拷 `long_chars_`，两个对象析构即 double free，动本类前先补删除声明。
+- `ObjString`（`ObjString.hpp`）：不可变 SSO 字符串、内容哈希、intern 驻留。调试 repr 保留引号与转义，
+  显示由 String 类的 __str__ 返回原文。创建统一走 new_string：等价内容共享对象，两段重载先查后拼，
+  接管重载负责缓冲的后续释放；hash 参数须与内容一致。已知拷贝风险见[对象笔记](../notes/object/objstring.md)。
 - `ObjFnProto`（`ObjFnProto.hpp`）：GC 托管的函数原型，`ObjType::FN_PROTO`（类型名 `FnProto`），经 `new_fn_proto` 创建；`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。存于 Value 常量池，不直接作为运行期函数值调用。
 - `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
 - `ObjFunction`（`ObjFunction.hpp`）：唯一运行期函数对象，`ObjType::FUNCTION` / 类型名 `Function`；内联 `std::variant` 保存原生载荷（名称 + C++ 函数指针 `NativeFn`）或 aria 载荷（`ObjFnProto*` + upvalue 数组），`is_native()` 查询载荷，`proto()` / `upvalues()` 仅用于 aria 载荷、`fn()` 仅用于原生载荷。共同持 `defining_class_`，经 `new_function` 重载工厂创建；`trace` 只遍历活动载荷和定义类。
@@ -33,9 +35,9 @@ paths:
 
 声明在 `Object.hpp`，基类默认体在 `Object.cpp`（出声明因 `ctx.fail` 是 runtime/AriaExeContext.hpp 内模板、本头不可反向 include 它）。
 
-**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / 删除的拷贝移动，`ObjString` 例外见上）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
+**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / 删除的拷贝移动，ObjString 的已知例外见对象笔记）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
 
-**仅类型内部消费的辅助留 private**（`ObjString::slice`、`ObjList::slice`），不按「可能有用」外放；`ObjClass::find_field` 是**公开**的纯查询原语（沿 super 链、无分配、不 fail），实例链腿与元类腿两路消费（见「`init_` 派生」）。const 重载的容器访问器按实际消费面取舍：`ObjList::elements()`/`ObjMap::table()` 的 const 版当前零消费，属待清理项。`Object` 的四个字段（GC 侵入式链的 `next_` + `hash_` / `type_` / `is_marked_`）同样收在收尾 private 段，GC 取字段级访问经 `friend class GC`（sweep / free_all 直接取 `&next_` 摘链，链头 `objects_head_` 住 GC；其余三字段对外只经访问器）；**子类新增成员不得复用这四个名字**（`ObjUpvalue::next_open_` 就是为此避让）。
+**仅类型内部消费的辅助留 private**（`ObjString::slice`、`ObjList::slice`），不按「可能有用」外放；`ObjClass::find_field` 是**公开**的纯查询原语（沿 super 链、无分配、不 fail），实例链腿与元类腿两路消费（见「`init_` 派生」）。const 重载的容器访问器按实际消费面取舍。`Object` 的四个字段（GC 侵入式链的 `next_` + `hash_` / `type_` / `is_marked_`）同样收在收尾 private 段，GC 取字段级访问经 `friend class GC`（sweep / free_all 直接取 `&next_` 摘链，链头 `objects_head_` 住 GC；其余三字段对外只经访问器）；**子类新增成员不得复用这四个名字**（`ObjUpvalue::next_open_` 就是为此避让）。
 
 ### 错误与文案契约
 
@@ -49,11 +51,11 @@ paths:
 - 契约纪律：至多 fail 一次、fail 后立即返回；调用方（VM）保证接收者「栈即根」（peek 不弹）跨协议内 GC 点。
 - 基类 `load_field` 默认委托 `load_field_from_class`，后者默认报成员不存在；`load_field_bound` 默认查询 `load_field` 并仅绑定实例方法，其他值原样返回。写入与下标协议的基类默认体报不支持，fail 后返失败信号。
 
-### 四条缝
+### 成员与算子协议
 
 - **① `load_field` / `store_field`**：命名成员的裸查找与写入协议。`load_field` = 裸查找原语（返回命中原值、永不铸 `ObjBoundMethod`、命中零分配），供 `run_prepare_method` 在实参求值前解析普通成员，也供绑定读取使用；`store_field` = 裸写入。指令侧的落点分两处：`LOAD_FIELD` 走 `load_field_bound`（②），`STORE_FIELD` 走 `store_field`；VM 不按子类型 switch 分型。算子与隐式调用钩子直接走 `load_field_from_class`（④）。基类默认委托 `load_field_from_class`；仅 `ObjInstance` / `ObjClass` / `ObjModule` 为独立成员规则重写 `load_field`，其余类型继承默认委托。
 - **② `load_field_bound`**：命名成员的绑定读取，消费方为 `run_load_field`/`run_load_this_field`。基类默认调用 `load_field`，从命中值取出 `ObjFunction*`，仅对带方法标记的函数创建绑定当前对象的 `ObjBoundMethod`，其他值原样返回。仅三类保留独立策略：`ObjInstance` 先返回字段原值、再对类链方法绑定；`ObjClass`/`ObjModule` 直接委托各自 `load_field`，保持声明命名空间中的值不绑定。新增独立成员规则时须同时审视绑定策略，不能在丢失查询来源后默认绑定本地字段。
-- **③ `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `ctx.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。**list 有一条绕过协议的快路径**：`run_load_index`/`run_store_index` 先试 `try_list_load_fast_dispatch`/`try_list_store_fast_dispatch`（`is<ObjList>() && 键为 int && resolve_index 命中`），命中即直接读写 `elements()`，未命中才落虚协议--负下标、边界与错误文案在两处各有一份实现，改任一侧必须同步另一侧。
+- **③ `load_index` / `store_index`**：下标读写协议（VM 侧执行体 `run_load_index` / `run_store_index`）。容器 override 直接 `ctx.fail` 自选错误码（IndexOutOfBounds / KeyError），错误细节（越界值、键）就地拼进文案。**list 有一条绕过协议的快路径**：`run_load_index`/`run_store_index` 先试 `try_list_load_fast_dispatch`/`try_list_store_fast_dispatch`（`is<ObjList>() && 键为 int && resolve_index 命中`），命中即直接读写 `elements()`，未命中才落虚协议。两条路径共用 `util::resolve_index`；快路径不报错，越界与类型错误由对象协议统一构造。
 - **④ 魔术咨询口 `load_field_from_class`**：从所属 class 起查的成员载入（**值本地状态出局**：实例 fields / 模块 globals 等不参与）；错误契约同 `load_field`（nullopt ⟺ 已 fail），miss 措辞按宿主类型就地烘焙。实例与内建对象可将它用于成员读的类链腿；module/class 的普通成员缺席不再委托本口。override 族映射在各宿主 override 内静态定型（无运行期 switch）：`ObjInstance` 自 `class_` 模板链、类值自 `Class` 元类链、内建/函数族/模块/协程自各自 bootstrap 单例链、未提供类型成员查询的类型落基类默认 `UndefinedProperty`。
 - **⑤ 算子与调用派发**：VM 侧按**编译期选定的钩子名**（`runtime/str_table.hpp` 注册表拼写）经**魔术咨询口** `load_field_from_class` 取实现（实例 fields 遮蔽出局），取到后按调用形态调（调用区槽 0 保持 receiver）。站点：`run_binary_operator<Op>` 的 `get_obj_binary_op_impl<Op>`（九个二元算子，Op -> `__add__` 等的映射是 if-constexpr 编译期链）、`run_negate`（`__neg__`）、`call_value` switch `default` 臂（`__call__`，查询前把槽 0 设为实际被调用对象，再用**同一调用区**递归分发，实参槽位不变）与显示咨询（`__str__`，住 `Eval::stringify`，重入，见 runtime.md「显示渲染与外部调用」）。咨询源同前：内置容器查自身 bootstrap 类链、类值走元类链（自身模板表结构性不可达）；miss 均落宿主咨询口的类措辞（`UndefinedProperty`；非对象 callee 仍报 `CallNonCallable`）。取实现恒走裸读零分配（与 `PREPARE_METHOD` 同形），绑定形态只属 `load_field_bound` 的值读取路径。
 - 钩子名是**语言级事实**（拼写注册表 `runtime/str_table.hpp`）；方法仍在类表里（`"a".__add__("b")` 读路径不变）。
@@ -61,10 +63,11 @@ paths:
 
 ### 内置类型的成员面
 
-- **八族（string/list/map/range/iterator/exception/function/boundmethod）的成员读共享同一趟咨询**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 `ObjFunction::is_method()` 为真的函数创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；函数族（function/boundmethod）与协程值也继承该默认绑定策略；读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。跨类方法赋值不改变归属，但**没有统一的接收者归属校验**：只有原生方法在 `NativeCallInfo::receiver<T>()` 处按 `obj_tag` 报 `TypeMismatch`；aria 方法（`call_bound_method` / `call_aria_fn`）只查元数，拿错 `this` 会跑到字段读失败才报 `UndefinedProperty`。
+- **无独立命名空间的内建对象共享类型成员查询与绑定**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 `ObjFunction::is_method()` 为真的函数创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；函数族（function/boundmethod）与协程值也继承该默认绑定策略；读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。跨类方法赋值不改变归属，但**没有统一的接收者归属校验**：只有原生方法在 `NativeCallInfo::receiver<T>()` 处按 `obj_tag` 报 `TypeMismatch`；aria 方法（`call_bound_method` / `call_aria_fn`）只查元数，拿错 `this` 会跑到字段读失败才报 `UndefinedProperty`。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
 - 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），Coroutine 的静态原语经 `register_class_functions` 注册，不设置定义类。方法表住各 `XxxClass.cpp` 的匿名命名空间（Coroutine 的四原语例外，住宿主类头内的 `static constexpr`）；`Function`/`BoundMethod`/`Module`/`Class` 四类没有方法表。全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
-- **零表类四个**（`value_register.hpp` 类段）：`FunctionClass`/`BoundMethodClass`/`ModuleClass`/`ClassClass`（空表，只承载链归属与默认显示）；`CoroutineClass` 表收 `create`/`resume`/`yield`/`status` 四静态原语（协程内建模块形态并入类面）。与七个带方法面的 bootstrap 类合计十二格；十二类全量经 `builtins_` 裸名曝光（`is_a` 归属判定的目标与 `str()` 显示咨询的默认兜底）。
+- FunctionClass / BoundMethodClass / ModuleClass / ClassClass 不定义自身方法表，只提供类链归属与默认显示。
+  CoroutineClass 定义静态原语；全部 bootstrap 类由 `runtime/value_register.hpp` 类段注册并曝光到 builtins，数量由表派生。
 
 ## 跨类型规则
 
@@ -142,7 +145,7 @@ paths:
 - **禁写 `obj->type() == ObjType::X` + `static_cast<X*>(obj)`**--三件套自文档化且 DEBUG 享 dynamic_cast 校验。三件套是 Object 的成员模板，子类型禁定义同名成员（成员调用从派生类作用域起查找，同名即遮蔽）。
 - 从 `Value` 出发的「守卫后使用」用 `value/ObjBridge.hpp` 的 `try_as_obj<T>(v)` 一步收口（非对象 / 类型不符返 nullptr）；分步场合仍先 `v.is_obj()` 再 `v.as_obj()->is/as<X>()`。
 - `obj_tag<T>()`（`Object.hpp`）是 tag↔类 的第二张表，`NativeCallInfo::receiver<T>()` 靠它按 tag 收窄；新增需要 `receiver<T>()` 的类型必须同批扩它，否则命中 `STATIC_UNREACHABLE`（编译期炸）。
-- `is<T>()` 的臂表只给四个具体迭代器类映射到 `ObjType::ITERATOR`（它们共享同一 tag）；新增子类型须同时改 `ObjType` 枚举、`to_string(ObjType)`、`is<T>()` 三处。
+- 迭代器共享 `ObjType::ITERATOR`，`is<T>()` 只支持按族基类 ObjIterator 查询，不能据此区分具体迭代器子类。新增独立对象类型时须同步 ObjType、类型名映射与 is 的映射。
 
 ## 成员访问分离
 

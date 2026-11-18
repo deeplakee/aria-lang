@@ -31,8 +31,9 @@ resumed
 done
 ```
 
-`create` 收一个函数作协程体，**不会执行它**；执行永远从 `resume` 开始。体执行完毕（自然
+`create` 收一个 aria 函数作协程体，**不会执行它**；执行永远从 `resume` 开始。体执行完毕（自然
 结束或 `return`）后协程进入 `done`，死了，不可再恢复。
+原生函数虽然同属 `Function` 类型，也不能作为 create 的入口。
 
 ## yield 与 resume 双向传值
 
@@ -275,5 +276,3 @@ Runtime: YieldOutsideCoroutine cannot yield outside a coroutine
 ---
 
 [上一章：模块](15-modules.md) · [下一章：附录：内建参考](17-builtin-reference.md)
-
-`Coroutine.create` 的入口必须是 aria 函数。原生函数虽然同属 `Function` 类型，不能用作协程入口。

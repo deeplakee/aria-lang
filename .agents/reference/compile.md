@@ -26,13 +26,12 @@ Lexer / Parser 的实现应与 `docs/grammar.txt`（语言文法规范，留在 
 
 `CodeGen final : AstVisitor`，一次 AST 遍历同时做名字解析、语义检查与字节码发射，产出模块入口 `ObjFnProto*`（arity 0）。模块、函数、作用域三层状态的游标寄存于 ModuleCtx；字节码编码由 CodeUnit 负责，`_or_fail` 在编译层翻译失败。局部采用先压值再登记的填槽模型，裸名按局部 -> upvalue -> 全局解析。赋值与循环的栈布局、跳转回填见 `.agents/reference/specs/lowering.md`，指令语义见 `.agents/reference/specs/instruction-set.md`；源码只就地说明求值顺序、捕获与根安全等易错约束。
 
-**设计决策（代码注释仅简版，论证在此）**：
+**跨阶段语义约束**（被否方案见[编译器笔记](../notes/compile/codegen.md)）：
 
 - **全局不做编译期 init 追踪**（支持前向引用/互递归，定义与否属运行期属性）：全局自引用 `var x = x + 1` 在初始化器里 `LOAD_GLOBAL x`（`DEF_GLOBAL x` 未执行）-> 运行期 `UndefinedVariable`。
 - **类成员不查重**：成员即表写入，与体外 `Foo.x = v` 同形态，重名后写遮蔽不报错（见 grammar.txt）；类名绑定先于体编译（自引用可用），静态初始化器 throw 后类名保持绑定 = 残留语义，对齐 Ruby。
-- **this/super 不对称**：this 是帧槽 0 具名局部可 upvalue 化（arrow-function 语义）；super 是 `(defining class, this)` 二元组，defining class 挂闭包上无槽可捕，故仅直接方法帧可用、嵌套函数先取后用（`var m = super.m;` 语义等价）。否决的 Wren 式 superclass 常量池烘焙：绑定时刻回填字节码过于 tricky，且 defining class 戳复制给嵌套闭包会被 `is_method` 误判。
+- **this/super 不对称**：this 是帧槽 0 具名局部可 upvalue 化（arrow-function 语义）；super 是 `(defining class, this)` 二元组，defining class 挂闭包上无槽可捕，故仅直接方法帧可用、嵌套函数先取后用（`var m = super.m;` 语义等价）。
 - **缺省参数作用域**：默认值表达式可见前序参数、自身/后序对解析结构性不可见（Python/C++ 同款）。
-- **语言参照系**：值填槽是对 clox 预占槽模式的偏离；`CLOSE_UPVALUE` 对齐 Lua `OP_CLOSE`；复合赋值 locator-once 是 C 标准对 `E1 += E2` 的定义；`resolve_upvalue` 是 clox resolveUpvalue 形。
 
 **语义检查（首错即止，内联各 visit）**：`InvalidAssignmentTarget`/`Break|ContinueOutsideLoop`/`TryWithoutHandler`/`UnreachableArm`/`DuplicateParam`/`TooManyParameters|Arguments`/`RedefinedVariable`/`ThisOutsideClass`/`SuperOutsideMethod`/`NumberOutOfRange`（i48）/`TooManyLocals`/`TooManyUpvalues`（容量 256 = `kMaxUpvalues`+1，第 257 条拒）/`CodeUnitTooLarge`/`TooManyElements`。顶层裸 `return` 合法（带值报 `ReturnValueAtTopLevel`）；varargs 为零发射翻转（rest 即末位局部槽，值由 `call_aria_fn` 打包就位）。
 

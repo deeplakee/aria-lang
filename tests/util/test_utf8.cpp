@@ -16,9 +16,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // decode_one
-// ---------------------------------------------------------------------------
 
 TEST(Utf8DecodeOne, Ascii) {
     auto [cp, n] = utf8::decode_one("A");
@@ -140,9 +138,7 @@ TEST(Utf8DecodeOne, CodepointAboveMax) { // U+110000 = F4 90 80 80
     EXPECT_EQ(n, 1u);
 }
 
-// ---------------------------------------------------------------------------
 // is_valid
-// ---------------------------------------------------------------------------
 
 TEST(Utf8IsValid, ValidAscii) { EXPECT_TRUE(utf8::is_valid("hello world")); }
 
@@ -158,9 +154,7 @@ TEST(Utf8IsValid, InvalidSurrogate) { EXPECT_FALSE(utf8::is_valid("\xED\xA0\x80"
 
 TEST(Utf8IsValid, InvalidTruncated) { EXPECT_FALSE(utf8::is_valid("\xE4\xB8")); }
 
-// ---------------------------------------------------------------------------
 // encode
-// ---------------------------------------------------------------------------
 
 TEST(Utf8Encode, Ascii) { EXPECT_EQ(utf8::encode(U'A'), "A"); }
 
@@ -184,9 +178,7 @@ TEST(Utf8Encode, SurrogateReturnsEmpty) { EXPECT_TRUE(utf8::encode(0xD800u).empt
 
 TEST(Utf8Encode, AboveMaxReturnsEmpty) { EXPECT_TRUE(utf8::encode(0x110000u).empty()); }
 
-// ---------------------------------------------------------------------------
 // 字符分类
-// ---------------------------------------------------------------------------
 
 TEST(Utf8Classify, IsAlphaAscii) {
     EXPECT_TRUE(utf8::is_alpha(U'a'));

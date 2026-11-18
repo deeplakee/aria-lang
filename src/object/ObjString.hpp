@@ -9,24 +9,22 @@ namespace aria {
     class GC;
     class ObjRange;
 
-    // 字符串对象:SSO 表示(短串内联,长串独立缓冲经 gc_ 释放);内容哈希,等价内容经驻留池共享同一对象。
+    // 不可变、内容哈希；短串内联，等价内容经驻留池共享对象。
     class ObjString final : public Object {
     public:
         static constexpr usize kShortCapacity = 15;
 
         ObjString(GC& gc, StringView src, u32 hash);
 
-        // 接管构造(仅 new_string 接管重载调进):data 为移交的堆 buffer,表示形态(长串收缩接管/
-        // 短串拷入 SSO 槽)由本构造分流,buffer 归本对象处置。
+        // 接管 data 的释放责任；长串沿用缓冲，短串转入内联存储。
         ObjString(GC& gc, char* data, usize size, usize cap, u32 hash);
 
-        // 两段直铸构造(仅 new_string 两段重载未命中臂调进):两段各拷一次进本对象存储,不经临时串;
-        // hash 契约同拷贝版,须为 hash_str(hash_str(lhs), rhs) 续算终态。
+        // hash 须为 hash_str(hash_str(lhs), rhs) 的续算结果。
         ObjString(GC& gc, StringView lhs, StringView rhs, u32 hash);
 
         ~ObjString() override;
 
-        // 借出内容视图:非移动 GC 对象地址与缓冲恒定,存活期有效;sweep 回收后即悬垂,勿跨 collect 持有。
+        // 视图仅在对象存活期有效；跨 collect 须保活对象。
         [[nodiscard]]
         StringView view() const noexcept;
 
@@ -40,40 +38,31 @@ namespace aria {
             return length_ > kShortCapacity;
         }
 
-        // 无 Value 子节点。
         void trace(GC&) const noexcept override {}
 
-        // 壳定长(长串 buffer 不计入壳,由 ~ObjString 单独释放)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjString);
         }
 
-        // 内容相等(==):先比指针(intern 命中快速路径),再比 view() 字符内容。
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 调试渲染(value_repr 位):字面量形式 `"<转义内容>"`(显示与调试分叉:显示位渲染面直取原文,
-        // 对象不设 override)。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 String bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 整数键 = 字节域(与 len 同域):产出单字节 1-char string,负数从尾计数、归一化后越界即报;
-        // 多字节序列中间字节取该字节自身(经单字符常量表直读,零分配)。Range 键走切片。receiver 经值栈为根。
+        // 下标按字节计，支持负数；Range 键走切片。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
-        // 下标写入:string 不可变,恒 TypeMismatch 定向文案。
         [[nodiscard]]
         bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
     private:
-        // 切片(Range 键):段解析收口 resolve_slice_bounds(报错文案与 list 切片同串)。域是字节(与 s[i]/len
-        // 同域):倒序段产出字节逆序串,多字节输入下不是合法 UTF-8 -- 与 s[i] 取续接字节同属字节域契约。
+        // 切片按字节处理，倒序多字节文本可能产生非法 UTF-8。
         [[nodiscard]]
         Opt<Value> slice(AriaExeContext& ctx, const ObjRange* range) const;
 
@@ -85,26 +74,22 @@ namespace aria {
         usize length_;
     };
 
-    // 工厂:返回内容等于 src 的 ObjString*。经 GC 驻留池:命中返回已有串,未命中分配+驻留。
+    // 返回驻留串，等价内容共享同一对象；显式 hash 须与内容哈希一致。
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView src);
 
-    // 调用方已持有 hash_str(src) 之值时用本重载,免重算。
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView src, u32 hash);
 
-    // 两段拼接铸造:内容等于 lhs+rhs,hash 须为 hash_str(hash_str(lhs), rhs) 续算终态。先查驻留
-    //(命中零拷贝返回),未命中才两段直铸(不经临时串);lhs/rhs 的宿主串跨分配须保活(经栈即根)。
+    // hash 须为两段的续算结果；lhs/rhs 的宿主串须跨分配保活。
     [[nodiscard]]
     ObjString* new_string(GC& gc, StringView lhs, StringView rhs, u32 hash);
 
-    // 接管铸造:内容等于 data[0..size),释放责任随三臂移交本函数 -- 命中驻留释放 buffer 返已有串;
-    // 未命中长串收缩 buffer 后由 ObjString 接管(零拷贝),未命中短串拷进 SSO 槽后释放 buffer。
-    // data 为空指针且 size 为 0 合法(空串);buffer 是 raw 内存,不受回收影响。
+    // 接管缓冲的释放责任；驻留命中时释放缓冲并返回已有串。
+    // data 为空且 size 为 0 表示空串。
     [[nodiscard]]
     ObjString* new_string(GC& gc, char* data, usize size, usize cap, u32 hash);
 
-    // 单字节串便捷重载(下标读产出形态):委托 StringView 版,同样经驻留池。
     [[nodiscard]]
     ObjString* new_string(GC& gc, char ch);
 

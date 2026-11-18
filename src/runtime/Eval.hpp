@@ -14,213 +14,120 @@ namespace aria {
     class ObjString;
     class Object;
 
-    // 前置声明(run_binary_* 模板形参用):免头文件拖入 bytecode 树,定义处 .cpp 已含。
     enum class OpCode : u8;
 
-    // eval 层驱动引擎:主循环、指令执行体、调用机器与异常派发。全静态方法宿主,宿主内部
-    //(current_ 与各服务表)经 AriaVM 友元到达;主循环以进场上下文为参数,换指点后自宿主重取。
+    // 字节码执行与调用、异常派发；共享状态由 AriaVM 持有。
     class Eval {
     public:
-        // 主循环:驱动当前上下文至顶层返回/未捕获(出口协议返 bool:成功 = 返回值已写回调用区
-        // 槽 0 即栈顶;失败 = 载荷留寄存器,失败出口均就地善后到边界)。参数 = 进场上下文,本轮
-        // 上下文在可能换指的调用点之后经内部指针重取(见 Eval.cpp 函数头注释)。
+        // 驱动至返回或未捕获错误。成功时结果在栈顶，失败时载荷留在挂起错误寄存器。
         static bool dispatch_loop(AriaExeContext& ctx);
 
-        // Aria 函数调用进帧单点(宿主执行入口 run 与重入执行体共用):元数检查 -> 帧余量检查 -> 实参
-        // 整形后进帧。失败 WrongArity/StackOverflow。
+        // 检查并整理实参后进入 aria 函数帧。
         static bool call_aria_fn(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
-        // ObjFunction 统一载荷执行口(AriaExeContext 重入口 execute_function/execute_method 的
-        // 共用体):原生载荷同步执行、aria 载荷重入驱动,契约随两臂(私有段)。失败 nullopt ⟺
-        // 载荷留寄存器。
+        // 原生函数同步执行，aria 函数重入驱动；失败返回 nullopt，载荷留在 ctx。
         [[nodiscard]]
         static Opt<Value> execute_function(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
-        // 可读渲染(show 位,str/println/插值共口):非对象值字面渲染;对象经类面咨询口取
-        // __str__ 实现(值本地状态出局)后调用,槽 0 = 渲染对象、argc = 0。
-        // 解析值须可调、返回值须为 string(违约就地 TypeMismatch)。成功返回渲染串,调用方须
-        // 在下个 GC 点前发布或根化(驻留池是弱根);nullptr ⟺ 载荷已入挂起寄存器(钩子抛错/
-        // 违约/嵌套过深)。调用方保证 value「栈即根」。
+        // 对象经所属类的 __str__ 钩子渲染，调用方须保活 value。
+        // 返回串须在下个 GC 点前发布或根化；nullptr 表示错误已挂起。
         [[nodiscard]]
         static ObjString* stringify(AriaExeContext& ctx, Value value);
 
-        // 段收拢(join 共口):各段一律经 stringify 收成 StringView,渲染串由本调用临时根保活至
-        // 拼接完成,量长定容后单趟填充。nullptr ⟺ 某段渲染失败载荷在寄存器。values 不得指进值栈(渲染重入
-        // 扩容搬迁必悬垂);指容器内部缓冲可 -- 容器被渲染中用户代码改写属用户程序自担,解释器
-        // 不设防;元素保活由调用方承担(栈根/容器根)。
+        // 渲染并拼接各段，临时串由本函数保活，输入元素由调用方保活。
+        // values 不得借用可能在渲染重入时搬迁的值栈。
         [[nodiscard]]
         static ObjString* concat_values(AriaExeContext& ctx, Span<const Value> values, StringView sep);
 
     private:
-        // CALL 分发:栈顶形如 [callee, a1..aN],按 callee 类型分派 call_* 子例程;其余对象按调用
-        // 钩子 __call__ 取实现后递归分发,非对象直接报 CallNonCallable。**call_* 族统一契约:
-        // false/nullptr ⟺ 错误载荷已 raise 进 *current_ 挂起错误寄存器**,调用方 take_error 传播。
+        // 调用区为 [callee, a1..aN]。call_* 失败时错误已挂起，成功时可能切换上下文。
         static bool call_value(AriaExeContext& ctx, Value callee, u8 argc);
 
-        // 函数值单点分派:原生同步执行,aria 载荷整理参数后进帧。
         static bool call_function(AriaExeContext& ctx, ObjFunction* function, u8 argc);
 
-        // 类实例化:类在槽 0 跨 new_instance 保活,建成后槽 0 换成实例,用作 init 的 this。
         static bool call_class(AriaExeContext& ctx, ObjClass* klass, u8 argc);
 
-        // 绑定方法调用:槽 0 改为 receiver,直接交 call_function。
         static bool call_bound_method(AriaExeContext& ctx, const ObjBoundMethod* bound, u8 argc);
 
-        // 原生函数调用:同步调 function->fn(),不进帧;bool 契约透传。
         static bool call_native_fn(AriaExeContext& ctx, const ObjFunction* function, u8 argc);
 
-        // 重入执行体(execute_function 的 aria 臂):压 slot0 与 args(栈形 [slot0, a1..aN],argc =
-        // 声明参数数,不含槽 0)后同步驱动至结算。成功 = 栈顶收取函数返回值;失败 nullopt 且载荷
-        // 留寄存器、残留帧已截净,调用方按 bool 契约 return false 交外层续搜;递归深度达
-        // kMaxRecursionDepth 报 StackOverflow,实参超 u8 域报 WrongArity。ctx 恒为正在执行的
-        // 上下文(契约,断言钉)。args 不得指进本上下文值栈;若传栈上段,压档余量须足(扩容会搬迁
-        // 旧块使视角悬垂,断言复核之)。
+        // args 若借用值栈，须预留压入调用区的容量，避免扩容使其悬垂。
+        // 失败时嵌套帧已清理，错误留给外层驱动继续派发。
         [[nodiscard]]
         static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);
 
-        // 外部调用原生(execute_function 的原生臂,同步):调用区 [slot0, a1..aN] 在此构造(槽 0 =
-        // receiver 兼返回槽),调毕弹槽 0 收产出。argc 超 u8 域报 WrongArity;失败 nullopt ⟺
-        // 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_native_fn(AriaExeContext& ctx, Value slot0, const ObjFunction* function,
                                             ArgList args);
 
-        // 外部调用口(非循环上下文发起的同步调用):绑定方法直接取其函数和接收者,函数载荷统一交
-        // execute_function 分派;非可调值报 CallNonCallable。失败 nullopt ⟺ 载荷留寄存器。
         [[nodiscard]]
         static Opt<Value> execute_callable(AriaExeContext& ctx, Value slot0, Value callee, ArgList args);
 
-        // __str__ 钩子调用与产出验收:渲染对象作槽 0 同步调用(hook 为咨询口解析值),返回值须为
-        // string,违约 TypeMismatch。nullptr ⟺ 载荷留寄存器。
         [[nodiscard]]
         static ObjString* execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
-        // 按 Op 编译期选定算子钩子名,经咨询口自类面取本对象上的实现(值本地状态出局;Op 由调用
-        // 点穷举);nullopt ⟺ 已 fail(措辞随宿主)。模板定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
         static Opt<Value> get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj);
 
-        // 弹 2 算 1 的二元数值运算入口(9 个算术/比较指令共用,Op 由调用点穷举实例化):类型守卫后
-        // 按域分流,双 Int 走 run_binary_int、任一 F64 升浮点走 run_binary_f64(两域失败语义不同);
-        // 定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
         static bool run_binary_numeric(AriaExeContext& ctx);
 
-        // 整数域九算子(结果压栈):结果越 i48 报 IntegerOverflow,乘法在计算前检查以避 i64 溢出;
-        // 除/模零就地 fail;% 向零截断,MIN % -1 得零。
         template<OpCode Op>
         [[nodiscard]]
         static bool run_binary_int(AriaExeContext& ctx, i64 lhs, i64 rhs);
 
-        // 浮点域九算子(结果压栈):按 IEEE,除零得 inf/nan、% 走 fmod,无失败路径。
         template<OpCode Op>
         [[nodiscard]]
         static bool run_binary_f64(AriaExeContext& ctx, f64 lhs, f64 rhs);
 
-        // 九个二元算子的执行体(算术/比较 block 唯一入口):非对象左值委托 run_binary_numeric,
-        // 对象左值取算子实现后交 call_value(调用区 [lhs, rhs] 即 [this, arg1])。peek 不弹 --
-        // receiver 占调用区槽 0(栈即根)跨实现内分配。
         template<OpCode Op>
         static bool run_binary_operator(AriaExeContext& ctx);
 
-        // NEGATE 执行体:[v] -> [r]:整数/浮点就地取负,对象左值取 __neg__ 实现后调用(一元恒零
-        // 实参,调用区 [v] 即 [this]);其余类型报 TypeMismatch。契约同上。
         static bool run_negate(AriaExeContext& ctx);
 
-        // 位算子二元执行体(六指令共用,Op 由调用点穷举实例化):纯 Int 域、无对象钩子,非 Int 报
-        // TypeMismatch。& | ^ 结果恒在 i48 域内。移位先检查计数,<< 在计算前检查结果是否会越出 i48,
-        // >>> 在计算后检查结果。定义在 .cpp(实例化点全在本 TU)。
         template<OpCode Op>
         static bool run_bitwise_operator(AriaExeContext& ctx);
 
-        // BIT_NOT 执行体:[v] -> [r]:i48 域封闭取反(~x == -x-1)零检查;非 Int 报 TypeMismatch。
         static bool run_bit_not(AriaExeContext& ctx);
 
-        // field 族指令执行体;bool 契约同 call_value(对象协议失败由 override 内 ctx.fail 就地烘焙,
-        // 非对象守卫由执行体 fail),peek 不弹 -- 协议内分配跨 GC 须 obj 在栈(栈即根)。
+        // 访问协议可能分配，接收者须留在栈上保活。
 
-        // LOAD_FIELD 执行体:[obj] -> [v],经 load_field_bound 协议解析写回原槽;非对象守卫文案
-        // 留执行体,对象 miss 文案由协议 override 烘焙。
         static bool run_load_field(AriaExeContext& ctx, ObjString* name);
 
-        // STORE_FIELD 执行体:[obj, v] -> [v](完成时单槽下移留 v -- 赋值表达式约定)。经
-        // Object::store_field 协议。
         static bool run_store_field(AriaExeContext& ctx, ObjString* name);
 
-        // THIS 对执行体:this 取顶帧槽 0,this 不经值栈与 obj.m 同走 field 协议。槽 0 非实例 = this
-        // 被自由调用/类直调掏空(经 call_aria_fn 的写法不可达),响亮 TypeMismatch 兜底(帧形
-        // 不变式只对 call_aria_fn 成立)。
         static bool run_load_this_field(AriaExeContext& ctx, ObjString* name);
 
-        // 写入执行体:[v] -> [v](peek-store 经 this 的 store_field,实例字段动态即创建)。非实例
-        // 兜底报错同读取执行体,文案用 field assignment 形态。
         static bool run_store_this_field(AriaExeContext& ctx, ObjString* name);
 
-        // PREPARE_METHOD 执行体(两段式第一段):[recv] -> [recv, target]。接收者在栈顶、解析
-        // 先于实参求值;待调值压栈跨指令存活(栈即根),由 CALL_METHOD 收口。
         static bool run_prepare_method(AriaExeContext& ctx, ObjString* name);
 
-        // CALL_METHOD 执行体(两段式第二段):[recv, target, a1..aN] -> [r],实参整体下移一格补掉
-        // 待调值占的那格得调用区 [recv, a1..aN](槽 0 = receiver),交 call_value 统一分发;
-        // 纯调用,不再解析。
         static bool run_call_method(AriaExeContext& ctx, u8 argc);
 
-        // LOAD_SUPER_FIELD 执行体:defining class 从顶帧的 function 直读(编译器不变式,ASSERT 把关),
-        // 自父类沿链读穿透、不含 defining 自身;命中脚本/原生实例方法则绑 this=帧槽 0,其余原值直读。
-        // 全链 miss 为语言可达错误,经协议 fail。
         static bool run_load_super_field(AriaExeContext& ctx, ObjString* name);
 
-        // 下标族指令执行体(LOAD/STORE_INDEX):契约同 field 族
-
-        // list 下标快路径派发门(target 非空,调用方已判 is_obj):接收者 tag 为 LIST 且键为整数时
-        // 免 load_index 虚派发直取,键解析与虚路径同走 resolve_index;返回 true = 已完成,false =
-        // 不适用落原路(非失败),报错文案单一事实源留 ObjList::load_index。无分配无 GC 点。
+        // 返回 false 表示快路径不适用，须回退到对象协议；不代表访问失败。
         static bool try_list_load_fast_dispatch(AriaExeContext& ctx, Object* target, Value idx);
 
-        // list 下标写快路径派发门:契约同 try_list_load_fast_dispatch,界内写槽后值下移两格
-        // ([obj, idx, v] -> [v]);报错文案单一事实源留 ObjList::store_index。
         static bool try_list_store_fast_dispatch(AriaExeContext& ctx, Object* target, Value idx, Value value);
 
-        // LOAD_INDEX 执行体:[obj, idx] -> [v],经 load_index 协议写回 obj 槽再弹 idx;非对象守卫
-        // 文案留执行体,对象侧越界/键类型文案由 override 就地烘焙。
         static bool run_load_index(AriaExeContext& ctx);
 
-        // STORE_INDEX 执行体:[obj, idx, v] -> [v](值下移两格留 v,peek-store --赋值表达式约定),
-        // 经 store_index 协议。
         static bool run_store_index(AriaExeContext& ctx);
 
-        // range 构造指令执行体(MAKE_RANGE):契约同 field 族
-
-        // MAKE_RANGE 执行体:有界 [from, to] -> [range]、无上界 [from] -> [range]。端点须为整数,
-        // 非整数 fail TypeMismatch(静态文案不插端点值);端点 peek 在栈跨 new_range 的
-        // maybe_collect(栈即根),铸完 drop 再 push。
         static bool run_make_range(AriaExeContext& ctx, u8 flags);
 
-        // BUILD_STRING 执行体:[v1..vn] -> [str] 插值串收拢:段存储即值栈 -- 非串段经
-        // stringify 渲染后原槽换装成串(栈即根),量长定容后单趟填充,不落临时段表;失败载荷在
-        // 寄存器,成功 drop n 再 push。
         static bool run_build_string(AriaExeContext& ctx, u8 count);
 
-        // MAKE_CLASS 执行体:[super] -> [class] 原地写回。super 须类值、且非内建容器五类
-        //(iterator/list/map/string/range,Exception 与 Object 可作 super),否则 fail TypeMismatch;
-        // super peek 在栈跨 new_class 的 maybe_collect(栈即根),建成原地写回槽发布。
         static bool run_make_class(AriaExeContext& ctx, ObjString* name);
 
-        // IMPORT 执行体:解析 specifier 为绝对规范路径 -> intern 后 guard 根化查 modules_(命中复用即
-        // 循环导入),未命中加载并编译模块、包空闭包进帧 run-once;两分支栈效应统一 [..., module]。
-        // bool 契约同 call_* 族(false ⟺ 载荷已 raise:解析/加载/进帧)。私有性即「仅限驱动期调用」的强制。
         static bool run_import(AriaExeContext& ctx, const ObjString* path);
 
-        // RETURN 执行体:[..., ret] -> 取返回值后弹帧(关本帧区间开指,值迁入各自 upvalue 自持),
-        // 按弹后帧深分流(出口边界 = current_->ret_frame())。返回 true = 本循环结束(递归出口值
-        // 落调用区槽 0 / 主顶层返回值留栈顶);false = 循环继续(帧间返回写回 callee 槽 / 协程
-        // 完成切换)。
+        // 返回 true 表示本轮驱动结束，false 表示继续执行（包括协程切回）。
         static bool run_return(AriaExeContext& ctx);
 
-        // 异常派发:自最内帧向下按 last_ip 遍查本上下文各帧 CodeUnit 异常记录表,命中回退派发
-        //(不动帧栈/值栈)。搜索边界 = current_->ret_frame()(随上下文走)。返回 true = 已派发;
-        // false = 边界之上全帧未命中,载荷留寄存器(嵌套边界交外层续搜 / 链上已转投恢复者 /
-        // 链根未捕获善后归调用方)。命中可能在多跳之后,current_ 已非进入时的上下文。
+        // 查找 handler，必要时沿 resume 链转投错误；可能切换当前上下文。
+        // 返回 false 表示搜索边界内未捕获，错误仍挂起，交调用方处理。
         static bool unwind(AriaVM& vm);
     };
 

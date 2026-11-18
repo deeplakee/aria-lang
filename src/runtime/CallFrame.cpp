@@ -14,8 +14,7 @@ namespace aria {
         frame.unit       = &proto->unit();
         frame.module     = proto->module();
         frame.ip         = proto->unit().code.data();
-        // 位置锚点占位(= code 起始,等价 offset 0),主循环取指前即覆写。不用 nullptr:
-        // 与 data() 相减是 UB。(无 NSDMI,保 trivial 聚合。)
+        // 先锚定 code 起点；nullptr 无法与 code.data() 相减求偏移。
         frame.last_ip = frame.ip;
     }
 

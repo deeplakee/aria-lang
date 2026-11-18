@@ -24,9 +24,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // 构造与访问器
-// ---------------------------------------------------------------------------
 
 TEST(SourceFile, ConstructorsAndAccessors) {
     SourceFile sf{"main.aria", "/path/to/main.aria", "let x = 1\n"};
@@ -47,9 +45,7 @@ TEST(SourceFile, ContentIsNullTerminated) {
     EXPECT_EQ(sf.content().data()[sf.content().size()], '\0');
 }
 
-// ---------------------------------------------------------------------------
 // from_path：基本读取
-// ---------------------------------------------------------------------------
 
 TEST(SourceFileFromPath, ReadsContent) {
     String path = write_temp_file("basic.aria", "let x = 1\n");
@@ -66,9 +62,7 @@ TEST(SourceFileFromPath, MissingFileReturnsNotFound) {
     EXPECT_EQ(sf.error(), fs::FsErrCode::NotFound);
 }
 
-// ---------------------------------------------------------------------------
 // from_path：BOM 剥除
-// ---------------------------------------------------------------------------
 
 TEST(SourceFileFromPath, StripsBom) {
     std::vector<u8> bytes = {0xEF, 0xBB, 0xBF};
@@ -88,9 +82,7 @@ TEST(SourceFileFromPath, NoBomUnchanged) {
     EXPECT_EQ(sf->content(), "abc");
 }
 
-// ---------------------------------------------------------------------------
 // from_path：CRLF / CR 归一化
-// ---------------------------------------------------------------------------
 
 TEST(SourceFileFromPath, NormalizesCrlf) {
     String path = write_temp_file("crlf.aria", "line1\r\nline2\r\n");
@@ -114,9 +106,7 @@ TEST(SourceFileFromPath, MixedLineEndings) {
     EXPECT_EQ(sf->content(), "a\nb\nc\nd");
 }
 
-// ---------------------------------------------------------------------------
 // from_path：非法 UTF-8
-// ---------------------------------------------------------------------------
 
 TEST(SourceFileFromPath, InvalidUtf8ReturnsInvalidEncoding) {
     std::vector<u8> bytes = {0xFF, 0xFE, 0x00, 0xC0, 0xAF};
@@ -132,9 +122,7 @@ TEST(SourceFileFromPath, ValidUtf8Accepted) {
     ASSERT_TRUE(sf.has_value());
 }
 
-// ---------------------------------------------------------------------------
 // line_count（遵循 wc -l + 末行未终止也算一行的惯例）
-// ---------------------------------------------------------------------------
 
 class SourceFileLines : public ::testing::Test {
 protected:
@@ -155,9 +143,7 @@ TEST_F(SourceFileLines, LoneNewlineOneLine) { EXPECT_EQ(make("\n").line_count(),
 
 TEST_F(SourceFileLines, TwoNewlinesTwoLines) { EXPECT_EQ(make("\n\n").line_count(), 2u); }
 
-// ---------------------------------------------------------------------------
 // line(n)
-// ---------------------------------------------------------------------------
 
 TEST_F(SourceFileLines, LineExcludesTrailingLf) {
     auto sf = make("a\nb\n");
@@ -185,9 +171,7 @@ TEST_F(SourceFileLines, EmptyLineInMiddle) {
     EXPECT_EQ(sf.line(3), "b");
 }
 
-// ---------------------------------------------------------------------------
 // locate：字节偏移 -> (行, 码点列)
-// ---------------------------------------------------------------------------
 
 class SourceFileLocate : public ::testing::Test {
 protected:
@@ -272,9 +256,7 @@ TEST_F(SourceFileLocate, LineAtAgreesWithLocateIncludingEof) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // SourceLoc
-// ---------------------------------------------------------------------------
 TEST(SourceLoc, ToStringDerivesFromOffset) {
     // 位置只存偏移，行列在渲染时派生：偏移 6 是第 2 行第 3 列（'f'）
     SourceFile sf{"main.aria", "/path/to/main.aria", "abc\ndef"};

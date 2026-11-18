@@ -64,13 +64,11 @@ namespace aria {
         // 标 *value_slot()(open 标栈槽内值,closed 标 closed_--两态同一地址语义)。
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(无外挂子内存)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjUpvalue);
         }
 
-        // 调试渲染:`<upvalue>` 稳定短文案;显示同文案。
         [[nodiscard]]
         String repr() const override;
 

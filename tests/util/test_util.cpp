@@ -20,9 +20,7 @@ static_assert(UnsignedInteger<usize>);
 static_assert(UnsignedInteger<u32>);
 static_assert(!UnsignedInteger<i64>);
 
-// ---------------------------------------------------------------------------
 // resolve_index：负下标从尾计数 + 越界判定（list/string 下标与切片端点共用）
-// ---------------------------------------------------------------------------
 
 TEST(ResolveIndex, PositivePassesThrough) {
     EXPECT_EQ(resolve_index(0, 3), 0u);
@@ -42,9 +40,7 @@ TEST(ResolveIndex, OutOfRangeIsNullopt) {
     EXPECT_EQ(resolve_index(-1, 0), std::nullopt);
 }
 
-// ---------------------------------------------------------------------------
 // resolve_position：插入位解析（resolve_index 的姊妹函数，上界放宽到 == size 即追加位）
-// ---------------------------------------------------------------------------
 
 TEST(ResolvePosition, PositivePassesThrough) {
     EXPECT_EQ(resolve_position(0, 3), 0u);
@@ -64,9 +60,7 @@ TEST(ResolvePosition, OutOfRangeIsNullopt) {
     EXPECT_EQ(resolve_position(0, 0), 0u); // 空表唯一合法位
 }
 
-// ---------------------------------------------------------------------------
 // abs_diff：两下标距离（取大减小，无符号域不下溢）
-// ---------------------------------------------------------------------------
 
 TEST(AbsDiff, LargerMinusSmaller) {
     EXPECT_EQ(abs_diff(0u, 0u), 0u);
@@ -75,9 +69,7 @@ TEST(AbsDiff, LargerMinusSmaller) {
     EXPECT_EQ(abs_diff(0u, 5u), 5u);
 }
 
-// ---------------------------------------------------------------------------
 // try_parse：from_chars 全量解析封装（无错误且整串消费完才 somed）
-// ---------------------------------------------------------------------------
 
 TEST(TryParse, WholeConsumeSucceeds) {
     EXPECT_EQ(try_parse<i64>("42"), 42);
@@ -94,9 +86,7 @@ TEST(TryParse, RejectsPartialConsumeAndJunk) {
     EXPECT_EQ(try_parse<i64>("1_2"), std::nullopt);                  // '_' 非数字，停在 _ 处
 }
 
-// ---------------------------------------------------------------------------
 // parse_int_text：整串十进制整数文本（数据语法，非源码字面量语法）
-// ---------------------------------------------------------------------------
 
 TEST(ParseIntText, WholeStringWithOptionalSign) {
     EXPECT_EQ(parse_int_text("42"), 42);
@@ -129,9 +119,7 @@ TEST(ParseIntText, OutOfI48RangeIsNullopt) {
     EXPECT_EQ(parse_int_text("99999999999999999999"), std::nullopt); // 连 i64 都不收
 }
 
-// ---------------------------------------------------------------------------
 // parse_float_text：整串十进制浮点文本（含指数形与 inf/nan，与 str(f64) 输出往返一致）
-// ---------------------------------------------------------------------------
 
 TEST(ParseFloatText, DecimalForms) {
     EXPECT_EQ(parse_float_text("3.5"), 3.5);

@@ -9,10 +9,9 @@ namespace aria {
 
     class GC;
 
-    // map 对象:键值均为任意 Value 的哈希表;键判等用 ===,可变对象按对象身份;迭代序 unspecified。
+    // 键按 === 判等，可变对象按身份；迭代序不作保证。
     class ObjMap final : public Object {
     public:
-        // 哈希表惰性分配,ctor 只绑分配器(首分配由 set 的扩容路径自理)。
         explicit ObjMap(GC& gc);
 
         ~ObjMap() override = default; // 键值是 GC 值,不归本类释放
@@ -22,7 +21,6 @@ namespace aria {
         ObjMap(ObjMap&&)                 = delete;
         ObjMap& operator=(ObjMap&&)      = delete;
 
-        // 哈希表(非常量供 MAKE_MAP 的逐对 set 与 store_index 填充;容器成员直曝)。
         [[nodiscard]]
         AriaHashTable& table() noexcept {
             return table_;
@@ -35,29 +33,25 @@ namespace aria {
 
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(table_ 内联在壳内,entries/ctrl 缓冲由其分配器自持)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjMap);
         }
 
-        // 内容相等:同为 map 且 size 相等且逐键命中同键、值 value_equal;其余(含跨类型)恒 false。
+        // 键按 === 匹配，值按 == 比较。
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 调试渲染:{"a": 1} 式。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 Map bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 下标读取:任意键,miss KeyError(键走 debug 形入文案);find 纯查询无分配。
+        // 缺键报错，与 get 返回 nil 的语义不同。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
-        // 下标写入:恒成功,命中覆写、未命中新增;键值经调用方值栈为根(set/rehash 不触 GC)。
         [[nodiscard]]
         bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
@@ -65,7 +59,6 @@ namespace aria {
         AriaHashTable table_; // 键值表(GC 分配器绑定;set 惰性首分配,trivial 分配不触 GC)
     };
 
-    // 工厂:分配空 ObjMap(单次分配,无入参对象可守)。
     [[nodiscard]]
     ObjMap* new_map(GC& gc);
 

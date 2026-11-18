@@ -109,6 +109,13 @@ ln -s ../../.agents/reference/bytecode.md .claude/rules/bytecode.md
 - **字符串格式化统一用 `std::format`**（`#include <format>`），不要混用 `sprintf`/`snprintf`/`fmt::format`/字符串拼接来构造格式化串。需要格式化结果字符串时用 `std::format("...", args...)`；需要直接输出时用 `io::println(std::format("...", args...))` 或 `io::print` 的格式串重载。
 - **注释/文档破折号用 ASCII `--`（两个 hyphen），禁用 Unicode em-dash（U+2014）**：em-dash 被 Read 渲染成与 ASCII hyphen 难分的 `--`，会让 Edit 的 `old_string` 匹配失败。新增注释请保持用 ASCII `--`。
 
+### 代码注释
+
+- 只写代码本身难以表达、维护时必须知道的约束与原因：生命周期、GC 根、失效条件、非显然的顺序要求或语义边界。名字和代码已说清的内容不复述，不要求每个类型、函数或字段都有注释。
+- 接口前置条件和失败约定放声明处，局部陷阱放相关实现旁，各写一处；派生类只说明与基类不同的约定。通用 GC 规则不在每个调用点重讲，特殊保活窗口才就地说明。
+- 注释用短句，避免实现步骤流水、调用链清单、历史过程、被否方案和调试输出样例。跨文件机制与规格放 `.agents/reference/`，踩坑结论放 `.agents/notes/`，源码只留理解当前代码所需的要点。
+- 测试注释解释场景为何特殊或为何这样构造，不逐句翻译断言；分组标题保持简短，不加装饰性分隔线。改代码时删除失效注释，不为保留注释而同步维护重复叙述。
+
 ### 命名
 
 只采用一套规则，不混 Google/LLVM/Unreal。优先级：可读性 > 一致性 > 简洁性。注释用中文。（完整规则见 `docs/cpp-naming-convention.md`，本节为其摘要。）

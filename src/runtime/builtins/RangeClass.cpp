@@ -14,8 +14,7 @@ namespace aria {
 
     namespace {
 
-        // init(a [b]) -> range:工厂构造,1 元等价 a...(无上界)、2 元等价 a...b(不含上界),覆盖槽 0
-        //(call_class 预置的临时 instance 被替换);端点须整数,文案与 MAKE_RANGE 同族。
+        // 一个端点表示无上界；两个端点表示不含上界。
         bool fn_init(const NativeCallInfo& info) {
             auto&      ctx  = info.ctx();
             const auto argc = info.size();
@@ -38,7 +37,6 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器(迭代器族 GC 纪律);迭代器标量自足不持源指针,源 range 彼后可回收。
         bool fn_iter(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -52,7 +50,6 @@ namespace aria {
             return true;
         }
 
-        // range 方法表(has_next/next 住 Iterator 表,全子类共享)。
         constexpr BuiltinFnEntry kRangeBuiltins[] = {
                 {"init", fn_init},
                 {"iter", fn_iter},
@@ -61,7 +58,6 @@ namespace aria {
     } // namespace
 
     ObjClass* RangeClass::make_class(GC& gc, ObjClass* super) {
-        // Range bootstrap 类:内置 range 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Range", super);
         Builtin::register_class_methods(gc, klass, kRangeBuiltins);
         return klass;

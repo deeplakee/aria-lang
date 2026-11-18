@@ -20,8 +20,6 @@ namespace aria {
 
     namespace {
 
-        // init(...) -> list:工厂构造,实参收进新 list 覆盖槽 0(call_class 预置的临时 instance 被替换)。
-        // GC 走查:实参全程在槽即根,push 走 trivial 分配不触 GC,白色 list 写槽即发布。
         bool fn_init(const NativeCallInfo& info) {
             const auto& ctx  = info.ctx();
             const auto  list = new_list(ctx.gc());
@@ -32,7 +30,6 @@ namespace aria {
             return true;
         }
 
-        // push(x) -> nil:追加 x 到末尾(任意 Value);返回 nil。
         bool fn_push(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -47,7 +44,7 @@ namespace aria {
             return true;
         }
 
-        // pop() -> 末元素;空表报 IndexOutOfBounds(fail-fast,nil 哨兵不可行 -- 元素可合法存 nil)。
+        // 空表须报错，nil 可能是合法元素，不能充当失败哨兵。
         bool fn_pop(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -66,8 +63,7 @@ namespace aria {
             return true;
         }
 
-        // insert(i, x) -> nil:i 前插入;负数从尾计数指「该下标元素之前」,合法域 [-(size), size]
-        //(上界放宽到追加位)。
+        // 负下标从尾计数，上界 size 表示追加。
         bool fn_insert(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 2) {
@@ -89,7 +85,7 @@ namespace aria {
             return true;
         }
 
-        // remove(x) -> Bool:移除全部 == 命中元素;miss 返 false 不报错。
+        // 移除全部 == 命中元素。
         bool fn_remove(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -103,7 +99,6 @@ namespace aria {
             return true;
         }
 
-        // remove_at(i) -> i 处元素:负数从尾计数,越界报原始键值。
         bool fn_remove_at(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -127,7 +122,6 @@ namespace aria {
             return true;
         }
 
-        // clear() -> nil:清空(长度归零,容量保留)。
         bool fn_clear(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -142,7 +136,6 @@ namespace aria {
             return true;
         }
 
-        // 排序域:可比较域两支(数值 / 字符串)加域外单列(NotComparable 覆盖 nil/bool/容器等)。
         enum class SortDomain : u8 {
             Number,
             String,
@@ -159,9 +152,7 @@ namespace aria {
             return SortDomain::NotComparable;
         }
 
-        // sort() -> nil:就地升序。域 = 全数值或全字符串,先整体域检再排序,排序中途无失败路径;
-        // stable_sort 临时缓冲走 std 内存,receiver 在槽 0;稳定序:等值元素(如 int 1 与
-        // f64 1.0)保输入相对序。
+        // 先检查整表可比较性，再稳定排序，避免失败时留下部分排序结果。
         bool fn_sort(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -173,8 +164,6 @@ namespace aria {
             }
             auto& list = self->elements();
             if (!list.empty()) {
-                // 首元素定域,两类皆非即报(只含其类型);其余元素逐个须同域,破域(含两类皆非)
-                // 报首元素与破类元素两类类型。
                 const auto domain = sort_domain(list[0]);
                 if (domain == SortDomain::NotComparable) {
                     return ctx.fail(ErrorCode::TypeMismatch, "sort requires all numbers or all strings, got {}",
@@ -193,7 +182,6 @@ namespace aria {
             return true;
         }
 
-        // reverse() -> nil:就地整段反转。
         bool fn_reverse(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -208,7 +196,6 @@ namespace aria {
             return true;
         }
 
-        // find(x) -> 整数或 nil:首个 == 元素的下标,未命中 nil。
         bool fn_find(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -223,7 +210,6 @@ namespace aria {
             return true;
         }
 
-        // contains(x) -> Bool:成员判定(list 无 in 算子,此即成员测试口)。
         bool fn_contains(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -237,7 +223,6 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:元素数。
         bool fn_size(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -251,7 +236,6 @@ namespace aria {
             return true;
         }
 
-        // is_empty() -> Bool:空表判定(len == 0 的谓词形)。
         bool fn_is_empty(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -265,7 +249,6 @@ namespace aria {
             return true;
         }
 
-        // join(sep) -> string:以 sep 粘合各元素的字符串渲染;空 list 得空串,sep 可为空串。
         bool fn_join(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -287,7 +270,6 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器。GC 约束:list 在槽 0 于栈根,迭代器白色建成先写回槽发布再返回,中间无 GC 点。
         bool fn_iter(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -301,10 +283,7 @@ namespace aria {
             return true;
         }
 
-        // 运算符重载方法:list 只重载 `+` 与 `*`。
-
-        // __add__ -> 新 list:两表拼接;浅拷(嵌套容器共享同一对象)。
-        // GC 走查:唯一分配点 new_list,两侧实参经调用区槽在栈,reserve/copy_from trivial,建成即写回槽 0。
+        // 浅拷贝，两表中的嵌套对象仍共享。
         bool fn___add__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -327,8 +306,6 @@ namespace aria {
             return true;
         }
 
-        // __mul__ -> 新 list:整次重复(0 次得空表,浅拷同 __add__);乘数严格 int,负数报错不静默得空。
-        // GC 走查同 __add__:唯一分配点 new_list,其后 reserve 加逐轮 copy_from 全程 trivial。
         bool fn___mul__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -355,7 +332,6 @@ namespace aria {
             return true;
         }
 
-        // list 方法表。
         constexpr BuiltinFnEntry kListBuiltins[] = {
                 {"init", fn_init},         {"push", fn_push},         {"pop", fn_pop},
                 {"insert", fn_insert},     {"remove", fn_remove},     {"remove_at", fn_remove_at},
@@ -368,7 +344,6 @@ namespace aria {
     } // namespace
 
     ObjClass* ListClass::make_class(GC& gc, ObjClass* super) {
-        // List bootstrap 类:内置 list 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "List", super);
         Builtin::register_class_methods(gc, klass, kListBuiltins);
         return klass;

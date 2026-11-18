@@ -22,9 +22,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // flag：长名 / 短名 / 簇 / 内联值忽略
-// ---------------------------------------------------------------------------
 
 TEST(CliFlag, LongName) {
     auto parser = Cli{};
@@ -70,9 +68,7 @@ TEST(CliFlag, UnsetFlagIsFalse) {
     EXPECT_FALSE(r->has("unregistered"));
 }
 
-// ---------------------------------------------------------------------------
 // option：--name value / --name=value / -o value / -oVALUE
-// ---------------------------------------------------------------------------
 
 TEST(CliOption, LongNextArg) {
     auto parser = Cli{};
@@ -139,9 +135,7 @@ TEST(CliOption, EmptyInlineValue) {
     EXPECT_TRUE(r->has("output"));
 }
 
-// ---------------------------------------------------------------------------
 // positional：必填 / 可选 / 超额收集
-// ---------------------------------------------------------------------------
 
 TEST(CliPositional, RequiredFilledInOrder) {
     auto parser = Cli{};
@@ -219,9 +213,7 @@ TEST(CliPositional, HasReportsEmptyStringPositional) {
     EXPECT_TRUE(r->has("script"));
 }
 
-// ---------------------------------------------------------------------------
 // 混合注册：flag / option / positional 同一 parser（合并索引 + 多态分派路径）
-// ---------------------------------------------------------------------------
 
 TEST(CliMixed, FlagOptionPositionalTogether) {
     auto parser = Cli{};
@@ -246,9 +238,7 @@ TEST(CliMixed, DistinctFlagAndOptionNames) {
     EXPECT_EQ(r->get("verbose-level"), "3");
 }
 
-// ---------------------------------------------------------------------------
 // --help / -h
-// ---------------------------------------------------------------------------
 
 TEST(CliHelpRequest, LongHelp) {
     auto parser = Cli{};
@@ -286,9 +276,7 @@ TEST(CliHelpRequest, ShortClusterHelpShortCircuits) {
     EXPECT_FALSE(r->get("script").has_value());
 }
 
-// ---------------------------------------------------------------------------
 // 解析错误：未知选项 / 缺值（首错即终止，消息经 unexpected 带出）
-// ---------------------------------------------------------------------------
 
 TEST(CliErrors, UnknownLongOption) {
     auto       parser = Cli{};
@@ -349,9 +337,7 @@ TEST(CliErrors, ReuseSameTemplateParsesCleanly) {
     EXPECT_EQ(r1->get("script"), "main.aria");
 }
 
-// ---------------------------------------------------------------------------
 // 三个 parse 重载入口
-// ---------------------------------------------------------------------------
 
 TEST(CliOverloads, ArgvSkipsProgramName) {
     char  arg0[] = "aria";
@@ -395,9 +381,7 @@ TEST(CliOverloads, ConstParserParses) {
     EXPECT_EQ(r->get("script"), "main.aria");
 }
 
-// ---------------------------------------------------------------------------
 // help() 文本渲染
-// ---------------------------------------------------------------------------
 
 TEST(CliHelpText, UsageLineAndPositionals) {
     // [OPTIONS] 恒展示（内置 help 始终在）；必填 <name>，可选 [name]

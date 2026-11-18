@@ -10,7 +10,7 @@ namespace aria {
     class ObjString;
     class Error;
 
-    // 异常对象:VM 检测到的运行时错误与原生报错的装箱载荷;message_ 存完整烘焙消息,运行期不含位置前缀。
+    // 运行期错误载荷，持完整消息；位置由未捕获出口补充。
     class ObjException final : public Object {
     public:
         ObjException(i64 code, ObjString* message);
@@ -21,42 +21,35 @@ namespace aria {
         ObjException(ObjException&&)                 = delete;
         ObjException& operator=(ObjException&&)      = delete;
 
-        // 错误码(ErrorCode 视图 = 数字码转注册表枚举;VM 报错路径恒为注册表码,cast 保真)。
+        // 内部枚举视图；用户传入的数字码可能不在注册表内。
         [[nodiscard]]
         ErrorCode code() const noexcept {
             return static_cast<ErrorCode>(code_);
         }
 
-        // 错误码数字(i64 视图 = 存储原值;语言面 code() 即此值)。
         [[nodiscard]]
         i64 numeric_code() const noexcept {
             return code_;
         }
 
-        // 完整烘焙消息串(intern;指针恒非空,内容可空)。
         [[nodiscard]]
         ObjString* message() const noexcept {
             return message_;
         }
 
-        // 还原为边界 Error(message_ 经 from_baked 原样回传,不再重烘);供测试 / 嵌入方断言。
         [[nodiscard]]
         Error to_error() const;
 
-        // 标 message_(唯一 GC 子节点)。
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(无外挂子内存;message_ 归 GC 管)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjException);
         }
 
-        // 调试渲染:消息原文(无引号);显示同文案,catch 的 println(e)/str(e) 即此文案。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 Exception bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
@@ -65,15 +58,13 @@ namespace aria {
         ObjString* message_; // 完整烘焙消息串(intern;指针恒非空,内容可空)
     };
 
-    // 工厂:message 须为已烘好的完整消息串(原样存,不经 make_message);内部 new_string 驻留自守,
-    // 产出后须立即发布进根(如 raise 入寄存器)。ErrorCode 重载 = VM 报错装箱;i64 重载 = 数字码参直通。
+    // message 须为完整消息，原样存储；返回对象须在下个 GC 点前发布进根。
     [[nodiscard]]
     ObjException* new_exception(GC& gc, ErrorCode code, StringView message);
 
     [[nodiscard]]
     ObjException* new_exception(GC& gc, i64 code, StringView message);
 
-    // Error 便捷重载:收已烘焙 Error,code + message 逐件转发原样装箱不重烘(与 to_error 对称)。
     [[nodiscard]]
     ObjException* new_exception(GC& gc, const Error& error);
 

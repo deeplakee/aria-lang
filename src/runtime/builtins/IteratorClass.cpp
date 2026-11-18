@@ -20,8 +20,7 @@ namespace aria {
 
     namespace {
 
-        // init(src) -> 迭代器:工厂构造,按源类型铸对应迭代器覆盖槽 0(call_class 预置的临时
-        // instance 被替换);只收 string/list/map,源在槽 1 即根,白色迭代器写槽即发布。
+        // 工厂构造以具体迭代器替换 call_class 预置的普通实例。
         bool fn_init(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -43,7 +42,6 @@ namespace aria {
                             type_name(info[0]));
         }
 
-        // has_next() -> bool:是否还有下一个元素。
         bool fn_has_next(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -57,7 +55,6 @@ namespace aria {
             return true;
         }
 
-        // next() -> 下一元素并推进游标;越界抛 IterationExhausted(fail-fast,可 catch)。
         bool fn_next(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -75,7 +72,6 @@ namespace aria {
             return true;
         }
 
-        // 迭代器方法表(注册名须与 for-in 降糖发射的同名常量同拼写)。
         constexpr BuiltinFnEntry kIteratorBuiltins[] = {
                 {"init", fn_init},
                 {"has_next", fn_has_next},
@@ -85,7 +81,6 @@ namespace aria {
     } // namespace
 
     ObjClass* IteratorClass::make_class(GC& gc, ObjClass* super) {
-        // Iterator bootstrap 类:迭代器语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Iterator", super);
         Builtin::register_class_methods(gc, klass, kIteratorBuiltins);
         return klass;

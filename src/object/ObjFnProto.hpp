@@ -4,7 +4,6 @@
 #include "bytecode/CodeUnit.hpp"
 #include "common.hpp"
 #include "memory/Array.hpp"
-// Array<UpvalueDesc> 成员以 GC 为分配器,实例化点须 GC 完整(仓库约定:具体类自 include,不经容器传递)
 #include "memory/GC.hpp"
 #include "object/Object.hpp"
 
@@ -20,9 +19,8 @@ namespace aria {
         bool operator==(const UpvalueDesc&) const = default;
     };
 
-    // GC 托管的函数原型:字节码(CodeUnit)+ 所属模块 + 名 + 元数 + 捕获描述;地址哈希型。
-    // 原型存于常量池,运行期函数值由 ObjFunction 包装。
-    // arity_ 不含 varargs 槽(帧槽深 = arity + 1);调用时实参数必须落在 [min_arity, arity] 区间。
+    // 函数原型存于常量池，由 ObjFunction 包装为运行期函数值。
+    // arity 不含 rest 槽；无 varargs 时实参数须落在 [min_arity, arity]。
     class ObjFnProto final : public Object {
     public:
         ObjFnProto(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
@@ -48,40 +46,33 @@ namespace aria {
             return arity_;
         }
 
-        // 必传参数数(<= arity,差额为带默认值参数);call_aria_fn 区间检查下界。
         [[nodiscard]]
         u8 min_arity() const noexcept {
             return min_arity_;
         }
 
-        // varargs 函数标志(末位参数为 ...rest;帧槽深 = arity + 1)。
         [[nodiscard]]
         bool is_varargs() const noexcept {
             return is_varargs_;
         }
 
-        // 所属模块(不可变非空),供 VM 定位模块 globals。
         [[nodiscard]]
         ObjModule* module() const noexcept {
             return module_;
         }
 
-        // 捕获描述表(编译期 CodeGen 一次性 flush;VM 执行 CLOSURE 时读)。
         [[nodiscard]]
         Array<UpvalueDesc>& upvalue_descs() noexcept {
             return upvalue_descs_;
         }
 
-        // 标 name_ + module_ + 常量池(code/lines 无 Value 子节点);module_ 非空,mark_object 容 nullptr 仅防御。
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(CodeUnit / upvalue_descs_ 内部 Array 自管理,级联释放)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjFnProto);
         }
 
-        // 调试渲染:`<fn add>`(入口 `<fn <main>>`、lambda `<fn <anonymous>>`);显示同文案。
         [[nodiscard]]
         String repr() const override;
 
@@ -95,8 +86,7 @@ namespace aria {
         Array<UpvalueDesc> upvalue_descs_; // 捕获描述表(编译期 flush,运行期只读)
     };
 
-    // 工厂:分配 ObjFnProto。module 与 name 皆 weak root,调用方须自行根化;StringView 重载内部
-    // intern name 并自守,调用方只需根化 module。
+    // 调用方须根化 module 和 name；StringView 重载内部根化新建名称。
     [[nodiscard]]
     ObjFnProto* new_fn_proto(GC& gc, ObjModule* module, ObjString* name, u8 arity, u8 min_arity, bool is_varargs);
 

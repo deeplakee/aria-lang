@@ -13,12 +13,9 @@ namespace aria {
 
     namespace {
 
-        // init():no-op 不写槽,槽 0 原样返回实例;未写 init 的类沿链继承本实现。
         bool fn_init(const NativeCallInfo&) { return true; }
 
-        // __str__():默认显示渲染,体 = 接收者对象自身类型的 repr(非重入、不执行用户代码):
-        // <Foo instance>/<class Foo>/<fn f>/协程形各归其位;凡类链抵达根的承载值缺省继承本实现,
-        // 子类在表上覆写即沿链生效。
+        // 默认显示委托 repr，不执行用户代码；子类可在类链上覆盖。
         bool fn___str__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -32,7 +29,6 @@ namespace aria {
             return true;
         }
 
-        // Object 根类方法表。
         constexpr BuiltinFnEntry kObjectBuiltins[] = {
                 {"init", fn_init},
                 {"__str__", fn___str__},
@@ -41,7 +37,6 @@ namespace aria {
     } // namespace
 
     ObjClass* ObjectClass::make_class(GC& gc) {
-        // Object 根类:唯一 super 为空的 bootstrap 类,全类链之根(各内建类以它作 super)。
         const auto klass = new_class(gc, "Object", nullptr);
         Builtin::register_class_methods(gc, klass, kObjectBuiltins);
         return klass;

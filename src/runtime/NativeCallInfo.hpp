@@ -11,17 +11,13 @@ namespace aria {
 
     class NativeCallInfo;
 
-    // 原生函数的 C++ 调用约定:VM 同步直调、不经字节码帧,调用区 [self, a1..aN] 全程留栈(善后
-    // drop 在原生返回后才发生)。原生经 NativeCallInfo 读 self 与实参、写返回值,失败返 false
-    //(载荷已在挂起错误寄存器);切换型原生(resume/yield)不写返回槽。
+    // 调用区 [self, a1..aN] 留栈保活；返回 false 时须已挂起错误。
+    // resume/yield 成功后切换上下文，不写返回槽。
     using NativeFn = bool (*)(const NativeCallInfo& info);
 
-    // 一次原生调用的操作面板:self 与实参只读、返回值经 set_return_val 写回。持槽 0 在值栈缓冲
-    // 中的下标而非指针,每次访问经 ctx 重取基址按偏移重算,原生执行期间的重入扩容(grow_stack_
-    // 搬迁)不再悬垂。
+    // 以槽下标定位调用区，每次访问重取基址，允许原生调用期间重入并搬迁值栈。
     class NativeCallInfo {
     public:
-        // 调用区须已在栈上:栈顶 argc+1 个值恰为 [self, a1..argc]。
         NativeCallInfo(AriaExeContext& ctx, const u8 argc) : ctx_{&ctx}, argc_{argc} {
             ASSERT(ctx.stack_size() >= argc + 1, "call region not on stack");
             base_index_ = ctx.stack_size() - argc - 1;
@@ -37,15 +33,13 @@ namespace aria {
             return argc_;
         }
 
-        // 槽 0:普通调用 = 闭包自身,方法调用 = receiver;set_return_val 惯例为返回前最后动作,
-        // 其后读到的是返回值。
+        // self 与返回值共用槽 0，写返回值须留到最后。
         [[nodiscard]]
         Value self() const noexcept {
             return slot(0);
         }
 
-        // 方法调用 receiver 的类型收窄:类上裸读后调用的 stray 是语言可达形态,self 须为 T。命中返
-        // T*,miss fail 后返 nullptr,调用方 false 出口。
+        // 类上取出的裸方法可被任意接收者调用，类型不匹配属于语言错误。
         template<DerivedFromObj T>
         [[nodiscard]]
         T* receiver() const {
@@ -57,14 +51,12 @@ namespace aria {
             return ctx_->fail(ErrorCode::TypeMismatch, "receiver must be a {}, got {}", tag.word, type_name(self));
         }
 
-        // 实参只读访问,0 起不含槽 0;按值返回,跨重入持有安全(对象经栈根存活)。
         [[nodiscard]]
         Value operator[](const usize index) const noexcept {
             ASSERT(index < argc_, "argument index out of range");
             return slot(index + 1);
         }
 
-        // 写返回槽(即槽 0);切换型原生(resume/yield)不写,槽 0 归对侧作预留结果槽。
         void set_return_val(const Value value) const noexcept { slot(0) = value; }
 
     private:

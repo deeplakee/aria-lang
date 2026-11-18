@@ -103,7 +103,7 @@ eval 层驱动引擎（协程为单循环切换模型）：`class Eval` 全静�
 
 ### 指令子集
 
-指令 case 与 `code.hpp` 表行同批落地（不存在「表里有、VM 没实现」的持久态），未设 case 走 `UNREACHABLE`（`fatal_error`）；各指令的栈效应与逐 case 语义见 `Eval.cpp` dispatch_loop（case 注释即契约）。本层只需记住的跨文件约定：
+指令 case 与 `code.hpp` 表行同批落地，未设 case 走 `UNREACHABLE`（`fatal_error`）。指令编码、栈效应与语义见 `.agents/reference/specs/instruction-set.md`；`Eval.cpp` 仅保留重入、换指和保活等局部约束注释。本层的跨文件约定：
 
 - **全局**：`LOAD_GLOBAL` 先查模块 `globals_`、miss 回退 VM 级 `builtins_` 表（Python 式查找链，内置 type/str/println/assert/clock/Error/is_a/is_subclass 与 Exception 类经此解析），再 miss 报 `UndefinedVariable`；`STORE_GLOBAL` 仅写模块 `globals_`、**不**回退 builtins（赋值不隐式创建，必须先 var 声明，见 `docs/grammar.txt`「作用域模型」裸名赋值条）。
 - **算子取实现**：九个二元算子共用执行体 `run_binary_operator<Op>`：非对象左值委托 `run_binary_numeric<Op>`，对象左值经 `get_obj_binary_op_impl<Op>` 按编译期选定的钩子名走**魔术咨询口** `load_field_from_class` 取实现（值本地状态出局，见 object.md ④；miss 措辞随各宿主咨询口烘焙），取到后 `call_value`（调用区 `[lhs, rhs]` 即 `[this, arg1]`），取不到即已 fail。`+` 与四个比较算子的域 = 数值 ∪ String（String 的拼接经驻留池、比较按无符号字节序，见 object.md ⑤）。

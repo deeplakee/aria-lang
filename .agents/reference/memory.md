@@ -41,7 +41,7 @@ header-only 模板 `InternPool<Alloc = GC>`，无 .cpp：字符串驻留池（**
 
 ## `memory/StringBuilder.hpp`
 
-header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造 `StringBuilder{gc, src}` + `append`（直写；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩；碎片化流式追加须先量后填，如 join 预扫）+ `resize`（`reserve(n)` 后经 `begin()` 直写、以此提交终长的外部产源收口）；检视面 = `view`/`size`/`begin`/`end`；`take_string` 把 buffer 移交 `ObjString`（驻留判定与接管/SSO 化收在 `new_string` 五参接管重载；另具 hash 重载免重算），**只有长串臂是原地接管**（realloc 只做记账对齐、后端原地返回），短串拷入 SSO 槽后释放 buffer、驻留命中则直接释放 buffer。take 后空态可复用。容量策略理由与 GC 纪律见该头类头注。
+header-only `aria::StringBuilder`：可增长原始字节缓冲，buffer 经 GC 分配器家族分配（`bytes_allocated_` 自动记账）。构建面 = 带种串构造 `StringBuilder{gc, src}` + `append`（直写；终态 `'\0'` 位由分配口径恒含，交付后 `data_[size_]` 恒 `'\0'`）+ `reserve`（唯一扩容路径，append 隐式扩容走同口：一律精确按需、无倍增无空余、只扩不缩；碎片化流式追加须先量后填，如 join 预扫）+ `resize`（`reserve(n)` 后经 `begin()` 直写、以此提交终长的外部产源收口）；检视面 = `view`/`size`/`begin`/`end`；`take_string` 把 buffer 移交 `ObjString`（驻留判定与接管/SSO 化收在 `new_string` 五参接管重载；另具 hash 重载免重算），**只有长串臂是原地接管**（realloc 只做记账对齐、后端原地返回），短串拷入 SSO 槽后释放 buffer、驻留命中则直接释放 buffer。take 后空态可复用。容量精确增长是因为缓冲构建后即移交，未用容量无法摊销；多段追加宜预量总长。GC 与移交前置条件见头文件。
 
 ## `memory/RawAlloc.hpp`
 

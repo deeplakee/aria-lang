@@ -38,16 +38,13 @@ using aria::Value;
 
 namespace {
 
-    // 端到端：源码 -> tokenize -> parse -> CodeGen::compile。
-    // 断言词法/语法成功（测试用例均用合法语法），返回编译结果（入口 ObjFnProto 或首错 Error）。
-    // 注意：返回的 ObjFnProto 及其常量池 ObjString 归属调用方提供的 vm 的 GC，须在 vm 存活期间使用。
+    // 返回原型归调用方 GC 管理。
     Result<ObjFnProto*, Error> compile_source(GC& gc, ObjModule* module, std::string_view src) {
         SourceFile file{"<test>", "<test>", aria::String{src}};
         auto       lex = Lexer::tokenize(file);
         if (!lex) {
             return std::unexpected(std::move(lex.error()));
         }
-        // arena 持有整棵 AST，存活覆盖 CodeGen::compile 调用。
         AstArena arena;
         auto     parse = Parser::parse(arena, file, *lex);
         if (!parse) {
@@ -56,7 +53,7 @@ namespace {
         return CodeGen::compile(gc, **parse, module, aria::kMainEntryName);
     }
 
-    // RunResult 惯用法（vm/GC 随结果返回的生存期理由与 Result 转发形态）见 test_compiler.cpp 同名结构注。
+    // 随结果持有 VM，使 GC 对象在断言期间存活。
     struct RunResult {
         std::unique_ptr<AriaVM> vm;
         Result<Value, Error>    result;
@@ -78,8 +75,6 @@ namespace {
         const Error&               error() const noexcept { return result.error(); }
     };
 
-    // 从入口函数常量池取名为 name 的嵌套 ObjFnProto（run_value 探针提取与 find_nested_function
-    // 共用;调用方保证 entry 存活期间使用返回值,对象经常量池根链可达）。
     ObjFnProto* find_entry_nested(ObjFnProto& entry, const std::string_view name) {
         for (const auto& constant: entry.unit().constants) {
             if (!constant.is_obj() || !constant.as_obj()->is<ObjFnProto>()) {
@@ -93,36 +88,30 @@ namespace {
         return nullptr;
     }
 
-    // 取入口函数常量池里名为 name 的嵌套 ObjFnProto（方法与 lambda 体各占一个 CodeUnit）：
-    // 方法体内的发射断言要看它们的 unit，入口 unit 只有 CLOSURE/调用序列。
     ObjFnProto* find_nested_function(Compiled& compiled, const std::string_view name) {
         return find_entry_nested(*compiled, name);
     }
 
-    // 端到端：源码 -> 编译 -> VM 运行。返回 RunResult（持 vm 活到调用方检视完返回值）。
-    // stress GC：每次 new_object / 循环回边都 collect，主动锻炼 compile+run 的 GC 根接线，
-    // 暴露缺失根（裸指针跨分配）的 bug。module 经 compile() 的 guard 根化、值栈/帧经
-    // vm_roots tracer 标根，故 stress 下安全。
+    // 开启 stress GC，检验编译和运行的根接线。
     RunResult run_source(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto module   = new_module(gc, "<test>");
         auto compiled = compile_source(gc, module, src);
         if (!compiled) {
             return RunResult{std::move(vm), std::unexpected(compiled.error())};
         }
-        auto result = vm->run(*compiled); // vm 活着时取结果
+        auto result = vm->run(*compiled);
         return RunResult{std::move(vm), std::move(result)};
     }
 
-    // 带值取数惯用法（探针函数包裹的理由）见 test_compiler.cpp 的 run_value 注；
-    // 本侧站点：仅取值。钉模块顶层语义（顶层 var 落全局等）的站点走 run_source（不包）。
+    // 顶层禁止带值 return，取值测试改为直接运行探针函数；模块语义测试用 run_source。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto        module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto        module = new_module(gc, "<test>");
         std::string wrapped{"fun __probe__() {\n"};
         wrapped += src;
         wrapped += "\n}\n";
@@ -140,26 +129,21 @@ namespace {
         return RunResult{std::move(vm), std::move(result)};
     }
 
-    // 仅编译（不入 VM），供反汇编 / 编译期错误测试用。返回 Compiled（持 vm 活到反汇编/检视完）。
-    // 同 run_source 开 stress GC，锻炼编译期根接线。
     Compiled compile_only(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto module   = new_module(gc, "<test>");
         auto compiled = compile_source(gc, module, src);
         return Compiled{std::move(vm), std::move(compiled)};
     }
 
-    // 便捷：断言运行成功并返回整数（整数即值，无 GC 对象依赖，但仍经 RunResult 在 vm 存活期取值）。
     i64 run_int(std::string_view src) {
         auto out = run_value(src);
         EXPECT_TRUE(out.has_value()) << out.error().message();
         return out ? out->as_int() : 0;
     }
 
-    // 逐行扫描 disassembly 文本，断言存在「含 first 的行，其紧邻下一行含 second」的相邻对
-    // （指令相邻形态断言，反汇编形状测试用）。
     bool lines_adjacent(const aria::String& text, const std::string_view first, const std::string_view second) {
         for (aria::usize pos = text.find(first); pos != aria::String::npos; pos = text.find(first, pos + 1)) {
             const aria::usize line_end = text.find('\n', pos);
@@ -176,7 +160,6 @@ namespace {
         return false;
     }
 
-    // 统计子串出现次数（发射形态断言用：如「每个位置一条 LOAD_INDEX」）。
     aria::usize count_occurrences(const aria::String& text, const std::string_view needle) {
         aria::usize count = 0;
         for (aria::usize pos = text.find(needle); pos != aria::String::npos; pos = text.find(needle, pos + 1)) {
@@ -187,9 +170,7 @@ namespace {
 
 } // namespace
 
-// ============================================================
 // 算术 / 字面量
-// ============================================================
 
 TEST(CodeGen, ArithmeticPrecedence) {
     EXPECT_EQ(run_int("return 1 + 2 * 3;"), 7);
@@ -271,8 +252,6 @@ TEST(CodeGen, UnaryMinusAndNot) {
     EXPECT_TRUE((*run_value("return !nil;")).as_bool());
 }
 
-// 负字面量折叠：-<数值字面量> 的取负并进常量，只发一条加载指令（LOAD_IMM 立即数按 i8 有符号
-// 解释，池内常量亦可为负），不再发运行期 NEGATE。只折直接操作数这一层。
 TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     // i8 内：单条 LOAD_IMM 负立即数（0xFF 位型 i8 = -1）
     {
@@ -346,9 +325,7 @@ TEST(CodeGen, NegativeLiteralFoldsIntoLoad) {
     }
 }
 
-// ============================================================
 // 逻辑短路
-// ============================================================
 
 TEST(CodeGen, LogicShortCircuit) {
     // nil || 5 -> 5（nil 假，求 rhs 留值）
@@ -375,9 +352,7 @@ TEST(CodeGen, LogicShortCircuit) {
     EXPECT_EQ(and2->as_int(), 5);
 }
 
-// ============================================================
 // 变量 / 作用域 / 赋值
-// ============================================================
 
 TEST(CodeGen, GlobalVar) {
     EXPECT_EQ(run_int("var x = 5; return x;"), 5);
@@ -412,9 +387,7 @@ TEST(CodeGen, PreIncDec) {
     EXPECT_EQ(e->as_int(), 6);
 }
 
-// ============================================================
 // 控制流
-// ============================================================
 
 TEST(CodeGen, IfElse) {
     EXPECT_EQ(run_int("var x = 3; if (x > 2) { return 1; } else { return 2; }"), 1);
@@ -473,9 +446,7 @@ TEST(CodeGen, IfExpr) {
     EXPECT_EQ(run_int("var c = false; return if (c) { 1 } else { 2 };"), 2);
 }
 
-// ============================================================
 // 函数 / 调用 / 递归 / lambda
-// ============================================================
 
 TEST(CodeGen, FunctionCall) { EXPECT_EQ(run_int("fun add(a, b) { return a + b; } return add(3, 4);"), 7); }
 
@@ -498,9 +469,7 @@ TEST(CodeGen, HigherOrderReturn) {
               42);
 }
 
-// ============================================================
 // 闭包（端到端：捕获读/写/共享/关闭/递归自捕获/unwind 幸存）
-// ============================================================
 
 // 计数器闭包经典样例 -- 内层 lambda 捕获外层局部 n,
 // 捕获即引用（n = n + 1 经 STORE_UPVALUE 写穿）,外层帧 RETURN 后 upvalue 已关闭,
@@ -600,9 +569,7 @@ TEST(CodeGen, UpvalueWriteThrough) {
               3);
 }
 
-// ============================================================
 // 反汇编核对（形状断言，不经 VM 运行）
-// ============================================================
 
 TEST(CodeGen, ForInDisassembly) {
     auto compiled = compile_only("for (x in iter) { println(x); }");
@@ -741,9 +708,7 @@ TEST(CodeGen, ForInNoCloseWithoutCapture) {
     EXPECT_EQ(text.find("CLOSE_UPVALUE"), aria::String::npos);
 }
 
-// ============================================================
 // 编译期语义错误（compile() 返回 Error）
-// ============================================================
 
 TEST(CodeGen, ErrRedefinedVariable) {
     auto c = compile_only("var x = 1; var x = 2;");
@@ -781,9 +746,7 @@ TEST(CodeGen, ImportNestedInBlock) {
     EXPECT_EQ(text.find("DEF_GLOBAL"), aria::String::npos) << "嵌套 import 不走 DEF_GLOBAL";
 }
 
-// ============================================================
 // 模块入口返回值（ModuleEntry）
-// ============================================================
 // 入口函数（主脚本与导入模块同规，ModuleCtx 构造烙定）返回值恒为模块对象：隐式收尾与裸
 // return 都发「压模块对象常量 + RETURN」（IMPORT 命中/未命中两路栈效应的兑现，VM RETURN
 // 通用写回 callee 槽即 IMPORT 预留结果槽）；带值 return 编译期拒绝（ReturnValueAtTopLevel）。
@@ -979,9 +942,7 @@ TEST(CodeGen, ErrNumberOutOfRange) {
     EXPECT_NE(neg.error().message().find("-999999999999999"), aria::String::npos) << "报文应报字面量自身的值（带符号）";
 }
 
-// ============================================================
 // 默认参数（印章方案：call_aria_fn 垫充 + 序言身份判等换值）
-// ============================================================
 
 TEST(CodeGen, DefaultParamFillAndExplicitArg) {
     // 未传走默认;实参在位则实参胜出。
@@ -1137,9 +1098,7 @@ TEST(CodeGen, ErrStopOnNestedLambdaInExpr) {
     EXPECT_EQ(c.error().code(), ErrorCode::BreakOutsideLoop);
 }
 
-// ============================================================
 // match（纯降糖：subject 驻栈 + DUP 逐臂比较 + 共享 MatchNoArm 兜底异常）
-// ============================================================
 
 TEST(CodeGen, MatchStmtFirstArmHit) {
     EXPECT_EQ(run_int("var r = 0; match (1) { 1 => r = 1; 2 => r = 2; _ => r = 3; } return r;"), 1);
@@ -1248,9 +1207,7 @@ TEST(CodeGen, MatchDisassembly) {
     EXPECT_LT(text.find("JUMP_NE"), text.find("LOAD_REG"));
 }
 
-// ============================================================
 // 运行期错误（VM 报）
-// ============================================================
 
 TEST(CodeGen, ErrRuntimeUndefinedVariable) {
     // 裸名非局部 -> LOAD_GLOBAL；VM 运行期查表未定义 -> UndefinedVariable
@@ -1266,9 +1223,7 @@ TEST(CodeGen, ErrRuntimeAssignUndefined) {
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
 
-// ============================================================
 // 内置函数（type / str / println / assert）
-// ============================================================
 // 内置由 VM 级只读 builtins_ 表承载（ctor 一次注册），LOAD_GLOBAL 模块 globals 未命中后回退查之
 // （Python 式 globals -> builtins 查找链，无 LOAD_BUILTIN 指令）。run_source 走 run(ObjFnProto*)，
 // VM ctor 已注册 builtins，故单次 run 测试天然覆盖。跨行 shadow 持久见 BuiltinShadowPersistsAcrossRuns。
@@ -1359,7 +1314,7 @@ TEST(CodeGen, BuiltinShadowPersistsAcrossRuns) {
     auto  vm = std::make_unique<AriaVM>();
     auto& gc = vm->gc();
     gc.set_stress(true);
-    auto module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+    auto module = new_module(gc, "<test>");
 
     auto c1 = compile_source(gc, module, "var str = 5;");
     ASSERT_TRUE(c1.has_value());
@@ -1380,9 +1335,7 @@ TEST(CodeGen, BuiltinBareAssignWithoutVarFails) {
     EXPECT_EQ(out.error().code(), ErrorCode::UndefinedVariable);
 }
 
-// ============================================================
 // 异常（try/catch/throw）
-// ============================================================
 // 统一异常通道：aria throw 与 VM 运行时错误都走挂起寄存器 + unwind 查 CodeUnit 异常记录表。
 // 单寄存器模型：用户 throw 存原值保类型、运行时错误装箱 ObjException 携码；未捕获物化 Error
 // 并烘焙逐帧堆栈跟踪（内 -> 外，最内帧紧贴消息行）。run_source 的 stress GC 默认开，锻炼 pending_error_ 根接线
@@ -1562,9 +1515,7 @@ TEST(CodeGen, NestedTryRecordsAscendingByBegin) {
     EXPECT_LT(recs[1].end, recs[0].end);
 }
 
-// ============================================================
 // 类与对象
-// ============================================================
 
 // 空类 + 隐式 Object 根继承：无成员无 init，实例化走 bootstrap 的原生 no-op init。
 TEST(CodeGen, EmptyDefInstantiates) { EXPECT_EQ(run_int("def X { } var x = X(); return 1;"), 1); }
@@ -2093,9 +2044,7 @@ def Animal {
     EXPECT_EQ(def_global_count, 1u);
 }
 
-// ============================================================
 // list 字面量(值表示 + MAKE_LIST + str/println)
-// ============================================================
 
 // 字面量求值:元素按序求值、恰好各一次(经全局计数器观察副作用),渲染保序。
 TEST(CodeGen, ListLiteralElementsEvaluatedInOrder) {
@@ -2263,9 +2212,7 @@ return xs;
               "[[\"aa\", [2]], [2]]");
 }
 
-// ============================================================
 // 解构：发射形态
-// ============================================================
 
 // Fill（var 声明 / for-in 目标）：访问数 >= 2 时先建隐藏局部存源值（值填槽零指令），逐位置
 // LOAD_LOCAL 复取源值 + 压下标 + LOAD_INDEX（源值只求值一次）。
@@ -2300,9 +2247,7 @@ TEST(CodeGen, DestructureFillZeroAccessPopsSource) {
     EXPECT_EQ(wild->unit().disassemble("<test>").find("LOAD_INDEX"), aria::String::npos);
 }
 
-// ============================================================
 // 条件跳转融合(JUMP_NE)
-// ============================================================
 
 // 条件恰为 `==` 二元:直发融合指令(判等,不等则跳),不再有独立 EQUAL 与 JUMP_FALSE。
 TEST(CodeGen, CondJumpFusesPlainEquality) {
@@ -2377,9 +2322,7 @@ TEST(CodeGen, DestructureRestTakesSuffixViaUnboundedRange) {
     EXPECT_EQ(only_text.find("LOAD_LOCAL"), aria::String::npos); // 单次访问不建隐藏局部
 }
 
-// ============================================================
 // 插值串（InterpolatedStringNode 手工组 AST，BUILD_STRING 收拢）
-// ============================================================
 
 namespace {
     // 手工组「表达式语句包裹插值串」的最小程序（绕开词法/语法层，只到 CodeGen）。

@@ -23,7 +23,6 @@ namespace aria {
         [[nodiscard]]
         usize size() const noexcept override = 0;
 
-        // 调试渲染:"<iterator>";显示同文案。
         [[nodiscard]]
         String repr() const override;
 

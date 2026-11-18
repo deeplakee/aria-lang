@@ -11,7 +11,8 @@ namespace aria {
     class ObjString;
     class ObjFnProto;
 
-    // 模块对象:aria 语言里的模块(一个源文件对应一个模块,充当命名空间与全局绑定域)。
+    // 一个源文件对应一个模块，保存顶层绑定。
+    // name 为文件 stem，dir 为目录；两者指针非空。
     class ObjModule final : public Object {
     public:
         // name = 模块文件名去 .aria 后缀(stem);dir = 所在目录(指针恒非空,构造期 ASSERT)。
@@ -28,28 +29,25 @@ namespace aria {
             return name_;
         }
 
-        // 模块文件所在目录(intern):合成绝对路径 + 相对导入基;恒非空、构造注入不可变(内容可空)。
         [[nodiscard]]
         ObjString* dir() const noexcept {
             return dir_;
         }
 
-        // 绝对路径(= 模块表键形式),即时合成不驻留;name_ 空串仅返 dir_,dir_ 空串返空串。
+        // 无目录锚点时返回空串；名称为空时返回目录。
         [[nodiscard]]
         String abs_path() const;
 
-        // 模块位置串 "<loc>:<line>"(未捕获堆栈 at 行用):文件模块取 abs_path;尖括号合成模块(abs_path 拼伪路径)
-        // 与无目录锚点退化为 name_。纯拼接无 GC 分配(调用点在 unwind 物化路径)。
+        // 文件模块用绝对路径，合成模块或无目录锚点时用名称；不触发 GC。
         [[nodiscard]]
         String format_location(u32 line) const;
 
-        // 模块级绑定表:顶层 var/fun/def 的目标,LOAD/STORE/DEF_GLOBAL 操作此表(键 intern)。
         [[nodiscard]]
         AriaHashTable& globals() noexcept {
             return globals_;
         }
 
-        // 模块体(顶层语句编进的 ObjFnProto,arity 0 匿名),导入时 run-once;nullptr 表无体。
+        // nullptr 表示尚无模块体。
         [[nodiscard]]
         ObjFnProto* entry() const noexcept {
             return entry_;
@@ -57,32 +55,27 @@ namespace aria {
 
         void set_entry(ObjFnProto* entry) noexcept { entry_ = entry; }
 
-        // 标 name_ + dir_ + entry_ + globals_(key+value)。
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(globals_ 的 ctrl/entries 两块由 ~HashTable 自释放,不计入壳)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjModule);
         }
 
-        // 调试渲染:`<module lib/utils>`;显示同文案。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 Module 类链起查(globals 出局 -- 值态与类命名空间分层)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 普通成员仅查 globals_,不回退到 Module 类链;命中 nil 与缺席分开,值原样返回。
+        // 普通成员只查模块 globals，不回退类链，不绑定。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 声明命名空间中的成员保持原值,不绑定当前对象。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
-        // 命名成员写入:模块成员只读 -- 越模块写会隐式创建未声明全局,违「赋值不隐式创建」。
+        // 跨模块写入会绕过全局声明，因此成员只读。
         [[nodiscard]]
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
@@ -93,19 +86,17 @@ namespace aria {
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 
-    // 工厂:分配 ObjModule;调用方须自行根化 name 与 dir,dir 指针须非空。
+    // 调用方须根化 name 和 dir，dir 指针须非空。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name, ObjString* dir);
 
-    // 工厂重载(2 参):合成模块(<script> / REPL / 测试桩),dir 取 cwd(不可用空串兜底)。
+    // 省略 dir 时取 cwd；显式传空串表示无目录锚点。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, ObjString* name);
 
-    // 工厂重载(StringView name):name 工厂内部驻留自守;dir 取 cwd。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, StringView name);
 
-    // 工厂重载(StringView name, dir):两者均工厂内部驻留自守;dir 原样 intern(空串锚点),需 cwd 退化用 2 参重载。
     [[nodiscard]]
     ObjModule* new_module(GC& gc, StringView name, StringView dir);
 

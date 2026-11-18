@@ -16,9 +16,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // read_file
-// ---------------------------------------------------------------------------
 
 TEST(FsReadFile, ReadsExistingFile) {
     String path = write_temp_file("fs_read.txt", "hello\nworld");
@@ -57,9 +55,7 @@ TEST(FsReadFile, DirectoryReturnsError) {
     EXPECT_EQ(result.error(), fs::FsErrCode::IsDirectory);
 }
 
-// ---------------------------------------------------------------------------
 // current_dir
-// ---------------------------------------------------------------------------
 
 TEST(FsCurrentDir, ReturnsNonEmpty) {
     auto r = fs::current_dir();
@@ -67,9 +63,7 @@ TEST(FsCurrentDir, ReturnsNonEmpty) {
     EXPECT_FALSE(r->empty());
 }
 
-// ---------------------------------------------------------------------------
 // program_dir
-// ---------------------------------------------------------------------------
 
 TEST(FsProgramDir, ReturnsNonEmpty) {
     auto r = fs::program_dir();
@@ -77,9 +71,7 @@ TEST(FsProgramDir, ReturnsNonEmpty) {
     EXPECT_FALSE(r->empty());
 }
 
-// ---------------------------------------------------------------------------
 // absolute
-// ---------------------------------------------------------------------------
 
 TEST(FsAbsolute, RelativePathResolved) {
     auto r = fs::absolute("foo/bar.txt");
@@ -100,9 +92,7 @@ TEST(FsAbsolute, EmptyPath) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // resolve（weakly_canonical）
-// ---------------------------------------------------------------------------
 
 TEST(FsResolve, EliminatesParentDir) {
     auto cwd = fs::current_dir();
@@ -128,9 +118,7 @@ TEST(FsResolve, FullyMissingPathLexicalNormalized) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // module_name_and_dir
-// ---------------------------------------------------------------------------
 
 TEST(FsModuleNameAndDir, StripsAriaExtension) {
     auto cwd = fs::current_dir();

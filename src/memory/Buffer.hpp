@@ -6,8 +6,7 @@
 
 namespace aria {
 
-    // Trivial 内存块底座:仅持 {Alloc* alloc_, T* data_, usize cap_},收口「分配 / 重分配 / 释放」,扩容策略不内置
-    // (调用方算好 new_cap 调 reserve)。不可拷贝/不可移动:持堆分配裸指针(data_),浅 move 会 double-free。
+    // 管理平凡类型内存块；容量策略由调用方决定。
     template<TriviallyCopyable T, TrivialAllocator Alloc = GC>
     class Buffer {
         T*     data_;
@@ -15,10 +14,8 @@ namespace aria {
         Alloc* alloc_;
 
     public:
-        // 空态:不分配,延迟到首次 reserve 才分配。
         explicit Buffer(Alloc* alloc) noexcept : data_{nullptr}, cap_{0}, alloc_{alloc} {}
 
-        // 分配 initial_cap 个 T(initial_cap > 0)。
         Buffer(Alloc* alloc, const usize initial_cap) noexcept :
             data_{alloc->template allocate<T>(initial_cap)}, cap_{initial_cap}, alloc_{alloc} {}
 
@@ -33,8 +30,7 @@ namespace aria {
         Buffer(Buffer&&)                 = delete;
         Buffer& operator=(Buffer&&)      = delete;
 
-        // 扩容到 new_cap(仅 new_cap > cap 才 reallocate,可能原地扩展也可能搬迁)。旧基址在返回后一律失效、不
-        // 返回基址差;持派生裸指针的调用方须调前把到旧基址的偏移记成整数、调后以新基址加偏移重建(原址即刷新)。
+        // 返回后旧基址视为失效；派生指针须在调用前转为偏移，调用后以新基址重建。
         void reserve(const usize new_cap) noexcept {
             if (new_cap <= cap_) {
                 return;

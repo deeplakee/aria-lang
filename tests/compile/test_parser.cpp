@@ -99,9 +99,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // 空程序 / 字面量 / 基础表达式
-// ---------------------------------------------------------------------------
 
 TEST(ParserBasic, EmptyProgram) {
     auto p = parse_src("");
@@ -133,9 +131,7 @@ TEST(ParserBasic, ParenDoesNotMakeNode) {
     EXPECT_EQ(out.find("Paren", 0), String::npos);
 }
 
-// ---------------------------------------------------------------------------
 // 二元运算：优先级与结合性
-// ---------------------------------------------------------------------------
 
 TEST(ParserBinary, Precedence) {
     // 1 + 2 * 3 -> 1 + (2 * 3)
@@ -190,9 +186,7 @@ TEST(ParserBinary, ComparisonAndEquality) {
     expect_has(dump_ok("a !== b;"), "op=!==");
 }
 
-// ---------------------------------------------------------------------------
 // 区间
-// ---------------------------------------------------------------------------
 
 TEST(ParserRange, Inclusive) {
     // 1..10 -> RangeExpr inclusive，lower=1，upper=10
@@ -242,9 +236,7 @@ TEST(ParserRange, NonAssociative) {
     EXPECT_FALSE(p->result.has_value());
 }
 
-// ---------------------------------------------------------------------------
 // 一元 / 后缀
-// ---------------------------------------------------------------------------
 
 TEST(ParserUnary, Prefix) {
     expect_has(dump_ok("-x;"), "UnaryExpr op=-");
@@ -294,9 +286,7 @@ TEST(ParserPostfix, SuperMethodCall) {
     EXPECT_EQ(out.find("FieldAccess"), String::npos);
 }
 
-// ---------------------------------------------------------------------------
 // 赋值（普通 / 复合 / 解构）
-// ---------------------------------------------------------------------------
 
 TEST(ParserAssignment, Plain) {
     const String out = dump_ok("x = 5;");
@@ -367,9 +357,7 @@ TEST(ParserAssignment, ListExprNotDestructure) {
     expect_has(expr_stmt->expr->dump(0), "ListExpr elements=2");
 }
 
-// ---------------------------------------------------------------------------
 // 复合表达式
-// ---------------------------------------------------------------------------
 
 TEST(ParserCompound, ListExpr) {
     const String out = dump_ok("[1, 2, 3];");
@@ -405,9 +393,7 @@ TEST(ParserCompound, MatchExpr) {
     expect_has(out, "MatchPattern _ (wildcard)");
 }
 
-// ---------------------------------------------------------------------------
 // 声明
-// ---------------------------------------------------------------------------
 
 TEST(ParserDecl, VarSingle) {
     const String out = dump_ok("var x = 1;");
@@ -508,9 +494,7 @@ TEST(ParserDecl, DefInitMethodStamping) {
     expect_has(out, "FunDecl name=init params=0 kind=StaticMethod");
 }
 
-// ---------------------------------------------------------------------------
 // 语句
-// ---------------------------------------------------------------------------
 
 TEST(ParserStmt, IfElse) {
     const String out = dump_ok("if (c) println(1); else println(2);");
@@ -659,9 +643,7 @@ TEST(ParserStmt, NestedBlocksAndScope) {
     expect_has(out, "Block stmts=1");
 }
 
-// ---------------------------------------------------------------------------
 // 错误处理
-// ---------------------------------------------------------------------------
 
 TEST(ParserError, ExpectedIdentifier) {
     // var 后直接 '='（缺绑定目标）
@@ -813,9 +795,7 @@ TEST(ParserError, PatternRestUnderscore) {
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::InvalidPattern);
 }
 
-// ---------------------------------------------------------------------------
 // 错误恢复：收集多个错误
-// ---------------------------------------------------------------------------
 
 TEST(ParserRecovery, MultipleErrorsCollected) {
     // 两条 var 声明均有错误，应收集到 >= 2 个错误
@@ -832,9 +812,7 @@ TEST(ParserRecovery, RecoversAndContinues) {
     EXPECT_EQ(p->result.error()[0].code(), ErrorCode::ExpectedIdentifier);
 }
 
-// ---------------------------------------------------------------------------
 // 错误位置：携带源码行列
-// ---------------------------------------------------------------------------
 
 TEST(ParserError, ErrorHasLocation) {
     // 第一行缺 ';'：解析器在第二行 'var' 处发现非预期 token，错误位置指向该 token（行 2）。

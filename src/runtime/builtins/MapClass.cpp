@@ -15,9 +15,8 @@ namespace aria {
 
     namespace {
 
-        // 键判定一律走表内判等 ===(value_identical 匹配,int 1 与 f64 1.0 是不同键),与下标读同域。
+        // 键按 === 判等，整数 1 与浮点 1.0 是不同键。
 
-        // init() -> map:工厂构造,空表覆盖槽 0(call_class 预置的临时 instance 被替换);只收 0 元。
         bool fn_init(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -27,7 +26,6 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:键值对数。
         bool fn_size(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -41,7 +39,6 @@ namespace aria {
             return true;
         }
 
-        // is_empty() -> Bool:无键值对判定(与 list 同名的空表谓词)。
         bool fn_is_empty(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -55,7 +52,6 @@ namespace aria {
             return true;
         }
 
-        // has(key) -> Bool:键存在判定(miss 返 false 不报错)。
         bool fn_has(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -70,7 +66,7 @@ namespace aria {
             return true;
         }
 
-        // get(key) -> 值或 nil:miss 取 nil(与「值为 nil」不可分,分清用 has);下标读 miss 仍报 KeyError。
+        // 缺键返回 nil；要区分值为 nil 的表项须用 has。
         bool fn_get(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -85,7 +81,6 @@ namespace aria {
             return true;
         }
 
-        // remove(key) -> Bool:移除命中键(命中 true、miss false 不报错)。
         bool fn_remove(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -99,7 +94,6 @@ namespace aria {
             return true;
         }
 
-        // clear() -> nil:清空(对数归零,容量保留)。
         bool fn_clear(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -114,8 +108,6 @@ namespace aria {
             return true;
         }
 
-        // keys() -> list:全部键的快照(序随占用槽,unspecified)。GC 约束:map 在槽 0 于栈根,
-        // new_list 顶部 maybe_collect 时新 list 未诞生,逐键 push trivial 不触 GC,建成写回槽发布。
         bool fn_keys(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -133,7 +125,7 @@ namespace aria {
             return true;
         }
 
-        // values() -> list:全部值的快照;与 keys 同槽位序,keys()[i]/values()[i] 同源同对(序 unspecified)。
+        // 快照顺序与 keys 对齐，均随占用槽顺序。
         bool fn_values(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -151,9 +143,7 @@ namespace aria {
             return true;
         }
 
-        // pairs() -> list:全部 [k, v] 对的快照,与 keys()/values() 同槽位序(pairs()[i] 对齐)。
-        // GC 约束:本表唯一「元素本身也是新对象」的方法 -- 外层必挂守卫(循环内每铸内层 list 都
-        // 过 maybe_collect,而 receiver 之外无根);内层铸后仅 push 即入外层,窗口内无 GC 点。
+        // 外层列表须跨内层列表分配保活；每个内层列表建成即发布到外层。
         bool fn_pairs(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -175,7 +165,6 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器(迭代器族 GC 纪律)。
         bool fn_iter(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -189,7 +178,6 @@ namespace aria {
             return true;
         }
 
-        // map 方法表(has_next/next 住 Iterator 表,全子类共享)。
         constexpr BuiltinFnEntry kMapBuiltins[] = {
                 {"init", fn_init},     {"size", fn_size},   {"is_empty", fn_is_empty}, {"has", fn_has},
                 {"get", fn_get},       {"keys", fn_keys},   {"values", fn_values},     {"pairs", fn_pairs},
@@ -199,7 +187,6 @@ namespace aria {
     } // namespace
 
     ObjClass* MapClass::make_class(GC& gc, ObjClass* super) {
-        // Map bootstrap 类:内置 map 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "Map", super);
         Builtin::register_class_methods(gc, klass, kMapBuiltins);
         return klass;

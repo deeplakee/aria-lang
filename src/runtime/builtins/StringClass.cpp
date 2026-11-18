@@ -20,11 +20,8 @@ namespace aria {
 
     namespace {
 
-        // 下标域约定:除 codepoint_at(码点序号)外全部字节域(与 len/s[i] 同域);string 不可变,
-        // 方法全部产出新串。
+        // 除 codepoint_at 的码点序号外，下标和长度均按字节计。
 
-        // init(v) -> string:转换构造,任意值的可读渲染(与内建 str 同域同实现),
-        // 覆盖槽 0(call_class 预置的临时 instance 被替换)。
         bool fn_init(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -38,7 +35,7 @@ namespace aria {
             return true;
         }
 
-        // upper() -> 新串:ASCII 范围(A-Z/a-z)逐字节转大写,其余字节原样。
+        // 大小写转换仅处理 ASCII，其余字节保持原样。
         bool fn_upper(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -48,7 +45,6 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            // builder 累积全程零 GC 点,唯一 GC 点在 take_string(此刻 receiver 留槽 0 为根)。
             auto out = StringBuilder{ctx.gc(), self->view()};
             for (char& c: out) {
                 if (c >= 'a' && c <= 'z') {
@@ -59,7 +55,6 @@ namespace aria {
             return true;
         }
 
-        // lower() -> 新串:ASCII 逐字节转小写,同 upper 口径。
         bool fn_lower(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -69,7 +64,6 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            // builder 累积全程零 GC 点,唯一 GC 点在 take_string(此刻 receiver 留槽 0 为根)。
             auto out = StringBuilder{ctx.gc(), self->view()};
             for (char& c: out) {
                 if (c >= 'A' && c <= 'Z') {
@@ -80,13 +74,11 @@ namespace aria {
             return true;
         }
 
-        // ASCII 空白六字符(trim 的空白集,与 upper/lower 的 ASCII 口径一致)。
         [[nodiscard]]
         bool is_ascii_space(const char c) noexcept {
             return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
         }
 
-        // trim() -> 新串:去首尾 ASCII 空白;全空白返空串。
         bool fn_trim(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -107,8 +99,7 @@ namespace aria {
             return true;
         }
 
-        // 单参形态:按 sep 逐段切开,保留空段("a,,b" -> ["a","","b"]),空串输入切出 [""]。
-        // 新 list 白色须跨逐段铸造的 GC 点,入口挂守卫保命;src 是 receiver 视图,receiver 留槽 0 为根。
+        // 显式分隔符保留空段；结果列表须跨逐段铸串保活。
         ObjList* split_by_sep(const AriaExeContext& ctx, const StringView src, const StringView sep) {
             const auto list  = new_list(ctx.gc());
             const auto guard = ctx.gc().make_guard(list);
@@ -118,7 +109,6 @@ namespace aria {
                 if (hit == StringView::npos) {
                     break;
                 }
-                // 段串铸后立即 push(中间无 GC 点);段串白色期间经 list 可达。
                 list->elements().push(Value::from_obj(new_string(ctx.gc(), src.substr(begin, hit - begin))));
                 begin = hit + sep.size();
             }
@@ -126,8 +116,7 @@ namespace aria {
             return list;
         }
 
-        // 无参形态:按 ASCII 空白连续段切开并丢弃空段;全空白与空串返 []。
-        // 只在 ASCII 域判定空白:0x80 以上字节一律非空白,多字节字符不会被劈开。
+        // 无分隔符时按连续 ASCII 空白切分并丢弃空段，不拆多字节字符。
         ObjList* split_on_space(const AriaExeContext& ctx, const StringView src) {
             const auto list  = new_list(ctx.gc());
             const auto guard = ctx.gc().make_guard(list);
@@ -148,8 +137,6 @@ namespace aria {
             return list;
         }
 
-        // split([sep]) -> list<string>:1 参按分隔符切(保留空段,分隔符须非空 string = EmptyPattern);
-        // 0 参按 ASCII 空白连续段切、丢空段。
         bool fn_split(const NativeCallInfo& info) {
             auto&      ctx  = info.ctx();
             const auto argc = info.size();
@@ -167,8 +154,7 @@ namespace aria {
                     return ctx.fail(ErrorCode::EmptyPattern, "split separator must not be empty");
                 }
             }
-            // receiver 全程留槽 0(临时串只有 intern 弱根,覆写即悬垂),src 即其视图;产出 list
-            // 白色,下一句写回槽 0 发布,两句间无 GC 点故不再挂守卫;sep 经实参槽恒为根。
+            // 分割期间不能覆盖 receiver 槽，否则 src 借用的内容可能被回收。
             const auto self = info.receiver<ObjString>();
             if (self == nullptr) {
                 return false;
@@ -179,7 +165,6 @@ namespace aria {
             return true;
         }
 
-        // find(sub) -> 整数或 nil:子串首现字节下标,未命中 nil。
         bool fn_find(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -198,7 +183,6 @@ namespace aria {
             return true;
         }
 
-        // contains(sub) -> Bool:按字节子串判定;空串参数恒真,未命中返 false。
         bool fn_contains(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -217,7 +201,6 @@ namespace aria {
             return true;
         }
 
-        // replace(old, new) -> 新串:全部替换;匹配串为空报 EmptyPattern。
         bool fn_replace(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 2) {
@@ -236,9 +219,7 @@ namespace aria {
             if (self == nullptr) {
                 return false;
             }
-            // 两遍式(与 join 预扫同口):先 find 数命中定精确输出长(命中不重叠,匹配串占位恒不超
-            // 原长,差值式无下溢),再填充。拼接在 GC 记账 builder,唯一 GC 点在 take_string(此刻
-            // 所有实参仍在槽位)。
+            // 先统计不重叠匹配的输出总长，再一次定容填充。
             const StringView src     = self->view();
             const StringView pat     = pattern->view();
             const StringView rep     = replacement->view();
@@ -258,8 +239,7 @@ namespace aria {
             return true;
         }
 
-        // substring(start[, end]) -> 新串:字节区间 [start, end),end 省略到尾;越界/负数/end<begin
-        // 报 IndexOutOfBounds,不静默钳制、无负下标归一(与 list 下标不同口径)。
+        // 字节区间 [start, end)，不支持负下标，不钳制越界。
         bool fn_substring(const NativeCallInfo& info) {
             auto&      ctx  = info.ctx();
             const auto argc = info.size();
@@ -288,7 +268,6 @@ namespace aria {
             return true;
         }
 
-        // starts_with(prefix) -> bool:字节前缀判定;空串前缀恒真。ends_with 同款尾缀。
         bool fn_starts_with(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -325,7 +304,6 @@ namespace aria {
             return true;
         }
 
-        // size() -> 整数:UTF-8 字节数(与 s[i] 同域)。码点数那是 chars().size()。
         bool fn_size(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -339,7 +317,6 @@ namespace aria {
             return true;
         }
 
-        // is_empty() -> Bool:空串判定(size() == 0 的谓词形;与 list/map 同名)。
         bool fn_is_empty(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -353,10 +330,7 @@ namespace aria {
             return true;
         }
 
-        // chars() -> list<string>:逐码点 1-char string 快照(码点域访问口,码点数即 chars().size())。
-        // 内容零重生:decode 只为拿宽度,合法字符直接切 src 原字节(免 decode->encode 往返的临时串);
-        // 非法字节(宽度 1 却非 ASCII)走 encode(U+FFFD) 保替换码点串语义(冷路径)。GC 约束:receiver
-        // 留槽 0,新 list 挂临时根,循环结束写回槽发布。
+        // 按码点切出原字节，非法字节替换为 U+FFFD；结果列表须跨铸串保活。
         bool fn_chars(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -373,9 +347,7 @@ namespace aria {
                 const usize start      = offset;
                 const auto [cp, width] = utf8::decode_one(src, offset);
                 offset += width;
-                // 串铸后立即 push(中间无 GC 点);串白色期间经 list 可达。宽 1 外判、码点内判:
-                // 非 ASCII 即坏字节走 encode(U+FFFD) 冷臂保替换码点语义;宽 1 ASCII 走单字符常量
-                // 表直读;多字节切 src 原字节(合法 U+FFFD 宽 3,原字节与 encode 产物逐位相同)。
+                // 单字节 ASCII 直接取缓存，非法字节转替换码点，多字节字符保留原编码。
                 if (width == 1) {
                     if (cp >= 0x80) {
                         list->elements().push(Value::from_obj(new_string(ctx.gc(), utf8::encode(cp))));
@@ -390,8 +362,6 @@ namespace aria {
             return true;
         }
 
-        // codepoint_at(i) -> 整数:第 i 个码点的码点值(码点序号,区别于字节域 s[i]);负数与越末同走循环走空后报
-        // IndexOutOfBounds。
         bool fn_codepoint_at(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -419,7 +389,6 @@ namespace aria {
             return ctx.fail(ErrorCode::IndexOutOfBounds, "codepoint index {} out of range", index);
         }
 
-        // to_int() -> 整数或 nil:整串十进制解析,失败返 nil(永不与合法整数二义)。
         bool fn_to_int(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -434,7 +403,6 @@ namespace aria {
             return true;
         }
 
-        // to_float() -> 浮点或 nil:整串十进制解析,失败返 nil。
         bool fn_to_float(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -449,7 +417,6 @@ namespace aria {
             return true;
         }
 
-        // iter() -> 迭代器(迭代器族 GC 纪律)。
         bool fn_iter(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -463,10 +430,7 @@ namespace aria {
             return true;
         }
 
-        // 运算符重载方法:string 只重载 `+`/`*` 与四个比较,两侧均 String 才成立(无隐式转换)。
-
-        // 四个比较钩子 -> Bool:两侧须皆 String,按无符号字节序比较 -- 必须走 string_view::compare
-        //(char 多数平台有符号,逐 char 手写会把 0x80+ 字节排到 ASCII 之前);纯读零分配,无 GC 点。
+        // 用无符号字节序比较，避免平台 char 的符号性影响非 ASCII 排序。
         bool fn___lt__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -539,8 +503,6 @@ namespace aria {
             return true;
         }
 
-        // __add__ -> 新串:拼接,结果经 new_string 两段重载先查驻留(同内容必同指针),未命中才铸造;
-        // 两侧经槽在栈(跨分配保活)。
         bool fn___add__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -555,16 +517,13 @@ namespace aria {
             if (lhs == nullptr) {
                 return false;
             }
-            // lhs->hash() 即 FNV 终态:续算 rhs 字节得 hash(lhs+rhs),免重扫整段前缀。
+            // 左串哈希是 FNV 终态，可直接续算右串，无须重扫前缀。
             const auto hash = util::hash_str(lhs->hash(), rhs->view());
             const auto out  = new_string(ctx.gc(), lhs->view(), rhs->view(), hash);
             info.set_return_val(Value::from_obj(out));
             return true;
         }
 
-        // __mul__ -> 新串:整次重复(字节域整段复制,多字节序列原样成倍,0 次得空串);乘数严格 int,
-        // 负数报错不静默得空。结果经 new_string 驻留(同内容必同指针);重复在 GC 记账 builder 累积,
-        // take_string 零拷贝接管(唯一 GC 点在其内部,receiver 占槽 0)。
         bool fn___mul__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -594,14 +553,13 @@ namespace aria {
                 for (usize i = 0; i < copies; ++i) {
                     out.append(src);
                 }
-                // 续算:首份拷贝终态即 hash(a),续算其余各份得整串终态。
                 const auto rest = out.view().substr(src.size());
                 info.set_return_val(Value::from_obj(out.take_string(util::hash_str(self->hash(), rest))));
             }
             return true;
         }
 
-        // __str__():显示原文;本类型是显示/调试分叉的唯一分叉点(显示原文,value_repr 走 repr 带引号转义)。
+        // 显示返回原文，调试 repr 保留引号与转义。
         bool fn___str__(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -614,7 +572,6 @@ namespace aria {
             return true;
         }
 
-        // string 方法表。
         constexpr BuiltinFnEntry kStringBuiltins[] = {
                 {"init", fn_init},
                 {"upper", fn_upper},
@@ -646,7 +603,6 @@ namespace aria {
     } // namespace
 
     ObjClass* StringClass::make_class(GC& gc, ObjClass* super) {
-        // String bootstrap 类:内置 string 的语言方法面载体,类名与 type() 的类型名一致。
         const auto klass = new_class(gc, "String", super);
         Builtin::register_class_methods(gc, klass, kStringBuiltins);
         return klass;

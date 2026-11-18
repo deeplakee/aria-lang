@@ -13,9 +13,8 @@
 
 namespace aria {
 
-    // GC:解释器统一内存分配器 + mark-sweep 回收器。roots = 临时根 + VM 根(宿主经 std::function 回调注册,
-    // 标什么由宿主定)。
-    // **核心不变式**:allocate/reallocate 与壳池取槽永不触发 GC,GC 仅在 new_object 顶部与 VM safe point 触发。
+    // mark-sweep 回收器，根由临时守卫与宿主 tracer 提供。
+    // allocate/reallocate 和壳池不触发 GC；自动回收点仅在 new_object 前及 VM 安全点。
     class GC {
     public:
         GC() noexcept;
@@ -26,7 +25,6 @@ namespace aria {
         GC(GC&&)                 = delete;
         GC& operator=(GC&&)      = delete;
 
-        // 分配 count*sizeof(T) 字节,失败走 fatal_error(OutOfMemory)。**INVARIANT: 永不触发 GC**。
         template<typename T>
         [[nodiscard]]
         T* allocate(usize count);
@@ -34,16 +32,13 @@ namespace aria {
         template<typename T>
         void deallocate(T* p, usize count) noexcept;
 
-        // realloc 语义:new_count==0 退化为 deallocate;否则后端原生 realloc(扩缩容都允许,基址可能不变)。
-        // **INVARIANT: 永不触发 GC**。
+        // new_count 为 0 时释放；扩缩容后基址可能变化。
         template<typename T>
         [[nodiscard]]
         T* reallocate(T* p, usize old_count, usize new_count);
 
-        // 分配层唯一触发 GC 的入口:maybe_collect 在分配前完成(新对象尚未诞生,不会被本轮扫到)。
-        // 工厂守卫纪律(**每方只守自己创建的**):调用方入参不守、调用前自行根化,工厂内部产物
-        // 经 make_guard 自守;返回对象白色无根,发布进根才安全,发布动作自身也不触发 GC(否则白色
-        // 对象会被扫掉)。
+        // 分配前可能回收；入参须由调用方根化，工厂负责自己的中间产物。
+        // 返回对象尚无根，须在下个 GC 点前发布。
         template<DerivedFromObj T, typename... Args>
         [[nodiscard]]
         T* new_object(Args&&... args);
@@ -55,9 +50,7 @@ namespace aria {
 
         void collect();
 
-        // 保护 C++ 局部变量持有的、尚未入值栈的对象跨分配序列:构造 push、析构 pop,底层 push/pop 私有。
-        // 生存期须严格嵌套(temp_roots_ 是朴素栈,无归属校验):A push 后 B push、A 先析构会弹掉 B 的根,无断言可拦。
-        // 前置条件:object 非空 -- null 无可守,调用方自行判空跳过挂守卫(from_obj 的 DEBUG 断言兜底)。
+        // 临时根采用栈结构，守卫生存期须严格嵌套；push 的对象须非空。
         class Guard {
         public:
             explicit Guard(GC* gc) noexcept : gc_{gc}, count_{0} {}
@@ -100,16 +93,14 @@ namespace aria {
             return bytes_allocated_;
         }
 
-        // 累计 new_object 调用数(单调不减;bytes_allocated() 是存活字节、随回收回落,看不出分配 churn)。
+        // 累计对象分配数，不随回收下降。
         [[nodiscard]]
         usize allocation_count() const noexcept {
             return allocation_count_;
         }
 
-        // 运行期压力开关(测试用):开启后每次 new_object 强制 collect。
         void set_stress(const bool enabled) noexcept { is_stress_ = enabled; }
 
-        // GC 禁用锁(计数器实现,支持嵌套):lock_count_ > 0 时 collect() 直跳过。
         void disable_gc() noexcept { ++lock_count_; }
         void enable_gc() noexcept {
             ASSERT(lock_count_ > 0, "enable_gc without matching disable_gc");
@@ -117,7 +108,6 @@ namespace aria {
         }
         [[nodiscard]] bool is_gc_disabled() const noexcept { return lock_count_ > 0; }
 
-        // RAII 禁用 GC:构造 disable、析构 enable;禁拷贝/移动无碍(make_lock 为 prvalue,必然复制消除)。
         class LockGuard {
         public:
             explicit LockGuard(GC* gc) noexcept : gc_{gc} { gc_->disable_gc(); }
@@ -133,15 +123,12 @@ namespace aria {
 
         [[nodiscard]] LockGuard make_lock() noexcept { return LockGuard{this}; }
 
-        // 驻留池 API:命中返回已有串,未命中 new_object 后 insert。
         [[nodiscard]] ObjString* intern_find(StringView str, u32 hash) const noexcept;
 
-        // 两段查找(内容等于 lhs+rhs 拼接):拼接方免先拼整段即可查驻留。
         [[nodiscard]] ObjString* intern_find(StringView lhs, StringView rhs, u32 hash) const noexcept;
 
         void intern_insert(ObjString* str);
 
-        // VM 根经 std::function 回调接入(组合而非继承,GC 不识 VM 类型;[this] 恰落 std::function SBO,零堆分配)。
         void set_vm_roots(std::function<void(GC&)> tracer) noexcept { vm_roots_tracer_ = std::move(tracer); }
 
     private:
@@ -149,10 +136,9 @@ namespace aria {
         void trace_gray_() noexcept;
         void sweep_() noexcept;
         void free_all_() noexcept; // ~GC:释放所有残留对象
-        // 销毁单个对象:new_object 的逆(虚析构级联释放子内存 + 归还壳给壳池)。不含链表摘除,由调用方管。
+        // 不负责从对象链表摘除。
         void delete_object(Object* obj) noexcept;
 
-        // temp roots 底层:Object* 经 from_obj 装箱为 Value 存储。
         void push_temp_root(Object* object) noexcept;
         void pop_temp_root(usize count = 1) noexcept;
 
@@ -198,7 +184,6 @@ namespace aria {
             deallocate(p, old_count);
             return nullptr;
         }
-        // 原生 realloc:失败时旧块仍有效,但本出口即 fatal_error 进程退出,无需回收旧块。
         void* q = mem::realloc(p, new_count * sizeof(T));
         if (q == nullptr) {
             fatal_error(ErrorCode::OutOfMemory, "failed to reallocate {} bytes", new_count * sizeof(T));

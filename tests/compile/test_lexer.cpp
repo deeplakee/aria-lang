@@ -75,9 +75,7 @@ namespace {
     }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // 关键字
-// ---------------------------------------------------------------------------
 
 TEST(LexerKeyword, AllKeywords) {
     // 关键字 22 个（finally 非关键字，按普通 identifier 处理）
@@ -120,9 +118,7 @@ TEST(LexerKeyword, FinallyIsIdentifierAfterRemoval) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // 运算符（最长匹配）
-// ---------------------------------------------------------------------------
 
 TEST(LexerOperator, LongestMatch) {
     const String        src      = "+ += ++ - -= -- * *= / /= % %= = == => ! != > >= < <= && || .. ... . "
@@ -201,9 +197,7 @@ TEST(LexerOperator, RangeTokens) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // 标点
-// ---------------------------------------------------------------------------
 
 TEST(LexerPunct, Brackets) {
     const auto          lexed    = lex_ok("( ) { } [ ] , : ; .");
@@ -218,9 +212,7 @@ TEST(LexerPunct, Brackets) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Identifier / Underscore
-// ---------------------------------------------------------------------------
 
 TEST(LexerIdentifier, Basic) {
     const auto  lexed  = lex_ok("foo _foo foo123 bar_baz");
@@ -255,9 +247,7 @@ TEST(LexerIdentifier, Unicode) {
     EXPECT_EQ(tokens[0].lexeme(), StringView{"\xE8\xAE\xA1\xE6\x95\xB0"});
 }
 
-// ---------------------------------------------------------------------------
 // Integer
-// ---------------------------------------------------------------------------
 
 TEST(LexerInteger, Decimal) {
     const auto  lexed  = lex_ok("0 42 1_000");
@@ -339,9 +329,7 @@ TEST(LexerInteger, RadixOutOfRangeDigit) {
     EXPECT_EQ(err2.code(), ErrorCode::InvalidNumber);
 }
 
-// ---------------------------------------------------------------------------
 // Float
-// ---------------------------------------------------------------------------
 
 TEST(LexerFloat, Forms) {
     // 小数点两侧必须各有数字（禁止 .5 / 5. 这类不完整形式）
@@ -401,9 +389,7 @@ TEST(LexerFloat, IncompleteFormsRejected) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // String（plainString）
-// ---------------------------------------------------------------------------
 
 TEST(LexerString, Basic) {
     const auto  lexed  = lex_ok("\"hello\" 'world'");
@@ -508,9 +494,7 @@ TEST(LexerString, FPrefixIsNotInterpolation) {
     EXPECT_EQ(decoded(tokens[1]), "x");
 }
 
-// ---------------------------------------------------------------------------
 // 注释与空白
-// ---------------------------------------------------------------------------
 
 TEST(LexerTrivia, CommentsAndWhitespace) {
     const auto  lexed  = lex_ok("// line comment\n # hash comment\n  42  \n");
@@ -520,9 +504,7 @@ TEST(LexerTrivia, CommentsAndWhitespace) {
     EXPECT_EQ(tokens[0].int_value(), 42);
 }
 
-// ---------------------------------------------------------------------------
 // loc 精确性
-// ---------------------------------------------------------------------------
 
 TEST(LexerLoc, Precise) {
     const auto  lexed  = lex_ok("ab 12");
@@ -573,9 +555,7 @@ TEST(LexerLoc, ExpBacktrackKeepsFollowingTokensAligned) {
     EXPECT_EQ(loc_of(lexed->sf, tokens[2]).col, 4u);
 }
 
-// ---------------------------------------------------------------------------
 // 边界
-// ---------------------------------------------------------------------------
 
 TEST(LexerEdge, EmptyFile) {
     const auto  lexed  = lex_ok("");
@@ -591,9 +571,7 @@ TEST(LexerEdge, OnlyTrivia) {
     EXPECT_EQ(tokens[0].type(), TokenType::Eof);
 }
 
-// ---------------------------------------------------------------------------
 // 错误：6 个错误码
-// ---------------------------------------------------------------------------
 
 TEST(LexerError, UnterminatedString) {
     // EOF 前未闭合
@@ -627,9 +605,7 @@ TEST(LexerError, FirstErrorOnly) {
     EXPECT_NE(err.message().find("U+0040"), String::npos);
 }
 
-// ---------------------------------------------------------------------------
 // 字符串模板（"...${expr}..."，无前缀；裸 $ 与 { } 皆普通字符，仅 ${ 开档）
-// ---------------------------------------------------------------------------
 
 TEST(LexerInterp, BasicSplit) {
     // "a ${x} b" -> Start("a ") x End(" b")
@@ -845,9 +821,7 @@ TEST(LexerInterp, DollarOutsideStringIsInvalid) {
     EXPECT_EQ(err2.code(), ErrorCode::InvalidCharacter);
 }
 
-// ---------------------------------------------------------------------------
 // 超大字面量端到端钉子（原文只以 lexeme 借自源缓冲,无独立存储层）
-// ---------------------------------------------------------------------------
 
 TEST(LexerString, SourceWithHugeLiteral) {
     // 超大字面量（4 MB+）:值借源缓冲存活,内容完整、记账正确

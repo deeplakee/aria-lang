@@ -17,11 +17,9 @@ namespace aria {
 
     namespace {
 
-        // face 按槽 0 类型分派:ObjException 读 C++ 成员,ObjInstance(用户子类实例)经 load_field
-        // 读 _message/_code 字段,其余接收者(stray)响亮 TypeMismatch。
+        // 内建异常读原生成员，用户子类实例读 _message/_code 字段。
 
-        // init():默认构造落 _code/_message 两字段(链上实例恒有此二字段);子类自有 init 未落
-        // 同名字段时,face 读据走 UndefinedProperty 类措辞。
+        // 用户子类覆盖 init 后须自行填写异常字段，否则读取报 UndefinedProperty。
         bool fn_init(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -32,13 +30,11 @@ namespace aria {
                 return ctx.fail(ErrorCode::TypeMismatch, "init requires an instance receiver, got {}",
                                 type_name(info.self()));
             }
-            // GC 走查:receiver 经槽 0 栈根,键串零分配,_message 建成即存,窗口内零 GC 点免守卫。
             inst->store_field(ctx, ctx.str<"_code">(), Value::from_int(std::to_underlying(ErrorCode::Error)));
             inst->store_field(ctx, ctx.str<"_message">(), Value::from_obj(new_string(ctx.gc(), "")));
             return true;
         }
 
-        // message() -> 消息原文:ObjException 读 message_(VM 报错为烘焙整串),实例读 _message 字段。
         bool fn_message(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -59,7 +55,6 @@ namespace aria {
                             type_name(info.self()));
         }
 
-        // code() -> 错误码数字:ObjException 读 code_ 的 i64 视图,实例读 _code 字段。
         bool fn_code(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -80,7 +75,6 @@ namespace aria {
                             type_name(info.self()));
         }
 
-        // Exception 类方法表。
         constexpr BuiltinFnEntry kExceptionBuiltins[] = {
                 {"init", fn_init},
                 {"message", fn_message},
@@ -90,7 +84,6 @@ namespace aria {
     } // namespace
 
     ObjClass* ExceptionClass::make_class(GC& gc, ObjClass* super) {
-        // Exception bootstrap 类:用户异常基类(继承它定义自己的异常类型)。
         const auto klass = new_class(gc, "Exception", super);
         Builtin::register_class_methods(gc, klass, kExceptionBuiltins);
         return klass;

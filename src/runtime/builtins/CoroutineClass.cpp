@@ -30,7 +30,6 @@ namespace aria {
 
     bool CoroutineClass::resume(const NativeCallInfo& info) {
         auto& ctx = info.ctx();
-        // 校验段只读可失败:元数、对象类型与状态检查,失败路径不得留下脏状态。
         if (const auto argc = info.size(); argc == 0) {
             return ctx.arity_error_at_least(argc, 1);
         }
@@ -38,7 +37,6 @@ namespace aria {
         if (co == nullptr) {
             return ctx.fail(ErrorCode::TypeMismatch, "argument must be a coroutine, got {}", type_name(info[0]));
         }
-        // 状态五态穷举:Suspended 是唯一可恢复态(状态是唯一分派依据),其余各归其码。
         switch (co->state()) {
             case ExecState::Suspended:
                 break;
@@ -49,11 +47,9 @@ namespace aria {
             case ExecState::Running:
                 return ctx.fail(ErrorCode::ResumeNonSuspendedCoroutine, "cannot resume a non-suspended coroutine");
         }
-        // 两臂各自自含完整序列;臂内一切可失败检查都先于切换 -- 失败载荷须落 resumer 寄存器,
-        // 切换之后只剩不可失败动作。
+        // 所有可失败检查须先于切换，使错误落在恢复者上下文。
         const auto payload = static_cast<u8>(info.size() - 1);
         if (co->frames().empty()) {
-            // 首启:载荷即被调函数实参(上界交 check_arity 报被调者元数,默认参数/varargs 照常)。
             const auto function = try_as_obj<ObjFunction>(co->peek(0));
             ASSERT(function != nullptr && !function->is_native(), "coroutine slot-0 must be an aria function");
             const auto proto = function->proto();
@@ -64,17 +60,14 @@ namespace aria {
             for (usize i = 0; i < payload; ++i) {
                 co->push(info[1 + i]); // push 扩容不触 GC(allocate/reallocate 不变式)
             }
-            // 元数已预检、协程帧栈必空,直取 call_aria_fn 的整形加进帧尾段;varargs 打包顶
-            // maybe_collect 时恢复者经 previous_ 边可达。
+            // 切换后 varargs 打包可能触发 GC，恢复者由 previous_ 链保活。
             co->enter_frame(function, co->prepare_call_args(proto, payload));
         } else {
-            // 已挂起:yield 是单值表达式,只收 0 或 1 个载荷。
             if (payload > 1) {
                 return ctx.arity_error_range(info.size(), 1, 2);
             }
             ctx.host().enter_coroutine(co);
-            // 协程栈顶即 yield 预留槽(call_native_fn 事后 drop 停在它上面),载荷写入即 yield 表达式的值;
-            // 载荷仍在恢复者调用区,跨换指读取安全。
+            // yield 的槽 0 是预留结果槽，由恢复者填入。
             co->peek(0) = payload == 0 ? Value::nil_val() : info[1];
         }
         return true;
@@ -82,8 +75,7 @@ namespace aria {
 
     bool CoroutineClass::yield(const NativeCallInfo& info) {
         auto& ctx = info.ctx();
-        // 嵌套执行内禁止 yield:ret_frame_ 非零即处于嵌套执行,嵌套循环等的是同步结果,挂起即穿界
-        //(resume 无此禁:被恢复的协程带零边界,完成/让位都自动切回)。
+        // 嵌套驱动等待同步结果，yield 会穿越返回边界，故禁止。
         if (ctx.ret_frame() != 0) {
             return ctx.fail(ErrorCode::YieldInNestedExecution, "cannot yield inside a nested execution");
         }
@@ -91,14 +83,11 @@ namespace aria {
         if (argc > 1) {
             return ctx.arity_error_range(argc, 0, 1);
         }
-        // yield 只可能由正在执行的上下文发起(current_);空 previous 即主上下文。
         const auto resumer = ctx.previous();
         if (resumer == nullptr) {
             return ctx.fail(ErrorCode::YieldOutsideCoroutine, "cannot yield outside a coroutine");
         }
-        // 提交段:载荷写 resumer 预留槽(resume 调用的槽 0),切回交 leave_coroutine(本侧置
-        // Suspended 并解链、resumer 置 Running)。可从任意调用深度发起(挂起整个上下文,帧链原样
-        // 保留);嵌套实参位下内层 yield 写的是自己 resumer 的预留槽,互不干扰。
+        // 结果写入恢复者的 resume 槽 0；当前协程帧链保留供下次继续。
         resumer->peek(0) = argc == 0 ? Value::nil_val() : info[0];
         ctx.host().leave_coroutine(ExecState::Suspended);
         return true;
@@ -113,13 +102,11 @@ namespace aria {
         if (co == nullptr) {
             return ctx.fail(ErrorCode::TypeMismatch, "argument must be a coroutine, got {}", type_name(info[0]));
         }
-        // 五状态串皆驻留表条目,new_string 驻留命中零分配,窗口内无 GC 点免守卫。
         info.set_return_val(Value::from_obj(new_string(ctx.gc(), to_string(co->state()))));
         return true;
     }
 
     ObjClass* CoroutineClass::make_class(GC& gc, ObjClass* super) {
-        // Coroutine 类:协程句柄的类面载体 + 四原语静态方法面(类名与 type() 的类型名一致)。
         const auto klass = new_class(gc, "Coroutine", super);
         Builtin::register_class_functions(gc, klass, kCoroutineBuiltins);
         return klass;

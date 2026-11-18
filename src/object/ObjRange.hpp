@@ -8,19 +8,18 @@ namespace aria {
 
     class ObjString;
 
-    // 切片段解析结果:升序源段起点 + 元素数 + 是否反向写入;长度与方向折算全在解析口完成,消费端只按此段拷。
+    // 升序源段的起点、长度与输出方向，供切片拷贝使用。
     struct SliceSegment {
         usize start;
         usize count;
         bool  is_reversed;
     };
 
-    // range 对象:a..b(含上界)/a...b(不含上界)/a..(无上界)的纯值载体;from > to 表示倒序区间,方向由迭代器推断。
     class ObjRange final : public Object {
     public:
         ObjRange(i64 from, i64 to, bool is_exclusive);
 
-        // 无上界开区间(from..):is_exclusive_ 构造期归一为 false(含否上界无意义)。
+        // 无上界时 is_exclusive 归一为 false。
         ObjRange(i64 from);
 
         ~ObjRange() override = default;
@@ -35,13 +34,11 @@ namespace aria {
             return from_;
         }
 
-        // 上界端点;nullopt = 无上界开区间(from..)。
         [[nodiscard]]
         Opt<i64> to() const noexcept {
             return to_;
         }
 
-        // 有上界判定:取 to_ 值前先问它 -- 无上界的 nullopt 是空态、不是端点语义。
         [[nodiscard]]
         bool has_upper() const noexcept {
             return to_.has_value();
@@ -52,29 +49,23 @@ namespace aria {
             return is_exclusive_;
         }
 
-        // 切片段解析(容器 size -> SliceSegment),有上界两端点各经 resolve_index 从尾计数且均须落实元素位置;
-        // 无上界为后缀语义,起点允许 == size 得空段(解构 rest 的空尾据此成立)。纯换算,无分配无 fail。
+        // 有上界时两端均须指向元素；无上界时起点可等于 size，表示空尾段。
         [[nodiscard]]
         Opt<SliceSegment> resolve_slice_bounds(usize size) const noexcept;
 
-        // 纯值无子对象,标记空操作。
         void trace(GC&) const noexcept override {}
 
-        // 壳定长(三标量字段,无外挂 buffer)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjRange);
         }
 
-        // 内容相等:同为 range 且两端点与含否上界全等;其余(含跨类型)恒 false。
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 调试渲染:0..10 / 0...10 / 0..(无上界)式。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 Range bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
@@ -84,11 +75,9 @@ namespace aria {
         bool     is_exclusive_; // true: from...to(不含上界);false: from..to(含上界);无上界恒 false
     };
 
-    // 工厂:分配 ObjRange(纯值,无入参对象可守)。
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from, i64 to, bool is_exclusive);
 
-    // 无上界开区间重载(MAKE_RANGE unbounded 位)。
     [[nodiscard]]
     ObjRange* new_range(GC& gc, i64 from);
 

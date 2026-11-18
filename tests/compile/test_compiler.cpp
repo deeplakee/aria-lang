@@ -28,9 +28,7 @@ using aria::Value;
 
 namespace {
 
-    // 持有 AriaVM(进而其 GC)+ 实际 SourceFile + 结果一并返回,使返回值引用的 GC 对象在调用方
-    // 检视期间存活(unique_ptr 持堆稳定地址,GC 对象地址稳定所需);转发 has_value/error 并提供
-    // bool/->/*,调用点按 Result 惯用法访问。
+    // 随结果持有 VM，使 GC 对象在断言期间存活。
     struct RunResult {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
@@ -43,29 +41,23 @@ namespace {
         const Error&                error() const noexcept { return result.error(); }
     };
 
-    // 端到端：构造实际 SourceFile -> AriaVM::run(source, module)（编译并执行）。经 VM 的编译并执行入口
-    // （内部 Compiler 编排 + run(ObjFnProto*)），非手拼 lex/parse/codegen/run。开 stress GC 锻炼编译期 +
-    // 运行期根接线（module 经 CodeGen::compile 内部 make_guard 根化、值栈/帧经 vm_roots tracer 标根）。
-    // source 经 unique_ptr 持堆，活到调用方检视完返回值/错误（编译期 Error 的 SourceLoc 指向它）。
+    // 经完整编译与执行入口运行，开启 stress GC 检验根接线。
     RunResult run_source(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
-        // 实际源文件：调用方构造（测试用 "<test>" 作 name/path，真实入口用文件路径）。堆地址稳定。
+        auto module = new_module(gc, "<test>");
         auto source = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
-        auto result = vm->run(*source, module); // 编译并执行
+        auto result = vm->run(*source, module);
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
-    // 带值取数惯用法:顶层禁带值 return,故把源码包进探针函数(不调用)编译,再从入口常量池取
-    // __probe__ 的 ObjFnProto 直接 run,其返回值即 run() 返回值。仅取值/错误码站点走此入口;
-    // 钉模块顶层语义的站点走 run_source(不包)。
+    // 顶层禁止带值 return，取值测试改为直接运行探针函数；模块语义测试用 run_source。
     RunResult run_value(std::string_view src) {
         auto  vm = std::make_unique<AriaVM>();
         auto& gc = vm->gc();
         gc.set_stress(true);
-        auto        module = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto        module = new_module(gc, "<test>");
         std::string wrapped{"fun __probe__() {\n"};
         wrapped += src;
         wrapped += "\n}\n";
@@ -93,8 +85,6 @@ namespace {
         return RunResult{std::move(vm), std::move(source), std::move(result)};
     }
 
-    // 编译失败时返回首错 Error（SourceLoc 指向 source，经 unique_ptr 活到检视完，format() 不触悬垂）。
-    // Error 无默认构造，故存整个 Result。
     struct CompileFail {
         std::unique_ptr<AriaVM>     vm;
         std::unique_ptr<SourceFile> source;
@@ -106,11 +96,10 @@ namespace {
     CompileFail compile_fail(std::string_view src) {
         auto  vm       = std::make_unique<AriaVM>();
         auto& gc       = vm->gc();
-        auto  module   = new_module(gc, "<test>"); // StringView 重载:名字经工厂内部 intern 并自守
+        auto  module   = new_module(gc, "<test>");
         auto  source   = std::make_unique<SourceFile>("<test>", "<test>", aria::String{src});
         auto  compiled = Compiler::compile(gc, *source, module, aria::kMainEntryName);
         EXPECT_FALSE(compiled.has_value());
-        // module 仍由 GC 管理。error 的 SourceLoc 指向 *source，source 经 unique_ptr 存活故可渲染。
         return CompileFail{std::move(vm), std::move(source), std::move(compiled)};
     }
 
@@ -122,7 +111,6 @@ namespace {
 
 } // namespace
 
-// 基础算术：源文件 -> ObjFnProto -> 运行得整数（入口 <main> 为函数，顶层 return 合法）。
 TEST(Compiler, Arithmetic) {
     EXPECT_EQ(run_int("return 1 + 2 * 3;"), 7);
     EXPECT_EQ(run_int("return (1 + 2) * 3;"), 9);

@@ -1,8 +1,7 @@
 #ifndef ARIA_FUNCTIONCTX_HPP
 #define ARIA_FUNCTIONCTX_HPP
 
-// 单函数编译上下文：局部栈 / 作用域深度 / 循环上下文栈 / 捕获描述表 / 外层指针。值填槽模型：值先压栈，
-// add_local 槽位 = 当前栈高 = 值所在位置，登记即初始化、不预占槽；loop_stack_ 随函数走。
+// 仅登记局部、作用域、捕获与常量，不发射指令；局部采用先压值再登记的填槽模型。
 
 #include "compile/FnKind.hpp"
 #include "object/ObjFnProto.hpp"
@@ -10,20 +9,17 @@
 
 namespace aria {
 
-    // 单函数 upvalue 上限：LOAD/STORE_UPVALUE 的 idx 为 u8，可寻址 0..kMaxUpvalues，故容量 = 上限 + 1。
     constexpr u32 kMaxUpvalues = kU8OperandMax;
 
-    // this 局部名：实例方法帧槽 0 的具名局部；this 是关键字不撞用户名，嵌套引用即沿 ctx 链捕获其槽 0。
+    // 实例方法的槽 0 登记为 this，使嵌套函数能按局部捕获。
     constexpr StringView kThisName = "this";
 
-    // 局部变量条目（slot 0 = 哑元 callee）。
     struct Local {
         StringView name; // 借自 AST 名字视图/kThisName/空哑元，存活覆盖编译期
         u32        depth       = 0;
         bool       is_captured = false;
     };
 
-    // 循环上下文（break / continue 回填）。
     struct LoopCtx {
         u32            loop_scope_depth     = 0;            // 循环体 scope 深度（break/continue 弹局部至此）
         u32            back_target          = 0;            // 循环头（条件求值点）；回边与后向 continue 恒跳此
@@ -35,7 +31,7 @@ namespace aria {
     public:
         FunctionCtx() = delete;
 
-        // 单构造：enclosing = nullptr 为入口 <main> 上下文，否则嵌套；实例方法族槽 0 = 具名局部 this。
+        // enclosing 为空表示入口函数；实例方法的槽 0 登记为 this。
         explicit FunctionCtx(ObjFnProto* proto, FunctionCtx* enclosing, FnKind kind);
 
         FunctionCtx(const FunctionCtx&)                = delete;
@@ -43,31 +39,26 @@ namespace aria {
         FunctionCtx(FunctionCtx&&) noexcept            = delete;
         FunctionCtx& operator=(FunctionCtx&&) noexcept = delete;
 
-        // 压 Local{name, scope_depth_}，返回 slot（纯登记，不发射、不查重）。
         u16 add_local(StringView name);
 
-        // 常量入池（带 === 去重，同值复用索引）；纯登记不发指令，池溢出不在此判。
+        // 按 === 去重，复用同值常量索引。
         u16 add_constant(Value value);
 
-        // 当前作用域是否已定义同名局部（外层同名允许 shadow）。
         [[nodiscard]]
         bool is_defined_in_scope(StringView name) const;
 
-        // 当前函数局部查表，返最近一个同名局部 slot（最内层）；未命中返 nullopt。
         [[nodiscard]]
         Opt<u16> find_local(StringView name) const;
 
-        // upvalue 登记：同 (is_local, index) 复用下标（同一局部多处引用只占一个 upvalue）；越 u8
-        // 索引域（size > kMaxUpvalues）返 nullopt。纯登记，不发射。
+        // 同一捕获复用索引；超出 u8 索引范围返回 nullopt。
         Opt<u8> add_upvalue(UpvalueDesc desc);
 
         void begin_scope();
 
-        // 退出块作用域：弹出原 scope 的局部登记，后续语句不可再引用。break/continue 跳出循环不走此
-        // （跳转后的语句仍在作用域内），弹区清理指令由调用方先经 emit_pop_locals_to 发射。
+        // 仅移除局部登记；调用方须先发射清理指令，break/continue 不改变编译期作用域。
         void end_scope();
 
-        // 父编译期长于子，enclosing_ 裸指针在子生命期内稳定。
+        // 父上下文须比子上下文存活更久。
         FunctionCtx*      enclosing_;
         ObjFnProto*       proto_;
         FnKind            kind_;
@@ -76,9 +67,7 @@ namespace aria {
         Stack<LoopCtx>    loop_stack_;
         List<UpvalueDesc> upvalues_; // 捕获描述表，下标即 upvalue 索引
 
-        // 常量池去重索引（Value -> 池索引，键相等用 ===）。编译期草稿：每函数一份、随本上下文销毁；
-        // 非 GC 根（std 分配器），键保活靠池内同值副本。每函数一份是硬约束：共用表漏清会取到上个
-        // 函数池里的索引，静默发射错常量。
+        // 索引仅属于当前函数；键由常量池中的同值副本保活，本表不作 GC 根。
         HashMap<Value, u16> constant_index_;
     };
 

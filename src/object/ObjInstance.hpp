@@ -11,8 +11,7 @@ namespace aria {
     class ObjClass;
     class ObjString;
 
-    // 实例对象:字段动态、无需预声明,存 fields_ 表;方法不落 fields_,读路径按当前类链每次现场绑定,
-    // 保证类或父类改写方法后对既有实例立即生效。
+    // 字段动态创建并遮蔽类成员；方法读取时现场绑定，不缓存，以反映类链变更。
     class ObjInstance final : public Object {
     public:
         explicit ObjInstance(GC& gc, ObjClass* klass);
@@ -23,40 +22,32 @@ namespace aria {
         ObjInstance(ObjInstance&&)                 = delete;
         ObjInstance& operator=(ObjInstance&&)      = delete;
 
-        // 所属类(构造注入、不可变:实例不换类,故无 setter)。
         [[nodiscard]]
         ObjClass* klass() const noexcept {
             return class_;
         }
 
-        // 标 class_ + fields_(key+value;字段里存的可调用值经值级联)。
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(fields_ 的 ctrl/entries 两块由 ~HashTable 自释放,不计入壳)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjInstance);
         }
 
-        // 调试渲染:`<Foo instance>`(class_ 恒非空);显示同文案。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自本类模板链起查(fields 出局),字段不在时由成员读落此一腿。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 裸查找 override(调用路径与算子钩子取实现共用):不绑定,返回字段/类链里的原值交 VM 直调
-        // (方法体从槽 0 读 this)。零分配,每次按当前类链解析。
+        // 字段优先，缺席时查类链，返回原值。
         [[nodiscard]]
         Opt<Value> load_field(AriaExeContext& ctx, ObjString* name) override;
 
-        // 绑定读 override(方法值读取路径):fields 命中优先(真字段遮蔽类链),否则委托类协议沿链
-        // 读穿透;命中方法戳闭包现场绑 this(每次新 bound,不缓存),其余原值直读。
+        // 仅绑定类链中的方法，字段中的函数保持原值。
         [[nodiscard]]
         Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name) override;
 
-        // 命名成员写入协议 override:实例字段动态创建(无预声明),set 即写入,永不失败。
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
     private:
@@ -64,7 +55,7 @@ namespace aria {
         AriaHashTable fields_; // 实例字段表(惰性分配;纯字段,方法绑定不缓存)
     };
 
-    // 工厂:分配 ObjInstance(fields_ 空态,单次分配);调用方须自行根化 klass,建成即写栈(值栈根)。
+    // 调用方须根化 klass。
     [[nodiscard]]
     ObjInstance* new_instance(GC& gc, ObjClass* klass);
 

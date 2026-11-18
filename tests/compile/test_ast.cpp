@@ -93,9 +93,7 @@ namespace {
     String dump_str(const ASTNode& n) { return n.dump(0); }
 } // namespace
 
-// ---------------------------------------------------------------------------
 // 运算符可读名
-// ---------------------------------------------------------------------------
 
 TEST(AstOpName, All) {
     EXPECT_EQ(aria::Op::to_string(aria::Op::Binary::Plus), StringView{"+"});
@@ -109,9 +107,7 @@ TEST(AstOpName, All) {
     EXPECT_EQ(aria::Op::to_string(aria::Op::Assignment::Assign), StringView{"="});
 }
 
-// ---------------------------------------------------------------------------
 // 字面量与基础表达式 dump
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, Literals) {
     AstArena arena;
@@ -131,9 +127,7 @@ TEST(AstDisplay, FloatLiteral) {
     EXPECT_NE(f.find("3.14"), String::npos);
 }
 
-// ---------------------------------------------------------------------------
 // 二元表达式：dump + 结构
-// ---------------------------------------------------------------------------
 
 TEST(AstBinary, DisplayAndStruct) {
     AstArena       arena;
@@ -158,9 +152,7 @@ TEST(AstBinary, LogicOpName) {
     EXPECT_NE(dump_str(node).find("BinaryExpr op=&&"), String::npos);
 }
 
-// ---------------------------------------------------------------------------
 // 一元 / 赋值 / 解构赋值
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, Unary) {
     AstArena      arena;
@@ -196,9 +188,7 @@ TEST(AstDisplay, DestructureAssignment) {
     expect_has(out, "Identifier lst");
 }
 
-// ---------------------------------------------------------------------------
 // 调用 / 字段 / 下标
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, Call) {
     AstArena        arena;
@@ -219,9 +209,7 @@ TEST(AstDisplay, FieldAndIndex) {
     EXPECT_EQ(dump_str(ia), "IndexAccess\n  Identifier a\n  IntegerLiteral 0\n");
 }
 
-// ---------------------------------------------------------------------------
 // 复合表达式
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, ListExpr) {
     AstArena        arena;
@@ -289,9 +277,7 @@ TEST(AstDisplay, MatchExpr) {
     expect_has(out, "MatchPattern _ (wildcard)");
 }
 
-// ---------------------------------------------------------------------------
 // 语句
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, BlockAndExprStmt) {
     AstArena        arena;
@@ -363,9 +349,7 @@ TEST(AstDisplay, BreakContinue) {
     EXPECT_EQ(dump_str(ContinueStmtNode{kLoc}), "ContinueStmt\n");
 }
 
-// ---------------------------------------------------------------------------
 // 声明 + Program
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, VarDecl) {
     AstArena         arena;
@@ -436,9 +420,7 @@ TEST(AstDisplay, Program) {
     expect_has(out, "ExprStmt");
 }
 
-// ---------------------------------------------------------------------------
 // 解构模式
-// ---------------------------------------------------------------------------
 
 TEST(AstDisplay, Patterns) {
     AstArena arena;
@@ -456,9 +438,7 @@ TEST(AstDisplay, Patterns) {
     expect_has(lp_out, "WildcardPattern _");
 }
 
-// ---------------------------------------------------------------------------
 // 多态：通过基类指针调用 dump
-// ---------------------------------------------------------------------------
 
 TEST(AstPolymorphism, BasePointerDump) {
     AstArena  arena;

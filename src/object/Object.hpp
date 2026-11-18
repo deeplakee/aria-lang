@@ -30,7 +30,6 @@ namespace aria {
     class ObjIterator;
     class ObjMovement;
 
-    // 供 is<T>/as<T> 与 GC::new_object<T> 约束 T 派生自 Object(is_base_of 延迟到实例化点)。
     template<typename T>
     concept DerivedFromObj = std::is_base_of_v<Object, T>;
 
@@ -38,9 +37,8 @@ namespace aria {
     public:
         Object() = delete;
 
-        // 内容哈希型(ObjString/ObjRange 等不可变对象):显式传算好的内容哈希。
+        // 不可变对象可传入内容哈希；其余对象默认按地址哈希。
         Object(const u32 hash, const ObjType type) noexcept : Object{nullptr, hash, type, false} {}
-        // 地址哈希型(可变对象默认):用对象地址算哈希(this 在 init list 中仅取地址,合法)。
         explicit Object(const ObjType type) noexcept : Object{nullptr, util::hash_addr(this), type, false} {}
 
         virtual ~Object() = default;
@@ -55,7 +53,6 @@ namespace aria {
             return type_;
         }
 
-        // 对象类型可读名:委托 to_string(ObjType),非虚(纯由 type_ 决定)。
         [[nodiscard]]
         constexpr StringView type_name() const noexcept {
             return aria::to_string(type_);
@@ -70,84 +67,51 @@ namespace aria {
 
         void unmark() noexcept { is_marked_ = false; }
 
-        // 公共虚函数:具体 Object 子类型实现这些。
-
-        // GC 标记阶段:遍历本对象的 Value/Object 子节点,调 gc.mark_value/mark_object。
-        // 纯字符串等无子节点者空实现。
+        // 标记本对象引用的 GC 子对象；无子对象时为空实现。
         virtual void trace(GC& gc) const noexcept = 0;
 
-        // 壳对象的分配字节数(sizeof(壳),不含外挂 buffer),须与壳池配对:new_object 侧
-        // ShellPool::alloc<T>(sizeof 上取整落格)、delete_object 侧 ShellPool::push(size(), obj)
-        // -- 虚报外挂字节致分配/释放错格。子内存统一走虚析构(Array 成员自释放;非 Array 子内存如
-        // ObjString 的 long_chars_ 由子类 ~dtor 经自持 GC* 释放);sweep_ 顺序:obj->~Object() ->
-        // deallocate(壳)。
+        // 仅返回壳大小，不含外挂缓冲；ShellPool 依此选择释放格位。
         [[nodiscard]]
         virtual usize size() const noexcept = 0;
 
-        // 内容相等(== 语义),默认地址相等;ObjString 等按内容 override。=== 对 Obj 一律
-        // 指针相等不走本函数。前置条件: other 非空 -- 恒经 value_equal 的 Obj 臂 as_obj()
-        // 传入(from_obj 的 DEBUG 断言兜底),override 入口 ASSERT 布防。**契约:须 GC-pure** --
-        // EQUAL/NOT_EQUAL 在弹出的 off-stack 裸局部上经 value_equal 调用本函数,若触发 collect
-        // 会回收操作数成悬垂。递归比较子值者(容器)入口另须挂 EqualGuard 防环:比较链重遇同对
-        // 即视为相等(正则树同构),守卫分配走 std::allocator 不触 GC,比较中途不致 collect。
+        // 实现须不触发 GC：比较操作数可能已离栈。容器递归比较须用 EqualGuard 防环。
+        // other 须非空；此协议服务于 ==，=== 对象比较始终按指针。
         [[nodiscard]]
         virtual bool equals(const Object* other) const noexcept {
             return this == other;
         }
 
-        // 调试渲染(value_repr 位),基类默认地址型 `<Type at 0xaddr>`。**override 契约 = 纯 C++
-        // 惰性渲染**:只读自身成员造返回串,绝不执行 aria 字节码/调可重入 VM 的路径 --
-        // value_repr / trace_execution 等在 dispatch_loop 内的调试上下文经虚分派
-        // 调用,防重入由本契约维护(override 集合编译期封闭)。递归渲染子值者(容器)入口
-        // 另须挂 PrintGuard 防环:元素重遇在印对象即截断 "[...]",否则无限递归栈溢出。
+        // 调试渲染不得执行用户代码或重入 VM；容器递归渲染须用 PrintGuard 防环。
         [[nodiscard]]
         virtual String repr() const {
             return std::format("<{} at {:p}>", type_name(), util::to_void_ptr(this));
         }
 
-        // 成员/下标访问协议(LOAD/STORE_FIELD 族与 LOAD/STORE_INDEX 的分派点):语义在各宿主 override 一次收口,
-        // 新增承载类型零 VM 改动;失败**自己 fail**、返回值只留信号(load 族 nullopt / store 族 false ⟺ 已 fail,
-        // 失败出口 `return ctx.fail(...);`);fail 文案渲染值走非重入渲染;调用方保证接收者「栈即根」。
+        // 访问协议失败时须先 ctx.fail，再返回 nullopt/false；调用方负责保活接收者。
 
-        // 从所属类的成员链载入(名字即契约:从 class 起查,值本地状态出局) -- 实例自 klass 模板
-        // 链、类值自 Class 元类链、内建/函数族/模块/协程自各自单例链。错误契约同 load_field:
-        // nullopt ⟺ 已 fail,miss 措辞按宿主类型就地烘焙;映射在各宿主 override 内静态定型,
-        // 无运行期 switch。基类默认报 UndefinedProperty;成员读 = 本地值态 + 本口缺席腿。
+        // 仅查所属类的成员链，忽略实例字段和类、模块的本地命名空间，供隐式钩子查询。
         [[nodiscard]]
         virtual Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name);
 
-        // 普通命名成员的裸查询(PREPARE_METHOD 解析入口,也供绑定读取使用):name 为 intern 串。
-        // 命中返回原值、零分配,不创建 ObjBoundMethod;基类默认委托类型成员查询。
-        // 实例重写为字段优先、再查类链;类重写为声明链查询;模块重写为 globals 查询。
-        // 错误契约:nullopt ⟺ 已 fail,miss 文案随宿主 override 就地烘焙;基类默认委托 load_field_from_class。
+        // 普通成员裸查询：name 须为 intern 串；返回原值，不分配绑定方法。
         [[nodiscard]]
         virtual Opt<Value> load_field(AriaExeContext& ctx, ObjString* name);
 
-        // 绑定读取命名成员(LOAD_FIELD / LOAD_THIS_FIELD 统一入口):默认调用 load_field,
-        // 对 is_method 命中值现场绑定当前对象,其余值原样返回。错误契约同 load_field。
-        // 独立成员规则须同时审视绑定策略:实例字段直读、仅类链方法绑定;类/模块命名空间恒直读。
+        // 默认绑定 is_method 值；实例字段、类和模块命名空间中的值保持原样。
         [[nodiscard]]
         virtual Opt<Value> load_field_bound(AriaExeContext& ctx, ObjString* name);
-        // 写入命名成员(STORE_FIELD / STORE_THIS_FIELD 统一入口):基类默认报 "type X does
-        // not support field access";ObjClass 落本类自身表恒成功;ObjInstance 动态字段永不失败;
-        // ObjModule 恒拒(模块成员只读)。
+
         [[nodiscard]]
         virtual bool store_field(AriaExeContext& ctx, ObjString* name, Value value);
 
-        // 读取下标成员(LOAD_INDEX 统一入口):基类默认报 TypeMismatch "type X does not
-        // support subscript access"。
         [[nodiscard]]
         virtual Opt<Value> load_index(AriaExeContext& ctx, Value key);
 
-        // 写入下标成员(STORE_INDEX 统一入口):契约同 store_field;其余类型落基类默认报错。
         [[nodiscard]]
         virtual bool store_index(AriaExeContext& ctx, Value key, Value value);
 
-        // 类型判定 = if constexpr 按 T 编译期选 tag,运行期单比较(两配置同价零 RTTI)。前置条件:
-        // this 非空 -- is_obj 门后的解码指针恒满足,from_obj 的 DEBUG 断言兜底。分辨率 =
-        // ObjType,共享 tag 的族(迭代器四子类)只可按族基类查询;新增 ObjType 须在此扩臂,漏臂
-        // 编译期报错。子类型禁定义 is/as/try_as 同名成员--成员调用从派生类作用域起查找,同名即
-        // 遮蔽本三件套。
+        // 按 ObjType 查询；共享 tag 的迭代器子类只能按族基类查询。
+        // 子类不得定义同名 is/as/try_as，以免遮蔽此接口。
         template<DerivedFromObj T>
         [[nodiscard]]
         bool is() const noexcept {
@@ -184,8 +148,7 @@ namespace aria {
             }
         }
 
-        // 前置条件:调用前已经 is<T>() / switch(type()) 确认动态类型匹配--NDEBUG 下是
-        // 裸 static_cast,不校验;DEBUG 下 dynamic_cast 兜底(不匹配返 nullptr 可暴露)。
+        // 调用前须已确认类型匹配；Release 使用 static_cast，Debug 使用 dynamic_cast。
         template<DerivedFromObj T>
         [[nodiscard]]
         T* as() noexcept {
@@ -196,7 +159,6 @@ namespace aria {
 #endif
         }
 
-        // const 重载:const this -> const T*(DEBUG 下 dynamic_cast 校验,与 as() 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
         const T* as() const noexcept {
@@ -207,16 +169,12 @@ namespace aria {
 #endif
         }
 
-        // 检查式转换(try_as = is+as 合一):动态类型匹配返回转型指针,否则 nullptr。「守卫后使用」
-        // 场景类型只写一次,消除 is<>/as<> 双类型参数漂移;纯谓词用 is<T>,switch(type()) 臂内等
-        // 静态已知场合用 as<T>。前置条件同 is<T>()(this 非空)。
         template<DerivedFromObj T>
         [[nodiscard]]
         T* try_as() noexcept {
             return is<T>() ? as<T>() : nullptr;
         }
 
-        // const 重载:const this -> const T*(与 as() const 对称)。
         template<DerivedFromObj T>
         [[nodiscard]]
         const T* try_as() const noexcept {

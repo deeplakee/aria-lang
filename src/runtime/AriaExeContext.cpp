@@ -12,7 +12,6 @@
 namespace aria {
     namespace {
 
-        // 元数规格措辞:0 -> "no arguments"、1 -> "1 argument"、N -> "N arguments"(单数只在恰好 1)。
         String arity_phrase(const u32 count) {
             if (count == 0) {
                 return "no arguments";
@@ -25,14 +24,11 @@ namespace aria {
 
     } // namespace
 
-    // 报错族真身在此(写本上下文自己的寄存器),委托面读宿主公有面。
-
     FailSignal AriaExeContext::arity_error(const u32 argc, const u32 expected) {
         return fail(ErrorCode::WrongArity, "function expects {}, got {}", arity_phrase(expected), argc);
     }
 
     FailSignal AriaExeContext::arity_error_range(const u32 argc, const u32 low, const u32 high) {
-        // 区间恒复数(n or m arguments):"0 or 1 argument" 这类读起来像单数,不成句。
         return fail(ErrorCode::WrongArity, "function expects {} or {} arguments, got {}", low, high, argc);
     }
 
@@ -40,10 +36,7 @@ namespace aria {
         return fail(ErrorCode::WrongArity, "function expects at least {}, got {}", arity_phrase(low), argc);
     }
 
-    // 调用整形面
-
     bool AriaExeContext::check_arity(const ObjFnProto* proto, const u8 argc) {
-        // 检查纯读,无分配。
         const auto arity     = proto->arity();
         const auto min_arity = proto->min_arity();
         if (proto->is_varargs()) {
@@ -62,17 +55,13 @@ namespace aria {
     }
 
     u8 AriaExeContext::prepare_call_args(const ObjFnProto* proto, const u8 argc) {
-        // GC 走查:new_list 为唯一分配点 -- 额外实参 peek 在栈(栈即根),copy_from 走 trivial
-        // 分配不触 GC,白色 list 随即 drop+push 入值栈根,窗口内无 GC 点;垫充压寄存器单例无分配。
         const auto arity = proto->arity();
 
-        // ① 缺省垫充(仅当实参不足固定参数数;varargs 的 argc 可超 arity,差值不可作 u8 减)。
         const auto missing = argc < arity ? static_cast<u8>(arity - argc) : u8{0};
         for (u8 i = 0; i < missing; ++i) {
             push(Value::from_obj(host_->default_mark()));
         }
 
-        // ② varargs 打包:rest 槽深 = arity + 1;普通函数槽深 = arity。
         if (proto->is_varargs()) {
             const auto extras = argc > arity ? static_cast<u8>(argc - arity) : u8{0};
             const auto rest   = new_list(gc());
@@ -84,8 +73,6 @@ namespace aria {
         return arity;
     }
 
-    // 重入口面
-
     Opt<Value> AriaExeContext::execute_function(ObjFunction* function, const ArgList args) {
         return Eval::execute_function(*this, Value::from_obj(function), function, args);
     }
@@ -94,14 +81,10 @@ namespace aria {
         return Eval::execute_function(*this, receiver, method, args);
     }
 
-    // 帧与开指链
-
     void AriaExeContext::enter_frame(ObjFunction* function, const u8 argc) {
         CallFrame::init(frames_.acquire(), function, top_, argc);
     }
 
-    // 「同一局部只有一份引用」不变式由此收口;建新到插链之间无任何分配点,入链后即随本对象
-    // trace 保命。
     ObjUpvalue* AriaExeContext::capture_upvalue(Value* slot) noexcept {
         ObjUpvalue* prev = nullptr;
         ObjUpvalue* cur  = open_upvalues_;
@@ -110,7 +93,7 @@ namespace aria {
             cur  = cur->next_open();
         }
         if (cur != nullptr && cur->value_slot() == slot) {
-            return cur; // 同槽已捕获:复用(内外层共享同一份引用)
+            return cur;
         }
         ObjUpvalue* uv = new_upvalue(gc(), slot);
         uv->set_next_open(cur);
@@ -122,8 +105,6 @@ namespace aria {
         return uv;
     }
 
-    // 关闭所有指向 >= from 槽址的开指:值迁入各自 closed_ 并整段摘链,降序不变式下 >= from 为
-    // 链头连续前缀,遇首个 < from 即停;摘下的节点 next_open_ 清空 -- 已离链的陈旧链指针防误遍历。
     void AriaExeContext::close_upvalues(const Value* from) noexcept {
         ObjUpvalue* uv = open_upvalues_;
         while (uv != nullptr && uv->value_slot() >= from) {
@@ -135,15 +116,12 @@ namespace aria {
         open_upvalues_ = uv;
     }
 
-    // 值栈 2x 扩容:旧基址一律失效,指入旧块的三类指针 top_/活动帧 slots/开指 location_ 须重绑
-    // -- 调 reserve 前算好相对旧基址的槽偏移、调后用「新基址 + 偏移」重建,全程不读 dangling
-    // 指针(对 dangling 指针做指针减法是 UB);暂存用 List(与 GC 自身 scratch 容器同款)。
+    // 须在 reserve 前记录 top、帧槽和 upvalue 的偏移，搬迁后从新基址重建。
+    // 旧指针已失效，不能在搬迁后相减求偏移。
     void AriaExeContext::grow_stack_() noexcept {
         const auto old_base    = buf_.data();
         const auto frame_count = frames_.size();
 
-        // 扩容前:记 top_/各活动帧 slots 相对 old_base 的槽偏移(偏移而非绝对指针 --
-        // 扩容后旧基址失效,绝对指针成 dangling 不可再用)。
         const auto top_offset = static_cast<usize>(top_ - old_base);
 
         usize slot_offsets[kFrameMax];
@@ -151,20 +129,18 @@ namespace aria {
             slot_offsets[i] = static_cast<usize>(frames_[i].slots - old_base);
         }
 
-        // 开链偏移:走链记偏移。
         List<usize> upvalue_offsets;
         for (ObjUpvalue* upvalue = open_upvalues_; upvalue != nullptr; upvalue = upvalue->next_open()) {
             upvalue_offsets.push_back(static_cast<usize>(upvalue->value_slot() - old_base));
         }
 
-        buf_.reserve(buf_.capacity() * 2); // 扩容:旧基址失效,新基址就位(可能原地)
+        buf_.reserve(buf_.capacity() * 2);
 
         const auto new_base = buf_.data();
         if (new_base == old_base) {
-            return; // 原地扩展,无需重绑(realloc 允许原地;此分支现是活路径,非防御性保留)
+            return;
         }
 
-        // 搬迁后:用「新基址 + 偏移」重算指针,不读任何 dangling 指针值。
         top_ = new_base + top_offset;
         for (usize i = 0; i < frame_count; ++i) {
             frames_[i].slots = new_base + slot_offsets[i];
@@ -174,8 +150,6 @@ namespace aria {
             upvalue->set_location(new_base + upvalue_offsets[i++]);
         }
     }
-
-    // 宿主委托面
 
     ObjString* AriaExeContext::char_string(const u8 byte) const noexcept { return host_->char_string(byte); }
 

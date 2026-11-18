@@ -10,10 +10,9 @@ namespace aria {
     class GC;
     class ObjRange;
 
-    // list 对象:元素任意 Value 的顺序容器;地址哈希型(map 键按对象身份)。
+    // 元素任意；作为 map 键时按对象身份判等。
     class ObjList final : public Object {
     public:
-        // 元素表惰性增长,ctor 只绑分配器(首字节预留由 copy_from/push 的扩容路径自理)。
         explicit ObjList(GC& gc);
 
         ~ObjList() override = default; // 元素是 GC 值,不归本类释放
@@ -23,7 +22,6 @@ namespace aria {
         ObjList(ObjList&&)                 = delete;
         ObjList& operator=(ObjList&&)      = delete;
 
-        // 元素表(非常量供 MAKE_LIST 的 copy_from 与 push/pop 方法填充;容器成员直曝)。
         [[nodiscard]]
         AriaArray& elements() noexcept {
             return elements_;
@@ -36,30 +34,25 @@ namespace aria {
 
         void trace(GC& gc) const noexcept override;
 
-        // 壳定长(elements_ 内联在壳内,元素缓冲由其 Buffer 自持)。
         [[nodiscard]]
         usize size() const noexcept override {
             return sizeof(ObjList);
         }
 
-        // 内容相等:同为 list 且长度相等且逐元素 value_equal;其余(含跨类型)恒 false。
         [[nodiscard]]
         bool equals(const Object* other) const noexcept override;
 
-        // 调试渲染:`[1, "ab"]`;显示同文案。
         [[nodiscard]]
         String repr() const override;
 
-        // 从所属类载入:自 List bootstrap 类链起查(本类无值本地状态)。
         [[nodiscard]]
         Opt<Value> load_field_from_class(AriaExeContext& ctx, ObjString* name) override;
 
-        // 整数键:负数从尾计数、归一化后越界即报(越界值就地拼进文案),非整数键 TypeMismatch,查读无分配。
-        // Range 键 = 切片:产出新 list、只读(路径有分配)。
+        // 整数键支持负下标；Range 键返回新切片。
         [[nodiscard]]
         Opt<Value> load_index(AriaExeContext& ctx, Value key) override;
 
-        // 下标写入:键检查同读,不自动增长(追加走 push 方法),写已存槽恒成功;Range 键落统一文案(切片写只读)。
+        // 下标写入不自动增长，不支持切片赋值。
         [[nodiscard]]
         bool store_index(AriaExeContext& ctx, Value key, Value value) override;
 
@@ -71,7 +64,6 @@ namespace aria {
         AriaArray elements_; // 元素表(GC 分配器绑定;push/copy_from 惰性增长,trivial 分配不触 GC)
     };
 
-    // 工厂:分配空 ObjList(单次分配,无入参对象可守)。
     [[nodiscard]]
     ObjList* new_list(GC& gc);
 

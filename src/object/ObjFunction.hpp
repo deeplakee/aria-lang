@@ -61,7 +61,6 @@ namespace aria {
 
         void set_defining_class(ObjClass* klass) noexcept { defining_class_ = klass; }
 
-        // 标定义类,再按载荷标原生名称或 aria 原型与捕获数组。
         void trace(GC& gc) const noexcept override;
 
         [[nodiscard]]

@@ -5,9 +5,6 @@
 
 namespace aria {
 
-    ObjClass* BoundMethodClass::make_class(GC& gc, ObjClass* super) {
-        // BoundMethod 类:绑定方法值的类面载体,方法表全空(成员一律沿链继承 Object 根)。
-        return new_class(gc, "BoundMethod", super);
-    }
+    ObjClass* BoundMethodClass::make_class(GC& gc, ObjClass* super) { return new_class(gc, "BoundMethod", super); }
 
 } // namespace aria

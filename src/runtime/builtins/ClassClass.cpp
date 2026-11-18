@@ -5,9 +5,6 @@
 
 namespace aria {
 
-    ObjClass* ClassClass::make_class(GC& gc, ObjClass* super) {
-        // Class 元类:类值对象的类面载体,方法表全空(成员一律沿链继承 Object 根)。
-        return new_class(gc, "Class", super);
-    }
+    ObjClass* ClassClass::make_class(GC& gc, ObjClass* super) { return new_class(gc, "Class", super); }
 
 } // namespace aria

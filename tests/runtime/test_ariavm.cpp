@@ -58,87 +58,67 @@ using aria::str_table::kConstants;
 
 namespace {
 
-    // LOAD_IMM 的 i8 立即数(经 emit_byte 写入)。
     void emit_imm(CodeUnit& cu, const i8 v, const u32 line = 1) {
         cu.emit_op(OpCode::LOAD_IMM, line);
         cu.emit_byte(static_cast<u8>(v), line);
     }
 
-    // 局部槽的 u16 槽号指令(LOAD_LOCAL/STORE_LOCAL 通用形态)。
     void emit_local(CodeUnit& cu, const OpCode op, const u16 slot, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_word(slot, line);
     }
 
-    // 回填一条 u16 跳转偏移(编译器 backpatch 的手写版;偏移以读完操作数后 ip 为基准)。
     void patch_word(CodeUnit& cu, const usize operand_offset, const u16 word) {
         cu.code[operand_offset]     = static_cast<u8>(word & 0xFF);
         cu.code[operand_offset + 1] = static_cast<u8>(word >> 8);
     }
 
-    // u16 名字操作数指令(DEF/LOAD/STORE_GLOBAL):op + u16 常量池索引(名字 ObjString)。
     void emit_global(CodeUnit& cu, const OpCode op, const u16 name_idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_word(name_idx, line);
     }
 
-    // u8 upvalue 索引指令(LOAD_UPVALUE/STORE_UPVALUE)。
     void emit_upvalue(CodeUnit& cu, const OpCode op, const u8 idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_byte(idx, line);
     }
 
-    // CLOSURE fn:u16(常量池 ObjFnProto 索引):VM 按 fn->upvalue_descs() 建捕获,压闭包值。
     void emit_closure(CodeUnit& cu, const u16 fn_idx, const u32 line = 1) {
         cu.emit_op(OpCode::CLOSURE, line);
         cu.emit_word(fn_idx, line);
     }
 
-    // u16 名字操作数的类组/字段组指令(MAKE_CLASS/MAKE_METHOD/MAKE_STATIC/LOAD_FIELD/
-    // STORE_FIELD/LOAD_THIS_FIELD/STORE_THIS_FIELD/LOAD_SUPER_FIELD):op + 常量池
-    // ObjString 索引,与 emit_global 同形(DEF/LOAD/STORE_GLOBAL 用)。
     void emit_named(CodeUnit& cu, const OpCode op, const u16 name_idx, const u32 line = 1) {
         cu.emit_op(op, line);
         cu.emit_word(name_idx, line);
     }
 
-    // PREPARE_METHOD name:u16（两段式第一段：[recv] -> [recv, target]）。手写字节码须按编译器
-    // 的发射序 接收者 -> 解析 -> 实参 -> 调用；解析在实参求值之前，故它紧跟接收者之后。
+    // 手写字节码也须先解析方法，再求值实参。
     void emit_prepare(CodeUnit& cu, const u16 name_idx, const u32 line = 1) {
         cu.emit_op(OpCode::PREPARE_METHOD, line);
         cu.emit_word(name_idx, line);
     }
 
-    // CALL_METHOD argc:u8（两段式第二段：[recv, target, a1..aN] -> [r]）。
     void emit_call_method(CodeUnit& cu, const u8 argc, const u32 line = 1) {
         cu.emit_op(OpCode::CALL_METHOD, line);
         cu.emit_byte(argc, line);
     }
 
-    // LOAD_CONST idx:u16(压常量池 idx 处的值)。
     void emit_const(CodeUnit& cu, const u16 idx, const u32 line = 1) {
         cu.emit_op(OpCode::LOAD_CONST, line);
         cu.emit_word(idx, line);
     }
 
-    // 给 fn 追加一条捕获描述:is_local=true 捕直接外围帧局部槽 index(测试只用到此形态)。
     void capture_local(ObjFnProto* fn, const u16 index) { fn->upvalue_descs().push(UpvalueDesc{true, index}); }
 
-    // IMPORT path:u16(常量池 ObjString 索引)。压模块值于栈顶（[...] -> [..., module]）；绑定由
-    // 调用方按作用域经 DEF_GLOBAL / 值填槽自行完成。
     void emit_import(CodeUnit& cu, const u16 path_idx, const u32 line = 1) {
         cu.emit_op(OpCode::IMPORT, line);
         cu.emit_word(path_idx, line);
     }
 
-    // 测试便利:委托 new_module 1 参 StringView 重载(name/dir 经工厂内部 intern 并自守)。
-    // 默认 "<script>"(临时模块,dir_ 走 cwd,run() 替换 source_roots_[0])。返回的 m 未根,
-    // 调用方跨 GC 点持有须自行再守卫。
+    // 返回对象未根化，跨 GC 点持有须由调用方保活。
     ObjModule* make_module(GC& gc, const StringView name = "<script>") { return new_module(gc, name); }
 
-    // 显式目录版:intern + 守卫 name,先守 dir 再 new_string(name),调 new_module(3-arg)。
-    // 工厂不替调用方守卫入参(本文件收 ObjString* 入参的各 make_*/new_* 助手同理,下文不再
-    // 赘述),返回的 m 未根,调用方跨 GC 点持有须自行再守卫。
     ObjModule* make_module(GC& gc, const StringView name, ObjString* dir) {
         auto guard = gc.make_guard(dir); // dir 先入根:下方 new_string(name) 可能 collect
         auto nm    = new_string(gc, name);
@@ -146,36 +126,25 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // 指定共享模块的具名函数:闭包测试用(DEF_GLOBAL/LOAD_GLOBAL 跨函数共享同模块 globals)。
-    // 返回白色,调用方自守。m 未根须自守:工厂内 intern name 与 new_object 均 GC 点。
     ObjFnProto* make_function(GC& gc, ObjModule* m, const StringView name, const u8 arity) {
         auto guard = gc.make_guard(m);
         return aria::new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
-    // 3 参便利重载:造临时模块 + 委托工厂 StringView 重载。屏蔽全局 aria::new_fn_proto。
-    // m 未根须自守:make_module 与工厂内部分配在 stress GC 下会 collect,裸局部指针无根会被
-    // 扫掉;name 串由工厂内部 intern 并自守。
     ObjFnProto* new_fn_proto(GC& gc, const StringView name, const u8 arity) {
         auto m     = make_module(gc);
         auto guard = gc.make_guard(m);
         return aria::new_fn_proto(gc, m, name, arity, arity, false); // 无缺省,min_arity = arity
     }
 
-    // 指定模块的匿名入口单元(`<main>` 名,arity 0)。
     ObjFnProto* new_script(GC& gc, ObjModule* m) {
         auto guard = gc.make_guard(m); // m 未根:工厂内 intern 与 new_object 均 GC 点
         return aria::new_fn_proto(gc, m, "<main>", 0, 0, false);
     }
 
-    // ---- IMPORT 路径解析测试辅助 ----(设计见 .agents/reference/specs/import.md;测试需真实临时文件
-    // 让 exists-check 命中、按解析出的绝对键预注册合成模块入 modules_ 并设 dir_/name_。)
-    // macOS 下 testing::TempDir() 常落在符号链接后(/var -> /private/var),基准须先
-    // weakly_canonical 规范化,保证预注册键与 resolve_module 输出逐字节一致。
+    // 预注册模块的路径须规范化，以匹配解析器的键；macOS 的 /var 可能为符号链接。
 
-    // 按「套件名_用例名」建独立子目录并返回其规范绝对路径:TempDir() 全程序共享、跨运行不清理,
-    // 各测试直接建同路径文件会互相污染(如依赖「lib/math.aria 不存在」的用例);按用例名隔离后
-    // 互不污染,重跑自建文件幂等覆盖。
+    // 各用例独立目录，避免共享 TempDir 中的文件影响缺失路径测试。
     std::string test_canon_dir() {
         auto info = ::testing::UnitTest::GetInstance()->current_test_info();
         auto dir  = std::filesystem::weakly_canonical(std::filesystem::path{testing::TempDir()} /
@@ -184,8 +153,6 @@ namespace {
         return dir.string();
     }
 
-    // 在 base 下按相对路径 rel(含 .aria 后缀)创建空文件(含父目录),返回该文件的规范绝对路径
-    // -- 即 IMPORT 解析应命中的模块表键(与 resolve_module 的 weakly_canonical 输出逐字节一致)。
     std::string touch_aria(const std::string& base, std::string_view rel) {
         auto file = std::filesystem::weakly_canonical(std::filesystem::path{base} / std::string{rel});
         std::filesystem::create_directories(file.parent_path());
@@ -194,8 +161,6 @@ namespace {
         return file.string();
     }
 
-    // 在 base 下按相对路径 rel 写入源码内容 content(含父目录),返回该文件的规范绝对路径。
-    // 供 IMPORT 加载层端到端测试:被导入模块有真实源码,触发 读盘 -> 编译 -> run-once 全链路。
     std::string write_aria(const std::string& base, std::string_view rel, std::string_view content) {
         auto file = std::filesystem::weakly_canonical(std::filesystem::path{base} / std::string{rel});
         std::filesystem::create_directories(file.parent_path());
@@ -204,8 +169,6 @@ namespace {
         return file.string();
     }
 
-    // 在 VM 模块表 modules 里按模块显示名(name_->view())查找模块对象;未命中返 nullptr。
-    // 加载层测试经 interpret_from_path 跑完后,用此白盒检视被导入模块的 state / globals。
     ObjModule* find_module_by_name(aria::AriaHashTable& modules, const StringView name) {
         for (const auto& entry: modules) {
             auto m = entry.value.as_obj()->as<ObjModule>();
@@ -216,8 +179,7 @@ namespace {
         return nullptr;
     }
 
-    // 造带目录的模块(name = 文件名 stem,dir = 模块文件所在目录)。调用方须先 guard 已创建
-    // 的 dir;本函数内 new_string(name) 分配时 dir 须已入根。
+    // dir 须在调用前根化，内部创建名称可能触发 GC。
     ObjModule* new_disk_module(GC& gc, std::string_view name, ObjString* dir) {
         auto nm    = new_string(gc, name);
         auto guard = gc.make_guard(nm);
@@ -225,9 +187,6 @@ namespace {
         return new_module(gc, nm, dir);
     }
 
-    // ---- 原生函数测试辅助 ----
-
-    // double(x):把 x*2 写入返回槽(就地返回),元数自查。
     bool double_native(const NativeCallInfo& info) {
         auto& ctx = info.ctx();
         if (const auto argc = info.size(); argc != 1) {
@@ -237,13 +196,10 @@ namespace {
         return true;
     }
 
-    // fail_always():恒报错,验证侧信道错误从 run() 出栈为未捕获 Error。
     bool fail_always_native(const NativeCallInfo& info) {
         return info.ctx().fail(ErrorCode::TypeMismatch, "fail_always always fails");
     }
 
-    // 把 native 包成 Value 入常量池,返回常量池索引(emit LOAD_CONST 用)。name 经
-    // new_function 的 StringView 重载内部 intern 并自守;add_constant 为 trivial push 无 GC 点。
     u16 add_native_const(CodeUnit& cu, GC& gc, const char* name, NativeFn fn) {
         const auto nf = new_function(gc, name, fn);
         return cu.add_constant(Value::from_obj(nf));
@@ -1334,10 +1290,8 @@ TEST_F(AriaVMStress, NativeFnAritySelfCheck) {
     EXPECT_EQ(out.error().code(), ErrorCode::WrongArity);
 }
 
-// ============================================================
 // 闭包机制(手写 emit;全部跑在 AriaVMStress 下,每个 new_object 触发 collect,
 // 顺带锻炼开链 tracer 标根 / CLOSURE 根安全 / 关闭挂点的分配安全)
-// ============================================================
 
 // incr 闭包体(arity 0,捕获 uv0 = 外层局部 n):
 //   n += 1 经 LOAD_UPVALUE/STORE_UPVALUE(peek-store 写穿),返回新值。
@@ -1748,10 +1702,8 @@ TEST_F(AriaVMStress, OpenUpvalueChainSurvivesGcWithDeadClosure) {
     EXPECT_EQ(out->as_int(), 42); // 复用的链节点存活且指槽正确
 }
 
-// ============================================================
 // 类机制(手写 emit)。全部跑在 AriaVMStress 下,每个 new_object 触发 collect,顺带锻炼
 // bootstrap 根 / 实例化快慢路径 / LOAD_FIELD 现场绑定 / 超类链的分配安全。
-// ============================================================
 
 // 无自定义 init 的类(无成员):LOAD_REG ObjectClass + MAKE_CLASS 后 Foo() -- ctor 自 super 派生继承
 // Object 的原生 no-op init,call_class 槽 0 原位换实例后 call_value 走 call_native_fn 同步
@@ -2591,11 +2543,9 @@ TEST_F(AriaVMStress, ClassGraphSurvivesExplicitCollect) {
     EXPECT_EQ(tag_v->as_int(), 3);
 }
 
-// ============================================================
 // 泛化:native 落表(原生值经 MAKE_STATIC/类上赋值落类表 = 静态槽语义,读恒原值
 // --方法性 = defining class 戳;绑定形态 ObjBoundMethod 的原生分支由对象层直接构造,
 // 见 test_objboundmethod)。
-// ============================================================
 
 // echo_this():验证原生的调用约定 -- 绑定调用(call_bound_method)时 VM 把调用区槽 0
 // (bound 对象)覆写为 receiver 后调用:原生读 self 即 this(校验为 ObjInstance)、

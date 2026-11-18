@@ -45,8 +45,6 @@
 namespace aria {
     namespace {
 
-        // 单例表收口:两张预置表长格的 VM 单例表(registers_ / str_table_)填完后不许留空格。
-        // 未填格(nullptr)装箱后是非法值、按名取到空指针,存活到消费点只崩不报错,故在填点炸出。
         template<typename T>
         void assert_slots_filled(const List<T*>& slots, const char* what) noexcept {
             for (const auto slot: slots) {
@@ -54,10 +52,8 @@ namespace aria {
             }
         }
 
-        // dispatch_loop 各异常站点(unwind 返 Error)统一收口 Result<Value, Error> 的 unexpected 态。
         Result<Value, Error> runtime_err(Error err) { return std::unexpected(std::move(err)); }
 
-        // specifier 的 stem:剥末段 ".aria" 后缀(import "x.aria" 与 "x" 等价);末段恰为 ".aria" 者不剥。
         [[nodiscard]]
         StringView stem_of(const StringView spec) {
             const auto last_slash = spec.find_last_of('/');
@@ -68,7 +64,6 @@ namespace aria {
             return spec;
         }
 
-        // 逐基探测:<base>/<file_name> 规范化(weakly_canonical),存在即返绝对路径;不存在/失败试下一基。
         [[nodiscard]]
         Opt<String> probe_bases(const List<stdfs::path>& bases, const StringView file_name) {
             std::error_code ec;
@@ -95,8 +90,7 @@ namespace aria {
         hook_vm_roots();
         init_source_roots();
         {
-            // 构造临界区:GC 挂起,窗口内回收不可达,创建的白对象免逐个守卫;**解锁前须全部发布
-            // 进 tracer 可达的家**(registers_ / str_table_ / builtins_,主上下文经 current_)。
+            // 启动时暂禁 GC，解锁前须将全部对象发布到 tracer 可达处。
             const auto lock = gc_.make_lock();
             bootstrap_str_table();
             bootstrap_char_cache();
@@ -106,8 +100,6 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_str_table() {
-        // 按下标(= 表序)逐格驻留填入;须在 ctor 构造临界区内调用(GC 挂起,创建免守卫),
-        // 填入即经 str_table_ 可达,解锁前发布完毕。
         for (usize index = 0; index < str_table::kCount; ++index) {
             str_table_[index] = new_string(gc_, str_table::kConstants[index]);
         }
@@ -115,9 +107,6 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_char_cache() {
-        // 字节域全值域一次铸满(char 重载工厂内 &ch 同步用,无悬垂窗口);经驻留池铸造,与一切
-        // 铸造路径恒同对象。须在 ctor 构造临界区内调用(GC 挂起,创建免守卫),填入即经
-        // char_cache_ 可达,解锁前发布完毕;填完逐槽收口。
         for (usize byte = 0; byte < kCharCacheSlots; ++byte) {
             char_cache_[byte] = new_string(gc_, static_cast<char>(byte));
         }
@@ -125,7 +114,6 @@ namespace aria {
     }
 
     void AriaVM::bootstrap_registers() {
-        // 将类对象放在寄存器组中
         registers_[kObjectClassOffset]      = ObjectClass::make_class(gc_);
         registers_[kExceptionClassOffset]   = ExceptionClass::make_class(gc_, object_class());
         registers_[kIteratorClassOffset]    = IteratorClass::make_class(gc_, object_class());
@@ -138,12 +126,10 @@ namespace aria {
         registers_[kModuleClassOffset]      = ModuleClass::make_class(gc_, object_class());
         registers_[kCoroutineClassOffset]   = CoroutineClass::make_class(gc_, object_class());
         registers_[kClassClassOffset]       = ClassClass::make_class(gc_, object_class());
-        // 缺参印章:私有 ObjClass 身份令牌,用户不可达;equals 恒地址型,显式实参身份均异于印章。
+        // 缺参印章仅靠私有对象身份判等，用户无法传入。
         registers_[kDefaultMarkOffset] = new_class(gc_, "<default>", nullptr);
-        // match 全臂未命中的共享兜底异常:字节码 LOAD_REG + THROW 抛出,同一对象身份恒一。
         registers_[kMatchNoArmOffset] = new_exception(gc_, Error::from_detail(ErrorCode::MatchNoArm, "no arm matched"));
 
-        // 将类对象也加放到内建对象/方法表中
         builtins_.set(Value::from_obj(object_class()->name()), Value::from_obj(object_class()));
         builtins_.set(Value::from_obj(exception_class()->name()), Value::from_obj(exception_class()));
         builtins_.set(Value::from_obj(iterator_class()->name()), Value::from_obj(iterator_class()));
@@ -160,7 +146,6 @@ namespace aria {
     }
 
     void AriaVM::hook_vm_roots() {
-        // 链根交接纪律由 run() 出口断言承担,此处不重复设防。
         gc_.set_vm_roots([this](GC& g) {
             modules_.trace(g);
             builtins_.trace(g);
@@ -177,7 +162,6 @@ namespace aria {
         });
     }
 
-    // 寄存器格访问器定义:类格经 as<ObjClass> 收窄,单例格直返;自注册表两段子表生成(声明在 AriaVM.hpp)。
 #define ARIA_VALUE_REGISTER_ACCESSOR_DEF_CLASS(name, accessor, type) \
     type* AriaVM::accessor() const noexcept { return registers_[k##name##Offset]->as<type>(); }
     ARIA_VALUE_REGISTER_CLASS_LIST(ARIA_VALUE_REGISTER_ACCESSOR_DEF_CLASS)
@@ -189,10 +173,7 @@ namespace aria {
 #undef ARIA_VALUE_REGISTER_ACCESSOR_DEF_SINGLETON
 
     void AriaVM::init_source_roots() {
-        // 入口槽 [0] 占位 cwd;cwd 不可用时空串兜底。
         source_roots_.push_back(fs::current_dir().value_or(""));
-        // 配置根 [1..] = 编译器相对 stdlib 源根,weakly_canonical 规范化、推导失败跳过;
-        // 可经 set_source_roots 覆盖。
         if (const auto pd = fs::program_dir()) {
             const auto      stdlib = stdfs::path{*pd} / kStdlibRelPath;
             std::error_code ec;
@@ -232,17 +213,14 @@ namespace aria {
     }
 
     InterpretResult AriaVM::interpret_from_src(const StringView src) {
-        // 合成入口模块 <script>(dir=cwd);guard 根化跨编译+执行。
         const auto module = new_module(gc_, kScriptModuleName);
         auto       guard  = gc_.make_guard(module);
 
-        // 方法内局部,存活至返回,Error 渲染不悬垂。
         SourceFile source{String{kScriptModuleName}, String{kScriptModuleName}, String{src}};
         return interpret_run(source, module);
     }
 
     InterpretResult AriaVM::interpret_from_path(const StringView path) {
-        // 读盘 + BOM/CRLF/UTF-8 处理;失败渲染路径返 LoadError(无 SourceLoc,故 Error 走无位置版)。
         auto loaded = SourceFile::from_path(path);
         if (!loaded) {
             const auto detail = std::format("cannot read source file '{}'", path);
@@ -251,8 +229,6 @@ namespace aria {
         }
         SourceFile source = std::move(*loaded);
 
-        // 入口模块身份:name = basename 去 .aria、dir = dirname(absolute(path))(收口于
-        // fs::module_name_and_dir);name 为空(目录/空/无文件名)与读盘失败同属加载失败。
         auto [name_s, dir_s] = fs::module_name_and_dir(path);
         if (name_s.empty()) {
             const auto detail = std::format("module path has no valid name: '{}'", path);
@@ -266,34 +242,29 @@ namespace aria {
     }
 
     Result<Value, Error> AriaVM::run(ObjFnProto* proto) {
-        // 入口锚 = 本轮入口上下文(即主上下文):dispatch_loop 出口(顶层 RETURN / 未捕获物化)均
-        // 发生在链根,出口断言据此保证切换交接完整(漏交接当场炸,不等下一轮入口)。
+        // 执行须最终回到入口上下文，出口断言检查协程交接完整性。
         const auto entry_ctx = current_;
         // 入口槽 [0] 原地替换为入口模块 dir_;dir_ 可空。
         source_roots_[0] = proto->module()->dir()->view();
 
-        // 重复调用先清场:HALT 收场的上一轮不弹帧,不清场会把新帧叠在陈旧帧上。
+        // 先清理上一轮 HALT 可能留下的帧，避免跨 run 叠帧。
         current_->reset();
 
-        // 创建入口函数:原型跨 new_function 的 GC 点须有根。
         const auto guard          = gc_.make_guard(proto);
         const auto entry_function = new_function(gc_, proto);
 
-        // 首次进入(最外执行):出口边界恒零,弹空帧栈即出口。
         current_->push(Value::from_obj(entry_function)); // 入栈即根
         Eval::call_aria_fn(*current_, entry_function, 0);
         Result<Value, Error> result =
                 Eval::dispatch_loop(*current_) ? current_->pop() : runtime_err(rebake_uncaught_error());
         ASSERT(current_ == entry_ctx, "current_ is not the run entry context (unbalanced context switch)");
 
-        // 结束再清场:防 run() 外的 GC 经 tracer 标到陈旧栈值;清场归本入口。
         current_->reset();
         return result;
     }
 
     void AriaVM::enter_coroutine(ObjMovement* coroutine) {
-        // 顺序不变式:置链必须先于换指 -- 换指后恢复者只经 coroutine->previous_ 一条边可达,
-        // 其调用区的实参/载荷以此跨切换后的 GC 点存活。
+        // 须先置 previous_ 链再换上下文，恢复者及其实参依此跨后续 GC 保活。
         coroutine->set_previous(current_);
         coroutine->set_state(ExecState::Running);
         current_->set_state(ExecState::Normal);
@@ -311,7 +282,6 @@ namespace aria {
     Opt<String> AriaVM::resolve_module(const StringView spec, const StringView current_module_path) const {
         const auto file_name = util::concat_string(stem_of(spec), kAriaExtension);
 
-        // 相对 specifier:基恒为当前模块自己的目录(合成模块无锚点即失败),永不逃逸到别的源根。
         if (spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..") {
             if (current_module_path.empty()) {
                 return std::nullopt;
@@ -321,7 +291,6 @@ namespace aria {
             return probe_bases(bases, file_name);
         }
 
-        // 裸名:沿 source_roots_ 逐根试;空根跳过。
         List<stdfs::path> bases;
         for (const auto& root: source_roots_) {
             if (!root.empty()) {
@@ -332,9 +301,7 @@ namespace aria {
     }
 
     ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
-        // canonical_path 已由调用方根化。
 
-        // 1. 读盘(路径解析已过 exists-check,读盘/编码仍可能失败:权限竞争/非法 UTF-8)。
         auto loaded_src = SourceFile::from_path(canonical_path->view());
         if (!loaded_src) {
             return current_->fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",
@@ -342,23 +309,20 @@ namespace aria {
         }
         SourceFile source = std::move(*loaded_src);
 
-        // 2. 派生模块身份(name/dir):abs_path() 还原 canonical key。
         const auto [name_str, dir_str] = fs::module_name_and_dir(canonical_path->view());
         if (name_str.empty()) {
             return current_->fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
-        // 3. 建模块(工厂内部 intern name/dir)+ 自守跨编译/入表。
         auto module = new_module(gc_, name_str, dir_str);
         auto guard  = gc_.make_guard(module);
 
-        // 4. 编译(入口名 kModuleEntryName)。编译期 Error 就地装箱透传;source 须存活到返回。
         if (auto compiled = Compiler::compile(gc_, source, module, kModuleEntryName); !compiled) {
             current_->raise(Value::from_obj(new_exception(gc_, compiled.error())));
             return nullptr;
         }
 
-        // 5. 入表先于模块体 run-once(体由 IMPORT 分支调起);module 仍由 guard 根化,表 set 无 GC 点。
+        // 编译成功即入表，先于模块体执行，以支持循环导入；执行失败不回滚表项。
         modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         return module;
     }
@@ -373,8 +337,6 @@ namespace aria {
     }
 
     Error AriaVM::rebake_uncaught_error() const {
-        // 自顶帧向下收集 (proto, module, ip_off) 烘跟踪行(跨协程死帧已随 reset 退场)-> take 载荷 ->
-        // reset 清场 -> 烘焙成自足 Error。物化路径仅 string 拼接无 GC 分配点。
         struct TraceEntry {
             ObjFnProto* proto;  // 函数原型(名字渲染)
             ObjModule*  module; // 帧模块(位置串渲染,ObjModule::format_location)

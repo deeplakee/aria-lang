@@ -66,9 +66,6 @@ namespace aria {
             return false;
         }
 
-        // 内置原生函数实现
-
-        // type(x) -> 字符串:值的精确类型名(PascalCase,如 "Int"/"String"/"Nil")。
         bool fn_type(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -79,7 +76,6 @@ namespace aria {
             return true;
         }
 
-        // is_a(value, target):检查真实所属类链,原始值无所属类而返回 false。
         bool fn_is_a(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 2) {
@@ -93,7 +89,6 @@ namespace aria {
             return true;
         }
 
-        // is_subclass(derived, base):模板继承关系包含自身,与类值的 Class 身份分开。
         bool fn_is_subclass(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 2) {
@@ -111,7 +106,6 @@ namespace aria {
             return true;
         }
 
-        // str(x) -> 字符串:值的可读渲染。
         bool fn_str(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 1) {
@@ -125,7 +119,6 @@ namespace aria {
             return true;
         }
 
-        // println([x]) -> nil:值的可读渲染加换行,省参只输出换行;可作一等值传参。
         bool fn_println(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc > 1) {
@@ -143,7 +136,7 @@ namespace aria {
             return true;
         }
 
-        // assert(x[, msg]) -> nil:真值返 nil,否则抛 AssertionFailed(msg 非 string 静默忽略落默认消息)。
+        // 非字符串消息参数按默认消息处理。
         bool fn_assert(const NativeCallInfo& info) {
             auto&      ctx  = info.ctx();
             const auto argc = info.size();
@@ -163,8 +156,7 @@ namespace aria {
             return ctx.fail(ErrorCode::AssertionFailed, "{}", msg);
         }
 
-        // clock() -> f64:单调时钟当前读数(秒)。起点未定(非 Unix 纪元),只有两次读数相减才有意义;
-        // 同进程内跨调用单调不减,不受系统调时影响。
+        // 单调时钟无固定纪元，只能用读数差计时。
         bool fn_clock(const NativeCallInfo& info) {
             auto& ctx = info.ctx();
             if (const auto argc = info.size(); argc != 0) {
@@ -175,8 +167,7 @@ namespace aria {
             return true;
         }
 
-        // Error(message[, code]) -> ObjException:用户异常工厂,直接产出 VM 同款异常对象;code 可选
-        // int 原样携带(未设 = 默认 Error 码)。message 原样入库不烘 "Category: Name" 前缀,catch 侧原文取回。
+        // 用户消息和数字码原样携带，不加内部错误前缀。
         bool fn_Error(const NativeCallInfo& info) {
             auto&      ctx  = info.ctx();
             const auto argc = info.size();
@@ -198,14 +189,11 @@ namespace aria {
             return true;
         }
 
-        // 内置全局函数表。
         constexpr BuiltinFnEntry kBuiltinFns[] = {
                 {"type", fn_type},   {"str", fn_str},     {"println", fn_println}, {"assert", fn_assert},
                 {"clock", fn_clock}, {"Error", fn_Error}, {"is_a", fn_is_a},       {"is_subclass", fn_is_subclass},
         };
 
-        // 全局面函数装载口:按名写入给定 builtins 表;须在构造临界区(GC 挂起)内调用 -- 白色对象
-        // 免逐个守卫,建成即入表、入表条目经 vm_roots tracer 标根。
         void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> functions) {
             for (const auto& [name, fn]: functions) {
                 const auto function = new_function(gc, name, fn);

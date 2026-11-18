@@ -7,6 +7,8 @@ paths:
 
 # value 层模块参考
 
+相等、排序与渲染的共同约束集中在 `Value.hpp`，容器只补充元素操作或键判等的差异；值表示和跨模块规则见下文。
+
 ## `value/` 两种值表示（`USING_NANBOXING` 切换）
 
 切换机制见 `common.hpp`（core.md）：`value/Value.hpp` 经 `#ifdef` 选 `NanBoxing.hpp`（`aria::nanboxing`）或 `TagValue.hpp`（`aria::tagvalue`），并 `using namespace` 进 `aria`。

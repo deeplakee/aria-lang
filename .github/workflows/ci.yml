@@ -124,3 +124,41 @@ jobs:
         run: |
           $aria = if ($IsWindows) { './build/aria.exe' } else { './build/aria' }
           & $aria -e 'assert(6 * 7 == 42);'
+
+  sanitizers:
+    name: Linux x64 (ASan + UBSan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CC: clang-19
+      CXX: clang++-19
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Clang 19 配合 runner 的 libstdc++ 14 提供项目使用的 C++23 标准库接口。
+      - name: Install Clang and sanitizer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang-19 libclang-rt-19-dev llvm-19
+          echo '/usr/lib/llvm-19/bin' >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DARIA_USE_TAGVALUE=OFF
+          -DARIA_USE_MIMALLOC=OFF
+          -DARIA_ENABLE_LTO=OFF
+          -DARIA_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build --target aria aria_tests --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Smoke test CLI
+        run: ./build/aria -e 'assert(6 * 7 == 42);'

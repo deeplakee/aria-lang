@@ -249,6 +249,26 @@ if (ARIA_ENABLE_LTO)
     endif()
 endif()
 
+# sanitizer 参数经 aria_core 传给测试、CLI 与其他消费者，最终可执行文件也须链接运行库。
+option(ARIA_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+if (ARIA_ENABLE_SANITIZERS)
+    if (WIN32 OR NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        message(FATAL_ERROR "ARIA_ENABLE_SANITIZERS requires GCC or Clang on a non-Windows platform")
+    endif ()
+    if (ARIA_USE_MIMALLOC)
+        message(FATAL_ERROR "ARIA_ENABLE_SANITIZERS requires ARIA_USE_MIMALLOC=OFF")
+    endif ()
+    if (ARIA_ENABLE_LTO)
+        message(FATAL_ERROR "ARIA_ENABLE_SANITIZERS requires ARIA_ENABLE_LTO=OFF")
+    endif ()
+    target_compile_options(aria_core PUBLIC
+            -fsanitize=address,undefined
+            -fno-sanitize-recover=all
+            -fno-omit-frame-pointer
+            -g)
+    target_link_options(aria_core PUBLIC -fsanitize=address,undefined)
+endif ()
+
 # === 测试 ===
 enable_testing()
 

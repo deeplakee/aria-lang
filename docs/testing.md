@@ -73,3 +73,6 @@ CTest 的 `PRE_TEST` 模式会复用已有发现清单，单独增删脚本不�
 
 推送到 `main` 或向 `main` 提交 PR 时，CI 运行文档、报错文案与代码格式检查，并在
 Linux、Windows、macOS 构建和测试，其中包含 Linux TagValue 配置与三平台 Release 配置。
+另有一个 Linux Clang 的 ASan + UBSan 配置，使用 NaN-boxing、标准库分配器并关闭 LTO，
+运行全部测试和 CLI 冒烟检查。复现配方与对象池检测边界见
+[sanitizer 诊断构建](building.md#sanitizer-诊断构建)。

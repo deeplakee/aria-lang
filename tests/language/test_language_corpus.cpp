@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+// 语料路径变化通过此头文件触发重新链接，使 CTest 重新枚举用例。
+#include "language_corpus_manifest.hpp"
 #include "runtime/AriaVM.hpp"
 #include "type.hpp"
 #include "util/fs.hpp"

@@ -25,7 +25,22 @@ ctest --test-dir build -R '用例名片段' --output-on-failure --no-tests=error
 
 ### 验证新增语言脚本
 
-已有测试二进制时，不必重新构建。直接运行 GTest，它每次启动都会扫描语料目录：
+新增、删除或重命名 `.aria` 脚本后，运行常规构建与测试命令即可更新 CTest 清单，也可以
+筛选目标用例：
+
+```sh
+cmake --build build --target aria_tests -j &&
+ctest --test-dir build -R '用例名片段' --output-on-failure --no-tests=error
+```
+
+构建会检查语料路径清单；清单变化时只重编语言 runner 并重新链接测试程序，随后 CTest
+重新枚举用例。`lib` 辅助模块的路径变化也会触发检查；是否注册为用例仍由 runner 决定。
+只修改已有脚本内容或 `.out` / `.err` 时，无需重新链接，它们会在运行时重新读取。
+
+**单独运行 `ctest` 不会触发构建。** 语料路径清单变化后，须先构建再运行 CTest。
+`--no-tests=error` 只能防止完全没匹配到测试，不能发现旧清单里缺了部分用例。
+
+已有测试二进制时，也可以直接运行 GTest，它每次启动都会扫描语料目录：
 
 ```sh
 build/tests/aria_tests --gtest_filter='*用例名片段*'
@@ -34,10 +49,6 @@ build/tests/aria_tests --gtest_filter='*用例名片段*'
 Windows 的可执行文件为 `build/tests/aria_tests.exe`（Ninja 单配置构建）。检查输出是否实际跑了
 目标用例：GTest 匹配不到用例时也可以返回成功。语料用例名由相对路径去掉 `.aria`、把 `/`
 换成 `_` 得到，模块用例可用目录名匹配。
-
-CTest 的 `PRE_TEST` 模式会复用已有发现清单，单独增删脚本不会让它失效。语料清单改动后，
-全量验收可在新构建目录运行 CTest，或直接运行不带筛选的 GTest。CTest 的
-`--no-tests=error` 只能防止完全没匹配到测试，不能发现清单里缺了部分用例。
 
 ## 编写测试
 

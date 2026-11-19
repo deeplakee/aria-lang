@@ -65,9 +65,17 @@ endif ()
 # language 语料根：runner（test_language_corpus.cpp）经该绝对路径递归发现 .aria 脚本
 target_compile_definitions(aria_tests PRIVATE ARIA_LANG_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/language")
 
+# 仅跟踪语料路径；脚本内容与旁挂文件由 runner 在运行时读取。
+file(GLOB_RECURSE aria_language_corpus_files CONFIGURE_DEPENDS LIST_DIRECTORIES false
+        RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/language"
+        "${CMAKE_CURRENT_SOURCE_DIR}/language/*.aria")
+list(SORT aria_language_corpus_files)
+string(SHA256 aria_language_corpus_fingerprint "${aria_language_corpus_files}")
+configure_file(language/language_corpus_manifest.hpp.in language_corpus_manifest.hpp @ONLY)
+target_include_directories(aria_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 # interpreter.cpp 实现 cli_dispatch,属 CLI 层归 aria 可执行(不进 aria_core);测试需其符号,单独编入。
 target_sources(aria_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/interpreter.cpp)
 
-# PRE_TEST 将枚举延迟到 ctest 启动，但会复用发现清单。新增语料直接跑 GTest，见 docs/testing.md。
 include(GoogleTest)
 gtest_discover_tests(aria_tests DISCOVERY_MODE PRE_TEST)

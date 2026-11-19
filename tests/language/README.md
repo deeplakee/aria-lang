@@ -3,7 +3,8 @@
 用 aria 语言本身写测试脚本（语料），端到端驱动解释器验证**语言行为**，作为 C++
 GTest 白盒测试（util / value / compile / bytecode / runtime / object / memory 七模块）
 之上的行为级安全网。本模块唯一的 C++ 文件是参数化 runner（`test_language_corpus.cpp`），
-其余全部是 `.aria` 脚本与旁挂的 golden / 期望文件。
+语言用例由 `.aria` 脚本与旁挂的 golden / 期望文件组成；头文件模板用于在语料路径变化后
+刷新 CTest 清单，构建与运行方式见[测试文档](../../docs/testing.md#验证新增语言脚本)。
 
 ## 目录结构与判定规则
 

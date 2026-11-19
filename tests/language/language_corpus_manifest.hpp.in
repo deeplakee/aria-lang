@@ -1,0 +1,6 @@
+#ifndef ARIA_LANGUAGE_CORPUS_MANIFEST_HPP
+#define ARIA_LANGUAGE_CORPUS_MANIFEST_HPP
+
+// 语料路径清单指纹：@aria_language_corpus_fingerprint@
+
+#endif // ARIA_LANGUAGE_CORPUS_MANIFEST_HPP

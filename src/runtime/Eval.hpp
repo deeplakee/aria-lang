@@ -66,25 +66,22 @@ namespace aria {
         static ObjString* execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
         template<OpCode Op>
+        static bool run_binary_operator(AriaExeContext& ctx);
+
+        template<OpCode Op>
+        static bool run_unary_operator(AriaExeContext& ctx);
+
+        template<OpCode Op>
         static bool run_binary_numeric(AriaExeContext& ctx);
-
-        template<OpCode Op>
-        [[nodiscard]]
-        static bool run_binary_int(AriaExeContext& ctx, i64 lhs, i64 rhs);
-
-        template<OpCode Op>
-        [[nodiscard]]
-        static bool run_binary_f64(AriaExeContext& ctx, f64 lhs, f64 rhs);
 
         template<OpCode Op>
         static bool run_binary_bitwise(AriaExeContext& ctx);
 
         template<OpCode Op>
-        static bool run_binary_operator(AriaExeContext& ctx);
+        static bool run_unary_numeric(AriaExeContext& ctx, Value operand);
 
-        static bool run_negate(AriaExeContext& ctx);
-
-        static bool run_bit_not(AriaExeContext& ctx);
+        template<OpCode Op>
+        static bool run_unary_bitwise(AriaExeContext& ctx, Value operand);
 
         // 访问协议可能分配，接收者须留在栈上保活。
 

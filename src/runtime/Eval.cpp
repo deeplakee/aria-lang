@@ -91,45 +91,140 @@ namespace aria {
             }
         }
 
+        enum class OperatorFamily : u8 {
+            Numeric,
+            Bitwise,
+        };
+
+        template<usize capacity>
+        struct OperatorInfo {
+            util::FixedString<capacity> hook_name;
+            OperatorFamily              family;
+        };
+
+        template<OpCode Op>
+        consteval auto operator_info() {
+            using enum OperatorFamily;
+            if constexpr (Op == OpCode::ADD) {
+                return OperatorInfo{util::FixedString{"__add__"}, Numeric};
+            } else if constexpr (Op == OpCode::SUBTRACT) {
+                return OperatorInfo{util::FixedString{"__sub__"}, Numeric};
+            } else if constexpr (Op == OpCode::MULTIPLY) {
+                return OperatorInfo{util::FixedString{"__mul__"}, Numeric};
+            } else if constexpr (Op == OpCode::DIVIDE) {
+                return OperatorInfo{util::FixedString{"__div__"}, Numeric};
+            } else if constexpr (Op == OpCode::MOD) {
+                return OperatorInfo{util::FixedString{"__mod__"}, Numeric};
+            } else if constexpr (Op == OpCode::GREATER) {
+                return OperatorInfo{util::FixedString{"__gt__"}, Numeric};
+            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+                return OperatorInfo{util::FixedString{"__ge__"}, Numeric};
+            } else if constexpr (Op == OpCode::LESS) {
+                return OperatorInfo{util::FixedString{"__lt__"}, Numeric};
+            } else if constexpr (Op == OpCode::LESS_EQUAL) {
+                return OperatorInfo{util::FixedString{"__le__"}, Numeric};
+            } else if constexpr (Op == OpCode::NEGATE) {
+                return OperatorInfo{util::FixedString{"__neg__"}, Numeric};
+            } else if constexpr (Op == OpCode::BIT_AND) {
+                return OperatorInfo{util::FixedString{"__and__"}, Bitwise};
+            } else if constexpr (Op == OpCode::BIT_OR) {
+                return OperatorInfo{util::FixedString{"__or__"}, Bitwise};
+            } else if constexpr (Op == OpCode::BIT_XOR) {
+                return OperatorInfo{util::FixedString{"__xor__"}, Bitwise};
+            } else if constexpr (Op == OpCode::SHIFT_LEFT) {
+                return OperatorInfo{util::FixedString{"__lshift__"}, Bitwise};
+            } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
+                return OperatorInfo{util::FixedString{"__rshift__"}, Bitwise};
+            } else if constexpr (Op == OpCode::SHIFT_RIGHT_LOGICAL) {
+                return OperatorInfo{util::FixedString{"__urshift__"}, Bitwise};
+            } else if constexpr (Op == OpCode::BIT_NOT) {
+                return OperatorInfo{util::FixedString{"__invert__"}, Bitwise};
+            } else {
+                STATIC_UNREACHABLE("unsupported opcode in operator_info");
+            }
+        }
+
         template<OpCode Op>
         Opt<Value> load_operator_hook(AriaExeContext& ctx, Object* receiver) {
+            return receiver->load_field_from_class(ctx, ctx.str<operator_info<Op>().hook_name>());
+        }
+
+        template<OpCode Op>
+        [[nodiscard]]
+        bool run_numeric_int(AriaExeContext& ctx, const i64 lhs, const i64 rhs) {
+            // 加减除的中间值可用 i64 容纳；乘法须预检，避免 i64 溢出。
+            i64 result = 0;
             if constexpr (Op == OpCode::ADD) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__add__">());
+                result = lhs + rhs;
             } else if constexpr (Op == OpCode::SUBTRACT) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__sub__">());
+                result = lhs - rhs;
             } else if constexpr (Op == OpCode::MULTIPLY) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__mul__">());
+                const i64  lhs_magnitude = lhs < 0 ? -lhs : lhs;
+                const i64  rhs_magnitude = rhs < 0 ? -rhs : rhs;
+                const bool is_negative   = (lhs < 0) != (rhs < 0);
+                const i64  limit         = is_negative ? -kIntMin : kIntMax;
+                if (lhs_magnitude != 0 && rhs_magnitude > limit / lhs_magnitude) {
+                    return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+                }
+                result = lhs * rhs;
             } else if constexpr (Op == OpCode::DIVIDE) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__div__">());
+                if (rhs == 0) {
+                    return ctx.fail(ErrorCode::DivisionByZero, "integer division by zero");
+                }
+                result = lhs / rhs;
             } else if constexpr (Op == OpCode::MOD) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__mod__">());
+                if (rhs == 0) {
+                    return ctx.fail(ErrorCode::ModuloByZero, "integer modulo by zero");
+                }
+                result = lhs % rhs;
             } else if constexpr (Op == OpCode::GREATER) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__gt__">());
+                ctx.push(Value::from_bool(lhs > rhs));
+                return true;
             } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__ge__">());
+                ctx.push(Value::from_bool(lhs >= rhs));
+                return true;
             } else if constexpr (Op == OpCode::LESS) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__lt__">());
+                ctx.push(Value::from_bool(lhs < rhs));
+                return true;
             } else if constexpr (Op == OpCode::LESS_EQUAL) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__le__">());
-            } else if constexpr (Op == OpCode::NEGATE) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__neg__">());
-            } else if constexpr (Op == OpCode::BIT_AND) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__and__">());
-            } else if constexpr (Op == OpCode::BIT_OR) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__or__">());
-            } else if constexpr (Op == OpCode::BIT_XOR) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__xor__">());
-            } else if constexpr (Op == OpCode::SHIFT_LEFT) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__lshift__">());
-            } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__rshift__">());
-            } else if constexpr (Op == OpCode::SHIFT_RIGHT_LOGICAL) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__urshift__">());
-            } else if constexpr (Op == OpCode::BIT_NOT) {
-                return receiver->load_field_from_class(ctx, ctx.str<"__invert__">());
+                ctx.push(Value::from_bool(lhs <= rhs));
+                return true;
             } else {
-                STATIC_UNREACHABLE("unsupported opcode in load_operator_hook");
+                STATIC_UNREACHABLE("run_numeric_int: no arm for this Op");
             }
+            if (result < kIntMin || result > kIntMax) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
+            ctx.push(Value::from_int(result));
+            return true;
+        }
+
+        template<OpCode Op>
+        [[nodiscard]]
+        bool run_numeric_f64(AriaExeContext& ctx, const f64 lhs, const f64 rhs) {
+            // 浮点运算遵循 IEEE，除零产生 inf/nan。
+            if constexpr (Op == OpCode::ADD) {
+                ctx.push(Value::from_f64(lhs + rhs));
+            } else if constexpr (Op == OpCode::SUBTRACT) {
+                ctx.push(Value::from_f64(lhs - rhs));
+            } else if constexpr (Op == OpCode::MULTIPLY) {
+                ctx.push(Value::from_f64(lhs * rhs));
+            } else if constexpr (Op == OpCode::DIVIDE) {
+                ctx.push(Value::from_f64(lhs / rhs));
+            } else if constexpr (Op == OpCode::MOD) {
+                ctx.push(Value::from_f64(std::fmod(lhs, rhs)));
+            } else if constexpr (Op == OpCode::GREATER) {
+                ctx.push(Value::from_bool(lhs > rhs));
+            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+                ctx.push(Value::from_bool(lhs >= rhs));
+            } else if constexpr (Op == OpCode::LESS) {
+                ctx.push(Value::from_bool(lhs < rhs));
+            } else if constexpr (Op == OpCode::LESS_EQUAL) {
+                ctx.push(Value::from_bool(lhs <= rhs));
+            } else {
+                STATIC_UNREACHABLE("run_numeric_f64: no arm for this Op");
+            }
+            return true;
         }
 
     } // namespace
@@ -324,34 +419,41 @@ namespace aria {
             }
             return false;
         }
-        if constexpr (Op == OpCode::BIT_AND || Op == OpCode::BIT_OR || Op == OpCode::BIT_XOR ||
-                      Op == OpCode::SHIFT_LEFT || Op == OpCode::SHIFT_RIGHT || Op == OpCode::SHIFT_RIGHT_LOGICAL) {
-            return run_binary_bitwise<Op>(ctx);
-        } else {
+        if constexpr (operator_info<Op>().family == OperatorFamily::Numeric) {
             return run_binary_numeric<Op>(ctx);
+        } else {
+            return run_binary_bitwise<Op>(ctx);
         }
     }
 
-    bool Eval::run_negate(AriaExeContext& ctx) {
+    template<OpCode Op>
+    bool Eval::run_unary_operator(AriaExeContext& ctx) {
         const Value operand = ctx.peek(0);
-        if (operand.is_int()) {
-            if (operand.as_int() == kIntMin) {
-                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
-            }
-            ctx.peek(0) = Value::from_int(-operand.as_int());
-            return true;
-        }
-        if (operand.is_f64()) {
-            ctx.peek(0) = Value::from_f64(-operand.as_f64());
-            return true;
-        }
         if (operand.is_obj()) {
-            if (const auto target = load_operator_hook<OpCode::NEGATE>(ctx, operand.as_obj())) {
+            if (const auto target = load_operator_hook<Op>(ctx, operand.as_obj())) {
                 return call_value(ctx, *target, 0);
             }
             return false;
         }
-        return ctx.fail(ErrorCode::TypeMismatch, "negate requires a number, got {}", type_name(operand));
+        if constexpr (operator_info<Op>().family == OperatorFamily::Numeric) {
+            return run_unary_numeric<Op>(ctx, operand);
+        } else {
+            return run_unary_bitwise<Op>(ctx, operand);
+        }
+    }
+
+    template<OpCode Op>
+    bool Eval::run_binary_numeric(AriaExeContext& ctx) {
+        const Value b = ctx.pop();
+        const Value a = ctx.pop();
+        if (!(is_num(a) && is_num(b))) {
+            return ctx.fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", op_symbol(Op),
+                            type_name(a), type_name(b));
+        }
+        if (a.is_int() && b.is_int()) {
+            return run_numeric_int<Op>(ctx, a.as_int(), b.as_int());
+        }
+        return run_numeric_f64<Op>(ctx, as_num(a), as_num(b));
     }
 
     template<OpCode Op>
@@ -396,109 +498,31 @@ namespace aria {
         return true;
     }
 
-    bool Eval::run_bit_not(AriaExeContext& ctx) {
-        const Value operand = ctx.peek(0);
+    template<OpCode Op>
+    bool Eval::run_unary_numeric(AriaExeContext& ctx, const Value operand) {
+        static_assert(Op == OpCode::NEGATE);
+        if (operand.is_int()) {
+            if (operand.as_int() == kIntMin) {
+                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
+            }
+            ctx.peek(0) = Value::from_int(-operand.as_int());
+            return true;
+        }
+        if (operand.is_f64()) {
+            ctx.peek(0) = Value::from_f64(-operand.as_f64());
+            return true;
+        }
+        return ctx.fail(ErrorCode::TypeMismatch, "negate requires a number, got {}", type_name(operand));
+    }
+
+    template<OpCode Op>
+    bool Eval::run_unary_bitwise(AriaExeContext& ctx, const Value operand) {
+        static_assert(Op == OpCode::BIT_NOT);
         if (operand.is_int()) {
             ctx.peek(0) = Value::from_int(~operand.as_int());
             return true;
         }
-        if (operand.is_obj()) {
-            if (const auto target = load_operator_hook<OpCode::BIT_NOT>(ctx, operand.as_obj())) {
-                return call_value(ctx, *target, 0);
-            }
-            return false;
-        }
         return ctx.fail(ErrorCode::TypeMismatch, "bitwise not requires an integer, got {}", type_name(operand));
-    }
-
-    template<OpCode Op>
-    bool Eval::run_binary_numeric(AriaExeContext& ctx) {
-        const Value b = ctx.pop();
-        const Value a = ctx.pop();
-        if (!(is_num(a) && is_num(b))) {
-            return ctx.fail(ErrorCode::TypeMismatch, "operator '{}' requires numbers, got {} and {}", op_symbol(Op),
-                            type_name(a), type_name(b));
-        }
-        if (a.is_int() && b.is_int()) {
-            return run_binary_int<Op>(ctx, a.as_int(), b.as_int());
-        }
-        return run_binary_f64<Op>(ctx, as_num(a), as_num(b));
-    }
-
-    template<OpCode Op>
-    bool Eval::run_binary_int(AriaExeContext& ctx, const i64 lhs, const i64 rhs) {
-        // 加减除的中间值可用 i64 容纳；乘法须预检，避免 i64 溢出。
-        i64 result = 0;
-        if constexpr (Op == OpCode::ADD) {
-            result = lhs + rhs;
-        } else if constexpr (Op == OpCode::SUBTRACT) {
-            result = lhs - rhs;
-        } else if constexpr (Op == OpCode::MULTIPLY) {
-            const i64  lhs_magnitude = lhs < 0 ? -lhs : lhs;
-            const i64  rhs_magnitude = rhs < 0 ? -rhs : rhs;
-            const bool is_negative   = (lhs < 0) != (rhs < 0);
-            const i64  limit         = is_negative ? -kIntMin : kIntMax;
-            if (lhs_magnitude != 0 && rhs_magnitude > limit / lhs_magnitude) {
-                return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
-            }
-            result = lhs * rhs;
-        } else if constexpr (Op == OpCode::DIVIDE) {
-            if (rhs == 0) {
-                return ctx.fail(ErrorCode::DivisionByZero, "integer division by zero");
-            }
-            result = lhs / rhs;
-        } else if constexpr (Op == OpCode::MOD) {
-            if (rhs == 0) {
-                return ctx.fail(ErrorCode::ModuloByZero, "integer modulo by zero");
-            }
-            result = lhs % rhs;
-        } else if constexpr (Op == OpCode::GREATER) {
-            ctx.push(Value::from_bool(lhs > rhs));
-            return true;
-        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            ctx.push(Value::from_bool(lhs >= rhs));
-            return true;
-        } else if constexpr (Op == OpCode::LESS) {
-            ctx.push(Value::from_bool(lhs < rhs));
-            return true;
-        } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            ctx.push(Value::from_bool(lhs <= rhs));
-            return true;
-        } else {
-            STATIC_UNREACHABLE("run_binary_int: no arm for this Op");
-        }
-        if (result < kIntMin || result > kIntMax) {
-            return ctx.fail(ErrorCode::IntegerOverflow, "integer result out of range");
-        }
-        ctx.push(Value::from_int(result));
-        return true;
-    }
-
-    template<OpCode Op>
-    bool Eval::run_binary_f64(AriaExeContext& ctx, const f64 lhs, const f64 rhs) {
-        // 浮点运算遵循 IEEE，除零产生 inf/nan。
-        if constexpr (Op == OpCode::ADD) {
-            ctx.push(Value::from_f64(lhs + rhs));
-        } else if constexpr (Op == OpCode::SUBTRACT) {
-            ctx.push(Value::from_f64(lhs - rhs));
-        } else if constexpr (Op == OpCode::MULTIPLY) {
-            ctx.push(Value::from_f64(lhs * rhs));
-        } else if constexpr (Op == OpCode::DIVIDE) {
-            ctx.push(Value::from_f64(lhs / rhs));
-        } else if constexpr (Op == OpCode::MOD) {
-            ctx.push(Value::from_f64(std::fmod(lhs, rhs)));
-        } else if constexpr (Op == OpCode::GREATER) {
-            ctx.push(Value::from_bool(lhs > rhs));
-        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            ctx.push(Value::from_bool(lhs >= rhs));
-        } else if constexpr (Op == OpCode::LESS) {
-            ctx.push(Value::from_bool(lhs < rhs));
-        } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            ctx.push(Value::from_bool(lhs <= rhs));
-        } else {
-            STATIC_UNREACHABLE("run_binary_f64: no arm for this Op");
-        }
-        return true;
     }
 
     bool Eval::run_load_field(AriaExeContext& ctx, ObjString* name) {
@@ -1076,12 +1100,12 @@ namespace aria {
                     current->push(Value::from_bool(!is_truthy(current->pop())));
                     break;
                 case OpCode::NEGATE:
-                    if (!run_negate(*current)) {
+                    if (!run_unary_operator<OpCode::NEGATE>(*current)) {
                         goto unwind_check;
                     }
                     goto sync_now;
                 case OpCode::BIT_NOT:
-                    if (!run_bit_not(*current)) {
+                    if (!run_unary_operator<OpCode::BIT_NOT>(*current)) {
                         goto unwind_check;
                     }
                     goto sync_now;

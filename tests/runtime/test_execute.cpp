@@ -51,8 +51,7 @@ namespace {
 
     // ---- 重入口驱动原生:脚本经全局名传入闭包/绑定方法值,原生同步执行之 ----
 
-    // 拷出调用区实参(skip 个首部槽之后的部分)入 args 缓冲:重入实参不得指进值栈(execute_function
-    // 别名契约),视图读数按值抄离,跨重入期间值栈扩容无牵连。returns u8 argc。
+    // 这组探针用独立于值栈的缓冲区传参。
     u8 copy_call_args(const NativeCallInfo& info, const u8 skip, Value* args) {
         const u8 argc = static_cast<u8>(info.size() - skip);
         for (u8 i = 0; i < argc; ++i) {
@@ -215,6 +214,38 @@ TEST_F(NestedExecStress, RunNativeFnReturnsValue) {
     // 原生载荷经重入口同步执行(不进帧、无嵌套驱动):产出即返回值。
     const auto s = g->as_obj()->as<ObjString>();
     EXPECT_EQ(s->view(), "123");
+}
+
+TEST_F(NestedExecStress, StackBackedArgsSurviveCallAreaGrowth) {
+    const auto call_near_capacity = [](const NativeCallInfo& info) {
+        auto&       ctx           = info.ctx();
+        const auto  capacity      = ctx.stack_capacity();
+        const auto  original_size = ctx.stack_size();
+        const auto  free_slots    = static_cast<usize>(info[1].as_int());
+        const auto  padding       = capacity - original_size - free_slots;
+        const usize argc          = info.size() - 2;
+        // 保留指定数量的空槽，让调用区的不同位置触发扩容。
+        for (usize i = 0; i < padding; ++i) {
+            ctx.push(Value::nil_val());
+        }
+        const auto result = ctx.execute_function(info[0].as_obj()->as<ObjFunction>(),
+                                                 {ctx.stack_base() + original_size - argc, argc});
+        if (!result) {
+            return false;
+        }
+        EXPECT_GT(ctx.stack_capacity(), capacity);
+        ctx.drop(padding);
+        info.set_return_val(*result);
+        return true;
+    };
+    const auto src = R"(
+        fun subtract(a, b) { return a - b; }
+        assert(call_near_capacity(subtract, 2, 20, 3) == 17);
+        assert(call_near_capacity(str, 1, 42) == "42");
+        assert(call_near_capacity(str, 2, 43) == "43");
+    )";
+    const auto run = run_with_natives(vm, src, {{"call_near_capacity", call_near_capacity}});
+    ASSERT_TRUE(run.result.has_value()) << run.result.error().message();
 }
 
 TEST_F(NestedExecStress, RunNativeMethodBindsReceiver) {

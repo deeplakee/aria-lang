@@ -51,7 +51,6 @@ namespace aria {
 
         static bool call_native_fn(AriaExeContext& ctx, const ObjFunction* function, u8 argc);
 
-        // args 若借用值栈，须预留压入调用区的容量，避免扩容使其悬垂。
         // 失败时嵌套帧已清理，错误留给外层驱动继续派发。
         [[nodiscard]]
         static Opt<Value> execute_aria_fn(AriaExeContext& ctx, Value slot0, ObjFunction* function, ArgList args);

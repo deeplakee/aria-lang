@@ -96,7 +96,7 @@ aria 载荷重入 dispatch_loop。aria 重入仅能发生在正在执行的驱�
 
 `ret_frame_` 是当前驱动的返回边界，`recursion_depth_` 记录嵌套深度。
 `enter_recursion` 保存外层边界，`leave_recursion` 恢复；失败时 unwind 清理边界内残帧，错误留给外层。
-args 若借用当前值栈，须保证压入调用区不会触发扩容；重入后须重新定位返回槽。
+重入实参可借用当前值栈。压入调用区会触发扩容时，先复制实参；重入后须重新定位返回槽。
 嵌套执行允许 resume，禁止 yield，原因见[协程笔记](../notes/runtime/coroutine.md) #10。
 
 ### 整数运算

@@ -78,7 +78,13 @@ namespace aria {
             io::print(stderr, "{}^ frame[{}]\n", String(col, ' '), static_cast<u32>(frames.size() - 1));
         }
 
-        void push_call_area(AriaExeContext& ctx, const Value slot0, const ArgList args) {
+        void push_call_area(AriaExeContext& ctx, const Value slot0, ArgList args) {
+            List<Value> saved_args;
+            // push 写满最后一槽就会扩容，须在压入 slot0 前复制可能借自值栈的实参。
+            if (1 + args.size() >= ctx.stack_capacity() - ctx.stack_size()) {
+                saved_args.assign(args.begin(), args.end());
+                args = saved_args;
+            }
             ctx.push(slot0);
             for (const auto& arg: args) {
                 ctx.push(arg);
@@ -165,15 +171,13 @@ namespace aria {
         if (ctx.recursion_depth() >= AriaExeContext::kMaxRecursionDepth) {
             return ctx.fail(ErrorCode::StackOverflow, "nested execution too deep");
         }
-        if (args.size() > std::numeric_limits<u8>::max()) {
-            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size());
+        const auto argc = args.size();
+        if (argc > std::numeric_limits<u8>::max()) {
+            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", argc);
         }
-        ASSERT(args.data() >= ctx.stack_top() || args.data() + args.size() <= ctx.stack_base() ||
-                       ctx.stack_size() + 1 + args.size() <= ctx.stack_capacity(),
-               "args alias the value stack without room to push");
         push_call_area(ctx, slot0, args);
         const auto saved_ret = ctx.enter_recursion(); // 换防本循环出口边界,取走外层值
-        if (call_aria_fn(ctx, function, args.size()) && dispatch_loop(ctx)) {
+        if (call_aria_fn(ctx, function, argc) && dispatch_loop(ctx)) {
             ctx.leave_recursion(saved_ret);
             return ctx.pop();
         }
@@ -183,11 +187,12 @@ namespace aria {
 
     Opt<Value> Eval::execute_native_fn(AriaExeContext& ctx, const Value slot0, const ObjFunction* function,
                                        const ArgList args) {
-        if (args.size() > std::numeric_limits<u8>::max()) {
-            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", args.size());
+        const auto argc = args.size();
+        if (argc > std::numeric_limits<u8>::max()) {
+            return ctx.fail(ErrorCode::WrongArity, "too many arguments: {}", argc);
         }
         push_call_area(ctx, slot0, args);
-        if (call_native_fn(ctx, function, args.size())) {
+        if (call_native_fn(ctx, function, argc)) {
             return ctx.pop();
         }
         return std::nullopt;

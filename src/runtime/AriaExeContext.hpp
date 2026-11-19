@@ -214,7 +214,7 @@ namespace aria {
         [[nodiscard]]
         u8 prepare_call_args(const ObjFnProto* proto, u8 argc);
 
-        // 仅供执行中的驱动同步重入；失败时嵌套帧已清理，错误留给外层继续派发。
+        // 仅供执行中的驱动同步重入；实参可借用当前值栈。失败时嵌套帧已清理，错误留给外层继续派发。
 
         [[nodiscard]]
         Opt<Value> execute_function(ObjFunction* function, ArgList args);

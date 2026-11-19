@@ -1,6 +1,7 @@
 #include "object/ObjString.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <format>
 
 #include "error/ErrorCode.hpp"
@@ -14,9 +15,24 @@
 
 namespace aria {
 
+    namespace {
+
+        // 空视图的 data() 可以是空指针，零字节时也不能传给 memcpy。
+        void copy_chars(char* destination, const StringView chars) {
+            if (!chars.empty()) {
+                std::memcpy(destination, chars.data(), chars.size());
+            }
+        }
+
+    } // namespace
+
     ObjString::ObjString(GC& gc, const StringView src, const u32 hash) :
         Object{hash, ObjType::STRING}, gc_{&gc}, length_{src.size()} {
         ASSERT(hash == util::hash_str(src), "hash must be hash_str(src)");
+        if (src.empty()) {
+            short_chars_[0] = '\0';
+            return;
+        }
         if (is_long()) {
             long_chars_ = gc.allocate<char>(length_ + 1);
             std::memcpy(long_chars_, src.data(), length_);
@@ -29,6 +45,10 @@ namespace aria {
 
     ObjString::ObjString(GC& gc, char* data, const usize size, const usize cap, const u32 hash) :
         Object{hash, ObjType::STRING}, gc_{&gc}, length_{size} {
+        if (data == nullptr) {
+            short_chars_[0] = '\0';
+            return;
+        }
         // 接管移交 buffer,表示形态自分流(与拷贝版同构):长串收缩接管,短串拷入 SSO 槽后释放;
         // data[size] 处的终态 '\0' 由本构造安置。
         if (is_long()) {
@@ -50,12 +70,12 @@ namespace aria {
         ASSERT(hash == util::hash_str(util::hash_str(lhs), rhs), "hash must be hash_str(hash_str(lhs), rhs)");
         if (is_long()) {
             long_chars_ = gc.allocate<char>(length_ + 1);
-            std::memcpy(long_chars_, lhs.data(), lhs.size());
-            std::memcpy(long_chars_ + lhs.size(), rhs.data(), rhs.size());
+            copy_chars(long_chars_, lhs);
+            copy_chars(long_chars_ + lhs.size(), rhs);
             long_chars_[length_] = '\0';
         } else {
-            std::memcpy(short_chars_, lhs.data(), lhs.size());
-            std::memcpy(short_chars_ + lhs.size(), rhs.data(), rhs.size());
+            copy_chars(short_chars_, lhs);
+            copy_chars(short_chars_ + lhs.size(), rhs);
             short_chars_[length_] = '\0';
         }
     }

@@ -16,7 +16,7 @@ namespace aria {
 
         ObjString(GC& gc, StringView src, u32 hash);
 
-        // 接管 data 的释放责任；长串沿用缓冲，短串转入内联存储。
+        // 接管 data 的释放责任；长串沿用缓冲，短串转入内联存储。data 为空指针时 size 须为 0。
         ObjString(GC& gc, char* data, usize size, usize cap, u32 hash);
 
         // hash 须为 hash_str(hash_str(lhs), rhs) 的续算结果。

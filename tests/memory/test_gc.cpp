@@ -6,6 +6,7 @@
 
 #include "memory/GC.hpp"
 #include "object/ObjString.hpp"
+#include "util/util.hpp"
 
 using aria::GC;
 using aria::new_string;
@@ -100,6 +101,38 @@ TEST(ObjString, LongIsSeparate) {
     EXPECT_TRUE(s->is_long());
     EXPECT_EQ(s->length(), kLong.size());
     EXPECT_EQ(s->view(), kLong);
+}
+
+TEST(ObjString, CopiesDefaultEmptyView) {
+    GC         gc;
+    const auto view = new_string(gc, StringView{})->view();
+    EXPECT_TRUE(view.empty());
+    EXPECT_EQ(view.data()[0], '\0');
+}
+
+TEST(ObjString, AdoptsReservedEmptyBuffer) {
+    GC              gc;
+    constexpr usize kCapacity = 32;
+    auto            data      = gc.allocate<char>(kCapacity);
+    const ObjString empty{gc, data, 0, kCapacity, aria::util::hash_str("")};
+    EXPECT_EQ(gc.bytes_allocated(), 0u);
+    EXPECT_FALSE(empty.is_long());
+    EXPECT_TRUE(empty.view().empty());
+    EXPECT_EQ(empty.view().data()[0], '\0');
+}
+
+TEST(ObjString, ConcatenatesDefaultEmptyViews) {
+    const auto expect_concat = [](const StringView lhs, const StringView rhs, const StringView expected) {
+        GC         gc; // 每次从空驻留池开始，确保走到构造路径。
+        const auto view = new_string(gc, lhs, rhs, aria::util::hash_str(expected))->view();
+        EXPECT_EQ(view, expected);
+        EXPECT_EQ(view.data()[view.size()], '\0');
+    };
+    expect_concat({}, {}, {});
+    for (const StringView text: {kShort, kLong}) {
+        expect_concat({}, text, text);
+        expect_concat(text, {}, text);
+    }
 }
 
 TEST(ObjString, HashStableForEqualContent) {

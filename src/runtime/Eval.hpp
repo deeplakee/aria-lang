@@ -66,9 +66,6 @@ namespace aria {
         static ObjString* execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
         template<OpCode Op>
-        static Opt<Value> get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj);
-
-        template<OpCode Op>
         static bool run_binary_numeric(AriaExeContext& ctx);
 
         template<OpCode Op>

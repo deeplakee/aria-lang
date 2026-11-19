@@ -91,6 +91,47 @@ namespace aria {
             }
         }
 
+        template<OpCode Op>
+        Opt<Value> load_operator_hook(AriaExeContext& ctx, Object* receiver) {
+            if constexpr (Op == OpCode::ADD) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__add__">());
+            } else if constexpr (Op == OpCode::SUBTRACT) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__sub__">());
+            } else if constexpr (Op == OpCode::MULTIPLY) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__mul__">());
+            } else if constexpr (Op == OpCode::DIVIDE) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__div__">());
+            } else if constexpr (Op == OpCode::MOD) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__mod__">());
+            } else if constexpr (Op == OpCode::GREATER) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__gt__">());
+            } else if constexpr (Op == OpCode::GREATER_EQUAL) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__ge__">());
+            } else if constexpr (Op == OpCode::LESS) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__lt__">());
+            } else if constexpr (Op == OpCode::LESS_EQUAL) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__le__">());
+            } else if constexpr (Op == OpCode::NEGATE) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__neg__">());
+            } else if constexpr (Op == OpCode::BIT_AND) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__and__">());
+            } else if constexpr (Op == OpCode::BIT_OR) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__or__">());
+            } else if constexpr (Op == OpCode::BIT_XOR) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__xor__">());
+            } else if constexpr (Op == OpCode::SHIFT_LEFT) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__lshift__">());
+            } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__rshift__">());
+            } else if constexpr (Op == OpCode::SHIFT_RIGHT_LOGICAL) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__urshift__">());
+            } else if constexpr (Op == OpCode::BIT_NOT) {
+                return receiver->load_field_from_class(ctx, ctx.str<"__invert__">());
+            } else {
+                STATIC_UNREACHABLE("unsupported opcode in load_operator_hook");
+            }
+        }
+
     } // namespace
 
     bool Eval::call_value(AriaExeContext& ctx, const Value callee, const u8 argc) {
@@ -278,7 +319,7 @@ namespace aria {
     template<OpCode Op>
     bool Eval::run_binary_operator(AriaExeContext& ctx) {
         if (const auto lhs = ctx.peek(1); lhs.is_obj()) {
-            if (const auto target = get_obj_binary_op_impl<Op>(ctx, lhs.as_obj())) {
+            if (const auto target = load_operator_hook<Op>(ctx, lhs.as_obj())) {
                 return call_value(ctx, *target, 1);
             }
             return false;
@@ -305,7 +346,7 @@ namespace aria {
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->load_field_from_class(ctx, ctx.str<"__neg__">())) {
+            if (const auto target = load_operator_hook<OpCode::NEGATE>(ctx, operand.as_obj())) {
                 return call_value(ctx, *target, 0);
             }
             return false;
@@ -362,49 +403,12 @@ namespace aria {
             return true;
         }
         if (operand.is_obj()) {
-            if (const auto target = operand.as_obj()->load_field_from_class(ctx, ctx.str<"__invert__">())) {
+            if (const auto target = load_operator_hook<OpCode::BIT_NOT>(ctx, operand.as_obj())) {
                 return call_value(ctx, *target, 0);
             }
             return false;
         }
         return ctx.fail(ErrorCode::TypeMismatch, "bitwise not requires an integer, got {}", type_name(operand));
-    }
-
-    template<OpCode Op>
-    Opt<Value> Eval::get_obj_binary_op_impl(AriaExeContext& ctx, Object* obj) {
-        if constexpr (Op == OpCode::ADD) {
-            return obj->load_field_from_class(ctx, ctx.str<"__add__">());
-        } else if constexpr (Op == OpCode::SUBTRACT) {
-            return obj->load_field_from_class(ctx, ctx.str<"__sub__">());
-        } else if constexpr (Op == OpCode::MULTIPLY) {
-            return obj->load_field_from_class(ctx, ctx.str<"__mul__">());
-        } else if constexpr (Op == OpCode::DIVIDE) {
-            return obj->load_field_from_class(ctx, ctx.str<"__div__">());
-        } else if constexpr (Op == OpCode::MOD) {
-            return obj->load_field_from_class(ctx, ctx.str<"__mod__">());
-        } else if constexpr (Op == OpCode::GREATER) {
-            return obj->load_field_from_class(ctx, ctx.str<"__gt__">());
-        } else if constexpr (Op == OpCode::GREATER_EQUAL) {
-            return obj->load_field_from_class(ctx, ctx.str<"__ge__">());
-        } else if constexpr (Op == OpCode::LESS) {
-            return obj->load_field_from_class(ctx, ctx.str<"__lt__">());
-        } else if constexpr (Op == OpCode::LESS_EQUAL) {
-            return obj->load_field_from_class(ctx, ctx.str<"__le__">());
-        } else if constexpr (Op == OpCode::BIT_AND) {
-            return obj->load_field_from_class(ctx, ctx.str<"__and__">());
-        } else if constexpr (Op == OpCode::BIT_OR) {
-            return obj->load_field_from_class(ctx, ctx.str<"__or__">());
-        } else if constexpr (Op == OpCode::BIT_XOR) {
-            return obj->load_field_from_class(ctx, ctx.str<"__xor__">());
-        } else if constexpr (Op == OpCode::SHIFT_LEFT) {
-            return obj->load_field_from_class(ctx, ctx.str<"__lshift__">());
-        } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
-            return obj->load_field_from_class(ctx, ctx.str<"__rshift__">());
-        } else if constexpr (Op == OpCode::SHIFT_RIGHT_LOGICAL) {
-            return obj->load_field_from_class(ctx, ctx.str<"__urshift__">());
-        } else {
-            STATIC_UNREACHABLE("get_obj_binary_op_impl: no arm for this Op");
-        }
     }
 
     template<OpCode Op>

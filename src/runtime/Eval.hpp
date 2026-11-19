@@ -80,12 +80,12 @@ namespace aria {
         static bool run_binary_f64(AriaExeContext& ctx, f64 lhs, f64 rhs);
 
         template<OpCode Op>
+        static bool run_binary_bitwise(AriaExeContext& ctx);
+
+        template<OpCode Op>
         static bool run_binary_operator(AriaExeContext& ctx);
 
         static bool run_negate(AriaExeContext& ctx);
-
-        template<OpCode Op>
-        static bool run_bitwise_operator(AriaExeContext& ctx);
 
         static bool run_bit_not(AriaExeContext& ctx);
 

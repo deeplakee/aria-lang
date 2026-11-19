@@ -151,15 +151,17 @@ N 短变体与通用形态语义逐位一致，选择收口在 `CodeUnit::emit_l
 | `MOD` | `[a, b] -> [a%b]` | 整数余数按向零截断的商，`MIN % -1` 得 0，模零报 `ModuloByZero`；含 F64 走 fmod |
 | `NOT` | `[a] -> [!a]` | 逻辑非（按真值翻转，结果 bool） |
 | `NEGATE` | `[a] -> [-a]` | 数值取负（Int 的 MIN 报 `IntegerOverflow`）；对象经 `__neg__` 钩子；其余类型报 `TypeMismatch` |
-| `BIT_AND` / `BIT_OR` / `BIT_XOR` | `[a, b] -> [a&b]` | 按位与 / 或 / 异或，纯 Int 域（i48 符号扩展闭包，结果恒在域内、无溢出检查）；无对象钩子，非 Int 报 `TypeMismatch` |
-| `SHIFT_LEFT` | `[a, b] -> [a<<b]` | 算术左移（= 乘 2^b）；计数域 [0,47] 外与结果越 i48 域均报 `IntegerOverflow`（计算前检查，不回绕） |
-| `SHIFT_RIGHT` | `[a, b] -> [a>>b]` | 算术右移（保号）；计数域 [0,47] 外报 `IntegerOverflow`，结果恒在域内 |
-| `SHIFT_RIGHT_LOGICAL` | `[a, b] -> [a>>>b]` | 逻辑右移（48 位无符号视图）；计数域 [0,47] 外报 `IntegerOverflow`；结果统一域检查——计数 0 且 a 为负时报 `IntegerOverflow`（结果越 i48），计数 ≥1 恒在域内 |
-| `BIT_NOT` | `[a] -> [~a]` | 按位取反（`~x == -x - 1`，i48 域封闭）；非 Int 报 `TypeMismatch` |
+| `BIT_AND` / `BIT_OR` / `BIT_XOR` | `[a, b] -> [r]` | 整数按位与 / 或 / 异或（i48 符号扩展闭包）；对象左值分别经 `__and__` / `__or__` / `__xor__` |
+| `SHIFT_LEFT` | `[a, b] -> [r]` | 整数左移（= 乘 2^b）；结果越 i48 域报 `IntegerOverflow`（计算前检查）；对象左值经 `__lshift__` |
+| `SHIFT_RIGHT` | `[a, b] -> [r]` | 整数算术右移（保号，结果恒在域内）；对象左值经 `__rshift__` |
+| `SHIFT_RIGHT_LOGICAL` | `[a, b] -> [r]` | 整数逻辑右移（48 位无符号视图）；计数 0 且 a 为负时报 `IntegerOverflow`（结果越 i48），计数 ≥1 恒在域内；对象左值经 `__urshift__` |
+| `BIT_NOT` | `[a] -> [r]` | 整数按位取反（`~x == -x - 1`，i48 域封闭）；对象经 `__invert__` |
 
 9 个数值二元算子（4 比较 + 5 算术）的对象左值全有钩子：`__lt__`/`__le__`/`__gt__`/`__ge__`/`__add__`/`__sub__`/`__mul__`/`__div__`/`__mod__`。整数加/减/乘/除与一元取负的结果须在 i48 域内，越界报 `IntegerOverflow`，不回绕、不自动升浮点；复合赋值与前置自增复用这些指令，算术失败不写回（已发生的操作数副作用保留）。
 
-位算子七条（`&` `|` `^` `<<` `>>` `>>>` `~`）为纯 Int 域：f64 不升浮点一律拒，对象左值无钩子；移位计数域 [0,47]（域外报 `IntegerOverflow`，0 左移越界计数同样报错、无豁免）；`>>>` 结果统一域检查，唯一失败面为计数 0 的负操作数。
+位运算的对象派发与算术相同，二元钩子仅由左操作数触发，右操作数原样传入，缺失钩子报
+`UndefinedProperty`。整数路径要求所有操作数为 Int，否则报 `TypeMismatch`。
+整数移位计数域为 [0,47]，即使左操作数为 0，计数越界也报 `IntegerOverflow`。
 
 `&&`/`||` 短路，不设 `AND`/`OR`，经 `JUMP_TRUE_OR_POP`/`JUMP_FALSE_OR_POP` lowering（§4.2）。
 

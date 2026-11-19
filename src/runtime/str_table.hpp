@@ -7,25 +7,32 @@ namespace aria::str_table {
 
     // VM 常量串注册表:VM 运行期按名取用、须恒久存活的字符串常量。
     inline constexpr StringView kConstants[] = {
-            "__add__",   // binary +
-            "__sub__",   // binary -
-            "__mul__",   // binary *
-            "__div__",   // binary /
-            "__mod__",   // binary %
-            "__lt__",    // comparison <
-            "__le__",    // comparison <=
-            "__gt__",    // comparison >
-            "__ge__",    // comparison >=
-            "__neg__",   // unary negation
-            "__call__",  // call hook
-            "__str__",   // str hook
-            "_message",  // Exception face 字段键
-            "_code",     // Exception face 字段键
-            "suspended", // coroutine status 串
-            "running",   // coroutine status 串
-            "normal",    // coroutine status 串
-            "done",      // coroutine status 串
-            "failed",    // coroutine status 串
+            "__add__",     // binary +
+            "__sub__",     // binary -
+            "__mul__",     // binary *
+            "__div__",     // binary /
+            "__mod__",     // binary %
+            "__lt__",      // comparison <
+            "__le__",      // comparison <=
+            "__gt__",      // comparison >
+            "__ge__",      // comparison >=
+            "__neg__",     // unary negation
+            "__and__",     // 按位与 &
+            "__or__",      // 按位或 |
+            "__xor__",     // 按位异或 ^
+            "__lshift__",  // 左移 <<
+            "__rshift__",  // 算术右移 >>
+            "__urshift__", // 逻辑右移 >>>
+            "__invert__",  // 按位取反 ~
+            "__call__",    // call hook
+            "__str__",     // str hook
+            "_message",    // Exception face 字段键
+            "_code",       // Exception face 字段键
+            "suspended",   // coroutine status 串
+            "running",     // coroutine status 串
+            "normal",      // coroutine status 串
+            "done",        // coroutine status 串
+            "failed",      // coroutine status 串
     };
 
     // 表长:常量串表条数(VM 构造期按它预置格位)。

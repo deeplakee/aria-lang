@@ -1,0 +1,68 @@
+// 钉住：位运算按类链调用钩子，复合赋值只求值一次左值并在钩子成功后写回。
+def Mask {
+    init(bits) { this.bits = bits; }
+    __and__(mask) { return Mask(this.bits & mask.bits); }
+    __or__(bits) { return Mask(this.bits | bits); }
+    __xor__(bits) { return Mask(this.bits ^ bits); }
+    __invert__() { return Mask(~this.bits); }
+    __lshift__(count) { return Mask(this.bits << count); }
+    __rshift__(count) { return Mask(this.bits >> count); }
+    __urshift__(count) { return Mask(this.bits >>> count); }
+}
+
+var mask = Mask(5);
+assert((mask & Mask(3)).bits == 1);
+assert((mask | 3).bits == 7);
+assert((mask ^ 3).bits == 6);
+assert((~mask).bits == -6);
+assert((mask << 2).bits == 20);
+assert((Mask(-16) >> 2).bits == -4);
+assert((Mask(-16) >>> 2).bits == 70368744177660);
+assert(mask.__invert__().bits == -6);
+
+def DerivedMask : Mask {
+    __lshift__(count) { return [this.bits, count]; }
+}
+var derived = DerivedMask(5);
+derived.__and__ = fun(other) { return nil; };
+derived.__invert__ = fun() { return nil; };
+assert(derived.__and__(Mask(3)) == nil);
+assert((derived & Mask(3)).bits == 1);
+assert((~derived).bits == -6);
+var shifted = derived << -1;
+assert(shifted[0] == 5 && shifted[1] == -1);
+assert((derived << "count")[1] == "count");
+
+fun compound() {
+    var value = Mask(5);
+    value &= Mask(3);
+    assert(value.bits == 1);
+    value |= 8;
+    assert(value.bits == 9);
+    value ^= 12;
+    assert(value.bits == 5);
+    value <<= 2;
+    assert(value.bits == 20);
+    value >>= 1;
+    assert(value.bits == 10);
+    value >>>= 1;
+    return value.bits;
+}
+assert(compound() == 5);
+
+var calls = 0;
+fun index() {
+    calls += 1;
+    return 0;
+}
+var slots = [Mask(7)];
+var assigned = (slots[index()] &= Mask(3));
+assert(calls == 1);
+assert(assigned.bits == 3 && slots[0] === assigned);
+try {
+    slots[index()] <<= 48;
+    assert(false);
+} catch (error) {
+    assert(error.message() == "Runtime: IntegerOverflow shift count must be between 0 and 47, got 48");
+}
+assert(calls == 2 && slots[0] === assigned);

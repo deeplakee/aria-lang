@@ -1,0 +1,5 @@
+// 钉住：实例字段不能代替类链上缺失的位运算钩子。
+def Box {}
+var box = Box();
+box.__and__ = fun(other) { return other; };
+box & 1;

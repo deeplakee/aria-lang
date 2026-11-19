@@ -35,6 +35,7 @@
 | 前置 `++`/`--` | `emit_lvalue(lhs, Locate)` -> `LOAD_IMM 1` -> `<op>` -> `emit_lvalue(lhs, Store)` |
 
 - **Store 腿一律 peek-store**：`STORE_LOCAL`/`STORE_GLOBAL`/`STORE_UPVALUE`/`STORE_FIELD`/`STORE_INDEX` 写回后**留新值在栈上**，即赋值表达式的值；语句上下文（值被丢弃）由编译器补一条 `POP`。故本文各序列末尾栈形都是「新值」，不是空。
+- **运算腿复用二元指令**：对象重载的算术或位运算由指令在运行期派发；钩子成功时返回值进入 Store 腿，抛出错误时直接进入异常展开。
 - **Prepare 腿**只发 locator 的运行时部分（`obj` / `obj idx`）；Identifier 与帧内 `this` 的 locator 是编译期常量，Prepare 臂是 no-op。`STORE_FIELD` 的栈形 `[obj, v] -> [v]` 要求接收者先于值入栈，发射权归目标节点。
 - **Locate 腿**按 locator 性质两路：编译期常量（Identifier、帧内 `this`）与 Load 同形--重 resolve 免费且无副作用；运行时 locator（Field/Index）单次求值后用 `DUP`/`DUP2` 留栈，Load 与 Store 复用栈上副本。都不靠编译期缓存 locator 描述。
 - `super.成员` 不是 `FieldAccessNode`（独立 `SuperExprNode`，Load-only），写形态被 validate 拒绝。

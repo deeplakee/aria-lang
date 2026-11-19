@@ -283,7 +283,12 @@ namespace aria {
             }
             return false;
         }
-        return run_binary_numeric<Op>(ctx);
+        if constexpr (Op == OpCode::BIT_AND || Op == OpCode::BIT_OR || Op == OpCode::BIT_XOR ||
+                      Op == OpCode::SHIFT_LEFT || Op == OpCode::SHIFT_RIGHT || Op == OpCode::SHIFT_RIGHT_LOGICAL) {
+            return run_binary_bitwise<Op>(ctx);
+        } else {
+            return run_binary_numeric<Op>(ctx);
+        }
     }
 
     bool Eval::run_negate(AriaExeContext& ctx) {
@@ -309,7 +314,7 @@ namespace aria {
     }
 
     template<OpCode Op>
-    bool Eval::run_bitwise_operator(AriaExeContext& ctx) {
+    bool Eval::run_binary_bitwise(AriaExeContext& ctx) {
         // 左移须在计算前检查 i48 溢出，避免中间值回绕。
         const Value rhs_value = ctx.pop();
         const Value lhs_value = ctx.pop();
@@ -356,6 +361,12 @@ namespace aria {
             ctx.peek(0) = Value::from_int(~operand.as_int());
             return true;
         }
+        if (operand.is_obj()) {
+            if (const auto target = operand.as_obj()->load_field_from_class(ctx, ctx.str<"__invert__">())) {
+                return call_value(ctx, *target, 0);
+            }
+            return false;
+        }
         return ctx.fail(ErrorCode::TypeMismatch, "bitwise not requires an integer, got {}", type_name(operand));
     }
 
@@ -379,6 +390,18 @@ namespace aria {
             return obj->load_field_from_class(ctx, ctx.str<"__lt__">());
         } else if constexpr (Op == OpCode::LESS_EQUAL) {
             return obj->load_field_from_class(ctx, ctx.str<"__le__">());
+        } else if constexpr (Op == OpCode::BIT_AND) {
+            return obj->load_field_from_class(ctx, ctx.str<"__and__">());
+        } else if constexpr (Op == OpCode::BIT_OR) {
+            return obj->load_field_from_class(ctx, ctx.str<"__or__">());
+        } else if constexpr (Op == OpCode::BIT_XOR) {
+            return obj->load_field_from_class(ctx, ctx.str<"__xor__">());
+        } else if constexpr (Op == OpCode::SHIFT_LEFT) {
+            return obj->load_field_from_class(ctx, ctx.str<"__lshift__">());
+        } else if constexpr (Op == OpCode::SHIFT_RIGHT) {
+            return obj->load_field_from_class(ctx, ctx.str<"__rshift__">());
+        } else if constexpr (Op == OpCode::SHIFT_RIGHT_LOGICAL) {
+            return obj->load_field_from_class(ctx, ctx.str<"__urshift__">());
         } else {
             STATIC_UNREACHABLE("get_obj_binary_op_impl: no arm for this Op");
         }
@@ -1016,35 +1039,35 @@ namespace aria {
                     }
                     goto sync_now;
                 case OpCode::BIT_AND:
-                    if (!run_bitwise_operator<OpCode::BIT_AND>(*current)) {
+                    if (!run_binary_operator<OpCode::BIT_AND>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::BIT_OR:
-                    if (!run_bitwise_operator<OpCode::BIT_OR>(*current)) {
+                    if (!run_binary_operator<OpCode::BIT_OR>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::BIT_XOR:
-                    if (!run_bitwise_operator<OpCode::BIT_XOR>(*current)) {
+                    if (!run_binary_operator<OpCode::BIT_XOR>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::SHIFT_LEFT:
-                    if (!run_bitwise_operator<OpCode::SHIFT_LEFT>(*current)) {
+                    if (!run_binary_operator<OpCode::SHIFT_LEFT>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::SHIFT_RIGHT:
-                    if (!run_bitwise_operator<OpCode::SHIFT_RIGHT>(*current)) {
+                    if (!run_binary_operator<OpCode::SHIFT_RIGHT>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::SHIFT_RIGHT_LOGICAL:
-                    if (!run_bitwise_operator<OpCode::SHIFT_RIGHT_LOGICAL>(*current)) {
+                    if (!run_binary_operator<OpCode::SHIFT_RIGHT_LOGICAL>(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
                 case OpCode::NOT:
                     current->push(Value::from_bool(!is_truthy(current->pop())));
                     break;
@@ -1057,7 +1080,7 @@ namespace aria {
                     if (!run_bit_not(*current)) {
                         goto unwind_check;
                     }
-                    break;
+                    goto sync_now;
 
                 case OpCode::POP:
                     current->drop(1);

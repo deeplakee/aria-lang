@@ -2,6 +2,14 @@
 assert(-5 == 0 - 5);
 assert(-(-5) == 5);
 assert(-2.5 == 0.0 - 2.5);
+// 用变量触发 NEGATE；严格相等可以区分正负零并检查 NaN 的规范位型。
+var zero = 0.0;
+var nan = zero / zero;
+var infinity = 1.0 / zero;
+assert((-zero) === -0.0);
+assert((-(-zero)) === zero);
+assert((-nan) === nan);
+assert((-infinity) === (-1.0 / zero));
 assert(-(3 + 4) == -7);
 assert(!true == false);
 assert(!false == true);

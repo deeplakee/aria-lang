@@ -28,9 +28,11 @@ namespace aria::nanboxing {
         static constexpr u64 kTagBool = 0x0002000000000000ull;
         static constexpr u64 kTagInt  = 0x0003000000000000ull;
 
-        static constexpr u64 kNilBits   = kQNan | kTagNil;
-        static constexpr u64 kFalseBits = kQNan | kTagBool | 0u;
-        static constexpr u64 kTrueBits  = kQNan | kTagBool | 1u;
+        static constexpr u64 kInfinityBits     = 0x7ff0000000000000ull;
+        static constexpr u64 kCanonicalNanBits = 0x7ff8000000000000ull;
+        static constexpr u64 kNilBits          = kQNan | kTagNil;
+        static constexpr u64 kFalseBits        = kQNan | kTagBool | 0u;
+        static constexpr u64 kTrueBits         = kQNan | kTagBool | 1u;
 
         // 默认构造为 trivial(= default,POD 可 memcpy/入 FrameStack):默认初始化 Value v; 的 bits_ 为不定值;
         // 值初始化 Value{} 是 f64 0.0 而非 nil,需要 nil 用 nil_val()。
@@ -58,12 +60,9 @@ namespace aria::nanboxing {
 
         [[nodiscard]]
         static constexpr Value from_f64(const f64 value) noexcept {
-            // 把任意 NaN 规范化为单一位型(硬件 canonical quiet NaN),回出时绝不会被误判为
-            // boxed 值(=== 按位比较下 NaN===NaN 的前提)。
-            if (value != value) {
-                return Value{0x7ff8000000000000ull};
-            }
-            return Value{f64_to_u64(value)};
+            // 清除符号位后，只有 NaN 的位型大于正无穷。
+            const auto bits = std::bit_cast<u64>(value);
+            return Value{(bits & ~kSign) > kInfinityBits ? kCanonicalNanBits : bits};
         }
 
         [[nodiscard]]
@@ -187,7 +186,6 @@ namespace aria::nanboxing {
     private:
         explicit constexpr Value(const u64 bits) noexcept : bits_(bits) {}
 
-        static u64 f64_to_u64(const f64 value) { return std::bit_cast<u64>(value); }
         static f64 u64_to_f64(const u64 bits) { return std::bit_cast<f64>(bits); }
         static u64 ptr_to_u64(Obj object) { return static_cast<u64>(reinterpret_cast<uintptr_t>(object)); }
         static Obj u64_to_ptr(const u64 bits) { return reinterpret_cast<Obj>(bits); }

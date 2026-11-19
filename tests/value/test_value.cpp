@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -22,6 +23,23 @@ using aria::Value;
 using aria::value_equal;
 using aria::value_identical;
 using aria::value_less;
+
+TEST(ValueBoxing, F64InfinityAndNanBoundary) {
+    constexpr aria::u64 kInfinityBits = 0x7ff0000000000000ull;
+    for (const auto sign: {0ull, 0x8000000000000000ull}) {
+        const auto infinity_bits = sign | kInfinityBits;
+        const auto infinity      = Value::from_f64(std::bit_cast<aria::f64>(infinity_bits));
+        ASSERT_TRUE(infinity.is_f64());
+        EXPECT_EQ(std::bit_cast<aria::u64>(infinity.as_f64()), infinity_bits);
+
+        // 最小 NaN 载荷紧邻无穷，最大载荷覆盖 NaN-boxing 的标签位。
+        for (const auto payload: {1ull, 0xfffffffffffffull}) {
+            const auto nan = Value::from_f64(std::bit_cast<aria::f64>(infinity_bits | payload));
+            ASSERT_TRUE(nan.is_f64());
+            EXPECT_EQ(std::bit_cast<aria::u64>(nan.as_f64()), 0x7ff8000000000000ull);
+        }
+    }
+}
 
 // 双相等体系见 Value.hpp:value_equal(== 内容相等)/ value_identical(=== 严格相等);
 // 哈希表键用 ===(见末尾 HashTableKey*)。

@@ -9,6 +9,10 @@ paths:
 
 本层只做**对象的表示与协议**。公共协议约束集中在 `Object.hpp`；派生类只注释语义差异与工厂的特殊前置条件。本文件收类型地图、协议缝与跨类型规则，不在每个类型旁重复通用约定。
 
+所有 GC 对象的本体均不可复制、不可移动，四个特殊成员由 `Object` 统一删除，派生类不重复声明。
+`Value` 的按值复制只复制值或对象引用，不复制对象本体。遗漏防护的风险见
+[对象笔记](../notes/object/objstring.md)。
+
 ## 类型地图
 
 - `Object`（`object/Object.hpp`）：所有 GC 对象的基类。用 `ObjType` 枚举（独立头 `object/ObjType.hpp`）、地址哈希（可变对象）/ 内容哈希（不可变对象）两类 ctor、`is<T>`/`as<T>`/`try_as<T>`、协议虚函数族（见下）。两 ctor 即「缓存哈希」的**构造期分发**--不可变对象传算好的内容哈希、可变对象取地址哈希；故 `hash_` 留在基类，查询期直接 `o->hash()`，无需按类型分发的自由函数。
@@ -16,7 +20,7 @@ paths:
 - `Object.hpp` include `value/Value.hpp`：基类的**成员访问 / 运算符协议虚函数**签名需要 `Value` 完整类型（Value.hpp -> boxing 头 -> common.hpp，不依赖 Object，无 include 环；子类型头早已经 AriaHashTable 等 value 头拉入 Value，非新增暴露）。
 - `ObjString`（`ObjString.hpp`）：不可变 SSO 字符串、内容哈希、intern 驻留。调试 repr 保留引号与转义，
   显示由 String 类的 __str__ 返回原文。创建统一走 new_string：等价内容共享对象，两段重载先查后拼，
-  接管重载负责缓冲的后续释放；hash 参数须与内容一致。已知拷贝风险见[对象笔记](../notes/object/objstring.md)。
+  接管重载负责缓冲的后续释放；hash 参数须与内容一致。
 - `ObjFnProto`（`ObjFnProto.hpp`）：GC 托管的函数原型，`ObjType::FN_PROTO`（类型名 `FnProto`），经 `new_fn_proto` 创建；`CodeUnit` 值成员 + 所属模块 + 名 + 元数（固定 / 必传 / varargs 三量）+ 捕获描述表 `UpvalueDesc`。存于 Value 常量池，不直接作为运行期函数值调用。
 - `ObjUpvalue`（`ObjUpvalue.hpp`）：闭包「捕获即引用」的载体（open 指值栈槽 / closed 自持值）。
 - `ObjFunction`（`ObjFunction.hpp`）：唯一运行期函数对象，`ObjType::FUNCTION` / 类型名 `Function`；内联 `std::variant` 保存原生载荷（名称 + C++ 函数指针 `NativeFn`）或 aria 载荷（`ObjFnProto*` + upvalue 数组），`is_native()` 查询载荷，`proto()` / `upvalues()` 仅用于 aria 载荷、`fn()` 仅用于原生载荷。共同持 `defining_class_`，经 `new_function` 重载工厂创建；`trace` 只遍历活动载荷和定义类。
@@ -35,7 +39,7 @@ paths:
 
 声明在 `Object.hpp`，基类默认体在 `Object.cpp`（出声明因 `ctx.fail` 是 runtime/AriaExeContext.hpp 内模板、本头不可反向 include 它）。
 
-**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor / 删除的拷贝移动，ObjString 的已知例外见对象笔记）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
+**类型头声明序**（各子类型统一，`.cpp` 定义序同序）：特殊成员（ctor / dtor）-> 非虚访问器与写入器 -> `Object` 协议 override（**严格按 `Object.hpp` 的声明序**：`trace`、`size`、`equals`、`repr`、`load_field_from_class`、`load_field`、`load_field_bound`、`store_field`、`load_index`、`store_index`）-> 本类型自有虚函数（如 `ObjIterator` 的 `has_next` / `next`）-> private 辅助函数 -> **数据成员（类定义收尾）**。故每个类恒为「一个 public 段 + 一个收尾的 private 段」（`ObjIterator` 收尾段是 protected，它是抽象基类）。
 
 **仅类型内部消费的辅助留 private**（`ObjString::slice`、`ObjList::slice`），不按「可能有用」外放；`ObjClass::find_field` 是**公开**的纯查询原语（沿 super 链、无分配、不 fail），实例链腿与元类腿两路消费（见「`init_` 派生」）。const 重载的容器访问器按实际消费面取舍。`Object` 的四个字段（GC 侵入式链的 `next_` + `hash_` / `type_` / `is_marked_`）同样收在收尾 private 段，GC 取字段级访问经 `friend class GC`（sweep / free_all 直接取 `&next_` 摘链，链头 `objects_head_` 住 GC；其余三字段对外只经访问器）；**子类新增成员不得复用这四个名字**（`ObjUpvalue::next_open_` 就是为此避让）。
 

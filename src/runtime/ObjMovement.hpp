@@ -18,11 +18,6 @@ namespace aria {
 
         ~ObjMovement() override = default;
 
-        ObjMovement(const ObjMovement&)            = delete;
-        ObjMovement& operator=(const ObjMovement&) = delete;
-        ObjMovement(ObjMovement&&)                 = delete;
-        ObjMovement& operator=(ObjMovement&&)      = delete;
-
         void trace(GC& gc) const noexcept override;
 
         [[nodiscard]]

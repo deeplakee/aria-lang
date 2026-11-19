@@ -18,11 +18,6 @@ namespace aria {
         }
         ~ObjUpvalue() override = default; // 壳定长,无外挂子内存
 
-        ObjUpvalue(const ObjUpvalue&)            = delete;
-        ObjUpvalue& operator=(const ObjUpvalue&) = delete;
-        ObjUpvalue(ObjUpvalue&&)                 = delete;
-        ObjUpvalue& operator=(ObjUpvalue&&)      = delete;
-
         // open 态:location_ 尚指外部栈槽(close 后恒指 &closed_)。
         [[nodiscard]]
         bool is_open() const noexcept {

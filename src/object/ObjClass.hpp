@@ -16,11 +16,6 @@ namespace aria {
         ObjClass(GC& gc, ObjString* name, ObjClass* super);
         ~ObjClass() override = default;
 
-        ObjClass(const ObjClass&)            = delete;
-        ObjClass& operator=(const ObjClass&) = delete;
-        ObjClass(ObjClass&&)                 = delete;
-        ObjClass& operator=(ObjClass&&)      = delete;
-
         [[nodiscard]]
         ObjString* name() const noexcept {
             return name_;

@@ -19,11 +19,6 @@ namespace aria {
         ObjModule(GC& gc, ObjString* name, ObjString* dir);
         ~ObjModule() override = default; // globals_ 持 GC* 级联自释放;entry_/name_/dir_ 是 GC 对象,不归本类释放
 
-        ObjModule(const ObjModule&)            = delete;
-        ObjModule& operator=(const ObjModule&) = delete;
-        ObjModule(ObjModule&&)                 = delete;
-        ObjModule& operator=(ObjModule&&)      = delete;
-
         [[nodiscard]]
         ObjString* name() const noexcept {
             return name_;

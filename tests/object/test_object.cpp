@@ -1,15 +1,29 @@
 #include <gtest/gtest.h>
 
 #include <format>
+#include <type_traits>
 
 #include "error/ErrorCode.hpp"
 #include "memory/GC.hpp"
+#include "object/ObjBoundMethod.hpp"
+#include "object/ObjClass.hpp"
 #include "object/ObjException.hpp"
 #include "object/ObjFnProto.hpp"
+#include "object/ObjFunction.hpp"
+#include "object/ObjInstance.hpp"
+#include "object/ObjList.hpp"
+#include "object/ObjMap.hpp"
 #include "object/ObjModule.hpp"
+#include "object/ObjRange.hpp"
 #include "object/ObjString.hpp"
 #include "object/ObjUpvalue.hpp"
+#include "object/Object.hpp"
+#include "object/iterator/ObjListIterator.hpp"
+#include "object/iterator/ObjMapIterator.hpp"
+#include "object/iterator/ObjRangeIterator.hpp"
+#include "object/iterator/ObjStringIterator.hpp"
 #include "runtime/AriaVM.hpp"
+#include "runtime/ObjMovement.hpp"
 #include "value/ObjBridge.hpp"
 #include "value/Value.hpp"
 
@@ -29,6 +43,29 @@ using aria::try_as_obj;
 using aria::Value;
 
 namespace {
+
+    template<typename T>
+    constexpr bool kIsNoncopyableAndNonmovable = !std::is_copy_constructible_v<T> && !std::is_copy_assignable_v<T> &&
+                                                 !std::is_move_constructible_v<T> && !std::is_move_assignable_v<T>;
+
+    // 用具体类型验证，避免抽象类不可构造使构造断言天然成立。
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjBoundMethod>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjClass>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjException>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjFnProto>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjFunction>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjInstance>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjList>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjMap>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjModule>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjRange>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjString>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjUpvalue>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjListIterator>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjMapIterator>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjRangeIterator>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjStringIterator>);
+    static_assert(kIsNoncopyableAndNonmovable<aria::ObjMovement>);
 
     // 白盒取件:从挂起错误寄存器取出 ObjException,拆 (码, 烘焙消息) 两件
     //(协议 fail 契约:load 族 nullopt / store 族 false ⟺ 寄存器必有载荷)。

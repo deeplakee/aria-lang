@@ -23,11 +23,6 @@ namespace aria {
         ObjFunction(ObjString* name, NativeFn native);
         ~ObjFunction() override = default;
 
-        ObjFunction(const ObjFunction&)            = delete;
-        ObjFunction& operator=(const ObjFunction&) = delete;
-        ObjFunction(ObjFunction&&)                 = delete;
-        ObjFunction& operator=(ObjFunction&&)      = delete;
-
         [[nodiscard]]
         bool is_native() const noexcept {
             return std::holds_alternative<NativeData>(payload_);

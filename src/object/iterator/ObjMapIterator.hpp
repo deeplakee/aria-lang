@@ -17,11 +17,6 @@ namespace aria {
 
         ~ObjMapIterator() override = default;
 
-        ObjMapIterator(const ObjMapIterator&)            = delete;
-        ObjMapIterator& operator=(const ObjMapIterator&) = delete;
-        ObjMapIterator(ObjMapIterator&&)                 = delete;
-        ObjMapIterator& operator=(ObjMapIterator&&)      = delete;
-
         void trace(GC& gc) const noexcept override;
 
         [[nodiscard]]

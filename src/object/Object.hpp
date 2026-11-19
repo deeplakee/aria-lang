@@ -43,6 +43,12 @@ namespace aria {
 
         virtual ~Object() = default;
 
+        // GC 链与外部引用依赖对象的地址身份，禁止复制或迁移对象本体。
+        Object(const Object&)            = delete;
+        Object& operator=(const Object&) = delete;
+        Object(Object&&)                 = delete;
+        Object& operator=(Object&&)      = delete;
+
         [[nodiscard]]
         u32 hash() const noexcept {
             return hash_;

@@ -24,11 +24,6 @@ namespace aria {
 
         ~ObjRange() override = default;
 
-        ObjRange(const ObjRange&)            = delete;
-        ObjRange& operator=(const ObjRange&) = delete;
-        ObjRange(ObjRange&&)                 = delete;
-        ObjRange& operator=(ObjRange&&)      = delete;
-
         [[nodiscard]]
         i64 from() const noexcept {
             return from_;

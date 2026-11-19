@@ -16,11 +16,6 @@ namespace aria {
 
         ~ObjMap() override = default; // 键值是 GC 值,不归本类释放
 
-        ObjMap(const ObjMap&)            = delete;
-        ObjMap& operator=(const ObjMap&) = delete;
-        ObjMap(ObjMap&&)                 = delete;
-        ObjMap& operator=(ObjMap&&)      = delete;
-
         [[nodiscard]]
         AriaHashTable& table() noexcept {
             return table_;

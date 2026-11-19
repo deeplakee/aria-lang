@@ -17,11 +17,6 @@ namespace aria {
 
         ~ObjList() override = default; // 元素是 GC 值,不归本类释放
 
-        ObjList(const ObjList&)            = delete;
-        ObjList& operator=(const ObjList&) = delete;
-        ObjList(ObjList&&)                 = delete;
-        ObjList& operator=(ObjList&&)      = delete;
-
         [[nodiscard]]
         AriaArray& elements() noexcept {
             return elements_;

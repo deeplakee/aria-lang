@@ -17,11 +17,6 @@ namespace aria {
         explicit ObjInstance(GC& gc, ObjClass* klass);
         ~ObjInstance() override = default; // fields_ 持 GC* 级联自释放;class_ 是 GC 对象,不归本类释放
 
-        ObjInstance(const ObjInstance&)            = delete;
-        ObjInstance& operator=(const ObjInstance&) = delete;
-        ObjInstance(ObjInstance&&)                 = delete;
-        ObjInstance& operator=(ObjInstance&&)      = delete;
-
         [[nodiscard]]
         ObjClass* klass() const noexcept {
             return class_;

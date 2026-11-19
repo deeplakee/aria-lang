@@ -16,11 +16,6 @@ namespace aria {
         ObjException(i64 code, ObjString* message);
         ~ObjException() override = default;
 
-        ObjException(const ObjException&)            = delete;
-        ObjException& operator=(const ObjException&) = delete;
-        ObjException(ObjException&&)                 = delete;
-        ObjException& operator=(ObjException&&)      = delete;
-
         // 内部枚举视图；用户传入的数字码可能不在注册表内。
         [[nodiscard]]
         ErrorCode code() const noexcept {

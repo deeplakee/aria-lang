@@ -16,11 +16,6 @@ namespace aria {
         ObjBoundMethod(ObjFunction* method, Value receiver);
         ~ObjBoundMethod() override = default;
 
-        ObjBoundMethod(const ObjBoundMethod&)            = delete;
-        ObjBoundMethod& operator=(const ObjBoundMethod&) = delete;
-        ObjBoundMethod(ObjBoundMethod&&)                 = delete;
-        ObjBoundMethod& operator=(ObjBoundMethod&&)      = delete;
-
         [[nodiscard]]
         ObjFunction* method() const noexcept {
             return method_;

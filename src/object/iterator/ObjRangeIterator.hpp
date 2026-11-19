@@ -16,11 +16,6 @@ namespace aria {
 
         ~ObjRangeIterator() override = default;
 
-        ObjRangeIterator(const ObjRangeIterator&)            = delete;
-        ObjRangeIterator& operator=(const ObjRangeIterator&) = delete;
-        ObjRangeIterator(ObjRangeIterator&&)                 = delete;
-        ObjRangeIterator& operator=(ObjRangeIterator&&)      = delete;
-
         void trace(GC&) const noexcept override {}
 
         [[nodiscard]]

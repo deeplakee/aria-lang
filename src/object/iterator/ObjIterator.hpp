@@ -13,11 +13,6 @@ namespace aria {
     public:
         ~ObjIterator() override = default;
 
-        ObjIterator(const ObjIterator&)            = delete;
-        ObjIterator& operator=(const ObjIterator&) = delete;
-        ObjIterator(ObjIterator&&)                 = delete;
-        ObjIterator& operator=(ObjIterator&&)      = delete;
-
         void trace(GC& gc) const noexcept override = 0;
 
         [[nodiscard]]

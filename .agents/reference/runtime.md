@@ -76,8 +76,9 @@ paths:
 - `call_value` 分派函数、类和绑定方法，其余对象通过 `load_field_from_class` 取 `__call__`；
   该分支先将 slot0 换为实际被调用对象。成员查询与方法绑定语义统一见 [object.md](object.md)。
 - `run_unary_operator` 与 `run_binary_operator` 先检查接收者是否为对象，并以原操作数栈槽作为
-  钩子的调用区。`operator_info` 在编译期按操作码选定钩子名与运算族。钩子可能进入新帧或切换
-  执行上下文，成功后派发循环须经 `sync_now` 重取当前上下文与帧。
+  钩子的调用区。`operator_info` 在编译期按操作码选定钩子名与运算族。`finish_operator` 根据
+  `OperatorResult` 选择下一步。内建运算完成后直接取指。钩子可能进入新帧或切换执行上下文，
+  调用成功后经 `sync_now` 重取当前上下文与帧。失败则转到 `unwind_check`。
 - `call_aria_fn` 临时根化已解析函数，跨元数检查与实参整形保活；进入帧后由 `frame.function` 接管。
   方法可能已从类表移除，槽 0 也可能已被接收者覆盖，不能依赖它们继续持有函数。
 - `call_class` 在分配实例前将类写入 slot0 保活；实例建成后接手该槽，并成为 init 的接收者。

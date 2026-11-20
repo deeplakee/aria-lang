@@ -412,33 +412,33 @@ namespace aria {
     }
 
     template<OpCode Op>
-    bool Eval::run_binary_operator(AriaExeContext& ctx) {
+    Eval::OperatorResult Eval::run_binary_operator(AriaExeContext& ctx) {
         if (const auto lhs = ctx.peek(1); lhs.is_obj()) {
             if (const auto target = load_operator_hook<Op>(ctx, lhs.as_obj())) {
-                return call_value(ctx, *target, 1);
+                return call_value(ctx, *target, 1) ? OperatorResult::Called : OperatorResult::Failed;
             }
-            return false;
+            return OperatorResult::Failed;
         }
         if constexpr (operator_info<Op>().family == OperatorFamily::Numeric) {
-            return run_binary_numeric<Op>(ctx);
+            return run_binary_numeric<Op>(ctx) ? OperatorResult::Completed : OperatorResult::Failed;
         } else {
-            return run_binary_bitwise<Op>(ctx);
+            return run_binary_bitwise<Op>(ctx) ? OperatorResult::Completed : OperatorResult::Failed;
         }
     }
 
     template<OpCode Op>
-    bool Eval::run_unary_operator(AriaExeContext& ctx) {
+    Eval::OperatorResult Eval::run_unary_operator(AriaExeContext& ctx) {
         const Value operand = ctx.peek(0);
         if (operand.is_obj()) {
             if (const auto target = load_operator_hook<Op>(ctx, operand.as_obj())) {
-                return call_value(ctx, *target, 0);
+                return call_value(ctx, *target, 0) ? OperatorResult::Called : OperatorResult::Failed;
             }
-            return false;
+            return OperatorResult::Failed;
         }
         if constexpr (operator_info<Op>().family == OperatorFamily::Numeric) {
-            return run_unary_numeric<Op>(ctx, operand);
+            return run_unary_numeric<Op>(ctx, operand) ? OperatorResult::Completed : OperatorResult::Failed;
         } else {
-            return run_unary_bitwise<Op>(ctx, operand);
+            return run_unary_bitwise<Op>(ctx, operand) ? OperatorResult::Completed : OperatorResult::Failed;
         }
     }
 
@@ -832,6 +832,7 @@ namespace aria {
             trace_execution(*current);
 #endif
             // 错误统一跳 unwind_check；switch 之后不得使用可能已失效的 frame。
+            OperatorResult operator_result;
             switch (ARIA_FETCH_OPCODE(current, frame)) {
                 case OpCode::HALT:
                     // HALT 仅供手写字节码使用，不允许协程经此退出。
@@ -1022,93 +1023,59 @@ namespace aria {
                     break;
                 }
                 case OpCode::GREATER:
-                    if (!run_binary_operator<OpCode::GREATER>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::GREATER>(*current);
+                    goto finish_operator;
                 case OpCode::GREATER_EQUAL:
-                    if (!run_binary_operator<OpCode::GREATER_EQUAL>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::GREATER_EQUAL>(*current);
+                    goto finish_operator;
                 case OpCode::LESS:
-                    if (!run_binary_operator<OpCode::LESS>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::LESS>(*current);
+                    goto finish_operator;
                 case OpCode::LESS_EQUAL:
-                    if (!run_binary_operator<OpCode::LESS_EQUAL>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::LESS_EQUAL>(*current);
+                    goto finish_operator;
                 case OpCode::ADD:
-                    if (!run_binary_operator<OpCode::ADD>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::ADD>(*current);
+                    goto finish_operator;
                 case OpCode::SUBTRACT:
-                    if (!run_binary_operator<OpCode::SUBTRACT>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::SUBTRACT>(*current);
+                    goto finish_operator;
                 case OpCode::MULTIPLY:
-                    if (!run_binary_operator<OpCode::MULTIPLY>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::MULTIPLY>(*current);
+                    goto finish_operator;
                 case OpCode::DIVIDE:
-                    if (!run_binary_operator<OpCode::DIVIDE>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::DIVIDE>(*current);
+                    goto finish_operator;
                 case OpCode::MOD:
-                    if (!run_binary_operator<OpCode::MOD>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::MOD>(*current);
+                    goto finish_operator;
                 case OpCode::BIT_AND:
-                    if (!run_binary_operator<OpCode::BIT_AND>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::BIT_AND>(*current);
+                    goto finish_operator;
                 case OpCode::BIT_OR:
-                    if (!run_binary_operator<OpCode::BIT_OR>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::BIT_OR>(*current);
+                    goto finish_operator;
                 case OpCode::BIT_XOR:
-                    if (!run_binary_operator<OpCode::BIT_XOR>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::BIT_XOR>(*current);
+                    goto finish_operator;
                 case OpCode::SHIFT_LEFT:
-                    if (!run_binary_operator<OpCode::SHIFT_LEFT>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::SHIFT_LEFT>(*current);
+                    goto finish_operator;
                 case OpCode::SHIFT_RIGHT:
-                    if (!run_binary_operator<OpCode::SHIFT_RIGHT>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::SHIFT_RIGHT>(*current);
+                    goto finish_operator;
                 case OpCode::SHIFT_RIGHT_LOGICAL:
-                    if (!run_binary_operator<OpCode::SHIFT_RIGHT_LOGICAL>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_binary_operator<OpCode::SHIFT_RIGHT_LOGICAL>(*current);
+                    goto finish_operator;
                 case OpCode::NOT:
                     current->push(Value::from_bool(!is_truthy(current->pop())));
                     break;
                 case OpCode::NEGATE:
-                    if (!run_unary_operator<OpCode::NEGATE>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_unary_operator<OpCode::NEGATE>(*current);
+                    goto finish_operator;
                 case OpCode::BIT_NOT:
-                    if (!run_unary_operator<OpCode::BIT_NOT>(*current)) {
-                        goto unwind_check;
-                    }
-                    goto sync_now;
+                    operator_result = run_unary_operator<OpCode::BIT_NOT>(*current);
+                    goto finish_operator;
 
                 case OpCode::POP:
                     current->drop(1);
@@ -1297,6 +1264,15 @@ namespace aria {
                     UNREACHABLE();
             }
             continue; // 状态未变的正常路径:break 出 switch 后回循环顶,不落善后标签
+        finish_operator:
+            switch (operator_result) {
+                case OperatorResult::Completed:
+                    continue;
+                case OperatorResult::Called:
+                    goto sync_now;
+                case OperatorResult::Failed:
+                    goto unwind_check;
+            }
         unwind_check:
             if (!unwind(vm)) {
                 return false;

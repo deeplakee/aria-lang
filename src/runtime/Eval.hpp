@@ -65,11 +65,13 @@ namespace aria {
         [[nodiscard]]
         static ObjString* execute_str_hook(AriaExeContext& ctx, Value value, Value hook);
 
-        template<OpCode Op>
-        static bool run_binary_operator(AriaExeContext& ctx);
+        enum class OperatorResult : u8 { Completed, Called, Failed };
 
         template<OpCode Op>
-        static bool run_unary_operator(AriaExeContext& ctx);
+        static OperatorResult run_binary_operator(AriaExeContext& ctx);
+
+        template<OpCode Op>
+        static OperatorResult run_unary_operator(AriaExeContext& ctx);
 
         template<OpCode Op>
         static bool run_binary_numeric(AriaExeContext& ctx);

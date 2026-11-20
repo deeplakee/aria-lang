@@ -66,3 +66,12 @@ try {
     assert(error.message() == "Runtime: IntegerOverflow shift count must be between 0 and 47, got 48");
 }
 assert(calls == 2 && slots[0] === assigned);
+
+// 原生位运算钩子可能切换协程，后续指令须从切换后的帧取出。
+def Relay {}
+Relay.__and__ = Coroutine.resume;
+Relay.__invert__ = Coroutine.yield;
+var relay = Relay();
+var coroutine = Coroutine.create(fun() { return (~relay) + 7; });
+assert((relay & coroutine) == nil);
+assert(Coroutine.resume(coroutine, 5) == 12);

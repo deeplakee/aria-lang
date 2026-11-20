@@ -1,0 +1,3 @@
+// 二元数学函数的第二个实参也必须是数值。
+import "std:math" as math;
+math.pow(2, "3");

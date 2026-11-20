@@ -34,17 +34,31 @@
 
 ## std:math 数学模块
 
-用 `import "std:math" as math;` 导入。两个常量为 `F64`，每个函数恰收一个数值（`Int` 或
-`F64`）。
+用 `import "std:math" as math;` 导入。常量均为 `F64`，函数实参均接受 `Int` 或 `F64`。
+`abs` 保留输入类型，分类谓词返回 `Bool`，其余函数返回 `F64`。
 
 | 成员 | 行为 |
 | :--- | :--- |
 | `pi` / `e` | 圆周率 / 自然对数的底 |
-| `abs(x)` | 绝对值，保持输入类型。最小 `Int` 的绝对值超出整数范围，抛 `IntegerOverflow`。 |
-| `sqrt(x)` | 平方根，返回 `F64`。负数得到 NaN。 |
-| `floor(x)` / `ceil(x)` | 分别向下、向上取整，返回 `F64`。NaN 返回 NaN，无穷值保持符号。 |
+| `tau` | 一周对应的弧度数，等于 `2 * pi`。 |
+| `inf` / `nan` | 正无穷 / NaN |
+| `abs(x)` | 绝对值。最小 `Int` 的绝对值超出整数范围，抛 `IntegerOverflow`。 |
+| `floor(x)` / `ceil(x)` | 分别向下、向上取整。 |
+| `trunc(x)` | 向零截去小数部分。 |
+| `round(x)` | 取最近的整数值。正好在中点时向远离零的方向取整，如 `round(-2.5)` 得到 `-3.0`。 |
+| `sqrt(x)` / `cbrt(x)` | 平方根 / 立方根。负数的平方根为 NaN，立方根保留负号。 |
+| `pow(base, exponent)` | 幂运算。如 `pow(-1, 0.5)` 返回 NaN。 |
+| `hypot(x, y)` | 以 `x`、`y` 为直角边的斜边长度，避免直接计算平方导致的中间上溢或下溢。 |
+| `exp(x)` | 自然指数，即 `e` 的 `x` 次幂。 |
+| `log(x)` / `log2(x)` / `log10(x)` | 以 `e`、2、10 为底的对数。零返回负无穷，负数返回 NaN。 |
+| `sin(x)` / `cos(x)` / `tan(x)` | 正弦、余弦、正切，实参为弧度。 |
+| `asin(x)` / `acos(x)` / `atan(x)` | 反正弦、反余弦、反正切，结果为弧度。`asin` 和 `acos` 在 `[-1, 1]` 之外返回 NaN。 |
+| `atan2(y, x)` | 向量 `(x, y)` 与正 x 轴的夹角，按象限确定，结果在 `[-pi, pi]` 弧度内。 |
 | `is_nan(x)` | NaN 返回 `true`，其余数值返回 `false`。 |
 | `is_finite(x)` | 整数和有限浮点数返回 `true`，NaN 和正负无穷返回 `false`。 |
+| `is_inf(x)` | 正负无穷返回 `true`，其余数值返回 `false`。 |
+
+四种取整函数遇到 NaN 时返回 NaN，遇到无穷值时保留符号。
 
 ## Coroutine 类方法（4 个）
 

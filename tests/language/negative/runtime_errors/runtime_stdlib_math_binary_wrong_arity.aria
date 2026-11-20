@@ -1,0 +1,3 @@
+// 二元数学函数必须收到两个实参。
+import "std:math" as math;
+math.atan2(1);

@@ -339,8 +339,8 @@ println(acc);
 
 1. 写 `Stack` 类：`push(x)`、`pop()`、`peek()`（看栈顶不出栈）、`size()`。`pop` / `peek`
    在空栈时应抛出错误（用 `throw "empty stack";`，第 14 章预告）。
-2. 写 `Vec2` 类：`init(x, y)`、`length_sq()`（模长平方，别开根号 -- aria 没有内建
-   `sqrt`）、`scaled(k)` 返回新 `Vec2`。
+2. 写 `Vec2` 类：`init(x, y)`、`length_sq()`（模长平方）、`scaled(k)`（返回新 `Vec2`）。
+   导入 `"std:math"`，用其中的 `sqrt` 实现 `length()`。
 3. 给第 6 章练习的 `dedup` 换个类实现：`Uniquer` 持一个 `seen` 映射，方法 `add(x)`
    返回「是否首次出现」。
 4. 写 `Range2` 类：构造收 `from` / `to` / `step`（默认 1），实现三方法迭代协议，让

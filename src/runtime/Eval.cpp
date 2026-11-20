@@ -739,29 +739,52 @@ namespace aria {
         return true;
     }
 
-    bool Eval::run_import(AriaExeContext& ctx, const ObjString* path) {
-        const auto& frame              = ctx.frames().top(); // 导入方帧:abs_path 作相对解析基;进帧后不再引用
-        const auto  canonical_path_str = ctx.host().resolve_module(path->view(), frame.module->abs_path());
-        if (!canonical_path_str) {
-            return ctx.fail(ErrorCode::ModuleNotFound, "module not found: '{}'", path->view());
-        }
-        const auto canonical_path = new_string(ctx.gc(), *canonical_path_str);
-        // 驻留路径须跨模块编译的分配保活。
-        auto guard = ctx.gc().make_guard(canonical_path);
-        if (const auto module_entry = ctx.host().modules().find(Value::from_obj(canonical_path));
-            module_entry != nullptr) {
-            ctx.push(module_entry->value); // 命中:体执行中即循环导入,复用半初始化对象
+    bool Eval::import_stdlib_module(AriaExeContext& ctx, ObjString* specifier) {
+        auto&      host = ctx.host();
+        const auto key  = Value::from_obj(specifier);
+        if (const auto cached = host.modules().find(key)) {
+            ctx.push(cached->value);
             return true;
         }
-        const auto module = ctx.host().load_module(canonical_path, path->view());
+
+        const auto module = host.load_stdlib_module(specifier);
         if (module == nullptr) {
             return false;
         }
-        const auto proto = module->entry();
-        ASSERT(proto != nullptr, "load_module returned a module whose entry is not set");
-        const auto function = new_function(ctx.gc(), proto);
+        ctx.push(Value::from_obj(module));
+        return true;
+    }
+
+    bool Eval::import_file_module(AriaExeContext& ctx, const ObjString* specifier) {
+        auto&      host           = ctx.host();
+        const auto name           = specifier->view();
+        const auto canonical_path = host.resolve_module(name, ctx.frames().top().module->abs_path());
+        if (!canonical_path) {
+            return ctx.fail(ErrorCode::ModuleNotFound, "module not found: '{}'", name);
+        }
+        const auto module_key = new_string(ctx.gc(), *canonical_path);
+        const auto key        = Value::from_obj(module_key);
+        if (const auto cached = host.modules().find(key)) {
+            ctx.push(cached->value);
+            return true;
+        }
+
+        // 规范路径入表前须跨加载分配保活。
+        const auto guard  = ctx.gc().make_guard(module_key);
+        const auto module = host.load_file_module(module_key, name);
+        if (module == nullptr) {
+            return false;
+        }
+        const auto entry = module->entry();
+        ASSERT(entry != nullptr, "compiled module has no entry");
+        const auto function = new_function(ctx.gc(), entry);
         ctx.push(Value::from_obj(function));
         return call_aria_fn(ctx, function, 0);
+    }
+
+    bool Eval::run_import(AriaExeContext& ctx, ObjString* specifier) {
+        return specifier->view().starts_with("std:") ? import_stdlib_module(ctx, specifier)
+                                                     : import_file_module(ctx, specifier);
     }
 
     bool Eval::run_return(AriaExeContext& ctx) {

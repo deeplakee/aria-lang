@@ -23,6 +23,7 @@ paths:
 | `runtime/Eval.hpp` / `.cpp` | 指令循环、调用、显示渲染和异常派发 |
 | `runtime/NativeCallInfo.hpp` | 原生调用的实参、接收者与返回槽视图 |
 | `runtime/builtins/` | 全局内建与类型方法面，注册规则见 [object.md](object.md#内置类型的成员面) |
+| `runtime/stdlib/` | 原生标准库模块的公开函数和常量 |
 | `runtime/value_register.hpp` / `runtime/str_table.hpp` | 值寄存器与运行期常量串注册表 |
 | `runtime/opcode_profile.hpp` / `.cpp` | 可选指令频度探针 |
 
@@ -158,10 +159,10 @@ concat_values 可以借用容器缓冲，但渲染中用户代码修改该容器
 
 ### IMPORT 与模块加载
 
-`resolve_module` 负责路径查找，`load_module` 只加载、编译并入表，模块体由 IMPORT 进帧执行，
-不递归 dispatch_loop；模块入口返回模块对象，使命中与未命中的栈结果一致。
-编译成功后先入表再运行模块体，循环导入复用半初始化对象，模块体失败不回滚表项。
-路径串由 run_import 临时根化；加载失败返回 nullptr 并挂起错误。完整链路见 [import 规格](specs/import.md)。
+`Eval::run_import` 按 `std:` 前缀分派。`Eval::import_stdlib_module` 用完整标准库名查缓存，
+`Eval::import_file_module` 用 `AriaVM::resolve_module` 返回的规范路径查缓存。未命中时由对应的 VM
+加载方法完成加载并入表。原生模块直接压栈，文件模块为入口原型创建调用帧。
+完整链路见 [import 规格](specs/import.md)。
 
 ### 协程
 

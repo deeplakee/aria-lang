@@ -23,6 +23,9 @@ namespace aria {
         // 注册为静态函数，不设置定义类。
         static void register_class_functions(GC& gc, ObjClass* klass, Span<const BuiltinFnEntry> functions);
 
+        // 注册普通原生函数。GC 开启时 table 的宿主须在注册期间保持可达。
+        static void register_functions(GC& gc, AriaHashTable& table, Span<const BuiltinFnEntry> functions);
+
         // 仅在宿主已注册 tracer 且暂停 GC 的构造期调用。
         static void register_builtins(GC& gc, AriaHashTable& builtins);
     };

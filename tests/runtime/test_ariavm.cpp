@@ -996,6 +996,38 @@ TEST_F(AriaVMStress, ImportLoadsDiskModuleRunsBodyAndPopulatesGlobals) {
     EXPECT_EQ(x_entry->value.as_int(), 42);
 }
 
+TEST_F(AriaVMStress, ImportStdlibIdentityAndFileModule) {
+    vm.set_source_roots({});
+    const auto base = test_canon_dir();
+    write_aria(base, "math.aria", "var pi = 3;");
+    const auto main_path = write_aria(base, "main.aria", R"(
+        import "std:math" as math;
+        import "math" as local_math;
+        import "std:math" as again;
+        assert(math === again);
+        assert(math !== local_math);
+        assert(local_math.pi === 3);
+        assert(math.sqrt(9) === 3.0);
+    )");
+    ASSERT_EQ(vm.interpret_from_path(main_path), aria::InterpretResult::Ok);
+    EXPECT_EQ(vm.modules().size(), 2u);
+
+    const auto key   = Value::from_obj(new_string(vm.gc(), "std:math"));
+    const auto entry = vm.modules().find(key);
+    ASSERT_NE(entry, nullptr);
+    const auto module = entry->value.as_obj()->as<ObjModule>();
+    EXPECT_TRUE(module->abs_path().empty());
+    EXPECT_EQ(module->entry(), nullptr);
+
+    ASSERT_EQ(vm.interpret_from_src(R"(
+        import "std:math" as math;
+        assert(math.sqrt(16) === 4.0);
+    )"),
+              aria::InterpretResult::Ok);
+    EXPECT_EQ(find_module_by_name(vm.modules(), "std:math"), module);
+    EXPECT_EQ(vm.modules().size(), 2u);
+}
+
 // 被导入模块编译期错误经 Error 原样透传(含其文件位置):helper 有语法错 -> interpret 返 RuntimeError。
 // 分类按失败阶段而非错误码大类:错误在主模块执行期的 IMPORT 站点浮现(可被 try/catch 捕获),
 // 主入口自身编译已成功 -- 「可 catch 的错误」不构成 CompileError。

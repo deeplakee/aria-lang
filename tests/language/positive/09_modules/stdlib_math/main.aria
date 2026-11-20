@@ -1,0 +1,42 @@
+// 原生数学模块的公开成员、数值边界以及两种取函数方式。
+import "std:math" as math;
+assert(is_a(math, Module));
+assert(str(math) == "<module std:math>");
+assert(math.pi === 3.141592653589793);
+assert(math.e === 2.718281828459045);
+assert(math.abs(-7) === 7);
+assert(math.abs(140737488355327) === 140737488355327);
+assert(math.abs(-2.5) === 2.5);
+assert(math.abs(-0.0) === 0.0);
+
+var sqrt = math.sqrt;
+assert(sqrt(9) === 3.0);
+assert(math.sqrt(2.25) === 1.5);
+assert(math.sqrt(-0.0) === -0.0);
+assert(math.floor(-2.5) === -3.0);
+assert(math.floor(7) === 7.0);
+assert(math.ceil(-2.5) === -2.0);
+assert(math.ceil(7) === 7.0);
+
+var inf = 1.0 / 0.0;
+var nan = math.sqrt(-1);
+assert(type(nan) == "F64");
+assert(math.is_nan(nan) === true);
+assert(math.is_nan(math.abs(nan)));
+assert(!math.is_nan(7));
+assert(!math.is_nan(inf));
+assert(math.sqrt(inf) === inf);
+assert(math.floor(inf) === inf);
+assert(math.is_nan(math.ceil(nan)));
+assert(math.is_finite(7) === true);
+assert(math.is_finite(-2.5));
+assert(!math.is_finite(inf));
+assert(!math.is_finite(-inf));
+assert(!math.is_finite(nan));
+
+var caught = false;
+try { math.abs(-140737488355328); } catch (error) {
+    assert(error.message().contains("IntegerOverflow integer result out of range"));
+    caught = true;
+}
+assert(caught);

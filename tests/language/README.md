@@ -99,8 +99,9 @@ ctest 条目（相对路径 `/` 换 `_`，`ctest -N` 可读）。每个 VM 实�
 - **list `+`/`*` 算子**（拼接/重复）：`+` 两侧皆 `List` 产浅拷新表（嵌套容器按元素共享）、源表
   不动；`*` 按整数次数重复，乘数校验同 string（严格 Int、负数报错）；`+=`/`*=` 复合赋值重绑
   新值不原地改（与 push 的就地语义相对照），见 12_collections/list_concat、list_repeat。
-- **模块成员访问**：模块的顶层绑定即成员（`H.x` 读原值、`H.f(args)` 直调），只查 globals、不回退 Module/Object，成员只读、写报
-  `TypeMismatch`；09_modules 直接经 `H.x` 观察辅助模块。
+- **模块成员访问**：文件模块的顶层绑定和原生模块注册的成员都通过模块的 globals 读取（`H.x`
+  读原值、`H.f(args)` 直调），成员只读、写报 `TypeMismatch`。见 09_modules 的
+  module_member_access、stdlib_math 和负向用例 runtime_stdlib_module_member_write。
 - **list 方法面**（push/pop/insert/remove/remove_at/clear/sort/reverse/find/contains/size/is_empty/
   join/iter）：变更方法一律就地改、返 nil；`remove` 例外（移除**全部** `==` 命中元素、返命中布尔，
   miss 走返回值不报错）；`remove_at(i)` 按位置移除返元素、负数从尾计数；`sort` 就地升序，域为全数值

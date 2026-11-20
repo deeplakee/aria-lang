@@ -40,7 +40,6 @@ namespace aria {
     }
 
     void ObjModule::trace(GC& gc) const noexcept {
-        // entry_ 可为 nullptr(未编译/目录包占位),mark_object 容 nullptr。
         gc.mark_object(name_);
         gc.mark_object(dir_);
         gc.mark_object(entry_);
@@ -57,7 +56,6 @@ namespace aria {
     }
 
     Opt<Value> ObjModule::load_field(AriaExeContext& ctx, ObjString* name) {
-        // 模块点号只访问顶层绑定,不回退到 Module/Object 的能力面。
         if (const auto entry = globals_.find(Value::from_obj(name))) {
             return entry->value;
         }

@@ -36,6 +36,7 @@
 #include "runtime/builtins/RangeClass.hpp"
 #include "runtime/builtins/StringClass.hpp"
 #include "runtime/opcode_profile.hpp"
+#include "runtime/stdlib/MathModule.hpp"
 #include "util/fs.hpp"
 #include "util/io.hpp"
 #include "util/util.hpp"
@@ -279,10 +280,10 @@ namespace aria {
         current_ = resumer;
     }
 
-    Opt<String> AriaVM::resolve_module(const StringView spec, const StringView current_module_path) const {
-        const auto file_name = util::concat_string(stem_of(spec), kAriaExtension);
+    Opt<String> AriaVM::resolve_module(const StringView specifier, const StringView current_module_path) const {
+        const auto file_name = util::concat_string(stem_of(specifier), kAriaExtension);
 
-        if (spec.starts_with("./") || spec.starts_with("../") || spec == "." || spec == "..") {
+        if (specifier.starts_with("./") || specifier.starts_with("../") || specifier == "." || specifier == "..") {
             if (current_module_path.empty()) {
                 return std::nullopt;
             }
@@ -300,29 +301,44 @@ namespace aria {
         return probe_bases(bases, file_name);
     }
 
-    ObjModule* AriaVM::load_module(ObjString* canonical_path, const StringView import_specifier) {
+    ObjModule* AriaVM::load_stdlib_module(ObjString* module_key) {
+        static constexpr Pair<StringView, void (*)(GC&, ObjModule*)> kStdlibModules[] = {
+                {"std:math", stdlib::register_math_exports},
+        };
+        const auto name = module_key->view();
+        for (const auto& [registered_name, register_exports]: kStdlibModules) {
+            if (name == registered_name) {
+                const auto module = new_module(gc_, registered_name, "");
+                const auto guard  = gc_.make_guard(module);
+                register_exports(gc_, module);
+                modules_.set(Value::from_obj(module_key), Value::from_obj(module));
+                return module;
+            }
+        }
+        return current_->fail(ErrorCode::ModuleNotFound, "module not found: '{}'", name);
+    }
 
-        auto loaded_src = SourceFile::from_path(canonical_path->view());
+    ObjModule* AriaVM::load_file_module(ObjString* canonical_path, const StringView import_specifier) {
+        const auto path       = canonical_path->view();
+        auto       loaded_src = SourceFile::from_path(path);
         if (!loaded_src) {
             return current_->fail(ErrorCode::ModuleNotFound, "failed to load module '{}': read/decode error",
                                   import_specifier);
         }
         SourceFile source = std::move(*loaded_src);
 
-        const auto [name_str, dir_str] = fs::module_name_and_dir(canonical_path->view());
-        if (name_str.empty()) {
+        const auto [name, dir] = fs::module_name_and_dir(path);
+        if (name.empty()) {
             return current_->fail(ErrorCode::ModuleNotFound, "module path has no valid name: '{}'", import_specifier);
         }
 
-        auto module = new_module(gc_, name_str, dir_str);
-        auto guard  = gc_.make_guard(module);
-
-        if (auto compiled = Compiler::compile(gc_, source, module, kModuleEntryName); !compiled) {
+        const auto module = new_module(gc_, name, dir);
+        const auto guard  = gc_.make_guard(module);
+        if (const auto compiled = Compiler::compile(gc_, source, module, kModuleEntryName); !compiled) {
             current_->raise(Value::from_obj(new_exception(gc_, compiled.error())));
             return nullptr;
         }
-
-        // 编译成功即入表，先于模块体执行，以支持循环导入；执行失败不回滚表项。
+        // 执行入口前入表，循环导入才能复用初始化中的对象。
         modules_.set(Value::from_obj(canonical_path), Value::from_obj(module));
         return module;
     }

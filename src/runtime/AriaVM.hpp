@@ -69,7 +69,7 @@ namespace aria {
             return current_;
         }
 
-        // 模块表键为 intern 后的规范路径，值为模块对象。
+        // 模块表键为驻留的文件规范路径或原生标准库完整名，值为模块对象。
         [[nodiscard]]
         AriaHashTable& modules() noexcept {
             return modules_;
@@ -104,11 +104,12 @@ namespace aria {
 
         // 相对路径仅以当前模块目录为基，裸名沿 source_roots_ 搜索；未命中返回 nullopt。
         [[nodiscard]]
-        Opt<String> resolve_module(StringView spec, StringView current_module_path) const;
+        Opt<String> resolve_module(StringView specifier, StringView current_module_path) const;
 
-        // 仅加载和编译，成功后入表，不执行模块体；失败返回 nullptr 并挂起错误。
-        // 仅限驱动期调用，canonical_path 须由调用方根化。
-        ObjModule* load_module(ObjString* canonical_path, StringView import_specifier);
+        // 仅在驱动期缓存未命中时调用，调用方须保活键。成功后入表，失败返回 nullptr 并挂起错误。
+        ObjModule* load_file_module(ObjString* canonical_path, StringView import_specifier);
+
+        ObjModule* load_stdlib_module(ObjString* module_key);
 
         InterpretResult interpret_run(SourceFile& source, ObjModule* module);
 

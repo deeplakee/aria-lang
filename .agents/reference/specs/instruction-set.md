@@ -246,9 +246,11 @@ POP                        ; 只在顶层或嵌套类成员路径发射；局部
 
 | 操作码 | 操作数 | 栈效应 | 语义 |
 | :--- | :--- | :--- | :--- |
-| `IMPORT` | `path:u16` | `... -> [module]` | 解析路径并复用/加载模块，把 `ObjModule` 压栈 |
+| `IMPORT` | `path:u16` | `... -> [module]` | 按导入名复用或加载模块，把 `ObjModule` 压栈 |
 
-`path` 是常量池 ObjString 索引。**绑定不在本指令内**：CodeGen 在 `IMPORT` 之后按作用域声明并绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽），故 `IMPORT` 不带 `alias` 操作数。解析、查表、run-once 与错误契约见 `import.md`。
+`path` 是导入字符串在常量池中的 ObjString 索引，内容可为文件路径或 `std:` 逻辑名。CodeGen 在
+`IMPORT` 之后按作用域声明并绑定（顶层 `DEF_GLOBAL alias` / 嵌套值填槽）。解析、查表、run-once
+与错误契约见 [导入规格](import.md)。
 
 ### 3.15 异常
 

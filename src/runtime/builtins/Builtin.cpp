@@ -194,14 +194,14 @@ namespace aria {
                 {"clock", fn_clock}, {"Error", fn_Error}, {"is_a", fn_is_a},       {"is_subclass", fn_is_subclass},
         };
 
-        void register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> functions) {
-            for (const auto& [name, fn]: functions) {
-                const auto function = new_function(gc, name, fn);
-                table.set(Value::from_obj(function->name()), Value::from_obj(function));
-            }
-        }
-
     } // namespace
+
+    void Builtin::register_functions(GC& gc, AriaHashTable& table, const Span<const BuiltinFnEntry> functions) {
+        for (const auto& [name, fn]: functions) {
+            const auto function = new_function(gc, name, fn);
+            table.set(Value::from_obj(function->name()), Value::from_obj(function));
+        }
+    }
 
     void Builtin::register_class_methods(GC& gc, ObjClass* klass, const Span<const BuiltinFnEntry> methods) {
         for (const auto& [name, fn]: methods) {

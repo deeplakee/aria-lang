@@ -1,0 +1,3 @@
+// 模块数学函数只接收 Int 或 F64。
+import "std:math" as math;
+math.is_finite("1");

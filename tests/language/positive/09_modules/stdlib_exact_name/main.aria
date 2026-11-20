@@ -1,0 +1,17 @@
+// 标准库名称按完整原串匹配，文件扩展名和大小写均参与判定。
+var caught = 0;
+try { import "std:Math" as math; } catch (error) {
+    assert(error.message().contains("ModuleNotFound module not found: 'std:Math'"));
+    caught += 1;
+}
+try { import "std:math.aria" as math; } catch (error) {
+    assert(error.message().contains("ModuleNotFound module not found: 'std:math.aria'"));
+    caught += 1;
+}
+try { import "std:" as math; } catch (error) {
+    assert(error.message().contains("ModuleNotFound module not found: 'std:'"));
+    caught += 1;
+}
+assert(caught == 3);
+import "std:math" as math;
+assert(math.sqrt(4) === 2.0);

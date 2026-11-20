@@ -1,0 +1,3 @@
+// 模块函数使用普通函数的元数检查。
+import "std:math" as math;
+math.sqrt();

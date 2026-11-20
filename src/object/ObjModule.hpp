@@ -11,11 +11,9 @@ namespace aria {
     class ObjString;
     class ObjFnProto;
 
-    // 一个源文件对应一个模块，保存顶层绑定。
-    // name 为文件 stem，dir 为目录；两者指针非空。
+    // 文件模块用文件 stem 与目录，原生标准库用逻辑全名与空目录。两者指针非空。
     class ObjModule final : public Object {
     public:
-        // name = 模块文件名去 .aria 后缀(stem);dir = 所在目录(指针恒非空,构造期 ASSERT)。
         ObjModule(GC& gc, ObjString* name, ObjString* dir);
         ~ObjModule() override = default; // globals_ 持 GC* 级联自释放;entry_/name_/dir_ 是 GC 对象,不归本类释放
 
@@ -42,7 +40,7 @@ namespace aria {
             return globals_;
         }
 
-        // nullptr 表示尚无模块体。
+        // nullptr 表示无模块体或模块体尚未编译。
         [[nodiscard]]
         ObjFnProto* entry() const noexcept {
             return entry_;
@@ -75,9 +73,9 @@ namespace aria {
         bool store_field(AriaExeContext& ctx, ObjString* name, Value value) override;
 
     private:
-        ObjString*    name_;    // 模块名(stem,intern;指针恒非空,内容可空)
-        ObjString*    dir_;     // 所在目录(intern;指针恒非空,内容可空)
-        ObjFnProto*   entry_;   // 模块体(run-once;可为 nullptr)
+        ObjString*    name_; // 模块名(intern;指针恒非空,内容可空)
+        ObjString*    dir_;  // 所在目录(intern;指针恒非空,内容可空)
+        ObjFnProto*   entry_;
         AriaHashTable globals_; // 模块级绑定表(惰性分配)
     };
 

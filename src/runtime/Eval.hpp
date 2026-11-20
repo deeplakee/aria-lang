@@ -116,7 +116,11 @@ namespace aria {
 
         static bool run_make_class(AriaExeContext& ctx, ObjString* name);
 
-        static bool run_import(AriaExeContext& ctx, const ObjString* path);
+        static bool import_stdlib_module(AriaExeContext& ctx, ObjString* specifier);
+
+        static bool import_file_module(AriaExeContext& ctx, const ObjString* specifier);
+
+        static bool run_import(AriaExeContext& ctx, ObjString* specifier);
 
         // 返回 true 表示本轮驱动结束，false 表示继续执行（包括协程切回）。
         static bool run_return(AriaExeContext& ctx);

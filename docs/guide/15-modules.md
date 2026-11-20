@@ -1,10 +1,9 @@
 # 第 15 章 模块
 
-程序变大后按文件拆分。aria 的模块系统极简：**一个 `.aria` 文件就是一个模块**，`import`
-把整个模块以一个名字引进来。没有 export 声明 -- 模块顶层的所有绑定（var / fun / def /
-import）自动都是模块成员。本章讲导入语法、路径解析、成员语义，以及循环导入的行为。
+用 `import` 可以导入文件模块和标准库，并在当前作用域绑定一个别名。一个 `.aria` 文件就是一个
+模块，文件顶层的所有绑定（var / fun / def / import）自动成为模块成员。
 
-## import：路径写在字符串里，别名必写
+## 导入名和别名
 
 <!-- skip -->
 ```aria
@@ -13,9 +12,31 @@ import "util" as U;
 
 三个要点：
 
-- 路径**只写在字符串里**（没有 `import util` 这种裸标识符形态），不带 `.aria` 扩展名。
+- 导入名写在字符串里。导入文件模块时通常省略 `.aria` 扩展名。
 - `as 别名` **强制必写** -- 模块永远以别名出现在你的作用域里，没有「导入即散装倒出」。
 - `import` 是普通声明：放在模块顶层时 `U` 是模块全局，放在函数体 / 块内是局部绑定。
+
+## 导入标准库
+
+`std:` 开头的完整名字用于查询标准库。比如 `"std:math"` 提供数学函数和常量。
+
+<!-- run: main.aria -->
+```aria
+import "std:math" as math;
+import "std:math" as m;
+
+println(math.sqrt(81));
+println(math === m);
+```
+
+```text
+9.0
+true
+```
+
+标准库名区分大小写，`"std:Math"` 和 `"std:math.aria"` 都会报 `ModuleNotFound`。
+项目中的 `math.aria` 可以用 `import "math" as local_math;` 单独导入。标准库成员同样只读。
+数学函数和常量见[标准库参考](17-builtin-reference.md#stdmath-数学模块)。
 
 ## 双文件起步
 
@@ -117,10 +138,10 @@ circle area ~= 12
 
 ## 路径解析：源根与相对导入
 
-两类写法、两条解析规则：
+文件模块有两条解析规则：
 
-- **非相对**：`import "util" as U;` -- 从**源根**搜起。目前源根就是入口脚本所在目录，
-  按 `util.aria` 命中即加载。
+- **非相对**：`import "util" as U;` -- 从**源根**搜起，先查入口脚本所在目录，再查配置根，
+  加载首个命中的 `util.aria`。
 - **相对**：`import "./sub/inner" as I;` -- 基点恒为**当前文件所在目录**，不逃到别的
   源根。`./` 前缀明确表达「相对本文件」。
 
@@ -167,7 +188,7 @@ utils
 `U.Inner.tag` 一路点下去：`Inner` 是 util 的成员（它自己 import 的），`tag` 又是
 inner 的成员。
 
-找不到模块是**加载期错误**，程序不执行：
+找不到模块时，执行到 `import` 会抛出可捕获的 `ModuleNotFound`。
 
 <!-- expect-error: ModuleNotFound -->
 <!-- run: main.aria -->
@@ -295,9 +316,10 @@ b 里读 `A.ready` 时 a 还没执行到 `var ready`，于是走 catch。等一�
 
 ## 小结
 
-- 一个文件一个模块；`import "路径" as 别名;`，别名必写、路径只写串、不带扩展名。
+- `import "导入名" as 别名;` 导入文件模块或以 `std:` 开头的标准库模块，别名必写。
 - 顶层绑定（var / fun / def / import）即成员；裸名不自动导入。
-- 导入即执行、按绝对路径只执行一次；非相对走源根（入口目录），`./` 相对当前文件。
+- 文件模块按绝对规范路径只执行一次；非相对路径走源根，`./` 相对当前文件。
+- 原生标准库模块按完整名创建一次，重复导入复用同一个模块对象。
 - 成员对导入方只读；读写不存在分别报 `TypeMismatch` / `UndefinedProperty`。
 - 循环导入拿到半初始化模块，读未完成绑定报可捕获的 `UndefinedProperty`。
 

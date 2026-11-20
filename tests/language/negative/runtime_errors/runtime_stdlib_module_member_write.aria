@@ -1,0 +1,3 @@
+// 原生标准库模块的成员也通过模块只读规则保护。
+import "std:math" as math;
+math.pi = 3;

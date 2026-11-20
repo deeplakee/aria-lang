@@ -1,6 +1,6 @@
 # 第 17 章 附录：内建参考
 
-本章是速查手册：全局内建函数、各类型方法面、下标与切片规则、`type()` 返回名、常见错误
+本章是速查手册：全局内建函数、标准库、各类型方法面、下标与切片规则、`type()` 返回名、常见错误
 消息。教程正文（各章）讲了语义与惯用法，这里收口为表格。语法产生式以
 [docs/grammar.txt](../grammar.txt) 为准。
 
@@ -32,6 +32,20 @@
 | 协程 | `"Coroutine"` |
 | VM 运行期错误装箱 | `"Exception"` |
 
+## std:math 数学模块
+
+用 `import "std:math" as math;` 导入。两个常量为 `F64`，每个函数恰收一个数值（`Int` 或
+`F64`）。
+
+| 成员 | 行为 |
+| :--- | :--- |
+| `pi` / `e` | 圆周率 / 自然对数的底 |
+| `abs(x)` | 绝对值，保持输入类型。最小 `Int` 的绝对值超出整数范围，抛 `IntegerOverflow`。 |
+| `sqrt(x)` | 平方根，返回 `F64`。负数得到 NaN。 |
+| `floor(x)` / `ceil(x)` | 分别向下、向上取整，返回 `F64`。NaN 返回 NaN，无穷值保持符号。 |
+| `is_nan(x)` | NaN 返回 `true`，其余数值返回 `false`。 |
+| `is_finite(x)` | 整数和有限浮点数返回 `true`，NaN 和正负无穷返回 `false`。 |
+
 ## Coroutine 类方法（4 个）
 
 内建类 `Coroutine`（经内建表解析，见第 16 章）。类方法对协程按名取用，`co` 一律指
@@ -48,7 +62,8 @@
 
 ## 模块与类的成员范围
 
-模块点号只查顶层绑定，类点号只查自身及父类的声明成员，均不回退到 Module/Class 的对象能力面。类型归属与类继承关系使用上述外部函数。
+模块点号只查模块自己的成员。类点号只查自身及父类的声明成员。类型归属与类继承关系使用
+`is_a()` 和 `is_subclass()`。
 
 ## string 方法面（18 个 + 6 个算子钩子）
 
@@ -172,6 +187,8 @@ Runtime: TypeMismatch list index must be an integer, got Range
 Runtime: TypeMismatch type Module does not support field assignment
 Runtime: TypeMismatch sort requires all numbers or all strings, got Int and String
 Runtime: TypeMismatch argument must be a coroutine, got Int
+Runtime: TypeMismatch argument must be a number, got String
+Runtime: IntegerOverflow integer result out of range
 Runtime: UndefinedVariable undefined global 'nope'
 Runtime: UndefinedProperty <class Box> has no member '__add__'
 Runtime: UndefinedProperty <module util> has no member 'absent'

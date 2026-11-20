@@ -41,10 +41,10 @@
 | 成员缺失 | `<recv repr> has no member '<name>'` | `<class Box> has no member 'x'` |
 | 未定义名 | `undefined global '<n>'` | |
 | 编译语义 | `'<kw>' outside <context>` | `'break' outside loop`、`'this' outside method` |
-| 模块 | `module not found: '<path>'` / `failed to load module '<path>': <why>` / `cannot read source file '<path>'` / `module path has no valid name: '<path>'` | |
+| 模块 | `module not found: '<specifier>'` / `failed to load module '<path>': <why>` / `cannot read source file '<path>'` / `module path has no valid name: '<path>'` | `module not found: 'std:Math'` |
 | 协程状态 | `cannot <resume a dead \| resume a non-suspended \| yield outside a> coroutine` / `cannot yield inside a nested execution` | `cannot resume a dead coroutine` |
 | 除零 / 迭代器 | `integer division by zero` / `integer modulo by zero` / `iterator exhausted` | |
-| 整数溢出 | `integer result out of range` | 算术与无上界 range 请求超出 i48 的元素共用 |
+| 整数溢出 | `integer result out of range` | 算术、整数绝对值与无上界 range 请求超出 i48 的元素共用 |
 
 **`<spec>` 取值集（元数族）**：`no arguments` / `1 argument` / `N arguments` / `N or M arguments` / `at least N arguments`。单数为 `1 argument`，其余一律 `arguments`（复数形）。措辞由 `AriaExeContext::arity_error` 族一处构造--三形态三名（`arity_error` 精确数 / `arity_error_range` 闭区间 / `arity_error_at_least` 仅下界），三者是三种约束语义、各对应一种措辞串，故不共用重载；调用点只给数量，不得手写格式串。
 

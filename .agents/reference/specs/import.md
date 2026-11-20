@@ -1,27 +1,38 @@
 # 导入（import）
 
-`import "PATH" as ALIAS;` 的端到端形态：文法 -> 字节码 -> VM 路径解析 -> 模块表 -> 加载与 run-once。指令格式与栈效应见 `instruction-set.md` §3.14；`ObjModule` 字段规格见 object.md「模块身份」。
+`import "PATH" as ALIAS;` 的指令格式与栈效应见 [指令集规格](instruction-set.md) §3.14。
+`ObjModule` 字段规格见 [模块身份](../object.md#模块身份)。
 
 ## 文法与前端
 
-- 文法（`docs/grammar.txt` 的 `importStmt`）：`"import" string "as" identifier ";"`--强制字符串路径、强制 `as` 别名，不支持裸名导入。
+- 文法（`docs/grammar.txt` 的 `importStmt`）：`"import" string "as" identifier ";"`，导入名用字符串，`as` 别名必写。
 - 关键字：`TokenType::Import` / `TokenType::As`。
 - Parser 的 `import_stmt()` 只做形状检查（path 位须为 `String` token，否则 `ExpectedToken`：`expected a string literal as module path, got '...'`），`string_value()` + `shape()` 组 `StringLiteralNode`；**不做任何路径解析或文件系统检查**。
 - `ImportStmtNode{ path: StringLiteralNode*, alias: StringView }`，`dump` 渲染 `ImportStmt as=...`。
 - CodeGen 的 `visitImportStmtNode` 把 path 经 `add_string_literal_or_fail`（与字面量表达式共用驻留口）得常量索引，发射 `IMPORT path:u16`；**绑定在 IMPORT 之后**，按作用域走（顶层声明并 `DEF_GLOBAL alias` / 嵌套值填槽），与 `var`/`fun` 同形。
 - `OpCode::IMPORT` 格式类别 `Import`，栈效应 `... -> [module]`；反汇编渲染 `IMPORT PPPP  ; path`。
 
-## 键 = 绝对规范路径
+## 模块表键
 
-模块表键为命中文件的**绝对规范路径**（`weakly_canonical`：解析符号链接、折叠 `.`/`..`、去冗余分隔符），经 `new_string` 驻留后用 `===` 查表。
+模块表的键为驻留字符串，用 `===` 查表。文件模块用命中文件的**绝对规范路径**（`weakly_canonical`：解析符号链接、折叠 `.`/`..`、去冗余分隔符）；原生标准库用**完整逻辑名**（如 `std:math`）。
 
 - 跨源根不碰撞：`<proj>/util/tool.aria` 与 `<stdlib>/util/tool.aria` 是不同键。
 - 符号链接不双加载：等价路径归一到真实路径。
-- 代价：失去「按逻辑名跨位置导入」与字节码跨机器可移植性（键含机器路径）。运行期解析，字节码不烘焙绝对路径。
+- 导入在运行期解析，字节码保留导入字符串。
 
-## `resolve_module(spec, current_module_path) -> Opt<String>`
+## 原生标准库
 
-`AriaVM` 私有成员，源根取自身 `source_roots_`。相对与裸名共用本原语，只有基目录列表不同：
+`std:` 前缀在路径解析之前识别。标准库名字区分大小写，完整字符串与注册表精确匹配。
+`std:Math`、`std:math.aria`、`std:` 等未注册名都以原字符串报 `ModuleNotFound`。
+项目中的 `math.aria` 经普通文件导入规则查找。
+
+注册表提供每个原生模块的成员注册函数。原生模块使用完整名和空目录，`entry()` 为空。
+普通原生函数可用 `Builtin::register_functions` 注册进已根化模块的 `globals()`。
+
+## 文件路径解析
+
+`AriaVM::resolve_module(specifier, current_module_path)` 查找文件，返回规范路径或空值。
+文件模块的相对和非相对路径使用不同的基目录：
 
 - **相对**（`./` / `../` 开头，或正是 `.` / `..`，Windows 风格 `.\` 不进此分支）：基 = `dirname(current_module_path)`，单一基、caller-local，**不碰 `source_roots`**--所以相对导入不会落到别的源根去搜索。基为空（`abs_path()` 为空）直接返 `nullopt`。
 - **裸名**：基 = `source_roots_`，逐基 exists-check，首个命中的 `<base>/<spec>.aria` 即结果。
@@ -40,59 +51,51 @@
 
 存储为 `List<String>`（路径元数据），**不是 `ObjString*`、不参与 GC 追踪**（它不作表键，只有解析器读）。
 
-**裸名不试当前模块所在目录**（Python 3 `sys.path[0]` 风格，非 Python 2 隐式相对）：裸名在任何文件里都一致指「入口根级或 stdlib 的同名模块」，导入同目录兄弟须写 `import "./math"`。把「同名劫持 stdlib」的潜在点从任意子目录收窄到入口根目录；残余副作用是入口根下的同名文件仍会盖掉 stdlib 版本。
+裸名导入在各模块中都走同一组源根。同目录兄弟用 `import "./math" as math;`。
 
 ### 示例
 
 入口模块 `dir_` = `/proj`（入口源根 `/proj`），stdlib = `/stdlib`，导入方 `dir_` = `/proj/a`、`name_` = `b`（`abs_path` = `/proj/a/b.aria`）：
 
-| import 串 | 类别 | 基 | 绝对键 |
+| import 串 | 类别 | 基 | 模块表键 |
 | :--- | :--- | :--- | :--- |
 | `"lib/utils"` | 裸名 | source_roots | `/proj/lib/utils.aria` |
 | `"lib/utils.aria"` | 裸名，剥后缀 | source_roots | `/proj/lib/utils.aria` |
 | `"./helper"` | 相对 | `dirname(cur)` = `/proj/a` | `/proj/a/helper.aria` |
 | `"../x"` | 相对，`..` 折叠 | `/proj/a` | `/proj/x.aria` |
-| `"math"`（入口根无、stdlib 有） | 裸名 fall-through | source_roots | `/stdlib/math.aria` |
+| `"math"`（入口根无、配置根有） | 裸名 | source_roots | `/stdlib/math.aria` |
+| `"std:math"` | 原生标准库 | 标准库注册表 | `std:math` |
 
 `/proj/a/b.aria` 里 `import "lib/math"` 解析到 `/proj/lib/math.aria`，**不是** `/proj/a/lib/math.aria`。
 
 ## `ObjModule` 的身份字段
 
-`dir_` + `name_`（均 `ObjString*`、intern）由 `fs::module_name_and_dir` 按命中文件切分：`dir_` = dirname，`name_` = `stem()`。`abs_path()` 即时合成 `dir_ + "/" + name_ + ".aria"`，不存 `abs_path_` 字段。
+`dir_` 与 `name_` 均为驻留字符串。文件模块经 `fs::module_name_and_dir` 切分，`dir_` 是
+dirname，`name_` 是 stem。原生标准库模块使用空目录和完整逻辑名。
 
 - `dir_` 指针恒非空、内容可空（`new_module` 未传时取当前工作目录，不可用则空串）。
-- `name_` 兼作显示名（`repr` 与报错渲染），不单独参与查重。
-- **加载层与入口层产出的模块** `name_` 是单段 stem（不含 `/`），故 `dirname(abs_path()) == dir_`；`ObjModule` 构造只断言非空，测试会直接造多段 `name_` 的模块，别把该等式当类型不变式。
-- 无加载状态字段：加载事实源 = 模块表成员资格（未入表 = 未加载；入表 = 已编译待 run-once 或已跑完）。
+- `name_` 兼作显示名（`repr` 与报错渲染）。`abs_path()` 从目录和模块名即时合成，空目录返回空串。
+- 模块表已有条目时复用该模块。文件模块在编译后入表，此时可能正在执行模块体；原生模块入表时成员已经就位。
 
 ## `IMPORT` 执行体（`Eval::run_import`）
 
-bool 契约同 `call_*` 族（false ⟺ 载荷已 raise），unwind 留 dispatch_loop 调用点：
+`run_import` 按 `std:` 前缀分派给 `import_stdlib_module` 或 `import_file_module`。
+两条路径查到缓存时直接压模块对象。失败返回 false，由 dispatch_loop 处理已挂起的错误。
 
-1. `read_name(frame)` 读 u16 常量池索引取 `ObjString* path`（良构前提：常量必为 intern 串）。
-2. 取导入方帧模块的 `abs_path()` 作 `current_module_path` 调 `resolve_module`；失败报 `ModuleNotFound`（`module not found: '<path>'`）。
-3. 成功则把绝对键 intern，以 `Value` 查 `modules_`：
-   - **命中**：复用该模块对象（表内任意进度，见下）。
-   - **未命中**：调 `load_module(key, path)` 得模块，由其入口原型现场建函数、`call_aria_fn` 进帧后 break--**模块体 run-once 就是一个普通 0 参函数**，由主循环照常驱动，无递归 `dispatch_loop()`。
-4. 压模块值：命中臂 `current_->push(module)`；未命中臂压的是入口函数，模块值由模块体 RETURN 写回 callee 槽。模块体入口的返回值恒为模块对象（编译器在入口收尾发射「压模块对象常量 + RETURN」），故两臂栈效应统一 `[..., module]`。
+- `import_stdlib_module` 用常量池里的完整逻辑名作键。缓存未命中时，`load_stdlib_module` 构造原生模块，
+  注册成员后入表，再由 `import_stdlib_module` 压栈。
+- `import_file_module` 调用 `resolve_module` 查找文件，驻留规范路径作键。缓存未命中时调用
+  `load_file_module` 读文件、编译并入表。返回后检查模块入口，再从入口原型创建函数，经
+  `call_aria_fn` 进帧。主循环驱动模块体，RETURN 将模块对象写回 callee 槽。循环导入可以复用
+  表中半初始化的模块。求值失败时保留该模块。
 
-**循环导入**：入表先于模块体执行，故正在 run-once 的模块已在表内，命中即拿到半初始化对象，按语言语义直接用、不报错。
+读盘失败或文件名无效时挂起 `ModuleNotFound`。编译期 `Error` 原样装箱，保留源码位置。
 
-## `load_module(canonical_path, import_specifier)`
-
-`AriaVM` 私有，**仅加载与编译**，且**仅限 dispatch_loop 驱动期调用**（错误载荷随 `*current_` 走，run 外直调会被吞）：
-
-1. `SourceFile::from_path(canonical_path)` + `fs::module_name_and_dir` -> `new_module` + `make_guard`（guard 跨编译与入表）。
-2. `Compiler::compile(gc_, source, module, kModuleEntryName)`。
-3. **编译成功才 `modules_.set`**（键 = canonical_path，一身二任：表键 + 读盘路径）。
-4. 模块体执行在 IMPORT 分支（见上）。
-
-**错误与表项**：返 `ObjModule*`，`nullptr` ⟺ 载荷已 raise。读盘失败 / `name` 空经 `fail` 报 `ModuleNotFound`；编译期 `Error` 就地装箱透传（消息自带位置，不重烘）。**只有编译失败不留表项**：入表先于模块体执行，模块体抛错或运行期失败后表项不回滚，后续 import 命中的就是那个半初始化模块。
-
-**根安全**：`canonical_path` 是 intern weak root，跨 `load_module` 内一串 `new_*` 分配由调用方的 `make_guard` 根化；`modules_.set` 等表 rehash 走 trivial 分配、不触 GC，不是守卫承重点；`module`/`entry` 经 `modules_` 与 `module->entry_` 可达。命中臂取回的 `module` 同理（非移动 GC，push 期间指针稳定，不加守卫）。
+原始导入名由当前帧的常量池保活。`import_file_module` 在加载期间根化新驻留的路径，VM 在注册或编译期间根化模块。
+两个加载方法在返回前入表，随后由模块表保活模块和入口原型。
 
 ## 不支持
 
 - 目录包（`<base>/<spec>/index.aria`）：只认 `<base>/<spec>.aria`。
 - 相对导入越出源根的 containment 检查：解析器不限路径范围。
-- 解析缓存：IMPORT 每次执行都重新 stat/`weakly_canonical`。
+- 文件路径解析缓存：每次导入文件模块都重新查找并规范化路径。

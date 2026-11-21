@@ -1,14 +1,34 @@
 #ifndef ARIA_IO_HPP
 #define ARIA_IO_HPP
 
+#include <cstdio>
 #include <iostream>
 #include <print>
+#include <system_error>
+
 #include "common.hpp"
 
 namespace aria::io {
 
     using std::print;
     using std::println;
+
+    // 以下操作借用非空的 FILE*。读取在 Windows 非终端流上临时切到二进制模式。
+    // 读行去掉 LF 或 CRLF。空 optional 表示 EOF，空串表示空行。
+    [[nodiscard]]
+    Result<Opt<String>, std::errc> read_line(std::FILE* stream);
+
+    [[nodiscard]]
+    Result<String, std::errc> read_all(std::FILE* stream);
+
+    [[nodiscard]]
+    bool write_text(std::FILE* stream, StringView text);
+
+    [[nodiscard]]
+    bool write_line(std::FILE* stream, StringView text);
+
+    [[nodiscard]]
+    bool flush(std::FILE* stream);
 
     // 流结束与「读到空行/合法字节」在返回值上无差别（EOF 不单独表达），调用方需自行查流状态。
     inline String readline(std::istream& is = std::cin) {

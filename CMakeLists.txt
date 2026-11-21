@@ -32,6 +32,7 @@ add_library(aria_core STATIC
         src/value/Value.cpp
         src/value/Value.hpp
         src/util/util.hpp
+        src/util/io.cpp
         src/util/io.hpp
         src/util/fs.hpp
         src/util/utf8.hpp

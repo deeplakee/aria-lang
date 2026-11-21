@@ -35,6 +35,12 @@ paths:
 
 `io::print`/`io::println`（`std::print`/`std::println` 的 using 别名，全库输出统一入口）+ `readline(std::istream& = std::cin)`/`readchar(std::istream&)` 与 `readchar()`（读 `std::cin`；当前全库零消费者，REPL 行读取走 isocline，见 `main.cpp`。两者**无法区分 EOF 与空行**，`readchar` 亦无法区分 EOF 与字节 0xFF，启用前先定 EOF 判据）。
 
+`read_line`、`read_all`、`write_text`、`write_line` 和 `flush` 操作已打开的非空 `FILE*`，由调用方持有流。
+`read_line` 去掉 LF 或 CRLF，返回的空 `Opt` 表示 EOF，空串表示空行。`read_all` 读到 EOF，
+保留流交付的字节。`write_text` 写入传入的文本。`write_line` 在一次持锁期间依次写入文本和换行。
+读失败返回 `std::errc::io_error`，写和刷新失败返回 `false`。
+`util/io.cpp` 管理每次操作的文件锁、Windows 非终端输入模式及断管后的输出缓冲清理。
+
 ## `util/str.hpp`
 
 `namespace aria::str`（与 fs/utf8 同），header-only 的字符串字面量转义展开工具。

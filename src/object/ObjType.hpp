@@ -22,6 +22,7 @@ namespace aria {
         ITERATOR,
         EXCEPTION,
         MOVEMENT,
+        STREAM,
     };
 
     // ObjType 的类型名映射(PascalCase):C++ 侧诊断与语言面(type() 内建/用户可见报错/repr 默认)。
@@ -58,6 +59,8 @@ namespace aria {
                 return "Exception";
             case ObjType::MOVEMENT:
                 return "Coroutine"; // 语言概念是协程;MOVEMENT 只是 C++ 实现词根
+            case ObjType::STREAM:
+                return "Stream";
             default:
                 UNREACHABLE();
         }

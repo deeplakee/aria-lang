@@ -41,6 +41,7 @@ add_executable(aria_tests
         object/test_objfunction_native.cpp
         object/test_objexception.cpp
         object/test_objrange.cpp
+        object/test_objstream.cpp
         object/test_objstring.cpp
         object/test_objupvalue.cpp
         # memory

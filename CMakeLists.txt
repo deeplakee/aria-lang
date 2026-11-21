@@ -145,6 +145,8 @@ add_library(aria_core STATIC
         src/object/ObjException.hpp
         src/object/ObjRange.cpp
         src/object/ObjRange.hpp
+        src/object/ObjStream.cpp
+        src/object/ObjStream.hpp
         src/object/ObjUpvalue.cpp
         src/object/ObjUpvalue.hpp
         src/object/PrintGuard.hpp

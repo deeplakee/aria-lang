@@ -8,6 +8,7 @@
 #include "object/ObjException.hpp"
 #include "object/ObjFunction.hpp"
 #include "object/ObjInstance.hpp"
+#include "object/ObjStream.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/Eval.hpp"
 #include "runtime/ObjMovement.hpp"
@@ -51,6 +52,8 @@ namespace aria {
                     return ctx.range_class();
                 case ObjType::ITERATOR:
                     return ctx.iterator_class();
+                case ObjType::STREAM:
+                    return value.as_obj()->as<ObjStream>()->klass();
                 default:
                     UNREACHABLE();
             }

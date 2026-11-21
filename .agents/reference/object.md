@@ -70,6 +70,7 @@ paths:
 - **无独立命名空间的内建对象共享类型成员查询与绑定**（权威说明，各子类头不复述）：裸读、绑定读与咨询口同起自自身 bootstrap 类链（`ctx.string_class()` / `ctx.list_class()` / ...）沿链查表，miss 的类措辞 fail 随协议透传；`load_field_from_class` 直取类链原生值；`load_field` 继承基类默认委托咨询口（无 fields）；`load_field_bound` 继承基类默认实现，仅对 `ObjFunction::is_method()` 为真的函数创建绑定方法，普通值、普通/静态函数和已有 BoundMethod 原样返回；函数族（function/boundmethod）与协程值也继承该默认绑定策略；读取绑定方法对象自身的类型方法时以该对象为接收者。Coroutine 静态原语不绑定。跨类方法赋值不改变归属，但**没有统一的接收者归属校验**：只有原生方法在 `NativeCallInfo::receiver<T>()` 处按 `obj_tag` 报 `TypeMismatch`；aria 方法（`call_bound_method` / `call_aria_fn`）只查元数，拿错 `this` 会跑到字段读失败才报 `UndefinedProperty`。
 - 内置类型的 `store_field` 不 override（基类默认即正确行为--不可变成员面）。
 - 方法面构造口 = 各宿主类公有静态 `XxxClass::make_class`（建类挂 super 并经 `Builtin::register_class_methods` 底座装载方法面，`ObjectClass` 根类免 super），Coroutine 的静态原语经 `register_class_functions` 注册，不设置定义类。方法表住各 `XxxClass.cpp` 的匿名命名空间（Coroutine 的四原语例外，住宿主类头内的 `static constexpr`）；`Function`/`BoundMethod`/`Module`/`Class` 四类没有方法表。全局面编排口 = `Builtin::register_builtins`（住 `runtime/builtins/Builtin.{hpp,cpp}`）。
+- `ObjStream` 持有并追踪自己的 `ObjClass*`，从该类查找成员，借用宿主持有的 `FILE*`。
 - FunctionClass / BoundMethodClass / ModuleClass / ClassClass 不定义自身方法表，只提供类链归属与默认显示。
   CoroutineClass 定义静态原语；全部 bootstrap 类由 `runtime/value_register.hpp` 类段注册并曝光到 builtins，数量由表派生。
 

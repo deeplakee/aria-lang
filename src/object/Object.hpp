@@ -29,6 +29,7 @@ namespace aria {
     class ObjException;
     class ObjIterator;
     class ObjMovement;
+    class ObjStream;
 
     template<typename T>
     concept DerivedFromObj = std::is_base_of_v<Object, T>;
@@ -149,6 +150,8 @@ namespace aria {
                 return type() == ObjType::FUNCTION;
             } else if constexpr (std::is_same_v<T, ObjMovement>) {
                 return type() == ObjType::MOVEMENT;
+            } else if constexpr (std::is_same_v<T, ObjStream>) {
+                return type() == ObjType::STREAM;
             } else {
                 STATIC_UNREACHABLE("is: no mapping for this Obj subclass");
             }
@@ -207,7 +210,7 @@ namespace aria {
 
     // 具体子类型的 tag 事实表:ObjType 标识 + 报错用小写限定词(读作「某个 list 下标」,与类型
     // 名的 PascalCase 分属两域)。消费方 = 类型守卫与按类报错;与 is<T> 的分派表是同一 tag↔类
-    // 关联的两向。表对五内建类封闭,新增守卫类别须在此扩臂,漏臂编译期报错。
+    // 关联的两向。新增守卫类别须在此扩臂,漏臂编译期报错。
     struct ObjTag {
         ObjType    tag;
         StringView word;
@@ -225,6 +228,8 @@ namespace aria {
             return {ObjType::RANGE, "range"};
         } else if constexpr (std::is_same_v<T, ObjIterator>) {
             return {ObjType::ITERATOR, "iterator"};
+        } else if constexpr (std::is_same_v<T, ObjStream>) {
+            return {ObjType::STREAM, "stream"};
         } else {
             STATIC_UNREACHABLE("obj_tag: no mapping for this Obj subclass");
         }

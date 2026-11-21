@@ -302,7 +302,7 @@ namespace aria {
     }
 
     ObjModule* AriaVM::load_stdlib_module(ObjString* module_key) {
-        static constexpr Pair<StringView, void (*)(GC&, ObjModule*)> kStdlibModules[] = {
+        static constexpr Pair<StringView, void (*)(AriaVM&, ObjModule*)> kStdlibModules[] = {
                 {"std:math", stdlib::register_math_exports},
         };
         const auto name = module_key->view();
@@ -310,7 +310,7 @@ namespace aria {
             if (name == registered_name) {
                 const auto module = new_module(gc_, registered_name, "");
                 const auto guard  = gc_.make_guard(module);
-                register_exports(gc_, module);
+                register_exports(*this, module);
                 modules_.set(Value::from_obj(module_key), Value::from_obj(module));
                 return module;
             }

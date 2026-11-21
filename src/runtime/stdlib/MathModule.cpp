@@ -8,6 +8,7 @@
 #include "object/ObjModule.hpp"
 #include "object/ObjString.hpp"
 #include "runtime/AriaExeContext.hpp"
+#include "runtime/AriaVM.hpp"
 #include "runtime/builtins/Builtin.hpp"
 #include "value/Value.hpp"
 
@@ -119,7 +120,8 @@ namespace aria::stdlib {
 
     } // namespace
 
-    void register_math_exports(GC& gc, ObjModule* module) {
+    void register_math_exports(AriaVM& host, ObjModule* module) {
+        auto& gc      = host.gc();
         auto& globals = module->globals();
         globals.set(Value::from_obj(new_string(gc, "pi")), Value::from_f64(std::numbers::pi_v<f64>));
         globals.set(Value::from_obj(new_string(gc, "e")), Value::from_f64(std::numbers::e_v<f64>));

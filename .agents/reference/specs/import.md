@@ -26,7 +26,8 @@
 `std:Math`、`std:math.aria`、`std:` 等未注册名都以原字符串报 `ModuleNotFound`。
 项目中的 `math.aria` 经普通文件导入规则查找。
 
-注册表提供每个原生模块的成员注册函数。原生模块使用完整名和空目录，`entry()` 为空。
+注册表的回调接收 `AriaVM&` 和待填充的 `ObjModule*`，调用期间模块已根化。
+原生模块使用完整名和空目录，`entry()` 为空。
 普通原生函数可用 `Builtin::register_functions` 注册进已根化模块的 `globals()`。
 
 ## 文件路径解析

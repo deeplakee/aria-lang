@@ -3,13 +3,13 @@
 
 namespace aria {
 
-    class GC;
+    class AriaVM;
     class ObjModule;
 
     namespace stdlib {
 
         // module 须在注册期间保持可达。
-        void register_math_exports(GC& gc, ObjModule* module);
+        void register_math_exports(AriaVM& host, ObjModule* module);
 
     } // namespace stdlib
 
